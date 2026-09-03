@@ -33,6 +33,7 @@
 #include <sstream>
 #include <unordered_map>
 
+#include <QFile>
 #include <QImage>
 
 #include <App/Application.h>
@@ -88,6 +89,7 @@
 #include "../ViewParams.h"
 #include "../RenderParams.h"
 #include "../View3DInventor.h"
+#include "../Renderer/ImageDecode.h"
 #include "../Renderer/MaterialXSupport.h"
 
 FC_LOG_LEVEL_INIT("Renderer", true, true)
@@ -2343,6 +2345,18 @@ decodeParamImage(const std::string &path, bool keepGray)
         for (int y = 0; y < img.height(); ++y)
             std::memcpy(tex->pixels.data() + size_t(y) * rowLen,
                         img.constScanLine(y), rowLen);
+        // The file itself, when it is one every tier can decode: the
+        // transport ships it in place of the pixels (SceneDump v75,
+        // docs/MaterialStorage.md sec 17.23). Decided by what is in the
+        // file, like the Radiance test above, not by its name.
+        QFile file(qpath);
+        if (file.open(QIODevice::ReadOnly)) {
+            QByteArray bytes = file.readAll();
+            if (Render::isEncodedImage(
+                    reinterpret_cast<const uint8_t *>(bytes.constData()),
+                    size_t(bytes.size())))
+                tex->encoded.assign(bytes.begin(), bytes.end());
+        }
     }
     return tex;
 }

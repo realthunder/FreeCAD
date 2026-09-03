@@ -2154,8 +2154,9 @@ public:
     /// (the beauty passes) or the glass body stage (ViewGlassSurface,
     /// docs/MaterialStorage.md sec 17.22). Ignored for shader text,
     /// which is a whole fragment stage of its own. The standalone tier
-    /// ships no glass splice yet and answers invalid for it, so the
-    /// viewer draws a MaterialX glass with the flat pass.
+    /// answers it from the shipped glass binary (Compiled::glassBin),
+    /// and invalid while none travelled, so the viewer draws a
+    /// MaterialX glass with the flat pass until then.
     enum UserSplice { MeshSplice, GlassSplice };
     bgfx::ProgramHandle getUserProgram(const Render::UserShader &shader,
                                        const char *stockVs,
@@ -2182,13 +2183,19 @@ public:
                             QString &binPath,
                             const char *platform = nullptr,
                             const char *profile = nullptr);
-    /// Server-side compile for the viewer tiers (docs/RenderDebug.md
-    /// §6.3): compile \a shader for each viewer target through the
-    /// async disk cache and append every READY variant to \a out.
-    /// Pending compiles republish on the next userCompileGeneration
-    /// bump; failed ones are dropped (reported once by the compile).
-    void viewerShaderBins(const Render::UserShader &shader,
-                          std::vector<Render::UserShader::Compiled> &out);
+    /// Make the copy of a user shader that travels whole for the viewer
+    /// tiers (SceneSnapshot::shipShader). Server-side compile
+    /// (docs/RenderDebug.md sec 6.3): compile \a shader for each viewer
+    /// target through the async disk cache and append every READY
+    /// variant to its compiled list -- for a MaterialX document, the
+    /// mesh splice and, where its surface claims a glass body, the
+    /// glass splice beside it. Pending compiles republish on the next
+    /// userCompileGeneration bump; failed ones are dropped (reported
+    /// once by the compile). And the document's image layout: each
+    /// image's array layer, the sampler and the unit, resolved against
+    /// the generator those tiers do not have (docs/MaterialStorage.md
+    /// sec 17.23).
+    void shipUserShader(Render::UserShader &shader);
 #endif
 
 #ifdef FC_RENDERER_STANDALONE
@@ -3428,12 +3435,31 @@ struct GpuTextureArray
     /// of a gigabyte before mips. Past this the layers are halved until
     /// they fit, which is a softer answer than refusing the material.
     static constexpr std::size_t MaxBytes = std::size_t(64) << 20;
-    /// How many times an incomplete array is rebuilt while it waits for
-    /// its pixels. A decode in flight lands inside a few frames; a file
-    /// that will never decode would otherwise re-upload every layer on
-    /// every frame for as long as the document is on screen.
-    static constexpr int MaxPlaceholderTries = 120;
-    int placeholderTries = 0;
+    /// The layers that were not usable when the array was built: what
+    /// `placeholder` is waiting on. The array is rebuilt when one of
+    /// them becomes usable and not before -- a file that will never
+    /// decode never triggers a rebuild, and a map that lands after any
+    /// number of frames still does. (A bound of 120 rebuilds used to
+    /// stand in for this and gave up on the browser tier, whose maps
+    /// arrive over a network: an array built while they were in flight
+    /// stayed white for good, and a metal piece with a white base and
+    /// a white metalness map was a chrome reflection of the sky.)
+    ///
+    /// Layer INDICES, examined against the palette handed in on each
+    /// call, never the image objects of the build: a streamed republish
+    /// re-parses a shader into fresh objects under the same ids, and
+    /// an array that watched the first publish's objects saw their
+    /// pixels never arrive while the current ones had them.
+    std::vector<uint16_t> waiting;
+    bool arrived(const Render::TexturePalette &palette) const
+    {
+        for (uint16_t i : waiting) {
+            if (i < palette.entries.size() && palette.entries[i]
+                    && usable(*palette.entries[i]))
+                return true;
+        }
+        return false;
+    }
 
     void destroy()
     {
@@ -3502,6 +3528,7 @@ struct GpuTextureArray
                 int maxSide = MaxSide)
     {
         placeholder = false;
+        waiting.clear();
         const uint16_t numLayers =
             uint16_t(std::min(palette.entries.size(),
                               std::size_t(std::max(maxLayers, 0))));
@@ -3527,6 +3554,7 @@ struct GpuTextureArray
             const auto &e = palette.entries[i];
             if (!e || !usable(*e)) {
                 placeholder = true;
+                waiting.push_back(i);
                 continue;
             }
             w = std::max(w, int(e->width));
@@ -5176,19 +5204,15 @@ public:
         mix(uint64_t(maxSide));
         GpuTextureArray &tex = textureArrays[key];
         tex.lastUsed = frame;
-        // A placeholder is re-examined: the pixels it stands in for are
-        // in flight and will arrive under these ids. Bounded, because a
-        // file that exists but never decodes leaves an entry null for
-        // good, and rebuilding every layer of a 2k array once a frame
-        // forever is a worse answer than one map staying white.
-        if (tex.placeholder
-                && tex.placeholderTries < GpuTextureArray::MaxPlaceholderTries)
+        // A placeholder is rebuilt when a layer it waited on has
+        // arrived -- and only then: a file that never decodes never
+        // wakes it, and rebuilding every layer of a 2k array once a
+        // frame on the chance would be a worse answer than one map
+        // staying white.
+        if (tex.placeholder && tex.arrived(palette))
             tex.destroy();
-        if (!bgfx::isValid(tex.handle)) {
+        if (!bgfx::isValid(tex.handle))
             tex.upload(palette, maxLayers, maxSide);
-            if (tex.placeholder)
-                ++tex.placeholderTries;
-        }
         return bgfx::isValid(tex.handle) ? &tex : nullptr;
     }
 

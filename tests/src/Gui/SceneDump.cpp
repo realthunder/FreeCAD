@@ -515,6 +515,295 @@ TEST(SceneDump, manifestRoundTrip)
     expectScene(loaded);
 }
 
+/// A texture whose producer kept the file it was decoded from travels
+/// as that file (v75): the blob the transport hands over is the PNG,
+/// forty bytes here where the pixels would be twelve, and the reader
+/// decodes it back to the same twelve on arrival. The desktop's own
+/// object keeps both.
+static const uint8_t kPng2x2[] = {
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0xfd, 0xd4, 0x9a, 0x73, 0x00, 0x00, 0x00,
+    0x16, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0xc0,
+    0xf0, 0x9f, 0x81, 0x91, 0x81, 0xe1, 0xff, 0xff, 0xff, 0x0c, 0x00, 0x1e,
+    0xf6, 0x04, 0xfd, 0x09, 0xed, 0x34, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x49,
+    0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82};
+// Rows bottom-up like GL: the file's top row (red, green) is second.
+static const std::vector<uint8_t> kPng2x2Pixels = {
+    0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 0};
+
+std::shared_ptr<Render::TextureImage> makeEncodedTexture(int id)
+{
+    auto tex = std::make_shared<Render::TextureImage>();
+    tex->textureId = uint64_t(id);
+    tex->width = 2;
+    tex->height = 2;
+    tex->numComponents = 3;
+    tex->pixels = kPng2x2Pixels;
+    tex->encoded.assign(kPng2x2, kPng2x2 + sizeof(kPng2x2));
+    return tex;
+}
+
+/// A MaterialX shader travels whole for a tier that has no generator
+/// (v74, docs/MaterialStorage.md sec 17.23): its images as ordinary
+/// texture records -- deferred pixels under the manifest layout, inline
+/// under the bundled one -- each with the array layer the ship hook
+/// resolved for it, the sampler and unit the generated program
+/// declares, and the glass splice binary beside the mesh one. The hook
+/// works on the COPY that travels: the desktop's own object keeps its
+/// unresolved layout and empty compiled list.
+Render::SceneSnapshot makeMaterialXScene(
+    std::shared_ptr<Render::UserShader>& shader)
+{
+    Render::SceneSnapshot snap;
+    auto mesh = makeMesh(3, 8);
+    shader = std::make_shared<Render::UserShader>();
+    shader->dialect = Render::UserShader::Dialect::MaterialX;
+    shader->stage = "material";
+    shader->sourcePath = "/models/chess.mtlx";
+    shader->fragmentSource = "<materialx version=\"1.39\"/>";
+    Render::UserShader::Image a;
+    a.path = "/models/albedo.png";
+    // One map as its FILE (v75), decoded on arrival like a material's.
+    a.image = makeEncodedTexture(11);
+    Render::UserShader::Image b;
+    b.path = "/models/rough.png";
+    b.image = makeTexture(12, 96);
+    shader->images = {a, b};
+    shader->glass.claimed = true;
+    snap.scene.push_back(makeDraw(0x4444, mesh, 0xffffffff));
+    snap.scene.back().material.usershader = shader;
+    snap.scene.back().material.glass = true;
+    snap.scene.back().material.glassmtlx = true;
+    snap.width = 320;
+    snap.height = 240;
+    // What the backend's hook does with its generator: the layers in
+    // the order the generated code reads them (here reversed, so a
+    // reader that took document order would be caught), the sampler
+    // and unit, and a variant carrying both splices.
+    snap.shipShader = [](Render::UserShader& s) {
+        s.imageSampler = "s_fcMtlxImages";
+        s.imageUnit = 13;
+        for (auto& img : s.images) {
+            img.layer = img.path == "/models/rough.png" ? 0 : 1;
+        }
+        Render::UserShader::Compiled c;
+        c.profile = "300_es";
+        c.fsBin = {1, 2, 3};
+        c.glassBin = {4, 5, 6};
+        s.compiled.push_back(std::move(c));
+    };
+    return snap;
+}
+
+void expectShippedMaterialX(const Render::SceneSnapshot& loaded)
+{
+    ASSERT_EQ(loaded.scene.size(), 1u);
+    const auto& sh = loaded.scene.front().material.usershader;
+    ASSERT_TRUE(sh);
+    EXPECT_EQ(sh->dialect, Render::UserShader::Dialect::MaterialX);
+    EXPECT_EQ(sh->sourcePath, "/models/chess.mtlx");
+    EXPECT_EQ(sh->imageSampler, "s_fcMtlxImages");
+    EXPECT_EQ(sh->imageUnit, 13);
+    ASSERT_EQ(sh->images.size(), 2u);
+    EXPECT_EQ(sh->images[0].path, "/models/albedo.png");
+    EXPECT_EQ(sh->images[0].layer, 1);
+    ASSERT_TRUE(sh->images[0].image);
+    EXPECT_EQ(sh->images[0].image->pixels, kPng2x2Pixels);
+    EXPECT_EQ(sh->images[0].image->width, 2);
+    EXPECT_FALSE(sh->images[0].image->deferred);
+    EXPECT_EQ(sh->images[1].path, "/models/rough.png");
+    EXPECT_EQ(sh->images[1].layer, 0);
+    ASSERT_TRUE(sh->images[1].image);
+    EXPECT_EQ(sh->images[1].image->pixels.size(), 96u);
+    ASSERT_EQ(sh->compiled.size(), 1u);
+    EXPECT_EQ(sh->compiled[0].profile, "300_es");
+    EXPECT_EQ(sh->compiled[0].fsBin, (std::vector<uint8_t>{1, 2, 3}));
+    EXPECT_EQ(sh->compiled[0].glassBin, (std::vector<uint8_t>{4, 5, 6}));
+}
+
+TEST(SceneDump, anEncodedTextureTravelsAsItsFile)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    auto mesh = makeMesh(4, 8);
+    auto tex = makeEncodedTexture(21);
+    snap.scene.push_back(makeDraw(0x5555, mesh, 0xffffffff));
+    snap.scene.back().material.texture = tex;
+    snap.width = 64;
+    snap.height = 64;
+    attachSinks(snap, store);
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    // The blob under the texture's key is the file, not the pixels.
+    ASSERT_EQ(tex->contentKey.size(), 40u);
+    auto it = store.blobs.find(tex->contentKey);
+    ASSERT_NE(it, store.blobs.end());
+    EXPECT_EQ(it->second.size(), sizeof(kPng2x2));
+    EXPECT_EQ(tex->pixels, kPng2x2Pixels) << "the producer's copy is untouched";
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+    ASSERT_EQ(loaded.scene.size(), 1u);
+    const auto& got = loaded.scene.front().material.texture;
+    ASSERT_TRUE(got);
+    EXPECT_FALSE(got->deferred);
+    EXPECT_EQ(got->width, 2);
+    EXPECT_EQ(got->height, 2);
+    EXPECT_EQ(got->numComponents, 3);
+    EXPECT_EQ(got->pixels, kPng2x2Pixels);
+
+    // Bundled: the file rides inline and is decoded on read.
+    Render::SceneSnapshot bundled;
+    bundled.scene.push_back(makeDraw(0x5555, mesh, 0xffffffff));
+    bundled.scene.back().material.texture = makeEncodedTexture(22);
+    bundled.width = 64;
+    bundled.height = 64;
+    std::vector<uint8_t> file;
+    ASSERT_TRUE(Render::saveSceneSnapshot(file, bundled));
+    Render::SceneSnapshot back;
+    ASSERT_TRUE(Render::loadSceneSnapshot(file.data(), file.size(), back));
+    ASSERT_EQ(back.scene.size(), 1u);
+    ASSERT_TRUE(back.scene.front().material.texture);
+    EXPECT_EQ(back.scene.front().material.texture->pixels, kPng2x2Pixels);
+}
+
+/// A texture in flight when the next publish lands is filled where the
+/// draws look (v75's memo, SceneSnapshot::textureMemo): the second
+/// parse of the same shader chunk hands back the FIRST parse's texture
+/// object, and either snapshot's fill lands in it. Without the memo
+/// the first object -- the one an unchanged draw keeps -- stayed empty
+/// once the publish naming its fetch was superseded.
+TEST(SceneDump, aTextureInFlightIsSharedAcrossPublishes)
+{
+    std::shared_ptr<Render::UserShader> shader;
+    BlobStore store;
+    Render::SceneSnapshot snap = makeMaterialXScene(shader);
+    attachSinks(snap, store);
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    auto memo = std::make_shared<Render::SceneSnapshot::TextureMemo>();
+    // First publish: parse everything but the image payload itself.
+    Render::SceneSnapshot first;
+    first.textureMemo = memo;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), first));
+    std::string held;
+    for (const auto& c : first.deferredChunks)
+        if (c.texture && c.fill)
+            held = c.key;
+    // The image keys are only known once the shader chunk is parsed,
+    // so resolve once with nothing held, then find them.
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(first, store, model));
+    const auto& shFirst = first.scene.front().material.usershader;
+    ASSERT_TRUE(shFirst);
+    ASSERT_EQ(shFirst->images.size(), 2u);
+    const auto texA = shFirst->images[0].image;
+    ASSERT_TRUE(texA);
+    EXPECT_EQ(texA->pixels, kPng2x2Pixels);
+
+    // Second publish of the same bytes, parsed afresh: its shader
+    // holds the very object the first one does, filled already, and
+    // names no fetch for it.
+    Render::SceneSnapshot second;
+    second.textureMemo = memo;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), second));
+    ASSERT_TRUE(resolveInto(second, store, model));
+    const auto& shSecond = second.scene.front().material.usershader;
+    ASSERT_TRUE(shSecond);
+    ASSERT_NE(shSecond.get(), shFirst.get()) << "a re-parse is a fresh shader";
+    ASSERT_EQ(shSecond->images.size(), 2u);
+    EXPECT_EQ(shSecond->images[0].image.get(), texA.get())
+        << "but the same texture object";
+
+    // And the other order: the first publish's fetch never lands (the
+    // consumer superseded it), the second's does -- into the object the
+    // first parse handed out, which is what an unchanged draw holds.
+    // The image payloads are the blobs that ARE the PNG.
+    std::set<std::string> pngKeys;
+    for (const auto& kv : store.blobs) {
+        if (kv.second.size() == sizeof(kPng2x2)
+                && std::equal(kv.second.begin(), kv.second.end(), kPng2x2))
+            pngKeys.insert(kv.first);
+    }
+    ASSERT_FALSE(pngKeys.empty());
+    auto memo2 = std::make_shared<Render::SceneSnapshot::TextureMemo>();
+    Render::SceneSnapshot a;
+    a.textureMemo = memo2;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(), a));
+    ASSERT_TRUE(resolve(a, store, pngKeys));
+    Render::SceneObjectModel modelA;
+    ASSERT_TRUE(Render::applySceneObjects(a, modelA));
+    auto objA = modelA.objects.find(0x4444);
+    ASSERT_NE(objA, modelA.objects.end());
+    ASSERT_FALSE(objA->second.draws.empty());
+    const auto& shA = objA->second.draws.front().material.usershader;
+    ASSERT_TRUE(shA);
+    ASSERT_EQ(shA->images.size(), 2u);
+    const auto texHeldByA = shA->images[0].image;
+    ASSERT_TRUE(texHeldByA);
+    EXPECT_TRUE(texHeldByA->deferred);
+    EXPECT_TRUE(texHeldByA->pixels.empty());
+
+    Render::SceneSnapshot b;
+    b.textureMemo = memo2;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(), b));
+    Render::SceneObjectModel model2;
+    ASSERT_TRUE(resolveInto(b, store, model2));
+    EXPECT_EQ(b.scene.front().material.usershader->images[0].image.get(),
+              texHeldByA.get());
+    EXPECT_FALSE(texHeldByA->deferred);
+    EXPECT_EQ(texHeldByA->pixels, kPng2x2Pixels)
+        << "the second publish's fetch filled the first's object";
+}
+
+TEST(SceneDump, aMaterialXShaderShipsItsImagesAndGlassSplice)
+{
+    std::shared_ptr<Render::UserShader> shader;
+    BlobStore store;
+    Render::SceneSnapshot snap = makeMaterialXScene(shader);
+    attachSinks(snap, store);
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    // The hook worked on the travelling copy.
+    EXPECT_TRUE(shader->compiled.empty());
+    EXPECT_TRUE(shader->imageSampler.empty());
+    EXPECT_EQ(shader->images[0].layer, -1);
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    // Before the payloads land the images are named, not carried: the
+    // shader chunk is outstanding, and once it is parsed its pixels are.
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+    expectShippedMaterialX(loaded);
+}
+
+TEST(SceneDump, aBundledMaterialXShaderCarriesItsImagesInline)
+{
+    std::shared_ptr<Render::UserShader> shader;
+    Render::SceneSnapshot snap = makeMaterialXScene(shader);
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    EXPECT_TRUE(loaded.deferredChunks.empty())
+        << "a bundled capture carries its pixels, it names nothing";
+    expectShippedMaterialX(loaded);
+}
+
 /// The label a viewer shows comes from the metadata table, not from the
 /// identity the publish path resolves.
 ///

@@ -233,13 +233,6 @@ BGFXView::pushUserImages(const Render::UserShader &shader)
 {
     if (shader.dialect != Render::UserShader::Dialect::MaterialX)
         return;
-    const auto &variant = _BGFXLib.materialXVariant(shader);
-    if (variant.images.empty() || variant.imageSampler.empty())
-        return;
-    const bgfx::UniformHandle sampler =
-        _BGFXLib.userSampler(variant.imageSampler);
-    if (!bgfx::isValid(sampler))
-        return;
     // The document's images stacked as the layers of ONE array, in the
     // order the generated code names them -- which is what lets a
     // material carry more maps than the mesh shader has units free
@@ -251,6 +244,14 @@ BGFXView::pushUserImages(const Render::UserShader &shader)
     // is left null and uploads white, which is the map missing and
     // nothing else -- never another draw's texture.
     Render::TexturePalette layers;
+    std::string samplerName;
+    int unit = 0;
+#ifndef FC_RENDERER_STANDALONE
+    const auto &variant = _BGFXLib.materialXVariant(shader);
+    if (variant.images.empty() || variant.imageSampler.empty())
+        return;
+    samplerName = variant.imageSampler;
+    unit = variant.imageUnit;
     layers.entries.resize(variant.images.size());
     for (const auto &want : variant.images) {
         if (want.layer < 0 || want.layer >= int(layers.entries.size()))
@@ -262,6 +263,30 @@ BGFXView::pushUserImages(const Render::UserShader &shader)
             }
         }
     }
+#else
+    // No generator on this tier: the producer made the join once and
+    // shipped the answer on each image (UserShader::Image::layer) with
+    // the sampler and unit its program declares (docs/MaterialStorage.md
+    // sec 17.23). A snapshot older than that carries no images at all,
+    // and no program to bind them to either.
+    if (shader.imageSampler.empty())
+        return;
+    samplerName = shader.imageSampler;
+    unit = shader.imageUnit;
+    int count = 0;
+    for (const auto &have : shader.images)
+        count = std::max(count, have.layer + 1);
+    if (count <= 0)
+        return;
+    layers.entries.resize(size_t(count));
+    for (const auto &have : shader.images) {
+        if (have.layer >= 0 && have.image)
+            layers.entries[size_t(have.layer)] = have.image;
+    }
+#endif
+    const bgfx::UniformHandle sampler = _BGFXLib.userSampler(samplerName);
+    if (!bgfx::isValid(sampler))
+        return;
     // The white 1x1 stand-in when the array cannot be built at all (no
     // array-texture support, or the upload was refused): a sampler2DArray
     // left unbound is undefined rather than merely blank.
@@ -271,7 +296,7 @@ BGFXView::pushUserImages(const Render::UserShader &shader)
                             GpuTextureArray::MaterialSide))
         tex = array->handle;
     if (bgfx::isValid(tex))
-        bgfx::setTexture(uint8_t(variant.imageUnit), sampler, tex);
+        bgfx::setTexture(uint8_t(unit), sampler, tex);
 }
 
 void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,

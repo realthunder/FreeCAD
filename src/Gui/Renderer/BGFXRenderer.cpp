@@ -1517,7 +1517,7 @@ std::unique_ptr<Renderer> BGFXRendererLib::create(
     // must not be what decides which backend the process will use: it
     // never creates one (docs/HeadlessServe.md §3.1). The type it is
     // asked for survives only as a label on the snapshot's shader
-    // variants, which viewerShaderBins() compiles offline for the
+    // variants, which shipUserShader() compiles offline for the
     // viewer tiers regardless of what runs here.
     if (publishOnly) {
         auto renderer = new BGFXRenderer(widget, true);
@@ -1761,6 +1761,22 @@ bgfx::ProgramHandle fcLoadProgram(const char *vsName, const char *fsName,
         return BGFX_INVALID_HANDLE;
     }
     return bgfx::createProgram(vsh, fsh, true);
+}
+
+// A generated sampler name is known only once a document has been
+// generated (desktop) or shipped (viewer), so the handle is made on
+// first use, on either tier.
+bgfx::UniformHandle
+BGFXRendererLibP::userSampler(const std::string &name)
+{
+    auto it = userSamplers.find(name);
+    if (it == userSamplers.end())
+        it = userSamplers
+                 .emplace(name,
+                          bgfx::createUniform(name.c_str(),
+                                              bgfx::UniformType::Sampler))
+                 .first;
+    return it->second;
 }
 
 #ifndef FC_RENDERER_STANDALONE
@@ -2012,47 +2028,48 @@ BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
     return materialXVariants.emplace(key, std::move(variant)).first->second;
 }
 
-bgfx::UniformHandle
-BGFXRendererLibP::userSampler(const std::string &name)
-{
-    auto it = userSamplers.find(name);
-    if (it == userSamplers.end())
-        it = userSamplers
-                 .emplace(name,
-                          bgfx::createUniform(name.c_str(),
-                                              bgfx::UniformType::Sampler))
-                 .first;
-    return it->second;
-}
-
 void
-BGFXRendererLibP::viewerShaderBins(
-    const Render::UserShader &shader,
-    std::vector<Render::UserShader::Compiled> &out)
+BGFXRendererLibP::shipUserShader(Render::UserShader &shader)
 {
     if (shader.fragmentSource.empty())
         return;
+    std::vector<Render::UserShader::Compiled> &out = shader.compiled;
     // A MaterialX document is a material description, not shader text:
     // what the viewer tier loads is the mesh-shader variant generated
     // from it (docs/CyclesIntegration.md sec 6.10). The viewer has no
     // compiler of its own, so this server-side compile is the only one
     // it will ever get.
     std::string generated;
+    std::string glassSource;
     if (shader.dialect == Render::UserShader::Dialect::MaterialX) {
         const MaterialXVariant &variant = materialXVariant(shader);
         generated = variant.source;
         if (generated.empty())
             return;
-        // A document naming images is not shipped to a viewer tier yet:
-        // its pixels do not travel in the snapshot, so the tier would
-        // load a program whose samplers nothing binds and draw the maps
-        // as the backend default. Shipping nothing instead leaves the
-        // stock program standing in, which is the fallback every other
-        // unrenderable document already gets (docs/CyclesIntegration.md
-        // sec 6.12). Carrying UserShader::images through SceneDump is
-        // what lifts this.
-        if (!variant.images.empty())
-            return;
+        // The glass body splice travels only for a surface claimed as a
+        // glass body: the viewer's glass pass asks for it and nothing
+        // else does, and a compile per document per target is not
+        // spent on a surface that will never wear it.
+        if (shader.glass.claimed)
+            glassSource = variant.glassSource;
+        // The document's images travel as the shader's own (SceneDump
+        // v74), and the tier they reach has no generator to tell it
+        // which layer of the program's array each one is -- so the join
+        // the desktop makes per draw (BGFXView::pushUserImages) is made
+        // here once, on the path, and the answer rides with the image.
+        // The sampler name and unit go with it: only the generator
+        // knows them (docs/CyclesIntegration.md sec 6.12).
+        shader.imageSampler = variant.imageSampler;
+        shader.imageUnit = variant.imageUnit;
+        for (auto &img : shader.images) {
+            img.layer = -1;
+            for (const auto &want : variant.images) {
+                if (want.path == img.path) {
+                    img.layer = want.layer;
+                    break;
+                }
+            }
+        }
     }
     else if (shader.dialect != Render::UserShader::Dialect::ShaderText) {
         return;
@@ -2084,9 +2101,17 @@ BGFXRendererLibP::viewerShaderBins(
     for (const auto &t : targets) {
         Render::UserShader::Compiled c;
         c.profile = t.profile;
-        QString fsBin, vsBin, simBin;
+        QString fsBin, vsBin, simBin, glassBin;
         if (ensureUserShaderBin(fsSource, true, fsBin,
                                 t.platform, t.profile) != 0)
+            continue;
+        // The glass splice is the other half of a glass document's
+        // program: without it the viewer draws the body with the flat
+        // pass, which is a different picture, so a pending compile
+        // holds the variant back like the state step below does.
+        if (!glassSource.empty()
+                && ensureUserShaderBin(glassSource, true, glassBin,
+                                       t.platform, t.profile) != 0)
             continue;
         if (!shader.vertexSource.empty()
                 && ensureUserShaderBin(shader.vertexSource, false, vsBin,
@@ -2106,6 +2131,8 @@ BGFXRendererLibP::viewerShaderBins(
         if (!vsBin.isEmpty() && !readAll(vsBin, c.vsBin))
             continue;
         if (!simBin.isEmpty() && !readAll(simBin, c.simBin))
+            continue;
+        if (!glassBin.isEmpty() && !readAll(glassBin, c.glassBin))
             continue;
         out.push_back(std::move(c));
     }
@@ -2227,20 +2254,34 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
     // snapshot carries the matching variant, there is nothing to load
     // and the stock program stands in.
     //
-    // The shipped variant of a MaterialX document is its MESH splice
-    // (viewerShaderBins); no glass splice travels yet, and answering
-    // the mesh program to the glass pass would draw the body opaque
-    // and lit in a pass that expects to refract. The flat glass pass
-    // stands in on this tier.
-    if (splice == GlassSplice)
+    // A MaterialX document ships as its generated splices
+    // (shipUserShader): the mesh splice in fsBin and, for a surface
+    // claimed as a glass body, the glass splice in glassBin. Both were
+    // assembled over the textured mesh varying list, so both pair with
+    // vs_fc_mesh_tex whatever the caller asked for -- the desktop makes
+    // the same substitution, and bgfx links only on an exact varying
+    // match. The glass pass asking for a splice that did not travel
+    // gets invalid, and its flat program stands in.
+    const bool mtlx = shader.dialect == Render::UserShader::Dialect::MaterialX;
+    if (mtlx) {
+        if (simulate)
+            return BGFX_INVALID_HANDLE;
+        stockVs = "vs_fc_mesh_tex";
+    }
+    else if (splice == GlassSplice) {
         return BGFX_INVALID_HANDLE;
+    }
+    const bool glass = mtlx && splice == GlassSplice;
     std::string platform, profile, apiDir;
     if (!shadercTarget(platform, profile, apiDir))
         return BGFX_INVALID_HANDLE;
+    auto binOf = [&](const Render::UserShader::Compiled &c)
+        -> const std::vector<uint8_t> & {
+        return simulate ? c.simBin : glass ? c.glassBin : c.fsBin;
+    };
     const Render::UserShader::Compiled *variant = nullptr;
     for (const auto &c : shader.compiled) {
-        if (c.profile == profile
-                && !(simulate ? c.simBin : c.fsBin).empty()) {
+        if (c.profile == profile && !binOf(c).empty()) {
             variant = &c;
             break;
         }
@@ -2248,8 +2289,7 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
     if (!variant)
         return BGFX_INVALID_HANDLE;
     // The state step is always the stock full-screen vertex stage.
-    const std::vector<uint8_t> &fsBin =
-        simulate ? variant->simBin : variant->fsBin;
+    const std::vector<uint8_t> &fsBin = binOf(*variant);
     static const std::vector<uint8_t> kNoVertexBin;
     const std::vector<uint8_t> &vsBin =
         simulate ? kNoVertexBin : variant->vsBin;

@@ -209,6 +209,17 @@ struct TextureImage {
     }
 
     std::vector<uint8_t> pixels;
+    /// The file \ref pixels were decoded from, as authored -- a JPEG or
+    /// a PNG (ImageDecode.h says which), kept beside the pixels by a
+    /// producer that read one. Consumers read \ref pixels; this is for
+    /// the TRANSPORT, which ships it instead of the pixels when it is
+    /// here: a 2k map is a few hundred kilobytes as a file and sixteen
+    /// megabytes decoded, and a document's worth of maps is the
+    /// difference between a scene that streams and one that does not
+    /// (docs/MaterialStorage.md sec 17.23). The content key is then the
+    /// key of these bytes. Empty for a texture nobody read from such a
+    /// file -- a Coin texture, a rendered palette, a Radiance picture.
+    std::vector<uint8_t> encoded;
 
     enum Wrap : uint8_t { Repeat, Clamp };
     uint8_t wrapS = Repeat;
@@ -230,6 +241,9 @@ struct TextureImage {
     /// must be filled from the key before the texture can be uploaded.
     /// Only a streamed snapshot defers; a bundled one is self-contained.
     bool deferred = false;
+    /// The deferred payload is an encoded file (see \ref encoded), to be
+    /// decoded into `pixels` when it lands rather than copied.
+    bool encodedPayload = false;
 };
 
 /// Window background drawn behind the scene, mirroring the Coin-side
@@ -924,15 +938,24 @@ struct UserShader {
         /// Binary of simulateSource, paired with the viewer's stock
         /// full-screen vertex shader. Empty for a stateless program.
         std::vector<uint8_t> simBin;
+        /// The glass body splice of a MaterialX document
+        /// (docs/MaterialStorage.md sec 17.23): the same generated
+        /// material function spliced into the glass pass's fragment
+        /// stage, paired with the stock textured mesh vertex stage
+        /// like fsBin is. Empty for shader text and for a document
+        /// whose surface claims no glass body, where the viewer's flat
+        /// glass program stands in.
+        std::vector<uint8_t> glassBin;
 
         bool operator==(const Compiled &o) const {
             return profile == o.profile && vsBin == o.vsBin
-                && fsBin == o.fsBin && simBin == o.simBin;
+                && fsBin == o.fsBin && simBin == o.simBin
+                && glassBin == o.glassBin;
         }
         bool operator!=(const Compiled &o) const { return !(*this == o); }
     };
     /// Transport payload attached at snapshot-serialization time
-    /// (SceneSnapshot::shaderBins); empty on the desktop's own config
+    /// (SceneSnapshot::shipShader); empty on the desktop's own config
     /// feed. Part of equality on purpose: a viewer must re-apply a
     /// config whose sources it already has once the bins arrive.
     std::vector<Compiled> compiled;
@@ -952,17 +975,33 @@ struct UserShader {
         /// Absolute path the document resolved to. The join key.
         std::string path;
         std::shared_ptr<const TextureImage> image;
+        /// Which layer of the generated program's image array this
+        /// file is, or -1 when the generated code does not read it (or
+        /// nobody has said). The join, done once: the producer's ship
+        /// hook (SceneSnapshot::shipShader) resolves it against its
+        /// generator before the shader travels, so a tier with no
+        /// generator of its own binds the layers it was handed
+        /// (docs/MaterialStorage.md sec 17.23). The desktop leaves it
+        /// -1 and joins through its own variant.
+        int layer = -1;
 
         bool operator==(const Image &o) const {
             const uint64_t a = image ? image->textureId : 0;
             const uint64_t b = o.image ? o.image->textureId : 0;
-            return path == o.path && a == b;
+            return path == o.path && a == b && layer == o.layer;
         }
         bool operator!=(const Image &o) const { return !(*this == o); }
     };
     /// The document's images, in document order. Empty for every shader
     /// that is not a MaterialX document naming a file.
     std::vector<Image> images;
+    /// The array sampler the generated program declares for those
+    /// layers and the unit it claims -- transport fields, filled by the
+    /// same ship hook that resolves Image::layer, for the tiers that
+    /// have no generator to ask. Empty and 0 until then, and for a
+    /// document naming no image.
+    std::string imageSampler;
+    int imageUnit = 0;
 
     /// What the MaterialX surface's transmission resolves to for a
     /// consumer that draws it as a glass BODY -- the engine's glass pass,
@@ -990,7 +1029,8 @@ struct UserShader {
             && stage == o.stage && vertexSource == o.vertexSource
             && fragmentSource == o.fragmentSource
             && simulateSource == o.simulateSource && params == o.params
-            && compiled == o.compiled && images == o.images;
+            && compiled == o.compiled && images == o.images
+            && imageSampler == o.imageSampler && imageUnit == o.imageUnit;
     }
     bool operator!=(const UserShader &o) const { return !(*this == o); }
 };

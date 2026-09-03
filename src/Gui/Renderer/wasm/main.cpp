@@ -43,10 +43,8 @@
 #include "StandalonePlatform.h"
 
 // The streamed frame's decoder (docs/CyclesIntegration.md sec 7.1):
-// bimg's vendored stb_image, JPEG only, compiled here because the
-// viewer links bimg without its decode library.
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_JPEG
+// bimg's vendored stb_image, compiled once for every tier in
+// ImageDecode.cpp (the texture transport reads through it too).
 #define STBI_NO_STDIO
 #include <stb/stb_image.h>
 
@@ -57,6 +55,9 @@ static Render::SceneSnapshot s_snap;
 /// somewhere (SceneDump.h). Reset whenever the stream restarts, so a
 /// reconnect cannot apply a delta onto a model from a previous run.
 static Render::SceneObjectModel s_objects;
+/// Textures by content key across publishes (SceneSnapshot::textureMemo).
+static std::shared_ptr<Render::SceneSnapshot::TextureMemo> s_textureMemo =
+    std::make_shared<Render::SceneSnapshot::TextureMemo>();
 static bool s_haveScene = false;
 
 /// The plan is what there is instead of the released/refused memos,
@@ -4228,7 +4229,21 @@ static void carryLadders(Render::SceneSnapshot &fresh)
     for (const auto &up : fresh.objectUpdates)
         redescribed.insert(up.entry.objectKey);
     size_t carried = 0;
+    size_t textures = 0;
     for (const auto &entry : s_snap.deferredChunks) {
+        // A texture still on its way rides too: its fill writes only
+        // its own object, which the model's draws hold (and which the
+        // fresh publish's re-parse handed back through the memo), and
+        // a publish that does not name its key again would otherwise
+        // drop the one fetch that was going to fill it -- the map then
+        // stayed white on every object the delta left alone.
+        if (entry.texture && entry.fill) {
+            if (!entry.key.empty() && !named.count(entry.key)) {
+                fresh.deferredChunks.push_back(entry);
+                ++textures;
+            }
+            continue;
+        }
         if (!entry.release)
             continue;
         bool covered = !entry.key.empty() && named.count(entry.key);
@@ -4251,6 +4266,8 @@ static void carryLadders(Render::SceneSnapshot &fresh)
         fresh.deferredChunks.back().owners = std::move(owners);
         ++carried;
     }
+    if (textures)
+        decLog("carried %zu texture fetches across the delta", textures);
     if (carried) {
         decLog("carried %zu geometry ladders across the delta", carried);
         if (s_streamDebug)
@@ -7106,6 +7123,10 @@ static bool applyScenePayload(const char *data, size_t size)
         return applyPagePayload(version, data + 8, size - 8);
     }
     Render::SceneSnapshot snap;
+    // Textures are held by content key across publishes, so a
+    // re-parse hands back the objects the model's draws already hold
+    // (SceneSnapshot::textureMemo).
+    snap.textureMemo = s_textureMemo;
     if (Render::loadSceneSnapshot(data + 8, size - 8, snap)) {
         // A scene payload means the joined group serves 3D: leave page
         // mode (the page store keeps its state -- switching back is a
@@ -7124,6 +7145,7 @@ static bool applyScenePayload(const char *data, size_t size)
                             "dropping the object model\n");
             s_sessionId = snap.sessionId;
             s_objects = Render::SceneObjectModel();
+            s_textureMemo->clear();
             s_sceneVersion = 0;
             // Deltas held from the old session chain to nothing now.
             s_heldPayloads.clear();

@@ -1,12 +1,15 @@
 set(Library FreeCADRenderer)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+# stb_image (ImageDecode.cpp): bimg's vendored copy, header only. The
+# submodule is present whether or not the bgfx backend is built.
+include_directories(${CMAKE_SOURCE_DIR}/src/3rdParty/bgfx/bimg/3rdparty)
 
 file(GLOB CMakeCache RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}/CMakeCache.txt)
 
-set(Renderer_Headers Renderer.h MaterialXSupport.h Environment.h Page2D.h Page2DWire.h DrawDevice.h DrawSurface.h FrameImageConsumer.h FrameStreamWire.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
+set(Renderer_Headers Renderer.h ImageDecode.h MaterialXSupport.h Environment.h Page2D.h Page2DWire.h DrawDevice.h DrawSurface.h FrameImageConsumer.h FrameStreamWire.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
 set(Renderer_HPP_SRCS ${Renderer_Headers})
-set(Renderer_CPP_SRCS Renderer.cpp MaterialXSupport.cpp MaterialXGen.cpp Environment.cpp Page2D.cpp Page2DWire.cpp DrawDevice.cpp FrameImageConsumer.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
+set(Renderer_CPP_SRCS Renderer.cpp MaterialXSupport.cpp MaterialXGen.cpp Environment.cpp Page2D.cpp Page2DWire.cpp DrawDevice.cpp FrameImageConsumer.cpp ImageDecode.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
 set(Renderer_LIBS FreeCADBase
                   ${QtCore_LIBRARIES}
                   ${QtWidgets_LIBRARIES}
