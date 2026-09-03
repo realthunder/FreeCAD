@@ -129,6 +129,9 @@
 #include "ToolBarManager.h"
 #include "TransactionObject.h"
 #include "TextDocumentEditorView.h"
+#ifdef FC_SHADER_GRAPH_EDITOR
+# include "ShaderGraphView.h"
+#endif
 #include "UiLoader.h"
 #include "View3DViewerPy.h"
 #include "View3DInventor.h"
@@ -2391,6 +2394,9 @@ void Application::initTypes()
     Gui::SplitView3DInventor                    ::init();
     Gui::ViewArea                               ::init();
     Gui::TextDocumentEditorView                 ::init();
+#ifdef FC_SHADER_GRAPH_EDITOR
+    Gui::ShaderGraphView                        ::init();
+#endif
     Gui::EditorView                             ::init();
     Gui::PythonEditorView                       ::init();
     // View Provider

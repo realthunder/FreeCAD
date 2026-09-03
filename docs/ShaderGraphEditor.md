@@ -299,10 +299,12 @@ node-editor canvas, property panel and search popup are unchanged.
 ### 4.5 Where the code goes
 
 ```
-src/3rdParty/imgui-node-editor/            new submodule (thedmd/imgui-node-editor)
+src/3rdParty/imgui-node-editor/            new submodule (thedmd/imgui-node-editor, sec 10)
 src/Gui/Renderer/GraphEditor/
-    ImGuiBgfx.{h,cpp}                      bgfx's example ImGui renderer, entry:: removed
+    ImGuiBgfx.{h,cpp}                      bgfx's example ImGui renderer, per instance, entry:: removed
+    ImGuiStb.cpp                           the stb_truetype/stb_rect_pack implementation (sec 10)
     ImGuiSurface.{h,cpp}                   QOpenGLWidget + DrawSurface + Qt input bridge
+    GraphEditorWidget.{h,cpp}              the editor's widget: an ImGuiSurface drawing the canvas
     GraphHost.h                            the interface of 4.2
     NullGraphHost.{h,cpp}                  phase 1
     EngineGraphHost.{h,cpp}                phase 2: preview + thumbnails on the engine
@@ -311,7 +313,17 @@ src/Gui/Renderer/GraphEditor/
     NodeEditorDrawing.{h,cpp},
     NodeEditorWidgets.{h,cpp}              the two blueprints-example utilities, copied
 src/Gui/ShaderGraphView.{h,cpp}            the view (an MDIView; placed by ViewPlacement)
+src/Gui/Renderer/DrawSurface.h             nativePassId(pass): the backend's own id of a pass
 ```
+
+`DrawSurface::nativePassId` is the one addition to the facade: the ImGui
+renderer draws with transient buffers and embedded shaders, which the
+facade does not carry, so it submits to bgfx directly on the surface's
+pass id. Only code inside the renderer library can make use of it.
+`FC_SHADER_GRAPH_EDITOR` is the compile-time switch, set by both
+`src/Gui/Renderer/CMakeLists.txt` and `src/Gui/CMakeLists.txt` when
+`BUILD_BGFX AND BUILD_MATERIALX`; `Gui::ShaderGraphView::init()` runs
+in `Application.cpp` under it.
 
 CMake: a `BUILD_MATERIALX`-guarded block in
 `src/Gui/Renderer/CMakeLists.txt` (the `HAVE_MATERIALX` block at line
@@ -350,7 +362,7 @@ of it until phase 4.
 
 ## 7. Build order, each its own commit
 
-0. **Spike.** Add `imgui-node-editor` as a submodule; compile bgfx's
+0. **Spike -- DONE 2026-09-03, section 10.** Add `imgui-node-editor` as a submodule; compile bgfx's
    ImGui + the node editor into `FreeCADRenderer` behind
    `BUILD_MATERIALX`; `ImGuiSurface` with Qt input; a throwaway
    `ShaderGraphView` showing the node editor's canvas with two dummy
@@ -402,6 +414,41 @@ of it until phase 4.
    surface beside 3D views; the spike proves it for a widget that
    wants keyboard focus and redraws on every event.
 
+### 8.1 Settled by the spike (2026-09-03)
+
+Risk 1, the touch-ups against ImGui 1.92.8, all found by the compiler
+or the first frame -- none by reading:
+
+- `imgui-node-editor` master (`021aa0e`, 2026-02-20, "fixing for
+  modern imgui") builds against 1.92.8 with ONE change: ImGui 1.92.7
+  (`IMGUI_VERSION_NUM` 19270) added `operator*(float, ImVec2)` to its
+  math-operator set, and `imgui_extra_math.{h,inl}` redefined it. Guarded
+  with `# if IMGUI_VERSION_NUM < 19270`, the style of the file's own
+  `< 19002` / `< 18955` guards. Upstream `develop` has the same
+  unguarded line. Commit `b683192` on the submodule's `LinkVibe`
+  branch; see section 10 for where that commit has to live.
+- Dear ImGui itself needs nothing: bgfx.cmake compiles bgfx's patched
+  copy into `example-common` (as `${DEAR_IMGUI_SOURCES}`), which
+  FreeCADRenderer already links, so the editor gets ImGui for free.
+- Two things in that arrangement bite, both link-time or first-frame:
+  (a) bgfx's `imconfig.h` disables ImGui's stb implementations and
+  expects the example renderer to provide them, and the example's
+  `STBTT_malloc` goes through a global allocator that only its
+  `imguiCreate()` sets -- the first glyph rasterized without it is a
+  null dereference inside `stbtt_GetGlyphShape`. (b) The example
+  object is pulled into the link anyway, by ONE symbol: bgfx's
+  `widgets/file_list.inl` calls `ImGui::PushFont(Font::Enum, float)`,
+  which only the example defines. `ImGuiStb.cpp` answers both: it
+  defines that `PushFont` and the two stb implementations from the
+  same bgfx headers, so the linker never reaches the example object.
+- The MaterialX editor's `IsKeyPressedMap` call (Graph.cpp:3839) is
+  not reached by the spike; it is phase 1's, and `ImGui::IsKeyPressed`
+  is the replacement.
+
+Risk 2 did not bite: a `DrawSurface` with one pass beside a live 3D
+view draws, takes keyboard focus, and repaints on every event; the 3D
+cell keeps rendering next to it (section 10).
+
 ## 9. Day-one checklist for the coding session
 
 - Read this doc, MaterialStorage.md 17.11-17.13, RenderEngine.md 5,
@@ -422,3 +469,63 @@ of it until phase 4.
   and `ShowNaviCube=False`.
 - Commit the spike as its own commit even if it is later deleted; the
   touch-up list from risk 1 goes into section 8 of this doc.
+
+## 10. Phase 0 result (2026-09-03)
+
+Built and run on the standard preset, under Xvfb (`gui-tests-xvfb`),
+by a probe kept outside the repo
+(`~/works/sw/fcad-probes/shader_graph_spike.{py,sh}`). Every exit
+criterion of section 7 phase 0 held, in one process, with a clean
+exit and no crash log:
+
+- Opened through the provider door (`ViewObject.doubleClicked()`,
+  the tree's path), the view lands as a split cell beside the 3D
+  view: the 3D cell went from 1178 to 587 px wide, the editor drew
+  its first frame at 587x623 on its own pass id, and the 3D cell
+  still rendered after a later recompute.
+- It draws (menu bar, label, a text field, two nodes and a link on
+  the node-editor canvas), a node drags with the link following, and
+  a text field takes typing -- after one fix (below).
+- A second program opens a second instance; by the placement policy
+  (ViewPlacement.md 3.2 step 6) it ADOPTS the most-recent non-3D cell
+  and the first view goes through its close path, so the count stays
+  at one view; a second double-click on an open program reveals it
+  rather than duplicating; close and reopen work; deleting a program
+  whose view is open closes the view.
+
+What the run found and fixed:
+
+- **Typing dropped characters** ("typed42" arrived as "pe2"), and it
+  was not ImGui: the widget never received the key PRESSES, only the
+  releases. Qt's shortcut map sees a press first, and a key that
+  starts one of the application's multi-key shortcut sequences is
+  consumed there. `ImGuiSurface::event` now accepts
+  `QEvent::ShortcutOverride` -- everything while a text field is
+  active or an item is being dragged, and any unmodified key
+  otherwise; a Ctrl/Alt/Meta chord with no field active stays with
+  the application so undo/redo/save keep their meaning. The same
+  rule QLineEdit applies.
+- The view type has to be registered (`ShaderGraphView::init()` in
+  `Application.cpp`), or `getMDIViewsOfType` -- and with it the
+  provider's own reveal-if-open -- finds nothing.
+- The two link-time traps of 8.1.
+
+What the spike does NOT prove: HiDPI (Xvfb is 1x; the framebuffer
+scale path is written but unexercised), a real GPU (llvmpipe), cell
+maximize, and the cell content menu (exercised through `close()`
+only). `QWidget::grab` of the main window shows the GL widget's text
+doubled; `grabFramebuffer()` of the widget is crisp, so that is the
+grab path, not the frame -- an on-screen check is still owed.
+
+**The submodule needs a home.** `.gitmodules` points at
+`thedmd/imgui-node-editor`, but the recorded commit (`b683192`, the
+8.1 guard) exists only in this checkout, on a local `LinkVibe`
+branch. The fork's pattern is a `realthunder/` fork for every
+vendored engine (bgfx.cmake, vg-renderer, cycles); creating
+`realthunder/imgui-node-editor`, pushing that branch, and switching
+the URL is the outstanding step, and a push -- so it waits for the
+ask. Until then a fresh clone cannot resolve the gitlink.
+
+Phase 1 starts from here: `GraphEditorWidget::drawUi` is the body
+the ported `Graph` replaces, `ImGuiSurface` and `ImGuiBgfx` are
+final, the view and the provider hooks are final in shape.

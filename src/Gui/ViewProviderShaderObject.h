@@ -75,6 +75,30 @@ public:
     void finishRestoring() override;
     bool isShow() const override {return true;}
 
+    /** @name The shader graph editor (docs/ShaderGraphEditor.md sec 4.4)
+     *
+     * A MATERIALX-dialect program opens in Gui::ShaderGraphView, placed
+     * by Gui::ViewPlacement as a document view (a split cell by
+     * default). getMDIView() and show() are what the split-view area
+     * keys on: the cell content menu lists objects whose view is
+     * open, and a saved layout rehydrates an O:<name> cell through
+     * show(). Builds without the editor (no bgfx or no MaterialX)
+     * have these do nothing.
+     */
+    //@{
+    bool doubleClicked() override;
+    void setupContextMenu(QMenu *menu, QObject *receiver,
+                          const char *member) override;
+    MDIView *getMDIView() const override;
+    void show() override;
+    void beforeDelete() override;
+    /// Reveal the open view of this program, if any. False when none.
+    bool activateView() const;
+    /// Whether this program's document can be edited in the graph
+    /// editor: MATERIALX dialect, and the editor built in.
+    bool hasGraphEditor() const;
+    //@}
+
     /// The shared shader program node consumers insert into their graphs
     SoShaderProgram *getShaderNode() const;
 

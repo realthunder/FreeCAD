@@ -13,3 +13,6 @@
 [submodule "src/3rdParty/MaterialX"]
 	path = src/3rdParty/MaterialX
 	url = https://github.com/AcademySoftwareFoundation/MaterialX.git
+[submodule "src/3rdParty/imgui-node-editor"]
+	path = src/3rdParty/imgui-node-editor
+	url = https://github.com/thedmd/imgui-node-editor

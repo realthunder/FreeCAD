@@ -88,6 +88,41 @@ if(BUILD_MATERIALX)
     add_definitions(-DHAVE_MATERIALX)
 endif()
 
+# The shader graph editor (docs/ShaderGraphEditor.md): MaterialX's node
+# editor hosted on bgfx's ImGui inside a Qt widget. Dear ImGui itself
+# is bgfx's patched copy, already compiled into example-common (with
+# bgfx's own example renderer, which is not used); imgui-node-editor is
+# our submodule. FC_SHADER_GRAPH_EDITOR is the compile-time switch the
+# Gui side reads too (src/Gui/CMakeLists.txt), so both halves come and
+# go together.
+if(BUILD_BGFX AND BUILD_MATERIALX)
+    set(_node_editor ${CMAKE_SOURCE_DIR}/src/3rdParty/imgui-node-editor)
+    if(NOT EXISTS ${_node_editor}/imgui_node_editor.cpp)
+        message(FATAL_ERROR "imgui-node-editor submodule missing: "
+                            "run 'git submodule update --init src/3rdParty/imgui-node-editor'")
+    endif()
+    list(APPEND Renderer_CPP_SRCS
+        GraphEditor/ImGuiBgfx.cpp
+        GraphEditor/ImGuiStb.cpp
+        GraphEditor/ImGuiSurface.cpp
+        GraphEditor/GraphEditorWidget.cpp
+        ${_node_editor}/imgui_node_editor.cpp
+        ${_node_editor}/imgui_node_editor_api.cpp
+        ${_node_editor}/imgui_canvas.cpp
+        ${_node_editor}/crude_json.cpp)
+    list(APPEND Renderer_HPP_SRCS
+        GraphEditor/ImGuiBgfx.h
+        GraphEditor/ImGuiSurface.h
+        GraphEditor/GraphEditorWidget.h)
+    # The node editor includes <imgui.h> and <imgui_internal.h> bare;
+    # our own sources take <dear-imgui/...> through example-common's
+    # public include path. Same files either way.
+    include_directories(${_node_editor}
+                        ${CMAKE_SOURCE_DIR}/src/3rdParty/bgfx/bgfx/3rdparty/dear-imgui)
+    add_definitions(-DFC_SHADER_GRAPH_EDITOR)
+    unset(_node_editor)
+endif()
+
 # The Cycles unit (docs/CyclesIntegration.md). One source either way:
 # built with the engine it is an object library of its own, because the
 # Cycles headers come with the SSE4.2 flags and feature defines that

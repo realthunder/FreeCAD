@@ -29,6 +29,9 @@
 # include <map>
 # include <set>
 # include <sstream>
+# include <cstring>
+# include <QAction>
+# include <QMenu>
 # include <QTimer>
 # include <random>
 
@@ -66,6 +69,12 @@
 #include "Application.h"
 #include "ViewProviderGeometryObject.h"
 #include "Renderer/MaterialXSupport.h"
+#ifdef FC_SHADER_GRAPH_EDITOR
+# include "ShaderGraphView.h"
+#endif
+#include "ActionFunction.h"
+#include "MainWindow.h"
+#include "ViewPlacement.h"
 #include "Document.h"
 #include "SoFCUnifiedSelection.h"
 #include "Inventor/SoFCRenderCache.h"
@@ -293,6 +302,92 @@ SoShaderProgram *ViewProviderShaderProgram::getShaderNode() const
     return pcShaderProgram;
 }
 
+// ---- the shader graph editor (docs/ShaderGraphEditor.md sec 4.4) ----
+
+bool ViewProviderShaderProgram::hasGraphEditor() const
+{
+#ifdef FC_SHADER_GRAPH_EDITOR
+    auto obj = dynamic_cast<App::ShaderProgram*>(getObject());
+    if (!obj)
+        return false;
+    const char *dialect = obj->Dialect.getValueAsString();
+    return dialect && std::strcmp(dialect, "MATERIALX") == 0;
+#else
+    return false;
+#endif
+}
+
+MDIView *ViewProviderShaderProgram::getMDIView() const
+{
+#ifdef FC_SHADER_GRAPH_EDITOR
+    auto doc = getDocument();
+    if (!doc)
+        return nullptr;
+    for (auto v : doc->getMDIViewsOfType(ShaderGraphView::getClassTypeId())) {
+        auto view = static_cast<ShaderGraphView*>(v);
+        if (view->getProgram() == getObject())
+            return view;
+    }
+#endif
+    return nullptr;
+}
+
+bool ViewProviderShaderProgram::activateView() const
+{
+    if (auto view = getMDIView()) {
+        // An already-open view: the reveal half of rule 0, so Alt
+        // relocates it (docs/ViewPlacement.md sec 4.2).
+        ViewPlacement::reveal(view, getDocument(), true);
+        return true;
+    }
+    return false;
+}
+
+void ViewProviderShaderProgram::show()
+{
+#ifdef FC_SHADER_GRAPH_EDITOR
+    // Restore of an O:<name> split cell (Document.cpp) calls show()
+    // and then asks getMDIView() for the view it made.
+    if (hasGraphEditor() && !getMDIView()) {
+        auto obj = static_cast<App::ShaderProgram*>(getObject());
+        auto view = new ShaderGraphView(obj, getMainWindow());
+        ViewPlacement::place(view, ViewPlacement::Category::DocView,
+                             getDocument());
+    }
+#endif
+    ViewProviderDocumentObject::show();
+}
+
+bool ViewProviderShaderProgram::doubleClicked()
+{
+    if (!hasGraphEditor())
+        return ViewProviderDocumentObject::doubleClicked();
+    // Reveal-if-open first, never a second view of one program.
+    if (!activateView())
+        show();
+    return true;
+}
+
+void ViewProviderShaderProgram::setupContextMenu(QMenu *menu, QObject *receiver,
+                                                 const char *member)
+{
+    if (hasGraphEditor()) {
+        auto func = new Gui::ActionFunction(menu);
+        QAction *act = menu->addAction(QObject::tr("Edit shader graph"));
+        func->trigger(act, [this]() { this->doubleClicked(); });
+    }
+    ViewProviderDocumentObject::setupContextMenu(menu, receiver, member);
+}
+
+void ViewProviderShaderProgram::beforeDelete()
+{
+    // The view is a view over this object's property; it goes with
+    // the object.
+    if (auto view = getMDIView())
+        view->close();
+    ViewProviderDocumentObject::beforeDelete();
+}
+
 void ViewProviderShaderProgram::attach(App::DocumentObject *obj)
 {
     ViewProviderDocumentObject::attach(obj);
@@ -335,6 +430,12 @@ void ViewProviderShaderProgram::finishRestoring()
 
 void ViewProviderShaderProgram::updateData(const App::Property *prop)
 {
+#ifdef FC_SHADER_GRAPH_EDITOR
+    if (auto obj = getObject(); obj && prop == &obj->Label) {
+        if (auto view = static_cast<ShaderGraphView*>(getMDIView()))
+            view->labelChanged();
+    }
+#endif
     auto obj = dynamic_cast<App::ShaderProgram*>(getObject());
     // A dynamic property is a shader parameter (§6.4)
     bool dynParam = obj && prop && prop->getName()

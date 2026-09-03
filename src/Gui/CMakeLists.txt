@@ -741,6 +741,13 @@ SET(Editor_HPP_SRCS
     SyntaxHighlighter.h
     TextEdit.h
 )
+# The shader graph editor's view (docs/ShaderGraphEditor.md sec 4.4);
+# its widget lives in FreeCADRenderer under the same switch.
+if(BUILD_BGFX AND BUILD_MATERIALX)
+    add_definitions(-DFC_SHADER_GRAPH_EDITOR)
+    list(APPEND Editor_CPP_SRCS ShaderGraphView.cpp)
+    list(APPEND Editor_HPP_SRCS ShaderGraphView.h)
+endif()
 SET(Editor_SRCS
     ${Editor_CPP_SRCS}
     ${Editor_HPP_SRCS}

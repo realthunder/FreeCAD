@@ -677,6 +677,15 @@ public:
         return bgfx::ViewId(baseId + pass);
     }
 
+    uint16_t nativePassId(unsigned pass) const override
+    {
+        if (pass >= numPasses)
+            return 0xffff;
+        if (isAttached && (!inFrame || pass >= hostIds.size()))
+            return 0xffff;
+        return uint16_t(viewIdOf(pass));
+    }
+
     struct PassConfig {
         Render::TargetHandle target;
         bool haveRect = false;

@@ -106,6 +106,17 @@ public:
     /// through that transform twice.
     virtual bool hostLinearColor() const { return false; }
 
+    /// The backend's own id of \a pass -- a bgfx view id on that
+    /// backend -- for a consumer compiled INSIDE the renderer library
+    /// that speaks the backend directly because the facade does not
+    /// carry what it needs (the ImGui renderer wants transient
+    /// buffers and embedded shaders). Anything outside the library
+    /// has no use for it. Valid only between beginFrame and endFrame
+    /// on an attached surface, whose ids are the host's and move
+    /// every frame; 0xffff when there is no such id.
+    virtual uint16_t nativePassId(unsigned pass) const
+    { (void)pass; return 0xffff; }
+
     /// Start a frame at the widget's current size. False when the
     /// backend cannot draw this frame; the caller skips to its
     /// fallback (or draws nothing) and tries again next paint.
