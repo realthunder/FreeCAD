@@ -3111,3 +3111,75 @@ What this leaves open on the viewer tier: a document's maps decode at
 whose maps are PNGs with alpha or greyscale files travels them as
 files too, but a Radiance environment still travels as floats -- a 2k
 HDR is the one 12 MB blob left in the request log.
+
+### 17.24 The raster's constant 1.07x was the specular lobe's edge (fixed, 2026-09-03)
+
+17.15 left one number on the raster: a flat OpenPBR surface with
+`specular_weight` 0 under the constant environment drew byte 132-133
+where the closed form and the path tracer both say 128 -- linear 0.2307
+for 0.2159, a factor of 1.069, reproducible, the same in every leg of
+`mtlxbase_probe.py` and in every run. It carried through 17.21 and
+17.22 as "17.19's list" and was the last of the raster's known
+brightness residuals with no image involved.
+
+**Where it was.** The surface's specular lobe is a dielectric at IOR
+1.5 whose strength `specular_weight` sets by lowering the IOR toward
+air (OpenPBR PR #247). Under the punctual lights the raster has that
+exactly: `fcPbrFresnelDielectricMod` builds the modified IOR, and at
+weight 0 it is air, and the Fresnel reflectance is zero at every
+angle. Against the ENVIRONMENT the lobe is not integrated but read off
+the split-sum fit, `f0 * A + fEdge * B`, where `fEdge` is the
+reflectance the grazing half of the fit carries -- Schlick's F90, which
+`fc_openpbr.sh` passed as one. `f0` was scaled by the weight and the
+edge was not, so a surface stating no specular at all still took the
+whole of `B` from the environment. The same term entered twice, with
+opposite signs and unequal sizes: the diffuse slab weight is `1 -
+specAlbedo`, so the diffuse LOST `rho * B`, and the specular
+environment term GAINED `B`, for a net `B * (1 - rho)`.
+
+**The number matched before anything was changed.** At the probe's
+camera the mode face sits at an isometric `ndv` of 0.577; the fit's
+`B` there at the default roughness 0.3 is 0.0200, and `0.0200 * (1 -
+0.2159)` = 0.0157 over 0.2159 is 0.2316 linear -- byte 132.4, which is
+the 132-133 measured. A neighbouring face at `ndv` 0.5 predicts 135
+and one at 0.7 predicts 130, which is the spread the frames show.
+
+**The fix** is one helper, `fcOpenPbrSpecEnvAlbedo`, which both the
+slab weights and the environment term now call: the edge reflectance
+is scaled by the same weight as `f0`, `min(specular_weight, 1)`. That
+is the convention `KHR_materials_specular` states for the same knob
+(its factor scales F0 and F90 alike), and it is exact at the two ends
+-- a full-strength dielectric is unchanged, a weight of 0 removes the
+lobe at every angle, as the punctual path and Cycles already did. In
+between it is Schlick's approximation of a lowered IOR, which is what
+the fit was already assuming for the rest of the curve. The stock CAD
+surface states `specular_weight` 1, so nothing outside a MaterialX
+document that lowers it changes by a bit.
+
+Measured after, `fcad-probes/mtlxbase_run.sh`, the same three legs
+(the shader assets rebuilt; the runtime splice cache keys on a content
+hash of the include tree, so the old binaries missed by themselves):
+
+| leg | raster before | raster after | Cycles |
+| --- | --- | --- | --- |
+| Flat (open_pbr_surface) | 132 | **128** | 128 |
+| Std (standard_surface, base unstated) | 133 | **128** | 128 |
+| StdBase (standard_surface, base 1.0) | 133 | **128** | 128 |
+
+Byte 128 is the closed form exactly, in every leg of both engines.
+
+This touches only a document that LOWERS `specular_weight`. The chess
+set's standard_surface pieces state the default specular of 1, so its
+17.22 board-region number is not expected to move, and was not rerun.
+
+**The other item on 17.19's list, "the smaller framing at the same
+reported camera", is the probe and not the engine.** The raster leg is
+the viewport's own dump, 602x326 under the 1024x768 xvfb screen, and
+the Cycles leg is rendered at 640x480; both cameras keep the vertical
+extent, so the wider frame shows the same box smaller by the ratio of
+the aspects, 1.85 over 1.33. `chess3_probe.py` already renders the path
+tracer at the raster dump's aspect for exactly this reason, and the
+"body share" column of `mtlxbase_probe.py` cannot be read across the
+two engines at all: the raster body is flat, so its share is coverage,
+while the path tracer's is the share of pixels at the mode byte under
+64 spp of noise. Struck off; nothing on 17.19's list remains.
