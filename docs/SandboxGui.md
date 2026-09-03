@@ -544,6 +544,140 @@ construction rule); the survey numbers of sec 1 reproduce (243/224
 files, 19/49 `.ui`, 120/87 files importing PySide within one of the
 grep count).  Not a build change: no C++ touched, no suite run.
 
+## 9. G1 sized (2026-09-03): what "Draft's App side in the guest" needs
+
+Sec 6 states G1 in one sentence; `sandbox_gui_lint.py --surface`
+(the same tool, the other direction: which members declared in the
+Part/Base/App Py XMLs the App side reads or calls, against the
+`<Sandbox>` annotations) says what that sentence costs.  Roots: the
+97 files of 8.2 plus `DraftGeomUtils.py`, `DraftVecUtils.py`,
+`WorkingPlane.py`.
+
+### 9.1 The surface
+
+    module members       distinct   uses   examples
+    -------------------  --------  -----   ------------------------------------------
+    FreeCAD.*                  16    692   Vector 332, GuiUp 98, ActiveDocument 62,
+                                           Placement 59, Console 42, Rotation 42
+    Part.*                     32    374   LineSegment 50, Wire 47, Circle 34,
+                                           OCCError 32, Edge 30, Face 29, makeCompound 18,
+                                           Compound 15, makePolygon 13, Arc 12, ...
+
+    declared members read or called: 187 distinct names, 4231 reads
+
+    type            used  annotated today   heaviest members
+    --------------  ----  ---------------   ------------------------------------------
+    TopoShape         41   5                Vertexes 225, Length 159, Edges 116, Faces 59,
+                                            isNull 53, Wires 39, isEqual 36, scale 31
+    GeometryCurve     18   0                toShape 48, FirstParameter 39, value, tangent
+    BoundBox          17   0                add 107, Center 55, scale 31, move 14
+    TopoShapeEdge     17   0                Curve 167, tangentAt 22, valueAt 22, split 12
+    Vector            17   0                sub 112, add 107, x/y 104, normalize 79, cross 63
+    DocumentObject    13   2                addProperty 192, Name 89, removeProperty 18
+    Rotation          13   0                multVec 65, multiply 58, Axis 33
+    Document          12   2                addObject 76, Objects 13, removeObject 13
+    Placement         12   0                Base 73, multVec 65, multiply 58, inverse 26
+    GeometrySurface   12   0
+    ShapeList         11   0                append 241, Shape 149, extend 45
+    TopoShapeWire     11   0                OrderedEdges 14, makeOffset 3, makePipeShell 1
+    BSplineCurve, BezierCurve, TopoShapeFace  10 each, 0 annotated
+    Matrix 9, Geometry 6, PropertyContainer 6 (setPropertyStatus 57,
+    PropertiesList 39), the conics, Quantity 3 (Value 92), ... 0 annotated
+
+Annotated members in these XMLs today: 14 in all (TopoShape 5,
+DocumentObject 3, ComplexGeoData 3, Document 2, Sheet 1).  The
+expression rung needed property reads and a handful of shape queries;
+Draft's geometry code needs the geometry API.
+
+### 9.2 What exists and what does not
+
+- **The facade generator and the annotation rule** exist
+  (`ExpressionSandbox.md` sec 7.5: absent means DENY, host CPython
+  runs only `call` members).  Growing the surface is annotation work
+  over the XMLs, generated the same way -- large but mechanical, and
+  the security review is the diff of the annotations.
+- **The wire has no write.**  `FcxWire.h`: `eval`, `read_prop`,
+  `get_attr`, `call`, `get_item`, `len`, `release`, `resolve_alias`,
+  `pkg.missing`.  An `execute()` that sets `obj.Shape` needs a
+  `write_prop` op under `doc.write.self` (sec 3.2 already reserves it
+  for exactly this), and `addProperty` (192 uses, in `onDocumentRestored`
+  and `__init__`) is a write too.
+- **No module facades.**  `Part.Wire(edges)` is a module-level
+  constructor: the guest needs a `Part` module whose 32 names are
+  facade ops returning handles, and a `FreeCAD` module with
+  `ActiveDocument`, `Console`, `Units`, `GuiUp` (False in the guest).
+- **No guest-native geometry values.**  The guest wheel is the C++
+  value layer compiled to wasm (`ImageSources.cmake`, `_fcx_image`);
+  it has no Python-visible `Vector`/`Placement`/`Rotation`/`Matrix`/
+  `BoundBox` classes.  Draft does 1.6 k vector operations on this
+  surface (`DraftVecUtils` alone: 132 calls); at one hop each that is
+  the chattiness sec 3 rules out, so these five are guest-side
+  classes (pure Python, or bound to the wasm value layer), crossing
+  the wire as values as they do for expressions today.
+- **Rung 2 does not exist.**  `FeaturePython::execute()` calls the
+  host Python Proxy (`FeaturePython.h:201`); nothing routes a Proxy
+  that lives in a guest.  `ExpressionSecurity.h:119` carries only the
+  forward-compatible payload slot.  G1's gate ("recompute the Draft
+  test documents with routing ON") is a rung-2 gate: the Proxy class
+  in the guest, `execute(obj)` as a bridge call with `obj` a handle,
+  `PropertyPythonObject` (the Proxy's pickled state) restored in the
+  guest, and the write op above.
+- **The loader takes lock-file packages only** (`PyodideHost.md`
+  12.4): a wheel not in pyodide's index is refused.  Draft's App side
+  as a LOCAL wheel needs a local-wheel source in `install_package`
+  (manifest entry with `origin: local` and the file's sha256) or a
+  build-time wheel beside `fcx_image` picked up at boot.
+
+### 9.3 The plan: four stages, each with its own gate
+
+- **G1a -- the surface.**  Annotate the 187 + 32 + 16 members as
+  `value`/`handle`/`call` per sec 7.5, generate the `Part` and
+  `FreeCAD` module facades, add the guest geometry value classes.
+  Gate: a geometry parity corpus in the shape of the expression
+  corpus gate -- every public function of `draftgeoutils` (220 call
+  sites in the App side) run in the guest on handles of the same
+  shapes, results equal to native.  No document writes yet.
+- **G1b -- the wheel and the loader.**  Build `draft_app` (the 97
+  files plus the three modules, with a U7 stub for
+  `QT_TRANSLATE_NOOP`/`QTimer.singleShot`) as a wheel in the tree,
+  the local-wheel source for `install_package`, boot-time load.
+  Gate: `import draftgeoutils` in a fresh guest, the G1a corpus
+  passing from the wheel.
+- **G1c -- rung 2 for one principal.**  `write_prop`, the
+  `FeaturePython` seam (a Proxy whose class lives in a guest is
+  executed by a bridge call), Proxy state restore in the guest,
+  `addProperty`/`removeProperty`/`setPropertyStatus` as write ops.
+  Gate: one Draft Wire object's `execute()` in the guest, the shape
+  byte-identical to native.
+- **G1d -- the G1 gate as written**: the Draft and BIM test documents
+  recomputed with routing ON, byte-identical shapes; `TestDraft` green
+  with routing ON.  BIM per 8.2: `Arch*.py` loaded whole with the
+  subset present, view-provider classes importable and unused.
+
+G1a and G1b are independent; G1c depends on G1a; G1d on all.  G1a is
+the bulk of the typing, G1c the architecture.
+
+### 9.4 Decisions to take before G1a
+
+1. **Where host CPython still runs.**  Annotating the surface as
+   `call` puts every `Part.Wire`, `fuse`, `tangentAt` through the
+   Python C API on the host at rung 0/1 (`ExpressionSandbox.md` sec
+   7.5, second rule).  Rung 1 (generated C++ dispatch) would remove
+   that, but it is a separate arc; the proposal is `call` now, rung
+   1 later, since document principals never reach these until G1c.
+2. **Which guest hosts Draft.**  Draft is `addon:Draft`, so the addon
+   guest -- one instance per addon, Proxy state per document inside
+   it -- rather than a per-document guest (rung 2 proper).  Proposal:
+   the addon guest for G1; the per-document split when rung 2 covers
+   document-embedded Proxies.
+3. **The geometry value classes.**  Pure Python `Vector`/`Placement`/
+   `Rotation`/`Matrix`/`BoundBox` in the guest (simple, slow, exact
+   only if the operations are written to match `Base::Vector3d`
+   bit for bit) or bindings to the wasm value layer already in
+   `_fcx_image` (exact by construction, more generator work).
+   Proposal: the wasm layer, because "byte-identical shapes" is the
+   gate and floating-point order matters.
+
 ## References
 
 - Electron's `remote` module deprecation (synchronous IPC, leaky

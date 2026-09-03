@@ -22,7 +22,7 @@ have missed.  Run without arguments from anywhere in the tree to lint
 src/Mod/Draft and src/Mod/BIM.
 
     sandbox_gui_lint.py [ROOT ...] [--all] [--list FILE] [--ui]
-                        [--json OUT] [--self-test]
+                        [--json OUT] [--surface] [--self-test]
 
 Pure standard library; no FreeCAD needed.  Python >= 3.10 (Draft and BIM use
 `match` statements, which an older parser rejects as a syntax error); on the
@@ -985,6 +985,84 @@ def report_list(res, path, out):
         print(file=out)
 
 
+def report_surface(roots, tree, out):
+    """The App-side API surface: which members declared in the Py XMLs the
+    roots read or call, per XML, against the members annotated <Sandbox>.
+    This is G1's work list (docs/SandboxGui.md sec 9)."""
+    import glob
+
+    xmls = (
+        sorted(glob.glob(os.path.join(tree, "src", "Mod", "Part", "App", "*Py.xml")))
+        + sorted(glob.glob(os.path.join(tree, "src", "Base", "*Py.xml")))
+        + [
+            os.path.join(tree, "src", "App", n)
+            for n in (
+                "DocumentObjectPy.xml",
+                "DocumentPy.xml",
+                "PropertyContainerPy.xml",
+                "ExtensionContainerPy.xml",
+                "GeoFeaturePy.xml",
+            )
+        ]
+    )
+    decl = {}  # member -> set of type names
+    annotated = {}  # type -> set of annotated members
+    for x in xmls:
+        if not os.path.exists(x):
+            continue
+        s = open(x).read()
+        typ = os.path.basename(x)[: -len("Py.xml")]
+        for m in re.finditer(r'<(?:Methode|Attribute) Name="([A-Za-z_]+)"(.*?)</(?:Methode|Attribute)>', s, re.S):
+            decl.setdefault(m.group(1), set()).add(typ)
+            if "<Sandbox" in m.group(2):
+                annotated.setdefault(typ, set()).add(m.group(1))
+    used = collections.Counter()
+    modcalls = collections.Counter()
+    modules = {"Part", "FreeCAD", "App"}
+    for path in walk(roots, {".py"}):
+        try:
+            t = ast.parse(open(path, "rb").read(), filename=path)
+        except SyntaxError:
+            continue
+        alias = {}
+        for n in ast.walk(t):
+            if isinstance(n, ast.Import):
+                for a in n.names:
+                    alias[a.asname or a.name.split(".")[0]] = a.name.split(".")[0]
+        for n in ast.walk(t):
+            if isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Load):
+                if isinstance(n.value, ast.Name) and alias.get(n.value.id, n.value.id) in modules:
+                    modcalls[alias.get(n.value.id, n.value.id) + "." + n.attr] += 1
+                elif n.attr in decl:
+                    used[n.attr] += 1
+    print("== App-side surface: module members used (Part / FreeCAD)", file=out)
+    for m in sorted(modules):
+        rows = sorted(((k, v) for k, v in modcalls.items() if k.startswith(m + ".")), key=lambda kv: -kv[1])
+        if rows:
+            print("  %s: %d distinct, %d uses" % (m, len(rows), sum(v for _, v in rows)), file=out)
+            print("    " + ", ".join("%s %d" % (k.split(".", 1)[1], v) for k, v in rows), file=out)
+    byxml = collections.defaultdict(list)
+    for n, c in used.items():
+        for x in decl[n]:
+            byxml[x].append((n, c))
+    print(file=out)
+    print("== App-side surface: declared members read or called, per Py type", file=out)
+    print("   (%d distinct names, %d reads; a name declared on several types is listed under each)" % (len(used), sum(used.values())), file=out)
+    print("  %-26s %5s %5s  members (annotated <Sandbox> marked *)" % ("type", "used", "annot"), file=out)
+    for x in sorted(byxml, key=lambda k: (-len(byxml[k]), k)):
+        rows = sorted(byxml[x], key=lambda kv: -kv[1])
+        ann = annotated.get(x, set())
+        print(
+            "  %-26s %5d %5d  %s"
+            % (x, len(rows), len(ann & {n for n, _ in rows}), ", ".join(("*" if n in ann else "") + "%s %d" % (n, c) for n, c in rows)),
+            file=out,
+        )
+    print(file=out)
+    total_ann = sum(len(v) for v in annotated.values())
+    print("  annotated members in these XMLs today: %d (%s)" % (total_ann, ", ".join("%s %d" % (k, len(v)) for k, v in sorted(annotated.items()))), file=out)
+    print(file=out)
+
+
 def to_json(res):
     roots = res["roots"]
     files = {}
@@ -1117,18 +1195,31 @@ def main(argv=None):
     ap.add_argument("--ui", action="store_true", help="the widget classes the .ui files use")
     ap.add_argument("--residue-top", type=int, default=0, help="limit the residue table to N rows")
     ap.add_argument("--json", metavar="OUT", help="write the full result as JSON")
+    ap.add_argument(
+        "--surface",
+        action="store_true",
+        help="instead of the GUI buckets: the Part/Base/App API members the roots use, per Py type, "
+        "against the <Sandbox> annotations (G1's work list; default roots are Draft's App side)",
+    )
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
+    here = os.path.dirname(os.path.abspath(__file__))
+    tree = os.path.dirname(here)
     roots = args.roots
+    out = sys.stdout
+    if args.surface:
+        if not roots:
+            d = os.path.join(tree, "src", "Mod", "Draft")
+            roots = [os.path.join(d, n) for n in ("draftobjects", "draftgeoutils", "draftfunctions", "draftmake",
+                                                    "DraftGeomUtils.py", "DraftVecUtils.py", "WorkingPlane.py")]
+        report_surface([os.path.abspath(r) for r in roots], tree, out)
+        return 0
     if not roots:
-        here = os.path.dirname(os.path.abspath(__file__))
-        tree = os.path.dirname(here)
         roots = [os.path.join(tree, "src", "Mod", "Draft"), os.path.join(tree, "src", "Mod", "BIM")]
     roots = [os.path.abspath(r) for r in roots]
     res = lint(roots)
-    out = sys.stdout
     if args.list:
         for p in args.list:
             report_list(res, p, out)
