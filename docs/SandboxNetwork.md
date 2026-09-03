@@ -438,7 +438,11 @@ is the one piece that needs a probe before it is promised:
   site-packages (emscripten's in-memory FS) is what `micropip` does
   after its download, and it is synchronous Python.  The finder can
   receive the wheel bytes through the bridge and do exactly that.
-- A **native wheel** (numpy, aiohttp) carries `.so` side modules.
+- A **wheel with compiled extension modules** (numpy, aiohttp) is
+  wasm too -- every pyodide wheel is -- but its `.so` files are
+  emscripten SIDE MODULES (`*.cpython-314-wasm32-emscripten.so`) that
+  must be instantiated as `WebAssembly.Module`s and dynamically linked
+  into the main pyodide module before Python can import them.
   `loadPackage` pre-loads them through an asynchronous JavaScript path
   (`loadDynlibsFromPackage`, `WebAssembly.instantiate`), which cannot
   complete inside a synchronous host op.  But emscripten's C-level
@@ -447,8 +451,8 @@ is the one piece that needs a probe before it is promised:
   -- the glue has four such sites).  The probe: unpack numpy into
   site-packages, `import numpy` with no `loadPackage`, and see whether
   the side modules resolve.  If they do, in-place install covers
-  everything; if not, native wheels take the deferred path below and
-  pure wheels still install in place.
+  everything; if not, wheels with extension modules take the deferred
+  path below and pure wheels still install in place.
 
 ### 9.4 Deferred install and the manifest
 
@@ -595,9 +599,10 @@ code and state, never a runtime choice or a grant (sec 5).
 
 ## 12. Open questions (to settle before P1 and N1)
 
-- The sec 9.3 probe: does a native wheel unpacked into site-packages
-  import synchronously without `loadPackage`?  Decides whether P2
-  covers native wheels.
+- The sec 9.3 probe: does a wheel with compiled extension modules,
+  unpacked into site-packages, import synchronously without
+  `loadPackage`?  Decides whether P2 covers such wheels or only
+  pure-Python ones.
 - Resolver for PyPI packages: host-side against PyPI's JSON API, or
   micropip's resolver run in the guest with a host-fed index.
 
