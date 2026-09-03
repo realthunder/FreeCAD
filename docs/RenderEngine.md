@@ -2132,7 +2132,172 @@ phone).
   `RenderDebug_*` prop, `saveRenderDump(source='viewer')`, read the
   PNG.
 
-## 7. Known limitations / future work
+## 7. Which settings each shading model reads
+
+`View3DInventor::ShadingType` picks the model: **Classic** (fixed
+function Phong), **Realistic** (physically based, image lit), **Matcap**
+(a camera-fixed studio), **External** (the view is handed to a path
+tracer -- only Cycles exists). `Render_PBR` / `Render_Matcap` are a
+hidden facade over the enum, not a second truth.
+
+They are **two tiers, not four variations** (ruled 2026-09-03,
+docs/MaterialStorage.md sec 17.13):
+
+- **Classic and Matcap must never show an unlit model.** That is what
+  they are FOR -- a viewport you can always work in. Classic buys it
+  with the headlight and Coin's `LIGHT_MODEL_AMBIENT`; Matcap buys it
+  with a studio that needs no lights at all.
+- **Realistic and Cycles are lit by the SCENE** -- the environment, the
+  scene light, and any light a DOCUMENT adds -- and by none of the
+  viewport's own aids. Both may draw black, because a black scene is
+  black. They are the same tier at two qualities.
+
+Two rules fall out, and the tables below are their consequences:
+
+1. **A viewing aid is not a light.** The headlight, backlight and fill
+   light are camera-attached (`ViewLight::eyeSpace`) and the scene
+   ambient is a Phong-era global; they belong to Classic. Blender draws
+   the same line -- Solid mode's studio lights never render.
+2. **A quality dial belongs to an INTERACTIVE tier.** The raster trades
+   accuracy for frame rate everywhere (AO resolution, effect
+   resolution, the shadow map). An offline still has no such trade to
+   offer: nobody wants a render that is faster and wrong. So Cycles
+   reads no dial, and that -- not "shadows are a fake" -- is why it
+   ignores `Render_Shadow`.
+
+Legend: **Y** honoured, **-** not read, **n/a** meaningless here.
+
+### 7.1 Output, and what the frame is
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `OutputTransform` | Y | Y | Y | Y |
+| `Exposure` | Y | Y | Y | Y |
+| background colour / gradient | Y | Y | Y | Y |
+| section planes and their style | Y | Y | Y | Y |
+
+### 7.2 Which model shades
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `PBR` (the facade over ShadingType) | Y | Y | Y | **-** |
+| `Matcap`, `MatcapPreset`, `MatcapTint` | - | - | Y | - |
+
+`Render_PBR` says which branch the RASTER shades with. The path tracer
+is physically based by definition -- that is the whole reason to reach
+for it -- so it does not take orders from the facade. The flag survives
+into `Cycles::SceneInput` for ONE thing: `pbr.enabled && envBackground`
+decides whether the environment is SEEN as the backdrop, never whether
+it LIGHTS.
+
+### 7.3 The environment
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `PBREnvPreset`, `PBREnvImage`, `PBREnvEmbed` | - | Y | - | Y |
+| `PBREnvIntensity` | - | Y | - | Y |
+| `PBREnvBackground` | - | Y | - | Y |
+| `PBREnvBlur` | - | Y | - | Y |
+
+Classic and Matcap are not lit by the environment at all, and do not
+show it as a backdrop (`pbrActive` gates both).
+
+### 7.4 Lighting
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| the viewer's headlight / backlight / fill (`Light_*` view props) | Y | **-** | - | **-** |
+| scene ambient (`AmbientLightColor/Intensity`) | Y | **-** | - | **-** |
+| a light a DOCUMENT contains | Y | Y | - | Y |
+| `Light`, `LightIntensity`, `LightColor` | Y | Y | - | Y |
+| `LightDirection*`, `LightSpot`, `LightPosition*` | Y | Y | - | Y |
+| `LightCutOffAngle`, `LightDropOffRate` | Y | Y | - | Y |
+| `SunDisc`, `SunDiscSize` | Y | Y | - | - |
+| `GroundReflection`, `GroundReflectionIntensity` | Y | Y | Y | - |
+
+Matcap reads no light of any kind -- form must read the same wherever
+the light sits, which is the point of it. `SunDisc` is a backdrop
+element the raster draws; the path tracer gives its sun the real sun's
+half-degree instead. The ground receiver is a raster stage-prop.
+
+### 7.5 Material interpretation
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `PBRMetallic`, `PBRRoughness` | - | Y | - | Y |
+| `PBRFromSpecular` | - | Y | - | Y |
+| `ShininessMapping` | - | Y | - | Y |
+| `BumpScale` | Y | Y | Y | Y |
+| `Parallax` | Y | Y | Y | - |
+
+The normal is bump-perturbed before the branch, so a bump map reaches
+even the matcap lookup. Parallax is a raster trick with no meaning to a
+path tracer.
+
+### 7.6 Screen-space and post effects
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `AO`, `AOMethod`, `AORadius`, `AOIntensity` | Y | Y | Y | - |
+| `Cavity`, `CavityRadius`, `CavityValley`, `CavityRidge` | Y | Y | Y | - |
+| `Bloom`, `BloomThreshold`, `BloomIntensity`, `BloomRadius` | Y | Y | Y | - |
+
+GTAO reaches all three raster branches. It is kept in Realistic
+deliberately: it APPROXIMATES the occlusion the path tracer integrates
+exactly, so removing it would make Realistic less like Cycles, not
+more.
+
+### 7.7 Volumes, water and effect packages
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `Volumetric*`, `Caustics*` | Y | Y | Y | - |
+| `WaterSurface` and the `Water*` family | Y | Y | Y | - |
+
+Effect volumes arrive as draws and the translation counts them in
+`skipped`: a path tracer has no screen-space volume pass, and these
+are authored looks rather than statements about the geometry.
+
+### 7.8 Cost and quality dials -- the interactive tier only
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `Shadow` (the shadow MAP) | Y | Y | (map built, unused) | **-** |
+| `AOResolution`, `AOSlices`, `AOSteps` | Y | Y | Y | - |
+| `EffectResolution` | Y | Y | Y | - |
+| `TemporalAccum`, `TemporalAccumSamples` | Y | Y | Y | - |
+
+**`Shadow` stays honoured in Realistic**, and that is not an
+inconsistency with Cycles. In the raster it is a genuine dial: the
+shadow map is a whole extra pass over the scene from the light's point
+of view, every frame, and dropping it is the same kind of trade as
+halving the AO resolution. In a path tracer there is no map to skip --
+the shadow is what happens when a shadow ray meets the model -- so
+honouring the flag would not buy a cheaper approximation, it would draw
+light passing through solid matter. `translateLight` always casts.
+
+Matcap builds the shadow map when a scene light asks for one and then
+never taps it; the map is wasted work in that mode.
+
+### 7.9 Engine settings, streaming and diagnostics
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `CyclesDevice`, `CyclesSamples`, `CyclesTimeLimit` | n/a | n/a | n/a | Y |
+| `CyclesDenoise`, `CyclesPixelSize` | n/a | n/a | n/a | Y |
+| `Type`, `MaxViewIds`, `GpuMemoryBudgetMB` | Y | Y | Y | n/a |
+| tessellation and LOD (`Coarse*`, `Level*`, `MeshSkip*`, `Simplify*`, `ProgressiveLoad*`, `Climb*`, `Visual*`, `Descent*`, `ShapeVertices`, `PressureDrop*`, `TinyElementCutoff`, `LoadDropElements`, `ElementGateStagger`, `DowngradeLedger`, `WorkerVertexCache`, `CaptureBudgetMS`, `BackgroundReleaseDelay`) | Y | Y | Y | (the meshes it is handed) |
+| occlusion culling (`Occlusion*`) | Y | Y | Y | - |
+| `Debug*` | Y | Y | Y | `DebugViewMode` 2 only |
+
+These decide what geometry exists and at what fidelity, so they are
+upstream of shading: every raster model sees their result, and the path
+tracer traces whatever meshes the cache hands it. `DebugViewMode` 2 --
+the view-space shading normal -- is the one picture in which the two
+engines can be compared exactly, which is what the finish and map
+probes assert on.
+
+## 8. Known limitations / future work
 
 - Stock passes keep stock programs: a material-stage override does not
   affect shadows, picking, AO or section clipping; a displacing VS
