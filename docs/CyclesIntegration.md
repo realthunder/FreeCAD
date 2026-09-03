@@ -3,10 +3,12 @@
 Bringing Blender's Cycles path tracer into the fork as a vendored
 renderer, feeding a 3D view that draws nothing of its own but the
 selection highlight. Written 2026-08-27 as the plan and the rulings;
-phases 0-5 and phase 6's item 14 and phase A are built (section 8
-carries the record per phase, section 6.2 the translation as it
-stands). What remains of the plan is phase B of item 15 -- the
-MaterialX bridge, designed in section 8, not started.
+every phase of the plan is built (section 8 carries the record per
+phase, section 6.2 the translation as it stands). Item 15's phase B,
+the MaterialX bridge, is built through section 6.14; the material card
+that carries a shader graph (section 6.13) was designed here and is
+built under `docs/MaterialStorage.md`, which is where that work now
+lives.
 
 Related: `docs/RenderEngine.md` (the bgfx engine that hosts the blit),
 `docs/CAMSimRenderPort.md` (sections 8 and 10 -- the borrowed-frame
