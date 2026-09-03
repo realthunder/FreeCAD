@@ -1,5 +1,12 @@
 # GUI for sandboxed Python: the FreeCAD UI protocol, not a PySide shim
 
+> **Superseded 2026-09-03 by `docs/Sandbox.md`**, the consolidated
+> sandbox reference audited against the code. This file is kept as the
+> historical record; `Sandbox.md` sec 14 says which of its sections
+> moved where and which statements here are stale. Do not update this
+> file; update `Sandbox.md`.
+
+
 Status as of **2026-09-03**: discussion draft; the G0 linter is built
 (sec 8) and G1 is sized (sec 9).  **Revised the same evening, sec 10:**
 pivy runs in the guest and the scene is mirrored (U5/U6), forms use

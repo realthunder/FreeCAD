@@ -1,5 +1,12 @@
 # The pyodide host: CPython-on-emscripten inside a bare V8
 
+> **Superseded 2026-09-03 by `docs/Sandbox.md`**, the consolidated
+> sandbox reference audited against the code. This file is kept as the
+> historical record; `Sandbox.md` sec 14 says which of its sections
+> moved where and which statements here are stale. Do not update this
+> file; update `Sandbox.md`.
+
+
 Status as of **2026-09-02**: phase 0 built and measured
 (`src/App/PyodideHost/`).  Pyodide boots on the V8 that the `v8-embed`
 package ships, with FreeCAD supplying the Web environment and nothing

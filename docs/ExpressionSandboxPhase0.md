@@ -1,5 +1,12 @@
 # Expression sandbox -- Phase 0 report (boundary audit + contracts + measurement)
 
+> **Superseded 2026-09-03 by `docs/Sandbox.md`**, the consolidated
+> sandbox reference audited against the code. This file is kept as the
+> historical record; `Sandbox.md` sec 14 says which of its sections
+> moved where and which statements here are stale. Do not update this
+> file; update `Sandbox.md`.
+
+
 Date: 2026-08-30. Branch: SecurePython. This document is the Phase 0
 deliverable set defined by docs/ExpressionSandbox.md sec 10: (1) the
 boundary audit, (2) the ExpressionCore seam list, (a) the

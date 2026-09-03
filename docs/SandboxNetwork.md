@@ -1,5 +1,12 @@
 # Network for the Python sandbox: the permission model
 
+> **Superseded 2026-09-03 by `docs/Sandbox.md`**, the consolidated
+> sandbox reference audited against the code. This file is kept as the
+> historical record; `Sandbox.md` sec 14 says which of its sections
+> moved where and which statements here are stale. Do not update this
+> file; update `Sandbox.md`.
+
+
 Status as of **2026-09-03**: design.  Of the roadmap in section 10 only
 N0, the demotion of the WASI runtime, is built.
 

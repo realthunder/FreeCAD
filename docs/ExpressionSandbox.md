@@ -1,5 +1,12 @@
 # Sandboxing the expression engine's Python (before the sheet goes to wasm)
 
+> **Superseded 2026-09-03 by `docs/Sandbox.md`**, the consolidated
+> sandbox reference audited against the code. This file is kept as the
+> historical record; `Sandbox.md` sec 14 says which of its sections
+> moved where and which statements here are stale. Do not update this
+> file; update `Sandbox.md`.
+
+
 Ordered 2026-08-29, broadening docs/SpreadsheetRemote.md. The user's
 sequencing: **do not bring the spreadsheet to the browser until the
 expression engine's Python interop is sandboxed.** The sheet is the

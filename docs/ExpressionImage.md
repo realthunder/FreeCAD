@@ -1,5 +1,12 @@
 # The expression sandbox image (Phase 1 step 4 build notes)
 
+> **Superseded 2026-09-03 by `docs/Sandbox.md`**, the consolidated
+> sandbox reference audited against the code. This file is kept as the
+> historical record; `Sandbox.md` sec 14 says which of its sections
+> moved where and which statements here are stale. Do not update this
+> file; update `Sandbox.md`.
+
+
 **Reference implementation since 2026-09-03.**  The wasm32-wasi image
 under wasmtime described here is no longer the shipping runtime: the
 user's direction of 2026-09-03 (`docs/SandboxNetwork.md` sec 0) makes
