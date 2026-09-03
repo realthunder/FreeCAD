@@ -11,6 +11,15 @@ that led here -- why pyodide, why not node, why a bare engine -- is in
 `docs/ExpressionImage.md` ("Pyodide-on-node, benchmarked and probed")
 and is not repeated; this page is the record of what was then built.
 
+**THE runtime since 2026-09-03** (user direction, `docs/SandboxNetwork.md`
+sec 0): pyodide is the sandbox FreeCAD ships and develops; the WASI
+image is the reference implementation, built only on request.  The
+default runtime name is `pyodide`; a build without v8-embed and
+without `BUILD_EXPR_WASI_RUNTIME` has no sandbox host at all and
+evaluates in-process as before.  The network permission model, the
+missing-package install flow, and the "everything Python in pyodide"
+switch are designed in that document, not here.
+
 ## 1. What the host is
 
 Three pieces, and the boundary between them is the design:

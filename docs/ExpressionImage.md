@@ -1,5 +1,14 @@
 # The expression sandbox image (Phase 1 step 4 build notes)
 
+**Reference implementation since 2026-09-03.**  The wasm32-wasi image
+under wasmtime described here is no longer the shipping runtime: the
+user's direction of 2026-09-03 (`docs/SandboxNetwork.md` sec 0) makes
+pyodide (`docs/PyodideHost.md`) THE runtime and keeps this one as the
+reference -- the smallest confinement the `ImageHost` seam can carry,
+built only with `BUILD_EXPR_WASI_RUNTIME` (default OFF), fixed when it
+breaks, never extended.  Everything below is the record of how it was
+built and measured, and stays valid for that build.
+
 Companion to docs/ExpressionSandbox.md (the design; secs 6, 7.4, 7.6)
 and docs/ExpressionSandboxPhase0.md (the frozen contracts).  This file
 records what step 4 has BUILT so far, the exact toolchain, and how to

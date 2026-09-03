@@ -404,6 +404,17 @@ workbenches in the browser; what it costs is a 1.5 s cold start and
 "do not build V8 by hand" verdict: `docs/ExpressionImage.md`,
 "Pyodide-on-node, benchmarked and probed".
 
+**Settled (2026-09-03, user direction).**  Pyodide is THE runtime.
+The WASI image is demoted to a *reference implementation*: it stays
+in the tree as the smallest confinement the seam can carry, is built
+only with `BUILD_EXPR_WASI_RUNTIME` (default OFF), and gets no new
+features.  The default runtime name is `pyodide`.  Two things this
+section's first paragraph rules out are now in scope for the pyodide
+runtime and designed in `docs/SandboxNetwork.md`: a network
+capability the host grants per origin (the "fs / net: not offered"
+line of sec 3.2 is overtaken for `net`), and the end state of one
+user switch that runs every rung of sec 8 in pyodide.
+
 ## 7. Interfacing native modules with the sandbox (added 2026-08-29)
 
 Sec 4 says "host proxies through an object-operation protocol";

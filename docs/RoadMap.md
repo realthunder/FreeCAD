@@ -204,9 +204,27 @@ Python passthrough, so the protocol design questions below are all still open.</
   `.FCStd` can currently execute arbitrary code) and is browser-friendly.
   <span style="color:#9a6a12">**Not started (2026-07).** The security hole is still
   open.</span>
+  <span style="color:#1a7f37">**Built for expressions (2026-09).** Expressions and both
+  spreadsheet modes evaluate in a sandbox behind the `ImageHost` seam, preference-gated,
+  with a time budget and a 456-file parity gate ([ExpressionSandbox.md](./ExpressionSandbox.md),
+  [PyodideHost.md](./PyodideHost.md)). The runtime is **pyodide on a bare V8** that FreeCAD
+  embeds from its own `v8-embed` package (decided 2026-09-02, made THE runtime 2026-09-03).
+  Document-embedded code, macros and workbenches are the remaining rungs, and the stated
+  end goal is **one user switch that runs every piece of Python in pyodide**
+  ([SandboxNetwork.md](./SandboxNetwork.md) sec 11).</span>
 - The same WASM modules can run out-of-process on desktop via a native runtime
   (Wasmtime/Wasmer/WAMR + WASI), unifying the sandbox and browser stories.
   <span style="color:#9a6a12">**Not started (2026-07).**</span>
+  <span style="color:#9a6a12">**Built, then demoted (2026-09-03).** A wasm32-wasi image under
+  wasmtime was built first and proved the seam ([ExpressionImage.md](./ExpressionImage.md));
+  it is now the *reference implementation*, built only with `BUILD_EXPR_WASI_RUNTIME`.
+  Pyodide won on ecosystem: users install their own wheels from the pyodide index or PyPI.</span>
+- <span style="color:#9a6a12">**Added (2026-09-03), not on the original list:** network for
+  sandboxed Python as a host-granted capability -- HTTP through the host with per-origin
+  grants, deny lists, redirect re-checks and an audit log; WebSocket as a later, separate
+  grant; raw sockets never for document code ([SandboxNetwork.md](./SandboxNetwork.md)).
+  Alongside it, a missing-package import in the sandbox becomes an offer to install the
+  package into the user's pyodide directory (same document, sec 9).</span>
 
 ### 4. Large models — how commercial web CAD does it
 - Onshape et al. do **not** run the kernel in the browser. Geometry servers hold the
@@ -299,6 +317,11 @@ team-years of work; the near-term list is deliberately small.
 - `execute()` purity contract + `relocatable` audit (start Part/PartDesign; long-running).
 - In-process parallel recompute scheduler (C++ features, threads) — prove parallel == serial.
 - WASM sandbox for untrusted document Python.
+  <span style="color:#1a7f37">**Expressions done (2026-09), pyodide runtime.**</span>
+  <span style="color:#9a6a12">Next rungs: document-embedded code, then session scripting,
+  then workbenches, toward the one-switch end state; network grants, WebSocket and the
+  package-install flow are on the same list ([SandboxNetwork.md](./SandboxNetwork.md)
+  sec 10).</span>
 - Decide the undo model for resident workers (command replay vs state snapshot) — constrains
   the protocol; do not defer past protocol v1.
 
