@@ -2910,3 +2910,204 @@ the generated function as literals; a mapped transmission colour is an
 image fetch there, not a literal; a stated normal is emitted, not a
 literal, and the frame it is expressed in names the geometry's tangent
 and bitangent.
+
+### 17.23 The viewer tier draws the document's MaterialX (2026-09-03)
+
+The browser viewer drew none of it. A MaterialX document naming an
+image was never shipped to it at all -- the server-side compile
+declined the document because its pixels did not travel, and the stock
+appearance stood in (6.12's last paragraph) -- and a glass document
+reached it as a flat glass body, because the shipped variant had one
+slot, the mesh splice, and the viewer's program lookup answered invalid
+for the glass one rather than hand the glass pass a program that lights
+an opaque body. The chess set, which is both, was a set of grey pieces
+with white balls for pawn heads in the browser and the picture of 17.22
+on the desktop. And the viewer had not linked since 6.12: the shared
+image-binding code called the desktop's generator-side variant and a
+sampler helper that lived in the desktop-only block, so the wasm build
+failed at the link -- nobody had built it in the two days since.
+
+#### What travels, and who does the join
+
+The two halves of an image binding are produced by sides that cannot
+see each other (6.12): the generator knows which layer of the program's
+array each file is, the capture has the pixels. The desktop joins them
+per draw, on the path (`BGFXView::pushUserImages`). A viewer tier has
+the capture's half -- once the images travel -- and no generator at
+all, so the join has to be made for it, once, before the shader leaves.
+
+That is the ship hook. `SceneSnapshot::shaderBins`, which appended the
+server-compiled binaries to a copy of the compiled list, is now
+`shipShader`: it is handed the COPY of the shader that travels and makes
+it whole -- the binaries as before, and now the layout: `Image::layer`
+on each image (resolved against the generator's list by path, -1 for a
+file the generated code does not read), and the array's sampler name
+and unit on the shader (`imageSampler`, `imageUnit`), which only the
+generator knows. The desktop's own object is never written: it keeps
+-1 and empty, and joins through its variant as it did.
+
+The snapshot (v74, shader chunk revision 16) writes, after everything
+the shader carried, a glass splice binary per compiled variant
+(`Compiled::glassBin`), then the sampler, the unit, and the images --
+each one its path, its layer and an ordinary texture record, which
+under the streaming transport is the header inline and the pixels
+deferred by content key. So a map is fetched once, cached in the
+viewer's blob store like a material's texture, and shared with any
+other shader or material naming the same pixels (the loader's texture
+memo is keyed on the content). A bundled capture carries the pixels
+inline in the shader entry and stays self-contained. An older snapshot
+reads as before: no images, no glass binary, which is exactly what
+those builds shipped.
+
+The glass splice is compiled for the viewer targets only when the
+surface claims a glass body (`UserShader::glass.claimed`, the capture's
+flat reading of 17.21): the glass pass is the only consumer, and a
+compile per document per target is not spent on a surface that will
+never wear it. Like the particle state step, a pending glass compile
+holds the whole variant back rather than shipping a mesh splice whose
+glass half is missing -- the flat pass would draw a different picture,
+and a republish on the compile's landing is the ordinary path.
+
+#### The viewer's side
+
+`getUserProgram` on the standalone tier pairs a MaterialX program with
+`vs_fc_mesh_tex`, whatever stock stage the caller named -- the same
+substitution the desktop makes, and a necessary one: both splices were
+assembled over the textured varying list, and bgfx links only on an
+exact varying match ([[bgfx-varying-exact-match]]). Before this the
+viewer would have paired an imageless document's mesh splice with
+`vs_fc_mesh` and silently drawn nothing new; no one had noticed because
+no image document had ever reached it and the imageless ones were never
+tried there. The glass splice resolves from `glassBin` under the same
+profile match, and a variant without one answers invalid, so the flat
+program stands in exactly as it does on the desktop while a compile is
+pending. `pushUserImages` on that tier stacks the shipped images by
+their layer into one array on the shipped unit under the shipped
+sampler name; the sampler-handle helper moved out of the desktop-only
+block so both tiers make one on first use.
+
+Nothing on the viewer knows MaterialX exists. It receives a fragment
+binary, a vertex-stage name, a sampler name, a unit, and layered
+pixels -- which is the shape every other asset already has, and the
+reason the generator never has to be ported to the browser.
+
+#### What the first browser frame said
+
+With the splices and the images travelling, real Chrome drew the set
+from the shipped programs in seventy-five seconds -- and drew it wrong:
+a flat grey board, one white knight, and two black pieces a saturated
+red. Two minutes in, the board had its checker and the marble was
+marble, and the two red pieces were still red. The request log said
+why: forty-three blobs of 12,582,912 bytes each. A 2k map is 400 kB as
+the JPEG the document names and 12 MB as the RGB the capture decoded
+it into, and `writeTexture` shipped the pixels -- which is what every
+material texture had always done, and had never been asked to do
+forty-three times over. Half a gigabyte took thirty seconds on
+loopback, the viewer's blob store (512 MB) started evicting what it
+had just fetched, its heap reached 1.8 GB, and the arrays that stack a
+document's maps had stopped waiting long before any of it landed.
+
+That last part is the red. An array built while its layers are in
+flight stands in with white, and it was re-examined once a frame for
+120 frames -- a bound written against a decode in flight, which lands
+in a few frames, not a network. Past it the white stayed for good. A
+white base colour is a white piece (the knight in the first frame); a
+white base colour AND a white metalness map is a mirror, and a mirror
+of that environment is the orange wall behind the board, which is what
+the two metal-mapped black pieces were reflecting. Pieces whose maps
+happened to arrive inside the bound came out right, so the picture
+looked like a per-material bug and was a scheduling one.
+
+Both are fixed at the root rather than by widening the bound:
+
+- **The transport ships the file.** `TextureImage::encoded` holds the
+  bytes the producer decoded a map from, when they are a JPEG or a PNG
+  (decided by signature, `ImageDecode.h`), and `writeTexture` sends
+  those in place of the pixels (v75, a flag after the sample kind; the
+  content key is the key of the file bytes). The reader decodes on
+  arrival through the one stb_image the renderer now compiles
+  (`ImageDecode.cpp`, shared with the viewer's streamed-frame decoder,
+  which had its own copy). The bridge keeps the file beside the pixels
+  for every image it decodes through Qt -- a document's maps, a ground
+  texture, a bump map alike -- so the chess set's maps are 20 MB on the
+  wire where they were 540. The browser tier decodes under a cap of
+  1024 a side, halving box-filtered (the mip it would have drawn at
+  that size), because its whole scene lives in one heap; the desktop
+  keeps what the file says.
+- **An array is rebuilt when a layer it waited on arrives**, and only
+  then: `GpuTextureArray` remembers WHICH layers were not usable when
+  it was built and re-examines those slots of the palette handed in on
+  each draw, so a map landing after any number of frames still
+  replaces its white, and a file that will never decode never wakes a
+  rebuild. The frame bound is gone. The first cut remembered the image
+  OBJECTS instead of the slots, and one browser run in two came up
+  with no map at all: a streamed republish (the backend republishes as
+  each compile lands) re-parses a shader chunk into fresh texture
+  objects under the same ids, the array's key is the ids, and so the
+  array kept watching the first publish's objects -- whose fetches had
+  been retired with that publish -- while the current objects held
+  the pixels. Which run failed depended on whether a republish fell
+  between the first draw and the last arrival.
+- **A texture in flight belongs to the model, not to the publish that
+  named it.** With the slots fixed, one run in two still came up with
+  a flat board and half the pieces plain, and the reason is a level
+  below the arrays. The viewer keeps an object's draws from the
+  publish that last carried them (`applySceneObjects`), and a delta
+  that leaves an object alone leaves those draws holding the FIRST
+  parse's texture objects. Meanwhile the delta re-parses every chunk
+  it does name into fresh objects, and when it is committed the
+  superseded snapshot's outstanding fetches go with it. A map whose
+  bytes were in flight at that moment was filled into an object
+  nothing drew, or into none at all -- and every publish the backend
+  makes as its compiles land is such a moment. Two things fix it, and
+  both are the consumer's: a texture memo across publishes
+  (`SceneSnapshot::textureMemo`, weak, by content key) so a re-parse
+  hands back the object the model's draws already hold, and the
+  carry-over that already preserved geometry ladders across a delta
+  (`carryLadders`) now carries a texture fetch still outstanding whose
+  key the fresh publish does not name. A texture entry is marked as
+  such (`DeferredChunk::texture`) because it is the one kind of fill
+  that writes only its own object and may run against any snapshot; a
+  group's or a material's writes into its snapshot's tables and may
+  not. The fill is idempotent, so a texture two snapshots both wait on
+  is filled by whichever lands first.
+
+#### Verification
+
+Real Chrome (WebGL2 on ANGLE over D3D12, `scripts/wasm-chrome.js`)
+against a fresh headless serve of the chess set
+(`fcad-probes/chess_serve.py` under `renderer-serve.sh`), forty-five
+seconds after load, twice from the same fresh serve because the
+failures above were one run in two:
+
+    run   heap     last blob   maps    board     pawn heads   red pieces
+    1     1318 MB  --          none    flat      dark balls   2  (raw pixels, 75 s)
+    2     1832 MB  31 s        most    checker   glass        2  (raw pixels, 120 s)
+    3      373 MB  9.6 s       none    flat      glass        0  (encoded, first array rule)
+    4      538 MB  --          all     checker   glass        0  (same bundle as 3)
+    5      448 MB  10.9 s      half    flat      glass        0  (slot rule, first after serve)
+    7      448 MB  12.8 s      all     checker   glass        0  (memo + carry, first after serve)
+    8      448 MB  12.2 s      all     checker   glass        0
+
+The last two frames are the set as the desktop draws it: the marble on
+every piece, the checker on the board, the pawn heads glass and pale,
+the black bishop and queen black -- from forty-three JPEG blobs
+totalling twenty megabytes where run 2 had pulled five hundred and
+forty of raw pixels, and with the browser's heap a quarter of what it
+was. The glass splices drew: the two `fc_glass_fs` sources in the
+compile cache carry `300_es` binaries beside their `140` and desktop
+ones, and the heads refract the board where run 1's stood in flat.
+
+Tests: `SceneDump_tests_run` 43 (five new -- a MaterialX shader ships
+its images, layout and glass binary through the manifest layout and
+inline through the bundled one; an encoded texture travels as its file
+and decodes back to its pixels both ways; a texture in flight is shared
+across two parses and filled by whichever publish lands first);
+`MaterialXGen_tests_run` 48/48; `ctest` 473/473.
+
+What this leaves open on the viewer tier: a document's maps decode at
+1024 a side there, a constant chosen for the heap and not a setting;
+`kDecodeMaxSide` is where a per-device policy would go. And a scene
+whose maps are PNGs with alpha or greyscale files travels them as
+files too, but a Radiance environment still travels as floats -- a 2k
+HDR is the one 12 MB blob left in the request log.

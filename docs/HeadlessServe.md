@@ -105,7 +105,7 @@ block, and nothing after it. In `BGFXRenderer` this means factoring the region
 callers share it, and skipping the `getView()`/`bgfxFbo` gate entirely. The audit says this is
 clean: `makeSnapshot` reads only CPU members (`scene`, `objectInfo`, `selections`,
 `highlight`, `overlays`, the configs), and the one call inside it that looks like a GPU
-dependency — `_BGFXLib.viewerShaderBins()` (`BGFXRenderer.cpp:13654`) — is offline `shaderc`
+dependency -- `_BGFXLib.viewerShaderBins()` (`BGFXRenderer.cpp:13654`; now `shipUserShader()`) -- is offline `shaderc`
 invocation plus file reads, no bgfx device. `width`/`height` and `clearColor` become
 parameters rather than view state.
 

@@ -1453,8 +1453,9 @@ thousand draws sharing a material share one interpretation.
 A document this build cannot interpret does not take the frame with
 it: the draw renders its stock material and the reason is reported
 once. The raster path stands down the same way for now, by the
-opposite route -- `getUserProgram` and `viewerShaderBins` refuse a
-non-text dialect at the one door every stage's compile goes through,
+opposite route -- `getUserProgram` and `viewerShaderBins` (since
+renamed `shipUserShader`) refuse a non-text dialect at the one door
+every stage's compile goes through,
 so a document is never handed to shaderc, which would report a compile
 error per material and draw nothing new. The raster splice is step 2.
 
@@ -1966,6 +1967,10 @@ section. Carrying the images through the snapshot is the next step, and
 the vehicle is already there: a `TextureImage` is content-keyed and
 blob-stored, and the snapshot's texture table already deduplicates and
 defers exactly these.
+
+> Built two days later: the images travel with the shader (snapshot
+> v74), joined to the program's array layers by the ship hook, and the
+> glass splice travels beside the mesh one -- MaterialStorage.md 17.23.
 
 **Verification.** Twenty-one unit tests
 (`tests/src/Gui/MaterialXGen.cpp`), four of them new: an image becomes a
