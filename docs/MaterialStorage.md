@@ -2899,8 +2899,11 @@ fc_glass_fs.sh", the flat program stood in exactly as designed, and the
 probe reported PROBE OK over a measurement of the fallback. A
 fallback that draws something plausible hides its own absence; the
 compile cache (a `.sc` with no `.bin` beside it) and the run log's
-"user shader compile failed" are what say which program drew. A new
-shader include needs a reconfigure, like a new `.sc` does.
+"user shader compile failed" are what say which program drew. The
+globs carry `CONFIGURE_DEPENDS` since: the build re-checks the shader
+directory and reconfigures itself when a file is added or removed,
+proved by a scratch `.sh` appearing in the copy on the next build and
+an unchanged tree not reconfiguring.
 
 Three tests in `MaterialXGen_tests_run`: the transmission inputs reach
 the generated function as literals; a mapped transmission colour is an
