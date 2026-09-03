@@ -516,9 +516,27 @@ Val Interpreter::buildNode(const mx::NodePtr &node,
         // getActiveColorSpace inherits it) says nothing about a normal
         // or roughness map's pixels -- reading those as colour is the
         // silent, plausible mistake this avoids.
+        //
+        // A picture is declared `scene_linear_srgb` and NOT
+        // `u_colorspace_srgb`, for the reason PixelImage states at
+        // length in CyclesScene.cpp: the bytes stay bytes and the
+        // kernel decodes them per sample. The two spellings differ
+        // only in primaries -- `u_colorspace_srgb` is Rec.709 whatever
+        // scene linear is -- and scene linear IS Rec.709 here, since
+        // nothing sets an OpenColorIO config and every other colour
+        // this engine is handed is already Rec.709.
+        //
+        // This path had the other spelling, and it does not merely
+        // cost half floats: ColorSpaceManager::to_scene_linear leaves
+        // the pixels sRGB-encoded for it (it forces compress_as_srgb)
+        // while ImageMetaData::finalize never sets the
+        // is_compressible_as_srgb that tells the kernel to decode
+        // them, so the map arrived ENCODED TWICE -- 3.418x the albedo
+        // it should have, against 3.413x predicted for a double
+        // encode (fcad-probes/mtlximage_run.sh).
         const std::string space = file ? file->getColorSpace() : std::string();
         if (space == "srgb_texture")
-            tex->set_colorspace(ccl::u_colorspace_srgb);
+            tex->set_colorspace(ccl::u_colorspace_scene_linear_srgb);
         else if (dim >= 3 && (type == "color3" || type == "color4"))
             tex->set_colorspace(ccl::u_colorspace_scene_linear);
         else

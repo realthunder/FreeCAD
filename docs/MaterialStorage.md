@@ -2160,3 +2160,99 @@ hash is a different asset and the directory takes a suffix.
 A pool is exact and needs no collision rule, but the extra sharing it buys
 over this -- two unrelated assets holding the same image file -- is rare,
 and it costs the legibility the library is for.
+
+### 17.15 An sRGB image map reached the path tracer encoded twice (fixed, 2026-09-03)
+
+Item 4 of 17.13's list, and the last thing left between the two engines
+on a MaterialX document. Session 9 took the LIGHTING difference out of
+the way, so the chess set's remaining disagreement -- Cycles brighter
+AND much lower contrast than the raster -- had to be inside the MaterialX
+path. Brightness and collapsed contrast together is what reading an sRGB
+map as linear looks like, and it was.
+
+**The scene answers in arithmetic, not by eye.** One box under a
+CONSTANT environment of radiance 1, wearing an OpenPBR surface with
+`specular_weight` 0, is flat at exactly the base colour. Two legs over
+ONE document, differing only in how that colour is written:
+
+- **flat** -- `base_color` stated as the constant 0.21586
+- **imaged** -- `base_color` from a solid byte-128 PNG, `srgb_texture`
+
+Byte 128 IS sRGB 0.502, and `srgbToLinear(0.502)` = 0.21586, so the two
+legs are the same surface written two ways. The imaged/flat ratio then
+names the defect with no reference renderer needed -- the control is
+inside the same engine, which is what makes this cheaper than the
+Blender leg the lighting arc needed:
+
+| ratio | what it means | byte |
+| --- | --- | --- |
+| 1.00 | the decode is right | 128 |
+| 2.32 | no decode at all (the sRGB byte used as linear) | 188 |
+| 3.41 | decoded, then encoded again | 224 |
+
+**Measured: 3.418, against 3.413 predicted.** Cycles drew the flat leg
+at byte 128 -- the closed-form answer exactly -- and the imaged leg at
+223. The raster drew both legs alike, so it was never the one at fault.
+
+**The cause is one ustring.** `CyclesMaterialX.cpp` declared an
+`srgb_texture` file `ccl::u_colorspace_srgb`. That is a space to CONVERT
+FROM, and Cycles handles it inconsistently:
+`ColorSpaceManager::to_scene_linear` deliberately leaves the pixels
+sRGB-encoded for it (it forces `compress_as_srgb`, and with scene linear
+at Rec.709 the processor is null, so the ONLY thing that runs is a
+`color_linear_to_srgb` on data that was already sRGB), while
+`ImageMetaData::finalize` never sets the `is_compressible_as_srgb` that
+would put `NODE_IMAGE_COMPRESS_AS_SRGB` on the node and have the kernel
+decode it. Encoded on the way in, never decoded on the way out.
+
+The fix is the spelling the rest of the engine already uses, and which
+`PixelImage` in `CyclesScene.cpp` documents at length for the
+non-MaterialX textures: `u_colorspace_scene_linear_srgb`. The bytes stay
+bytes and the kernel decodes per sample. The two differ only in
+primaries -- `u_colorspace_srgb` is Rec.709 whatever scene linear is --
+and scene linear IS Rec.709 here, because nothing sets an OpenColorIO
+config and every other colour the engine is handed is already Rec.709.
+
+`fcad-probes/mtlximage_run.sh` is the measurement. After the fix both
+engines read 1.000.
+
+**On the asset that reported it.** `fcad-probes/look_run.sh` renders the
+chess set in both engines; over a 4x4 grid of the frame (mean byte):
+
+| | raster | Cycles before | Cycles after |
+| --- | --- | --- | --- |
+| whole frame | 112.3 | 135.5 | **117.6** |
+| darkest cell | 45.3 | 145.1 | **70.1** |
+| range | 45..169 | 91..169 | **70..169** |
+
+The board's dark cells were the whole complaint -- 45 in the raster and
+145 under the path tracer, which is why one picture was the asset as
+authored and the other pale grey-green throughout. Every edge cell now
+agrees within a byte or two (91.2/90.8, 124.6/124.0, 136.6/135.6,
+169.2/169.2).
+
+What is left is in the DARK interior cells only, where Cycles still sits
+20 to 25 bytes above the raster. That is the shape of bounce light the
+raster only approximates, so it belongs to item 2 of 17.13 -- GTAO
+against path-traced GI -- and not to colour management.
+
+**Two traps the probe itself walked into**, worth keeping:
+
+- **A document must state `colorspace="lin_rec709"` on its root**, as
+  every authored one does (all 36 in the vendored examples). MaterialX's
+  `DefaultColorManagementSystem` only inserts a decode when it knows the
+  working space to decode TO, so a document without it makes the raster
+  leg measure the probe rather than the engine. The first run "found" a
+  raster defect that was the missing attribute.
+- **The mean of a centred patch is not the body's colour.** The
+  environment behind the box is white at radiance 1, and a patch that
+  catches any of it reads low or high with no sign that it did. The mode
+  of the frame with the background excluded is the answer, and the share
+  it covers says whether the reading is worth anything.
+
+**What is left, now measured rather than suspected.** On this scene the
+raster draws 132-133 where the closed form and the path tracer both say
+128 -- about 1.07x, reproducible across runs, with the two legs equal to
+within a byte. That is a MaterialX-path brightness residual with no image
+involved, and it is the next thing in this arc. (One run in four read 144:
+a frame captured before it settled, not a third value.)
