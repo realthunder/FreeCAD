@@ -550,9 +550,13 @@ the probe and P2 work through):
   never reaches `dlopen` with the wrong `dylink` expectations.
 - **Where the browser tier differs.**  Synchronous `WebAssembly.Module`
   compile is refused on a browser main thread above a small size,
-  which is why pyodide preloads in the first place; in a Web Worker it
-  is allowed, and the browser-tier guest already runs in one.  On the
-  bare V8 host there is no such limit.
+  which is why pyodide preloads in the first place.  The browser-tier
+  guest runs on the MAIN thread today (`ExpressionImage.md`, "The
+  browser tier": reach-back needs a Worker with `Atomics.wait`, and
+  that is not built).  So in the browser the in-place path is not
+  used at all; sec 9.6 has the browser flow, which is asynchronous
+  and needs no synchronous compile.  On the bare V8 host there is no
+  such limit.
 
 ### 9.4 Deferred install and the manifest
 
@@ -589,6 +593,78 @@ Two things to keep straight:
 Independent of the network items (no sandbox network is involved) and
 dependent on the bootstrap installer, so it goes right after N0 in
 sec 10 as P1/P2.
+
+### 9.6 The browser tier: where the packages come from there
+
+The browser tier moves to pyodide with the rest (sec 0); today it runs
+the reference image on the page's main thread, and nothing of this
+section exists there yet.  In the browser "the host" is the page's own
+JavaScript, and the same finder and the same `pkg.missing` op apply;
+what changes is where wheels come from, where they persist, and who
+may install.
+
+**Sources, in order of preference:**
+
+1. **The FreeCAD that serves the document.**  The desktop bootstrap
+   already keeps the user's chosen set in `packages/` with a manifest
+   and the lock's hashes.  `SceneStreamServer` serves HTTP endpoints
+   behind the same access gate as the scene; it adds `/pyodide/...`
+   (the runtime files of the served pyodide version) and
+   `/packages/...` (the manifest and the wheels).  A viewer's guest
+   boots from the server's pyodide and loads the server's set, so the
+   packages the owner installed on the desktop follow the document
+   into every browser that opens it -- LAN and air-gapped included,
+   and never a third-party CDN involved.  Same version, same hashes,
+   same behaviour as the desktop guest: this is what keeps the parity
+   gate meaningful across tiers.
+2. **The public indexes**, for a standalone page with no serving
+   FreeCAD (static hosting, a shared snapshot): pyodide's ordinary
+   browser flow -- `loadPackage` from the jsDelivr pyodide CDN,
+   `micropip` from PyPI -- through the browser's own `fetch`.  Both
+   hosts send CORS headers, which is why micropip works in browsers at
+   all.  Hashes still come from the lock file the page ships.
+
+**Persistence.**  A browser has no user package directory.  Downloaded
+wheels go into the origin's Cache API (or IndexedDB), keyed by file
+name and hash, and the page keeps its own manifest in `localStorage`;
+at the next guest boot the page installs from the cache without a
+network round trip, and the ordinary HTTP cache covers the runtime
+files themselves.  This is the JupyterLite pattern (piplite caches
+wheels per origin and re-installs at kernel start).  Nothing is
+persisted into the guest's in-memory filesystem across page loads;
+mounting site-packages on IDBFS would be the alternative, at the cost
+of pyodide-version coupling in the stored tree.
+
+**Who may install.**  A viewer installs into THEIR browser's storage,
+never onto the server: the serving FreeCAD's set is the owner's, and
+the access-grant model of `MultiDocServe.md` does not give a viewer
+write access to the owner's machine.  A viewer of a served document
+therefore sees two kinds of offer: "load `scipy` from the server's
+set" (already installed by the owner, one click, no download decision
+to make) and "install `scipy` from the pyodide index into this
+browser" (source 2), which is only offered when the page is allowed
+to reach the index at all -- a static page is, a page served from a
+FreeCAD on a LAN may not be, and the offer says which.
+
+**The flow, and why it is simpler than the desktop's.**  The finder
+answers `offer`; the page shows the prompt (session-principal code,
+the viewer's own gesture) or records the `PackageNeeded` for a
+document principal; on accept the page runs pyodide's asynchronous
+loader (`fetch`, `unpack_buffer`, `loadDynlibsFromPackage`) with
+`await`, registers the package in `loadedPackages`, and re-runs the
+evaluation that failed.  Nothing needs the synchronous in-place path
+of sec 9.3: the browser's event loop is right there, and an
+evaluation in the browser tier is cheap to re-run.  If the guest ever
+moves to a Worker (which reach-back needs anyway), the in-place path
+becomes legal there too, but it buys nothing the retry does not.
+
+**What does not change.**  Document code never installs by itself;
+the offer/click/install separation of sec 9.4 holds.  Expressions
+stay package-free the way they stay network-free (sec 8).  And the
+sandbox network capability of sec 3 is a separate matter from the
+package download: in the browser the download is the PAGE's fetch
+under the browser's CORS, exactly as the desktop's is the HOST's
+client under the Addon Manager's trust, and the guest sees neither.
 
 ## 10. Roadmap
 
