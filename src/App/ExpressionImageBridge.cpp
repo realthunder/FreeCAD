@@ -37,6 +37,9 @@
 #include "ExpressionImageBridge.h"
 #include "ExpressionSecurityRuntime.h"
 #include "PropertyContainerPy.h"
+#ifdef FC_EXPR_PYODIDE_HOST
+#include "ExpressionPyodide.h"
+#endif
 
 using json = nlohmann::json;
 
@@ -562,6 +565,16 @@ json dispatchHostOp(HandleTable& table, const json& req)
         if (op == FcxWire::OpRelease) {
             table.release(id);
             return okReply(json());
+        }
+        if (op == FcxWire::OpPkgMissing) {
+#ifdef FC_EXPR_PYODIDE_HOST
+            auto a = req.find("a");
+            if (a == req.end() || !a->is_string())
+                return errReply("ProtocolError", "pkg.missing without a name");
+            return okReply(json(Pyodide::missingImport(a->get_ref<const std::string&>())));
+#else
+            return okReply(json(""));
+#endif
         }
         PyObject* base = table.get(id);
         if (!base)

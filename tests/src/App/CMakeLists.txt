@@ -1,6 +1,10 @@
 if(BUILD_EXPR_IMAGE_HOST)
     set(ExpressionImageHost_TEST_SRC
         ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionImageHost.cpp)
+    if(BUILD_EXPR_PYODIDE_HOST)
+        list(APPEND ExpressionImageHost_TEST_SRC
+            ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionPyodide.cpp)
+    endif()
 else()
     set(ExpressionImageHost_TEST_SRC)
 endif()

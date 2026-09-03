@@ -636,6 +636,14 @@ Independent of the network items (no sandbox network is involved) and
 dependent on the bootstrap installer, so it goes right after N0 in
 sec 10 as P1/P2.
 
+**Built 2026-09-03** (`docs/PyodideHost.md` sec 12): P1 as the finder
+plus the `pkg.missing` op plus a pending `pkg.install:<name>` request
+the permissions panel turns into the install; the deferred path of
+sec 9.4 (install now, fresh guest at the next evaluation) is what
+ships.  P2 (in-place) was not probed.  The pre-run scan was dropped:
+the expression language reaches a module only through `import`
+statements, which fail at the guest's import with the same offer.
+
 ### 9.6 The browser tier: where the packages come from there
 
 The browser tier moves to pyodide with the rest (sec 0); today it runs

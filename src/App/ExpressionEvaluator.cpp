@@ -158,8 +158,16 @@ ExpressionSandbox::SandboxStatus ExpressionSandbox::sandboxStatus()
     status.stdlib = where.stdlib;
     status.imagePresent = Base::FileInfo(status.image).isFile()
             && Base::FileInfo(status.stdlib).isDir();
+    status.runtime = ImageHost::instance().runtime();
 #endif
     return status;
+}
+
+void ExpressionSandbox::resetSandbox()
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    ImageHost::instance().reset();
+#endif
 }
 
 void ExpressionSandbox::setEvaluationRouted(bool on)

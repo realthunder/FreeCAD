@@ -199,9 +199,10 @@ public:
     /// The paths a runtime resolves for itself (ImageHost::Location).
     struct Paths
     {
-        std::string image;   ///< fcx_image.wasm, or the fcx_image wheel
-        std::string stdlib;  ///< the stdlib slice dir, or the pyodide dir
-        std::string cache;   ///< compiled-form cache, when the runtime has one
+        std::string image;     ///< fcx_image.wasm, or the fcx_image wheel
+        std::string stdlib;    ///< the stdlib slice dir, or the pyodide dir
+        std::string cache;     ///< compiled-form cache, when the runtime has one
+        std::string packages;  ///< the user's package set, when the runtime loads one
     };
 
     /// The runtime's name as the preference spells it.

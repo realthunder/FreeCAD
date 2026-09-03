@@ -216,15 +216,38 @@ if(BUILD_EXPR_IMAGE_HOST)
             set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/${_ident}.inc PROPERTIES
                 GENERATED TRUE HEADER_FILE_ONLY TRUE)
         endforeach()
-        list(APPEND ExpressionImageHost_SRC ExpressionPyodideRuntime.cpp)
+        list(APPEND ExpressionImageHost_SRC ExpressionPyodideRuntime.cpp
+                                            ExpressionPyodide.cpp ExpressionPyodide.h)
         add_definitions(-DFC_EXPR_PYODIDE_HOST)
         list(APPEND FreeCADApp_LIBS v8-embed::v8 Threads::Threads)
 
-        # The pyodide files (pyodide.js, pyodide.asm.*, python_stdlib.zip,
-        # pyodide-lock.json, wheels) plus the fcx_image wheel: shipped as
-        # <datadir>/Pyodide, like the wasi image as <datadir>/Fcx, and
-        # mirrored into the build tree so a dev build resolves them the
-        # way an install does.
+        # The fcx_image wheel -- FreeCAD's own guest, matched to this
+        # build -- ships under <datadir>/Pyodide/wheels/ (one per pyodide
+        # ABI tag); the pyodide runtime itself is what the bootstrap
+        # installs per user (docs/PyodideHost.md sec 12).  Mirrored into
+        # the build tree like the rest.
+        if(FREECAD_FCX_IMAGE_WHEEL)
+            if(NOT EXISTS "${FREECAD_FCX_IMAGE_WHEEL}")
+                message(FATAL_ERROR "FREECAD_FCX_IMAGE_WHEEL does not exist: ${FREECAD_FCX_IMAGE_WHEEL}")
+            endif()
+            install(FILES ${FREECAD_FCX_IMAGE_WHEEL}
+                    DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
+            get_filename_component(_fcx_wheel_name "${FREECAD_FCX_IMAGE_WHEEL}" NAME)
+            set(_fcx_wheel_data ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
+            add_custom_command(
+                OUTPUT ${_fcx_wheel_data}/${_fcx_wheel_name}
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${FREECAD_FCX_IMAGE_WHEEL} ${_fcx_wheel_data}/${_fcx_wheel_name}
+                DEPENDS ${FREECAD_FCX_IMAGE_WHEEL}
+                COMMENT "Mirroring the fcx_image wheel into the build tree")
+            add_custom_target(FcxImageWheel ALL DEPENDS ${_fcx_wheel_data}/${_fcx_wheel_name})
+        endif()
+
+        # A whole pyodide distribution (pyodide.js, pyodide.asm.*,
+        # python_stdlib.zip, pyodide-lock.json, wheels) bundled as
+        # <datadir>/Pyodide: what a dev tree does with the npm directory
+        # (the wheel dropped in beside the runtime), and what a package
+        # may choose to do instead of relying on the bootstrap.
         if(FREECAD_PYODIDE_DIR)
             if(NOT EXISTS "${FREECAD_PYODIDE_DIR}/pyodide.js")
                 message(FATAL_ERROR "FREECAD_PYODIDE_DIR has no pyodide.js: ${FREECAD_PYODIDE_DIR}")

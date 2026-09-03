@@ -575,3 +575,180 @@ hashes.
 After this arc: G0 (the porting linter, cheap, any time), then G1
 (Draft/BIM App side in the guest), then N1 (the network policy
 engine), in that order unless the user says otherwise.
+
+## 12. The bootstrap and the package flow: what was built (2026-09-03)
+
+Sec 11's B1-B5 and B7, in one arc.  B6 (the in-place probe: a wheel
+loaded into a RUNNING guest from inside a synchronous import) was not
+attempted; the deferred path below is what ships, and it is the one
+that always works.  PyPI (PEP 783) sources are not built either: the
+installer names only what the lock file names, and says so.
+
+### 12.1 The layout (B1)
+
+    <user app data>/Pyodide/
+        current                 the version the runtime boots (one line)
+        314.0.6/                pyodide.js pyodide.mjs pyodide.asm.mjs
+                                pyodide.asm.wasm python_stdlib.zip
+                                pyodide-lock.json package.json
+        packages/               the user's chosen wheels, under their
+            manifest.json       lock-file names, plus the manifest
+    <datadir>/Pyodide/wheels/   fcx_image-<ver>-cp314-cp314-pyodide_<abi>_wasm32.whl
+                                (FreeCAD's own guest, shipped with the build)
+
+`App::ExpressionSandbox::Pyodide` (`src/App/ExpressionPyodide.h/.cpp`)
+is the single place these facts live: `releases()` (the pinned table),
+`layout()`, `verifyDirectory()`, `scopePath()`, the lock lookups and
+`missingImport()`.  `FreeCAD.ExpressionSandbox.pyodideReleases()`,
+`pyodideLayout()`, `pyodideVerify(dir)` and `pyodideAbi(dir)` hand the
+same facts to Python.  Overrides for tests and odd boxes: preferences
+`PyodideUserDir` / `PyodidePackages`, environment `FCX_PYODIDE_USER` /
+`FCX_PYODIDE_PACKAGES`.
+
+**Resolve order** (`PyodideRuntime::resolve`): explicit `configure()`,
+preference `PyodideDir`, `FCX_PYODIDE`, then **the user-data runtime
+`current` names**, then `<datadir>/Pyodide` (a dev tree mirrors the npm
+directory there with the wheel beside it; a package may bundle one).
+The wheel: explicit, `PyodideWheel`, `FCX_PYODIDE_WHEEL`, an
+`fcx_image-*.whl` beside the runtime, else the shipped one whose ABI
+tag matches the runtime's (`wheelForAbi`).  A wheel whose tag does not
+match the runtime's `abi_version` is refused at boot.
+
+**The pinned table.**  One entry per supported version: the six
+runtime files with their sha256 (taken from both the npm CDN and the
+GitHub core tarball, which agree byte for byte), the ABI tag, the
+CPython version, the core tarball's name and hash.  `initialize()`
+verifies the directory it boots -- version from `package.json`, then
+every file's hash (~14 MB, tens of milliseconds, once per instance) --
+and REFUSES anything else.  `FCX_PYODIDE_UNPINNED=1` or the preference
+`PyodideUnpinned` turns the refusal into a warning, for bringing up a
+new release before the table is widened; the warning repeats on every
+boot.
+
+**Scoping.**  The reader and the module loader are confined to a list
+of canonical roots -- the runtime directory, the wheel's directory, and
+the package set -- rather than one directory: three named places, not
+a widened parent.  `scopePath()` compares canonical forms component by
+component (a sibling sharing a root's prefix as a string is outside),
+case-insensitively on Windows, understands `file:///C:/x`, and follows
+symlinks before deciding.  Paths cross into JavaScript as generic
+(forward-slash) strings: pyodide's loader does URL arithmetic on them.
+One shell-mode fact shapes the reader: pyodide's `resolvePath` is the
+IDENTITY there, so the loader asks for a lock-file wheel by its bare
+file name and `packageBaseUrl` never reaches the reader.  A relative
+name therefore resolves against the runtime directory first and the
+package set second (`scopePath`'s `fallbacks`), existing entries only,
+still confined to the roots.
+
+### 12.2 The runtime installer (B2): `freecad.pyodide`
+
+Host Python (`src/Ext/freecad/pyodide/__init__.py`), never sandboxed
+code.  `install_runtime(version=None, source="github", progress=None)`:
+
+- `github`: the release asset `pyodide-core-<ver>.tar.bz2` (6.8 MB),
+  verified against its pinned hash, and the six files plus
+  `package.json` read out of it by name (nothing else in the archive
+  is touched);
+- `jsdelivr`: the npm package file by file
+  (`https://cdn.jsdelivr.net/npm/pyodide@<ver>/<file>`);
+- a LOCAL tarball or directory, for air-gapped boxes.
+
+Every file is verified against the table before anything moves; the
+files are staged beside the target and renamed into place in one step;
+the binary's own `pyodideVerify` runs on the result; `current` is
+written last.  A runtime whose ABI has no shipped `fcx_image` wheel is
+refused up front.  With a GUI up, downloads go through the Addon
+Manager's `NetworkManager` (its proxy and certificate handling apply);
+headless, through `urllib`.  `list_runtimes()`, `set_current()`,
+`remove_runtime()` complete the set.  **Nothing runs at startup**: the
+status-bar padlock offers the install when the sandbox is switched on
+with no runtime present (`SandboxIndicator::toggleRouting`), and the
+console can call it.
+
+### 12.3 The wheel (B3)
+
+`FREECAD_FCX_IMAGE_WHEEL=<path>` installs the wheel under
+`<datadir>/Pyodide/wheels/` and mirrors it into the build tree;
+`FREECAD_PYODIDE_DIR` keeps bundling a whole distribution for dev
+trees.  The PyPI route (`fcx-image==<FreeCAD version>`, one file per
+ABI tag) stays the recorded later upgrade path.
+
+### 12.4 The package installer (B4)
+
+`install_package(name, source="index")`: resolves `name` and its
+`depends` against the ACTIVE runtime's lock (depth first, dependencies
+before dependents, installed ones skipped), fetches each wheel from
+pyodide's CDN (`https://cdn.jsdelivr.net/pyodide/v<ver>/full/<file>`)
+or a local mirror directory, verifies it against the lock's sha256,
+writes it into `packages/` atomically, and rewrites `manifest.json`:
+
+    {"version": 1, "runtime": "314.0.6", "abi": "2026_0",
+     "packages": {"numpy": {"version": ..., "file_name": ..., "sha256": ...,
+                            "depends": [], "requested_by": "session", ...}},
+     "load_order": ["numpy"]}
+
+Boot: `__fcx_boot(root, wheel, packagesDir, names)` passes
+`packageBaseUrl: packagesDir` to `loadPyodide`, so pyodide's own
+loader fetches lock-file packages from the user's set (through the
+scoped reader, which now has that root), and `loadPackage(names)` in
+manifest order right after the fcx_image wheel.  A manifest written
+for another ABI is ignored with a warning, and the installer starts a
+new set when the runtime's ABI differs.  A package that fails to load
+is reported and skipped; the import says what is wrong.  Not in the
+lock -> "PyPI packages are not supported yet".
+
+### 12.5 The offer (B5), P1 of `SandboxNetwork.md` sec 9
+
+- **The finder.**  `pyodide_glue.js` installs, at boot, a
+  `sys.meta_path` finder appended LAST.  Its `find_spec` asks the host
+  ONE bridge op, `pkg.missing {a: name}` (`FcxWire::OpPkgMissing`, no
+  handle), and gets a string back: empty = unknown (return `None`, the
+  ordinary `ModuleNotFoundError` follows); otherwise the message to
+  raise as `ModuleNotFoundError`.  Nothing is ever loaded from inside
+  an import.
+- **The host answer** (`Pyodide::missingImport`): the lock's import
+  map (`imports` per package, 304 names) gives the package; if the
+  manifest has it, INSTALLED -- the host calls
+  `ImageHost::scheduleReset()` and the instance is dropped after this
+  round trip, so the next evaluation boots with the package; else OFFER
+  -- `ExpressionSecurity::Runtime::requestPending(PkgInstall, name)`
+  records a pending request for the current principal and owner (or
+  `session` outside any evaluation), audited as a prompt, repeats
+  collapsed.
+- **`pkg.install:<name>`** is a new `Permission` value, but an ACTION,
+  not a grant: `check()` never resolves it, and the panel's allow
+  buttons on such a row run `freecad.pyodide.install_package(name)`
+  (whatever scope was clicked), clear the request, reset the sandbox,
+  and recompute the objects that were blocked -- the same re-run path
+  a grant takes.  Deny clears the request.  The package is then
+  available to every principal, as sec 9.4 says.
+- **Pre-run scan**: not built.  The expression language reaches a
+  module only through `import` statements or `import_py()`, both of
+  which fail at the guest's import with the offer above and no host
+  work wasted; the scan would only save the one failed evaluation.
+
+The gate of sec 11 holds as a Python test (`SandboxPyodide`): with
+routing ON, `import numpy; float(numpy.sqrt(4.0))` in python mode on a
+document object raises the offer and records `pkg.install:numpy`
+against that object; `install_package("numpy", source=<mirror>)` puts
+the wheel in the set and clears the request; the same evaluation then
+returns 2.0 from a guest that booted with numpy.  With routing OFF
+nothing here runs.
+
+### 12.6 Tests (B7)
+
+- `tests/src/App/ExpressionPyodide.cpp` (in `Tests_run`, pyodide host
+  builds only): the table, `verifyDirectory` refusing unpinned and
+  tampered directories and passing on the staged one, `askedToPath`
+  on the Windows URL shapes, `scopePath` (in, out, `..`, siblings, the
+  root itself, a symlink out), `layout()` over fake runtimes and the
+  `current` marker (a path or a missing version is ignored), the
+  resolve order (environment > user data > bundle) through
+  `ImageHost::location()`, the lock lookups, the manifest's load order
+  and ABI refusal, and the offer end to end on the real guest
+  (`missingImportIsOfferedThenLoadedAfterInstall`).
+- `src/Mod/Test/SandboxPyodide.py`: `install_runtime` from a LOCAL
+  source (the staged `<datadir>/Pyodide`, or `FCX_PYODIDE_CORE_TARBALL`)
+  into a scratch user directory, the wrong-hash refusal, the resolve
+  order picking the install up, boot, then the package flow above from
+  the staged directory as the mirror.  No network anywhere.

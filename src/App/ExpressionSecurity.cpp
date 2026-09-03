@@ -55,6 +55,7 @@ const char *permissionName(Permission perm)
     case Permission::Gui:           return "gui";
     case Permission::HostImport:    return "host.import";
     case Permission::UnsafeGetattr: return "unsafe.getattr";
+    case Permission::PkgInstall:    return "pkg.install";
     }
     return "";
 }
@@ -80,6 +81,7 @@ std::optional<Permission> permissionFromName(const std::string &name, std::strin
         {"gui",            Permission::Gui},
         {"host.import",    Permission::HostImport},
         {"unsafe.getattr", Permission::UnsafeGetattr},
+        {"pkg.install",    Permission::PkgInstall},
     };
     std::string base = name;
     std::string module;
@@ -90,8 +92,9 @@ std::optional<Permission> permissionFromName(const std::string &name, std::strin
     }
     for (auto &entry : table) {
         if (base == entry.first) {
-            // Only host.import is parameterized.
-            if (!module.empty() && entry.second != Permission::HostImport)
+            // Only host.import and pkg.install are parameterized.
+            if (!module.empty() && entry.second != Permission::HostImport
+                    && entry.second != Permission::PkgInstall)
                 return std::nullopt;
             if (target)
                 *target = module;
@@ -131,6 +134,8 @@ Decision catalogDefault(PrincipalClass pclass, Permission perm)
     case Permission::Gui:           return doc ? Decision::Deny : Decision::Allow;
     case Permission::HostImport:    return Decision::Prompt;
     case Permission::UnsafeGetattr: return doc ? Decision::Deny : Decision::Prompt;
+    // an install is always the user's click, whoever asked
+    case Permission::PkgInstall:    return Decision::Prompt;
     }
     return Decision::Deny;
 }

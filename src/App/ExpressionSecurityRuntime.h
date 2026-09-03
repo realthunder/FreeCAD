@@ -195,6 +195,16 @@ public:
      */
     void check(Permission perm, const std::string &target = "*");
 
+    /** Record a pending request WITHOUT deciding or throwing: for the
+     * things that are actions the user takes rather than permissions the
+     * evaluation holds -- a sandbox package install (Permission::
+     * PkgInstall, docs/SandboxNetwork.md sec 9.3).  Attributed to the
+     * current scope's principal and owner, or to "session" outside any
+     * evaluation; audited as a prompt; collapses repeats; fires
+     * signalPendingChanged on a new entry.
+     */
+    void requestPending(Permission perm, const std::string &target);
+
     /** The decision for an explicit principal, without throwing or
      * recording. Precedence: process overrides (--grant), once answers,
      * session answers, persisted store, store defaults, catalog. For
@@ -278,6 +288,11 @@ private:
     void audit(const std::string &principal, Permission perm,
             const std::string &target, Decision decision,
             const std::string &context);
+    /// Add or bump a pending entry; true when it was new.  Caller holds
+    /// the mutex.
+    bool addPending(const std::string &principal, Permission perm,
+            const std::string &target, const std::string &docName,
+            const std::string &objName);
 
     mutable std::recursive_mutex mutex;
     GrantStore _store;

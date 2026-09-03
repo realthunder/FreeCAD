@@ -4,9 +4,16 @@
 // found there, wires the guest's bridge to the host's native function, and
 // leaves two functions on the global for the host to call:
 //
-//   __fcx_boot(root, wheel) -> Promise<string>   "booted" or throws
+//   __fcx_boot(root, wheel, packagesDir, packages) -> Promise<string>
+//                                                "booted" or throws
 //   __fcx_call(Uint8Array)  -> Uint8Array        one CBOR round trip
 //   __fcx_setInterrupt(Int32Array)               the interpreter's interrupt buffer
+//
+// `packagesDir` is the user's package set (docs/PyodideHost.md sec 12),
+// the base pyodide's loader fetches lock-file packages from, and
+// `packages` the names its manifest lists, loaded at boot in that
+// order; both may be empty.  Only the host's scoped reader ever serves
+// those fetches.
 //
 // The host installs `__fcx_bridge(Uint8Array) -> Uint8Array` before boot;
 // it is the only way out of the guest, and it goes straight to
@@ -55,15 +62,50 @@
     return bytes.byteLength;
   }
 
-  globalThis.__fcx_boot = async function (root, wheel) {
+  // The last-in-line import finder (docs/SandboxNetwork.md sec 9.3):
+  // when nothing in the guest can import a module, ask the host what it
+  // knows through the one bridge op the guest has.  An empty answer is
+  // "unknown" and the ordinary ModuleNotFoundError follows; anything
+  // else is the message to raise -- an offer the host has recorded for
+  // the user, or "installed, next evaluation".  Nothing is loaded from
+  // inside an import: the install is the user's click on the host side,
+  // and a fresh guest picks the package up at boot.
+  var FINDER =
+    "import sys, importlib.abc\n" +
+    "class _FcxPackageFinder(importlib.abc.MetaPathFinder):\n" +
+    "    def find_spec(self, fullname, path=None, target=None):\n" +
+    "        if path is not None:\n" +
+    "            return None\n" +
+    "        import _fcx\n" +
+    "        try:\n" +
+    "            answer = _fcx.op('pkg.missing', 0, fullname)\n" +
+    "        except Exception:\n" +
+    "            return None\n" +
+    "        if not answer:\n" +
+    "            return None\n" +
+    "        raise ModuleNotFoundError(answer, name=fullname)\n" +
+    "sys.meta_path.append(_FcxPackageFinder())\n";
+
+  globalThis.__fcx_boot = async function (root, wheel, packagesDir, packages) {
     if (typeof globalThis.__fcx_bridge !== "function")
       throw new Error("__fcx_bridge is not installed");
-    py = await loadPyodide({
+    var options = {
       indexURL: root,
       stdout: function (s) { print(s); },
       stderr: function (s) { printErr(s); },
-    });
+    };
+    if (packagesDir) options.packageBaseUrl = packagesDir;
+    py = await loadPyodide(options);
     await py.loadPackage(wheel, { messageCallback: function () {} });
+    if (packages && packages.length) {
+      // A package that fails to load is reported and skipped: the guest
+      // is still good without it, and the import will say what is wrong.
+      await py.loadPackage(packages, {
+        messageCallback: function () {},
+        errorCallback: function (m) { printErr("sandbox package: " + m); },
+      });
+    }
+    py.runPython(FINDER);
     var mod = py.pyimport("_fcx_image");
     // Attribute proxies are borrowed from their owner and die with it;
     // copy() gives ones that outlive mod.

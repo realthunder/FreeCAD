@@ -438,27 +438,8 @@ void Runtime::check(Permission perm, const std::string &target)
     bool pendingChanged = false;
     {
         std::lock_guard<std::recursive_mutex> guard(mutex);
-        if (promptable) {
-            auto it = std::find_if(pending.begin(), pending.end(),
-                    [&](const PendingRequest &r) {
-                        return r.principal == principal && r.permission == perm
-                            && r.target == target && r.documentName == docName
-                            && r.objectName == objName;
-                    });
-            if (it != pending.end())
-                ++it->count;
-            else {
-                PendingRequest req;
-                req.principal = principal;
-                req.permission = perm;
-                req.target = target;
-                req.documentName = docName;
-                req.objectName = objName;
-                req.firstUtc = utcNow();
-                pending.push_back(std::move(req));
-                pendingChanged = true;
-            }
-        }
+        if (promptable)
+            pendingChanged = addPending(principal, perm, target, docName, objName);
         audit(principal, perm, target,
                 promptable ? Decision::Prompt : Decision::Deny,
                 docName.empty() ? objName : docName + ":" + objName);
@@ -466,6 +447,55 @@ void Runtime::check(Permission perm, const std::string &target)
     if (pendingChanged)
         signalPendingChanged();
     throw PermissionNeededException(principal, perm, target, promptable);
+}
+
+bool Runtime::addPending(const std::string &principal, Permission perm,
+        const std::string &target, const std::string &docName,
+        const std::string &objName)
+{
+    auto it = std::find_if(pending.begin(), pending.end(),
+            [&](const PendingRequest &r) {
+                return r.principal == principal && r.permission == perm
+                    && r.target == target && r.documentName == docName
+                    && r.objectName == objName;
+            });
+    if (it != pending.end()) {
+        ++it->count;
+        return false;
+    }
+    PendingRequest req;
+    req.principal = principal;
+    req.permission = perm;
+    req.target = target;
+    req.documentName = docName;
+    req.objectName = objName;
+    req.firstUtc = utcNow();
+    pending.push_back(std::move(req));
+    return true;
+}
+
+void Runtime::requestPending(Permission perm, const std::string &target)
+{
+    std::string principal = "session";
+    std::string docName;
+    std::string objName;
+    if (!_ScopeStack.empty()) {
+        principal = currentPrincipal();
+        auto &top = _ScopeStack.back();
+        if (top.doc)
+            docName = top.doc->getName();
+        if (top.owner && top.owner->getNameInDocument())
+            objName = top.owner->getNameInDocument();
+    }
+    bool pendingChanged = false;
+    {
+        std::lock_guard<std::recursive_mutex> guard(mutex);
+        pendingChanged = addPending(principal, perm, target, docName, objName);
+        audit(principal, perm, target, Decision::Prompt,
+                docName.empty() ? objName : docName + ":" + objName);
+    }
+    if (pendingChanged)
+        signalPendingChanged();
 }
 
 void Runtime::grant(const std::string &principal, Permission perm,

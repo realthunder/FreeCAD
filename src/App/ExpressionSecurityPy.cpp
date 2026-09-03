@@ -200,6 +200,21 @@ PyObject *clearOnceFunc(PyObject *, PyObject *)
     Py_Return;
 }
 
+PyObject *clearPendingFunc(PyObject *, PyObject *args)
+{
+    const char *principal {};
+    const char *permission {};
+    const char *target = "*";
+    if (!PyArg_ParseTuple(args, "ss|s", &principal, &permission, &target))
+        return nullptr;
+    Sec::Permission perm;
+    std::string t;
+    if (!parsePermission(permission, target, perm, t))
+        return nullptr;
+    Sec::Runtime::instance().clearPending(principal, perm, t);
+    Py_Return;
+}
+
 PyObject *enforcedFunc(PyObject *, PyObject *)
 {
     return PyBool_FromLong(Sec::Runtime::instance().enforced());
@@ -226,6 +241,10 @@ PyMethodDef Methods[] = {
      "resolve(principal, permission, target='*') -> 'allow'|'deny'|'prompt'"},
     {"clearOnce", clearOnceFunc, METH_NOARGS,
      "clearOnce() -- drop all once-scoped answers."},
+    {"clearPending", clearPendingFunc, METH_VARARGS,
+     "clearPending(principal, permission, target='*') -- drop pending"
+     " requests matching the triple ('*' matches any); what the sandbox"
+     " package installer does once a pkg.install request is satisfied."},
     {"enforced", enforcedFunc, METH_NOARGS,
      "enforced() -> bool -- whether expression permission enforcement is on."},
     {nullptr, nullptr, 0, nullptr},

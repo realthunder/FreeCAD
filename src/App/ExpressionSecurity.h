@@ -53,6 +53,10 @@ enum class Permission {
     Gui,            // gui
     HostImport,     // host.import:<module>, the module is the target
     UnsafeGetattr,  // unsafe.getattr
+    PkgInstall,     // pkg.install:<package> -- an ACTION, not a grant: the
+                    // sandbox guest asked for a package the user has not
+                    // installed (docs/SandboxNetwork.md sec 9); only ever
+                    // a pending request, never resolved by check()
 };
 
 enum class Decision {

@@ -144,6 +144,8 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     bool configured = false;
     bool triedInit = false;
     bool live = false;
+    /// scheduleReset() was called during the current round trip.
+    bool resetPending = false;
 
     /// The transport and its guest (ExpressionImageRuntime.h); chosen at
     /// initialize() and dropped by teardown(), so a runtime preference
@@ -250,6 +252,7 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
             return false;
         applyBudget();
         std::vector<uint8_t> bytes;
+        resetPending = false;
         const Outcome outcome = rt->roundTrip(request, bytes);
         if (outcome == Outcome::Failed)
             return false;
@@ -257,6 +260,12 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
             dropTerminated();
             reply = budgetError("terminated");
             return true;
+        }
+        if (resetPending) {
+            // a bridge op asked for a fresh instance (a package to pick
+            // up at boot); the reply of THIS trip is still good
+            resetPending = false;
+            dropTerminated();
         }
         try {
             reply = json::from_cbor(bytes.begin(), bytes.end());
@@ -311,7 +320,13 @@ ImageHost::Location ImageHost::location()
 {
     std::lock_guard<std::recursive_mutex> lock(d->mutex);
     ImageRuntime::Paths where = d->paths();
-    return Location {where.image, where.stdlib, where.cache};
+    return Location {where.image, where.stdlib, where.cache, where.packages};
+}
+
+void ImageHost::scheduleReset()
+{
+    std::lock_guard<std::recursive_mutex> lock(d->mutex);
+    d->resetPending = true;
 }
 
 std::string ImageHost::runtime()
@@ -544,12 +559,18 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
         req["ctx"] = std::move(ctx);
     }
 
+    // The evaluation's principal, for the pack step AND the round trip:
+    // a bridge op the guest makes mid-evaluation (a permission check, a
+    // pkg.missing request) is attributed to this owner.  Pushes only
+    // when no outer scope is active, so an enclosing evaluation entry
+    // or an explicit "session" scope still wins.
+    ExpressionSecurity::Runtime::Scope secScope(owner);
+
     // The bindings pack: enumerate the expression's identifiers without
     // evaluating it, resolve each under the owner's principal, marshal
     // by value or as a handle.  Identifiers that fail to resolve are
     // left out -- the image reports the identical resolution error.
     try {
-        ExpressionSecurity::Runtime::Scope secScope(owner);
         Base::PyGILStateLocker lock;
 
         // An already-parsed expression is the switch-over's hot path:

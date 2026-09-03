@@ -56,6 +56,7 @@
 
 #include "Application.h"
 #include "ExpressionImageRuntime.h"
+#include "ExpressionPyodide.h"
 
 // The two JavaScript files compiled in (embed_js.py at build time):
 // the Web-environment shim and the boot/call glue.  See
@@ -151,17 +152,28 @@ public:
         return "pyodide";
     }
 
-    /** image = the fcx_image wheel, stdlib = the pyodide directory.
-     * Precedence: explicit configure(), the preferences (PyodideDir,
-     * PyodideWheel), the FCX_PYODIDE / FCX_PYODIDE_WHEEL environment,
-     * then <datadir>/Pyodide.  With no wheel named, the first
-     * fcx_image-*.whl in the directory.
+    /** image = the fcx_image wheel, stdlib = the pyodide directory,
+     * packages = the user's package set (docs/PyodideHost.md sec 12).
+     *
+     * The pyodide directory, in order: explicit configure(), the
+     * preference PyodideDir, the FCX_PYODIDE environment, the runtime
+     * the bootstrap installed under the user's data directory (the one
+     * its `current` marker names), then <datadir>/Pyodide -- a dev tree
+     * mirrors the npm directory there, and a package may choose to
+     * bundle one.
+     *
+     * The wheel: explicit, PyodideWheel, FCX_PYODIDE_WHEEL, an
+     * fcx_image-*.whl beside the runtime (the dev layout), else the
+     * shipped one under <datadir>/Pyodide/wheels whose ABI tag matches
+     * the runtime's.  The packages directory comes from the layout.
      */
     Paths resolve(const std::string& image, const std::string& stdlib) const override
     {
         Paths p;
         p.image = image;
         p.stdlib = stdlib;
+        Pyodide::Layout layout = Pyodide::layout();
+        p.packages = layout.packages;
         if (p.stdlib.empty() || p.image.empty()) {
             auto hGrp = GetApplication().GetParameterGroupByPath(
                     "User parameter:BaseApp/Preferences/Expression/Sandbox");
@@ -173,6 +185,8 @@ public:
                 p.stdlib = envPath("FCX_PYODIDE");
             if (p.image.empty())
                 p.image = envPath("FCX_PYODIDE_WHEEL");
+            if (p.stdlib.empty() && !layout.current.empty())
+                p.stdlib = (fs::path(layout.userDir) / layout.current).string();
             if (p.stdlib.empty())
                 p.stdlib = App::Application::getResourceDir() + "Pyodide";
         }
@@ -186,6 +200,8 @@ public:
                     break;
                 }
             }
+            if (p.image.empty())
+                p.image = Pyodide::wheelForAbi(Pyodide::directoryAbi(p.stdlib));
             if (p.image.empty())
                 p.image = (fs::path(p.stdlib) / "fcx_image.whl").string();
         }
@@ -201,11 +217,65 @@ public:
             FC_LOG("no pyodide at " << paths.stdlib << ", sandbox runtime unavailable");
             return false;
         }
+        if (root.filename().empty() && root.has_parent_path())
+            root = root.parent_path();
+
+        // The allowlist rule (docs/PyodideHost.md sec 5): only a pinned
+        // release boots, and only with the files it was pinned with.  A
+        // developer bringing up a NEW release sets FCX_PYODIDE_UNPINNED
+        // (or the PyodideUnpinned preference) and is told so on every
+        // boot, until the table is widened.
+        {
+            auto hGrp = GetApplication().GetParameterGroupByPath(
+                    "User parameter:BaseApp/Preferences/Expression/Sandbox");
+            const bool unpinned = hGrp->GetBool("PyodideUnpinned", false)
+                || !envPath("FCX_PYODIDE_UNPINNED").empty();
+            const std::string reason = Pyodide::verifyDirectory(root.string());
+            if (!reason.empty()) {
+                if (!unpinned) {
+                    FC_ERR("pyodide runtime refused: " << reason
+                           << " (FCX_PYODIDE_UNPINNED=1 overrides, for development only)");
+                    return false;
+                }
+                FC_WARN("pyodide runtime UNPINNED: " << reason);
+            }
+        }
+
+        // What the guest's reader may open, canonical and nothing else:
+        // the runtime, the directory the wheel is in, and the package set.
+        roots.clear();
+        roots.push_back(root.string());
         fs::path wheel = fs::weakly_canonical(paths.image, ec);
-        if (ec || !fs::is_regular_file(wheel) || scope(wheel.string(), root).empty()) {
-            FC_LOG("no fcx_image wheel at " << paths.image << " under " << root.string());
+        if (ec || !fs::is_regular_file(wheel)) {
+            FC_LOG("no fcx_image wheel at " << paths.image << " for the pyodide at " << root.string());
             return false;
         }
+        roots.push_back(wheel.parent_path().string());
+        fs::path packagesDir;
+        packagesRoot.clear();
+        if (!paths.packages.empty()) {
+            packagesDir = fs::weakly_canonical(paths.packages, ec);
+            if (!ec && fs::is_directory(packagesDir)) {
+                if (packagesDir.filename().empty() && packagesDir.has_parent_path())
+                    packagesDir = packagesDir.parent_path();
+                roots.push_back(packagesDir.string());
+                packagesRoot = packagesDir.string();
+            }
+            else
+                packagesDir.clear();
+        }
+        const std::string abi = Pyodide::directoryAbi(root.string());
+        {
+            const std::string tag = "pyodide_" + abi + "_wasm32";
+            if (!abi.empty() && wheel.filename().string().find(tag) == std::string::npos) {
+                FC_ERR("fcx_image wheel " << wheel.filename().string()
+                       << " does not match the pyodide ABI " << abi << " of " << root.string());
+                return false;
+            }
+        }
+        std::vector<std::string> packageNames;
+        if (!packagesDir.empty())
+            packageNames = Pyodide::manifestPackages(packagesDir.string(), abi);
 
         platform();
         v8::Isolate::CreateParams params;
@@ -258,10 +328,18 @@ public:
         }
         put(ctx->Global(), "__fcx_bridge", hostBridge);
 
-        // 3. boot: ~1.5 s, once per session
+        // 3. boot: ~1.5 s, once per session.  Paths cross as generic
+        // (forward-slash) strings: pyodide's loader does URL arithmetic
+        // on them, and the reader on the way back accepts either form.
         const double t0 = nowMs();
-        std::string boot = "__fcx_boot(" + jsString(root.string() + "/") + ", "
-            + jsString(wheel.string()) + ")";
+        std::string names = "[";
+        for (size_t i = 0; i < packageNames.size(); ++i)
+            names += (i ? ", " : "") + jsString(packageNames[i]);
+        names += "]";
+        std::string boot = "__fcx_boot(" + jsString(root.generic_string() + "/") + ", "
+            + jsString(wheel.generic_string()) + ", "
+            + jsString(packagesDir.empty() ? std::string() : packagesDir.generic_string() + "/")
+            + ", " + names + ")";
         v8::Local<v8::Value> result;
         if (!run(boot, "boot", &result) || toStd(isolate, result) != "booted") {
             FC_ERR("pyodide boot failed");
@@ -303,7 +381,8 @@ public:
         }
         live = true;
         FC_LOG("sandbox runtime live: pyodide at " << root.string() << " with "
-               << wheel.filename().string() << " (" << (int)(nowMs() - t0) << " ms)");
+               << wheel.filename().string() << " and " << packageNames.size()
+               << " package(s) (" << (int)(nowMs() - t0) << " ms)");
         return true;
     }
 
@@ -397,6 +476,8 @@ public:
                 modules.clear();
                 modulePaths.clear();
                 unhandled.clear();
+                roots.clear();
+                packagesRoot.clear();
             }
             isolate->Dispose();
             isolate = nullptr;
@@ -410,6 +491,12 @@ private:
     bool live = false;
     BridgeFn bridge;
     fs::path root;
+    /// What the reader and the loader may open (Pyodide::scopePath):
+    /// the runtime directory, the wheel's, the package set's.
+    std::vector<std::string> roots;
+    /// The package set, where a bare wheel name the loader asks for is
+    /// looked up after the runtime directory (empty when there is none).
+    std::string packagesRoot;
     int budgetMs = 0;
     int graceMs = 0;
     /// The interrupt buffer's one word (ExpressionImageRuntime.h,
@@ -453,24 +540,13 @@ private:
         return out + "\"";
     }
 
-    /// A path the guest named, canonicalised and confined to root (or
-    /// empty).  `file://` is stripped; relative paths resolve against
-    /// `base`.  Symlinks and `..` cannot leave root: the test is on the
-    /// canonical form.
-    fs::path scope(std::string p, const fs::path& base) const
+    /// A path the guest named, canonicalised and confined to one of the
+    /// roots (or empty); relative paths resolve against `base`.  The
+    /// rules -- `file://`, drive letters, `..`, symlinks, sibling
+    /// prefixes -- are Pyodide::scopePath's, tested on their own.
+    fs::path scope(const std::string& p, const fs::path& base) const
     {
-        if (p.rfind("file://", 0) == 0)
-            p = p.substr(7);
-        fs::path candidate = fs::path(p).is_absolute() ? fs::path(p) : base / p;
-        std::error_code ec;
-        fs::path canon = fs::weakly_canonical(candidate, ec);
-        if (ec)
-            return {};
-        const std::string r = root.string() + "/";
-        const std::string c = canon.string();
-        if (c.compare(0, r.size(), r) != 0)
-            return {};
-        return canon;
+        return fs::path(Pyodide::scopePath(roots, p, base.string(), {packagesRoot}));
     }
 
     static void throwError(v8::Isolate* isolate, const std::string& msg)
@@ -505,7 +581,7 @@ private:
         const std::string asked = toStd(isolate, info[0]);
         fs::path p = rt->scope(asked, rt->root);
         if (p.empty())
-            return throwError(isolate, "read: refused, outside the pyodide directory: " + asked);
+            return throwError(isolate, "read: refused, outside the pyodide directories: " + asked);
         std::string data;
         if (!readFile(p, data))
             return throwError(isolate, "read: cannot open " + p.string());

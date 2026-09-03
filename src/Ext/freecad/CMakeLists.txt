@@ -38,6 +38,10 @@ configure_file(mcp_console/server.py ${NAMESPACE_DIR}/mcp_console/server.py COPY
 # (share/Renderer/effects) into user documents (docs/RenderEngine.md §5.11)
 configure_file(rendereffects/__init__.py ${NAMESPACE_DIR}/rendereffects/__init__.py COPYONLY)
 
+# The pyodide bootstrap: installs the sandbox runtime and its packages
+# per user (docs/PyodideHost.md sec 12).  Pure Python, host side.
+configure_file(pyodide/__init__.py ${NAMESPACE_DIR}/pyodide/__init__.py COPYONLY)
+
 if (INSTALL_TO_SITEPACKAGES)
     SET(SITE_PACKAGE_DIR ${PYTHON_MAIN_DIR}/freecad)
 else ()
@@ -68,6 +72,13 @@ INSTALL(
         rendereffects/__init__.py
     DESTINATION
         ${SITE_PACKAGE_DIR}/rendereffects
+)
+
+INSTALL(
+    FILES
+        pyodide/__init__.py
+    DESTINATION
+        ${SITE_PACKAGE_DIR}/pyodide
 )
 
 add_subdirectory(fc_cadquery)

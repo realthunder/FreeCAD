@@ -18,6 +18,7 @@ SET(Test_SRCS
     unittestgui.py
     testmakeWireString.py
     TestPythonSyntax.py
+    SandboxPyodide.py
 )
 
 SET(TestData_SRCS

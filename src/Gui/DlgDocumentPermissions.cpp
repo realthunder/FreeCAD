@@ -33,6 +33,7 @@
 # include <QMessageBox>
 # include <QPointer>
 # include <QPushButton>
+# include <QRegularExpression>
 # include <QStyle>
 # include <QTimer>
 # include <QTreeWidget>
@@ -44,6 +45,7 @@
 #include <App/DocumentObject.h>
 #include <App/ExpressionEvaluator.h>
 #include <App/ExpressionSecurityRuntime.h>
+#include <Base/Interpreter.h>
 
 #include "DlgDocumentPermissions.h"
 #include "MainWindow.h"
@@ -229,6 +231,41 @@ void DlgDocumentPermissions::refresh()
         addGrants("session");
 }
 
+/** Run the host-side installer (freecad.pyodide, docs/PyodideHost.md
+ * sec 12) for one sandbox package.  The name is validated before it is
+ * interpolated into Python: it came from the guest's import statement.
+ * False, with the reason shown, on failure.
+ */
+static bool installSandboxPackage(QWidget *parent, const std::string &name)
+{
+    static const QRegularExpression valid(QStringLiteral("^[A-Za-z0-9_.-]+$"));
+    if (!valid.match(QString::fromStdString(name)).hasMatch()) {
+        QMessageBox::warning(parent, DlgDocumentPermissions::tr("Sandbox package"),
+                DlgDocumentPermissions::tr("Refusing to install a package with an "
+                                           "unusual name: %1")
+                        .arg(QString::fromStdString(name)));
+        return false;
+    }
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    bool ok = true;
+    QString error;
+    try {
+        Base::PyGILStateLocker lock;
+        Base::Interpreter().runString(
+                ("import freecad.pyodide as _fcp\n_fcp.install_package(\"" + name + "\")").c_str());
+    }
+    catch (Base::Exception &e) {
+        ok = false;
+        error = QString::fromUtf8(e.what());
+    }
+    QApplication::restoreOverrideCursor();
+    if (!ok)
+        QMessageBox::warning(parent, DlgDocumentPermissions::tr("Sandbox package"),
+                DlgDocumentPermissions::tr("Installing %1 for the sandbox failed:\n%2")
+                        .arg(QString::fromStdString(name), error));
+    return ok;
+}
+
 void DlgDocumentPermissions::applyDecision(bool allow, const char *scope)
 {
     auto items = pendingTree->selectedItems();
@@ -252,6 +289,7 @@ void DlgDocumentPermissions::applyDecision(bool allow, const char *scope)
             rerun.insert(v);
     }
 
+    bool installed = false;
     for (auto item : items) {
         auto principal = item->data(0, RolePrincipal).toString().toStdString();
         auto permName = item->data(0, RolePermission).toString().toStdString();
@@ -259,9 +297,24 @@ void DlgDocumentPermissions::applyDecision(bool allow, const char *scope)
         auto perm = Sec::permissionFromName(permName);
         if (!perm)
             continue;
+        if (*perm == Sec::Permission::PkgInstall) {
+            // An action, not a grant (docs/SandboxNetwork.md sec 9.4):
+            // allowing IS the install, whatever scope button was used;
+            // the package is then available to every principal.
+            if (allow && !installSandboxPackage(this, target))
+                continue;
+            rt.clearPending(principal, *perm, target);
+            installed = installed || allow;
+            continue;
+        }
         rt.grant(principal, *perm, target, allow, scope, label, path);
         if (!allow)
             rt.clearPending(principal, *perm, target);
+    }
+    if (installed) {
+        // the guest that asked does not have the package; the next
+        // evaluation's fresh instance loads it at boot
+        App::ExpressionSandbox::resetSandbox();
     }
 
     if (allow) {
@@ -450,9 +503,53 @@ void SandboxIndicator::updateState()
                        .arg(state, trade, action));
 }
 
+/** The bootstrap offer (docs/PyodideHost.md sec 12): this build carries
+ * the pyodide host but no pyodide runtime is installed for this user.
+ * Explicit user action only -- nothing downloads at startup -- so the
+ * offer is made here, on the click that asked for the sandbox.  True
+ * when a runtime is installed afterwards.
+ */
+static bool offerPyodideBootstrap(QWidget *parent)
+{
+    auto answer = QMessageBox::question(parent,
+            SandboxIndicator::tr("Expression sandbox"),
+            SandboxIndicator::tr("The sandbox runs expressions in pyodide, a Python "
+                                 "built for WebAssembly, which is not installed for "
+                                 "this user yet.\n\n"
+                                 "Download it now (about 14 MB, from the pyodide "
+                                 "project's release on github.com, verified against "
+                                 "the checksums this FreeCAD was built with)?"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+    if (answer != QMessageBox::Yes)
+        return false;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    QString error;
+    try {
+        Base::PyGILStateLocker lock;
+        Base::Interpreter().runString("import freecad.pyodide as _fcp\n_fcp.install_runtime()");
+    }
+    catch (Base::Exception &e) {
+        error = QString::fromUtf8(e.what());
+    }
+    QApplication::restoreOverrideCursor();
+    if (!error.isEmpty()) {
+        QMessageBox::warning(parent, SandboxIndicator::tr("Expression sandbox"),
+                SandboxIndicator::tr("Installing the pyodide runtime failed:\n%1")
+                        .arg(error));
+        return false;
+    }
+    return true;
+}
+
 void SandboxIndicator::toggleRouting()
 {
     auto status = App::ExpressionSandbox::sandboxStatus();
+    if (status.hostBuilt && !status.imagePresent && status.runtime == "pyodide"
+            && !status.enabled) {
+        if (!offerPyodideBootstrap(getMainWindow()))
+            return;
+        status = App::ExpressionSandbox::sandboxStatus();
+    }
     if (!status.hostBuilt || !status.imagePresent) {
         QMessageBox::information(
                 getMainWindow(), tr("Expression sandbox"),

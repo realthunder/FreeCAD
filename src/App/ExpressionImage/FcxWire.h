@@ -41,6 +41,11 @@ inline const char* const OpGetItem = "get_item";
 inline const char* const OpLen = "len";
 inline const char* const OpRelease = "release";
 inline const char* const OpResolveAlias = "resolve_alias";
+// No handle: the guest's last-in-line import finder asking what the host
+// knows about a module it could not import (docs/SandboxNetwork.md sec
+// 9.3).  "a" = the import name; the reply value is "" (unknown) or the
+// message the finder raises (offer / installed).
+inline const char* const OpPkgMissing = "pkg.missing";
 
 // value type tags
 inline const char* const TagKey = "t";

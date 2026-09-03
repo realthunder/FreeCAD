@@ -81,6 +81,10 @@ struct SandboxStatus
     std::string image;
     /// Where the stdlib slice was looked for (empty without a host).
     std::string stdlib;
+    /// The runtime the host would use ("pyodide" or "wasi"; empty
+    /// without a host).  "pyodide" is the one FreeCAD can bootstrap
+    /// (freecad.pyodide.install_runtime) when the image is missing.
+    std::string runtime;
 
     /// Expressions actually run confined.
     bool confined() const
@@ -90,6 +94,11 @@ struct SandboxStatus
 };
 
 AppExport SandboxStatus sandboxStatus();
+
+/// Drop the live sandbox instance; the next evaluation starts a fresh
+/// one (after a package install, so the guest boots with it).  A no-op
+/// without a host.
+AppExport void resetSandbox();
 
 /// Set the Evaluate preference.  Takes effect on the next evaluation --
 /// there is nothing to restart.

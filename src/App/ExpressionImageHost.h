@@ -86,8 +86,17 @@ public:
         std::string image;
         std::string stdlib;
         std::string cache;
+        /// The user's package set the guest boots with (pyodide only).
+        std::string packages;
     };
     Location location();
+
+    /** Drop the live instance AFTER the current round trip: a package
+     * just installed is not in this guest, and the next evaluation's
+     * fresh instance loads it at boot.  Called from inside a bridge op
+     * (the guest is mid-call, so the instance cannot go away right now).
+     */
+    void scheduleReset();
 
     /// The runtime carrying the sandbox ("pyodide", or "wasi" for the
     /// reference build): the live one, else the one the preference /

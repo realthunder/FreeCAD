@@ -38,6 +38,9 @@
 #ifdef FC_EXPR_IMAGE_HOST
 #include "ExpressionImageHost.h"
 #endif
+#ifdef FC_EXPR_PYODIDE_HOST
+#include "ExpressionPyodide.h"
+#endif
 
 // The FreeCAD.ExpressionSandbox module: drive the evaluation switch-over
 // from Python.  Its reason to exist is the compatibility gate -- the
@@ -148,6 +151,7 @@ PyObject* imageInfoFunc(PyObject*, PyObject*)
     info.setItem("image", Py::String(loc.image));
     info.setItem("stdlib", Py::String(loc.stdlib));
     info.setItem("cache", Py::String(loc.cache));
+    info.setItem("packages", Py::String(loc.packages));
     info.setItem("runtime", Py::String(ExpressionSandbox::ImageHost::instance().runtime()));
     info.setItem("host", Py::Boolean(true));
     return Py::new_reference_to(info);
@@ -156,9 +160,89 @@ PyObject* imageInfoFunc(PyObject*, PyObject*)
     info.setItem("image", Py::String(""));
     info.setItem("stdlib", Py::String(""));
     info.setItem("cache", Py::String(""));
+    info.setItem("packages", Py::String(""));
     info.setItem("runtime", Py::String(""));
     info.setItem("host", Py::Boolean(false));
     return Py::new_reference_to(info);
+#endif
+}
+
+PyObject* resetFunc(PyObject*, PyObject*)
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    ExpressionSandbox::ImageHost::instance().reset();
+#endif
+    Py_Return;
+}
+
+// ---- the pyodide bootstrap facts (docs/PyodideHost.md sec 12), for the
+// host installer freecad.pyodide: what this binary agrees to run, and
+// where it keeps things.
+
+PyObject* pyodideReleasesFunc(PyObject*, PyObject*)
+{
+    Py::List list;
+#ifdef FC_EXPR_PYODIDE_HOST
+    for (const auto& r : ExpressionSandbox::Pyodide::releases()) {
+        Py::Dict d;
+        d.setItem("version", Py::String(r.version));
+        d.setItem("abi", Py::String(r.abi));
+        d.setItem("python", Py::String(r.python));
+        Py::Dict files;
+        for (const auto& f : r.files)
+            files.setItem(f.name.c_str(), Py::String(f.sha256));
+        d.setItem("files", files);
+        d.setItem("core_tarball", Py::String(r.coreTarball));
+        d.setItem("core_sha256", Py::String(r.coreSha256));
+        list.append(d);
+    }
+#endif
+    return Py::new_reference_to(list);
+}
+
+PyObject* pyodideLayoutFunc(PyObject*, PyObject*)
+{
+    Py::Dict d;
+#ifdef FC_EXPR_PYODIDE_HOST
+    auto l = ExpressionSandbox::Pyodide::layout();
+    d.setItem("user_dir", Py::String(l.userDir));
+    d.setItem("packages", Py::String(l.packages));
+    d.setItem("manifest", Py::String(l.manifest));
+    d.setItem("wheel_dir", Py::String(l.wheelDir));
+    d.setItem("current", Py::String(l.current));
+    Py::List installed;
+    for (const auto& v : l.installed)
+        installed.append(Py::String(v));
+    d.setItem("installed", installed);
+    Py::Dict wheels;
+    for (const auto& w : l.wheels)
+        wheels.setItem(w.first.c_str(), Py::String(w.second));
+    d.setItem("wheels", wheels);
+#endif
+    return Py::new_reference_to(d);
+}
+
+PyObject* pyodideVerifyFunc(PyObject*, PyObject* args)
+{
+    const char* dir = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &dir))
+        return nullptr;
+#ifdef FC_EXPR_PYODIDE_HOST
+    return Py::new_reference_to(Py::String(ExpressionSandbox::Pyodide::verifyDirectory(dir)));
+#else
+    return Py::new_reference_to(Py::String("this build has no pyodide host"));
+#endif
+}
+
+PyObject* pyodideAbiFunc(PyObject*, PyObject* args)
+{
+    const char* dir = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &dir))
+        return nullptr;
+#ifdef FC_EXPR_PYODIDE_HOST
+    return Py::new_reference_to(Py::String(ExpressionSandbox::Pyodide::directoryAbi(dir)));
+#else
+    return Py::new_reference_to(Py::String(""));
 #endif
 }
 
@@ -189,6 +273,24 @@ PyMethodDef Methods[] = {
      " of the compatibility gate."},
     {"evalCount", evalCountFunc, METH_NOARGS,
      "evalCount() -> int -- evaluations that have crossed into the image."},
+    {"reset", resetFunc, METH_NOARGS,
+     "reset() -- drop the live sandbox instance; the next evaluation starts"
+     " a fresh one (after installing a package, so the guest boots with it)."},
+    {"pyodideReleases", pyodideReleasesFunc, METH_NOARGS,
+     "pyodideReleases() -> list of dicts -- the pyodide versions this build"
+     " agrees to run, each with the sha256 of every runtime file, the ABI"
+     " tag and the GitHub core tarball name and hash.  What the installer"
+     " (freecad.pyodide) verifies against."},
+    {"pyodideLayout", pyodideLayoutFunc, METH_NOARGS,
+     "pyodideLayout() -> dict -- where the bootstrap keeps runtimes and"
+     " packages (user_dir, packages, manifest, current, installed) and"
+     " the fcx_image wheels found per ABI tag."},
+    {"pyodideVerify", pyodideVerifyFunc, METH_VARARGS,
+     "pyodideVerify(dir) -> str -- '' when the runtime directory is a"
+     " pinned version with every file's sha256 as pinned, else the reason."},
+    {"pyodideAbi", pyodideAbiFunc, METH_VARARGS,
+     "pyodideAbi(dir) -> str -- the ABI tag of a runtime directory"
+     " ('2026_0'), from the pinned table or its lock file."},
     {nullptr, nullptr, 0, nullptr},
 };
 
