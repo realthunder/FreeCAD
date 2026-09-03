@@ -309,10 +309,18 @@ mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc,
     // standard_surface translates TO the others, and UsdPreviewSurface
     // and the hair models translate to nothing -- so a document stating
     // one of those is reported rather than rendered wrong.
+    //
+    // The CHOSEN shader alone, not translateAllMaterials: that walks
+    // every material in the document and throws on the first one that
+    // is already OpenPBR ("category is already open_pbr_surface"), so
+    // a document carrying one OpenPBR surface beside a standard_surface
+    // rendered NEITHER of them, in both consumers. One document, many
+    // surfaces is the chess set's shape (sec 17.13), and nothing says
+    // they all state the same model.
     const std::string original = surface->getCategory();
     try {
         mx::ShaderTranslatorPtr translator = mx::ShaderTranslator::create();
-        translator->translateAllMaterials(doc, "open_pbr_surface");
+        translator->translateShader(surface, "open_pbr_surface");
     }
     catch (const std::exception &e) {
         error = "surface model '" + original + "' does not translate to OpenPBR: "

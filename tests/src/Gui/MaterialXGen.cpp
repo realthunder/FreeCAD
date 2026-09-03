@@ -505,8 +505,9 @@ TEST_F(MaterialXGenerator, aDocumentSaysWhichSurfacesItStatesAndWhichIsWorn)
 
 TEST_F(MaterialXGenerator, theSurfaceSurvivesTheOpenPbrTranslation)
 {
-    // translateAllMaterials replaces every shader node, so the selection
-    // is carried as a position in document order, not as a node.
+    // The translation rewrites the shader node in place, so the
+    // selection is carried as a position in document order, not as a
+    // node.
     const std::string doc =
         "<?xml version=\"1.0\"?>\n"
         "<materialx version=\"1.39\">\n"
@@ -528,6 +529,35 @@ TEST_F(MaterialXGenerator, theSurfaceSurvivesTheOpenPbrTranslation)
     ASSERT_TRUE(a.valid) << a.error;
     ASSERT_TRUE(b.valid) << b.error;
     EXPECT_NE(a.source, b.source);
+    EXPECT_NE(a.source.find("0.100000"), std::string::npos) << a.source;
+    EXPECT_NE(b.source.find("0.900000"), std::string::npos) << b.source;
+}
+
+TEST_F(MaterialXGenerator, aDocumentMayStateOneModelBesideAnother)
+{
+    // translateAllMaterials threw on the first material already in
+    // OpenPBR, so a document carrying one beside a standard_surface
+    // rendered neither. Only the chosen surface is translated now.
+    const std::string doc =
+        "<?xml version=\"1.0\"?>\n"
+        "<materialx version=\"1.39\">\n"
+        "  <open_pbr_surface name=\"A\" type=\"surfaceshader\">\n"
+        "    <input name=\"base_color\" type=\"color3\" value=\"0.1, 0.1, 0.1\" />\n"
+        "  </open_pbr_surface>\n"
+        "  <surfacematerial name=\"M_A\" type=\"material\">\n"
+        "    <input name=\"surfaceshader\" type=\"surfaceshader\" nodename=\"A\" />\n"
+        "  </surfacematerial>\n"
+        "  <standard_surface name=\"B\" type=\"surfaceshader\">\n"
+        "    <input name=\"base_color\" type=\"color3\" value=\"0.9, 0.9, 0.9\" />\n"
+        "  </standard_surface>\n"
+        "  <surfacematerial name=\"M_B\" type=\"material\">\n"
+        "    <input name=\"surfaceshader\" type=\"surfaceshader\" nodename=\"B\" />\n"
+        "  </surfacematerial>\n"
+        "</materialx>\n";
+    auto a = Render::MaterialX::generate(doc, {}, "M_A");
+    auto b = Render::MaterialX::generate(doc, {}, "M_B");
+    ASSERT_TRUE(a.valid) << a.error;
+    ASSERT_TRUE(b.valid) << b.error;
     EXPECT_NE(a.source.find("0.100000"), std::string::npos) << a.source;
     EXPECT_NE(b.source.find("0.900000"), std::string::npos) << b.source;
 }
