@@ -2256,3 +2256,119 @@ raster draws 132-133 where the closed form and the path tracer both say
 within a byte. That is a MaterialX-path brightness residual with no image
 involved, and it is the next thing in this arc. (One run in four read 144:
 a frame captured before it settled, not a third value.)
+
+### 17.16 The environment picture was read mirrored (fixed, 2026-09-03)
+
+Found while making the three-way picture that 17.15 called for. It is
+not a MaterialX matter at all -- it moves every render this engine has
+ever made from an image-based environment.
+
+`Render::sampleEnvImage` mapped an equirectangular picture as
+`u = 0.5 + atan2(d.y, d.x) / 2pi`. Cycles' kernel spells the same thing
+`direction_to_equirectangular`, `u = 0.5 - atan2(d.y, d.x) / 2pi`, and
+so does Blender and everything else that loads one of these files. So an
+HDRI came in **horizontally mirrored**: the background faced the wrong
+way, and so did every reflection in it.
+
+**Why nothing caught it.** That function is the ONLY environment sampler
+behind both engines -- the raster builds its cubemap through it
+(`BGFXViewEnv.cpp`) and the path tracer bakes its equirect through it
+(`bakeEnvironment`, which documents the Cycles layout it writes and then
+feeds it directions that come back mirrored). Our two engines therefore
+agreed with each other exactly while both disagreed with the world, and
+no internal comparison could see it. The lighting arc could not have
+seen it either: every measurement there was made under a CONSTANT
+environment, which is mirror-invariant.
+
+**How it was proved, before changing anything.** Blender was lit from a
+visibly different direction on the same HDR with a matched camera.
+Sweeping a Z rotation of Blender's environment could not fix that -- the
+best of eight angles was a mean absolute error of 23.6 bytes, and the
+curve was shallow, which is the signature of a mirror rather than an
+offset. Mirroring Blender's environment gave **4.4 at rotation 0**,
+against 45.9 unmirrored. So the difference was a flip, and the flip was
+ours.
+
+**After the fix**, with no mirror asked of Blender, our Cycles and
+Blender's Cycles agree on the chess set at **MAE 3.83 bytes** over the
+whole frame -- most of which is path-tracer noise at 128 samples. The
+three-way picture:
+
+| | mean | darkest | brightest |
+| --- | --- | --- | --- |
+| raster (bgfx) | 93.5 | 46.5 | 144.6 |
+| our Cycles | 89.9 | 46.2 | 144.4 |
+| Blender Cycles | 93.6 | 46.2 | 144.4 |
+
+`fcad-probes/chess3_run.sh` reports the camera and bounding box;
+`blender_chess.py` reproduces the framing from them and takes a rotation
+and a mirror flag for exactly this test; `chess3_sheet.py` lays the three
+side by side.
+
+**A trap worth keeping: an orthographic camera makes a path tracer draw
+a flat background.** All its rays are parallel, so the environment is
+sampled in one direction and the background is one colour. Blender's
+first picture was uniform brown for that reason and nothing else. When
+the background is part of what is being compared, use perspective.
+
+### 17.17 What GTAO does and does not do against path-traced GI (measured, 2026-09-03)
+
+Item 2 of 17.13's list. Measured, not closed: the answer is a gap in
+what the raster models, not a defect to fix in an afternoon.
+
+The scene is a TRENCH -- a floor between two parallel walls, one albedo
+0.5 throughout, under a constant environment of radiance 1 -- looked at
+straight down, so the CENTRE of the frame is the centre of the floor in
+both engines whatever aspect ratio each chose. Wall height is the sweep.
+The walls do two opposite things: they block the environment over part
+of the floor's hemisphere, and they bounce light back into it. Cycles
+does both; the raster's only occlusion is the screen-space AO term.
+
+Floor brightness as a fraction of the open floor (`gi_run.sh`):
+
+| | h=10 | h=20 | h=40 |
+| --- | --- | --- | --- |
+| Cycles | x0.80 | x0.58 | x0.36 |
+| raster, AO off | x1.00 | x1.00 | x1.00 |
+| raster, SSAO | x1.00 | x1.00 | x1.00 |
+| raster, GTAO | x0.99 | x1.00 | x1.00 |
+
+Both camera types, because screen-space AO reconstructs view-space
+positions from depth and that is where the two projections differ: the
+orthographic and perspective rows agree, so it is not that.
+
+**The environment is not occluded by geometry at all.** The AO=off row
+is flat at x1.00 -- a 40mm wall beside a 20mm trench changes the floor by
+nothing -- so the whole of the raster's occlusion is the AO term, and the
+AO term did not reach 10mm in this scene either.
+
+**AO is not inert**, which is the part that keeps this honest: on the
+chess set the AO buffer runs the full 0 to 255 (`CHESS_AO_BUFFER=1`
+dumps it through `RenderDebug_ViewMode` 3). It is a contact-scale
+darkening and it behaves like one. Why it read nothing at 10mm with
+`AORadius` explicitly set to 20mm is a loose end of its own, and the
+radius is where to start.
+
+So the honest summary: **the raster has no medium-range occlusion of the
+environment and no bounce at all**; AO adds contact darkening and is not
+a stand-in for either. On the chess set that shows as the raster running
+a little BRIGHTER than the path tracer (93.5 against 89.9 in 17.16),
+which is the direction this predicts.
+
+**Two traps this cost.** `AOMethod` defaults to 0 -- classic SSAO -- so a
+run that just switches `AO` on is not testing GTAO; and `AORadius`
+defaults to 0, meaning a fraction of the scene size. State both. And the
+per-view `Render_*` properties are seeded from the preferences ONCE,
+when the backend is selected, so an AO setting has to be in place
+BEFORE the document exists.
+
+#### A texture-upload race, seen once
+
+While the chess set was rendered under CPU contention (the GI sweep was
+running beside it), the raster drew several pieces a shaded red --
+(155, 36, 40) -- that appears in NO texture the document names: every
+base colour in `chess_set/` averages greenish-grey or cream. Run alone
+the same probe draws 12 red pixels instead of 632, and those are the
+axis cross. So a MaterialX draw can sample a texture layer that has not
+finished uploading, and it shows under load. Not chased further; recorded
+here because it will be hard to recognise the second time.
