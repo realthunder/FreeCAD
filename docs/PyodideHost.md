@@ -474,3 +474,104 @@ box, 2026-09-02, budget 5000 vs 0, two runs each):
 
 On wasi about 1.5 us (11%): ~1 us of epoch checks in the guest, the
 rest arming.  On pyodide the polling is inside the run-to-run noise.
+
+## 11. The bootstrap and the package flow: the plan (2026-09-03, for the next session)
+
+The user's direction of 2026-09-03 (no `pyodide-dist` feedstock;
+FreeCAD bootstraps pyodide on the user's host; users choose packages)
+and the package-install offer of `docs/SandboxNetwork.md` sec 9 are
+built FIRST, before the network capability and before the GUI protocol
+of `docs/SandboxGui.md`.  The reasons, in order of weight:
+
+1. **It is the ship path.**  With the dist feedstock dropped, no user
+   can run the pyodide runtime until the bootstrap exists; everything
+   built after it is unreachable in a release without it.
+2. **The package offer IS mostly the bootstrap installer** (download,
+   verify, `packages/` + manifest, `loadPackage` at boot); P1 adds a
+   scan, a finder and a dialog on top.
+3. **G1 needs the same loader.**  Draft's and BIM's own Python must
+   reach the guest as wheels through this machinery; the "FreeCAD
+   modules in the guest" story is the package story with a local
+   source.
+4. It yields the first user-visible payoff of the whole arc with the
+   smallest new surface: `import numpy` in a spreadsheet Python cell,
+   an offer, an install, a value.
+5. It settles two things every later step inherits: the supported
+   pyodide version range, and how the `fcx_image` wheel is
+   distributed.
+
+### What the release actually offers (checked 2026-09-03)
+
+GitHub release `314.0.6` assets: `pyodide-core-314.0.6.tar.bz2`
+(6.8 MB, the runtime without packages), `pyodide-314.0.6.tar.bz2`
+(350 MB, everything), `static-libraries` and `xbuildenv` tarballs.
+**No checksum asset.**  The npm package on jsDelivr
+(`https://cdn.jsdelivr.net/npm/pyodide@314.0.6/`) is 14 files, of
+which four matter: `pyodide.asm.wasm` 9.6 MB, `python_stdlib.zip`
+2.5 MB, `pyodide.asm.mjs` 1.25 MB, `pyodide-lock.json` 114 KB; the
+lock carries a sha256 per package wheel, the runtime files carry
+none.  Consequence: **FreeCAD pins the sha256 of the runtime files per
+supported version** in a small table in the tree, which is also the
+supported-version list -- a version not in the table cannot be
+installed, and the table is widened only after re-auditing the shim
+against the new release (the allowlist rule of sec 5).  Package
+wheels are verified against the lock; PyPI wheels against PyPI's
+hashes.
+
+### Steps
+
+- **B1 -- layout and resolve order.**  `<user app data>/Pyodide/
+  <version>/` for the runtime files, `<user app data>/Pyodide/
+  packages/` + `manifest.json` beside the versions, a `current`
+  marker.  `resolve()` in `ExpressionPyodideRuntime.cpp` puts the
+  user-data location FIRST after the explicit preference and
+  environment, before `<datadir>/Pyodide` (which stays for dev trees
+  and for a package that chooses to bundle).  The scoped root widens
+  from the version dir to the `Pyodide/` dir so `packages/` is
+  readable by the loader and nothing else is.  While in there: the
+  Windows/macOS path handling (`weakly_canonical` on drive letters,
+  the `/` prefix test in `scope()`), untested so far.  The binary's
+  supported-version table and a loud refusal at boot for a version
+  outside it.
+- **B2 -- the runtime installer.**  A Python module on the HOST (host
+  infrastructure, not user code, so it may use the native interpreter
+  and the Addon Manager's `NetworkManager` for proxies and
+  certificates; the C++ `NetClient` arrives with N1 and can replace it
+  later): `install_runtime(version, source)` with `source` = the
+  GitHub core tarball, the jsDelivr per-file set, or a LOCAL tarball
+  for air-gapped boxes; downloads to a temp dir, verifies against the
+  pinned table, moves into place atomically, updates `current`.
+  `list_runtimes()`, `remove_runtime(version)`.  Explicit user action
+  only -- nothing downloads at startup.
+- **B3 -- the `fcx_image` wheel.**  Bundled in the FreeCAD package
+  under `<datadir>/Pyodide/wheels/` (368 KB, matched to the build by
+  construction; an ABI change waits for a release, accepted for now),
+  with the PyPI route (`fcx-image==<FreeCAD version>`, one file per
+  ABI tag, a Linux CI job with emsdk) recorded as the later upgrade
+  path.  The installer refuses a runtime whose ABI tag has no matching
+  wheel.
+- **B4 -- the package installer.**  `install_package(name)`: resolve
+  against the lock first (index packages, dependencies from the lock),
+  PyPI second (PEP 783 `pyemscripten_<abi>` wheels and pure wheels,
+  metadata from PyPI's JSON API, dependencies resolved host-side);
+  download into `packages/`, verify, write the manifest.  Boot loads
+  the manifest through `loadPackage` from the local files.  First cut:
+  index packages only; PyPI in the same session if time allows.
+- **B5 -- the offer (P1).**  The pre-run import scan over the source
+  the host is about to run, the last-in-line `sys.meta_path` finder
+  with the `pkg.missing` op, `PackageNeeded` for document principals,
+  the session-principal dialog, deferred install and retry.  Gate:
+  `import numpy` in a spreadsheet Python cell with routing ON produces
+  the offer, the install, and the value on retry; with routing OFF
+  nothing changes.
+- **B6 -- the in-place probe (P2), time permitting.**  `unpack_buffer`
+  plus a synchronous import of numpy, then scipy over openblas,
+  without `loadPackage`; the list in `SandboxNetwork.md` sec 9.3.
+- **B7 -- tests.**  gtests for resolve order, the version table and
+  the scope widening; a Python test that installs from a LOCAL tarball
+  (no network in CI) and from a local `packages/` mirror; path tests
+  that run the Windows shapes on Linux by construction.
+
+After this arc: G0 (the porting linter, cheap, any time), then G1
+(Draft/BIM App side in the guest), then N1 (the network policy
+engine), in that order unless the user says otherwise.
