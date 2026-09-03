@@ -808,7 +808,9 @@ The rungs, and what each needs beyond what exists:
   live Qt/Coin objects) stays on the native island until it empties.
   The switch is honest about this: under `pyodide`, an addon's Gui
   glue still runs native at addon-grade trust, its App logic in the
-  guest, and the panel shows both.
+  guest, and the panel shows both.  How the island empties -- a
+  FreeCAD UI protocol in place of a PySide shim, with Draft/BIM as
+  the test -- is `docs/SandboxGui.md`.
 
 What the switch does NOT do: change the C++ core, the renderer, or the
 document format.  The guest sees FreeCAD through the same generated
