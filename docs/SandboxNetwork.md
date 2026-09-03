@@ -726,14 +726,25 @@ adds this document.
   OFF) carries the wasmtime runtime; the pyodide runtime is the default
   runtime name; docs marked.  No behaviour change on a box that sets
   the option.
-- **P1 -- offer and deferred install.**  The bootstrap installer
-  (download, verify, `packages/` + manifest, boot-time `loadPackage`),
-  the pre-run scan (sec 9.2), the finder with the `offer` answer (sec
-  9.3), the session-principal dialog, `PackageNeeded` for documents.
-- **P2 -- in-place install.**  The `installed` answer with the wheel
-  bytes over the bridge; pure wheels unpacked by the finder; native
-  wheels the same way if the sec 9.3 probe passes, else deferred to
-  the idle point.
+- **P1 -- offer and deferred install (DONE 2026-09-03,
+  `docs/PyodideHost.md` sec 12).**  The bootstrap installer (download,
+  verify, `packages/` + manifest, boot-time `loadPackage`), the finder
+  with the `offer` answer (sec 9.3), the pending `pkg.install` request
+  the permissions panel turns into the install.  The pre-run scan (sec
+  9.2) was dropped: the expression language reaches a module only
+  through an `import` statement, which fails at the guest's import
+  with the same offer; it returns only with N5, when macros and
+  console lines run in the guest and a scan before a long script is
+  worth having.
+- **G0, G1** (`docs/SandboxGui.md`): the porting linter, then Draft's
+  and BIM's App side in the guest as LOCAL wheels through the same
+  package loader -- boot-time loading only, which is why P2 is not a
+  prerequisite of them.
+- **P2 -- in-place install** (moved after G1, 2026-09-03: nothing
+  built depends on it, and a fresh guest boots with the package in
+  about 1.5 s).  The `installed` answer with the wheel bytes over the
+  bridge; pure wheels unpacked by the finder; native wheels the same
+  way if the sec 9.3 probe passes, else deferred to the idle point.
 - **N1 -- the policy engine and the two primitives.**  `NetPolicy`
   with the sec 4 grammar and built-ins, a `NetClient` behind an
   interface (sec 3.3 decision), the `net.http.request` bridge op, the
@@ -741,6 +752,11 @@ adds this document.
   lists, the audit line.  Test: `requests.get` against a local server
   from a session-principal guest, denied from a document-principal
   guest, redirect hops.  No UI beyond preferences.
+- **PyPI sources for the package installer** (PEP 783
+  `pyemscripten_<abi>` wheels and pure wheels, metadata from PyPI's
+  JSON API, dependencies resolved host-side, hashes from PyPI).  After
+  N1, so the installer's fetches move from urllib / the Addon
+  Manager's client to the `NetClient` N1 brings and are written once.
 - **N2 -- `fetch` and the loop primitive.**  Promise completion through
   the pumped task queue, `pyfetch` and `aiohttp` working, cancellation
   by the soft interrupt.
