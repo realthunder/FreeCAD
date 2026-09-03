@@ -928,6 +928,21 @@ Val Interpreter::buildNode(const mx::NodePtr &node,
 // ---------------------------------------------------------------------
 // the surface
 
+/// A float input the node states as a constant, else 0: for the inputs
+/// whose VALUE decides the graph's shape (a depth that is or is not
+/// there), which a connection cannot. Read FLAT through the translation
+/// graph (Render::MaterialX::flatConstant): a translated
+/// standard_surface carries every input as a connection, so a literal
+/// read of the node -- what this did before -- said 0 for every depth
+/// a standard_surface document stated.
+static float statedFloat(const mx::NodePtr &node, const char *name)
+{
+    std::vector<float> value;
+    if (!Render::MaterialX::flatConstant(node, name, value) || value.empty())
+        return 0.0f;
+    return value[0];
+}
+
 Out Interpreter::buildOpenPbr(const mx::NodePtr &node)
 {
     auto *bsdf = graph->create_node<ccl::PrincipledBsdfNode>();
@@ -938,6 +953,26 @@ Out Interpreter::buildOpenPbr(const mx::NodePtr &node)
     Out base = vmath(ccl::NODE_VECTOR_MATH_MULTIPLY,
                      asVec(in(node, "base_color")),
                      asVec(in(node, "base_weight")));
+    // OpenPBR gives transmission_color two meanings by the depth: over
+    // a stated depth it is what survives that path length (the
+    // absorption volume at the end of this function), and at depth 0
+    // it is a tint applied ONCE at the surface. Principled tints its
+    // refraction by Base Color and has no socket for the second, so
+    // it is folded in there, weighted by the transmission -- exact for
+    // a fully transmissive body, and for a partial one it tints the
+    // diffuse share too, which is what Blender's own importers accept.
+    // Without this the tracer dropped the colour of every depth-0
+    // glass (the chess set's pawn heads) while the raster glass pass
+    // applies it (docs/MaterialStorage.md sec 17.21).
+    const float depthValue = statedFloat(node, "transmission_depth");
+    if (depthValue <= 0.0f && node->getInput("transmission_color")) {
+        auto *tint = graph->create_node<ccl::MixColorNode>();
+        tint->set_blend_type(ccl::NODE_MIX_BLEND);
+        graph->connect(asFloat(in(node, "transmission_weight")), tint->input("Factor"));
+        graph->connect(konst3(1.0f, 1.0f, 1.0f), tint->input("A"));
+        graph->connect(asVec(in(node, "transmission_color")), tint->input("B"));
+        base = vmath(ccl::NODE_VECTOR_MATH_MULTIPLY, base, tint->output("Result"));
+    }
     graph->connect(base, bsdf->input("Base Color"));
     graph->connect(asFloat(in(node, "base_metalness")), bsdf->input("Metallic"));
     graph->connect(asFloat(in(node, "base_diffuse_roughness")),
@@ -1012,16 +1047,6 @@ Out Interpreter::buildOpenPbr(const mx::NodePtr &node)
     // Beer-Lambert, the same closure the fork's glass materials
     // already use, with the density read off the depth at which
     // transmission_color is reached.
-    mx::InputPtr depth = node->getInput("transmission_depth");
-    float depthValue = 0.0f;
-    if (depth && depth->hasValueString()) {
-        try {
-            depthValue = std::stof(depth->getValueString());
-        }
-        catch (const std::exception &) {
-            depthValue = 0.0f;
-        }
-    }
     if (depthValue > 0.0f) {
         auto *absorb = graph->create_node<ccl::AbsorptionVolumeNode>();
         absorb->set_density(1.0f / depthValue);

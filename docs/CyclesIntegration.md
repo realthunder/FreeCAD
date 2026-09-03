@@ -1497,7 +1497,15 @@ mapping are a decision rather than a rename:
   kind means.
 - `transmission_depth` becomes an absorption volume at density
   `1 / depth`, the Beer-Lambert closure the fork's glass materials
-  already use (section 6.2).
+  already use (section 6.2). With NO depth, OpenPBR's colour is a tint
+  applied once at the surface, which Principled has no socket for: it
+  folds into Base Color as `base * mix(1, transmission_color,
+  transmission_weight)`, exact for a fully transmissive body (the
+  chess set's pawn heads) and tinting the diffuse share too for a
+  partial one -- what Blender's own importers accept. The depth is
+  read FLAT through the translation graph (`flatConstant`): a
+  translated standard_surface carries every input as a connection, so
+  the literal read this used to do said 0 for every stated depth.
 
 Two traps the table exists to avoid, both of which yield a
 plausible-looking wrong material rather than an error:
@@ -1598,8 +1606,10 @@ departures the file states in full:
   not a viewport budget.
 - No transmission and no subsurface lobe. A rasterizer cannot refract
   through geometry: transmission is the glass pass's business
-  (docs/ShaderDesign.md 3.8) and subsurface has no raster route at all,
-  so it degrades to diffuse.
+  (docs/ShaderDesign.md 3.8), and a constant `transmission_weight` of
+  one half or more is routed there as a glass body
+  (docs/MaterialStorage.md sec 17.21); a mapped one, and subsurface,
+  which has no raster route at all, degrade to diffuse.
 - No anisotropy (no tangent frame on the untextured path, and an
   isotropic environment probe) and no thin film (rasterizable, but ~180
   lines of complex arithmetic on every mesh draw).
