@@ -33,6 +33,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -194,6 +195,17 @@ AppExport PyObject* decodeHostValue(const HandleTable& table, const nlohmann::js
  * GIL itself; catches everything -- the reply is always well-formed.
  */
 AppExport nlohmann::json dispatchHostOp(HandleTable& table, const nlohmann::json& req);
+
+/** The fixed-layout form of a bare read_prop / get_attr (FcxWire.h,
+ * FixedRequestMagic): `data` is the whole request, the reply comes
+ * back in the fixed layout (a scalar or vector result inline, anything
+ * else -- and every error -- as CBOR behind kind 0).  `opName` receives
+ * the wire op name for the counters.
+ */
+AppExport std::vector<unsigned char> dispatchHostOpFixed(HandleTable& table,
+                                                          const unsigned char* data,
+                                                          std::size_t len,
+                                                          std::string& opName);
 
 }  // namespace ExpressionSandbox
 }  // namespace App

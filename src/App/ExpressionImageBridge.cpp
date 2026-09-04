@@ -642,6 +642,98 @@ static json callWithWireArgs(HandleTable& table, PyObject* callable, const json&
     return encodeResult(table, result);
 }
 
+std::vector<unsigned char> dispatchHostOpFixed(HandleTable& table,
+                                               const unsigned char* data,
+                                               std::size_t len,
+                                               std::string& opName)
+{
+    // both ends are little-endian (wasm32, x86-64/arm64 hosts); the
+    // layout is defined LE and read byte-wise to stay so
+    auto le64 = [](const unsigned char* p) {
+        uint64_t v = 0;
+        for (int i = 7; i >= 0; --i)
+            v = (v << 8) | p[i];
+        return v;
+    };
+    json reply;
+    if (len < 12 || data[0] != FcxWire::FixedRequestMagic
+            || (data[1] != FcxWire::FixedOpReadProp && data[1] != FcxWire::FixedOpGetAttr)) {
+        reply = {{"ok", false}, {"exc", "ProtocolError"}, {"msg", "malformed fixed-layout request"}};
+        opName = "?";
+    }
+    else {
+        const uint64_t id = le64(data + 2);
+        const size_t nlen = data[10] | (size_t(data[11]) << 8);
+        if (12 + nlen > len) {
+            reply = {{"ok", false}, {"exc", "ProtocolError"}, {"msg", "fixed-layout name overruns"}};
+            opName = "?";
+        }
+        else {
+            opName = data[1] == FcxWire::FixedOpReadProp ? FcxWire::OpReadProp : FcxWire::OpGetAttr;
+            json req = {{"op", opName}, {"h", id},
+                        {"a", std::string(reinterpret_cast<const char*>(data + 12), nlen)}};
+            reply = dispatchHostOp(table, req);
+        }
+    }
+
+    std::vector<unsigned char> out;
+    out.reserve(32);
+    out.push_back(FcxWire::FixedReplyMagic);
+    auto put64 = [&](uint64_t v) {
+        for (int i = 0; i < 8; ++i)
+            out.push_back(static_cast<unsigned char>(v >> (8 * i)));
+    };
+    auto putDouble = [&](double d) {
+        uint64_t bits;
+        std::memcpy(&bits, &d, 8);
+        put64(bits);
+    };
+    if (reply.value("ok", false)) {
+        auto val = reply.find("val");
+        if (val != reply.end()) {
+            if (val->is_number_float()) {
+                out.push_back(FcxWire::FixedKindFloat);
+                putDouble(val->get<double>());
+                return out;
+            }
+            if (val->is_boolean()) {
+                out.push_back(FcxWire::FixedKindBool);
+                out.push_back(val->get<bool>() ? 1 : 0);
+                return out;
+            }
+            if (val->is_number_integer()) {
+                out.push_back(FcxWire::FixedKindInt);
+                put64(static_cast<uint64_t>(val->get<int64_t>()));
+                return out;
+            }
+            if (val->is_string()) {
+                const auto& s = val->get_ref<const std::string&>();
+                if (s.size() <= 0xFFFFFFFFu) {
+                    out.push_back(FcxWire::FixedKindString);
+                    uint32_t n = static_cast<uint32_t>(s.size());
+                    for (int i = 0; i < 4; ++i)
+                        out.push_back(static_cast<unsigned char>(n >> (8 * i)));
+                    out.insert(out.end(), s.begin(), s.end());
+                    return out;
+                }
+            }
+            if (val->is_object() && val->value(FcxWire::TagKey, "") == FcxWire::TagVector) {
+                auto v = val->find("v");
+                if (v != val->end() && v->is_array() && v->size() == 3) {
+                    out.push_back(FcxWire::FixedKindVector);
+                    for (const auto& c : *v)
+                        putDouble(c.get<double>());
+                    return out;
+                }
+            }
+        }
+    }
+    out.push_back(FcxWire::FixedKindCbor);
+    auto cbor = json::to_cbor(reply);
+    out.insert(out.end(), cbor.begin(), cbor.end());
+    return out;
+}
+
 json dispatchHostOp(HandleTable& table, const json& req)
 {
     Base::PyGILStateLocker lock;

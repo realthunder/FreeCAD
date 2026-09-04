@@ -37,6 +37,7 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "Expression.h"
+#include "ExpressionImage/FcxWire.h"
 #include "ExpressionImageBridge.h"
 #include "ExpressionImageHost.h"
 #include "ExpressionImageRuntime.h"
@@ -185,6 +186,14 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     /// One guest->host bridge op, CBOR both ways (ExpressionImageBridge).
     std::vector<uint8_t> bridge(const uint8_t* data, std::size_t len)
     {
+        // the fixed layout of a bare read_prop / get_attr (FcxWire.h):
+        // no CBOR on either side for the most frequent hop
+        if (len > 0 && data[0] == FcxWire::FixedRequestMagic) {
+            std::string opName;
+            auto out = dispatchHostOpFixed(handles, data, len, opName);
+            ++ops[opName];
+            return out;
+        }
         json reply;
         try {
             json req = json::from_cbor(data, data + len);

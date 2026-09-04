@@ -292,6 +292,17 @@ allowed.  The read path never enters host Python
 runs only for members annotated `call`.  Arguments validate against the
 XML-declared signature; a sandbox callable is never a valid argument.
 
+The fixed layout (2026-09-04, step 7 of the coding order): a bare
+`read_prop`/`get_attr` with a name -- 2738 of the 3575 hops in the
+draftgeoutils gate -- skips CBOR on both sides.  Request `0xF1`, op
+byte, handle u64, name (u16 length + UTF-8); reply `0xF2`, kind byte,
+then a float64, a bool, an int64, a string or a Vector inline -- or
+kind 0 and the CBOR reply as before for any other value and every
+error.  The guest takes it when no releases are queued (those ride
+"r" on a CBOR request); the host recognises the magic byte, which no
+CBOR document of this wire begins with.  Everything else is CBOR
+exactly as before; the two forms share the dispatcher.
+
 Handles are transaction-scoped and decoded BEFORE `clearHandles()`.
 Releases never cross as an op (2026-09-04, step 6 of the coding
 order): a proxy's `__del__` queues its id in the guest, and the queue
@@ -962,7 +973,7 @@ these numbers are not CI-checked and can drift.
     wire floor (eval "1")                 --       12.8-15.7 us     22.2 us (was 30.6-37.6)
     parse + eval arithmetic               2.03 us  13.36 us (6.6x)  18.6 us (was 23.6)
     one property read                     ~3.0 us  20.92 us (7.1x)  29.7 us (was 37.1)
-    one bridge hop (marginal, read_prop)  --       7.1-7.3 us       6.2-7.4 us
+    one bridge hop (marginal, read_prop)  --       5.4 us (was 7.1-7.6)  4.4 us (was 5.9-7.4)
     pack per eval (export+proxy+release)  --       +19 us (was +23) +23 us (was +44, +27)
     instantiate + first eval              --       14 ms (.cwasm)   ~1.5-1.7 s
 
@@ -974,8 +985,10 @@ us and the per-eval pack cost by 17 us; the marginal hop itself moved
 within noise (~7 us either way), because what remains of a hop is the
 guest's CPython `__getattr__` + `_fcx.op` + CBOR (~3 us) and the host
 dispatch (GIL, handle table, property read, security, encode, ~3-4
-us), not the crossing.  A fixed-layout codec (1-2 us) is the only
-transport-side saving left.
+us), not the crossing.  The fixed-layout codec (step 7, sec 3.2) then
+took its predicted 1-2 us: the marginal read_prop hop is 5.4 us on
+WASI and 4.4 us on pyodide (2026-09-04, same bench).  What is left is
+CPython on both ends; the transport is done.
     native Shape.Volume / BoundBox.ZMin   179/183 us (mass properties, not
                                           materialization: a TopoShapePy
                                           attribute read is ~1 us native)

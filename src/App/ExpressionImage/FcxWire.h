@@ -22,6 +22,8 @@
 #ifndef APP_FCX_WIRE_H
 #define APP_FCX_WIRE_H
 
+#include <cstdint>
+
 namespace FcxWire
 {
 
@@ -82,6 +84,29 @@ inline const char* const OpStr = "str";
 // 9.3).  "a" = the import name; the reply value is "" (unknown) or the
 // message the finder raises (offer / installed).
 inline const char* const OpPkgMissing = "pkg.missing";
+
+// ---- fixed layout for the hot ops (step 7 of the coding order) ----
+// A read_prop / get_attr with a name and nothing else is by far the
+// most frequent bridge request (2738 of 3575 hops in the draftgeoutils
+// gate) and may skip CBOR entirely, on both sides:
+//   request  0xF1, op u8 (1 read_prop, 2 get_attr), handle u64 LE,
+//            name u16 LE length + UTF-8 bytes
+//   reply    0xF2, kind u8: 1 float64 LE | 2 bool u8 | 3 int64 LE |
+//            4 string u32 LE length + UTF-8 | 5 vector 3 x float64 LE |
+//            0 CBOR follows (any other value, and every error)
+// Neither magic byte begins a CBOR document this wire produces (a map
+// starts 0xA0-0xBF); a request without the magic is CBOR as before.
+// Releases pending in the guest force the CBOR form (they ride "r").
+inline constexpr uint8_t FixedRequestMagic = 0xF1;
+inline constexpr uint8_t FixedReplyMagic = 0xF2;
+inline constexpr uint8_t FixedOpReadProp = 1;
+inline constexpr uint8_t FixedOpGetAttr = 2;
+inline constexpr uint8_t FixedKindCbor = 0;
+inline constexpr uint8_t FixedKindFloat = 1;
+inline constexpr uint8_t FixedKindBool = 2;
+inline constexpr uint8_t FixedKindInt = 3;
+inline constexpr uint8_t FixedKindString = 4;
+inline constexpr uint8_t FixedKindVector = 5;
 
 // value type tags
 inline const char* const TagKey = "t";

@@ -26,6 +26,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <Base/VectorPy.h>
+
 #include "FcxWire.h"
 #include "ImageMarshal.h"
 
@@ -129,6 +131,93 @@ static PyObject *fcx_op(PyObject *, PyObject *args)
     PyObject *a3 = nullptr;
     if (!PyArg_ParseTuple(args, "sK|OOO", &op, &id, &a1, &a2, &a3))
         return nullptr;
+
+    // The fixed layout (FcxWire.h): a bare read_prop / get_attr with a
+    // name, no releases waiting -- the hop that dominates, without CBOR
+    // on either side.  Anything else takes the CBOR form below.
+    if (g_pendingReleases.empty() && a1 && !a2 && PyUnicode_Check(a1)
+            && (strcmp(op, FcxWire::OpReadProp) == 0 || strcmp(op, FcxWire::OpGetAttr) == 0)) {
+        Py_ssize_t nlen = 0;
+        const char *name = PyUnicode_AsUTF8AndSize(a1, &nlen);
+        if (name && nlen <= 0xFFFF) {
+            std::vector<uint8_t> fixed(12 + (size_t)nlen);
+            uint8_t *p = fixed.data();
+            *p++ = FcxWire::FixedRequestMagic;
+            *p++ = strcmp(op, FcxWire::OpReadProp) == 0 ? FcxWire::FixedOpReadProp
+                                                        : FcxWire::FixedOpGetAttr;
+            for (int i = 0; i < 8; ++i)
+                *p++ = (uint8_t)((uint64_t)id >> (8 * i));
+            *p++ = (uint8_t)(nlen & 0xFF);
+            *p++ = (uint8_t)(nlen >> 8);
+            memcpy(p, name, (size_t)nlen);
+            std::vector<uint8_t> rep;
+            if (!hostTransport(fixed, rep))
+                return nullptr;
+            if (rep.size() < 2 || rep[0] != FcxWire::FixedReplyMagic) {
+                PyErr_SetString(PyExc_RuntimeError, "malformed fixed-layout reply");
+                return nullptr;
+            }
+            const uint8_t *q = rep.data() + 2;
+            const size_t n = rep.size() - 2;
+            auto le64 = [](const uint8_t *b) {
+                uint64_t v = 0;
+                for (int i = 7; i >= 0; --i)
+                    v = (v << 8) | b[i];
+                return v;
+            };
+            auto dbl = [&](const uint8_t *b) {
+                uint64_t bits = le64(b);
+                double d;
+                memcpy(&d, &bits, 8);
+                return d;
+            };
+            switch (rep[1]) {
+            case FcxWire::FixedKindFloat:
+                if (n >= 8)
+                    return PyFloat_FromDouble(dbl(q));
+                break;
+            case FcxWire::FixedKindBool:
+                if (n >= 1)
+                    return PyBool_FromLong(q[0]);
+                break;
+            case FcxWire::FixedKindInt:
+                if (n >= 8)
+                    return PyLong_FromLongLong((int64_t)le64(q));
+                break;
+            case FcxWire::FixedKindString:
+                if (n >= 4) {
+                    uint32_t l = q[0] | (q[1] << 8) | (q[2] << 16) | ((uint32_t)q[3] << 24);
+                    if (n >= 4 + (size_t)l)
+                        return PyUnicode_FromStringAndSize((const char *)q + 4, l);
+                }
+                break;
+            case FcxWire::FixedKindVector:
+                if (n >= 24)
+                    return new Base::VectorPy(Base::Vector3d(dbl(q), dbl(q + 8), dbl(q + 16)));
+                break;
+            case FcxWire::FixedKindCbor: {
+                json reply;
+                try {
+                    reply = json::from_cbor(q, q + n);
+                }
+                catch (const json::exception &e) {
+                    PyErr_Format(PyExc_RuntimeError, "undecodable host reply: %s", e.what());
+                    return nullptr;
+                }
+                if (!reply.value("ok", false)) {
+                    raiseFromReply(reply);
+                    return nullptr;
+                }
+                auto val = reply.find("val");
+                return FcxImage::decodeValue(val != reply.end() ? *val : json());
+            }
+            default:
+                break;
+            }
+            PyErr_SetString(PyExc_RuntimeError, "malformed fixed-layout reply");
+            return nullptr;
+        }
+    }
 
     json req;
     req["op"] = op;
