@@ -103,6 +103,9 @@ public:
     const std::vector<std::string> &previewModes() override { return owner.previewModes(); }
     int previewMode() override { return owner.previewMode(); }
     void setPreviewMode(int mode) override { owner.setPreviewMode(mode); }
+    const std::vector<std::string> &previewDevices() override { return owner.previewDevices(); }
+    int previewDevice() override { return owner.previewDevice(); }
+    void setPreviewDevice(int device) override { owner.setPreviewDevice(device); }
     std::string previewStatus() override { return owner.previewStatus(); }
 
 private:

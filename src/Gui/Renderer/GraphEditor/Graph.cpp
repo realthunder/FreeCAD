@@ -3005,6 +3005,28 @@ void Graph::graphButtons()
                     _host->setPreviewMode(int(i));
                 }
             }
+
+            // What the current mode computes on, when it has a choice
+            // (a path tracer's CPU or GPU). One device draws no submenu.
+            const std::vector<std::string>& devices = _host->previewDevices();
+            if (devices.size() > 1)
+            {
+                ImGui::Separator();
+                if (ImGui::BeginMenu("Device"))
+                {
+                    const int currentDevice = _host->previewDevice();
+                    for (size_t i = 0; i < devices.size(); ++i)
+                    {
+                        const bool deviceSelected = int(i) == currentDevice;
+                        if (ImGui::MenuItem(devices[i].c_str(), nullptr, deviceSelected)
+                            && !deviceSelected)
+                        {
+                            _host->setPreviewDevice(int(i));
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
+            }
             ImGui::EndMenu();
         }
 

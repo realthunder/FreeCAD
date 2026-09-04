@@ -430,6 +430,64 @@ void ShaderGraphHost::setPreviewMode(int m)
                               Qt::QueuedConnection);
 }
 
+const std::vector<std::string> &ShaderGraphHost::previewDevices()
+{
+    static const std::vector<std::string> none;
+    // Only the traced mode computes on a device of its own; the raster
+    // one draws through the view's backend, wherever that is.
+    if (mode != 1)
+        return none;
+    if (deviceTypes.empty()) {
+        // The TYPES this machine can compute on: ViewportOptions.device
+        // names a type, so two cards of one type are one entry -- the
+        // rule the view's Cycles_Device enum is built by.
+        for (const auto &info : Render::Cycles::devices()) {
+            bool seen = false;
+            for (const auto &type : deviceTypes)
+                seen = seen || type == info.type;
+            if (!seen)
+                deviceTypes.push_back(info.type);
+        }
+    }
+    return deviceTypes;
+}
+
+int ShaderGraphHost::previewDevice()
+{
+    // What a session started now would run on: this editor's pick, else
+    // the view's effective device.
+    std::string current = device;
+    if (current.empty()) {
+        if (View3DInventorViewer *viewer = findViewer())
+            current = viewer->cyclesViewportOptions().device;
+    }
+    const std::vector<std::string> &types = previewDevices();
+    for (size_t i = 0; i < types.size(); ++i) {
+        if (types[i] == current)
+            return int(i);
+    }
+    return 0;
+}
+
+void ShaderGraphHost::setPreviewDevice(int index)
+{
+    // From the event loop, as a mode pick is: the session is torn down
+    // and set up again, which is not something to do inside the
+    // editor's frame.
+    QMetaObject::invokeMethod(this, [this, index]() {
+        const std::vector<std::string> &types = previewDevices();
+        if (index < 0 || index >= int(types.size()) || index == previewDevice())
+            return;
+        device = types[index];
+        FC_LOG("shader graph preview: device " << device);
+        tracerBlocked = false;
+        if (mode == 1 && startTracer()) {
+            previewInvalidated();
+            editor->requestFrame();
+        }
+    }, Qt::QueuedConnection);
+}
+
 void ShaderGraphHost::applyPreviewMode(int m)
 {
     if (m == mode)
@@ -459,8 +517,11 @@ bool ShaderGraphHost::startTracer()
         FC_WARN("shader graph preview: no 3D view to path trace for");
         return false;
     }
+    Render::Cycles::ViewportOptions options = viewer->cyclesViewportOptions();
+    if (!device.empty())
+        options.device = device;
     std::string error;
-    auto vp = Render::Cycles::Viewport::create(viewer->cyclesViewportOptions(), &error);
+    auto vp = Render::Cycles::Viewport::create(options, &error);
     if (!vp) {
         FC_WARN("shader graph preview: path tracer unavailable: " << error);
         // Every invalidation would otherwise ask the engine again.
@@ -481,12 +542,14 @@ bool ShaderGraphHost::startTracer()
     tracer = std::move(vp);
     tracer->setPaused(hidden);
     setPreviewStatus("Path tracing");
+    FC_LOG("shader graph preview: tracer on " << options.device);
     return true;
 }
 
 void ShaderGraphHost::stopTracer()
 {
     frame.stop();
+    tracedFrames = 0;
     tracer.reset();
     tracedSignature.clear();
     tracedInput.reset();
@@ -822,8 +885,15 @@ void ShaderGraphHost::takeTracedFrame()
         fw = width;
         fh = height;
     });
-    if (got && !rgba.empty())
+    if (got && !rgba.empty()) {
         setPreviewImage(fw, fh, rgba.data());
+        // One line per session: that the device this session was
+        // started on is producing frames at all is what a device pick
+        // has to be judged by -- two devices tracing the same scene to
+        // the same sample count settle on the same picture.
+        if (++tracedFrames == 1)
+            FC_LOG("shader graph preview: first traced frame " << fw << "x" << fh);
+    }
     updateTracedStatus();
     editor->requestFrame();
 }

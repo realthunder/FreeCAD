@@ -106,6 +106,13 @@ public:
     const std::vector<std::string> &previewModes() override;
     int previewMode() override;
     void setPreviewMode(int mode) override;
+    /// The device types the path tracer can compute on, while the
+    /// traced mode is up; none in raster mode, which has no choice to
+    /// make. The default is the 3D view's effective Cycles_Device, and
+    /// a pick here overrides it for this editor only.
+    const std::vector<std::string> &previewDevices() override;
+    int previewDevice() override;
+    void setPreviewDevice(int device) override;
 
     /// Watches the editor widget's show and hide: a pane nobody can
     /// see is not worth a render, and a path tracer session behind a
@@ -200,6 +207,10 @@ private:
     /// The document's view attach and detach, for viewsChanged.
     fastsignals::connection attachConnection;
     fastsignals::connection detachConnection;
+    /// The device types devices() reports, deduplicated, read once.
+    std::vector<std::string> deviceTypes;
+    /// The device picked in the menu; empty follows the 3D view's.
+    std::string device;
     /// The path tracer's session while the mode is traced.
     std::unique_ptr<Render::Cycles::Viewport> tracer;
     /// What the tracer holds: the shader node's text, surface and
@@ -207,6 +218,9 @@ private:
     /// camera cleared), to tell a restate from a camera move.
     std::string tracedSignature;
     std::unique_ptr<Render::Cycles::SceneInput> tracedInput;
+    /// Frames taken from the current session, for the one-per-session
+    /// log line that says it is producing any.
+    int tracedFrames = 0;
     /// Staged frames coalesce on this timer before they are taken.
     QTimer frame;
 };

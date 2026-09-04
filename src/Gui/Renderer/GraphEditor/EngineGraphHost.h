@@ -97,6 +97,16 @@ public:
     }
     virtual int previewMode() { return 0; }
     virtual void setPreviewMode(int) {}
+    /// Which device the current preview mode renders on, and a pick
+    /// made in the Device submenu of that menu (GraphHost has the
+    /// contract). The defaults state none, so no submenu is drawn.
+    virtual const std::vector<std::string> &previewDevices()
+    {
+        static const std::vector<std::string> none;
+        return none;
+    }
+    virtual int previewDevice() { return 0; }
+    virtual void setPreviewDevice(int) {}
 
     // ---- what the platform half reads and writes
 

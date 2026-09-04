@@ -94,6 +94,17 @@ public:
     }
     virtual int previewMode() { return 0; }
     virtual void setPreviewMode(int) {}
+    /// The compute devices the current preview mode can render on, the
+    /// one it uses, and a pick from the Device submenu of the Preview
+    /// menu -- drawn only when there are two or more. The default
+    /// states none, and so does a mode that has no device to choose.
+    virtual const std::vector<std::string> &previewDevices()
+    {
+        static const std::vector<std::string> none;
+        return none;
+    }
+    virtual int previewDevice() { return 0; }
+    virtual void setPreviewDevice(int) {}
     /// What the preview's renderer is doing, shown under the pane
     /// while non-empty (a path tracer's sample count); empty when
     /// there is nothing to say.
