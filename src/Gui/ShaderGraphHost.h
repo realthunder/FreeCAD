@@ -32,10 +32,16 @@
 /// transient capture scene, the way the TechDraw shaded underlay
 /// captures a derived shape. No backend (no 3D view on the renderer
 /// path) means no preview pane; the editor works without one.
+///
+/// The same pane can be path traced instead (sec 15): the same sphere
+/// scene handed to a Cycles Viewport of this host's own, registered
+/// with no backend, its refining frames taken as the served stream
+/// takes them and composited into the preview texture.
 
 #include <QObject>
 #include <QTimer>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -46,6 +52,8 @@ class SoSeparator;
 class SoPerspectiveCamera;
 class SoFragmentShader;
 class SoShaderParameterArray1f;
+class SoFCRenderCacheManager;
+class SbMatrix;
 
 namespace App {
 class ShaderProgram;
@@ -53,6 +61,10 @@ class ShaderProgram;
 namespace Render {
 class GraphEditorWidget;
 class Renderer;
+namespace Cycles {
+class Viewport;
+struct SceneInput;
+}
 }
 
 namespace Gui {
@@ -86,23 +98,55 @@ public:
     /// loop: the pick is made inside the editor's frame, and the write
     /// reloads the editor.
     void selectSurface(const std::string &name) override;
+    /// Raster and Path traced when the build carries the Cycles
+    /// engine, else nothing (no menu). A pick is applied from the
+    /// event loop: the session is created outside the editor's frame.
+    const std::vector<std::string> &previewModes() override;
+    int previewMode() override;
+    void setPreviewMode(int mode) override;
 
 private:
     /// Render the preview from the event loop: never from inside the
     /// editor's paint, where a backend frame is being encoded.
     void renderPreview();
-    /// A 3D view of the program's document with a backend, or none.
+    /// The raster path: the draws as the backend's transient capture
+    /// scene, renderOffscreen into an FBO, the pixels read back.
+    void renderRaster(int w, int h, Render::Renderer *renderer, View3DInventorViewer *viewer);
+    /// The traced path: the draws to the tracer when the scene changed,
+    /// the camera alone when not; the frames land in takeTracedFrame.
+    void renderTraced(int w, int h, View3DInventorViewer *viewer);
+    void takeTracedFrame();
+    void updateTracedStatus();
+    void applyPreviewMode(int mode);
+    void stopTracer();
+    /// A 3D view of the program's document, one with a backend
+    /// preferred (the raster path needs one; the traced path only
+    /// needs the view's settings); null when the document has none.
+    View3DInventorViewer *findViewer() const;
+    /// The viewer's backend, when the found viewer has one.
     bool findBackend(Render::Renderer *&renderer, View3DInventorViewer *&viewer) const;
     /// The document as the preview's shader node takes it: the text
     /// with the program's stored images named where they are.
     std::string documentForRender() const;
     void buildScene();
+    /// The shader node's text, surface and parameters from the live
+    /// document, and the camera from the orbit, for a pane of w x h.
+    void updateScene(int w, int h);
+    /// The scene through the render caches into the backend-neutral
+    /// draw list both paths consume. The cache manager persists across
+    /// renders so the sphere keeps its cache identity: the tracer keys
+    /// its meshes on it, and a fresh manager per render would hand it
+    /// a new sphere -- a mesh rebuilt and a session reset -- each time.
+    bool translateScene(int w, int h, Render::DrawCallList &draws);
+    /// The camera's matrices as the renderers take them.
+    void cameraMatrices(int w, int h, SbMatrix &view, SbMatrix &proj) const;
 
     App::ShaderProgram *const program;
     Render::GraphEditorWidget *const editor;
     CoinPtr<SoSeparator> root;
     CoinPtr<SoPerspectiveCamera> previewCamera;
     CoinPtr<SoFragmentShader> fragment;
+    std::unique_ptr<SoFCRenderCacheManager> manager;
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> paramNodes;
     /// The baseline's public input values as parameters (setBaseText).
     std::vector<Render::RenderDebugConfig::UserParam> baseParams;
@@ -118,6 +162,18 @@ private:
     /// compiling, the poll asks the backend until the compile lands.
     QTimer poll;
     int compileGeneration = 0;
+
+    /// 0 = raster, 1 = path traced (the index into previewModes).
+    int mode = 0;
+    /// The path tracer's session while the mode is traced.
+    std::unique_ptr<Render::Cycles::Viewport> tracer;
+    /// What the tracer holds: the shader node's text, surface and
+    /// parameter values as one string, and the configs (draws and
+    /// camera cleared), to tell a restate from a camera move.
+    std::string tracedSignature;
+    std::unique_ptr<Render::Cycles::SceneInput> tracedInput;
+    /// Staged frames coalesce on this timer before they are taken.
+    QTimer frame;
 };
 
 } // namespace Gui

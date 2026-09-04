@@ -83,6 +83,21 @@ public:
     }
     virtual std::string currentSurface() { return {}; }
     virtual void selectSurface(const std::string &) {}
+    /// How the preview is rendered (docs/ShaderGraphEditor.md sec 15):
+    /// the modes by name, the current one's index, and a pick from the
+    /// editor's Preview menu -- drawn only when there are two or more.
+    /// The default states none.
+    virtual const std::vector<std::string> &previewModes()
+    {
+        static const std::vector<std::string> none;
+        return none;
+    }
+    virtual int previewMode() { return 0; }
+    virtual void setPreviewMode(int) {}
+    /// What the preview's renderer is doing, shown under the pane
+    /// while non-empty (a path tracer's sample count); empty when
+    /// there is nothing to say.
+    virtual std::string previewStatus() { return {}; }
 };
 
 /// No preview, no thumbnails, every nodedef implemented: the editor

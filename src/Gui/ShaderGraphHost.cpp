@@ -58,6 +58,7 @@
 #include "Inventor/SoFCRenderCacheManager.h"
 #include "Inventor/SoFCRendererBridge.h"
 #include "Renderer/GraphEditor/GraphEditorWidget.h"
+#include "Renderer/CyclesRenderer.h"
 #include "Renderer/MaterialXSupport.h"
 #include "Renderer/Renderer.h"
 
@@ -76,6 +77,23 @@ constexpr int kCompilePollMs = 250;
 /// How long invalidations coalesce before a render: a drag reports
 /// every motion, and a render costs a backend frame.
 constexpr int kRenderDelayMs = 40;
+/// How long the path tracer's staged frames coalesce before one is
+/// taken and uploaded: the engine stages many per second early in a
+/// render, and the pane needs none of them faster than this.
+constexpr int kFrameDelayMs = 30;
+
+/// Whether two scene inputs agree on everything but the draws and the
+/// camera (the feed's gate in View3DInventorViewer, spelled once).
+bool sameConfig(const Render::Cycles::SceneInput &a, const Render::Cycles::SceneInput &b)
+{
+    return a.pbr == b.pbr && a.bump == b.bump && a.output == b.output && a.light == b.light
+        && a.section == b.section && a.debugView == b.debugView
+        && a.background.type == b.background.type
+        && a.background.fromColor == b.background.fromColor
+        && a.background.toColor == b.background.toColor
+        && a.background.midColor == b.background.midColor
+        && a.background.hasMid == b.background.hasMid;
+}
 
 /// The preview's ball. Coin's sphere generator states a UV per vertex,
 /// but the vertex cache keeps them only while a texture unit is enabled
@@ -130,6 +148,9 @@ ShaderGraphHost::ShaderGraphHost(App::ShaderProgram *prog, Render::GraphEditorWi
     render.setSingleShot(true);
     render.setInterval(kRenderDelayMs);
     connect(&render, &QTimer::timeout, this, [this]() { renderPreview(); });
+    frame.setSingleShot(true);
+    frame.setInterval(kFrameDelayMs);
+    connect(&frame, &QTimer::timeout, this, [this]() { takeTracedFrame(); });
     poll.setInterval(kCompilePollMs);
     connect(&poll, &QTimer::timeout, this, [this]() {
         Render::Renderer *renderer = nullptr;
@@ -148,7 +169,13 @@ ShaderGraphHost::ShaderGraphHost(App::ShaderProgram *prog, Render::GraphEditorWi
     });
 }
 
-ShaderGraphHost::~ShaderGraphHost() = default;
+ShaderGraphHost::~ShaderGraphHost()
+{
+    // The tracer first: its destructor nulls the callback under its
+    // lock and joins the session's thread while this object is still
+    // whole, and a call it queued on this object dies with it.
+    stopTracer();
+}
 
 void ShaderGraphHost::programChanged()
 {
@@ -267,21 +294,105 @@ void ShaderGraphHost::previewInvalidated()
         render.start();
 }
 
-bool ShaderGraphHost::findBackend(Render::Renderer *&renderer,
-                                  View3DInventorViewer *&viewer) const
+View3DInventorViewer *ShaderGraphHost::findViewer() const
 {
     Gui::Document *gdoc = Application::Instance->getDocument(program->getDocument());
     if (!gdoc)
-        return false;
+        return nullptr;
+    View3DInventorViewer *first = nullptr;
     for (auto *view : gdoc->getMDIViewsOfType(View3DInventor::getClassTypeId())) {
-        auto *v3d = static_cast<View3DInventor*>(view);
-        if (auto *r = v3d->getViewer()->getExternalRenderer()) {
-            renderer = r;
-            viewer = v3d->getViewer();
-            return true;
-        }
+        auto *viewer = static_cast<View3DInventor*>(view)->getViewer();
+        if (viewer->getExternalRenderer())
+            return viewer;
+        if (!first)
+            first = viewer;
     }
-    return false;
+    return first;
+}
+
+bool ShaderGraphHost::findBackend(Render::Renderer *&renderer,
+                                  View3DInventorViewer *&viewer) const
+{
+    View3DInventorViewer *v = findViewer();
+    if (!v || !v->getExternalRenderer())
+        return false;
+    renderer = v->getExternalRenderer();
+    viewer = v;
+    return true;
+}
+
+const std::vector<std::string> &ShaderGraphHost::previewModes()
+{
+    static const std::vector<std::string> both = {"Raster", "Path traced"};
+    static const std::vector<std::string> none;
+    return Render::Cycles::available() ? both : none;
+}
+
+int ShaderGraphHost::previewMode()
+{
+    return mode;
+}
+
+void ShaderGraphHost::setPreviewMode(int m)
+{
+    if (m == mode || m < 0 || m >= int(previewModes().size()))
+        return;
+    // From the event loop: the pick is made inside the editor's frame,
+    // and a device's session is not something to set up there.
+    QMetaObject::invokeMethod(this, [this, m]() { applyPreviewMode(m); },
+                              Qt::QueuedConnection);
+}
+
+void ShaderGraphHost::applyPreviewMode(int m)
+{
+    if (m == mode)
+        return;
+    if (m == 1) {
+        View3DInventorViewer *viewer = findViewer();
+        if (!viewer) {
+            FC_WARN("shader graph preview: no 3D view to path trace for");
+            return;
+        }
+        std::string error;
+        auto vp = Render::Cycles::Viewport::create(viewer->cyclesViewportOptions(), &error);
+        if (!vp) {
+            FC_WARN("shader graph preview: path tracer unavailable: " << error);
+            return;
+        }
+        // Cycles' threads report a staged frame from wherever they
+        // run; the take is queued to this object's thread, where the
+        // session is fed too (takeFrame is serialized by its caller
+        // against setScene and setCamera).
+        vp->setRedrawCallback([this]() {
+            QMetaObject::invokeMethod(this, [this]() {
+                if (!frame.isActive())
+                    frame.start();
+            }, Qt::QueuedConnection);
+        });
+        stopTracer();
+        tracer = std::move(vp);
+        mode = 1;
+        // The raster frame stays on the pane until the first traced
+        // one lands.
+        setCompiling(false);
+        poll.stop();
+        setPreviewStatus("Path tracing");
+    }
+    else {
+        stopTracer();
+        mode = 0;
+    }
+    previewInvalidated();
+    editor->requestFrame();
+}
+
+void ShaderGraphHost::stopTracer()
+{
+    frame.stop();
+    tracer.reset();
+    tracedSignature.clear();
+    tracedInput.reset();
+    setPreviewStatus({});
 }
 
 std::string ShaderGraphHost::documentForRender() const
@@ -329,6 +440,12 @@ void ShaderGraphHost::buildScene()
     auto sphere = new PreviewSphere;
     sphere->radius = kSphereRadius;
     root->addChild(sphere);
+    // After the nodes, the sphere's class registration included: the
+    // manager's traversal action is built at construction, and one
+    // built before PreviewSphere::initClass captured no geometry on its
+    // first pass (a persistent manager showed it; the per-render one
+    // it replaced was always constructed after the scene).
+    manager = std::make_unique<SoFCRenderCacheManager>();
 }
 
 void ShaderGraphHost::renderPreview()
@@ -336,20 +453,32 @@ void ShaderGraphHost::renderPreview()
     const int w = previewWidth();
     const int h = previewHeight();
     FC_LOG("shader graph preview: render " << w << "x" << h << " camera yaw "
-           << camera().yaw << " pitch " << camera().pitch << " dist " << camera().distance);
+           << camera().yaw << " pitch " << camera().pitch << " dist " << camera().distance
+           << " mode " << mode);
     if (w <= 0 || h <= 0)
         return;
     const std::string &xml = documentText();
-    Render::Renderer *renderer = nullptr;
-    View3DInventorViewer *viewer = nullptr;
-    if (xml.empty() || !findBackend(renderer, viewer)) {
+    View3DInventorViewer *viewer = findViewer();
+    Render::Renderer *renderer = viewer ? viewer->getExternalRenderer() : nullptr;
+    const bool traced = mode == 1 && tracer;
+    if (xml.empty() || !viewer || (!traced && !renderer)) {
         clearPreview();
         setCompiling(false);
         poll.stop();
         editor->requestFrame();
         return;
     }
+    updateScene(w, h);
+    if (traced)
+        renderTraced(w, h, viewer);
+    else
+        renderRaster(w, h, renderer, viewer);
+}
+
+void ShaderGraphHost::updateScene(int w, int h)
+{
     buildScene();
+    const std::string &xml = documentText();
     const char *surface = program->Surface.getValue();
     // The live values as parameters; the shader node's text is the live
     // document with its public inputs set back to the baseline's
@@ -413,29 +542,40 @@ void ShaderGraphHost::renderPreview()
     previewCamera->farDistance = distance + kSphereRadius * 2.0f;
     previewCamera->focalDistance = distance;
     previewCamera->aspectRatio = float(w) / float(h);
+}
 
-    // Coin scene -> render caches -> backend draws, as the shaded
-    // underlay's derived capture does (ShadedUnderlay.cpp,
+bool ShaderGraphHost::translateScene(int w, int h, Render::DrawCallList &draws)
+{
+    // Coin scene -> render caches -> the backend-neutral draw list, as
+    // the shaded underlay's derived capture does (ShadedUnderlay.cpp,
     // captureSceneViaBackend).
-    SoFCRenderCacheManager manager;
-    manager.traverse(root, SbViewportRegion(short(w), short(h)));
-    SoFCRenderCache *cache = manager.getSceneCache();
-    if (!cache) {
-        clearPreview();
-        editor->requestFrame();
-        return;
-    }
-    Render::DrawCallList draws = RendererBridge::translate(
-        cache->getVertexCaches(true), RendererBridge::SectionOnTop());
+    manager->traverse(root, SbViewportRegion(short(w), short(h)));
+    SoFCRenderCache *cache = manager->getSceneCache();
+    if (!cache)
+        return false;
+    draws = RendererBridge::translate(cache->getVertexCaches(true),
+                                      RendererBridge::SectionOnTop());
     FC_LOG("shader graph preview: " << draws.size() << " draws, params " << liveParams.size());
-    if (draws.empty() || !renderer->setCaptureScene(std::move(draws))) {
+    return !draws.empty();
+}
+
+void ShaderGraphHost::cameraMatrices(int w, int h, SbMatrix &view, SbMatrix &proj) const
+{
+    previewCamera->getViewVolume(float(w) / float(h)).getMatrices(view, proj);
+}
+
+void ShaderGraphHost::renderRaster(int w, int h, Render::Renderer *renderer,
+                                   View3DInventorViewer *viewer)
+{
+    Render::DrawCallList draws;
+    if (!translateScene(w, h, draws) || !renderer->setCaptureScene(std::move(draws))) {
         clearPreview();
         editor->requestFrame();
         return;
     }
 
     SbMatrix viewMat, projMat;
-    previewCamera->getViewVolume(float(w) / float(h)).getMatrices(viewMat, projMat);
+    cameraMatrices(w, h, viewMat, projMat);
     auto *glWidget = qobject_cast<QOpenGLWidget*>(viewer->viewport());
     if (!glWidget) {
         renderer->clearCaptureScene();
@@ -496,6 +636,109 @@ void ShaderGraphHost::renderPreview()
     else
         poll.stop();
     editor->requestFrame();
+}
+
+void ShaderGraphHost::renderTraced(int w, int h, View3DInventorViewer *viewer)
+{
+    // No shader compile to wait for on this path.
+    setCompiling(false);
+    poll.stop();
+
+    Render::Cycles::SceneInput input;
+    const QColor col = viewer->backgroundColor();
+    viewer->cyclesSceneConfig(input, col);
+    // The pane's background is the view's flat colour in both modes:
+    // the raster path clears its offscreen frame to it (the gradient
+    // the config feed states is the on-screen view's, drawn over the
+    // backend's frame there) and shows no sky behind the ball, so the
+    // traced film is left transparent where the environment would be
+    // seen and composites over the same colour -- a mode switch moves
+    // the sphere, not the pane.
+    input.pbr.envBackground = false;
+    input.background = Render::Background();
+    input.background.type = Render::Background::Flat;
+    input.background.fromColor = (uint32_t(col.red()) << 24) | (uint32_t(col.green()) << 16)
+        | (uint32_t(col.blue()) << 8) | 0xff;
+    SbMatrix viewMat, projMat;
+    cameraMatrices(w, h, viewMat, projMat);
+    std::memcpy(input.camera.view, viewMat.getValue(), sizeof(input.camera.view));
+    std::memcpy(input.camera.proj, projMat.getValue(), sizeof(input.camera.proj));
+    input.camera.width = w;
+    input.camera.height = h;
+
+    // What the tracer's shader is made of: a value drag is a new
+    // shader key on this path (the raster one only moves uniforms),
+    // so the parameter values are part of the signature.
+    std::string signature = fragment->sourceProgram.getValue().getString();
+    signature += '\n';
+    signature += fragment->sourceSurface.getValue().getString();
+    for (const auto &p : liveParams) {
+        signature += '\n';
+        signature += p.name;
+        signature.append(reinterpret_cast<const char *>(p.values.data()),
+                         p.values.size() * sizeof(float));
+    }
+    if (tracedInput && signature == tracedSignature && sameConfig(*tracedInput, input)) {
+        // The cheap path: a camera move restarts the sampling from the
+        // coarse divider, throttled by the session.
+        tracer->setCamera(input.camera);
+        return;
+    }
+    if (!translateScene(w, h, input.draws)) {
+        clearPreview();
+        editor->requestFrame();
+        return;
+    }
+    FC_LOG("shader graph preview: tracer scene " << input.draws.size() << " draws");
+    tracer->setScene(input);
+    tracedSignature = std::move(signature);
+    input.draws.clear();
+    tracedInput = std::make_unique<Render::Cycles::SceneInput>(std::move(input));
+    updateTracedStatus();
+    editor->requestFrame();
+}
+
+void ShaderGraphHost::takeTracedFrame()
+{
+    if (!tracer || !tracedInput)
+        return;
+    const bool managed = tracedInput->output.transform == Render::OutputConfig::SRGB;
+    const Render::Background &background = tracedInput->background;
+    std::vector<uint8_t> rgba;
+    int fw = 0;
+    int fh = 0;
+    const bool got = tracer->takeFrame([&](const void *px, int width, int height) {
+        // Premultiplied linear half4 over the view's background,
+        // encoded exactly when the scene is colour managed -- the
+        // bytes the raster readback holds -- bottom-up as
+        // setPreviewImage reads them. The frame is at the divider's
+        // size early in a render; the pane stretches it.
+        Render::Cycles::compositeFrame(px, width, height, background, managed, 4, false,
+                                       rgba);
+        fw = width;
+        fh = height;
+    });
+    if (got && !rgba.empty())
+        setPreviewImage(fw, fh, rgba.data());
+    updateTracedStatus();
+    editor->requestFrame();
+}
+
+void ShaderGraphHost::updateTracedStatus()
+{
+    if (!tracer)
+        return;
+    Render::Cycles::ViewportStatus st = tracer->status();
+    std::string text;
+    if (!st.error.empty())
+        text = "Path tracer: " + st.error;
+    else if (!st.running)
+        text = "Path tracing";
+    else if (st.status.empty())
+        text = "Path tracing " + std::to_string(int(st.progress * 100.0f)) + "%";
+    else
+        text = st.status;
+    setPreviewStatus(text);
 }
 
 #include "moc_ShaderGraphHost.cpp"

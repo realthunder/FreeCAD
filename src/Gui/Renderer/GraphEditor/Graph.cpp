@@ -2990,6 +2990,24 @@ void Graph::graphButtons()
             ImGui::EndMenu();
         }
 
+        // How the preview is rendered (docs/ShaderGraphEditor.md sec
+        // 15): the raster backend, or a path tracer when the host has
+        // one. One way only draws no menu.
+        const std::vector<std::string>& modes = _host ? _host->previewModes() : std::vector<std::string>();
+        if (modes.size() > 1 && ImGui::BeginMenu("Preview"))
+        {
+            const int current = _host->previewMode();
+            for (size_t i = 0; i < modes.size(); ++i)
+            {
+                const bool selected = int(i) == current;
+                if (ImGui::MenuItem(modes[i].c_str(), nullptr, selected) && !selected)
+                {
+                    _host->setPreviewMode(int(i));
+                }
+            }
+            ImGui::EndMenu();
+        }
+
         if (ImGui::Button("Help"))
         {
             ImGui::OpenPopup("Help");
@@ -3925,22 +3943,29 @@ void Graph::readOnlyPopup()
 void Graph::shaderPopup()
 {
     const bool compiling = _updatePending || _host->compiling();
-    if (compiling)
+    // The same corner note carries what the preview's renderer is
+    // doing when it has something to say (a path tracer's progress,
+    // docs/ShaderGraphEditor.md sec 15). A plain overlay window, not
+    // the popup the stock editor drew: an open popup blocks hovering of
+    // every other window and closes the menus, which a note that stays
+    // on screen for as long as a render mode does cannot afford -- the
+    // orbit drag and the menu bar went dead under it.
+    const std::string status = compiling ? std::string("Compiling Shaders") : _host->previewStatus();
+    if (status.empty())
     {
-        ImVec2 pos = ImGui::GetWindowPos();
-        ImGui::SetNextWindowPos(ImVec2(pos.x + 10, pos.y + ImGui::GetWindowHeight() - 40));
-        ImGui::SetNextWindowBgAlpha(80.f);
-        ImGui::OpenPopup("Shaders");
+        return;
     }
-    if (ImGui::BeginPopup("Shaders"))
+    ImVec2 pos = ImGui::GetWindowPos();
+    ImGui::SetNextWindowPos(ImVec2(pos.x + 10, pos.y + ImGui::GetWindowHeight() - 40));
+    ImGui::SetNextWindowBgAlpha(0.85f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoSavedSettings;
+    if (ImGui::Begin("##shaderStatus", nullptr, flags))
     {
-        ImGui::Text("Compiling Shaders");
-        if (!compiling)
-        {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
+        ImGui::TextUnformatted(status.c_str());
     }
+    ImGui::End();
 }
 
 void Graph::handleRenderViewInputs()

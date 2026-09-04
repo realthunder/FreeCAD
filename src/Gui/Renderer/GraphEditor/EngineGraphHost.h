@@ -87,6 +87,16 @@ public:
     }
     virtual std::string currentSurface() { return {}; }
     virtual void selectSurface(const std::string &) {}
+    /// How the preview is rendered, and a pick made in the editor's
+    /// Preview menu (GraphHost has the contract). The defaults state
+    /// one way of rendering with no name, so no menu is drawn.
+    virtual const std::vector<std::string> &previewModes()
+    {
+        static const std::vector<std::string> none;
+        return none;
+    }
+    virtual int previewMode() { return 0; }
+    virtual void setPreviewMode(int) {}
 
     // ---- what the platform half reads and writes
 
@@ -121,6 +131,10 @@ public:
     /// editor shows "Compiling Shaders" while true.
     void setCompiling(bool compiling);
     bool compiling() const;
+    /// What the preview's renderer is doing, shown under the pane while
+    /// non-empty (a path tracer's "Sample 64/256"); empty says nothing.
+    void setPreviewStatus(const std::string &status);
+    const std::string &previewStatus() const;
     /// Forget every thumbnail (the image set changed).
     void invalidateThumbnails();
 

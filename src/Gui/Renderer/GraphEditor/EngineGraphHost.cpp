@@ -100,6 +100,10 @@ public:
     const std::vector<std::string> &surfaceNames() override { return owner.surfaceNames(); }
     std::string currentSurface() override { return owner.currentSurface(); }
     void selectSurface(const std::string &name) override { owner.selectSurface(name); }
+    const std::vector<std::string> &previewModes() override { return owner.previewModes(); }
+    int previewMode() override { return owner.previewMode(); }
+    void setPreviewMode(int mode) override { owner.setPreviewMode(mode); }
+    std::string previewStatus() override { return owner.previewStatus(); }
 
 private:
     void textChanged(const ::MaterialX::DocumentPtr &doc);
@@ -123,6 +127,7 @@ struct EngineGraphHost::Private {
     int wantH = 0;
     Camera camera;
     bool compiling = false;
+    std::string status;
     /// The preview pane's drag: which button holds it and where the
     /// pointer last was.
     int dragButton = -1;
@@ -386,6 +391,16 @@ void EngineGraphHost::setCompiling(bool compiling)
 bool EngineGraphHost::compiling() const
 {
     return d->compiling;
+}
+
+void EngineGraphHost::setPreviewStatus(const std::string &status)
+{
+    d->status = status;
+}
+
+const std::string &EngineGraphHost::previewStatus() const
+{
+    return d->status;
 }
 
 void EngineGraphHost::invalidateThumbnails()
