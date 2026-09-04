@@ -30,6 +30,34 @@
 
 ## \addtogroup draftobjects
 # @{
+import FreeCAD as App
+
+
+def new_proxy(cls, *args, **kwargs):
+    """Allocate a scripted object's Proxy: in the sandbox guest when the
+    session routes there, natively otherwise.
+
+    The construction dispatch (docs/Sandbox.md 7.6, G1d).  A class
+    whose instances become an object's `Proxy` routes its `__new__`
+    here; with the sandbox routing preference on,
+    `FreeCAD.ExpressionSandbox.proxyConstruct` constructs the class in
+    the guest -- `__init__` runs there, its `obj.Proxy = self` installs
+    a host stand-in -- and returns that stand-in, which is not an
+    instance of `cls`, so Python skips the host `__init__`.  A class
+    made with no object (`Array(None)`, installed by
+    `addObject(..., attach=True)`) constructs there too; the object's
+    `attach` call reaches it through the stand-in.  In the guest
+    itself, and in a session that does not route, there is no
+    `ExpressionSandbox` answer and the instance is allocated natively.
+    Nothing else changes: the make_* functions keep calling
+    `Polygon(obj)`.
+    """
+    sandbox = getattr(App, "ExpressionSandbox", None)
+    if sandbox is not None:
+        inst = sandbox.proxyConstruct(cls, *args, **kwargs)
+        if inst is not None:
+            return inst
+    return object.__new__(cls)
 
 
 class DraftObject(object):
@@ -75,6 +103,9 @@ class DraftObject(object):
     This class attribute is accessible through the `Proxy` object:
     `obj.Proxy.Type`.
     """
+
+    def __new__(cls, *args, **kwargs):
+        return new_proxy(cls, *args, **kwargs)
 
     def __init__(self, obj, tp="Unknown"):
         # This class is assigned to the Proxy attribute

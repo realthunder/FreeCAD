@@ -337,6 +337,19 @@ Round trips NEST: a guest hook's `write_prop` runs the host's
 owner, flushes releases and performs a requested reset only at the
 outermost level; wasmtime enters the store through the CALLER's
 context while nested, the pyodide runtime arms the budget once).
+G1d (2026-09-04) added two host->guest ops and one value for the
+HOST's side of a Proxy: `proxy_get {id, n}` reads attribute `n` of the
+registered instance -- data comes back by value, a callable as
+`{"t":"gmethod", id, n}`, which decodes to a forwarder bound like a
+hook (calling it is a `proxy_call` with the object argument as owner);
+`proxy_set {id, n, v}` writes a VALUE (a host object would cross as a
+handle no transaction outlives, so the host refuses it with a
+TypeError before the trip).  The stand-in's `getattr` answers its own
+dict first (the hooks), refuses dunders and the hook names the
+descriptor did not list without a trip, and sends everything else as
+`proxy_get`, keeping a method it got back on the stand-in; its
+`setattr` is `proxy_set`.  `proxy_new` also takes `k` (kwargs): the
+construction dispatch (7.6, G1d) sends a class's real call.
 
 The fixed layout (2026-09-04, step 7 of the coding order): a bare
 `read_prop`/`get_attr` with a name -- 2738 of the 3575 hops in the
@@ -1247,14 +1260,78 @@ suite does not leave behind (its tests delete their objects), then
 the list already known: `ArchStairs`/`ArchReference` document-level
 writes, 193 `Proxy.<attr>` host reads; (2) the Polygon ULP question
 -- RESOLVED above (last-bit libm drift, gated at 4 ULP of the
-coordinate); (3) the stand-in `__getattr__` for host reads of `Proxy.Type` (39
-sites in Draft's make_*/utils, none in an `execute()`); (4) a Draft
-object MADE in a routed session still gets a host Proxy -- `make_*`
-runs on the host and constructs the class there -- so the routed
-session covers reopened documents today, not fresh ones: the
-construction dispatch (the `make_*` layer in the guest, or a host
-`draftobjects` shim that constructs through `proxy_new`) is the
-design question that decides "one switch = all Python in pyodide".
+coordinate); (3) the stand-in `__getattr__` for host reads of
+`Proxy.Type` -- BUILT below; (4) the construction dispatch -- SIZED
+AND BUILT below.
+
+**G1d, the construction dispatch, SIZED 2026-09-04.**  The fact: a
+Draft object MADE in a routed session got a host Proxy, because
+`make_polygon` runs on the host and `Polygon(obj)` there constructs
+the host class; only reopened documents routed.  Two designs were
+sized.  (B) The make layer in the guest -- the host's `Draft` module a
+facade, `make_*` running in the guest under the CALLER's principal:
+needs document-level writes for that principal (`addObject`, ruled
+undeclared for document principals; a user principal is a different
+ruling), `App.ActiveDocument` in the guest, handle-returning
+`addObject`, and the GuiUp tail of every `make_*` (view provider,
+`format_object`, `select`) split off to run on the host after the
+guest returns -- a rewrite of the make layer that belongs with G2's
+view providers, not before it.  (A) The class boundary -- every
+scripted object class's `__new__` asks the host whether the session
+routes, and if so constructs the class IN THE GUEST through
+`proxy_new` (`cls(*args, **kwargs)` there; its `obj.Proxy = self`
+installs the stand-in) and returns the stand-in, which is not an
+instance of the class, so Python skips the host `__init__`; the whole
+`__init__` runs in the guest, `make_*` is untouched and still calls
+`Polygon(obj)`.  The Draft App side has FIVE root classes
+(`DraftObject`, `DraftAnnotation`, `Layer`, `LayerContainer`,
+`WorkingPlaneProxy`); BIM adds `ArchIFC.IfcRoot` and a few plain
+classes when its wheel comes.  A generic hook without touching the
+roots does not exist: migrating the host instance at `obj.Proxy =
+self` (allocate in the guest, `loads(dumps())`) loses every attribute
+`__init__` sets AFTER that line, which is all of them (`self.Type =
+tp` follows it in `DraftObject`).  Cost per construction: one
+`proxy_new` plus the `__init__`'s own hops (addProperty writes), the
+same traffic G1c measured for a Wire.  (A) is built; (B) remains the
+route to "one switch" and supersedes (A) when the make layer moves.
+
+**BUILT the same day** (commit after `7b9b4bf224`):
+`FreeCAD.ExpressionSandbox.proxyConstruct(cls, *args, **kwargs)`
+(`constructGuestProxy` in `ExpressionGuestProxy.cpp`): None when the
+session does not route (the Evaluate preference alone, like the
+Restore route) or the call is a bare `cls.__new__(cls)` (copy, pickle,
+a native alloc) -- the class allocates natively; else the stand-in
+(a document object first argument is the owner, `Array(None)` has
+none: Draft's link arrays are installed by `addObject(..., attach=
+True)`, whose `attach` call reaches the guest as a method read off
+the stand-in; the guest registers the instance whether or not
+`__init__` installed it), or an error when the guest cannot serve the
+module or the class raised -- fail closed, as Restore does, never a
+native retry (running `__init__` a second time would repeat its side
+effects).  An extension added during `__init__` (WorkingPlaneProxy
+adds `Part::AttachExtensionPython` and calls `changeAttacherType` in
+the same breath) recomposes the guest proxy's class: `addExtension`
+is followed by an `ext` op that re-reads the object's extension
+facades.  `addExtension` and `changeAttacherType` joined the write
+family (neither was declared before; nothing in a recompute reaches
+them, construction does).
+`draftobjects.base.new_proxy(cls, *args, **kwargs)` wraps it for the
+five roots' `__new__`; the same source runs in the guest, where
+`FreeCAD` has no `ExpressionSandbox` and the class allocates natively.
+Host reads of Proxy attributes ride the stand-in's `getattr`/`setattr`
+(3.2: `proxy_get`/`proxy_set`, methods as forwarders, no trip for a
+dunder or an unlisted hook name); Draft reads `Proxy.Type` in 7 App-
+side sites and calls `Proxy.getMovableChildren`/`.transform`/`.execute`
+in a handful; Draft writes none, BIM writes 22 (`ifcfile`,
+`svgcache`, ...).  Gates: `guestProxyAttrsAndConstruct` (both
+runtimes: construction from a host class's `__new__`, reads by value,
+class attribute, AttributeError, a method forwarder with the object
+as owner, a write, a refused handle store, then a recompute through
+the guest Proxy; 9 proxy calls), and `draftTestObjectsBuiltRouted`
+(pyodide): the Draft test document BUILT with routing on -- every
+`make_*` on the host, every Proxy constructed in the guest -- against
+the native build, the same counts and the ULP bound as the reopen
+gate.
 
 ### 7.7 Decisions, numbered
 
@@ -1392,9 +1469,9 @@ Non-ASCII object names occur in real files.  Rig:
     --------------------------------------------  -----   ----------------------------------
     tests/src/App/ExpressionSecurity.cpp            11    catalog, hash, grant store
     tests/src/App/ExpressionSecurityRuntime.cpp      9    resolve, scopes, pending, audit
-    tests/src/App/ExpressionImageHost.cpp           62    acceptance 6, bench 6 (disabled),
-                                                          bridge 8, budget 4, eval 20 (the
-                                                          G1a, G1b and G1c gates among them),
+    tests/src/App/ExpressionImageHost.cpp           64    acceptance 6, bench 6 (disabled),
+                                                          bridge 8, budget 4, eval 22 (the
+                                                          G1a-G1d gates among them),
                                                           host 9, routing 9
     tests/src/App/ExpressionPyodide.cpp             10    layout, verify, scoping, offer
     src/Mod/Test/SandboxPyodide.py                   2    the offer end to end
@@ -1452,9 +1529,11 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    the same day; G1d OPENED the same day -- the Draft test document
    reopens routed with every Proxy a stand-in and every object
    recomputing (harness `scripts/sandbox-reopen-routed.py`, gate
-   `draftTestObjectsReopenRouted`); BIM, the Polygon ULP question,
-   `Proxy.<attr>` host reads and the construction dispatch remain
-   (7.6, "G1d SIZED AND OPENED").
+   `draftTestObjectsReopenRouted`); the Polygon ULP question answered
+   (libm, gated in ULPs), `Proxy.<attr>` host reads and the
+   construction dispatch BUILT the same day (gate
+   `draftTestObjectsBuiltRouted`: the whole Draft test document built
+   with routing on, 70/70 Proxies in the guest); BIM remains (7.6).
 2. **G2** -- U1 + U2 + U7: Draft and BIM register from the guest; the
    subset shim.  No dependency on G1; in parallel if hands allow.
 3. **Probe A** -- Coin and pivy to wasm: compile the Coin fork with emcc
@@ -1531,6 +1610,23 @@ sockets, any network for the reference image, a webview escape hatch.
   `calc()`'s non-inplace `OP_MOD` branch also calls
   `PyNumber_InPlaceRemainder`; `ObjectIdentifier::Component::del`
   falls through to an unconditional throw after a successful delete.
+- The facade generator's XML list is read at CONFIGURE time (both
+  guest trees and the main tree take their DEPENDS from
+  `--list-xmls`).  A file that joins `ANNOTATED_XMLS` after a tree was
+  configured is edited in vain: the table never regenerates, and the
+  symptom is the guest reporting `'FeaturePython' object has no
+  attribute 'changeAttacherType'` while the host table has it.  Since
+  2026-09-04 the generator is a `CMAKE_CONFIGURE_DEPENDS` of both, so
+  editing it reconfigures; before that, reconfigure by hand.
+- A guest proxy's class is composed from the object's extensions when
+  the handle is made.  An extension added by the guest itself
+  (`addExtension` inside `__init__`) is invisible to that class until
+  the `ext` op recomposes it -- which `addExtension` now does; any
+  other host-side path that adds an extension mid-transaction would
+  need the same.
+- The guest's `math` is the runtime's libm: cos/sin can round one ULP
+  from glibc (Polygon, 7.6).  Any gate that compares guest trig to
+  native must compare in ULPs, not bytes.
 
 ## 13. Known gaps and open questions
 

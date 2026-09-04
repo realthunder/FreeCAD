@@ -3300,6 +3300,208 @@ TEST_F(ExpressionImageEvalTest, draftWireRestoreInGuest)
 // ---- recomputing, every shape equal to the native re-execute (or
 // ---- within libm's last bit where trig runs in the guest) ----
 
+// ---- G1d: host reads and writes of a guest Proxy's attributes
+// ---- (proxy_get / proxy_set through the stand-in's getattr and
+// ---- setattr), and the construction dispatch: a class's __new__ ->
+// ---- proxyConstruct builds the instance in the guest ----
+
+TEST_F(ExpressionImageEvalTest, guestProxyAttrsAndConstruct)
+{
+    auto& host = ImageHost::instance();
+    // the same class on both sides, with the __new__ Draft's roots
+    // have: in the guest FreeCAD has no ExpressionSandbox, so the
+    // class allocates natively there; on the host it constructs in the
+    // guest when the session routes
+    const std::string source =
+        "import FreeCAD as App\n"
+        "class Probe:\n"
+        "    kind = 'probe'\n"
+        "    def __new__(cls, *args, **kwargs):\n"
+        "        sandbox = getattr(App, 'ExpressionSandbox', None)\n"
+        "        if sandbox is not None:\n"
+        "            inst = sandbox.proxyConstruct(cls, *args, **kwargs)\n"
+        "            if inst is not None:\n"
+        "                return inst\n"
+        "        return object.__new__(cls)\n"
+        "    def __init__(self, obj, tp='Probe'):\n"
+        "        obj.Proxy = self\n"
+        "        self.Type = tp\n"
+        "    def execute(self, obj):\n"
+        "        obj.Width = obj.Width + 1\n"
+        "    def describe(self, obj):\n"
+        "        return '%s:%s' % (self.Type, obj.Name)\n"
+        "    def dumps(self):\n"
+        "        return self.Type\n"
+        "    def loads(self, state):\n"
+        "        self.Type = state\n";
+    auto r = host.exec(source, "fcxattrs");
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    ASSERT_TRUE(hostModule("fcxattrs", source));
+    ASSERT_TRUE(hostModule(
+        "fcxattrsrig",
+        "import FreeCAD as App\n"
+        "from fcxattrs import Probe\n"
+        "S = App.ExpressionSandbox\n"
+        "def native(o):\n"
+        "    p = Probe(o, tp='Native')\n"
+        "    return '%s %s %s' % (S.proxyInfo(p) is None, p is o.Proxy, p.Type)\n"
+        "def routed(o):\n"
+        "    p = Probe(o, tp='Routed')\n"
+        "    out = [S.proxyInfo(p) is not None and p is o.Proxy]\n"
+        "    out.append(p.Type)\n"
+        "    out.append(p.kind)\n"
+        "    out.append(hasattr(p, 'nothing'))\n"
+        "    out.append(hasattr(p, 'mustExecute'))\n"
+        "    out.append(p.describe(o))\n"
+        "    p.Type = 'Changed'\n"
+        "    out.append(p.Type)\n"
+        "    try:\n"
+        "        p.Type = o\n"
+        "        out.append('stored a handle')\n"
+        "    except TypeError:\n"
+        "        out.append('TypeError')\n"
+        "    out.append(p.dumps())\n"
+        "    return ' '.join(str(x) for x in out)\n"));
+    auto param = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    struct Cleanup
+    {
+        ParameterGrp::handle param;
+        ~Cleanup()
+        {
+            param->RemoveBool("Evaluate");
+            dropHostModules({"fcxattrs", "fcxattrsrig"});
+        }
+    } cleanup {param};
+    const std::string objExpr =
+        "__import__('FreeCAD').getDocument('FcxEvalTest').getObject('";
+
+    // routing off: Probe(obj) is a native instance, __init__ ran here
+    std::string out;
+    param->SetBool("Evaluate", false);
+    ASSERT_TRUE(hostEvalStr("__import__('fcxattrsrig').native(" + objExpr + "Obj'))", out));
+    EXPECT_EQ(out, "True True Native");
+
+    // routing on: Probe(obj2) constructs in the guest -- the stand-in
+    // is what the expression got back and what the property holds;
+    // Type and the class attribute read through the guest; a missing
+    // attribute is an AttributeError (hasattr False); a hook the class
+    // lacks answers without a trip; a method read is a forwarder that
+    // crosses with the object as owner; a write lands in the guest; a
+    // document object cannot be stored there
+    App::DocumentObject* obj2 = doc->addObject("App::FeaturePython", "Obj2");
+    ASSERT_NE(obj2, nullptr);
+    auto width2 = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        obj2->addDynamicProperty("App::PropertyFloat", "Width"));
+    ASSERT_NE(width2, nullptr);
+    param->SetBool("Evaluate", true);
+    host.resetStats();
+    ASSERT_TRUE(hostEvalStr("__import__('fcxattrsrig').routed(" + objExpr + "Obj2'))", out));
+    EXPECT_EQ(out, "True Routed probe False False Routed:Obj2 Changed TypeError Changed");
+    auto st = host.stats();
+    // the construction, Type, kind, nothing, describe (read + call),
+    // Type (set + read), the refused set never crosses, dumps
+    EXPECT_EQ(st.proxyCalls, 9u) << "construction + reads + the call + the write + dumps";
+    std::cout << "guest Proxy attrs: proxy calls " << st.proxyCalls << ", host ops:";
+    for (const auto& [k, v] : st.hostOps)
+        std::cout << " " << k << "=" << v;
+    std::cout << ", bridge ops:";
+    for (const auto& [k, v] : st.ops)
+        std::cout << " " << k << "=" << v;
+    std::cout << std::endl;
+
+    // and it is a working Proxy: the recompute runs execute() in the guest
+    width2->setValue(1.0);
+    obj2->touch();
+    doc->recompute();
+    EXPECT_FALSE(obj2->isError());
+    EXPECT_DOUBLE_EQ(width2->getValue(), 2.0);
+    {
+        Base::PyGILStateLocker lock;
+        auto* proxyProp = Base::freecad_dynamic_cast<App::PropertyPythonObject>(
+            obj2->getPropertyByName("Proxy"));
+        ASSERT_NE(proxyProp, nullptr);
+        EXPECT_TRUE(App::ExpressionSandbox::isGuestProxy(proxyProp->getValue().ptr()));
+    }
+}
+
+/// The Draft test document rig shared by the reopen-routed and the
+/// built-routed gates: build it, snapshot a pass (proxy kind, shape
+/// hash, vertices, state per object), compare the routed pass to the
+/// native one.
+const char* const DraftObjsRig =
+    "import hashlib, json, math\n"
+    "import FreeCAD as App\n"
+    "from drafttests import draft_test_objects as dto\n"
+    "S = App.ExpressionSandbox\n"
+    "def build(path):\n"
+    "    doc = App.newDocument('FcxDraftObjs')\n"
+    "    dto._create_objects(doc)\n"
+    "    doc.recompute()\n"
+    "    doc.saveAs(path)\n"
+    "    App.closeDocument(doc.Name)\n"
+    "    return 'ok'\n"
+    "def sig(o):\n"
+    "    try:\n"
+    "        sh = o.Shape\n"
+    "    except Exception:\n"
+    "        return None\n"
+    "    if sh.isNull():\n"
+    "        return 'null'\n"
+    "    return hashlib.sha1(sh.exportBrepToString().encode()).hexdigest()\n"
+    "def verts(o):\n"
+    "    try:\n"
+    "        return sorted((v.X, v.Y, v.Z) for v in o.Shape.Vertexes)\n"
+    "    except Exception:\n"
+    "        return None\n"
+    "def proxy(o):\n"
+    "    p = getattr(o, 'Proxy', None)\n"
+    "    if p is None:\n"
+    "        return 'none'\n"
+    "    return 'guest' if S.proxyInfo(p) else 'host'\n"
+    "SNAP = {}\n"
+    "def pass_(path, routed):\n"
+    "    doc = App.openDocument(path)\n"
+    "    restored = {o.Name: proxy(o) for o in doc.Objects}\n"
+    "    for o in doc.Objects:\n"
+    "        o.touch()\n"
+    "    doc.recompute()\n"
+    "    SNAP[routed] = {o.Name: (restored[o.Name], sig(o), verts(o), 'Invalid' in o.State)\n"
+    "                    for o in doc.Objects}\n"
+    "    App.closeDocument(doc.Name)\n"
+    "    return 'ok'\n"
+    "def build_pass(routed):\n"
+    "    doc = App.newDocument('FcxDraftBuild')\n"
+    "    dto._create_objects(doc)\n"
+    "    doc.recompute()\n"
+    "    SNAP[routed] = {o.Name: (proxy(o), sig(o), verts(o), 'Invalid' in o.State)\n"
+    "                    for o in doc.Objects}\n"
+    "    App.closeDocument(doc.Name)\n"
+    "    return 'ok'\n"
+    "def compare():\n"
+    "    n, r = SNAP[False], SNAP[True]\n"
+    "    out = dict(objects=len(n), guest=0, host=0, none=0, invalid=[], differ=[], missing=[],\n"
+    "               hosts=[])\n"
+    "    for name, (pn, sn, vn, _) in n.items():\n"
+    "        if name not in r:\n"
+    "            out['missing'].append(name)\n"
+    "            continue\n"
+    "        pr, sr, vr, inv = r[name]\n"
+    "        if pn != 'none':\n"
+    "            out[pr] += 1\n"
+    "            if pr == 'host':\n"
+    "                out['hosts'].append(name)\n"
+    "        if inv:\n"
+    "            out['invalid'].append(name)\n"
+    "        if sn is not None and sn != sr:\n"
+    "            d = ulps = None\n"
+    "            if vn and vr and len(vn) == len(vr):\n"
+    "                d = max(abs(a - b) for pa, pb in zip(vn, vr) for a, b in zip(pa, pb))\n"
+    "                scale = max(abs(c) for p in vn + vr for c in p)\n"
+    "                ulps = d / math.ulp(scale) if scale else (0.0 if d == 0 else None)\n"
+    "            out['differ'].append([name, d, ulps])\n"
+    "    return json.dumps(out)\n";
+
 TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
 {
     auto& host = ImageHost::instance();
@@ -3342,68 +3544,7 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
         }
     } cleanup {param, path};
 
-    ASSERT_TRUE(hostModule(
-        "fcxobjs",
-        "import hashlib, json, math\n"
-        "import FreeCAD as App\n"
-        "from drafttests import draft_test_objects as dto\n"
-        "S = App.ExpressionSandbox\n"
-        "def build(path):\n"
-        "    doc = App.newDocument('FcxDraftObjs')\n"
-        "    dto._create_objects(doc)\n"
-        "    doc.recompute()\n"
-        "    doc.saveAs(path)\n"
-        "    App.closeDocument(doc.Name)\n"
-        "    return 'ok'\n"
-        "def sig(o):\n"
-        "    try:\n"
-        "        sh = o.Shape\n"
-        "    except Exception:\n"
-        "        return None\n"
-        "    if sh.isNull():\n"
-        "        return 'null'\n"
-        "    return hashlib.sha1(sh.exportBrepToString().encode()).hexdigest()\n"
-        "def verts(o):\n"
-        "    try:\n"
-        "        return sorted((v.X, v.Y, v.Z) for v in o.Shape.Vertexes)\n"
-        "    except Exception:\n"
-        "        return None\n"
-        "def proxy(o):\n"
-        "    p = getattr(o, 'Proxy', None)\n"
-        "    if p is None:\n"
-        "        return 'none'\n"
-        "    return 'guest' if S.proxyInfo(p) else 'host'\n"
-        "SNAP = {}\n"
-        "def pass_(path, routed):\n"
-        "    doc = App.openDocument(path)\n"
-        "    restored = {o.Name: proxy(o) for o in doc.Objects}\n"
-        "    for o in doc.Objects:\n"
-        "        o.touch()\n"
-        "    doc.recompute()\n"
-        "    SNAP[routed] = {o.Name: (restored[o.Name], sig(o), verts(o), 'Invalid' in o.State)\n"
-        "                    for o in doc.Objects}\n"
-        "    App.closeDocument(doc.Name)\n"
-        "    return 'ok'\n"
-        "def compare():\n"
-        "    n, r = SNAP[False], SNAP[True]\n"
-        "    out = dict(objects=len(n), guest=0, host=0, none=0, invalid=[], differ=[], missing=[])\n"
-        "    for name, (pn, sn, vn, _) in n.items():\n"
-        "        if name not in r:\n"
-        "            out['missing'].append(name)\n"
-        "            continue\n"
-        "        pr, sr, vr, inv = r[name]\n"
-        "        if pn != 'none':\n"
-        "            out[pr] += 1\n"
-        "        if inv:\n"
-        "            out['invalid'].append(name)\n"
-        "        if sn is not None and sn != sr:\n"
-        "            d = ulps = None\n"
-        "            if vn and vr and len(vn) == len(vr):\n"
-        "                d = max(abs(a - b) for pa, pb in zip(vn, vr) for a, b in zip(pa, pb))\n"
-        "                scale = max(abs(c) for p in vn + vr for c in p)\n"
-        "                ulps = d / math.ulp(scale) if scale else (0.0 if d == 0 else None)\n"
-        "            out['differ'].append([name, d, ulps])\n"
-        "    return json.dumps(out)\n"));
+    ASSERT_TRUE(hostModule("fcxobjs", DraftObjsRig));
     std::string ok;
     ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').build(" + json(path).dump() + ")", ok));
     ASSERT_EQ(ok, "ok");
@@ -3418,14 +3559,18 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
     json j = json::parse(summary);
     std::cout << "Draft test document reopened routed: " << j["objects"] << " objects, proxies guest "
               << j["guest"] << " host " << j["host"] << " none " << j["none"] << "; proxy calls "
-              << st.proxyCalls << "; bridge ops:";
+              << st.proxyCalls << " (";
+    for (const auto& [k, v] : st.hostOps)
+        std::cout << " " << k << "=" << v;
+    std::cout << " ); bridge ops:";
     for (const auto& [k, v] : st.ops)
         std::cout << " " << k << "=" << v;
     std::cout << "\n  invalid: " << j["invalid"].dump() << "\n  differ: " << j["differ"].dump()
               << std::endl;
     EXPECT_GE(j["objects"].get<int>(), 60);
     EXPECT_GE(j["guest"].get<int>(), 60) << "every restored Proxy must be a stand-in";
-    EXPECT_EQ(j["host"].get<int>(), 0) << "no Proxy may be imported on the host with routing on";
+    EXPECT_EQ(j["host"].get<int>(), 0) << "no Proxy may be imported on the host with routing on: "
+                                       << j["hosts"].dump();
     EXPECT_EQ(j["none"].get<int>(), 0) << "every saved Proxy module must be served by the guest";
     EXPECT_TRUE(j["missing"].empty()) << j["missing"].dump();
     EXPECT_TRUE(j["invalid"].empty()) << "objects failing to recompute in the guest: "
@@ -3446,5 +3591,75 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
             EXPECT_LE(d[2].get<double>(), 4.0)
                 << d[0] << ": " << d[2] << " ULPs of the largest coordinate (delta " << d[1]
                 << "), more than a last-bit libm difference";
+    }
+}
+
+// ---- G1d, the construction dispatch: the Draft test document BUILT
+// ---- in a routed session -- every make_* runs on the host, every
+// ---- class's __new__ constructs its Proxy in the guest -- against
+// ---- the same document built natively ----
+
+TEST_F(ExpressionImageEvalTest, draftTestObjectsBuiltRouted)
+{
+    auto& host = ImageHost::instance();
+    if (host.runtime() != "pyodide")
+        GTEST_SKIP() << "bundled wheels load on the pyodide runtime only";
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* m = PyImport_ImportModule("drafttests.draft_test_objects");
+        if (!m) {
+            PyErr_Clear();
+            GTEST_SKIP() << "drafttests is not importable on the host in this test binary";
+        }
+        Py_DECREF(m);
+    }
+    auto param = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    struct Cleanup
+    {
+        ParameterGrp::handle param;
+        ~Cleanup()
+        {
+            param->RemoveBool("Evaluate");
+            dropHostModules({"fcxobjs"});
+        }
+    } cleanup {param};
+    ASSERT_TRUE(hostModule("fcxobjs", DraftObjsRig));
+    std::string ok;
+    param->SetBool("Evaluate", false);
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').build_pass(False)", ok));
+    ASSERT_EQ(ok, "ok");
+    param->SetBool("Evaluate", true);
+    host.resetStats();
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').build_pass(True)", ok));
+    ASSERT_EQ(ok, "ok");
+    auto st = host.stats();
+    std::string summary;
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').compare()", summary));
+    json j = json::parse(summary);
+    std::cout << "Draft test document built routed: " << j["objects"] << " objects, proxies guest "
+              << j["guest"] << " host " << j["host"] << " none " << j["none"] << "; proxy calls "
+              << st.proxyCalls << " (";
+    for (const auto& [k, v] : st.hostOps)
+        std::cout << " " << k << "=" << v;
+    std::cout << " ); bridge ops:";
+    for (const auto& [k, v] : st.ops)
+        std::cout << " " << k << "=" << v;
+    std::cout << "\n  invalid: " << j["invalid"].dump() << "\n  differ: " << j["differ"].dump()
+              << std::endl;
+    EXPECT_GE(j["objects"].get<int>(), 60);
+    EXPECT_GE(j["guest"].get<int>(), 60) << "every Proxy made in a routed session must be a stand-in";
+    EXPECT_EQ(j["host"].get<int>(), 0) << "no Proxy may be constructed on the host with routing on: "
+                                       << j["hosts"].dump();
+    EXPECT_EQ(j["none"].get<int>(), 0);
+    EXPECT_TRUE(j["missing"].empty()) << j["missing"].dump();
+    EXPECT_TRUE(j["invalid"].empty()) << "objects failing to recompute in the guest: "
+                                      << j["invalid"].dump();
+    for (const auto& d : j["differ"]) {
+        ASSERT_TRUE(d.is_array() && d.size() == 3);
+        EXPECT_TRUE(d[2].is_number()) << d[0] << ": shapes differ in structure, not in rounding";
+        if (d[2].is_number())
+            EXPECT_LE(d[2].get<double>(), 4.0)
+                << d[0] << ": " << d[2] << " ULPs of the largest coordinate (delta " << d[1] << ")";
     }
 }

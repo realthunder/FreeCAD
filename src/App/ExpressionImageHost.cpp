@@ -160,6 +160,8 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     std::size_t proxyCalls = 0;
     /// guest->host ops by wire name (ImageHost::stats)
     std::map<std::string, std::size_t> ops;
+    /// host->guest ops by wire name (ImageHost::stats)
+    std::map<std::string, std::size_t> hostOps;
 
     /// host->guest calls in flight; 2 or more = nested inside a bridge op
     int depth = 0;
@@ -399,6 +401,57 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         }
         return true;
     }
+
+    /** The tail every proxy op shares (proxyNew/proxyCall/proxyGet/
+     * proxySet): `fill` builds the request inside the transaction, so
+     * the handles it mints belong to it, and may refuse by setting the
+     * result's error; the reply's value or error becomes the result.
+     * Caller holds the mutex.
+     */
+    template<class Fill>
+    ImageResult proxyRoundTrip(const App::DocumentObject* owner, Fill fill)
+    {
+        ImageResult res;
+        if (!initialize()) {
+            res.excType = "ImageUnavailable";
+            res.message = "expression sandbox image is not available";
+            return res;
+        }
+        Base::PyGILStateLocker lock;
+        PyObject* ownerPy = nullptr;
+        if (owner) {
+            // the same PyObject the hook's first argument exports as a
+            // handle, so the write gate's identity check holds;
+            // borrowed, the object keeps its Python face
+            ownerPy = const_cast<App::DocumentObject*>(owner)->getPyObject();
+            Py_DECREF(ownerPy);
+        }
+        Transaction tx(*this, ownerPy);
+        ExpressionSecurity::Runtime::Scope secScope(owner);
+        json req;
+        if (!fill(req, res))
+            return res;  // refused before the trip: not a call
+        ++proxyCalls;
+        ++hostOps[req["op"].get<std::string>()];
+        attachDrops(req);
+        json reply;
+        if (!roundTrip(json::to_cbor(req), reply)) {
+            requestReset();
+            res.excType = "ImageTrapped";
+            res.message = "image call failed, instance dropped";
+            return res;
+        }
+        res.ok = reply.value("ok", false);
+        if (res.ok) {
+            auto val = reply.find("val");
+            res.value = json::to_cbor(val != reply.end() ? *val : json());
+        }
+        else {
+            res.excType = reply.value("exc", "Exception");
+            res.message = reply.value("msg", "");
+        }
+        return res;
+    }
 };
 
 ImageHost::ImageHost()
@@ -486,6 +539,7 @@ ImageHost::Stats ImageHost::stats() const
     s.handles = d->handles.created();
     s.proxyCalls = d->proxyCalls;
     s.ops = d->ops;
+    s.hostOps = d->hostOps;
     return s;
 }
 
@@ -495,6 +549,7 @@ void ImageHost::resetStats()
     d->evals = 0;
     d->proxyCalls = 0;
     d->ops.clear();
+    d->hostOps.clear();
     d->handles.resetCreated();
 }
 
@@ -567,6 +622,7 @@ ImageResult ImageHost::eval(const std::string& source,
     }
     Private::Transaction tx(*d, ownerPy);
     ++d->evals;
+    ++d->hostOps["eval"];
     json req;
     req["op"] = "eval";
     req["src"] = source;
@@ -617,6 +673,7 @@ ImageResult ImageHost::exec(const std::string& source, const std::string& module
     Private::Transaction tx(*d, nullptr);
     json req;
     req["op"] = "exec";
+    ++d->hostOps["exec"];
     req["src"] = source;
     if (!module.empty())
         req["module"] = module;
@@ -698,6 +755,7 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
     // once its Python face is exported into the pack
     Private::Transaction tx(*d, nullptr);
     ++d->evals;
+    ++d->hostOps["eval"];
     json req;
     req["op"] = "eval";
     req["lang"] = "expr";
@@ -857,53 +915,58 @@ json encodeArgs(HandleTable& table, PyObject* args)
 
 }  // namespace
 
+namespace
+{
+
+/// Whether a wire value carries a handle anywhere inside it.
+bool carriesHandle(const json& v)
+{
+    if (v.is_object()) {
+        auto t = v.find(FcxWire::TagKey);
+        if (t != v.end() && t->is_string() && t->get_ref<const std::string&>() == FcxWire::TagHandle)
+            return true;
+        for (const auto& item : v)
+            if (carriesHandle(item))
+                return true;
+    }
+    else if (v.is_array()) {
+        for (const auto& item : v)
+            if (carriesHandle(item))
+                return true;
+    }
+    return false;
+}
+
+}  // namespace
+
 ImageResult ImageHost::proxyNew(const std::string& module,
                                 const std::string& cls,
                                 PyObject* args,
                                 bool alloc,
                                 const App::DocumentObject* owner)
 {
+    return proxyNew(module, cls, args, nullptr, alloc, owner);
+}
+
+ImageResult ImageHost::proxyNew(const std::string& module,
+                                const std::string& cls,
+                                PyObject* args,
+                                PyObject* kwargs,
+                                bool alloc,
+                                const App::DocumentObject* owner)
+{
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
-    ImageResult res;
-    if (!d->initialize()) {
-        res.excType = "ImageUnavailable";
-        res.message = "expression sandbox image is not available";
-        return res;
-    }
-    Base::PyGILStateLocker lock;
-    PyObject* ownerPy = nullptr;
-    if (owner) {
-        ownerPy = const_cast<App::DocumentObject*>(owner)->getPyObject();
-        Py_DECREF(ownerPy);  // borrowed: the object keeps its Python face
-    }
-    Private::Transaction tx(*d, ownerPy);
-    ExpressionSecurity::Runtime::Scope secScope(owner);
-    ++d->proxyCalls;
-    json req;
-    req["op"] = FcxWire::OpProxyNew;
-    req["mod"] = module;
-    req["cls"] = cls;
-    req["a"] = encodeArgs(d->handles, args);
-    if (alloc)
-        req["alloc"] = true;
-    d->attachDrops(req);
-    json reply;
-    if (!d->roundTrip(json::to_cbor(req), reply)) {
-        d->requestReset();
-        res.excType = "ImageTrapped";
-        res.message = "image call failed, instance dropped";
-        return res;
-    }
-    res.ok = reply.value("ok", false);
-    if (res.ok) {
-        auto val = reply.find("val");
-        res.value = json::to_cbor(val != reply.end() ? *val : json());
-    }
-    else {
-        res.excType = reply.value("exc", "Exception");
-        res.message = reply.value("msg", "");
-    }
-    return res;
+    return d->proxyRoundTrip(owner, [&](json& req, ImageResult&) {
+        req["op"] = FcxWire::OpProxyNew;
+        req["mod"] = module;
+        req["cls"] = cls;
+        req["a"] = encodeArgs(d->handles, args);
+        if (kwargs && PyDict_Check(kwargs) && PyDict_Size(kwargs) > 0)
+            req["k"] = encodeHostValue(d->handles, kwargs);
+        if (alloc)
+            req["alloc"] = true;
+        return true;
+    });
 }
 
 ImageResult ImageHost::proxyCall(uint64_t id,
@@ -913,48 +976,47 @@ ImageResult ImageHost::proxyCall(uint64_t id,
                                  const App::DocumentObject* owner)
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
-    ImageResult res;
-    if (!d->initialize()) {
-        res.excType = "ImageUnavailable";
-        res.message = "expression sandbox image is not available";
-        return res;
-    }
-    Base::PyGILStateLocker lock;
-    PyObject* ownerPy = nullptr;
-    if (owner) {
-        // the same PyObject the hook's first argument exports as a
-        // handle, so the write gate's identity check holds
-        ownerPy = const_cast<App::DocumentObject*>(owner)->getPyObject();
-        Py_DECREF(ownerPy);
-    }
-    Private::Transaction tx(*d, ownerPy);
-    ExpressionSecurity::Runtime::Scope secScope(owner);
-    ++d->proxyCalls;
-    json req;
-    req["op"] = FcxWire::OpProxyCall;
-    req["id"] = id;
-    req["m"] = hook;
-    req["a"] = encodeArgs(d->handles, args);
-    if (kwargs && PyDict_Check(kwargs) && PyDict_Size(kwargs) > 0)
-        req["k"] = encodeHostValue(d->handles, kwargs);
-    d->attachDrops(req);
-    json reply;
-    if (!d->roundTrip(json::to_cbor(req), reply)) {
-        d->requestReset();
-        res.excType = "ImageTrapped";
-        res.message = "image call failed, instance dropped";
-        return res;
-    }
-    res.ok = reply.value("ok", false);
-    if (res.ok) {
-        auto val = reply.find("val");
-        res.value = json::to_cbor(val != reply.end() ? *val : json());
-    }
-    else {
-        res.excType = reply.value("exc", "Exception");
-        res.message = reply.value("msg", "");
-    }
-    return res;
+    return d->proxyRoundTrip(owner, [&](json& req, ImageResult&) {
+        req["op"] = FcxWire::OpProxyCall;
+        req["id"] = id;
+        req["m"] = hook;
+        req["a"] = encodeArgs(d->handles, args);
+        if (kwargs && PyDict_Check(kwargs) && PyDict_Size(kwargs) > 0)
+            req["k"] = encodeHostValue(d->handles, kwargs);
+        return true;
+    });
+}
+
+ImageResult ImageHost::proxyGet(uint64_t id, const std::string& name)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    return d->proxyRoundTrip(nullptr, [&](json& req, ImageResult&) {
+        req["op"] = FcxWire::OpProxyGet;
+        req["id"] = id;
+        req["n"] = name;
+        return true;
+    });
+}
+
+ImageResult ImageHost::proxySet(uint64_t id, const std::string& name, PyObject* value)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    return d->proxyRoundTrip(nullptr, [&](json& req, ImageResult& res) {
+        json v = encodeHostValue(d->handles, value);
+        if (carriesHandle(v)) {
+            // the handle dies with this transaction; the guest would
+            // keep a reference to nothing
+            res.excType = "TypeError";
+            res.message = "only a value can be stored on a guest Proxy from the host, not a "
+                          + std::string(Py_TYPE(value)->tp_name) + " (attribute '" + name + "')";
+            return false;
+        }
+        req["op"] = FcxWire::OpProxySet;
+        req["id"] = id;
+        req["n"] = name;
+        req["v"] = std::move(v);
+        return true;
+    });
 }
 
 void ImageHost::dropProxy(uint64_t id)

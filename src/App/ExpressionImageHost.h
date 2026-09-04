@@ -154,8 +154,8 @@ public:
      * `cls(*args)` there -- `obj.Proxy = self` inside it crosses as
      * write_prop and installs the host stand-in (ExpressionGuestProxy.h)
      * -- or, with `alloc`, only allocates the instance (the Restore
-     * path); the value is the stand-in (decodeResult), or None when the
-     * class never installed itself.  proxyCall runs hook `hook` of
+     * path); the value is the stand-in (decodeResult), registered
+     * whether or not __init__ installed it.  proxyCall runs hook `hook` of
      * proxy `id` with the host arguments (a document object crosses as
      * a handle) and returns its result by value; it is what a stand-in's
      * hook attributes do.  `owner` is the object the guest may write.
@@ -168,11 +168,30 @@ public:
                          PyObject* args,
                          bool alloc,
                          const App::DocumentObject* owner);
+    /// The same with keyword arguments (`kwargs` may be nullptr).
+    ImageResult proxyNew(const std::string& module,
+                         const std::string& cls,
+                         PyObject* args,
+                         PyObject* kwargs,
+                         bool alloc,
+                         const App::DocumentObject* owner);
     ImageResult proxyCall(uint64_t id,
                           const std::string& hook,
                           PyObject* args,
                           PyObject* kwargs,
                           const App::DocumentObject* owner);
+    /** A host read or write of a guest proxy's attribute (G1d: Draft's
+     * `get_type` reads `obj.Proxy.Type`, BIM writes `Proxy.svgcache`).
+     * proxyGet answers the value by value, or a forwarder bound to
+     * (id, name) when the attribute is callable (FcxWire::TagGuestMethod
+     * decodes to it); the guest's AttributeError comes back as one.
+     * proxySet stores a VALUE: a host object would cross as a handle
+     * that no transaction outlives, so it is refused before the trip
+     * (TypeError).  Neither has an owner: nothing the guest does inside
+     * a getter may write a document object.
+     */
+    ImageResult proxyGet(uint64_t id, const std::string& name);
+    ImageResult proxySet(uint64_t id, const std::string& name, PyObject* value);
     /// A stand-in died: the guest drops the proxy with the next request.
     void dropProxy(uint64_t id);
 
@@ -216,9 +235,12 @@ public:
     {
         std::size_t evals = 0;
         std::size_t handles = 0;
-        /// host->guest Proxy hook calls (proxyNew and proxyCall)
+        /// host->guest Proxy ops (proxyNew, proxyCall, proxyGet, proxySet)
         std::size_t proxyCalls = 0;
+        /// guest->host bridge ops by wire name
         std::map<std::string, std::size_t> ops;
+        /// host->guest ops by wire name (eval, exec, proxy_*)
+        std::map<std::string, std::size_t> hostOps;
     };
     Stats stats() const;
     void resetStats();

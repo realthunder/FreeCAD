@@ -499,6 +499,16 @@ static json valueReply(PyObject *result)
     return reply;
 }
 
+/// The "k" kwargs map decoded, an empty dict when absent; nullptr with
+/// a Python error on a malformed value.
+static PyObject *decodeKwargs(const json &req)
+{
+    auto k = req.find("k");
+    if (k != req.end() && k->is_object())
+        return FcxImage::decodeValue(*k);
+    return PyDict_New();
+}
+
 static json dispatchProxyNew(const json &req)
 {
     const std::string mod = req.value("mod", "");
@@ -511,9 +521,51 @@ static json dispatchProxyNew(const json &req)
     PyObject *args = decodeArgs(req, "a");
     if (!args)
         return errorReply();
-    PyObject *result = PyObject_CallFunction(fn, "ssOO", mod.c_str(), cls.c_str(), args,
+    PyObject *kwargs = decodeKwargs(req);
+    if (!kwargs) {
+        Py_DECREF(args);
+        return errorReply();
+    }
+    PyObject *result = PyObject_CallFunction(fn, "ssOOO", mod.c_str(), cls.c_str(), args, kwargs,
                                              req.value("alloc", false) ? Py_True : Py_False);
     Py_DECREF(args);
+    Py_DECREF(kwargs);
+    if (!result)
+        return errorReply();
+    json reply = valueReply(result);
+    Py_DECREF(result);
+    return reply;
+}
+
+/// proxy_get / proxy_set: a host read or write of a proxy attribute.
+static json dispatchProxyAttr(const json &req, bool set)
+{
+    auto id = req.find("id");
+    const std::string name = req.value("n", "");
+    if (id == req.end() || !id->is_number_integer() || name.empty())
+        return protocolError(set ? "proxy_set without id/n" : "proxy_get without id/n");
+    PyObject *fn = FcxImage::preludeFunction(set ? "_proxy_setattr" : "_proxy_attr");
+    if (!fn)
+        return errorReply();
+    PyObject *result = nullptr;
+    if (set) {
+        auto v = req.find("v");
+        PyObject *value = nullptr;
+        if (v != req.end())
+            value = FcxImage::decodeValue(*v);
+        else {
+            value = Py_None;
+            Py_INCREF(value);
+        }
+        if (!value)
+            return errorReply();
+        result = PyObject_CallFunction(fn, "KsO", (unsigned long long)id->get<uint64_t>(),
+                                       name.c_str(), value);
+        Py_DECREF(value);
+    }
+    else
+        result = PyObject_CallFunction(fn, "Ks", (unsigned long long)id->get<uint64_t>(),
+                                       name.c_str());
     if (!result)
         return errorReply();
     json reply = valueReply(result);
@@ -533,17 +585,11 @@ static json dispatchProxyCall(const json &req)
     PyObject *args = decodeArgs(req, "a");
     if (!args)
         return errorReply();
-    PyObject *kwargs = nullptr;
-    auto k = req.find("k");
-    if (k != req.end() && k->is_object()) {
-        kwargs = FcxImage::decodeValue(*k);
-        if (!kwargs) {
-            Py_DECREF(args);
-            return errorReply();
-        }
+    PyObject *kwargs = decodeKwargs(req);
+    if (!kwargs) {
+        Py_DECREF(args);
+        return errorReply();
     }
-    else
-        kwargs = PyDict_New();
     PyObject *result = PyObject_CallFunction(fn, "KsOO", (unsigned long long)id->get<uint64_t>(),
                                              member.c_str(), args, kwargs);
     Py_DECREF(args);
@@ -585,6 +631,10 @@ json dispatch(const json &req)
         reply = dispatchProxyNew(req);
     else if (op->get_ref<const std::string &>() == FcxWire::OpProxyCall)
         reply = dispatchProxyCall(req);
+    else if (op->get_ref<const std::string &>() == FcxWire::OpProxyGet)
+        reply = dispatchProxyAttr(req, false);
+    else if (op->get_ref<const std::string &>() == FcxWire::OpProxySet)
+        reply = dispatchProxyAttr(req, true);
     else
         reply = protocolError("unknown op");
     if (PyErr_Occurred())

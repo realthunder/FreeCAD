@@ -190,6 +190,9 @@ if(BUILD_EXPR_IMAGE_HOST)
     endif()
     string(REPLACE "\n" ";" _fcx_annotated_xmls "${_fcx_annotated_xmls}")
     list(TRANSFORM _fcx_annotated_xmls PREPEND ${CMAKE_SOURCE_DIR}/)
+    # A grown ANNOTATED_XMLS must reconfigure, or the new XML's edits
+    # never regenerate the table (see ImageSources.cmake).
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${FCX_SANDBOX_GEN})
     add_custom_command(
         OUTPUT ${FCX_DISPATCH_INC}
         COMMAND ${PYTHON_EXECUTABLE} ${FCX_SANDBOX_GEN} --host-out ${FCX_DISPATCH_INC}

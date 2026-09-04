@@ -594,6 +594,13 @@ PyObject* decodeHostValue(const HandleTable& table, const json& v)
         // reply): the host stand-in, one per guest proxy
         return makeGuestProxy(v);
     }
+    else if (t == FcxWire::TagGuestMethod) {
+        // a callable attribute read from a guest proxy: a forwarder
+        auto id = v.find("id");
+        auto n = v.find("n");
+        if (id != v.end() && id->is_number_integer() && n != v.end() && n->is_string())
+            return makeGuestMethod(id->get<uint64_t>(), n->get<std::string>());
+    }
 bad:
     PyErr_SetString(PyExc_ValueError, "malformed typed wire value");
     return nullptr;
@@ -1045,7 +1052,8 @@ json dispatchHostOp(HandleTable& table, const json& req)
             // the document, so the owner-only gate applies.
             static const char* const writeFamily[] = {
                 "addProperty", "removeProperty", "setPropertyStatus", "setEditorMode",
-                "setGroupOfProperty", "recompute", "configLinkProperty", "setLink"};
+                "setGroupOfProperty", "recompute", "configLinkProperty", "setLink",
+                "addExtension", "changeAttacherType"};
             for (const char* w : writeFamily) {
                 if (member == w) {
                     json denied = writeGate(w);
@@ -1108,6 +1116,9 @@ json dispatchHostOp(HandleTable& table, const json& req)
                 return pyErrorReply();
             return encodeResult(table, s);
         }
+
+        if (op == FcxWire::OpExt)
+            return okReply(extensionFacadeKeys(base));
 
         if (op == FcxWire::OpLen) {
             if (!PyDict_Check(base) && !PyList_Check(base)

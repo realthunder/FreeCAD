@@ -21,12 +21,14 @@
 #include "PreCompiled.h"
 
 #include <cstddef>
+#include <cstring>
 #include <string>
 #include <unordered_map>
 
 #include <Base/Interpreter.h>
 
 #include "DocumentObjectPy.h"
+#include "ExpressionEvaluator.h"
 #include "ExpressionGuestProxy.h"
 #include "ExpressionImageHost.h"
 
@@ -139,6 +141,101 @@ PyMethodDef HookDef = {"hook", reinterpret_cast<PyCFunction>(reinterpret_cast<vo
                        METH_VARARGS | METH_KEYWORDS,
                        "A guest proxy hook: forwards to the Proxy living in the sandbox guest."};
 
+/// A forwarder bound to (id, name): what a hook attribute is, and what
+/// a callable attribute read through the guest becomes.
+PyObject* makeForwarder(uint64_t id, const char* name)
+{
+    PyObject* binding = Py_BuildValue("(Ks)", static_cast<unsigned long long>(id), name);
+    PyObject* fwd = binding ? PyCFunction_NewEx(&HookDef, binding, nullptr) : nullptr;
+    Py_XDECREF(binding);
+    return fwd;
+}
+
+bool isForwarder(PyObject* obj)
+{
+    return obj && PyCFunction_Check(obj)
+        && PyCFunction_GET_FUNCTION(obj)
+            == reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(hookCall));
+}
+
+/// Attribute read (G1d, docs/Sandbox.md 7.6): what the stand-in holds
+/// itself -- its hooks, the class attributes -- answers at once; any
+/// other name is the guest instance's, read through proxy_get.  A
+/// dunder never crosses: Python probes them by the dozen (copy,
+/// pickle, repr) and a Proxy defines none the host needs.  A method
+/// read once is kept as a forwarder on the stand-in, so `hasattr`
+/// followed by the call is one trip, not two; data is read every
+/// time, since the guest instance may change it.
+/// The hook names FeaturePythonImp probes on every Proxy (the guest
+/// prelude's HOOKS, kept in step): a hook the descriptor did not list
+/// is one the class does not define, answered without a trip.
+bool isHookName(const char* attr)
+{
+    static const char* const hooks[] = {
+        "execute", "mustExecute", "skipRecompute", "onBeforeChange", "onBeforeChangeLabel",
+        "onChanged", "onDocumentRestored", "unsetupObject", "getViewProviderName",
+        "getSubObject", "getSubObjects", "getLinkedObject", "canLinkProperties",
+        "allowDuplicateLabel", "redirectSubName", "canLoadPartial", "hasChildElement",
+        "isElementVisible", "isElementVisibleEx", "setElementVisible", "getElementMapVersion",
+        "editProperty", "dumps", "loads"};
+    for (const char* h : hooks)
+        if (std::strcmp(h, attr) == 0)
+            return true;
+    return false;
+}
+
+PyObject* guestProxyGetAttr(PyObject* self, PyObject* name)
+{
+    PyObject* value = PyObject_GenericGetAttr(self, name);
+    if (value || !PyErr_ExceptionMatches(PyExc_AttributeError))
+        return value;
+    auto* o = reinterpret_cast<GuestProxyObject*>(self);
+    const char* attr = PyUnicode_Check(name) ? PyUnicode_AsUTF8(name) : nullptr;
+    if (!attr || o->id == 0 || (attr[0] == '_' && attr[1] == '_') || isHookName(attr))
+        return nullptr;
+    PyErr_Clear();
+    ImageResult r = ImageHost::instance().proxyGet(o->id, attr);
+    if (!r.ok) {
+        raiseGuestError(r);
+        return nullptr;
+    }
+    value = ImageHost::instance().decodeResult(r);
+    if (!value) {
+        if (!PyErr_Occurred())
+            PyErr_Format(PyExc_RuntimeError, "guest proxy attribute '%s' is not transferable", attr);
+        return nullptr;
+    }
+    if (isForwarder(value) && PyObject_GenericSetAttr(self, name, value) != 0)
+        PyErr_Clear();
+    return value;
+}
+
+/// Attribute write: the guest instance's, through proxy_set (a value
+/// only; a host object would be a handle no transaction outlives).
+/// The stand-in's own dict is written by makeGuestProxy alone.
+int guestProxySetAttr(PyObject* self, PyObject* name, PyObject* value)
+{
+    auto* o = reinterpret_cast<GuestProxyObject*>(self);
+    const char* attr = PyUnicode_Check(name) ? PyUnicode_AsUTF8(name) : nullptr;
+    if (!attr)
+        return -1;
+    if (o->id == 0)
+        return PyObject_GenericSetAttr(self, name, value);
+    if (!value) {
+        PyErr_Format(PyExc_AttributeError, "cannot delete attribute '%s' of a guest proxy", attr);
+        return -1;
+    }
+    ImageResult r = ImageHost::instance().proxySet(o->id, attr, value);
+    if (!r.ok) {
+        raiseGuestError(r);
+        return -1;
+    }
+    // a forwarder cached by a read is now shadowed by the guest's value
+    if (PyObject_GenericSetAttr(self, name, nullptr) != 0)
+        PyErr_Clear();
+    return 0;
+}
+
 PyMemberDef GuestProxyMembers[] = {
     {"__dictoffset__", Py_T_PYSSIZET, offsetof(GuestProxyObject, dict), Py_READONLY, nullptr},
     {nullptr, 0, 0, 0, nullptr},
@@ -147,8 +244,8 @@ PyMemberDef GuestProxyMembers[] = {
 PyType_Slot GuestProxySlots[] = {
     {Py_tp_dealloc, reinterpret_cast<void*>(guestProxyDealloc)},
     {Py_tp_repr, reinterpret_cast<void*>(guestProxyRepr)},
-    {Py_tp_getattro, reinterpret_cast<void*>(PyObject_GenericGetAttr)},
-    {Py_tp_setattro, reinterpret_cast<void*>(PyObject_GenericSetAttr)},
+    {Py_tp_getattro, reinterpret_cast<void*>(guestProxyGetAttr)},
+    {Py_tp_setattro, reinterpret_cast<void*>(guestProxySetAttr)},
     {Py_tp_members, GuestProxyMembers},
     {Py_tp_new, reinterpret_cast<void*>(PyType_GenericNew)},
     {Py_tp_doc, const_cast<char*>("Stand-in for a scripted object's Proxy that lives in the"
@@ -218,19 +315,19 @@ PyObject* makeGuestProxy(const json& desc)
     if (!inst)
         return nullptr;
     auto* o = reinterpret_cast<GuestProxyObject*>(inst);
-    o->id = id->get<uint64_t>();
-    live[o->id] = inst;
+    const uint64_t pid = id->get<uint64_t>();
+    // the hooks go into the stand-in's own dict (id still 0: the
+    // setattr slot forwards to the guest once it is bound)
     auto hooks = desc.find("hooks");
     if (hooks != desc.end() && hooks->is_array()) {
         for (const auto& h : *hooks) {
             if (!h.is_string())
                 continue;
             const std::string& name = h.get_ref<const std::string&>();
-            PyObject* binding = Py_BuildValue("(Ks)", static_cast<unsigned long long>(o->id),
-                                              name.c_str());
-            PyObject* fwd = binding ? PyCFunction_NewEx(&HookDef, binding, nullptr) : nullptr;
-            Py_XDECREF(binding);
-            int rc = fwd ? PyObject_SetAttrString(inst, name.c_str(), fwd) : -1;
+            PyObject* fwd = makeForwarder(pid, name.c_str());
+            PyObject* key = fwd ? PyUnicode_FromString(name.c_str()) : nullptr;
+            int rc = key ? PyObject_GenericSetAttr(inst, key, fwd) : -1;
+            Py_XDECREF(key);
             Py_XDECREF(fwd);
             if (rc != 0) {
                 Py_DECREF(inst);
@@ -238,7 +335,63 @@ PyObject* makeGuestProxy(const json& desc)
             }
         }
     }
+    o->id = pid;
+    live[o->id] = inst;
     return inst;
+}
+
+PyObject* makeGuestMethod(uint64_t id, const std::string& name)
+{
+    return makeForwarder(id, name.c_str());
+}
+
+PyObject* constructGuestProxy(PyObject* cls, PyObject* args, PyObject* kwargs)
+{
+    if (!proxyRestoreRouted())
+        Py_RETURN_NONE;
+    if (!cls || !PyType_Check(cls)) {
+        PyErr_SetString(PyExc_TypeError, "constructGuestProxy: a class is required");
+        return nullptr;
+    }
+    // `cls.__new__(cls)` alone -- copy, pickle, a native alloc -- is
+    // no construction: native.  A first argument that is a document
+    // object is the owner __init__ may write; None (Draft's
+    // `Array(None)`, installed later by addObject(attach=True)) or
+    // anything else constructs with no owner.
+    if (!args || !PyTuple_Check(args) || PyTuple_GET_SIZE(args) == 0)
+        Py_RETURN_NONE;
+    PyObject* first = PyTuple_GET_ITEM(args, 0);
+    const App::DocumentObject* owner = PyObject_TypeCheck(first, &DocumentObjectPy::Type)
+        ? static_cast<DocumentObjectPy*>(first)->getDocumentObjectPtr()
+        : nullptr;
+    PyObject* mod = PyObject_GetAttrString(cls, "__module__");
+    PyObject* qual = PyObject_GetAttrString(cls, "__qualname__");
+    std::string module = mod && PyUnicode_Check(mod) ? PyUnicode_AsUTF8(mod) : "";
+    std::string name = qual && PyUnicode_Check(qual) ? PyUnicode_AsUTF8(qual) : "";
+    Py_XDECREF(mod);
+    Py_XDECREF(qual);
+    if (module.empty() || name.empty()) {
+        if (!PyErr_Occurred())
+            PyErr_SetString(PyExc_TypeError, "constructGuestProxy: the class has no module or name");
+        return nullptr;
+    }
+    ImageResult r = ImageHost::instance().proxyNew(module, name, args, kwargs, false, owner);
+    if (!r.ok) {
+        raiseGuestError(r);
+        return nullptr;
+    }
+    PyObject* standIn = ImageHost::instance().decodeResult(r);
+    if (!standIn)
+        return nullptr;
+    if (!isGuestProxy(standIn)) {
+        // never a native fallback: the guest ran __init__, and running
+        // it again on the host would repeat its side effects
+        Py_DECREF(standIn);
+        PyErr_Format(PyExc_RuntimeError, "guest construction of %s.%s returned no proxy",
+                     module.c_str(), name.c_str());
+        return nullptr;
+    }
+    return standIn;
 }
 
 bool isGuestProxy(PyObject* obj)

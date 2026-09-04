@@ -99,6 +99,11 @@ function(fcx_add_facades_command)
     endif()
     string(REPLACE "\n" ";" _fcx_annotated_xmls "${_fcx_annotated_xmls}")
     list(TRANSFORM _fcx_annotated_xmls PREPEND ${_fcx_root}/)
+    # The list lives in the generator: when an XML joins ANNOTATED_XMLS
+    # the configure must run again, or the new file's edits never
+    # regenerate the table (a guest tree sat on a stale DEPENDS list
+    # through two annotations, 2026-09-04).
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${gen})
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/FcxFacades.inc
         COMMAND Python3::Interpreter ${gen} --image-out ${CMAKE_CURRENT_BINARY_DIR}/FcxFacades.inc

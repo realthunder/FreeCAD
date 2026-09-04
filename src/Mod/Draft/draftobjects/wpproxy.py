@@ -33,11 +33,15 @@
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
+from draftobjects.base import new_proxy
 from draftutils import gui_utils
 
 
 class WorkingPlaneProxy:
     """The Draft working plane proxy object"""
+
+    def __new__(cls, *args, **kwargs):
+        return new_proxy(cls, *args, **kwargs)
 
     def __init__(self, obj):
         obj.Proxy = self

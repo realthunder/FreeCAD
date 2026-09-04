@@ -81,6 +81,29 @@ AppExport PyObject* restoreGuestProxy(const std::string& module,
                                       const std::string& cls,
                                       const App::DocumentObject* owner);
 
+/** The construction dispatch (docs/Sandbox.md 7.6 G1d): a scripted
+ * object class's host `__new__` calls this with the class and the
+ * constructor arguments.  With routing on (the Evaluate preference)
+ * and at least one argument, the class is constructed IN THE GUEST
+ * (`proxy_new`: `cls(*args, **kwargs)` there; a document object first
+ * argument is the owner its `obj.Proxy = self` installs the stand-in
+ * on, None -- Draft's `Array(None)`, installed later by
+ * addObject(attach=True) -- constructs with no owner) and the stand-in
+ * is returned -- not an instance of `cls`, so Python skips the host
+ * `__init__`.  None (new reference) when the construction is native:
+ * routing off, or a bare `cls.__new__(cls)` (copy, pickle, a native
+ * alloc).  nullptr with a Python error when the guest cannot construct
+ * it (the module is not served, the class raised) -- fail closed, the
+ * same as the Restore route.  Caller holds the GIL.
+ */
+AppExport PyObject* constructGuestProxy(PyObject* cls, PyObject* args, PyObject* kwargs);
+
+/** A forwarder bound to guest proxy `id`'s callable attribute `name`
+ * (FcxWire::TagGuestMethod): calling it is a proxy_call, the object
+ * among the arguments the owner.  New reference.
+ */
+AppExport PyObject* makeGuestMethod(uint64_t id, const std::string& name);
+
 }  // namespace ExpressionSandbox
 }  // namespace App
 

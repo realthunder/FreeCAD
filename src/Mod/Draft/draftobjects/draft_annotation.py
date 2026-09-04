@@ -40,6 +40,7 @@ through Coin (pivy).
 
 ## \addtogroup draftobjects
 # @{
+from draftobjects.base import new_proxy
 from draftutils.messages import _log
 
 
@@ -54,6 +55,9 @@ class DraftAnnotation(object):
     Label
     Text
     """
+
+    def __new__(cls, *args, **kwargs):
+        return new_proxy(cls, *args, **kwargs)
 
     def onDocumentRestored(self, obj):
         """Execute code when the document is restored.

@@ -38,7 +38,7 @@ namespace FcxImage
 static const char ProxyPrelude[] =
     "import _fcx\n"
     "class HostHandle:\n"
-    "    __slots__ = ('_id', '_ty')\n"
+    "    __slots__ = ('_id', '_ty', '_fc')\n"
     "    def __repr__(self):\n"
     "        return '<HostHandle %s #%d>' % (self._ty, self._id)\n"
     "    def __getattr__(self, name):\n"
@@ -46,7 +46,7 @@ static const char ProxyPrelude[] =
     "            raise AttributeError(name)\n"
     "        return _fcx.op('read_prop', self._id, name)\n"
     "    def __setattr__(self, name, value):\n"
-    "        if name in HostHandle.__slots__:\n"
+    "        if name in HostHandle.__slots__ or name == '__class__':\n"
     "            object.__setattr__(self, name, value)\n"
     "        else:\n"
     // `obj.Proxy = self` (DraftObject.__init__): the instance stays
@@ -73,8 +73,16 @@ static const char ProxyPrelude[] =
     "        return _fcx.op('get_attr', self._id, name)\n"
     "    return property(get)\n"
     "def _method(name):\n"
-    "    def call(self, *args, **kw):\n"
-    "        return _fcx.op('call', self._id, name, args, kw)\n"
+    "    if name == 'addExtension':\n"
+    // the object's extensions changed under the proxy: recompose
+    // its class from the facades the host now reports (FcxWire OpExt)
+    "        def call(self, *args, **kw):\n"
+    "            r = _fcx.op('call', self._id, name, args, kw)\n"
+    "            self.__class__ = _composed(self._fc, tuple(_fcx.op('ext', self._id)))\n"
+    "            return r\n"
+    "    else:\n"
+    "        def call(self, *args, **kw):\n"
+    "            return _fcx.op('call', self._id, name, args, kw)\n"
     "    call.__name__ = name\n"
     "    return call\n"
     // The module facades (generated MODULES): a module object per
@@ -200,7 +208,7 @@ static const char ProxyPrelude[] =
     "        inst = PROXIES.pop(pid, None)\n"
     "        if inst is not None:\n"
     "            PROXY_IDS.pop(id(inst), None)\n"
-    "def _proxy_new(mod, cls, args, alloc):\n"
+    "def _proxy_new(mod, cls, args, kw, alloc):\n"
     // no importlib: the WASI stdlib slice does not carry it
     "    klass = __import__(mod)\n"
     "    for part in mod.split('.')[1:]:\n"
@@ -209,10 +217,20 @@ static const char ProxyPrelude[] =
     "        klass = getattr(klass, part)\n"
     "    if alloc:\n"
     "        return _proxy_register(klass.__new__(klass))\n"
-    "    inst = klass(*args)\n"
-    "    if PROXY_IDS.get(id(inst)) is None:\n"
-    "        return None\n"
-    "    return _proxy_register(inst)\n"
+    // registered whether or not __init__ did `obj.Proxy = self`: the
+    // instance is the VALUE of `cls(...)` on the host, and Draft's
+    // `Array(None)` is installed later by addObject(..., attach=True)
+    "    return _proxy_register(klass(*args, **kw))\n"
+    // A host read of a Proxy attribute (proxy_get): data by value, a
+    // method as a descriptor the host binds into a forwarder.  A class
+    // object is data (Draft never reads one, but `callable` says yes).
+    "def _proxy_attr(pid, name):\n"
+    "    value = getattr(_proxy_get(pid), name)\n"
+    "    if callable(value) and not isinstance(value, type):\n"
+    "        return {'t': 'gmethod', 'id': pid, 'n': name}\n"
+    "    return value\n"
+    "def _proxy_setattr(pid, name, value):\n"
+    "    setattr(_proxy_get(pid), name, value)\n"
     "def _proxy_call(pid, m, args, kw):\n"
     "    inst = _proxy_get(pid)\n"
     "    fn = getattr(inst, m, None)\n"
@@ -464,12 +482,16 @@ PyObject* decodeValue(const json& v)
             PyObject* pid = PyLong_FromUnsignedLongLong(id->get<uint64_t>());
             PyObject* pty = PyUnicode_FromString(
                 ty->get_ref<const std::string&>().c_str());
-            int rc = (pid && pty) ? PyObject_SetAttrString(inst, "_id", pid)
-                                  : -1;
+            PyObject* pfc = fcKey ? PyUnicode_FromString(fcKey) : (Py_INCREF(Py_None), Py_None);
+            int rc = (pid && pty && pfc) ? PyObject_SetAttrString(inst, "_id", pid)
+                                         : -1;
             if (rc == 0)
                 rc = PyObject_SetAttrString(inst, "_ty", pty);
+            if (rc == 0)
+                rc = PyObject_SetAttrString(inst, "_fc", pfc);
             Py_XDECREF(pid);
             Py_XDECREF(pty);
+            Py_XDECREF(pfc);
             if (rc != 0) {
                 Py_DECREF(inst);
                 return nullptr;

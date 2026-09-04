@@ -36,17 +36,29 @@ inline const char* const OpEval = "eval";
 inline const char* const OpExec = "exec";
 // Rung 2 (docs/Sandbox.md 7.6, G1c): a scripted object's Proxy lives in
 // the guest and the host holds a stand-in in the Proxy property.
-// {op:"proxy_new", mod, cls, a:[args], alloc?, owner_h?}: import `mod`,
-// call `cls(*args)` -- or only `cls.__new__(cls)` with alloc, the
-// Restore path -- and reply with the proxy's descriptor (TagGuestProxy
-// below), or null when the class never installed itself as a Proxy.
+// {op:"proxy_new", mod, cls, a:[args], k?, alloc?, owner_h?}: import
+// `mod`, call `cls(*args, **k)` -- or only `cls.__new__(cls)` with
+// alloc, the Restore path -- and reply with the proxy's descriptor
+// (TagGuestProxy below); the instance is registered whether or not
+// `__init__` installed it as a Proxy (Draft's `Array(None)` is
+// installed by addObject(attach=True), which then reads `attach` off
+// the stand-in).  The construction dispatch (docs/Sandbox.md 7.6 G1d)
+// is this op from a class's host `__new__`.
 // {op:"proxy_call", id, m, a:[args], k?, owner_h?}: call hook `m` of the
 // registered proxy `id` with the decoded args (the object rides as a
 // handle, exactly the native `execute(self, obj)` signature) and reply
-// with the result by value.  Any host->guest request may carry
-// "pd":[ids], proxies whose host stand-in died: the guest drops them.
+// with the result by value.
+// {op:"proxy_get", id, n}: a host read of attribute `n` of proxy `id`
+// (Draft's get_type reads `obj.Proxy.Type`): the value by value, or
+// TagGuestMethod when it is callable -- the host binds a forwarder as
+// it does for a hook.  {op:"proxy_set", id, n, v}: a host write of it;
+// `v` is a value, never a handle (a handle outlives no transaction).
+// Any host->guest request may carry "pd":[ids], proxies whose host
+// stand-in died: the guest drops them.
 inline const char* const OpProxyNew = "proxy_new";
 inline const char* const OpProxyCall = "proxy_call";
+inline const char* const OpProxyGet = "proxy_get";
+inline const char* const OpProxySet = "proxy_set";
 
 // ops, image -> host (mid-eval bridge).  Request fields: "h" = handle
 // id (uint64), "a" = wire-encoded op argument (attr/prop name string
@@ -59,6 +71,12 @@ inline const char* const OpGetAttr = "get_attr";
 inline const char* const OpCall = "call";
 inline const char* const OpGetItem = "get_item";
 inline const char* const OpLen = "len";
+// {op:"ext", h}: the facade keys of the object's extensions NOW -- what
+// the handle's "ext" carried when it was made, re-read after the guest
+// called addExtension on it (WorkingPlaneProxy.__init__ adds the
+// attach extension and calls changeAttacherType in the same breath),
+// so the guest recomposes the proxy's class.
+inline const char* const OpExt = "ext";
 // release: "h" one id, or "a" an array of ids.  In practice releases
 // never cross as an op: a proxy's __del__ queues its id and the queue
 // rides as "r" (an array of ids) on the next guest->host request or on
@@ -141,6 +159,11 @@ inline const char* const TagType = "ty";
 // class defines, plus dumps/loads).  Host -> guest (a Proxy read, an
 // argument): {"t":"gproxy", "id":N} resolves to the registered instance.
 inline const char* const TagGuestProxy = "gproxy";
+// A callable attribute of a guest proxy, the reply to a proxy_get
+// whose value is a method: {"t":"gmethod", "id":N, "n":"name"} -- the
+// host binds it into a forwarder (proxy_call on the read), the same
+// object a hook attribute is.
+inline const char* const TagGuestMethod = "gmethod";
 // A tuple is NOT a list: the expression engine hands tuples to Enum
 // properties and to tuple(), and collapsing them to lists on the wire
 // loses type identity the same way bool-as-long would (Phase 0 sec

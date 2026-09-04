@@ -19,6 +19,7 @@
       <Documentation>
         <UserDocu>Adds an extension to the object. Requires the string identifier for the python extension as argument</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="hasExtension" Const="true">
       <Documentation>

@@ -155,18 +155,32 @@ PyObject* statsFunc(PyObject*, PyObject*)
     bool ok = true;
 #ifdef FC_EXPR_IMAGE_HOST
     ExpressionSandbox::ImageHost::Stats s = ExpressionSandbox::ImageHost::instance().stats();
-    ok = put(dict, "evals", PyLong_FromSize_t(s.evals))
-        && put(dict, "handles", PyLong_FromSize_t(s.handles));
-    for (const auto& [name, count] : s.ops)
-        ok = ok && put(ops, name.c_str(), PyLong_FromSize_t(count));
-#else
-    ok = put(dict, "evals", PyLong_FromLong(0)) && put(dict, "handles", PyLong_FromLong(0));
-#endif
-    if (!ok || PyDict_SetItemString(dict, "ops", ops) != 0) {
+    PyObject* hostOps = PyDict_New();
+    if (!hostOps) {
         Py_DECREF(ops);
         Py_DECREF(dict);
         return nullptr;
     }
+    ok = put(dict, "evals", PyLong_FromSize_t(s.evals))
+        && put(dict, "handles", PyLong_FromSize_t(s.handles))
+        && put(dict, "proxy_calls", PyLong_FromSize_t(s.proxyCalls));
+    for (const auto& [name, count] : s.ops)
+        ok = ok && put(ops, name.c_str(), PyLong_FromSize_t(count));
+    for (const auto& [name, count] : s.hostOps)
+        ok = ok && put(hostOps, name.c_str(), PyLong_FromSize_t(count));
+#else
+    PyObject* hostOps = PyDict_New();
+    ok = hostOps && put(dict, "evals", PyLong_FromLong(0)) && put(dict, "handles", PyLong_FromLong(0))
+        && put(dict, "proxy_calls", PyLong_FromLong(0));
+#endif
+    if (!ok || PyDict_SetItemString(dict, "ops", ops) != 0
+            || PyDict_SetItemString(dict, "host_ops", hostOps) != 0) {
+        Py_XDECREF(hostOps);
+        Py_DECREF(ops);
+        Py_DECREF(dict);
+        return nullptr;
+    }
+    Py_DECREF(hostOps);
     Py_DECREF(ops);
     return dict;
 }
@@ -223,7 +237,7 @@ PyObject* resetFunc(PyObject*, PyObject*)
 // ---- rung 2 (docs/Sandbox.md 7.6, G1c): a scripted object's Proxy in
 // the guest.  proxyNew(module, class, *args) constructs it there -- the
 // class's `obj.Proxy = self` installs the host stand-in -- and returns
-// the stand-in (None when the class never installed itself);
+// the stand-in (registered whether or not the class installed itself);
 // proxyInfo(proxy) describes a stand-in.
 
 PyObject* proxyNewFunc(PyObject*, PyObject* args)
@@ -258,6 +272,26 @@ PyObject* proxyNewFunc(PyObject*, PyObject* args)
     (void)args;
     PyErr_SetString(PyExc_RuntimeError, "this build has no sandbox host");
     return nullptr;
+#endif
+}
+
+PyObject* proxyConstructFunc(PyObject*, PyObject* args, PyObject* kwargs)
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    if (PyTuple_GET_SIZE(args) < 1 || !PyType_Check(PyTuple_GET_ITEM(args, 0))) {
+        PyErr_SetString(PyExc_TypeError, "proxyConstruct(cls, *args, **kwargs)");
+        return nullptr;
+    }
+    PyObject* rest = PyTuple_GetSlice(args, 1, PyTuple_GET_SIZE(args));
+    if (!rest)
+        return nullptr;
+    PyObject* value = ExpressionSandbox::constructGuestProxy(PyTuple_GET_ITEM(args, 0), rest, kwargs);
+    Py_DECREF(rest);
+    return value;
+#else
+    (void)args;
+    (void)kwargs;
+    Py_RETURN_NONE;
 #endif
 }
 
@@ -383,15 +417,25 @@ PyMethodDef Methods[] = {
      "evalCount() -> int -- evaluations that have crossed into the image."},
     {"stats", statsFunc, METH_NOARGS,
      "stats() -> dict -- bridge traffic since startup or resetStats():"
-     " {'evals': n, 'handles': n minted, 'ops': {wire op name: count}}."
+     " {'evals': n, 'handles': n minted, 'proxy_calls': n, 'ops': {guest->host"
+     " wire op: count}, 'host_ops': {host->guest wire op: count}}."
      "  How many guest->host hops (read_prop, get_attr, call, get_item,"
      " len, release, pkg.missing) a workload really makes; what prices a"
      " snapshot op before one is designed."},
     {"proxyNew", proxyNewFunc, METH_VARARGS,
-     "proxyNew(module, class, *args) -> stand-in | None -- construct a"
+     "proxyNew(module, class, *args) -> stand-in -- construct a"
      " scripted object's Proxy IN THE SANDBOX GUEST (rung 2): the class's"
      " `obj.Proxy = self` installs the returned stand-in, whose hooks"
-     " (execute, onChanged, ...) forward to the guest."},
+     " (execute, onChanged, ...) forward to the guest; a class that"
+     " does not install itself still returns its stand-in."},
+    {"proxyConstruct", reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(proxyConstructFunc)),
+     METH_VARARGS | METH_KEYWORDS,
+     "proxyConstruct(cls, *args, **kwargs) -> stand-in | None -- the"
+     " construction dispatch a scripted object class's __new__ calls:"
+     " with routing on and a document object as the first argument the"
+     " class is constructed in the sandbox guest and its stand-in is"
+     " returned (Python then skips the host __init__); None means"
+     " construct natively.  Raises when the guest cannot construct it."},
     {"proxyInfo", proxyInfoFunc, METH_VARARGS,
      "proxyInfo(proxy) -> {'id', 'module', 'class'} | None -- describe a"
      " guest Proxy stand-in; None for any other object."},

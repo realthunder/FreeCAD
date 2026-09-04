@@ -30,6 +30,7 @@ typename: string. The following are accepted so far:
 'Attacher::AttachEngineLine'
 'Attacher::AttachEnginePoint'</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="initBaseProperties">
       <Documentation>
