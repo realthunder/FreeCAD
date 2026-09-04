@@ -34,6 +34,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -159,6 +160,24 @@ public:
     /// Diagnostics, and how a test proves an evaluation really was
     /// routed rather than answered in-process.
     std::size_t evalCount() const;
+
+    /** Bridge traffic since startup or resetStats(): evaluations,
+     * handles minted (pack exports and reply values alike), and every
+     * guest->host op by its wire name (read_prop, get_attr, call,
+     * get_item, len, release, pkg.missing).  This is what prices a
+     * workload's crossing -- how many hops a Draft or Arch execute()
+     * really makes on handles -- before any snapshot op is designed
+     * (docs/Sandbox.md sec 8.1).  Exposed as
+     * FreeCAD.ExpressionSandbox.stats().
+     */
+    struct Stats
+    {
+        std::size_t evals = 0;
+        std::size_t handles = 0;
+        std::map<std::string, std::size_t> ops;
+    };
+    Stats stats() const;
+    void resetStats();
 
     /** Raw protocol call: a CBOR request in, the CBOR reply out, with
      * no host-side parsing, packing or result re-encoding.  Diagnostics

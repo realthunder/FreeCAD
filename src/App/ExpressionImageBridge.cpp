@@ -141,6 +141,7 @@ uint64_t HandleTable::add(PyObject* obj)
     Py_INCREF(obj);
     uint64_t id = nextId++;
     objects[id] = obj;
+    ++minted;
     return id;
 }
 

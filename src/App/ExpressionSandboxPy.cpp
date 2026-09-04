@@ -134,6 +134,50 @@ PyObject* evalCountFunc(PyObject*, PyObject*)
 #endif
 }
 
+PyObject* statsFunc(PyObject*, PyObject*)
+{
+    PyObject* dict = PyDict_New();
+    if (!dict)
+        return nullptr;
+    PyObject* ops = PyDict_New();
+    if (!ops) {
+        Py_DECREF(dict);
+        return nullptr;
+    }
+    auto put = [](PyObject* target, const char* key, PyObject* value) {
+        if (!value)
+            return false;
+        int rc = PyDict_SetItemString(target, key, value);
+        Py_DECREF(value);
+        return rc == 0;
+    };
+    bool ok = true;
+#ifdef FC_EXPR_IMAGE_HOST
+    ExpressionSandbox::ImageHost::Stats s = ExpressionSandbox::ImageHost::instance().stats();
+    ok = put(dict, "evals", PyLong_FromSize_t(s.evals))
+        && put(dict, "handles", PyLong_FromSize_t(s.handles));
+    for (const auto& [name, count] : s.ops)
+        ok = ok && put(ops, name.c_str(), PyLong_FromSize_t(count));
+#else
+    ok = put(dict, "evals", PyLong_FromLong(0)) && put(dict, "handles", PyLong_FromLong(0));
+#endif
+    if (!ok || PyDict_SetItemString(dict, "ops", ops) != 0) {
+        Py_DECREF(ops);
+        Py_DECREF(dict);
+        return nullptr;
+    }
+    Py_DECREF(ops);
+    return dict;
+}
+
+PyObject* resetStatsFunc(PyObject*, PyObject*)
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    ExpressionSandbox::ImageHost::instance().resetStats();
+#endif
+    Py_RETURN_NONE;
+}
+
 PyObject* availableFunc(PyObject*, PyObject*)
 {
 #ifdef FC_EXPR_IMAGE_HOST
@@ -273,6 +317,14 @@ PyMethodDef Methods[] = {
      " of the compatibility gate."},
     {"evalCount", evalCountFunc, METH_NOARGS,
      "evalCount() -> int -- evaluations that have crossed into the image."},
+    {"stats", statsFunc, METH_NOARGS,
+     "stats() -> dict -- bridge traffic since startup or resetStats():"
+     " {'evals': n, 'handles': n minted, 'ops': {wire op name: count}}."
+     "  How many guest->host hops (read_prop, get_attr, call, get_item,"
+     " len, release, pkg.missing) a workload really makes; what prices a"
+     " snapshot op before one is designed."},
+    {"resetStats", resetStatsFunc, METH_NOARGS,
+     "resetStats() -- zero the stats() counters (handles stay live)."},
     {"reset", resetFunc, METH_NOARGS,
      "reset() -- drop the live sandbox instance; the next evaluation starts"
      " a fresh one (after installing a package, so the guest boots with it)."},

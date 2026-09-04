@@ -123,12 +123,23 @@ public:
     {
         return objects.size();
     }
+    /// Handles minted since construction or resetCreated(): pack
+    /// exports and reply values alike (ImageHost::stats()).
+    std::size_t created() const
+    {
+        return minted;
+    }
+    void resetCreated()
+    {
+        minted = 0;
+    }
 
 private:
     std::unordered_map<uint64_t, PyObject*> objects;
     std::vector<uint64_t> deferred;
     bool defer = false;
     uint64_t nextId = 1;
+    std::size_t minted = 0;
 };
 
 /** Host Python object -> wire value.  Objects outside the by-value set

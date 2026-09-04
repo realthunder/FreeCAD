@@ -155,6 +155,8 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     // image->host bridge state: the live handles of the transaction
     HandleTable handles;
     std::size_t evals = 0;
+    /// guest->host ops by wire name (ImageHost::stats)
+    std::map<std::string, std::size_t> ops;
 
     void teardown()
     {
@@ -185,6 +187,7 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         json reply;
         try {
             json req = json::from_cbor(data, data + len);
+            ++ops[req.is_object() ? req.value("op", std::string("?")) : std::string("?")];
             reply = dispatchHostOp(handles, req);
         }
         catch (const std::exception& e) {
@@ -370,6 +373,24 @@ std::size_t ImageHost::handleCount() const
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     return d->handles.size();
+}
+
+ImageHost::Stats ImageHost::stats() const
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    Stats s;
+    s.evals = d->evals;
+    s.handles = d->handles.created();
+    s.ops = d->ops;
+    return s;
+}
+
+void ImageHost::resetStats()
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    d->evals = 0;
+    d->ops.clear();
+    d->handles.resetCreated();
 }
 
 void ImageHost::reset()

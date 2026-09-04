@@ -567,6 +567,49 @@ protected:
     }
 };
 
+TEST_F(ExpressionImageEvalTest, bridgeCountersPerOp)
+{
+    // stats(): evaluations, handles minted, and every guest->host op by
+    // wire name -- the instrument that prices a workload's crossing.
+    auto& host = ImageHost::instance();
+    host.resetStats();
+    auto zero = host.stats();
+    EXPECT_EQ(zero.evals, 0u);
+    EXPECT_EQ(zero.handles, 0u);
+    EXPECT_TRUE(zero.ops.empty());
+
+    // one binding = one handle minted; o.Width = one read_prop; the
+    // proxy's __del__ at the end of the eval = one release
+    auto res = host.eval("o.Width", objectBinding("o", obj));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    auto one = host.stats();
+    EXPECT_EQ(one.evals, 1u);
+    EXPECT_EQ(one.handles, 1u);
+    EXPECT_EQ(one.ops["read_prop"], 1u);
+    EXPECT_GE(one.ops["release"], 1u);
+
+    // no caching in the proxy: three more reads are three more hops
+    res = host.eval("o.Width + o.Width + o.Width", objectBinding("o", obj));
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    auto more = host.stats();
+    EXPECT_EQ(more.evals, 2u);
+    EXPECT_EQ(more.handles, 2u);
+    EXPECT_EQ(more.ops["read_prop"], 4u);
+
+    // a bare literal crosses nothing but the evaluation itself
+    res = host.eval("1", {});
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    auto lit = host.stats();
+    EXPECT_EQ(lit.evals, 3u);
+    EXPECT_EQ(lit.handles, 2u);
+    EXPECT_EQ(lit.ops["read_prop"], 4u);
+
+    host.resetStats();
+    EXPECT_EQ(host.stats().evals, 0u);
+    EXPECT_TRUE(host.stats().ops.empty());
+    host.clearHandles();
+}
+
 TEST_F(ExpressionImageEvalTest, arithmeticInImage)
 {
     auto res = ImageHost::instance().evalExpression(obj, "2 ^ 10 + 0.5");

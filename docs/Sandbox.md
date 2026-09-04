@@ -287,7 +287,13 @@ Re-entrancy during an image evaluation runs natively (thread-local
 guard); the AST is not re-parsed host-side.  `SandboxStatus` /
 `sandboxStatus()` (`ExpressionEvaluator.h:72-96`) is a cheap preference
 read plus two stats; `confined()` is host built, image present, routing
-enabled.  `ImageHost::evalCount()` counts crossings.
+enabled.  `ImageHost::evalCount()` counts crossings; `ImageHost::stats()`
+(2026-09-04) counts them by kind -- evaluations, handles minted, and
+every guest->host op by wire name -- with `resetStats()` to zero them.
+That is the instrument for G1a: run a Draft or Arch `execute()` in the
+guest, read `FreeCAD.ExpressionSandbox.stats()['ops']`, and the
+read_prop/get_attr/call counts say where a snapshot op would pay
+(sec 8.1) before one is designed.
 
 ### 3.5 The router: what is routed
 
@@ -306,7 +312,7 @@ execute` sets the path on the host after the value returns.
 
 Python: `FreeCAD.ExpressionSandbox` -- `routed`, `setRouting`,
 `available`, `imageInfo`, `evaluate`, `evaluateNative`, `evalCount`,
-`reset`, `pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
+`stats`, `resetStats`, `reset`, `pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
 `pyodideAbi`; constants `OptionCallFrame`, `OptionPythonMode`.
 
 ## 4. Runtimes **[built]**
