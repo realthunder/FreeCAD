@@ -2095,6 +2095,8 @@ public:
     struct UserProgram {
         bgfx::ProgramHandle prog = BGFX_INVALID_HANDLE;
         bool failed = false;
+        /// The frameSerial of the last lookup (sweepUserCaches).
+        uint32_t lastUsed = 0;
     };
     std::map<std::string, UserProgram> userPrograms;
     /// The mesh-shader variant a MaterialX document compiles to, keyed
@@ -2126,8 +2128,25 @@ public:
         /// unit it claims. Empty and 0 when the document names no image.
         std::string imageSampler;
         int imageUnit = 0;
+        /// The frameSerial of the last lookup (sweepUserCaches).
+        uint32_t lastUsed = 0;
     };
     std::map<std::string, MaterialXVariant> materialXVariants;
+    /// Counts the frames submitted; what the two caches above stamp a
+    /// lookup with.
+    uint32_t frameSerial = 0;
+    /// Bound the two caches (docs/ShaderGraphEditor.md sec 14). The
+    /// graph editor makes a distinct text per gesture -- a variant, a
+    /// generated source, a linked program with its two shader handles
+    /// -- and a session of editing grew both maps without limit, toward
+    /// bgfx's 512 shader handles. Once a map is past its cap, entries
+    /// not looked up for a while are dropped; the sweep never touches
+    /// what this frame used, and below the cap nothing is touched, so
+    /// a scene's own materials are not churned by an object out of
+    /// view. Every user of a program handle re-resolves it per frame
+    /// and keeps it only within the frame, which is what makes a drop
+    /// after bgfx::frame() safe. Called once per frame, after it.
+    void sweepUserCaches();
     /// The MaterialX generation warnings already printed, so a document
     /// edited per gesture reports each note once.
     std::set<std::string> materialXWarned;

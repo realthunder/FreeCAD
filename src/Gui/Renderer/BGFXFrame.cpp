@@ -6287,6 +6287,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         return true;
     }
     frameNum = timedBgfxFrame();
+    _BGFXLib.sweepUserCaches();
 #else
     // The output colour transform, when one is selected: encode the
     // finished frame into presentTex so the blit below transfers the
@@ -6308,6 +6309,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     _BGFXLib.makeCurrent();
     cpuMark(CpuCtxOut);
     frameNum = timedBgfxFrame();
+    _BGFXLib.sweepUserCaches();
     // bgfx::frame() has its own timer; restart the chain past it so
     // it is not counted twice.
     if (debugconf.frameTiming)

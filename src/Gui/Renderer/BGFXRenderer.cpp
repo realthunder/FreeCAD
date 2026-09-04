@@ -1998,8 +1998,10 @@ BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
         (shader.sourcePath.empty() ? shader.fragmentSource : shader.sourcePath)
         + '\0' + shader.surface;
     auto it = materialXVariants.find(key);
-    if (it != materialXVariants.end())
+    if (it != materialXVariants.end()) {
+        it->second.lastUsed = frameSerial;
         return it->second;
+    }
 
     auto gen = Render::MaterialX::generate(shader.fragmentSource,
                                            shader.sourcePath, shader.surface);
@@ -2020,7 +2022,10 @@ BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
         Base::Console().Warning("MaterialX %s: not rendered by the raster "
                                 "path: %s\n", what.c_str(),
                                 gen.error.c_str());
-        return materialXVariants.emplace(key, MaterialXVariant()).first->second;
+        MaterialXVariant &empty =
+            materialXVariants.emplace(key, MaterialXVariant()).first->second;
+        empty.lastUsed = frameSerial;
+        return empty;
     }
 
     // The stock TEXTURED mesh fragment stage, spliced. Textured because
@@ -2047,6 +2052,7 @@ BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
     variant.images = std::move(gen.images);
     variant.imageSampler = std::move(gen.imageSampler);
     variant.imageUnit = gen.imageUnit;
+    variant.lastUsed = frameSerial;
     return materialXVariants.emplace(key, std::move(variant)).first->second;
 }
 
@@ -2208,6 +2214,7 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
         QCryptographicHash::hash(keyed, QCryptographicHash::Sha1)
             .toHex().toStdString();
     auto &entry = userPrograms[key];
+    entry.lastUsed = frameSerial;
     if (bgfx::isValid(entry.prog) || entry.failed)
         return entry.prog;
 
@@ -2330,6 +2337,7 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
         key.append(reinterpret_cast<const char *>(vsBin.data()),
                    vsBin.size());
     auto &entry = userPrograms[key];
+    entry.lastUsed = frameSerial;
     if (bgfx::isValid(entry.prog) || entry.failed)
         return entry.prog;
 
@@ -2377,6 +2385,39 @@ BGFXRendererLibP::~BGFXRendererLibP()
     context.release();
     offscreen.release();
 #endif
+}
+
+void BGFXRendererLibP::sweepUserCaches()
+{
+    // Caps and age. A whole asset's material set is well under the
+    // caps and stays put; a gesture's text outlives its last preview
+    // frame by the age and goes.
+    constexpr size_t kKeepVariants = 32;
+    constexpr size_t kKeepPrograms = 64;
+    constexpr uint32_t kStaleFrames = 120;
+    const uint32_t now = frameSerial++;
+    if (materialXVariants.size() > kKeepVariants) {
+        for (auto it = materialXVariants.begin();
+             it != materialXVariants.end();) {
+            if (now - it->second.lastUsed > kStaleFrames)
+                it = materialXVariants.erase(it);
+            else
+                ++it;
+        }
+    }
+    if (userPrograms.size() > kKeepPrograms) {
+        for (auto it = userPrograms.begin(); it != userPrograms.end();) {
+            if (now - it->second.lastUsed > kStaleFrames) {
+                // The program owns its shaders (createProgram with
+                // destroyShaders): one destroy frees all three handles.
+                if (bgfx::isValid(it->second.prog))
+                    bgfx::destroy(it->second.prog);
+                it = userPrograms.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
 }
 
 void BGFXRendererLibP::shutdown()
