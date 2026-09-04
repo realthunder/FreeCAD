@@ -159,18 +159,22 @@ Base::Color MaterialProperty::getColor() const
     auto colorString = getValue().toString();
     std::stringstream stream(colorString.toStdString());
 
-    char c;
+    // Every channel starts defined. A slot with no value in it is an empty
+    // string, the first extraction fails, and a stream in a failed state
+    // skips every extraction after it -- so an unset colour used to come
+    // out of here as three floats nobody had ever written.
+    char c = 0;
     stream >> c;  // read "("
-    float red;
+    float red = 0.0F;
     stream >> red;
     stream >> c;  // ","
-    float green;
+    float green = 0.0F;
     stream >> green;
     stream >> c;  // ","
-    float blue;
+    float blue = 0.0F;
     stream >> blue;
     stream >> c;  // ","
-    float alpha = 1.0;
+    float alpha = 1.0F;
     if (c == ',') {
         stream >> alpha;
     }
@@ -2121,30 +2125,41 @@ App::MaterialAppearance Material::getMaterialAppearance() const
     App::MaterialAppearance material(App::MaterialAppearance::DEFAULT);
 
     bool custom = false;
-    if (hasAppearanceProperty(QStringLiteral("AmbientColor"))) {
-        material.ambientColor = getAppearanceProperty(QStringLiteral("AmbientColor"))->getColor();
+    // A slot the card's model HAS is not a value the card STATES. The
+    // MaterialX model inherits the six colour slots and a look's card
+    // fills none of them: it says which shader graph shades the surface
+    // and leaves the colours to the Default card. A slot with nothing in
+    // it keeps the Default number it started with; the card still counts
+    // as an appearance of its own, which is what carries its identity
+    // (the uuid below) onto the object wearing it.
+    auto colorSlot = [this, &custom](const char* name, App::Color& slot) {
+        const QString key = QString::fromLatin1(name);
+        if (!hasAppearanceProperty(key)) {
+            return;
+        }
         custom = true;
-    }
-    if (hasAppearanceProperty(QStringLiteral("DiffuseColor"))) {
-        material.diffuseColor = getAppearanceProperty(QStringLiteral("DiffuseColor"))->getColor();
+        auto property = getAppearanceProperty(key);
+        if (!property->isNull()) {
+            slot = property->getColor();
+        }
+    };
+    auto floatSlot = [this, &custom](const char* name, float& slot) {
+        const QString key = QString::fromLatin1(name);
+        if (!hasAppearanceProperty(key)) {
+            return;
+        }
         custom = true;
-    }
-    if (hasAppearanceProperty(QStringLiteral("SpecularColor"))) {
-        material.specularColor = getAppearanceProperty(QStringLiteral("SpecularColor"))->getColor();
-        custom = true;
-    }
-    if (hasAppearanceProperty(QStringLiteral("EmissiveColor"))) {
-        material.emissiveColor = getAppearanceProperty(QStringLiteral("EmissiveColor"))->getColor();
-        custom = true;
-    }
-    if (hasAppearanceProperty(QStringLiteral("Shininess"))) {
-        material.shininess = getAppearanceProperty(QStringLiteral("Shininess"))->getFloat();
-        custom = true;
-    }
-    if (hasAppearanceProperty(QStringLiteral("Transparency"))) {
-        material.transparency = getAppearanceProperty(QStringLiteral("Transparency"))->getFloat();
-        custom = true;
-    }
+        auto property = getAppearanceProperty(key);
+        if (!property->isNull()) {
+            slot = static_cast<float>(property->getFloat());
+        }
+    };
+    colorSlot("AmbientColor", material.ambientColor);
+    colorSlot("DiffuseColor", material.diffuseColor);
+    colorSlot("SpecularColor", material.specularColor);
+    colorSlot("EmissiveColor", material.emissiveColor);
+    floatSlot("Shininess", material.shininess);
+    floatSlot("Transparency", material.transparency);
     if (hasAppearanceProperty(QStringLiteral("TextureImage"))) {
         auto property = getAppearanceProperty(QStringLiteral("TextureImage"));
         if (!property->isNull()) {

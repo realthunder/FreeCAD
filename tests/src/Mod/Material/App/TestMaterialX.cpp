@@ -29,7 +29,9 @@
 #include <QStringList>
 
 #include <App/Application.h>
+#include <App/MaterialAppearance.h>
 #include <App/MaterialXDocument.h>
+#include <Base/Color.h>
 #include <Gui/MetaTypes.h>
 #include <src/App/InitApplication.h>
 #include <src/TempDirectory.h>
@@ -199,6 +201,39 @@ TEST_F(TestMaterialX, aMissingFileLeavesTheLookToTheColourSlots)
     // half a manifest would be a different identity altogether
     EXPECT_FALSE(card->getMaterialXManifest().isSet());
     EXPECT_TRUE(card->getMaterialAppearance().materialx.empty());
+}
+
+TEST_F(TestMaterialX, aCardStatingNoColourWearsTheDefaultLook)
+{
+    // A look's card says which shader graph shades the surface and nothing
+    // else. The model inherits the colour slots, so the card HAS them, with
+    // no value in any -- and reading an empty slot as a stated colour gave
+    // three floats nobody had written: every dressed object came up green.
+    auto card = std::make_shared<Materials::Material>();
+    card->addAppearance(Materials::ModelUUIDs::ModelUUID_Rendering_MaterialX);
+    card->setAppearanceValue(QStringLiteral("MaterialXShaderGraph"), QStringLiteral("brass.mtlx"));
+    ASSERT_TRUE(card->hasAppearanceProperty(QStringLiteral("DiffuseColor")));
+    auto diffuse = card->getAppearanceProperty(QStringLiteral("DiffuseColor"));
+    ASSERT_TRUE(diffuse->isNull());
+    // The slot itself reads as a defined colour, whatever a caller does
+    EXPECT_EQ(diffuse->getColor(), Base::Color());
+
+    const App::MaterialAppearance look = card->getMaterialAppearance();
+    const App::MaterialAppearance stock(App::MaterialAppearance::DEFAULT);
+    EXPECT_EQ(look.ambientColor, stock.ambientColor);
+    EXPECT_EQ(look.diffuseColor, stock.diffuseColor);
+    EXPECT_EQ(look.specularColor, stock.specularColor);
+    EXPECT_EQ(look.emissiveColor, stock.emissiveColor);
+    EXPECT_FLOAT_EQ(look.shininess, stock.shininess);
+    EXPECT_FLOAT_EQ(look.transparency, stock.transparency);
+    // Still the card's own appearance: it is what the object wears
+    EXPECT_EQ(look.getType(), App::MaterialAppearance::USER_DEFINED);
+    EXPECT_EQ(look.uuid, card->getUUID().toStdString());
+    EXPECT_NE(look, App::MaterialAppearance());
+
+    // A stated colour is still the card's word over the default
+    card->setAppearanceValue(QStringLiteral("DiffuseColor"), QStringLiteral("(0.1, 0.2, 0.3, 1.0)"));
+    EXPECT_EQ(card->getMaterialAppearance().diffuseColor, Base::Color(0.1F, 0.2F, 0.3F, 1.0F));
 }
 
 TEST_F(TestMaterialX, aCardStoredInADocumentReadsItsHashesBack)
