@@ -64,6 +64,14 @@ inline const char* const OpWriteProp = "write_prop";
 // not a host import.  An undeclared name is a protocol error.
 inline const char* const OpModCall = "mod_call";
 inline const char* const OpModGet = "mod_get";
+// {op:"bool", h} -> the host object's truth value; {op:"str", h} -> its
+// str().  What the guest proxy's __bool__ and __str__ do: natively any
+// object is truthy unless its type says otherwise (`if plane:`), and
+// Draft compares curves by str().  Both answered by the C type's own
+// slot; a heap type (Python-defined __bool__/__str__ = host code) rides
+// the unsafe gate.
+inline const char* const OpBool = "bool";
+inline const char* const OpStr = "str";
 // No handle: the guest's last-in-line import finder asking what the host
 // knows about a module it could not import (docs/SandboxNetwork.md sec
 // 9.3).  "a" = the import name; the reply value is "" (unknown) or the
@@ -79,6 +87,10 @@ inline const char* const TagPlacement = "pla";
 inline const char* const TagMatrix = "mat";
 inline const char* const TagBoundBox = "bb";
 inline const char* const TagHandle = "h";
+// a module facade's class object as a call argument -- Draft's
+// `shape.ancestorsOfType(v, Part.Edge)` -- crosses as {"t":"ty",
+// "q":"Part.Edge"} and decodes on the host to the declared object
+inline const char* const TagType = "ty";
 // A tuple is NOT a list: the expression engine hands tuples to Enum
 // properties and to tuple(), and collapsing them to lists on the wire
 // loses type identity the same way bool-as-long would (Phase 0 sec

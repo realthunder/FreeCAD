@@ -293,7 +293,12 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
                 {"v", q.getValue()},
                 {"u", encodeUnit(q.getUnit())}};
     }
-    else if (PyList_Check(obj) || PyTuple_Check(obj)) {
+    // Part.ShapeList (this fork's Shape.Edges/Faces/...: a sequence
+    // type of its own, not a list) crosses as a list of handles -- the
+    // classic FreeCAD shape, which is what Draft's slicing and
+    // concatenation of edge lists expect.
+    else if (PyList_Check(obj) || PyTuple_Check(obj)
+             || std::strcmp(Py_TYPE(obj)->tp_name, "Part.ShapeList") == 0) {
         PyObject* seq = PySequence_Fast(obj, "sequence");
         if (seq) {
             json arr = json::array();
@@ -421,6 +426,24 @@ PyObject* decodeHostValue(const HandleTable& table, const json& v)
     }
 
     const std::string& t = tag->get_ref<const std::string&>();
+    if (t == FcxWire::TagType) {
+        // a declared module member named by the guest (Part.Edge as an
+        // argument): the object itself, from the host module
+        auto q = v.find("q");
+        const ModuleMember* mm = q != v.end() && q->is_string()
+            ? moduleMemberLookup(q->get_ref<const std::string&>())
+            : nullptr;
+        if (!mm || mm->kind != ModuleKind::Callable) {
+            PyErr_SetString(PyExc_TypeError, "type reference is not a declared module member");
+            return nullptr;
+        }
+        PyObject* mod = PyImport_ImportModule(mm->module);
+        if (!mod)
+            return nullptr;
+        PyObject* attr = PyObject_GetAttrString(mod, mm->name);
+        Py_DECREF(mod);
+        return attr;
+    }
     if (t == FcxWire::TagTuple) {
         auto items = v.find("v");
         if (items == v.end() || !items->is_array()) {
@@ -716,7 +739,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
             if (!PyObject_TypeCheck(base, &App::PropertyContainerPy::Type))
                 return errReply("AttributeError",
                                 "'" + std::string(Py_TYPE(base)->tp_name)
-                                    + "' has no property '" + name + "'");
+                                    + "' object has no attribute '" + name + "'");
             auto* container = static_cast<App::PropertyContainerPy*>(base)
                                   ->getPropertyContainerPtr();
             App::Property* prop =
@@ -724,7 +747,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
             if (!prop)
                 return errReply("AttributeError",
                                 "'" + std::string(Py_TYPE(base)->tp_name)
-                                    + "' has no property '" + name + "'");
+                                    + "' object has no attribute '" + name + "'");
             PyObject* result = prop->getPyObject();
             if (!result)
                 return pyErrorReply();
@@ -770,7 +793,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
             if (!PyObject_TypeCheck(base, &App::PropertyContainerPy::Type))
                 return errReply("AttributeError",
                                 "'" + std::string(Py_TYPE(base)->tp_name)
-                                    + "' has no property '" + name + "'");
+                                    + "' object has no attribute '" + name + "'");
             auto* container = static_cast<App::PropertyContainerPy*>(base)
                                   ->getPropertyContainerPtr();
             App::Property* prop =
@@ -778,7 +801,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
             if (!prop)
                 return errReply("AttributeError",
                                 "'" + std::string(Py_TYPE(base)->tp_name)
-                                    + "' has no property '" + name + "'");
+                                    + "' object has no attribute '" + name + "'");
             // Native setattr's one refusal (PropertyContainerPy::
             // setCustomAttributes): Immutable.  ReadOnly is the
             // editor's status, and Python writes it there too.
@@ -861,6 +884,25 @@ json dispatchHostOp(HandleTable& table, const json& req)
             if (!result)
                 return pyErrorReply();
             return encodeResult(table, result);
+        }
+
+        if (op == FcxWire::OpBool || op == FcxWire::OpStr) {
+            // The type's own slot: a C type's nb_bool/tp_str is not host
+            // code; a heap type's (Python-defined) is, so it rides the
+            // unsafe gate like any undeclared reach.
+            if (Py_TYPE(base)->tp_flags & Py_TPFLAGS_HEAPTYPE)
+                ExpressionSecurity::checkPermission(
+                    ExpressionSecurity::Permission::UnsafeGetattr);
+            if (op == FcxWire::OpBool) {
+                int truth = PyObject_IsTrue(base);
+                if (truth < 0)
+                    return pyErrorReply();
+                return okReply(json(truth != 0));
+            }
+            PyObject* s = PyObject_Str(base);
+            if (!s)
+                return pyErrorReply();
+            return encodeResult(table, s);
         }
 
         if (op == FcxWire::OpLen) {

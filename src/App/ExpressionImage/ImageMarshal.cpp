@@ -49,6 +49,10 @@ static const char ProxyPrelude[] =
     "            object.__setattr__(self, name, value)\n"
     "        else:\n"
     "            _fcx.op('write_prop', self._id, name, value)\n"
+    "    def __bool__(self):\n"
+    "        return _fcx.op('bool', self._id)\n"
+    "    def __str__(self):\n"
+    "        return _fcx.op('str', self._id)\n"
     "    def __getitem__(self, key):\n"
     "        return _fcx.op('get_item', self._id, key)\n"
     "    def __len__(self):\n"
@@ -87,11 +91,29 @@ static const char ProxyPrelude[] =
     "            self.__dict__[name] = value\n"
     "            return value\n"
     "        raise AttributeError(\"module '%s' has no attribute '%s'\" % (self.__name__, name))\n"
+    // A callable that is also a facade type (Part.Shape, Part.Edge,
+    // Part.LineSegment, ...) becomes a class: calling it constructs on
+    // the host as any callable, and isinstance/issubclass against it
+    // recognise the proxy class of that type -- Draft's `isinstance(e,
+    // Part.Edge)` and `issubclass(type(e.Curve), Part.LineSegment)`.
+    "class _FcxTypeMeta(type):\n"
+    "    def __call__(cls, *args, **kw):\n"
+    "        return _fcx.op('mod_call', 0, cls._fcx_qual, args, kw)\n"
+    "    def __instancecheck__(cls, obj):\n"
+    "        proxy = FACADES.get(cls._fcx_qual)\n"
+    "        return proxy is not None and isinstance(obj, proxy)\n"
+    "    def __subclasscheck__(cls, sub):\n"
+    "        proxy = FACADES.get(cls._fcx_qual)\n"
+    "        return proxy is not None and isinstance(sub, type) and issubclass(sub, proxy)\n"
     "def _install_modules(modules):\n"
     "    for modname, spec in modules.items():\n"
     "        m = _FcxModule(modname)\n"
     "        for n in spec['callables']:\n"
-    "            setattr(m, n, _mod_call(modname + '.' + n))\n"
+    "            qual = modname + '.' + n\n"
+    "            if qual in FACADES:\n"
+    "                setattr(m, n, _FcxTypeMeta(n, (), {'_fcx_qual': qual, '__module__': modname}))\n"
+    "            else:\n"
+    "                setattr(m, n, _mod_call(qual))\n"
     "        for n in spec['exceptions']:\n"
     "            e = type(n, (Exception,), {'__module__': modname})\n"
     "            setattr(m, n, e)\n"
@@ -454,6 +476,18 @@ bool encodeValue(PyObject* obj, json& out, std::string& err)
                {"v", q.getValue()},
                {"u", encodeUnit(q.getUnit())}};
         return true;
+    }
+    // a module facade's class (Part.Edge) as an argument: a type
+    // reference the host resolves to the declared object
+    if (PyType_Check(obj) && PyObject_HasAttrString(obj, "_fcx_qual")) {
+        PyObject* q = PyObject_GetAttrString(obj, "_fcx_qual");
+        bool ok = q && PyUnicode_Check(q);
+        if (ok)
+            out = {{FcxWire::TagKey, FcxWire::TagType}, {"q", std::string(PyUnicode_AsUTF8(q))}};
+        Py_XDECREF(q);
+        if (ok)
+            return true;
+        PyErr_Clear();
     }
     PyObject* htype = handleType();
     if (htype && PyObject_IsInstance(obj, htype) == 1) {

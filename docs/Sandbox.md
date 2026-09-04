@@ -234,8 +234,20 @@ ring 2 is absent (`os`, `socket`, `ctypes`: no grant supplies them).
 ### 3.2 The wire (`FcxWire.h`)
 
 Ops: `eval`, `exec`, `read_prop`, `get_attr`, `call`, `get_item`, `len`,
-`release`, `resolve_alias`, `pkg.missing`, `write_prop`, `mod_call`,
-`mod_get`.  The module facades (2026-09-04, `MODULE_FACADES` in the
+`bool`, `str`, `release`, `resolve_alias`, `pkg.missing`, `write_prop`,
+`mod_call`, `mod_get`.  `bool` and `str` (2026-09-04) are the proxy's
+`__bool__` and `__str__`: natively every object is truthy unless its
+type says otherwise (`if plane:` -- with only `__len__` on the proxy the
+host answered "no len()" and Draft's plane tests died), and Draft
+compares curves by `str()`; both are answered by the C type's own slot,
+and a heap type (a Python-defined `__bool__`/`__str__` is host code)
+rides the unsafe gate.  Two more wire rules the draftgeoutils gate
+forced: a module facade's class object crosses as a type reference
+(`{"t":"ty","q":"Part.Edge"}`, decoded on the host to the declared
+object -- `shape.ancestorsOfType(v, Part.Edge)`), and this fork's
+`Part.ShapeList` (what `Shape.Edges` returns, a sequence type of its
+own) crosses as a plain list of handles, the classic shape Draft's
+slicing and concatenation expect.  The module facades (2026-09-04, `MODULE_FACADES` in the
 generator, sec 3.3): the guest's `Part` module is a closed list of
 names -- 30 callables (`LineSegment`, `makePolygon`, `Face`, ...), one
 constant (`OCC_VERSION`), one exception (`OCCError`) -- built at init
@@ -828,8 +840,28 @@ booleans between two handles -- each equal to the host's own answer on
 both runtimes).  The `Part` module facade is BUILT (3.2: 30 callables,
 `OCC_VERSION`, `OCCError`; gate `partModuleFacade`, 14 constructions
 and reads equal to native on both runtimes, the exception mapped).
+**G1a gate PASSED 2026-09-04** (`draftgeoutilsOnHandles`): the 16
+geometry modules of `draftgeoutils` (all but `geo_arrays`, which
+makes document objects) pushed into the guest UNMODIFIED through
+`exec` and registered on the host from the same source, 116 calls
+covering every public function the fixtures can feed, on 14 host-made
+shapes bound as handles, each answer normalised (shapes to kind,
+measures and counts; values rounded) and equal as text on both
+runtimes; 11 of the 116 fail identically on both sides (curve-only
+functions fed an edge, the deprecated `sortEdges`, a `NameError` in
+Draft's own `get_spline_normal`, `removeSplitter` on a clean box) --
+parity, not a sandbox gap.  What the gate forced into the guest is
+listed in 3.2 and above (`bool`/`str` ops, type references,
+`ShapeList` as list, `GuiUp`/`Console`/`Base`/unit constants).
+The traffic it measured, 116 calls: `release` 4977, `get_attr` 2738,
+`call` 587, `mod_call` 153, `bool` 50, `read_prop` 29, `str` 18 --
+about 74 hops per call, and 58 percent of them are releases of
+proxies the guest let go one at a time; sec 8.1's per-hop cost makes
+that ~0.5 ms of crossing per call, and batching releases (one op per
+transaction, or per N) is the first thing to cut, before any snapshot
+op (step 6 of the coding order).
 Still missing: a `FreeCAD` module facade for `ActiveDocument`/
-`Console`/`ParamGet`, rung 2, and a local-wheel source in
+`ParamGet`, rung 2, and a local-wheel source in
 `install_package`.  Document-level writes (`addObject` 76 uses,
 `removeObject`) are NOT declared: they are what Draft's make_* commands
 do, not what an `execute()` does, and rung 2 writes self only -- a
@@ -837,6 +869,13 @@ decision to revisit with G1c.  NOT missing, checked 2026-09-04: the
 guest-native value classes.  The
 in-image `FreeCAD` module has carried `Vector`, `Rotation`,
 `Placement`, `Matrix`, `BoundBox` and `Units.Quantity`/`Unit` since the
+core carve, and since the draftgeoutils gate also what workbench code
+reads before doing geometry: `GuiUp` (0), a `Console` whose `Print*`
+write to the guest's stderr, `FreeCAD.Base` (the same classes and
+exception types, for `from FreeCAD import Base`), and the unit
+constants `Units.Radian`, `Units.Metre`, ... from `Quantity::unitInfo()`
+as the host's Units module carries them -- none of it crosses, all of
+it lives in the
 core carve (ImageDispatch.cpp), so the 1.6 k vector operations never
 hop.  Gate passed on both runtimes
 (`ExpressionImageEvalTest.draftVecUtilsInGuestZeroHops`): DraftVecUtils

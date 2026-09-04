@@ -1109,6 +1109,398 @@ bool hostEvalFloat(const std::string& expr, double& out)
 
 }  // namespace
 
+// ---- the G1a gate (docs/Sandbox.md sec 7.6): draftgeoutils in the
+// ---- guest on handles, every answer equal to the same source run on
+// ---- the host.
+
+namespace
+{
+
+/// The modules pushed into the guest AND registered on the host from
+/// the same source, in dependency order.  geo_arrays (document objects
+/// and frames) is not geometry and is left out.
+const char* const GeoUtilsModules[] = {
+    "general", "edges", "geometry", "intersections", "wires", "faces", "arcs",
+    "circles", "offsets", "sort_edges", "fillets", "cuboids", "linear_algebra",
+    "circle_inversion", "circles_apollonius", "circles_incomplete",
+};
+
+/// Stubs around draftgeoutils: WorkingPlane (imported, never used by
+/// the functions below), draftutils.gui_utils (get_3d_view, GUI only),
+/// lazy_loader, plus the DraftVecUtils set.
+const char* const GeoUtilsStubs =
+    "import sys, types\n"
+    "def _mod(name, **attrs):\n"
+    "    m = types.ModuleType(name)\n"
+    "    m.__dict__.update(attrs)\n"
+    "    sys.modules[name] = m\n"
+    "    return m\n"
+    "_mod('WorkingPlane')\n"
+    "sys.modules['draftutils'].gui_utils = _mod('draftutils.gui_utils', get_3d_view=lambda: None)\n"
+    // lazy_loader.LazyLoader: a module stand-in that imports on first
+    // attribute access.  The real one (src/3rdParty/lazy_loader) does
+    // the same through `from __future__ import ...`, which the wasi
+    // guest's 16-file stdlib slice does not carry.
+    "class _LazyLoader(types.ModuleType):\n"
+    "    def __init__(self, local_name, parent_globals, name):\n"
+    "        super().__init__(name)\n"
+    "        self.__dict__['_fcx_target'] = name\n"
+    "    def __getattr__(self, item):\n"
+    "        return getattr(__import__(self.__dict__['_fcx_target']), item)\n"
+    "_lz = _mod('lazy_loader')\n"
+    "_lz.__path__ = []\n"
+    "_lz.lazy_loader = _mod('lazy_loader.lazy_loader', LazyLoader=_LazyLoader)\n";
+
+/// The harness module, same text both sides: the pushed modules by
+/// their short names, the shape names, and _run(expr, env) -> the
+/// normalised result or ('E', exception type).  Normalisation reduces
+/// shapes to (kind, measures, counts), values to rounded numbers, so
+/// a guest answer built from handles and a host answer built from the
+/// objects compare as text.
+const char* const GeoUtilsHarness =
+    "import math\n"
+    "import FreeCAD\n"
+    "import Part\n"
+    "import DraftVecUtils\n"
+    "from draftgeoutils import general, edges, geometry, wires, faces, arcs, circles\n"
+    "from draftgeoutils import intersections, offsets, sort_edges, fillets, cuboids\n"
+    "from draftgeoutils import linear_algebra, circle_inversion, circles_apollonius\n"
+    "from draftgeoutils import circles_incomplete\n"
+    "V = FreeCAD.Vector\n"
+    "def _r(v):\n"
+    "    return round(v, 6) + 0.0\n"
+    "def _N(x):\n"
+    "    if x is None or isinstance(x, (bool, int, str)):\n"
+    "        return x if x is not None else 'None'\n"
+    "    if isinstance(x, float):\n"
+    "        return _r(x)\n"
+    "    if isinstance(x, (list, tuple)) or type(x).__name__ == 'ShapeList':\n"
+    "        return [_N(i) for i in x]\n"
+    "    if isinstance(x, FreeCAD.Vector):\n"
+    "        return ('V', _r(x.x), _r(x.y), _r(x.z))\n"
+    "    if isinstance(x, FreeCAD.Rotation):\n"
+    "        return ('R', _N(x.Axis), _r(x.Angle))\n"
+    "    if isinstance(x, FreeCAD.Placement):\n"
+    "        return ('P', _N(x.Base), _N(x.Rotation))\n"
+    "    if isinstance(x, FreeCAD.Matrix):\n"
+    "        return ('M', [_r(v) for v in x.A])\n"
+    "    st = getattr(x, 'ShapeType', None)\n"
+    "    if st is not None:\n"
+    "        return ('S', st, _r(x.Length), _r(x.Area), _r(x.Volume),\n"
+    "                len(x.Edges), len(x.Vertexes), _N(x.BoundBox.Center))\n"
+    "    ti = getattr(x, 'TypeId', None)\n"
+    "    if ti:\n"
+    "        return ('G', ti)\n"
+    "    return type(x).__name__\n"
+    "def _run(expr, env):\n"
+    "    try:\n"
+    "        return _N(eval(expr, globals(), env))\n"
+    "    except Exception as e:\n"
+    "        return ('E', type(e).__name__, str(e)[:120])\n";
+
+/// The shapes both sides work on, made on the host and bound as
+/// handles: a box and one of its faces, three lines, a closed and an
+/// open polygon, a crossing polyline, three circles, an arc, a spline
+/// edge, a plane face.
+const char* const GeoUtilsFixtures =
+    "import Part, FreeCAD\n"
+    "V = FreeCAD.Vector\n"
+    "s = Part.makeBox(2, 3, 4)\n"
+    "f = s.Faces[5]\n"
+    "l = Part.makeLine(V(0, 0, 0), V(2, 0, 0))\n"
+    "l2 = Part.makeLine(V(2, 0, 0), V(2, 2, 0))\n"
+    "l3 = Part.makeLine(V(0, 0, 0), V(0, 2, 0))\n"
+    "w = Part.makePolygon([V(0, 0, 0), V(2, 0, 0), V(2, 2, 0), V(0, 2, 0), V(0, 0, 0)])\n"
+    "w2 = Part.makePolygon([V(0, 0, 0), V(2, 0, 0), V(2, 2, 0)])\n"
+    "w3 = Part.makePolygon([V(-1, 1, 0), V(3, 1, 0)])\n"
+    "c = Part.makeCircle(1.0)\n"
+    "c2 = Part.makeCircle(1.0, V(3, 0, 0))\n"
+    "c3 = Part.makeCircle(1.0, V(0, 3, 0))\n"
+    "a = Part.makeCircle(1.0, V(0, 0, 0), V(0, 0, 1), 0, 90)\n"
+    "_b = Part.BSplineCurve()\n"
+    "_b.interpolate([V(0, 0, 0), V(1, 1, 0), V(2, 0, 0)])\n"
+    "b = _b.toShape()\n"
+    "pl = Part.makePlane(2, 2)\n";
+
+const char* const GeoUtilsNames[] = {
+    "s", "f", "l", "l2", "l3", "w", "w2", "w3", "c", "c2", "c3", "a", "b", "pl",
+};
+
+/// One call per public function the fixtures can feed (the harness
+/// classifies a failure by exception type, so a call the fixture does
+/// not suit still has to fail the SAME way on both sides).
+const char* const GeoUtilsCalls[] = {
+    // general
+    "general.precision()",
+    "general.vec(l)",
+    "general.vec(l, True)",
+    "general.edg(V(0, 0, 0), V(1, 1, 0))",
+    "general.getVerts(w)",
+    "general.v1(l)",
+    "general.isNull(s)",
+    "general.isNull(V(0, 0, 0))",
+    "general.isPtOnEdge(V(1, 0, 0), l)",
+    "general.isPtOnEdge(V(1, 1, 0), l)",
+    "general.hasCurves(s)",
+    "general.hasCurves(c)",
+    "general.isAligned(l, 'x')",
+    "general.isAligned(l, 'y')",
+    "general.getQuad(f)",
+    "general.areColinear(l, l2)",
+    "general.areColinear(l, Part.makeLine(V(3, 0, 0), V(5, 0, 0)))",
+    "general.hasOnlyWires(w)",
+    "general.geomType(c)",
+    "general.geomType(l)",
+    "general.geomType(b)",
+    "general.isValidPath(w)",
+    "general.findClosest(V(0, 0, 0), [V(1, 0, 0), V(0.5, 0, 0)])",
+    "general.getBoundaryAngles(0.1, [0.0, 1.0, 2.0])",
+    // edges
+    "edges.findEdge(l, [l2, l])",
+    "edges.orientEdge(a)",
+    "edges.orientEdge(l, V(0, 0, 1))",
+    "edges.isSameLine(l, l)",
+    "edges.isSameLine(l, l2)",
+    "edges.is_line(b)",
+    "edges.invert(l)",
+    "edges.invert(w)",
+    "edges.findMidpoint(a)",
+    "edges.findMidpoint(l)",
+    "edges.getTangent(c)",
+    "edges.getTangent(l)",
+    // wires
+    "wires.findWires(s.Edges)",
+    "wires.isReallyClosed(w)",
+    "wires.isReallyClosed(w2)",
+    "wires.rebaseWire(w, 1)",
+    "wires.removeInterVertices(w)",
+    "wires.superWire(w.Edges, True)",
+    "wires.flattenWire(w)",
+    "wires.curvetowire(c, 8)",
+    "wires.curvetosegment(c, 1.0)",
+    "wires.get_placement_perpendicular_to_wire(w)",
+    "wires.get_extended_wire(w2, 1.0, 1.0)",
+    // geometry
+    "geometry.findPerpendicular(V(1, 1, 0), [l])",
+    "geometry.findDistance(V(1, 1, 0), l)",
+    "geometry.findDistance(V(1, 1, 0), c)",
+    "geometry.get_spline_normal(b)",
+    "geometry.get_shape_normal(f)",
+    "geometry.get_normal(w)",
+    "geometry.get_normal(l)",
+    "geometry.getRotation(V(1, 0, 0), V(0, 1, 0))",
+    "geometry.is_planar(w)",
+    "geometry.is_straight_line(l)",
+    "geometry.is_straight_line(w2)",
+    "geometry.are_coplanar(f, w)",
+    "geometry.find_plane(f)",
+    "geometry.calculatePlacement(w)",
+    "geometry.mirror(V(1, 1, 0), l)",
+    "geometry.uv_vectors_from_face(f)",
+    "geometry.placement_from_face(f)",
+    "geometry.placement_from_points(V(0, 0, 0), V(1, 0, 0), V(0, 1, 0))",
+    "geometry.distance_to_plane(V(1, 2, 3), V(0, 0, 0), V(0, 0, 1))",
+    "geometry.project_point_on_plane(V(1, 2, 3), V(0, 0, 0), V(0, 0, 1))",
+    // faces
+    "faces.concatenate(s)",
+    "faces.getBoundary(pl)",
+    "faces.is_coplanar([f, f])",
+    "faces.bind(w, w2)",
+    "faces.cleanFaces(s)",
+    "faces.removeSplitter(s)",
+    // arcs
+    "arcs.isClockwise(a)",
+    "arcs.isWideAngle(a)",
+    "arcs.arcFrom2Pts(V(1, 0, 0), V(0, 1, 0), V(0, 0, 0))",
+    "arcs.arcFromSpline(b)",
+    // circles
+    "circles.findClosestCircle(V(0, 0, 0), [c, c2])",
+    "circles.getCircleFromSpline(b)",
+    "circles.circlefrom1Line2Points(l, V(0, 1, 0), V(2, 1, 0))",
+    "circles.circlefrom2Lines1Point(l, l3, V(1, 1, 0))",
+    "circles.circleFrom2LinesRadius(l, l3, 1.0)",
+    "circles.circleFrom3LineTangents(l, l2, l3)",
+    "circles.circleFromPointLineRadius(V(1, 1, 0), l, 1.0)",
+    "circles.circleFrom2PointsRadius(V(0, 0, 0), V(2, 0, 0), 2.0)",
+    "circles.findHomotheticCenterOfCircles(c, c2)",
+    "circles.findRadicalAxis(c, c2)",
+    "circles.findRadicalCenter(c, c2, c3)",
+    // intersections
+    "intersections.findIntersection(l, l3)",
+    "intersections.findIntersection(l, l2, True, True)",
+    "intersections.wiresIntersect(w, w3)",
+    "intersections.connect([l, l2])",
+    "intersections.angleBisection(l, l3)",
+    // offsets
+    "offsets.offset(l, V(0, 1, 0))",
+    "offsets.offsetWire(w, V(0, 0.5, 0))",
+    "offsets.pocket2d(pl, 0.3)",
+    // sort_edges
+    "sort_edges.sortEdges(list(reversed(w.Edges)))",
+    "sort_edges.sortEdgesOld(list(reversed(w.Edges)))",
+    // fillets
+    "fillets.fillet([l, l2], 0.5)",
+    "fillets.fillet([l, l2], 0.5, True)",
+    "fillets.filletWire(w2, 0.3)",
+    // cuboids
+    "cuboids.isCubic(s)",
+    "cuboids.getCubicDimensions(s)",
+    // linear_algebra
+    "linear_algebra.linearFromPoints(V(0, 0, 0), V(1, 1, 0))",
+    "linear_algebra.determinant([[1, 2], [3, 4]], 2)",
+    // circle_inversion
+    "circle_inversion.pointInversion(c, V(3, 0, 0))",
+    "circle_inversion.polarInversion(c, l2)",
+    "circle_inversion.circleInversion(c, c2)",
+    // circles_apollonius
+    "circles_apollonius.outerSoddyCircle(c, c2, c3)",
+    "circles_apollonius.innerSoddyCircle(c, c2, c3)",
+    "circles_apollonius.circleFrom3CircleTangents(c, c2, c3)",
+    // circles_incomplete
+    "circles_incomplete.circleFrom2tan1pt(l, l3, V(1, 1, 0))",
+    "circles_incomplete.circleFrom2tan1rad(l, l3, 0.5)",
+    "circles_incomplete.circleFrom1tan2pt(l, V(0, 1, 0), V(2, 1, 0))",
+    "circles_incomplete.circleFrom1tan1pt1rad(l, V(1, 1, 0), 1.0)",
+    "circles_incomplete.circleFrom3tan(l, l2, l3)",
+};
+
+}  // namespace
+
+TEST_F(ExpressionImageEvalTest, draftgeoutilsOnHandles)
+{
+    std::string vecUtils = readDraftFile("DraftVecUtils.py");
+    if (vecUtils.empty())
+        GTEST_SKIP() << "Mod/Draft/DraftVecUtils.py not found (set FCX_REPO)";
+    std::vector<std::pair<std::string, std::string>> sources;  // (module, text)
+    for (const char* m : GeoUtilsModules) {
+        std::string text = readDraftFile((std::string("draftgeoutils/") + m + ".py").c_str());
+        ASSERT_FALSE(text.empty()) << m;
+        sources.emplace_back(std::string("draftgeoutils.") + m, text);
+    }
+    PyObject* part = nullptr;
+    {
+        Base::PyGILStateLocker lock;
+        part = PyImport_ImportModule("Part");
+        if (!part) {
+            PyErr_Clear();
+            GTEST_SKIP() << "the Part module is not importable in this test binary";
+        }
+    }
+    auto& host = ImageHost::instance();
+
+    // the same push on both sides; the first failure ends the test
+    auto push = [&](const char* module, const std::string& text) {
+        auto r = host.exec(text, module ? module : "");
+        EXPECT_TRUE(r.ok) << (module ? module : "stubs") << ": " << r.excType << ": " << r.message;
+        if (!r.ok)
+            return false;
+        bool ok = hostModule(module ? module : "_fcx_geo_stubs", text);
+        EXPECT_TRUE(ok) << (module ? module : "stubs") << " on the host";
+        return ok;
+    };
+    if (!push(nullptr, DraftStubs) || !push(nullptr, GeoUtilsStubs)
+            || !push("DraftVecUtils", vecUtils) || !push("draftgeoutils", ""))
+        return;
+    for (const auto& [module, text] : sources)
+        if (!push(module.c_str(), text))
+            return;
+    if (!push("fcxgu", GeoUtilsHarness))
+        return;
+
+    // fixtures on the host; each bound as a handle for the guest
+    PyObject* fixtures = nullptr;
+    {
+        Base::PyGILStateLocker lock;
+        fixtures = PyDict_New();
+        PyDict_SetItemString(fixtures, "__builtins__", PyEval_GetBuiltins());
+        PyObject* r = PyRun_String(GeoUtilsFixtures, Py_file_input, fixtures, fixtures);
+        if (!r)
+            PyErr_Print();
+        ASSERT_NE(r, nullptr);
+        Py_DECREF(r);
+    }
+    std::string envText = "dict(";
+    for (const char* n : GeoUtilsNames)
+        envText += std::string(n) + "=" + n + ", ";
+    envText += ")";
+    auto pack = [&]() {
+        Base::PyGILStateLocker lock;
+        json m = json::object();
+        for (const char* n : GeoUtilsNames) {
+            PyObject* py = PyDict_GetItemString(fixtures, n);
+            Py_INCREF(py);
+            auto one = pyBinding(n, py);
+            m.update(json::from_cbor(one.begin(), one.end()));
+        }
+        auto v = json::to_cbor(m);
+        return std::vector<unsigned char>(v.begin(), v.end());
+    };
+
+    host.resetStats();
+    int agreed = 0;
+    int bothError = 0;
+    std::string failingAlike;
+    for (const char* call : GeoUtilsCalls) {
+        std::string expr = std::string("__import__('fcxgu')._run(") + json(call).dump() + ", "
+            + envText + ")";
+        auto g = host.eval(expr, pack());
+        ASSERT_TRUE(g.ok) << call << ": " << g.excType << ": " << g.message;
+        std::string want;
+        std::string got;
+        {
+            Base::PyGILStateLocker lock;
+            PyObject* r = PyRun_String(expr.c_str(), Py_eval_input, fixtures, fixtures);
+            if (!r)
+                PyErr_Print();
+            ASSERT_NE(r, nullptr) << call;
+            PyObject* rep = PyObject_Repr(r);
+            Py_DECREF(r);
+            want = PyUnicode_AsUTF8(rep);
+            Py_DECREF(rep);
+            PyObject* v = host.decodeResult(g);
+            ASSERT_NE(v, nullptr) << call;
+            rep = PyObject_Repr(v);
+            Py_DECREF(v);
+            got = PyUnicode_AsUTF8(rep);
+            Py_DECREF(rep);
+        }
+        EXPECT_EQ(got, want) << call;
+        if (got == want) {
+            ++agreed;
+            if (want.rfind("('E', ", 0) == 0) {
+                ++bothError;
+                failingAlike += std::string("\n    ") + call + " -> " + want;
+            }
+        }
+        host.clearHandles();
+    }
+    auto st = host.stats();
+    std::cout << "draftgeoutils: " << agreed << "/" << (sizeof(GeoUtilsCalls) / sizeof(*GeoUtilsCalls))
+              << " calls agree, " << bothError << " of them failing alike; bridge ops:";
+    for (const auto& [k, v] : st.ops)
+        std::cout << " " << k << "=" << v;
+    std::cout << failingAlike << std::endl;
+    EXPECT_LT(bothError * 4, agreed) << "too many calls fail on both sides: fixtures unsuitable";
+
+    {
+        Base::PyGILStateLocker lock;
+        Py_DECREF(fixtures);
+        Py_DECREF(part);
+        PyObject* g = PyDict_New();
+        PyDict_SetItemString(g, "__builtins__", PyEval_GetBuiltins());
+        std::string cleanup = std::string(DraftCleanup)
+            + "for n in [m for m in sys.modules if m == 'fcxgu' or m == 'WorkingPlane'"
+              " or m.startswith('draftgeoutils') or m.startswith('lazy_loader')"
+              " or m == 'draftutils.gui_utils']:\n"
+              "    sys.modules.pop(n, None)\n";
+        PyObject* c = PyRun_String(cleanup.c_str(), Py_file_input, g, g);
+        Py_XDECREF(c);
+        Py_DECREF(g);
+        if (PyErr_Occurred())
+            PyErr_Clear();
+    }
+}
+
 TEST_F(ExpressionImageEvalTest, draftVecUtilsInGuestZeroHops)
 {
     std::string source = readDraftFile("DraftVecUtils.py");

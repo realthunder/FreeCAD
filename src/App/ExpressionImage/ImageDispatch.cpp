@@ -118,6 +118,12 @@ static PyObject *init_freecad_module()
     if (units) {
         add_type(units, "Quantity", &Base::QuantityPy::Type);
         add_type(units, "Unit", &Base::UnitPy::Type);
+        // the unit constants (Units.Radian, Units.Metre, ...) as the
+        // host's Units module carries them (UnitsApiPy.cpp): Draft
+        // multiplies angles by App.Units.Radian
+        for (const auto &info : Base::Quantity::unitInfo())
+            PyModule_AddObject(units, info.name,
+                               new Base::QuantityPy(new Base::Quantity(info.quantity)));
         PyModule_AddObject(module, "Units", units);
         PyObject *modules = PyImport_GetModuleDict();
         PyDict_SetItemString(modules, "FreeCAD.Units", units);
@@ -148,6 +154,44 @@ int initEvalGlobals()
     if (units)
         PyDict_SetItemString(eval_globals, "Units", units);
     Py_XDECREF(units);
+    // What workbench Python reads off FreeCAD before doing geometry:
+    // GuiUp (False: there is no GUI in here) and a Console whose
+    // Print* go to the guest's stderr, which the host logs.  Not a
+    // facade: nothing crosses.
+    {
+        PyObject *dict = PyModule_GetDict(fc);  // borrowed
+        PyObject *r = PyRun_String(
+            "GuiUp = 0\n"
+            "class _Console:\n"
+            "    def _w(self, *args):\n"
+            "        import sys\n"
+            "        sys.stderr.write(''.join(str(a) for a in args))\n"
+            "    PrintError = PrintWarning = PrintMessage = PrintLog = _w\n"
+            "    PrintDeveloperError = PrintDeveloperWarning = _w\n"
+            "Console = _Console()\n"
+            "del _Console\n"
+            // FreeCAD.Base as workbench code imports it (`from FreeCAD
+            // import Base`; Base.Vector): the same value classes and
+            // exception types the module itself carries.
+            "import sys as _sys, types as _types\n"
+            "Base = _types.ModuleType('FreeCAD.Base')\n"
+            "for _n in ('Vector', 'Rotation', 'Placement', 'Matrix', 'BoundBox',\n"
+            "           'FreeCADError', 'FreeCADAbort', 'XMLBaseException',\n"
+            "           'UnknownProgramOption', 'PropertyError', 'XMLParseException',\n"
+            "           'XMLAttributeError', 'BadFormatError', 'BadGraphError',\n"
+            "           'ExpressionError', 'ParserError', 'CADKernelError'):\n"
+            "    if _n in globals():\n"
+            "        setattr(Base, _n, globals()[_n])\n"
+            "_sys.modules['FreeCAD.Base'] = Base\n"
+            "del _sys, _types, _n\n",
+            Py_file_input, dict, dict);
+        if (!r) {
+            PyErr_Print();
+            Py_DECREF(fc);
+            return 7;
+        }
+        Py_DECREF(r);
+    }
     Py_DECREF(fc);
     // the module facades (Part) go into sys.modules now, so an exec'd
     // module's `import Part` finds them
