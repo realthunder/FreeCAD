@@ -39,6 +39,8 @@
 # include <Inventor/nodes/SoShaderParameter.h>
 # include <Inventor/nodes/SoShaderProgram.h>
 # include <Inventor/nodes/SoSphere.h>
+# include <Inventor/nodes/SoSubNode.h>
+# include <Inventor/fields/SoSFBool.h>
 #endif
 
 #include <App/Document.h>
@@ -73,6 +75,34 @@ constexpr int kCompilePollMs = 250;
 /// How long invalidations coalesce before a render: a drag reports
 /// every motion, and a render costs a backend frame.
 constexpr int kRenderDelayMs = 40;
+
+/// The preview's ball. Coin's sphere generator states a UV per vertex,
+/// but the vertex cache keeps them only while a texture unit is enabled
+/// on the capture traversal, which nothing here does -- so a plain
+/// SoSphere reached the backend without UVs, every fragment of a
+/// document's image node sampled texel (0, 0), and a mapped material
+/// showed as one flat colour (the chess set's bishop, 2026-09-04). The
+/// forceTexCoords field is what SoFCVertexCache reads to keep unit-0
+/// UVs regardless, as SoTextImage and SoDatumLabel carry it.
+class PreviewSphere : public SoSphere {
+    SO_NODE_HEADER(PreviewSphere);
+public:
+    static void initClass()
+    {
+        static bool done = false;
+        if (!done) {
+            SO_NODE_INIT_CLASS(PreviewSphere, SoSphere, "Sphere");
+            done = true;
+        }
+    }
+    PreviewSphere()
+    {
+        SO_NODE_CONSTRUCTOR(PreviewSphere);
+        SO_NODE_ADD_FIELD(forceTexCoords, (TRUE));
+    }
+    SoSFBool forceTexCoords;
+};
+SO_NODE_SOURCE(PreviewSphere)
 
 /// A document's public inputs as the vec4-padded `u_<name>` parameters
 /// the generated shader's uniforms are fed by (the packing of
@@ -242,7 +272,8 @@ void ShaderGraphHost::buildScene()
     auto material = new SoMaterial;
     material->diffuseColor.setValue(0.8f, 0.8f, 0.8f);
     root->addChild(material);
-    auto sphere = new SoSphere;
+    PreviewSphere::initClass();
+    auto sphere = new PreviewSphere;
     sphere->radius = kSphereRadius;
     root->addChild(sphere);
 }
