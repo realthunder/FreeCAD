@@ -24,6 +24,8 @@
 #include "CyclesSceneP.h"
 #include "Environment.h"
 
+#include <atomic>
+
 #ifdef HAVE_CYCLES
 
 #include <algorithm>
@@ -509,6 +511,28 @@ bool renderTestScene(const std::string &path,
 
 Viewport::~Viewport() = default;
 
-FrameStream::~FrameStream() = default;
+namespace
+{
+/// Streams alive in this process (sec 7.1's cap). Here rather than in
+/// the engine's translation unit so that the count is the same object
+/// in a build without the engine, and so that no implementation can
+/// forget it: a stream is counted by its own base.
+std::atomic<int> s_liveStreams{0};
+}  // namespace
+
+FrameStream::FrameStream()
+{
+    ++s_liveStreams;
+}
+
+FrameStream::~FrameStream()
+{
+    --s_liveStreams;
+}
+
+int FrameStream::liveCount()
+{
+    return s_liveStreams.load(std::memory_order_relaxed);
+}
 
 }  // namespace Render::Cycles

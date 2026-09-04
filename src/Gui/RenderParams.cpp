@@ -193,6 +193,7 @@ public:
     double CyclesTimeLimit;
     bool CyclesDenoise;
     long CyclesPixelSize;
+    long CyclesMaxStreams;
     long DebugViewMode;
     bool DebugFreezeFrame;
     bool DebugLabel;
@@ -494,6 +495,8 @@ public:
         funcs["CyclesDenoise"] = &RenderParamsP::updateCyclesDenoise;
         CyclesPixelSize = this->handle->GetInt("CyclesPixelSize", 1);
         funcs["CyclesPixelSize"] = &RenderParamsP::updateCyclesPixelSize;
+        CyclesMaxStreams = this->handle->GetInt("CyclesMaxStreams", 4);
+        funcs["CyclesMaxStreams"] = &RenderParamsP::updateCyclesMaxStreams;
         DebugViewMode = this->handle->GetInt("DebugViewMode", 0);
         funcs["DebugViewMode"] = &RenderParamsP::updateDebugViewMode;
         DebugFreezeFrame = this->handle->GetBool("DebugFreezeFrame", false);
@@ -1103,6 +1106,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCyclesPixelSize(RenderParamsP *self) {
         self->CyclesPixelSize = self->handle->GetInt("CyclesPixelSize", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCyclesMaxStreams(RenderParamsP *self) {
+        self->CyclesMaxStreams = self->handle->GetInt("CyclesMaxStreams", 4);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugViewMode(RenderParamsP *self) {
@@ -6320,6 +6327,43 @@ void RenderParams::setCyclesPixelSize(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeCyclesPixelSize() {
     instance()->handle->RemoveInt("CyclesPixelSize");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCyclesMaxStreams() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many path-traced sessions this process serves at once\n"
+"(docs/CyclesIntegration.md sec 7.1). A browser viewer that asks\n"
+"for a path-traced view gets a Cycles session of its own -- one\n"
+"per traced cell, per connection, across every served document --\n"
+"and each holds a device context and the scene on that device.\n"
+"A start made when this many are already running is refused with\n"
+"'TooManyStreams'; the viewer says so and stays on its raster\n"
+"view. 0 or less means no cap, which is what the desktop views\n"
+"and the offline render have always had: this counts served\n"
+"streams only.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getCyclesMaxStreams() {
+    return instance()->CyclesMaxStreams;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultCyclesMaxStreams() {
+    const static long def = 4;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCyclesMaxStreams(const long &v) {
+    instance()->handle->SetInt("CyclesMaxStreams",v);
+    instance()->CyclesMaxStreams = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCyclesMaxStreams() {
+    instance()->handle->RemoveInt("CyclesMaxStreams");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

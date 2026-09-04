@@ -2951,6 +2951,27 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter CyclesMaxStreams
+    ///
+    /// How many path-traced sessions this process serves at once
+    /// (docs/CyclesIntegration.md sec 7.1). A browser viewer that asks
+    /// for a path-traced view gets a Cycles session of its own -- one
+    /// per traced cell, per connection, across every served document --
+    /// and each holds a device context and the scene on that device.
+    /// A start made when this many are already running is refused with
+    /// 'TooManyStreams'; the viewer says so and stays on its raster
+    /// view. 0 or less means no cap, which is what the desktop views
+    /// and the offline render have always had: this counts served
+    /// streams only.
+    static const long & getCyclesMaxStreams();
+    static const long & defaultCyclesMaxStreams();
+    static void removeCyclesMaxStreams();
+    static void setCyclesMaxStreams(const long &v);
+    static const char *docCyclesMaxStreams();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter DebugViewMode
     ///
     /// Render debugging buffer visualization (docs/RenderDebug.md).

@@ -446,6 +446,8 @@ public:
             }
             reply[QLatin1String("available")] = Render::Cycles::available();
             reply[QLatin1String("devices")] = list;
+            reply[QLatin1String("streams")] = Render::Cycles::FrameStream::liveCount();
+            reply[QLatin1String("maxStreams")] = int(RenderParams::getCyclesMaxStreams());
             return reply;
         }
         const int cell = cellOf(req);
@@ -501,10 +503,41 @@ public:
             req.value(QLatin1String("minIntervalMs")).toInt(options.minIntervalMs);
         options.maxPixels =
             long(req.value(QLatin1String("maxPixels")).toDouble(double(options.maxPixels)));
+        // The server's policy, not the viewer's: read fresh at every
+        // start, so a change of the preference takes on the next one.
+        options.maxStreams = int(RenderParams::getCyclesMaxStreams());
         Render::Cycles::CameraInput camera;
         if (!readCamera(req, camera))
             return error("BadRequest",
                          QStringLiteral("a start needs view, proj, width and height"));
+
+        // A start on a cell that already traces is a restart, so its
+        // own stream goes BEFORE the replacement is made: it must not
+        // be what the cap refuses the replacement over, and two device
+        // contexts for one cell should not overlap. The cost is that a
+        // restart the engine then refuses leaves the cell dark rather
+        // than on its old frame -- which is what the viewer is told.
+        {
+            auto gone = streams->take(client, cell);
+            gone.clear();
+        }
+
+        // The cap itself, so that the refusal is named and logged. The
+        // engine checks it again as it constructs (it is the one place
+        // the count cannot be raced), but that answer arrives as a
+        // plain device failure; this one is the server's own.
+        const int live = Render::Cycles::FrameStream::liveCount();
+        if (options.maxStreams > 0 && live >= options.maxStreams) {
+            Base::Console().Warning(
+                "SceneServeSource: path tracing refused for connection %llu cell %d -- "
+                "%d served sessions already run (CyclesMaxStreams %d)\n",
+                (unsigned long long)client, cell, live, options.maxStreams);
+            return error("TooManyStreams",
+                         QStringLiteral("this server already path traces for %1 viewers, "
+                                        "which is its limit (%2)")
+                             .arg(live)
+                             .arg(options.maxStreams));
+        }
 
         auto &server = Render::SceneStreamServer::instance();
         std::string message;
@@ -521,14 +554,10 @@ public:
         if (!stream)
             return error("NoDevice", QString::fromStdString(message));
         stream->setCamera(camera);
-        std::shared_ptr<Render::Cycles::FrameStream> previous;
         {
             std::lock_guard<std::mutex> lock(streams->mutex);
-            auto &slot = streams->byClient[CyclesStreams::Key(client, cell)];
-            previous = std::move(slot);
-            slot = stream;
+            streams->byClient[CyclesStreams::Key(client, cell)] = stream;
         }
-        previous.reset();
         feedCyclesStreams(false, stream);
         reply[QLatin1String("running")] = true;
         reply[QLatin1String("device")] = QString::fromStdString(vp.device);

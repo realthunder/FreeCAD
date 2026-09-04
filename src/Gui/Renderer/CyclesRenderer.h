@@ -225,6 +225,10 @@ struct StreamOptions {
     int quality = 85;            ///< JPEG quality, 1..100
     int minIntervalMs = 100;     ///< least time between two frames sent
     long maxPixels = 1920L * 1080L;  ///< the render size cap (aspect kept)
+    int maxStreams = 0;          ///< how many streams this process may
+                                 ///< have alive at once, this one
+                                 ///< included; 0 = no cap. The server's
+                                 ///< policy, stated at every start.
 };
 
 /// Phase 5 of the plan: a Viewport whose frames go to a remote viewer
@@ -238,6 +242,9 @@ struct StreamOptions {
 /// serialized here. Nothing here names a Gui type (sec 7).
 class RendererExport FrameStream
 {
+protected:
+    FrameStream();
+
 public:
     /// \a send delivers one wire message (FrameStreamWire.h) to the
     /// viewer from the encoder thread and answers false once the
@@ -250,6 +257,12 @@ public:
             std::function<bool(std::vector<uint8_t> &&)> send,
             std::function<void(const std::string &)> notify,
             std::string *error);
+    /// Streams alive in this process, across every source and every
+    /// connection: what StreamOptions::maxStreams caps. A stream
+    /// counts from its construction to its destruction, and the
+    /// session it hands to the reaper on the way out (sec 5.12) is
+    /// already uncounted while that session still holds its device.
+    static int liveCount();
     virtual ~FrameStream();
 
     /// State the scene; its camera is ignored once the viewer has

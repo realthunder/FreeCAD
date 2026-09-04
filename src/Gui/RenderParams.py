@@ -1523,6 +1523,17 @@ Params = [
         doc="Render the External shading model at 1/n resolution and\n"
         "scale up -- Blender's preview pixel size. 2 or 4 keeps a large\n"
         "view fluid on a weak device at the cost of a blockier preview."),
+    ParamInt('CyclesMaxStreams',  4, title='Cycles served sessions',
+        doc="How many path-traced sessions this process serves at once\n"
+        "(docs/CyclesIntegration.md sec 7.1). A browser viewer that asks\n"
+        "for a path-traced view gets a Cycles session of its own -- one\n"
+        "per traced cell, per connection, across every served document --\n"
+        "and each holds a device context and the scene on that device.\n"
+        "A start made when this many are already running is refused with\n"
+        "'TooManyStreams'; the viewer says so and stays on its raster\n"
+        "view. 0 or less means no cap, which is what the desktop views\n"
+        "and the offline render have always had: this counts served\n"
+        "streams only."),
     ParamInt('DebugViewMode',  0, title='Debug view mode',
         proxy=ParamComboBox(items=['Off', 'Depth', 'Normal', 'AO', 'Shadow',
                                    'ShadowTile', 'Overdraw', 'ShadowFilter',
