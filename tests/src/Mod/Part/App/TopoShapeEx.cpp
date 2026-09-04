@@ -9,6 +9,9 @@
 #include "PartTestHelpers.h"
 
 #include <functional>
+// std::numbers::pi below: libstdc++ hands it over through another header,
+// MSVC does not.
+#include <numbers>
 
 #include <boost/core/ignore_unused.hpp>
 #include <BRepAdaptor_CompCurve.hxx>

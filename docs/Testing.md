@@ -13,6 +13,7 @@ as "the primary tree"; that was wrong.
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
+| C++ on Windows (`build/win-relwithdebinfo-801`) | **472 of 472 passing** (2026-09-04), 1 disabled -- see "C++ on Windows" |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -65,6 +66,88 @@ builds. It costs build time and nothing else.
 One binary directly, which is the fastest loop while working on a suite:
 
     ./tests/src/Mod/Part/TopoShapeEx_tests_run --gtest_filter='*makEBoolean*'
+
+### C++ on Windows
+
+Green there too as of **2026-09-04**: **472 of 472 passing** on
+`build/win-relwithdebinfo-801`, 473 registered, the same one entry disabled.
+22s with `-j 6`, 89s serial.
+
+That is 473 against the 453 above, and the difference is the date rather than
+the platform: 444 expanded cases and 29 whole-binary entries here, against 427
+and 26 on 2026-08-28, from suites added since (`MaterialXGen_tests_run` alone
+is 48 cases). Section 2 explains why the two kinds of entry count differently.
+
+    D:\works\sw\tools\ctest-fcad.cmd -j 6
+
+which is only `cd` plus `run.cmd`; a plain `.conda\run.cmd ctest` from the
+build directory is the same thing. `QT_QPA_PLATFORM` is a Linux concern --
+there is a desktop here and the QtTest suite uses it.
+
+**`ENABLE_DEVELOPER_TESTS` is OFF in the Windows preset and has to be forced
+into a tree that already exists**, because `cacheVariables` only seed a fresh
+configure (the trap `CLAUDE.md` describes). `CMakeUserPresets.json` is a local
+file, so flipping it there is per-box:
+
+    .conda\run.cmd cmake --preset win-relwithdebinfo-local -DENABLE_DEVELOPER_TESTS=ON
+
+Five things were in the way, none of them a stale test, and all five are
+fixed. Four were MSVC being stricter or Windows exporting less:
+
+- `Toponaming_tests_run` -- `return {}` for a `Base::BoundBox3d`. Its
+  six-bound constructor is `explicit` (with defaults for every argument), and
+  MSVC will not use an explicit constructor for an empty braced return.
+- `TopoShapeEx_tests_run` -- `std::numbers::pi` with no `<numbers>`, which
+  libstdc++ hands over through another header.
+- `Material_tests_run` -- `MaterialLoader::getMaterialFromFile` unresolved:
+  `MaterialLoader` is not an exported class, so nothing carried that member
+  out of the DLL. It has `MaterialsExport` of its own now.
+- `RenderCacheMapBench_tests_run` -- `SoFCRenderCache::_Material::init`
+  unresolved. `SoFCRenderCache` is `GuiExport`, but **a nested class is not
+  exported with its enclosing one**, so the member needs its own.
+
+The fifth was the suites finding nothing to run:
+
+- `MaterialXGen_tests_run` failed all 48 cases with "the MaterialX data
+  library is missing from this install". The build handed it
+  `${CMAKE_BINARY_DIR}/share/Renderer/`, and `CMAKE_INSTALL_DATADIR` -- what
+  actually stages that library -- is **`data`** on Windows. The test's guard
+  does not catch this: `dataLibraryPath()` returns a path whether or not
+  anything is there, so a wrong root fails loudly rather than skipping, which
+  is the right way round.
+
+**And `ctest` itself could not run a single case.** Windows has no rpath, so a
+test exe finds `FreeCADApp.dll` in the build's `bin`, and `Part.pyd` under
+`Mod\Part`, only through `PATH`; without them it dies at load with
+`0xc0000135`, which ctest reports as an abnormal exit with no output -- it
+reads as the test crashing rather than as the loader never getting there. And
+`PRE_TEST` discovery hits it first, so one failed discovery aborted the run
+before anything else was tried.
+
+`tests/CMakeLists.txt` now carries the path per target, from
+`TARGET_RUNTIME_DLL_DIRS` -- every directory that target's own dependencies
+live in, so there is no list to maintain. It goes in two ways, and they are
+not interchangeable:
+
+- The `add_test()` suites take it as the test property
+  `ENVIRONMENT_MODIFICATION`, one `PATH=path_list_prepend:` entry per
+  directory, separated with `$<SEMICOLON>`. Not an escaped `\;`: the property
+  is written into `CTestTestfile.cmake` as a bracket argument, where a
+  backslash is literal, and ctest then reads the whole thing as **one**
+  modification -- prepending `PATH=path_list_prepend:` to `PATH` as if it
+  were a directory.
+- The six `gtest_discover_tests()` suites need the path one step earlier, for
+  the discovery run, and only `TEST_LAUNCHER` (CMake 3.29) prefixes that
+  command. It gets one `--modify` per directory, because GoogleTest carries
+  the launcher as a CMake list through a `-D` round trip that splits on `;`.
+  Set it **before** `gtest_discover_tests()`: the module reads the property
+  when it is called, not when the build is generated.
+
+Do not merge the two. A launcher on an `add_test()` target arrives as one
+argument, semicolons and all, which prepends `--modify` and the rest to `PATH`
+as though they were directories and leaves the real ones out -- and the tests
+that happen to need only their first directory still pass, so it looks like it
+works.
 
 ## 2. Why ctest says 453 and the binaries add up to 1305
 
