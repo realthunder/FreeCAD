@@ -493,6 +493,35 @@ ImageResult ImageHost::eval(const std::string& source,
     return res;
 }
 
+ImageResult ImageHost::exec(const std::string& source, const std::string& module)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    ImageResult res;
+    if (!d->initialize()) {
+        res.excType = "ImageUnavailable";
+        res.message = "expression sandbox image is not available";
+        return res;
+    }
+    json req;
+    req["op"] = "exec";
+    req["src"] = source;
+    if (!module.empty())
+        req["module"] = module;
+    json reply;
+    if (!d->roundTrip(json::to_cbor(req), reply)) {
+        reset();
+        res.excType = "ImageTrapped";
+        res.message = "image call failed, instance dropped";
+        return res;
+    }
+    res.ok = reply.value("ok", false);
+    if (!res.ok) {
+        res.excType = reply.value("exc", "Exception");
+        res.message = reply.value("msg", "");
+    }
+    return res;
+}
+
 namespace
 {
 

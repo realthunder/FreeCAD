@@ -134,6 +134,16 @@ public:
                                const App::Expression* parsed = nullptr,
                                int options = 0);
 
+    /** Run statements in the guest (FcxWire::OpExec).  With `module`
+     * the source becomes a module of that name in the guest's
+     * sys.modules -- the way the host pushes workbench Python into the
+     * guest while there is no package loader for it (tests today, G1's
+     * Draft loader later).  Not counted as an evaluation; bridge ops the
+     * source makes are counted.  `ok` says whether it ran; there is no
+     * value.
+     */
+    ImageResult exec(const std::string& source, const std::string& module = std::string());
+
     /** Decode the value of a successful result into a new host PyObject
      * reference (nullptr on failure).  Handles in the reply resolve
      * against the live table, so call this BEFORE clearHandles().  The

@@ -342,6 +342,70 @@ static json dispatchEval(const json &req)
 }
 
 
+/** {op:"exec", src, module?}: statements, not an expression.  With
+ * `module` the source runs as a module of that name -- created, put in
+ * sys.modules BEFORE it runs (as import does, so the source may refer
+ * to itself) and bound to its parent package when the name is dotted;
+ * removed again on failure.  This is how the host pushes workbench
+ * Python into the guest while there is no package loader for it
+ * (tests today, G1's Draft loader later).  Without `module` the source
+ * runs once in a copy of the eval globals and its names are discarded;
+ * what it put in sys.modules stays.  Reply {ok:true} or the error.
+ */
+static json dispatchExec(const json &req)
+{
+    auto src = req.find("src");
+    if (src == req.end() || !src->is_string())
+        return protocolError("exec without src");
+    const std::string module = req.value("module", "");
+    PyObject *modules = PyImport_GetModuleDict();
+    PyObject *globals = nullptr;
+    PyObject *mod = nullptr;
+    if (!module.empty()) {
+        mod = PyModule_New(module.c_str());
+        if (!mod)
+            return errorReply();
+        globals = PyModule_GetDict(mod);  // borrowed
+        Py_INCREF(globals);
+        if (PyDict_SetItemString(globals, "__builtins__", PyEval_GetBuiltins()) < 0
+                || PyDict_SetItemString(modules, module.c_str(), mod) < 0) {
+            Py_DECREF(globals);
+            Py_DECREF(mod);
+            return errorReply();
+        }
+    }
+    else {
+        globals = PyDict_Copy(eval_globals);
+        if (!globals)
+            return errorReply();
+    }
+    PyObject *result = PyRun_String(src->get_ref<const std::string &>().c_str(),
+                                    Py_file_input, globals, globals);
+    Py_DECREF(globals);
+    if (!result) {
+        json err = errorReply();
+        if (mod) {
+            if (PyDict_DelItemString(modules, module.c_str()) < 0)
+                PyErr_Clear();
+            Py_DECREF(mod);
+        }
+        return err;
+    }
+    Py_DECREF(result);
+    if (mod) {
+        size_t dot = module.rfind('.');
+        if (dot != std::string::npos) {
+            PyObject *parent = PyDict_GetItemString(modules, module.substr(0, dot).c_str());
+            if (parent && PyObject_SetAttrString(parent, module.c_str() + dot + 1, mod) < 0)
+                PyErr_Clear();
+        }
+        Py_DECREF(mod);  // sys.modules holds it
+    }
+    json reply;
+    reply["ok"] = true;
+    return reply;
+}
+
 json dispatch(const json &req)
 {
     json reply;
@@ -350,6 +414,8 @@ json dispatch(const json &req)
         reply = protocolError("request without op");
     else if (op->get_ref<const std::string &>() == FcxWire::OpEval)
         reply = dispatchEval(req);
+    else if (op->get_ref<const std::string &>() == FcxWire::OpExec)
+        reply = dispatchExec(req);
     else
         reply = protocolError("unknown op");
     if (PyErr_Occurred())

@@ -610,6 +610,201 @@ TEST_F(ExpressionImageEvalTest, bridgeCountersPerOp)
     host.clearHandles();
 }
 
+// ---- the G1 step-3 gate (docs/Sandbox.md sec 7.6): Draft's vector
+// ---- algebra runs in the guest on the in-image value classes with no
+// ---- bridge hop, and agrees with the same source run on the host.
+
+#include <cmath>
+#include <fstream>
+#include <iterator>
+
+namespace
+{
+
+/// A Draft workbench source file: the build/install tree's Mod/Draft
+/// (Application::getHomePath), else FCX_REPO/src/Mod/Draft; empty when
+/// neither has it.
+std::string readDraftFile(const char* name)
+{
+    std::vector<std::string> candidates = {
+        App::Application::getHomePath() + "Mod/Draft/" + name,
+    };
+    std::string repo = envOr("FCX_REPO", std::string());
+    if (!repo.empty())
+        candidates.push_back(repo + "/src/Mod/Draft/" + name);
+    for (const auto& p : candidates) {
+        std::ifstream in(p, std::ios::binary);
+        if (in)
+            return std::string(std::istreambuf_iterator<char>(in), {});
+    }
+    return {};
+}
+
+/// Stand-ins for what DraftVecUtils imports around itself: the
+/// parameter store (draftutils.params), the message sink, the precision
+/// helper, the deprecation decorator.  The real ones pull PySide and the
+/// host's parameter database, which is G1b's loader problem; what runs
+/// UNMODIFIED here is DraftVecUtils itself.  Same script on both sides.
+const char* const DraftStubs =
+    "import sys, types\n"
+    "def _mod(name, **attrs):\n"
+    "    m = types.ModuleType(name)\n"
+    "    m.__dict__.update(attrs)\n"
+    "    sys.modules[name] = m\n"
+    "    return m\n"
+    "pkg = _mod('draftutils')\n"
+    "pkg.__path__ = []\n"
+    "pkg.params = _mod('draftutils.params',\n"
+    "    get_param=lambda entry, path='Mod/Draft', ret_default=False, silent=False:\n"
+    "        {'precision': 6}.get(entry))\n"
+    "_noop = lambda *a, **k: None\n"
+    "pkg.messages = _mod('draftutils.messages', _msg=_noop, _wrn=_noop, _err=_noop, _log=_noop)\n"
+    "pkg.utils = _mod('draftutils.utils', precision=lambda: 6)\n"
+    "if 'freecad' not in sys.modules:\n"
+    "    try:\n"
+    "        import freecad\n"
+    "    except ImportError:\n"
+    "        _mod('freecad').__path__ = []\n"
+    "sys.modules['freecad'].deprecation = _mod('freecad.deprecation',\n"
+    "    deprecated=lambda *a, **k: (lambda f: f))\n";
+
+/// The harness module the expressions below reach through.
+const char* const DraftHarness =
+    "import math\n"
+    "import FreeCAD\n"
+    "import DraftVecUtils as D\n"
+    "V = FreeCAD.Vector\n"
+    "pi = math.pi\n";
+
+/// Undo the stubs and the pushed modules on the host side.
+const char* const DraftCleanup =
+    "import sys\n"
+    "for n in ('fcxtest', 'DraftVecUtils', 'draftutils.utils', 'draftutils.messages',\n"
+    "          'draftutils.params', 'draftutils', 'freecad.deprecation'):\n"
+    "    sys.modules.pop(n, None)\n"
+    "fc = sys.modules.get('freecad')\n"
+    "if fc is not None and hasattr(fc, 'deprecation'):\n"
+    "    del fc.deprecation\n";
+
+/// Run `source` on the host as module `name` (in sys.modules); the
+/// mirror of ImageHost::exec(source, name).
+bool hostModule(const char* name, const std::string& source)
+{
+    Base::PyGILStateLocker lock;
+    PyObject* mod = PyModule_New(name);
+    if (!mod)
+        return false;
+    PyObject* g = PyModule_GetDict(mod);
+    PyDict_SetItemString(g, "__builtins__", PyEval_GetBuiltins());
+    PyDict_SetItemString(PyImport_GetModuleDict(), name, mod);
+    PyObject* r = PyRun_String(source.c_str(), Py_file_input, g, g);
+    Py_DECREF(mod);
+    if (!r) {
+        PyErr_Print();
+        return false;
+    }
+    Py_DECREF(r);
+    return true;
+}
+
+bool hostEvalFloat(const std::string& expr, double& out)
+{
+    Base::PyGILStateLocker lock;
+    PyObject* g = PyDict_New();
+    PyDict_SetItemString(g, "__builtins__", PyEval_GetBuiltins());
+    PyObject* r = PyRun_String(expr.c_str(), Py_eval_input, g, g);
+    Py_DECREF(g);
+    if (!r) {
+        PyErr_Print();
+        return false;
+    }
+    out = PyFloat_AsDouble(r);
+    Py_DECREF(r);
+    return !PyErr_Occurred();
+}
+
+}  // namespace
+
+TEST_F(ExpressionImageEvalTest, draftVecUtilsInGuestZeroHops)
+{
+    std::string source = readDraftFile("DraftVecUtils.py");
+    if (source.empty())
+        GTEST_SKIP() << "Mod/Draft/DraftVecUtils.py not found (set FCX_REPO)";
+
+    auto& host = ImageHost::instance();
+    auto r = host.exec(DraftStubs);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    r = host.exec(source, "DraftVecUtils");
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    r = host.exec(DraftHarness, "fcxtest");
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+
+    ASSERT_TRUE(hostModule("_fcx_draft_stubs", DraftStubs));
+    ASSERT_TRUE(hostModule("DraftVecUtils", source));
+    ASSERT_TRUE(hostModule("fcxtest", DraftHarness));
+
+    // Every public function but typecheck (which returns None), each
+    // reduced to one float so both sides compare on the wire's terms.
+    const char* cases[] = {
+        "T.D.precision()",
+        "len(T.D.toString(T.V(1, 2, 3)))",
+        "T.D.tup(T.V(1, 2, 3))[2]",
+        "T.D.neg(T.V(1, -2, 3)).y",
+        "T.D.equals(T.V(1, 2, 3), T.V(1, 2, 3.0000001))",
+        "T.D.scale(T.V(1, 2, 3), 2).z",
+        "T.D.scaleTo(T.V(3, 4, 0), 10).x",
+        "T.D.dist(T.V(1, 2, 3), T.V(4, 6, 3))",
+        "T.D.angle(T.V(1, 0, 0), T.V(0, 1, 0))",
+        "T.D.angle(T.V(1, 0, 0), T.V(0, -1, 0), T.V(0, 0, 1))",
+        "T.D.project(T.V(1, 1, 0), T.V(2, 0, 0)).x",
+        "T.D.rotate2D(T.V(1, 0, 0), T.pi / 2).y",
+        "T.D.rotate(T.V(1, 0, 0), T.pi / 2, T.V(0, 0, 1)).y",
+        "T.D.getRotation(T.V(0, 1, 0))[3]",
+        "T.D.isNull(T.V(1e-9, 0, 0))",
+        "T.D.find(T.V(1, 0, 0), [T.V(5, 0, 0), T.V(1, 0, 0)])",
+        "T.D.closest(T.V(0, 0, 0), [T.V(5, 0, 0), T.V(1, 0, 0), T.V(3, 0, 0)])",
+        "T.D.isColinear([T.V(0, 0, 0), T.V(1, 1, 0), T.V(2, 2, 0)])",
+        "T.D.rounded(T.V(1.23456789, 0, 0)).x",
+        "T.D.getPlaneRotation(T.V(1, 0, 0), T.V(0, 1, 0)).A22",
+        "len(T.D.removeDoubles([T.V(0, 0, 0), T.V(0, 0, 0), T.V(1, 0, 0)]))",
+        "T.D.get_spherical_coords(1, 1, 0)[1]",
+        "T.D.get_cartesian_coords(2, T.pi / 2, T.pi / 2)[1]",
+    };
+
+    host.resetStats();
+    std::size_t n = 0;
+    for (const char* expr : cases) {
+        std::string wrapped = std::string("float((lambda T: ") + expr
+            + ")(__import__('fcxtest')))";
+        auto g = host.eval(wrapped, {});
+        ASSERT_TRUE(g.ok) << expr << ": " << g.excType << ": " << g.message;
+        double native = 0;
+        ASSERT_TRUE(hostEvalFloat(wrapped, native)) << expr;
+        EXPECT_NEAR(value(g).get<double>(), native, 1e-12) << expr;
+        ++n;
+    }
+    auto st = host.stats();
+    EXPECT_EQ(st.evals, n);
+    EXPECT_EQ(st.handles, 0u) << "a value class crossed as a handle";
+    EXPECT_TRUE(st.ops.empty()) << "bridge ops: " << [&] {
+        std::string s;
+        for (const auto& [k, v] : st.ops)
+            s += k + "=" + std::to_string(v) + " ";
+        return s;
+    }();
+
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* g = PyDict_New();
+        PyDict_SetItemString(g, "__builtins__", PyEval_GetBuiltins());
+        PyObject* c = PyRun_String(DraftCleanup, Py_file_input, g, g);
+        Py_XDECREF(c);
+        Py_DECREF(g);
+        if (PyErr_Occurred())
+            PyErr_Clear();
+    }
+}
+
 TEST_F(ExpressionImageEvalTest, arithmeticInImage)
 {
     auto res = ImageHost::instance().evalExpression(obj, "2 ^ 10 + 0.5");

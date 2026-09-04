@@ -233,8 +233,14 @@ ring 2 is absent (`os`, `socket`, `ctypes`: no grant supplies them).
 
 ### 3.2 The wire (`FcxWire.h`)
 
-Ops: `eval`, `read_prop`, `get_attr`, `call`, `get_item`, `len`,
-`release`, `resolve_alias`, `pkg.missing`.  Value tags: `quantity`,
+Ops: `eval`, `exec`, `read_prop`, `get_attr`, `call`, `get_item`, `len`,
+`release`, `resolve_alias`, `pkg.missing`.  `exec` (2026-09-04,
+host->guest, `ImageHost::exec(source, module)`) runs statements; with a
+module name the source becomes that module in the guest's `sys.modules`
+(created and registered before it runs, bound to its parent package
+when dotted, removed on failure) -- how the host pushes workbench
+Python into the guest while there is no package loader for it (the
+DraftVecUtils gate today, G1's Draft loader later).  Value tags: `quantity`,
 `vec`, `rot`, `pla`, `mat`, `bb`, `h` (handle), `tup` (a tuple crosses
 as a tuple, the first corpus-gate finding).  Reply shape `{ok, val}` or
 `{ok:false, exc, msg}`.  There is NO write op; `doc.write.self` is
@@ -761,9 +767,19 @@ TopoShapeEdge 17, Vector 17, DocumentObject 13 / 2, Rotation 13,
 Document 12 / 2, Placement 12, ...), 32 `Part` module names (374 uses),
 16 `FreeCAD` names (692 uses, `Vector` 332).  Missing: a `write_prop`
 op (`addProperty` alone is 192 uses), `Part` and `FreeCAD` module
-facades, guest-native `Vector`/`Placement`/`Rotation`/`Matrix`/
-`BoundBox` (1.6 k vector operations cannot hop), rung 2, and a
-local-wheel source in `install_package`.  Plan: G1a the surface
+facades, rung 2, and a local-wheel source in `install_package`.  NOT
+missing, checked 2026-09-04: the guest-native value classes.  The
+in-image `FreeCAD` module has carried `Vector`, `Rotation`,
+`Placement`, `Matrix`, `BoundBox` and `Units.Quantity`/`Unit` since the
+core carve (ImageDispatch.cpp), so the 1.6 k vector operations never
+hop.  Gate passed on both runtimes
+(`ExpressionImageEvalTest.draftVecUtilsInGuestZeroHops`): DraftVecUtils
+pushed into the guest UNMODIFIED through the `exec` op (its
+`draftutils`/`freecad.deprecation` imports stubbed -- those pull PySide
+and the parameter store, G1b's loader problem), all 23 public functions
+evaluated in the guest and on the host from the same source, results
+within 1e-12 (wasm libm included), `stats()` showing zero bridge ops
+and zero handles.  Plan: G1a the surface
 (gate: every public `draftgeoutils` function run in the guest on
 handles, results equal to native); G1b the Draft wheel and the loader;
 G1c rung 2 for one principal (gate: one Draft Wire's `execute()`

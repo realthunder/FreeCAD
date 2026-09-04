@@ -27,6 +27,11 @@ namespace FcxWire
 
 // ops, host -> image
 inline const char* const OpEval = "eval";
+// {op:"exec", src, module?}: run statements in the guest; with "module"
+// the source becomes a module of that name in sys.modules -- how the
+// host pushes workbench Python into the guest before a package loader
+// exists (tests; G1's loader later).  Reply {ok:true} or the error.
+inline const char* const OpExec = "exec";
 
 // ops, image -> host (mid-eval bridge).  Request fields: "h" = handle
 // id (uint64), "a" = wire-encoded op argument (attr/prop name string
