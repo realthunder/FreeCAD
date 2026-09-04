@@ -2005,16 +2005,23 @@ BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
 
     auto gen = Render::MaterialX::generate(shader.fragmentSource,
                                            shader.sourcePath, shader.surface);
-    std::string what = shader.sourcePath.empty() ? std::string("document")
-                                                : shader.sourcePath;
+    const std::string document = shader.sourcePath.empty()
+        ? std::string("document")
+        : shader.sourcePath;
+    // Once per distinct message PER DOCUMENT, not per surface. One
+    // document usually carries a whole asset's material set, and a note
+    // like the OpenPBR translation is about the model the document is
+    // authored against -- true of every surface in it and worth saying
+    // once, not fifteen times for a chess set. Two surfaces with
+    // genuinely different notes (a missing image names the image) still
+    // report separately, because the message is part of the key.
+    for (const auto &w : gen.warnings) {
+        if (materialXWarned.insert(document + '\0' + w).second)
+            Base::Console().Warning("MaterialX %s: %s\n", document.c_str(), w.c_str());
+    }
+    std::string what = document;
     if (!shader.surface.empty())
         what += " surface '" + shader.surface + "'";
-    // Once per distinct message: every distinct text is a new variant,
-    // and the graph editor makes one per gesture.
-    for (const auto &w : gen.warnings) {
-        if (materialXWarned.insert(what + ": " + w).second)
-            Base::Console().Warning("MaterialX %s: %s\n", what.c_str(), w.c_str());
-    }
     if (!gen.valid) {
         // Reported once, here, and the draw keeps its stock appearance.
         // The path tracer reads the same document on its own terms and
