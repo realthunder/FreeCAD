@@ -19,7 +19,9 @@ modules).
   REL       a file relative to --root, stored under the same path
   --exclude a REL to leave out (a module the guest gets as a facade)
   --add     SRC=DEST: a file or directory outside --root, stored at
-            DEST (a directory is walked; DEST "." merges at the root)
+            DEST (a directory is walked for its .py files; DEST "."
+            merges at the root)
+  --add-data SRC=DEST: the same keeping every file (presets, JSON)
 
 The wheel is deterministic: entries sorted, timestamps fixed, so a
 rebuild that changes nothing leaves a byte-identical file and CMake's
@@ -43,15 +45,16 @@ def record_hash(data):
     return "sha256=" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-def walk(src, dest):
-    """(archive path, file path) pairs for a file or a directory."""
+def walk(src, dest, data=False):
+    """(archive path, file path) pairs for a file or a directory: the
+    Python files of a directory, or every file with `data`."""
     if os.path.isfile(src):
         yield dest, src
         return
     for dirpath, dirnames, filenames in os.walk(src):
         dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
         for fn in sorted(filenames):
-            if not fn.endswith(".py"):
+            if not data and not fn.endswith(".py"):
                 continue
             rel = os.path.relpath(os.path.join(dirpath, fn), src)
             arc = rel if dest in ("", ".") else dest + "/" + rel
@@ -66,6 +69,8 @@ def main():
     ap.add_argument("--root", required=True, help="the directory the REL files are relative to")
     ap.add_argument("--exclude", action="append", default=[], metavar="REL")
     ap.add_argument("--add", action="append", default=[], metavar="SRC=DEST")
+    ap.add_argument("--add-data", action="append", default=[], metavar="SRC=DEST",
+                    help="like --add, keeping every file of a directory (presets, JSON)")
     ap.add_argument("--summary", metavar="FILE",
                     help="write the archive member list there (the test reads it)")
     ap.add_argument("files", nargs="*", metavar="REL")
@@ -78,13 +83,13 @@ def main():
         if arc in excluded or not arc.endswith(".py"):
             continue
         members[arc] = os.path.join(args.root, rel)
-    for spec in args.add:
+    for spec, data in [(a, False) for a in args.add] + [(a, True) for a in args.add_data]:
         if "=" not in spec:
             sys.exit("--add wants SRC=DEST, got %r" % spec)
         src, dest = spec.split("=", 1)
         if not os.path.exists(src):
             sys.exit("--add: no such path %s" % src)
-        for arc, path in walk(src, dest.replace(os.sep, "/").strip("/")):
+        for arc, path in walk(src, dest.replace(os.sep, "/").strip("/"), data):
             if arc in excluded:
                 continue
             members[arc] = path

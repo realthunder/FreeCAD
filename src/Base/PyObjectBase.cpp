@@ -587,6 +587,18 @@ void PyObjectBase::trackReturnedItem(PyObject* child, Py_ssize_t index)
     trackItem(index, child);
 }
 
+void PyObjectBase::trackAttributeOf(PyObject* child, const char* attr, PyObject* parent)
+{
+    if (!child || !parent || !attr || !PyObject_TypeCheck(child, &(PyObjectBase::Type))) {
+        return;
+    }
+    auto* base = static_cast<PyObjectBase*>(child);
+    if (base->isConst() || base->isNotTracking()) {
+        return;
+    }
+    base->setAttributeOf(attr, parent);
+}
+
 void PyObjectBase::startNotify()
 {
     if (!shouldNotify()) {
@@ -637,7 +649,16 @@ void PyObjectBase::startNotify()
             Py_INCREF(attr);
             Py_INCREF(this);
 
-            __setattro(parent, attr, this);
+            // A parent stamped by trackAttributeOf() need not be a
+            // PyObjectBase (the sandbox guest's handle proxies are
+            // Python classes): the write-back is then its own
+            // __setattr__, which the proxy turns into the host op.
+            if (PyObject_TypeCheck(parent, &(PyObjectBase::Type))) {
+                __setattro(parent, attr, this);
+            }
+            else {
+                PyObject_SetAttr(parent, attr, this);
+            }
 
             Py_DECREF(parent); // might be destroyed now
             Py_DECREF(attr); // might be destroyed now

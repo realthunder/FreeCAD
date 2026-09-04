@@ -238,6 +238,12 @@ def get_axis_bubble_data(obj, vobj):
 
 
 class _Axis:
+    def __new__(cls, *args, **kwargs):
+        # the sandbox construction dispatch (docs/Sandbox.md 7.6 G1d)
+        from draftobjects.base import new_proxy
+
+        return new_proxy(cls, *args, **kwargs)
+
     "The Axis object"
 
     def __init__(self, obj):

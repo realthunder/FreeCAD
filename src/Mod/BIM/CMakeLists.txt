@@ -230,6 +230,7 @@ SET(nativeifc_SRCS
 
 SET(bimtests_SRCS
     bimtests/__init__.py
+    bimtests/bim_test_objects.py
     bimtests/TestArchAxis.py
     bimtests/TestArchAxisGui.py
     bimtests/TestArchBase.py
@@ -335,6 +336,92 @@ add_custom_command(
 #   `fc_copy_sources` and `fc_target_copy_resource` output a dependency of the
 #   BIM target. Thus building the BIM target triggers populating the build tree
 #   with the workbench sources and resources, if needed.
+IF (BUILD_EXPR_PYODIDE_HOST)
+    # BIM's App side as a bundled sandbox wheel (docs/Sandbox.md 5.6,
+    # 7.6 G1d): every Arch module a scripted object's Proxy lives in,
+    # unmodified -- the GUI halves inside them stay behind `if
+    # FreeCAD.GuiUp`, which is False in the guest.  Left out: the
+    # workbench init, the commands, the importers, nativeifc, the
+    # GUI-only modules and the tests.  The presets ride along under
+    # fcx_resources/Mod/BIM/Presets, where the guest's
+    # FreeCAD.getResourceDir() resolves (ArchIFCSchema, ArchProfile and
+    # ArchComponent read them at the resource path unchanged); the SQL
+    # parser is the generated one; the
+    # importers package is the guest shim (Arch.py imports importDAE at
+    # module level).  Draft's wheel (fcx_draft) is the other half:
+    # everything here imports Draft.
+    SET(BIM_sandbox_wheel_files
+        Arch.py
+        ArchAxis.py
+        ArchAxisSystem.py
+        ArchBuilding.py
+        ArchBuildingPart.py
+        ArchCommands.py
+        ArchComponent.py
+        ArchCovering.py
+        ArchCurtainWall.py
+        ArchCutPlane.py
+        ArchEquipment.py
+        ArchFence.py
+        ArchFloor.py
+        ArchFrame.py
+        ArchGrid.py
+        ArchIFC.py
+        ArchIFCSchema.py
+        ArchIFCView.py
+        ArchMaterial.py
+        ArchNesting.py
+        ArchPanel.py
+        ArchPipe.py
+        ArchPrecast.py
+        ArchProfile.py
+        ArchProject.py
+        ArchRebar.py
+        ArchReference.py
+        ArchReport.py
+        ArchRoof.py
+        ArchSchedule.py
+        ArchSectionPlane.py
+        ArchSite.py
+        ArchSketchObject.py
+        ArchSpace.py
+        ArchSql.py
+        ArchStairs.py
+        ArchStructure.py
+        ArchTessellation.py
+        ArchTruss.py
+        ArchVRM.py
+        ArchWall.py
+        ArchWindow.py
+        ArchWindowPresets.py
+    )
+    SET(_bim_wheel_dir ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
+    SET(_bim_wheel ${_bim_wheel_dir}/fcx_bim-${PACKAGE_VERSION}-py3-none-any.whl)
+    SET(_bim_wheel_packer ${CMAKE_SOURCE_DIR}/src/Tools/bindings/packSandboxWheel.py)
+    SET(_bim_wheel_shims ${CMAKE_SOURCE_DIR}/src/App/ExpressionImage/shims)
+    SET(_bim_wheel_deps ${BIM_sandbox_wheel_files} ${Arch_presets})
+    LIST(TRANSFORM _bim_wheel_deps PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
+    ADD_CUSTOM_COMMAND(
+        OUTPUT ${_bim_wheel}
+        COMMAND ${PYTHON_EXECUTABLE} ${_bim_wheel_packer}
+                --name fcx_bim --version ${PACKAGE_VERSION}
+                --out-dir ${_bim_wheel_dir}
+                --root ${CMAKE_CURRENT_SOURCE_DIR}
+                --add-data ${CMAKE_CURRENT_SOURCE_DIR}/Presets=fcx_resources/Mod/BIM/Presets
+                --add ${BIM_GENERATED_PARSER}=generated_sql_parser.py
+                --add ${_bim_wheel_shims}/importers=importers
+                --summary ${CMAKE_CURRENT_BINARY_DIR}/fcx_bim_wheel.txt
+                ${BIM_sandbox_wheel_files}
+        DEPENDS ${_bim_wheel_packer} ${_bim_wheel_deps} ${BIM_GENERATED_PARSER}
+                ${_bim_wheel_shims}/importers/__init__.py
+                ${_bim_wheel_shims}/importers/importDAE.py
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Packing BIM's App side as the fcx_bim sandbox wheel"
+    )
+    ADD_CUSTOM_TARGET(BimSandboxWheel ALL DEPENDS ${_bim_wheel})
+    INSTALL(FILES ${_bim_wheel} DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
+ENDIF (BUILD_EXPR_PYODIDE_HOST)
+
 ADD_CUSTOM_TARGET(BIM ALL
     DEPENDS ${Arch_QRC_SRCS} ${Arch_QRC_COPIED} ${BIM_GENERATED_PARSER}
     SOURCES ${Arch_SRCS}

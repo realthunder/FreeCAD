@@ -594,7 +594,11 @@ TEST_F(ExpressionImageEvalTest, bridgeCountersPerOp)
     ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
     auto more = host.stats();
     EXPECT_EQ(more.evals, 2u);
-    EXPECT_EQ(more.handles, 2u);
+    // one id per object: the pack finds the entry the previous
+    // evaluation's deferred release has not yet dropped, so the same
+    // object exported again mints nothing (G1d, ArchComponent's
+    // `obj in o.Hosts`)
+    EXPECT_EQ(more.handles, 1u);
     EXPECT_EQ(more.ops["read_prop"], 4u);
 
     // a bare literal crosses nothing but the evaluation itself
@@ -602,7 +606,7 @@ TEST_F(ExpressionImageEvalTest, bridgeCountersPerOp)
     ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
     auto lit = host.stats();
     EXPECT_EQ(lit.evals, 3u);
-    EXPECT_EQ(lit.handles, 2u);
+    EXPECT_EQ(lit.handles, 1u);
     EXPECT_EQ(lit.ops["read_prop"], 4u);
 
     host.resetStats();
@@ -1937,12 +1941,12 @@ TEST_F(ExpressionImageEvalTest, facadeChainDocumentGetObject)
 
 TEST_F(ExpressionImageEvalTest, undeclaredXmlMemberUnreachable)
 {
-    // renameProperty IS an XML member of DocumentObjectPy -- but it
-    // carries no <Sandbox/> annotation, so the facade does not have it
-    // and read_prop finds no such property: DENY by default.
-    // (removeProperty played this part until it was declared as a
-    // write-family call.)
-    auto res = ImageHost::instance().eval("o.renameProperty",
+    // adjustRelativeLinks IS an XML member of DocumentObjectPy -- but
+    // it carries no <Sandbox/> annotation, so the facade does not have
+    // it and read_prop finds no such property: DENY by default.
+    // (removeProperty, then renameProperty, played this part until
+    // each was declared as a write-family call.)
+    auto res = ImageHost::instance().eval("o.adjustRelativeLinks",
                                           objectBinding("o", obj));
     ASSERT_FALSE(res.ok);
     EXPECT_EQ(res.excType, "AttributeError");
@@ -1956,7 +1960,7 @@ TEST_F(ExpressionImageEvalTest, undeclaredXmlMemberUnreachable)
     json req;
     req["op"] = "get_attr";
     req["h"] = id;
-    req["a"] = "renameProperty";
+    req["a"] = "adjustRelativeLinks";
     json reply = App::ExpressionSandbox::dispatchHostOp(table, req);
     EXPECT_FALSE(reply.value("ok", false));
     EXPECT_EQ(reply.value("exc", ""), "ProtocolError");
@@ -3294,12 +3298,6 @@ TEST_F(ExpressionImageEvalTest, draftWireRestoreInGuest)
     EXPECT_EQ(factsBefore, factsNative);
 }
 
-// ---- G1d (docs/Sandbox.md 7.6): the Draft test document -- every
-// ---- object drafttests.draft_test_objects makes -- saved natively,
-// ---- reopened with routing ON: every Proxy a stand-in, every object
-// ---- recomputing, every shape equal to the native re-execute (or
-// ---- within libm's last bit where trig runs in the guest) ----
-
 // ---- G1d: host reads and writes of a guest Proxy's attributes
 // ---- (proxy_get / proxy_set through the stand-in's getattr and
 // ---- setattr), and the construction dispatch: a class's __new__ ->
@@ -3425,139 +3423,151 @@ TEST_F(ExpressionImageEvalTest, guestProxyAttrsAndConstruct)
     }
 }
 
-/// The Draft test document rig shared by the reopen-routed and the
-/// built-routed gates: build it, snapshot a pass (proxy kind, shape
-/// hash, vertices, state per object), compare the routed pass to the
-/// native one.
-const char* const DraftObjsRig =
-    "import hashlib, json, math\n"
-    "import FreeCAD as App\n"
-    "from drafttests import draft_test_objects as dto\n"
-    "S = App.ExpressionSandbox\n"
-    "def build(path):\n"
-    "    doc = App.newDocument('FcxDraftObjs')\n"
-    "    dto._create_objects(doc)\n"
-    "    doc.recompute()\n"
-    "    doc.saveAs(path)\n"
-    "    App.closeDocument(doc.Name)\n"
-    "    return 'ok'\n"
-    "def sig(o):\n"
-    "    try:\n"
-    "        sh = o.Shape\n"
-    "    except Exception:\n"
-    "        return None\n"
-    "    if sh.isNull():\n"
-    "        return 'null'\n"
-    "    return hashlib.sha1(sh.exportBrepToString().encode()).hexdigest()\n"
-    "def verts(o):\n"
-    "    try:\n"
-    "        return sorted((v.X, v.Y, v.Z) for v in o.Shape.Vertexes)\n"
-    "    except Exception:\n"
-    "        return None\n"
-    "def proxy(o):\n"
-    "    p = getattr(o, 'Proxy', None)\n"
-    "    if p is None:\n"
-    "        return 'none'\n"
-    "    return 'guest' if S.proxyInfo(p) else 'host'\n"
-    "SNAP = {}\n"
-    "def pass_(path, routed):\n"
-    "    doc = App.openDocument(path)\n"
-    "    restored = {o.Name: proxy(o) for o in doc.Objects}\n"
-    "    for o in doc.Objects:\n"
-    "        o.touch()\n"
-    "    doc.recompute()\n"
-    "    SNAP[routed] = {o.Name: (restored[o.Name], sig(o), verts(o), 'Invalid' in o.State)\n"
-    "                    for o in doc.Objects}\n"
-    "    App.closeDocument(doc.Name)\n"
-    "    return 'ok'\n"
-    "def build_pass(routed):\n"
-    "    doc = App.newDocument('FcxDraftBuild')\n"
-    "    dto._create_objects(doc)\n"
-    "    doc.recompute()\n"
-    "    SNAP[routed] = {o.Name: (proxy(o), sig(o), verts(o), 'Invalid' in o.State)\n"
-    "                    for o in doc.Objects}\n"
-    "    App.closeDocument(doc.Name)\n"
-    "    return 'ok'\n"
-    "def compare():\n"
-    "    n, r = SNAP[False], SNAP[True]\n"
-    "    out = dict(objects=len(n), guest=0, host=0, none=0, invalid=[], differ=[], missing=[],\n"
-    "               hosts=[])\n"
-    "    for name, (pn, sn, vn, _) in n.items():\n"
-    "        if name not in r:\n"
-    "            out['missing'].append(name)\n"
-    "            continue\n"
-    "        pr, sr, vr, inv = r[name]\n"
-    "        if pn != 'none':\n"
-    "            out[pr] += 1\n"
-    "            if pr == 'host':\n"
-    "                out['hosts'].append(name)\n"
-    "        if inv:\n"
-    "            out['invalid'].append(name)\n"
-    "        if sn is not None and sn != sr:\n"
-    "            d = ulps = None\n"
-    "            if vn and vr and len(vn) == len(vr):\n"
-    "                d = max(abs(a - b) for pa, pb in zip(vn, vr) for a, b in zip(pa, pb))\n"
-    "                scale = max(abs(c) for p in vn + vr for c in p)\n"
-    "                ulps = d / math.ulp(scale) if scale else (0.0 if d == 0 else None)\n"
-    "            out['differ'].append([name, d, ulps])\n"
-    "    return json.dumps(out)\n";
+/// A corpus gate (G1d): a test document of one workbench's scripted
+/// objects, generated natively by `generator._create_objects(doc)`
+/// (drafttests.draft_test_objects, bimtests.bim_test_objects) and
+/// carried by a bundled wheel (`wheelPrefix`).  Two passes each: the
+/// reopen gate saves the native build and reopens it natively then
+/// routed (the Restore route); the built gate builds it twice, natively
+/// then routed (the construction dispatch).  A pass snapshots every
+/// object -- proxy kind, shape hash, vertices, state -- and the routed
+/// pass is compared to the native one: every scripted object's Proxy a
+/// guest stand-in, none imported or constructed on the host, no object
+/// missing, and (strict) none invalid, any shape difference within a
+/// few ULPs of the coordinate (libm's last bit, see the Polygon note).
+struct CorpusGate
+{
+    const char* label;
+    const char* generator;
+    const char* wheelPrefix;
+    int minScripted;
+    /// a corpus whose failures are still being listed reports invalid
+    /// objects and shape differences instead of failing on them
+    bool strict;
+};
 
-TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
+const CorpusGate DraftCorpus {"Draft test document", "drafttests.draft_test_objects", "fcx_draft-",
+                              60, true};
+const CorpusGate BimCorpus {"BIM test document", "bimtests.bim_test_objects", "fcx_bim-", 10,
+                            false};
+
+std::string corpusRig(const CorpusGate& gate)
+{
+    return std::string("import hashlib, json, math\n"
+                       "import FreeCAD as App\n"
+                       "import importlib\n"
+                       "gen = importlib.import_module(")
+        + json(gate.generator).dump()
+        + ")\n"
+          "S = App.ExpressionSandbox\n"
+          "def build(path):\n"
+          "    doc = App.newDocument('FcxCorpus')\n"
+          "    gen._create_objects(doc)\n"
+          "    doc.recompute()\n"
+          "    doc.saveAs(path)\n"
+          "    App.closeDocument(doc.Name)\n"
+          "    return 'ok'\n"
+          "def sig(o):\n"
+          "    try:\n"
+          "        sh = o.Shape\n"
+          "    except Exception:\n"
+          "        return None\n"
+          "    if sh.isNull():\n"
+          "        return 'null'\n"
+          "    return hashlib.sha1(sh.exportBrepToString().encode()).hexdigest()\n"
+          "def verts(o):\n"
+          "    try:\n"
+          "        return sorted((v.X, v.Y, v.Z) for v in o.Shape.Vertexes)\n"
+          "    except Exception:\n"
+          "        return None\n"
+          "def proxy(o):\n"
+          "    p = getattr(o, 'Proxy', None)\n"
+          "    if p is None:\n"
+          "        return 'none'\n"
+          "    return 'guest' if S.proxyInfo(p) else 'host'\n"
+          "SNAP = {}\n"
+          "def pass_(path, routed):\n"
+          "    doc = App.openDocument(path)\n"
+          "    restored = {o.Name: proxy(o) for o in doc.Objects}\n"
+          "    for o in doc.Objects:\n"
+          "        o.touch()\n"
+          "    doc.recompute()\n"
+          "    SNAP[routed] = {o.Name: (restored[o.Name], sig(o), verts(o), 'Invalid' in o.State)\n"
+          "                    for o in doc.Objects}\n"
+          "    App.closeDocument(doc.Name)\n"
+          "    return 'ok'\n"
+          "def build_pass(routed):\n"
+          "    doc = App.newDocument('FcxCorpusBuild')\n"
+          "    gen._create_objects(doc)\n"
+          "    doc.recompute()\n"
+          "    SNAP[routed] = {o.Name: (proxy(o), sig(o), verts(o), 'Invalid' in o.State)\n"
+          "                    for o in doc.Objects}\n"
+          "    App.closeDocument(doc.Name)\n"
+          "    return 'ok'\n"
+          "def compare():\n"
+          "    n, r = SNAP[False], SNAP[True]\n"
+          "    out = dict(objects=len(n), guest=0, host=0, none=0, invalid=[], differ=[], missing=[],\n"
+          "               hosts=[], nones=[], native_invalid=[])\n"
+          "    for name, (pn, sn, vn, ninv) in n.items():\n"
+          "        if ninv:\n"
+          "            out['native_invalid'].append(name)\n"
+          "        if name not in r:\n"
+          "            out['missing'].append(name)\n"
+          "            continue\n"
+          "        pr, sr, vr, inv = r[name]\n"
+          "        if pn != 'none':\n"
+          "            out[pr] += 1\n"
+          "            if pr == 'host':\n"
+          "                out['hosts'].append(name)\n"
+          "            elif pr == 'none':\n"
+          "                out['nones'].append(name)\n"
+          "        if inv and not ninv:\n"
+          "            out['invalid'].append(name)\n"
+          "        if sn is not None and sn != sr:\n"
+          "            d = ulps = None\n"
+          "            if vn and vr and len(vn) == len(vr):\n"
+          "                d = max(abs(a - b) for pa, pb in zip(vn, vr) for a, b in zip(pa, pb))\n"
+          "                scale = max(abs(c) for p in vn + vr for c in p)\n"
+          "                ulps = d / math.ulp(scale) if scale else (0.0 if d == 0 else None)\n"
+          "            out['differ'].append([name, d, ulps])\n"
+          "    return json.dumps(out)\n";
+}
+
+/// Why the gate cannot run: the runtime is not pyodide, the wheel is
+/// not bundled, or the generator does not import on the host; empty
+/// when it can.
+std::string corpusSkipReason(const CorpusGate& gate)
 {
     auto& host = ImageHost::instance();
     if (host.runtime() != "pyodide")
-        GTEST_SKIP() << "bundled wheels load on the pyodide runtime only";
-    {
-        namespace fs = std::filesystem;
-        bool bundled = false;
-        std::error_code ec;
-        for (const auto& e : fs::directory_iterator(
-                 App::Application::getResourceDir() + "Pyodide/wheels", ec)) {
-            const std::string fn = e.path().filename().string();
-            bundled = bundled || (fn.rfind("fcx_draft-", 0) == 0 && fn.find("-py3-none-any.whl") != std::string::npos);
-        }
-        if (!bundled)
-            GTEST_SKIP() << "no fcx_draft wheel bundled under " << App::Application::getResourceDir()
-                         << "Pyodide/wheels";
+        return "bundled wheels load on the pyodide runtime only";
+    namespace fs = std::filesystem;
+    bool bundled = false;
+    std::error_code ec;
+    for (const auto& e :
+         fs::directory_iterator(App::Application::getResourceDir() + "Pyodide/wheels", ec)) {
+        const std::string fn = e.path().filename().string();
+        bundled = bundled
+            || (fn.rfind(gate.wheelPrefix, 0) == 0
+                && fn.find("-py3-none-any.whl") != std::string::npos);
     }
-    {
-        Base::PyGILStateLocker lock;
-        PyObject* m = PyImport_ImportModule("drafttests.draft_test_objects");
-        if (!m) {
-            PyErr_Clear();
-            GTEST_SKIP() << "drafttests is not importable on the host in this test binary";
-        }
-        Py_DECREF(m);
+    if (!bundled)
+        return std::string("no ") + gate.wheelPrefix + "* wheel bundled under "
+            + App::Application::getResourceDir() + "Pyodide/wheels";
+    Base::PyGILStateLocker lock;
+    PyObject* m = PyImport_ImportModule(gate.generator);
+    if (!m) {
+        PyErr_Clear();
+        return std::string(gate.generator) + " is not importable on the host in this test binary";
     }
-    auto param = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Expression/Sandbox");
-    const std::string path = std::string(std::tmpnam(nullptr)) + "-fcxobjs.FCStd";
-    struct Cleanup
-    {
-        ParameterGrp::handle param;
-        std::string path;
-        ~Cleanup()
-        {
-            param->RemoveBool("Evaluate");
-            std::remove(path.c_str());
-            dropHostModules({"fcxobjs"});
-        }
-    } cleanup {param, path};
+    Py_DECREF(m);
+    return std::string();
+}
 
-    ASSERT_TRUE(hostModule("fcxobjs", DraftObjsRig));
-    std::string ok;
-    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').build(" + json(path).dump() + ")", ok));
-    ASSERT_EQ(ok, "ok");
-    param->SetBool("Evaluate", false);
-    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').pass_(" + json(path).dump() + ", False)", ok));
-    param->SetBool("Evaluate", true);
-    host.resetStats();
-    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').pass_(" + json(path).dump() + ", True)", ok));
-    auto st = host.stats();
-    std::string summary;
-    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').compare()", summary));
-    json j = json::parse(summary);
-    std::cout << "Draft test document reopened routed: " << j["objects"] << " objects, proxies guest "
+void corpusReport(const CorpusGate& gate, const char* how, const json& j,
+                  const ImageHost::Stats& st)
+{
+    std::cout << gate.label << " " << how << " routed: " << j["objects"] << " objects, proxies guest "
               << j["guest"] << " host " << j["host"] << " none " << j["none"] << "; proxy calls "
               << st.proxyCalls << " (";
     for (const auto& [k, v] : st.hostOps)
@@ -3565,13 +3575,22 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
     std::cout << " ); bridge ops:";
     for (const auto& [k, v] : st.ops)
         std::cout << " " << k << "=" << v;
-    std::cout << "\n  invalid: " << j["invalid"].dump() << "\n  differ: " << j["differ"].dump()
-              << std::endl;
-    EXPECT_GE(j["objects"].get<int>(), 60);
-    EXPECT_GE(j["guest"].get<int>(), 60) << "every restored Proxy must be a stand-in";
-    EXPECT_EQ(j["host"].get<int>(), 0) << "no Proxy may be imported on the host with routing on: "
-                                       << j["hosts"].dump();
-    EXPECT_EQ(j["none"].get<int>(), 0) << "every saved Proxy module must be served by the guest";
+    std::cout << "\n  invalid natively: " << j["native_invalid"].dump()
+              << "\n  invalid routed only: " << j["invalid"].dump()
+              << "\n  differ: " << j["differ"].dump() << std::endl;
+    EXPECT_GE(j["objects"].get<int>(), gate.minScripted);
+    EXPECT_GE(j["guest"].get<int>(), gate.minScripted) << "every Proxy must be a stand-in";
+    EXPECT_EQ(j["host"].get<int>(), 0)
+        << "no Proxy may be imported or constructed on the host with routing on: "
+        << j["hosts"].dump();
+    EXPECT_EQ(j["none"].get<int>(), 0) << "every Proxy module must be served by the guest: "
+                                       << j["nones"].dump();
+    if (!gate.strict) {
+        // an object a failing make_* never created is missing here
+        if (!j["missing"].empty())
+            std::cout << "  missing: " << j["missing"].dump() << std::endl;
+        return;
+    }
     EXPECT_TRUE(j["missing"].empty()) << j["missing"].dump();
     EXPECT_TRUE(j["invalid"].empty()) << "objects failing to recompute in the guest: "
                                       << j["invalid"].dump();
@@ -3594,25 +3613,52 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
     }
 }
 
-// ---- G1d, the construction dispatch: the Draft test document BUILT
-// ---- in a routed session -- every make_* runs on the host, every
-// ---- class's __new__ constructs its Proxy in the guest -- against
-// ---- the same document built natively ----
-
-TEST_F(ExpressionImageEvalTest, draftTestObjectsBuiltRouted)
+/// The reopen gate: the Restore route (docs/Sandbox.md 3.5, 7.6).
+void corpusReopenRouted(const CorpusGate& gate)
 {
+    const std::string why = corpusSkipReason(gate);
+    if (!why.empty())
+        GTEST_SKIP() << why;
     auto& host = ImageHost::instance();
-    if (host.runtime() != "pyodide")
-        GTEST_SKIP() << "bundled wheels load on the pyodide runtime only";
+    auto param = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    const std::string path = std::string(std::tmpnam(nullptr)) + "-fcxobjs.FCStd";
+    struct Cleanup
     {
-        Base::PyGILStateLocker lock;
-        PyObject* m = PyImport_ImportModule("drafttests.draft_test_objects");
-        if (!m) {
-            PyErr_Clear();
-            GTEST_SKIP() << "drafttests is not importable on the host in this test binary";
+        ParameterGrp::handle param;
+        std::string path;
+        ~Cleanup()
+        {
+            param->RemoveBool("Evaluate");
+            std::remove(path.c_str());
+            dropHostModules({"fcxobjs"});
         }
-        Py_DECREF(m);
-    }
+    } cleanup {param, path};
+
+    ASSERT_TRUE(hostModule("fcxobjs", corpusRig(gate)));
+    std::string ok;
+    param->SetBool("Evaluate", false);
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').build(" + json(path).dump() + ")", ok));
+    ASSERT_EQ(ok, "ok");
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').pass_(" + json(path).dump() + ", False)", ok));
+    param->SetBool("Evaluate", true);
+    host.resetStats();
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').pass_(" + json(path).dump() + ", True)", ok));
+    auto st = host.stats();
+    std::string summary;
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').compare()", summary));
+    corpusReport(gate, "reopened", json::parse(summary), st);
+}
+
+/// The built gate: the construction dispatch (7.6 G1d) -- every make_*
+/// runs on the host, every class's __new__ constructs its Proxy in the
+/// guest.
+void corpusBuiltRouted(const CorpusGate& gate)
+{
+    const std::string why = corpusSkipReason(gate);
+    if (!why.empty())
+        GTEST_SKIP() << why;
+    auto& host = ImageHost::instance();
     auto param = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Expression/Sandbox");
     struct Cleanup
@@ -3624,7 +3670,7 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsBuiltRouted)
             dropHostModules({"fcxobjs"});
         }
     } cleanup {param};
-    ASSERT_TRUE(hostModule("fcxobjs", DraftObjsRig));
+    ASSERT_TRUE(hostModule("fcxobjs", corpusRig(gate)));
     std::string ok;
     param->SetBool("Evaluate", false);
     ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').build_pass(False)", ok));
@@ -3636,30 +3682,34 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsBuiltRouted)
     auto st = host.stats();
     std::string summary;
     ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').compare()", summary));
-    json j = json::parse(summary);
-    std::cout << "Draft test document built routed: " << j["objects"] << " objects, proxies guest "
-              << j["guest"] << " host " << j["host"] << " none " << j["none"] << "; proxy calls "
-              << st.proxyCalls << " (";
-    for (const auto& [k, v] : st.hostOps)
-        std::cout << " " << k << "=" << v;
-    std::cout << " ); bridge ops:";
-    for (const auto& [k, v] : st.ops)
-        std::cout << " " << k << "=" << v;
-    std::cout << "\n  invalid: " << j["invalid"].dump() << "\n  differ: " << j["differ"].dump()
-              << std::endl;
-    EXPECT_GE(j["objects"].get<int>(), 60);
-    EXPECT_GE(j["guest"].get<int>(), 60) << "every Proxy made in a routed session must be a stand-in";
-    EXPECT_EQ(j["host"].get<int>(), 0) << "no Proxy may be constructed on the host with routing on: "
-                                       << j["hosts"].dump();
-    EXPECT_EQ(j["none"].get<int>(), 0);
-    EXPECT_TRUE(j["missing"].empty()) << j["missing"].dump();
-    EXPECT_TRUE(j["invalid"].empty()) << "objects failing to recompute in the guest: "
-                                      << j["invalid"].dump();
-    for (const auto& d : j["differ"]) {
-        ASSERT_TRUE(d.is_array() && d.size() == 3);
-        EXPECT_TRUE(d[2].is_number()) << d[0] << ": shapes differ in structure, not in rounding";
-        if (d[2].is_number())
-            EXPECT_LE(d[2].get<double>(), 4.0)
-                << d[0] << ": " << d[2] << " ULPs of the largest coordinate (delta " << d[1] << ")";
-    }
+    corpusReport(gate, "built", json::parse(summary), st);
+}
+
+// ---- G1d: the Draft test document (111 objects, 70 scripted) reopened
+// ---- with routing ON -- every saved Proxy a guest stand-in, every
+// ---- object recomputing, every shape equal to the native re-execute
+// ---- (or within libm's last bit) -- and BUILT in a routed session ----
+
+TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
+{
+    corpusReopenRouted(DraftCorpus);
+}
+
+TEST_F(ExpressionImageEvalTest, draftTestObjectsBuiltRouted)
+{
+    corpusBuiltRouted(DraftCorpus);
+}
+
+// ---- the same two gates over the BIM corpus (bimtests.bim_test_objects,
+// ---- the fcx_bim wheel): reporting, not yet strict -- the list of
+// ---- what BIM's execute() paths still need is the output ----
+
+TEST_F(ExpressionImageEvalTest, bimTestObjectsReopenRouted)
+{
+    corpusReopenRouted(BimCorpus);
+}
+
+TEST_F(ExpressionImageEvalTest, bimTestObjectsBuiltRouted)
+{
+    corpusBuiltRouted(BimCorpus);
 }

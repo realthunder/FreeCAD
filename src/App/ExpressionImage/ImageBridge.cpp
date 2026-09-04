@@ -26,6 +26,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <Base/PyObjectBase.h>
 #include <Base/VectorPy.h>
 
 #include "FcxWire.h"
@@ -289,8 +290,27 @@ json FcxImage::takePendingReleases()
     return ids;
 }
 
+/// _fcx.track(value, parent, name) -> value: stamp a value a handle
+/// proxy hands out for attribute `name` as that attribute of `parent`,
+/// so a nested write (`shape.Placement.Rotation = r`) writes the whole
+/// value back through the proxy's __setattr__ -- the write-back native
+/// FreeCAD does for every PyObjectBase an attribute returns.  Anything
+/// that is not a PyObjectBase passes through untouched.
+static PyObject *fcx_track(PyObject *, PyObject *args)
+{
+    PyObject *value = nullptr, *parent = nullptr;
+    const char *name = nullptr;
+    if (!PyArg_ParseTuple(args, "OOs", &value, &parent, &name))
+        return nullptr;
+    Base::PyObjectBase::trackAttributeOf(value, name, parent);
+    Py_INCREF(value);
+    return value;
+}
+
 static PyMethodDef FcxMethods[] = {
     {"op", fcx_op, METH_VARARGS, "One image->host bridge op."},
+    {"track", fcx_track, METH_VARARGS,
+     "Stamp a value as an attribute of its handle proxy, for the write-back."},
     {"release_later", fcx_release_later, METH_O,
      "Queue a handle release to ride the next request or reply."},
     {nullptr, nullptr, 0, nullptr},

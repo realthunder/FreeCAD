@@ -138,9 +138,9 @@ MODULE_FACADES = {
             "Arc", "ArcOfCircle", "ArcOfEllipse", "BSplineCurve", "BezierCurve",
             "Circle", "Compound", "Edge", "Ellipse", "Face", "Line", "LineSegment",
             "Plane", "Point", "Shape", "Vertex", "Wire",
-            "__sortEdges__", "getShape", "makeCircle", "makeCompound", "makeFace",
-            "makeLine", "makePlane", "makePolygon", "makeShell", "makeSolid",
-            "makeWireString", "makeWires", "sortEdges",
+            "__sortEdges__", "getShape", "getSortedClusters", "makeBox", "makeCircle",
+            "makeCompound", "makeFace", "makeLine", "makePlane", "makePolygon", "makeShell",
+            "makeSolid", "makeWireString", "makeWires", "sortEdges",
         ],
         "constants": ["OCC_VERSION"],
         "exceptions": ["OCCError"],
@@ -166,7 +166,18 @@ MODULE_FACADES = {
     # ALLOW for every principal (user ruling 2026-09-04), so a document
     # object's Wire.__init__ never prompts for its MakeFaceMode.
     "draftutils.params": {
-        "callables": ["get_param", "get_param_view"],
+        "callables": ["get_param", "get_param_arch", "get_param_view"],
+        "constants": [],
+        "exceptions": [],
+        "permission": "prefs.read",
+    },
+    # The guest's FreeCAD.ParamGet (a Python shim in the in-image
+    # FreeCAD module, ImageDispatch.cpp) answers every Get* through
+    # this host module (src/Ext/freecad/prefs.py), read only: BIM's
+    # ArchSchedule reads the parameter store at import, ArchTessellation
+    # and ArchComponent at execute.
+    "freecad.prefs": {
+        "callables": ["read", "names", "has_group"],
         "constants": [],
         "exceptions": [],
         "permission": "prefs.read",

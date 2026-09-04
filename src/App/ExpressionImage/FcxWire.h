@@ -77,6 +77,11 @@ inline const char* const OpLen = "len";
 // attach extension and calls changeAttacherType in the same breath),
 // so the guest recomposes the proxy's class.
 inline const char* const OpExt = "ext";
+// {op:"active_doc"}: the guest's FreeCAD.ActiveDocument -- the document
+// of the transaction's owner (the object whose hook runs), answered
+// exactly as `read_prop Document` on that owner would be; None when
+// no object owns the transaction.
+inline const char* const OpActiveDoc = "active_doc";
 // release: "h" one id, or "a" an array of ids.  In practice releases
 // never cross as an op: a proxy's __del__ queues its id and the queue
 // rides as "r" (an array of ids) on the next guest->host request or on

@@ -23,6 +23,7 @@
       <Documentation>
         <UserDocu>Get evaluated cell contents</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getContents">
       <Documentation>
@@ -154,6 +155,7 @@
       <Documentation>
         <UserDocu>Get given spreadsheet column width</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setRowHeight">
       <Documentation>
@@ -190,11 +192,13 @@ Enable/Disable given spreadsheet cell persistent edit mode.</UserDocu>
       <Documentation>
         <UserDocu>row(offset=0): Return the current row index with optional offset</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="column">
       <Documentation>
         <UserDocu>column(offset=0): Return the current column index with optional offset</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="touchCells">
       <Documentation>
@@ -245,6 +249,7 @@ of the block are not necessarily used.
 Returns None if the sheet has no used cells at all.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
 
     <Methode Name="getNonEmptyRange">

@@ -124,6 +124,10 @@ static PyObject *init_freecad_module()
         for (const auto &info : Base::Quantity::unitInfo())
             PyModule_AddObject(units, info.name,
                                new Base::QuantityPy(new Base::Quantity(info.quantity)));
+        // and the unit types (Units.Length, Units.Area, ...): BIM builds
+        // `Quantity(value, Units.Length)` for its user-facing strings
+        for (const auto &v : Base::Unit::unitTypes())
+            PyModule_AddObject(units, v.second, new Base::UnitPy(new Base::Unit(v.first)));
         PyModule_AddObject(module, "Units", units);
         PyObject *modules = PyImport_GetModuleDict();
         PyDict_SetItemString(modules, "FreeCAD.Units", units);
@@ -183,7 +187,120 @@ int initEvalGlobals()
             "    if _n in globals():\n"
             "        setattr(Base, _n, globals()[_n])\n"
             "_sys.modules['FreeCAD.Base'] = Base\n"
-            "del _sys, _types, _n\n",
+            "del _sys, _types, _n\n"
+            // FreeCAD.ParamGet, read only: every Get* is a prefs.read
+            // through the freecad.prefs module facade (BIM's
+            // ArchSchedule reads the store at import); a Set* is
+            // refused here, nothing crosses.
+            "class _ParamGrp:\n"
+            "    __slots__ = ('_path',)\n"
+            "    def __init__(self, path):\n"
+            "        self._path = path\n"
+            "    def __repr__(self):\n"
+            "        return '<sandbox parameter group %s (read only)>' % self._path\n"
+            "    def _get(self, kind, name, default):\n"
+            "        from freecad import prefs\n"
+            "        return prefs.read(self._path, name, kind, default)\n"
+            "    def GetBool(self, name, default=False):\n"
+            "        return self._get('Bool', name, default)\n"
+            "    def GetInt(self, name, default=0):\n"
+            "        return self._get('Int', name, default)\n"
+            "    def GetUnsigned(self, name, default=0):\n"
+            "        return self._get('Unsigned', name, default)\n"
+            "    def GetFloat(self, name, default=0.0):\n"
+            "        return self._get('Float', name, default)\n"
+            "    def GetString(self, name, default=''):\n"
+            "        return self._get('String', name, default)\n"
+            "    def _names(self, kind):\n"
+            "        from freecad import prefs\n"
+            "        return prefs.names(self._path, kind)\n"
+            "    def GetBools(self):\n"
+            "        return self._names('Bool')\n"
+            "    def GetInts(self):\n"
+            "        return self._names('Int')\n"
+            "    def GetUnsigneds(self):\n"
+            "        return self._names('Unsigned')\n"
+            "    def GetFloats(self):\n"
+            "        return self._names('Float')\n"
+            "    def GetStrings(self):\n"
+            "        return self._names('String')\n"
+            "    def GetGroup(self, name):\n"
+            "        return _ParamGrp(self._path + '/' + name)\n"
+            "    def HasGroup(self, name):\n"
+            "        from freecad import prefs\n"
+            "        return prefs.has_group(self._path, name)\n"
+            // A write is not performed and says so once per group: the
+            // user's preferences are not document code's to change,
+            // and the writes workbench code makes from a recompute
+            // (ArchComponent registering a TechDraw debug default)
+            // are defaults it then reads back with the same default.
+            "    _warned = set()\n"
+            "    def _ignore(self, *args, **kw):\n"
+            "        if self._path not in _ParamGrp._warned:\n"
+            "            _ParamGrp._warned.add(self._path)\n"
+            "            import sys\n"
+            "            sys.stderr.write('sandbox: parameter write to %s ignored (the guest reads"
+            " parameters, it does not write them)\\n' % self._path)\n"
+            "    SetBool = SetInt = SetUnsigned = SetFloat = SetString = _ignore\n"
+            "    RemBool = RemInt = RemUnsigned = RemFloat = RemString = _ignore\n"
+            "    RemGroup = Clear = Notify = NotifyAll = _ignore\n"
+            "def ParamGet(path):\n"
+            "    return _ParamGrp(path)\n"
+            // FreeCAD.Qt: the translation helpers workbench modules
+            // bind at import (Arch.py: `QT_TRANSLATE_NOOP =
+            // FreeCAD.Qt.QT_TRANSLATE_NOOP`); no translation here.
+            "class _Qt:\n"
+            "    @staticmethod\n"
+            "    def translate(context, text, disambiguation=None, n=-1):\n"
+            "        return text\n"
+            "    @staticmethod\n"
+            "    def QT_TRANSLATE_NOOP(context, text):\n"
+            "        return text\n"
+            "Qt = _Qt()\n"
+            "del _Qt\n"
+            // FreeCAD.getResourceDir: a bundled wheel's data rides under
+            // fcx_resources/ in site-packages (the fcx_bim wheel puts
+            // BIM's Presets at fcx_resources/Mod/BIM/Presets), so the
+            // resource paths workbench code builds resolve unchanged.
+            // The user data directory is a path that does not exist:
+            // code that looks for user files there finds none.
+            // (no sysconfig: the WASI stdlib slice does not carry it;
+            // site-packages is found on sys.path, and the reference
+            // image, which has no wheels, gets a path nothing is under)
+            "import sys as _sys\n"
+            "_resource_dir = '/fcx_resources/'\n"
+            "for _p in _sys.path:\n"
+            "    if _p.endswith('site-packages'):\n"
+            "        _resource_dir = _p + '/fcx_resources/'\n"
+            "        break\n"
+            "def getResourceDir():\n"
+            "    return _resource_dir\n"
+            "def getUserAppDataDir():\n"
+            "    return '/fcx/userdata/'\n"
+            "def getUserMacroDir(actual=False):\n"
+            "    return '/fcx/userdata/Macro/'\n"
+            "del _sys, _p\n"
+            // Document observers: registered here only, never fired --
+            // the guest sees no document events (ArchSchedule and
+            // ArchReport register one to refresh themselves).
+            "_observers = []\n"
+            "def addDocumentObserver(observer):\n"
+            "    _observers.append(observer)\n"
+            "def removeDocumentObserver(observer):\n"
+            "    if observer in _observers:\n"
+            "        _observers.remove(observer)\n"
+            // FreeCAD.ActiveDocument: the document of the object whose
+            // hook is running (FcxWire OpActiveDoc, the owner's
+            // Document as read_prop reads it), None outside a hook --
+            // a module property, so the module's class is swapped.
+            "import sys as _sys, types as _types\n"
+            "class _FcModule(_types.ModuleType):\n"
+            "    @property\n"
+            "    def ActiveDocument(self):\n"
+            "        import _fcx\n"
+            "        return _fcx.op('active_doc', 0)\n"
+            "_sys.modules['FreeCAD'].__class__ = _FcModule\n"
+            "del _sys, _types, _FcModule\n",
             Py_file_input, dict, dict);
         if (!r) {
             PyErr_Print();

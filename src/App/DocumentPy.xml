@@ -56,6 +56,7 @@ segments.</UserDocu>
       <Documentation>
         <UserDocu>Get the program version that a project file was created with</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getFileName">
       <Documentation>
@@ -401,6 +402,7 @@ Reorder object(s) in the tree view before a given object
           <UserDocu>Indicate if the document is restoring</UserDocu>
     </Documentation>
     <Parameter Name="Restoring" Type="Boolean" />
+    <Sandbox tier="value"/>
   </Attribute>
   <Attribute Name="Partial" ReadOnly="true">
     <Documentation>
@@ -419,6 +421,7 @@ Reorder object(s) in the tree view before a given object
           <UserDocu>Indicate if the document is recomputing</UserDocu>
     </Documentation>
     <Parameter Name="Recomputing" Type="Boolean" />
+    <Sandbox tier="value"/>
   </Attribute>
   <Attribute Name="Hasher" ReadOnly="true">
     <Documentation>
@@ -431,6 +434,7 @@ Reorder object(s) in the tree view before a given object
           <UserDocu>Indicate whether the document is undoing/redoing</UserDocu>
     </Documentation>
     <Parameter Name="Transacting" Type="Boolean" />
+    <Sandbox tier="value"/>
   </Attribute>
     <Attribute Name="OldLabel" ReadOnly="true">
         <Documentation>

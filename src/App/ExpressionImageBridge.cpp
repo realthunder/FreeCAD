@@ -39,6 +39,7 @@
 #include "ExpressionSecurityRuntime.h"
 #include "Extension.h"
 #include "ExtensionContainer.h"
+#include "DocumentObjectPy.h"
 #include "ExtensionContainerPy.h"
 #include "PropertyContainerPy.h"
 #ifdef FC_EXPR_PYODIDE_HOST
@@ -214,9 +215,21 @@ static bool boundDeclaredMethod(PyObject* obj, PyObject** self, std::string& nam
 
 uint64_t HandleTable::add(PyObject* obj)
 {
+    // ONE id per object for the life of the transaction: the guest
+    // compares proxies by id (`obj in o.Hosts`, ArchComponent's window
+    // subtraction), so the same object exported twice must not look
+    // like two.  Each export is one use; the entry goes when the last
+    // proxy releases it.
+    auto known = ids.find(obj);
+    if (known != ids.end()) {
+        ++uses[known->second];
+        return known->second;
+    }
     Py_INCREF(obj);
     uint64_t id = nextId++;
     objects[id] = obj;
+    ids[obj] = id;
+    uses[id] = 1;
     ++minted;
     return id;
 }
@@ -227,6 +240,14 @@ PyObject* HandleTable::get(uint64_t id) const
     return it == objects.end() ? nullptr : it->second;
 }
 
+uint64_t HandleTable::idOf(PyObject* obj) const
+{
+    for (const auto& [id, o] : objects)
+        if (o == obj)
+            return id;
+    return 0;
+}
+
 void HandleTable::release(uint64_t id)
 {
     if (defer) {
@@ -234,7 +255,9 @@ void HandleTable::release(uint64_t id)
         return;
     }
     auto it = objects.find(id);
-    if (it != objects.end()) {
+    if (it != objects.end() && --uses[id] <= 0) {
+        ids.erase(it->second);
+        uses.erase(id);
         Py_DECREF(it->second);
         objects.erase(it);
     }
@@ -259,6 +282,8 @@ void HandleTable::clear()
     for (auto& entry : objects)
         Py_DECREF(entry.second);
     objects.clear();
+    ids.clear();
+    uses.clear();
 }
 
 // ---- host value marshal (mirror of the image's ImageMarshal.cpp,
@@ -837,6 +862,24 @@ json dispatchHostOp(HandleTable& table, const json& req)
                 table.release(id);
             return okReply(json());
         }
+        if (op == FcxWire::OpActiveDoc) {
+            // the guest's FreeCAD.ActiveDocument: the owner's Document,
+            // through get_attr on the owner's own handle (Document is a
+            // declared handle attribute of DocumentObject, not a
+            // property) so the same permission applies -- an Arch
+            // execute() reads FreeCAD.ActiveDocument.getObject(...) as
+            // the host would.  A refusal must not surface as an
+            // AttributeError: Python would read that as "no such
+            // attribute" and hide the reason.
+            const uint64_t ownerId = table.owner() ? table.idOf(table.owner()) : 0;
+            if (!ownerId)
+                return okReply(json());
+            json sub = {{"op", FcxWire::OpGetAttr}, {"h", ownerId}, {"a", "Document"}};
+            json reply = dispatchHostOp(table, sub);
+            if (!reply.value("ok", false) && reply.value("exc", "") == "AttributeError")
+                reply["exc"] = "RuntimeError";
+            return reply;
+        }
         if (op == FcxWire::OpPkgMissing) {
 #ifdef FC_EXPR_PYODIDE_HOST
             auto a = req.find("a");
@@ -1053,14 +1096,32 @@ json dispatchHostOp(HandleTable& table, const json& req)
             static const char* const writeFamily[] = {
                 "addProperty", "removeProperty", "setPropertyStatus", "setEditorMode",
                 "setGroupOfProperty", "recompute", "configLinkProperty", "setLink",
-                "addExtension", "changeAttacherType"};
+                "addExtension", "changeAttacherType", "touch", "purgeTouched",
+                "renameProperty", "setExpression"};
             for (const char* w : writeFamily) {
-                if (member == w) {
-                    json denied = writeGate(w);
-                    if (!denied.is_null())
-                        return denied;
+                if (member != w)
+                    continue;
+                // touch marks an object for recompute and changes no
+                // data: allowed on any object of the OWNER'S document
+                // (ArchWindow.execute touches its host wall so the wall
+                // subtracts the opening in the same recompute); the
+                // permission is still the owner's own write permission
+                if (member == "touch" && table.owner()
+                        && PyObject_TypeCheck(base, &App::DocumentObjectPy::Type)
+                        && PyObject_TypeCheck(table.owner(), &App::DocumentObjectPy::Type)
+                        && static_cast<App::DocumentObjectPy*>(base)->getDocumentObjectPtr()
+                                   ->getDocument()
+                            == static_cast<App::DocumentObjectPy*>(table.owner())
+                                   ->getDocumentObjectPtr()
+                                   ->getDocument()) {
+                    ExpressionSecurity::checkPermission(
+                        ExpressionSecurity::Permission::DocWriteSelf);
                     break;
                 }
+                json denied = writeGate(w);
+                if (!denied.is_null())
+                    return denied;
+                break;
             }
             PyObject* callable = PyObject_GetAttrString(base, member.c_str());
             if (!callable)

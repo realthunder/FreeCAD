@@ -417,6 +417,12 @@ class _ArchReportDocObserver:
 
 class _ArchReport:
 
+    def __new__(cls, *args, **kwargs):
+        # the sandbox construction dispatch (docs/Sandbox.md 7.6 G1d)
+        from draftobjects.base import new_proxy
+
+        return new_proxy(cls, *args, **kwargs)
+
     def __init__(self, obj):
         self.setProperties(obj)
         # Keep a reference to the host object so helper methods can persist data

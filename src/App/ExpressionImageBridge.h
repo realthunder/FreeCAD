@@ -124,6 +124,8 @@ public:
     uint64_t add(PyObject* obj);
     /// Borrowed reference, nullptr when stale/released.
     PyObject* get(uint64_t id) const;
+    /// The wire id an object is registered under; 0 when it is not.
+    uint64_t idOf(PyObject* obj) const;
     /// Drop one entry (image-proxy __del__).  While releases are
     /// deferred the id is only QUEUED -- see setDeferReleases.
     void release(uint64_t id);
@@ -175,6 +177,9 @@ public:
 
 private:
     std::unordered_map<uint64_t, PyObject*> objects;
+    /// the id an object already has, and how many exports hold it
+    std::unordered_map<PyObject*, uint64_t> ids;
+    std::unordered_map<uint64_t, int> uses;
     std::vector<uint64_t> deferred;
     bool defer = false;
     uint64_t nextId = 1;

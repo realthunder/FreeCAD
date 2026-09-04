@@ -350,6 +350,31 @@ descriptor did not list without a trip, and sends everything else as
 `proxy_get`, keeping a method it got back on the stand-in; its
 `setattr` is `proxy_set`.  `proxy_new` also takes `k` (kwargs): the
 construction dispatch (7.6, G1d) sends a class's real call.
+Three more guest->host ops came with BIM (G1d): `ext {h}` re-reads a
+handle's extension facades after the guest called `addExtension` on
+it (the proxy recomposes its class); `active_doc` answers the guest's
+`FreeCAD.ActiveDocument` with the transaction owner's `Document`
+through `get_attr` on the owner's own handle (None outside a hook);
+`pkg.missing` is unchanged.  And the WRITE-BACK: every value a handle
+proxy hands out (`read_prop`, `get_attr`) is stamped as that
+attribute of the proxy (`PyObjectBase::trackAttributeOf`, the
+prelude's `_fcx.track`), so a nested write -- `obj.Placement.Base =
+v`, ArchFrame's `profile.Placement.Rotation = rot` -- writes the whole
+value back through the proxy's `__setattr__` = `write_prop`, exactly
+the write-back native FreeCAD performs for every PyObjectBase an
+attribute returns (`startNotify`, which now takes a generic setattr
+for a parent that is not a PyObjectBase).  Before it, such a write
+was silently lost in the guest and the Arch Frame's profiles never
+turned.  Two more identity rules from the same corpus: the host mints
+ONE handle id per object for the life of a transaction (a use count
+per id, the entry going with the last release), and a proxy compares
+and hashes by id, so `obj in o.Hosts` and `a == b` hold as they do
+natively (ArchComponent found no window to subtract from its wall
+before); and `touch` is allowed on any object of the OWNER'S document
+-- it marks for recompute and changes no data -- since ArchWindow
+touches its host wall from its own execute so the wall subtracts the
+opening in the same recompute.  Every other write-family member stays
+owner-only.
 
 The fixed layout (2026-09-04, step 7 of the coding order): a bare
 `read_prop`/`get_attr` with a name -- 2738 of the 3575 hops in the
@@ -736,6 +761,36 @@ ON) -- nothing; importing all 105 modules in the guest is a separate
 2.9 s gate step and happens only when workbench code asks for them.
 Measure with `setRouting(True)` first: `evaluate()` with routing off
 never boots the guest, and `available()` does not either.
+
+`fcx_draft` grew on 2026-09-04 (G1d, BIM): `Draft.py` itself and the
+two view provider modules it imports unguarded
+(`draftviewproviders.view_base`, `view_draftlink`; their GUI reach
+sits under `GuiUp`, and BIM derives view provider classes from
+`Draft.ViewProviderDraft` at module level).  The second wheel is
+`fcx_bim` (target `BimSandboxWheel`, `src/Mod/BIM/CMakeLists.txt`):
+the 43 Arch modules a scripted object's Proxy lives in, UNMODIFIED --
+their GUI halves stay behind `if FreeCAD.GuiUp` -- without the
+workbench init, the commands, the importers, nativeifc, the GUI-only
+modules and the tests; plus the generated SQL parser, an `importers`
+package shim (`Arch.py` imports `importDAE.triangulate` at module
+level; the shim's raises), and BIM's `Presets` as DATA under
+`fcx_resources/Mod/BIM/Presets` (the packer's `--add-data` keeps
+every file), where the guest's `FreeCAD.getResourceDir()` resolves,
+so `ArchIFCSchema`, `ArchProfile` and `ArchComponent` read their
+presets at the path they build natively.  What BIM's App side reads
+off `FreeCAD` at import or in a hook and the guest module now
+carries: `ParamGet` (read only: every `Get*` is a `prefs.read` through
+the `freecad.prefs` module facade, `src/Ext/freecad/prefs.py`; a
+`Set*` raises), `Qt.translate`/`QT_TRANSLATE_NOOP` (identity),
+`getResourceDir`/`getUserAppDataDir`/`getUserMacroDir` (the latter
+two a path that does not exist), `addDocumentObserver`/
+`removeDocumentObserver` (registered, never fired), and
+`ActiveDocument` -- a module property (the module's class is swapped
+for one with it) answered by the `active_doc` op: the transaction
+owner's `Document` through `get_attr` on the owner's own handle, None
+outside a hook.  The corpus is `bimtests.bim_test_objects` (one of
+every Arch class made headless: 68 objects, 59 scripted), the gates
+`bimTestObjectsReopenRouted` / `bimTestObjectsBuiltRouted` (7.6).
 
 Ground truth: a guest has no sockets by structural absence; the shim
 defines no `fetch`, `XMLHttpRequest` or `WebSocket`.  The threat that
@@ -1333,6 +1388,47 @@ the guest Proxy; 9 proxy calls), and `draftTestObjectsBuiltRouted`
 the native build, the same counts and the ULP bound as the reopen
 gate.
 
+**G1d, BIM, BUILT 2026-09-04 (commit after `72fb1159bc`).**  The
+`fcx_bim` wheel (5.6) and the corpus `bimtests.bim_test_objects` (one
+of every Arch class made headless: 68 objects, 59 scripted, all valid
+natively; Reference alone skipped, it needs an external file), with
+the same two gates as Draft's, parameterised (`CorpusGate` in the
+test file): `bimTestObjectsReopenRouted` and `bimTestObjectsBuiltRouted`,
+REPORTING rather than strict while the list below stands.  What the
+gates found, in the order the errors surfaced, each fixed the same
+day: `Draft.py` and the two view provider modules it imports were not
+in the Draft wheel; `FreeCAD.Qt`, `ParamGet` (with `Get*s`),
+`getResourceDir` (+ the presets as data under `fcx_resources`),
+`addDocumentObserver`, `ActiveDocument` and the `Units.Length` unit
+types missing from the guest module (5.6); undeclared members BIM's
+`execute()` paths reach -- `State`, `InListRecursive`,
+`OutListRecursive`, `Document.Restoring/Recomputing/Transacting/
+getProgramVersion`, `getPropertyByName`, `getPropertyStatus`,
+`getDocumentationOfProperty`, `getEnumerationsOfProperty`, TopoShape
+`extrude/revolve/makeWires/reversed/isSame/isCoplanar/tessellate/
+cleaned/isInside/importBrepFromString/dumps/writeInventor`,
+`touch/purgeTouched/renameProperty/setExpression` (write family),
+`isAttachedToDocument/getParent`, Sheet `get/getUsedRange/row/column/
+getColumnWidth`, `Part.getSortedClusters/makeBox`, `Part.Precision`
+(OCCT's compile-time tolerances, a guest class); nine plain Proxy
+classes without a root (`_ArchMaterial`, `_ArchMaterialContainer`,
+`_ArchMultiMaterial`, `_Axis`, `_AxisSystem`, `ArchGrid`,
+`_SectionPlane`, `_ArchSchedule`, `_ArchReport`) given the `__new__`
+hook beside `ArchIFC.IfcRoot`'s; and ONE real divergence: ArchFrame's
+`profile.Placement.Rotation = rot` -- native FreeCAD writes a value an
+attribute handed out back into its parent on a nested write
+(`PyObjectBase::setAttributeOf` + `startNotify`), the guest's value
+was detached, so the frame's profiles never turned (a 2000 mm
+difference).  Now every value a handle proxy hands out is stamped as
+that attribute of the proxy (`PyObjectBase::trackAttributeOf`, public
+and static, from the prelude's `_fcx.track`), and the write-back is
+the proxy's `__setattr__` = `write_prop`, on a value handle through
+the type's own setter (3.2).  Result: reopen routed 59/59 Proxies in
+the guest, invalid only Stairs, Schedule, Report; built routed 59/59,
+plus the pipe Connector -- all four are writes to objects other than
+the owner, ruled undeclared (13).  Traffic for the reopen: ~1100 proxy
+calls, ~9000 hops for 59 objects.
+
 ### 7.7 Decisions, numbered
 
 1. `.ui` as the form language -- amended: the authoring format; the
@@ -1469,9 +1565,10 @@ Non-ASCII object names occur in real files.  Rig:
     --------------------------------------------  -----   ----------------------------------
     tests/src/App/ExpressionSecurity.cpp            11    catalog, hash, grant store
     tests/src/App/ExpressionSecurityRuntime.cpp      9    resolve, scopes, pending, audit
-    tests/src/App/ExpressionImageHost.cpp           64    acceptance 6, bench 6 (disabled),
-                                                          bridge 8, budget 4, eval 22 (the
-                                                          G1a-G1d gates among them),
+    tests/src/App/ExpressionImageHost.cpp           66    acceptance 6, bench 6 (disabled),
+                                                          bridge 8, budget 4, eval 24 (the
+                                                          G1a-G1d gates among them, the
+                                                          Draft and BIM corpus gates),
                                                           host 9, routing 9
     tests/src/App/ExpressionPyodide.cpp             10    layout, verify, scoping, offer
     src/Mod/Test/SandboxPyodide.py                   2    the offer end to end
@@ -1479,7 +1576,9 @@ Non-ASCII object names occur in real files.  Rig:
 
 The acceptance harness opens a real saved-and-reopened `.FCStd` under a
 real `document:sha256` principal and runs hostile expressions through
-every layer.  Suites green at `fd14ba2878`: C++ 536/536, Python 2630.
+every layer.  Suites green at `fd14ba2878`: C++ 536/536, Python 2630;
+the sandbox suites at the BIM commit (2026-09-04): pyodide 90/90, wasi
+79 + 11 skipped, the four corpus gates passing.
 Every gtest and the corpus gate select a runtime per process through
 `FCX_RUNTIME`.
 
@@ -1627,6 +1726,21 @@ sockets, any network for the reference image, a webview escape hatch.
 - The guest's `math` is the runtime's libm: cos/sin can round one ULP
   from glibc (Polygon, 7.6).  Any gate that compares guest trig to
   native must compare in ULPs, not bytes.
+- A value handed out by a handle is a COPY unless it is stamped: native
+  FreeCAD's `obj.Placement.Base = v` works only because __getattro
+  stamps the Placement as the object's attribute and `startNotify`
+  writes it back.  The guest lost every such nested write until the
+  proxies stamped what they hand out (3.2); a workbench that works
+  natively and silently misplaces geometry in the guest is this shape
+  of bug (ArchFrame, 2000 mm).
+- `python-mode` through `evaluate()` is the EXPRESSION engine, not
+  CPython: no `obj`, the owner is addressed by name (`Frame001.Base`),
+  no comprehensions, member access through ObjectIdentifier.  It
+  cannot exercise the stamping above; probe such things through a
+  guest Proxy or the corpus gates.
+- A module property that raises AttributeError reads as "module has
+  no attribute": the guest's `FreeCAD.ActiveDocument` property maps a
+  refused `get_attr` to RuntimeError so the reason shows.
 
 ## 13. Known gaps and open questions
 
@@ -1640,6 +1754,21 @@ sockets, any network for the reference image, a webview escape hatch.
   container, no document object -- native until the Gui side is in the
   guest, G2), and `Base::Type::importModule`'s type-string import
   (`Type.cpp:85`).
+- What BIM's App side cannot do in the guest (the corpus gates' list,
+  2026-09-04, all ruled or structural): `ArchStairs` makes and writes
+  its railing objects, `ArchPipeConnector` trims the pipes it joins,
+  `ArchSchedule` and `ArchReport` fill and recompute their result
+  spreadsheet -- writes to objects other than the owner, undeclared by
+  ruling (7.6 decision 1) -- so those four recompute INVALID with
+  routing on and the objects they would have made are missing; a
+  parameter WRITE from a recompute is ignored with one stderr line
+  per group (`ArchComponent.getSection` sets TechDraw's
+  `allowCrazyEdge` while it projects, so a section of an edge over
+  10 m differs from native); `ArchSchedule`'s IFC branch imports
+  `nativeifc` (ifcopenshell) -- nothing of it is in the guest.  A
+  nested write-back's refusal is silent, as it is natively: a guest
+  `obj.Placement.Base = v` on a non-owner raises inside
+  `startNotify`, which clears it.
 - The GUI live expression editors evaluate as session, unconfined.
 - No memory ceiling for a guest.
 - Addon principal granularity (per addon, per file?) is still open.

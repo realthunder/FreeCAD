@@ -374,10 +374,17 @@ INSTALL(
 # the PySide/resource shims.  Boots with the pyodide guest from
 # <datadir>/Pyodide/wheels like the fcx_image wheel.
 IF (BUILD_EXPR_PYODIDE_HOST)
+    # Draft.py imports view_base and view_draftlink unguarded, and BIM
+    # derives view provider classes from Draft.ViewProviderDraft at
+    # module level; both modules keep their GUI reach under GuiUp.
     SET(Draft_sandbox_wheel_files
+        Draft.py
         DraftVecUtils.py
         DraftGeomUtils.py
         WorkingPlane.py
+        draftviewproviders/__init__.py
+        draftviewproviders/view_base.py
+        draftviewproviders/view_draftlink.py
         ${Draft_geoutils}
         ${Draft_utilities}
         ${Draft_functions}

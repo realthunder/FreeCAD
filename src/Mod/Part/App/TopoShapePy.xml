@@ -23,6 +23,7 @@ Sub-elements such as vertices, edges or faces are accessible as:
       <Documentation>
         <UserDocu>Serialize the content of this shape to a string in BREP format.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="loads">
       <Documentation>
@@ -43,6 +44,7 @@ read(filename)
 writeInventor() -> string
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="exportIges" Const="true">
       <Documentation>
@@ -114,6 +116,7 @@ importBrepFromString(string, [displayProgressBar=True])
 importBrepFromString(str,False) to not display a progress bar.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="extrude" Const="true">
       <Documentation>
@@ -122,6 +125,7 @@ extrude(vector) -> Shape
 --
 Shp2 = Shp1.extrude(App.Vector(0,0,10)) - extrude the shape 10 mm in the +Z direction.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="revolve" Const="true">
       <Documentation>
@@ -163,6 +167,7 @@ r=s.revolve(V(0,0,0),V(0,1,0), 360)
 Part.show(r)
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="check" Const="true">
       <Documentation>
@@ -552,6 +557,7 @@ itself.
 op: an optional string to be appended when auto generates element mapping.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="reverse">
       <Documentation>
@@ -567,6 +573,7 @@ reverse()
 reversed() -> Shape
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="complement">
       <Documentation>
@@ -612,6 +619,7 @@ isPartner(shape) -> bool
 isSame(shape) -> bool
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="isEqual" Const="true">
       <Documentation>
@@ -643,6 +651,7 @@ isValid() -> bool
 isCoplanar(shape,tol=None) -> bool
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="isInfinite" Const="true">
       <Documentation>
@@ -688,6 +697,7 @@ the bounded HashCode() with an unbounded std::hash.</UserDocu>
 tessellate() -> (vertex,facets)
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="project" Const="true">
       <Documentation>
@@ -777,6 +787,7 @@ Warning: Use the cleaned shape with care because certain algorithms may work inc
 if the shape has no internal triangulation any more.
 </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="replaceShape" Const="true">
       <Documentation>
@@ -810,6 +821,7 @@ isInside(point, tolerance, checkFace) => Boolean
 checkFace indicates if the point lying directly on a face is considered to be inside or not
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="removeSplitter" Const="true">
       <Documentation>

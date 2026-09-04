@@ -68,6 +68,13 @@ class IfcRoot:
     This class is further segmented down into IfcProduct and IfcContext.
     """
 
+    def __new__(cls, *args, **kwargs):
+        # the sandbox construction dispatch (docs/Sandbox.md 7.6 G1d):
+        # every Arch scripted object descends from here
+        from draftobjects.base import new_proxy
+
+        return new_proxy(cls, *args, **kwargs)
+
     def setProperties(self, obj):
         """Give the object properties for storing IFC data.
 

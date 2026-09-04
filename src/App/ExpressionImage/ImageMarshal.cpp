@@ -41,10 +41,25 @@ static const char ProxyPrelude[] =
     "    __slots__ = ('_id', '_ty', '_fc')\n"
     "    def __repr__(self):\n"
     "        return '<HostHandle %s #%d>' % (self._ty, self._id)\n"
+    // identity is the host object's: the host mints one id per object
+    // per transaction, so `obj in o.Hosts` and `a == b` hold as they
+    // do natively
+    "    def __eq__(self, other):\n"
+    "        return isinstance(other, HostHandle) and other._id == self._id\n"
+    "    def __ne__(self, other):\n"
+    "        return not (isinstance(other, HostHandle) and other._id == self._id)\n"
+    "    def __hash__(self):\n"
+    "        return hash(self._id)\n"
+    // A value read off a handle (read_prop here, get_attr in _attr) is
+    // stamped as that attribute of the proxy: a nested write --
+    // `obj.Placement.Base = v`, ArchFrame's `profile.Placement.Rotation
+    // = rot` -- then writes the whole value back through __setattr__,
+    // the write-back native FreeCAD performs for every value an
+    // attribute hands out.
     "    def __getattr__(self, name):\n"
     "        if name.startswith('_'):\n"
     "            raise AttributeError(name)\n"
-    "        return _fcx.op('read_prop', self._id, name)\n"
+    "        return _fcx.track(_fcx.op('read_prop', self._id, name), self, name)\n"
     "    def __setattr__(self, name, value):\n"
     "        if name in HostHandle.__slots__ or name == '__class__':\n"
     "            object.__setattr__(self, name, value)\n"
@@ -70,7 +85,7 @@ static const char ProxyPrelude[] =
     "            pass\n"
     "def _attr(name):\n"
     "    def get(self):\n"
-    "        return _fcx.op('get_attr', self._id, name)\n"
+    "        return _fcx.track(_fcx.op('get_attr', self._id, name), self, name)\n"
     "    return property(get)\n"
     "def _method(name):\n"
     "    if name == 'addExtension':\n"
@@ -134,6 +149,47 @@ static const char ProxyPrelude[] =
     "            EXCEPTIONS[n] = e\n"
     "        m._fcx_constants = tuple(spec['constants'])\n"
     "        sys.modules[modname] = m\n"
+    "        if modname == 'Part':\n"
+    "            m.Precision = _Precision\n"
+    // Part.Precision: OCCT's Precision class is compile-time constants
+    // (Precision.hxx), so it lives here rather than crossing.
+    "class _Precision:\n"
+    "    @staticmethod\n"
+    "    def confusion():\n"
+    "        return 1e-7\n"
+    "    @staticmethod\n"
+    "    def squareConfusion():\n"
+    "        return 1e-14\n"
+    "    @staticmethod\n"
+    "    def angular():\n"
+    "        return 1e-12\n"
+    "    @staticmethod\n"
+    "    def intersection():\n"
+    "        return 1e-9\n"
+    "    @staticmethod\n"
+    "    def approximation():\n"
+    "        return 1e-6\n"
+    "    @staticmethod\n"
+    "    def pConfusion():\n"
+    "        return 1e-9\n"
+    "    @staticmethod\n"
+    "    def pIntersection():\n"
+    "        return 1e-11\n"
+    "    @staticmethod\n"
+    "    def pApproximation():\n"
+    "        return 1e-8\n"
+    "    @staticmethod\n"
+    "    def infinite():\n"
+    "        return 2e100\n"
+    "    @staticmethod\n"
+    "    def isInfinite(value):\n"
+    "        return abs(value) >= 1e100\n"
+    "    @staticmethod\n"
+    "    def isPositiveInfinite(value):\n"
+    "        return value >= 1e100\n"
+    "    @staticmethod\n"
+    "    def isNegativeInfinite(value):\n"
+    "        return value <= -1e100\n"
     // A handle whose object carries extensions (Part::AttachExtension
     // on a Draft Wire): the extension methods are injected per
     // instance on the host, so the proxy class is composed from the

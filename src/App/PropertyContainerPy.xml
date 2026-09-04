@@ -28,6 +28,7 @@ checkOwner : int
     1: raise exception if not found or the property does not belong to this container.
     2: return a tuple (owner, propertyValue).</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getPropertyTouchList">
       <Documentation>
@@ -146,6 +147,7 @@ Get property status.
 name : str
     Property name. If empty, returns a list of supported text names of the status.</UserDocu>
             </Documentation>
+        <Sandbox tier="call"/>
       </Methode>
     <Methode Name="getDocumentationOfProperty">
       <Documentation>
@@ -156,6 +158,7 @@ Returns the documentation string of the property of this class.
 name : str
     Property name.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setDocumentationOfProperty">
       <Documentation>
@@ -179,6 +182,7 @@ PropertyEnumeration.
 name : str
     Property name.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
       <Methode Name="dumpPropertyContent" Keyword="true" Const="true">
             <Documentation>
