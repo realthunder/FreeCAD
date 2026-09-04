@@ -767,3 +767,63 @@ it) and the dock option (not asked for). The probe is
 for the 4K run): it finds node boxes by pixel projection, zooms with
 the wheel, dives with a double-click, and reads the menu by a fixed
 click. ctest 473/473 after phase 3.
+
+## 14. The open items of sec 13 (2026-09-04)
+
+Four of the five, in the order of their value; the fifth (the
+path-traced preview through the Cycles consumer) is a design item and
+was not started.
+
+- **The 3D view under a HiDPI scale factor.** The bgfx backend sized
+  its view from the host widget's `width()`/`height()`, which are
+  Qt's LOGICAL pixels, and blitted that frame into the widget's
+  default framebuffer, which is physical -- so at `QT_SCALE_FACTOR=2`
+  the frame landed in the bottom-left quadrant and the rest stayed
+  black (the probe's four-quadrant sample read three of them dark).
+  `BGFXRendererLibP::framebufferWidth/Height` (logical times
+  `devicePixelRatioF`) now size the view and bgfx's init resolution,
+  and the Diligent backend got the same two lines. Everything else
+  already spoke physical: Quarter's viewport region, the viewer's
+  pick coordinates, the canvas cell rects, the blit's sub-view
+  offsets. Verified: all four quadrants carry the scene at dpr 2, the
+  1x frame unchanged.
+- **The preview at physical size.** `Graph` asked `preview(w, h)` at
+  the pane's ImGui size; it asks for that times
+  `io.DisplayFramebufferScale` now, so the host renders the sphere at
+  the pixels the pane actually has, and `GraphHost::preview` states
+  the unit. At 1x nothing changes.
+- **A Surface pick keeps the navigation.** `Graph::setDocument`
+  records where the user is before the reload -- the nodegraph levels
+  below the root by their element name path (and whether each is a
+  compound graph or a functional implementation) plus the selected
+  node's name -- and `restoreNavigation` re-enters them one level per
+  settled layout, through the node that opens each (the dive's own
+  body, now `enterNodeGraph`, shared with the double-click; the
+  read-only popup is not repeated). One level per layout because a
+  dive saves the positions of the level it leaves, and those exist
+  only once that level is laid out. With the levels back the
+  selection is restored and `_keepView` suppresses the reload's
+  `NavigateToContent`, so the canvas stays at the user's zoom and
+  scroll -- the node editor keeps its view across our reload, we only
+  had to stop asking it to reframe. A level the new text no longer
+  has (an undo that removed the nodegraph) ends the descent there and
+  frames what is left. This covers every reload: the Surface pick,
+  Edit > Undo, a write from Python.
+- **The variant and program caches are bounded.** Every lookup stamps
+  its entry with the lib's `frameSerial`; `sweepUserCaches`, once per
+  frame after `bgfx::frame`, drops entries not looked up for 120
+  frames once a map is past its cap (32 variants, 64 programs). Below
+  the cap nothing is touched, so a scene's own material set is never
+  churned by an object out of view; what this frame used is never
+  dropped; and every user of a program handle re-resolves it per
+  frame and holds it only within the frame (checked at all eight
+  sites), which is what makes a drop after the frame safe. A program
+  owns its two shader handles (`createProgram(..., true)`), so the
+  session of editing that grew toward bgfx's 512 shader handles now
+  plateaus. The eight settle frames per preview update stay: they are
+  what the temporal passes need, and the pane is small.
+
+Probe: `shader_graph_chess.py` gained the four-quadrant sample of the
+3D view, a report-view scrape of the preview's render size (FC_LOG
+lands there, not on stdout; `checkLogging` on), and a layout compare
+across the Surface pick.
