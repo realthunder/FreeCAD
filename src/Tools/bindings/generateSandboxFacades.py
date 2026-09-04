@@ -120,7 +120,11 @@ RUNTIME_TYPE_NAMES = {
 # constants are read once (mod_get); exceptions are guest-local classes
 # the bridge raises when the host reply names them.  The Part list is
 # the 32 names Draft's App side uses (docs/Sandbox.md sec 7.6).  Same
-# rule as the members: absent means DENY.
+# rule as the members: absent means DENY.  Each module names the
+# catalog permission its ops are checked against (sec 2.2): a curated
+# geometry constructor list is geom.call; the host's parameter store,
+# read through Draft's own get_param, is app.query -- the FreeCAD
+# module's class.
 MODULE_FACADES = {
     "Part": {
         "callables": [
@@ -133,6 +137,18 @@ MODULE_FACADES = {
         ],
         "constants": ["OCC_VERSION"],
         "exceptions": ["OCCError"],
+        "permission": "geom.call",
+    },
+    # Draft's preference reader (docs/Sandbox.md sec 7.6): the guest's
+    # bundled fcx_draft wheel leaves draftutils/params.py out, and these
+    # two answer from the host's parameter store, by value.  The module
+    # facade goes into sys.modules before the wheel's draftutils package
+    # is imported, so `from draftutils import params` finds it.
+    "draftutils.params": {
+        "callables": ["get_param", "get_param_view"],
+        "constants": [],
+        "exceptions": [],
+        "permission": "app.query",
     },
 }
 
@@ -267,12 +283,13 @@ def emit_host(facades, out):
     lines.append("};")
     lines.append("static const ModuleMember ModuleTable[] = {")
     for modname, spec in MODULE_FACADES.items():
+        perm = spec["permission"]
         for n in spec["callables"]:
-            lines.append('    {"%s", "%s", ModuleKind::Callable},' % (modname, n))
+            lines.append('    {"%s", "%s", ModuleKind::Callable, "%s"},' % (modname, n, perm))
         for n in spec["constants"]:
-            lines.append('    {"%s", "%s", ModuleKind::Constant},' % (modname, n))
+            lines.append('    {"%s", "%s", ModuleKind::Constant, "%s"},' % (modname, n, perm))
         for n in spec["exceptions"]:
-            lines.append('    {"%s", "%s", ModuleKind::Exception},' % (modname, n))
+            lines.append('    {"%s", "%s", ModuleKind::Exception, "%s"},' % (modname, n, perm))
     lines.append("};")
     with open(out, "w") as fp:
         fp.write("\n".join(lines) + "\n")

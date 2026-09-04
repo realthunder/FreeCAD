@@ -92,6 +92,11 @@ struct Layout
     /// ABI tag -> fcx_image wheel path, over every place a wheel may be
     /// (wheelDir, then <datadir>/Pyodide itself for a dev tree).
     std::vector<std::pair<std::string, std::string>> wheels;
+    /// Bundled pure-Python wheels (`*-py3-none-any.whl` in the same two
+    /// places): FreeCAD's own workbench code packed for the guest
+    /// (fcx_draft, ...), loaded at boot after fcx_image and before the
+    /// user's package set.  Sorted by file name.
+    std::vector<std::string> bundled;
 };
 AppExport Layout layout();
 

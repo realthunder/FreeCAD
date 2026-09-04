@@ -770,9 +770,11 @@ json dispatchHostOp(HandleTable& table, const json& req)
 #endif
         }
         if (op == FcxWire::OpModCall || op == FcxWire::OpModGet) {
-            // The module facades: no handle, a declared "Module.name".
-            // A curated constructor list is a geometry call, not a host
-            // import, hence geom.call (docs/Sandbox.md sec 3.2).
+            // The module facades: no handle, a declared "Module.name",
+            // each module under the catalog permission its table row
+            // names -- a curated constructor list is a geometry call,
+            // not a host import (geom.call); Draft's preference reader
+            // is the parameter store (app.query).  docs/Sandbox.md 3.2.
             auto m = req.find("m");
             if (m == req.end() || !m->is_string())
                 return errReply("ProtocolError", "module op without a name");
@@ -782,7 +784,11 @@ json dispatchHostOp(HandleTable& table, const json& req)
             if (!mm || mm->kind != (isGet ? ModuleKind::Constant : ModuleKind::Callable))
                 return errReply("ProtocolError",
                                 "'" + qual + "' is not declared for sandbox access");
-            ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::GeomCall);
+            auto perm = ExpressionSecurity::permissionFromName(mm->permission);
+            if (!perm)
+                return errReply("ProtocolError",
+                                "'" + qual + "' names an unknown permission");
+            ExpressionSecurity::checkPermission(*perm);
             PyObject* mod = PyImport_ImportModule(mm->module);
             if (!mod)
                 return pyErrorReply();

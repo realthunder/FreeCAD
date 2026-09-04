@@ -364,3 +364,55 @@ INSTALL(
     DESTINATION
        "${CMAKE_INSTALL_DATADIR}/Mod/Draft/Resources/icons"
 )
+
+# Draft's App side as a bundled sandbox wheel (docs/Sandbox.md sec 5.6):
+# the objects, geometry, functions and make_* modules UNMODIFIED, the
+# support modules minus params (a host-answered facade in the guest)
+# and minus the two that import FreeCADGui unconditionally (todo,
+# init_draft_statusbar: GUI-side, reached only under GuiUp), plus what
+# they import that the guest lacks -- lazy_loader, freecad.deprecation,
+# the PySide/resource shims.  Boots with the pyodide guest from
+# <datadir>/Pyodide/wheels like the fcx_image wheel.
+IF (BUILD_EXPR_PYODIDE_HOST)
+    SET(Draft_sandbox_wheel_files
+        DraftVecUtils.py
+        DraftGeomUtils.py
+        WorkingPlane.py
+        ${Draft_geoutils}
+        ${Draft_utilities}
+        ${Draft_functions}
+        ${Draft_make_functions}
+        ${Draft_objects}
+    )
+    SET(_draft_wheel_dir ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
+    SET(_draft_wheel ${_draft_wheel_dir}/fcx_draft-${PACKAGE_VERSION}-py3-none-any.whl)
+    SET(_draft_wheel_packer ${CMAKE_SOURCE_DIR}/src/Tools/bindings/packSandboxWheel.py)
+    SET(_draft_wheel_shims ${CMAKE_SOURCE_DIR}/src/App/ExpressionImage/shims)
+    FILE(GLOB_RECURSE _draft_wheel_shim_files ${_draft_wheel_shims}/*.py)
+    SET(_draft_wheel_deps ${Draft_sandbox_wheel_files})
+    LIST(TRANSFORM _draft_wheel_deps PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
+    ADD_CUSTOM_COMMAND(
+        OUTPUT ${_draft_wheel}
+        COMMAND ${PYTHON_EXECUTABLE} ${_draft_wheel_packer}
+                --name fcx_draft --version ${PACKAGE_VERSION}
+                --out-dir ${_draft_wheel_dir}
+                --root ${CMAKE_CURRENT_SOURCE_DIR}
+                --exclude draftutils/params.py
+                --exclude draftutils/todo.py
+                --exclude draftutils/init_draft_statusbar.py
+                --add ${CMAKE_SOURCE_DIR}/src/3rdParty/lazy_loader=lazy_loader
+                --add ${CMAKE_SOURCE_DIR}/src/Ext/freecad/deprecation.py=freecad/deprecation.py
+                --add ${_draft_wheel_shims}=.
+                --summary ${CMAKE_CURRENT_BINARY_DIR}/fcx_draft_wheel.txt
+                ${Draft_sandbox_wheel_files}
+        DEPENDS ${_draft_wheel_packer} ${_draft_wheel_deps}
+                ${CMAKE_SOURCE_DIR}/src/3rdParty/lazy_loader/lazy_loader.py
+                ${CMAKE_SOURCE_DIR}/src/3rdParty/lazy_loader/__init__.py
+                ${CMAKE_SOURCE_DIR}/src/Ext/freecad/deprecation.py
+                ${_draft_wheel_shim_files}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Packing Draft's App side as the fcx_draft sandbox wheel"
+    )
+    ADD_CUSTOM_TARGET(DraftSandboxWheel ALL DEPENDS ${_draft_wheel})
+    INSTALL(FILES ${_draft_wheel} DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
+ENDIF (BUILD_EXPR_PYODIDE_HOST)

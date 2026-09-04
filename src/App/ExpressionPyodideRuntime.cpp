@@ -273,9 +273,26 @@ public:
                 return false;
             }
         }
+        // Bundled wheels first (FreeCAD's own workbench code packed for
+        // the guest, docs/Sandbox.md sec 5.6), by absolute path; their
+        // directories join the reader's roots.  Then the user's package
+        // set by lock-file name.
         std::vector<std::string> packageNames;
-        if (!packagesDir.empty())
-            packageNames = Pyodide::manifestPackages(packagesDir.string(), abi);
+        size_t bundledCount = 0;
+        for (const auto& b : Pyodide::layout().bundled) {
+            fs::path w = fs::weakly_canonical(b, ec);
+            if (ec || !fs::is_regular_file(w))
+                continue;
+            const std::string dir = w.parent_path().string();
+            if (std::find(roots.begin(), roots.end(), dir) == roots.end())
+                roots.push_back(dir);
+            packageNames.push_back(w.generic_string());
+            ++bundledCount;
+        }
+        if (!packagesDir.empty()) {
+            for (const auto& n : Pyodide::manifestPackages(packagesDir.string(), abi))
+                packageNames.push_back(n);
+        }
 
         platform();
         v8::Isolate::CreateParams params;
@@ -402,8 +419,9 @@ public:
         }
         live = true;
         FC_LOG("sandbox runtime live: pyodide at " << root.string() << " with "
-               << wheel.filename().string() << " and " << packageNames.size()
-               << " package(s) (" << (int)(nowMs() - t0) << " ms)");
+               << wheel.filename().string() << ", " << bundledCount << " bundled wheel(s) and "
+               << (packageNames.size() - bundledCount) << " package(s) ("
+               << (int)(nowMs() - t0) << " ms)");
         return true;
         }();
         if (!booted) {

@@ -1000,6 +1000,7 @@ TEST_F(ExpressionImageEvalTest, partModuleFacade)
 // ---- bridge hop, and agrees with the same source run on the host.
 
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 
@@ -1365,6 +1366,96 @@ const char* const GeoUtilsCalls[] = {
     "circles_incomplete.circleFrom3tan(l, l2, l3)",
 };
 
+/// The GeoUtilsFixtures run on the host: a dict holding the shapes.
+PyObject* makeGeoUtilsFixtures()
+{
+    Base::PyGILStateLocker lock;
+    PyObject* fixtures = PyDict_New();
+    PyDict_SetItemString(fixtures, "__builtins__", PyEval_GetBuiltins());
+    PyObject* r = PyRun_String(GeoUtilsFixtures, Py_file_input, fixtures, fixtures);
+    if (!r) {
+        PyErr_Print();
+        Py_DECREF(fixtures);
+        return nullptr;
+    }
+    Py_DECREF(r);
+    return fixtures;
+}
+
+/// The G1a comparison: every GeoUtilsCalls expression evaluated in the
+/// guest through fcxgu._run on the fixtures bound as handles, and on
+/// the host through the same harness on the objects themselves; each
+/// pair compared as text.  Returns how many agree; `bothError` counts
+/// the agreed ones that failed alike, listed in `failingAlike`.  The
+/// harness module `fcxgu` must be in place on both sides.
+int geoUtilsAgreement(ImageHost& host, PyObject* fixtures, int& bothError,
+                      std::string& failingAlike)
+{
+    std::string envText = "dict(";
+    for (const char* n : GeoUtilsNames)
+        envText += std::string(n) + "=" + n + ", ";
+    envText += ")";
+    auto pack = [&]() {
+        Base::PyGILStateLocker lock;
+        json m = json::object();
+        for (const char* n : GeoUtilsNames) {
+            PyObject* py = PyDict_GetItemString(fixtures, n);
+            Py_INCREF(py);
+            auto one = pyBinding(n, py);
+            m.update(json::from_cbor(one.begin(), one.end()));
+        }
+        auto v = json::to_cbor(m);
+        return std::vector<unsigned char>(v.begin(), v.end());
+    };
+
+    int agreed = 0;
+    bothError = 0;
+    failingAlike.clear();
+    for (const char* call : GeoUtilsCalls) {
+        std::string expr = std::string("__import__('fcxgu')._run(") + json(call).dump() + ", "
+            + envText + ")";
+        auto g = host.eval(expr, pack());
+        EXPECT_TRUE(g.ok) << call << ": " << g.excType << ": " << g.message;
+        if (!g.ok)
+            break;
+        std::string want;
+        std::string got;
+        {
+            Base::PyGILStateLocker lock;
+            PyObject* r = PyRun_String(expr.c_str(), Py_eval_input, fixtures, fixtures);
+            if (!r)
+                PyErr_Print();
+            EXPECT_NE(r, nullptr) << call;
+            if (!r)
+                break;
+            PyObject* rep = PyObject_Repr(r);
+            Py_DECREF(r);
+            want = PyUnicode_AsUTF8(rep);
+            Py_DECREF(rep);
+            PyObject* v = host.decodeResult(g);
+            EXPECT_NE(v, nullptr) << call;
+            if (!v)
+                break;
+            rep = PyObject_Repr(v);
+            Py_DECREF(v);
+            got = PyUnicode_AsUTF8(rep);
+            Py_DECREF(rep);
+        }
+        EXPECT_EQ(got, want) << call;
+        if (got == want) {
+            ++agreed;
+            if (want.rfind("('E', ", 0) == 0) {
+                ++bothError;
+                failingAlike += std::string("\n    ") + call + " -> " + want;
+            }
+        }
+        host.clearHandles();
+    }
+    return agreed;
+}
+
+constexpr int GeoUtilsCallCount = sizeof(GeoUtilsCalls) / sizeof(*GeoUtilsCalls);
+
 }  // namespace
 
 TEST_F(ExpressionImageEvalTest, draftgeoutilsOnHandles)
@@ -1409,74 +1500,15 @@ TEST_F(ExpressionImageEvalTest, draftgeoutilsOnHandles)
         return;
 
     // fixtures on the host; each bound as a handle for the guest
-    PyObject* fixtures = nullptr;
-    {
-        Base::PyGILStateLocker lock;
-        fixtures = PyDict_New();
-        PyDict_SetItemString(fixtures, "__builtins__", PyEval_GetBuiltins());
-        PyObject* r = PyRun_String(GeoUtilsFixtures, Py_file_input, fixtures, fixtures);
-        if (!r)
-            PyErr_Print();
-        ASSERT_NE(r, nullptr);
-        Py_DECREF(r);
-    }
-    std::string envText = "dict(";
-    for (const char* n : GeoUtilsNames)
-        envText += std::string(n) + "=" + n + ", ";
-    envText += ")";
-    auto pack = [&]() {
-        Base::PyGILStateLocker lock;
-        json m = json::object();
-        for (const char* n : GeoUtilsNames) {
-            PyObject* py = PyDict_GetItemString(fixtures, n);
-            Py_INCREF(py);
-            auto one = pyBinding(n, py);
-            m.update(json::from_cbor(one.begin(), one.end()));
-        }
-        auto v = json::to_cbor(m);
-        return std::vector<unsigned char>(v.begin(), v.end());
-    };
+    PyObject* fixtures = makeGeoUtilsFixtures();
+    ASSERT_NE(fixtures, nullptr);
 
     host.resetStats();
-    int agreed = 0;
     int bothError = 0;
     std::string failingAlike;
-    for (const char* call : GeoUtilsCalls) {
-        std::string expr = std::string("__import__('fcxgu')._run(") + json(call).dump() + ", "
-            + envText + ")";
-        auto g = host.eval(expr, pack());
-        ASSERT_TRUE(g.ok) << call << ": " << g.excType << ": " << g.message;
-        std::string want;
-        std::string got;
-        {
-            Base::PyGILStateLocker lock;
-            PyObject* r = PyRun_String(expr.c_str(), Py_eval_input, fixtures, fixtures);
-            if (!r)
-                PyErr_Print();
-            ASSERT_NE(r, nullptr) << call;
-            PyObject* rep = PyObject_Repr(r);
-            Py_DECREF(r);
-            want = PyUnicode_AsUTF8(rep);
-            Py_DECREF(rep);
-            PyObject* v = host.decodeResult(g);
-            ASSERT_NE(v, nullptr) << call;
-            rep = PyObject_Repr(v);
-            Py_DECREF(v);
-            got = PyUnicode_AsUTF8(rep);
-            Py_DECREF(rep);
-        }
-        EXPECT_EQ(got, want) << call;
-        if (got == want) {
-            ++agreed;
-            if (want.rfind("('E', ", 0) == 0) {
-                ++bothError;
-                failingAlike += std::string("\n    ") + call + " -> " + want;
-            }
-        }
-        host.clearHandles();
-    }
+    int agreed = geoUtilsAgreement(host, fixtures, bothError, failingAlike);
     auto st = host.stats();
-    std::cout << "draftgeoutils: " << agreed << "/" << (sizeof(GeoUtilsCalls) / sizeof(*GeoUtilsCalls))
+    std::cout << "draftgeoutils: " << agreed << "/" << GeoUtilsCallCount
               << " calls agree, " << bothError << " of them failing alike; bridge ops:";
     for (const auto& [k, v] : st.ops)
         std::cout << " " << k << "=" << v;
@@ -1577,6 +1609,164 @@ TEST_F(ExpressionImageEvalTest, draftVecUtilsInGuestZeroHops)
         PyObject* c = PyRun_String(DraftCleanup, Py_file_input, g, g);
         Py_XDECREF(c);
         Py_DECREF(g);
+        if (PyErr_Occurred())
+            PyErr_Clear();
+    }
+}
+
+// ---- the G1b gate (docs/Sandbox.md sec 5.6, 7.6): Draft's App side
+// ---- boots with the pyodide guest as the bundled fcx_draft wheel --
+// ---- no exec, no stubs.  Every module of the wheel imports there, the
+// ---- preference reader answers from the host through its facade, and
+// ---- the G1a calls agree from the wheel.
+
+namespace
+{
+
+/// The harness, same text both sides: the wheel's module inventory
+/// (its packages walked, params named by hand -- the facade has no
+/// file), an import of each, and the preference reader.
+const char* const WheelHarness =
+    "import importlib, json, pkgutil\n"
+    "from draftutils import params\n"
+    "PACKAGES = ('draftgeoutils', 'draftutils', 'draftfunctions', 'draftmake', 'draftobjects')\n"
+    "TOP = ('DraftVecUtils', 'DraftGeomUtils', 'WorkingPlane', 'draftutils.params')\n"
+    "def _modules():\n"
+    "    names = list(TOP)\n"
+    "    for p in PACKAGES:\n"
+    "        pkg = importlib.import_module(p)\n"
+    "        names += sorted(p + '.' + m.name for m in pkgutil.iter_modules(pkg.__path__))\n"
+    "    return names\n"
+    "def _import_all():\n"
+    "    failed = []\n"
+    "    names = _modules()\n"
+    "    for n in names:\n"
+    "        try:\n"
+    "            importlib.import_module(n)\n"
+    "        except Exception as e:\n"
+    "            failed.append('%s: %s: %s' % (n, type(e).__name__, str(e)[:120]))\n"
+    "    return json.dumps({'count': len(names), 'failed': failed})\n"
+    "def _param(expr):\n"
+    "    return repr(eval(expr, {'params': params}))\n";
+
+/// What the wheel's App side reads through draftutils.params: the
+/// Draft group by default, the View group through get_param_view.
+const char* const ParamReads[] = {
+    "params.get_param('precision')",
+    "params.get_param('gridSpacing')",
+    "params.get_param('DefaultAnnoScaleMultiplier')",
+    "params.get_param('dimsymbol')",
+    "params.get_param('svgDashedLine')",
+    "params.get_param_view('MarkerSize')",
+    "params.get_param_view('DefaultShapeColor')",
+};
+
+/// Evaluate on the host; the result's str() (the harness already
+/// returns a repr, so this is the text the guest sends).
+bool hostEvalStr(const std::string& expr, std::string& out)
+{
+    Base::PyGILStateLocker lock;
+    PyObject* g = PyDict_New();
+    PyDict_SetItemString(g, "__builtins__", PyEval_GetBuiltins());
+    PyObject* r = PyRun_String(expr.c_str(), Py_eval_input, g, g);
+    Py_DECREF(g);
+    if (!r) {
+        PyErr_Print();
+        return false;
+    }
+    PyObject* rep = PyObject_Str(r);
+    Py_DECREF(r);
+    if (!rep)
+        return false;
+    out = PyUnicode_AsUTF8(rep);
+    Py_DECREF(rep);
+    return true;
+}
+
+}  // namespace
+
+TEST_F(ExpressionImageEvalTest, draftWheelInGuest)
+{
+    auto& host = ImageHost::instance();
+    if (host.runtime() != "pyodide")
+        GTEST_SKIP() << "bundled wheels load on the pyodide runtime only";
+    {
+        // the wheel the build tree packs into <datadir>/Pyodide/wheels
+        // (src/Mod/Draft/CMakeLists.txt), where the layout finds it
+        namespace fs = std::filesystem;
+        bool bundled = false;
+        std::error_code ec;
+        for (const auto& e : fs::directory_iterator(
+                 App::Application::getResourceDir() + "Pyodide/wheels", ec)) {
+            const std::string fn = e.path().filename().string();
+            bundled = bundled || (fn.rfind("fcx_draft-", 0) == 0 && fn.find("-py3-none-any.whl") != std::string::npos);
+        }
+        if (!bundled)
+            GTEST_SKIP() << "no fcx_draft wheel bundled under " << App::Application::getResourceDir()
+                         << "Pyodide/wheels (BUILD_DRAFT with BUILD_EXPR_PYODIDE_HOST packs one)";
+    }
+    PyObject* part = nullptr;
+    {
+        Base::PyGILStateLocker lock;
+        part = PyImport_ImportModule("Part");
+        if (!part) {
+            PyErr_Clear();
+            GTEST_SKIP() << "the Part module is not importable in this test binary";
+        }
+    }
+
+    // 1. the harness on both sides; every module of the wheel imports
+    //    in the guest (the guest's `from draftutils import params` is
+    //    the facade, the host's the real reader)
+    auto r = host.exec(WheelHarness, "fcxwheel");
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    ASSERT_TRUE(hostModule("fcxwheel", WheelHarness));
+    host.resetStats();
+    auto g = host.eval("__import__('fcxwheel')._import_all()", {});
+    ASSERT_TRUE(g.ok) << g.excType << ": " << g.message;
+    json report = json::parse(value(g).get<std::string>());
+    EXPECT_GE(report.value("count", 0), 100) << "the wheel's inventory is short: " << report.dump();
+    EXPECT_TRUE(report["failed"].empty()) << "modules that do not import in the guest:\n"
+                                          << report["failed"].dump(2);
+    auto st = host.stats();
+    std::cout << "fcx_draft: " << report.value("count", 0) << " modules imported in the guest;"
+              << " bridge ops during import:";
+    for (const auto& [k, v] : st.ops)
+        std::cout << " " << k << "=" << v;
+    std::cout << std::endl;
+
+    // 2. the preference reader: each read equal to the host's own
+    for (const char* expr : ParamReads) {
+        std::string wrapped = std::string("__import__('fcxwheel')._param(") + json(expr).dump() + ")";
+        auto gv = host.eval(wrapped, {});
+        ASSERT_TRUE(gv.ok) << expr << ": " << gv.excType << ": " << gv.message;
+        std::string want;
+        ASSERT_TRUE(hostEvalStr(wrapped, want)) << expr;
+        EXPECT_EQ(value(gv).get<std::string>(), want) << expr;
+    }
+
+    // 3. the G1a calls, this time from the wheel on both sides
+    r = host.exec(GeoUtilsHarness, "fcxgu");
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    ASSERT_TRUE(hostModule("fcxgu", GeoUtilsHarness));
+    PyObject* fixtures = makeGeoUtilsFixtures();
+    ASSERT_NE(fixtures, nullptr);
+    int bothError = 0;
+    std::string failingAlike;
+    int agreed = geoUtilsAgreement(host, fixtures, bothError, failingAlike);
+    std::cout << "draftgeoutils from the wheel: " << agreed << "/" << GeoUtilsCallCount
+              << " calls agree, " << bothError << " of them failing alike" << failingAlike
+              << std::endl;
+    EXPECT_EQ(agreed, GeoUtilsCallCount);
+    EXPECT_LT(bothError * 4, agreed) << "too many calls fail on both sides: fixtures unsuitable";
+
+    {
+        Base::PyGILStateLocker lock;
+        Py_DECREF(fixtures);
+        Py_DECREF(part);
+        PyObject* d = PyImport_GetModuleDict();
+        PyDict_DelItemString(d, "fcxgu");
+        PyDict_DelItemString(d, "fcxwheel");
         if (PyErr_Occurred())
             PyErr_Clear();
     }

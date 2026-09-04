@@ -257,17 +257,25 @@ dereferenced, its result crossing by value or as a handle with the
 annotated facade above it; a constant is read once over `mod_get`; the
 exception is a guest-local class the bridge raises whenever a host
 reply names it (`raiseFromReply` consults the facades' `EXCEPTIONS`
-after the builtins).  Gate `Permission::GeomCall`, a decision: a
-curated constructor list is a geometry call, where `_part` (an
-arbitrary import) is `host.import`.  An undeclared name is not on the
-guest module at all (AttributeError), and a forged `mod_call` is a
-protocol error.  `exec` (2026-09-04,
+after the builtins).  Each module's table row names the catalog
+permission its ops are checked against (`ModuleMember::permission`,
+2026-09-04): `Part` is `geom.call`, a decision -- a curated constructor
+list is a geometry call, where `_part` (an arbitrary import) is
+`host.import`; `draftutils.params` (`get_param`, `get_param_view`,
+the two names Draft's App side reads preferences through) is
+`app.query`, the FreeCAD module's class, answered by the host's own
+Draft reader by value -- the bundled wheel (5.6) leaves
+`draftutils/params.py` out, and the facade sits in `sys.modules` before
+the wheel's `draftutils` package is imported, so `from draftutils
+import params` finds it.  An undeclared name is not on the guest
+module at all (AttributeError), and a forged `mod_call` is a protocol
+error.  `exec` (2026-09-04,
 host->guest, `ImageHost::exec(source, module)`) runs statements; with a
 module name the source becomes that module in the guest's `sys.modules`
 (created and registered before it runs, bound to its parent package
-when dotted, removed on failure) -- how the host pushes workbench
-Python into the guest while there is no package loader for it (the
-DraftVecUtils gate today, G1's Draft loader later).  Value tags: `quantity`,
+when dotted, removed on failure) -- how a test pushes a harness or a
+source under study into the guest; workbench code itself boots as a
+bundled wheel (5.6).  Value tags: `quantity`,
 `vec`, `rot`, `pla`, `mat`, `bb`, `h` (handle), `tup` (a tuple crosses
 as a tuple, the first corpus-gate finding).  Reply shape `{ok, val}` or
 `{ok:false, exc, msg}`.  The one write op is `write_prop` (2026-09-04,
@@ -630,7 +638,45 @@ install into a running guest (P2), PyPI sources (PEP 783
 `pyemscripten_<abi>` wheels), the pre-run import scan (dropped: an
 `import` fails at the guest's import with the same offer).
 
-## 6. Network **[designed 2026-09-03, nothing built beyond the demotion]**
+### 5.6 Bundled wheels **[built 2026-09-04]**
+
+FreeCAD's own workbench code reaches the guest as pure-Python wheels
+beside the fcx_image wheel: `<datadir>/Pyodide/wheels/<dist>-<ver>-py3-
+none-any.whl` (the dev tree's `<datadir>/Pyodide` is scanned too),
+`Layout::bundled`, one per distribution name, sorted.  The boot loads
+them by absolute path after `fcx_image` and before the user's package
+set, their directories joining the reader's roots; a wheel that fails
+to load is reported on the guest's stderr and skipped, as a package is.
+Nothing is installed per user and nothing is downloaded: the wheel is
+a build product, matched to the FreeCAD that ships it.
+
+The first is `fcx_draft`, Draft's App side (7.6): `DraftVecUtils`,
+`DraftGeomUtils`, `WorkingPlane`, and the `draftgeoutils`, `draftutils`,
+`draftfunctions`, `draftmake`, `draftobjects` packages UNMODIFIED from
+`src/Mod/Draft` (the CMake lists in `src/Mod/Draft/CMakeLists.txt`,
+target `DraftSandboxWheel`, so a source edit repacks), minus
+`draftutils/params.py` (a facade, 3.2) and the two support modules
+that import `FreeCADGui` unconditionally (`todo`,
+`init_draft_statusbar`: GUI-side, reached only under `GuiUp`); plus
+what they import that the
+guest lacks -- the vendored `lazy_loader`, `freecad.deprecation`
+(falling back to `warnings.deprecated` where `typing_extensions` is
+absent), and the guest shims under `src/App/ExpressionImage/shims/`:
+a `PySide` package carrying the names Draft's App side reaches it
+through and nothing that draws (`QT_TRANSLATE_NOOP`,
+`QCoreApplication.translate` as the identity, `QTimer.singleShot`
+running its callable now, `QLocale().decimalPoint()`), and empty
+`Draft_rc`/`Arch_rc` resource modules.  The packer,
+`src/Tools/bindings/packSandboxWheel.py`, needs python3 only and is
+deterministic (sorted entries, fixed timestamps), so an unchanged
+source leaves a byte-identical wheel.  WASI's reference image has no
+package loader; bundled wheels are the pyodide runtime's.  Cost: the
+first evaluation (the boot) measures 1.80-1.82 s with the 336 KB
+wheel and 1.77-1.85 s without (three runs each, FreeCADCmd, routing
+ON) -- nothing; importing all 105 modules in the guest is a separate
+2.9 s gate step and happens only when workbench code asks for them.
+Measure with `setRouting(True)` first: `evaluate()` with routing off
+never boots the guest, and `available()` does not either.
 
 Ground truth: a guest has no sockets by structural absence; the shim
 defines no `fetch`, `XMLHttpRequest` or `WebSocket`.  The threat that
@@ -881,8 +927,16 @@ calls now make 3575 hops -- `get_attr` 2738, `call` 587, `mod_call`
 pack cost lost its release hop (8.1).  What remains is dominated by
 `get_attr` on shapes and curves; a snapshot op would target exactly
 those reads, and this is the count to size it from.
-Still missing: a `FreeCAD` module facade for `ActiveDocument`/
-`ParamGet`, rung 2, and a local-wheel source in
+**G1b BUILT 2026-09-04** (`draftWheelInGuest`): Draft's App side boots
+with the pyodide guest as the bundled `fcx_draft` wheel (5.6) -- no
+`exec`, no stubs; every module of the wheel imports in the guest (the
+gate found one unguarded view-provider import in `draftmake/
+make_polygon.py`, fixed in Draft the way its siblings guard theirs),
+the preference reads answer from the host through the
+`draftutils.params` facade (3.2) equal to the host's own, and the G1a
+calls agree from the wheel.  Still missing: a `FreeCAD` module facade for `ActiveDocument`
+(69 uses, all in `draftmake`/`draftfunctions` -- the make_* commands,
+not an `execute()`), rung 2, and a local-wheel source in
 `install_package`.  Document-level writes (`addObject` 76 uses,
 `removeObject`) are NOT declared: they are what Draft's make_* commands
 do, not what an `execute()` does, and rung 2 writes self only -- a
@@ -1052,8 +1106,9 @@ Non-ASCII object names occur in real files.  Rig:
     --------------------------------------------  -----   ----------------------------------
     tests/src/App/ExpressionSecurity.cpp            11    catalog, hash, grant store
     tests/src/App/ExpressionSecurityRuntime.cpp      9    resolve, scopes, pending, audit
-    tests/src/App/ExpressionImageHost.cpp           59    acceptance 6, bench 6 (disabled),
-                                                          bridge 8, budget 4, eval 17,
+    tests/src/App/ExpressionImageHost.cpp           60    acceptance 6, bench 6 (disabled),
+                                                          bridge 8, budget 4, eval 18 (the
+                                                          G1a and G1b gates among them),
                                                           host 9, routing 9
     tests/src/App/ExpressionPyodide.cpp             10    layout, verify, scoping, offer
     src/Mod/Test/SandboxPyodide.py                   2    the offer end to end
@@ -1088,7 +1143,10 @@ CMake (`cMake/FreeCAD_Helpers/InitializeFreeCADBuildOptions.cmake`
 `BUILD_EXPR_IMAGE_HOST` (ON iff either runtime; ON with none is a
 configure error), `FREECAD_PYODIDE_DIR` (bundle a distribution in a dev
 tree), `FREECAD_FCX_IMAGE_WHEEL` (ship the wheel under
-`<datadir>/Pyodide/wheels/`), `FREECAD_BUNDLE_WASMTIME`.
+`<datadir>/Pyodide/wheels/`), `FREECAD_BUNDLE_WASMTIME`.  With
+`BUILD_EXPR_PYODIDE_HOST` and `BUILD_DRAFT`, target `DraftSandboxWheel`
+packs `fcx_draft-<ver>-py3-none-any.whl` into the same wheels
+directory (5.6).
 
 Command line: `--grant <permission>[:<target>]`, `--policy <file>`.
 
@@ -1099,8 +1157,10 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
 (2026-09-02), N0 demotion, P1 bootstrap and offer, G0 linter
 (2026-09-03).
 
-1. **G1** -- Draft's App side in the guest, four stages (7.6), after
-   the three pending decisions.
+1. **G1** -- Draft's App side in the guest, four stages (7.6): G1a
+   the surface and G1b the wheel and loader DONE 2026-09-04; G1c rung
+   2 for one principal (one Draft Wire `execute()` byte-identical) and
+   G1d the Draft and BIM test documents with routing ON remain.
 2. **G2** -- U1 + U2 + U7: Draft and BIM register from the guest; the
    subset shim.  No dependency on G1; in parallel if hands allow.
 3. **Probe A** -- Coin and pivy to wasm: compile the Coin fork with emcc

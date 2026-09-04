@@ -92,6 +92,9 @@ struct ModuleMember
     const char* module;
     const char* name;
     ModuleKind kind;
+    /// the catalog permission a mod_call/mod_get on this member is
+    /// checked against ("geom.call", "app.query", ...)
+    const char* permission;
 };
 
 /// The declared module member for "Module.name" (split at the last

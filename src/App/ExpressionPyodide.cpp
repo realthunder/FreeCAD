@@ -292,8 +292,23 @@ Layout layout()
             names.push_back(entry.path().filename().string());
         std::sort(names.begin(), names.end());
         for (const auto& fn : names) {
-            if (fn.rfind("fcx_image-", 0) != 0 || fn.size() < 5
-                    || fn.compare(fn.size() - 4, 4, ".whl") != 0)
+            if (fn.size() < 5 || fn.compare(fn.size() - 4, 4, ".whl") != 0)
+                continue;
+            // a pure-Python wheel is bundled workbench code, one per
+            // distribution name (the first place scanned wins)
+            static const std::string pureTag = "-py3-none-any.whl";
+            if (fn.size() > pureTag.size()
+                    && fn.compare(fn.size() - pureTag.size(), pureTag.size(), pureTag) == 0) {
+                const std::string dist = fn.substr(0, fn.find('-'));
+                bool have = false;
+                for (const auto& b : l.bundled)
+                    have = have || fs::path(b).filename().string().substr(0, dist.size() + 1)
+                        == dist + "-";
+                if (!have)
+                    l.bundled.push_back((dir / fn).string());
+                continue;
+            }
+            if (fn.rfind("fcx_image-", 0) != 0)
                 continue;
             // ...-cp314-cp314-pyodide_2026_0_wasm32.whl -> "2026_0"
             std::string abi;
