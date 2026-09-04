@@ -1216,11 +1216,25 @@ objects alone (3.2); `LinkBaseExtensionPy.xml` annotated
 `getLinkPropertyInfo`, `setLink`), `configLinkProperty` and `setLink`
 in the write family.  Gate `draftTestObjectsReopenRouted` (pyodide):
 111 objects, 70 stand-ins, 0 host imports, 0 unserved, 0 invalid, one
-shape not byte-identical -- Polygon, whose BRep text differs in the
-last bits of its line directions and plane origin (vertices equal to
-the bit; the pentagon's `cos`/`sin` run in the guest's wasm libm, the
-likely cause, unconfirmed); the gate allows a difference only when the
-vertex delta is below 1e-9 and reports it.  Traffic for the whole
+shape not byte-identical -- Polygon.  CAUSE FOUND 2026-09-04, by
+comparing the bits of `cos`/`sin` of `k * 2pi/5` on the host and in
+the guest (python-mode `import math` evaluated through `evaluate()`):
+seven of the eight values agree to the bit, `cos(3 * 2pi/5)` does not
+-- glibc returns the correctly rounded `-0x1.9e3779b97f4a9p-1`, the
+guest's wasm libm (emscripten's musl, FreeBSD msun `cos`, under 1 ULP
+but not correctly rounded) returns `...4a8p-1`, and the true value sits
+0.03 ULP from the rounding midpoint, a hard case.  One vertex
+coordinate of the pentagon is thus one ULP off (2.8e-14 at radius
+250), and the line directions and plane origin BRepLib derives from
+the points carry it.  Not fixable from the wheel: the guest's `math`
+is the runtime's CPython against the runtime's libm; a correctly
+rounded `cos` (CORE-MATH) would mean rebuilding pyodide's core, and
+routing trig to the host would cost a hop per call.  The user ruled
+identity is not required but 1e-9 is far too loose, so the gate now
+measures the difference in ULPs of the object's largest coordinate
+(`math.ulp(scale)`) and allows at most 4 -- the trig's one ULP plus a
+product's own rounding; the harness prints the same number.  The
+reference Polygon reads 1.0 ULP.  Traffic for the whole
 document's routed recompute: 967 proxy calls, ~2500 hops (`read_prop`
 1361, `call` 387, `get_attr` 316, `write_prop` 195, `mod_call` 190,
 `bool` 44), 702 handles -- about 1.4 ms of crossing per scripted
@@ -1232,9 +1246,8 @@ needs an `fcx_bim` wheel of BIM's App side plus a corpus the TestArch
 suite does not leave behind (its tests delete their objects), then
 the list already known: `ArchStairs`/`ArchReference` document-level
 writes, 193 `Proxy.<attr>` host reads; (2) the Polygon ULP question
--- whether last-bit libm drift on trig computed in the guest is
-accepted (a decision for the user; byte-identity was the G1c gate);
-(3) the stand-in `__getattr__` for host reads of `Proxy.Type` (39
+-- RESOLVED above (last-bit libm drift, gated at 4 ULP of the
+coordinate); (3) the stand-in `__getattr__` for host reads of `Proxy.Type` (39
 sites in Draft's make_*/utils, none in an `execute()`); (4) a Draft
 object MADE in a routed session still gets a host Proxy -- `make_*`
 runs on the host and constructs the class there -- so the routed

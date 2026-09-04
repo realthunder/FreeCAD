@@ -3344,7 +3344,7 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
 
     ASSERT_TRUE(hostModule(
         "fcxobjs",
-        "import hashlib, json\n"
+        "import hashlib, json, math\n"
         "import FreeCAD as App\n"
         "from drafttests import draft_test_objects as dto\n"
         "S = App.ExpressionSandbox\n"
@@ -3397,10 +3397,12 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
         "        if inv:\n"
         "            out['invalid'].append(name)\n"
         "        if sn is not None and sn != sr:\n"
-        "            d = None\n"
+        "            d = ulps = None\n"
         "            if vn and vr and len(vn) == len(vr):\n"
         "                d = max(abs(a - b) for pa, pb in zip(vn, vr) for a, b in zip(pa, pb))\n"
-        "            out['differ'].append([name, d])\n"
+        "                scale = max(abs(c) for p in vn + vr for c in p)\n"
+        "                ulps = d / math.ulp(scale) if scale else (0.0 if d == 0 else None)\n"
+        "            out['differ'].append([name, d, ulps])\n"
         "    return json.dumps(out)\n"));
     std::string ok;
     ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').build(" + json(path).dump() + ")", ok));
@@ -3429,13 +3431,20 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
     EXPECT_TRUE(j["invalid"].empty()) << "objects failing to recompute in the guest: "
                                       << j["invalid"].dump();
     // A shape that is not byte-identical must be within libm's last
-    // bits: the guest's wasm cos/sin round differently from glibc by
-    // one ULP (Polygon's pentagon), and that is the only difference
-    // allowed.
+    // bit.  Measured 2026-09-04: the guest's wasm libm (musl's msun
+    // cos) returns cos(3 * 2pi/5) one ULP from the correctly rounded
+    // value glibc returns (the true value sits 0.03 ULP from the
+    // rounding midpoint), so Polygon's pentagon has one vertex
+    // coordinate one ULP off, 2.8e-14 at radius 250.  The bound is
+    // therefore in ULPs of the object's largest coordinate, not an
+    // absolute distance: a few ULPs cover a product's own rounding on
+    // top of the trig, and anything larger is a real divergence.
     for (const auto& d : j["differ"]) {
-        ASSERT_TRUE(d.is_array() && d.size() == 2);
-        EXPECT_TRUE(d[1].is_number()) << d[0] << ": shapes differ in structure, not in rounding";
-        if (d[1].is_number())
-            EXPECT_LT(d[1].get<double>(), 1e-9) << d[0];
+        ASSERT_TRUE(d.is_array() && d.size() == 3);
+        EXPECT_TRUE(d[2].is_number()) << d[0] << ": shapes differ in structure, not in rounding";
+        if (d[2].is_number())
+            EXPECT_LE(d[2].get<double>(), 4.0)
+                << d[0] << ": " << d[2] << " ULPs of the largest coordinate (delta " << d[1]
+                << "), more than a last-bit libm difference";
     }
 }

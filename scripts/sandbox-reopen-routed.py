@@ -24,6 +24,7 @@ Run under the test rig (docs/Testing.md sec 1):
 The routing preference is left as it was found.
 """
 import hashlib
+import math
 import os
 import sys
 import tempfile
@@ -85,11 +86,16 @@ def snapshot(doc):
 
 
 def vdelta(a, b):
+    """The largest vertex coordinate difference, and how many ULPs of
+    the object's largest coordinate that is: the guest's wasm libm
+    rounds a rare cos/sin one ULP from glibc, so a last-bit
+    difference reads as ~1 ULP; more is a real divergence."""
     if not a or not b or len(a) != len(b):
         return "n/a (%s vs %s vertices)" % (a and len(a), b and len(b))
-    return "max vertex delta %.3e" % max(
-        abs(x - y) for pa, pb in zip(a, b) for x, y in zip(pa, pb)
-    )
+    d = max(abs(x - y) for pa, pb in zip(a, b) for x, y in zip(pa, pb))
+    scale = max(abs(c) for p in a + b for c in p)
+    ulps = d / math.ulp(scale) if scale else 0.0
+    return "max vertex delta %.3e = %.1f ULP of %.6g" % (d, ulps, scale)
 
 
 def reopen(path, routed):
