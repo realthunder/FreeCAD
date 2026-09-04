@@ -827,3 +827,127 @@ Probe: `shader_graph_chess.py` gained the four-quadrant sample of the
 3D view, a report-view scrape of the preview's render size (FC_LOG
 lands there, not on stdout; `checkLogging` on), and a layout compare
 across the Surface pick.
+
+## 15. The path-traced preview (2026-09-04)
+
+The fifth item of sec 13, the one sec 14 left as a design item: the
+same preview pane, rendered by the Cycles path tracer instead of the
+raster backend, chosen from the editor's menu bar. Nothing in the
+host forbade it; this section says how the pane's sphere scene reaches
+the Cycles consumer, what owns the session, how its frames land in the
+preview texture, and where the toggle lives. Written before the code.
+
+### 15.1 Prior art
+
+- **Substance 3D Designer 15** replaced its OpenGL and Iray viewers
+  with one 3D view renderer that has a rasterizer mode for the live
+  edit and a path tracer mode for the accurate look, over the same
+  material and the same scene, switched in the view. That is the
+  shape wanted here: one pane, two engines, the raster one the
+  default because a drag must answer at once.
+- **Blender's material preview** renders its preview scene with the
+  scene's own engine, Cycles included, as a background job whose
+  refining frames replace the thumbnail as they arrive. The preview
+  is never the viewport's session: it is a scene of its own.
+- **MaterialX's own graph editor** has only its GL viewer; there was
+  nothing to port.
+- **In this repo** the pattern exists twice. `FrameStream`
+  (`CyclesStream.cpp`, CyclesIntegration.md sec 7.1) is a host that
+  DRAWS NOTHING: it owns a `Viewport`, feeds it a scene and a camera,
+  and pulls each staged frame through `Viewport::takeFrame`, which was
+  added for exactly that -- a consumer with no backend to blit into.
+  And `View3DInventorViewer::Private::feedCyclesViewport` is where a
+  render-cache scene becomes a `SceneInput` with the view's PBR,
+  bump, output, light, section and background configs.
+
+### 15.2 The scene
+
+The raster preview (sec 12) already builds the whole answer: the
+material icon's two-unit sphere carrying the edited document as a
+`material`-stage `SoShaderProgram` with the live public inputs as
+parameters, traversed by a `SoFCRenderCacheManager` and translated by
+`RendererBridge::translate` into a `DrawCallList`. The tracer takes
+THAT list. The document crosses on the draw's `UserShader` the way it
+crosses in the viewport (`SceneTranslator::materialXShader`,
+CyclesIntegration.md sec 6.9), the stored images as the absolute paths
+`documentForRender` already substitutes, the input values as
+`user.params` -- so a value drag, which only moves uniforms on the
+raster path, is a new shader key on the Cycles path and the recycle
+pool re-graphs a parked node (sec 6.9's pool, verified on the
+`Param_roughness` sweep in session 16).
+
+One thing changes: the cache manager becomes a member of the host
+instead of a local of each render. The raster path could afford a
+fresh manager per render because its capture scene is transient; the
+tracer's restate (CyclesIntegration.md sec 5.10) keys meshes on the
+vertex cache's `cacheId`, and a fresh manager would hand it a new
+sphere every render -- a mesh rebuilt and a session reset per camera
+motion. Persisted, the sphere is translated once and every later
+`setScene` finds it in place.
+
+The configs come from the document's 3D view, as the raster path
+takes its backend from one: the config half of `feedCyclesViewport`
+moves into a public `View3DInventorViewer::cyclesSceneConfig
+(SceneInput &, const QColor &background)`, and the options block of
+`syncExternalShading` into a public `cyclesViewportOptions()`, and the
+feed, the sync and the editor call them. The environment, the light
+rig, the output transform and the background of the preview are then
+the view's, which is what the raster preview shows too. A document
+with no 3D view open has no preview in either mode.
+
+### 15.3 The session and its frames
+
+One `Render::Cycles::Viewport` per editor host, created when the user
+picks Path traced with the view's effective options, destroyed when
+they pick Raster or the editor closes. It is registered with NO
+backend: the host draws nothing.
+
+Each preview render in traced mode compares a scene signature -- the
+rendered text, the surface, the parameter values -- with what the
+tracer was last given: different, `setScene` (a restate in place, a
+reset only if the translation changed something); the same,
+`setCamera` alone, which is the cheap throttled path a camera drag
+wants. The camera is the same Coin camera's matrices the raster path
+builds, at the pane's framebuffer size.
+
+Frames arrive the way the stream takes them. Cycles' threads call the
+redraw callback; it is marshalled to the host with a queued call on
+the host QObject (a widget on its way out drops it), which starts a
+30 ms coalescing timer; the timer's slot calls `takeFrame`, composites
+the premultiplied linear half4 over the view's background, encodes it
+to sRGB exactly when the scene is colour managed -- the same bytes the
+raster readback holds -- and hands it to `setPreviewImage` bottom-up
+as GL reads a framebuffer. The stream's `composite` becomes the shared
+`Render::Cycles::compositeFrame`, with the channel count and row order
+as arguments: the stream wants top-down RGB8 for JPEG, the pane
+bottom-up RGBA8. The status the engine reports ("Sample 64/256",
+"Rendering Done") is shown where "Compiling Shaders" is, so the user
+sees the refinement; the compiling flag itself is false in this mode,
+there being no shader compile to wait for.
+
+Switching to traced keeps the raster frame on the pane until the
+first traced one lands; switching back renders a raster frame at
+once. The host's destructor resets the tracer before anything else:
+the viewport's own destructor nulls its callback under its lock
+before the session goes.
+
+### 15.4 The toggle
+
+`GraphHost` grows a preview mode contract beside the surface one:
+`previewModes()` (names, empty by default), `previewMode()` and
+`setPreviewMode(int)`. The Graph draws a `Preview` menu after
+`Surface` only when there are two or more modes, with a radio item
+per mode. `EngineGraphHost` carries the same three virtuals with the
+same empty defaults; the Gui host answers `Raster` and `Path traced`
+when the build carries the engine, and nothing otherwise, so a build
+without Cycles draws no menu. The mode is per editor and starts at
+Raster; it is not persisted -- a pane that path traces from the first
+frame would surprise the next open of any program.
+
+### 15.5 Not in this step
+
+A device submenu (the device is the view's effective `Cycles_Device`,
+the preferences underneath), pausing the session while the pane is
+hidden, and GPU interop -- the frame crosses the CPU twice (half4 to
+bytes, bytes to the texture), which a pane of a few hundred pixels a
+side does not feel.
