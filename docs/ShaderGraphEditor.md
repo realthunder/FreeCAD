@@ -1091,10 +1091,10 @@ GUI thread in it. The two commits after this section fixed it on both
 sides: a released session is now destroyed on a reaper worker instead
 of on the caller, and the kernel compile itself can be stopped and
 leaves no torn cache behind. It is written up as
-`docs/CyclesIntegration.md` sec 5.12, which is also where the one part
-still open lives -- on Windows the compiler runs under `system()` and
-the cancel only raises a flag, so a teardown during a first compile
-still waits it out there.
+`docs/CyclesIntegration.md` sec 5.12, which now covers Windows too --
+`CreateProcessW` suspended into a job object with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, `TerminateJobObject` on cancel --
+so there is nothing left open here on any platform.
 
 Still open, from sec 15.5: GPU interop -- a traced frame crosses the
 CPU twice (half4 to bytes, bytes to the texture), which a pane of a few
