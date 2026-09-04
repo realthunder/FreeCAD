@@ -167,14 +167,49 @@ ShaderGraphHost::ShaderGraphHost(App::ShaderProgram *prog, Render::GraphEditorWi
                 || !renderer->shaderCompilePending())
             previewInvalidated();
     });
+
+    // The preview reads its whole configuration off a 3D view of the
+    // document, so it has to know when one comes or goes.
+    if (Gui::Document *gdoc = Application::Instance->getDocument(program->getDocument())) {
+        attachConnection = gdoc->signalAttachView.connect(
+                [this](const Gui::BaseView &, bool) { viewsChanged(); });
+        detachConnection = gdoc->signalDetachView.connect(
+                [this](const Gui::BaseView &, bool) { viewsChanged(); });
+    }
 }
 
 ShaderGraphHost::~ShaderGraphHost()
 {
+    attachConnection.disconnect();
+    detachConnection.disconnect();
     // The tracer first: its destructor nulls the callback under its
     // lock and joins the session's thread while this object is still
     // whole, and a call it queued on this object dies with it.
     stopTracer();
+}
+
+void ShaderGraphHost::viewsChanged()
+{
+    // Deferred: signalDetachView is reported BEFORE the view leaves the
+    // document's list, so findViewer would still answer the one that is
+    // going. From the event loop the list is settled, and a queued call
+    // on this object dies with it if the whole document is closing.
+    QMetaObject::invokeMethod(this, [this]() {
+        if (findViewer()) {
+            // A view came back: whatever the tracer refused before is
+            // worth one more attempt.
+            tracerBlocked = false;
+        }
+        else if (tracer) {
+            // Nothing left to configure a render from: park the
+            // session rather than let it hold a device for a pane that
+            // cannot be refreshed. The mode stays traced, so the next
+            // view to attach starts one again.
+            FC_LOG("shader graph preview: no 3D view left, tracer parked");
+            stopTracer();
+        }
+        previewInvalidated();
+    }, Qt::QueuedConnection);
 }
 
 void ShaderGraphHost::programChanged()
@@ -348,35 +383,14 @@ void ShaderGraphHost::applyPreviewMode(int m)
     if (m == mode)
         return;
     if (m == 1) {
-        View3DInventorViewer *viewer = findViewer();
-        if (!viewer) {
-            FC_WARN("shader graph preview: no 3D view to path trace for");
-            return;
-        }
-        std::string error;
-        auto vp = Render::Cycles::Viewport::create(viewer->cyclesViewportOptions(), &error);
-        if (!vp) {
-            FC_WARN("shader graph preview: path tracer unavailable: " << error);
-            return;
-        }
-        // Cycles' threads report a staged frame from wherever they
-        // run; the take is queued to this object's thread, where the
-        // session is fed too (takeFrame is serialized by its caller
-        // against setScene and setCamera).
-        vp->setRedrawCallback([this]() {
-            QMetaObject::invokeMethod(this, [this]() {
-                if (!frame.isActive())
-                    frame.start();
-            }, Qt::QueuedConnection);
-        });
-        stopTracer();
-        tracer = std::move(vp);
+        tracerBlocked = false;
         mode = 1;
         // The raster frame stays on the pane until the first traced
-        // one lands.
+        // one lands. A view that is not there yet leaves the mode
+        // traced and the session for the next attach to start.
         setCompiling(false);
         poll.stop();
-        setPreviewStatus("Path tracing");
+        startTracer();
     }
     else {
         stopTracer();
@@ -384,6 +398,37 @@ void ShaderGraphHost::applyPreviewMode(int m)
     }
     previewInvalidated();
     editor->requestFrame();
+}
+
+bool ShaderGraphHost::startTracer()
+{
+    View3DInventorViewer *viewer = findViewer();
+    if (!viewer) {
+        FC_WARN("shader graph preview: no 3D view to path trace for");
+        return false;
+    }
+    std::string error;
+    auto vp = Render::Cycles::Viewport::create(viewer->cyclesViewportOptions(), &error);
+    if (!vp) {
+        FC_WARN("shader graph preview: path tracer unavailable: " << error);
+        // Every invalidation would otherwise ask the engine again.
+        tracerBlocked = true;
+        return false;
+    }
+    // Cycles' threads report a staged frame from wherever they
+    // run; the take is queued to this object's thread, where the
+    // session is fed too (takeFrame is serialized by its caller
+    // against setScene and setCamera).
+    vp->setRedrawCallback([this]() {
+        QMetaObject::invokeMethod(this, [this]() {
+            if (!frame.isActive())
+                frame.start();
+        }, Qt::QueuedConnection);
+    });
+    stopTracer();
+    tracer = std::move(vp);
+    setPreviewStatus("Path tracing");
+    return true;
 }
 
 void ShaderGraphHost::stopTracer()
@@ -460,8 +505,14 @@ void ShaderGraphHost::renderPreview()
     const std::string &xml = documentText();
     View3DInventorViewer *viewer = findViewer();
     Render::Renderer *renderer = viewer ? viewer->getExternalRenderer() : nullptr;
+    // The mode says traced and there is no session: the last view left
+    // and one is back, or the pick was made before there was a view.
+    if (mode == 1 && viewer && !tracer && !tracerBlocked)
+        startTracer();
     const bool traced = mode == 1 && tracer;
     if (xml.empty() || !viewer || (!traced && !renderer)) {
+        if (!viewer)
+            stopTracer();
         clearPreview();
         setCompiling(false);
         poll.stop();

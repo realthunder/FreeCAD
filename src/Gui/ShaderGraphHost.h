@@ -40,6 +40,7 @@
 
 #include <QObject>
 #include <QTimer>
+#include <fastsignals/signal.h>
 #include <map>
 #include <memory>
 #include <string>
@@ -69,6 +70,7 @@ struct SceneInput;
 
 namespace Gui {
 
+class BaseView;
 class View3DInventorViewer;
 
 class GuiExport ShaderGraphHost : public QObject, public Render::GraphEditor::EngineGraphHost {
@@ -118,7 +120,18 @@ private:
     void takeTracedFrame();
     void updateTracedStatus();
     void applyPreviewMode(int mode);
+    /// Create the session on the view's effective options, replacing
+    /// any there is. False when there is no view to take them from or
+    /// the engine refused the device -- and then the mode still says
+    /// traced, so a view attaching later tries again.
+    bool startTracer();
     void stopTracer();
+    /// A view of the program's document came or went. The preview's
+    /// whole configuration -- the backend, the environment, the light
+    /// rig, the tracer's options -- comes from a 3D view, so both ends
+    /// of that matter: the last one leaving parks the session and
+    /// empties the pane, and one arriving starts them again.
+    void viewsChanged();
     /// A 3D view of the program's document, one with a backend
     /// preferred (the raster path needs one; the traced path only
     /// needs the view's settings); null when the document has none.
@@ -165,6 +178,12 @@ private:
 
     /// 0 = raster, 1 = path traced (the index into previewModes).
     int mode = 0;
+    /// The engine refused the device: do not ask it again until
+    /// something changes (a mode pick, a view attaching).
+    bool tracerBlocked = false;
+    /// The document's view attach and detach, for viewsChanged.
+    fastsignals::connection attachConnection;
+    fastsignals::connection detachConnection;
     /// The path tracer's session while the mode is traced.
     std::unique_ptr<Render::Cycles::Viewport> tracer;
     /// What the tracer holds: the shader node's text, surface and
