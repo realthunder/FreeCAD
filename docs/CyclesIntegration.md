@@ -2551,23 +2551,32 @@ naming the connection and the cell. Nothing that is not a served
 stream is counted or capped: the desktop views, the shader graph
 editor's preview and the offline `cyclesRender` are not streams.
 
-- **It counts live streams, not live sessions.** `FrameStream` counts
-  itself in its base constructor and out of its destructor
-  (`FrameStream::liveCount()`), so no implementation can forget to and
-  a build without the engine has the same counter. What that does not
-  cover is the retiring session: a released stream leaves the count at
-  once, while the session it handed to the reaper (sec 5.12) still
-  holds its device for as long as the teardown takes. The cap bounds
-  what is being asked of the machine, not the contexts alive at an
-  instant.
-- **A restart frees its own slot first.** A `start` for a cell that is
-  already tracing now releases that cell's stream before it makes the
-  replacement, where the two used to overlap. Otherwise a viewer at
-  the cap could not restart its own render -- which is what a device
-  change is -- and two device contexts for one cell would be alive for
-  no reason. What it costs: a restart the engine then refuses (no such
-  device) leaves the cell with no stream instead of the one it had,
-  which is what the viewer is told.
+- **It counts devices, not objects.** `FrameStream` makes one slot in
+  its base constructor -- so no implementation can forget to count,
+  and a build without the engine has the same counter -- and shares
+  it with its viewport, which copies it into every session it hands
+  to the reaper (sec 5.12). The reaper drops it after the session is
+  destroyed and never before. A stream that has stopped therefore
+  keeps its place for as long as its device is still being torn down,
+  which is the number that matters: the point of a cap on a machine
+  is what the machine is carrying, not how many objects are alive.
+  `FrameStream::liveCount()` reads it; `slotHandle()` is a handle on
+  one slot that outlives its stream.
+- **A restart frees its own slot first, and is forgiven it.** A
+  `start` for a cell that is already tracing releases that cell's
+  stream before it makes the replacement, where the two used to
+  overlap -- and, since that slot is now held until the teardown
+  finishes, hands the replacement a `StreamOptions::replacing` handle
+  on it, which is forgiven once against the cap. Without the release
+  a restart would double the cell's devices for no reason; without
+  the forgiveness a viewer at the cap could not restart its own
+  render at all -- the wait would be the whole teardown, minutes of
+  it on the cold-kernel-compile case sec 5.12 is about. Exactly one
+  slot is ever forgiven, and only while it is still held, so a viewer
+  that restarts in a loop still leaves every earlier session counted
+  and is refused at the cap. What it costs: a restart the engine then
+  refuses (no such device) leaves the cell with no stream instead of
+  the one it had, which is what the viewer is told.
 - **Checked twice, deliberately.** The serve source checks before it
   creates, which is what produces the named code and the log line; the
   engine checks again inside `FrameStream::create`, under the same
@@ -2588,10 +2597,21 @@ with `TooManyStreams` and the message naming the limit, the count
 still 2 after the refusal, the server logging the connection and the
 cell; the `devices` reply reported `streams` 0 then 2; a restart of a
 cell already tracing was taken at the cap and left the count at 2,
-while a second cell of that same connection was refused; and a `stop`
-and, separately, a connection simply dropped each returned the slot
-and let the refused viewer in. At a cap of 0 all three were admitted.
-ctest 473/473 after the change.
+while a second cell of that same connection was refused; five
+restarts in a row were all taken and left the count where it started,
+which is the check that matters for the forgiveness -- a slot leaked
+by it would shrink the server's capacity for good; and a `stop` and,
+separately, a connection simply dropped each returned the slot and
+let the refused viewer in, the count reading its new value 0.25 s and
+0.51 s later, through the reaper rather than at the stop. At a cap of
+0 all three were admitted. ctest 473/473 after the change.
+
+What the probe cannot show is the hold itself: a CPU session tears
+down in milliseconds, so the slot is back before the next message is
+answered. The hold is for the case sec 5.12 is about -- a device
+whose teardown takes minutes -- where the old count would have handed
+the freed slot to another viewer while the first device was still
+resident.
 
 What this does NOT do yet: the interop
 path (the GPU frame still crosses the CPU twice,

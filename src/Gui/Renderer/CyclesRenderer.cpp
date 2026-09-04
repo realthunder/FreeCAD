@@ -518,17 +518,28 @@ namespace
 /// in a build without the engine, and so that no implementation can
 /// forget it: a stream is counted by its own base.
 std::atomic<int> s_liveStreams{0};
+
+/// One slot of the cap. A stream makes one and shares it with its
+/// viewport, which copies it into every session it retires (sec
+/// 5.12); the slot is therefore freed by whichever of the two lets go
+/// last -- the stream, or the reaper once the device is really gone.
+struct StreamSlot {
+    StreamSlot()
+    {
+        ++s_liveStreams;
+    }
+    ~StreamSlot()
+    {
+        --s_liveStreams;
+    }
+};
 }  // namespace
 
 FrameStream::FrameStream()
-{
-    ++s_liveStreams;
-}
+    : slot(std::make_shared<StreamSlot>())
+{}
 
-FrameStream::~FrameStream()
-{
-    --s_liveStreams;
-}
+FrameStream::~FrameStream() = default;
 
 int FrameStream::liveCount()
 {

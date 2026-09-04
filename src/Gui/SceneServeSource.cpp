@@ -512,13 +512,18 @@ public:
                          QStringLiteral("a start needs view, proj, width and height"));
 
         // A start on a cell that already traces is a restart, so its
-        // own stream goes BEFORE the replacement is made: it must not
-        // be what the cap refuses the replacement over, and two device
-        // contexts for one cell should not overlap. The cost is that a
+        // own stream goes BEFORE the replacement is made: two device
+        // contexts for one cell should not overlap, and the one on its
+        // way out must not be what refuses the one taking its place.
+        // Its slot is held until the reaper is done with the session,
+        // so the replacement is told to forgive exactly that slot --
+        // once, and only while it is still held. The cost is that a
         // restart the engine then refuses leaves the cell dark rather
         // than on its old frame -- which is what the viewer is told.
         {
             auto gone = streams->take(client, cell);
+            for (const auto &s : gone)
+                options.replacing = s->slotHandle();
             gone.clear();
         }
 
@@ -526,7 +531,8 @@ public:
         // engine checks it again as it constructs (it is the one place
         // the count cannot be raced), but that answer arrives as a
         // plain device failure; this one is the server's own.
-        const int live = Render::Cycles::FrameStream::liveCount();
+        const int live = Render::Cycles::FrameStream::liveCount()
+            - (options.replacing.expired() ? 0 : 1);
         if (options.maxStreams > 0 && live >= options.maxStreams) {
             Base::Console().Warning(
                 "SceneServeSource: path tracing refused for connection %llu cell %d -- "

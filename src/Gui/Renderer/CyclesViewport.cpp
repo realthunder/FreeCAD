@@ -172,10 +172,13 @@ private:
 
 /// A session on its way out, with the translator that states its scene
 /// (which points into it, so the two travel together and go in that
-/// order).
+/// order). \a token is whatever the viewport asked to outlive the
+/// teardown -- a served stream's slot in the cap (sec 7.1) -- and is
+/// dropped after the session is destroyed, never before.
 struct RetiredSession {
     std::unique_ptr<ccl::Session> session;
     std::unique_ptr<SceneTranslator> translator;
+    std::shared_ptr<void> token;
 };
 
 /// Destroying a Cycles session can block for MINUTES, and destroying
@@ -201,13 +204,15 @@ bool s_retireStarted = false;
 bool s_retireBusy = false;
 
 void retireSession(std::unique_ptr<ccl::Session> session,
-                   std::unique_ptr<SceneTranslator> translator)
+                   std::unique_ptr<SceneTranslator> translator,
+                   std::shared_ptr<void> token)
 {
     if (!session && !translator)
         return;
     {
         std::lock_guard<std::mutex> lock(s_retireMutex);
-        s_retireQueue.push_back(RetiredSession{std::move(session), std::move(translator)});
+        s_retireQueue.push_back(
+            RetiredSession{std::move(session), std::move(translator), std::move(token)});
         if (!s_retireStarted) {
             s_retireStarted = true;
             std::thread([]() {
@@ -225,6 +230,9 @@ void retireSession(std::unique_ptr<ccl::Session> session,
                     // is not something to ask of a driver.
                     item.session.reset();
                     item.translator.reset();
+                    // Last, and only now: the device is gone, so a
+                    // slot this session held in the cap is free.
+                    item.token.reset();
                     {
                         std::lock_guard<std::mutex> lock(s_retireMutex);
                         s_retireBusy = false;
@@ -364,6 +372,11 @@ public:
         applyCamera();
     }
 
+    void setRetireToken(std::shared_ptr<void> token) override
+    {
+        retireToken = std::move(token);
+    }
+
     void setPaused(bool paused) override
     {
         if (session)
@@ -483,10 +496,14 @@ private:
             gate.reset();
         }
         driver = nullptr;
-        retireSession(std::move(session), std::move(translator));
+        // A COPY of the token: a viewport that swaps sessions in place
+        // retires more than one, and each has to hold the slot.
+        retireSession(std::move(session), std::move(translator), retireToken);
     }
 
     ViewportOptions options;
+    std::shared_ptr<void> retireToken;  ///< outlives every session this
+                                        ///< viewport retires (sec 7.1)
     ccl::SessionParams sessionParams;
     std::unique_ptr<ccl::Session> session;
     std::unique_ptr<SceneTranslator> translator;

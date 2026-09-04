@@ -150,6 +150,10 @@ public:
         viewport = Viewport::create(options.viewport, error);
         if (!viewport)
             return false;
+        // The slot this stream holds in the cap travels with whatever
+        // the viewport retires, so that a session still being torn
+        // down is still counted (sec 7.1).
+        viewport->setRetireToken(capSlot());
         // Cycles' threads report a staged frame; the encoder thread
         // is what takes it.
         viewport->setRedrawCallback([this] {
@@ -380,9 +384,12 @@ std::unique_ptr<FrameStream> FrameStream::create(
         // outside it by start().
         static std::mutex admit;
         std::lock_guard<std::mutex> lock(admit);
-        if (options.maxStreams > 0 && liveCount() >= options.maxStreams) {
+        // The stream being replaced does not count against its own
+        // replacement while its device is still going away.
+        const int live = liveCount() - (options.replacing.expired() ? 0 : 1);
+        if (options.maxStreams > 0 && live >= options.maxStreams) {
             if (error) {
-                *error = "this server already runs " + std::to_string(liveCount())
+                *error = "this server already runs " + std::to_string(live)
                     + " path-traced sessions, which is its limit ("
                     + std::to_string(options.maxStreams) + ")";
             }
