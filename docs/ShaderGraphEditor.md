@@ -999,4 +999,99 @@ under the editor's top edge at 1x). ctest 473/473 after the change.
 Open: the traced frame stays on the pane after the last 3D view
 closes, since nothing invalidates the preview then (the raster pane
 goes only because the cell re-layout resizes it); the session is
-never paused while the pane is hidden; no device submenu.
+never paused while the pane is hidden; no device submenu. All three
+are closed in sec 16.
+
+
+## 16. The open items of sec 15 (2026-09-04)
+
+The three sec 15.6 left, in the order of their value. All of them are
+about the preview following what is actually there: the views that
+configure it, the pane that shows it, and the device it runs on.
+
+- **The pane follows the document's 3D views.** Everything the preview
+  needs comes from a 3D view of the program's document -- the backend
+  the raster path renders through, and the environment, light rig,
+  output transform and tracer options the traced path states -- and
+  nothing told the host when one came or went. The traced frame
+  therefore stayed on the pane after the last view closed, with a
+  session still holding its device for a picture that could no longer
+  be refreshed. (The raster pane appeared to behave only because the
+  cell re-layout happened to resize it, which invalidates by accident.)
+  The host connects to the Gui document's `signalAttachView` and
+  `signalDetachView` and re-reads the view list from the event loop:
+  detach is reported BEFORE the view leaves the document's list, so a
+  check made in the handler still finds the one that is going, and a
+  queued call on this object dies with it if the whole document is
+  closing. With no view left the session is parked and the pane
+  cleared; the mode stays `Path traced`, so the next view to attach
+  starts a session again. `Viewport::create` moved out of
+  `applyPreviewMode` into `startTracer()`, called from the pick and
+  from the render, which is also what makes a `Path traced` pick made
+  before any view is open resolve itself later instead of warning and
+  doing nothing. A device the engine refuses sets `tracerBlocked`, so
+  the next thousand invalidations do not ask it again; a view
+  attaching clears it.
+- **The preview is held while its pane is hidden.** A session behind a
+  cell showing another tab kept sampling -- a GPU or every core spent
+  on a frame nobody paints -- and the raster path spent a backend
+  frame per invalidation for the same nothing. The host filters the
+  editor widget for `Show`/`Hide` and `ShowToParent`/`HideToParent`
+  (the last two arrive when an ancestor is the one that moved) and
+  reads `isVisible()` from them. Hidden pauses the session
+  (`Viewport::setPaused`, which is `session->set_pause`) and stops the
+  render and frame timers; `previewInvalidated` remembers the
+  invalidation instead of answering it, and one render when the pane
+  comes back answers everything that arrived meanwhile. A session
+  created behind a hidden pane starts paused.
+- **A device submenu under Preview.** `GraphHost` grows a device
+  contract beside the mode one -- `previewDevices()`,
+  `previewDevice()`, `setPreviewDevice(int)`, the same shape and the
+  same empty defaults -- and the Graph draws a `Device` submenu under
+  a separator inside the `Preview` menu when the current mode reports
+  two or more. The Gui host answers the device TYPES this machine has,
+  deduplicated as the view's `Cycles_Device` enum is built
+  (`ViewportOptions.device` names a type, so two cards of one type are
+  one entry), and only while the mode is traced: the raster mode draws
+  through the view's backend and has no choice to make. The default is
+  the view's effective device, which is what the submenu shows checked
+  until a pick is made; a pick overrides it for this editor alone, is
+  applied from the event loop as a mode pick is, and starts a fresh
+  session on it. The view's own property is not written -- an editor
+  trying the GPU should not change what the 3D view path traces with.
+
+Two log lines were added with the submenu, because a device pick is
+otherwise not observable: `tracer on <device>` when a session starts,
+and `first traced frame <w>x<h>` once per session. Two devices tracing
+the same scene to the same sample count settle on the same picture, so
+pixels cannot tell them apart -- the evidence that a pick took effect
+is that a session started on the named device and produced a frame.
+
+Verified under Xvfb on CPU at 32 spp
+(`~/works/sw/fcad-probes/shader_graph_cycles.{py,sh}`, extended for
+these three; the wrapper runs the binary under `stdbuf -oL` so the
+probe can count log lines while it runs, the report view holding none).
+Hiding the editor's view logged the pane hidden and rendered NOTHING
+while it was down, including for a `Param_base_color` edit made
+meanwhile; showing it again logged the pane shown, rendered once, and
+settled on the green sphere the edit asked for. Closing the last 3D
+view emptied the pane within a second (134 stray pixels of 16464) and
+logged the tracer parked once; `Std_ViewCreate` brought a view back and
+the traced green sphere with it (12641 pixels in the re-laid-out pane),
+with no pick or reload in between. `Preview > Device > CUDA` logged the
+device, started a session on CUDA, took a frame from it and restated
+the scene once. ctest 473/473 after the change.
+
+Seen, not fixed: the first-ever GPU kernel compile blocks the session's
+teardown. Picking CUDA on a machine whose kernel cache is cold starts
+an `nvcc` run of several minutes, and the next `stopTracer` -- closing
+the 3D view, switching back to Raster, closing the editor -- waits
+inside `Viewport`'s destructor for that thread to join, with the GUI
+thread in it. Cycles behaves the same way in Blender; a fix would have
+to make the session's teardown asynchronous, and it costs nothing on a
+warm cache.
+
+Still open, from sec 15.5: GPU interop -- a traced frame crosses the
+CPU twice (half4 to bytes, bytes to the texture), which a pane of a few
+hundred pixels a side does not feel. Sec 7 phase 4 (the browser
+viewer's editor) is recorded and deliberately not started.
