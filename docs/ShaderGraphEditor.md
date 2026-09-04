@@ -307,8 +307,10 @@ gains an Alt shortcut (`SuppressAltInversion`).
 
 The menu bar the editor draws (`graphButtons`: File / Graph / Viewer /
 Options / Help) loses File (no load/save: the property is the file)
-and Viewer's Load Geometry; Graph (Auto Layout) and Help stay. The
-node-editor canvas, property panel and search popup are unchanged.
+and Viewer's Load Geometry; Graph (Auto Layout) and Help stay, and a
+Surface menu is added (phase 3, section 13) when the document names
+two or more renderable surfaces. The node-editor canvas, property
+panel and search popup are unchanged.
 
 ### 4.5 Where the code goes
 
@@ -401,9 +403,10 @@ of it until phase 4.
    property-editor edit reaches the panel through the `FragmentProgram`
    watch -- values are in the text -- and a panel drag writes the
    property).
-3. **Polish**: read-only library nodegraphs (`readOnly()` exists),
-   the `Surface` picker, HiDPI font scale, a path-traced preview
-   through the Cycles consumer, a dock option if asked for.
+3. **Polish -- DONE 2026-09-04 except the two last items, section 13.**
+   Read-only library nodegraphs (`readOnly()` exists), the `Surface`
+   picker, HiDPI font scale, a path-traced preview through the Cycles
+   consumer (not built), a dock option if asked for (not asked).
 4. **The browser viewer.** MaterialX Core/Format/GenGlsl to wasm
    (`JsMaterialX` proves the emscripten build), the same `GraphEditor/`
    sources in the viewer with a host that sends the edited text back
@@ -702,3 +705,65 @@ drag) for the session; the preview borrows a 3D view and renders eight
 settle frames per update, which is fine for a 373 px pane and would
 not be for a large one; the `Surface` picker (phase 3) is still a
 property edit.
+
+## 13. Phase 3 result (2026-09-04)
+
+Opened on the chess set first (`standard_surface_chess_set.mtlx` over
+`chess_set.glb`, a card per piece, `Materials.materializeShaderGraph`
+on one piece for the program), which is what phase 3 was scoped by:
+the screenshot showed the preview ball a flat ivory beside a marbled
+piece.
+
+- **The preview sphere carries UVs now.** A MaterialX image node
+  samples unit-0 texcoords; Coin's sphere generator states one per
+  vertex, but `SoFCVertexCache` keeps them only while a texture unit
+  is enabled on the capture traversal, which nothing in the preview
+  scene does -- so every fragment sampled texel (0, 0). The ball is a
+  `SoSphere` subclass carrying the `forceTexCoords` field the cache
+  reads (the `SoTextImage` / `SoDatumLabel` pattern), and the chess
+  materials show their base colour, roughness and normal maps on it.
+- **The Surface menu.** A document carrying an asset's whole material
+  set is viewed as ONE surface (the program's `Surface`). The menu
+  bar lists the document's renderable surfaces in document order when
+  there are two or more, the worn one checked; a pick writes the
+  property in one transaction from the event loop (the pick is made
+  inside the editor's frame and the write reloads the editor), so
+  Edit > Undo takes it back. `GraphHost` / `EngineGraphHost` carry
+  `surfaceNames` / `currentSurface` / `selectSurface` with defaults
+  that draw no menu; the Gui host answers from one `inspect` per
+  distinct text, cached. The reload puts the canvas back at the
+  overview.
+- **Read-only library nodegraphs needed nothing.** A double-click on a
+  `standard_surface` node opens its library implementation
+  (`NG_standard_surface_surfaceshader_100`) and `readOnly()` -- the
+  element's source URI against the document's, which a document read
+  from a string has empty -- already refuses Delete (the "Read Only"
+  popup) and writes nothing on a drag. Verified, not changed.
+- **F frames AND zooms** (`NavigateToSelection(true)`): the stock
+  call only centred, and a node picked in the fifteen-material
+  overview stayed a thumbnail.
+- **HiDPI needed nothing in the editor.** ImGui 1.92 with a backend
+  that has `RendererHasTextures` (ours) takes the font raster density
+  from the framebuffer scale, so at `QT_SCALE_FACTOR=2` on a 4K Xvfb
+  screen the text is crisp, the layout is logical, and a click lands
+  on its node. Open: the preview is rendered at the pane's LOGICAL
+  size and upscaled (soft at 2x; `preview(w, h)` could ask for
+  physical), and the 3D view itself drew in its bottom-left quadrant
+  under that scale factor -- the viewer's, not the editor's, noted in
+  the session memory and not chased here.
+- **Warnings print when they appear, not per parse.** The editor
+  writes the text per gesture, each write a parse in the provider and
+  a variant in the renderer, and the "translated to OpenPBR" note of
+  a standard_surface document printed on every one and raised the
+  report view each time. The provider prints a warning absent from
+  the previous parse's list; the renderer prints each distinct
+  message once. Not part of the editor, but it is what made the
+  editor unusable on that document.
+
+Not built: the path-traced preview through the Cycles consumer (a
+second render path into the same pane; nothing in the host forbids
+it) and the dock option (not asked for). The probe is
+`~/works/sw/fcad-probes/shader_graph_chess.{py,sh}` (`PROBE_HIDPI=1`
+for the 4K run): it finds node boxes by pixel projection, zooms with
+the wheel, dives with a double-click, and reads the menu by a fixed
+click. ctest 473/473 after phase 3.
