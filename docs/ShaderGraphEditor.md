@@ -951,3 +951,52 @@ the preferences underneath), pausing the session while the pane is
 hidden, and GPU interop -- the frame crosses the CPU twice (half4 to
 bytes, bytes to the texture), which a pane of a few hundred pixels a
 side does not feel.
+
+### 15.6 Result (2026-09-04)
+
+Built as designed, two commits (`7cc395f2bc` the shared plumbing,
+`683062fac0` the editor), and two things the design did not foresee.
+
+- **The persistent cache manager captured nothing on its first pass.**
+  Constructed at the top of `buildScene`, before `PreviewSphere::
+  initClass()` registered the sphere's node class, the manager's first
+  traversal came back with zero draws and, its root id unchanged, never
+  traversed again -- the raster pane stayed empty until an edit. The
+  per-render manager it replaced was always constructed after the
+  scene, which is why the order never mattered before. Constructed
+  after the nodes, the first pass has its draw. The manager's own
+  gate (`sceneid == root->getNodeId()`) makes the persistence sound:
+  every field the host sets on the shader node moves the root's id.
+- **The "Compiling Shaders" note was an ImGui popup**, re-opened every
+  frame while there was something to say. A popup blocks hovering of
+  every other window and closes the menus, so the moment the status
+  became permanent (a render mode's) the orbit drag and the menu bar
+  went dead -- the first probe run saw the second menu never open.
+  The note is a plain no-input overlay window now, for the compile
+  case too.
+- **The pane's background** is the same flat colour in both modes: the
+  traced input leaves `envBackground` off (the film is transparent
+  where the sky would be) and composites over the view's flat colour,
+  which is what the raster path clears its offscreen frame to. Left
+  as the config feed states it, the traced pane showed Cycles' own
+  procedural sky over the view's gradient.
+
+Verified under Xvfb on CPU at 32 spp (`~/works/sw/fcad-probes/
+shader_graph_cycles.{py,sh}`, `PROBE_DEVICE=CUDA` for the GPU): the
+raster pane first (blue enamel, 17111 sphere pixels of the 373x373
+pane); Preview > Path traced, the first traced frame about a second
+after the pick, settled at "Rendering Done, Sample 32/32" with 16888
+sphere pixels and the pane background byte-identical to the raster
+pane's; an orbit drag moved the picture through `setCamera` alone (the
+log shows the camera renders without a retranslation) and added no
+undo step; `Param_base_color` set to red re-traced the sphere red
+through one restate; Preview > Raster brought the backend's frame
+back, red; Path traced again started a second session; closing the 3D
+view and then the editor with the session running left no crash. The
+menu items sit where the probe clicks them (item rows 36 and 58 px
+under the editor's top edge at 1x). ctest 473/473 after the change.
+
+Open: the traced frame stays on the pane after the last 3D view
+closes, since nothing invalidates the preview then (the raster pane
+goes only because the cell re-layout resizes it); the session is
+never paused while the pane is hidden; no device submenu.
