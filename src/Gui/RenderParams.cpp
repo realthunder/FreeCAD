@@ -4692,10 +4692,11 @@ const char *RenderParams::docPBREnvImage() {
 "\n"
 "How sharp it is DRAWN behind the model is a separate\n"
 "question, and the answer is Render_PBREnvBlur: the background\n"
-"pass reads a level of that cubemap the way a real backdrop is\n"
-"out of focus, and at zero it reads the level it was baked at.\n"
-"The lighting and the reflections use the sharp levels\n"
-"whatever the blur says.\n"
+"pass draws that cubemap through a lens aperture, the way a\n"
+"real backdrop is out of focus, and at zero the aperture is\n"
+"shut and it is drawn as baked. The lighting and the\n"
+"reflections read the sharp environment whatever the blur\n"
+"says.\n"
 "\n"
 "Empty falls back to that dialog's current image, then to the\n"
 "procedural environment.");
@@ -4801,10 +4802,16 @@ void RenderParams::removePBREnvBackground() {
 const char *RenderParams::docPBREnvBlur() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "How far out of focus the environment background is, 0 to 1.\n"
-"Zero draws it at the resolution it was baked at; one flattens\n"
-"it to a single average colour. Only the BACKGROUND is\n"
-"affected -- the lighting and the reflections read the whole\n"
-"environment whatever this says.\n"
+"Zero is sharp -- the resolution it was baked at; one opens the\n"
+"aperture to 45 degrees, and in between it doubles every eighth\n"
+"of the range. Only the BACKGROUND is affected -- the lighting\n"
+"and the reflections read the whole environment whatever this\n"
+"says.\n"
+"\n"
+"It is a defocus, not a smudge: the environment is convolved\n"
+"with the disc of directions an aperture subtends, in linear\n"
+"radiance, so a small bright source spreads into an even bokeh\n"
+"disc that keeps its energy rather than being averaged away.\n"
 "\n"
 "A backdrop wants some of this. A real one is out of focus, and\n"
 "softening also lets a small bright source bleed into a wide\n"
@@ -4819,12 +4826,12 @@ const char *RenderParams::docPBREnvBlur() {
 "same backdrop: they bake the environment at the same angular\n"
 "resolution. The external path tracer gets there differently,\n"
 "since the world it samples IS the light and softening it\n"
-"would relight the scene -- so a second, smaller bake of the\n"
-"same environment is mixed in on CAMERA rays alone, and the\n"
-"lighting, reflections and refractions keep the sharp world.\n"
-"One consequence of that rule: a camera ray stays a camera ray\n"
-"through a transparent surface, so a see-through pass-through\n"
-"shows the soft backdrop as well.");
+"would relight the scene -- so a second bake of the same\n"
+"environment through the same aperture is mixed in on CAMERA\n"
+"rays alone, and the lighting, reflections and refractions keep\n"
+"the sharp world. One consequence of that rule: a camera ray\n"
+"stays a camera ray through a transparent surface, so a\n"
+"see-through pass-through shows the soft backdrop as well.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)

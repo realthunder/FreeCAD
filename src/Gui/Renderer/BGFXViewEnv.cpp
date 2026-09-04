@@ -498,14 +498,42 @@ void BGFXView::submitEnvBackground()
     // rectangle -- but the same blur is why a Realistic view did not
     // look like the External one standing beside it, and there was no
     // way to ask for the sharp one. Zero is m_envBgTex as baked, which
-    // is the resolution the path tracer bakes its world at; one is the
-    // top of the chain, a single averaged colour.
-    const float lod = ownMap
-        ? std::clamp(pbrEnvBlur, 0.0f, 1.0f)
-            * float(std::max(m_envBgMips - 1, 0))
-        : 2.0f;
-    float params[4] = {0.0f, lod, 0.0f,
-                       std::max(pbrEnvIntensity, 0.0f)};
+    // is the resolution the path tracer bakes its world at.
+    //
+    // What softening MEANS is a lens (Render::envBlurAngle): the
+    // aperture's cone of directions, convolved in. Reading one mip
+    // level instead was the cheap stand-in for it and looked like one
+    // -- see fs_fc_env.sc -- so the cone is spread over taps here, and
+    // the mip level's job is now only to size each tap's footprint to
+    // the SPACING between them, which is what closes the gaps that
+    // made a wide setting pixelated. The count follows the radius,
+    // measured in base texels, so a narrow aperture stays a couple of
+    // fetches and only a wide one pays for the full 32.
+    float params[4] = {1.0f, 2.0f, 1.0f, std::max(pbrEnvIntensity, 0.0f)};
+    if (ownMap) {
+        // Radians a base texel spans at a face's centre, the unit the
+        // aperture radius and the mip chain are both measured in.
+        constexpr float kTexelAngle = 1.5707963268f / float(kEnvBgSize);
+        const float alpha = Render::envBlurAngle(pbrEnvBlur);
+        const float radius = alpha / kTexelAngle;
+        const int taps = std::clamp(int(std::ceil(2.0f * radius)), 1, 32);
+        if (taps <= 1) {
+            // Narrower than a texel: nothing for a second tap to find,
+            // and the base level is already the answer.
+            params[1] = 0.0f;
+        }
+        else {
+            params[0] = std::cos(alpha);
+            // Spacing of N points spread over a disc of this radius,
+            // as a mip level: one tap then covers exactly the ground
+            // between it and the next.
+            params[1] = std::clamp(
+                std::log2(std::max(2.0f * radius / std::sqrt(float(taps)),
+                                   1.0f)),
+                0.0f, float(std::max(m_envBgMips - 1, 0)));
+            params[2] = float(taps);
+        }
+    }
     bgfx::setUniform(u_pbrParams, params);
     bgfx::setTexture(1, s_texEnv, tex);
     fullscreen(ViewBackground, m_progEnvBg,

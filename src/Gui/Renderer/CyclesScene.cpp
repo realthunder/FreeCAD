@@ -384,64 +384,211 @@ std::vector<float> bakeEnvironment(const PBRConfig &pbr, bool managed,
     return rgba;
 }
 
-/// Area-average a baked equirect down to \a outWidth x \a outHeight,
-/// which is how the background blur is made: a smaller picture read
-/// back through the engine's linear interpolation IS the defocused
-/// one, the same way the raster background reads a level of its
-/// cubemap. Each output texel averages the block of input texels it
-/// covers, so nothing is dropped -- a point source stays as bright as
-/// its share of the block, which is what keeps a blurred sky from
-/// losing its sun.
-std::vector<float> downsampleEquirect(const std::vector<float> &rgba,
-                                      int width, int height,
-                                      int outWidth, int outHeight)
+/// One level of a box mip pyramid over a baked equirect, halved in
+/// both directions from the level above.
+struct EquirectLevel
 {
+    std::vector<float> rgba;
+    int width = 0;
+    int height = 0;
+};
+
+/// Box mip pyramid of \a rgba, down to a single texel. Wrapping in
+/// longitude and clamping in latitude is the sampler's business; the
+/// halving itself never needs a neighbour outside the level.
+std::vector<EquirectLevel> buildEquirectPyramid(const std::vector<float> &rgba,
+                                                int width, int height)
+{
+    std::vector<EquirectLevel> levels;
+    levels.push_back({rgba, width, height});
+    while (levels.back().width > 1 || levels.back().height > 1) {
+        const EquirectLevel &src = levels.back();
+        EquirectLevel dst;
+        dst.width = std::max(src.width / 2, 1);
+        dst.height = std::max(src.height / 2, 1);
+        dst.rgba.assign(size_t(dst.width) * size_t(dst.height) * 4, 0.0f);
+        const int sx = src.width / dst.width;
+        const int sy = src.height / dst.height;
+        for (int y = 0; y < dst.height; ++y) {
+            for (int x = 0; x < dst.width; ++x) {
+                float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                for (int j = 0; j < sy; ++j) {
+                    for (int i = 0; i < sx; ++i) {
+                        const float *px = src.rgba.data()
+                            + (size_t(y * sy + j) * src.width
+                               + size_t(x * sx + i)) * 4;
+                        for (int c = 0; c < 4; ++c)
+                            acc[c] += px[c];
+                    }
+                }
+                float *px = dst.rgba.data() + (size_t(y) * dst.width + x) * 4;
+                for (int c = 0; c < 4; ++c)
+                    px[c] = acc[c] / float(sx * sy);
+            }
+        }
+        levels.push_back(std::move(dst));
+    }
+    return levels;
+}
+
+/// Bilinear fetch at \a u, \a v -- the same parameterisation
+/// bakeEnvironment writes, u wrapping in longitude and v clamping at
+/// the poles.
+void sampleEquirectLevel(const EquirectLevel &lv, float u, float v,
+                         float out[3])
+{
+    const float fx = u * lv.width - 0.5f;
+    const float fy = std::clamp(v * lv.height - 0.5f,
+                                0.0f, float(lv.height) - 1.0f);
+    const int x0 = int(std::floor(fx));
+    const float tx = fx - float(x0);
+    const int y0 = int(std::floor(fy));
+    const float ty = fy - float(y0);
+    const int y1 = std::min(y0 + 1, lv.height - 1);
+    auto wrap = [&lv](int x) {
+        x %= lv.width;
+        return x < 0 ? x + lv.width : x;
+    };
+    const int xa = wrap(x0);
+    const int xb = wrap(x0 + 1);
+    const float *p00 = lv.rgba.data() + (size_t(y0) * lv.width + xa) * 4;
+    const float *p10 = lv.rgba.data() + (size_t(y0) * lv.width + xb) * 4;
+    const float *p01 = lv.rgba.data() + (size_t(y1) * lv.width + xa) * 4;
+    const float *p11 = lv.rgba.data() + (size_t(y1) * lv.width + xb) * 4;
+    for (int c = 0; c < 3; ++c) {
+        const float a = p00[c] + (p10[c] - p00[c]) * tx;
+        const float b = p01[c] + (p11[c] - p01[c]) * tx;
+        out[c] = a + (b - a) * ty;
+    }
+}
+
+/// Trilinear fetch in direction \a d at fractional level \a lod.
+void sampleEquirectPyramid(const std::vector<EquirectLevel> &levels,
+                           const float d[3], float lod, float out[3])
+{
+    const float u = 0.5f - std::atan2(d[1], d[0]) / (2.0f * kPi);
+    const float v = 1.0f - std::acos(std::clamp(d[2], -1.0f, 1.0f)) / kPi;
+    lod = std::clamp(lod, 0.0f, float(levels.size() - 1));
+    const int l0 = int(lod);
+    const int l1 = std::min(l0 + 1, int(levels.size()) - 1);
+    const float t = lod - float(l0);
+    sampleEquirectLevel(levels[size_t(l0)], u, v, out);
+    if (t <= 0.0f || l1 == l0)
+        return;
+    float b[3];
+    sampleEquirectLevel(levels[size_t(l1)], u, v, b);
+    for (int c = 0; c < 3; ++c)
+        out[c] += (b[c] - out[c]) * t;
+}
+
+/// The width the camera-ray copy of the environment is baked at for
+/// \a blur, or 0 for "no blurred copy" -- which is what zero asks
+/// for, and what keeps a sharp world the graph it has always had.
+///
+/// A defocused sky carries no detail finer than the aperture, so the
+/// copy only has to hold that much: six texels across the blur radius,
+/// which is enough for the engine's linear interpolation to
+/// reconstruct it without faceting, and no more. That is why this is
+/// no longer the old eight-halvings law -- that one shrank the picture
+/// to as few as four texels and let bilinear magnification supply the
+/// "blur", which is the same mistake the raster backend was making
+/// with its mip chain, and it showed up the same way.
+int envBlurWidth(float blur, int width)
+{
+    const float alpha = envBlurAngle(blur);
+    if (alpha <= 0.0f)
+        return 0;
+    const int out = int(std::lround(6.0 * double(kPi) / double(alpha)));
+    return std::clamp(out, 32, width);
+}
+
+/// The camera-ray copy of a baked equirect, defocused: \a rgba
+/// convolved with the disc of directions the aperture subtends
+/// (Render::envBlurAngle), resampled to \a outWidth x \a outHeight.
+///
+/// This is the same lens the raster background draws through, run on
+/// the CPU instead of in a fragment shader -- same cone, same uniform
+/// spread over its solid angle, same choice of level per tap -- so the
+/// two backdrops stay one picture at every slider position. Averaging
+/// directions in linear radiance is what makes it a lens rather than a
+/// smudge: a small bright source spreads into an even disc that keeps
+/// its energy, so a blurred sky keeps its sun.
+///
+/// The tap count follows the radius in source texels and the level
+/// each tap reads follows the SPACING between taps, so the footprints
+/// tile the disc with no gaps however wide it opens -- and a narrow
+/// aperture costs a handful of taps instead of the full 32.
+std::vector<float> blurEquirect(const std::vector<float> &rgba,
+                                int width, int height, float alpha,
+                                int outWidth, int outHeight)
+{
+    const std::vector<EquirectLevel> levels =
+        buildEquirectPyramid(rgba, width, height);
+    // Radians a source texel spans in longitude, the unit the aperture
+    // radius and the pyramid are both measured in.
+    const float texel = 2.0f * kPi / float(width);
+    const float radius = alpha / texel;
+    const int taps = std::clamp(int(std::ceil(2.0f * radius)), 1, 32);
+    const float lod = std::clamp(
+        std::log2(std::max(2.0f * radius / std::sqrt(float(taps)), 1.0f)),
+        0.0f, float(levels.size() - 1));
+    const float cosA = std::cos(alpha);
+    // Golden angle: successive taps a full turn apart stay even at
+    // every prefix of the sequence, so any tap count still covers the
+    // disc.
+    constexpr float kGolden = 2.39996323f;
+
     std::vector<float> out(size_t(outWidth) * size_t(outHeight) * 4);
     for (int y = 0; y < outHeight; ++y) {
-        const int y0 = y * height / outHeight;
-        const int y1 = std::max((y + 1) * height / outHeight, y0 + 1);
+        const float theta = (1.0f - (y + 0.5f) / outHeight) * kPi;
+        const float st = std::sin(theta);
+        const float ct = std::cos(theta);
         for (int x = 0; x < outWidth; ++x) {
-            const int x0 = x * width / outWidth;
-            const int x1 = std::max((x + 1) * width / outWidth, x0 + 1);
-            float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-            for (int sy = y0; sy < y1; ++sy) {
-                for (int sx = x0; sx < x1; ++sx) {
-                    const float *px =
-                        rgba.data() + (size_t(sy) * width + sx) * 4;
-                    for (int c = 0; c < 4; ++c)
-                        acc[c] += px[c];
-                }
+            const float phi = (0.5f - (x + 0.5f) / outWidth) * 2.0f * kPi;
+            const float d[3] = {st * std::cos(phi), st * std::sin(phi), ct};
+            // Any tangent frame will do -- the taps are rotationally
+            // symmetric about d -- as long as the seed axis is never
+            // parallel to it.
+            const bool polar = std::abs(d[2]) > 0.999f;
+            const float seed[3] = {polar ? 1.0f : 0.0f, 0.0f,
+                                   polar ? 0.0f : 1.0f};
+            float tx[3] = {seed[1] * d[2] - seed[2] * d[1],
+                           seed[2] * d[0] - seed[0] * d[2],
+                           seed[0] * d[1] - seed[1] * d[0]};
+            const float tl = std::sqrt(tx[0] * tx[0] + tx[1] * tx[1]
+                                       + tx[2] * tx[2]);
+            for (int c = 0; c < 3; ++c)
+                tx[c] /= tl;
+            const float ty[3] = {d[1] * tx[2] - d[2] * tx[1],
+                                 d[2] * tx[0] - d[0] * tx[2],
+                                 d[0] * tx[1] - d[1] * tx[0]};
+            float acc[3] = {0.0f, 0.0f, 0.0f};
+            for (int i = 0; i < taps; ++i) {
+                // Uniform over the cap's SOLID angle, which is what an
+                // aperture covers: the cosine runs linearly from 1 to
+                // cos(alpha), so the taps thin out with radius exactly
+                // as a disc does.
+                const float u = (float(i) + 0.5f) / float(taps);
+                const float tc = 1.0f + (cosA - 1.0f) * u;
+                const float ts = std::sqrt(std::max(1.0f - tc * tc, 0.0f));
+                const float ph = float(i) * kGolden;
+                const float cp = std::cos(ph);
+                const float sp = std::sin(ph);
+                float dir[3];
+                for (int c = 0; c < 3; ++c)
+                    dir[c] = d[c] * tc + (tx[c] * cp + ty[c] * sp) * ts;
+                float tap[3];
+                sampleEquirectPyramid(levels, dir, lod, tap);
+                for (int c = 0; c < 3; ++c)
+                    acc[c] += tap[c];
             }
-            const float n = float((y1 - y0) * (x1 - x0));
             float *px = out.data() + (size_t(y) * outWidth + x) * 4;
-            for (int c = 0; c < 4; ++c)
-                px[c] = acc[c] / n;
+            for (int c = 0; c < 3; ++c)
+                px[c] = acc[c] / float(taps);
+            px[3] = 1.0f;
         }
     }
     return out;
-}
-
-/// The width the camera-ray copy of the environment is baked down to
-/// for \a blur, or 0 for "no blurred copy" -- which is what zero asks
-/// for, and what keeps a sharp world the graph it has always had.
-///
-/// Eight halvings end to end, the same span the raster background
-/// slides along its cubemap's mip chain, so the slider reads as one
-/// softness in both. It is measured from the picture this engine bakes
-/// rather than from a fixed reference, so zero stays "as sharp as this
-/// engine gets": for the procedural presets the two bakes are the same
-/// angular resolution and the two backdrops match outright, and for a
-/// user picture large enough to be baked sharper than the raster
-/// cubemap, Cycles keeps that sharpness instead of being blurred down
-/// to meet it.
-int envBlurWidth(float blur, int width)
-{
-    blur = std::clamp(blur, 0.0f, 1.0f);
-    if (blur <= 0.0f)
-        return 0;
-    const int out = int(std::lround(double(width)
-                                    * std::pow(2.0, -8.0 * double(blur))));
-    return std::clamp(out, 4, width - 1);
 }
 
 /// A baked equirect the engine's image manager serves to the world
@@ -1124,16 +1271,17 @@ bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
     };
 
     // The background blur (Render_PBREnvBlur), which the raster backend
-    // does by reading a level of its cubemap. A path tracer cannot: the
-    // world it samples IS the light, so softening it would relight the
-    // scene, and an environment texture has no lod to read anyway. So
-    // the softening is put where it belongs instead -- a second,
-    // smaller bake of the same environment, mixed in on CAMERA rays
-    // alone. Lighting, reflections and refractions keep the sharp
-    // world; only what is seen behind the model changes. That is the
-    // node graph Blender users build by hand for this (Blender ships no
-    // control for it: its viewport Blur slider is the raster preview's
-    // only), and it costs one small picture and three nodes.
+    // does by convolving its cubemap with the aperture as it draws. A
+    // path tracer cannot soften the world in place: what it samples IS
+    // the light, so blurring it would relight the scene. So the
+    // softening is put where it belongs instead -- a second bake of the
+    // same environment through the same lens (blurEquirect, the same
+    // cone as Render::envBlurAngle gives the shader), mixed in on
+    // CAMERA rays alone. Lighting, reflections and refractions keep the
+    // sharp world; only what is seen behind the model changes. That is
+    // the node graph Blender users build by hand for this (Blender
+    // ships no control for it: its viewport Blur slider is the raster
+    // preview's only), and it costs one small picture and three nodes.
     //
     // Is Camera Ray is 1 through a Transparent BSDF as well, so a
     // see-through pass-through shows the soft backdrop too. Same there.
@@ -1141,8 +1289,9 @@ bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
     ccl::ShaderOutput *envColor = nullptr;
     if (blurWidth > 0) {
         const int blurHeight = std::max(blurWidth / 2, 1);
-        auto *soft = addEnv(downsampleEquirect(pixels, width, height,
-                                               blurWidth, blurHeight),
+        auto *soft = addEnv(blurEquirect(pixels, width, height,
+                                         envBlurAngle(pbr.envBlur),
+                                         blurWidth, blurHeight),
                             blurWidth, blurHeight);
         auto *sharp = addEnv(std::move(pixels), width, height);
         auto *mix = graph->create_node<ccl::MixColorNode>();

@@ -396,4 +396,16 @@ void envRadiance(const PBRConfig &pbr, const float d[3], float out[3], bool mana
     envRadianceProcedural(pbr.envPreset, d, out);
 }
 
+float envBlurAngle(float blur)
+{
+    blur = std::clamp(blur, 0.0f, 1.0f);
+    if (blur <= 0.0f)
+        return 0.0f;
+    // 45 degrees at one, halved for every eighth of the slider below
+    // it. Written from the wide end so the top of the range is the
+    // stated number rather than whatever 256 doublings of a texel
+    // happen to land on.
+    return 0.25f * kPi * std::pow(2.0f, 8.0f * (blur - 1.0f));
+}
+
 }  // namespace Render
