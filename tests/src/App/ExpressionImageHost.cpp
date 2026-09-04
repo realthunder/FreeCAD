@@ -851,6 +851,149 @@ TEST_F(ExpressionImageEvalTest, partSurfaceOnHandles)
     }
 }
 
+TEST_F(ExpressionImageEvalTest, partModuleFacade)
+{
+    // G1 step 5b: the Part module facade -- the 32 names Draft's App
+    // side uses, as a guest `Part` module whose callables run on the
+    // host (mod_call) and hand back handles, whose constant reads once
+    // (mod_get), whose OCCError is a guest class the bridge raises when
+    // the host reply names it.  Each answer equals the host's own.
+    PyObject* box = nullptr;
+    PyObject* other = nullptr;
+    PyObject* fc = nullptr;
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* part = PyImport_ImportModule("Part");
+        if (!part) {
+            PyErr_Clear();
+            GTEST_SKIP() << "the Part module is not importable in this test binary";
+        }
+        box = PyObject_CallMethod(part, "makeBox", "ddd", 2.0, 3.0, 4.0);
+        other = PyObject_CallMethod(part, "makeBox", "ddd", 1.0, 1.0, 1.0);
+        Py_DECREF(part);
+        fc = PyImport_ImportModule("FreeCAD");
+        ASSERT_NE(box, nullptr);
+        ASSERT_NE(other, nullptr);
+        ASSERT_NE(fc, nullptr);
+    }
+    auto& host = ImageHost::instance();
+    auto pack = [&]() {
+        Py_INCREF(box);
+        Py_INCREF(other);
+        auto a = pyBinding("s", box);
+        auto b = pyBinding("t", other);
+        json m = json::from_cbor(a.begin(), a.end());
+        m.update(json::from_cbor(b.begin(), b.end()));
+        auto v = json::to_cbor(m);
+        return std::vector<unsigned char>(v.begin(), v.end());
+    };
+    // the same text runs on both sides: __import__ reaches the guest's
+    // facade module there and the real module here
+    auto native = [&](const char* expr, std::string& out) {
+        Base::PyGILStateLocker lock;
+        PyObject* g = PyDict_New();
+        PyDict_SetItemString(g, "__builtins__", PyEval_GetBuiltins());
+        PyDict_SetItemString(g, "FreeCAD", fc);
+        PyDict_SetItemString(g, "s", box);
+        PyDict_SetItemString(g, "t", other);
+        PyObject* r = PyRun_String(expr, Py_eval_input, g, g);
+        Py_DECREF(g);
+        if (!r) {
+            PyErr_Print();
+            return false;
+        }
+        PyObject* rep = PyObject_Repr(r);
+        Py_DECREF(r);
+        out = PyUnicode_AsUTF8(rep);
+        Py_DECREF(rep);
+        return true;
+    };
+    const char* cases[] = {
+        "__import__('Part').LineSegment(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(3, 4, 0)).length()",
+        "__import__('Part').LineSegment(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(3, 4, 0)).EndPoint.y",
+        "__import__('Part').makeCircle(2.0).Length",
+        "__import__('Part').makeCircle(2.0).Curve.Radius",
+        "__import__('Part').makePolygon([FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(1, 0, 0),"
+        " FreeCAD.Vector(1, 1, 0), FreeCAD.Vector(0, 0, 0)]).isClosed()",
+        "__import__('Part').Face(__import__('Part').makePolygon([FreeCAD.Vector(0, 0, 0),"
+        " FreeCAD.Vector(1, 0, 0), FreeCAD.Vector(1, 1, 0), FreeCAD.Vector(0, 0, 0)])).Area",
+        "__import__('Part').makeCompound([s, t]).Volume",
+        "__import__('Part').Vertex(FreeCAD.Vector(1, 2, 3)).Point.y",
+        "__import__('Part').Circle(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), 2.0).Radius",
+        "__import__('Part').Plane().Axis.z",
+        "__import__('Part').Point(FreeCAD.Vector(1, 2, 3)).toShape().Point.z",
+        "len(__import__('Part').sortEdges(s.Edges))",
+        "__import__('Part').OCC_VERSION",
+        "__import__('Part').OCC_VERSION",
+    };
+    host.resetStats();
+    for (const char* expr : cases) {
+        auto g = host.eval(expr, pack());
+        ASSERT_TRUE(g.ok) << expr << ": " << g.excType << ": " << g.message;
+        std::string want;
+        ASSERT_TRUE(native(expr, want)) << expr;
+        std::string got;
+        {
+            Base::PyGILStateLocker lock;
+            PyObject* v = host.decodeResult(g);
+            ASSERT_NE(v, nullptr) << expr;
+            PyObject* rep = PyObject_Repr(v);
+            Py_DECREF(v);
+            got = PyUnicode_AsUTF8(rep);
+            Py_DECREF(rep);
+        }
+        EXPECT_EQ(got, want) << expr;
+        host.clearHandles();
+    }
+    auto st = host.stats();
+    EXPECT_GT(st.ops["mod_call"], 0u);
+    EXPECT_EQ(st.ops["mod_get"], 1u) << "the constant is read once, then cached";
+
+    // an undeclared name does not exist in the guest's module
+    auto r = host.eval("__import__('Part').makeSphere(1.0)", pack());
+    EXPECT_FALSE(r.ok);
+    EXPECT_EQ(r.excType, "AttributeError") << r.message;
+
+    // the host's Part.OCCError arrives as the guest's Part.OCCError:
+    // the same script classifies the failure identically on both sides
+    const char* script =
+        "import Part, FreeCAD\n"
+        "V = FreeCAD.Vector\n"
+        "try:\n"
+        "    Part.Face(Part.makePolygon([V(0, 0, 0), V(1, 0, 0)]))\n"
+        "    R = 'no error'\n"
+        "except Part.OCCError as e:\n"
+        "    R = 'OCCError'\n"
+        "except Exception as e:\n"
+        "    R = type(e).__name__\n";
+    r = host.exec(script, "fcxexc");
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    r = host.eval("__import__('fcxexc').R", {});
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    std::string nativeClass;
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* g = PyDict_New();
+        PyDict_SetItemString(g, "__builtins__", PyEval_GetBuiltins());
+        PyObject* ran = PyRun_String(script, Py_file_input, g, g);
+        ASSERT_NE(ran, nullptr);
+        Py_DECREF(ran);
+        PyObject* R = PyDict_GetItemString(g, "R");
+        nativeClass = PyUnicode_AsUTF8(R);
+        Py_DECREF(g);
+    }
+    EXPECT_EQ(value(r).get<std::string>(), nativeClass);
+    EXPECT_EQ(nativeClass, "OCCError") << "the fixture no longer raises OCCError natively";
+
+    host.clearHandles();
+    {
+        Base::PyGILStateLocker lock;
+        Py_DECREF(box);
+        Py_DECREF(other);
+        Py_DECREF(fc);
+    }
+}
+
 // ---- the G1 step-3 gate (docs/Sandbox.md sec 7.6): Draft's vector
 // ---- algebra runs in the guest on the in-image value classes with no
 // ---- bridge hop, and agrees with the same source run on the host.

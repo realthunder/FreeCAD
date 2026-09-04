@@ -67,6 +67,26 @@ static const MemberIndex& facadeIndex()
     return index;
 }
 
+const ModuleMember* moduleMemberLookup(const std::string& qualified)
+{
+    using ModuleIndex =
+        std::unordered_map<std::string, std::unordered_map<std::string, const ModuleMember*>>;
+    static const ModuleIndex index = [] {
+        ModuleIndex idx;
+        for (const auto& m : ModuleTable)
+            idx[m.module][m.name] = &m;
+        return idx;
+    }();
+    auto dot = qualified.rfind('.');
+    if (dot == std::string::npos)
+        return nullptr;
+    auto it = index.find(qualified.substr(0, dot));
+    if (it == index.end())
+        return nullptr;
+    auto mit = it->second.find(qualified.substr(dot + 1));
+    return mit == it->second.end() ? nullptr : mit->second;
+}
+
 const char* facadeKeyFor(PyTypeObject* type)
 {
     const auto& idx = facadeIndex();
@@ -558,6 +578,47 @@ static json encodeResult(HandleTable& table, PyObject* result)
     return okReply(std::move(val));
 }
 
+/// Call `callable` (stolen) with the request's "a" (args list) and "k"
+/// (kwargs map), both decoded through the table so handles dereference
+/// to live objects; the encoded result or the Python error.
+static json callWithWireArgs(HandleTable& table, PyObject* callable, const json& req)
+{
+    PyObject* argTuple = nullptr;
+    auto a = req.find("a");
+    if (a == req.end())
+        argTuple = PyTuple_New(0);
+    else {
+        PyObject* list = decodeHostValue(table, *a);
+        if (!list) {
+            Py_DECREF(callable);
+            return pyErrorReply();
+        }
+        argTuple = PySequence_Tuple(list);
+        Py_DECREF(list);
+    }
+    if (!argTuple) {
+        Py_DECREF(callable);
+        return pyErrorReply();
+    }
+    PyObject* kwargs = nullptr;
+    auto k = req.find("k");
+    if (k != req.end() && k->is_object() && !k->empty()) {
+        kwargs = decodeHostValue(table, *k);
+        if (!kwargs) {
+            Py_DECREF(callable);
+            Py_DECREF(argTuple);
+            return pyErrorReply();
+        }
+    }
+    PyObject* result = PyObject_Call(callable, argTuple, kwargs);
+    Py_DECREF(callable);
+    Py_DECREF(argTuple);
+    Py_XDECREF(kwargs);
+    if (!result)
+        return pyErrorReply();
+    return encodeResult(table, result);
+}
+
 json dispatchHostOp(HandleTable& table, const json& req)
 {
     Base::PyGILStateLocker lock;
@@ -578,6 +639,32 @@ json dispatchHostOp(HandleTable& table, const json& req)
             return okReply(json(""));
 #endif
         }
+        if (op == FcxWire::OpModCall || op == FcxWire::OpModGet) {
+            // The module facades: no handle, a declared "Module.name".
+            // A curated constructor list is a geometry call, not a host
+            // import, hence geom.call (docs/Sandbox.md sec 3.2).
+            auto m = req.find("m");
+            if (m == req.end() || !m->is_string())
+                return errReply("ProtocolError", "module op without a name");
+            const std::string& qual = m->get_ref<const std::string&>();
+            const ModuleMember* mm = moduleMemberLookup(qual);
+            const bool isGet = op == FcxWire::OpModGet;
+            if (!mm || mm->kind != (isGet ? ModuleKind::Constant : ModuleKind::Callable))
+                return errReply("ProtocolError",
+                                "'" + qual + "' is not declared for sandbox access");
+            ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::GeomCall);
+            PyObject* mod = PyImport_ImportModule(mm->module);
+            if (!mod)
+                return pyErrorReply();
+            PyObject* attr = PyObject_GetAttrString(mod, mm->name);
+            Py_DECREF(mod);
+            if (!attr)
+                return pyErrorReply();
+            if (isGet)
+                return encodeResult(table, attr);
+            return callWithWireArgs(table, attr, req);
+        }
+
         PyObject* base = table.get(id);
         if (!base)
             return errReply("ReferenceError", "stale host handle");
@@ -751,40 +838,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
                 Py_DECREF(callable);
                 throw;
             }
-            PyObject* argTuple = nullptr;
-            auto a = req.find("a");
-            if (a == req.end())
-                argTuple = PyTuple_New(0);
-            else {
-                PyObject* list = decodeHostValue(table, *a);
-                if (!list) {
-                    Py_DECREF(callable);
-                    return pyErrorReply();
-                }
-                argTuple = PySequence_Tuple(list);
-                Py_DECREF(list);
-            }
-            if (!argTuple) {
-                Py_DECREF(callable);
-                return pyErrorReply();
-            }
-            PyObject* kwargs = nullptr;
-            auto k = req.find("k");
-            if (k != req.end() && k->is_object() && !k->empty()) {
-                kwargs = decodeHostValue(table, *k);
-                if (!kwargs) {
-                    Py_DECREF(callable);
-                    Py_DECREF(argTuple);
-                    return pyErrorReply();
-                }
-            }
-            PyObject* result = PyObject_Call(callable, argTuple, kwargs);
-            Py_DECREF(callable);
-            Py_DECREF(argTuple);
-            Py_XDECREF(kwargs);
-            if (!result)
-                return pyErrorReply();
-            return encodeResult(table, result);
+            return callWithWireArgs(table, callable, req);
         }
 
         if (op == FcxWire::OpGetItem) {

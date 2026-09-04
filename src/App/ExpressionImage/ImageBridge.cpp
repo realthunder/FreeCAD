@@ -97,6 +97,9 @@ static void raiseFromReply(const json &reply)
     PyObject *builtins = PyEval_GetBuiltins();
     PyObject *type =
         builtins ? PyDict_GetItemString(builtins, exc.c_str()) : nullptr;
+    // not a builtin: a module facade's exception class (Part.OCCError)
+    if (!type)
+        type = FcxImage::guestExceptionType(exc.c_str());
     if (type && PyExceptionClass_Check(type))
         PyErr_SetString(type, msg.c_str());
     else
@@ -123,10 +126,12 @@ static PyObject *fcx_op(PyObject *, PyObject *args)
     req["op"] = op;
     req["h"] = (uint64_t)id;
     std::string err;
-    bool isCall = strcmp(op, "call") == 0;
+    // member-addressed ops carry the name as "m" and shift the extras
+    bool isCall = strcmp(op, FcxWire::OpCall) == 0 || strcmp(op, FcxWire::OpModCall) == 0
+        || strcmp(op, FcxWire::OpModGet) == 0;
     if (isCall) {
         if (!a1 || !PyUnicode_Check(a1)) {
-            PyErr_SetString(PyExc_TypeError, "call op needs a member name");
+            PyErr_SetString(PyExc_TypeError, "member-addressed op needs a name");
             return nullptr;
         }
         req["m"] = PyUnicode_AsUTF8(a1);

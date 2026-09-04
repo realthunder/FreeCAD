@@ -55,6 +55,15 @@ inline const char* const OpResolveAlias = "resolve_alias";
 // addProperty / setPropertyStatus / removeProperty ride the `call` op
 // with the same owner-only write gate.
 inline const char* const OpWriteProp = "write_prop";
+// No handle (h = 0): the module facades (generateSandboxFacades.py
+// MODULE_FACADES).  {op:"mod_call", m:"Part.LineSegment", a: args, k:
+// kwargs} calls a declared module callable on the host and returns its
+// result (a shape or curve comes back as a handle); {op:"mod_get",
+// m:"Part.OCC_VERSION"} reads a declared constant.  Both under
+// Permission::GeomCall: a curated constructor list is a geometry call,
+// not a host import.  An undeclared name is a protocol error.
+inline const char* const OpModCall = "mod_call";
+inline const char* const OpModGet = "mod_get";
 // No handle: the guest's last-in-line import finder asking what the host
 // knows about a module it could not import (docs/SandboxNetwork.md sec
 // 9.3).  "a" = the import name; the reply value is "" (unknown) or the

@@ -30,6 +30,18 @@ bool encodeValue(PyObject* obj, nlohmann::json& out, std::string& err);
  */
 bool hostOp(const nlohmann::json& req, nlohmann::json& reply);
 
+/** Build the module facades (generated MODULES: Part today) into
+ * sys.modules -- callables over mod_call, constants over mod_get,
+ * exception classes local to the guest.  Called from initEvalGlobals;
+ * false with a Python error set.
+ */
+bool installModuleFacades();
+
+/// The guest-local exception class a module facade declared under
+/// `name` (borrowed), or nullptr: what the bridge raises when a host
+/// reply names it (Part.OCCError).
+PyObject* guestExceptionType(const char* name);
+
 }  // namespace FcxImage
 
 #endif  // APP_FCX_IMAGE_MARSHAL_H

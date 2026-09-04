@@ -66,7 +66,38 @@ static const char ProxyPrelude[] =
     "    def call(self, *args, **kw):\n"
     "        return _fcx.op('call', self._id, name, args, kw)\n"
     "    call.__name__ = name\n"
-    "    return call\n";
+    "    return call\n"
+    // The module facades (generated MODULES): a module object per
+    // entry whose callables forward over mod_call, whose constants are
+    // read once over mod_get on first access, and whose exception
+    // classes are local -- registered in EXCEPTIONS so the bridge can
+    // raise them by the name the host reply carries.
+    "import sys, types\n"
+    "EXCEPTIONS = {}\n"
+    "def _mod_call(qual):\n"
+    "    def call(*args, **kw):\n"
+    "        return _fcx.op('mod_call', 0, qual, args, kw)\n"
+    "    call.__name__ = qual.rsplit('.', 1)[1]\n"
+    "    call.__qualname__ = qual\n"
+    "    return call\n"
+    "class _FcxModule(types.ModuleType):\n"
+    "    def __getattr__(self, name):\n"
+    "        if name in self.__dict__.get('_fcx_constants', ()):\n"
+    "            value = _fcx.op('mod_get', 0, self.__name__ + '.' + name)\n"
+    "            self.__dict__[name] = value\n"
+    "            return value\n"
+    "        raise AttributeError(\"module '%s' has no attribute '%s'\" % (self.__name__, name))\n"
+    "def _install_modules(modules):\n"
+    "    for modname, spec in modules.items():\n"
+    "        m = _FcxModule(modname)\n"
+    "        for n in spec['callables']:\n"
+    "            setattr(m, n, _mod_call(modname + '.' + n))\n"
+    "        for n in spec['exceptions']:\n"
+    "            e = type(n, (Exception,), {'__module__': modname})\n"
+    "            setattr(m, n, e)\n"
+    "            EXCEPTIONS[n] = e\n"
+    "        m._fcx_constants = tuple(spec['constants'])\n"
+    "        sys.modules[modname] = m\n";
 
 /// Namespace dict holding HostHandle + the generated FACADES map.
 static PyObject* proxyNamespace()
@@ -82,6 +113,10 @@ static PyObject* proxyNamespace()
             Py_DECREF(r);
             r = PyRun_String(FcxFacadesSource, Py_file_input, ns, ns);
         }
+        if (r) {
+            Py_DECREF(r);
+            r = PyRun_String("_install_modules(MODULES)\n", Py_file_input, ns, ns);
+        }
         if (!r) {
             PyErr_Print();
             Py_CLEAR(ns);
@@ -90,6 +125,18 @@ static PyObject* proxyNamespace()
         Py_DECREF(r);
     }
     return ns;
+}
+
+bool installModuleFacades()
+{
+    return proxyNamespace() != nullptr;
+}
+
+PyObject* guestExceptionType(const char* name)
+{
+    PyObject* ns = proxyNamespace();
+    PyObject* table = ns ? PyDict_GetItemString(ns, "EXCEPTIONS") : nullptr;
+    return table ? PyDict_GetItemString(table, name) : nullptr;  // borrowed
 }
 
 PyObject* handleType()

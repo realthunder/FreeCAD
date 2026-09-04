@@ -113,6 +113,29 @@ RUNTIME_TYPE_NAMES = {
     "TopoShapeCompSolidPy": "Part.CompSolid",
 }
 
+# Module facades: host modules the guest sees as a closed list of names.
+# Callables run on the host (FcxWire mod_call) and return their result
+# by value or as a handle -- so Part.LineSegment(...) in the guest is a
+# handle on a host GeomLineSegment, with the annotated facade above it;
+# constants are read once (mod_get); exceptions are guest-local classes
+# the bridge raises when the host reply names them.  The Part list is
+# the 32 names Draft's App side uses (docs/Sandbox.md sec 7.6).  Same
+# rule as the members: absent means DENY.
+MODULE_FACADES = {
+    "Part": {
+        "callables": [
+            "Arc", "ArcOfCircle", "ArcOfEllipse", "BSplineCurve", "BezierCurve",
+            "Circle", "Compound", "Edge", "Ellipse", "Face", "Line", "LineSegment",
+            "Plane", "Point", "Shape", "Vertex", "Wire",
+            "__sortEdges__", "getShape", "makeCircle", "makeCompound", "makeFace",
+            "makeLine", "makePlane", "makePolygon", "makeShell", "makeSolid",
+            "makeWireString", "makeWires", "sortEdges",
+        ],
+        "constants": ["OCC_VERSION"],
+        "exceptions": ["OCCError"],
+    },
+}
+
 VALID_ATTRIBUTE_TIERS = ("value", "handle")
 VALID_METHODE_TIERS = ("call",)
 
@@ -242,6 +265,15 @@ def emit_host(facades, out):
             lines.append('    {"%s", "%s", FacadeKind::Method, FacadeTier::Call},'
                          % (f.type_key, mname))
     lines.append("};")
+    lines.append("static const ModuleMember ModuleTable[] = {")
+    for modname, spec in MODULE_FACADES.items():
+        for n in spec["callables"]:
+            lines.append('    {"%s", "%s", ModuleKind::Callable},' % (modname, n))
+        for n in spec["constants"]:
+            lines.append('    {"%s", "%s", ModuleKind::Constant},' % (modname, n))
+        for n in spec["exceptions"]:
+            lines.append('    {"%s", "%s", ModuleKind::Exception},' % (modname, n))
+    lines.append("};")
     with open(out, "w") as fp:
         fp.write("\n".join(lines) + "\n")
 
@@ -267,6 +299,17 @@ def emit_image(facades, out):
     py.append("FACADES = {")
     for f in facades:
         py.append("    '%s': %s," % (f.type_key, proxy_name[f.name]))
+    py.append("}")
+    py.append("")
+    py.append("# Module facades: the prelude's _install_modules builds a module per")
+    py.append("# entry -- callables forward over mod_call, constants read once over")
+    py.append("# mod_get, exceptions are local classes the bridge raises by name.")
+    py.append("MODULES = {")
+    for modname, spec in MODULE_FACADES.items():
+        py.append("    '%s': {" % modname)
+        for key in ("callables", "constants", "exceptions"):
+            py.append("        '%s': (%s)," % (key, "".join("'%s', " % n for n in spec[key])))
+        py.append("    },")
     py.append("}")
 
     lines = [

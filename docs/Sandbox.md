@@ -234,7 +234,22 @@ ring 2 is absent (`os`, `socket`, `ctypes`: no grant supplies them).
 ### 3.2 The wire (`FcxWire.h`)
 
 Ops: `eval`, `exec`, `read_prop`, `get_attr`, `call`, `get_item`, `len`,
-`release`, `resolve_alias`, `pkg.missing`.  `exec` (2026-09-04,
+`release`, `resolve_alias`, `pkg.missing`, `write_prop`, `mod_call`,
+`mod_get`.  The module facades (2026-09-04, `MODULE_FACADES` in the
+generator, sec 3.3): the guest's `Part` module is a closed list of
+names -- 30 callables (`LineSegment`, `makePolygon`, `Face`, ...), one
+constant (`OCC_VERSION`), one exception (`OCCError`) -- built at init
+into the guest's `sys.modules`; a callable is `{op:"mod_call", m:
+"Part.LineSegment", a, k}` run on the host with handle arguments
+dereferenced, its result crossing by value or as a handle with the
+annotated facade above it; a constant is read once over `mod_get`; the
+exception is a guest-local class the bridge raises whenever a host
+reply names it (`raiseFromReply` consults the facades' `EXCEPTIONS`
+after the builtins).  Gate `Permission::GeomCall`, a decision: a
+curated constructor list is a geometry call, where `_part` (an
+arbitrary import) is `host.import`.  An undeclared name is not on the
+guest module at all (AttributeError), and a forged `mod_call` is a
+protocol error.  `exec` (2026-09-04,
 host->guest, `ImageHost::exec(source, module)`) runs statements; with a
 module name the source becomes that module in the guest's `sys.modules`
 (created and registered before it runs, bound to its parent package
@@ -810,10 +825,12 @@ handles from the guest (`partSurfaceOnHandles`: 31 expressions over a
 box and its sub-shapes, curves and surfaces -- handle-tier attributes,
 value-tier reads, declared calls with handle arguments dereferenced,
 booleans between two handles -- each equal to the host's own answer on
-both runtimes).  Still missing: the `Part` module facade (32 names,
-constructors returning handles) and a `FreeCAD` module facade for
-`ActiveDocument`/`Console`/`ParamGet`, rung 2, and a local-wheel source
-in `install_package`.  Document-level writes (`addObject` 76 uses,
+both runtimes).  The `Part` module facade is BUILT (3.2: 30 callables,
+`OCC_VERSION`, `OCCError`; gate `partModuleFacade`, 14 constructions
+and reads equal to native on both runtimes, the exception mapped).
+Still missing: a `FreeCAD` module facade for `ActiveDocument`/
+`Console`/`ParamGet`, rung 2, and a local-wheel source in
+`install_package`.  Document-level writes (`addObject` 76 uses,
 `removeObject`) are NOT declared: they are what Draft's make_* commands
 do, not what an `execute()` does, and rung 2 writes self only -- a
 decision to revisit with G1c.  NOT missing, checked 2026-09-04: the

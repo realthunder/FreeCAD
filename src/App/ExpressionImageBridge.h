@@ -74,6 +74,29 @@ struct FacadeMember
     FacadeTier tier;
 };
 
+/** The module facades (generateSandboxFacades.py MODULE_FACADES): host
+ * module names the guest may call (FcxWire mod_call), read (mod_get) or
+ * catch (a guest-local exception class raised by name).  Also generated
+ * into FcxDispatch.inc; absent means DENY.
+ */
+enum class ModuleKind
+{
+    Callable,
+    Constant,
+    Exception,
+};
+
+struct ModuleMember
+{
+    const char* module;
+    const char* name;
+    ModuleKind kind;
+};
+
+/// The declared module member for "Module.name" (split at the last
+/// dot), or nullptr.
+AppExport const ModuleMember* moduleMemberLookup(const std::string& qualified);
+
 /** The nearest annotated type in `type`'s mro, or nullptr.  Shipped as
  * the "fc" field on handle values so the image picks the right facade
  * class.  Caller holds the GIL (tp_mro access).

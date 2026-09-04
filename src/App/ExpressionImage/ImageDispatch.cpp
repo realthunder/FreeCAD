@@ -149,6 +149,12 @@ int initEvalGlobals()
         PyDict_SetItemString(eval_globals, "Units", units);
     Py_XDECREF(units);
     Py_DECREF(fc);
+    // the module facades (Part) go into sys.modules now, so an exec'd
+    // module's `import Part` finds them
+    if (!FcxImage::installModuleFacades()) {
+        PyErr_Print();
+        return 6;
+    }
     return 0;
 }
 
