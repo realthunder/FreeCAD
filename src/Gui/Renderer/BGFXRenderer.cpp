@@ -2007,8 +2007,12 @@ BGFXRendererLibP::materialXVariant(const Render::UserShader &shader)
                                                 : shader.sourcePath;
     if (!shader.surface.empty())
         what += " surface '" + shader.surface + "'";
-    for (const auto &w : gen.warnings)
-        Base::Console().Warning("MaterialX %s: %s\n", what.c_str(), w.c_str());
+    // Once per distinct message: every distinct text is a new variant,
+    // and the graph editor makes one per gesture.
+    for (const auto &w : gen.warnings) {
+        if (materialXWarned.insert(what + ": " + w).second)
+            Base::Console().Warning("MaterialX %s: %s\n", what.c_str(), w.c_str());
+    }
     if (!gen.valid) {
         // Reported once, here, and the draw keeps its stock appearance.
         // The path tracer reads the same document on its own terms and

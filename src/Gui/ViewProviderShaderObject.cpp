@@ -798,8 +798,16 @@ void ViewProviderShaderProgram::validateDocument()
     xml = documentWithStoredImages(obj, xml.c_str());
 
     auto info = Render::MaterialX::inspect(xml, sourcePath, obj->Surface.getValue());
-    for (const auto &w : info.warnings)
-        Base::Console().Warning("%s: %s\n", label.c_str(), w.c_str());
+    // A warning is printed when it APPEARS, not on every parse: the
+    // graph editor writes the text per gesture, and a note that holds
+    // across every gesture (a standard_surface document is translated
+    // to OpenPBR, say) would print, and raise the report view, on each.
+    for (const auto &w : info.warnings) {
+        if (std::find(reportedWarnings.begin(), reportedWarnings.end(), w)
+                == reportedWarnings.end())
+            Base::Console().Warning("%s: %s\n", label.c_str(), w.c_str());
+    }
+    reportedWarnings = info.warnings;
     if (!info.valid) {
         // The parameters are NOT withdrawn here. A document is edited
         // in place, so it spends time unparsable on the way from one

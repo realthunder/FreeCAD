@@ -114,6 +114,9 @@ private:
     /// arrives here whole, so the earliest place it can be checked is
     /// where it is first materialized -- which is document load.
     void validateDocument();
+    /// The warnings validateDocument last printed, so a note that holds
+    /// across parses is printed when it appears and not on each.
+    std::vector<std::string> reportedWarnings;
     /// Materialize the document's declared interface as the object's
     /// `Param_*` dynamic properties, the REVERSE of the hand-declared
     /// direction everything else here takes: the document says what

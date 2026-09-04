@@ -2128,6 +2128,9 @@ public:
         int imageUnit = 0;
     };
     std::map<std::string, MaterialXVariant> materialXVariants;
+    /// The MaterialX generation warnings already printed, so a document
+    /// edited per gesture reports each note once.
+    std::set<std::string> materialXWarned;
     /// Generate a MaterialX document's mesh-shader variant, once per
     /// document, and remember it.
     const MaterialXVariant &materialXVariant(const Render::UserShader &shader);
