@@ -7,6 +7,10 @@
 
 #include <MaterialXGenShader/Util.h>
 
+// std::runtime_error below: libstdc++ hands it over through another header,
+// MSVC does not.
+#include <stdexcept>
+
 namespace Render::GraphEditor {
 
 using namespace ::MaterialX;
