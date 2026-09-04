@@ -107,6 +107,11 @@ public:
     int previewMode() override;
     void setPreviewMode(int mode) override;
 
+    /// Watches the editor widget's show and hide: a pane nobody can
+    /// see is not worth a render, and a path tracer session behind a
+    /// hidden pane is a device held for nothing.
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
     /// Render the preview from the event loop: never from inside the
     /// editor's paint, where a backend frame is being encoded.
@@ -126,6 +131,10 @@ private:
     /// traced, so a view attaching later tries again.
     bool startTracer();
     void stopTracer();
+    /// Read the editor's visibility and act on a change: the session
+    /// pauses with the pane and resumes with it, and a render skipped
+    /// while hidden is made up when it comes back.
+    void updateHidden();
     /// A view of the program's document came or went. The preview's
     /// whole configuration -- the backend, the environment, the light
     /// rig, the tracer's options -- comes from a 3D view, so both ends
@@ -181,6 +190,13 @@ private:
     /// The engine refused the device: do not ask it again until
     /// something changes (a mode pick, a view attaching).
     bool tracerBlocked = false;
+    /// The editor is not on screen (another cell's tab is up, the view
+    /// is closed but not yet deleted): the tracer is paused and no
+    /// preview is rendered.
+    bool hidden = false;
+    /// Something invalidated the preview while hidden: render once the
+    /// pane is back.
+    bool staleWhileHidden = false;
     /// The document's view attach and detach, for viewsChanged.
     fastsignals::connection attachConnection;
     fastsignals::connection detachConnection;

@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <cstring>
+# include <QEvent>
 # include <QFile>
 # include <QImage>
 # include <QOpenGLContext>
@@ -168,6 +169,12 @@ ShaderGraphHost::ShaderGraphHost(App::ShaderProgram *prog, Render::GraphEditorWi
             previewInvalidated();
     });
 
+    // Show and Hide reach the widget itself; ShowToParent and
+    // HideToParent reach it when an ancestor -- the view in its cell --
+    // is the one that moved.
+    editor->installEventFilter(this);
+    hidden = !editor->isVisible();
+
     // The preview reads its whole configuration off a 3D view of the
     // document, so it has to know when one comes or goes.
     if (Gui::Document *gdoc = Application::Instance->getDocument(program->getDocument())) {
@@ -210,6 +217,44 @@ void ShaderGraphHost::viewsChanged()
         }
         previewInvalidated();
     }, Qt::QueuedConnection);
+}
+
+bool ShaderGraphHost::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == editor) {
+        switch (event->type()) {
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::ShowToParent:
+        case QEvent::HideToParent:
+            updateHidden();
+            break;
+        default:
+            break;
+        }
+    }
+    return QObject::eventFilter(watched, event);
+}
+
+void ShaderGraphHost::updateHidden()
+{
+    const bool now = !editor->isVisible();
+    if (now == hidden)
+        return;
+    hidden = now;
+    FC_LOG("shader graph preview: pane " << (hidden ? "hidden" : "shown"));
+    if (tracer)
+        tracer->setPaused(hidden);
+    if (hidden) {
+        // Nothing is drawn behind a hidden pane; a render in flight is
+        // one the editor will never paint.
+        render.stop();
+        frame.stop();
+    }
+    else if (staleWhileHidden) {
+        staleWhileHidden = false;
+        previewInvalidated();
+    }
 }
 
 void ShaderGraphHost::programChanged()
@@ -323,6 +368,13 @@ void ShaderGraphHost::selectSurface(const std::string &name)
 
 void ShaderGraphHost::previewInvalidated()
 {
+    // A pane nobody can see is not worth a backend frame or a scene
+    // restate; the invalidation is remembered and answered when the
+    // pane comes back.
+    if (hidden) {
+        staleWhileHidden = true;
+        return;
+    }
     // Coalesced: a drag reports every motion, a load reports once per
     // element; one render answers everything that arrived meanwhile.
     if (!render.isActive())
@@ -427,6 +479,7 @@ bool ShaderGraphHost::startTracer()
     });
     stopTracer();
     tracer = std::move(vp);
+    tracer->setPaused(hidden);
     setPreviewStatus("Path tracing");
     return true;
 }
