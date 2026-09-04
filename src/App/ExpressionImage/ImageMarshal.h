@@ -30,6 +30,11 @@ bool encodeValue(PyObject* obj, nlohmann::json& out, std::string& err);
  */
 bool hostOp(const nlohmann::json& req, nlohmann::json& reply);
 
+/// The handle ids proxies have released since the last take (a JSON
+/// array, possibly empty), cleared.  They ride out as "r" on the next
+/// bridge request or on the evaluation's reply; never as an op.
+nlohmann::json takePendingReleases();
+
 /** Build the module facades (generated MODULES: Part today) into
  * sys.modules -- callables over mod_call, constants over mod_get,
  * exception classes local to the guest.  Called from initEvalGlobals;

@@ -646,10 +646,25 @@ json dispatchHostOp(HandleTable& table, const json& req)
 {
     Base::PyGILStateLocker lock;
     try {
+        // releases piggybacking on this request (FcxWire "r")
+        auto rides = req.find("r");
+        if (rides != req.end() && rides->is_array())
+            for (const auto& rid : *rides)
+                if (rid.is_number_unsigned())
+                    table.release(rid.get<uint64_t>());
+
         std::string op = req.value("op", "");
         uint64_t id = req.value("h", (uint64_t)0);
         if (op == FcxWire::OpRelease) {
-            table.release(id);
+            // one id in "h", or several in "a"
+            auto a = req.find("a");
+            if (a != req.end() && a->is_array()) {
+                for (const auto& rid : *a)
+                    if (rid.is_number_unsigned())
+                        table.release(rid.get<uint64_t>());
+            }
+            else
+                table.release(id);
             return okReply(json());
         }
         if (op == FcxWire::OpPkgMissing) {

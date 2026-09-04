@@ -470,6 +470,11 @@ json dispatch(const json &req)
         reply = protocolError("unknown op");
     if (PyErr_Occurred())
         PyErr_Clear();
+    // The proxies the evaluation let go (its globals died with it):
+    // their releases ride the reply, not a hop each.
+    json released = FcxImage::takePendingReleases();
+    if (!released.empty())
+        reply["r"] = std::move(released);
     return reply;
 }
 

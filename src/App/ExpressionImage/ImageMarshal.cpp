@@ -31,8 +31,9 @@ namespace FcxImage
  * __getitem__ sequence fallback: IndexError crosses the wire and ends
  * the loop.  __setattr__ is the write_prop op (the host decides:
  * owner only, doc.write.self); the slots themselves stay local.
- * __del__ releases the host table entry; by then the host may be gone,
- * hence the bare except.
+ * __del__ queues the host table entry's release, which rides the next
+ * request or the reply (never a hop of its own); by then the bridge
+ * may be gone, hence the bare except.
  */
 static const char ProxyPrelude[] =
     "import _fcx\n"
@@ -59,7 +60,7 @@ static const char ProxyPrelude[] =
     "        return _fcx.op('len', self._id)\n"
     "    def __del__(self):\n"
     "        try:\n"
-    "            _fcx.op('release', self._id)\n"
+    "            _fcx.release_later(self._id)\n"
     "        except Exception:\n"
     "            pass\n"
     "def _attr(name):\n"

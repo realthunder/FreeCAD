@@ -280,6 +280,17 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         }
         if (reply.is_null())
             return false;
+        // The proxies the guest let go as the evaluation unwound ride
+        // the reply (FcxWire "r"); released here under the same deferral
+        // as an op would be, so a result that IS one of them still
+        // decodes.  A DECREF needs the GIL.
+        auto rides = reply.find("r");
+        if (rides != reply.end() && rides->is_array() && Py_IsInitialized()) {
+            Base::PyGILStateLocker lock;
+            for (const auto& rid : *rides)
+                if (rid.is_number_unsigned())
+                    handles.release(rid.get<uint64_t>());
+        }
         if (outcome == Outcome::Interrupted) {
             if (!reply.value("ok", false) && reply.value("exc", "") == "KeyboardInterrupt") {
                 reply = budgetError("interrupted");

@@ -31,6 +31,14 @@
 
 using nlohmann::json;
 
+/* Releases never cross on their own.  A proxy's __del__ queues its
+ * handle id here; the queue rides out as "r" on the next bridge request
+ * (fcx_op) or, when the evaluation ends first, on the reply itself
+ * (ImageDispatch dispatch()).  Measured before this: 58 percent of all
+ * hops in a draftgeoutils workload were single releases.
+ */
+static std::vector<uint64_t> g_pendingReleases;
+
 #ifdef FC_EXPR_PYODIDE
 #define FCX_IMPORT_MODULE "env"
 #define FCX_IMPORT_CALL "fcx_host_call"
@@ -159,6 +167,10 @@ static PyObject *fcx_op(PyObject *, PyObject *args)
         req[strcmp(op, FcxWire::OpWriteProp) == 0 ? "v" : "k"] = std::move(v);
     }
 
+    // queued releases ride along, free
+    if (!g_pendingReleases.empty())
+        req["r"] = FcxImage::takePendingReleases();
+
     json reply;
     if (!hostRoundTrip(req, reply))
         return nullptr;
@@ -170,8 +182,28 @@ static PyObject *fcx_op(PyObject *, PyObject *args)
     return FcxImage::decodeValue(val != reply.end() ? *val : json());
 }
 
+static PyObject *fcx_release_later(PyObject *, PyObject *arg)
+{
+    unsigned long long id = PyLong_AsUnsignedLongLong(arg);
+    if (id == (unsigned long long)-1 && PyErr_Occurred())
+        return nullptr;
+    g_pendingReleases.push_back((uint64_t)id);
+    Py_RETURN_NONE;
+}
+
+json FcxImage::takePendingReleases()
+{
+    json ids = json::array();
+    for (uint64_t id : g_pendingReleases)
+        ids.push_back(id);
+    g_pendingReleases.clear();
+    return ids;
+}
+
 static PyMethodDef FcxMethods[] = {
     {"op", fcx_op, METH_VARARGS, "One image->host bridge op."},
+    {"release_later", fcx_release_later, METH_O,
+     "Queue a handle release to ride the next request or reply."},
     {nullptr, nullptr, 0, nullptr},
 };
 

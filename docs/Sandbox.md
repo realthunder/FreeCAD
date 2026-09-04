@@ -293,6 +293,12 @@ runs only for members annotated `call`.  Arguments validate against the
 XML-declared signature; a sandbox callable is never a valid argument.
 
 Handles are transaction-scoped and decoded BEFORE `clearHandles()`.
+Releases never cross as an op (2026-09-04, step 6 of the coding
+order): a proxy's `__del__` queues its id in the guest, and the queue
+rides as `"r"` on the next guest->host request or on the evaluation's
+own reply -- the host releases them before the op, or after the trip,
+under the deferral below.  Before this, 58 percent of all hops in the
+draftgeoutils gate were single releases (4977 of ~8550 for 116 calls).
 Releases are deferred for one transaction and applied at the start of
 the next: the spreadsheet idiom `tuple(.cells, <<B4>>, <<ZZ4>>)` returns
 a tuple whose first element IS a host object, and the image destroys
@@ -855,11 +861,15 @@ listed in 3.2 and above (`bool`/`str` ops, type references,
 `ShapeList` as list, `GuiUp`/`Console`/`Base`/unit constants).
 The traffic it measured, 116 calls: `release` 4977, `get_attr` 2738,
 `call` 587, `mod_call` 153, `bool` 50, `read_prop` 29, `str` 18 --
-about 74 hops per call, and 58 percent of them are releases of
-proxies the guest let go one at a time; sec 8.1's per-hop cost makes
-that ~0.5 ms of crossing per call, and batching releases (one op per
-transaction, or per N) is the first thing to cut, before any snapshot
-op (step 6 of the coding order).
+about 74 hops per call, and 58 percent of them were releases of
+proxies the guest let go one at a time.  Step 6 of the coding order
+made releases ride the next request or the reply (3.2): the same 116
+calls now make 3575 hops -- `get_attr` 2738, `call` 587, `mod_call`
+153, `bool` 50, `read_prop` 29, `str` 18, `release` 0 -- 31 per call,
+~0.2 ms of crossing per call at sec 8.1's hop cost, and the per-eval
+pack cost lost its release hop (8.1).  What remains is dominated by
+`get_attr` on shapes and curves; a snapshot op would target exactly
+those reads, and this is the count to size it from.
 Still missing: a `FreeCAD` module facade for `ActiveDocument`/
 `ParamGet`, rung 2, and a local-wheel source in
 `install_package`.  Document-level writes (`addObject` 76 uses,
@@ -953,7 +963,7 @@ these numbers are not CI-checked and can drift.
     parse + eval arithmetic               2.03 us  13.36 us (6.6x)  18.6 us (was 23.6)
     one property read                     ~3.0 us  20.92 us (7.1x)  29.7 us (was 37.1)
     one bridge hop (marginal, read_prop)  --       7.1-7.3 us       6.2-7.4 us
-    pack per eval (export+proxy+release)  --       +23 us           +27 us (was +44)
+    pack per eval (export+proxy+release)  --       +19 us (was +23) +23 us (was +44, +27)
     instantiate + first eval              --       14 ms (.cwasm)   ~1.5-1.7 s
 
 The pyodide "was" figures are the bytearray/getBuffer transport; the

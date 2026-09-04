@@ -426,10 +426,10 @@ TEST_F(ExpressionImageBridgeTest, proxyDropReleasesHandle)
     EXPECT_EQ(ImageHost::instance().handleCount(), 1u);
     auto res = ImageHost::instance().eval("o['a']", handleBinding("o", id));
     ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
-    // the eval globals died with the call and the proxy's __del__ sent
-    // a release op -- but releases are DEFERRED for the length of the
-    // transaction, so the reply stays decodable.  The next transaction
-    // applies them.
+    // the eval globals died with the call and the proxy's __del__
+    // queued a release that rode the reply -- but releases are DEFERRED
+    // for the length of the transaction, so the reply stays decodable.
+    // The next transaction applies them.
     EXPECT_EQ(ImageHost::instance().handleCount(), 1u);
     auto res2 = ImageHost::instance().eval("1", {});
     ASSERT_TRUE(res2.ok);
@@ -579,14 +579,15 @@ TEST_F(ExpressionImageEvalTest, bridgeCountersPerOp)
     EXPECT_TRUE(zero.ops.empty());
 
     // one binding = one handle minted; o.Width = one read_prop; the
-    // proxy's __del__ at the end of the eval = one release
+    // proxy's __del__ at the end of the eval queues a release that
+    // rides the reply -- never a hop of its own
     auto res = host.eval("o.Width", objectBinding("o", obj));
     ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
     auto one = host.stats();
     EXPECT_EQ(one.evals, 1u);
     EXPECT_EQ(one.handles, 1u);
     EXPECT_EQ(one.ops["read_prop"], 1u);
-    EXPECT_GE(one.ops["release"], 1u);
+    EXPECT_EQ(one.ops.count("release"), 0u) << "a release crossed as an op";
 
     // no caching in the proxy: three more reads are three more hops
     res = host.eval("o.Width + o.Width + o.Width", objectBinding("o", obj));

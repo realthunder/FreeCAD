@@ -44,6 +44,11 @@ inline const char* const OpGetAttr = "get_attr";
 inline const char* const OpCall = "call";
 inline const char* const OpGetItem = "get_item";
 inline const char* const OpLen = "len";
+// release: "h" one id, or "a" an array of ids.  In practice releases
+// never cross as an op: a proxy's __del__ queues its id and the queue
+// rides as "r" (an array of ids) on the next guest->host request or on
+// the evaluation's reply, released host-side before the op / after the
+// trip under the transaction's deferral.
 inline const char* const OpRelease = "release";
 inline const char* const OpResolveAlias = "resolve_alias";
 // {op:"write_prop", h, a: property name, v: wire value}: set a property
