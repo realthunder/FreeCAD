@@ -322,8 +322,10 @@ public:
     void init()
     {
         destroy();
-        width = uint16_t(widget->width());
-        height = uint16_t(widget->height());
+        // Framebuffer pixels, not Qt's logical ones (the bgfx backend's
+        // framebufferWidth): the two differ under a HiDPI scale factor.
+        width = uint16_t(widget->width() * widget->devicePixelRatioF() + 0.5);
+        height = uint16_t(widget->height() * widget->devicePixelRatioF() + 0.5);
 
         int samples = widget->format().samples();
         if (samples >= 8)
@@ -648,8 +650,8 @@ public:
         if (!view)
             return false;
 
-        if (widget->width() != int(view->width)
-                || widget->height() != int(view->height))
+        if (int(widget->width() * widget->devicePixelRatioF() + 0.5) != int(view->width)
+                || int(widget->height() * widget->devicePixelRatioF() + 0.5) != int(view->height))
             view->init();
 
         widget->doneCurrent();

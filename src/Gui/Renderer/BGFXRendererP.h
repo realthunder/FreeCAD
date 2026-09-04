@@ -1931,8 +1931,8 @@ public:
                 RENDER_ERR("no native GL context handle; bgfx would fall back to headless");
                 return false;
             }
-            init.resolution.width = widget->width();
-            init.resolution.height = widget->height();
+            init.resolution.width = framebufferWidth(widget);
+            init.resolution.height = framebufferHeight(widget);
             init.resolution.reset = bgfxResetFlags();
             // See the standalone path above: a startup option, because
             // bgfx::init happens once per process.
@@ -2243,12 +2243,22 @@ public:
     // sizes the view back on its own.
     uint16_t captureWidth = 0;
     uint16_t captureHeight = 0;
-    /// The size a desktop view renders at: the host widget's, unless an
-    /// offscreen capture is asking for its own.
+    /// The host widget's framebuffer size. Qt's width()/height() are
+    /// logical (device-independent) pixels; the widget's default
+    /// framebuffer, which blit() writes into, is that times the device
+    /// pixel ratio. Sized from width() alone, a view under
+    /// QT_SCALE_FACTOR=2 rendered into the bottom-left quadrant of the
+    /// 3D view (docs/ShaderGraphEditor.md sec 14).
+    static int framebufferWidth(QOpenGLWidget *widget)
+    { return int(widget->width() * widget->devicePixelRatioF() + 0.5); }
+    static int framebufferHeight(QOpenGLWidget *widget)
+    { return int(widget->height() * widget->devicePixelRatioF() + 0.5); }
+    /// The size a desktop view renders at: the host widget's framebuffer,
+    /// unless an offscreen capture is asking for its own.
     int viewWidth(QOpenGLWidget *widget) const
-    { return captureWidth ? int(captureWidth) : widget->width(); }
+    { return captureWidth ? int(captureWidth) : framebufferWidth(widget); }
     int viewHeight(QOpenGLWidget *widget) const
-    { return captureHeight ? int(captureHeight) : widget->height(); }
+    { return captureHeight ? int(captureHeight) : framebufferHeight(widget); }
     typedef void (*FreeResourceFunc)(QOpenGLFunctions *functions, GLuint id);
     std::vector<std::pair<GLuint, FreeResourceFunc>> pendingRemoves;
     std::unique_ptr<QOpenGLContext> context;
