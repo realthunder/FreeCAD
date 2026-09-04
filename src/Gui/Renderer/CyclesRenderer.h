@@ -53,6 +53,16 @@ RendererExport bool available();
 /// engine.
 RendererExport std::vector<DeviceInfo> devices();
 
+/// Wait for every session retired by a destroyed or restarted Viewport
+/// to finish being destroyed. A session is not torn down where it is
+/// released -- `~Session` joins its own thread, which may be inside a
+/// first-ever GPU kernel compile that nothing interrupts, and that
+/// would be the GUI thread waiting minutes -- so a worker does it. The
+/// application calls this once on its way out, where the alternative
+/// is a thread still in the engine while the process unloads it.
+/// Returns at once without the engine, or with nothing retired.
+RendererExport void waitForRetiredSessions();
+
 /// The camera of a render: the same two GL-layout matrices every
 /// backend's render() takes (world -> eye, then eye -> clip), plus the
 /// pixel size they were built for. Perspective or orthographic is read

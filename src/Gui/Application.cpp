@@ -80,6 +80,7 @@
 #include <Base/UnitsApi.h>
 
 #include <Language/Translator.h>
+#include "Renderer/CyclesRenderer.h"
 #include "Renderer/Renderer.h"
 #include <Quarter/Quarter.h>
 
@@ -709,6 +710,11 @@ Application::Application(bool GUIenabled)
 Application::~Application()
 {
     Base::Console().Log("Destruct Gui::Application\n");
+    // A path tracer session released by a closing view is destroyed by
+    // a worker, not where it was released (docs/CyclesIntegration.md
+    // sec 5.12). Wait for those here: past this point the process
+    // starts unloading what that worker is still inside.
+    Render::Cycles::waitForRetiredSessions();
     WorkbenchManager::destruct();
     WorkbenchManipulator::removeAll();
     SelectionSingleton::destruct();

@@ -788,6 +788,80 @@ frame draws no feature lines in these cells (raster or traced), so the
 edge-over-blit route of section 5.8 is exercised only by the lone-view
 step here.
 
+### 5.12 Retiring a session off the calling thread (2026-09-04)
+
+Releasing a Cycles session used to freeze the application, for as long
+as a first-ever GPU kernel compile takes.
+
+The chain is short. `~Session` cancels and then joins its own thread
+unconditionally (`session/session.cpp`). The cancel calls
+`device->cancel()`, whose base is empty and which only the Metal
+backend overrides. And the CUDA backend's kernel load compiles with a
+plain blocking `system("nvcc ...")` (`device/cuda/device_impl.cpp`),
+which nothing can interrupt. So a session released while its thread is
+inside that compile waits for nvcc to finish, and every release we make
+was on the thread that asked: a closing 3D view, a preview switched
+back to Raster, an editor closing, all of them the GUI thread.
+
+The compile itself was never the problem. It has always run on the
+session's own thread, which is why the pane keeps answering while it
+runs. Only the teardown was synchronous.
+
+A session is therefore not destroyed where it is released. It is handed
+to a worker with the translator that states its scene (which points
+into it, so the two travel together and go in that order), and the
+caller returns at once. The worker destroys them one at a time, in the
+order they were retired: two devices tearing down at once is not
+something to ask of a driver.
+
+Three things make that safe.
+
+- **The driver must not hold the viewport.** The staging display driver
+  woke the host through a lambda capturing `this`, which a retired
+  session would call after its viewport was gone. It calls a
+  `RedrawGate` held by shared pointer instead. `call()` runs under the
+  gate's lock, so `close()` returning means no thread is still inside
+  the callback and no later one will enter. The viewport closes the
+  gate before it retires; each session gets its own.
+- **The mutex and condition variables are never freed.** A detached
+  worker parked in `wait()` for the life of the process hangs
+  `pthread_cond_destroy` at exit, which is the trap already fixed once
+  in `Part/Gui/MeshLevelSource.cpp`. They are leaked heap objects, as
+  they are there.
+- **The application drains on its way out.**
+  `Render::Cycles::waitForRetiredSessions()`, called at the top of
+  `Gui::Application::~Application`, waits for the queue to empty. Past
+  that point the process starts unloading what the worker is still
+  inside. A quit during a cold kernel compile therefore still waits,
+  and says so on the console rather than looking hung.
+
+What it costs: while one session is retiring, its replacement is
+already alive, so two devices hold their memory for the overlap. On a
+preview that is nothing; on two large scenes it is real, and it is the
+price of not freezing.
+
+Known interaction, not introduced here but newly reachable with one
+viewport: two sessions loading the same uncached kernel at once each
+run their own nvcc, both writing the same `.cubin` path, which Cycles
+neither locks nor writes atomically. Two viewports could already do
+this (a 3D view path tracing while the editor starts its own session);
+retiring without blocking adds the toggle route through one pane. A
+torn cache entry stays cached, since the next load takes the file's
+existence as a hit. The fix belongs in our Cycles fork -- compile to a
+unique temporary path and rename into place -- and waits for a
+submodule bump.
+
+Verified with `~/works/sw/fcad-probes/shader_graph_cold_teardown.{py,sh}`,
+which gives the process its own `XDG_CACHE_HOME` so the compile is
+guaranteed cold and the box's shared kernel cache is untouched. With
+nvcc and cicc confirmed running, switching the preview back to Raster
+(which stops the tracer and destroys its viewport) left the GUI
+thread's own heartbeat timer with a longest gap of 0.11 s against a
+0.1 s interval, the compilers still running, the editor still drawing
+and the document still recomputing. The quit then waited 274 s for that
+compile, exiting cleanly. Before the change the same release blocked
+the GUI thread for the whole compile.
+
 ## 6. Scene translation
 
 The bulk of the real work, and the fork is unusually well placed for

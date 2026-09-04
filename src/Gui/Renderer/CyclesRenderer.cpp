@@ -72,6 +72,8 @@ std::vector<DeviceInfo> devices()
     return {};
 }
 
+void waitForRetiredSessions() {}
+
 bool renderTestScene(const std::string &, int, int, int, const std::string &, std::string *error)
 {
     if (error)
