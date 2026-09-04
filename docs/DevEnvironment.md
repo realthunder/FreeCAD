@@ -1229,7 +1229,8 @@ inherits `conda-windows-release` and overrides:
 | `OCCT_CMAKE_FALLBACK=OFF` | **required** — see below |
 | `BUILD_BGFX=ON` | the renderer |
 | `BUILD_WEB/FREECAD_USE_PCL=OFF` | same trims as the Linux local preset |
-| `BUILD_FEM/FREECAD_USE_EXTERNAL_SMESH/ENABLE_DEVELOPER_TESTS=OFF` | Windows only -- all three are **ON** on Linux now |
+| `BUILD_FEM/FREECAD_USE_EXTERNAL_SMESH=OFF` | Windows only -- both are **ON** on Linux now |
+| `ENABLE_DEVELOPER_TESTS=ON` | as on Linux since 2026-09-04; see "Running the C++ (GoogleTest) suites" |
 
 **`OCCT_CMAKE_FALLBACK` must be OFF.** The repo's `conda` preset turns it ON, which
 skips `find_package(OpenCASCADE CONFIG)` in favour of a hand-rolled search. That
@@ -1584,37 +1585,27 @@ not an access violation.
 
 ### Running the C++ (GoogleTest) suites
 
-`ENABLE_DEVELOPER_TESTS` is **OFF** in this build dir -- unlike the Linux
-presets, which turn it on -- so `tests/` is not configured at all and
-`ninja Tests_run` answers *unknown target*.
-Turning it on costs one configure and no rebuild of what is already there:
+**`docs/Testing.md`, "C++ on Windows", is authoritative** -- what passes, what
+each of the five Windows-only breaks was, and how the DLL path reaches the
+tests. The recipe:
 
 ```cmd
-run.cmd cmake -S . -B build\win-relwithdebinfo-801 -DENABLE_DEVELOPER_TESTS=ON
-run.cmd cmake --build build\win-relwithdebinfo-801 --target <suite> -j 4
+.conda\run.cmd cmake --preset win-relwithdebinfo-local -DENABLE_DEVELOPER_TESTS=ON
+.conda\run.cmd cmake --build build\win-relwithdebinfo-801 -- -j 6
+D:\works\sw\tools\ctest-fcad.cmd -j 6
 ```
 
-googletest is vendored (`tests/lib`), so nothing is fetched. Two things to know:
+472 of 472 pass as of 2026-09-04, in 22s. googletest is vendored
+(`tests/lib`), so nothing is fetched.
 
-- **The shared `Tests_run` suite does not link here**, for reasons that have
-  nothing to do with whatever you are testing: `tests/src/Base/Reader.cpp` names
-  `xercesc_3_2` while the conda env ships 3.3, and `tests/src/App/Expression.cpp`
-  uses `UnitExpression`/`OperatorExpression::UNIT` as they no longer are. Build a
-  focused executable instead (`DeferredLoad_tests_run`, `RestoreDrain_tests_run`,
-  …) — that is part of why those exist. `-- -k 0` gets ninja past the two broken
-  translation units if you only want a compile check of your own.
-- **The test exes need `bin` on `PATH`.** They are built into
-  `build\...\tests\src\App\`, not next to `FreeCADApp.dll`, and `run.cmd` does not
-  add the build's `bin` (it adds the dependency prefixes). Without it the process
-  dies before `main()` with no output at all:
-
-  ```cmd
-  set PATH=D:\Zheng.Lei\sw\fcad\build\win-relwithdebinfo-801\bin;%PATH%
-  run.cmd build\win-relwithdebinfo-801\tests\src\App\RestoreDrain_tests_run.exe
-  ```
-
-Put `ENABLE_DEVELOPER_TESTS` back to `OFF` afterwards, or a plain
-`cmake --build` of everything fails on those same two files.
+`ENABLE_DEVELOPER_TESTS` is now **ON** in `CMakeUserPresets.json` here, as it
+is on Linux, and it is safe to leave on -- every target builds. Two things
+that were true and are not any more: the flag had to be forced onto an
+existing tree (`cacheVariables` only seed a fresh configure, so the
+`-D` above is what reaches a standing cache), and the test exes needed the
+build's `bin` on `PATH` by hand. The build carries that itself now, per
+target, so `ctest` works from the build directory with nothing added;
+`ctest-fcad.cmd` is only the `cd` and the `run.cmd`.
 
 ### Building pivy
 
