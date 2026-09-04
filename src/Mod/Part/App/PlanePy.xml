@@ -40,12 +40,14 @@ Part.Plane(A,B,C,D)
         <UserDocu>Returns the position point of this plane.</UserDocu>
       </Documentation>
       <Parameter Name="Position" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Axis" ReadOnly="false">
       <Documentation>
         <UserDocu>Returns the axis of this plane.</UserDocu>
       </Documentation>
       <Parameter Name="Axis" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
   </PythonExport>
 </GenerateModel>

@@ -255,6 +255,7 @@ NOTE: It's possible that several objects have the same label name.</UserDocu>
 Return a list of objects that match the specified type, name or label.
 Name and label support regular expressions. All parameters are optional.</UserDocu>
     </Documentation>
+    <Sandbox tier="call"/>
   </Methode>
     <Methode Name="getLinksTo">
         <Documentation>
@@ -314,6 +315,7 @@ Reorder object(s) in the tree view before a given object
         <UserDocu>The list of object handled by this document</UserDocu>
       </Documentation>
       <Parameter Name="Objects" Type="List" />
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="TopologicalSortedObjects" ReadOnly="true">
       <Documentation>

@@ -59,6 +59,7 @@ Returns the C++ class name of a named property.
 name : str
     Property name.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="touchProperty">
       <Documentation>
@@ -80,6 +81,7 @@ type : int, sequence of str
     0: default behaviour. 1: item is ready-only. 2: item is hidden. 3: item is hidden and read-only.
     If sequence, the available items are 'ReadOnly' and 'Hidden'.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
       <Methode Name="getEditorMode">
             <Documentation>
@@ -106,6 +108,7 @@ The properties are sorted in different named groups for convenience.
 name : str
     Property name.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
       <Methode Name="setGroupOfProperty">
       <Documentation>
@@ -118,6 +121,7 @@ name : str
 group : str
     Group name.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
       <Methode Name="setPropertyStatus">
             <Documentation>
@@ -207,6 +211,7 @@ obj : buffer
         <UserDocu>A list of all property names.</UserDocu>
       </Documentation>
       <Parameter Name="PropertiesList" Type="List"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <CustomAttributes />
   </PythonExport>

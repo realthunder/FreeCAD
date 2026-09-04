@@ -39,12 +39,14 @@
                 <UserDocu>The major radius of the ellipse.</UserDocu>
             </Documentation>
             <Parameter Name="MajorRadius" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="MinorRadius" ReadOnly="false">
             <Documentation>
                 <UserDocu>The minor radius of the ellipse.</UserDocu>
             </Documentation>
             <Parameter Name="MinorRadius" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Focal" ReadOnly="true">
             <Documentation>

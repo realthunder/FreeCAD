@@ -86,15 +86,23 @@ function(fcx_add_facades_command)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
     set(FCX_FACADES_INC ${CMAKE_CURRENT_BINARY_DIR}/FcxFacades.inc PARENT_SCOPE)
     set(gen ${FC_SRC}/Tools/bindings/generateSandboxFacades.py)
+    # The XML list is the generator's own (ANNOTATED_XMLS), asked for at
+    # configure time so it cannot drift from what the generator reads.
+    get_filename_component(_fcx_root ${FC_SRC} DIRECTORY)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} ${gen} --list-xmls
+        OUTPUT_VARIABLE _fcx_annotated_xmls
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _fcx_list_rc)
+    if(NOT _fcx_list_rc EQUAL 0)
+        message(FATAL_ERROR "${gen} --list-xmls failed")
+    endif()
+    string(REPLACE "\n" ";" _fcx_annotated_xmls "${_fcx_annotated_xmls}")
+    list(TRANSFORM _fcx_annotated_xmls PREPEND ${_fcx_root}/)
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/FcxFacades.inc
         COMMAND Python3::Interpreter ${gen} --image-out ${CMAKE_CURRENT_BINARY_DIR}/FcxFacades.inc
-        DEPENDS ${gen}
-                ${FC_SRC}/App/ComplexGeoDataPy.xml
-                ${FC_SRC}/App/DocumentObjectPy.xml
-                ${FC_SRC}/App/DocumentPy.xml
-                ${FC_SRC}/Mod/Part/App/TopoShapePy.xml
-                ${FC_SRC}/Mod/Spreadsheet/App/SheetPy.xml
+        DEPENDS ${gen} ${_fcx_annotated_xmls}
         COMMENT "Generating the expression sandbox facades (FcxFacades.inc)"
     )
     set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/FcxFacades.inc PROPERTIES

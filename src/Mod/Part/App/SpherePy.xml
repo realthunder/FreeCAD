@@ -20,30 +20,35 @@
                 <UserDocu>The radius of the sphere.</UserDocu>
             </Documentation>
             <Parameter Name="Radius" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Area" ReadOnly="true">
             <Documentation>
                 <UserDocu>Compute the area of the sphere.</UserDocu>
             </Documentation>
             <Parameter Name="Area" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Volume" ReadOnly="true">
             <Documentation>
                 <UserDocu>Compute the volume of the sphere.</UserDocu>
             </Documentation>
             <Parameter Name="Volume" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Center" ReadOnly="false">
             <Documentation>
                 <UserDocu>Center of the sphere.</UserDocu>
             </Documentation>
             <Parameter Name="Center" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Axis" ReadOnly="false">
             <Documentation>
                 <UserDocu>The axis direction of the circle</UserDocu>
             </Documentation>
             <Parameter Name="Axis" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
     </PythonExport>
 </GenerateModel>

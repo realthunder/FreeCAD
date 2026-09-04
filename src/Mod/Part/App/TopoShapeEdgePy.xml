@@ -32,6 +32,7 @@ Returns:
         given position along its cartesian length.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="tangentAt" Const="true">
       <Documentation>
@@ -69,6 +70,7 @@ Returns:
        location along its length (or extrapolated length)
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="valueAt" Const="true">
       <Documentation>
@@ -110,6 +112,7 @@ Returns:
        distance along its length (or extrapolated length)
           </UserDocu>
         </Documentation>
+      <Sandbox tier="call"/>
       </Methode>
       <Methode Name="parameters" Const="true">
         <Documentation>
@@ -164,6 +167,7 @@ Returns:
        location along its length (or extrapolated length)
           </UserDocu>
         </Documentation>
+        <Sandbox tier="call"/>
       </Methode>
       <Methode Name="derivative1At" Const="true">
         <Documentation>
@@ -299,6 +303,7 @@ If there is none a Null shape is returned.
 Orientation = True : taking into account the edge orientation
           </UserDocu>
         </Documentation>
+        <Sandbox tier="call"/>
       </Methode>
       <Methode Name="lastVertex" Const="true">
         <Documentation>
@@ -309,6 +314,7 @@ If there is none a Null shape is returned.
 Orientation = True : taking into account the edge orientation
           </UserDocu>
         </Documentation>
+        <Sandbox tier="call"/>
       </Methode>
       <Methode Name="discretize" Const="true" Keyword="true">
         <Documentation>
@@ -346,6 +352,7 @@ s=Part.Compound([Part.Vertex(i) for i in p])
 Part.show(s)
           </UserDocu>
         </Documentation>
+        <Sandbox tier="call"/>
       </Methode>
       <Methode Name="countNodes" Const="true">
       <Documentation>
@@ -368,6 +375,7 @@ Returns:
     Wire: wire made up of two Edges
           </UserDocu>
         </Documentation>
+        <Sandbox tier="call"/>
       </Methode>
       <Methode Name="isSeam" Const="true">
         <Documentation>
@@ -397,6 +405,7 @@ Returns a 5-items tuple of a curve, a surface, a placement, first parameter and 
           <UserDocu>Returns the cartesian length of the curve</UserDocu>
         </Documentation>
         <Parameter Name="Length" Type="Float"/>
+        <Sandbox tier="value"/>
       </Attribute>
       <Attribute Name="ParameterRange" ReadOnly="true">
         <Documentation>
@@ -419,6 +428,7 @@ Helix                Angle swept by helical turns in radians
           </UserDocu>
         </Documentation>
         <Parameter Name="ParameterRange" Type="Tuple"/>
+        <Sandbox tier="value"/>
       </Attribute>
       <Attribute Name="FirstParameter" ReadOnly="true">
         <Documentation>
@@ -438,6 +448,7 @@ Helix                Angle swept by helical turns in radians
           </UserDocu>
         </Documentation>
         <Parameter Name="FirstParameter" Type="Float"/>
+        <Sandbox tier="value"/>
       </Attribute>
       <Attribute Name="LastParameter" ReadOnly="true">
         <Documentation>
@@ -457,18 +468,21 @@ Helix                Angle swept by helical turns in radians
           </UserDocu>
         </Documentation>
         <Parameter Name="LastParameter" Type="Float"/>
+        <Sandbox tier="value"/>
       </Attribute>
       <Attribute Name="Curve" ReadOnly="true">
         <Documentation>
           <UserDocu>Returns the 3D curve of the edge</UserDocu>
         </Documentation>
         <Parameter Name="Curve" Type="Object"/>
+        <Sandbox tier="handle"/>
       </Attribute>
       <Attribute Name="Closed" ReadOnly="true">
         <Documentation>
           <UserDocu>Returns true if the edge is closed</UserDocu>
         </Documentation>
         <Parameter Name="Closed" Type="Boolean"/>
+        <Sandbox tier="value"/>
       </Attribute>
       <Attribute Name="Degenerated" ReadOnly="true">
         <Documentation>
@@ -481,6 +495,7 @@ Helix                Angle swept by helical turns in radians
           <UserDocu>Returns the mass of the current system.</UserDocu>
         </Documentation>
         <Parameter Name="Mass" Type="Object"/>
+        <Sandbox tier="value"/>
       </Attribute>
       <Attribute Name="CenterOfMass" ReadOnly="true">
         <Documentation>
@@ -490,6 +505,7 @@ The coordinates returned for the center of mass are expressed in the
 absolute Cartesian coordinate system.</UserDocu>
         </Documentation>
         <Parameter Name="CenterOfMass" Type="Object"/>
+        <Sandbox tier="value"/>
       </Attribute>
       <Attribute Name="MatrixOfInertia" ReadOnly="true">
         <Documentation>
@@ -539,6 +555,7 @@ coordinate system.</UserDocu>
           <UserDocu>Returns the continuity</UserDocu>
         </Documentation>
         <Parameter Name="Continuity" Type="String"/>
+        <Sandbox tier="value"/>
       </Attribute>
       <ClassDeclarations>
       </ClassDeclarations>

@@ -34,12 +34,14 @@ Part.LineSegment(Point1,Point2)
         <UserDocu>Returns the start point of this line.</UserDocu>
       </Documentation>
       <Parameter Name="StartPoint" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="EndPoint" ReadOnly="false">
       <Documentation>
         <UserDocu>Returns the end point point of this line.</UserDocu>
       </Documentation>
       <Parameter Name="EndPoint" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
   </PythonExport>
 </GenerateModel>

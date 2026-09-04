@@ -29,6 +29,7 @@ makeOffset(dist) -> Face
 Returns Compound of Wires. Deprecated - use makeOffset2D instead.
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="makeEvolved" Const="true" Keyword="true">
             <Documentation>
@@ -50,6 +51,7 @@ An exception is raised if the face is not triangulated.
 tangentAt(u,v) -> Vector
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="valueAt" Const="true">
             <Documentation>
@@ -57,6 +59,7 @@ tangentAt(u,v) -> Vector
 valueAt(u,v) -> Vector
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="normalAt" Const="true">
             <Documentation>
@@ -64,6 +67,7 @@ valueAt(u,v) -> Vector
 normalAt(pos) -> Vector
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="derivative1At" Const="true">
             <Documentation>
@@ -106,6 +110,7 @@ makeHalfSpace(pos) -> Shape
 validate()
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="countNodes" Const="true">
         <Documentation>
@@ -145,12 +150,14 @@ cutHoles(list_of_wires)
                 <UserDocu>Returns a 4 tuple with the parameter range</UserDocu>
             </Documentation>
             <Parameter Name="ParameterRange" Type="Tuple"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Surface" ReadOnly="true">
             <Documentation>
                 <UserDocu>Returns the geometric surface of the face</UserDocu>
             </Documentation>
             <Parameter Name="Surface" Type="Object"/>
+            <Sandbox tier="handle"/>
         </Attribute>
         <Attribute Name="Wire" ReadOnly="true">
             <Documentation>
@@ -164,12 +171,14 @@ deprecated -- please use OuterWire</UserDocu>
                 <UserDocu>The outer wire of this face</UserDocu>
             </Documentation>
             <Parameter Name="OuterWire" Type="Object"/>
+            <Sandbox tier="handle"/>
         </Attribute>
     <Attribute Name="Mass" ReadOnly="true">
       <Documentation>
         <UserDocu>Returns the mass of the current system.</UserDocu>
       </Documentation>
       <Parameter Name="Mass" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="CenterOfMass" ReadOnly="true">
       <Documentation>
@@ -179,6 +188,7 @@ The coordinates returned for the center of mass are expressed in the
 absolute Cartesian coordinate system.</UserDocu>
       </Documentation>
       <Parameter Name="CenterOfMass" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="MatrixOfInertia" ReadOnly="true">
       <Documentation>

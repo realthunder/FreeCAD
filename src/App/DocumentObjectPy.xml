@@ -102,6 +102,7 @@ tuple(typename, start, end, children, refs, hiddenRefs) with the following eleme
             <Documentation>
                 <UserDocu>recompute(recursive=False): Recomputes this object</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getStatusString" const="True">
             <Documentation>
@@ -116,6 +117,7 @@ If the object is valid but touched then &apos;Touched&apos; will be returned,
             <Documentation>
                 <UserDocu>Returns True if the object is valid, False otherwise</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="isAttachedToDocument" const="True">
             <Documentation>
@@ -152,6 +154,7 @@ referencing subobject.
 * depth: current recursive depth
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getSubObjectList">
             <Documentation>
@@ -194,6 +197,7 @@ documents each contribute their own transformation. A scaled transformation
 cannot be expressed as a placement, and its scale is dropped.
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="expandSubObjectNames" Keyword="true">
             <Documentation>
@@ -250,6 +254,7 @@ containing the accumulated transformation matrix
 * depth: current recursive depth
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="setElementVisible">
             <Documentation>
@@ -294,6 +299,7 @@ found, 0 if invisible, or else 1
                           Note that an object can only be in a single group, hence only a single return 
                           value.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getParentGeoFeatureGroup">
             <Documentation>
@@ -301,6 +307,7 @@ found, 0 if invisible, or else 1
                           is in or None if it is not part of a group. Note that an object can only be 
                           in a single group, hence only a single return value.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getParent">
             <Documentation>
@@ -391,6 +398,7 @@ return A List holding all parents (or requested parent if given) and correspondi
         <UserDocu>A list of all objects this object links to.</UserDocu>
       </Documentation>
       <Parameter Name="OutList" Type="List"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="OutListRecursive" ReadOnly="true">
       <Documentation>
@@ -403,6 +411,7 @@ return A List holding all parents (or requested parent if given) and correspondi
         <UserDocu>A list of all objects which link to this object.</UserDocu>
       </Documentation>
       <Parameter Name="InList" Type="List"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="InListRecursive" ReadOnly="true">
       <Documentation>

@@ -36,6 +36,7 @@ Part.Circle(Point1,Point2,Point3)
         <UserDocu>The radius of the circle.</UserDocu>
       </Documentation>
       <Parameter Name="Radius" Type="Float"/>
+      <Sandbox tier="value"/>
     </Attribute>
   </PythonExport>
 </GenerateModel>

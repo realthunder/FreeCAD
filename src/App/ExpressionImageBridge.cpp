@@ -730,7 +730,8 @@ json dispatchHostOp(HandleTable& table, const json& req)
             // The write family: declared like any call, but a write to
             // the document, so the owner-only gate applies.
             static const char* const writeFamily[] = {
-                "addProperty", "removeProperty", "setPropertyStatus", "setEditorMode"};
+                "addProperty", "removeProperty", "setPropertyStatus", "setEditorMode",
+                "setGroupOfProperty", "recompute"};
             for (const char* w : writeFamily) {
                 if (member == w) {
                     json denied = writeGate(w);

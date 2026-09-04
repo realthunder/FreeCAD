@@ -24,6 +24,7 @@
       <Documentation>
         <UserDocu>Returns if this object has the specified extension</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <CustomAttributes />
   </PythonExport>

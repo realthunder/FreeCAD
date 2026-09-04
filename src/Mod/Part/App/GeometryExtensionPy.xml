@@ -19,12 +19,14 @@
       <Documentation>
         <UserDocu>Create a copy of this geometry extension.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Attribute Name="Name" ReadOnly="false">
         <Documentation>
             <UserDocu>Sets/returns the name of this extension.</UserDocu>
         </Documentation>
         <Parameter Name="Name" Type="String"/>
+        <Sandbox tier="value"/>
     </Attribute>
   </PythonExport>
 </GenerateModel>

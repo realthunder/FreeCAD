@@ -20,6 +20,7 @@
         <UserDocu>The radius of the circle.</UserDocu>
       </Documentation>
       <Parameter Name="Radius" Type="Float"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Circle" ReadOnly="true">
       <Documentation>

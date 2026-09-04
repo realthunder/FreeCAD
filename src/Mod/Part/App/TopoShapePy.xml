@@ -28,6 +28,7 @@ Sub-elements such as vertices, edges or faces are accessible as:
       <Documentation>
         <UserDocu>Deserialize the content of this shape from a string in BREP format.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="read">
       <Documentation>
@@ -190,6 +191,7 @@ Supports (OCCT 6.9.0 and above):
 
 Beginning from OCCT 6.8.1 a tolerance value can be specified.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="multiFuse" Const="true" Keyword="true">
       <Documentation>
@@ -206,6 +208,7 @@ Supports (OCCT 6.9.0 and above):
 Beginning from OCCT 6.8.1 a tolerance value can be specified.
 Deprecated: use fuse() instead.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="oldFuse" Const="true">
       <Documentation>
@@ -228,6 +231,7 @@ Supports:
 
 OCC 6.9.0 or later is required.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="section" Const="true">
       <Documentation>
@@ -245,6 +249,7 @@ Supports:
 
 OCC 6.9.0 or later is required.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="slices" Const="true">
       <Documentation>
@@ -273,6 +278,7 @@ Supports:
 
 OCC 6.9.0 or later is required.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="generalFuse" Const="true">
       <Documentation>
@@ -310,6 +316,7 @@ OCC 6.9.0 or later is required.
 sewShape()
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="childShapes" Const="true">
       <Documentation>
@@ -330,6 +337,7 @@ childShapes([cumOri=True, cumLoc=True]) -> list
 ancestorsOfType(shape, shape type) -> list
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="removeInternalWires">
       <Documentation>
@@ -369,6 +377,7 @@ Note: If you want to transform a shape without changing the
 underlying geometry then use the methods translate or rotate.
 </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="transformShape">
       <Documentation>
@@ -378,6 +387,7 @@ transformShape(Matrix,[boolean copy=False, checkScale=False]) -> None
 If checkScale is True, it will use transformGeometry if non-uniform
 scaling is detected.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="transformed" Const="true"  Keyword="true">
       <Documentation>
@@ -385,6 +395,7 @@ scaling is detected.</UserDocu>
 transformed(Matrix,copy=False,checkScale=False,op=None) -> shape
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="translate">
       <Documentation>
@@ -392,6 +403,7 @@ transformed(Matrix,copy=False,checkScale=False,op=None) -> shape
 translate(vector)
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="translated" Const="true">
       <Documentation>
@@ -408,6 +420,7 @@ rotate(base,dir,degree)
 Shp.rotate(App.Vector(0,0,0),App.Vector(0,0,1),180) - rotate the shape around the Z Axis 180 degrees.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="rotated" Const="true">
       <Documentation>
@@ -422,6 +435,7 @@ rotated(base,dir,degree) -> shape
 scale(factor,[base=App.Vector(0,0,0)])
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="scaled" Const="true">
       <Documentation>
@@ -483,6 +497,7 @@ intersection
 
 Returns: result of offsetting.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="makeOffset2D" Const="true"  Keyword="true">
       <Documentation>
@@ -544,6 +559,7 @@ op: an optional string to be appended when auto generates element mapping.
 reverse()
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="reversed" Const="true">
       <Documentation>
@@ -579,6 +595,7 @@ If the shape is a wire it returns True if it has no free ends (vertices).
 If the shape is an edge it returns True if its vertices are the same.
 </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="isPartner" Const="true">
       <Documentation>
@@ -603,6 +620,7 @@ isSame(shape) -> bool
 isEqual(shape) -> bool
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="isNull" Const="true">
       <Documentation>
@@ -617,6 +635,7 @@ isNull() -> bool</UserDocu>
 isValid() -> bool
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="isCoplanar" Const="true">
       <Documentation>
@@ -638,6 +657,7 @@ isInfinite() -> bool
 findPlane(tol=None) -> Plane
           </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="fix">
       <Documentation>
@@ -647,6 +667,7 @@ fix(working precision, minimum precision, maximum precision) -> bool
 True is returned if the operation succeeded, False otherwise.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="hashCode" Const="true">
       <Documentation>
@@ -659,6 +680,7 @@ Built against OCCT 7.8 and later this returns the full 64-bit hash, and the
 optional upper bound argument is accepted but ignored, OCCT having replaced
 the bounded HashCode() with an unbounded std::hash.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="tessellate" Const="true">
       <Documentation>
@@ -673,6 +695,7 @@ tessellate() -> (vertex,facets)
 project(shapeList) -> Shape
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="makeParallelProjection" Const="true">
       <Documentation>
@@ -742,6 +765,7 @@ If copyGeom is False, only topological objects will be copied, while
 geometry and triangulation will be shared with original shape.
 </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="cleaned" Const="true">
       <Documentation>
@@ -793,6 +817,7 @@ checkFace indicates if the point lying directly on a face is considered to be in
 removeSplitter() -> Shape
 </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="proximity" Const="true">
       <Documentation>
@@ -825,6 +850,7 @@ infos contains additional info on the solutions. It is a list of tuples:
     vertices, params is None. For edges, params is one float, u. For faces,
     params is a tuple (u,v). </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getElement" Const="true">
       <Documentation>
@@ -832,6 +858,7 @@ infos contains additional info on the solutions. It is a list of tuples:
 getElement(elementName) -> Face | Edge | Vertex
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="countElement" Const="true">
       <Documentation>
@@ -925,6 +952,7 @@ mode &gt; 0 : maximal
 mode &lt; 0 : minimal
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="fixTolerance" Const="true">
       <Documentation>
@@ -964,6 +992,7 @@ Returns True if at least one tolerance of the sub-shape has been modified
 optimalBoundingBox([useTriangulation = True, useShapeTolerance = False]) -> bound box
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="clearCache" Const="true">
       <Documentation>
@@ -1049,6 +1078,7 @@ avoidtype: optional shape type to skip when exploring
         <UserDocu>Returns the orientation of the shape.</UserDocu>
       </Documentation>
       <Parameter Name="Orientation" Type="String"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Faces" ReadOnly="true">
       <Documentation>
@@ -1056,12 +1086,14 @@ avoidtype: optional shape type to skip when exploring
 builds a face only when one is asked for.</UserDocu>
       </Documentation>
       <Parameter Name="Faces" Type="Object"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="Vertexes" ReadOnly="true">
       <Documentation>
         <UserDocu>The vertexes of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
       <Parameter Name="Vertexes" Type="Object"/>
+      <Sandbox tier="handle"/>
     </Attribute>
       <Attribute Name="Shells" ReadOnly="true">
           <Documentation>
@@ -1074,6 +1106,7 @@ builds a face only when one is asked for.</UserDocu>
               <UserDocu>The solids of this shape, as a lazy Part.ShapeList.</UserDocu>
           </Documentation>
           <Parameter Name="Solids" Type="Object"/>
+          <Sandbox tier="handle"/>
       </Attribute>
       <Attribute Name="CompSolids" ReadOnly="true">
       <Documentation>
@@ -1086,12 +1119,14 @@ builds a face only when one is asked for.</UserDocu>
        <UserDocu>The edges of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
       <Parameter Name="Edges" Type="Object"/>
+      <Sandbox tier="handle"/>
    </Attribute>
     <Attribute Name="Wires" ReadOnly="true">
       <Documentation>
         <UserDocu>The wires of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
       <Parameter Name="Wires" Type="Object"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="Compounds" ReadOnly="true">
       <Documentation>
@@ -1104,6 +1139,7 @@ builds a face only when one is asked for.</UserDocu>
         <UserDocu>The direct sub-shapes of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
       <Parameter Name="SubShapes" Type="Object"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="Length" ReadOnly="true">
       <Documentation>

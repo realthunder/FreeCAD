@@ -19,6 +19,7 @@
             <Documentation>
                 <UserDocu>Return the shape for the geometry.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="toShell" Const="true" Keyword="true">
             <Documentation>
@@ -40,18 +41,21 @@
                 <UserDocu>value(u,v) -&gt; Point
 Computes the point of parameter (u,v) on this surface</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="tangent" Const="true">
             <Documentation>
                 <UserDocu>tangent(u,v) -&gt; (Vector,Vector)
 Computes the tangent of parameter (u,v) on this geometry</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="normal" Const="true">
             <Documentation>
                 <UserDocu>normal(u,v) -&gt; Vector
 Computes the normal of parameter (u,v) on this geometry</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="projectPoint" Const="true" Keyword="true">
             <Documentation>
@@ -65,6 +69,7 @@ projectPoint(Vector,&quot;Distance&quot;) -&gt; list of floats
 projectPoint(Vector,&quot;Parameters&quot;) -&gt; list of tuples of floats
 projectPoint(Vector,&quot;Point&quot;) -&gt; list of points</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="isUmbillic" Const="true">
             <Documentation>
@@ -93,24 +98,28 @@ the second vector corresponds to the minimum curvature.</UserDocu>
             <Documentation>
                 <UserDocu>Returns the parametric bounds (U1, U2, V1, V2) of this trimmed surface.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="isPlanar" Const="true">
             <Documentation>
                 <UserDocu>isPlanar([float]) -&gt; Bool
 Checks if the surface is planar within a certain tolerance.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Attribute Name="Continuity" ReadOnly="true">
             <Documentation>
                 <UserDocu>Returns the global continuity of the surface.</UserDocu>
             </Documentation>
             <Parameter Name="Continuity" Type="String"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Rotation" ReadOnly="true">
             <Documentation>
                 <UserDocu>Returns a rotation object to describe the orientation for surface that supports it</UserDocu>
             </Documentation>
             <Parameter Name="Rotation" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Methode Name="uIso" Const="true">
             <Documentation>
@@ -157,6 +166,7 @@ Checks if the surface is planar within a certain tolerance.</UserDocu>
                 <UserDocu>Returns the parameter on the curve
 of the nearest orthogonal projection of the point.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="toBSpline" Const="true" Keyword="true">
             <Documentation>
@@ -171,11 +181,13 @@ of the nearest orthogonal projection of the point.</UserDocu>
                     * precision code (default=0)
                     Will raise an exception if surface is infinite in U or V (like planes, cones or cylinders)</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="intersect" Const="true">
             <Documentation>
                 <UserDocu>Returns all intersection points/curves between the surface and the curve/surface.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="intersectSS" Const="true">
             <Documentation>

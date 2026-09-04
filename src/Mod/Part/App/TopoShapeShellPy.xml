@@ -20,6 +20,7 @@
 add(face)
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getFreeEdges" Const="true">
       <Documentation>
@@ -47,6 +48,7 @@ makeHalfSpace(point) -> Solid
         <UserDocu>Returns the mass of the current system.</UserDocu>
       </Documentation>
       <Parameter Name="Mass" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="CenterOfMass" ReadOnly="true">
       <Documentation>
@@ -56,6 +58,7 @@ The coordinates returned for the center of mass are expressed in the
 absolute Cartesian coordinate system.</UserDocu>
       </Documentation>
       <Parameter Name="CenterOfMass" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="MatrixOfInertia" ReadOnly="true">
       <Documentation>

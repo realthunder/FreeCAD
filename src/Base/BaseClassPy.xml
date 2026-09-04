@@ -18,6 +18,7 @@
       <Documentation>
         <UserDocu>Returns true if given type is a father</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getAllDerivedFrom" Const="true">
       <Documentation>
@@ -29,6 +30,7 @@
         <UserDocu>Is the type of the FreeCAD object with module domain</UserDocu>
       </Documentation>
       <Parameter Name="TypeId" Type="String" />
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Module" ReadOnly="true">
       <Documentation>

@@ -20,12 +20,14 @@
                 <UserDocu>Returns the starting point of the bounded curve.</UserDocu>
             </Documentation>
             <Parameter Name="StartPoint" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="EndPoint" ReadOnly="true">
             <Documentation>
                 <UserDocu>Returns the end point of the bounded curve.</UserDocu>
             </Documentation>
             <Parameter Name="EndPoint" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
     </PythonExport>
 </GenerateModel>

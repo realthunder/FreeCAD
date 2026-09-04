@@ -177,15 +177,23 @@ if(BUILD_EXPR_IMAGE_HOST)
     # Same order-only-dep scoping as the binding generators below: the
     # command needs only python and its listed inputs.
     set(CMAKE_ADD_CUSTOM_COMMAND_DEPENDS_EXPLICIT_ONLY ON)
+    # The annotated XML list is the generator's own (ANNOTATED_XMLS),
+    # asked for at configure time so the dependency list cannot drift
+    # from what the generator reads (49 files as of G1 step 5).
+    execute_process(
+        COMMAND ${PYTHON_EXECUTABLE} ${FCX_SANDBOX_GEN} --list-xmls
+        OUTPUT_VARIABLE _fcx_annotated_xmls
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _fcx_list_rc)
+    if(NOT _fcx_list_rc EQUAL 0)
+        message(FATAL_ERROR "${FCX_SANDBOX_GEN} --list-xmls failed")
+    endif()
+    string(REPLACE "\n" ";" _fcx_annotated_xmls "${_fcx_annotated_xmls}")
+    list(TRANSFORM _fcx_annotated_xmls PREPEND ${CMAKE_SOURCE_DIR}/)
     add_custom_command(
         OUTPUT ${FCX_DISPATCH_INC}
         COMMAND ${PYTHON_EXECUTABLE} ${FCX_SANDBOX_GEN} --host-out ${FCX_DISPATCH_INC}
-        DEPENDS ${FCX_SANDBOX_GEN}
-                ${CMAKE_SOURCE_DIR}/src/App/ComplexGeoDataPy.xml
-                ${CMAKE_SOURCE_DIR}/src/App/DocumentObjectPy.xml
-                ${CMAKE_SOURCE_DIR}/src/App/DocumentPy.xml
-                ${CMAKE_SOURCE_DIR}/src/Mod/Part/App/TopoShapePy.xml
-                ${CMAKE_SOURCE_DIR}/src/Mod/Spreadsheet/App/SheetPy.xml
+        DEPENDS ${FCX_SANDBOX_GEN} ${_fcx_annotated_xmls}
         COMMENT "Generating the expression sandbox dispatch table (FcxDispatch.inc)"
     )
     list(APPEND ExpressionImageHost_SRC ${FCX_DISPATCH_INC})

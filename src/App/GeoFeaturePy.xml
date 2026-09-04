@@ -36,6 +36,7 @@ relationships.
 Note: This function is not available during recompute, as there the placements of parents
 can change after the execution of this object, rendering the result wrong.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getPropertyNameOfGeometry">
       <Documentation>

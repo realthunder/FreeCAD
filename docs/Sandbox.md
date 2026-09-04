@@ -294,11 +294,33 @@ emits ONE `FcxDispatch.inc` (host) and ONE `FcxFacades.inc` (a Python
 source string for the image) from the same list, so the two guests
 cannot drift.  Absent means DENY: a new binding is unreachable until
 annotated, and the security review of the bridge is "diff the
-annotations".  Annotated today, 14 members in five XMLs:
-`ComplexGeoDataPy` 3 (value), `DocumentPy` 2 (call, value),
-`DocumentObjectPy` 3 (value, value, handle), `SheetPy` 1 (call),
-`TopoShapePy` 5 (call, value x4).  Sec 7.6 sizes what Draft's App side
-would need beyond these.
+annotations".  Until 2026-09-04 that was 14 members in five XMLs; G1
+step 5 grew it to 239 members across 50 facades in 50 XMLs, the
+Draft App-side surface of sec 7.6 (`--surface`): the nine TopoShape
+bindings, Geometry/Curve/Surface and the concrete curves and surfaces
+Draft touches, Geometry extensions, BaseClass (`TypeId`,
+`isDerivedFrom`), Document/DocumentObject/PropertyContainer reads and
+the write family.  Value classes (Vector, Rotation, Placement, Matrix,
+BoundBox, Quantity) need no annotation: they cross by value and exist
+in the guest.  The list lives ONLY in the generator (`ANNOTATED_XMLS`,
+fathers first -- an XML with no annotation of its own, Persistence or
+TrimmedCurve, is listed so the Father chain reaches through it); the
+two CMake custom commands take their DEPENDS from `--list-xmls` so
+nothing drifts.
+
+Two traps the growth uncovered.  A facade's key must be the RUNTIME
+`tp_name`, and Part renames all nine TopoShape types at module init
+(`AppPart.cpp`: TopoShapePy becomes `Part.Shape`, then `Part.Edge`,
+`Part.Solid`, ...), so the XML-derived `Part.TopoShape` never matched
+a live shape and every shape fell through to `read_prop` -- that was
+the caveat recorded in the crossing analysis, not a python-mode quirk;
+`RUNTIME_TYPE_NAMES` in the generator carries the nine, and
+`merge_same_key` folds any genuine collision into one facade (the
+union of members; a member the object lacks raises AttributeError
+from the host as natively).  And a facade is verified only by real
+guest Python on a real object
+(`ExpressionImageEvalTest.partSurfaceOnHandles`), never by reading
+the XML.
 
 ### 3.4 The evaluation seam
 
@@ -781,10 +803,21 @@ loads them whole with the subset present.
 reads (TopoShape 41 used / 5 annotated, GeometryCurve 18, BoundBox 17,
 TopoShapeEdge 17, Vector 17, DocumentObject 13 / 2, Rotation 13,
 Document 12 / 2, Placement 12, ...), 32 `Part` module names (374 uses),
-16 `FreeCAD` names (692 uses, `Vector` 332).  Missing: a `write_prop`
-op (`addProperty` alone is 192 uses), `Part` and `FreeCAD` module
-facades, rung 2, and a local-wheel source in `install_package`.  NOT
-missing, checked 2026-09-04: the guest-native value classes.  The
+16 `FreeCAD` names (692 uses, `Vector` 332).  Status 2026-09-04: the
+`write_prop` op and the write family are BUILT (3.2); the 187-member
+surface is ANNOTATED (3.3: 239 members, 50 facades) and proved on
+handles from the guest (`partSurfaceOnHandles`: 31 expressions over a
+box and its sub-shapes, curves and surfaces -- handle-tier attributes,
+value-tier reads, declared calls with handle arguments dereferenced,
+booleans between two handles -- each equal to the host's own answer on
+both runtimes).  Still missing: the `Part` module facade (32 names,
+constructors returning handles) and a `FreeCAD` module facade for
+`ActiveDocument`/`Console`/`ParamGet`, rung 2, and a local-wheel source
+in `install_package`.  Document-level writes (`addObject` 76 uses,
+`removeObject`) are NOT declared: they are what Draft's make_* commands
+do, not what an `execute()` does, and rung 2 writes self only -- a
+decision to revisit with G1c.  NOT missing, checked 2026-09-04: the
+guest-native value classes.  The
 in-image `FreeCAD` module has carried `Vector`, `Rotation`,
 `Placement`, `Matrix`, `BoundBox` and `Units.Quantity`/`Unit` since the
 core carve (ImageDispatch.cpp), so the 1.6 k vector operations never

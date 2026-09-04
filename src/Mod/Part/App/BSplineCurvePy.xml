@@ -27,6 +27,7 @@ Serialization of Part.BSplineCurve objects
                 <UserDocu>Returns the polynomial degree of this B-Spline curve.</UserDocu>
             </Documentation>
             <Parameter Name="Degree" Type="Long"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="MaxDegree" ReadOnly="true">
             <Documentation>
@@ -34,6 +35,7 @@ Serialization of Part.BSplineCurve objects
 B-Spline curve curve. This value is 25.</UserDocu>
             </Documentation>
             <Parameter Name="MaxDegree" Type="Long"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="NbPoles" ReadOnly="true">
             <Documentation>
@@ -55,12 +57,14 @@ B-Spline curve curve. This value is 25.</UserDocu>
                 <UserDocu>Returns the start point of this B-Spline curve.</UserDocu>
             </Documentation>
             <Parameter Name="StartPoint" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="EndPoint" ReadOnly="true">
             <Documentation>
                 <UserDocu>Returns the end point of this B-Spline curve.</UserDocu>
             </Documentation>
             <Parameter Name="EndPoint" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="FirstUKnotIndex" ReadOnly="true">
             <Documentation>
@@ -92,6 +96,7 @@ of this B-Spline curve.</UserDocu>
                     the weight table has been initialized.
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="isPeriodic" Const="true">
             <Documentation>
@@ -105,6 +110,7 @@ of this B-Spline curve.</UserDocu>
                     this B-Spline curve is less than or equal to gp::Resolution().
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="increaseDegree">
             <Documentation>
@@ -228,6 +234,7 @@ to the pole of index Index in the poles table.</UserDocu>
             <Documentation>
                 <UserDocu>Get all poles of the B-Spline curve.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="setWeight">
             <Documentation>
@@ -375,6 +382,7 @@ from the knots table of this B-Spline curve.</UserDocu>
                     are supplied, the continuity will drop to C1.
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="buildFromPoles">
             <Documentation>
@@ -435,6 +443,7 @@ from the knots table of this B-Spline curve.</UserDocu>
                     Build a list of Bezier splines.
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="toBiArcs" Const="true">
             <Documentation>
@@ -450,6 +459,7 @@ from the knots table of this B-Spline curve.</UserDocu>
                     Build a new spline by joining this and a second spline.
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="makeC1Continuous">
             <Documentation>

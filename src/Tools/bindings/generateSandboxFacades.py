@@ -36,17 +36,82 @@ import xml.etree.ElementTree as ET
 # append-only; the CMake custom commands in src/App/CMakeLists.txt and
 # src/App/ExpressionImage/CMakeLists.txt list the same files as deps.
 ANNOTATED_XMLS = [
+    # Fathers before children: the generator chains a facade to its
+    # Father only when that Father is annotated too, and an XML with
+    # no annotation of its own (Persistence, TrimmedCurve, ...) is
+    # listed so the chain reaches through it.  Grown for G1 step 5
+    # (2026-09-04) from the Draft App-side surface report
+    # (scripts/sandbox_gui_lint.py --surface).
+    "src/Base/BaseClassPy.xml",
+    "src/Base/PersistencePy.xml",
     "src/App/ComplexGeoDataPy.xml",
-    # PropertyContainer carries setPropertyStatus (the write family);
-    # ExtensionContainer has no annotation of its own and is listed only
-    # so DocumentObject's Father chain reaches PropertyContainer.
-    "src/App/PropertyContainerPy.xml",
     "src/App/ExtensionContainerPy.xml",
+    "src/App/PropertyContainerPy.xml",
     "src/App/DocumentObjectPy.xml",
+    "src/App/GeoFeaturePy.xml",
     "src/App/DocumentPy.xml",
     "src/Mod/Part/App/TopoShapePy.xml",
+    "src/Mod/Part/App/TopoShapeEdgePy.xml",
+    "src/Mod/Part/App/TopoShapeWirePy.xml",
+    "src/Mod/Part/App/TopoShapeFacePy.xml",
+    "src/Mod/Part/App/TopoShapeVertexPy.xml",
+    "src/Mod/Part/App/TopoShapeShellPy.xml",
+    "src/Mod/Part/App/TopoShapeSolidPy.xml",
+    "src/Mod/Part/App/TopoShapeCompoundPy.xml",
+    "src/Mod/Part/App/TopoShapeCompSolidPy.xml",
+    "src/Mod/Part/App/GeometryPy.xml",
+    "src/Mod/Part/App/GeometryCurvePy.xml",
+    "src/Mod/Part/App/GeometrySurfacePy.xml",
+    "src/Mod/Part/App/BoundedCurvePy.xml",
+    "src/Mod/Part/App/TrimmedCurvePy.xml",
+    "src/Mod/Part/App/ConicPy.xml",
+    "src/Mod/Part/App/ArcOfConicPy.xml",
+    "src/Mod/Part/App/ArcOfCirclePy.xml",
+    "src/Mod/Part/App/ArcOfEllipsePy.xml",
+    "src/Mod/Part/App/ArcOfHyperbolaPy.xml",
+    "src/Mod/Part/App/CirclePy.xml",
+    "src/Mod/Part/App/EllipsePy.xml",
+    "src/Mod/Part/App/HyperbolaPy.xml",
+    "src/Mod/Part/App/LinePy.xml",
+    "src/Mod/Part/App/LineSegmentPy.xml",
+    "src/Mod/Part/App/BSplineCurvePy.xml",
+    "src/Mod/Part/App/BezierCurvePy.xml",
+    "src/Mod/Part/App/BSplineSurfacePy.xml",
+    "src/Mod/Part/App/BezierSurfacePy.xml",
+    "src/Mod/Part/App/PointPy.xml",
+    "src/Mod/Part/App/PlanePy.xml",
+    "src/Mod/Part/App/SpherePy.xml",
+    "src/Mod/Part/App/ToroidPy.xml",
+    "src/Mod/Part/App/ConePy.xml",
+    "src/Mod/Part/App/CylinderPy.xml",
+    "src/Mod/Part/App/SurfaceOfExtrusionPy.xml",
+    "src/Mod/Part/App/SurfaceOfRevolutionPy.xml",
+    "src/Mod/Part/App/GeometryExtensionPy.xml",
+    "src/Mod/Part/App/GeometryBoolExtensionPy.xml",
+    "src/Mod/Part/App/GeometryDoubleExtensionPy.xml",
+    "src/Mod/Part/App/GeometryIntExtensionPy.xml",
+    "src/Mod/Part/App/GeometryStringExtensionPy.xml",
     "src/Mod/Spreadsheet/App/SheetPy.xml",
 ]
+
+# The key of a facade is the type's RUNTIME tp_name -- what the host's
+# MRO walk (facadeKeyFor / facadeMemberLookup) compares -- which is
+# PythonName, else Namespace.Twin, EXCEPT where module init renames the
+# type afterwards.  Part does that for every TopoShape binding
+# (src/Mod/Part/App/AppPart.cpp, "Part::TopoShapePy::Type.tp_name =
+# ..."); without this table a live shape ('Part.Solid') matched no
+# facade at all and fell through to read_prop.
+RUNTIME_TYPE_NAMES = {
+    "TopoShapePy": "Part.Shape",
+    "TopoShapeVertexPy": "Part.Vertex",
+    "TopoShapeEdgePy": "Part.Edge",
+    "TopoShapeWirePy": "Part.Wire",
+    "TopoShapeFacePy": "Part.Face",
+    "TopoShapeShellPy": "Part.Shell",
+    "TopoShapeSolidPy": "Part.Solid",
+    "TopoShapeCompoundPy": "Part.Compound",
+    "TopoShapeCompSolidPy": "Part.CompSolid",
+}
 
 VALID_ATTRIBUTE_TIERS = ("value", "handle")
 VALID_METHODE_TIERS = ("call",)
@@ -81,6 +146,7 @@ def parse_export(path):
     namespace = export.get("Namespace")
     python_name = export.get("PythonName")
     type_key = python_name if python_name else "%s.%s" % (namespace, twin)
+    type_key = RUNTIME_TYPE_NAMES.get(name, type_key)
     facade = Facade(name, type_key, export.get("Father"))
     for member in export:
         if member.tag not in ("Methode", "Attribute"):
@@ -101,6 +167,45 @@ def parse_export(path):
                          % (path, mname, tier))
             facade.methods.append((mname,))
     return facade
+
+
+def merge_same_key(facades):
+    """One facade per runtime type name.
+
+    Two bindings can share a tp_name (before RUNTIME_TYPE_NAMES existed
+    the eight TopoShape sub-shape XMLs all read "Part.TopoShape"); the
+    host cannot tell them apart by name and the guest picks its proxy
+    class by that name, so facades sharing a key merge into the first
+    (fathers-first, so the base binding): the union of the declared
+    members, where a member the object lacks raises AttributeError from
+    the host as it does natively.  The closed table still holds -- only
+    declared names cross.  With the table filled in this is a safety
+    net, not the normal path.
+    """
+    by_key = {}
+    merged = []
+    for f in facades:
+        base = by_key.get(f.type_key)
+        if base is None:
+            by_key[f.type_key] = f
+            merged.append(f)
+            continue
+        have = {m for m, _ in base.attributes} | {m for (m,) in base.methods}
+        for member, tier in f.attributes:
+            if member not in have:
+                base.attributes.append((member, tier))
+                have.add(member)
+        for (member,) in f.methods:
+            if member not in have:
+                base.methods.append((member,))
+                have.add(member)
+    # a child whose Father merged away must chain to the survivor
+    names = {f.name for f in facades}
+    survivor_of = {f.name: by_key[f.type_key].name for f in facades}
+    for f in merged:
+        if f.father_name in names:
+            f.father_name = survivor_of[f.father_name]
+    return merged
 
 
 def topo_sort(facades):
@@ -180,13 +285,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host-out", help="write the host dispatch table (.inc)")
     ap.add_argument("--image-out", help="write the embedded image facades (.inc)")
+    ap.add_argument("--list-xmls", action="store_true",
+                    help="print ANNOTATED_XMLS, one repo-relative path per line, and exit"
+                         " (the CMake custom commands take their DEPENDS from this)")
     args = ap.parse_args()
+    if args.list_xmls:
+        print("\n".join(ANNOTATED_XMLS))
+        return
     if not args.host_out and not args.image_out:
         ap.error("nothing to do: give --host-out and/or --image-out")
 
     root = repo_root()
     facades = [parse_export(os.path.join(root, rel)) for rel in ANNOTATED_XMLS]
-    facades = topo_sort(facades)
+    facades = topo_sort(merge_same_key(facades))
     total = sum(len(f.attributes) + len(f.methods) for f in facades)
     if total == 0:
         sys.exit("generateSandboxFacades: no <Sandbox/> annotations found")

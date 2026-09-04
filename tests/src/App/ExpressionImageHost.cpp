@@ -708,6 +708,149 @@ TEST_F(ExpressionImageEvalTest, writePropOwnerOnly)
     host.clearHandles();
 }
 
+namespace
+{
+
+/// Any host object as a {"var": handle} binding (objectBinding for
+/// PropertyContainers; this one for shapes and geometry).  Steals the
+/// reference.
+std::vector<unsigned char> pyBinding(const char* var, PyObject* py)
+{
+    Base::PyGILStateLocker lock;
+    uint64_t id = ImageHost::instance().exportObject(py);
+    json h = {{"t", "h"}, {"id", id}, {"ty", Py_TYPE(py)->tp_name}};
+    if (const char* fc = App::ExpressionSandbox::facadeKeyFor(Py_TYPE(py)))
+        h["fc"] = fc;
+    Py_DECREF(py);
+    json b;
+    b[var] = std::move(h);
+    auto v = json::to_cbor(b);
+    return {v.begin(), v.end()};
+}
+
+}  // namespace
+
+TEST_F(ExpressionImageEvalTest, partSurfaceOnHandles)
+{
+    // G1 step 5: the annotated Part surface -- TopoShape and its
+    // sub-shapes, curves and surfaces -- reached from the guest on
+    // handles: handle-tier attributes give handles, value-tier ones
+    // cross by value, declared calls run on the host with handle
+    // arguments dereferenced, and each answer equals the host's own.
+    PyObject* box = nullptr;
+    PyObject* other = nullptr;
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* part = PyImport_ImportModule("Part");
+        if (!part) {
+            PyErr_Clear();
+            GTEST_SKIP() << "the Part module is not importable in this test binary";
+        }
+        box = PyObject_CallMethod(part, "makeBox", "ddd", 2.0, 3.0, 4.0);
+        other = PyObject_CallMethod(part, "makeBox", "ddd", 1.0, 1.0, 1.0);
+        Py_DECREF(part);
+        ASSERT_NE(box, nullptr);
+        ASSERT_NE(other, nullptr);
+    }
+    auto& host = ImageHost::instance();
+    auto pack = [&]() {
+        Py_INCREF(box);
+        Py_INCREF(other);
+        auto a = pyBinding("s", box);
+        auto b = pyBinding("t", other);
+        json m = json::from_cbor(a.begin(), a.end());
+        m.update(json::from_cbor(b.begin(), b.end()));
+        auto v = json::to_cbor(m);
+        return std::vector<unsigned char>(v.begin(), v.end());
+    };
+
+    // each expression reduced to something the wire carries by value,
+    // then compared against the host's repr of the same expression
+    const char* cases[] = {
+        "s.ShapeType",
+        "s.Volume",
+        "s.isValid()",
+        "s.isClosed()",
+        "len(s.Edges)",
+        "len(s.Faces)",
+        "len(s.Vertexes)",
+        "s.Edges[0].Length",
+        "s.Edges[0].ShapeType",
+        "s.Edges[0].Curve.Direction.z",
+        "s.Edges[0].Curve.value(1.0).x",
+        "s.Edges[0].Curve.TypeId",
+        "s.Edges[0].valueAt(0.5).z",
+        "s.Edges[0].firstVertex().Point.y",
+        "s.Faces[0].Surface.Axis.z",
+        "s.Faces[0].OuterWire.Length",
+        "s.Faces[0].normalAt(0.5, 0.5).x",
+        "s.Faces[0].CenterOfMass.y",
+        "s.Vertexes[0].Point.z",
+        "s.BoundBox.ZMax",
+        "s.copy().Volume",
+        "s.common(t).Volume",
+        "s.cut(t).Volume",
+        "s.fuse(t).Volume",
+        "s.hashCode() == s.hashCode()",
+        "s.isDerivedFrom('Part::TopoShape')",
+        "s.TypeId",
+        "s.section(t).ShapeType",
+        "s.Solids[0].Mass",
+        "s.Edges[0].Curve.length()",
+        "s.Edges[0].Curve.discretize(3)[1].x",
+    };
+    host.resetStats();
+    for (const char* expr : cases) {
+        auto g = host.eval(expr, pack());
+        ASSERT_TRUE(g.ok) << expr << ": " << g.excType << ": " << g.message;
+        std::string native;
+        {
+            Base::PyGILStateLocker lock;
+            PyObject* g2 = PyDict_New();
+            PyDict_SetItemString(g2, "__builtins__", PyEval_GetBuiltins());
+            PyDict_SetItemString(g2, "s", box);
+            PyDict_SetItemString(g2, "t", other);
+            PyObject* r = PyRun_String(expr, Py_eval_input, g2, g2);
+            Py_DECREF(g2);
+            ASSERT_NE(r, nullptr) << expr;
+            PyObject* rep = PyObject_Repr(r);
+            Py_DECREF(r);
+            native = PyUnicode_AsUTF8(rep);
+            Py_DECREF(rep);
+        }
+        // the guest's answer, as the host would repr it
+        std::string guest;
+        {
+            Base::PyGILStateLocker lock;
+            PyObject* v = host.decodeResult(g);
+            ASSERT_NE(v, nullptr) << expr;
+            PyObject* rep = PyObject_Repr(v);
+            Py_DECREF(v);
+            guest = PyUnicode_AsUTF8(rep);
+            Py_DECREF(rep);
+        }
+        EXPECT_EQ(guest, native) << expr;
+        host.clearHandles();
+    }
+    auto st = host.stats();
+    EXPECT_GT(st.ops["get_attr"], 0u);
+    EXPECT_GT(st.ops["call"], 0u);
+
+    // an undeclared member of a sub-shape is unreachable; a declared
+    // one the object lacks fails as it does natively
+    auto r = host.eval("s.Edges[0].tolerance", pack());
+    EXPECT_FALSE(r.ok);
+    r = host.eval("s.Edges[0].Surface", pack());
+    EXPECT_FALSE(r.ok);
+    EXPECT_EQ(r.excType, "AttributeError") << r.message;
+    host.clearHandles();
+    {
+        Base::PyGILStateLocker lock;
+        Py_DECREF(box);
+        Py_DECREF(other);
+    }
+}
+
 // ---- the G1 step-3 gate (docs/Sandbox.md sec 7.6): Draft's vector
 // ---- algebra runs in the guest on the in-image value classes with no
 // ---- bridge hop, and agrees with the same source run on the host.

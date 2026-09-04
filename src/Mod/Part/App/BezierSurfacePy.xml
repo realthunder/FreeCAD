@@ -37,6 +37,7 @@
                     Bezier surface. This value is 25.</UserDocu>
             </Documentation>
             <Parameter Name="MaxDegree" Type="Long"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="NbUPoles" ReadOnly="true">
             <Documentation>
@@ -54,6 +55,7 @@
             <Documentation>
                 <UserDocu>Returns the parametric bounds (U1, U2, V1, V2) of this Bezier surface.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="isURational" Const="true">
             <Documentation>
@@ -101,6 +103,7 @@
                     Increases the degree of this Bezier surface in the two
                     parametric directions.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="insertPoleColAfter">
             <Documentation>
@@ -205,6 +208,7 @@
             <Documentation>
                 <UserDocu>Get all poles of the Bezier surface.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="setWeight">
             <Documentation>
