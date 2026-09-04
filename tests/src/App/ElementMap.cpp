@@ -71,7 +71,10 @@ public:
     }
     Base::BoundBox3d getBoundBox() const override
     {
-        return {};
+        // Spelled out rather than `return {}`: BoundBox3's constructor takes
+        // its six bounds with defaults and is explicit, and MSVC will not use
+        // an explicit constructor for an empty braced return.
+        return Base::BoundBox3d();
     }
     bool isSame(const Data::ComplexGeoData& other) const override
     {

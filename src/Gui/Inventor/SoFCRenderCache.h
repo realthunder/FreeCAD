@@ -486,7 +486,10 @@ public:
     NodeInfoArray clippers;
     NodeInfoArray autozoom;
 
-    void init(SoState * state = nullptr);
+    // Exported on its own: _Material is nested in SoFCRenderCache, and a
+    // nested class is not carried out of the DLL by the enclosing class's
+    // export, so RenderCacheMapBench_tests_run cannot link this without it.
+    GuiExport void init(SoState * state = nullptr);
 
     bool isOnTop() const {
       return order > 0 || annotation > 0;

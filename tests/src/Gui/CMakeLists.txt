@@ -106,7 +106,11 @@ if(TARGET FreeCADRenderer)
     # whole material set is one document (docs/MaterialStorage.md 17.13).
     # Skipped at run time when the submodule is not checked out.
     target_compile_definitions(MaterialXGen_tests_run PRIVATE
-        FC_TEST_RENDERER_RESOURCES="${CMAKE_BINARY_DIR}/share/Renderer/"
+        # CMAKE_INSTALL_DATADIR, not a literal "share": it is what stages the
+        # data library (src/3rdParty/CMakeLists.txt), and it is "data" on
+        # Windows -- where the literal left every case failing with "the
+        # MaterialX data library is missing from this install".
+        FC_TEST_RENDERER_RESOURCES="${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/"
         FC_TEST_MATERIALX_RESOURCES="${CMAKE_SOURCE_DIR}/src/3rdParty/MaterialX/resources/")
     add_test(NAME MaterialXGen_tests_run COMMAND MaterialXGen_tests_run)
 
