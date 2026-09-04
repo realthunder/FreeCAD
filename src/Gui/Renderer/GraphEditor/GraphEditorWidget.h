@@ -38,6 +38,10 @@
 
 namespace Render {
 
+namespace GraphEditor {
+class EngineGraphHost;
+}
+
 class RendererExport GraphEditorWidget : public ImGuiSurface {
 public:
     explicit GraphEditorWidget(QWidget *parent = nullptr);
@@ -45,6 +49,12 @@ public:
 
     /// The name shown at the root of the graph path (the program's label).
     void setTitle(const std::string &title);
+
+    /// The host that answers the editor's preview, thumbnails and
+    /// implementation questions (docs/ShaderGraphEditor.md sec 4.2).
+    /// Null, the default, is a host with no preview and no
+    /// thumbnails. Not owned; the owner unsets it before it goes.
+    void setHost(GraphEditor::EngineGraphHost *host);
 
     /// Load, or reload, the document from MaterialX XML. Applied on
     /// the next frame, with the node editor current; a text that does

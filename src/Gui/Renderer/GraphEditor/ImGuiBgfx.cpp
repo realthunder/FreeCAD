@@ -63,6 +63,21 @@ static_assert(sizeof(TexId) == sizeof(ImTextureID),
 
 constexpr uint8_t kFlagAlphaBlend = 0x01;
 
+} // namespace
+
+uint64_t Render::ImGuiBgfx::packTexture(uint16_t textureIdx)
+{
+    TexId id;
+    id.handle = {textureIdx};
+    id.flags = kFlagAlphaBlend;
+    id.mip = 0;
+    id.unused = 0;
+    static_assert(sizeof(TexId) == sizeof(uint64_t), "TexId packs into 64 bits");
+    return bx::bitCast<uint64_t>(id);
+}
+
+namespace {
+
 bx::DefaultAllocator s_allocator;
 
 void *imguiAlloc(size_t size, void *)

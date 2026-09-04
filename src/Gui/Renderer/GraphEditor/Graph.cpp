@@ -171,6 +171,15 @@ Graph::Graph(GraphHost* host) :
     initializeGraph();
 }
 
+void Graph::setHost(GraphHost* host)
+{
+    _host = host;
+    if (_host && _graphDoc)
+    {
+        _host->documentChanged(_graphDoc, nullptr);
+    }
+}
+
 bool Graph::setDocument(const std::string& xml, std::string& error)
 {
     error.clear();
@@ -200,6 +209,9 @@ bool Graph::setDocument(const std::string& xml, std::string& error)
     _committedText = documentText();
     _commitReady = false;
     _updatePending = false;
+    // A loaded document is a changed one to the host: the preview
+    // renders it.
+    _host->documentChanged(_graphDoc, nullptr);
     return true;
 }
 
@@ -652,7 +664,7 @@ void Graph::updateMaterials(mx::InputPtr input /* = nullptr */, mx::ValuePtr val
     {
         // A value moved: the host previews it; the document is
         // written when the gesture completes.
-        _host->valueDragged(input, value);
+        _host->valueDragged(_graphDoc, input, value);
         return;
     }
 
@@ -668,7 +680,7 @@ void Graph::updateMaterials(mx::InputPtr input /* = nullptr */, mx::ValuePtr val
             elem = _currRenderNode->getOutput();
         }
     }
-    _host->documentChanged(elem);
+    _host->documentChanged(_graphDoc, elem);
 }
 
 void Graph::showPropertyEditorValue(UiNodePtr node, mx::InputPtr input, const UIProperties& uiProperties)
@@ -897,7 +909,25 @@ void Graph::showPropertyEditorValue(UiNodePtr node, mx::InputPtr input, const UI
             }
 
             // The name as the document states it, edited in place; the
-            // program's Images property is what it resolves against.
+            // program's Images property is what it resolves against,
+            // and what the picker beside the field offers.
+            const std::vector<std::string>& names = _host->imageNames();
+            if (!names.empty())
+            {
+                ImGui::SetNextItemWidth(ImGui::GetFrameHeight());
+                if (ImGui::BeginCombo("##filenamePick", "", ImGuiComboFlags_NoPreview))
+                {
+                    for (const std::string& name : names)
+                    {
+                        if (ImGui::Selectable(name.c_str(), name == temp))
+                        {
+                            temp = name;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::SameLine();
+            }
             ImGui::InputText("##filename", &temp);
 
             // Set input value and update materials if different from previous value

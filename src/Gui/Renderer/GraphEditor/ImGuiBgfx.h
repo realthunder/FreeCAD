@@ -55,6 +55,12 @@ public:
     void destroy(bool deviceUp);
     bool valid() const;
 
+    /// Pack a bgfx texture (by its handle index, as a DrawDevice
+    /// TextureHandle carries it) into the 64-bit texture id ImGui::Image
+    /// takes here: the same packing as bgfx's example, so a texture any
+    /// consumer of this renderer made draws through this backend.
+    static uint64_t packTexture(uint16_t textureIdx);
+
     ImGuiContext *context() const;
     /// ImGui's current context is a global; every call into ImGui on
     /// behalf of this instance is bracketed by this.

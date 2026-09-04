@@ -42,6 +42,8 @@ class GraphEditorWidget;
 
 namespace Gui {
 
+class ShaderGraphHost;
+
 class GuiExport ShaderGraphView : public MDIView {
     Q_OBJECT
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
@@ -60,14 +62,24 @@ public:
 
 private:
     /// The document's text after a completed gesture in the editor:
-    /// one undoable property write (docs/ShaderGraphEditor.md sec 4.1).
+    /// one undoable property write (docs/ShaderGraphEditor.md sec 4.1),
+    /// with the Param_* properties whose input the text moved written
+    /// in the same transaction.
     void commitText(const std::string &xml);
+    /// The text the editor shows: the property's document with the
+    /// Param_* property values written into its public inputs, which
+    /// is what the viewport renders.
+    std::string documentForEditor() const;
+    /// Write into the open transaction every Param_* property whose
+    /// public input \a xml states differently.
+    void writeParams(const std::string &xml);
     /// An object of the document changed: the program's text from
     /// outside (undo, Python) reloads the editor.
     void slotChangedObject(const App::DocumentObject &obj, const App::Property &prop);
 
     App::ShaderProgram *const program;
     Render::GraphEditorWidget *editor = nullptr;
+    ShaderGraphHost *host = nullptr;
     fastsignals::connection changedConnection;
     /// Set around this view's own property write, which must not
     /// reload the editor that made it.

@@ -203,17 +203,31 @@ public:
 };
 ```
 
-The desktop implementation (`EngineGraphHost`) lives in
-`FreeCADRenderer` beside the bgfx code and answers: `documentChanged`
--> serialize and hand the text to the preview's program; `preview` ->
-the icon path's transient sphere rendered into a bgfx texture (the
-async compile the viewport already waits for signals completion,
-`BGFXViewEffects.cpp:266`, stock media standing in meanwhile --
-`compiling()` reads that); `thumbnail` -> `DrawDevice::createTexture2D`
-from our image loader (`ImageDecode.cpp`); `hasImplementation` -> the
-generator's `getImplementation` through `Render::MaterialX`. Phase 1
-ships a `NullGraphHost` (no preview, no thumbnails, every nodedef
-implemented) so the editor is usable before the engine half exists.
+The implementation is in two halves (phase 2, section 12), split
+where the libraries split. `EngineGraphHost`
+(`GraphEditor/EngineGraphHost.h`, `FreeCADRenderer`) answers what the
+renderer can by itself: `thumbnail` -> `DrawDevice::createTexture2D`
+from our image loader (`ImageDecode.cpp`), `hasImplementation` -> the
+generator's `getImplementation` through `Render::MaterialX`, the
+preview texture's ownership and upload, the orbit camera the pane
+drives, `compiling()`. Its header names no MaterialX type -- the
+`GraphHost` the editor talks to is an adapter it owns -- so a
+subclass can live in a library without MaterialX headers, which Gui
+is. `Gui::ShaderGraphHost` (`src/Gui/ShaderGraphHost.cpp`) is that
+subclass and RENDERS the preview: the material icon's sphere wearing
+the edited document, as a Coin scene run through the render-cache
+pipeline (`SoFCRenderCacheManager::traverse` + `RendererBridge::
+translate`) and handed to the document's live 3D view backend as a
+transient capture scene (`setCaptureScene` + `renderOffscreen`, the
+TechDraw shaded underlay's derived-shape path), read back and uploaded.
+The render-cache pipeline lives in Gui, which is why the preview cannot
+be the renderer's; and it means the preview needs a 3D view on the
+renderer path -- without one the pane is simply absent. The async
+compile the viewport waits for is read through two new `Renderer`
+virtuals (`shaderCompilePending`, `shaderCompileGeneration`); a
+stand-in frame polls until the compile lands. Phase 1 shipped a
+`NullGraphHost` (no preview, no thumbnails, every nodedef implemented)
+so the editor was usable before the engine half existed.
 
 ### 4.3 The ImGui surface
 
@@ -596,3 +610,95 @@ Not done, by design of phase 1: no preview, no thumbnails (the
 (the program's `Images` is what it should pick from, phase 2), the
 `Surface` picker, HiDPI (font scale is 1). Phase 2 starts at
 `EngineGraphHost`.
+
+## 12. Phase 2 result (2026-09-04)
+
+`EngineGraphHost` and `Gui::ShaderGraphHost` are in, split as 4.2 now
+describes: the renderer half owns textures and answers the generator,
+the Gui half renders. Four things about the build that were not in
+the plan:
+
+- **The preview cannot be the renderer's.** The sphere is a Coin scene
+  because that is what the render-cache pipeline translates, and that
+  pipeline (`SoFCRenderCacheManager`, `RendererBridge`) is Gui code,
+  not renderer code. So the host that renders is in Gui, and the
+  renderer-side class is the MaterialX-free base it derives from --
+  `EngineGraphHost.h` names no MaterialX type, the `GraphHost` the
+  editor talks to is an adapter inside its `.cpp`, and Gui, which has
+  no MaterialX headers, subclasses it freely. The material icon's own
+  renderer (`MatGui::IconScene`) is a hidden `View3DInventorViewer`
+  in the Material module, which Gui cannot link either; the preview
+  borrows the document's live 3D view backend instead, through the
+  transient capture scene the TechDraw shaded underlay already uses
+  (`setCaptureScene` + `renderOffscreen`, read back and uploaded).
+  Without a 3D view on the renderer path there is no preview pane.
+- **A rendered preview is never made inside the editor's paint.** The
+  ImGui surface is itself a bgfx frame being encoded during `paintGL`;
+  a capture frame there would flush half the UI into the capture.
+  `preview(w, h)` only records the size and returns the texture it
+  has; the render runs from the event loop on a 40 ms coalescing
+  timer, and the widget is asked for a frame when the texture lands.
+- **A declared input's uniform is ZERO unless the shader carries a
+  parameter for it.** The engine seeds no defaults
+  (`pushUserParams` zeroes every uniform absent from `params`), and
+  the viewport only works because the provider always binds the
+  `Param_*` properties. The preview's draw therefore carries
+  `SoShaderParameterArray1f` nodes for the document's public inputs
+  (`Render::MaterialX::publicInputs(xml)`, new, parses against the
+  attached library without importing it), and the shader node's text
+  is the live document with those inputs set BACK to the values of the
+  text the editor was loaded with (`setBaseText`,
+  `applyInputsToDocument`). A value drag then moves a uniform and
+  never regenerates or recompiles -- the generated source folds only
+  UNDECLARED values as constants, so an undeclared value drag still
+  costs a generation per step, as it does in the viewport.
+- **A bgfx texture created WITH its data is immutable.** The first
+  preview uploaded through `createTexture2D(..., data)` and every
+  later one through `updateTexture2D`, which bgfx drops on an
+  immutable texture without a word: the probe saw the parameter edit
+  reload, the orbit move the camera and each render complete, and the
+  pane never changed. The preview texture is created empty and
+  written; the same bgfx rule applies to any texture a consumer means
+  to update.
+- **The compile state crosses the `Renderer` interface**, two virtuals
+  (`shaderCompilePending`, `shaderCompileGeneration`) over
+  `userShaderInflight` / `userCompileGeneration`. A preview rendered
+  while a compile was in flight shows the stock stand-in and the
+  editor's "Compiling Shaders" popup, and the host polls the backend
+  every 250 ms until the generation moves, then renders again.
+
+`Param_*` two-way: the view loads the editor with the property values
+written into the text (`documentForEditor`), reloads on a `Param_*`
+change, and a commit writes, in the same transaction as the text,
+every `Param_*` property whose public input the text now states
+differently (`writeParams`, through `inspect`'s input list). The
+filename field of an image input has a picker over the program's
+`Images` beside it.
+
+Verified under Xvfb (llvmpipe, `~/works/sw/fcad-probes/
+shader_graph_phase2.{py,sh}`), one process, no crash, the pane measured
+on sphere pixels only: the striped enamel
+(`scripts/materialx/fc_declared_interface.mtlx`) opens with its blue
+base at the bottom of the ball (the band is one broad stripe at
+`stripe_scale` 1.2); `Param_base_color = red` from Python reloads the
+editor and the bottom turns red with the text untouched; an orbit
+drag in the pane changes the picture and writes nothing; a wheel step
+grows the ball by half with nothing written; Std_Undo of the property
+edit turns it blue again; a rubber band still commits nothing; a
+second program opens with its own preview (the OpenPBR default,
+grey). The compile was disk-cached in every run, so the stand-in +
+poll path executed (pending false, generation 0) but was never SEEN
+compiling; thumbnails were not probed (a node has to be selected for
+the pane to show one) and are verified by reading. Not proven: HiDPI,
+real GPU, the look of a MaterialX material under the viewer's PBR
+environment (the capture takes the viewer's settings, so it is
+whatever the viewport shows), the pane after the last 3D view closes
+(the probe's editor was not visible by then; the code clears the
+preview and the pane goes).
+
+Open after phase 2: `materialXVariants` and the program cache grow by
+one entry per distinct text (a topology edit, or an undeclared value
+drag) for the session; the preview borrows a 3D view and renders eight
+settle frames per update, which is fine for a 373 px pane and would
+not be for a large one; the `Surface` picker (phase 3) is still a
+property edit.

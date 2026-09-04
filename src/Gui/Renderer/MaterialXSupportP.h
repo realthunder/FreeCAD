@@ -167,6 +167,10 @@ mx::NodePtr openPbrSurface(const mx::DocumentPtr &doc,
                            const std::string &surface, std::string &error,
                            std::vector<std::string> &warnings);
 
+/// Whether a nodedef has an implementation for the raster generator's
+/// target -- what the graph editor asks before it lets a link be made.
+bool hasImplementation(const mx::NodeDef &def);
+
 }  // namespace Render::MaterialX
 
 #endif  // RENDER_MATERIALX_SUPPORT_P_H

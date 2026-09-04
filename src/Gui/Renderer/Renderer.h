@@ -3336,6 +3336,15 @@ public:
     /// Clients that skip rendering while idle must render while this is
     /// true; the default is conservatively true.
     virtual bool isSceneDirty() const { return true; }
+    /// User shaders compile asynchronously on the desktop (docs/
+    /// RenderDebug.md sec 6): a frame drawn while one is in flight
+    /// draws the stock material in its place. Whether any compile is in
+    /// flight, and a counter that advances each time one finishes
+    /// (either way) -- what a consumer that rendered a stand-in frame
+    /// polls to know when to render again. Defaults: never pending,
+    /// never advancing.
+    virtual bool shaderCompilePending() const { return false; }
+    virtual int shaderCompileGeneration() const { return 0; }
     /// Per-frame physically based shading configuration.
     virtual void setPBRConfig(const PBRConfig &config) { (void)config; }
 

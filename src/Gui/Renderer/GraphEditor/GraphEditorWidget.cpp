@@ -21,6 +21,7 @@
  ****************************************************************************/
 
 #include "GraphEditorWidget.h"
+#include "EngineGraphHost.h"
 #include "Graph.h"
 #include "GraphHost.h"
 
@@ -35,8 +36,13 @@ namespace Render {
 
 struct GraphEditorWidget::Private {
     ed::EditorContext *editor = nullptr;
-    GraphEditor::NullGraphHost host;
+    GraphEditor::NullGraphHost nullHost;
+    GraphEditor::EngineGraphHost *host = nullptr;
     std::unique_ptr<GraphEditor::Graph> graph;
+    GraphEditor::GraphHost *activeHost()
+    {
+        return host ? host->graphHost() : &nullHost;
+    }
     std::string title;
     std::string pendingXml;
     bool hasPending = false;
@@ -71,6 +77,20 @@ void GraphEditorWidget::setTitle(const std::string &title)
     requestFrame();
 }
 
+void GraphEditorWidget::setHost(GraphEditor::EngineGraphHost *host)
+{
+    if (d->host == host)
+        return;
+    d->host = host;
+    if (d->graph) {
+        makeImGuiCurrent();
+        ed::SetCurrentEditor(d->editor);
+        d->graph->setHost(d->activeHost());
+        ed::SetCurrentEditor(nullptr);
+    }
+    requestFrame();
+}
+
 void GraphEditorWidget::setDocument(const std::string &xml)
 {
     d->pendingXml = xml;
@@ -96,7 +116,7 @@ void GraphEditorWidget::contextCreated()
     config.SettingsFile = nullptr;
     d->editor = ed::CreateEditor(&config);
     ed::SetCurrentEditor(d->editor);
-    d->graph = std::make_unique<GraphEditor::Graph>(&d->host);
+    d->graph = std::make_unique<GraphEditor::Graph>(d->activeHost());
     ed::SetCurrentEditor(nullptr);
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 }

@@ -93,6 +93,18 @@ std::string substituteImages(const std::string &xml, const std::vector<ImageRefe
     return xml;
 }
 
+std::string applyInputsToDocument(const std::string &xml,
+                                  const std::vector<RenderDebugConfig::UserParam> &,
+                                  const std::string &)
+{
+    return xml;
+}
+
+std::vector<MaterialInput> publicInputs(const std::string &, const std::string &)
+{
+    return {};
+}
+
 #else  // HAVE_MATERIALX
 
 mx::ConstDocumentPtr dataLibrary()
@@ -940,6 +952,45 @@ std::vector<Look> looks(const std::string &xml, const std::string &sourcePath)
         found.push_back(std::move(out));
     }
     return found;
+}
+
+std::vector<MaterialInput> publicInputs(const std::string &xml, const std::string &surface)
+{
+    mx::DocumentPtr doc = mx::createDocument();
+    try {
+        mx::readFromXmlString(doc, xml);
+    }
+    catch (const std::exception &) {
+        return {};
+    }
+    if (mx::ConstDocumentPtr library = dataLibrary())
+        doc->setDataLibrary(library);
+    std::vector<mx::NodePtr> shaders = surfaceShaders(doc);
+    const int index = surfaceIndex(doc, surface);
+    if (index < 0 || std::size_t(index) >= shaders.size())
+        return {};
+    return publicInputs(doc, shaders[std::size_t(index)]);
+}
+
+std::string applyInputsToDocument(const std::string &xml,
+                                  const std::vector<RenderDebugConfig::UserParam> &params,
+                                  const std::string &surface)
+{
+    if (params.empty())
+        return xml;
+    // Parsed with the library ATTACHED, not imported: an imported
+    // library is written back out with the document.
+    mx::DocumentPtr doc = mx::createDocument();
+    try {
+        mx::readFromXmlString(doc, xml);
+    }
+    catch (const std::exception &) {
+        return xml;
+    }
+    if (mx::ConstDocumentPtr library = dataLibrary())
+        doc->setDataLibrary(library);
+    applyInputs(doc, params, surface);
+    return mx::writeToXmlString(doc);
 }
 
 std::string substituteImages(const std::string &xml,

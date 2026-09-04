@@ -745,8 +745,8 @@ SET(Editor_HPP_SRCS
 # its widget lives in FreeCADRenderer under the same switch.
 if(BUILD_BGFX AND BUILD_MATERIALX)
     add_definitions(-DFC_SHADER_GRAPH_EDITOR)
-    list(APPEND Editor_CPP_SRCS ShaderGraphView.cpp)
-    list(APPEND Editor_HPP_SRCS ShaderGraphView.h)
+    list(APPEND Editor_CPP_SRCS ShaderGraphView.cpp ShaderGraphHost.cpp)
+    list(APPEND Editor_HPP_SRCS ShaderGraphView.h ShaderGraphHost.h)
 endif()
 SET(Editor_SRCS
     ${Editor_CPP_SRCS}

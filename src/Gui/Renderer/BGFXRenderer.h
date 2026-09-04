@@ -88,6 +88,8 @@ public:
     virtual void clearCaptureFilter() override;
     virtual bool setCaptureScene(DrawCallList &&draws) override;
     virtual void clearCaptureScene() override;
+    virtual bool shaderCompilePending() const override;
+    virtual int shaderCompileGeneration() const override;
 private:
 #ifndef FC_RENDERER_STANDALONE
     bool renderFiltered(const QColor &bg,

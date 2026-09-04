@@ -108,6 +108,9 @@ class Graph
     explicit Graph(GraphHost* host);
     ~Graph() = default;
 
+    /// Swap the host; the new one is told of the current document.
+    void setHost(GraphHost* host);
+
     // Replace the document with one parsed from MaterialX XML. False,
     // with why in `error`, when the text does not parse; the previous
     // document stays. Needs the node editor current.

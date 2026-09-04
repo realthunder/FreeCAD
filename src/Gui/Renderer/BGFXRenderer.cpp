@@ -479,6 +479,24 @@ void BGFXRenderer::clearCaptureScene()
     pimpl->captureSceneActive = false;
 }
 
+bool BGFXRenderer::shaderCompilePending() const
+{
+#ifdef FC_RENDERER_STANDALONE
+    return false;
+#else
+    return !_BGFXLib.userShaderInflight.empty();
+#endif
+}
+
+int BGFXRenderer::shaderCompileGeneration() const
+{
+#ifdef FC_RENDERER_STANDALONE
+    return 0;
+#else
+    return _BGFXLib.userCompileGeneration;
+#endif
+}
+
 #ifndef FC_RENDERER_STANDALONE
 // The capture frame with the object filter applied: swap in a scene
 // reduced to the filtered draws. drawListVersion is deliberately NOT

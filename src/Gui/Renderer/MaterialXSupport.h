@@ -169,6 +169,29 @@ RendererExport DocumentInfo inspect(const std::string &xml,
                                     const std::string &sourcePath = {},
                                     const std::string &surface = {});
 
+/// The document with its public inputs overridden by `u_<name>`
+/// parameter values (the vec4-lane packing of
+/// RenderDebugConfig::UserParam), serialized again: what an editor of
+/// the text shows when the values live in `Param_*` properties beside
+/// it. A parameter naming no public input is ignored; a text that does
+/// not parse comes back as it was.
+/// \a surface names which of the document's surfaces the interface is
+/// read from, empty meaning its first.
+/// The public interface of a document with the values it states now
+/// (the `inputs` of inspect(), without the validation): what an editor
+/// that moves a value needs per change, and cheap -- the text is parsed
+/// against the shared data library, not validated or generated.
+/// \a surface names which of the document's surfaces the interface is
+/// read from, empty meaning its first. Empty on a text that does not
+/// parse.
+RendererExport std::vector<MaterialInput> publicInputs(const std::string &xml,
+                                                      const std::string &surface = {});
+
+RendererExport std::string applyInputsToDocument(
+        const std::string &xml,
+        const std::vector<RenderDebugConfig::UserParam> &params,
+        const std::string &surface = {});
+
 /// The raster shader generated from a document: a material-inputs
 /// function, not a whole program. The engine splices `source` into the
 /// stock mesh fragment shader, which calls

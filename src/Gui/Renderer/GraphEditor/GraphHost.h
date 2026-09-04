@@ -27,8 +27,9 @@
 /// What the shader graph editor asks of its host, in place of the
 /// MaterialX editor's own GL viewer (docs/ShaderGraphEditor.md sec
 /// 4.2): a preview, thumbnails, and whether a nodedef has an
-/// implementation for our target. Phase 1 ships NullGraphHost; phase
-/// 2 answers on the engine.
+/// implementation for our target. NullGraphHost answers nothing;
+/// EngineGraphHost (EngineGraphHost.h) answers on the engine, with the
+/// preview itself rendered by whoever owns a scene (Gui::ShaderGraphHost).
 
 #include <MaterialXCore/Document.h>
 #include <imgui.h>
@@ -42,11 +43,17 @@ class GraphHost {
 public:
     virtual ~GraphHost() = default;
 
-    /// The document changed (topology or a value); a null element
-    /// means everything. The host re-renders the preview when it can.
-    virtual void documentChanged(::MaterialX::ElementPtr changed) = 0;
+    /// The document changed (topology or a value, or it was loaded); a
+    /// null element means everything. The host re-renders the preview
+    /// when it can. \a doc is the editor's document, the one the text
+    /// is serialized from.
+    virtual void documentChanged(const ::MaterialX::DocumentPtr &doc,
+                                 ::MaterialX::ElementPtr changed) = 0;
     /// A value moved during a drag: preview only, no property write.
-    virtual void valueDragged(::MaterialX::InputPtr input, ::MaterialX::ValuePtr value) = 0;
+    /// The document already carries the value.
+    virtual void valueDragged(const ::MaterialX::DocumentPtr &doc,
+                              ::MaterialX::InputPtr input,
+                              ::MaterialX::ValuePtr value) = 0;
     /// Whether a nodedef has an implementation for our target
     /// (checkCanAddLink's one use of the generator context).
     virtual bool hasImplementation(const ::MaterialX::NodeDef &def) = 0;
@@ -54,6 +61,9 @@ public:
     /// plus its size, or ImTextureID_Invalid.
     virtual ImTextureID thumbnail(const std::string &name, int &w, int &h) = 0;
     virtual const std::vector<std::string> &imageExtensions() = 0;
+    /// The image names a filename input may pick from: what the
+    /// program carries. Empty leaves the field typed only.
+    virtual const std::vector<std::string> &imageNames() = 0;
     /// The preview: its texture at the requested size, or
     /// ImTextureID_Invalid when there is none (then no preview pane
     /// is drawn), and its input.
@@ -67,8 +77,10 @@ public:
 /// is usable before the engine half exists.
 class NullGraphHost : public GraphHost {
 public:
-    void documentChanged(::MaterialX::ElementPtr) override {}
-    void valueDragged(::MaterialX::InputPtr, ::MaterialX::ValuePtr) override {}
+    void documentChanged(const ::MaterialX::DocumentPtr &, ::MaterialX::ElementPtr) override {}
+    void valueDragged(const ::MaterialX::DocumentPtr &, ::MaterialX::InputPtr,
+                      ::MaterialX::ValuePtr) override
+    {}
     bool hasImplementation(const ::MaterialX::NodeDef &) override { return true; }
     ImTextureID thumbnail(const std::string &, int &w, int &h) override
     {
@@ -76,6 +88,7 @@ public:
         return ImTextureID_Invalid;
     }
     const std::vector<std::string> &imageExtensions() override { return extensions; }
+    const std::vector<std::string> &imageNames() override { return extensions; }
     ImTextureID preview(int, int) override { return ImTextureID_Invalid; }
     void previewMouse(float, float, int, bool) override {}
     void previewScroll(float) override {}

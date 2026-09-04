@@ -729,6 +729,20 @@ GeneratedMaterial generate(const std::string &xml, const std::string &sourcePath
     return out;
 }
 
+bool hasImplementation(const mx::NodeDef &def)
+{
+    // The generator's target string, once: "essl", which the data
+    // library's targetdefs derive from "genglsl", so an implementation
+    // written for either answers.
+    static const std::string target = BgfxShaderGenerator::create()->getTarget();
+    try {
+        return def.getImplementation(target) != nullptr;
+    }
+    catch (const std::exception &) {
+        return false;
+    }
+}
+
 }  // namespace Render::MaterialX
 
 #endif  // HAVE_MATERIALX

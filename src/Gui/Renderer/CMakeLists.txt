@@ -107,6 +107,7 @@ if(BUILD_BGFX AND BUILD_MATERIALX)
         GraphEditor/ImGuiStdlib.cpp
         GraphEditor/ImGuiSurface.cpp
         GraphEditor/GraphEditorWidget.cpp
+        GraphEditor/EngineGraphHost.cpp
         GraphEditor/Graph.cpp
         GraphEditor/UiNode.cpp
         GraphEditor/Layout.cpp
@@ -122,6 +123,7 @@ if(BUILD_BGFX AND BUILD_MATERIALX)
         GraphEditor/ImGuiStdlib.h
         GraphEditor/ImGuiSurface.h
         GraphEditor/GraphEditorWidget.h
+        GraphEditor/EngineGraphHost.h
         GraphEditor/GraphHost.h
         GraphEditor/Graph.h
         GraphEditor/UiNode.h
