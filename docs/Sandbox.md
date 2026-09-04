@@ -970,6 +970,114 @@ a per-document guest; geometry values bound to the wasm value layer
 rather than pure Python (proposal: wasm, because byte-identical shapes
 is the gate).
 
+**G1c SIZED 2026-09-04: the Proxy dispatch.**  What exists: a scripted
+object's `Proxy` is a host Python instance; `FeaturePythonT::execute()`
+(`FeaturePython.h:201`) calls `FeaturePythonImp::execute()`, which
+calls `Proxy.execute(obj)` through the Python C API, one of the 22
+hooks in `FC_PY_FEATURE_PYTHON` (`execute`, `mustExecute`,
+`onBeforeChange`, `onChanged`, `onDocumentRestored`, ...); `imp->init`
+re-reads which hooks the Proxy defines whenever the `Proxy` property
+changes (`FeaturePython.h:363`).  The Proxy is installed by the class
+itself (`obj.Proxy = self`, `DraftObject.__init__`) and persisted by
+`PropertyPythonObject` as `<Python module=".." class="..">` plus the
+`dumps()` JSON; `Restore` imports the module and allocates the class ON
+THE HOST (`PropertyPythonObject.cpp:379-390`) -- the sec 13 gap.
+Draft's `Wire.execute()` (`draftobjects/wire.py:124`) reads 14
+properties, calls `Part.LineSegment().toShape()`, `Part.Wire()`,
+`obj.positionBySupport()`, writes `Shape`, `Area`, `Length`,
+`Placement`, `Start`, `End`, and relies on `self.props_changed`, a list
+`onChanged` fills and `execute` clears -- so the hooks are one
+stateful object, not one function.
+
+*Mechanism (proposed):* the Proxy instance lives in the guest (the
+addon guest that already boots the `fcx_draft` wheel); the host's
+`Proxy` property holds a STAND-IN.
+
+1. Guest: a registry (host-assigned proxy id -> instance).
+   `HostHandle.__setattr__('Proxy', inst)` registers `inst` and sends
+   `write_prop Proxy` with a new wire value `{"t":"gproxy", "id",
+   "mod", "cls", "hooks":[...]}`, `hooks` = the `FC_PY_FEATURE_PYTHON`
+   names the class defines plus `dumps`/`loads`.  Two host->guest ops:
+   `proxy_call {id, m, a:[owner handle, ...], owner_h, owner_fc}` (the
+   hook call; the object crosses as a fresh transaction handle, exactly
+   the `execute(self, obj)` signature) and `proxy_new {id, mod, cls,
+   a:[handle]}` (construction; with `alloc` only `cls.__new__`, for
+   Restore); a dead stand-in's id rides the release queue.
+2. Host: an `App::ExpressionSandbox::GuestProxy` type whose
+   `tp_getattro` answers exactly the declared hook names with bound
+   forwarders -- `FC_PY_GetCallable` finds only those, so a hook the
+   class does not define costs nothing (Wire: `execute`, `onChanged`,
+   `onDocumentRestored`, `dumps`, `loads`).  Its `__module__` and
+   `__class__.__name__` report the GUEST class, so `Save` writes the
+   same `<Python module="draftobjects.wire" class="Wire">` a native
+   session writes and the file stays readable by an unrouted FreeCAD.
+   `Restore` with routing on: if the guest can import the module (one
+   cached round trip per module name) build the stand-in, `proxy_new`
+   alloc, forward `loads`; else refuse -- fail closed, no native import
+   of a document-chosen module name.  `FeaturePythonImp` itself does
+   not change: the stand-in raises the guest's exception type and
+   message, and `FeaturePythonT::execute` already turns that into a
+   `DocumentObjectExecReturn`.
+3. RE-ENTRANCY, the real step.  A guest `execute()` writing `obj.Shape`
+   runs the host's `onChanged` INSIDE the `write_prop` op, and that
+   hook is in the guest too: a nested round trip while the guest is
+   suspended in `fcx_host_call`.  Deferring the hook is not an option
+   -- Draft's `props_changed_store`/`props_changed_clear` ordering is
+   what `execute` relies on -- so the round trip must nest.  Both
+   runtimes can: V8's `Locker` is re-entrant and a wasm export may be
+   called from a native callback; wasmtime must be entered through the
+   CALLER's context inside a host callback (`wasmtime_caller_context`),
+   so the runtime keeps a current-context stack; the single
+   `pendingReply` slot is safe because every nested op fetches before
+   the outer reply is parked.  `ImageHost` needs a transaction stack
+   (owner, deferral, security scope), releases flushed at the outermost
+   end only, the budget watchdog armed once.
+4. Extension methods.  `obj.positionBySupport()` belongs to
+   `Part::AttachExtension` and is injected per INSTANCE
+   (`ExtensionContainerPyImp.cpp:138-150`), invisible to the type-MRO
+   walk of `facadeMemberLookup`; the guest facade class does not have
+   it either.  Annotate `AttachExtensionPy.xml`; the host lookup falls
+   back over the container's extension Python types; a handle carries
+   its extension facade keys (`"ext":[...]`) and the guest composes the
+   proxy class from facade plus extension mixins, cached per
+   combination.
+
+*Cost, counted on the 3-point open Wire fixture:* about 45 bridge hops
+(read_prop ~24, write_prop 7, get_attr ~4, call 3, mod_call 3, bool 2)
+at 5-13 us = 0.3-0.5 ms, plus 7 nested `onChanged` dispatches (one per
+write) at ~0.1 ms each and their bodies (`Start`/`End`: ~4 hops), plus
+the `execute` dispatch itself (~0.1 ms) -- roughly **1.3-1.8 ms of
+crossing per Wire `execute()`** against ~0.15 ms native, so about +1.5
+s on a 1000-wire recompute; and ~0.1 ms per property write during a
+`make_*` (5-8 writes each).  Writes and hooks dominate, not attribute
+reads, so the snapshot op does not help here; batching writes cannot
+either without breaking the hook order.  G1d measures the real number.
+
+*Steps, each shipping alone:* (a) `GuestProxy` stand-in and the `Save`
+side; (b) the guest registry, `proxy_new`/`proxy_call`, the `Proxy`
+setattr; (c) nested transactions on both runtimes; (d) extension
+facades; (e) the gate; (f) the `Restore` route.  Gate: a Wire made
+natively and one whose Proxy lives in the guest, from the same points:
+BRep strings equal, `Points`/`Start`/`End`/`Length`/`Area` equal,
+`Shape` arrived through `write_prop`, the saved `<Python>` element
+equal.
+
+*Decisions this leaves to the user:*
+1. Document-level writes.  Recommendation: stay undeclared for rung 2
+   (an `execute()` writes self).  Facts: no `draftobjects` `execute()`
+   creates or removes objects; in BIM, `ArchStairs.execute` adds and
+   removes its `RailingWire` objects and `ArchReference.execute` removes
+   -- those two fail with routing ON until declared, G1d's list.
+2. The principal of wheel code.  Ruling 1.4 says a Proxy runs as the
+   document; `draftutils.params` is `app.query` = PROMPT for documents,
+   and `Wire.__init__` reads `MakeFaceMode` -- a prompt per Draft object
+   is not acceptable.  The G1b gate never met this: `host.eval` without
+   an owner has no principal scope.  Options: a read-only preference
+   class (`app.prefs`, ALLOW for documents; the facade reads Draft's own
+   groups only) or wheel code running as `addon:draft` even when called
+   for a document object.  Recommendation: the former; the ruling
+   stands.
+
 ### 7.7 Decisions, numbered
 
 1. `.ui` as the form language -- amended: the authoring format; the
