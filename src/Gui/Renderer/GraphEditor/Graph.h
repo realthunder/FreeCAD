@@ -119,6 +119,22 @@ class Graph
     // The document as MaterialX XML, node positions included.
     std::string documentText() const;
 
+    // The nodegraph a double-click on `node` opens -- a compound
+    // nodegraph's own, or a functional node's implementation -- with
+    // `compound` saying which; null for a node without one.
+    mx::NodeGraphPtr diveTarget(const UiNodePtr& node, bool& compound) const;
+
+    // Leave the current level for `target`, reached through `node` (the
+    // double-click's body). `announce` shows the read-only popup a
+    // library graph gets on a first visit; a re-entry after a reload
+    // does not repeat it.
+    void enterNodeGraph(const UiNodePtr& node, const mx::NodeGraphPtr& target, bool compound,
+                        bool announce);
+
+    // One step of the re-descent setDocument() queued, once the level
+    // it is at has its layout.
+    void restoreNavigation();
+
     // The name shown at the root of the graph path.
     void setName(const std::string& name);
 
@@ -322,6 +338,20 @@ class Graph
 
     // Saved states of parent graphs for navigating the graph hierarchy.
     std::vector<GraphState> _parentStates;
+
+    // Where the user was when setDocument() replaced the document under
+    // them (an undo, a Surface pick, a write from Python): the nodegraph
+    // levels below the root, top down, and the selected node's name.
+    // Re-entered one level per settled layout by restoreNavigation(),
+    // then the view is left where it was instead of framing the content.
+    struct RestoreLevel
+    {
+        std::string path;
+        bool compound = false;
+    };
+    std::vector<RestoreLevel> _restoreLevels;
+    std::string _restoreSelection;
+    bool _keepView = false;
 
     // map for copied nodes
     std::map<UiNodePtr, UiNodePtr> _copiedNodes;

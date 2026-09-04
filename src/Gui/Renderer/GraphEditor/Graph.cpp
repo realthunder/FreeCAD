@@ -198,6 +198,34 @@ bool Graph::setDocument(const std::string& xml, std::string& error)
         doc->setDataLibrary(library);
     }
 
+    // Where the user is, before the reload puts the canvas back at the
+    // root: a Surface pick or an undo replaces the text under an editor
+    // that may be three nodegraphs deep with a node selected, and the
+    // reload should not be visible as a jump to the overview. The
+    // levels are named by their graph element's path and re-entered
+    // through the node that opens them (restoreNavigation), one per
+    // settled layout, since a dive saves the positions of the level it
+    // leaves and those exist only once that level is laid out.
+    _restoreLevels.clear();
+    _restoreSelection.clear();
+    _keepView = _graphDoc != nullptr;
+    if (_graphDoc)
+    {
+        for (size_t i = 1; i < _parentStates.size(); ++i)
+        {
+            const GraphState& level = _parentStates[i];
+            _restoreLevels.push_back({ level.graphElem->getNamePath(), level.isCompoundNodeGraph });
+        }
+        if (!_parentStates.empty())
+        {
+            _restoreLevels.push_back({ _state.graphElem->getNamePath(), _state.isCompoundNodeGraph });
+        }
+        if (_currUiNode)
+        {
+            _restoreSelection = _currUiNode->getName();
+        }
+    }
+
     // Deselect before the nodes it refers to go away.
     if (_currUiNode)
     {
@@ -2775,6 +2803,102 @@ void Graph::addNodeGraphPins()
     }
 }
 
+mx::NodeGraphPtr Graph::diveTarget(const UiNodePtr& node, bool& compound) const
+{
+    compound = false;
+    if (node->getNode() != nullptr)
+    {
+        // A functional nodegraph: the node's implementation.
+        mx::InterfaceElementPtr impl = node->getNode()->getImplementation();
+        if (impl && impl->isA<mx::NodeGraph>())
+        {
+            return impl->asA<mx::NodeGraph>();
+        }
+        return nullptr;
+    }
+    if (node->getNodeGraph() != nullptr)
+    {
+        // A compound nodegraph: the node is the graph.
+        compound = true;
+        return node->getNodeGraph();
+    }
+    return nullptr;
+}
+
+void Graph::enterNodeGraph(const UiNodePtr& node, const mx::NodeGraphPtr& target, bool compound,
+                           bool announce)
+{
+    savePosition();
+
+    // Save current state and set up new graph level.
+    _parentStates.push_back(std::move(_state));
+    if (compound)
+    {
+        setRenderMaterial(node);
+    }
+    ed::DeselectNode(node->getId());
+    _currUiNode = nullptr;
+    _prevUiNode = nullptr;
+
+    _state = GraphState();
+    buildUiNodeGraph(target);
+    _state.graphElem = target;
+    _state.isCompoundNodeGraph = compound;
+
+    // Determine the display name for this graph.
+    _state.name = target->getName();
+    if (readOnly())
+    {
+        _state.name += " (Read Only)";
+        if (announce)
+        {
+            _popup = true;
+        }
+    }
+    _needsLayout = true;
+    _needsNavigation = true;
+}
+
+void Graph::restoreNavigation()
+{
+    if (_restoreLevels.empty())
+    {
+        if (!_restoreSelection.empty())
+        {
+            // The level is back; the node too if the new text still has it.
+            for (const UiNodePtr& node : _state.nodes)
+            {
+                if (node->getName() == _restoreSelection)
+                {
+                    ed::SelectNode(node->getId());
+                    break;
+                }
+            }
+            _restoreSelection.clear();
+        }
+        return;
+    }
+    const RestoreLevel level = _restoreLevels.front();
+    _restoreLevels.erase(_restoreLevels.begin());
+    for (const UiNodePtr& node : _state.nodes)
+    {
+        bool compound = false;
+        mx::NodeGraphPtr target = diveTarget(node, compound);
+        if (target && compound == level.compound && target->getNamePath() == level.path)
+        {
+            enterNodeGraph(node, target, compound, false);
+            return;
+        }
+    }
+    // The level is gone from the new text (an undo took the nodegraph
+    // with it): this is as deep as the path goes, and the view has
+    // nothing of its own to keep here -- frame what is there.
+    _restoreLevels.clear();
+    _restoreSelection.clear();
+    _keepView = false;
+    _needsNavigation = true;
+}
+
 void Graph::upNodeGraph()
 {
     if (!_parentStates.empty())
@@ -4100,10 +4224,23 @@ void Graph::drawGraph(ImVec2 mousePos)
         connectLinks();
 
         // Navigate to content when requested (deferred until after layout).
+        // Not while a reload is re-entering the levels the user was at,
+        // nor once it has: the canvas stays where they left it.
         if (_needsNavigation && !_layoutPending)
         {
-            ed::NavigateToContent();
+            if (_restoreLevels.empty() && !_keepView)
+            {
+                ed::NavigateToContent();
+            }
+            else if (_restoreLevels.empty())
+            {
+                _keepView = false;
+            }
             _needsNavigation = false;
+        }
+        if ((!_restoreLevels.empty() || !_restoreSelection.empty()) && !_needsLayout && !_layoutPending)
+        {
+            restoreNavigation();
         }
 
         // Start the session with content centered
@@ -4301,53 +4438,11 @@ void Graph::drawGraph(ImVec2 mousePos)
     {
         if (_currUiNode != nullptr)
         {
-            mx::NodeGraphPtr targetGraph = nullptr;
             bool enteringCompoundGraph = false;
-            if (_currUiNode->getNode() != nullptr)
-            {
-                // Diving into a functional nodegraph.
-                mx::InterfaceElementPtr impl = _currUiNode->getNode()->getImplementation();
-                if (impl && impl->isA<mx::NodeGraph>())
-                {
-                    targetGraph = impl->asA<mx::NodeGraph>();
-                    enteringCompoundGraph = false;
-                }
-            }
-            else if (_currUiNode->getNodeGraph() != nullptr)
-            {
-                // Diving into a compound nodegraph.
-                targetGraph = _currUiNode->getNodeGraph();
-                enteringCompoundGraph = true;
-            }
-
-            // Dive into the target nodegraph.
+            mx::NodeGraphPtr targetGraph = diveTarget(_currUiNode, enteringCompoundGraph);
             if (targetGraph)
             {
-                savePosition();
-
-                // Save current state and set up new graph level.
-                _parentStates.push_back(std::move(_state));
-                if (enteringCompoundGraph)
-                {
-                    setRenderMaterial(_currUiNode);
-                }
-                ed::DeselectNode(_currUiNode->getId());
-                _currUiNode = nullptr;
-
-                _state = GraphState();
-                buildUiNodeGraph(targetGraph);
-                _state.graphElem = targetGraph;
-                _state.isCompoundNodeGraph = enteringCompoundGraph;
-
-                // Determine the display name for this graph.
-                _state.name = targetGraph->getName();
-                if (readOnly())
-                {
-                    _state.name += " (Read Only)";
-                    _popup = true;
-                }
-                _needsLayout = true;
-                _needsNavigation = true;
+                enterNodeGraph(_currUiNode, targetGraph, enteringCompoundGraph, true);
             }
         }
     }
