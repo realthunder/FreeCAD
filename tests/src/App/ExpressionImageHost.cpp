@@ -1027,16 +1027,34 @@ TEST_F(ExpressionImageBenchTest, DISABLED_BenchImageRoundTrip)
 
 TEST_F(ExpressionImageBenchTest, DISABLED_BenchImageBridgeHop)
 {
-    // One mid-eval reach-back (read_prop) on top of a python-lang eval:
-    // the cost pack-first evaluation exists to avoid.
-    auto bind = objectBinding("o", obj);
-    auto res = ImageHost::instance().eval("o.Width", bind);
-    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
-    benchUs("image.eval.oneBridgeHop", 2000, [&] {
-        auto r = ImageHost::instance().eval("o.Width", bind);
-        (void)r;
-    });
-    benchUs("image.eval.noBridgeHop", 2000, [&] {
+    // Mid-eval reach-backs (read_prop) on top of a python-lang eval: the
+    // cost pack-first evaluation exists to avoid.
+    //
+    // The pack is built FRESH per iteration.  The guest copies the
+    // bindings into per-eval globals and releases the handle when those
+    // die, and the host flushes that release on the next call -- so a
+    // pack reused across iterations makes every eval after the first a
+    // stale-handle error round trip, which is what an earlier version
+    // of this bench measured (its "+78-80 us" was that error path).
+    // r.ok is asserted inside the loop for the same reason.
+    //
+    // Three rungs with the same per-iteration pack cost (export, proxy,
+    // release): zero hops, one hop, four hops.  The marginal hop is the
+    // slope (four - one) / 3; (one - zero) includes the first getattr's
+    // proxy setup.
+    auto run = [&](const char* name, const char* src) {
+        return benchUs(name, 2000, [&] {
+            auto r = ImageHost::instance().eval(src, objectBinding("o", obj));
+            ASSERT_TRUE(r.ok) << src << ": " << r.excType << ": " << r.message;
+        });
+    };
+    double zero = run("image.eval.pack.noHop", "42.0");
+    double one = run("image.eval.pack.oneHop", "o.Width");
+    double four = run("image.eval.pack.fourHops",
+                      "o.Width + o.Width + o.Width + o.Width");
+    std::cout << "BENCH image.eval.hop.marginal " << (four - one) / 3.0
+              << " us  first " << (one - zero) << " us" << std::endl;
+    benchUs("image.eval.noPack", 2000, [&] {
         auto r = ImageHost::instance().eval("42.0", {});
         (void)r;
     });

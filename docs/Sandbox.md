@@ -421,7 +421,8 @@ from is sec 6.4 territory, designed only.
 
 Conda does ship an embeddable engine (`nodejs`, `libnode.so`, 71 MB)
 and the boundary is fast (host hop 3.0 us against the WASI bridge's
-31.6 us), but a node-hosted pyodide cannot be confined by subtraction:
+then-quoted 31.6 us -- really ~7 us, sec 8.1), but a node-hosted
+pyodide cannot be confined by subtraction:
 after `del globalThis.process`, `js.Function('return
 import("node:fs")')()` is still a full read-write escape, because
 dynamic `import()` is a V8 realm intrinsic; node's permission model
@@ -809,13 +810,27 @@ these numbers are not CI-checked and can drift.
     wire floor (eval "1")                 --       12.8 us          30.6-37.6 us
     parse + eval arithmetic               2.03 us  13.36 us (6.6x)  --
     one property read                     ~3.0 us  20.92 us (7.1x)  --
-    one bridge hop                        --       +31.6 us         +78-80 us
+    one bridge hop (marginal, read_prop)  --       7.1-7.3 us       6.2-7.4 us
+    pack per eval (export+proxy+release)  --       +23 us           +44 us
     instantiate + first eval              --       14 ms (.cwasm)   ~1.5-1.7 s
-    native Shape.Volume / BoundBox.ZMin   175/183 us (TopoShapePy materialization)
+    native Shape.Volume / BoundBox.ZMin   179/183 us (mass properties, not
+                                          materialization: a TopoShapePy
+                                          attribute read is ~1 us native)
 
-Pyodide's stages: first transport 40.5 / 89.0 / +136.8 us; buffered
-8.4 / 39.0 / +72.1 us; after `-fvisibility=hidden -flto` 5.4 / 30.6 /
-+78 us, "about 2x the WASI image".  The verdict from the WASI numbers:
+The hop row was re-taken on 2026-09-04.  Every earlier figure for it
+(WASI +31.6, pyodide +136.8 / +72.1 / +78-80 us) came from a bench that
+reused ONE bindings pack across iterations: the guest copies the pack
+into per-eval globals and releases the handle when those die, the host
+flushes that release on the next call, so every iteration after the
+first timed a stale-handle ERROR round trip.  The bench now builds a
+fresh pack per iteration, asserts success inside the loop, and reports
+the marginal hop as a slope over 1 and 4 reads of `o.Width` (the proxy
+does not cache: `__getattr__` crosses every time).  The pack row is
+what a raw `eval` with one object binding adds over the wire floor and
+includes the release hop.
+Pyodide's stages for the first two rows: first transport 40.5 / 89.0 us;
+buffered 8.4 / 39.0 us; after `-fvisibility=hidden -flto` 5.4 / 30.6
+us, "about 2x the WASI image".  The verdict from the WASI numbers:
 architecture A is not a prerequisite; a 10k-cell arithmetic sheet
 recompute projects to 0.25-0.31 s from 0.13 s today.  Every number
 taken before the Release fix (2026-08-31) was 3 to 6x too slow; the
