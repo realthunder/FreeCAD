@@ -40,6 +40,10 @@
 #include "DocumentObjectPy.h"
 #include "Application.h"
 #include "DocumentObject.h"
+#ifdef FC_EXPR_IMAGE_HOST
+#include "ExpressionEvaluator.h"
+#include "ExpressionGuestProxy.h"
+#endif
 
 using namespace App;
 using namespace Base;
@@ -376,23 +380,52 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
         start = buffer.begin();
         end = buffer.end();
         if (reader.hasAttribute("module") && reader.hasAttribute("class")) {
-            Py::Module mod(PyImport_ImportModule(reader.getAttribute("module")),true);
-            if (mod.isNull())
-                throw Py::Exception();
-            PyObject* cls = mod.getAttr(reader.getAttribute("class")).ptr();
-            if (!cls) {
-                std::stringstream s;
-                s << "Module " << reader.getAttribute("module")
-                    << " has no class " << reader.getAttribute("class");
-                throw Py::AttributeError(s.str());
+            const char* module = reader.getAttribute("module");
+            const char* cls = reader.getAttribute("class");
+            auto* owner = dynamic_cast<App::DocumentObject*>(getContainer());
+#ifdef FC_EXPR_IMAGE_HOST
+            if (owner && ExpressionSandbox::proxyRestoreRouted()) {
+                // The sandbox route (docs/Sandbox.md 7.6, sec 13): the
+                // document-chosen module name is imported in the GUEST,
+                // the instance allocated there, and the property holds
+                // the stand-in; loads() below forwards through it.  A
+                // module the guest cannot serve fails CLOSED -- never a
+                // native import of a name the file chose.  A view
+                // provider's Proxy (no document object as container)
+                // still restores natively: the Gui side is not in the
+                // guest yet (G2).
+                PyObject* standIn = ExpressionSandbox::restoreGuestProxy(module, cls, owner);
+                if (!standIn) {
+                    Base::Console().Error("PropertyPythonObject::Restore: sandbox routing is on"
+                                          " and the guest cannot serve Proxy %s.%s of %s;"
+                                          " the object is left without a Proxy\n",
+                                          module, cls, owner->getFullName().c_str());
+                    throw Py::Exception();
+                }
+                this->object = Py::asObject(standIn);
+                load_json = true;
             }
-            if (PyType_Check(cls)) {
-                this->object = PyType_GenericAlloc((PyTypeObject*)cls, 0);
+            else
+#endif
+            {
+                (void)owner;
+                Py::Module mod(PyImport_ImportModule(module), true);
+                if (mod.isNull())
+                    throw Py::Exception();
+                PyObject* pycls = mod.getAttr(cls).ptr();
+                if (!pycls) {
+                    std::stringstream s;
+                    s << "Module " << module << " has no class " << cls;
+                    throw Py::AttributeError(s.str());
+                }
+                if (PyType_Check(pycls)) {
+                    this->object = PyType_GenericAlloc((PyTypeObject*)pycls, 0);
+                }
+                else {
+                    throw Py::TypeError("neither class nor type object");
+                }
+                load_json = true;
             }
-            else {
-                throw Py::TypeError("neither class nor type object");
-            }
-            load_json = true;
         }
         else if (boost::regex_search(start, end, what, pickle)) {
             std::string nam = std::string(what[1].first, what[1].second);

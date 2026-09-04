@@ -40,6 +40,7 @@
  */
 
 #include <cstdint>
+#include <string>
 
 #include <nlohmann/json.hpp>
 
@@ -49,6 +50,8 @@ typedef struct _object PyObject;
 
 namespace App
 {
+class DocumentObject;
+
 namespace ExpressionSandbox
 {
 
@@ -62,6 +65,21 @@ AppExport bool isGuestProxy(PyObject* obj);
 
 /// The stand-in's guest proxy id; 0 when `obj` is not a stand-in.
 AppExport uint64_t guestProxyId(PyObject* obj);
+
+/** The Restore route (docs/Sandbox.md 7.6 mechanism item 2): allocate
+ * an instance of the guest's `module`.`cls` WITHOUT running __init__
+ * (`proxy_new alloc` = `cls.__new__(cls)`, what PyType_GenericAlloc is
+ * to a native restore) and return its stand-in, ready for `loads`.
+ * The guest imports the module; nothing is imported on the host.  New
+ * reference; nullptr with a Python error set -- the guest's own
+ * exception when it is a builtin (ModuleNotFoundError, AttributeError),
+ * else a RuntimeError naming it, or the image being unavailable -- and
+ * the caller fails closed.  `owner` is the object being restored; its
+ * document is the principal.  Caller holds the GIL.
+ */
+AppExport PyObject* restoreGuestProxy(const std::string& module,
+                                      const std::string& cls,
+                                      const App::DocumentObject* owner);
 
 }  // namespace ExpressionSandbox
 }  // namespace App

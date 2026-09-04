@@ -92,6 +92,19 @@ PyObject* guestProxyRepr(PyObject* self)
     return r;
 }
 
+/// Raise a failed guest round trip on the host: the guest's exception
+/// type when it is a builtin, else a RuntimeError carrying both fields
+/// -- as the guest bridge does for host errors.
+void raiseGuestError(const ImageResult& r)
+{
+    PyObject* builtins = PyEval_GetBuiltins();
+    PyObject* type = builtins ? PyDict_GetItemString(builtins, r.excType.c_str()) : nullptr;
+    if (type && PyExceptionClass_Check(type))
+        PyErr_SetString(type, r.message.c_str());
+    else
+        PyErr_Format(PyExc_RuntimeError, "%s: %s", r.excType.c_str(), r.message.c_str());
+}
+
 /// The hook forwarder: `self` is the (proxy id, hook name) pair bound
 /// into the PyCFunction; the first positional argument, when it is a
 /// document object, is the owner the guest may write.
@@ -113,15 +126,7 @@ PyObject* hookCall(PyObject* self, PyObject* args, PyObject* kwargs)
     }
     ImageResult r = ImageHost::instance().proxyCall(id, hook, args, kwargs, owner);
     if (!r.ok) {
-        // the guest's exception type when it is a builtin, else a
-        // RuntimeError carrying both fields -- as the guest bridge does
-        // for host errors
-        PyObject* builtins = PyEval_GetBuiltins();
-        PyObject* type = builtins ? PyDict_GetItemString(builtins, r.excType.c_str()) : nullptr;
-        if (type && PyExceptionClass_Check(type))
-            PyErr_SetString(type, r.message.c_str());
-        else
-            PyErr_Format(PyExc_RuntimeError, "%s: %s", r.excType.c_str(), r.message.c_str());
+        raiseGuestError(r);
         return nullptr;
     }
     PyObject* value = ImageHost::instance().decodeResult(r);
@@ -247,6 +252,30 @@ uint64_t guestProxyId(PyObject* obj)
     if (!isGuestProxy(obj))
         return 0;
     return reinterpret_cast<GuestProxyObject*>(obj)->id;
+}
+
+PyObject* restoreGuestProxy(const std::string& module,
+                            const std::string& cls,
+                            const App::DocumentObject* owner)
+{
+    PyObject* args = PyTuple_New(0);
+    if (!args)
+        return nullptr;
+    ImageResult r = ImageHost::instance().proxyNew(module, cls, args, true, owner);
+    Py_DECREF(args);
+    if (!r.ok) {
+        raiseGuestError(r);
+        return nullptr;
+    }
+    PyObject* standIn = ImageHost::instance().decodeResult(r);
+    if (!standIn || !isGuestProxy(standIn)) {
+        Py_XDECREF(standIn);
+        if (!PyErr_Occurred())
+            PyErr_Format(PyExc_RuntimeError, "guest allocated no proxy for %s.%s",
+                         module.c_str(), cls.c_str());
+        return nullptr;
+    }
+    return standIn;
 }
 
 }  // namespace ExpressionSandbox

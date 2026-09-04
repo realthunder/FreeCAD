@@ -175,6 +175,15 @@ void ExpressionSandbox::setEvaluationRouted(bool on)
     sandboxParams()->SetBool("Evaluate", on);
 }
 
+bool ExpressionSandbox::proxyRestoreRouted()
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    return sandboxParams()->GetBool("Evaluate", false);
+#else
+    return false;
+#endif
+}
+
 bool ExpressionSandbox::evaluationRouted()
 {
 #ifdef FC_EXPR_IMAGE_HOST

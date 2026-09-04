@@ -436,6 +436,13 @@ editors (`DlgExpressionInput`, `SpinBox`, `InputField`, `PropertyItem`)
 -- policy-gated as session, not confined; a named future slice.
 Writes were never the router's problem: `PropertyExpressionEngine::
 execute` sets the path on the host after the value returns.
+The same preference routes a document object's saved Proxy at document
+OPEN (`ExpressionSandbox::proxyRestoreRouted()`, the preference alone,
+no image boot to answer it): `PropertyPythonObject::Restore` builds the
+`<Python module=".." class="..">` instance in the guest and holds the
+stand-in (7.6 G1c step (f)); a module the guest cannot serve FAILS
+CLOSED.  A view provider's Proxy is not routed -- the Gui side is not
+in the guest (G2).
 
 Python: `FreeCAD.ExpressionSandbox` -- `routed`, `setRouting`,
 `available`, `imageInfo`, `evaluate`, `evaluateNative`, `evalCount`,
@@ -1141,9 +1148,29 @@ the hooks the host fired for the writes, `execute`, its nested
 `call` 15, `write_prop` 8, `get_attr` 6, `mod_call` 6, `bool` 2 --
 against the ~45 hops + 7 nested calls sized above: the `call` count is
 the `addProperty` calls of `Wire.__init__` (12) that the sizing left
-out, the rest lands where estimated.  Still open from the sizing: (f)
-`PropertyPythonObject::Restore` still imports the module on the host
-(sec 13); the two decisions above; `obj.Proxy.<attr>` reads from HOST
+out, the rest lands where estimated.
+**(f) the Restore route BUILT 2026-09-04.**  With routing on
+(`proxyRestoreRouted()`, the preference alone), `PropertyPythonObject::
+Restore` on a document object sends `proxy_new alloc` -- the guest
+imports the saved module name and allocates `cls.__new__(cls)`, no
+`__init__`, what `PyType_GenericAlloc` is natively -- and holds the
+stand-in, so `loads`, `onDocumentRestored` and every later hook cross
+as they did for a Proxy constructed in the guest; the guest failing to
+serve the module (import error, no such class, image unavailable)
+leaves the object WITHOUT a Proxy and says so on the console -- never a
+native import of a document-chosen name.  Off, the native path is
+untouched.  Gates: `guestProxyRestoreRoute` (both runtimes) -- a probe
+class present on both sides saved from a guest Proxy, reopened routed
+= stand-in, the pre-save log back through `loads`, `execute` crossing
+again; a second object whose Proxy names a host-only module reopens
+routed with NO Proxy and unrouted with the native instance;
+`draftWireRestoreInGuest` (pyodide) -- the G1c Wire saved, reopened
+routed = stand-in with equal facts, recomputed BRep byte-identical to
+the pre-save shape, reopened unrouted = a native `draftobjects.wire.
+Wire` with the same shape.  Not routed: a view provider's Proxy (its
+container is no document object; G2).
+Still open from the sizing: the two decisions above (ruled, see the
+list); `obj.Proxy.<attr>` reads from HOST
 Python (Draft's `get_type` reads `Proxy.Type`) have no forwarder yet --
 a stand-in `__getattr__` over a `proxy_get` op when G1d needs it; a
 guest reset orphans live stand-ins (their hooks raise
@@ -1304,7 +1331,9 @@ Every gtest and the corpus gate select a runtime per process through
 Preferences under `User parameter:BaseApp/Preferences/Expression/`:
 
     Sandbox:Runtime          "pyodide" | "wasi" (default: pyodide when built)
-    Sandbox:Evaluate         route evaluation through the image (default OFF)
+    Sandbox:Evaluate         route evaluation through the image (default OFF);
+                             also routes a document object's saved Proxy
+                             to the guest at open, failing closed (3.5)
     Sandbox:BudgetMs         5000        Sandbox:GraceMs   1000
     Sandbox:ImagePath        Sandbox:StdlibPath          (WASI)
     Sandbox:PyodideDir       Sandbox:PyodideWheel        Sandbox:PyodideUserDir
@@ -1339,8 +1368,8 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
 1. **G1** -- Draft's App side in the guest, four stages (7.6): G1a
    the surface, G1b the wheel and loader, G1c rung 2 for one principal
    (one Draft Wire `execute()` byte-identical from a guest Proxy) DONE
-   2026-09-04 but for the Restore route, its two decisions ruled the
-   same day; G1d the Draft and BIM test documents with routing ON
+   2026-09-04, its two decisions ruled and the Restore route (f) built
+   the same day; G1d the Draft and BIM test documents with routing ON
    remains.
 2. **G2** -- U1 + U2 + U7: Draft and BIM register from the guest; the
    subset shim.  No dependency on G1; in parallel if hands allow.
@@ -1421,14 +1450,16 @@ sockets, any network for the reference image, a webview escape hatch.
 
 ## 13. Known gaps and open questions
 
-- Not closed by the sandbox: `PropertyPythonObject::Restore`'s
-  `PyImport_ImportModule` on a document-chosen module name
-  (`PropertyPythonObject.cpp:379`) and `Base::Type::importModule`'s
-  type-string import (`Type.cpp:85`), both at document OPEN, before any
-  expression runs.  Rung 2 is where they close: G1c built the stand-in
-  and `proxy_new alloc` for it (7.6); the `Restore` route itself --
-  routing on, module the guest can import, stand-in instead of a host
-  import, fail closed otherwise -- is G1c step (f), not built.
+- Document OPEN imports, before any expression runs.
+  `PropertyPythonObject::Restore`'s `PyImport_ImportModule` on a
+  document-chosen module name is CLOSED for document objects with
+  routing on (G1c step (f), 2026-09-04): the module is imported in the
+  guest, the instance allocated there, the property holds the stand-in,
+  and a module the guest cannot serve fails closed (3.5, 7.6).  Still
+  open: the same import for a VIEW PROVIDER's Proxy (`Gui::ViewProvider`
+  container, no document object -- native until the Gui side is in the
+  guest, G2), and `Base::Type::importModule`'s type-string import
+  (`Type.cpp:85`).
 - The GUI live expression editors evaluate as session, unconfined.
 - No memory ceiling for a guest.
 - Addon principal granularity (per addon, per file?) is still open.

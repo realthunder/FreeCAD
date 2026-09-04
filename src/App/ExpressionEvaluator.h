@@ -104,6 +104,18 @@ AppExport void resetSandbox();
 /// there is nothing to restart.
 AppExport void setEvaluationRouted(bool on);
 
+/** True when a document object's saved Proxy (`<Python module=".."
+ * class="..">`) is to be built in the sandbox guest at document open
+ * (docs/Sandbox.md 7.6 mechanism item 2, sec 13): the Evaluate
+ * preference alone, on a build with a host.  Unlike evaluationRouted()
+ * this never instantiates an image -- the restore itself does, through
+ * proxy_new, and when the guest cannot serve the module the property
+ * FAILS CLOSED rather than importing a document-chosen module name
+ * into the host.  Off, PropertyPythonObject::Restore imports natively
+ * as it always has.
+ */
+AppExport bool proxyRestoreRouted();
+
 /** Evaluate a top-level expression: through the sandbox image when
  * routing is on and this expression qualifies, in-process otherwise.
  *
