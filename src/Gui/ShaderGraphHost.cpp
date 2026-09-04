@@ -49,6 +49,7 @@
 
 #include "ShaderGraphHost.h"
 #include "Application.h"
+#include "Command.h"
 #include "Document.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -204,6 +205,58 @@ bool ShaderGraphHost::loadImage(const std::string &path, int &width, int &height
         std::memcpy(rgba.data() + size_t(y) * width * 4, image.constScanLine(y),
                     size_t(width) * 4);
     return true;
+}
+
+const std::vector<std::string> &ShaderGraphHost::surfaceNames()
+{
+    const std::string &xml = documentText();
+    if (xml != namesText) {
+        namesText = xml;
+        names.clear();
+        // An inspection per distinct text, as the viewport pays one per
+        // distinct text anyway; the menu reads the cached answer.
+        if (!xml.empty())
+            names = Render::MaterialX::inspect(xml, {}, program->Surface.getValue()).materials;
+    }
+    return names;
+}
+
+std::string ShaderGraphHost::currentSurface()
+{
+    const char *surface = program->Surface.getValue();
+    return surface ? surface : "";
+}
+
+void ShaderGraphHost::selectSurface(const std::string &name)
+{
+    QMetaObject::invokeMethod(this, [this, name]() {
+        if (!program->getNameInDocument() || name == currentSurface())
+            return;
+        Gui::Document *doc = Application::Instance->getDocument(program->getDocument());
+        if (!doc)
+            return;
+        std::string literal;
+        for (char c : name) {
+            if (c == '\\' || c == '"')
+                literal += '\\';
+            literal += c;
+        }
+        // A Python property assignment in one transaction, as the view
+        // writes the text: undoable, on the macro record. The view's
+        // watch reloads the editor and the preview follows.
+        doc->openCommand(QT_TRANSLATE_NOOP("Command", "Select shader surface"));
+        try {
+            Gui::Command::doCommand(Gui::Command::Doc,
+                    "App.getDocument(\"%s\").getObject(\"%s\").Surface = \"%s\"",
+                    program->getDocument()->getName(), program->getNameInDocument(),
+                    literal.c_str());
+            doc->commitCommand();
+        }
+        catch (Base::Exception &e) {
+            doc->abortCommand();
+            FC_ERR("shader graph surface write failed: " << e.what());
+        }
+    }, Qt::QueuedConnection);
 }
 
 void ShaderGraphHost::previewInvalidated()

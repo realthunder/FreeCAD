@@ -77,6 +77,16 @@ public:
     /// setPreviewImage. May be called several times per frame; the
     /// default renders nothing (no preview pane).
     virtual void previewInvalidated() {}
+    /// The document's renderable surfaces, the one the preview wears,
+    /// and a pick made in the editor's Surface menu (GraphHost has the
+    /// contract). The defaults state none, so no menu is drawn.
+    virtual const std::vector<std::string> &surfaceNames()
+    {
+        static const std::vector<std::string> none;
+        return none;
+    }
+    virtual std::string currentSurface() { return {}; }
+    virtual void selectSurface(const std::string &) {}
 
     // ---- what the platform half reads and writes
 

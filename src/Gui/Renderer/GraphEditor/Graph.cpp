@@ -2848,6 +2848,24 @@ void Graph::graphButtons()
             ImGui::EndMenu();
         }
 
+        // Which of the document's renderable surfaces the program wears
+        // (its Surface property): a document carrying an asset's whole
+        // material set states many, and the preview shows one.
+        const std::vector<std::string>& surfaces = _host ? _host->surfaceNames() : std::vector<std::string>();
+        if (surfaces.size() > 1 && ImGui::BeginMenu("Surface"))
+        {
+            const std::string current = _host->currentSurface();
+            for (const std::string& name : surfaces)
+            {
+                const bool selected = current.empty() ? &name == &surfaces.front() : name == current;
+                if (ImGui::MenuItem(name.c_str(), nullptr, selected) && !selected)
+                {
+                    _host->selectSurface(name);
+                }
+            }
+            ImGui::EndMenu();
+        }
+
         if (ImGui::Button("Help"))
         {
             ImGui::OpenPopup("Help");
@@ -4183,10 +4201,12 @@ void Graph::drawGraph(ImVec2 mousePos)
                 _isCut = false;
             }
 
-            // Hotkey to frame selected node(s)
+            // Hotkey to frame selected node(s). Zoom to them too: the
+            // stock call only centres, and a selection made in a
+            // fifteen-material overview stays a thumbnail (2026-09-04).
             else if (ImGui::IsKeyReleased(ImGuiKey_F))
             {
-                ed::NavigateToSelection();
+                ed::NavigateToSelection(true);
             }
 
             // Go back up from inside a subgraph

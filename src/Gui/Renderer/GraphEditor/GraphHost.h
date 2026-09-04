@@ -71,6 +71,17 @@ public:
     virtual void previewMouse(float x, float y, int button, bool down) = 0;
     virtual void previewScroll(float delta) = 0;
     virtual bool compiling() const = 0;
+    /// The document's renderable surfaces by name (a surfacematerial's,
+    /// or a bare surface shader's), the one the preview wears, and a
+    /// pick from the editor's Surface menu -- which is drawn only when
+    /// there are two or more. The defaults state none.
+    virtual const std::vector<std::string> &surfaceNames()
+    {
+        static const std::vector<std::string> none;
+        return none;
+    }
+    virtual std::string currentSurface() { return {}; }
+    virtual void selectSurface(const std::string &) {}
 };
 
 /// No preview, no thumbnails, every nodedef implemented: the editor

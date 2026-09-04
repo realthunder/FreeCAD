@@ -80,6 +80,12 @@ public:
     bool loadImage(const std::string &path, int &width, int &height,
                    std::vector<uint8_t> &rgba) override;
     void previewInvalidated() override;
+    const std::vector<std::string> &surfaceNames() override;
+    std::string currentSurface() override;
+    /// Writes the program's Surface property, deferred to the event
+    /// loop: the pick is made inside the editor's frame, and the write
+    /// reloads the editor.
+    void selectSurface(const std::string &name) override;
 
 private:
     /// Render the preview from the event loop: never from inside the
@@ -100,6 +106,9 @@ private:
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> paramNodes;
     /// The baseline's public input values as parameters (setBaseText).
     std::vector<Render::RenderDebugConfig::UserParam> baseParams;
+    /// The text the surface names were last read from, and the names.
+    std::string namesText;
+    std::vector<std::string> names;
     /// The live text last inspected, and its public inputs.
     std::string inspectedText;
     std::vector<Render::RenderDebugConfig::UserParam> liveParams;

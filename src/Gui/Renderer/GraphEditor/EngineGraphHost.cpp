@@ -97,6 +97,9 @@ public:
     void previewMouse(float x, float y, int button, bool down) override;
     void previewScroll(float delta) override;
     bool compiling() const override;
+    const std::vector<std::string> &surfaceNames() override { return owner.surfaceNames(); }
+    std::string currentSurface() override { return owner.currentSurface(); }
+    void selectSurface(const std::string &name) override { owner.selectSurface(name); }
 
 private:
     void textChanged(const ::MaterialX::DocumentPtr &doc);
