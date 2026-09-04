@@ -610,6 +610,104 @@ TEST_F(ExpressionImageEvalTest, bridgeCountersPerOp)
     host.clearHandles();
 }
 
+TEST_F(ExpressionImageEvalTest, writePropOwnerOnly)
+{
+    // write_prop and the write-family calls (addProperty,
+    // removeProperty, setPropertyStatus): the evaluation owner only,
+    // under doc.write.self; a handle in the value dereferences to the
+    // live object.
+    auto& host = ImageHost::instance();
+    auto other = doc->addObject("App::FeaturePython", "Other");
+    auto otherWidth = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        other->addDynamicProperty("App::PropertyFloat", "Width"));
+    ASSERT_NE(otherWidth, nullptr);
+    otherWidth->setValue(1.0);
+    auto width = Base::freecad_dynamic_cast<App::PropertyFloat>(obj->getPropertyByName("Width"));
+    ASSERT_NE(width, nullptr);
+
+    // both objects in one pack: o is the owner, p is not
+    auto pack = [&]() {
+        auto a = objectBinding("o", obj);
+        auto b = objectBinding("p", other);
+        json m = json::from_cbor(a.begin(), a.end());
+        m.update(json::from_cbor(b.begin(), b.end()));
+        auto v = json::to_cbor(m);
+        return std::vector<unsigned char>(v.begin(), v.end());
+    };
+
+    // no owner named: nothing may be written
+    auto r = host.eval("setattr(o, 'Width', 5.0)", pack());
+    EXPECT_FALSE(r.ok);
+    EXPECT_EQ(r.excType, "PermissionError") << r.message;
+    EXPECT_DOUBLE_EQ(width->getValue(), 21.0);
+
+    // the owner writes itself: the proxy's __setattr__, visible on the
+    // host at once, and counted
+    host.resetStats();
+    r = host.eval("setattr(o, 'Width', 5.0) or o.Width", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_DOUBLE_EQ(value(r).get<double>(), 5.0);
+    EXPECT_DOUBLE_EQ(width->getValue(), 5.0);
+    EXPECT_EQ(host.stats().ops["write_prop"], 1u);
+
+    // the owner writing ANOTHER object: refused, untouched
+    r = host.eval("setattr(p, 'Width', 7.0)", pack(), obj);
+    EXPECT_FALSE(r.ok);
+    EXPECT_EQ(r.excType, "PermissionError") << r.message;
+    EXPECT_DOUBLE_EQ(otherWidth->getValue(), 1.0);
+
+    // a property that does not exist, a read-only one
+    r = host.eval("setattr(o, 'Nope', 1.0)", pack(), obj);
+    EXPECT_EQ(r.excType, "AttributeError") << r.message;
+    r = host.eval("setattr(o, 'ExpressionEngine', 1.0)", pack(), obj);
+    EXPECT_FALSE(r.ok) << "ExpressionEngine took a float";
+
+    // the write family rides the declared call op with the same gate
+    r = host.eval("o.addProperty('App::PropertyFloat', 'Depth')", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    ASSERT_NE(obj->getPropertyByName("Depth"), nullptr);
+    r = host.eval("setattr(o, 'Depth', 3.0) or o.Depth", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_DOUBLE_EQ(value(r).get<double>(), 3.0);
+    r = host.eval("p.addProperty('App::PropertyFloat', 'Depth')", pack(), obj);
+    EXPECT_FALSE(r.ok);
+    EXPECT_EQ(r.excType, "PermissionError") << r.message;
+    EXPECT_EQ(other->getPropertyByName("Depth"), nullptr);
+    r = host.eval("o.setPropertyStatus('Depth', 'ReadOnly')", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_TRUE(obj->getPropertyByName("Depth")->testStatus(App::Property::ReadOnly));
+    // ReadOnly is the editor's status: native setattr writes through
+    // it, and so does write_prop; Immutable is the one refusal.
+    r = host.eval("setattr(o, 'Depth', 4.0) or o.Depth", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_DOUBLE_EQ(value(r).get<double>(), 4.0);
+    r = host.eval("o.setPropertyStatus('Depth', 'Immutable')", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    r = host.eval("setattr(o, 'Depth', 5.0)", pack(), obj);
+    EXPECT_FALSE(r.ok) << "an Immutable property took a write";
+    EXPECT_EQ(r.excType, "AttributeError") << r.message;
+    r = host.eval("o.Depth", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_DOUBLE_EQ(value(r).get<double>(), 4.0);
+    r = host.eval("o.setPropertyStatus('Depth', '-Immutable')", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    r = host.eval("o.removeProperty('Depth')", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_EQ(obj->getPropertyByName("Depth"), nullptr);
+
+    // a handle in the value: the live object, not its wire face
+    r = host.eval("o.addProperty('App::PropertyLink', 'Ref')", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    r = host.eval("setattr(o, 'Ref', p) or o.Ref.Name", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_EQ(value(r).get<std::string>(), "Other");
+    auto link = Base::freecad_dynamic_cast<App::PropertyLink>(obj->getPropertyByName("Ref"));
+    ASSERT_NE(link, nullptr);
+    EXPECT_EQ(link->getValue(), other);
+
+    host.clearHandles();
+}
+
 // ---- the G1 step-3 gate (docs/Sandbox.md sec 7.6): Draft's vector
 // ---- algebra runs in the guest on the in-image value classes with no
 // ---- bridge hop, and agrees with the same source run on the host.
@@ -970,10 +1068,12 @@ TEST_F(ExpressionImageEvalTest, facadeChainDocumentGetObject)
 
 TEST_F(ExpressionImageEvalTest, undeclaredXmlMemberUnreachable)
 {
-    // removeProperty IS an XML member of DocumentObjectPy -- but it
+    // renameProperty IS an XML member of DocumentObjectPy -- but it
     // carries no <Sandbox/> annotation, so the facade does not have it
     // and read_prop finds no such property: DENY by default.
-    auto res = ImageHost::instance().eval("o.removeProperty",
+    // (removeProperty played this part until it was declared as a
+    // write-family call.)
+    auto res = ImageHost::instance().eval("o.renameProperty",
                                           objectBinding("o", obj));
     ASSERT_FALSE(res.ok);
     EXPECT_EQ(res.excType, "AttributeError");
@@ -987,7 +1087,7 @@ TEST_F(ExpressionImageEvalTest, undeclaredXmlMemberUnreachable)
     json req;
     req["op"] = "get_attr";
     req["h"] = id;
-    req["a"] = "removeProperty";
+    req["a"] = "renameProperty";
     json reply = App::ExpressionSandbox::dispatchHostOp(table, req);
     EXPECT_FALSE(reply.value("ok", false));
     EXPECT_EQ(reply.value("exc", ""), "ProtocolError");

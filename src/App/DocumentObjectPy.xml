@@ -21,6 +21,7 @@
                     locked: prevent the property from being removed again (Property.LockDynamic).
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="removeProperty">
             <Documentation>
@@ -29,6 +30,7 @@
                     Note, you can only remove user-defined properties but not built-in ones.
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="renameProperty">
             <Documentation>

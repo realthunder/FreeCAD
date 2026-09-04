@@ -29,8 +29,10 @@ namespace FcxImage
  * There is deliberately NO __call__: an undeclared callable that
  * crossed as a handle is inert in-image.  Iteration works via the
  * __getitem__ sequence fallback: IndexError crosses the wire and ends
- * the loop.  __del__ releases the host table entry; by then the host
- * may be gone, hence the bare except.
+ * the loop.  __setattr__ is the write_prop op (the host decides:
+ * owner only, doc.write.self); the slots themselves stay local.
+ * __del__ releases the host table entry; by then the host may be gone,
+ * hence the bare except.
  */
 static const char ProxyPrelude[] =
     "import _fcx\n"
@@ -42,6 +44,11 @@ static const char ProxyPrelude[] =
     "        if name.startswith('_'):\n"
     "            raise AttributeError(name)\n"
     "        return _fcx.op('read_prop', self._id, name)\n"
+    "    def __setattr__(self, name, value):\n"
+    "        if name in HostHandle.__slots__:\n"
+    "            object.__setattr__(self, name, value)\n"
+    "        else:\n"
+    "            _fcx.op('write_prop', self._id, name, value)\n"
     "    def __getitem__(self, key):\n"
     "        return _fcx.op('get_item', self._id, key)\n"
     "    def __len__(self):\n"

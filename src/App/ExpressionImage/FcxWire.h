@@ -46,6 +46,15 @@ inline const char* const OpGetItem = "get_item";
 inline const char* const OpLen = "len";
 inline const char* const OpRelease = "release";
 inline const char* const OpResolveAlias = "resolve_alias";
+// {op:"write_prop", h, a: property name, v: wire value}: set a property
+// on the handle's object.  Owner only -- the handle must be the
+// evaluation owner -- under Permission::DocWriteSelf; the value is
+// decoded through the handle table, so a host object crossing back as
+// a handle (a TopoShape result) dereferences to the live object and
+// Property::setPyObject re-maps it.  The guest proxy's __setattr__.
+// addProperty / setPropertyStatus / removeProperty ride the `call` op
+// with the same owner-only write gate.
+inline const char* const OpWriteProp = "write_prop";
 // No handle: the guest's last-in-line import finder asking what the host
 // knows about a module it could not import (docs/SandboxNetwork.md sec
 // 9.3).  "a" = the import name; the reply value is "" (unknown) or the

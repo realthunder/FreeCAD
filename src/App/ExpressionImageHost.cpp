@@ -24,6 +24,7 @@
 #include <cstring>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <sstream>
 
 #include <nlohmann/json.hpp>
@@ -433,7 +434,8 @@ bool ImageHost::rawCall(const std::vector<unsigned char>& requestCbor,
 }
 
 ImageResult ImageHost::eval(const std::string& source,
-                            const std::vector<unsigned char>& bindingsCbor)
+                            const std::vector<unsigned char>& bindingsCbor,
+                            const App::DocumentObject* owner)
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     ImageResult res;
@@ -455,6 +457,19 @@ ImageResult ImageHost::eval(const std::string& source,
         d->handles.flushDeferred();
     }
     d->handles.setDeferReleases(true);
+    // The owner, when the caller names one, is the object writes may
+    // touch (HandleTable::setOwner) and the evaluation's principal; its
+    // Python face is borrowed against the caller's binding pack, which
+    // exported the same object.  No owner: no writes.
+    d->handles.setOwner(nullptr);
+    std::optional<ExpressionSecurity::Runtime::Scope> secScope;
+    if (owner && Py_IsInitialized()) {
+        Base::PyGILStateLocker lock;
+        PyObject* ownerPy = const_cast<App::DocumentObject*>(owner)->getPyObject();
+        d->handles.setOwner(ownerPy);
+        Py_DECREF(ownerPy);  // the same object sits in the pack's handle
+        secScope.emplace(owner);
+    }
     ++d->evals;
     json req;
     req["op"] = "eval";
@@ -638,6 +653,7 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
             PyObject* ownerPy =
                 const_cast<App::DocumentObject*>(owner)->getPyObject();
             req["owner_h"] = d->handles.add(ownerPy);
+            d->handles.setOwner(ownerPy);  // the one object writes may touch
             if (const char* fc = facadeKeyFor(Py_TYPE(ownerPy)))
                 req["owner_fc"] = fc;
             Py_DECREF(ownerPy);  // the table holds its own reference

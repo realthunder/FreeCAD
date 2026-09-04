@@ -142,7 +142,7 @@ across the board.
     permission        document   session   addon   notes
     ----------------  --------   -------   -----   -------------------------------
     doc.read.self     ALLOW      ALLOW     ALLOW   same-origin rule
-    doc.write.self    ALLOW      ALLOW     ALLOW   reserved for rung-2 execute()
+    doc.write.self    ALLOW      ALLOW     ALLOW   write_prop + write family, owner only (3.2)
     doc.foreign       PROMPT     ALLOW     ALLOW   the cross-origin wall
     geom.call         ALLOW      ALLOW     ALLOW   cost bounded by budget, not grant
     app.query         PROMPT     ALLOW     ALLOW
@@ -243,8 +243,24 @@ Python into the guest while there is no package loader for it (the
 DraftVecUtils gate today, G1's Draft loader later).  Value tags: `quantity`,
 `vec`, `rot`, `pla`, `mat`, `bb`, `h` (handle), `tup` (a tuple crosses
 as a tuple, the first corpus-gate finding).  Reply shape `{ok, val}` or
-`{ok:false, exc, msg}`.  There is NO write op; `doc.write.self` is
-reserved for rung 2.  The read path never enters host Python
+`{ok:false, exc, msg}`.  The one write op is `write_prop` (2026-09-04,
+`{op, h, a: name, v: value}`, the proxy's `__setattr__`): the handle
+must be the EVALUATION OWNER -- `HandleTable::owner()`, set by
+`evalExpression` and by a raw `eval` that names one; rung 2 writes self
+and nothing else -- under `doc.write.self`, then the C++ property
+system's `setPyObject` (typed; a shape re-maps its element map), never
+host Python.  `Immutable` refuses, as native `setattr` does; `ReadOnly`
+is the editor's status and writes through it succeed natively, so they
+do here too (the gate is parity, not extra policy).  The value
+decodes through the handle table, so a host object crossing back as a
+handle dereferences to the live object (a `PropertyLink` takes the
+object, not its wire face).  `addProperty`, `removeProperty`,
+`setPropertyStatus` are declared `call` members (DocumentObjectPy.xml,
+PropertyContainerPy.xml -- the facade chain now reaches
+PropertyContainer through ExtensionContainer) and ride the `call` op
+behind the same owner-only gate.  Refusals are `PermissionError`, not
+`ProtocolError`: the request is well-formed, the principal is not
+allowed.  The read path never enters host Python
 (`read_prop` is answered from the C++ property system); host CPython
 runs only for members annotated `call`.  Arguments validate against the
 XML-declared signature; a sandbox callable is never a valid argument.

@@ -133,6 +133,18 @@ public:
     {
         minted = 0;
     }
+    /** The evaluation owner's Python face (borrowed; the table holds
+     * the reference through its handle), or nullptr outside an owned
+     * transaction.  Writes are allowed on this object only.
+     */
+    void setOwner(PyObject* obj)
+    {
+        ownerObj = obj;
+    }
+    PyObject* owner() const
+    {
+        return ownerObj;
+    }
 
 private:
     std::unordered_map<uint64_t, PyObject*> objects;
@@ -140,6 +152,7 @@ private:
     bool defer = false;
     uint64_t nextId = 1;
     std::size_t minted = 0;
+    PyObject* ownerObj = nullptr;
 };
 
 /** Host Python object -> wire value.  Objects outside the by-value set

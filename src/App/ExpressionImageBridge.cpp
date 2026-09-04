@@ -179,6 +179,7 @@ void HandleTable::clear()
 {
     deferred.clear();
     defer = false;
+    ownerObj = nullptr;
     for (auto& entry : objects)
         Py_DECREF(entry.second);
     objects.clear();
@@ -650,6 +651,68 @@ json dispatchHostOp(HandleTable& table, const json& req)
             return encodeResult(table, result);
         }
 
+        // The write gate (FcxWire::OpWriteProp and the write-family
+        // calls): the object must be the evaluation owner -- rung 2
+        // writes self and nothing else -- and the principal must hold
+        // doc.write.self.  A PermissionError, not a ProtocolError: the
+        // request is well-formed, the principal is not allowed.
+        auto writeGate = [&](const char* what) -> json {
+            if (!table.owner() || base != table.owner())
+                return errReply("PermissionError",
+                                std::string(what)
+                                    + ": writes are allowed on the evaluation owner only");
+            ExpressionSecurity::checkPermission(
+                ExpressionSecurity::Permission::DocWriteSelf);
+            return json();
+        };
+
+        if (op == FcxWire::OpWriteProp) {
+            auto a = req.find("a");
+            if (a == req.end() || !a->is_string())
+                return errReply("ProtocolError", "write_prop without a name");
+            const std::string& name = a->get_ref<const std::string&>();
+            auto v = req.find("v");
+            if (v == req.end())
+                return errReply("ProtocolError", "write_prop without a value");
+            json denied = writeGate("write_prop");
+            if (!denied.is_null())
+                return denied;
+            // The C++ property system, as read_prop: typed, and the
+            // property's own setPyObject does the conversion (and the
+            // element-map re-mapping for a shape).
+            if (!PyObject_TypeCheck(base, &App::PropertyContainerPy::Type))
+                return errReply("AttributeError",
+                                "'" + std::string(Py_TYPE(base)->tp_name)
+                                    + "' has no property '" + name + "'");
+            auto* container = static_cast<App::PropertyContainerPy*>(base)
+                                  ->getPropertyContainerPtr();
+            App::Property* prop =
+                container ? container->getPropertyByName(name.c_str()) : nullptr;
+            if (!prop)
+                return errReply("AttributeError",
+                                "'" + std::string(Py_TYPE(base)->tp_name)
+                                    + "' has no property '" + name + "'");
+            // Native setattr's one refusal (PropertyContainerPy::
+            // setCustomAttributes): Immutable.  ReadOnly is the
+            // editor's status, and Python writes it there too.
+            if (prop->testStatus(App::Property::Immutable))
+                return errReply("AttributeError",
+                                "Attribute '" + name + "' of object '"
+                                    + Py_TYPE(base)->tp_name + "' is read-only");
+            PyObject* value = decodeHostValue(table, *v);
+            if (!value)
+                return pyErrorReply();
+            try {
+                prop->setPyObject(value);
+            }
+            catch (...) {
+                Py_DECREF(value);
+                throw;
+            }
+            Py_DECREF(value);
+            return okReply(json());
+        }
+
         if (op == FcxWire::OpCall) {
             // Member-addressed and table-gated: only a declared
             // call-tier member of the handle's type is invocable.
@@ -664,6 +727,18 @@ json dispatchHostOp(HandleTable& table, const json& req)
                                 "method '" + member + "' of '"
                                     + Py_TYPE(base)->tp_name
                                     + "' is not declared for sandbox access");
+            // The write family: declared like any call, but a write to
+            // the document, so the owner-only gate applies.
+            static const char* const writeFamily[] = {
+                "addProperty", "removeProperty", "setPropertyStatus", "setEditorMode"};
+            for (const char* w : writeFamily) {
+                if (member == w) {
+                    json denied = writeGate(w);
+                    if (!denied.is_null())
+                        return denied;
+                    break;
+                }
+            }
             PyObject* callable = PyObject_GetAttrString(base, member.c_str());
             if (!callable)
                 return pyErrorReply();

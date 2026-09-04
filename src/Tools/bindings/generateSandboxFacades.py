@@ -37,6 +37,11 @@ import xml.etree.ElementTree as ET
 # src/App/ExpressionImage/CMakeLists.txt list the same files as deps.
 ANNOTATED_XMLS = [
     "src/App/ComplexGeoDataPy.xml",
+    # PropertyContainer carries setPropertyStatus (the write family);
+    # ExtensionContainer has no annotation of its own and is listed only
+    # so DocumentObject's Father chain reaches PropertyContainer.
+    "src/App/PropertyContainerPy.xml",
+    "src/App/ExtensionContainerPy.xml",
     "src/App/DocumentObjectPy.xml",
     "src/App/DocumentPy.xml",
     "src/Mod/Part/App/TopoShapePy.xml",

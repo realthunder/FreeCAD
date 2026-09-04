@@ -107,7 +107,8 @@ static void raiseFromReply(const json &reply)
 /// extras wire-encoded ("a" = attr/prop name / item key, "k" = call
 /// kwargs).  The call op is member-addressed (docs/ExpressionSandbox.md
 /// sec 7.5): _fcx.op('call', id, member, args, kwargs) -> {"m","a","k"}.
-/// Returns the decoded reply value or raises.
+/// write_prop carries its value as "v": _fcx.op('write_prop', id, name,
+/// value) -> {"a","v"}.  Returns the decoded reply value or raises.
 static PyObject *fcx_op(PyObject *, PyObject *args)
 {
     const char *op = nullptr;
@@ -150,7 +151,7 @@ static PyObject *fcx_op(PyObject *, PyObject *args)
             PyErr_SetString(PyExc_TypeError, err.c_str());
             return nullptr;
         }
-        req["k"] = std::move(v);
+        req[strcmp(op, FcxWire::OpWriteProp) == 0 ? "v" : "k"] = std::move(v);
     }
 
     json reply;

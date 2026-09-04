@@ -108,8 +108,13 @@ public:
     /// `bindingsCbor` is a CBOR-encoded map of name -> wire value
     /// (may be empty).  Runs on the calling thread; the image is
     /// single-threaded, callers serialize through an internal lock.
+    /// `owner`, when given, is the evaluation's principal and the ONE
+    /// object the guest may write (write_prop, addProperty, ...); it
+    /// must also be in the pack, exported by the caller.  Without it
+    /// the evaluation has no principal scope of its own and no writes.
     ImageResult eval(const std::string& source,
-                     const std::vector<unsigned char>& bindingsCbor);
+                     const std::vector<unsigned char>& bindingsCbor,
+                     const App::DocumentObject* owner = nullptr);
 
     /** Evaluate one EXPRESSION-language source in the image on behalf
      * of `owner` (docs/ExpressionSandbox.md 7.3): parses host-side,
