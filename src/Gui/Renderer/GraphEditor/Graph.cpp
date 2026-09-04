@@ -2941,8 +2941,13 @@ void Graph::graphButtons()
     cursorInRenderView &= hasScrollbar ? mousePos.x < (tempWindowPos.x + screenSize.x - ImGui::GetStyle().ScrollbarSize) : true;
     cursorInRenderView &= hasScrollbar ? mousePos.y < (tempWindowPos.y + screenSize.y - ImGui::GetScrollY()) : true;
 
-    // The preview pane: the host's texture, or nothing.
-    ImTextureID previewTexture = _host->preview((int) screenSize[0], (int) screenSize[1]);
+    // The preview pane: the host's texture, or nothing. Asked for in
+    // framebuffer pixels -- the pane's size is in ImGui's logical units,
+    // and a preview rendered at those was upscaled soft under a HiDPI
+    // scale factor.
+    const ImVec2 fbScale = ImGui::GetIO().DisplayFramebufferScale;
+    ImTextureID previewTexture = _host->preview((int) (screenSize[0] * fbScale.x),
+                                                (int) (screenSize[1] * fbScale.y));
     if (previewTexture != ImTextureID_Invalid)
     {
         ImGui::Image(previewTexture, screenSize, ImVec2(0, 1), ImVec2(1, 0));

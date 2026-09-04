@@ -64,9 +64,10 @@ public:
     /// The image names a filename input may pick from: what the
     /// program carries. Empty leaves the field typed only.
     virtual const std::vector<std::string> &imageNames() = 0;
-    /// The preview: its texture at the requested size, or
-    /// ImTextureID_Invalid when there is none (then no preview pane
-    /// is drawn), and its input.
+    /// The preview: its texture at the requested size (in framebuffer
+    /// pixels, the pane's logical size times the display's framebuffer
+    /// scale), or ImTextureID_Invalid when there is none (then no
+    /// preview pane is drawn), and its input.
     virtual ImTextureID preview(int w, int h) = 0;
     virtual void previewMouse(float x, float y, int button, bool down) = 0;
     virtual void previewScroll(float delta) = 0;
