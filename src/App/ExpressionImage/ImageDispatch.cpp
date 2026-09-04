@@ -456,9 +456,124 @@ static json dispatchExec(const json &req)
     return reply;
 }
 
+// ---- rung 2: guest-resident Proxies (FcxWire OpProxyNew / OpProxyCall,
+// ---- docs/Sandbox.md 7.6 G1c), through the prelude's registry ----
+
+/// The wire array under `key` as a tuple of decoded values (handles
+/// become proxies, exactly as eval bindings do); an empty tuple when
+/// absent; nullptr with a Python error on a malformed value.
+static PyObject *decodeArgs(const json &req, const char *key)
+{
+    auto a = req.find(key);
+    if (a == req.end() || !a->is_array())
+        return PyTuple_New(0);
+    PyObject *tuple = PyTuple_New((Py_ssize_t)a->size());
+    if (!tuple)
+        return nullptr;
+    Py_ssize_t i = 0;
+    for (const auto &item : *a) {
+        PyObject *obj = FcxImage::decodeValue(item);
+        if (!obj) {
+            Py_DECREF(tuple);
+            return nullptr;
+        }
+        PyTuple_SET_ITEM(tuple, i++, obj);
+    }
+    return tuple;
+}
+
+/// A hook's result by value, or a MarshalError reply.
+static json valueReply(PyObject *result)
+{
+    json reply;
+    json value;
+    std::string err;
+    if (!FcxImage::encodeValue(result, value, err)) {
+        reply["ok"] = false;
+        reply["exc"] = "MarshalError";
+        reply["msg"] = err;
+        return reply;
+    }
+    reply["ok"] = true;
+    reply["val"] = std::move(value);
+    return reply;
+}
+
+static json dispatchProxyNew(const json &req)
+{
+    const std::string mod = req.value("mod", "");
+    const std::string cls = req.value("cls", "");
+    if (mod.empty() || cls.empty())
+        return protocolError("proxy_new without mod/cls");
+    PyObject *fn = FcxImage::preludeFunction("_proxy_new");
+    if (!fn)
+        return errorReply();
+    PyObject *args = decodeArgs(req, "a");
+    if (!args)
+        return errorReply();
+    PyObject *result = PyObject_CallFunction(fn, "ssOO", mod.c_str(), cls.c_str(), args,
+                                             req.value("alloc", false) ? Py_True : Py_False);
+    Py_DECREF(args);
+    if (!result)
+        return errorReply();
+    json reply = valueReply(result);
+    Py_DECREF(result);
+    return reply;
+}
+
+static json dispatchProxyCall(const json &req)
+{
+    auto id = req.find("id");
+    const std::string member = req.value("m", "");
+    if (id == req.end() || !id->is_number_integer() || member.empty())
+        return protocolError("proxy_call without id/m");
+    PyObject *fn = FcxImage::preludeFunction("_proxy_call");
+    if (!fn)
+        return errorReply();
+    PyObject *args = decodeArgs(req, "a");
+    if (!args)
+        return errorReply();
+    PyObject *kwargs = nullptr;
+    auto k = req.find("k");
+    if (k != req.end() && k->is_object()) {
+        kwargs = FcxImage::decodeValue(*k);
+        if (!kwargs) {
+            Py_DECREF(args);
+            return errorReply();
+        }
+    }
+    else
+        kwargs = PyDict_New();
+    PyObject *result = PyObject_CallFunction(fn, "KsOO", (unsigned long long)id->get<uint64_t>(),
+                                             member.c_str(), args, kwargs);
+    Py_DECREF(args);
+    Py_DECREF(kwargs);
+    if (!result)
+        return errorReply();
+    json reply = valueReply(result);
+    Py_DECREF(result);
+    return reply;
+}
+
+/// "pd": proxies whose host stand-in died since the last request.
+static void applyProxyDrops(const json &req)
+{
+    auto pd = req.find("pd");
+    if (pd == req.end() || !pd->is_array() || pd->empty())
+        return;
+    PyObject *fn = FcxImage::preludeFunction("_proxy_drop");
+    PyObject *ids = fn ? FcxImage::decodeValue(*pd) : nullptr;
+    PyObject *r = ids ? PyObject_CallFunction(fn, "O", ids) : nullptr;
+    Py_XDECREF(ids);
+    Py_XDECREF(r);
+    if (PyErr_Occurred())
+        PyErr_Clear();
+}
+
 json dispatch(const json &req)
 {
     json reply;
+    applyProxyDrops(req);
     auto op = req.find("op");
     if (op == req.end() || !op->is_string())
         reply = protocolError("request without op");
@@ -466,6 +581,10 @@ json dispatch(const json &req)
         reply = dispatchEval(req);
     else if (op->get_ref<const std::string &>() == FcxWire::OpExec)
         reply = dispatchExec(req);
+    else if (op->get_ref<const std::string &>() == FcxWire::OpProxyNew)
+        reply = dispatchProxyNew(req);
+    else if (op->get_ref<const std::string &>() == FcxWire::OpProxyCall)
+        reply = dispatchProxyCall(req);
     else
         reply = protocolError("unknown op");
     if (PyErr_Occurred())

@@ -34,8 +34,12 @@
 #include <Base/VectorPy.h>
 
 #include "ExpressionImage/FcxWire.h"
+#include "ExpressionGuestProxy.h"
 #include "ExpressionImageBridge.h"
 #include "ExpressionSecurityRuntime.h"
+#include "Extension.h"
+#include "ExtensionContainer.h"
+#include "ExtensionContainerPy.h"
 #include "PropertyContainerPy.h"
 #ifdef FC_EXPR_PYODIDE_HOST
 #include "ExpressionPyodide.h"
@@ -125,6 +129,58 @@ const FacadeMember* facadeMemberLookup(PyTypeObject* type, const char* member)
     return nullptr;
 }
 
+/** Extension methods (Part::AttachExtension's positionBySupport on a
+ * Draft Wire) are injected per INSTANCE by ExtensionContainerPy's
+ * attribute lookup and never appear in the type's mro, so a declared
+ * member is looked up on the type first and then on each extension's
+ * own binding type.  Caller holds the GIL.
+ */
+static const FacadeMember* memberLookupOn(PyObject* base, const char* member)
+{
+    if (const FacadeMember* m = facadeMemberLookup(Py_TYPE(base), member))
+        return m;
+    if (!PyObject_TypeCheck(base, &App::ExtensionContainerPy::Type))
+        return nullptr;
+    auto* container = static_cast<App::ExtensionContainerPy*>(base)->getExtensionContainerPtr();
+    if (!container)
+        return nullptr;
+    for (auto it = container->extensionBegin(); it != container->extensionEnd(); ++it) {
+        PyObject* ext = it->second->getExtensionPyObject();
+        if (!ext) {
+            PyErr_Clear();
+            continue;
+        }
+        const FacadeMember* m = facadeMemberLookup(Py_TYPE(ext), member);
+        Py_DECREF(ext);
+        if (m)
+            return m;
+    }
+    return nullptr;
+}
+
+/// The facade keys of the object's extensions that have one (the
+/// handle's "ext"), so the guest composes its proxy class from them.
+static json extensionFacadeKeys(PyObject* obj)
+{
+    json keys = json::array();
+    if (!PyObject_TypeCheck(obj, &App::ExtensionContainerPy::Type))
+        return keys;
+    auto* container = static_cast<App::ExtensionContainerPy*>(obj)->getExtensionContainerPtr();
+    if (!container)
+        return keys;
+    for (auto it = container->extensionBegin(); it != container->extensionEnd(); ++it) {
+        PyObject* ext = it->second->getExtensionPyObject();
+        if (!ext) {
+            PyErr_Clear();
+            continue;
+        }
+        if (const char* fc = facadeKeyFor(Py_TYPE(ext)))
+            keys.push_back(fc);
+        Py_DECREF(ext);
+    }
+    return keys;
+}
+
 /** Bound method of an annotated call-tier member?  Then it crosses as
  * a bound-member handle on its base object ({"t":"h","id":<base>,
  * "fc":...,"m":<member>}): the image resolves the facade method on the
@@ -152,7 +208,7 @@ static bool boundDeclaredMethod(PyObject* obj, PyObject** self, std::string& nam
         return false;
     if (!*self || name.empty() || PyModule_Check(*self))
         return false;
-    const FacadeMember* m = facadeMemberLookup(Py_TYPE(*self), name.c_str());
+    const FacadeMember* m = memberLookupOn(*self, name.c_str());
     return m && m->kind == FacadeKind::Method;
 }
 
@@ -330,6 +386,10 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
         if (allStringKeys)
             return map;
     }
+    // a Proxy that lives in the guest: its stand-in crosses back as the
+    // guest's own instance, never as a handle on the stand-in
+    else if (isGuestProxy(obj))
+        return {{FcxWire::TagKey, FcxWire::TagGuestProxy}, {"id", guestProxyId(obj)}};
     {
         PyObject* self = nullptr;
         std::string member;
@@ -340,6 +400,9 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
                       {"m", member}};
             if (const char* fc = facadeKeyFor(Py_TYPE(self)))
                 h["fc"] = fc;
+            json ext = extensionFacadeKeys(self);
+            if (!ext.empty())
+                h["ext"] = std::move(ext);
             return h;
         }
     }
@@ -349,6 +412,9 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
               {"ty", Py_TYPE(obj)->tp_name}};
     if (const char* fc = facadeKeyFor(Py_TYPE(obj)))
         h["fc"] = fc;
+    json ext = extensionFacadeKeys(obj);
+    if (!ext.empty())
+        h["ext"] = std::move(ext);
     return h;
 }
 
@@ -522,6 +588,11 @@ PyObject* decodeHostValue(const HandleTable& table, const json& v)
             Py_INCREF(obj);
             return obj;
         }
+    }
+    else if (t == FcxWire::TagGuestProxy) {
+        // the guest's Proxy descriptor (write_prop Proxy, a proxy_new
+        // reply): the host stand-in, one per guest proxy
+        return makeGuestProxy(v);
     }
 bad:
     PyErr_SetString(PyExc_ValueError, "malformed typed wire value");
@@ -813,7 +884,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
             // The closed table is the whole reachable surface: an
             // undeclared member is a protocol error, never a getattr
             // (docs/ExpressionSandbox.md sec 7.5).
-            const FacadeMember* fm = facadeMemberLookup(Py_TYPE(base), name.c_str());
+            const FacadeMember* fm = memberLookupOn(base, name.c_str());
             if (!fm || fm->kind != FacadeKind::Attribute)
                 return errReply("ProtocolError",
                                 "member '" + name + "' of '"
@@ -943,8 +1014,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
             if (m == req.end() || !m->is_string())
                 return errReply("ProtocolError", "call without a member");
             const std::string& member = m->get_ref<const std::string&>();
-            const FacadeMember* fm =
-                facadeMemberLookup(Py_TYPE(base), member.c_str());
+            const FacadeMember* fm = memberLookupOn(base, member.c_str());
             if (!fm || fm->kind != FacadeKind::Method)
                 return errReply("ProtocolError",
                                 "method '" + member + "' of '"

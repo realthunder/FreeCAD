@@ -149,6 +149,33 @@ public:
      */
     ImageResult exec(const std::string& source, const std::string& module = std::string());
 
+    /** Rung 2 (docs/Sandbox.md 7.6, G1c): a scripted object's Proxy
+     * living in the guest.  proxyNew imports `module` and calls
+     * `cls(*args)` there -- `obj.Proxy = self` inside it crosses as
+     * write_prop and installs the host stand-in (ExpressionGuestProxy.h)
+     * -- or, with `alloc`, only allocates the instance (the Restore
+     * path); the value is the stand-in (decodeResult), or None when the
+     * class never installed itself.  proxyCall runs hook `hook` of
+     * proxy `id` with the host arguments (a document object crosses as
+     * a handle) and returns its result by value; it is what a stand-in's
+     * hook attributes do.  `owner` is the object the guest may write.
+     * Both nest: a guest hook that writes a property runs the host's
+     * onChanged inside the bridge op, and that hook's proxyCall is a
+     * round trip inside the round trip.
+     */
+    ImageResult proxyNew(const std::string& module,
+                         const std::string& cls,
+                         PyObject* args,
+                         bool alloc,
+                         const App::DocumentObject* owner);
+    ImageResult proxyCall(uint64_t id,
+                          const std::string& hook,
+                          PyObject* args,
+                          PyObject* kwargs,
+                          const App::DocumentObject* owner);
+    /// A stand-in died: the guest drops the proxy with the next request.
+    void dropProxy(uint64_t id);
+
     /** Decode the value of a successful result into a new host PyObject
      * reference (nullptr on failure).  Handles in the reply resolve
      * against the live table, so call this BEFORE clearHandles().  The
@@ -189,6 +216,8 @@ public:
     {
         std::size_t evals = 0;
         std::size_t handles = 0;
+        /// host->guest Proxy hook calls (proxyNew and proxyCall)
+        std::size_t proxyCalls = 0;
         std::map<std::string, std::size_t> ops;
     };
     Stats stats() const;

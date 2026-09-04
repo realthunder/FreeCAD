@@ -442,6 +442,25 @@ public:
     {
         if (!live)
             return Outcome::Failed;
+        // Nested inside a bridge op (rung 2: a guest hook's write runs a
+        // host hook whose Proxy is in the guest again): the Locker is
+        // re-entrant and a wasm export may be called from a native
+        // callback; the budget, the interrupt signal and the microtask
+        // checkpoint belong to the outermost call only.
+        struct Depth
+        {
+            int& d;
+            explicit Depth(int& v)
+                : d(v)
+            {
+                ++d;
+            }
+            ~Depth()
+            {
+                --d;
+            }
+        } depthGuard(depth);
+        const bool outer = depth == 1;
         v8::Locker locker(isolate);
         v8::Isolate::Scope isolateScope(isolate);
         v8::HandleScope handleScope(isolate);
@@ -484,19 +503,25 @@ public:
             }
             interruptOn = budgetMs > 0;
         }
-        signal.store(0);
-        if (budgetMs > 0)
-            watchdog.arm(budgetMs, budgetMs + std::max(graceMs, 0));
+        if (outer) {
+            signal.store(0);
+            if (budgetMs > 0)
+                watchdog.arm(budgetMs, budgetMs + std::max(graceMs, 0));
+        }
         const bool called = callFn.Get(isolate)->Call(ctx, undef, 2, callArgs).ToLocal(&result);
-        const int fired = watchdog.disarm();
+        const int fired = outer ? watchdog.disarm() : -1;
         // A soft signal the guest did not get to consume must not greet
         // the next call (the guest zeroes it when it does consume it).
-        signal.store(0);
+        if (outer)
+            signal.store(0);
         if (!called) {
             if (tc.HasTerminated()) {
-                isolate->CancelTerminateExecution();
-                FC_WARN("pyodide guest terminated after " << (budgetMs + std::max(graceMs, 0))
-                        << " ms; the runtime is dropped");
+                // nested: the outer frame is terminating too and cancels
+                if (outer) {
+                    isolate->CancelTerminateExecution();
+                    FC_WARN("pyodide guest terminated after " << (budgetMs + std::max(graceMs, 0))
+                            << " ms; the runtime is dropped");
+                }
                 return Outcome::Terminated;
             }
             report(tc, "fcx call");
@@ -522,8 +547,10 @@ public:
         reply.assign(mem + rp + 4, mem + rp + 4 + n);
         guestFree(ctx, result);
         // Let the guest's own housekeeping (proxy finalizers, deferred
-        // work) run now rather than pile up.
-        isolate->PerformMicrotaskCheckpoint();
+        // work) run now rather than pile up -- outermost only, never
+        // from inside a bridge op's native frame.
+        if (outer)
+            isolate->PerformMicrotaskCheckpoint();
         return fired >= 0 ? Outcome::Interrupted : Outcome::Ok;
     }
 
@@ -604,6 +631,8 @@ private:
     /// The reply pending between the host_call and host_fetch halves of
     /// one bridge op (ExpressionWasmtimeRuntime.cpp has the same).
     std::vector<uint8_t> pendingReply;
+    /// round trips in flight (2 or more: nested inside a bridge op)
+    int depth = 0;
     v8::Global<v8::Function> interruptSetter;
     v8::Global<v8::Value> interruptArray;
     bool interruptOn = false;

@@ -19,6 +19,7 @@
 Returns True if attachment calculation was successful, false if object is not attached and Placement wasn't updated,
 and raises an exception if attachment calculation fails.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name = "changeAttacherType">
       <Documentation>

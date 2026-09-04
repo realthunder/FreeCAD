@@ -95,7 +95,7 @@ if(BUILD_EXPR_IMAGE_HOST)
                             "(needs the wasmtime C API; docs/ExpressionImage.md)")
     endif()
     set(ExpressionImageHost_SRC ExpressionImageHost.cpp ExpressionImageBridge.cpp
-                                ExpressionImageRuntime.h)
+                                ExpressionGuestProxy.cpp ExpressionImageRuntime.h)
     # Lets ExpressionEvaluator.cpp route evaluation into the image; every
     # other TU ignores it, and no header depends on it (no ABI edge).
     add_definitions(-DFC_EXPR_IMAGE_HOST)
@@ -439,6 +439,7 @@ SET(Document_HPP_SRCS
     DocumentObserverPython.h
     Expression.h
     ExpressionEvaluator.h
+    ExpressionGuestProxy.h
     ExpressionImageBridge.h
     ExpressionImageHost.h
     ExpressionSecurity.h

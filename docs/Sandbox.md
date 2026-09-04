@@ -299,6 +299,32 @@ allowed.  The read path never enters host Python
 (`read_prop` is answered from the C++ property system); host CPython
 runs only for members annotated `call`.  Arguments validate against the
 XML-declared signature; a sandbox callable is never a valid argument.
+Rung 2 (2026-09-04, G1c, sec 7.6): two more host->guest ops and one
+value.  `proxy_new {mod, cls, a, alloc?}` imports a class in the guest
+and constructs it -- `obj.Proxy = self` inside `__init__` is caught by
+the proxy's `__setattr__`, which registers the instance in the guest's
+registry and sends `write_prop Proxy` with the descriptor
+`{"t":"gproxy", id, mod, cls, hooks}`; the host decodes that into the
+STAND-IN (`ExpressionGuestProxy.h`), one per guest proxy, and the
+Proxy property holds it.  `proxy_call {id, m, a, k?}` runs hook `m` of
+the registered instance with the decoded arguments (the object rides
+as a handle) and returns the result by value; the stand-in's hook
+attributes are forwarders that do exactly this, and the OWNER of the
+call is the document object in the first argument, so the hook may
+write it.  `gproxy` also crosses host->guest as `{"t":"gproxy", id}`
+(an `obj.Proxy` read resolves to the guest instance) and any
+host->guest request may carry `"pd":[ids]`, stand-ins that died.  A
+handle whose object carries extensions names their facades in `"ext"`
+(`Part.AttachExtension` on a Draft Wire); the guest composes the proxy
+class from the type's facade plus theirs, and the host looks a member
+up on the container's extension types after the type's own MRO, since
+extension methods are injected per instance and never appear in it.
+Round trips NEST: a guest hook's `write_prop` runs the host's
+`onChanged`, whose hook is a `proxy_call` inside the pending bridge op
+(`ImageHost::Private::Transaction` keeps a depth, restores the outer
+owner, flushes releases and performs a requested reset only at the
+outermost level; wasmtime enters the store through the CALLER's
+context while nested, the pyodide runtime arms the budget once).
 
 The fixed layout (2026-09-04, step 7 of the coding order): a bare
 `read_prop`/`get_attr` with a name -- 2738 of the 3575 hops in the
@@ -408,7 +434,8 @@ execute` sets the path on the host after the value returns.
 
 Python: `FreeCAD.ExpressionSandbox` -- `routed`, `setRouting`,
 `available`, `imageInfo`, `evaluate`, `evaluateNative`, `evalCount`,
-`stats`, `resetStats`, `reset`, `pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
+`stats`, `resetStats`, `reset`, `proxyNew`, `proxyInfo` (rung 2, 3.2),
+`pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
 `pyodideAbi`; constants `OptionCallFrame`, `OptionPythonMode`.
 
 ## 4. Runtimes **[built]**
@@ -1078,6 +1105,41 @@ equal.
    for a document object.  Recommendation: the former; the ruling
    stands.
 
+**G1c BUILT 2026-09-04, steps (a)-(e); (f) the Restore route remains.**
+Built as sized (3.2): the guest registry and `proxy_new`/`proxy_call`,
+the `GuestProxy` stand-in (a per-class heap type named after the guest
+class, so `Save` is untouched and writes `<Python module=
+"draftobjects.wire" class="Wire">`), nested transactions on both
+runtimes, extension facades (`AttachExtensionPy.xml` annotated;
+`"ext"` on handles).  `FeaturePythonImp` did not change: the stand-in
+exposes exactly the hooks the guest class defines plus `dumps`/`loads`
+(for a class without its own, the guest answers as the host would
+natively: `__getstate__`/`__setstate__` when defined, else the instance
+`__dict__`).  Gates: `guestProxyHooksNest` (both runtimes) -- a class
+pushed by `exec`, constructed in the guest, its `execute()` doubling a
+property through `write_prop` while the host's `onChanged` reaches the
+guest again INSIDE that op, the log order `Proxy, Width, execute,
+Width, after` exactly the native order, `dumps`/`loads` through the
+stand-in; `draftWireInGuest` (pyodide) -- `Draft.make_wire` natively
+against a `Part::FeaturePython` twin whose `Wire` Proxy was constructed
+in the guest from the bundled wheel, the same three points written
+from the host: **BRep byte-identical**, `Points`/`Start`/`End`/
+`Length`/`Area`/`Closed`/`MakeFace`/Proxy module, class and `dumps()`
+equal, the saved `<Python>` element equal, the Shape arrived through
+`write_prop`.  Measured on that Wire: 11 proxy calls (construction,
+the hooks the host fired for the writes, `execute`, its nested
+`onChanged`s, two `dumps`) and 62 bridge hops -- `read_prop` 25,
+`call` 15, `write_prop` 8, `get_attr` 6, `mod_call` 6, `bool` 2 --
+against the ~45 hops + 7 nested calls sized above: the `call` count is
+the `addProperty` calls of `Wire.__init__` (12) that the sizing left
+out, the rest lands where estimated.  Still open from the sizing: (f)
+`PropertyPythonObject::Restore` still imports the module on the host
+(sec 13); the two decisions above; `obj.Proxy.<attr>` reads from HOST
+Python (Draft's `get_type` reads `Proxy.Type`) have no forwarder yet --
+a stand-in `__getattr__` over a `proxy_get` op when G1d needs it; a
+guest reset orphans live stand-ins (their hooks raise
+`ReferenceError`, never a silent new instance).
+
 ### 7.7 Decisions, numbered
 
 1. `.ui` as the form language -- amended: the authoring format; the
@@ -1214,9 +1276,9 @@ Non-ASCII object names occur in real files.  Rig:
     --------------------------------------------  -----   ----------------------------------
     tests/src/App/ExpressionSecurity.cpp            11    catalog, hash, grant store
     tests/src/App/ExpressionSecurityRuntime.cpp      9    resolve, scopes, pending, audit
-    tests/src/App/ExpressionImageHost.cpp           60    acceptance 6, bench 6 (disabled),
-                                                          bridge 8, budget 4, eval 18 (the
-                                                          G1a and G1b gates among them),
+    tests/src/App/ExpressionImageHost.cpp           62    acceptance 6, bench 6 (disabled),
+                                                          bridge 8, budget 4, eval 20 (the
+                                                          G1a, G1b and G1c gates among them),
                                                           host 9, routing 9
     tests/src/App/ExpressionPyodide.cpp             10    layout, verify, scoping, offer
     src/Mod/Test/SandboxPyodide.py                   2    the offer end to end
@@ -1266,9 +1328,10 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
 (2026-09-03).
 
 1. **G1** -- Draft's App side in the guest, four stages (7.6): G1a
-   the surface and G1b the wheel and loader DONE 2026-09-04; G1c rung
-   2 for one principal (one Draft Wire `execute()` byte-identical) and
-   G1d the Draft and BIM test documents with routing ON remain.
+   the surface, G1b the wheel and loader, G1c rung 2 for one principal
+   (one Draft Wire `execute()` byte-identical from a guest Proxy) DONE
+   2026-09-04 but for the Restore route; G1d the Draft and BIM test
+   documents with routing ON remains, and needs the two G1c decisions.
 2. **G2** -- U1 + U2 + U7: Draft and BIM register from the guest; the
    subset shim.  No dependency on G1; in parallel if hands allow.
 3. **Probe A** -- Coin and pivy to wasm: compile the Coin fork with emcc
@@ -1332,6 +1395,15 @@ sockets, any network for the reference image, a webview escape hatch.
 - Windows and macOS path handling in the pyodide scoping is by
   construction only; nothing ran there.
 - `pre-commit` and `black` are not on this box's PATH.
+- The WASI stdlib slice has no `importlib`: guest prelude code imports
+  with `__import__` and walks dotted names by hand.
+- `FeaturePythonT::Proxy` is private; tests reach it through
+  `getPropertyByName("Proxy")`.  A `PropertyFloat::setValue` with the
+  value already held fires no `onChanged`.
+- A stand-in decoded twice must be the SAME object (the `write_prop
+  Proxy` path and the `proxy_new` reply both carry the descriptor): a
+  duplicate dying would drop a proxy still in use, hence the live table
+  in `ExpressionGuestProxy.cpp`.
 - Two pre-existing, non-security bugs noted in passing and not fixed:
   `calc()`'s non-inplace `OP_MOD` branch also calls
   `PyNumber_InPlaceRemainder`; `ObjectIdentifier::Component::del`
@@ -1343,7 +1415,10 @@ sockets, any network for the reference image, a webview escape hatch.
   `PyImport_ImportModule` on a document-chosen module name
   (`PropertyPythonObject.cpp:379`) and `Base::Type::importModule`'s
   type-string import (`Type.cpp:85`), both at document OPEN, before any
-  expression runs.  Rung 2 is where they close.
+  expression runs.  Rung 2 is where they close: G1c built the stand-in
+  and `proxy_new alloc` for it (7.6); the `Restore` route itself --
+  routing on, module the guest can import, stand-in instead of a host
+  import, fail closed otherwise -- is G1c step (f), not built.
 - The GUI live expression editors evaluate as session, unconfined.
 - No memory ceiling for a guest.
 - Addon principal granularity (per addon, per file?) is still open.

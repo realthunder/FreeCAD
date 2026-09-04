@@ -36,6 +36,7 @@
 #include "ExpressionEvaluator.h"
 
 #ifdef FC_EXPR_IMAGE_HOST
+#include "ExpressionGuestProxy.h"
 #include "ExpressionImageHost.h"
 #endif
 #ifdef FC_EXPR_PYODIDE_HOST
@@ -219,6 +220,69 @@ PyObject* resetFunc(PyObject*, PyObject*)
     Py_Return;
 }
 
+// ---- rung 2 (docs/Sandbox.md 7.6, G1c): a scripted object's Proxy in
+// the guest.  proxyNew(module, class, *args) constructs it there -- the
+// class's `obj.Proxy = self` installs the host stand-in -- and returns
+// the stand-in (None when the class never installed itself);
+// proxyInfo(proxy) describes a stand-in.
+
+PyObject* proxyNewFunc(PyObject*, PyObject* args)
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    if (PyTuple_GET_SIZE(args) < 2 || !PyUnicode_Check(PyTuple_GET_ITEM(args, 0))
+            || !PyUnicode_Check(PyTuple_GET_ITEM(args, 1))) {
+        PyErr_SetString(PyExc_TypeError, "proxyNew(module, class, *args)");
+        return nullptr;
+    }
+    const char* module = PyUnicode_AsUTF8(PyTuple_GET_ITEM(args, 0));
+    const char* cls = PyUnicode_AsUTF8(PyTuple_GET_ITEM(args, 1));
+    PyObject* rest = PyTuple_GetSlice(args, 2, PyTuple_GET_SIZE(args));
+    if (!rest)
+        return nullptr;
+    const App::DocumentObject* owner = nullptr;
+    if (PyTuple_GET_SIZE(rest) > 0
+            && PyObject_TypeCheck(PyTuple_GET_ITEM(rest, 0), &DocumentObjectPy::Type))
+        owner = static_cast<DocumentObjectPy*>(PyTuple_GET_ITEM(rest, 0))->getDocumentObjectPtr();
+    auto& host = ExpressionSandbox::ImageHost::instance();
+    ExpressionSandbox::ImageResult r = host.proxyNew(module, cls, rest, false, owner);
+    Py_DECREF(rest);
+    if (!r.ok) {
+        PyErr_Format(PyExc_RuntimeError, "%s: %s", r.excType.c_str(), r.message.c_str());
+        return nullptr;
+    }
+    PyObject* value = host.decodeResult(r);
+    if (!value && !PyErr_Occurred())
+        PyErr_SetString(PyExc_RuntimeError, "proxy_new returned an undecodable value");
+    return value;
+#else
+    (void)args;
+    PyErr_SetString(PyExc_RuntimeError, "this build has no sandbox host");
+    return nullptr;
+#endif
+}
+
+PyObject* proxyInfoFunc(PyObject*, PyObject* args)
+{
+    PyObject* obj = nullptr;
+    if (!PyArg_ParseTuple(args, "O", &obj))
+        return nullptr;
+#ifdef FC_EXPR_IMAGE_HOST
+    if (!ExpressionSandbox::isGuestProxy(obj))
+        Py_RETURN_NONE;
+    Py::Dict info;
+    info.setItem("id", Py::Long(static_cast<unsigned long long>(ExpressionSandbox::guestProxyId(obj))));
+    PyObject* mod = PyObject_GetAttrString(obj, "__module__");
+    info.setItem("module", Py::String(mod && PyUnicode_Check(mod) ? PyUnicode_AsUTF8(mod) : ""));
+    Py_XDECREF(mod);
+    if (PyErr_Occurred())
+        PyErr_Clear();
+    info.setItem("class", Py::String(Py_TYPE(obj)->tp_name));
+    return Py::new_reference_to(info);
+#else
+    Py_RETURN_NONE;
+#endif
+}
+
 // ---- the pyodide bootstrap facts (docs/PyodideHost.md sec 12), for the
 // host installer freecad.pyodide: what this binary agrees to run, and
 // where it keeps things.
@@ -323,6 +387,14 @@ PyMethodDef Methods[] = {
      "  How many guest->host hops (read_prop, get_attr, call, get_item,"
      " len, release, pkg.missing) a workload really makes; what prices a"
      " snapshot op before one is designed."},
+    {"proxyNew", proxyNewFunc, METH_VARARGS,
+     "proxyNew(module, class, *args) -> stand-in | None -- construct a"
+     " scripted object's Proxy IN THE SANDBOX GUEST (rung 2): the class's"
+     " `obj.Proxy = self` installs the returned stand-in, whose hooks"
+     " (execute, onChanged, ...) forward to the guest."},
+    {"proxyInfo", proxyInfoFunc, METH_VARARGS,
+     "proxyInfo(proxy) -> {'id', 'module', 'class'} | None -- describe a"
+     " guest Proxy stand-in; None for any other object."},
     {"resetStats", resetStatsFunc, METH_NOARGS,
      "resetStats() -- zero the stats() counters (handles stay live)."},
     {"reset", resetFunc, METH_NOARGS,

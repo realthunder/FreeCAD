@@ -2682,3 +2682,249 @@ TEST_F(ExpressionImageEvalTest, tupleCrossesIntoTheImageAsTuple)
                   .get<std::string>(), "tuple");
     table.clear();
 }
+
+// ---- rung 2 (docs/Sandbox.md 7.6, G1c): a scripted object's Proxy
+// ---- lives in the guest; the host's Proxy property holds a stand-in
+// ---- whose hooks cross, and a hook's write runs the host's onChanged,
+// ---- whose hook crosses again -- a round trip inside a round trip ----
+
+#include <App/ExpressionGuestProxy.h>
+#include <App/PropertyPythonObject.h>
+#include <Base/Writer.h>
+
+TEST_F(ExpressionImageEvalTest, guestProxyHooksNest)
+{
+    auto& host = ImageHost::instance();
+    // A scripted-object class pushed into the guest: __init__ installs
+    // itself as the Proxy, execute() writes a property (write_prop),
+    // onChanged records what changed -- state on the instance, in the
+    // guest, exactly as a Draft object keeps its props_changed list.
+    auto r = host.exec(
+        "class Probe:\n"
+        "    def __init__(self, obj):\n"
+        "        self.log = []\n"
+        "        obj.Proxy = self\n"
+        "    def execute(self, obj):\n"
+        "        self.log.append('execute')\n"
+        "        obj.Width = obj.Width * 2\n"
+        "        self.log.append('after')\n"
+        "    def onChanged(self, obj, prop):\n"
+        "        self.log.append('changed:' + prop)\n"
+        "    def dumps(self):\n"
+        "        return {'log': list(self.log)}\n"
+        "    def loads(self, state):\n"
+        "        self.log = list(state['log'])\n",
+        "fcxprobe");
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    host.resetStats();
+
+    auto* proxyProp = Base::freecad_dynamic_cast<App::PropertyPythonObject>(
+        obj->getPropertyByName("Proxy"));
+    ASSERT_NE(proxyProp, nullptr);
+    PyObject* standIn = nullptr;
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* py = obj->getPyObject();
+        PyObject* args = Py_BuildValue("(O)", py);
+        Py_DECREF(py);
+        auto n = host.proxyNew("fcxprobe", "Probe", args, false, obj);
+        Py_DECREF(args);
+        ASSERT_TRUE(n.ok) << n.excType << ": " << n.message;
+        standIn = host.decodeResult(n);
+        ASSERT_NE(standIn, nullptr);
+        ASSERT_TRUE(App::ExpressionSandbox::isGuestProxy(standIn));
+        // one stand-in per guest proxy: the Proxy property holds this one
+        EXPECT_EQ(proxyProp->getValue().ptr(), standIn);
+        // and it reads as the guest class, for PropertyPythonObject::Save
+        PyObject* mod = PyObject_GetAttrString(standIn, "__module__");
+        ASSERT_NE(mod, nullptr);
+        EXPECT_STREQ(PyUnicode_AsUTF8(mod), "fcxprobe");
+        Py_DECREF(mod);
+        EXPECT_STREQ(Py_TYPE(standIn)->tp_name, "Probe");
+        // exactly the hooks the class defines, plus dumps/loads
+        EXPECT_TRUE(PyObject_HasAttrString(standIn, "execute"));
+        EXPECT_TRUE(PyObject_HasAttrString(standIn, "onChanged"));
+        EXPECT_TRUE(PyObject_HasAttrString(standIn, "dumps"));
+        EXPECT_FALSE(PyObject_HasAttrString(standIn, "onDocumentRestored"));
+        EXPECT_FALSE(PyObject_HasAttrString(standIn, "mustExecute"));
+    }
+
+    // The recompute: FeaturePythonT::execute -> stand-in -> guest
+    // execute() -> write_prop Width -> host onChanged -> stand-in ->
+    // guest onChanged, INSIDE the outer round trip.
+    auto width = Base::freecad_dynamic_cast<App::PropertyFloat>(obj->getPropertyByName("Width"));
+    ASSERT_NE(width, nullptr);
+    width->setValue(10.5);  // a real change: onChanged('Width') crosses on its own
+    obj->touch();
+    doc->recompute();
+    EXPECT_FALSE(obj->isError());
+    EXPECT_DOUBLE_EQ(width->getValue(), 21.0);
+
+    // the guest's state through dumps(), as Save would read it: the
+    // Proxy install, the property write, then execute's own write
+    // nested between its two marks
+    std::string state;
+    {
+        Base::PyGILStateLocker lock;
+        state = proxyProp->toString();
+    }
+    json j = json::parse(state);
+    ASSERT_TRUE(j.contains("log")) << state;
+    std::vector<std::string> log = j["log"];
+    std::vector<std::string> want = {"changed:Proxy", "changed:Width", "execute",
+                                     "changed:Width", "after"};
+    EXPECT_EQ(log, want);
+    auto st = host.stats();
+    EXPECT_GE(st.proxyCalls, 5u);  // new, 2x onChanged, execute, nested onChanged, dumps
+    EXPECT_GE(st.ops["write_prop"], 2u);  // Proxy, Width
+
+    // loads() through the stand-in restores guest state
+    {
+        Base::PyGILStateLocker lock;
+        proxyProp->fromString("{\"log\": [\"restored\"]}");
+        state = proxyProp->toString();
+    }
+    EXPECT_EQ(json::parse(state)["log"], json::array({"restored"}));
+
+    {
+        Base::PyGILStateLocker lock;
+        Py_DECREF(standIn);
+    }
+}
+
+TEST_F(ExpressionImageEvalTest, draftWireInGuest)
+{
+    // The G1c gate: a Draft Wire whose Proxy is constructed in the
+    // guest from the bundled wheel, against one made natively from the
+    // same points -- BRep byte-identical, the properties equal, the
+    // saved <Python> element equal.
+    auto& host = ImageHost::instance();
+    if (host.runtime() != "pyodide")
+        GTEST_SKIP() << "bundled wheels load on the pyodide runtime only";
+    {
+        namespace fs = std::filesystem;
+        bool bundled = false;
+        std::error_code ec;
+        for (const auto& e : fs::directory_iterator(
+                 App::Application::getResourceDir() + "Pyodide/wheels", ec)) {
+            const std::string fn = e.path().filename().string();
+            bundled = bundled || (fn.rfind("fcx_draft-", 0) == 0 && fn.find("-py3-none-any.whl") != std::string::npos);
+        }
+        if (!bundled)
+            GTEST_SKIP() << "no fcx_draft wheel bundled under " << App::Application::getResourceDir()
+                         << "Pyodide/wheels";
+    }
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* draft = PyImport_ImportModule("Draft");
+        if (!draft) {
+            PyErr_Clear();
+            GTEST_SKIP() << "Draft is not importable on the host in this test binary";
+        }
+        Py_DECREF(draft);
+    }
+    using App::ExpressionSecurity::Permission;
+    using App::ExpressionSecurity::Runtime;
+    // Wire.__init__ reads a Draft preference through the draftutils.params
+    // facade (app.query), which is PROMPT for a document principal --
+    // decision 2 of docs/Sandbox.md 7.6 (G1c); granted here.
+    const std::string principal = Runtime::instance().documentPrincipal(doc);
+    Runtime::instance().grant(principal, Permission::AppQuery, "*", true, "session");
+    App::GetApplication().setActiveDocument(doc);
+
+    // 1. the native reference
+    ASSERT_TRUE(hostModule(
+        "fcxwire",
+        "import FreeCAD, Draft\n"
+        "V = FreeCAD.Vector\n"
+        "PTS = [V(0, 0, 0), V(2, 0, 0), V(2, 2, 0)]\n"
+        "native = Draft.make_wire(PTS)\n"
+        "FreeCAD.ActiveDocument.recompute()\n"
+        "def obj(name):\n"
+        "    return FreeCAD.ActiveDocument.getObject(name)\n"
+        "def brep(o):\n"
+        "    return o.Shape.exportBrepToString()\n"
+        "def facts(o):\n"
+        "    return repr((o.Points, o.Start, o.End, o.Length, o.Area, o.Closed, o.MakeFace,\n"
+        "                 type(o.Proxy).__module__, type(o.Proxy).__name__, o.Proxy.dumps()))\n"));
+    std::string nativeName;
+    ASSERT_TRUE(hostEvalStr("__import__('fcxwire').native.Name", nativeName));
+    App::DocumentObject* native = doc->getObject(nativeName.c_str());
+    ASSERT_NE(native, nullptr);
+    EXPECT_FALSE(native->isError());
+
+    // 2. the twin: the same C++ type and extension, the Proxy IN THE GUEST
+    App::DocumentObject* twin = doc->addObject("Part::FeaturePython", "WireGuest");
+    ASSERT_NE(twin, nullptr);
+    std::string ignored;
+    ASSERT_TRUE(hostEvalStr("str(__import__('fcxwire').obj('WireGuest')"
+                            ".addExtension('Part::AttachExtensionPython'))", ignored));
+    host.resetStats();
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* py = twin->getPyObject();
+        PyObject* args = Py_BuildValue("(O)", py);
+        Py_DECREF(py);
+        auto n = host.proxyNew("draftobjects.wire", "Wire", args, false, twin);
+        Py_DECREF(args);
+        ASSERT_TRUE(n.ok) << n.excType << ": " << n.message;
+        PyObject* standIn = host.decodeResult(n);
+        ASSERT_NE(standIn, nullptr);
+        EXPECT_TRUE(App::ExpressionSandbox::isGuestProxy(standIn));
+        Py_DECREF(standIn);
+    }
+    // the writes make_wire does natively, each an onChanged crossing
+    ASSERT_TRUE(hostModule(
+        "fcxwire2",
+        "import FreeCAD, fcxwire\n"
+        "o = fcxwire.obj('WireGuest')\n"
+        "o.Points = fcxwire.PTS\n"
+        "o.Closed = False\n"
+        "o.AttachmentSupport = None\n"
+        "FreeCAD.ActiveDocument.recompute()\n"));
+    EXPECT_FALSE(twin->isError());
+    auto st = host.stats();
+    std::cout << "Draft Wire in the guest: proxy calls " << st.proxyCalls << "; bridge ops:";
+    for (const auto& [k, v] : st.ops)
+        std::cout << " " << k << "=" << v;
+    std::cout << std::endl;
+    EXPECT_GE(st.ops["write_prop"], 1u) << "the Shape must arrive through write_prop";
+
+    // 3. byte-identical
+    std::string brepNative, brepGuest, factsNative, factsGuest;
+    ASSERT_TRUE(hostEvalStr("__import__('fcxwire').brep(__import__('fcxwire').native)", brepNative));
+    ASSERT_TRUE(hostEvalStr("__import__('fcxwire').brep(__import__('fcxwire').obj('WireGuest'))", brepGuest));
+    EXPECT_FALSE(brepNative.empty());
+    EXPECT_EQ(brepNative, brepGuest);
+    ASSERT_TRUE(hostEvalStr("__import__('fcxwire').facts(__import__('fcxwire').native)", factsNative));
+    ASSERT_TRUE(hostEvalStr("__import__('fcxwire').facts(__import__('fcxwire').obj('WireGuest'))", factsGuest));
+    EXPECT_EQ(factsNative, factsGuest);
+
+    // 4. the saved <Python> element: module, class and state, the same
+    {
+        Base::PyGILStateLocker lock;
+        App::Property* pn = native->getPropertyByName("Proxy");
+        App::Property* pg = twin->getPropertyByName("Proxy");
+        ASSERT_NE(pn, nullptr);
+        ASSERT_NE(pg, nullptr);
+        Base::StringWriter wn, wg;
+        wn.setForceXML(true);
+        wg.setForceXML(true);
+        pn->Save(wn);
+        pg->Save(wg);
+        EXPECT_EQ(wn.getString(), wg.getString());
+        EXPECT_NE(wg.getString().find("module=\"draftobjects.wire\" class=\"Wire\""), std::string::npos)
+            << wg.getString();
+    }
+
+    Runtime::instance().grant(principal, Permission::AppQuery, "*", false, "session");
+    Runtime::instance().clearPending(principal, Permission::AppQuery, "*");
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* d = PyImport_GetModuleDict();
+        PyDict_DelItemString(d, "fcxwire2");
+        PyDict_DelItemString(d, "fcxwire");
+        if (PyErr_Occurred())
+            PyErr_Clear();
+    }
+}

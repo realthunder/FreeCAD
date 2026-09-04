@@ -305,6 +305,26 @@ public:
     {
         if (!live)
             return Outcome::Failed;
+        // Nested inside a bridge op (rung 2: a guest hook's write runs a
+        // host hook whose Proxy is in the guest again): the guest is
+        // suspended in host_call, the store must be entered through the
+        // CALLER's context (activeContext), and the budget stays the
+        // outermost call's.
+        struct Depth
+        {
+            int& d;
+            explicit Depth(int& v)
+                : d(v)
+            {
+                ++d;
+            }
+            ~Depth()
+            {
+                --d;
+            }
+        } depthGuard(depth);
+        const bool outer = depth == 1;
+        wasmtime_context_t* cx = activeContext();
         // write the request into guest memory
         wasmtime_val_t args[2], result;
         args[0].kind = WASMTIME_I32;
@@ -312,8 +332,8 @@ public:
         if (!callSimple(funcAlloc, args, 1, &result, 1, "fcx_alloc"))
             return Outcome::Failed;
         uint32_t guestPtr = (uint32_t)result.of.i32;
-        uint8_t* mem = wasmtime_memory_data(context, &memory);
-        size_t memSize = wasmtime_memory_data_size(context, &memory);
+        uint8_t* mem = wasmtime_memory_data(cx, &memory);
+        size_t memSize = wasmtime_memory_data_size(cx, &memory);
         if (!guestPtr || guestPtr + request.size() > memSize) {
             FC_ERR("guest allocation out of range");
             return Outcome::Failed;
@@ -324,10 +344,10 @@ public:
         args[0].of.i32 = (int32_t)guestPtr;
         args[1].kind = WASMTIME_I32;
         args[1].of.i32 = (int32_t)request.size();
-        const int hardMs = epochChecks && budgetMs > 0 ? budgetMs + std::max(graceMs, 0) : 0;
+        const int hardMs = outer && epochChecks && budgetMs > 0 ? budgetMs + std::max(graceMs, 0) : 0;
         if (hardMs > 0) {
             // trap on the first epoch tick; only the watchdog ticks
-            wasmtime_context_set_epoch_deadline(context, 1);
+            wasmtime_context_set_epoch_deadline(cx, 1);
             watchdog.arm(0, hardMs);
         }
         bool ok = callSimple(funcCall, args, 2, &result, 1, "fcx_call");
@@ -335,7 +355,7 @@ public:
         // A tick that landed as the call was returning must not trap the
         // bookkeeping calls below.
         if (hardMs > 0)
-            wasmtime_context_set_epoch_deadline(context, kUnboundedTicks);
+            wasmtime_context_set_epoch_deadline(cx, kUnboundedTicks);
         if (!ok && fired >= 0) {
             FC_WARN("sandbox image terminated after " << hardMs
                     << " ms; the instance is dropped");
@@ -350,8 +370,8 @@ public:
             return Outcome::Failed;
 
         uint32_t replyPtr = (uint32_t)result.of.i32;
-        mem = wasmtime_memory_data(context, &memory);  // may have moved
-        memSize = wasmtime_memory_data_size(context, &memory);
+        mem = wasmtime_memory_data(cx, &memory);  // may have moved
+        memSize = wasmtime_memory_data_size(cx, &memory);
         if (!replyPtr || replyPtr + 4 > memSize) {
             FC_ERR("bad reply pointer");
             return Outcome::Failed;
@@ -415,6 +435,17 @@ private:
     // one bridge op
     std::vector<uint8_t> pendingReply;
 
+    /// round trips in flight (2 or more: nested inside a bridge op)
+    int depth = 0;
+    /// The caller contexts of the bridge ops in progress, innermost
+    /// last: a round trip started from inside one must enter the store
+    /// through the caller's context, not the store's own.
+    std::vector<wasmtime_context_t*> callerStack;
+    wasmtime_context_t* activeContext() const
+    {
+        return callerStack.empty() ? context : callerStack.back();
+    }
+
     static std::string errorText(wasmtime_error_t* err, wasm_trap_t* trap)
     {
         wasm_byte_vec_t text;
@@ -450,7 +481,7 @@ private:
                     wasmtime_val_t* results, size_t nresults, const char* what)
     {
         wasm_trap_t* trap = nullptr;
-        wasmtime_error_t* err = wasmtime_func_call(context, &func, args, nargs,
+        wasmtime_error_t* err = wasmtime_func_call(activeContext(), &func, args, nargs,
                                                    results, nresults, &trap);
         if (err || trap) {
             FC_ERR(what << " failed: " << errorText(err, trap));
@@ -485,7 +516,13 @@ private:
         uint64_t len = (uint32_t)args[1].of.i32;
         if (ptr + len > memSize || !self->bridge)
             return nullptr;
-        self->pendingReply = self->bridge(data + ptr, (size_t)len);
+        // the op may re-enter the guest (a host hook whose Proxy lives
+        // there); that nested round trip must use this caller's context
+        self->callerStack.push_back(ctx);
+        std::vector<uint8_t> reply = self->bridge(data + ptr, (size_t)len);
+        self->callerStack.pop_back();
+        // parked only now: a nested trip's own ops fetched theirs already
+        self->pendingReply = std::move(reply);
         results[0].of.i32 = (int32_t)self->pendingReply.size();
         return nullptr;
     }

@@ -50,6 +50,13 @@ ANNOTATED_XMLS = [
     "src/App/DocumentObjectPy.xml",
     "src/App/GeoFeaturePy.xml",
     "src/App/DocumentPy.xml",
+    # Extensions (G1c): their methods are injected per INSTANCE on the
+    # host, so a handle names its extensions' facades ("ext") and the
+    # guest composes the proxy class; the host looks members up on the
+    # container's extension types after the type's own MRO.
+    "src/App/ExtensionPy.xml",
+    "src/App/DocumentObjectExtensionPy.xml",
+    "src/Mod/Part/App/AttachExtensionPy.xml",
     "src/Mod/Part/App/TopoShapePy.xml",
     "src/Mod/Part/App/TopoShapeEdgePy.xml",
     "src/Mod/Part/App/TopoShapeWirePy.xml",

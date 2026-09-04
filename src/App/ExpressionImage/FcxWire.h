@@ -34,6 +34,19 @@ inline const char* const OpEval = "eval";
 // host pushes workbench Python into the guest before a package loader
 // exists (tests; G1's loader later).  Reply {ok:true} or the error.
 inline const char* const OpExec = "exec";
+// Rung 2 (docs/Sandbox.md 7.6, G1c): a scripted object's Proxy lives in
+// the guest and the host holds a stand-in in the Proxy property.
+// {op:"proxy_new", mod, cls, a:[args], alloc?, owner_h?}: import `mod`,
+// call `cls(*args)` -- or only `cls.__new__(cls)` with alloc, the
+// Restore path -- and reply with the proxy's descriptor (TagGuestProxy
+// below), or null when the class never installed itself as a Proxy.
+// {op:"proxy_call", id, m, a:[args], k?, owner_h?}: call hook `m` of the
+// registered proxy `id` with the decoded args (the object rides as a
+// handle, exactly the native `execute(self, obj)` signature) and reply
+// with the result by value.  Any host->guest request may carry
+// "pd":[ids], proxies whose host stand-in died: the guest drops them.
+inline const char* const OpProxyNew = "proxy_new";
+inline const char* const OpProxyCall = "proxy_call";
 
 // ops, image -> host (mid-eval bridge).  Request fields: "h" = handle
 // id (uint64), "a" = wire-encoded op argument (attr/prop name string
@@ -121,6 +134,13 @@ inline const char* const TagHandle = "h";
 // `shape.ancestorsOfType(v, Part.Edge)` -- crosses as {"t":"ty",
 // "q":"Part.Edge"} and decodes on the host to the declared object
 inline const char* const TagType = "ty";
+// A guest-resident Proxy (rung 2).  Guest -> host, as the value of
+// `write_prop Proxy` or a proxy_new reply: {"t":"gproxy", "id":N,
+// "mod":"draftobjects.wire", "cls":"Wire", "hooks":[names]} -- the host
+// builds the stand-in from it (hooks = the FeaturePython hook names the
+// class defines, plus dumps/loads).  Host -> guest (a Proxy read, an
+// argument): {"t":"gproxy", "id":N} resolves to the registered instance.
+inline const char* const TagGuestProxy = "gproxy";
 // A tuple is NOT a list: the expression engine hands tuples to Enum
 // properties and to tuple(), and collapsing them to lists on the wire
 // loses type identity the same way bool-as-long would (Phase 0 sec

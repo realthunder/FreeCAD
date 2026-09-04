@@ -157,8 +157,80 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     // image->host bridge state: the live handles of the transaction
     HandleTable handles;
     std::size_t evals = 0;
+    std::size_t proxyCalls = 0;
     /// guest->host ops by wire name (ImageHost::stats)
     std::map<std::string, std::size_t> ops;
+
+    /// host->guest calls in flight; 2 or more = nested inside a bridge op
+    int depth = 0;
+    /// a reset asked for while nested: done when the outermost call ends
+    bool resetAfter = false;
+    /// stand-ins that died since the last request (FcxWire "pd")
+    std::vector<uint64_t> proxyDrops;
+
+    /** One host->guest call, possibly NESTED inside a bridge op of an
+     * outer one: a guest execute() writing a property runs the host's
+     * onChanged inside the write_prop op, and that hook's Proxy is in
+     * the guest again (rung 2).  Outermost: apply the previous
+     * transaction's queued releases (the flush DECREFs, so it needs the
+     * GIL -- FreeCAD releases it at init and a bare Py_DECREF here
+     * segfaults; and only when there is an interpreter to lock, since
+     * these entry points are reachable from a test binary that never
+     * started one).  Always: hold this call's releases so the reply
+     * stays decodable (HandleTable::setDeferReleases), make `ownerPy`
+     * the one object writes may touch, and restore the outer owner on
+     * exit.  A reset asked for while nested waits for the outermost
+     * call: the runtime is on the stack below us.
+     */
+    struct Transaction
+    {
+        Private& d;
+        PyObject* prevOwner;
+        Transaction(Private& p, PyObject* ownerPy)
+            : d(p)
+            , prevOwner(p.handles.owner())
+        {
+            if (d.depth == 0 && Py_IsInitialized()) {
+                Base::PyGILStateLocker lock;
+                d.handles.flushDeferred();
+            }
+            d.handles.setDeferReleases(true);
+            d.handles.setOwner(ownerPy);
+            ++d.depth;
+        }
+        ~Transaction()
+        {
+            --d.depth;
+            d.handles.setOwner(prevOwner);
+            if (d.depth == 0 && d.resetAfter) {
+                d.resetAfter = false;
+                d.teardown();
+                d.triedInit = false;
+            }
+        }
+        Transaction(const Transaction&) = delete;
+        Transaction& operator=(const Transaction&) = delete;
+    };
+
+    /// Drop the instance -- now, or when the outermost call returns.
+    void requestReset()
+    {
+        if (depth > 0) {
+            resetAfter = true;
+            return;
+        }
+        teardown();
+        triedInit = false;
+    }
+
+    /// Dead stand-ins ride the next request, whatever its op.
+    void attachDrops(json& req)
+    {
+        if (proxyDrops.empty())
+            return;
+        req["pd"] = proxyDrops;
+        proxyDrops.clear();
+    }
 
     void teardown()
     {
@@ -267,10 +339,17 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         std::vector<uint8_t> bytes;
         resetPending = false;
         const Outcome outcome = rt->roundTrip(request, bytes);
+        // Nested (depth > 1): the outer call is still on the runtime's
+        // stack, so a drop is only recorded here and done by the
+        // outermost Transaction on its way out.
+        const bool nested = depth > 1;
         if (outcome == Outcome::Failed)
             return false;
         if (outcome == Outcome::Terminated) {
-            dropTerminated();
+            if (nested)
+                resetAfter = true;
+            else
+                dropTerminated();
             reply = budgetError("terminated");
             return true;
         }
@@ -278,7 +357,10 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
             // a bridge op asked for a fresh instance (a package to pick
             // up at boot); the reply of THIS trip is still good
             resetPending = false;
-            dropTerminated();
+            if (nested)
+                resetAfter = true;
+            else
+                dropTerminated();
         }
         try {
             reply = json::from_cbor(bytes.begin(), bytes.end());
@@ -300,7 +382,7 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
                 if (rid.is_number_unsigned())
                     handles.release(rid.get<uint64_t>());
         }
-        if (outcome == Outcome::Interrupted) {
+        if (outcome == Outcome::Interrupted && !nested) {
             if (!reply.value("ok", false) && reply.value("exc", "") == "KeyboardInterrupt") {
                 reply = budgetError("interrupted");
             }
@@ -402,6 +484,7 @@ ImageHost::Stats ImageHost::stats() const
     Stats s;
     s.evals = d->evals;
     s.handles = d->handles.created();
+    s.proxyCalls = d->proxyCalls;
     s.ops = d->ops;
     return s;
 }
@@ -410,6 +493,7 @@ void ImageHost::resetStats()
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     d->evals = 0;
+    d->proxyCalls = 0;
     d->ops.clear();
     d->handles.resetCreated();
 }
@@ -417,8 +501,7 @@ void ImageHost::resetStats()
 void ImageHost::reset()
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
-    d->teardown();
-    d->triedInit = false;
+    d->requestReset();
 }
 
 PyObject* ImageHost::decodeResult(const ImageResult& result)
@@ -470,30 +553,24 @@ ImageResult ImageHost::eval(const std::string& source,
     // HandleTable::setDeferReleases).  The flush DECREFs, so it needs
     // the GIL -- FreeCAD releases it at init and a bare Py_DECREF here
     // segfaults.
-    if (Py_IsInitialized()) {
-        // ... and only when there is an interpreter to lock: this entry
-        // point is reachable from a test binary that never started one.
-        Base::PyGILStateLocker lock;
-        d->handles.flushDeferred();
-    }
-    d->handles.setDeferReleases(true);
     // The owner, when the caller names one, is the object writes may
     // touch (HandleTable::setOwner) and the evaluation's principal; its
     // Python face is borrowed against the caller's binding pack, which
     // exported the same object.  No owner: no writes.
-    d->handles.setOwner(nullptr);
+    PyObject* ownerPy = nullptr;
     std::optional<ExpressionSecurity::Runtime::Scope> secScope;
     if (owner && Py_IsInitialized()) {
         Base::PyGILStateLocker lock;
-        PyObject* ownerPy = const_cast<App::DocumentObject*>(owner)->getPyObject();
-        d->handles.setOwner(ownerPy);
+        ownerPy = const_cast<App::DocumentObject*>(owner)->getPyObject();
         Py_DECREF(ownerPy);  // the same object sits in the pack's handle
         secScope.emplace(owner);
     }
+    Private::Transaction tx(*d, ownerPy);
     ++d->evals;
     json req;
     req["op"] = "eval";
     req["src"] = source;
+    d->attachDrops(req);
     if (!bindingsCbor.empty()) {
         try {
             req["bindings"] =
@@ -510,7 +587,7 @@ ImageResult ImageHost::eval(const std::string& source,
     if (!d->roundTrip(json::to_cbor(req), reply)) {
         // a failed round trip may mean a trapped instance; drop it so
         // the next evaluation reinstantiates cleanly
-        reset();
+        d->requestReset();
         res.excType = "ImageTrapped";
         res.message = "image call failed, instance dropped";
         return res;
@@ -537,14 +614,16 @@ ImageResult ImageHost::exec(const std::string& source, const std::string& module
         res.message = "expression sandbox image is not available";
         return res;
     }
+    Private::Transaction tx(*d, nullptr);
     json req;
     req["op"] = "exec";
     req["src"] = source;
     if (!module.empty())
         req["module"] = module;
+    d->attachDrops(req);
     json reply;
     if (!d->roundTrip(json::to_cbor(req), reply)) {
-        reset();
+        d->requestReset();
         res.excType = "ImageTrapped";
         res.message = "image call failed, instance dropped";
         return res;
@@ -615,23 +694,15 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
         return res;
     }
 
-    // one transaction: apply the previous call's queued releases, then
-    // hold this call's so the reply stays decodable (see
-    // HandleTable::setDeferReleases).  The flush DECREFs, so it needs
-    // the GIL -- FreeCAD releases it at init and a bare Py_DECREF here
-    // segfaults.
-    if (Py_IsInitialized()) {
-        // ... and only when there is an interpreter to lock: this entry
-        // point is reachable from a test binary that never started one.
-        Base::PyGILStateLocker lock;
-        d->handles.flushDeferred();
-    }
-    d->handles.setDeferReleases(true);
+    // one transaction (Private::Transaction); the owner is set below,
+    // once its Python face is exported into the pack
+    Private::Transaction tx(*d, nullptr);
     ++d->evals;
     json req;
     req["op"] = "eval";
     req["lang"] = "expr";
     req["src"] = source;
+    d->attachDrops(req);
     // The eval options cross with the request: the image must parse and
     // walk under the same ones, or a python-mode sheet cell and a
     // statement-bearing binding both mean something else in there.
@@ -749,7 +820,7 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
 
     json reply;
     if (!d->roundTrip(json::to_cbor(req), reply)) {
-        reset();
+        d->requestReset();
         res.excType = "ImageTrapped";
         res.message = "image call failed, instance dropped";
         return res;
@@ -765,6 +836,131 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
         res.message = reply.value("msg", "");
     }
     return res;
+}
+
+// ---- rung 2: the guest-resident Proxy (docs/Sandbox.md 7.6, G1c) ----
+
+namespace
+{
+
+/// The positional arguments as a wire array of handles and values.
+json encodeArgs(HandleTable& table, PyObject* args)
+{
+    json a = json::array();
+    if (args && PyTuple_Check(args)) {
+        const Py_ssize_t n = PyTuple_GET_SIZE(args);
+        for (Py_ssize_t i = 0; i < n; ++i)
+            a.push_back(encodeHostValue(table, PyTuple_GET_ITEM(args, i)));
+    }
+    return a;
+}
+
+}  // namespace
+
+ImageResult ImageHost::proxyNew(const std::string& module,
+                                const std::string& cls,
+                                PyObject* args,
+                                bool alloc,
+                                const App::DocumentObject* owner)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    ImageResult res;
+    if (!d->initialize()) {
+        res.excType = "ImageUnavailable";
+        res.message = "expression sandbox image is not available";
+        return res;
+    }
+    Base::PyGILStateLocker lock;
+    PyObject* ownerPy = nullptr;
+    if (owner) {
+        ownerPy = const_cast<App::DocumentObject*>(owner)->getPyObject();
+        Py_DECREF(ownerPy);  // borrowed: the object keeps its Python face
+    }
+    Private::Transaction tx(*d, ownerPy);
+    ExpressionSecurity::Runtime::Scope secScope(owner);
+    ++d->proxyCalls;
+    json req;
+    req["op"] = FcxWire::OpProxyNew;
+    req["mod"] = module;
+    req["cls"] = cls;
+    req["a"] = encodeArgs(d->handles, args);
+    if (alloc)
+        req["alloc"] = true;
+    d->attachDrops(req);
+    json reply;
+    if (!d->roundTrip(json::to_cbor(req), reply)) {
+        d->requestReset();
+        res.excType = "ImageTrapped";
+        res.message = "image call failed, instance dropped";
+        return res;
+    }
+    res.ok = reply.value("ok", false);
+    if (res.ok) {
+        auto val = reply.find("val");
+        res.value = json::to_cbor(val != reply.end() ? *val : json());
+    }
+    else {
+        res.excType = reply.value("exc", "Exception");
+        res.message = reply.value("msg", "");
+    }
+    return res;
+}
+
+ImageResult ImageHost::proxyCall(uint64_t id,
+                                 const std::string& hook,
+                                 PyObject* args,
+                                 PyObject* kwargs,
+                                 const App::DocumentObject* owner)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    ImageResult res;
+    if (!d->initialize()) {
+        res.excType = "ImageUnavailable";
+        res.message = "expression sandbox image is not available";
+        return res;
+    }
+    Base::PyGILStateLocker lock;
+    PyObject* ownerPy = nullptr;
+    if (owner) {
+        // the same PyObject the hook's first argument exports as a
+        // handle, so the write gate's identity check holds
+        ownerPy = const_cast<App::DocumentObject*>(owner)->getPyObject();
+        Py_DECREF(ownerPy);
+    }
+    Private::Transaction tx(*d, ownerPy);
+    ExpressionSecurity::Runtime::Scope secScope(owner);
+    ++d->proxyCalls;
+    json req;
+    req["op"] = FcxWire::OpProxyCall;
+    req["id"] = id;
+    req["m"] = hook;
+    req["a"] = encodeArgs(d->handles, args);
+    if (kwargs && PyDict_Check(kwargs) && PyDict_Size(kwargs) > 0)
+        req["k"] = encodeHostValue(d->handles, kwargs);
+    d->attachDrops(req);
+    json reply;
+    if (!d->roundTrip(json::to_cbor(req), reply)) {
+        d->requestReset();
+        res.excType = "ImageTrapped";
+        res.message = "image call failed, instance dropped";
+        return res;
+    }
+    res.ok = reply.value("ok", false);
+    if (res.ok) {
+        auto val = reply.find("val");
+        res.value = json::to_cbor(val != reply.end() ? *val : json());
+    }
+    else {
+        res.excType = reply.value("exc", "Exception");
+        res.message = reply.value("msg", "");
+    }
+    return res;
+}
+
+void ImageHost::dropProxy(uint64_t id)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    d->proxyDrops.push_back(id);
 }
 
 }  // namespace ExpressionSandbox

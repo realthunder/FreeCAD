@@ -49,6 +49,11 @@ static const char ProxyPrelude[] =
     "        if name in HostHandle.__slots__:\n"
     "            object.__setattr__(self, name, value)\n"
     "        else:\n"
+    // `obj.Proxy = self` (DraftObject.__init__): the instance stays
+    // here, registered; what crosses is its descriptor, from which
+    // the host builds the stand-in (FcxWire TagGuestProxy).
+    "            if name == 'Proxy' and value is not None and not isinstance(value, HostHandle):\n"
+    "                value = _proxy_register(value)\n"
     "            _fcx.op('write_prop', self._id, name, value)\n"
     "    def __bool__(self):\n"
     "        return _fcx.op('bool', self._id)\n"
@@ -120,7 +125,102 @@ static const char ProxyPrelude[] =
     "            setattr(m, n, e)\n"
     "            EXCEPTIONS[n] = e\n"
     "        m._fcx_constants = tuple(spec['constants'])\n"
-    "        sys.modules[modname] = m\n";
+    "        sys.modules[modname] = m\n"
+    // A handle whose object carries extensions (Part::AttachExtension
+    // on a Draft Wire): the extension methods are injected per
+    // instance on the host, so the proxy class is composed from the
+    // type's facade plus each extension's, once per combination.
+    "COMPOSED = {}\n"
+    "def _composed(fc, ext):\n"
+    "    key = (fc, ext)\n"
+    "    cls = COMPOSED.get(key)\n"
+    "    if cls is None:\n"
+    "        bases = []\n"
+    "        base = FACADES.get(fc) if fc else None\n"
+    "        if base is not None:\n"
+    "            bases.append(base)\n"
+    "        for e in ext:\n"
+    "            b = FACADES.get(e)\n"
+    "            if b is not None and b not in bases:\n"
+    "                bases.append(b)\n"
+    "        if not bases:\n"
+    "            bases.append(HostHandle)\n"
+    "        cls = type((fc or 'HostHandle') + '+' + '+'.join(ext), tuple(bases), {'__slots__': ()})\n"
+    "        COMPOSED[key] = cls\n"
+    "    return cls\n"
+    // Rung 2 (docs/Sandbox.md 7.6, G1c): guest-resident Proxies.  The
+    // registry maps a proxy id to the live instance; the id is minted
+    // here and travels in the descriptor the host keeps in its
+    // stand-in, so a stand-in outliving THIS guest (a reset) finds
+    // its proxy gone -- ReferenceError, never a silent new instance.
+    "PROXIES = {}\n"
+    "PROXY_IDS = {}\n"
+    "_next_proxy = [1]\n"
+    "HOOKS = ('execute', 'mustExecute', 'skipRecompute', 'onBeforeChange',\n"
+    "         'onBeforeChangeLabel', 'onChanged', 'onDocumentRestored',\n"
+    "         'unsetupObject', 'getViewProviderName', 'getSubObject',\n"
+    "         'getSubObjects', 'getLinkedObject', 'canLinkProperties',\n"
+    "         'allowDuplicateLabel', 'redirectSubName', 'canLoadPartial',\n"
+    "         'hasChildElement', 'isElementVisible', 'isElementVisibleEx',\n"
+    "         'setElementVisible', 'getElementMapVersion', 'editProperty')\n"
+    // dumps/loads are always offered: PropertyPythonObject persists a
+    // Proxy through them, and for a class without its own the guest
+    // answers as the host would natively (__getstate__/__setstate__
+    // when the class defines them, else the instance __dict__).
+    "def _defines(cls, name):\n"
+    "    return any(name in vars(c) for c in cls.__mro__ if c is not object)\n"
+    "def _proxy_register(inst):\n"
+    "    pid = PROXY_IDS.get(id(inst))\n"
+    "    if pid is None:\n"
+    "        pid = _next_proxy[0]\n"
+    "        _next_proxy[0] += 1\n"
+    "        PROXIES[pid] = inst\n"
+    "        PROXY_IDS[id(inst)] = pid\n"
+    "    cls = type(inst)\n"
+    "    hooks = [h for h in HOOKS if callable(getattr(cls, h, None))]\n"
+    "    hooks.extend(('dumps', 'loads'))\n"
+    "    return {'t': 'gproxy', 'id': pid, 'mod': cls.__module__, 'cls': cls.__qualname__,\n"
+    "            'hooks': hooks}\n"
+    "def _proxy_dumps(inst):\n"
+    "    if _defines(type(inst), '__getstate__'):\n"
+    "        return inst.__getstate__()\n"
+    "    return getattr(inst, '__dict__', None)\n"
+    "def _proxy_loads(inst, state):\n"
+    "    if _defines(type(inst), '__setstate__'):\n"
+    "        inst.__setstate__(state)\n"
+    "    elif state is not None:\n"
+    "        inst.__dict__ = state\n"
+    "def _proxy_get(pid):\n"
+    "    inst = PROXIES.get(pid)\n"
+    "    if inst is None:\n"
+    "        raise ReferenceError('guest proxy %d is gone' % pid)\n"
+    "    return inst\n"
+    "def _proxy_drop(pids):\n"
+    "    for pid in pids:\n"
+    "        inst = PROXIES.pop(pid, None)\n"
+    "        if inst is not None:\n"
+    "            PROXY_IDS.pop(id(inst), None)\n"
+    "def _proxy_new(mod, cls, args, alloc):\n"
+    // no importlib: the WASI stdlib slice does not carry it
+    "    klass = __import__(mod)\n"
+    "    for part in mod.split('.')[1:]:\n"
+    "        klass = getattr(klass, part)\n"
+    "    for part in cls.split('.'):\n"
+    "        klass = getattr(klass, part)\n"
+    "    if alloc:\n"
+    "        return _proxy_register(klass.__new__(klass))\n"
+    "    inst = klass(*args)\n"
+    "    if PROXY_IDS.get(id(inst)) is None:\n"
+    "        return None\n"
+    "    return _proxy_register(inst)\n"
+    "def _proxy_call(pid, m, args, kw):\n"
+    "    inst = _proxy_get(pid)\n"
+    "    fn = getattr(inst, m, None)\n"
+    "    if fn is None and m == 'dumps':\n"
+    "        return _proxy_dumps(inst)\n"
+    "    if fn is None and m == 'loads':\n"
+    "        return _proxy_loads(inst, *args)\n"
+    "    return fn(*args, **kw)\n";
 
 /// Namespace dict holding HostHandle + the generated FACADES map.
 static PyObject* proxyNamespace()
@@ -331,12 +431,34 @@ PyObject* decodeValue(const json& v)
         auto id = v.find("id");
         auto ty = v.find("ty");
         auto fc = v.find("fc");
-        PyObject* type = facadeClass(
-            fc != v.end() && fc->is_string() ? fc->get_ref<const std::string&>().c_str()
-                                             : nullptr);
+        auto ext = v.find("ext");
+        const char* fcKey = fc != v.end() && fc->is_string()
+            ? fc->get_ref<const std::string&>().c_str() : nullptr;
+        PyObject* type = nullptr;
+        PyObject* composed = nullptr;
+        if (ext != v.end() && ext->is_array() && !ext->empty()) {
+            // extensions on the object: the class composed from the
+            // type's facade and theirs (prelude _composed, cached)
+            PyObject* keys = PyTuple_New((Py_ssize_t)ext->size());
+            if (!keys)
+                return nullptr;
+            Py_ssize_t i = 0;
+            for (const auto& e : *ext)
+                PyTuple_SET_ITEM(keys, i++, PyUnicode_FromString(
+                    e.is_string() ? e.get_ref<const std::string&>().c_str() : ""));
+            PyObject* fn = preludeFunction("_composed");
+            composed = fn ? PyObject_CallFunction(fn, "sO", fcKey, keys) : nullptr;
+            Py_DECREF(keys);
+            if (!composed)
+                return nullptr;
+            type = composed;
+        }
+        else
+            type = facadeClass(fcKey);
         if (type && id != v.end() && id->is_number_integer() && ty != v.end()
                 && ty->is_string()) {
             PyObject* inst = PyObject_CallNoArgs(type);
+            Py_XDECREF(composed);
             if (!inst)
                 return nullptr;
             PyObject* pid = PyLong_FromUnsignedLongLong(id->get<uint64_t>());
@@ -364,10 +486,27 @@ PyObject* decodeValue(const json& v)
             }
             return inst;
         }
+        Py_XDECREF(composed);
+    }
+    else if (t == FcxWire::TagGuestProxy) {
+        // a Proxy that lives here, named by the host's stand-in
+        auto id = v.find("id");
+        PyObject* fn = preludeFunction("_proxy_get");
+        if (fn && id != v.end() && id->is_number_integer())
+            return PyObject_CallFunction(fn, "K", (unsigned long long)id->get<uint64_t>());
     }
 bad:
     PyErr_SetString(PyExc_ValueError, "malformed typed wire value");
     return nullptr;
+}
+
+PyObject* preludeFunction(const char* name)
+{
+    PyObject* ns = proxyNamespace();
+    PyObject* fn = ns ? PyDict_GetItemString(ns, name) : nullptr;  // borrowed
+    if (!fn)
+        PyErr_Format(PyExc_RuntimeError, "sandbox prelude has no '%s'", name);
+    return fn;
 }
 
 static json encodeUnit(const Base::Unit& u)
