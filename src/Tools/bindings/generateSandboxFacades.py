@@ -130,8 +130,7 @@ RUNTIME_TYPE_NAMES = {
 # rule as the members: absent means DENY.  Each module names the
 # catalog permission its ops are checked against (sec 2.2): a curated
 # geometry constructor list is geom.call; the host's parameter store,
-# read through Draft's own get_param, is app.query -- the FreeCAD
-# module's class.
+# read through Draft's own get_param, is prefs.read.
 MODULE_FACADES = {
     "Part": {
         "callables": [
@@ -150,12 +149,15 @@ MODULE_FACADES = {
     # bundled fcx_draft wheel leaves draftutils/params.py out, and these
     # two answer from the host's parameter store, by value.  The module
     # facade goes into sys.modules before the wheel's draftutils package
-    # is imported, so `from draftutils import params` finds it.
+    # is imported, so `from draftutils import params` finds it.  Its
+    # permission is prefs.read -- read only, through Draft's own reader,
+    # ALLOW for every principal (user ruling 2026-09-04), so a document
+    # object's Wire.__init__ never prompts for its MakeFaceMode.
     "draftutils.params": {
         "callables": ["get_param", "get_param_view"],
         "constants": [],
         "exceptions": [],
-        "permission": "app.query",
+        "permission": "prefs.read",
     },
 }
 

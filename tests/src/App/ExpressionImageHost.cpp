@@ -2823,13 +2823,9 @@ TEST_F(ExpressionImageEvalTest, draftWireInGuest)
         }
         Py_DECREF(draft);
     }
-    using App::ExpressionSecurity::Permission;
-    using App::ExpressionSecurity::Runtime;
     // Wire.__init__ reads a Draft preference through the draftutils.params
-    // facade (app.query), which is PROMPT for a document principal --
-    // decision 2 of docs/Sandbox.md 7.6 (G1c); granted here.
-    const std::string principal = Runtime::instance().documentPrincipal(doc);
-    Runtime::instance().grant(principal, Permission::AppQuery, "*", true, "session");
+    // facade: prefs.read, ALLOW for a document principal (decision 2 of
+    // docs/Sandbox.md 7.6), so the guest construction below needs no grant.
     App::GetApplication().setActiveDocument(doc);
 
     // 1. the native reference
@@ -2917,8 +2913,6 @@ TEST_F(ExpressionImageEvalTest, draftWireInGuest)
             << wg.getString();
     }
 
-    Runtime::instance().grant(principal, Permission::AppQuery, "*", false, "session");
-    Runtime::instance().clearPending(principal, Permission::AppQuery, "*");
     {
         Base::PyGILStateLocker lock;
         PyObject* d = PyImport_GetModuleDict();

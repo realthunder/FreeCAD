@@ -845,7 +845,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
             // each module under the catalog permission its table row
             // names -- a curated constructor list is a geometry call,
             // not a host import (geom.call); Draft's preference reader
-            // is the parameter store (app.query).  docs/Sandbox.md 3.2.
+            // is a read-only parameter access (prefs.read).  docs/Sandbox.md 3.2.
             auto m = req.find("m");
             if (m == req.end() || !m->is_string())
                 return errReply("ProtocolError", "module op without a name");

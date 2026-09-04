@@ -50,6 +50,10 @@ enum class Permission {
     DocForeign,     // doc.foreign
     GeomCall,       // geom.call
     AppQuery,       // app.query
+    PrefsRead,      // prefs.read -- the parameter store, read only, through a
+                    // curated reader (Draft's get_param); ALLOW for every
+                    // principal class (user ruling 2026-09-04: "allow read
+                    // only for params anywhere")
     Gui,            // gui
     HostImport,     // host.import:<module>, the module is the target
     UnsafeGetattr,  // unsafe.getattr

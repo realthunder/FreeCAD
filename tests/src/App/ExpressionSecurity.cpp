@@ -37,7 +37,8 @@ TEST(ExpressionSecurity, permissionNames)
     // Round trip every catalog name.
     for (Permission perm : {Permission::DocReadSelf, Permission::DocWriteSelf,
             Permission::DocForeign, Permission::GeomCall, Permission::AppQuery,
-            Permission::Gui, Permission::HostImport, Permission::UnsafeGetattr}) {
+            Permission::PrefsRead, Permission::Gui, Permission::HostImport,
+            Permission::UnsafeGetattr}) {
         auto parsed = permissionFromName(permissionName(perm));
         ASSERT_TRUE(parsed.has_value()) << permissionName(perm);
         EXPECT_EQ(*parsed, perm);
@@ -83,6 +84,7 @@ TEST(ExpressionSecurity, catalogDefaults)
         {Permission::DocForeign,    Decision::Prompt, Decision::Allow},
         {Permission::GeomCall,      Decision::Allow,  Decision::Allow},
         {Permission::AppQuery,      Decision::Prompt, Decision::Allow},
+        {Permission::PrefsRead,     Decision::Allow,  Decision::Allow},
         {Permission::Gui,           Decision::Deny,   Decision::Allow},
         {Permission::HostImport,    Decision::Prompt, Decision::Prompt},
         {Permission::UnsafeGetattr, Decision::Deny,   Decision::Prompt},

@@ -52,6 +52,7 @@ const char *permissionName(Permission perm)
     case Permission::DocForeign:    return "doc.foreign";
     case Permission::GeomCall:      return "geom.call";
     case Permission::AppQuery:      return "app.query";
+    case Permission::PrefsRead:     return "prefs.read";
     case Permission::Gui:           return "gui";
     case Permission::HostImport:    return "host.import";
     case Permission::UnsafeGetattr: return "unsafe.getattr";
@@ -78,6 +79,7 @@ std::optional<Permission> permissionFromName(const std::string &name, std::strin
         {"doc.foreign",    Permission::DocForeign},
         {"geom.call",      Permission::GeomCall},
         {"app.query",      Permission::AppQuery},
+        {"prefs.read",     Permission::PrefsRead},
         {"gui",            Permission::Gui},
         {"host.import",    Permission::HostImport},
         {"unsafe.getattr", Permission::UnsafeGetattr},
@@ -131,6 +133,9 @@ Decision catalogDefault(PrincipalClass pclass, Permission perm)
     case Permission::DocForeign:    return doc ? Decision::Prompt : Decision::Allow;
     case Permission::GeomCall:      return Decision::Allow;
     case Permission::AppQuery:      return doc ? Decision::Prompt : Decision::Allow;
+    // a preference read through a curated reader is not a secret and
+    // cannot write: allowed anywhere (2026-09-04)
+    case Permission::PrefsRead:     return Decision::Allow;
     case Permission::Gui:           return doc ? Decision::Deny : Decision::Allow;
     case Permission::HostImport:    return Decision::Prompt;
     case Permission::UnsafeGetattr: return doc ? Decision::Deny : Decision::Prompt;

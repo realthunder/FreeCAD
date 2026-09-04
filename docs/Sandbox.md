@@ -146,6 +146,9 @@ across the board.
     doc.foreign       PROMPT     ALLOW     ALLOW   the cross-origin wall
     geom.call         ALLOW      ALLOW     ALLOW   cost bounded by budget, not grant
     app.query         PROMPT     ALLOW     ALLOW
+    prefs.read        ALLOW      ALLOW     ALLOW   the parameter store, read only, through a
+                                                   curated reader (draftutils.params); added
+                                                   2026-09-04, user ruling (7.6 G1c decision 2)
     gui               DENY (np)  ALLOW     ALLOW   the only non-promptable cell
     host.import:<m>   PROMPT     PROMPT    ALLOW   per module
     unsafe.getattr    DENY       PROMPT    ALLOW   host-side Python attribute walks
@@ -263,7 +266,9 @@ permission its ops are checked against (`ModuleMember::permission`,
 list is a geometry call, where `_part` (an arbitrary import) is
 `host.import`; `draftutils.params` (`get_param`, `get_param_view`,
 the two names Draft's App side reads preferences through) is
-`app.query`, the FreeCAD module's class, answered by the host's own
+`prefs.read` (2.2; `app.query` until 2026-09-04, when a document
+object's `Wire.__init__` would have prompted for `MakeFaceMode`),
+answered by the host's own
 Draft reader by value -- the bundled wheel (5.6) leaves
 `draftutils/params.py` out, and the facade sits in `sys.modules` before
 the wheel's `draftutils` package is imported, so `from draftutils
@@ -1089,7 +1094,11 @@ BRep strings equal, `Points`/`Start`/`End`/`Length`/`Area` equal,
 `Shape` arrived through `write_prop`, the saved `<Python>` element
 equal.
 
-*Decisions this leaves to the user:*
+*Decisions this leaves to the user* -- **both RULED 2026-09-04: (1)
+"yes", Document-level writes stay undeclared for rung 2; (2) "allow
+read only for params anywhere" = the `prefs.read` row of 2.2, ALLOW for
+every principal class, and `draftutils.params` rides it (3.2); the
+gate runs under a plain document principal with no grant.**
 1. Document-level writes.  Recommendation: stay undeclared for rung 2
    (an `execute()` writes self).  Facts: no `draftobjects` `execute()`
    creates or removes objects; in BIM, `ArchStairs.execute` adds and
@@ -1330,8 +1339,9 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
 1. **G1** -- Draft's App side in the guest, four stages (7.6): G1a
    the surface, G1b the wheel and loader, G1c rung 2 for one principal
    (one Draft Wire `execute()` byte-identical from a guest Proxy) DONE
-   2026-09-04 but for the Restore route; G1d the Draft and BIM test
-   documents with routing ON remains, and needs the two G1c decisions.
+   2026-09-04 but for the Restore route, its two decisions ruled the
+   same day; G1d the Draft and BIM test documents with routing ON
+   remains.
 2. **G2** -- U1 + U2 + U7: Draft and BIM register from the guest; the
    subset shim.  No dependency on G1; in parallel if hands allow.
 3. **Probe A** -- Coin and pivy to wasm: compile the Coin fork with emcc
