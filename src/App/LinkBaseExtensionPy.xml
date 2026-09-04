@@ -38,16 +38,19 @@ If 'val' is omitted, i.e. calling configLinkProperty(key,...), then
 it is assumed that the actual property name is the same as 'key'
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getLinkExtProperty">
       <Documentation>
         <UserDocu>getLinkExtProperty(name): return the property value by its predefined name </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getLinkExtPropertyName">
       <Documentation>
         <UserDocu>getLinkExtPropertyName(name): lookup the property name by its predefined name </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getLinkPropertyInfo">
       <Documentation>
@@ -59,6 +62,7 @@ getLinkPropertyInfo(index): return (name,type,doc) of a specific property
 getLinkPropertyInfo(name): return (type,doc) of a specific property
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setLink">
       <Documentation>
@@ -77,6 +81,7 @@ subName (String): Dot separated object path.
 subElements (String|tuple(String)): non-object sub-elements, e.g. Face1, Edge2.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="cacheChildLabel">
       <Documentation>

@@ -56,6 +56,7 @@ ANNOTATED_XMLS = [
     # container's extension types after the type's own MRO.
     "src/App/ExtensionPy.xml",
     "src/App/DocumentObjectExtensionPy.xml",
+    "src/App/LinkBaseExtensionPy.xml",
     "src/Mod/Part/App/AttachExtensionPy.xml",
     "src/Mod/Part/App/TopoShapePy.xml",
     "src/Mod/Part/App/TopoShapeEdgePy.xml",
@@ -143,6 +144,17 @@ MODULE_FACADES = {
         ],
         "constants": ["OCC_VERSION"],
         "exceptions": ["OCCError"],
+        "permission": "geom.call",
+    },
+    # TechDraw's projection entry points, the ones Draft's App side
+    # calls (G1d, docs/Sandbox.md 7.6): Shape2DView.execute projects
+    # through projectEx, Hatch through makeGeomHatch, the SVG/DXF
+    # exporters through projectToSVG/projectToDXF.  Geometry in,
+    # geometry out, on the host, under geom.call like Part.
+    "TechDraw": {
+        "callables": ["makeGeomHatch", "project", "projectEx", "projectToDXF", "projectToSVG"],
+        "constants": [],
+        "exceptions": [],
         "permission": "geom.call",
     },
     # Draft's preference reader (docs/Sandbox.md sec 7.6): the guest's

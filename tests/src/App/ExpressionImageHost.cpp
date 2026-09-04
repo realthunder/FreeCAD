@@ -3293,3 +3293,149 @@ TEST_F(ExpressionImageEvalTest, draftWireRestoreInGuest)
     EXPECT_EQ(brepBefore, brepNative);
     EXPECT_EQ(factsBefore, factsNative);
 }
+
+// ---- G1d (docs/Sandbox.md 7.6): the Draft test document -- every
+// ---- object drafttests.draft_test_objects makes -- saved natively,
+// ---- reopened with routing ON: every Proxy a stand-in, every object
+// ---- recomputing, every shape equal to the native re-execute (or
+// ---- within libm's last bit where trig runs in the guest) ----
+
+TEST_F(ExpressionImageEvalTest, draftTestObjectsReopenRouted)
+{
+    auto& host = ImageHost::instance();
+    if (host.runtime() != "pyodide")
+        GTEST_SKIP() << "bundled wheels load on the pyodide runtime only";
+    {
+        namespace fs = std::filesystem;
+        bool bundled = false;
+        std::error_code ec;
+        for (const auto& e : fs::directory_iterator(
+                 App::Application::getResourceDir() + "Pyodide/wheels", ec)) {
+            const std::string fn = e.path().filename().string();
+            bundled = bundled || (fn.rfind("fcx_draft-", 0) == 0 && fn.find("-py3-none-any.whl") != std::string::npos);
+        }
+        if (!bundled)
+            GTEST_SKIP() << "no fcx_draft wheel bundled under " << App::Application::getResourceDir()
+                         << "Pyodide/wheels";
+    }
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* m = PyImport_ImportModule("drafttests.draft_test_objects");
+        if (!m) {
+            PyErr_Clear();
+            GTEST_SKIP() << "drafttests is not importable on the host in this test binary";
+        }
+        Py_DECREF(m);
+    }
+    auto param = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    const std::string path = std::string(std::tmpnam(nullptr)) + "-fcxobjs.FCStd";
+    struct Cleanup
+    {
+        ParameterGrp::handle param;
+        std::string path;
+        ~Cleanup()
+        {
+            param->RemoveBool("Evaluate");
+            std::remove(path.c_str());
+            dropHostModules({"fcxobjs"});
+        }
+    } cleanup {param, path};
+
+    ASSERT_TRUE(hostModule(
+        "fcxobjs",
+        "import hashlib, json\n"
+        "import FreeCAD as App\n"
+        "from drafttests import draft_test_objects as dto\n"
+        "S = App.ExpressionSandbox\n"
+        "def build(path):\n"
+        "    doc = App.newDocument('FcxDraftObjs')\n"
+        "    dto._create_objects(doc)\n"
+        "    doc.recompute()\n"
+        "    doc.saveAs(path)\n"
+        "    App.closeDocument(doc.Name)\n"
+        "    return 'ok'\n"
+        "def sig(o):\n"
+        "    try:\n"
+        "        sh = o.Shape\n"
+        "    except Exception:\n"
+        "        return None\n"
+        "    if sh.isNull():\n"
+        "        return 'null'\n"
+        "    return hashlib.sha1(sh.exportBrepToString().encode()).hexdigest()\n"
+        "def verts(o):\n"
+        "    try:\n"
+        "        return sorted((v.X, v.Y, v.Z) for v in o.Shape.Vertexes)\n"
+        "    except Exception:\n"
+        "        return None\n"
+        "def proxy(o):\n"
+        "    p = getattr(o, 'Proxy', None)\n"
+        "    if p is None:\n"
+        "        return 'none'\n"
+        "    return 'guest' if S.proxyInfo(p) else 'host'\n"
+        "SNAP = {}\n"
+        "def pass_(path, routed):\n"
+        "    doc = App.openDocument(path)\n"
+        "    restored = {o.Name: proxy(o) for o in doc.Objects}\n"
+        "    for o in doc.Objects:\n"
+        "        o.touch()\n"
+        "    doc.recompute()\n"
+        "    SNAP[routed] = {o.Name: (restored[o.Name], sig(o), verts(o), 'Invalid' in o.State)\n"
+        "                    for o in doc.Objects}\n"
+        "    App.closeDocument(doc.Name)\n"
+        "    return 'ok'\n"
+        "def compare():\n"
+        "    n, r = SNAP[False], SNAP[True]\n"
+        "    out = dict(objects=len(n), guest=0, host=0, none=0, invalid=[], differ=[], missing=[])\n"
+        "    for name, (pn, sn, vn, _) in n.items():\n"
+        "        if name not in r:\n"
+        "            out['missing'].append(name)\n"
+        "            continue\n"
+        "        pr, sr, vr, inv = r[name]\n"
+        "        if pn != 'none':\n"
+        "            out[pr] += 1\n"
+        "        if inv:\n"
+        "            out['invalid'].append(name)\n"
+        "        if sn is not None and sn != sr:\n"
+        "            d = None\n"
+        "            if vn and vr and len(vn) == len(vr):\n"
+        "                d = max(abs(a - b) for pa, pb in zip(vn, vr) for a, b in zip(pa, pb))\n"
+        "            out['differ'].append([name, d])\n"
+        "    return json.dumps(out)\n"));
+    std::string ok;
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').build(" + json(path).dump() + ")", ok));
+    ASSERT_EQ(ok, "ok");
+    param->SetBool("Evaluate", false);
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').pass_(" + json(path).dump() + ", False)", ok));
+    param->SetBool("Evaluate", true);
+    host.resetStats();
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').pass_(" + json(path).dump() + ", True)", ok));
+    auto st = host.stats();
+    std::string summary;
+    ASSERT_TRUE(hostEvalStr("__import__('fcxobjs').compare()", summary));
+    json j = json::parse(summary);
+    std::cout << "Draft test document reopened routed: " << j["objects"] << " objects, proxies guest "
+              << j["guest"] << " host " << j["host"] << " none " << j["none"] << "; proxy calls "
+              << st.proxyCalls << "; bridge ops:";
+    for (const auto& [k, v] : st.ops)
+        std::cout << " " << k << "=" << v;
+    std::cout << "\n  invalid: " << j["invalid"].dump() << "\n  differ: " << j["differ"].dump()
+              << std::endl;
+    EXPECT_GE(j["objects"].get<int>(), 60);
+    EXPECT_GE(j["guest"].get<int>(), 60) << "every restored Proxy must be a stand-in";
+    EXPECT_EQ(j["host"].get<int>(), 0) << "no Proxy may be imported on the host with routing on";
+    EXPECT_EQ(j["none"].get<int>(), 0) << "every saved Proxy module must be served by the guest";
+    EXPECT_TRUE(j["missing"].empty()) << j["missing"].dump();
+    EXPECT_TRUE(j["invalid"].empty()) << "objects failing to recompute in the guest: "
+                                      << j["invalid"].dump();
+    // A shape that is not byte-identical must be within libm's last
+    // bits: the guest's wasm cos/sin round differently from glibc by
+    // one ULP (Polygon's pentagon), and that is the only difference
+    // allowed.
+    for (const auto& d : j["differ"]) {
+        ASSERT_TRUE(d.is_array() && d.size() == 2);
+        EXPECT_TRUE(d[1].is_number()) << d[0] << ": shapes differ in structure, not in rounding";
+        if (d[1].is_number())
+            EXPECT_LT(d[1].get<double>(), 1e-9) << d[0];
+    }
+}

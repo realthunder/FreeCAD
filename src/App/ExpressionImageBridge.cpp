@@ -968,16 +968,37 @@ json dispatchHostOp(HandleTable& table, const json& req)
             auto v = req.find("v");
             if (v == req.end())
                 return errReply("ProtocolError", "write_prop without a value");
+            if (!PyObject_TypeCheck(base, &App::PropertyContainerPy::Type)) {
+                // Not a document write: a value handle the transaction
+                // holds -- a shape the guest built or a property's
+                // copy (`p.Placement = obj.Placement` on the plane
+                // WorkingPlaneProxy.execute makes).  The same closed
+                // table as get_attr: only a declared attribute of the
+                // type, the type's own setter does the work (a read-only
+                // one refuses natively), under geom.call like the
+                // constructors that made the object.
+                const FacadeMember* fm = memberLookupOn(base, name.c_str());
+                if (!fm || fm->kind != FacadeKind::Attribute)
+                    return errReply("ProtocolError",
+                                    "member '" + name + "' of '"
+                                        + Py_TYPE(base)->tp_name
+                                        + "' is not declared for sandbox access");
+                ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::GeomCall);
+                PyObject* value = decodeHostValue(table, *v);
+                if (!value)
+                    return pyErrorReply();
+                int rc = PyObject_SetAttrString(base, name.c_str(), value);
+                Py_DECREF(value);
+                if (rc != 0)
+                    return pyErrorReply();
+                return okReply(json());
+            }
             json denied = writeGate("write_prop");
             if (!denied.is_null())
                 return denied;
             // The C++ property system, as read_prop: typed, and the
             // property's own setPyObject does the conversion (and the
             // element-map re-mapping for a shape).
-            if (!PyObject_TypeCheck(base, &App::PropertyContainerPy::Type))
-                return errReply("AttributeError",
-                                "'" + std::string(Py_TYPE(base)->tp_name)
-                                    + "' object has no attribute '" + name + "'");
             auto* container = static_cast<App::PropertyContainerPy*>(base)
                                   ->getPropertyContainerPtr();
             App::Property* prop =
@@ -1024,7 +1045,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
             // the document, so the owner-only gate applies.
             static const char* const writeFamily[] = {
                 "addProperty", "removeProperty", "setPropertyStatus", "setEditorMode",
-                "setGroupOfProperty", "recompute"};
+                "setGroupOfProperty", "recompute", "configLinkProperty", "setLink"};
             for (const char* w : writeFamily) {
                 if (member == w) {
                     json denied = writeGate(w);

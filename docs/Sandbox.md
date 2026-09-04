@@ -298,7 +298,14 @@ object, not its wire face).  `addProperty`, `removeProperty`,
 `setPropertyStatus` are declared `call` members (DocumentObjectPy.xml,
 PropertyContainerPy.xml -- the facade chain now reaches
 PropertyContainer through ExtensionContainer) and ride the `call` op
-behind the same owner-only gate.  Refusals are `PermissionError`, not
+behind the same owner-only gate (so do `configLinkProperty` and
+`setLink` of the Link extension, G1d).  A `write_prop` on a handle
+that is NOT a property container -- a value object the transaction
+holds: a shape the guest built, a property's copy -- is no document
+write: it takes a DECLARED attribute of the type (the same closed
+table as `get_attr`) through the type's own setter under `geom.call`,
+a read-only attribute refusing natively (G1d, 2026-09-04: Draft's
+WorkingPlaneProxy sets `Placement` on the plane it made).  Refusals are `PermissionError`, not
 `ProtocolError`: the request is well-formed, the principal is not
 allowed.  The read path never enters host Python
 (`read_prop` is answered from the C++ property system); host CPython
@@ -1176,6 +1183,66 @@ a stand-in `__getattr__` over a `proxy_get` op when G1d needs it; a
 guest reset orphans live stand-ins (their hooks raise
 `ReferenceError`, never a silent new instance).
 
+**G1d SIZED AND OPENED 2026-09-04: the Draft test document.**  The
+harness is `scripts/sandbox-reopen-routed.py` (run under the test rig,
+docs/Testing.md sec 1): a document reopened NATIVELY, every object
+touched, recomputed and snapshotted -- the honest baseline, since a
+re-execute drifts on its own (Draft's Fillet does, natively) -- then
+reopened with routing ON through the Restore route, touched,
+recomputed, and one row per object: how the Proxy came back (guest
+stand-in / host instance / none), shape hash equal or the max vertex
+delta, recompute state.  With no argument it builds the Draft test
+document, `drafttests.draft_test_objects` -- 111 objects, 70 of them
+scripted (every Draft App-side class: lines, wires, fillets, arcs,
+circles, ellipses, rectangles, polygons, splines, beziers, points,
+facebinders, texts, dimensions, labels, ortho/polar/circular/path/
+point arrays as objects and as Links, clones, Shape2DView, working
+plane proxies, layers).  First run: all 70 Proxies came back as
+stand-ins, none imported on the host, 62 shapes byte-identical, 4
+not: Fillet (native drift, gone against the honest baseline),
+Shape2DView (`import TechDraw` in the guest: no facade), WPProxy
+(`p.Placement = obj.Placement` on the plane it made: the write gate
+refused a write on a non-owner handle), Polygon; and the four Link
+arrays logged `AttributeError: configLinkProperty` from
+`DraftLink.onDocumentRestored` (the Link extension had no facade).
+Built the same day: a `TechDraw` module facade (`projectEx`,
+`project`, `projectToSVG`, `projectToDXF`, `makeGeomHatch`, under
+`geom.call`); `write_prop` on a value handle -- a handle that is not
+a property container (a shape the guest built, or a property's copy)
+takes a write to a DECLARED attribute of its type through the type's
+own setter under `geom.call`, the owner-only gate applying to document
+objects alone (3.2); `LinkBaseExtensionPy.xml` annotated
+(`configLinkProperty`, `getLinkExtProperty`, `getLinkExtPropertyName`,
+`getLinkPropertyInfo`, `setLink`), `configLinkProperty` and `setLink`
+in the write family.  Gate `draftTestObjectsReopenRouted` (pyodide):
+111 objects, 70 stand-ins, 0 host imports, 0 unserved, 0 invalid, one
+shape not byte-identical -- Polygon, whose BRep text differs in the
+last bits of its line directions and plane origin (vertices equal to
+the bit; the pentagon's `cos`/`sin` run in the guest's wasm libm, the
+likely cause, unconfirmed); the gate allows a difference only when the
+vertex delta is below 1e-9 and reports it.  Traffic for the whole
+document's routed recompute: 967 proxy calls, ~2500 hops (`read_prop`
+1361, `call` 387, `get_attr` 316, `write_prop` 195, `mod_call` 190,
+`bool` 44), 702 handles -- about 1.4 ms of crossing per scripted
+object at 8.1's hop cost.
+Still open for G1d: (1) BIM -- nothing of Arch is in the guest, so a
+BIM document reopens routed with every Proxy failing closed (the
+`bimtests/fixtures` file, one `ArchSite._Site`, does exactly that);
+needs an `fcx_bim` wheel of BIM's App side plus a corpus the TestArch
+suite does not leave behind (its tests delete their objects), then
+the list already known: `ArchStairs`/`ArchReference` document-level
+writes, 193 `Proxy.<attr>` host reads; (2) the Polygon ULP question
+-- whether last-bit libm drift on trig computed in the guest is
+accepted (a decision for the user; byte-identity was the G1c gate);
+(3) the stand-in `__getattr__` for host reads of `Proxy.Type` (39
+sites in Draft's make_*/utils, none in an `execute()`); (4) a Draft
+object MADE in a routed session still gets a host Proxy -- `make_*`
+runs on the host and constructs the class there -- so the routed
+session covers reopened documents today, not fresh ones: the
+construction dispatch (the `make_*` layer in the guest, or a host
+`draftobjects` shim that constructs through `proxy_new`) is the
+design question that decides "one switch = all Python in pyodide".
+
 ### 7.7 Decisions, numbered
 
 1. `.ui` as the form language -- amended: the authoring format; the
@@ -1369,8 +1436,12 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    the surface, G1b the wheel and loader, G1c rung 2 for one principal
    (one Draft Wire `execute()` byte-identical from a guest Proxy) DONE
    2026-09-04, its two decisions ruled and the Restore route (f) built
-   the same day; G1d the Draft and BIM test documents with routing ON
-   remains.
+   the same day; G1d OPENED the same day -- the Draft test document
+   reopens routed with every Proxy a stand-in and every object
+   recomputing (harness `scripts/sandbox-reopen-routed.py`, gate
+   `draftTestObjectsReopenRouted`); BIM, the Polygon ULP question,
+   `Proxy.<attr>` host reads and the construction dispatch remain
+   (7.6, "G1d SIZED AND OPENED").
 2. **G2** -- U1 + U2 + U7: Draft and BIM register from the guest; the
    subset shim.  No dependency on G1; in parallel if hands allow.
 3. **Probe A** -- Coin and pivy to wasm: compile the Coin fork with emcc
