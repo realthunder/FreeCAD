@@ -832,35 +832,79 @@ Three things make that safe.
   `Render::Cycles::waitForRetiredSessions()`, called at the top of
   `Gui::Application::~Application`, waits for the queue to empty. Past
   that point the process starts unloading what the worker is still
-  inside. A quit during a cold kernel compile therefore still waits,
-  and says so on the console rather than looking hung.
+  inside. It says so on the console rather than looking hung, which
+  matters when it does have to wait.
 
 What it costs: while one session is retiring, its replacement is
 already alive, so two devices hold their memory for the overlap. On a
 preview that is nothing; on two large scenes it is real, and it is the
 price of not freezing.
 
-Known interaction, not introduced here but newly reachable with one
-viewport: two sessions loading the same uncached kernel at once each
-run their own nvcc, both writing the same `.cubin` path, which Cycles
-neither locks nor writes atomically. Two viewports could already do
-this (a 3D view path tracing while the editor starts its own session);
-retiring without blocking adds the toggle route through one pane. A
-torn cache entry stays cached, since the next load takes the file's
-existence as a hit. The fix belongs in our Cycles fork -- compile to a
-unique temporary path and rename into place -- and waits for a
-submodule bump.
+Then the engine's own half of it, in our Cycles fork (`057c2c87b`):
+the compile can be stopped, and a stopped one leaves nothing behind.
+
+`Device::cancel()` exists upstream for exactly this -- its comment says
+"cancel any long running device operations (e.g. shader compilations)"
+-- but outside Metal nothing implemented it. `util::Subprocess` runs the
+compiler as a child in a process group of its own (`posix_spawn` with
+`POSIX_SPAWN_SETPGROUP`) and kills the group on cancel from another
+thread. The group and not the process: nvcc drives cicc and ptxas, and
+killing the shell or nvcc alone leaves the work running. The CUDA and
+HIP devices own one and override `cancel()` (OptiX and HIP-RT inherit
+it), `MultiDevice` forwards to its sub-devices, and a compile stopped
+this way reports no error -- being asked to stop is not a failure.
+
+**Windows is not covered, and is the one thing left open here.** The
+command still goes through `system()` there and the cancel only raises
+the flag, so a compile already started runs to the end and whoever
+joins that thread waits for it: no regression, no improvement. What it
+needs is the same "take the whole tree" rule the process group gives on
+POSIX, since the compiler driver's children are where the time goes --
+`CreateProcess` suspended, the process put in a job object created with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, resumed and waited on by handle,
+with the cancel calling `TerminateJobObject`. It is written as that
+note in `util/subprocess.cpp` rather than guessed at from a machine
+that cannot build or test it; it belongs to a Windows box.
+
+A killable compile makes a half-written kernel likely rather than
+merely possible, and the cache could not survive one: all three
+backends wrote straight to the final path, and a cache hit is an
+existence check, so a truncated file would be loaded forever after.
+That was already reachable without any cancel, by two devices building
+the same uncached kernel at once. They now compile to a path of the
+process's own (`path_temp_for`) and move it onto the real name
+(`path_rename`) once the compiler has succeeded, removing the temporary
+on every failure. That half is platform-independent and covers Windows
+as well.
+
+Together these turn the drain above into a formality: the cancel that
+`~Session` already issues now reaches the compiler, so the join it
+waits on returns in about a second instead of at the end of the
+compile.
 
 Verified with `~/works/sw/fcad-probes/shader_graph_cold_teardown.{py,sh}`,
 which gives the process its own `XDG_CACHE_HOME` so the compile is
-guaranteed cold and the box's shared kernel cache is untouched. With
-nvcc and cicc confirmed running, switching the preview back to Raster
-(which stops the tracer and destroys its viewport) left the GUI
-thread's own heartbeat timer with a longest gap of 0.11 s against a
-0.1 s interval, the compilers still running, the editor still drawing
-and the document still recomputing. The quit then waited 274 s for that
-compile, exiting cleanly. Before the change the same release blocked
-the GUI thread for the whole compile.
+guaranteed cold and the box's shared kernel cache -- a serving rig uses
+it -- is never touched. With nvcc and cicc confirmed running, switching
+the preview back to Raster (which stops the tracer and destroys its
+viewport) left the GUI thread's own heartbeat timer with a longest gap
+of 0.11 s against a 0.1 s interval, the editor still drawing and the
+document still recomputing. Before the change the same release blocked
+that thread for the whole compile.
+
+With the engine's half in as well, the compilers were gone a second
+after the release and the cache was left empty -- which is the torn
+file not being written. A second, uninterrupted attempt compiled for
+267 s, left exactly one `.cubin` and no temporary, and the traced frame
+followed a second later with no tracer error. The quit was immediate;
+the run before the cancel existed spent 274 s of its exit waiting for
+the same compile.
+
+What the probe measures deserves care. Its first version judged the
+second compile by "a sphere is on the pane", which passed in one second
+because the raster frame from the mode switch has one -- it proved
+nothing at all. A compile is judged by the engine's own finish line and
+by what the cache directory holds.
 
 ## 6. Scene translation
 
