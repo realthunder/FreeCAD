@@ -2346,10 +2346,30 @@ void View3DInventorViewer::syncExternalShading()
         return;
     }
     // Only Cycles exists; ExternalRenderType is consulted the day a
-    // second engine registers. The options are the view's Cycles_*
-    // properties where materialized, the preferences underneath where
-    // not -- the same effective-value rule every Render_* setting
-    // follows.
+    // second engine registers.
+    Render::Cycles::ViewportOptions options = cyclesViewportOptions();
+    // A write that restated the running value -- the shading options
+    // refresh loop, a document touch -- must not throw the refining
+    // frame away.
+    if (_pimpl->cyclesViewport
+            && options.device == _pimpl->cyclesOptions.device
+            && options.samples == _pimpl->cyclesOptions.samples
+            && options.timeLimit == _pimpl->cyclesOptions.timeLimit
+            && options.denoise == _pimpl->cyclesOptions.denoise
+            && options.pixelSize == _pimpl->cyclesOptions.pixelSize)
+        return;
+    std::string error;
+    if (setCyclesViewport(&options, &error))
+        _pimpl->cyclesOptions = options;
+    else
+        Base::Console().Warning("External shading: %s\n", error.c_str());
+}
+
+Render::Cycles::ViewportOptions View3DInventorViewer::cyclesViewportOptions() const
+{
+    // The view's Cycles_* properties where materialized, the
+    // preferences underneath where not -- the same effective-value
+    // rule every Render_* setting follows.
     App::PropertyContainer *settings = _pimpl->renderSettings();
     Render::Cycles::ViewportOptions options;
     options.device = RenderParams::getCyclesDevice();
@@ -2376,21 +2396,29 @@ void View3DInventorViewer::syncExternalShading()
                     settings->getPropertyByName("Cycles_PixelSize")))
             options.pixelSize = int(prop->getValue());
     }
-    // A write that restated the running value -- the shading options
-    // refresh loop, a document touch -- must not throw the refining
-    // frame away.
-    if (_pimpl->cyclesViewport
-            && options.device == _pimpl->cyclesOptions.device
-            && options.samples == _pimpl->cyclesOptions.samples
-            && options.timeLimit == _pimpl->cyclesOptions.timeLimit
-            && options.denoise == _pimpl->cyclesOptions.denoise
-            && options.pixelSize == _pimpl->cyclesOptions.pixelSize)
-        return;
-    std::string error;
-    if (setCyclesViewport(&options, &error))
-        _pimpl->cyclesOptions = options;
-    else
-        Base::Console().Warning("External shading: %s\n", error.c_str());
+    return options;
+}
+
+void View3DInventorViewer::cyclesSceneConfig(Render::Cycles::SceneInput &input,
+                                             const QColor &col) const
+{
+    App::PropertyContainer *settings = _pimpl->renderSettings();
+    input.pbr = RendererBridge::translatePBRConfig(settings);
+    // A running Cycles session IS external shading, whatever started
+    // it (the External shading type, the cyclesViewport() binding, or
+    // an editor's preview), so the enabled flag it receives states
+    // that fact -- not the Render_PBR facade, which only says what the
+    // RASTER pipeline shades and reads false by design under External.
+    // Left as the facade, the env background gate in translateWorld
+    // (pbr.enabled && pbr.envBackground) could never pass and the
+    // environment went missing behind every External frame.
+    input.pbr.enabled = true;
+    input.bump = RendererBridge::translateBumpConfig(settings);
+    input.section = RendererBridge::translateSectionConfig(settings);
+    input.output = RendererBridge::translateOutputConfig(settings);
+    input.light = RendererBridge::translateLightConfig(nullptr, settings);
+    input.background = _pimpl->backgroundFeed(col);
+    input.debugView = int(RenderParams::getDebugViewMode());
 }
 
 void View3DInventorViewer::Private::detachCyclesConsumer()
@@ -2442,60 +2470,39 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
     camera.height = height;
 
     App::PropertyContainer *settings = renderSettings();
-    Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
-    // A running Cycles session IS external shading, whatever started
-    // it (the External shading type or the cyclesViewport() binding),
-    // so the enabled flag it receives states that fact -- not the
-    // Render_PBR facade, which only says what the RASTER pipeline
-    // shades and reads false by design under External. Left as the
-    // facade, the env background gate in translateWorld (pbr.enabled
-    // && pbr.envBackground) could never pass and the environment went
-    // missing behind every External frame.
-    pbr.enabled = true;
-    Render::BumpConfig bump = RendererBridge::translateBumpConfig(settings);
-    Render::SectionConfig secconf = RendererBridge::translateSectionConfig(settings);
-    Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
-    Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
-    Render::Background background = backgroundFeed(col);
-    const int debugView = int(RenderParams::getDebugViewMode());
+    Render::Cycles::SceneInput input;
+    owner->cyclesSceneConfig(input, col);
+    const Render::Background &background = input.background;
     const uint64_t gen = host->sceneGeneration();
     const bool sameBackground = background.type == cyclesBackground.type
         && background.fromColor == cyclesBackground.fromColor
         && background.toColor == cyclesBackground.toColor
         && background.midColor == cyclesBackground.midColor
         && background.hasMid == cyclesBackground.hasMid;
-    if (cyclesFed && gen == cyclesSceneGen && pbr == cyclesPbr && bump == cyclesBump
-        && output == cyclesOutput
-        && debugView == cyclesDebugView
-        && light == cyclesLight && secconf == cyclesSection && sameBackground) {
+    if (cyclesFed && gen == cyclesSceneGen && input.pbr == cyclesPbr
+        && input.bump == cyclesBump && input.output == cyclesOutput
+        && input.debugView == cyclesDebugView
+        && input.light == cyclesLight && input.section == cyclesSection && sameBackground) {
         vp->setCamera(camera);
         return;
     }
     SoFCRenderCache *cache = manager ? manager->getSceneCache() : nullptr;
     if (!cache)
         return;
-    Render::Cycles::SceneInput input;
     RendererBridge::SectionOnTop section;
     section.noOnTop = Gui::sectionStyle(settings, "NoOnTop", ViewParams::getNoSectionOnTop());
     section.concave = Gui::sectionStyle(settings, "Concave", ViewParams::getSectionConcave());
     input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
-    input.section = secconf;
-    input.pbr = pbr;
-    input.bump = bump;
-    input.output = output;
-    input.light = light;
-    input.background = background;
     input.camera = camera;
-    input.debugView = debugView;
     vp->setScene(input);
     cyclesFed = true;
     cyclesSceneGen = gen;
-    cyclesPbr = pbr;
-    cyclesBump = bump;
-    cyclesOutput = output;
-    cyclesDebugView = debugView;
-    cyclesLight = light;
-    cyclesSection = secconf;
+    cyclesPbr = input.pbr;
+    cyclesBump = input.bump;
+    cyclesOutput = input.output;
+    cyclesDebugView = input.debugView;
+    cyclesLight = input.light;
+    cyclesSection = input.section;
     cyclesBackground = background;
 }
 

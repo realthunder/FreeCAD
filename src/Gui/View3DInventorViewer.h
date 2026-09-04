@@ -55,7 +55,7 @@ class SoTransform;
 class SoText2;
 class SoGetBoundingBoxAction;
 class SoFCRenderCacheManager;
-namespace Render::Cycles { struct RenderReport; struct ViewportOptions; struct ViewportStatus; }
+namespace Render::Cycles { struct RenderReport; struct ViewportOptions; struct ViewportStatus; struct SceneInput; }
 
 class SoSeparator;
 class SoDetail;
@@ -831,6 +831,22 @@ public:
                            std::string *error);
     /// What the live Cycles session is doing; false when there is none.
     bool cyclesViewportStatus(Render::Cycles::ViewportStatus &status) const;
+    /** The Cycles options in effect for this view: the view's Cycles_*
+     * properties where materialized, the preferences underneath where
+     * not -- the effective-value rule every Render_* setting follows.
+     * What syncExternalShading starts a session with, and what a
+     * consumer rendering on this view's behalf (the shader graph
+     * editor's preview, docs/ShaderGraphEditor.md sec 15) starts its
+     * own with.
+     */
+    Render::Cycles::ViewportOptions cyclesViewportOptions() const;
+    /** Fill the per-frame configs of a Cycles scene from this view's
+     * render settings: PBR (enabled -- a Cycles session IS external
+     * shading, see the feed), bump, output, light, section, the
+     * background from \a col (or the view's gradient), and the debug
+     * view mode. The draws and the camera are the caller's.
+     */
+    void cyclesSceneConfig(Render::Cycles::SceneInput &input, const QColor &col) const;
     /** Make the live external session agree with the view's shading
      * choice (the External value of View3DInventor::ShadingType).
      *

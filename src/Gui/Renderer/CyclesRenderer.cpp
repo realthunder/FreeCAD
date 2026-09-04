@@ -103,6 +103,12 @@ std::unique_ptr<FrameStream> FrameStream::create(const StreamOptions &,
     return nullptr;
 }
 
+void compositeFrame(const void *, int, int, const Background &, bool, int, bool,
+                    std::vector<uint8_t> &out)
+{
+    out.clear();
+}
+
 #else  // HAVE_CYCLES
 
 /// The engine's data root is the renderer resource tree's cycles/

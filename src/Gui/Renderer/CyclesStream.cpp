@@ -77,21 +77,33 @@ void unpackAuthored(uint32_t rgba, float out[3], bool managed)
             out[i] = srgbToLinear(out[i]);
 }
 
-/// Bottom-up premultiplied linear half4 to top-down RGB8, composited
-/// over \a background where the film was transparent: the same flat
-/// colour or vertical ramp the offline render writes (CyclesRenderer.cpp
-/// writePng), encoded exactly when the scene is colour managed.
-void composite(const ccl::half4 *px, int width, int height,
-               const Background &background, bool managed,
-               std::vector<uint8_t> &rgb)
+}  // namespace
+
+// Bottom-up premultiplied linear half4 to 8-bit rows, composited over
+// the background where the film was transparent: the same flat colour
+// or vertical ramp the offline render writes (CyclesRenderer.cpp
+// writePng), encoded exactly when the scene is colour managed. The
+// stream takes it top-down RGB for the JPEG encoder; the shader graph
+// editor's preview bottom-up RGBA, as GL reads a framebuffer back.
+void compositeFrame(const void *half4, int width, int height,
+                    const Background &background, bool managed,
+                    int channels, bool topDown, std::vector<uint8_t> &out)
 {
+    const ccl::half4 *px = static_cast<const ccl::half4 *>(half4);
+    if (!px || width <= 0 || height <= 0 || (channels != 3 && channels != 4)) {
+        out.clear();
+        return;
+    }
     float from[3], to[3], mid[3];
     unpackAuthored(background.fromColor, from, managed);
     unpackAuthored(background.toColor, to, managed);
     unpackAuthored(background.midColor, mid, managed);
-    rgb.resize(size_t(width) * size_t(height) * 3);
+    out.resize(size_t(width) * size_t(height) * size_t(channels));
     for (int y = 0; y < height; ++y) {
-        const float t = height > 1 ? float(y) / float(height - 1) : 0.0f;
+        // The ramp runs top to bottom in the row order of the OUTPUT;
+        // y here is the output row.
+        const float t = height > 1
+            ? float(topDown ? y : height - 1 - y) / float(height - 1) : 0.0f;
         float bg[3];
         for (int i = 0; i < 3; ++i) {
             if (background.type == Background::Flat)
@@ -102,9 +114,10 @@ void composite(const ccl::half4 *px, int width, int height,
             else
                 bg[i] = from[i] + (to[i] - from[i]) * t;
         }
-        const ccl::half4 *src = px + size_t(height - 1 - y) * size_t(width);
-        uint8_t *dst = rgb.data() + size_t(y) * size_t(width) * 3;
-        for (int x = 0; x < width; ++x, ++src, dst += 3) {
+        const int srcRow = topDown ? height - 1 - y : y;
+        const ccl::half4 *src = px + size_t(srcRow) * size_t(width);
+        uint8_t *dst = out.data() + size_t(y) * size_t(width) * size_t(channels);
+        for (int x = 0; x < width; ++x, ++src, dst += channels) {
             const float a = std::clamp(ccl::half_to_float(src->w), 0.0f, 1.0f);
             const float c[3] = {ccl::half_to_float(src->x), ccl::half_to_float(src->y),
                                 ccl::half_to_float(src->z)};
@@ -112,9 +125,13 @@ void composite(const ccl::half4 *px, int width, int height,
                 const float v = c[i] + bg[i] * (1.0f - a);
                 dst[i] = managed ? encode(v) : quantize(v);
             }
+            if (channels == 4)
+                dst[3] = 255;
         }
     }
 }
+
+namespace {
 
 class FrameStreamImpl : public FrameStream
 {
@@ -259,8 +276,7 @@ private:
                     return;
                 enc = managed;
                 got = viewport->takeFrame([&](const void *px, int w, int h) {
-                    composite(static_cast<const ccl::half4 *>(px), w, h, background,
-                              managed, rgb);
+                    compositeFrame(px, w, h, background, managed, 3, true, rgb);
                     width = w;
                     height = h;
                 });

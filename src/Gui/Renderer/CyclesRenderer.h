@@ -253,6 +253,20 @@ public:
     virtual bool lost() const = 0;
 };
 
+/// A staged viewport frame -- premultiplied linear half4, bottom-up,
+/// \a width the pitch, as Viewport::takeFrame hands it -- composited
+/// over \a background where the film was transparent (the same flat
+/// colour or vertical ramp the offline render writes), encoded to sRGB
+/// exactly when \a managed (the scene is colour managed), and packed
+/// to 8-bit rows of \a channels (3 = RGB, 4 = RGBA with alpha 255),
+/// top-down when \a topDown else bottom-up. Shared by the served
+/// stream (sec 7.1) and the shader graph editor's preview
+/// (docs/ShaderGraphEditor.md sec 15). Does nothing without the engine.
+RendererExport void compositeFrame(const void *half4, int width, int height,
+                                   const Background &background, bool managed,
+                                   int channels, bool topDown,
+                                   std::vector<uint8_t> &out);
+
 /// Phase 2 of the plan: render a hard-coded scene (a cube on a floor
 /// under a uniform sky) to a PNG at \a path, with \a samples per pixel
 /// on the device of the given type. Proves that the engine starts a
