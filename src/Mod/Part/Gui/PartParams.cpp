@@ -152,7 +152,7 @@ public:
         funcs["SelectionPickThreshold"] = &PartParamsP::updateSelectionPickThreshold;
         SelectionPickThreshold2 = this->handle->GetInt("SelectionPickThreshold2", 500);
         funcs["SelectionPickThreshold2"] = &PartParamsP::updateSelectionPickThreshold2;
-        SelectionPickRTree = this->handle->GetBool("SelectionPickRTree", false);
+        SelectionPickRTree = this->handle->GetBool("SelectionPickRTree", true);
         funcs["SelectionPickRTree"] = &PartParamsP::updateSelectionPickRTree;
     }
 
@@ -308,7 +308,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateSelectionPickRTree(PartParamsP *self) {
-        self->SelectionPickRTree = self->handle->GetBool("SelectionPickRTree", false);
+        self->SelectionPickRTree = self->handle->GetBool("SelectionPickRTree", true);
     }
 };
 
@@ -1033,7 +1033,17 @@ void PartParams::removeSelectionPickThreshold2() {
 
 // Auto generated code (Tools/params_utils.py:372)
 const char *PartParams::docSelectionPickRTree() {
-    return "";
+    return QT_TRANSLATE_NOOP("PartParams",
+"Pick with a per-triangle R-tree instead of walking every\n"
+"triangle of a part. Without it the only spatial filter is the\n"
+"per-part bounding box, so a ray that reaches a dense part\n"
+"sends all of its triangles through Coin's primitive callbacks:\n"
+"on an imported mesh (one part carrying everything) a selecting\n"
+"click cost 116 ms, and 18 ms with this on. The tree is built\n"
+"lazily, per part, on the first pick that reaches it -- that\n"
+"first pick pays about 15 ms more, every one after it is the\n"
+"cheap one. Parts smaller than SelectionPickThreshold2 are\n"
+"picked directly either way.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1043,7 +1053,7 @@ const bool & PartParams::getSelectionPickRTree() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const bool & PartParams::defaultSelectionPickRTree() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 
