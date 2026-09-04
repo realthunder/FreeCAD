@@ -159,7 +159,7 @@ fork has retired.
   print microseconds and assert nothing a pass/fail run cares about. Run
   them on purpose with `--gtest_also_run_disabled_tests
   --gtest_filter='ExpressionImageBenchTest.*'`; the numbers they produced
-  are recorded in `docs/ExpressionImage.md`.
+  are recorded in `docs/Sandbox.md` sec 8.1.
 - `TopoShapeEx_tests_run` carries three, each ruled an accepted difference
   by phase 4 of the topological-naming harvest rather than a bug. The reason
   is written above each case; in short:

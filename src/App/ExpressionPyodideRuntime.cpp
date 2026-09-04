@@ -288,6 +288,10 @@ public:
         isolate->SetHostInitializeImportMetaObjectCallback(initImportMeta);
         isolate->SetPromiseRejectCallback(onPromiseReject);
 
+        // Everything that enters the isolate is in this lambda, so that a
+        // failed boot tears down AFTER the scopes have exited: disposing
+        // an isolate a thread is still entered in is a V8 fatal.
+        const bool booted = [&]() -> bool {
         v8::Locker locker(isolate);
         v8::Isolate::Scope isolateScope(isolate);
         v8::HandleScope handleScope(isolate);
@@ -310,7 +314,6 @@ public:
         ctx->Global()->Set(ctx, str(isolate, "__fcx_host"), h).Check();
         if (!run(std::string(reinterpret_cast<const char*>(kPyodideShim), kPyodideShim_len),
                  "host_shim.js")) {
-            teardown();
             return false;
         }
 
@@ -318,15 +321,17 @@ public:
         std::string loader;
         if (!readFile(root / "pyodide.js", loader)
                 || !run(loader, (root / "pyodide.js").string())) {
-            teardown();
             return false;
         }
         if (!run(std::string(reinterpret_cast<const char*>(kPyodideGlue), kPyodideGlue_len),
                  "pyodide_glue.js")) {
-            teardown();
             return false;
         }
-        put(ctx->Global(), "__fcx_bridge", hostBridge);
+        // The guest's two "env" imports (ImageBridge.cpp), which the
+        // glue merges into the main module's symbol table before the
+        // wheel loads; a bridge op is one wasm import call landing here.
+        put(ctx->Global(), "__fcx_host_call", hostCall);
+        put(ctx->Global(), "__fcx_host_fetch", hostFetch);
 
         // 3. boot: ~1.5 s, once per session.  Paths cross as generic
         // (forward-slash) strings: pyodide's loader does URL arithmetic
@@ -343,16 +348,33 @@ public:
         v8::Local<v8::Value> result;
         if (!run(boot, "boot", &result) || toStd(isolate, result) != "booted") {
             FC_ERR("pyodide boot failed");
-            teardown();
             return false;
         }
-        v8::Local<v8::Value> fn;
-        if (!ctx->Global()->Get(ctx, str(isolate, "__fcx_call")).ToLocal(&fn) || !fn->IsFunction()) {
-            FC_ERR("pyodide glue left no __fcx_call");
-            teardown();
-            return false;
+        // The guest's exports and its emscripten Module, from the glue:
+        // host->guest calls go straight to the wasm functions from here.
+        {
+            v8::Local<v8::Value> link;
+            if (!run("__fcx_link()", "link", &link) || !link->IsObject()) {
+                FC_ERR("pyodide glue left no guest link");
+                return false;
+            }
+            v8::Local<v8::Object> l = link.As<v8::Object>();
+            auto take = [&](const char* key, v8::Global<v8::Function>& into) {
+                v8::Local<v8::Value> v;
+                if (!l->Get(ctx, str(isolate, key)).ToLocal(&v) || !v->IsFunction())
+                    return false;
+                into.Reset(isolate, v.As<v8::Function>());
+                return true;
+            };
+            v8::Local<v8::Value> mod;
+            if (!take("alloc", allocFn) || !take("free", freeFn) || !take("call", callFn)
+                    || !l->Get(ctx, str(isolate, "module")).ToLocal(&mod) || !mod->IsObject()) {
+                FC_ERR("pyodide guest link is incomplete");
+                return false;
+            }
+            emModule.Reset(isolate, mod.As<v8::Object>());
+            heapKey.Reset(isolate, str(isolate, "HEAPU8"));
         }
-        callFn.Reset(isolate, fn.As<v8::Function>());
 
         // 4. the soft stage of the budget: pyodide's interrupt buffer,
         // an Int32Array the interpreter polls from its eval loop
@@ -374,7 +396,6 @@ public:
             if (!ctx->Global()->Get(ctx, str(isolate, "__fcx_setInterrupt")).ToLocal(&setter)
                     || !setter->IsFunction()) {
                 FC_ERR("pyodide glue left no __fcx_setInterrupt");
-                teardown();
                 return false;
             }
             interruptSetter.Reset(isolate, setter.As<v8::Function>());
@@ -383,6 +404,12 @@ public:
         FC_LOG("sandbox runtime live: pyodide at " << root.string() << " with "
                << wheel.filename().string() << " and " << packageNames.size()
                << " package(s) (" << (int)(nowMs() - t0) << " ms)");
+        return true;
+        }();
+        if (!booted) {
+            teardown();
+            return false;
+        }
         return true;
     }
 
@@ -404,10 +431,30 @@ public:
         v8::Context::Scope contextScope(ctx);
         v8::TryCatch tc(isolate);
 
-        v8::Local<v8::ArrayBuffer> ab = v8::ArrayBuffer::New(isolate, request.size());
-        if (!request.empty())
-            std::memcpy(ab->Data(), request.data(), request.size());
-        v8::Local<v8::Value> arg = v8::Uint8Array::New(ab, 0, request.size());
+        // The request into wasm memory at a guest-allocated address:
+        // fcx_alloc, a copy, then fcx_call(ptr, len) -- the reactor's
+        // shape (ImageMain.cpp), called as wasm exports from here.
+        v8::Local<v8::Value> undef = v8::Undefined(isolate);
+        v8::Local<v8::Value> lenArg =
+            v8::Integer::NewFromUnsigned(isolate, static_cast<uint32_t>(request.size()));
+        v8::Local<v8::Value> ptrArg;
+        if (!allocFn.Get(isolate)->Call(ctx, undef, 1, &lenArg).ToLocal(&ptrArg)) {
+            report(tc, "fcx_alloc");
+            return Outcome::Failed;
+        }
+        const uint32_t ptr = ptrArg->Uint32Value(ctx).FromMaybe(0);
+        {
+            size_t size = 0;
+            uint8_t* mem = guestMemory(size);
+            if (!mem || (!ptr && !request.empty())
+                    || static_cast<uint64_t>(ptr) + request.size() > size) {
+                FC_ERR("pyodide guest: request buffer out of range");
+                return Outcome::Failed;
+            }
+            if (!request.empty())
+                std::memcpy(mem + ptr, request.data(), request.size());
+        }
+        v8::Local<v8::Value> callArgs[2] = {ptrArg, lenArg};
         v8::Local<v8::Value> result;
         if ((budgetMs > 0) != interruptOn) {
             // toggle the interpreter's polling with the budget
@@ -422,7 +469,7 @@ public:
         signal.store(0);
         if (budgetMs > 0)
             watchdog.arm(budgetMs, budgetMs + std::max(graceMs, 0));
-        const bool called = callFn.Get(isolate)->Call(ctx, ctx->Global(), 1, &arg).ToLocal(&result);
+        const bool called = callFn.Get(isolate)->Call(ctx, undef, 2, callArgs).ToLocal(&result);
         const int fired = watchdog.disarm();
         // A soft signal the guest did not get to consume must not greet
         // the next call (the guest zeroes it when it does consume it).
@@ -437,14 +484,25 @@ public:
             report(tc, "fcx call");
             return Outcome::Failed;
         }
-        if (!result->IsUint8Array()) {
-            FC_ERR("pyodide guest returned " << toStd(isolate, result) << " instead of bytes");
+        guestFree(ctx, ptrArg);
+        // The reply: u32 length + CBOR bytes at the returned address,
+        // read after re-taking the memory (the call may have grown it).
+        const uint32_t rp = result->Uint32Value(ctx).FromMaybe(0);
+        size_t size = 0;
+        uint8_t* mem = guestMemory(size);
+        if (!rp || !mem || static_cast<uint64_t>(rp) + 4 > size) {
+            FC_ERR("pyodide guest returned no reply buffer");
             return Outcome::Failed;
         }
-        v8::Local<v8::Uint8Array> out = result.As<v8::Uint8Array>();
-        reply.resize(out->ByteLength());
-        if (!reply.empty())
-            out->CopyContents(reply.data(), reply.size());
+        uint32_t n = 0;
+        std::memcpy(&n, mem + rp, 4);
+        if (static_cast<uint64_t>(rp) + 4 + n > size) {
+            FC_ERR("pyodide guest reply out of range");
+            guestFree(ctx, result);
+            return Outcome::Failed;
+        }
+        reply.assign(mem + rp + 4, mem + rp + 4 + n);
+        guestFree(ctx, result);
         // Let the guest's own housekeeping (proxy finalizers, deferred
         // work) run now rather than pile up.
         isolate->PerformMicrotaskCheckpoint();
@@ -468,7 +526,12 @@ public:
                         fn.As<v8::Function>()->Call(ctx, ctx->Global(), 0, nullptr).IsEmpty();
                     }
                 }
+                allocFn.Reset();
+                freeFn.Reset();
                 callFn.Reset();
+                emModule.Reset();
+                heapKey.Reset();
+                pendingReply.clear();
                 interruptSetter.Reset();
                 interruptArray.Reset();
                 interruptOn = false;
@@ -511,7 +574,18 @@ private:
     v8::Isolate* isolate = nullptr;
     v8::ArrayBuffer::Allocator* allocator = nullptr;
     v8::Global<v8::Context> context;
+    /// The guest side module's exports (ImageModule.cpp), called as
+    /// wasm functions; its emscripten Module, whose HEAPU8 is the
+    /// current view of wasm memory (replaced on growth, so re-read per
+    /// use and never held across guest code).
+    v8::Global<v8::Function> allocFn;
+    v8::Global<v8::Function> freeFn;
     v8::Global<v8::Function> callFn;
+    v8::Global<v8::Object> emModule;
+    v8::Global<v8::String> heapKey;
+    /// The reply pending between the host_call and host_fetch halves of
+    /// one bridge op (ExpressionWasmtimeRuntime.cpp has the same).
+    std::vector<uint8_t> pendingReply;
     v8::Global<v8::Function> interruptSetter;
     v8::Global<v8::Value> interruptArray;
     bool interruptOn = false;
@@ -635,25 +709,75 @@ private:
             FC_LOG("pyodide: " << text);
     }
 
-    /// The guest's only way out: one bridge op, Uint8Array in, Uint8Array
-    /// out, straight into ImageHost's dispatch.
-    static void hostBridge(const v8::FunctionCallbackInfo<v8::Value>& info)
+    /// Wasm memory as the guest sees it now: Module.HEAPU8's buffer.
+    /// Valid until the guest runs again (growth detaches it), so taken
+    /// per use; nullptr when the link is gone.
+    uint8_t* guestMemory(size_t& size)
+    {
+        size = 0;
+        if (emModule.IsEmpty())
+            return nullptr;
+        v8::Local<v8::Context> ctx = context.Get(isolate);
+        v8::Local<v8::Value> heap;
+        if (!emModule.Get(isolate)->Get(ctx, heapKey.Get(isolate)).ToLocal(&heap)
+                || !heap->IsUint8Array())
+            return nullptr;
+        v8::Local<v8::ArrayBuffer> ab = heap.As<v8::Uint8Array>()->Buffer();
+        size = ab->ByteLength();
+        return static_cast<uint8_t*>(ab->Data());
+    }
+
+    /// fcx_free on a guest pointer; a failure is logged, not fatal.
+    void guestFree(v8::Local<v8::Context> ctx, v8::Local<v8::Value> ptr)
+    {
+        v8::TryCatch tc(isolate);
+        if (freeFn.Get(isolate)->Call(ctx, v8::Undefined(isolate), 1, &ptr).IsEmpty())
+            report(tc, "fcx_free");
+    }
+
+    /// The guest's only way out, first half: the "env" import
+    /// fcx_host_call(ptr, len) -> reply length.  The request is read out
+    /// of wasm memory in place and dispatched; the reply is parked for
+    /// the fetch.  Negative on any failure, and never a throw: the
+    /// guest turns the sign into a Python exception.
+    static void hostCall(const v8::FunctionCallbackInfo<v8::Value>& info)
     {
         v8::Isolate* isolate = info.GetIsolate();
         PyodideRuntime* rt = self(info);
-        if (info.Length() < 1 || !info[0]->IsUint8Array())
-            return throwError(isolate, "bridge: request must be a Uint8Array");
-        v8::Local<v8::Uint8Array> in = info[0].As<v8::Uint8Array>();
-        std::vector<uint8_t> req(in->ByteLength());
-        if (!req.empty())
-            in->CopyContents(req.data(), req.size());
-        std::vector<uint8_t> reply = rt->bridge ? rt->bridge(req.data(), req.size())
-                                                : std::vector<uint8_t>();
-        if (reply.empty())
-            return throwError(isolate, "bridge: no reply");
-        v8::Local<v8::ArrayBuffer> ab = v8::ArrayBuffer::New(isolate, reply.size());
-        std::memcpy(ab->Data(), reply.data(), reply.size());
-        info.GetReturnValue().Set(v8::Uint8Array::New(ab, 0, reply.size()));
+        info.GetReturnValue().Set(-1);
+        if (info.Length() < 2 || !rt->bridge)
+            return;
+        v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+        const uint32_t ptr = info[0]->Uint32Value(ctx).FromMaybe(0);
+        const uint32_t len = info[1]->Uint32Value(ctx).FromMaybe(0);
+        size_t size = 0;
+        const uint8_t* mem = rt->guestMemory(size);
+        if (!mem || static_cast<uint64_t>(ptr) + len > size)
+            return;
+        rt->pendingReply = rt->bridge(mem + ptr, len);
+        info.GetReturnValue().Set(static_cast<int32_t>(rt->pendingReply.size()));
+    }
+
+    /// Second half: fcx_host_fetch(dst, cap) copies the parked reply
+    /// into the guest's own buffer and returns its length; negative when
+    /// there is none or it does not fit.
+    static void hostFetch(const v8::FunctionCallbackInfo<v8::Value>& info)
+    {
+        v8::Isolate* isolate = info.GetIsolate();
+        PyodideRuntime* rt = self(info);
+        info.GetReturnValue().Set(-1);
+        if (info.Length() < 2 || rt->pendingReply.empty())
+            return;
+        v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+        const uint32_t dst = info[0]->Uint32Value(ctx).FromMaybe(0);
+        const uint32_t cap = info[1]->Uint32Value(ctx).FromMaybe(0);
+        size_t size = 0;
+        uint8_t* mem = rt->guestMemory(size);
+        if (!mem || static_cast<uint64_t>(dst) + cap > size || cap < rt->pendingReply.size())
+            return;
+        std::memcpy(mem + dst, rt->pendingReply.data(), rt->pendingReply.size());
+        info.GetReturnValue().Set(static_cast<int32_t>(rt->pendingReply.size()));
+        rt->pendingReply.clear();
     }
 
     // ------------------------------------------------------------- loader

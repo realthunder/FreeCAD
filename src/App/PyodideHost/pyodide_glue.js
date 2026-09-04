@@ -1,68 +1,47 @@
 // Runs AFTER host_shim.js and pyodide.js: the JavaScript half of the
 // pyodide runtime (ExpressionPyodideRuntime.cpp).  It boots pyodide from
 // the directory the host scoped its reader to, loads the fcx_image wheel
-// found there, wires the guest's bridge to the host's native function, and
-// leaves two functions on the global for the host to call:
+// found there, and links the guest to the host in both directions.  It
+// leaves these on the global for the host:
 //
 //   __fcx_boot(root, wheel, packagesDir, packages) -> Promise<string>
 //                                                "booted" or throws
-//   __fcx_call(Uint8Array)  -> Uint8Array        one CBOR round trip
+//   __fcx_link() -> {alloc, free, call, module}  the guest's exports and
+//                                                emscripten Module
 //   __fcx_setInterrupt(Int32Array)               the interpreter's interrupt buffer
 //
-// `packagesDir` is the user's package set (docs/PyodideHost.md sec 12),
-// the base pyodide's loader fetches lock-file packages from, and
-// `packages` the names its manifest lists, loaded at boot in that
-// order; both may be empty.  Only the host's scoped reader ever serves
-// those fetches.
+// `packagesDir` is the user's package set (docs/Sandbox.md), the base
+// pyodide's loader fetches lock-file packages from, and `packages` the
+// names its manifest lists, loaded at boot in that order; both may be
+// empty.  Only the host's scoped reader ever serves those fetches.
 //
-// The host installs `__fcx_bridge(Uint8Array) -> Uint8Array` before boot;
-// it is the only way out of the guest, and it goes straight to
-// ImageHost's bridge dispatch.
+// Transport, both directions, with INTEGERS crossing and the bytes
+// staying in wasm memory:
 //
-// Transport: two bytearrays the guest owns, viewed here directly in wasm
-// memory (PyProxy.getBuffer), so a round trip moves bytes with typed-array
-// copies and crosses the language boundary with INTEGERS only.  Minting a
-// proxy per crossing measured 40 us of floor; this is the fix.  A view
-// detaches when wasm memory grows or a buffer is resized, so every use
-// checks and re-acquires.
+//  - guest -> host: the guest's side module imports `fcx_host_call` and
+//    `fcx_host_fetch` from "env" (ImageBridge.cpp).  The host installs
+//    them as V8 natives `__fcx_host_call` / `__fcx_host_fetch` before
+//    boot; mergeLibSymbols puts them in the main module's symbol table,
+//    where emscripten's dynamic linker resolves a side module's imports,
+//    BEFORE the wheel is loaded.  A bridge op is then one wasm import
+//    call landing in C++, which reads the request out of wasm memory in
+//    place.  No Python callable, no proxy, no JS in the path.
+//  - host -> guest: the side module's `fcx_alloc` / `fcx_call` /
+//    `fcx_free` exports (ImageModule.cpp), found in emscripten's loaded
+//    library table and handed to the host, which calls them straight
+//    from C++.  No `__fcx_call` in JS any more.
+//
+// Earlier shapes -- a Python callable returning bytes (a proxy per
+// crossing, 40 us of floor), then two bytearrays viewed with
+// PyProxy.getBuffer (integers across, but a JS function, two typed-array
+// copies and a detach check per hop) -- are gone.
 (function () {
   "use strict";
 
   var py = null;
-  var callLen = null;     // PyProxy of _fcx_image.call_len (owned copy)
-  var growReq = null;     // PyProxy of _fcx_image.grow_request
-  var reqProxy = null;    // PyProxy of the request bytearray
-  var repProxy = null;    // PyProxy of the reply bytearray
-  var reqView = null;     // PyBuffer over reqProxy (data: Uint8Array in wasm memory)
-  var repView = null;
+  var linked = null;
 
-  function acquire(proxy, old) {
-    if (old) old.release();
-    return proxy.getBuffer();
-  }
-  function reqData() {
-    if (!reqView || reqView.data.byteLength === 0) reqView = acquire(reqProxy, reqView);
-    return reqView.data;
-  }
-  function repData() {
-    if (!repView || repView.data.byteLength === 0) repView = acquire(repProxy, repView);
-    return repView.data;
-  }
-
-  // Put `bytes` at the start of the request buffer, growing it first if
-  // it is too small (which replaces its storage, hence re-acquire).
-  function putRequest(bytes) {
-    var data = reqData();
-    if (bytes.byteLength > data.byteLength) {
-      growReq(bytes.byteLength);
-      reqView = acquire(reqProxy, reqView);
-      data = reqView.data;
-    }
-    data.set(bytes);
-    return bytes.byteLength;
-  }
-
-  // The last-in-line import finder (docs/SandboxNetwork.md sec 9.3):
+  // The last-in-line import finder (docs/Sandbox.md, network model):
   // when nothing in the guest can import a module, ask the host what it
   // knows through the one bridge op the guest has.  An empty answer is
   // "unknown" and the ordinary ModuleNotFoundError follows; anything
@@ -87,8 +66,9 @@
     "sys.meta_path.append(_FcxPackageFinder())\n";
 
   globalThis.__fcx_boot = async function (root, wheel, packagesDir, packages) {
-    if (typeof globalThis.__fcx_bridge !== "function")
-      throw new Error("__fcx_bridge is not installed");
+    if (typeof globalThis.__fcx_host_call !== "function" ||
+        typeof globalThis.__fcx_host_fetch !== "function")
+      throw new Error("the host bridge natives are not installed");
     var options = {
       indexURL: root,
       stdout: function (s) { print(s); },
@@ -96,6 +76,14 @@
     };
     if (packagesDir) options.packageBaseUrl = packagesDir;
     py = await loadPyodide(options);
+    // The guest's two "env" imports.  A side module's imports resolve
+    // against the main module's import table at instantiation, so this
+    // goes before loadPackage; a name already defined there is left
+    // alone, hence the fcx_ prefix.
+    py._module.mergeLibSymbols({
+      fcx_host_call: globalThis.__fcx_host_call,
+      fcx_host_fetch: globalThis.__fcx_host_fetch,
+    }, "fcx");
     await py.loadPackage(wheel, { messageCallback: function () {} });
     if (packages && packages.length) {
       // A package that fails to load is reported and skipped: the guest
@@ -106,33 +94,37 @@
       });
     }
     py.runPython(FINDER);
-    var mod = py.pyimport("_fcx_image");
-    // Attribute proxies are borrowed from their owner and die with it;
-    // copy() gives ones that outlive mod.
-    callLen = mod.call_len.copy();
-    growReq = mod.grow_request.copy();
-    var bufs = mod.buffers();
-    reqProxy = bufs.get(0).copy();
-    repProxy = bufs.get(1).copy();
-    bufs.destroy();
-    // The guest's bridge: its request sits in the reply buffer, n bytes
-    // long; our reply goes into the request buffer and we return its
-    // length.  A copy out is needed because the host may run Python
-    // that grows wasm memory before it is done with the bytes.
-    mod.set_host_buffered(function (n) {
-      var req = new Uint8Array(repData().subarray(0, n));
-      var reply = globalThis.__fcx_bridge(req);
-      return putRequest(reply);
-    });
-    mod.destroy();
+    // The import runs PyInit__fcx_image: the in-image FreeCAD module,
+    // the _fcx bridge, the eval globals.
+    py.pyimport("_fcx_image").destroy();
+    // The side module's exports, from the dynamic linker's own table
+    // (the key is the .so's path in the guest's filesystem).
+    var libs = py._module.LDSO.loadedLibsByName;
+    var exports = null;
+    for (var name in libs) {
+      if (/(^|\/)_fcx_image\..*\.so$/.test(name)) {
+        exports = libs[name].exports;
+        break;
+      }
+    }
+    if (!exports)
+      throw new Error("fcx_image is not among the loaded side modules");
+    for (var fn of ["fcx_alloc", "fcx_free", "fcx_call"]) {
+      if (typeof exports[fn] !== "function")
+        throw new Error("fcx_image exports no " + fn);
+    }
+    linked = {
+      alloc: exports.fcx_alloc,
+      free: exports.fcx_free,
+      call: exports.fcx_call,
+      module: py._module,
+    };
     return "booted";
   };
 
-  globalThis.__fcx_call = function (request) {
-    if (!callLen) throw new Error("fcx_image is not loaded");
-    var n = putRequest(request);
-    var len = callLen(n);
-    return new Uint8Array(repData().subarray(0, len));
+  globalThis.__fcx_link = function () {
+    if (!linked) throw new Error("fcx_image is not loaded");
+    return linked;
   };
 
   // The soft stage of the host's time budget: pyodide polls buf[0] from
@@ -145,10 +137,7 @@
   };
 
   globalThis.__fcx_teardown = function () {
-    if (reqView) { reqView.release(); reqView = null; }
-    if (repView) { repView.release(); repView = null; }
-    for (var p of [callLen, growReq, reqProxy, repProxy]) if (p) p.destroy();
-    callLen = growReq = reqProxy = repProxy = null;
+    linked = null;
     py = null;
   };
 })();

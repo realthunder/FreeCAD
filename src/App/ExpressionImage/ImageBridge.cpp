@@ -4,9 +4,19 @@
  * `host_call` hands the CBOR request to the host and returns only the
  * reply length (the host must not re-enter the guest to allocate), then
  * `host_fetch` copies the pending reply into a guest buffer the guest
- * allocated itself.  Both are wasm imports from module "fcx", satisfied
- * by the host embedding (App::ExpressionSandbox::ImageHost) or by the
- * error-returning stubs in tools/smokehost.c.
+ * allocated itself.  Both are wasm imports, on BOTH runtimes:
+ *
+ *  - the wasi reactor imports them from module "fcx", defined by the
+ *    wasmtime linker (ExpressionWasmtimeRuntime.cpp) or by the
+ *    error-returning stubs in tools/smokehost.c;
+ *  - the pyodide side module imports from "env", the only module
+ *    emscripten's dynamic linker resolves, where the host put them with
+ *    `Module.mergeLibSymbols({fcx_host_call, fcx_host_fetch}, "fcx")`
+ *    before the wheel was loaded (pyodide_glue.js).  On the other side
+ *    is a V8 native function reading wasm memory in place -- no Python
+ *    callable, no proxy, no JS copy on the way out.
+ *
+ * Only integers cross either way; the bytes stay in wasm memory.
  */
 #include <Python.h>
 #include <cstdint>
@@ -22,131 +32,19 @@
 using nlohmann::json;
 
 #ifdef FC_EXPR_PYODIDE
-// The pyodide guest has no wasm imports of its own: a side module only
-// sees what the main module exports.  Its transport is a Python callable
-// the host installs at load (_fcx_image.set_host), which takes the CBOR
-// request as bytes and returns the CBOR reply as a bytes-like object --
-// on the other side of it is a V8 native function in the host process.
-static PyObject *g_hostCallable = nullptr;
-static bool g_hostBuffered = false;
-static PyObject *g_requestBuffer = nullptr;
-static PyObject *g_replyBuffer = nullptr;
-
-void FcxImage::setHostCallable(PyObject *callable, bool buffered)
-{
-    Py_XINCREF(callable);
-    Py_XDECREF(g_hostCallable);
-    g_hostCallable = callable;
-    g_hostBuffered = buffered;
-}
-
-static PyObject *buffer(PyObject *&slot)
-{
-    if (!slot)
-        slot = PyByteArray_FromStringAndSize(nullptr, 65536);
-    return slot;
-}
-
-PyObject *FcxImage::requestBuffer()
-{
-    return buffer(g_requestBuffer);
-}
-
-PyObject *FcxImage::replyBuffer()
-{
-    return buffer(g_replyBuffer);
-}
-
-bool FcxImage::ensureCapacity(PyObject *ba, size_t n)
-{
-    if ((size_t)PyByteArray_GET_SIZE(ba) >= n)
-        return true;
-    size_t grown = (size_t)PyByteArray_GET_SIZE(ba);
-    while (grown < n)
-        grown *= 2;
-    return PyByteArray_Resize(ba, (Py_ssize_t)grown) == 0;
-}
-
-/// The buffered shape: request into replyBuffer(), an int across, the
-/// reply out of requestBuffer().
-static bool hostTransportBuffered(const std::vector<uint8_t> &request,
-                                  std::vector<uint8_t> &replyBytes)
-{
-    PyObject *rep = FcxImage::replyBuffer();
-    PyObject *req = FcxImage::requestBuffer();
-    if (!rep || !req || !FcxImage::ensureCapacity(rep, request.size()))
-        return false;
-    memcpy(PyByteArray_AS_STRING(rep), request.data(), request.size());
-    PyObject *arg = PyLong_FromSize_t(request.size());
-    if (!arg)
-        return false;
-    PyObject *res = PyObject_CallOneArg(g_hostCallable, arg);
-    Py_DECREF(arg);
-    if (!res)
-        return false;
-    long n = PyLong_AsLong(res);
-    Py_DECREF(res);
-    if (n < 0) {
-        if (!PyErr_Occurred())
-            PyErr_SetString(PyExc_RuntimeError, "host bridge returned no reply");
-        return false;
-    }
-    if ((size_t)n > (size_t)PyByteArray_GET_SIZE(req)) {
-        PyErr_SetString(PyExc_RuntimeError, "host bridge reply exceeds the request buffer");
-        return false;
-    }
-    const uint8_t *data = reinterpret_cast<const uint8_t *>(PyByteArray_AS_STRING(req));
-    replyBytes.assign(data, data + n);
-    return true;
-}
-
-/// The one round trip: bytes out, bytes-like back.  A JsProxy of a
-/// Uint8Array supports the buffer protocol; anything else that does is
-/// accepted too.
-static bool hostTransport(const std::vector<uint8_t> &request,
-                          std::vector<uint8_t> &replyBytes)
-{
-    if (!g_hostCallable) {
-        PyErr_SetString(PyExc_RuntimeError, "host bridge unavailable");
-        return false;
-    }
-    if (g_hostBuffered)
-        return hostTransportBuffered(request, replyBytes);
-    PyObject *arg = PyBytes_FromStringAndSize(
-            reinterpret_cast<const char *>(request.data()),
-            (Py_ssize_t)request.size());
-    if (!arg)
-        return false;
-    PyObject *res = PyObject_CallOneArg(g_hostCallable, arg);
-    Py_DECREF(arg);
-    if (!res)
-        return false;
-    Py_buffer view;
-    if (PyObject_GetBuffer(res, &view, PyBUF_SIMPLE) != 0) {
-        // A JsProxy of a Uint8Array does not expose the buffer protocol
-        // directly; its to_bytes() copies the array into a bytes object.
-        PyErr_Clear();
-        PyObject *copy = PyObject_CallMethod(res, "to_bytes", nullptr);
-        Py_DECREF(res);
-        if (!copy)
-            return false;
-        res = copy;
-        if (PyObject_GetBuffer(res, &view, PyBUF_SIMPLE) != 0) {
-            Py_DECREF(res);
-            return false;
-        }
-    }
-    replyBytes.assign(static_cast<const uint8_t *>(view.buf),
-                      static_cast<const uint8_t *>(view.buf) + view.len);
-    PyBuffer_Release(&view);
-    Py_DECREF(res);
-    return true;
-}
+#define FCX_IMPORT_MODULE "env"
+#define FCX_IMPORT_CALL "fcx_host_call"
+#define FCX_IMPORT_FETCH "fcx_host_fetch"
 #else
+#define FCX_IMPORT_MODULE "fcx"
+#define FCX_IMPORT_CALL "host_call"
+#define FCX_IMPORT_FETCH "host_fetch"
+#endif
+
 extern "C" {
-__attribute__((import_module("fcx"), import_name("host_call")))
+__attribute__((import_module(FCX_IMPORT_MODULE), import_name(FCX_IMPORT_CALL)))
 int32_t fcx_host_call(const uint8_t *req, uint32_t len);
-__attribute__((import_module("fcx"), import_name("host_fetch")))
+__attribute__((import_module(FCX_IMPORT_MODULE), import_name(FCX_IMPORT_FETCH)))
 int32_t fcx_host_fetch(uint8_t *dst, uint32_t cap);
 }
 
@@ -167,7 +65,6 @@ static bool hostTransport(const std::vector<uint8_t> &request,
     }
     return true;
 }
-#endif
 
 static bool hostRoundTrip(const json &req, json &reply)
 {

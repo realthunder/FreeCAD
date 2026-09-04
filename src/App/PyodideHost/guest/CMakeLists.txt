@@ -85,7 +85,11 @@ target_link_options(_fcx_image PRIVATE
     -fwasm-exceptions -sSUPPORT_LONGJMP=wasm
     -flto
     -sSIDE_MODULE=2 -sWASM_BIGINT
-    "-sEXPORTED_FUNCTIONS=[_PyInit__fcx_image]"
+    # PyInit for pyodide's import; the three fcx_* for the host, which
+    # calls them straight from V8 (ImageModule.cpp).  The bridge's two
+    # imports (ImageBridge.cpp) are "env" imports the host merges into
+    # the main module's symbol table before this module is loaded.
+    "-sEXPORTED_FUNCTIONS=[_PyInit__fcx_image,_fcx_alloc,_fcx_free,_fcx_call]"
 )
 
 # The wheel, rebuilt whenever the module is.

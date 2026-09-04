@@ -30,25 +30,6 @@ bool encodeValue(PyObject* obj, nlohmann::json& out, std::string& err);
  */
 bool hostOp(const nlohmann::json& req, nlohmann::json& reply);
 
-#ifdef FC_EXPR_PYODIDE
-/** The pyodide guest's transport (ImageBridge.cpp).  Two shapes:
- *  - bytes: the host callable takes the CBOR request as `bytes` and
- *    returns a bytes-like reply (simple; a proxy per crossing);
- *  - buffered: two persistent bytearrays the host views directly in
- *    wasm memory.  The guest writes a bridge request into replyBuffer()
- *    and calls the host with its length; the host writes its reply into
- *    requestBuffer() and returns that length.  Only integers cross, no
- *    proxies -- the fast path.  (During an evaluation the request buffer
- *    is free: its CBOR was fully decoded before dispatch.)
- */
-void setHostCallable(PyObject* callable, bool buffered);
-/// The two bytearrays (borrowed); created on first use.
-PyObject* requestBuffer();
-PyObject* replyBuffer();
-/// Grow a bytearray to at least n bytes; false with a Python error set.
-bool ensureCapacity(PyObject* bytearray, size_t n);
-#endif
-
 }  // namespace FcxImage
 
 #endif  // APP_FCX_IMAGE_MARSHAL_H

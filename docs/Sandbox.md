@@ -336,9 +336,24 @@ Confinement is by construction: what the guest can reach is what the
 shim defines.  `PyodideProbe.cc` is the standalone probe binary only.
 
 Boot and call: `pyodide_glue.js` provides `__fcx_boot(root, wheel,
-packagesDir, names)`, `__fcx_call`, `__fcx_setInterrupt`,
-`__fcx_teardown`; the transport is two bytearrays shared through
-`getBuffer()`, only integers cross the JS boundary.  The guest wheel
+packagesDir, names)`, `__fcx_link()`, `__fcx_setInterrupt`,
+`__fcx_teardown`.  The transport (2026-09-04) is the wasi reactor's
+own shape on both sides, with no JavaScript in the path: guest->host is
+the pair of wasm imports `fcx_host_call(ptr, len) -> reply length` /
+`fcx_host_fetch(dst, cap)` (ImageBridge.cpp, module `env` for the side
+module, `fcx` for the reactor), installed as V8 natives and merged into
+the main module's symbol table with `Module.mergeLibSymbols` BEFORE
+the wheel loads, so the dynamic linker binds the side module's imports
+to them; the native reads the request out of `Module.HEAPU8` in place.
+Host->guest is the side module's `fcx_alloc`/`fcx_call`/`fcx_free`
+exports (ImageModule.cpp, `EMSCRIPTEN_KEEPALIVE` plus
+`-sEXPORTED_FUNCTIONS`), taken from `Module.LDSO.loadedLibsByName`
+and called from C++ as wasm functions.  `HEAPU8` is re-read per use:
+memory growth replaces it.  The earlier shapes -- a Python callable
+returning bytes (a proxy per crossing, 40 us of floor), then two
+bytearrays viewed through `PyProxy.getBuffer()` -- are gone, along with
+`set_host`, `set_host_buffered`, `buffers`, `grow_request`,
+`call_len` and `__fcx_call`.  The guest wheel
 `fcx_image-<ver>-cp314-cp314-pyodide_2026_0_wasm32.whl` is
 `_fcx_image`, the same `ImageSources.cmake` compiled by the pyodide
 toolchain (emsdk 5.0.3, pyodide-build 0.39.0) with `-fPIC
@@ -807,12 +822,23 @@ these numbers are not CI-checked and can drift.
     what                                  native   WASI (Release)   pyodide (final)
     ------------------------------------  -------  ---------------  ---------------
     transport floor                       --       2.68 us          5.4 us
-    wire floor (eval "1")                 --       12.8 us          30.6-37.6 us
-    parse + eval arithmetic               2.03 us  13.36 us (6.6x)  --
-    one property read                     ~3.0 us  20.92 us (7.1x)  --
+    wire floor (eval "1")                 --       12.8-15.7 us     22.2 us (was 30.6-37.6)
+    parse + eval arithmetic               2.03 us  13.36 us (6.6x)  18.6 us (was 23.6)
+    one property read                     ~3.0 us  20.92 us (7.1x)  29.7 us (was 37.1)
     one bridge hop (marginal, read_prop)  --       7.1-7.3 us       6.2-7.4 us
-    pack per eval (export+proxy+release)  --       +23 us           +44 us
+    pack per eval (export+proxy+release)  --       +23 us           +27 us (was +44)
     instantiate + first eval              --       14 ms (.cwasm)   ~1.5-1.7 s
+
+The pyodide "was" figures are the bytearray/getBuffer transport; the
+current ones are the short-circuit of 2026-09-04 (sec 4.1: wasm
+imports bound to V8 natives, exports called from C++), which took the
+JavaScript out of both directions.  It cut the round trip by about 9
+us and the per-eval pack cost by 17 us; the marginal hop itself moved
+within noise (~7 us either way), because what remains of a hop is the
+guest's CPython `__getattr__` + `_fcx.op` + CBOR (~3 us) and the host
+dispatch (GIL, handle table, property read, security, encode, ~3-4
+us), not the crossing.  A fixed-layout codec (1-2 us) is the only
+transport-side saving left.
     native Shape.Volume / BoundBox.ZMin   179/183 us (mass properties, not
                                           materialization: a TopoShapePy
                                           attribute read is ~1 us native)

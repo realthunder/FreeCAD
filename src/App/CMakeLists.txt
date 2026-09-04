@@ -255,11 +255,17 @@ if(BUILD_EXPR_IMAGE_HOST)
             install(DIRECTORY ${FREECAD_PYODIDE_DIR}/
                     DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide)
             set(_pyodide_data ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide)
+            # The mirror is what a dev-tree FreeCAD boots from, so it must
+            # follow the guest wheel too, not only pyodide.js: a rebuilt
+            # fcx_image wheel copied beside the runtime used to sit unseen
+            # while the mirror kept serving the previous one.
+            file(GLOB _pyodide_wheels ${FREECAD_PYODIDE_DIR}/fcx_image-*.whl)
             add_custom_command(
                 OUTPUT ${_pyodide_data}/pyodide.js
                 COMMAND ${CMAKE_COMMAND} -E copy_directory
                         ${FREECAD_PYODIDE_DIR} ${_pyodide_data}
-                DEPENDS ${FREECAD_PYODIDE_DIR}/pyodide.js
+                COMMAND ${CMAKE_COMMAND} -E touch ${_pyodide_data}/pyodide.js
+                DEPENDS ${FREECAD_PYODIDE_DIR}/pyodide.js ${_pyodide_wheels}
                 COMMENT "Mirroring the pyodide distribution into the build tree")
             add_custom_target(PyodideData ALL DEPENDS ${_pyodide_data}/pyodide.js)
         endif()
