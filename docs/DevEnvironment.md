@@ -1475,9 +1475,13 @@ Measured 2026-08-28, `cyclesRenderTest` at 640x480 / 64 samples:
 | HIP | Radeon 680M, gfx1035 | 195.1s | 2.0s |
 
 **Only the warm column is a performance number.** The cold one is dominated by
-one-time kernel compiles that then cache under `.cache/cycles/kernels`: CUDA's
-430s matches the ~297s sec 4.1 records for a cold compile, and OptiX's 9s is it
-reusing what CUDA had just built, not a faster compile.
+one-time kernel compiles that then cache: CUDA's 430s matches the ~297s sec 4.1
+records for a cold compile, and OptiX's 9s is it reusing what CUDA had just
+built, not a faster compile. **The cache is not where the Linux section says**
+-- `path_cache_get()` has no XDG branch on Windows, so it is `cache\kernels`
+beside the binary (`build\win-relwithdebinfo-801\bin`), and the way to arrange a
+cold compile here is to move that directory aside, not to set a variable. Move
+it rather than delete it: a cold CUDA compile is five minutes.
 
 Warm, the ordering is the one sec 4.2 predicts. CUDA and OptiX come in around
 3x the CPU, and **HIP loses to the CPU** -- a 680M on shared system memory

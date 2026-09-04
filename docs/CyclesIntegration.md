@@ -854,17 +854,38 @@ HIP devices own one and override `cancel()` (OptiX and HIP-RT inherit
 it), `MultiDevice` forwards to its sub-devices, and a compile stopped
 this way reports no error -- being asked to stop is not a failure.
 
-**Windows is not covered, and is the one thing left open here.** The
-command still goes through `system()` there and the cancel only raises
-the flag, so a compile already started runs to the end and whoever
-joins that thread waits for it: no regression, no improvement. What it
-needs is the same "take the whole tree" rule the process group gives on
-POSIX, since the compiler driver's children are where the time goes --
-`CreateProcess` suspended, the process put in a job object created with
-`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, resumed and waited on by handle,
-with the cancel calling `TerminateJobObject`. It is written as that
-note in `util/subprocess.cpp` rather than guessed at from a machine
-that cannot build or test it; it belongs to a Windows box.
+**Windows takes the whole tree too, through a job object** (built
+2026-09-04 on the Windows side of this same laptop -- sec 4.1 -- which
+is where nvcc, the real `nvoptix.dll` and the HIP SDK all are).
+`system()` gives the caller no handle to anything, so the command is
+started by hand instead: `CreateProcessW` on `cmd /s /c`, **suspended**,
+the process put in a job object created with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, then resumed and waited on by
+handle, with `cancel()` calling `TerminateJobObject`. Suspended is not
+a detail: a shell that got as far as starting nvcc would leave it
+outside the job and out of the cancel's reach. `KILL_ON_JOB_CLOSE`
+covers the paths that never reach a cancel as well -- whatever is still
+in the job dies when `run()` drops the last handle to it.
+
+Two things the sketch that stood here did not have:
+
+- **`/s`.** It makes cmd's quoting rule the simple one -- strip the
+  first and last quote, take the rest of the line verbatim. Every
+  command that gets here carries quoted paths of its own, which the
+  rule without `/s` counts and then takes apart.
+- **The child is handed exactly the three standard handles**,
+  duplicated inheritable and passed in a
+  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. `system()` ran the compiler on
+  the caller's handles, and a compiler's diagnostics are the "see
+  console for details" that a failed compile refers to, so they have to
+  keep arriving wherever the application's output goes -- a redirected
+  log included. The handle list keeps that without the other half of
+  what `system()` does, which is to inherit everything inheritable in a
+  process this size. Duplicating also keeps the list free of the
+  repeats it rejects, since stdout and stderr are commonly one handle.
+
+If the job cannot be created or joined, the command still runs; it runs
+uncancellable, which is exactly what it did before, and says so.
 
 A killable compile makes a half-written kernel likely rather than
 merely possible, and the cache could not survive one: all three
@@ -905,6 +926,54 @@ second compile by "a sphere is on the pane", which passed in one second
 because the raster frame from the mode switch has one -- it proved
 nothing at all. A compile is judged by the engine's own finish line and
 by what the cache directory holds.
+
+**Verified again on Windows** (2026-09-04, native `BUILD_CYCLES=ON`
+build, FreeCAD under cdb; probes in
+`D:\works\sw\fcad-probes\win_kernel_compile_cancel`). The cold cache is
+arranged differently there and it is worth knowing: `path_cache_get()`
+has no XDG branch on Windows, so the kernels land in `cache\kernels`
+**beside the binary**, and a cold compile is arranged by moving that
+directory aside rather than by setting a variable.
+
+With `FreeCAD -> cmd -> nvcc -> cmd -> cicc` confirmed running,
+`view.cyclesViewport(False)` returned in **0.003 s** and the GUI
+thread's own heartbeat timer showed a longest gap of **0.124 s**
+against its 0.1 s interval; every process in that tree was gone and the
+cache directory was left empty -- no `.cubin`, no temporary. The
+second, uninterrupted attempt compiled for **283 s**, left exactly one
+19,005,168-byte `.cubin` and no temporary, and the session reached
+"Rendering Done, Sample 16/16". A third cold compile released with the
+quit right behind it put the process out in about a second with nothing
+of the compiler left running: the drain covering the overlap, rather
+than waiting out a compile.
+
+**HIP was measured the same way and is the deeper tree.** hipcc is a
+batch file, so the command is `call hipcc ...` and the job holds
+`cmd -> hipcc -> cmd -> clang -> clang`. The release returned in
+0.002 s, the heartbeat's longest gap was 0.12 s, and all five were
+gone. Sec 4.2's point holds -- AMD is only reachable from the Windows
+side of this box -- and this is the first work to have needed it.
+
+The mechanism itself was taken separately, since a kernel compile is a
+slow way to ask a small question: a test against the tree's
+`cycles_util.lib` runs a command that starts a grandchild of its own
+and appends to a log once a second. Cancelled once that grandchild was
+demonstrably alive, `run()` returned 0.62 s into a command with a
+minute to go, reported -1 rather than the kill's exit status, and
+**the grandchild's log stopped
+growing** -- which is the difference between taking the tree and
+killing the process that was started. It also holds the quoting and the
+inherited stdout above, and that closing the job takes what a finished
+command left running.
+
+Two traps for the next scripted quit here, both of which cost a
+measurement. `mainWindow.close()` and, in Qt 6, `QApplication.quit()`
+alike stop at the "Unsaved document" modal, which a script does not
+see: an exit that "took 420 s" was that box waiting for an answer while
+the compile it was meant to interrupt ran to completion. Close the
+documents first (`App.closeDocument` discards). And a document that was
+just saved is not therefore unmodified -- the view's own state touches
+it again.
 
 ## 6. Scene translation
 
