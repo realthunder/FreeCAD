@@ -101,6 +101,13 @@ mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 ISO="$OUT/.iso"
 mkdir -p "$ISO/cache" "$ISO/config"
+# RV_CACHE shares one cache directory across runs instead of giving each
+# its own. It matters more than it sounds: the generated MaterialX
+# shaders are compiled by shaderc into $XDG_CACHE_HOME/FreeCAD/
+# BGFXUserShaders, and a private cache means every run recompiles the
+# whole material set from cold while the capture clock is running.
+CACHE="$ISO/cache"
+[ -n "${RV_CACHE:-}" ] && { mkdir -p "$RV_CACHE"; CACHE=$(cd "$RV_CACHE" && pwd); }
 rm -f "$ISO/cache/FreeCAD/Cache/FreeCAD_"*.lock 2>/dev/null
 RESULT="$OUT/result.txt"
 : > "$RESULT"
@@ -118,7 +125,7 @@ cleanup() {
 trap cleanup EXIT
 
 COMMON_ENV=(
-    XDG_CACHE_HOME="$ISO/cache" XDG_CONFIG_HOME="$ISO/config"
+    XDG_CACHE_HOME="$CACHE" XDG_CONFIG_HOME="$ISO/config"
     RV_OUT="$OUT" RV_RESULT="$RESULT" RV_SCENE_NAME="$NAME"
     ${CAMS:+RV_CAMERAS="$CAMS"} ${MODES:+RV_MODES="$MODES"}
     ${GOLDEN:+RV_GOLDEN="$GOLDEN"}
