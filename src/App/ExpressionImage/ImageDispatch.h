@@ -9,6 +9,7 @@
 #define APP_FCX_IMAGE_DISPATCH_H
 #include <Python.h>
 #include <cstdint>
+#include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -28,6 +29,17 @@ PyObject* evalGlobals();
 /// One decoded request -> its reply (never throws; protocol errors are
 /// replies).  A pending Python error is cleared on the way out.
 nlohmann::json dispatch(const nlohmann::json& req);
+
+/** Ask the host what it knows about a module the guest could not
+ * import (`pkg.missing <name>`, docs/Sandbox.md 5.5): the offer to
+ * install it, "installed, next evaluation", or "" when the host has
+ * nothing to say.  Asked only for an import that ENDS the work -- an
+ * uncaught ModuleNotFoundError leaving the guest (the error reply) and
+ * the expression language's own `import` statement, which nothing can
+ * catch (Expression.cpp ImportModules).  Never raises; leaves the
+ * current Python error as it found it.
+ */
+std::string missingImportOffer(const std::string& module);
 
 /// CBOR request bytes -> CBOR reply bytes.
 std::vector<uint8_t> dispatchCbor(const uint8_t* req, size_t len);

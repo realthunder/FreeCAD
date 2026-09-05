@@ -763,7 +763,14 @@ for a `ModuleNotFoundError` that leaves the guest UNCAUGHT (2026-09-05;
 until then a `sys.meta_path` finder asked at every failed import, and
 lark's optional `try: import regex` in BIM's generated parser -- `regex`
 is in the lock -- recorded an install offer nobody asked for; stats
-now count `pkg.missing:<name>`); the host answers from the lock's import map
+now count `pkg.missing:<name>`), and from the expression language's own
+`import x` statement (Expression.cpp `ImportModules`, guest build only):
+nothing in an expression can catch that failure, and the engine rethrows
+it as a Base exception before the reply looks, so the question is asked
+at the import site while it is still a `ModuleNotFoundError` -- the
+finder retirement had silently lost this path; `SandboxPyodide`'s
+python-mode `import numpy` test, not rerun that day, found it on
+2026-09-05.  Both sites share `FcxImage::missingImportOffer`.  The host answers from the lock's import map
 (304 names): installed -> `ImageHost::scheduleReset()` and the next
 evaluation boots with the package; else
 `Runtime::requestPending(PkgInstall, name)` records a pending request,

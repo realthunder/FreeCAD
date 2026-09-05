@@ -49,6 +49,7 @@
 // Expression/DocumentObject are absent (helpers below stub their type
 // checks).  See docs/ExpressionImage.md.
 #include <App/ExpressionImage/FcxDocument.h>
+#include <App/ExpressionImage/ImageDispatch.h>
 #include <Base/BaseClassPy.h>
 #else
 #include <App/Application.h>
@@ -2382,8 +2383,26 @@ public:
         if(entry)
             return Py::Object(entry);
         entry = PyImport_ImportModule(name.c_str());
-        if(!entry)
+        if(!entry) {
+#ifdef FC_EXPR_IMAGE
+            // The expression language's `import x` in the sandbox guest:
+            // nothing in an expression can catch the failure, so this is
+            // the uncaught case the guest's error reply asks the host
+            // about (pkg.missing, docs/Sandbox.md 5.5) -- but the reply
+            // sees a Base exception by then, the Python type gone.  Ask
+            // here, while it is still a ModuleNotFoundError, and make
+            // the offer the message (2026-09-05: the meta_path finder
+            // that used to answer at import time is retired).
+            if (PyErr_ExceptionMatches(PyExc_ModuleNotFoundError)) {
+                std::string offer = FcxImage::missingImportOffer(name);
+                if (!offer.empty()) {
+                    PyErr_Clear();
+                    __EXPR_THROW(ImportError, offer, e);
+                }
+            }
+#endif
             EXPR_PY_THROW(e);
+        }
         imports.insert(entry);
         return Py::Object(entry);
     }

@@ -327,6 +327,28 @@ PyObject *evalGlobals()
 }
 
 /// Current Python error -> {"ok":false,"exc":<type>,"msg":<text>}.
+std::string FcxImage::missingImportOffer(const std::string &module)
+{
+    // keep whatever error is pending: the caller is in the middle of
+    // reporting it
+    PyObject *ptype = nullptr, *pvalue = nullptr, *ptrace = nullptr;
+    PyErr_Fetch(&ptype, &pvalue, &ptrace);
+    std::string offer;
+    PyObject *fcx = PyImport_ImportModule("_fcx");
+    PyObject *answer = fcx ? PyObject_CallMethod(fcx, "op", "sKs", "pkg.missing",
+                                                 (unsigned long long)0, module.c_str())
+                           : nullptr;
+    if (answer && PyUnicode_Check(answer)) {
+        if (const char *text = PyUnicode_AsUTF8(answer))
+            offer = text;
+    }
+    Py_XDECREF(answer);
+    Py_XDECREF(fcx);
+    PyErr_Clear();
+    PyErr_Restore(ptype, pvalue, ptrace);
+    return offer;
+}
+
 static json errorReply()
 {
     json r;
@@ -357,16 +379,9 @@ static json errorReply()
     if (type && value && PyErr_GivenExceptionMatches(type, PyExc_ModuleNotFoundError)) {
         PyObject *name = PyObject_GetAttrString(value, "name");
         if (name && PyUnicode_Check(name)) {
-            PyObject *fcx = PyImport_ImportModule("_fcx");
-            PyObject *answer = fcx ? PyObject_CallMethod(fcx, "op", "sKO", "pkg.missing",
-                                                         (unsigned long long)0, name)
-                                   : nullptr;
-            const char *offer = answer && PyUnicode_Check(answer) ? PyUnicode_AsUTF8(answer)
-                                                                  : nullptr;
-            if (offer && *offer)
+            std::string offer = FcxImage::missingImportOffer(PyUnicode_AsUTF8(name));
+            if (!offer.empty())
                 r["msg"] = offer;
-            Py_XDECREF(answer);
-            Py_XDECREF(fcx);
         }
         Py_XDECREF(name);
         PyErr_Clear();
