@@ -25,6 +25,8 @@
 #ifndef _PreComp_
 #include <cassert>
 #endif
+#include <filesystem>
+#include <system_error>
 
 /// Here the FreeCAD includes sorted by Base,App,Gui......
 #include "Type.h"
@@ -91,6 +93,11 @@ void Type::importModule(const char* TypeName)
         // remember already loaded modules
         set<string>::const_iterator pos = loadModuleSet.find(Mod);
         if (pos == loadModuleSet.end()) {
+            if (!moduleAllowed(Mod)) {
+                throw RuntimeError("type '" + string(TypeName) + "' names module '" + Mod
+                                   + "', which is not a FreeCAD module (not loaded and not "
+                                     "under a Mod directory); not imported");
+            }
             Interpreter().loadModule(Mod.c_str());
 #ifdef FC_LOGLOADMODULE
             Console().Log("Act: Module %s loaded through class %s \n", Mod.c_str(), TypeName);
@@ -98,6 +105,110 @@ void Type::importModule(const char* TypeName)
             loadModuleSet.insert(Mod);
         }
     }
+}
+
+vector<string> Type::moduleRoots;
+
+void Type::addModuleRoot(const std::string& dir)
+{
+    if (dir.empty()) {
+        return;
+    }
+    std::error_code ec;
+    std::filesystem::path p = std::filesystem::weakly_canonical(dir, ec);
+    if (ec) {
+        p = std::filesystem::path(dir).lexically_normal();
+    }
+    string s = p.generic_string();
+    while (s.size() > 1 && s.back() == '/') {
+        s.pop_back();
+    }
+    for (const auto& r : moduleRoots) {
+        if (r == s) {
+            return;
+        }
+    }
+    moduleRoots.push_back(s);
+}
+
+namespace
+{
+/// Is `file` inside `root` (a canonical directory), at a separator boundary?
+bool underRoot(const std::string& file, const std::string& root)
+{
+    std::error_code ec;
+    std::filesystem::path p = std::filesystem::weakly_canonical(file, ec);
+    if (ec) {
+        p = std::filesystem::path(file).lexically_normal();
+    }
+    const string f = p.generic_string();
+    return f.size() > root.size() && f.compare(0, root.size(), root) == 0
+        && f[root.size()] == '/';
+}
+}  // namespace
+
+bool Type::moduleAllowed(const std::string& module)
+{
+    if (!Py_IsInitialized()) {
+        return false;
+    }
+    PyGILStateLocker lock;
+    // already loaded: nothing new runs
+    PyObject* mods = PyImport_GetModuleDict();
+    if (mods && PyDict_GetItemString(mods, module.c_str())) {
+        return true;
+    }
+    // where would the import come from?  importlib.util.find_spec on a
+    // top-level name imports nothing itself
+    PyObject* util = PyImport_ImportModule("importlib.util");
+    if (!util) {
+        PyErr_Clear();
+        return false;
+    }
+    PyObject* spec = PyObject_CallMethod(util, "find_spec", "s", module.c_str());
+    Py_DECREF(util);
+    if (!spec) {
+        // an invalid name, a broken finder: let the import report it
+        PyErr_Clear();
+        return true;
+    }
+    if (spec == Py_None) {
+        // no such module anywhere: the import fails with its own error
+        Py_DECREF(spec);
+        return true;
+    }
+    std::vector<std::string> locations;
+    PyObject* origin = PyObject_GetAttrString(spec, "origin");
+    if (origin && PyUnicode_Check(origin)) {
+        locations.emplace_back(PyUnicode_AsUTF8(origin));
+    }
+    Py_XDECREF(origin);
+    // a namespace package has no origin, only its directories
+    PyObject* dirs = PyObject_GetAttrString(spec, "submodule_search_locations");
+    if (dirs && PySequence_Check(dirs)) {
+        PyObject* seq = PySequence_Fast(dirs, "locations");
+        if (seq) {
+            for (Py_ssize_t i = 0; i < PySequence_Fast_GET_SIZE(seq); ++i) {
+                PyObject* d = PySequence_Fast_GET_ITEM(seq, i);
+                if (PyUnicode_Check(d)) {
+                    locations.emplace_back(PyUnicode_AsUTF8(d));
+                }
+            }
+            Py_DECREF(seq);
+        }
+    }
+    Py_XDECREF(dirs);
+    Py_DECREF(spec);
+    PyErr_Clear();
+    // "built-in" and "frozen" are not paths and match no root
+    for (const auto& loc : locations) {
+        for (const auto& root : moduleRoots) {
+            if (underRoot(loc, root)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 string Type::getModuleName(const char* ClassName)

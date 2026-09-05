@@ -1866,8 +1866,22 @@ sockets, any network for the reference image, a webview escape hatch.
   and a module the guest cannot serve fails closed (3.5, 7.6).  Still
   open: the same import for a VIEW PROVIDER's Proxy (`Gui::ViewProvider`
   container, no document object -- native until the Gui side is in the
-  guest, G2), and `Base::Type::importModule`'s type-string import
-  (`Type.cpp:85`).
+  guest, G2).  CLOSED 2026-09-05, natively: `Base::Type::importModule`'s
+  type-string import (a saved property type `Foo::Bar`, a
+  PropertyPersistentObject) was a plain `PyImport_ImportModule` of
+  whatever name stood before the `::` -- stdlib and site-packages
+  included.  User ruling: "restrict it natively, only Mod directories or
+  already loaded modules".  It now imports only a module already in
+  `sys.modules` or one `importlib.util.find_spec` resolves into a
+  registered module root (`Type::addModuleRoot`: the installation's
+  `Mod`, the user's `Mod`, the macro directory's `Mod` and every
+  `--module-path`, registered by `Application::initApplication` before
+  the init script -- the same directories FreeCADInit puts on
+  `sys.path`); anything else throws `Base::RuntimeError` without
+  importing, and a module that exists nowhere fails with the
+  interpreter's own error as before (the callers log it).  Gate:
+  `TypeImport.*` in Tests_run (six cases: under a root, on `sys.path`
+  outside every root, stdlib, already loaded, missing, core prefixes).
 - What BIM's App side cannot do in the guest (the corpus gates' list):
   `ArchSchedule`'s IFC branch imports `nativeifc` (ifcopenshell) --
   nothing of it is in the guest.  CLOSED 2026-09-05: the four writers

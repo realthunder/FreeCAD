@@ -3130,6 +3130,28 @@ void Application::initApplication()
         Base::Console().Log("Create Application\n");
     Application::_pcSingleton = new Application(mConfig);
 
+    // The module roots a type string in a document may import from
+    // (Base::Type::importModule): the same Mod directories FreeCADInit
+    // puts on sys.path -- the installation's, the user's, the macro
+    // directory's, and --module-path.  Nothing else: a saved
+    // "json::Whatever" must not import the stdlib (user ruling
+    // 2026-09-05, docs/Sandbox.md 13).
+    Base::Type::addModuleRoot(mConfig["AppHomePath"] + "Mod");
+    Base::Type::addModuleRoot(getUserAppDataDir() + "Mod");
+    Base::Type::addModuleRoot(getUserMacroDir() + "Mod");
+    {
+        const std::string& extra = mConfig["AdditionalModulePaths"];
+        std::string::size_type start = 0;
+        while (start <= extra.size() && !extra.empty()) {
+            std::string::size_type end = extra.find(';', start);
+            if (end == std::string::npos)
+                end = extra.size();
+            if (end > start)
+                Base::Type::addModuleRoot(extra.substr(start, end - start));
+            start = end + 1;
+        }
+    }
+
     // set up Unit system default
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
        ("User parameter:BaseApp/Preferences/Units");
