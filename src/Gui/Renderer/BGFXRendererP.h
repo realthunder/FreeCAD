@@ -5600,9 +5600,14 @@ public:
     /// reconstructs each pixel's world direction from the predefined
     /// u_proj/u_invView).
     ///
-    /// How far out of focus it is drawn is Render_PBREnvBlur, a lod
-    /// along m_envBgTex's box mip chain: zero is the map as baked,
-    /// which is the same backdrop the path tracer shows.
+    /// How far out of focus it is drawn is Render_PBREnvBlur, read as
+    /// a lens aperture (Render::envBlurAngle) and convolved in by
+    /// spreading taps over the cone it subtends: zero is the map as
+    /// baked, which is the same backdrop the path tracer shows.
+    /// m_envBgTex's mip chain is still what the taps read, but it now
+    /// sizes each tap's footprint to the spacing between taps rather
+    /// than standing in for the blur itself -- which is what a mip was
+    /// bad at, and why a wide setting used to be pixelated.
     void submitEnvBackground();
 
     void submitBackground(const Render::Background &bg);
@@ -6805,9 +6810,9 @@ public:
     /// (SceneTranslator::translateWorld, 1024x512 equirect), so at
     /// blur 0 the two shading models show the SAME backdrop -- which
     /// is the whole point of the control. Its mips are plain box
-    /// downsamples rather than GGX lobes: a defocused backdrop is what
-    /// they stand for, not a reflection, and box levels cost nothing
-    /// against the 64-sample prefilter the lighting cube pays.
+    /// downsamples rather than GGX lobes: they are read as a tap
+    /// footprint, not as a reflection lobe, and box levels cost
+    /// nothing against the 64-sample prefilter the lighting cube pays.
     static constexpr uint16_t kEnvBgSize = 256;
     bgfx::TextureHandle m_envTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_envBgTex = BGFX_INVALID_HANDLE;
@@ -6894,8 +6899,8 @@ public:
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
     float pbrEnvIntensity = 1.0f;
     /// How far out of focus the environment background is, 0..1
-    /// (PBRConfig::envBlur); 1 is the top of m_envBgTex's mip chain,
-    /// a single averaged colour.
+    /// (PBRConfig::envBlur); 1 is a 45-degree aperture, the widest
+    /// defocus that still reads as a place (Render::envBlurAngle).
     float pbrEnvBlur = 0.25f;
     bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_bumpParams = BGFX_INVALID_HANDLE;
