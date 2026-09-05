@@ -400,6 +400,7 @@ public:
             s.status = sub.empty() ? st : st + ", " + sub;
             if (session->progress.get_error())
                 s.error = session->progress.get_error_message();
+            s.complete = s.error.empty() && s.progress >= 1.0f;
         }
         return s;
     }

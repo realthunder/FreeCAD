@@ -21,9 +21,12 @@
 #   --gpu            real-GPU leg: WSLg wayland + Mesa d3d12 (OPENS A WINDOW
 #                    ON THE DESKTOP; default is headless xvfb = llvmpipe,
 #                    which verifies logic but not device-GPU precision)
-#   --settle N       frames to run before capturing (default 150); a
-#                    scene whose content arrives over several frames
-#                    needs enough of them
+#   --settle N       extra frames to run before capturing (default 0).
+#                    The harness first waits for the backend's own
+#                    "complete frame" signal (view.waitFrameComplete:
+#                    shaders compiled, deferred shapes arrived, frozen
+#                    warm-up reached), so this is only for content that
+#                    signal does not cover
 #   --cycles         also path trace each staged camera with Cycles
 #                    (CPU by default -- see --cycles-device). Needs a
 #                    BUILD_CYCLES build; adds <prefix>--cycles--mode0.png

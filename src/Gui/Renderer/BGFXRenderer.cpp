@@ -641,6 +641,21 @@ bool BGFXRenderer::frameDumpHeld() const
     return pimpl->dumpHeld;
 }
 
+bool BGFXRenderer::frameComplete() const
+{
+    return pimpl->lastFrameComplete;
+}
+
+uint64_t BGFXRenderer::renderedFrames() const
+{
+    return pimpl->renderedFrameCount;
+}
+
+uint64_t BGFXRenderer::completeFrames() const
+{
+    return pimpl->completeFrameCount;
+}
+
 bool BGFXRenderer::getRenderStats(RenderStats &stats) const
 {
     stats = pimpl->lastStats;

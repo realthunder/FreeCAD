@@ -1074,6 +1074,13 @@ struct FrameDumpRequest {
     /// — editing overlays, dimensions) are scene content and are drawn
     /// either way.
     bool overlays = true;
+    /// Consumed only by a COMPLETE frame (frameComplete: every user
+    /// shader compiled, every deferred shape arrived, the frozen
+    /// warm-up reached) -- the default, because a capture is of the
+    /// scene as authored. False takes the very next frame whatever
+    /// its state: the scene as it stands mid-arrival, which is what a
+    /// probe of the arrival itself wants to see.
+    bool waitComplete = true;
 };
 
 /// Readback statistics of a captured frame — the cheap numeric
@@ -3526,6 +3533,24 @@ public:
     /// dozen programs on a software driver takes longer than any quiet
     /// timeout should.
     virtual bool frameDumpHeld() const { return false; }
+    /// Whether the last rendered frame was COMPLETE -- the picture as
+    /// authored: every user-shader program compiled, every shape the
+    /// publish deferred arrived, a frozen frame's particle warm-up
+    /// reached, and no mesh refine asked for by the level ladder. The
+    /// same verdict that holds a frame dump, exposed so a test (or
+    /// anyone else) can wait for the picture instead of for a number
+    /// of frames. Costs the frame two flag writes and a compare; every
+    /// wait lives in the caller. True where the backend has nothing
+    /// to say.
+    virtual bool frameComplete() const { return true; }
+    /// Frames rendered, and complete frames rendered, since the backend
+    /// came up. A waiter records the complete count, pumps, and stops
+    /// when it advances -- a verdict left over from before the request
+    /// proves nothing about the scene since -- and reads the rendered
+    /// count as progress, so a frame that takes longer than any quiet
+    /// timeout never runs it out.
+    virtual uint64_t renderedFrames() const { return 0; }
+    virtual uint64_t completeFrames() const { return 0; }
     /// Statistics of the last frame readback (a consumed frame dump);
     /// false while none has run.
     virtual bool getRenderStats(RenderStats &stats) const

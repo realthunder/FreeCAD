@@ -35,10 +35,13 @@ Environment contract (all optional except RV_OUT):
                viewer to connect. The viewer keeps its own camera (pin it
                with the page's &cam= URL parameter), so viewer captures are
                named <scene>--viewercam--mode<N>--viewer.png.
-  RV_SETTLE    frames to run before capturing (default 150). A scene
-               whose content arrives over several frames -- imported
-               textures, a MaterialX splice, a stateful emitter -- needs
-               enough of them or a capture races what is still loading.
+  RV_SETTLE    extra frames to run before capturing (default 0). The
+               harness first waits for the backend's own complete-frame
+               signal (view.waitFrameComplete: every user shader
+               compiled, every deferred shape arrived, the frozen
+               particle warm-up reached), which is what used to need a
+               frame count; this is only for content that signal does
+               not cover.
   RV_CYCLES    "1" -> also path trace each staged camera with the Cycles
                engine (docs/CyclesIntegration.md phase 3), written as
                <prefix>--cycles--mode0.png so render_diff.py pairs it as a
@@ -72,7 +75,7 @@ MODES = [int(m) for m in os.environ.get("RV_MODES", "0,1,2,3,4").split(",") if m
 GOLDEN = os.environ.get("RV_GOLDEN", "")
 VIEWER = os.environ.get("RV_VIEWER", "") == "1"
 VIEWER_TIMEOUT = float(os.environ.get("RV_VIEWER_TIMEOUT", "120"))
-SETTLE = int(os.environ.get("RV_SETTLE", "150"))
+SETTLE = int(os.environ.get("RV_SETTLE", "0"))
 CYCLES = os.environ.get("RV_CYCLES", "") == "1"
 CYCLES_SAMPLES = int(os.environ.get("RV_CYCLES_SAMPLES", "32"))
 CYCLES_DEVICE = os.environ.get("RV_CYCLES_DEVICE", "CPU")
@@ -316,10 +319,18 @@ def settle_state():
     one settle here covers every staging that follows.
     """
     v = view()
+    # The backend's own word (docs/RenderDebug.md sec 4.2): a complete
+    # frame is one with every user shader compiled, every deferred shape
+    # arrived and the frozen warm-up reached. Waiting for that instead
+    # of for a frame count is what lets the chess set take the time it
+    # needs and the small scene almost none.
+    ok = v.waitFrameComplete(120000)
+    check("frame complete", ok)
     for _ in range(SETTLE):
         v.redraw()
         FreeCADGui.updateGui()
-    note("state settled (%d frames)" % SETTLE)
+    note("state settled (complete frame%s)"
+         % (" + %d frames" % SETTLE if SETTLE else ""))
 
 
 def stage_named(cam):

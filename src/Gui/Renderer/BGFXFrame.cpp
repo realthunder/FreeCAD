@@ -77,8 +77,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
         dirtyChanged = true;
     // The stand-in record is per frame: the first submit of a sub-view
     // sequence starts it, the later ones add to it, the tail reads it.
-    if (!subCtx.active || subCtx.first)
+    if (!subCtx.active || subCtx.first) {
         _BGFXLib.userProgramStoodIn = false;
+        frameOwes = false;
+    }
 #endif
     (void)feedChanged;
     feedDirty = false;
@@ -742,6 +744,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 auto tags = Render::planMeshRefines(
                     scene, levelPlanner.viewMatrix(),
                     levelPlanner.projMatrix(), h, refineTolerance);
+                // A refine asked for is a mesh drawn coarser than the
+                // plan wants: this frame is not the picture yet. Per
+                // frame on purpose -- a refine that lands republishes
+                // and re-plans, and a plan that stays quiet must not
+                // hold a stale "owes" over every later frame.
+                if (!tags.empty())
+                    frameOwes = true;
 
                 // The hard ceiling (sec 13c.5): the budget is a
                 // line climbs may not cross, judged against the
@@ -4075,8 +4084,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // that still owes simulation steps keeps the view animating
     // (docs/RenderEngine.md §5.8) — that is how a frozen frame
     // reaches its warm-up state.
-    if (view->stepParticles(scene, animTime, debugconf.freezeFrame))
+    if (view->stepParticles(scene, animTime, debugconf.freezeFrame)) {
         animatedFrame = true;
+        // A frozen frame short of its warm-up is not the picture yet;
+        // a live one is animating, which is never "incomplete".
+        if (debugconf.freezeFrame)
+            frameOwes = true;
+    }
     // ... and immediately hand what they hit to the water, which is
     // the only consumer that has to see it before anything draws.
     view->splatImpacts(animTime, debugconf.freezeFrame,
@@ -6340,9 +6354,19 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // frame deferred shapes under its capture budget, so the scene is
     // still arriving. Same hold, same release -- the follow-up publish
     // the viewer schedules catches the deferred shapes up.
-    const bool holdDump = dumpPending
-        && (_BGFXLib.userProgramStoodIn || hostHold);
+    // The verdict is the frame's, dump or no dump: it is what
+    // Renderer::frameComplete reports and what the counters below
+    // let a waiter wait for. Two flags and two increments; nothing
+    // here waits.
+    const bool complete = !_BGFXLib.userProgramStoodIn && !hostHold
+        && !frameOwes;
     hostHold = false;
+    lastFrameComplete = complete;
+    ++renderedFrameCount;
+    if (complete)
+        ++completeFrameCount;
+    const bool holdDump = dumpPending && !complete
+        && pendingDump.waitComplete;
     dumpHeld = holdDump;
     view->blit(dumpPending && !holdDump ? &pendingDump : nullptr,
                &lastStats,

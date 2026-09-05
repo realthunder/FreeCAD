@@ -637,6 +637,38 @@ view.saveRenderDump(path,
   is recorded and its draw stands in for good without asking again, and
   each follow-up publish captures at least one more deferred shape. The
   case that made this necessary is section 5.2a.
+- **The same verdict is a signal in its own right.** `Renderer::
+  frameComplete()` is the last frame's verdict; `renderedFrames()` and
+  `completeFrames()` count frames since the backend came up, so a
+  waiter records the complete count and stops when it advances (a
+  verdict left over from before the request proves nothing). What a
+  complete frame means: every user-shader program compiled, every
+  deferred shape arrived, a frozen frame's particle warm-up reached
+  (`stepParticles` still owing steps under `DebugFreezeFrame`), and no
+  mesh refine the level plan just asked for. On the frame path this is
+  two flag writes, two increments and a compare -- nothing waits there.
+  The consumers: `View3DInventorViewer::waitFrameComplete(timeoutMs)`
+  pumps frames until one complete frame has rendered since the call
+  (quiet 5 s restarting on every frame rendered and every pending
+  compile, 120 s in all), the Qt signal `frameCompleted()` fires from
+  `renderScene` on the frame that advanced the count, and Python has
+  `view.waitFrameComplete(timeout=120000)` and `view.isFrameComplete()`.
+  `render_verify.py` settles on the wait instead of a frame count
+  (`RV_SETTLE` is now extra frames, default 0), which is what lets the
+  chess set take exactly the time it needs and the small scene almost
+  none. Cycles too: `view.cyclesRender()` waits for a complete frame
+  before it translates the render cache (a publish still catching up
+  deferred shapes would otherwise trace half a scene), and
+  `view.cyclesViewportStatus()['complete']` says the live session has
+  rendered its whole sample budget for the scene and camera as last
+  stated -- what a probe polls instead of sleeping.
+- **The wait is the default of every capture, and an argument.**
+  `FrameDumpRequest::waitComplete` (default true) is what the frame
+  tail honours; `saveRenderDump`, `saveImage`, `getRenderStats` and
+  `cyclesRender` take `wait=True` and pass it down (`savePicture` /
+  `imageFromRenderer` carry it in C++, so a Std_ViewScreenShot waits
+  too). `wait=False` takes the very next frame as it stands, mid-arrival
+  included -- the one thing a probe of the arrival itself needs.
 - `source="renderer"` reuses the existing readback code path, promoted from
   env-gated static to a renderer-level `requestFrameDump(path, mode)` API;
   PNG via Qt's imagewriter instead of hand-rolled PPM.

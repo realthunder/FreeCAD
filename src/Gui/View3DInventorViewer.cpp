@@ -764,6 +764,9 @@ struct View3DInventorViewer::Private
     int cyclesSubView = 0;
     uint64_t cyclesSceneGen = 0;
     bool cyclesFed = false;
+    /// Render::Renderer::completeFrames as last seen by renderScene,
+    /// so frameCompleted() fires once per complete frame.
+    uint64_t completeFramesSeen = 0;
     Render::PBRConfig cyclesPbr;
     Render::BumpConfig cyclesBump;
     Render::OutputConfig cyclesOutput;
@@ -3738,7 +3741,8 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
     syncLightRotation();
 }
 
-void View3DInventorViewer::savePicture(int width, int height, int sample, const QColor& bg, QImage& img) const
+void View3DInventorViewer::savePicture(int width, int height, int sample, const QColor& bg, QImage& img,
+                                       bool waitComplete) const
 {
     // An external render backend draws the scene from its own feeds into
     // its own targets; the Coin scene graph it was fed from renders to
@@ -3748,7 +3752,7 @@ void View3DInventorViewer::savePicture(int width, int height, int sample, const 
     // overlays and background included.
     if (getExternalRenderer()) {
         auto self = const_cast<View3DInventorViewer*>(this);  // NOLINT
-        if (self->imageFromRenderer(width, height, bg, img))
+        if (self->imageFromRenderer(width, height, bg, img, waitComplete))
             return;
         Base::Console().Warning("Render backend frame capture failed; "
                                 "falling back to the plain GL capture\n");
@@ -4505,8 +4509,48 @@ bool View3DInventorViewer::pumpFrameDump(Render::Renderer *renderer)
     }
 }
 
+bool View3DInventorViewer::waitFrameComplete(int timeoutMs)
+{
+    Render::Renderer *renderer = getExternalRenderer();
+    if (!renderer) {
+        // Nothing asynchronous stands between Coin and its frame.
+        redraw(true);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        return true;
+    }
+    // Same two clocks as pumpFrameDump, and for the same reason: a
+    // frame that builds a dozen programs on a software driver is
+    // longer than any quiet timeout, so progress is a frame rendered
+    // (complete or not) or a compile still pending, never wall clock
+    // since the request.
+    const uint64_t startComplete = renderer->completeFrames();
+    uint64_t seenRendered = renderer->renderedFrames();
+    QElapsedTimer quiet;
+    quiet.start();
+    QElapsedTimer total;
+    total.start();
+    for (;;) {
+        Render::Renderer *current = getExternalRenderer();
+        if (!current || current != renderer)
+            return false;
+        if (renderer->completeFrames() > startComplete)
+            return true;
+        const uint64_t rendered = renderer->renderedFrames();
+        if (rendered != seenRendered || renderer->shaderCompilePending()) {
+            seenRendered = rendered;
+            quiet.restart();
+        }
+        if (quiet.elapsed() >= 5000 || total.elapsed() >= timeoutMs)
+            return false;
+        if (auto rm = getSoRenderManager())
+            rm->scheduleRedraw();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+}
+
 bool View3DInventorViewer::imageFromRenderer(int width, int height,
-                                             const QColor& bgcolor, QImage& img)
+                                             const QColor& bgcolor, QImage& img,
+                                             bool waitComplete)
 {
     Render::Renderer *renderer = getExternalRenderer();
     if (!renderer)
@@ -4540,6 +4584,7 @@ bool View3DInventorViewer::imageFromRenderer(int width, int height,
     // axis cross, no on-screen text — which is what the Coin route this
     // stands in for produced.
     req.overlays = false;
+    req.waitComplete = waitComplete;
     bool ok = renderer->requestFrameDump(req) && pumpFrameDump(renderer);
 
     if (bgcolor.isValid()) {
@@ -6466,6 +6511,13 @@ void View3DInventorViewer::renderScene()
         outPre.stop();
         externalRendered =
             _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
+        if (externalRendered) {
+            const uint64_t n = _pimpl->renderer->completeFrames();
+            if (n != _pimpl->completeFramesSeen) {
+                _pimpl->completeFramesSeen = n;
+                Q_EMIT frameCompleted();
+            }
+        }
         // Time-animated backend content (e.g. water caustics) keeps
         // advancing by itself: schedule the follow-up frame.
         if (externalRendered && _pimpl->renderer->animating())

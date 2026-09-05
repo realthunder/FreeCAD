@@ -169,10 +169,13 @@ scale: sets distance from camera to origin, and height of the screen in model
     </Methode>
     <Methode Name="saveImage">
       <Documentation>
-        <UserDocu>saveImage(path, width=-1, height=-1, background='Current', comment='$MIBA', samples=...)
+        <UserDocu>saveImage(path, width=-1, height=-1, background='Current', comment='$MIBA', samples=..., wait=True)
 
 Write the view to an image file. A width or height of -1 keeps the
 view's own. 'background' is a color name, or 'Current' for the view's.
+wait=True (the default) captures a COMPLETE backend frame, with every
+user shader compiled and every deferred shape arrived
+(waitFrameComplete); wait=False takes the next frame as it stands.
 
 With an external render backend active (render cache mode 3) the scene
 is drawn by the backend, not by the Coin scene graph, so the capture is
@@ -193,15 +196,18 @@ chrome included, when that is what you want.</UserDocu>
     </Methode>
     <Methode Name="cyclesRender" Keyword="true">
       <Documentation>
-        <UserDocu>cyclesRender(path, width=640, height=480, samples=64, device='CPU') -> dict
+        <UserDocu>cyclesRender(path, width=640, height=480, samples=64, device='CPU', wait=True) -> dict
 
 Path trace this view with the Cycles engine to a PNG at path
 (docs/CyclesIntegration.md phase 3): the view's render-cache scene,
 its PBR/output/light/background settings and its current camera,
 framed for width x height, with samples per pixel on the named
 device ("CPU", "CUDA", ...). Blocks until the render is done.
-Requires the render-cache bridge (render cache mode 3) and a build
-with BUILD_CYCLES.
+With wait=True (the default) it waits first for a complete frame
+(waitFrameComplete), so the scene it traces is whole: a publish still
+catching up deferred shapes would otherwise trace half of it;
+wait=False traces the scene as it stands. Requires the render-cache
+bridge (render cache mode 3) and a build with BUILD_CYCLES.
 
 Returns a dict of what the translation made of the scene: meshes,
 objects, shaders, triangles, skipped (draws with no path-traced
@@ -230,22 +236,55 @@ backend and a build with BUILD_CYCLES.</UserDocu>
         <UserDocu>cyclesViewportStatus() -> dict or None
 
 What the live Cycles session of this view is doing, or None when
-cyclesViewport() is off: running, progress (0..1), status (the
-engine's text), error, the translation report of the scene as last
-stated (meshes, objects, shaders, triangles, skipped), what the last
-translation did (added, removed, restated objects; built, released
-meshes), and how the scene got there: sessions (started, each a
-device set-up) and updates (scenes restated in place under a running
-session).</UserDocu>
+cyclesViewport() is off: running, progress (0..1), complete (the
+session has rendered its whole sample budget for the scene and camera
+as last stated, with no error -- the built-in signal a test polls
+instead of sleeping), status (the engine's text), error, the
+translation report of the scene as last stated (meshes, objects,
+shaders, triangles, skipped), what the last translation did (added,
+removed, restated objects; built, released meshes), and how the scene
+got there: sessions (started, each a device set-up) and updates
+(scenes restated in place under a running session).</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="waitFrameComplete" Keyword="true">
+      <Documentation>
+        <UserDocu>waitFrameComplete(timeout=120000) -> bool
+
+Run frames until the external render backend has rendered a COMPLETE
+one since the call (docs/RenderDebug.md section 4.2): every user
+shader compiled, every shape the publish deferred under its capture
+budget arrived, a frozen frame's particle warm-up reached, no mesh
+refine outstanding -- the picture, rather than a number of frames.
+The built-in signal a test settles on before it captures or measures;
+saveRenderDump and cyclesRender wait for the same thing themselves.
+The quiet timeout (5 s) restarts on every frame rendered and every
+pending compile; timeout (ms) bounds the whole wait. Without a
+backend one frame is rendered. False on timeout.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="isFrameComplete">
+      <Documentation>
+        <UserDocu>isFrameComplete() -> bool
+
+Whether the last frame the external render backend rendered was
+complete (see waitFrameComplete). True without a backend.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="saveRenderDump" Keyword="true">
       <Documentation>
-        <UserDocu>saveRenderDump(path, source='renderer', mode=None, metadata=True)
+        <UserDocu>saveRenderDump(path, source='renderer', mode=None, metadata=True, wait=True)
 
 One-shot render frame capture with reproducibility metadata
 (docs/RenderDebug.md section 4). Returns the written image path
 (source='viewer': list of paths, one per connected viewer).
+
+wait=True (the default): the capture is of a COMPLETE frame -- every
+user shader compiled, every shape the publish deferred arrived, the
+frozen particle warm-up reached (waitFrameComplete). wait=False takes
+the very next frame as it stands, mid-arrival included, which is what
+a probe of the arrival itself wants. Not applicable to source='viewer'
+(the browser reads back its own canvas).
 
 source='renderer':    readback of the external render backend's scene
                       color target (the true desktop-GPU frame, before
@@ -262,15 +301,17 @@ metadata: write a '&lt;path&gt;.json' sidecar (camera, viewport, backend,
       active Render_*/RenderDebug_* values) so the frame can be re-staged.</UserDocu>
       </Documentation>
     </Methode>
-    <Methode Name="getRenderStats">
+    <Methode Name="getRenderStats" Keyword="true">
       <Documentation>
-        <UserDocu>getRenderStats()
+        <UserDocu>getRenderStats(wait=True)
 
 Capture one frame of the external render backend and return its readback
 statistics as a dict: width, height, geometryPixels (pixels covered by
 geometry, i.e. depth in front of the far plane) and avgColor of those
 pixels — the cheap numeric assertions for render smoke tests
-(docs/RenderDebug.md section 4.2).
+(docs/RenderDebug.md section 4.2). wait=True (the default) reads a
+COMPLETE frame (see waitFrameComplete); wait=False reads the very next
+one as it stands.
 
 The dict also carries the backend's handle-pool occupancy, each beside
 its limit: frameBuffers/maxFrameBuffers, textures/maxTextures,

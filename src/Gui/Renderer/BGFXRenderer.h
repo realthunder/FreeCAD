@@ -167,6 +167,9 @@ public:
     virtual bool frameDumpPending() const override;
     virtual void holdFrameDump() override;
     virtual bool frameDumpHeld() const override;
+    virtual bool frameComplete() const override;
+    virtual uint64_t renderedFrames() const override;
+    virtual uint64_t completeFrames() const override;
     virtual bool getRenderStats(RenderStats &stats) const override;
     virtual bool reloadShaders() override;
     /// Drop this view's sized targets (BGFXView::destroyTargets, the

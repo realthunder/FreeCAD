@@ -9616,6 +9616,16 @@ public:
     bool hostHold = false;
     /// Whether the last frame held the pending dump (frameDumpHeld).
     bool dumpHeld = false;
+    /// This frame still owes something the picture depends on: a
+    /// frozen frame's particle warm-up not yet reached, a mesh refine
+    /// the level plan just asked for. Per frame, like the lib's
+    /// stand-in record; the tail folds both into the verdict.
+    bool frameOwes = false;
+    /// The last frame's verdict and the counters behind
+    /// Renderer::frameComplete / renderedFrames / completeFrames.
+    bool lastFrameComplete = false;
+    uint64_t renderedFrameCount = 0;
+    uint64_t completeFrameCount = 0;
     Render::RenderStats lastStats;
     bool sceneDumped = false;   ///< FC_BGFX_DUMP_SCENE fired
     /// Frames since the feeds last changed, and the fingerprint that is

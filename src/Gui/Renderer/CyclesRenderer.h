@@ -155,6 +155,11 @@ struct ViewportOptions {
 struct ViewportStatus {
     bool running = false;    ///< a session exists (a scene was set)
     float progress = 0.0f;   ///< 0..1 of the sample budget
+    /// The session has rendered its whole sample budget for the scene
+    /// and camera as last stated, with no error: the built-in signal a
+    /// test polls instead of sleeping. A restated scene or a moved
+    /// camera resets the session and clears it.
+    bool complete = false;
     std::string status;      ///< the engine's own status text
     std::string error;       ///< non-empty when the session failed
     RenderReport report;     ///< of the scene as last translated
