@@ -184,6 +184,24 @@ public:
 
     bool removeDynamicProperty(const char* name) override;
 
+    /** @name Retained base shapes (docs/TopoNamingEnhance.md section 7)
+     *
+     * A generation some missing reference was last resolved against is
+     * kept on this feature as a dynamic `_BaseShape<N>` property, and the
+     * `_BaseShapeRefs` map says which referrer holds which generation: a
+     * generation lives exactly as long as some entry names it.
+     */
+    //@{
+    /// The name prefix of a retained generation property, `_BaseShape`
+    static const char *baseShapePrefix();
+    /// The name of the referrer manifest, `_BaseShapeRefs`
+    static const char *baseShapeRefsName();
+    /// Whether 'prop' is a retained generation property of its owner
+    static bool isBaseShapeVersion(const App::Property *prop);
+    /// An old generation's map never asks for a recompute
+    bool checkElementMapVersion(const App::Property *prop, const char *ver) const override;
+    //@}
+
     void expandShapeContents();
     void mergeShapeContents();
     void collapseShapeContents(bool removeProperty=false);
@@ -241,15 +259,25 @@ protected:
     PropertyPartShape *shapePropertyOfElement(const char *element,
                                               const std::string **prefix = nullptr) const;
 
-    /** Drop the retained generations no missing referrer needs any more.
+    /** Keep or let go of every retained generation.
      *
      * Called after the element references into this feature have been
-     * re-resolved against a new shape: a referrer is kept on a generation
-     * only while its reference into that generation's property is missing,
-     * and a generation nobody is kept for is dropped, except the newest of
-     * each property, which always stays in memory.
+     * re-resolved against a new shape, and before a save.  A referrer is
+     * kept on a generation only while its reference into that generation's
+     * property is missing (a referrer in a document that is not loaded is
+     * kept, nothing can be said about it); a generation nobody is kept for
+     * is dropped, with its property, except the newest of each shape
+     * property, which stays in memory.  With 'materialize', a generation
+     * that has referrers and no property yet is given one.  The manifest
+     * is rewritten to match.
      */
-    void reconcileShapeVersions();
+    void reconcileShapeVersions(bool materialize);
+    /// Take the `_BaseShape<N>` properties on this feature into the list
+    void adoptShapeVersions();
+    /// Give every retained generation that has referrers its property
+    void materializeShapeVersions();
+    /// Rewrite `_BaseShapeRefs` from the materialized generations
+    void writeShapeVersionRefs();
 
     /** Helper function to obtain mapped and indexed element name from a shape
      * @params shape: source shape

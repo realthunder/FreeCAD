@@ -23,6 +23,8 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
+# include <cctype>
 # include <map>
 # include <set>
 # include <sstream>
@@ -117,6 +119,28 @@ struct Feature::ShapeVersion {
     std::set<std::string> referrers;
     /// Search memo per element, against the current live shape of 'prop'
     mutable std::map<std::string, std::vector<std::string>> searched;
+    /** What the last save wrote for this shape, taken from the live
+     * property as it was replaced (section 7.3): handed to the persisted
+     * form so that a generation the file already holds costs the next
+     * save no new geometry.
+     */
+    App::FileBlobHandle blob;
+    std::string blobPlan;
+    TopLoc_Location blobMotion;
+    /// The persisted form, a dynamic `_BaseShape<N>` property, or null
+    PropertyPartShape *materialized = nullptr;
+
+    /** The generation's shape.  A generation adopted from a restored
+     * property is not parsed just to be listed: its shape is read from the
+     * property on the first request, which is what keeps the open of a
+     * document holding generations as cheap as one without.
+     */
+    const TopoShape &geometry() const
+    {
+        if (shape.isNull() && materialized)
+            return materialized->getShape();
+        return shape;
+    }
 };
 
 /// The retention key of a referring link property, section 7.3
@@ -130,6 +154,58 @@ static std::string referrerKey(const App::Property *prop, const App::Document *d
             key.erase(0, pos + 1);
     }
     return key;
+}
+
+/// Whether the document a retention key names is loaded (this one always is)
+static bool keyDocumentLoaded(const std::string &key)
+{
+    auto pos = key.find('#');
+    if (pos == std::string::npos)
+        return true;
+    return App::GetApplication().getDocument(key.substr(0, pos).c_str()) != nullptr;
+}
+
+const char *Feature::baseShapePrefix()
+{
+    return "_BaseShape";
+}
+
+const char *Feature::baseShapeRefsName()
+{
+    return "_BaseShapeRefs";
+}
+
+bool Feature::isBaseShapeVersion(const App::Property *prop)
+{
+    if (!prop || !prop->testStatus(App::Property::PropDynamic)
+              || !prop->isDerivedFrom(PropertyPartShape::getClassTypeId()))
+        return false;
+    const char *name = prop->getName();
+    size_t len = strlen(baseShapePrefix());
+    return name && boost::starts_with(name, baseShapePrefix())
+                && std::isdigit(static_cast<unsigned char>(name[len]));
+}
+
+bool Feature::checkElementMapVersion(const App::Property *prop, const char *ver) const
+{
+    // A retained generation carries the map of its day; it is never
+    // regenerated, so it never schedules a recompute on restore.
+    if (isBaseShapeVersion(prop))
+        return false;
+    return inherited::checkElementMapVersion(prop, ver);
+}
+
+/// The ordinal of a `_BaseShape<N>` property name, 0 when it is not one
+static int baseShapeOrdinal(const char *name)
+{
+    size_t len = strlen(Feature::baseShapePrefix());
+    if (!name || !boost::starts_with(name, Feature::baseShapePrefix()))
+        return 0;
+    char *end = nullptr;
+    long n = strtol(name + len, &end, 10);
+    if (!end || *end || n <= 0)
+        return 0;
+    return static_cast<int>(n);
 }
 
 Feature::Feature()
@@ -1313,6 +1389,11 @@ void Feature::onBeforeChange(const App::Property *prop) {
             if (prefix)
                 version.prefix = *prefix;
             version.shape = propShape->getShape();
+            // The file the last save wrote for this shape, still on the
+            // property here: setValue drops it right after announcing.
+            version.blob = propShape->_blob;
+            version.blobPlan = propShape->_blobPlan;
+            version.blobMotion = propShape->_blobMotion;
             if (!version.shape.isNull()) {
                 std::vector<App::DocumentObject *> objs;
                 std::vector<std::string> subs;
@@ -1333,6 +1414,17 @@ void Feature::onBeforeChange(const App::Property *prop) {
                         break;
                     }
                 }
+                // A referrer holds one generation: the newest it resolved
+                // against.  Healthy now, it lets go of whatever older one it
+                // was recorded on -- the sec 2.3 side faces are re-resolved
+                // by position after this feature's own resolve pass, so an
+                // older generation can still carry them from a false alarm.
+                for (auto &older : _shapeVersions) {
+                    if (older.prop != propShape)
+                        continue;
+                    for (const auto &key : version.referrers)
+                        older.referrers.erase(key);
+                }
                 _shapeVersions.insert(_shapeVersions.begin(), std::move(version));
             }
         }
@@ -1340,8 +1432,125 @@ void Feature::onBeforeChange(const App::Property *prop) {
     GeoFeature::onBeforeChange(prop);
 }
 
-void Feature::reconcileShapeVersions()
+void Feature::adoptShapeVersions()
 {
+    std::map<std::string, App::Property*> props;
+    getPropertyMap(props);
+
+    // The manifest, inverted: property name -> the referrers holding it
+    std::map<std::string, std::set<std::string>> holders;
+    if (auto refs = Base::freecad_dynamic_cast<App::PropertyMap>(
+                getPropertyByName(baseShapeRefsName()))) {
+        for (const auto &v : refs->getValues())
+            holders[v.second].insert(v.first);
+    }
+
+    std::vector<std::pair<int, ShapeVersion>> adopted;
+    for (const auto &v : props) {
+        if (!isBaseShapeVersion(v.second))
+            continue;
+        auto prop = static_cast<PropertyPartShape*>(v.second);
+        bool linked = false;
+        for (const auto &version : _shapeVersions) {
+            if (version.materialized == prop) {
+                linked = true;
+                break;
+            }
+        }
+        if (linked)
+            continue;
+        ShapeVersion version;
+        version.prop = &Shape;
+        version.materialized = prop;
+        auto it = holders.find(v.first);
+        if (it != holders.end())
+            version.referrers = it->second;
+        else
+            FC_WARN(prop->getFullName() << " is held by no referrer, dropped at the next save");
+        adopted.emplace_back(baseShapeOrdinal(v.first.c_str()), std::move(version));
+    }
+    if (adopted.empty())
+        return;
+    // Newer (higher ordinal) first, after whatever is in memory already
+    std::stable_sort(adopted.begin(), adopted.end(),
+            [](const std::pair<int, ShapeVersion> &a, const std::pair<int, ShapeVersion> &b) {
+                return a.first > b.first;
+            });
+    for (auto &v : adopted)
+        _shapeVersions.push_back(std::move(v.second));
+}
+
+void Feature::materializeShapeVersions()
+{
+    int next = 0;
+    std::map<std::string, App::Property*> props;
+    getPropertyMap(props);
+    for (const auto &v : props)
+        next = std::max(next, baseShapeOrdinal(v.first.c_str()));
+
+    for (auto &version : _shapeVersions) {
+        // Only the main shape is persisted for now; a generation of a
+        // prefixed property (the Sketcher's InternalShape) stays in memory.
+        if (version.prop != &Shape || version.materialized
+                || version.referrers.empty() || version.shape.isNull())
+            continue;
+        std::string name = baseShapePrefix() + std::to_string(++next);
+        auto prop = Base::freecad_dynamic_cast<PropertyPartShape>(addDynamicProperty(
+                "Part::PropertyPartShape", name.c_str(), "BaseShape",
+                "A previous generation of Shape, kept for the references into it "
+                "that have been missing since it was replaced",
+                App::Prop_Hidden | App::Prop_ReadOnly | App::Prop_Output | App::Prop_NoRecompute));
+        if (!prop) {
+            FC_ERR("Failed to add " << name << " to " << getFullName());
+            continue;
+        }
+        prop->_publishes = false;
+        prop->setValue(version.shape);
+        // After setValue, which drops a blob that does not match the
+        // (until now empty) value.
+        prop->_blob = version.blob;
+        prop->_blobPlan = version.blobPlan;
+        prop->_blobMotion = version.blobMotion;
+        version.materialized = prop;
+    }
+}
+
+void Feature::writeShapeVersionRefs()
+{
+    std::map<std::string, std::string> refs;
+    for (const auto &version : _shapeVersions) {
+        if (!version.materialized)
+            continue;
+        // Newest first, so the newest generation a key names is the one
+        // written -- the same rule the snapshot enforces
+        for (const auto &key : version.referrers)
+            refs.emplace(key, version.materialized->getName());
+    }
+    auto prop = Base::freecad_dynamic_cast<App::PropertyMap>(
+            getPropertyByName(baseShapeRefsName()));
+    if (refs.empty()) {
+        if (prop && prop->getContainer() == this)
+            removeDynamicProperty(baseShapeRefsName());
+        return;
+    }
+    if (!prop || prop->getContainer() != this) {
+        prop = Base::freecad_dynamic_cast<App::PropertyMap>(addDynamicProperty(
+                "App::PropertyMap", baseShapeRefsName(), "BaseShape",
+                "Which retained generation each missing reference into this "
+                "feature was last resolved against",
+                App::Prop_Hidden | App::Prop_ReadOnly | App::Prop_Output | App::Prop_NoRecompute));
+        if (!prop) {
+            FC_ERR("Failed to add " << baseShapeRefsName() << " to " << getFullName());
+            return;
+        }
+    }
+    if (prop->getValues() != refs)
+        prop->setValues(std::move(refs));
+}
+
+void Feature::reconcileShapeVersions(bool materialize)
+{
+    adoptShapeVersions();
     if (_shapeVersions.empty())
         return;
 
@@ -1366,26 +1575,39 @@ void Feature::reconcileShapeVersions()
         }
     }
 
+    std::vector<std::string> removes;
     std::set<PropertyPartShape*> seen;
     for (auto it = _shapeVersions.begin(); it != _shapeVersions.end();) {
         auto found = missing.find(it->prop);
-        if (found == missing.end())
-            it->referrers.clear();
-        else {
-            for (auto rit = it->referrers.begin(); rit != it->referrers.end();) {
-                if (found->second.count(*rit))
-                    ++rit;
-                else
-                    rit = it->referrers.erase(rit);
-            }
+        for (auto rit = it->referrers.begin(); rit != it->referrers.end();) {
+            // A referrer in a document that is not loaded cannot be asked;
+            // its generation is kept, which is the only protection it gets.
+            bool keep = !keyDocumentLoaded(*rit)
+                     || (found != missing.end() && found->second.count(*rit));
+            if (keep)
+                ++rit;
+            else
+                rit = it->referrers.erase(rit);
         }
         // The newest generation of a property always stays in memory
         bool newest = seen.insert(it->prop).second;
+        if (it->referrers.empty() && it->materialized) {
+            // Nobody holds it: the property goes, after this loop -- the
+            // removeDynamicProperty override edits this list.
+            removes.push_back(it->materialized->getName());
+            it->materialized = nullptr;
+        }
         if (!newest && it->referrers.empty())
             it = _shapeVersions.erase(it);
         else
             ++it;
     }
+    for (const auto &name : removes)
+        removeDynamicProperty(name.c_str());
+
+    if (materialize)
+        materializeShapeVersions();
+    writeShapeVersionRefs();
 }
 
 void Feature::onChanged(const App::Property* prop)
@@ -1435,7 +1657,7 @@ void Feature::onChanged(const App::Property* prop)
             && getDocument()
             && !getDocument()->testStatus(App::Document::Restoring)
             && !getDocument()->isPerformingTransaction())
-        reconcileShapeVersions();
+        reconcileShapeVersions(/*materialize*/true);
 }
 
 bool Feature::shouldApplyPlacement()
@@ -1462,7 +1684,7 @@ Feature::searchElementCache(const std::string &element,
         if (res.second) {
             // The element as this generation had it: a mapped name through
             // the generation's own element map, an indexed name by position.
-            TopoShape sub = version.shape.getSubTopoShape(
+            TopoShape sub = version.geometry().getSubTopoShape(
                     element.c_str() + version.prefix.size(), true);
             if (!sub.isNull()) {
                 TopoShape newShape = propShape->getShape();
@@ -1573,6 +1795,19 @@ Feature *Feature::create(const TopoShape &s, const char *name, App::Document *do
 
 bool Feature::removeDynamicProperty(const char* name)
 {
+    // A retained generation losing its property -- by the reconcile, or by
+    // an undo of the change that took it -- leaves the list with it; a redo
+    // brings the property back and adoptShapeVersions() takes it in again.
+    if (auto prop = getDynamicPropertyByName(name)) {
+        if (isBaseShapeVersion(prop)) {
+            for (auto it = _shapeVersions.begin(); it != _shapeVersions.end();) {
+                if (it->materialized == prop)
+                    it = _shapeVersions.erase(it);
+                else
+                    ++it;
+            }
+        }
+    }
     if (boost::equals(name, "ShapeContentSuppressed")) {
         if (auto prop = getShapeContentSuppressedProperty(/*force*/false)) {
             if (prop->getValue()) {
@@ -1796,7 +2031,14 @@ void Feature::expandShapeContents()
 
 void Feature::beforeSave(Base::Writer &writer) const
 {
-    const_cast<Feature*>(this)->expandShapeContents();
+    auto self = const_cast<Feature*>(this);
+    self->expandShapeContents();
+    // Where the file's size is decided: a generation is written only while
+    // some referrer still needs it.  A reference repaired by hand, a deleted
+    // referrer, a closed document -- none of them reached this feature, so
+    // they are asked about here.  Before the inherited pass, which is what
+    // notes each property's blob for this save.
+    self->reconcileShapeVersions(/*materialize*/false);
     inherited::beforeSave(writer);
 }
 
@@ -1834,6 +2076,10 @@ void Feature::onDocumentRestored() {
     // (PropertyPartShape::ensureRestored()).
     if (!this->Shape.isRestorePending())
         restoreShapeContents();
+    // The generations this file holds, listed without being parsed.  A
+    // restore never writes: an orphan is only warned about here and goes
+    // at the next save.
+    adoptShapeVersions();
     App::GeoFeature::onDocumentRestored();
 }
 

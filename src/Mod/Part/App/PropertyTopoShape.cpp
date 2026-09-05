@@ -538,7 +538,10 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
         _blobMotion = TopLoc_Location();
     }
 
-    if (_blob && owners) {
+    // A retained generation (Feature::materializeShapeVersions) borrows but
+    // never publishes: a later object that borrowed from it would have to
+    // be rewritten the day the generation is dropped.
+    if (_blob && owners && _publishes) {
         ShapeOwnerTable::File entry;
         entry.hash = _blob->hash();
         entry.plan = plan;
@@ -803,6 +806,10 @@ void PropertyPartShape::validateShape(App::DocumentObject *obj)
     if (!obj || !obj->getDocument() || obj->isRestoring()
              || obj->getDocument()->testStatus(App::Document::Restoring))
         return;
+    // A retained generation is evidence, not the owner's geometry: it is
+    // neither fixed nor allowed to flag the owner invalid.
+    if (Feature::isBaseShapeVersion(this))
+        return;
     if (auto feat = Base::freecad_dynamic_cast<Part::Feature>(obj)) {
         if (_Shape.isNull()) {
             feat->InvalidShape.setValue(false);
@@ -829,8 +836,12 @@ void PropertyPartShape::setValue(const TopoShape& sh)
     // An unserved parked entry is dead: the value it would bring is
     // being overwritten. Never serve it after this.
     cancelRestorePending();
-    dropBlob(sh.getShape());
+    // Announced before the blob is dropped: the owner's onBeforeChange may
+    // retain the outgoing shape as a generation, and the file the last
+    // save wrote for it goes along (Feature::onBeforeChange). The stand-in
+    // the transaction takes there is a Copy(), which carries no blob.
     aboutToSetValue();
+    dropBlob(sh.getShape());
     _Shape = sh;
     _ShapeNoName.setShape(sh.getShape(), true);
     _ShapeNoName.Tag = -1;
@@ -855,8 +866,9 @@ void PropertyPartShape::setValue(const TopoShape& sh)
 void PropertyPartShape::setValue(const TopoDS_Shape& sh, bool resetElementMap)
 {
     cancelRestorePending();
-    dropBlob(sh);
+    // Announced first, see setValue(const TopoShape&).
     aboutToSetValue();
+    dropBlob(sh);
     auto obj = dynamic_cast<App::DocumentObject*>(getContainer());
     if(obj)
         _Shape.Tag = obj->getID();

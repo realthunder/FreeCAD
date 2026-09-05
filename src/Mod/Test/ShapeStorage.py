@@ -30,6 +30,9 @@
   ShapeRefCases       external file references (sec 11.6, build step 12.4): a
                       sub-shape already stored in another object's file is
                       referenced instead of serialized again
+  BaseShapeCases      retained base shapes (docs/TopoNamingEnhance.md sec 7):
+                      the generation a missing reference was resolved against
+                      is kept as a `_BaseShape<N>` property while it is needed
 
 Run headless with:  FreeCADCmd -t ShapeStorage
 """
@@ -1044,3 +1047,232 @@ class ShapeGeometryCases(ShapeTestCase):
             )
         finally:
             group.SetBool("DedupCrossFileGeometry", previous)
+
+
+@unittest.skipUnless(HAS_PART, "Part module not available")
+class BaseShapeCases(ShapeTestCase):
+    """Retained base shapes (docs/TopoNamingEnhance.md section 7).
+
+    The generation a missing element reference was last resolved against
+    is kept on the referenced feature as a dynamic `_BaseShape<N>`
+    property, and `_BaseShapeRefs` says which referrer holds which one.
+    A generation lives exactly as long as some referrer names it, and a
+    healthy document carries neither.
+
+    The model is section 2.3's: a box cut by a cylinder, and planes
+    attached FlatFace to faces of the cut. Replacing the cut's Base with a
+    brand new box is what defeats the tag-based recovery; the top face
+    (`Face3`) then moves to a new plane and its reference goes missing,
+    while a side face (`Face6`) is repaired by geometry -- until the new
+    box is also wider, which moves that face too.
+    """
+
+    def model(self, doc, faces=("Face3",)):
+        box = self.box(doc, "Box", length=20, width=20, height=20)
+        cyl = doc.addObject("Part::Cylinder", "Cylinder")
+        cyl.Radius = 3
+        cyl.Height = 40
+        cyl.Placement = self.placement(10, 10, -10)
+        cut = doc.addObject("Part::Cut", "Cut")
+        cut.Base = box
+        cut.Tool = cyl
+        doc.recompute()
+        planes = []
+        for face in faces:
+            plane = doc.addObject("Part::Plane", "Plane")
+            plane.AttachmentSupport = [(cut, (face,))]
+            plane.MapMode = "FlatFace"
+            planes.append(plane)
+        doc.recompute()
+        return cut, planes
+
+    def replaceBase(self, doc, cut, name, height=25, length=20):
+        """Break: a *new* box as the cut's Base, at a new height."""
+        cut.Base = self.box(doc, name, length=length, width=20, height=height)
+        doc.recompute()
+
+    def support(self, plane):
+        return plane.AttachmentSupport[0][1][0]
+
+    def entries(self, held):
+        """The manifest for {plane: generation}.  A plane references the cut
+        through two link properties, AttachmentSupport and its legacy twin
+        Support, and each is a referrer of its own."""
+        refs = {}
+        for plane, generation in held.items():
+            refs[plane.Name + ".AttachmentSupport"] = generation
+            refs[plane.Name + ".Support"] = generation
+        return refs
+
+    def versions(self, obj):
+        return sorted(
+            n for n in obj.PropertiesList if n.startswith("_BaseShape") and n != "_BaseShapeRefs"
+        )
+
+    def refs(self, obj):
+        if "_BaseShapeRefs" not in obj.PropertiesList:
+            return {}
+        return dict(obj._BaseShapeRefs)
+
+    def filesWithHash(self, project, digest):
+        return [name for name, (h, _) in self.blobIndex(project).items() if h == digest]
+
+    def testAHealthyDocumentCarriesNoGeneration(self):
+        """Gate 1: an edit the recovery survives leaves nothing behind, and
+        the file is what it was before any of this existed."""
+        doc = self.newDocument()
+        cut, (plane,) = self.model(doc)
+        doc.getObject("Box").Height = 22
+        doc.recompute()
+        self.assertEqual(self.support(plane), "Face3")
+        self.assertEqual(self.versions(cut), [])
+        self.assertEqual(self.refs(cut), {})
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertNotIn("_BaseShape", self.documentXml(project))
+
+    def testABrokenReferenceRetainsTheGeneration(self):
+        """Gate 2: the generation is a property, the manifest names it, and
+        the geometry the last save already wrote is not written again."""
+        doc = self.newDocument()
+        cut, (plane,) = self.model(doc)
+        volume = cut.Shape.Volume
+        project = self.directoryPath()
+        doc.saveAs(project)
+        oldHash = self.blobIndex(project)["Cut.Shape.brp"][0]
+        oldBytes = self.blobBytes(project, "Cut.Shape.brp")
+
+        self.replaceBase(doc, cut, "NewBox")
+        self.assertTrue(self.support(plane).startswith("?"))
+        self.assertEqual(self.versions(cut), ["_BaseShape1"])
+        self.assertEqual(self.refs(cut), self.entries({plane: "_BaseShape1"}))
+        self.assertAlmostEqual(cut._BaseShape1.Volume, volume)
+        doc.save()
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        cut = reopened.getObject("Cut")
+        self.assertEqual(self.versions(cut), ["_BaseShape1"])
+        self.assertEqual(
+            self.refs(cut),
+            {"Plane.AttachmentSupport": "_BaseShape1", "Plane.Support": "_BaseShape1"},
+        )
+        self.assertAlmostEqual(cut._BaseShape1.Volume, volume)
+        self.assertIn('name="_BaseShape1"', self.documentXml(project))
+        files = self.filesWithHash(project, oldHash)
+        self.assertEqual(len(files), 1)
+        self.assertEqual(self.blobBytes(project, files[0]), oldBytes)
+
+    def testTwoBreaksAtDifferentGenerationsKeepBoth(self):
+        """Gate 3: B breaks at the first edit and A at the second; each keeps
+        the generation it last resolved against.
+
+        A's side face is re-resolved by position only after the cut's own
+        resolve pass (by the attach extension re-setting Support), so right
+        after the first edit A reads as missing too and is retained with B;
+        the save-time reconcile is where the manifest is exact.
+        """
+        doc = self.newDocument()
+        cut, (planeB, planeA) = self.model(doc, ("Face3", "Face6"))
+        project = self.directoryPath()
+        self.replaceBase(doc, cut, "NewBox")
+        self.assertTrue(self.support(planeB).startswith("?"))
+        self.assertFalse(self.support(planeA).startswith("?"))
+        doc.saveAs(project)
+        self.assertEqual(self.refs(cut), self.entries({planeB: "_BaseShape1"}))
+
+        self.replaceBase(doc, cut, "WideBox", length=30)
+        self.assertTrue(self.support(planeA).startswith("?"))
+        self.assertEqual(self.versions(cut), ["_BaseShape1", "_BaseShape2"])
+        self.assertEqual(
+            self.refs(cut), self.entries({planeB: "_BaseShape1", planeA: "_BaseShape2"})
+        )
+        doc.save()
+        self.assertEqual(
+            self.refs(cut), self.entries({planeB: "_BaseShape1", planeA: "_BaseShape2"})
+        )
+        index = self.blobIndex(project)
+        hashes = set(h for h, _ in index.values())
+        self.assertEqual(len(hashes), len(index))
+        self.assertEqual(self.versions(doc.getObject("Cut")), ["_BaseShape1", "_BaseShape2"])
+
+    def testTwoBreaksAtOneGenerationShareIt(self):
+        """Gate 4: one shape, one map, however many referrers."""
+        doc = self.newDocument()
+        cut, (planeB, planeA) = self.model(doc, ("Face3", "Face3"))
+        project = self.directoryPath()
+        doc.saveAs(project)
+        oldHash = self.blobIndex(project)["Cut.Shape.brp"][0]
+
+        self.replaceBase(doc, cut, "NewBox")
+        self.assertEqual(self.versions(cut), ["_BaseShape1"])
+        self.assertEqual(
+            self.refs(cut), self.entries({planeB: "_BaseShape1", planeA: "_BaseShape1"})
+        )
+        doc.save()
+        self.assertEqual(len(self.filesWithHash(project, oldHash)), 1)
+
+    def testARepairedReferenceLetsGo(self):
+        """Gate 5: a reference repaired by hand drops its entry at the next
+        save; the generation stays while anyone names it."""
+        doc = self.newDocument()
+        cut, (planeB, planeA) = self.model(doc, ("Face3", "Face3"))
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.replaceBase(doc, cut, "NewBox")
+        self.assertEqual(len(self.refs(cut)), 4)
+
+        planeB.AttachmentSupport = [(cut, ("Face3",))]
+        doc.recompute()
+        self.assertEqual(self.support(planeB), "Face3")
+        doc.save()
+        self.assertEqual(self.refs(cut), self.entries({planeA: "_BaseShape1"}))
+        self.assertEqual(self.versions(cut), ["_BaseShape1"])
+
+        planeA.AttachmentSupport = [(cut, ("Face3",))]
+        doc.recompute()
+        doc.save()
+        self.assertEqual(self.versions(cut), [])
+        self.assertNotIn("_BaseShapeRefs", cut.PropertiesList)
+        self.assertNotIn("_BaseShape", self.documentXml(project))
+
+    def testADeletedReferrerLetsGo(self):
+        """Gate 6: a deleted referrer is nobody; its generation goes with the
+        last one."""
+        doc = self.newDocument()
+        cut, (planeB, planeA) = self.model(doc, ("Face3", "Face3"))
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.replaceBase(doc, cut, "NewBox")
+        heldByA = self.entries({planeA: "_BaseShape1"})
+
+        doc.removeObject(planeB.Name)
+        doc.recompute()
+        doc.save()
+        self.assertEqual(self.refs(cut), heldByA)
+
+        doc.removeObject(planeA.Name)
+        doc.recompute()
+        doc.save()
+        self.assertEqual(self.versions(cut), [])
+        self.assertEqual(self.refs(cut), {})
+
+    def testUndoTakesTheGenerationWithIt(self):
+        """Gate 7: the transaction records the property, so undo removes it
+        and redo brings it back."""
+        doc = self.newDocument()
+        doc.UndoMode = 1
+        cut, (plane,) = self.model(doc)
+        doc.openTransaction("break")
+        self.replaceBase(doc, cut, "NewBox")
+        doc.commitTransaction()
+        self.assertEqual(self.versions(cut), ["_BaseShape1"])
+
+        doc.undo()
+        self.assertEqual(self.versions(cut), [])
+        self.assertEqual(self.refs(cut), {})
+        self.assertEqual(self.support(plane), "Face3")
+
+        doc.redo()
+        self.assertEqual(self.versions(cut), ["_BaseShape1"])
+        self.assertEqual(self.refs(cut), self.entries({plane: "_BaseShape1"}))

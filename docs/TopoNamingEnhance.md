@@ -915,7 +915,7 @@ what a next session needs that neither of them says.
 
 | | state |
 | --- | --- |
-| pre-task (sec 5, re-planned in sec 7) | **V1 built** (7.11); V2 onward not started |
+| pre-task (sec 5, re-planned in sec 7) | **V1 and V2 built** (7.11, 7.12); V3 onward not started |
 | main task, TechDraw (sec 3) | surveyed, sequenced, **not started** |
 | measurements | done; all numbers in secs 2.3, 2.5, 5.2, 5.3 are real |
 | probe scripts | session scratchpad only, **will be gone** -- recipes in 6.3 |
@@ -1485,3 +1485,79 @@ Gate, all in one session, on `build/win-relwithdebinfo-801`:
 | Python (`FreeCADCmd -t 0`) | 1317 ran, 6 failures + 8 errors, all of them this box: no `yaml` (which also keeps `TestCAMApp` from loading, hence 1317 and not 2628) and no `ply`, CRLF fixtures in the Material clipboard tests, two over-long temp paths in `FileBlobs`, one file lock in FEM.  Every Part, Sketcher, PartDesign, Document, ShapeStorage and FileBlobs geometry case passed. |
 
 Next: **V2**, gate 1 (the byte-identical healthy save) first.
+
+### 7.12 V2, built (2026-09-05)
+
+The retained generations are persisted as planned in 7.3: a dynamic
+`Part::PropertyPartShape` named `_BaseShape<N>` per generation and the
+`App::PropertyMap _BaseShapeRefs` manifest, both in group `BaseShape`
+with `Prop_Hidden | Prop_ReadOnly | Prop_Output | Prop_NoRecompute`,
+created by `materializeShapeVersions()` after the `onChanged(Shape)`
+reconcile and removed by the reconcile itself when the last entry goes.
+`beforeSave` reconciles without materializing.  `onDocumentRestored`
+adopts the properties into the list (`adoptShapeVersions()`) without
+parsing them -- a generation's shape is read from its property on the
+first search request.  The gates of 7.6 are the seven cases of
+`BaseShapeCases` in `src/Mod/Test/ShapeStorage.py`.
+
+What the code settled or corrected:
+
+- **The blob is not on the property at `onBeforeChange`.**  7.3 said
+  `setValue` drops it "a moment later"; it dropped it a moment *earlier*
+  (`dropBlob` ran before `aboutToSetValue`).  The two `setValue`
+  overloads now announce first and drop second.  Nothing in between
+  reads the blob: the transaction's stand-in is a `Copy()`, which carries
+  none.  With that, gate 2 holds as 7.3 promised -- the file the last
+  save wrote for the old shape is the generation's file, byte for byte,
+  and the index lists that geometry once.
+- **The manifest is exact after a save, not after a recompute.**  The
+  sec 2.3 side faces are not repaired by the geometry search at all:
+  instrumented, `searchSubShape` finds nothing for the grown `Face6`
+  (area 400 -> 500), and the reference is marked missing by the cut's
+  own resolve pass.  It comes back healthy later in the same recompute,
+  when the attach extension re-sets the legacy `Support` from
+  `AttachmentSupport`'s raw sub names and "Face6" resolves by position
+  in the new shape.  So right after the break the in-memory reconcile
+  retains the side-face plane too; the save-time reconcile lets it go.
+  Sec 2.3's explanation of *why* the side faces survive ("comparing the
+  underlying surface") is therefore wrong: they survive by index, which
+  is the plausible-wrong-answer risk sec 2.3 itself names.
+- **A referrer holds one generation.**  Because of the above, a referrer
+  can be recorded on an older generation from a false alarm and then be
+  healthy when the next snapshot is taken.  The snapshot now removes the
+  referrers it records from every older generation of the same property,
+  and the manifest is built newest first, so the generation a key names
+  is always the newest it resolved against.
+- **A `Part::Plane` is two referrers**, `AttachmentSupport` and its
+  legacy twin `Support`; the manifest carries both keys, and the tests
+  expect both.
+- **`removeDynamicProperty` of a `_BaseShape<N>` erases its in-memory
+  generation**, whoever removes it (the reconcile, or an undo).  A redo
+  re-adds the property through the transaction and the next reconcile
+  adopts it again.  That is what makes gate 7 hold without the list and
+  the properties ever disagreeing.
+- **Only `Shape` generations are persisted.**  A generation of a prefixed
+  property (the Sketcher's `InternalShape`) is still retained in memory
+  and searched, but not materialized -- the persisted name does not say
+  which property it belongs to.  V5's item, unchanged.
+- The `validateShape` fix is narrower than 7.6 said: it skips the
+  `_BaseShape<N>` properties rather than everything but the geometry
+  property, so a retained generation is neither fixed nor allowed to
+  flag its owner, and the Sketcher's `InternalShape` keeps whatever
+  behaviour it had.  D5 is `Feature::checkElementMapVersion`, answering
+  false for a `_BaseShape<N>` property.
+
+Gate, on `build/win-relwithdebinfo-801`:
+
+| check | result |
+| --- | --- |
+| `FreeCADCmd -t ShapeStorage` | 41 of 41, the 7 `BaseShapeCases` included |
+| sec 2.3 matrix | identical to 7.11 |
+| C++ (`ctest -j 6`) | 473 of 473 passed, 1 disabled |
+| Python (`FreeCADCmd -t 0`) | 1324 ran; the same 6 failures + 8 errors as 7.11, all this box's environment, not one new |
+
+Next: **V3**, serve after restore -- `onDocumentRestored` calls
+`PropertyLinkBase::updateElementReferences(this)` when generations were
+adopted, gated on the sec 2.3 matrix across a save boundary and on
+`Face3` staying missing.  The caller-side note of 7.11 (pass the mapped
+name) belongs there too.
