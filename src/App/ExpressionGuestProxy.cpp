@@ -189,7 +189,10 @@ bool isHookName(const char* attr)
         // hasattr("IsActive") on every poll costs no trip
         "GetResources", "Activated", "IsActive", "GetCommands", "GetDefaultCommand",
         "OnActionInit", "CmdHelpURL", "Initialize", "Deactivated", "ContextMenu",
-        "GetClassName"};
+        "GetClassName",
+        // the guest's comm manager (docs/Sandbox.md 7.3, the prelude's
+        // COMM_HOOKS): what the host's widget manager calls
+        "host_msg", "host_close", "host_open"};
     for (const char* h : hooks)
         if (std::strcmp(h, attr) == 0)
             return true;

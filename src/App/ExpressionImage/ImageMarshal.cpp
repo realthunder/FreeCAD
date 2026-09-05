@@ -260,6 +260,10 @@ static const char ProxyPrelude[] =
     "CMD_HOOKS = ('GetResources', 'Activated', 'IsActive', 'GetCommands',\n"
     "             'GetDefaultCommand', 'OnActionInit', 'CmdHelpURL')\n"
     "WB_HOOKS = ('Initialize', 'Activated', 'Deactivated', 'ContextMenu', 'GetClassName')\n"
+    // the guest's Jupyter comm manager (the `comm` shim of the
+    // fcx_widgets wheel, docs/Sandbox.md 7.3): the host's widget manager
+    // delivers a model's messages through these
+    "COMM_HOOKS = ('host_msg', 'host_close', 'host_open')\n"
     "def _proxy_register(inst, hooks=None):\n"
     "    pid = PROXY_IDS.get(id(inst))\n"
     "    if pid is None:\n"
@@ -422,6 +426,21 @@ static const char ProxyPrelude[] =
     "_gui.updateLocale = lambda: None\n"
     // Draft's Initialize self-test compares the host's Coin with pivy's
     "_gui.getSoDBVersion = lambda: _fcx.op('gui.sodb_version', 0)\n"
+    // U3 (docs/Sandbox.md 7.3): the guest's ipywidgets models cross as
+    // Jupyter comm traffic; the comm shim registers its manager as a
+    // guest proxy once, and a widget is shown on the host by its model
+    // id (a task panel, or a window), IPython.display.display's route.
+    "def _gui_register_comm_manager(manager):\n"
+    "    _fcx.op('gui.comm.manager', 0, _proxy_register(manager, COMM_HOOKS))\n"
+    "def _gui_show_widget(widget, title=None, where='panel'):\n"
+    "    model_id = widget if isinstance(widget, str) else widget.model_id\n"
+    "    return _fcx.op('gui.widget.show', 0, [model_id, title, where])\n"
+    "def _gui_hide_widget(widget):\n"
+    "    model_id = widget if isinstance(widget, str) else widget.model_id\n"
+    "    return _fcx.op('gui.widget.hide', 0, model_id)\n"
+    "_gui._register_comm_manager = _gui_register_comm_manager\n"
+    "_gui.showWidget = _gui_show_widget\n"
+    "_gui.hideWidget = _gui_hide_widget\n"
     "_sys.modules['FreeCADGui'] = _gui\n"
     "del _sys, _types, _m\n";
 

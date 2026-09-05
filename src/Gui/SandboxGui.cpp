@@ -409,6 +409,121 @@ Reply listWorkbenches(HandleTable& table)
     return replyResult(table, keys);
 }
 
+// ---- U3, the forms (docs/Sandbox.md 7.3): the guest's ipywidgets
+// models cross as Jupyter comm traffic to freecad.widgets on the host,
+// which keeps the models and renders them (Qt first).  The guest's comm
+// manager registers once as a guest proxy; the host manager holds it
+// and drives it back through its host_* hooks.
+
+/// `freecad.widgets.manager()`; new reference, nullptr with an error.
+PyObject* widgetManager()
+{
+    PyObject* mod = PyImport_ImportModule("freecad.widgets");
+    if (!mod)
+        return nullptr;
+    PyObject* mgr = PyObject_CallMethod(mod, "manager", nullptr);
+    Py_DECREF(mod);
+    return mgr;
+}
+
+Reply commManager(HandleTable& table, const json& a)
+{
+    if (!a.is_object())
+        return replyErr("ProtocolError", "gui.comm.manager: descriptor");
+    PyObject* standin = decodeValue(table, a);
+    if (!standin)
+        return replyPyError();
+    if (!isGuestProxy(standin)) {
+        Py_DECREF(standin);
+        return replyErr("TypeError", "gui.comm.manager: the manager is not a guest proxy");
+    }
+    PyObject* mgr = widgetManager();
+    PyObject* r = mgr ? PyObject_CallMethod(mgr, "set_dispatcher", "O", standin) : nullptr;
+    Py_XDECREF(mgr);
+    Py_DECREF(standin);
+    if (!r)
+        return replyPyError();
+    Py_DECREF(r);
+    return replyOk(true);
+}
+
+Reply commPublish(HandleTable& table, const json& a)
+{
+    // [msg_type, comm_id, target_name, data, metadata, buffers]
+    if (!a.is_array() || a.size() != 6 || !a[0].is_string() || !a[1].is_string()
+        || !a[2].is_string() || !a[5].is_array())
+        return replyErr("ProtocolError",
+                        "gui.comm: [msg_type, comm_id, target_name, data, metadata, buffers]");
+    const std::string& type = a[0].get_ref<const std::string&>();
+    const char* method = type == "comm_open" ? "comm_open"
+        : type == "comm_msg"                 ? "comm_msg"
+        : type == "comm_close"               ? "comm_close"
+                                             : nullptr;
+    if (!method)
+        return replyErr("ProtocolError", "gui.comm: unknown message type '" + type + "'");
+    PyObject* data = decodeValue(table, a[3]);
+    PyObject* metadata = data ? decodeValue(table, a[4]) : nullptr;
+    PyObject* buffers = metadata ? decodeValue(table, a[5]) : nullptr;
+    PyObject* mgr = buffers ? widgetManager() : nullptr;
+    PyObject* r = nullptr;
+    if (mgr) {
+        const char* commId = a[1].get_ref<const std::string&>().c_str();
+        if (type == "comm_open")
+            r = PyObject_CallMethod(mgr, method, "ssOOO", commId,
+                                    a[2].get_ref<const std::string&>().c_str(), data, metadata,
+                                    buffers);
+        else if (type == "comm_msg")
+            r = PyObject_CallMethod(mgr, method, "sOO", commId, data, buffers);
+        else
+            r = PyObject_CallMethod(mgr, method, "sO", commId, data);
+    }
+    Py_XDECREF(mgr);
+    Py_XDECREF(buffers);
+    Py_XDECREF(metadata);
+    Py_XDECREF(data);
+    if (!r)
+        return replyPyError();
+    return replyResult(table, r);
+}
+
+Reply widgetShow(HandleTable& table, const json& a)
+{
+    // [model_id, title | null, where]
+    if (!a.is_array() || a.size() != 3 || !a[0].is_string()
+        || !(a[1].is_string() || a[1].is_null()) || !a[2].is_string())
+        return replyErr("ProtocolError", "gui.widget.show: [model_id, title, where]");
+    PyObject* mgr = widgetManager();
+    if (!mgr)
+        return replyPyError();
+    PyObject* title = a[1].is_string()
+        ? PyUnicode_FromString(a[1].get_ref<const std::string&>().c_str())
+        : Py_NewRef(Py_None);
+    PyObject* r = PyObject_CallMethod(mgr, "show", "sOs", a[0].get_ref<const std::string&>().c_str(),
+                                      title, a[2].get_ref<const std::string&>().c_str());
+    Py_DECREF(title);
+    Py_DECREF(mgr);
+    if (!r)
+        return replyPyError();
+    // the toolkit object stays on the host; the guest learns it is shown
+    Py_DECREF(r);
+    (void)table;
+    return replyOk(true);
+}
+
+Reply widgetHide(HandleTable& table, const json& a)
+{
+    if (!a.is_string())
+        return replyErr("ProtocolError", "gui.widget.hide: model_id");
+    PyObject* mgr = widgetManager();
+    if (!mgr)
+        return replyPyError();
+    PyObject* r = PyObject_CallMethod(mgr, "hide", "s", a.get_ref<const std::string&>().c_str());
+    Py_DECREF(mgr);
+    if (!r)
+        return replyPyError();
+    return replyResult(table, r);
+}
+
 Reply guiOp(HandleTable& table, const Reply& requestCbor)
 {
     const json req = json::from_cbor(requestCbor);
@@ -448,6 +563,14 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
                               Py_BuildValue("(s)", arg.get_ref<const std::string&>().c_str()));
         return r ? replyResult(table, r) : replyPyError();
     }
+    if (op == "gui.comm")
+        return commPublish(table, arg);
+    if (op == "gui.comm.manager")
+        return commManager(table, arg);
+    if (op == "gui.widget.show")
+        return widgetShow(table, arg);
+    if (op == "gui.widget.hide")
+        return widgetHide(table, arg);
     if (op == "gui.pref_page") {
         if (!arg.is_array() || arg.size() != 2 || !arg[0].is_string() || !arg[1].is_string())
             return replyErr("ProtocolError", "gui.pref_page: [ui file, group]");

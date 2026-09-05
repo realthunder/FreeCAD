@@ -7,14 +7,19 @@ The Gui binary has no -t mode, so the unittest modules that need a GUI
 
     cd build/conda-relwithdebinfo-801
     env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb FREECAD_USER_HOME=/tmp/fchome \
+      FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6 \
       xvfb-run -a -s "-screen 0 1280x800x24" timeout -k 5 600 \
       ~/works/sw/fcad/.conda/run.sh ./bin/FreeCAD ~/works/sw/fcad/scripts/sandbox-gui-gate.py
+
+(FCX_PYODIDE because that user home has no runtime of its own; without
+it every sandbox case skips and the verdict is still OK -- read the
+case lines.)
 
 The result goes to $SANDBOX_GUI_GATE_RESULT (default: sandbox-gui-gate.txt
 in the user data directory) and the last line is `RESULT OK` or `RESULT
 FAILED`; judge by that file, not by the exit code (the GUI's exit is not
 clean on every box).  $SANDBOX_GUI_GATE_MODULES selects the modules
-(comma-separated, default SandboxGui).
+(comma-separated, default SandboxGui,SandboxWidgets).
 """
 
 import io
@@ -28,7 +33,7 @@ import FreeCADGui
 
 
 def main():
-    modules = os.environ.get("SANDBOX_GUI_GATE_MODULES", "SandboxGui").split(",")
+    modules = os.environ.get("SANDBOX_GUI_GATE_MODULES", "SandboxGui,SandboxWidgets").split(",")
     out = os.environ.get("SANDBOX_GUI_GATE_RESULT") or os.path.join(
         FreeCAD.getUserAppDataDir(), "sandbox-gui-gate.txt"
     )

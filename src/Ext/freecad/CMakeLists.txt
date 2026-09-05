@@ -43,6 +43,11 @@ configure_file(rendereffects/__init__.py ${NAMESPACE_DIR}/rendereffects/__init__
 # per user (docs/PyodideHost.md sec 12).  Pure Python, host side.
 configure_file(pyodide/__init__.py ${NAMESPACE_DIR}/pyodide/__init__.py COPYONLY)
 
+# The host side of the sandbox's forms (docs/Sandbox.md 7.3): the widget
+# manager the guest's ipywidgets comm traffic reaches, and its Qt views.
+configure_file(widgets/__init__.py ${NAMESPACE_DIR}/widgets/__init__.py COPYONLY)
+configure_file(widgets/qt.py ${NAMESPACE_DIR}/widgets/qt.py COPYONLY)
+
 if (INSTALL_TO_SITEPACKAGES)
     SET(SITE_PACKAGE_DIR ${PYTHON_MAIN_DIR}/freecad)
 else ()
@@ -81,6 +86,14 @@ INSTALL(
         pyodide/__init__.py
     DESTINATION
         ${SITE_PACKAGE_DIR}/pyodide
+)
+
+INSTALL(
+    FILES
+        widgets/__init__.py
+        widgets/qt.py
+    DESTINATION
+        ${SITE_PACKAGE_DIR}/widgets
 )
 
 add_subdirectory(fc_cadquery)

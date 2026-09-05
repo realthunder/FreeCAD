@@ -934,6 +934,20 @@ is built the same way and is not needed for the suites. `BUILD_EXPR_WASI_RUNTIME
 never turns itself on; its `wasmtime-capi` is on the realthunder channel if it is
 ever wanted.
 
+The forms (`docs/Sandbox.md` 7.3) bundle two third-party pure wheels the build
+does not download itself: fetch them once by pinned hash and name them in
+`FREECAD_BUNDLED_WHEELS` (the `SandboxWidgets` GUI gate skips without them):
+
+```sh
+python3 scripts/sandbox-fetch-wheels.py build/sandbox-wheels   # prints the value
+$RUN cmake -S . -B build/conda-relwithdebinfo-801 \
+  -DFREECAD_BUNDLED_WHEELS="$PWD/build/sandbox-wheels/ipywidgets-8.1.9-py3-none-any.whl;$PWD/build/sandbox-wheels/traitlets-5.14.3-py3-none-any.whl"
+```
+
+The GUI gates (`scripts/sandbox-gui-gate.py`) run under `FREECAD_USER_HOME=/tmp/fchome`,
+which has no runtime of its own: pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6`
+or every sandbox case skips while the gate still reports `RESULT OK`.
+
 ### An optimized stack, for measuring anything
 
 The debug stack is unusable for performance work: a large STEP import runs ~6x slower,

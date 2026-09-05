@@ -240,25 +240,52 @@ if(BUILD_EXPR_IMAGE_HOST)
         # The same for the pivy wheel (Coin and pivy.coin compiled for
         # the guest, docs/Sandbox.md 7.10; FREECAD_PIVY_WHEEL): a compiled
         # bundled wheel the runtime loads with an fcx_image of its ABI.
+        # And the third-party pure wheels the forms need (ipywidgets
+        # and traitlets, docs/Sandbox.md 7.3; FREECAD_BUNDLED_WHEELS, a
+        # list): bundled the same way, one target each.
+        set(_fcx_wheel_data ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
+        set(_fcx_wheels "")
         foreach(_wheel_var FREECAD_FCX_IMAGE_WHEEL FREECAD_PIVY_WHEEL)
             if(${_wheel_var})
-                if(NOT EXISTS "${${_wheel_var}}")
-                    message(FATAL_ERROR "${_wheel_var} does not exist: ${${_wheel_var}}")
-                endif()
-                install(FILES ${${_wheel_var}}
-                        DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
-                get_filename_component(_fcx_wheel_name "${${_wheel_var}}" NAME)
-                set(_fcx_wheel_data ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
-                add_custom_command(
-                    OUTPUT ${_fcx_wheel_data}/${_fcx_wheel_name}
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                            ${${_wheel_var}} ${_fcx_wheel_data}/${_fcx_wheel_name}
-                    DEPENDS ${${_wheel_var}}
-                    COMMENT "Mirroring ${_fcx_wheel_name} into the build tree")
-                string(REPLACE "FREECAD_" "" _wheel_target ${_wheel_var})
-                add_custom_target(${_wheel_target} ALL DEPENDS ${_fcx_wheel_data}/${_fcx_wheel_name})
+                list(APPEND _fcx_wheels "${${_wheel_var}}")
             endif()
         endforeach()
+        foreach(_wheel ${FREECAD_BUNDLED_WHEELS})
+            list(APPEND _fcx_wheels "${_wheel}")
+        endforeach()
+        foreach(_wheel ${_fcx_wheels})
+            if(NOT EXISTS "${_wheel}")
+                message(FATAL_ERROR "bundled wheel does not exist: ${_wheel}")
+            endif()
+            install(FILES ${_wheel} DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
+            get_filename_component(_fcx_wheel_name "${_wheel}" NAME)
+            add_custom_command(
+                OUTPUT ${_fcx_wheel_data}/${_fcx_wheel_name}
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${_wheel} ${_fcx_wheel_data}/${_fcx_wheel_name}
+                DEPENDS ${_wheel}
+                COMMENT "Mirroring ${_fcx_wheel_name} into the build tree")
+            string(REGEX REPLACE "-.*" "" _wheel_target "${_fcx_wheel_name}")
+            add_custom_target(${_wheel_target}_wheel ALL DEPENDS ${_fcx_wheel_data}/${_fcx_wheel_name})
+        endforeach()
+
+        # The guest side of the forms (docs/Sandbox.md 7.3): the `comm`
+        # shim over the bridge and the IPython stand-in, packed as the
+        # fcx_widgets wheel from src/App/ExpressionImage/widgets.
+        set(_fcx_widgets_src ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionImage/widgets)
+        file(GLOB_RECURSE _fcx_widgets_files ${_fcx_widgets_src}/*.py)
+        set(_fcx_widgets_wheel ${_fcx_wheel_data}/fcx_widgets-${PACKAGE_VERSION}-py3-none-any.whl)
+        add_custom_command(
+            OUTPUT ${_fcx_widgets_wheel}
+            COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/src/Tools/bindings/packSandboxWheel.py
+                    --name fcx_widgets --version ${PACKAGE_VERSION}
+                    --out-dir ${_fcx_wheel_data}
+                    --root ${_fcx_widgets_src}
+                    --add ${_fcx_widgets_src}=.
+            DEPENDS ${CMAKE_SOURCE_DIR}/src/Tools/bindings/packSandboxWheel.py ${_fcx_widgets_files}
+            COMMENT "Packing the guest comm shim as the fcx_widgets sandbox wheel")
+        add_custom_target(WidgetsSandboxWheel ALL DEPENDS ${_fcx_widgets_wheel})
+        install(FILES ${_fcx_widgets_wheel} DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
 
         # A whole pyodide distribution (pyodide.js, pyodide.asm.*,
         # python_stdlib.zip, pyodide-lock.json, wheels) bundled as

@@ -35,9 +35,10 @@ user decision, quoted where the wording matters.
     porting linter (GUI)             built       scripts/sandbox_gui_lint.py
     GUI registration from the guest  built       src/Gui/SandboxGui.cpp, the guest FreeCADGui (7.9)
     Coin + pivy inside the guest     built       src/App/PyodideHost/pivy/, Coin's COIN_BUILD_GL_STUB (7.10)
+    forms: ipywidgets over comm, Qt  built       src/App/ExpressionImage/widgets/ (guest), src/Ext/freecad/widgets/ (host), SandboxGui.cpp (7.3)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     network capability               designed    sec 6
-    GUI protocol, mirror, widgets    designed    sec 7 (U1 and the guest's Coin are built)
+    GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
     rungs 1-4 of the ladder          designed    sec 1.3
     memory ceiling for a guest       open        sec 13
 
@@ -874,6 +875,21 @@ one per ABI and distribution) and the runtime loads those of the
 running fcx_image's ABI after the pure-Python wheels.  It costs about
 0.2 s of boot.
 
+Three more pure wheels joined on 2026-09-05 for the forms (7.3, Probe
+B): `fcx_widgets` (target `WidgetsSandboxWheel`, packed from
+`src/App/ExpressionImage/widgets/`: the `comm` shim over the bridge and
+the `IPython` stand-in), and two THIRD-PARTY wheels bundled unchanged
+-- `ipywidgets` 8.1.9 from PyPI (not in the pyodide lock) and
+`traitlets` 5.14.3 from the pyodide distribution -- named by the
+`FREECAD_BUNDLED_WHEELS` cache list and mirrored like the pivy wheel.
+Nothing downloads at build time: `scripts/sandbox-fetch-wheels.py DIR`
+fetches the two by pinned sha256 (docs/DevEnvironment.md).  Their
+declared dependencies are not fetched: `comm` and `IPython` are the
+shims, `widgetsnbextension`/`jupyterlab_widgets` are browser assets
+ipywidgets never imports.  The three cost 0.02 s of boot (1.62 s
+against 1.59 s, three runs each, FreeCADCmd) and nothing until a guest
+imports them.
+
 Ground truth: a guest has no sockets by structural absence; the shim
 defines no `fetch`, `XMLHttpRequest` or `WebSocket`.  The threat that
 network adds is exfiltration, server-side request forgery against the
@@ -1023,6 +1039,62 @@ labeled placeholder.  No webview escape hatch for now (if the browser
 tier ever needs one, MCP Apps is the shape).  Caveats: traitlets is
 heavier per attribute than a hand-rolled model; the `HTML` and `Output`
 widgets are browser-shaped, native managers support a subset.
+
+**PROBE B PASSED 2026-09-05, first complete run.**  The shape it
+settled:
+
+- **Guest**: ipywidgets 8.1.9 and traitlets UNMODIFIED as bundled
+  wheels (5.6).  The comm shim is a drop-in `comm` package
+  (`src/App/ExpressionImage/widgets/comm/`, the API of jupyter/comm
+  0.2.3): `Comm.publish_msg` is one op, `gui.comm [msg_type, comm_id,
+  target, data, metadata, buffers]` (bytes cross as CBOR binary), and
+  `CommManager` registers itself ONCE as a guest proxy
+  (`FreeCADGui._register_comm_manager`, hooks `host_msg`/`host_close`/
+  `host_open`) so the host can drive it back.  ipywidgets imports
+  `IPython` at import; the real one is 12 wheels, 2.5 MB, 400 modules
+  and **1.53 s** of guest import for `get_ipython() -> None` and a
+  `display`, so an `IPython` stand-in ships in the same wheel (0.001 s);
+  its `display(widget)` shows the widget on the host, the Jupyter idiom
+  kept.  `FreeCADGui.showWidget(w, title, where)` / `hideWidget(w)` are
+  the explicit form (`gui.widget.show`/`hide` by model id; `where` is
+  `panel`, the task panel, or `window`).
+- **Host**: `freecad.widgets` (`src/Ext/freecad/widgets/`), the manager
+  -- one `Model` per comm (state, live views), `comm_open`/`comm_msg`/
+  `comm_close`, `update` applied as a diff to the views, `echo_update`
+  ignored, `custom` handed to the views; back to the guest as
+  `host_msg(comm_id, {method: update|custom, ...})` on the stand-in --
+  and `freecad.widgets.qt`, the Qt manager: a `View` per (model,
+  rendering) with `applying` set while the guest's state is written so
+  Qt's signals do not echo it, `IPY_MODEL_` references resolved for
+  boxes/layout/style, twenty core model names covered (sliders, number
+  inputs, Text/Textarea, Button, Checkbox/ToggleButton, Dropdown/
+  RadioButtons/Select, Label/HTML, the boxes; Layout's px sizes and
+  visibility honored, the style models data), an unknown name a
+  labeled placeholder.  A shown root is a `TaskPanel` whose OK/Cancel
+  reach the guest as `{"event": "accept"|"reject"}` on the root model.
+  The four `gui.comm*`/`gui.widget.*` ops live in `SandboxGui.cpp` and
+  are the `gui` permission: a document principal's `IntSlider()` is
+  refused at its comm open.
+- **Measured** (`scripts/sandbox-widgets-probe.py`, Xvfb, RelWithDebInfo):
+
+      guest import traitlets / ipywidgets    0.047 s / 0.13 s (269 modules)
+      six widgets + a VBox                   20 models (layouts, styles),
+                                             20 comm opens, 0.5 ms each, 9 ms
+      shown as a task panel                  25 ms
+      Qt slider step -> guest observer ->    0.22 ms per step: 1 proxy call,
+        guest label -> Qt label              2 nested comm ops (echo + label)
+      button click (custom, no reply)        0.017 ms
+      guest write -> Qt slider               0.175 ms net of a 0.015 ms exec
+      boot with the three wheels             +0.02 s
+
+  Two facts worth keeping: every ipywidget opens three comms (its
+  Layout and Style models come first), so a form is ~3x its visible
+  widgets in models; and a guest's own trait write fires its own
+  observers exactly as natively, while the host sends nothing back for
+  it (the gate checks `sent` unchanged).  Gate `SandboxWidgets` (2
+  cases, 9): the form built, every view's Qt state, both directions,
+  OK as an event, window/hide, close and `close_all` dropping the host
+  models, the document principal refused.
 
 ### 7.4 The toolkit transition **[decided]**
 
@@ -1996,6 +2068,10 @@ Non-ASCII object names occur in real files.  Rig:
                                                           registered from the guest (7.9);
                                                           needs the GUI -- run through
                                                           scripts/sandbox-gui-gate.py on Xvfb
+    src/Mod/Test/SandboxWidgets.py                   2    Probe B: an ipywidgets form from
+                                                          the guest rendered in Qt, driven
+                                                          both ways (7.3); the same gate
+                                                          script (its default module list)
     src/Mod/Spreadsheet/TestSpreadsheet*.py          --   run with routing ON for parity
 
 The acceptance harness opens a real saved-and-reopened `.FCStd` under a
@@ -2036,7 +2112,10 @@ tree), `FREECAD_FCX_IMAGE_WHEEL` (ship the wheel under
 7.10, shipped and mirrored the same way), `FREECAD_BUNDLE_WASMTIME`.  With
 `BUILD_EXPR_PYODIDE_HOST` and `BUILD_DRAFT`, target `DraftSandboxWheel`
 packs `fcx_draft-<ver>-py3-none-any.whl` into the same wheels
-directory (5.6).
+directory (5.6); `WidgetsSandboxWheel` packs `fcx_widgets` (the comm
+shim, 7.3) unconditionally, and `FREECAD_BUNDLED_WHEELS` (a `;`-list of
+pure wheels, `scripts/sandbox-fetch-wheels.py` fetches ipywidgets and
+traitlets) is mirrored one target per wheel (`<dist>_wheel`).
 
 Command line: `--grant <permission>[:<target>]`, `--policy <file>`.
 
@@ -2069,11 +2148,15 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
 3. **Probe A** -- PASSED 2026-09-05 (7.10): the Coin fork compiles with
    emcc under `COIN_BUILD_GL_STUB`, `pivy.coin` loads in the guest, a
    10 k-node graph builds in 0.77 s, boot grows by 0.2 s; real Coin it
-   is.  **Probe B** -- ipywidgets in the package set, the comm shim,
-   five widgets rendered in Qt from a guest script; boot cost and
-   per-event latency.  Then **G3** (U3), which is what both workbenches'
-   `Initialize()` now stop at (`import DraftTools` -> `DraftGui`'s
-   widgets), and the G2b runner once there is something to switch to.
+   is.  **Probe B** -- PASSED 2026-09-05 (7.3): ipywidgets and
+   traitlets bundled unchanged, the `comm` shim and an `IPython`
+   stand-in (`fcx_widgets`), the host manager and twenty Qt views, a
+   six-widget form shown as a task panel from a guest script; 0.13 s
+   import, 0.5 ms per model, 0.22 ms per slider event, +0.02 s boot;
+   gate `SandboxWidgets`.  Then **G3** (U3), which is what both
+   workbenches' `Initialize()` now stop at (`import DraftTools` ->
+   `DraftGui`'s widgets), and the G2b runner once there is something to
+   switch to.
 4. **P2** -- in-place install into a running guest (the sec 9.3 probe of
    `SandboxNetwork.md`: does a wheel with compiled extensions import
    synchronously without `loadPackage`?).  Moved after G1: nothing
@@ -2084,9 +2167,12 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    session guest, denied from a document guest, redirect hops.
 6. **PyPI sources** for `install_package`, written once against N1's
    client.
-7. **G3** -- U3 over the widget protocol: the Qt manager, the FreeCAD
-   widget module, the `.ui` loader on both sides.  Gate: every Draft
-   and BIM task panel opens from the guest and round-trips its fields.
+7. **G3** -- U3 over the widget protocol: the Qt manager (BUILT by
+   Probe B for the core models), the FreeCAD widget module (quantity
+   input, selection input, color button, the tree/table model), the
+   `.ui` loader on both sides, the U7 Qt-flavored accessors.  Gate:
+   every Draft and BIM task panel opens from the guest and round-trips
+   its fields.
 8. **G4** -- the mirror: generated Coin models, the reader with its
    allowlist and quotas, host-scene query ops, stand-ins, the event
    stream.  Gate: the Draft test documents render identically (pixel
@@ -2192,6 +2278,21 @@ sockets, any network for the reference image, a webview escape hatch.
 - A host `activateWorkbench` whose Python `Initialize` raises shows a
   modal "Workbench failure" box: under Xvfb a hang until the timeout.
   Call a guest workbench's `Initialize` through `exec` when probing.
+- The GUI gates run with `FREECAD_USER_HOME=/tmp/fchome`, where no
+  pyodide runtime is installed: without `FCX_PYODIDE` pointing at one
+  every sandbox case SKIPS ("the sandbox image did not boot") and the
+  gate still says `RESULT OK`.  Read the case lines, not the verdict.
+  The same under Xvfb: a document left open at exit is a save prompt,
+  and a prompt is a hang until the timeout -- a probe closes its
+  documents and dialogs before the main window.
+- The guest prelude (`ImageMarshal.cpp`) is compiled into the GUEST
+  image: an edit needs `cmake --build build/pyodide-guest` (outside the
+  conda env, docs/DevEnvironment.md) and the mirror step, not a host
+  rebuild -- the host build silently keeps the old wheel and the new
+  `FreeCADGui` names are "missing".
+- A tuple crosses the wire as a tuple (ipywidgets' `_options_labels`),
+  a list as a list; compare with `list()` on the host when the guest's
+  type is traitlets' choice.
 - ONE recompute never meets a cached handle.  The handle table is
   cleared by every expression evaluation (`ExpressionEvaluator` ->
   `clearHandles()`), and a Spreadsheet's numeric cell IS an expression,
@@ -2270,11 +2371,19 @@ sockets, any network for the reference image, a webview escape hatch.
   long-lived grant is still a long-lived channel).
 - The PyPI resolver: host-side against PyPI's JSON API, or micropip in
   the guest with a host-fed index.
-- Probe A's outcome (real Coin in the guest or a Coin-shaped model
-  library); whether the mirror reader is the widget manager with a
-  second model family; widget-protocol versioning between a shipped
-  guest wheel and an older host (the manager refuses a newer major);
+- Whether the mirror reader is the widget manager with a second model
+  family (Probe A answered real Coin, Probe B built the manager);
+  widget-protocol versioning between a shipped guest wheel and an older
+  host (the manager refuses a newer major; today it reads no version);
   the browser-only tier's rendering of the mirrored subset.
+- The forms' wheels are BUNDLED (5.6), not in the user's package set
+  as 7.3 first said: ipywidgets is not in the pyodide lock and there is
+  no PyPI source yet (roadmap 6), and a form library the workbenches
+  depend on should ship with the FreeCAD that renders it anyway.  Open:
+  whether the `IPython` stand-in should yield to a real IPython a user
+  installs later: the bundled wheels load before the package set, so
+  a real IPython's files would land over the stand-in's in the guest's
+  site-packages -- untested, and it would bring the 1.5 s import back.
 - The audit log's retention and where the Report view shows it; the
   addon manifest format.
 
