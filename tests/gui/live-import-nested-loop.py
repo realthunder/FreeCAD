@@ -166,13 +166,18 @@ class NestedLoopCommand:
 
 def fire():
     """Runs the command once the window is open: the document carries
-    LiveImport and has objects for the tree to itemise."""
+    LiveImport, and the import has created its objects (Restoring is
+    the bit it holds while it does) with the tree yet to itemise them.
+    Too early -- a progress pump inside the import with one object made
+    -- and the tick inside the loop has nothing to renumber, which is
+    what the first parallel ctest run hit."""
     doc = state["doc"]
-    if not (doc.LiveImport and doc.Objects):
+    if not (doc.LiveImport and not doc.Restoring and len(doc.Objects) > 1):
         if time.monotonic() - state["t0"] > WINDOW_WAIT_S:
             check("window opened", False,
-                  "LiveImport=%s objects=%d after %ds"
-                  % (doc.LiveImport, len(doc.Objects), WINDOW_WAIT_S))
+                  "LiveImport=%s Restoring=%s objects=%d after %ds"
+                  % (doc.LiveImport, doc.Restoring, len(doc.Objects),
+                     WINDOW_WAIT_S))
             finish()
             return
         QtCore.QTimer.singleShot(10, fire)
@@ -303,10 +308,12 @@ def start_import():
     try:
         import ImportGui
 
-        # Armed BEFORE the import so that it fires in the first event-loop
-        # turn the import allows: a progress pump inside it, the animated
-        # fit it runs while the load is still live, or the turn after it
-        # returns. Animation stays on.
+        # Armed BEFORE the import so that its deadline precedes the
+        # tree's (which restarts at every new object): it fires in the
+        # first event-loop turn after the objects exist -- the animated
+        # fit the import runs while the load is still live, or the turn
+        # after it returns -- and the tree's tick lands inside the loop
+        # it opens. Animation stays on.
         QtCore.QTimer.singleShot(0, fire)
         # Held the way a Python progressive importer holds it, so that the
         # document is still live at the tree's tick however fast the box
