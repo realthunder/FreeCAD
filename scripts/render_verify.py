@@ -11,7 +11,9 @@ capture directories stage by stage.
 Staging comes from one of two sources:
 
 - **Manifest** (default): the RV_CAMERAS named standard views, staged as
-  ``view<Name>()`` + ``fitAll()`` — deterministic for a fixed scene.
+  ``view<Name>()`` + ``fitAll()`` -- deterministic for a fixed scene once
+  navigation animation is off (freeze() turns it off; animated, both
+  take ten frames to land and a capture can fall inside them).
 - **Golden restage** (RV_GOLDEN set): cameras, render properties *and*
   the recorded preferences are re-applied 1:1 from the golden captures'
   sidecar JSONs, so goldens stay valid when defaults change (§5
@@ -282,6 +284,13 @@ def freeze():
     """
     grp = FreeCAD.ParamGet(FREEZE_GROUP)
     grp.SetBool(FREEZE_PARAM, True)
+    # Navigation animation too: viewIsometric() and fitAll() animate
+    # the camera into place in ten per-frame steps, and a frame during
+    # a cold user-shader compile is seconds, so an animation started
+    # by the scene was still overwriting a restaged camera thirty
+    # seconds later -- a whole-board shift that read as a 32% diff and
+    # was chased for a day as a material defect. Assigned cameras only.
+    view().setAnimationEnabled(False)
     # The engine picks the change up through the parameter observer;
     # pump once so it is in force before anything is captured.
     view().redraw()

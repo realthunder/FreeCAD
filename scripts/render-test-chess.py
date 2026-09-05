@@ -21,7 +21,8 @@ Deterministic by construction, as a golden scene must be: every setting
 is a literal, the environment picture is the one in the tree, and the
 camera is assigned as a literal rotation rather than animated into place
 (viewIsometric() and friends animate, and a capture taken mid-flight is
-not reproducible).
+not reproducible), with navigation animation switched off so that the
+fit does not animate either.
 """
 import os
 import traceback
@@ -124,6 +125,11 @@ def stage():
     except Exception:
         pass
     v.setCameraType("Perspective")
+    # fitAll() animates the camera into place in ten per-frame steps
+    # unless animation is off, and a frame during the cold compile of
+    # this material set is seconds: the animation was still moving the
+    # camera when the harness captured, thirty seconds on.
+    v.setAnimationEnabled(False)
     v.getCameraNode().orientation.setValue(
         coin.SbRotation(0.4247, 0.1759, 0.3389, 0.8226))
     v.fitAll()
