@@ -308,14 +308,28 @@ Layout layout()
                     l.bundled.push_back((dir / fn).string());
                 continue;
             }
-            if (fn.rfind("fcx_image-", 0) != 0)
-                continue;
             // ...-cp314-cp314-pyodide_2026_0_wasm32.whl -> "2026_0"
             std::string abi;
             auto at = fn.find("-pyodide_");
             auto end = fn.find("_wasm32.whl");
             if (at != std::string::npos && end != std::string::npos && end > at + 9)
                 abi = fn.substr(at + 9, end - (at + 9));
+            if (fn.rfind("fcx_image-", 0) != 0) {
+                // a COMPILED bundled wheel (pivy, docs/Sandbox.md 7.10):
+                // one per distribution name and ABI, loaded only with an
+                // fcx_image of the same ABI (the runtime filters)
+                if (abi.empty())
+                    continue;
+                const std::string dist = fn.substr(0, fn.find('-'));
+                bool have = false;
+                for (const auto& b : l.bundledCompiled)
+                    have = have || (b.first == abi
+                                    && fs::path(b.second).filename().string().substr(0, dist.size() + 1)
+                                        == dist + "-");
+                if (!have)
+                    l.bundledCompiled.emplace_back(abi, (dir / fn).string());
+                continue;
+            }
             bool have = false;
             for (const auto& w : l.wheels)
                 have = have || w.first == abi;

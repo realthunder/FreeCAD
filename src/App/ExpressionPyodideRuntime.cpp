@@ -279,7 +279,11 @@ public:
         // set by lock-file name.
         std::vector<std::string> packageNames;
         size_t bundledCount = 0;
-        for (const auto& b : Pyodide::layout().bundled) {
+        std::vector<std::string> bundledAll = Pyodide::layout().bundled;
+        for (const auto& b : Pyodide::layout().bundledCompiled)
+            if (b.first == abi)
+                bundledAll.push_back(b.second);
+        for (const auto& b : bundledAll) {
             fs::path w = fs::weakly_canonical(b, ec);
             if (ec || !fs::is_regular_file(w))
                 continue;

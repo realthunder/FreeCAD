@@ -97,6 +97,11 @@ struct Layout
     /// (fcx_draft, ...), loaded at boot after fcx_image and before the
     /// user's package set.  Sorted by file name.
     std::vector<std::string> bundled;
+    /// Bundled COMPILED wheels (`*-cp3xx-cp3xx-pyodide_<abi>_wasm32.whl`
+    /// other than fcx_image, in the same two places): ABI tag -> path;
+    /// pivy (docs/Sandbox.md 7.10).  Loaded after the pure ones, only
+    /// those of the running fcx_image's ABI.
+    std::vector<std::pair<std::string, std::string>> bundledCompiled;
 };
 AppExport Layout layout();
 

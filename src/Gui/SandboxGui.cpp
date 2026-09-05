@@ -437,6 +437,10 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
         return activeWorkbench(table);
     if (op == "gui.wb.list")
         return listWorkbenches(table);
+    if (op == "gui.sodb_version") {
+        PyObject* v = callGui("getSoDBVersion", PyTuple_New(0));
+        return v ? replyResult(table, v) : replyPyError();
+    }
     if (op == "gui.icon_path" || op == "gui.lang_path") {
         if (!arg.is_string())
             return replyErr("ProtocolError", op + ": path");

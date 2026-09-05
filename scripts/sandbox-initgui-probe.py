@@ -5,7 +5,9 @@
 runner's globals, the native workbench removed first; Draft is then activated from
 the host, BIM's Initialize is called in the guest (a host activation whose
 Initialize raises ends in a modal, a hang under Xvfb).  Run under the GUI on Xvfb
-exactly like scripts/sandbox-gui-gate.py; the result goes to $INITGUI_PROBE_RESULT
+exactly like scripts/sandbox-gui-gate.py; INITGUI_PROBE_ACTIVATE=1 also activates each
+workbench from the host (a hang under Xvfb once an Initialize raises -- with pivy in the guest,
+Draft's reaches FreeCADGui.getMainWindow()); the result goes to $INITGUI_PROBE_RESULT
 (default /tmp/fchome/initgui-probe.txt), the guest's stderr to the console."""
 import os
 import sys
@@ -57,7 +59,7 @@ def main():
             lines.append("%s: InitGui module level FAILED: %s" % (mod, str(e)[:1500]))
         lines.append("%s: stats after module level: %s" % (mod, S.stats()["ops"]))
         lines.append("%s: registered on host: %s" % (mod, wb in Gui.listWorkbenches()))
-        if wb in Gui.listWorkbenches() and mod != "Draft":
+        if wb in Gui.listWorkbenches():
             # a host activation whose Initialize raises ends in a modal: call it in the guest
             S.resetStats()
             try:
@@ -66,7 +68,7 @@ def main():
             except Exception as e:
                 lines.append("%s: guest Initialize FAILED: %s" % (mod, str(e)[:800]))
             lines.append("%s: stats after guest Initialize: %s" % (mod, S.stats()["ops"]))
-        if wb in Gui.listWorkbenches() and mod == "Draft":
+        if wb in Gui.listWorkbenches() and os.environ.get("INITGUI_PROBE_ACTIVATE"):
             S.resetStats()
             try:
                 Gui.activateWorkbench(wb)

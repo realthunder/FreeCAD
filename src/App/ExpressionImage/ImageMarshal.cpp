@@ -420,6 +420,8 @@ static const char ProxyPrelude[] =
     "_gui.addLanguagePath = _gui_add_language_path\n"
     "_gui.addPreferencePage = _gui_add_preference_page\n"
     "_gui.updateLocale = lambda: None\n"
+    // Draft's Initialize self-test compares the host's Coin with pivy's
+    "_gui.getSoDBVersion = lambda: _fcx.op('gui.sodb_version', 0)\n"
     "_sys.modules['FreeCADGui'] = _gui\n"
     "del _sys, _types, _m\n";
 

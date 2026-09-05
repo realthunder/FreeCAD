@@ -237,22 +237,28 @@ if(BUILD_EXPR_IMAGE_HOST)
         # ABI tag); the pyodide runtime itself is what the bootstrap
         # installs per user (docs/PyodideHost.md sec 12).  Mirrored into
         # the build tree like the rest.
-        if(FREECAD_FCX_IMAGE_WHEEL)
-            if(NOT EXISTS "${FREECAD_FCX_IMAGE_WHEEL}")
-                message(FATAL_ERROR "FREECAD_FCX_IMAGE_WHEEL does not exist: ${FREECAD_FCX_IMAGE_WHEEL}")
+        # The same for the pivy wheel (Coin and pivy.coin compiled for
+        # the guest, docs/Sandbox.md 7.10; FREECAD_PIVY_WHEEL): a compiled
+        # bundled wheel the runtime loads with an fcx_image of its ABI.
+        foreach(_wheel_var FREECAD_FCX_IMAGE_WHEEL FREECAD_PIVY_WHEEL)
+            if(${_wheel_var})
+                if(NOT EXISTS "${${_wheel_var}}")
+                    message(FATAL_ERROR "${_wheel_var} does not exist: ${${_wheel_var}}")
+                endif()
+                install(FILES ${${_wheel_var}}
+                        DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
+                get_filename_component(_fcx_wheel_name "${${_wheel_var}}" NAME)
+                set(_fcx_wheel_data ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
+                add_custom_command(
+                    OUTPUT ${_fcx_wheel_data}/${_fcx_wheel_name}
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                            ${${_wheel_var}} ${_fcx_wheel_data}/${_fcx_wheel_name}
+                    DEPENDS ${${_wheel_var}}
+                    COMMENT "Mirroring ${_fcx_wheel_name} into the build tree")
+                string(REPLACE "FREECAD_" "" _wheel_target ${_wheel_var})
+                add_custom_target(${_wheel_target} ALL DEPENDS ${_fcx_wheel_data}/${_fcx_wheel_name})
             endif()
-            install(FILES ${FREECAD_FCX_IMAGE_WHEEL}
-                    DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
-            get_filename_component(_fcx_wheel_name "${FREECAD_FCX_IMAGE_WHEEL}" NAME)
-            set(_fcx_wheel_data ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
-            add_custom_command(
-                OUTPUT ${_fcx_wheel_data}/${_fcx_wheel_name}
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        ${FREECAD_FCX_IMAGE_WHEEL} ${_fcx_wheel_data}/${_fcx_wheel_name}
-                DEPENDS ${FREECAD_FCX_IMAGE_WHEEL}
-                COMMENT "Mirroring the fcx_image wheel into the build tree")
-            add_custom_target(FcxImageWheel ALL DEPENDS ${_fcx_wheel_data}/${_fcx_wheel_name})
-        endif()
+        endforeach()
 
         # A whole pyodide distribution (pyodide.js, pyodide.asm.*,
         # python_stdlib.zip, pyodide-lock.json, wheels) bundled as
