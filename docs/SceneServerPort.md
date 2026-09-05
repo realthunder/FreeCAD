@@ -1,10 +1,12 @@
 # Serving-tier port -- portable, async, and fit for a service
 
-**Status: design, nothing implemented.** Written 2026-09-05 (session 28)
-from the question "why is this platform specific, is this server run
-standalone, and re-evaluate boost beast". The decision at the end of
-section 5 is settled enough to build against; sections 7 and 8 are the
-work and the questions still open. Design resumes next session.
+**Status: design settled, stage 0 done.** Written 2026-09-05
+(session 28) from the question "why is this platform specific, is this
+server run standalone, and re-evaluate boost beast". The decision at
+the end of section 5 is settled enough to build against; section 5.4
+(same day, session 29) picks the coroutine style; section 7 has the
+stage-0 test built and green; section 8 holds the questions still
+open.
 
 ## 1. Why this document
 
@@ -108,16 +110,18 @@ before allocation, fragmentation is reassembled with its own bound, and
 close/ping are handled. The HTTP head is capped at 16 KB. This is not
 bad code. It is a minimal server being asked to become a service.
 
-**There is no socket-level test.** `tests/src/Gui/SceneDump.cpp:2284`
-says it outright: "the server's work queue end to end, **no sockets**".
-The existing tests drive the blob and level machinery directly;
-`PublishOnly.cpp:193` asserts the server is running but never speaks to
-it over a socket. Nothing exercises the handshake, the framing or the
-door over a wire.
+**There was no socket-level test** until stage 0.
+`tests/src/Gui/SceneDump.cpp:2284` says it outright: "the server's
+work queue end to end, **no sockets**". The older tests drive the blob
+and level machinery directly; `PublishOnly.cpp:193` asserts the server
+is running but never speaks to it over a socket. Nothing exercised the
+handshake, the framing or the door over a wire. Section 7, stage 0, is
+what now does.
 
 ## 5. The decision
 
-**Boost.Beast, asynchronous, C++20 coroutines.**
+**Boost.Beast, asynchronous, stackless `asio::coroutine` (not C++20
+coroutines -- section 5.4).**
 
 Availability is already there: boost 1.90 in `.conda/freecad`, with
 `boost/beast.hpp`, `boost/asio/awaitable.hpp` and
@@ -161,6 +165,59 @@ overstated, because Beast has a synchronous API that maps onto the
 current loop almost 1:1. We are choosing async anyway, for the reasons
 in section 6, but it is a choice and not a forced cost.
 
+### 5.4 Stackless `asio::coroutine`, not C++20 coroutines
+
+The async bodies are written with `boost::asio::coroutine` and the
+`reenter` / `yield` macros from `boost/asio/yield.hpp`. This is the
+Duff's-device coroutine (Tatham's "Coroutines in C"; the same trick
+the JUCE forum thread "Coroutines in C++, simple but nice discovery"
+rediscovers), which Asio has shipped as a class since Boost 1.54. The
+coroutine is one `int`: `reenter(c)` opens a switch on it, `yield`
+stores `__LINE__` and returns, and the next invocation jumps to
+`case __LINE__`. No stack, no heap frame, no compiler support beyond
+C++98.
+
+The prior art read for this is the `vsk-gateway` proxy
+(`~/works/veno/vsk-gateway`, `src/regsrv/httpclient.hpp`,
+`src/parser/ftp.cpp`, `src/regsrv/idenbase.hpp`), a production Asio
+server built entirely on the idiom. Four mechanisms recur there, and
+the port uses all four:
+
+1. **The completion handler is the coroutine.** A small copyable
+   struct derives from `coroutine`, holds a pointer to the real
+   context, and its call operator re-enters the body. Every
+   `yield async_op(..., self)` passes a copy of itself as the
+   handler, so Asio carries the resume point along for free.
+2. **All state lives in the context object.** Nothing local survives a
+   yield -- the switch jumps over its initialisation. Locals are fine
+   inside a block between two yields.
+3. **Two loops on one connection.** vsk-gateway splits them with the
+   `fork` macro; we write two handler structs instead (section 6.2),
+   because it reads better and because `fork` as a macro shadows POSIX
+   `fork` for the rest of the translation unit.
+4. **Resume from a foreign event.** Its timer stashes the coroutine
+   int and later constructs a fresh handler from the saved state and
+   invokes it. Any thread can wake a parked coroutine by posting a
+   handler that carries its state. This is how the frame push works
+   (section 6.6).
+
+Why this over `asio::awaitable` / `co_spawn`:
+
+- It settles open question 2: the file builds as C++17 or C++20 on
+  every compiler, emscripten included should the transport ever move
+  to the browser side.
+- Cost per connection is a Beast stream, two ints and a queue, with
+  no frame allocation per operation. `awaitable` allocates a frame
+  per coroutine and, with `use_awaitable`, typically per `co_await`.
+- Debugging is plain: the state is an int readable in gdb, and every
+  resume is an ordinary handler invocation on the strand, not a
+  coroutine frame the debugger has to reconstruct.
+
+The price is discipline, not machinery: no locals across a yield, no
+two yields on one source line, exceptions unwind straight out of the
+switch, and the macros are scoped to the bodies -- `yield.hpp` before,
+`unyield.hpp` after, exactly as vsk-gateway does it.
+
 ## 6. Shape of the ported server
 
 ### 6.1 Async deletes the Cycles latency problem
@@ -178,6 +235,23 @@ gives exactly that serialization without owning a thread. That
 correspondence is what makes this a port rather than a rewrite of the
 concurrency model, and it is the property to hold on to while writing
 it.
+
+The per-connection loop today (`SceneServer.cpp:2399`) is already a
+hand-rolled state machine: poll, kick check, read and consume frames,
+serialize, send body, drain texts, send the pending binary, ping. It
+becomes **two coroutines per connection on one strand**, because Beast
+allows one read and one write in flight concurrently but never two of
+the same:
+
+- **Reader**: a loop of `yield ws.async_read(buf, self)`, then dispatch
+  the message. Beast enforces the control-frame rules the audit found
+  missing (section 4, item 5).
+- **Writer**: drains an explicit queue with one
+  `yield ws.async_write(front, self)` in flight, then *parks* itself
+  when the queue is empty -- it simply returns, leaving its coroutine
+  state where the next wake finds it. Publish, kick, the reload push
+  and the traced-frame push all post onto the strand, append to the
+  queue, and re-invoke the parked writer (section 6.6).
 
 ### 6.3 Thread-per-connection goes away
 
@@ -208,15 +282,53 @@ completion coming back on the strand. Get this wrong and one publishing
 document janks every viewer in the backend. This is the constraint the
 port must be built around from the start, not retrofitted.
 
+In the coroutine idiom this has the same shape as a socket operation:
+`yield post(workerPool, ...)` where the worker, once done, posts the
+handler (carrying the saved coroutine state) back onto the strand.
+
+### 6.6 The parked writer is the frame push
+
+The writer coroutine parks by returning. Its coroutine int still holds
+the resume line, and the connection object holds the coroutine. To
+wake it, any thread does
+
+    post(conn->strand, [conn]{ conn->writer(); });
+
+after appending to the queue under the strand. That is vsk-gateway's
+timer trick from section 5.4 item 4, and it is the whole of stage 3:
+`sendBinary` from the Cycles thread becomes "append, wake". "Keep only
+the newest traced frame" is then a stated rule applied to that queue
+at append time, replacing the accidental single-slot `pendingBinary`
+of section 6.4.
+
 ## 7. Staged plan
 
 Each stage lands alone and is judged by the stage-0 test.
 
-- **Stage 0 -- the socket-level test that does not exist.** Start the
-  server on a port and drive a raw client through handshake, snapshot,
-  a control op, a binary push, fragmentation, the door refusing a bad
-  token, and kick. This is the oracle for every later stage and is worth
-  having whatever else happens.
+- **Stage 0 -- the socket-level test. DONE 2026-09-05**, as
+  `tests/src/Gui/SceneServerWire.cpp` (`SceneServerWire_tests_run`,
+  12 cases, in ctest). It starts the listener on a free port and
+  drives it through the HTTP routes (`/scene` with and without a held
+  version and session, `/blob`, the `/blobs` batch framing, 404s), the
+  WebSocket handshake, hello and snapshot, a held version costing no
+  payload, resync, a control op with its reply and the NoHandler
+  refusal, view-only carried on the request, text and binary pushes
+  from a foreign thread arriving in order, a fragmented pick and a
+  fragmented op, a ping answered with its payload, the door (403 on
+  HTTP, an unauthorized socket answering nothing, BadToken, the token
+  in the hello, the token on the upgrade), a kick, a named document
+  join, a failed switch, the re-home on unserve, and stop plus
+  restart. The client is **Boost.Beast**, so the handshake is judged
+  by an implementation that is not ours, and the same client will
+  speak to the ported server unchanged. Two wire facts the test
+  recorded that the design above had not stated: a view-only change
+  is announced to the client as `{"cmd":"config","viewOnly":...}`
+  before it takes effect on its requests; and a door refusal rides the
+  kick path, so the wire is the reason (`BadToken` / `Refused`), then
+  the `Kicked` farewell, then the close. The port keeps both. One
+  client-side lesson: Beast treats a cancelled read as the end of the
+  stream, so the "nothing arrives" probe leaves its read pending and
+  the next read picks it up.
 - **Stage 1 -- the seam.** Put an acceptor/connection abstraction
   between the protocol logic and the socket calls, still POSIX
   underneath. No behaviour change.
@@ -225,7 +337,8 @@ Each stage lands alone and is judged by the stage-0 test.
   parser, the `#ifndef _WIN32` and the stub. Three platforms build the
   real server.
 - **Stage 3 -- the frame push.** The Cycles latency item, which by then
-  is a `post` to a strand rather than a fix.
+  is "append to the writer's queue and wake it" (section 6.6) rather
+  than a fix.
 - **Stage 4 -- the cloud-readiness items** from section 4: IPv6 listen,
   read deadlines, the connection cap keyed on the judged address,
   control-frame rules, and a decision on chunked bodies.
@@ -236,9 +349,8 @@ Each stage lands alone and is judged by the stage-0 test.
 1. **Where do Windows and macOS get tested?** No Windows or macOS box is
    available here, and no CI in this repo builds them. Stages 2 and 5
    are unverifiable without one.
-2. **C++17.** C++20 is the default and nothing in `src/` currently
-   forces it. Coroutines would make this TU require C++20. Accept that,
-   or stay callback-based to keep C++17 building?
+2. ~~C++17.~~ Answered by section 5.4: the stackless idiom builds under
+   either standard.
 3. **How many io threads**, and does the worker pool for serialization
    belong to the server or to the existing LOD builder pool?
 4. **permessage-deflate**: worth measuring on the cloud wire. Control
@@ -256,6 +368,12 @@ Each stage lands alone and is judged by the stage-0 test.
   knowledge, not measured -- Darwin does not define it and wants
   `SO_NOSIGPIPE` instead, and there is no shim anywhere in `src/`. No
   Mac was available to compile on.
-- Beast's exact API shapes quoted here (`ws.accept(req)`,
+- Beast's server-side API shapes quoted here (`ws.accept(req)`,
   `tcp_stream::expires_after`) are design intent from the library's
-  documented model, not code that has been compiled in this tree.
+  documented model, not code that has been compiled in this tree. The
+  client side (`websocket::stream::handshake`, `async_read`,
+  `write_some` fragments, `ping`, `http::read/write`) has: the stage-0
+  test compiles and runs it against Boost 1.90.
+- The `asio::coroutine` headers (`boost/asio/coroutine.hpp`,
+  `yield.hpp`, `unyield.hpp`) were confirmed present in
+  `.conda/freecad/include`; nothing in this tree includes them yet.
