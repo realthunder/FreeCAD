@@ -1546,6 +1546,18 @@ void Document::checkUserEdit(const Document *doc, const DocumentObject *obj,
     if (obj && prop == &obj->TreeRank) {
         return;
     }
+    // The object's mirror of its view provider. A view provider property
+    // write touches ViewObject so the document notices presentation
+    // changing (ViewProviderDocumentObject::onChanged), and presentation
+    // is exactly what the live view exists to keep usable: the origin
+    // group's timer resizing its origin, a colour, a display mode. This is
+    // the only route by which a view provider property reaches this
+    // check, and it is exempted by identity like the two above (found by
+    // tests/gui/live-import-nested-loop.py: the origin resize fired
+    // inside the nested loop and aborted the command, 2026-09-06).
+    if (obj && prop == &obj->ViewObject) {
+        return;
+    }
     // Named as precisely as the caller knew, because the whole point is that
     // the command did not say what it was going to do -- so the report has to.
     std::ostringstream str;

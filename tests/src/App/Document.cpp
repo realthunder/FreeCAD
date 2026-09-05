@@ -114,6 +114,9 @@ TEST_F(DocumentTest, liveImportUserEditExemptsTreeRankByIdentity)
         EXPECT_EQ(obj->TreeRank.getValue(), 7);
         // ... showing and hiding is looking ...
         EXPECT_NO_THROW(obj->Visibility.setValue(false));
+        // ... a view provider property changing reaches here as a touch of
+        // the object's ViewObject mirror, and presentation is allowed ...
+        EXPECT_NO_THROW(obj->ViewObject.touch());
         // ... and anything else is refused, as an abort rather than an
         // error so the command adds no dialog.
         EXPECT_THROW(obj->Label.setValue("renamed"), Base::AbortException);
