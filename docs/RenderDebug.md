@@ -1009,12 +1009,15 @@ carrying `CONFIGURATIONS render-heavy` ran anyway on a plain `ctest`.
 heavy tests are behind a CMake option and not behind their label alone.
 The label is kept so `-L` can select them once the option is on.
 
-**The reference images are their own repository**, mounted at
-`tests/render/refs`, because a golden set is binary and is rewritten on
+**The reference images are their own repository**
+(`realthunder/fcad-render-refs`, branch `LinkVibe`), mounted at
+`tests/render/refs` as a git submodule (`git submodule update --init
+tests/render/refs`), because a golden set is binary and is rewritten on
 every reblessing -- churn that does not belong in the history of the
 source tree. Every golden test is *skipped, not failed*, when that
 checkout is absent, the same courtesy `MaterialXGen_tests_run` extends to
-the MaterialX submodule. Its README carries the reblessing procedure.
+the MaterialX submodule. Its README carries the reblessing procedure; a
+reblessing is a commit there and a submodule bump here.
 
 **The two scenes are deliberately different in kind.**
 `scripts/render-test-scene.py` is four primitives built in process -- a

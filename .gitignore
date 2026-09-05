@@ -75,4 +75,3 @@ files_to_translate.txt
 # their own repository, checked out here. Ignored only until it has a
 # remote and a .gitmodules entry; a submodule path may stay listed here
 # harmlessly.
-/tests/render/refs/

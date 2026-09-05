@@ -225,9 +225,10 @@ slower and because a label alone cannot hold them back:
 
     cmake -DFC_RENDER_HEAVY_TESTS=ON <build> && ctest -L render-heavy
 
-The reference images live in a separate repository mounted at
-`tests/render/refs`; when it is not checked out the golden tests are
-**skipped, not failed**. Full design, the reblessing procedure and the
+The reference images live in a separate repository
+(`realthunder/fcad-render-refs`), the submodule at `tests/render/refs`
+(`git submodule update --init tests/render/refs`); when it is not
+checked out the golden tests are **skipped, not failed**. Full design, the reblessing procedure and the
 traps: `docs/RenderDebug.md` section 5.2 -- and 5.2a for the defect the
 chess set found on its first day (a capture taken while a material was
 still compiling), which is why a frame dump now waits for a complete
