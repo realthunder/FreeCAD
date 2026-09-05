@@ -1556,8 +1556,82 @@ Gate, on `build/win-relwithdebinfo-801`:
 | C++ (`ctest -j 6`) | 473 of 473 passed, 1 disabled |
 | Python (`FreeCADCmd -t 0`) | 1324 ran; the same 6 failures + 8 errors as 7.11, all this box's environment, not one new |
 
-Next: **V3**, serve after restore -- `onDocumentRestored` calls
-`PropertyLinkBase::updateElementReferences(this)` when generations were
-adopted, gated on the sec 2.3 matrix across a save boundary and on
-`Face3` staying missing.  The caller-side note of 7.11 (pass the mapped
-name) belongs there too.
+*The next step was V3 as of this section; 7.13 re-sequences it.*
+
+### 7.13 Local referrers only, released promptly; foreign referrers keep their own evidence (2026-09-05)
+
+Two rulings from the user after V2, and what was built for the first.
+
+**A retained generation must not be dead weight.**  V2 let go of a
+generation at the feature's next shape change or at `beforeSave`; a
+reference repaired by hand, a deleted referrer or a repointed one left
+the whole old shape in memory until then.  Built:
+
+- `GeoFeature::onElementReferenceReleased(prop)`, a virtual called from
+  `PropertyLinkBase::unregisterElementReference()` for every feature the
+  property held element references into.  That runs when the property is
+  re-set (which is also how the attach extension's `Support` sync
+  resolves the sec 2.3 false alarm, 7.12) and when it is destroyed with
+  its owner.  A feature that is destroyed takes its registry entry with
+  it (`clearElementReferences`, from `~GeoFeature`), so a referrer
+  released afterwards finds nothing to notify.
+- `Part::Feature` does not decide at the notice -- the property is
+  mid-change and may register again a moment later with new content.
+  It marks itself pending, per document, and
+  `releasePendingShapeVersions()` reconciles (drop only) when
+  `App::Application::signalRecomputed` fires for that document, connected
+  once in the Part module init.  A pending feature not recomputed again
+  is reconciled by `beforeSave` as before.  During a restore or a
+  transaction the set is kept for later.
+- Effect on the gates: the side-face plane of gate 3 is retained for a
+  moment and let go by the end of the same recompute; gates 5 and 6 now
+  assert release with no save in between, and a repoint case was added.
+
+**The feature counts only referrers in its own document.**  A referrer
+in another document cannot be seen while that document is closed, which
+is the normal state of an assembly while its part is edited, so the
+feature-side count could never protect it; and keying it by document
+name was wrong anyway (a document's runtime name is not stable).  The
+`Doc#` key form is gone: `referrerKey` is empty for a foreign referrer,
+and the seeding, missing and reconcile loops skip it.  The manifest of a
+`_BaseShape<N>` names local `Object.Property` keys and nothing else.
+
+**Foreign referrers: decided, not built.**  The referrer document stores
+the evidence itself, as **sub-shapes, not whole shapes**: one
+document-wide dynamic `Part::PropertyPartShape` holding a compound of
+every foreign sub-shape the document's element references resolved
+against, and one `App::PropertyMap` manifest mapping **the full
+reference name** to the child's index in the compound, so that each
+link property looks its sub-shape up from its own link content.  User
+ruling.  Two refinements agreed for the key: the document part is the
+XLink's persisted file path (relative to the referring file), not the
+runtime document name; and the element part is the indexed name
+(`Cut.Face3`), which is what the lookup has in hand after a break and is
+kept exact by the refresh rule below.  The store is rebuilt at every
+save of the referrer document, from a document save hook
+(`signalStartSaveDocument`, before the collect pass) installed by the
+Part module: one entry per distinct target, a healthy reference
+refreshed from the live foreign shape, a missing one keeping the child it
+has, everything else dropped.  Bare geometry, no element maps.  The
+serving side widens `searchElementCache` to carry the referring
+property: the feature answers from its own generations first, then asks
+the referrer document's store, searching its live shape for the stored
+sub-shape as the local path does -- which is also where the mapped-name
+caller change of 7.11 lands.  Before building it, two things to verify:
+that `App::Document` saves and restores dynamic properties, and whether a
+`PropertyPartShape` with no owning object gets blob storage (`makeBlob`
+finds the document through the owner object); the fallback is a hidden
+document object.  And the ordering trap: the compound must be restored
+before the XLinks re-resolve on load.
+
+Gate for what was built, on `build/win-relwithdebinfo-801`:
+
+| check | result |
+| --- | --- |
+| `FreeCADCmd -t ShapeStorage` | 42 of 42 (the repoint case added; gates 5 and 6 assert release before any save) |
+| sec 2.3 matrix | identical to 7.11 |
+| C++ (`ctest -j 6`) | 474 entries passed, 0 failed, 1 disabled |
+| Python (`FreeCADCmd -t 0`) | 1325 ran; the same 6 failures + 8 errors as 7.11, all this box's environment |
+
+Next session, in order: the foreign store with the two checks above;
+the widened search and serve-on-restore (V3 folded in); then V5.

@@ -379,6 +379,13 @@ public:
     /// Obtain link properties that contain element references to a given object
     static const std::unordered_set<PropertyLinkBase*>& getElementReferences(DocumentObject *);
 
+    /** Forget every element reference into \a feature, which is going away.
+     *
+     * A referrer's own record still names the feature, so that a referrer
+     * released later does not notify it (GeoFeature::onElementReferenceReleased).
+     */
+    static void clearElementReferences(DocumentObject *feature);
+
     /** Helper function for update individual element reference
      *
      * @param feature: if given, than only update element reference belonging

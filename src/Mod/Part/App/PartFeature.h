@@ -200,6 +200,15 @@ public:
     static bool isBaseShapeVersion(const App::Property *prop);
     /// An old generation's map never asks for a recompute
     bool checkElementMapVersion(const App::Property *prop, const char *ver) const override;
+    /// A referrer let go: re-evaluate the generations at the end of the recompute
+    void onElementReferenceReleased(App::PropertyLinkBase *prop) override;
+    /** Let go of what released referrers were holding.
+     *
+     * Connected to App::Application::signalRecomputed by the Part module:
+     * a referrer releases while it is being re-set, so the decision waits
+     * until the recompute that re-set it is over.  Also run by beforeSave.
+     */
+    static void releasePendingShapeVersions(const App::Document &doc);
     //@}
 
     void expandShapeContents();

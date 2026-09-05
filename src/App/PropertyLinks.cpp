@@ -123,9 +123,18 @@ void PropertyLinkBase::unregisterElementReference() {
             it->second.erase(this);
             if(it->second.empty())
                 _ElementRefMap.erase(it);
+            // Found in the map, so the feature is alive: a feature that is
+            // destroyed takes its entry with it (clearElementReferences).
+            if (auto geo = Base::freecad_dynamic_cast<GeoFeature>(obj))
+                geo->onElementReferenceReleased(this);
         }
     }
     _ElementRefs.clear();
+}
+
+void PropertyLinkBase::clearElementReferences(DocumentObject *feature)
+{
+    _ElementRefMap.erase(feature);
 }
 
 void PropertyLinkBase::unregisterLabelReferences()

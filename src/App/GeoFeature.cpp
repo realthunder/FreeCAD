@@ -54,7 +54,11 @@ GeoFeature::GeoFeature()
             (App::PropertyType)(Prop_Output|Prop_Hidden|Prop_Transient),"");
 }
 
-GeoFeature::~GeoFeature() = default;
+GeoFeature::~GeoFeature()
+{
+    // No referrer may notify a feature that is gone
+    PropertyLinkBase::clearElementReferences(this);
+}
 
 void GeoFeature::transformPlacement(const Base::Placement &transform)
 {

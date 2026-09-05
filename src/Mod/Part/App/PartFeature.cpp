@@ -143,27 +143,27 @@ struct Feature::ShapeVersion {
     }
 };
 
-/// The retention key of a referring link property, section 7.3
+/** The retention key of a referring link property, section 7.3:
+ * `Object.Property`, or empty when the referrer is not in 'doc'.
+ *
+ * Only a referrer in the feature's own document is counted here.  One in
+ * another document keeps its own evidence, in that document, because only
+ * that document knows it exists while it is closed (section 7.13).
+ */
 static std::string referrerKey(const App::Property *prop, const App::Document *doc)
 {
-    std::string key = prop->getFullName();
     auto obj = Base::freecad_dynamic_cast<const App::DocumentObject>(prop->getContainer());
-    if (obj && obj->getDocument() == doc) {
-        auto pos = key.find('#');
-        if (pos != std::string::npos)
-            key.erase(0, pos + 1);
-    }
+    if (!obj || obj->getDocument() != doc)
+        return std::string();
+    std::string key = prop->getFullName();
+    auto pos = key.find('#');
+    if (pos != std::string::npos)
+        key.erase(0, pos + 1);
     return key;
 }
 
-/// Whether the document a retention key names is loaded (this one always is)
-static bool keyDocumentLoaded(const std::string &key)
-{
-    auto pos = key.find('#');
-    if (pos == std::string::npos)
-        return true;
-    return App::GetApplication().getDocument(key.substr(0, pos).c_str()) != nullptr;
-}
+/// The features with a released referrer, per document, until its recompute ends
+static std::map<const App::Document*, std::set<Feature*>> _pendingRelease;
 
 const char *Feature::baseShapePrefix()
 {
@@ -229,7 +229,52 @@ Feature::Feature()
             (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly|App::Prop_Output),"");
 }
 
-Feature::~Feature() = default;
+Feature::~Feature()
+{
+    if (auto doc = getDocument()) {
+        auto it = _pendingRelease.find(doc);
+        if (it != _pendingRelease.end()) {
+            it->second.erase(this);
+            if (it->second.empty())
+                _pendingRelease.erase(it);
+        }
+    }
+}
+
+void Feature::onElementReferenceReleased(App::PropertyLinkBase *prop)
+{
+    (void)prop;
+    // Nothing held, nothing to let go of
+    bool held = false;
+    for (const auto &version : _shapeVersions) {
+        if (!version.referrers.empty()) {
+            held = true;
+            break;
+        }
+    }
+    if (!held || !getDocument())
+        return;
+    // The referrer is mid-change (re-set, or destroyed): whether it still
+    // needs its generation is decided once the recompute is over, or at
+    // the next save, whichever comes first.
+    _pendingRelease[getDocument()].insert(this);
+}
+
+void Feature::releasePendingShapeVersions(const App::Document &doc)
+{
+    auto it = _pendingRelease.find(&doc);
+    if (it == _pendingRelease.end())
+        return;
+    // Not now: the referrers are not in a state to be asked.  They stay
+    // pending for the next recompute, or the next save.
+    if (doc.testStatus(App::Document::Restoring) || doc.isPerformingTransaction())
+        return;
+    // Taken out first: the reconcile below may release more
+    std::set<Feature*> features = std::move(it->second);
+    _pendingRelease.erase(it);
+    for (auto feature : features)
+        feature->reconcileShapeVersions(/*materialize*/false);
+}
 
 void Feature::fixShape(TopoShape &s) const
 {
@@ -1410,7 +1455,9 @@ void Feature::onBeforeChange(const App::Property *prop) {
                             continue;
                         if (shapePropertyOfElement(element) != propShape)
                             continue;
-                        version.referrers.insert(referrerKey(link, getDocument()));
+                        auto key = referrerKey(link, getDocument());
+                        if (!key.empty())
+                            version.referrers.insert(std::move(key));
                         break;
                     }
                 }
@@ -1563,14 +1610,14 @@ void Feature::reconcileShapeVersions(bool materialize)
             continue;
         objs.clear();
         subs.clear();
+        auto key = referrerKey(link, getDocument());
+        if (key.empty())
+            continue;
         link->getLinks(objs, true, &subs, false);
-        std::string key;
         for(auto &sub : subs) {
             auto element = Data::findElementName(sub.c_str());
             if(!element || !element[0] || !Data::hasMissingElement(element))
                 continue;
-            if (key.empty())
-                key = referrerKey(link, getDocument());
             missing[shapePropertyOfElement(element + Data::missingPrefix().size())].insert(key);
         }
     }
@@ -1580,11 +1627,7 @@ void Feature::reconcileShapeVersions(bool materialize)
     for (auto it = _shapeVersions.begin(); it != _shapeVersions.end();) {
         auto found = missing.find(it->prop);
         for (auto rit = it->referrers.begin(); rit != it->referrers.end();) {
-            // A referrer in a document that is not loaded cannot be asked;
-            // its generation is kept, which is the only protection it gets.
-            bool keep = !keyDocumentLoaded(*rit)
-                     || (found != missing.end() && found->second.count(*rit));
-            if (keep)
+            if (found != missing.end() && found->second.count(*rit))
                 ++rit;
             else
                 rit = it->referrers.erase(rit);

@@ -1168,9 +1168,9 @@ class BaseShapeCases(ShapeTestCase):
         the generation it last resolved against.
 
         A's side face is re-resolved by position only after the cut's own
-        resolve pass (by the attach extension re-setting Support), so right
-        after the first edit A reads as missing too and is retained with B;
-        the save-time reconcile is where the manifest is exact.
+        resolve pass (by the attach extension re-setting Support), so for a
+        moment A reads as missing too; re-setting releases it, and the end
+        of the same recompute lets it go -- before any save.
         """
         doc = self.newDocument()
         cut, (planeB, planeA) = self.model(doc, ("Face3", "Face6"))
@@ -1178,6 +1178,7 @@ class BaseShapeCases(ShapeTestCase):
         self.replaceBase(doc, cut, "NewBox")
         self.assertTrue(self.support(planeB).startswith("?"))
         self.assertFalse(self.support(planeA).startswith("?"))
+        self.assertEqual(self.refs(cut), self.entries({planeB: "_BaseShape1"}))
         doc.saveAs(project)
         self.assertEqual(self.refs(cut), self.entries({planeB: "_BaseShape1"}))
 
@@ -1213,8 +1214,9 @@ class BaseShapeCases(ShapeTestCase):
         self.assertEqual(len(self.filesWithHash(project, oldHash)), 1)
 
     def testARepairedReferenceLetsGo(self):
-        """Gate 5: a reference repaired by hand drops its entry at the next
-        save; the generation stays while anyone names it."""
+        """Gate 5: a reference repaired by hand drops its entry at the end
+        of the recompute that repaired it, with no save in between; the
+        generation stays while anyone names it."""
         doc = self.newDocument()
         cut, (planeB, planeA) = self.model(doc, ("Face3", "Face3"))
         project = self.directoryPath()
@@ -1225,16 +1227,28 @@ class BaseShapeCases(ShapeTestCase):
         planeB.AttachmentSupport = [(cut, ("Face3",))]
         doc.recompute()
         self.assertEqual(self.support(planeB), "Face3")
-        doc.save()
         self.assertEqual(self.refs(cut), self.entries({planeA: "_BaseShape1"}))
         self.assertEqual(self.versions(cut), ["_BaseShape1"])
 
         planeA.AttachmentSupport = [(cut, ("Face3",))]
         doc.recompute()
-        doc.save()
         self.assertEqual(self.versions(cut), [])
         self.assertNotIn("_BaseShapeRefs", cut.PropertiesList)
+        doc.save()
         self.assertNotIn("_BaseShape", self.documentXml(project))
+
+    def testARepointedReferenceLetsGo(self):
+        """A reference moved to another object is nobody's business here
+        any more, whatever it points at now."""
+        doc = self.newDocument()
+        cut, (plane,) = self.model(doc)
+        self.replaceBase(doc, cut, "NewBox")
+        self.assertEqual(self.versions(cut), ["_BaseShape1"])
+
+        plane.AttachmentSupport = [(doc.getObject("Box"), ("Face1",))]
+        doc.recompute()
+        self.assertEqual(self.versions(cut), [])
+        self.assertEqual(self.refs(cut), {})
 
     def testADeletedReferrerLetsGo(self):
         """Gate 6: a deleted referrer is nobody; its generation goes with the
@@ -1248,14 +1262,14 @@ class BaseShapeCases(ShapeTestCase):
 
         doc.removeObject(planeB.Name)
         doc.recompute()
-        doc.save()
         self.assertEqual(self.refs(cut), heldByA)
 
         doc.removeObject(planeA.Name)
         doc.recompute()
-        doc.save()
         self.assertEqual(self.versions(cut), [])
         self.assertEqual(self.refs(cut), {})
+        doc.save()
+        self.assertNotIn("_BaseShape", self.documentXml(project))
 
     def testUndoTakesTheGenerationWithIt(self):
         """Gate 7: the transaction records the property, so undo removes it

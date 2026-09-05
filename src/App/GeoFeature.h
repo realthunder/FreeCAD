@@ -39,6 +39,8 @@ class PropertyXLinkSub;
 
 /** Base class of all geometric document objects.
  */
+class PropertyLinkBase;
+
 class AppExport GeoFeature : public App::DocumentObject
 {
     PROPERTY_HEADER_WITH_OVERRIDE(App::GeoFeature);
@@ -177,6 +179,16 @@ public:
                                                                Data::SearchOptions options = Data::SearchOption::CheckGeometry,
                                                                double tol = 1e-7,
                                                                double atol = 1e-10) const;
+
+    /** Called when a link property stops holding element references into
+     * this feature: it is being re-set, or destroyed with its owner.
+     *
+     * Whatever the feature retained for that referrer (searchElementCache)
+     * may be let go of.  Only a notice: the property may register again a
+     * moment later with new content, so the feature should re-evaluate at
+     * its next safe point rather than act here.
+     */
+    virtual void onElementReferenceReleased(PropertyLinkBase *prop) { (void)prop; }
 
 
     /// Return the object that owns the shape that contains the give element name
