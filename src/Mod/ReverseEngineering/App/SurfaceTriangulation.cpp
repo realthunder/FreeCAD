@@ -40,7 +40,12 @@
 #include <pcl/common/io.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/pcl_config.h>
+// PCL 1.12 merged point_traits.h into type_traits.h and later dropped it.
+#if PCL_VERSION_COMPARE(>=, 1, 12, 0)
+#include <pcl/type_traits.h>
+#else
 #include <pcl/point_traits.h>
+#endif
 #include <pcl/point_types.h>
 #include <pcl/surface/ear_clipping.h>
 #include <pcl/surface/gp3.h>
