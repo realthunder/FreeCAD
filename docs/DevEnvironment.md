@@ -777,8 +777,9 @@ prints C strings, so it shows the directory being loaded and never the file
 name hiding behind the first NUL -- do not read that as "discover() returned
 the directory".
 
-Until `ifcopenshell-feedstock` is bumped (needs a push of the fork and the new
-tarball sha256), the packaged `_8` still needs the path seeded:
+`ifcopenshell-feedstock` build 9 (`fork_rev 0dc561db2`, pushed 2026-09-05)
+carries it; until that package is installed here, the packaged `_8` still
+needs the path seeded:
 
 ```python
 import ifcopenshell
