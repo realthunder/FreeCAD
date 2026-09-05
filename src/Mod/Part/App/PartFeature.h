@@ -24,7 +24,8 @@
 #ifndef PART_FEATURE_H
 #define PART_FEATURE_H
 
-#include <boost/container/map.hpp>
+#include <string>
+#include <vector>
 
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
@@ -162,6 +163,16 @@ public:
     static void disableElementMapping(App::PropertyContainer *container, bool disable=true);
     static bool isElementMappingDisabled(App::PropertyContainer *container);
 
+    /** Find an element of a retained generation of this feature's shape in
+     * the live shape.
+     *
+     * The feature keeps a list of generations of its shape properties in
+     * memory (see docs/TopoNamingEnhance.md section 7): the whole shape as
+     * it was before each change, newest first.  The request is answered from
+     * the newest generation that holds 'element' (a mapped name goes through
+     * that generation's own element map, an indexed name is taken by
+     * position), by searching the live shape for the same geometry.
+     */
     const std::vector<std::string>& searchElementCache(const std::string &element,
                                                        Data::SearchOptions options = Data::SearchOption::CheckGeometry,
                                                        double tol = 1e-7,
@@ -216,7 +227,29 @@ protected:
     // Return true if need to apply the shape placement to the Placement property
     virtual bool shouldApplyPlacement();
 
+    /** Register a second shape property whose elements are referenced with
+     * an element-name prefix, so that its generations are retained and
+     * searched like the main Shape's (the Sketcher's InternalShape).  A
+     * null 'prop' unregisters the prefix.
+     */
     void registerElementCache(const std::string &prefix, PropertyPartShape *prop);
+
+    /** The shape property an element name belongs to, by its registered
+     * prefix; the main Shape when no prefix matches.  'prefix' receives the
+     * matched prefix, or null.
+     */
+    PropertyPartShape *shapePropertyOfElement(const char *element,
+                                              const std::string **prefix = nullptr) const;
+
+    /** Drop the retained generations no missing referrer needs any more.
+     *
+     * Called after the element references into this feature have been
+     * re-resolved against a new shape: a referrer is kept on a generation
+     * only while its reference into that generation's property is missing,
+     * and a generation nobody is kept for is dropped, except the newest of
+     * each property, which always stays in memory.
+     */
+    void reconcileShapeVersions();
 
     /** Helper function to obtain mapped and indexed element name from a shape
      * @params shape: source shape
@@ -230,8 +263,10 @@ protected:
     std::pair<std::string,std::string> getExportElementName(TopoShape shape, const char *name) const;
 
 private:
-    struct ElementCache;
-    boost::container::map<std::string, ElementCache> _elementCache;
+    /// One retained generation of a shape property, see PartFeature.cpp
+    struct ShapeVersion;
+    /// The retained generations, newest first (of every registered property)
+    std::vector<ShapeVersion> _shapeVersions;
     std::vector<std::pair<std::string, PropertyPartShape*>> _elementCachePrefixMap;
 };
 

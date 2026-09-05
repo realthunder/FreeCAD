@@ -906,15 +906,16 @@ regresses it.
 
 ## 6. Where to resume (written 2026-09-05, end of session)
 
-Nothing in this document is built.  Sections 1 to 4 are the survey,
-section 5 is the plan for the pre-task, and this section is what a next
-session needs that neither of them says.
+*As of 7.11 the first step, V1, is built; the rest of this paragraph
+predates it.*  Nothing in this document is built.  Sections 1 to 4 are
+the survey, section 5 is the plan for the pre-task, and this section is
+what a next session needs that neither of them says.
 
 ### 6.1 State of play
 
 | | state |
 | --- | --- |
-| pre-task (sec 5) | planned, decided, **not started** |
+| pre-task (sec 5, re-planned in sec 7) | **V1 built** (7.11); V2 onward not started |
 | main task, TechDraw (sec 3) | surveyed, sequenced, **not started** |
 | measurements | done; all numbers in secs 2.3, 2.5, 5.2, 5.3 are real |
 | probe scripts | session scratchpad only, **will be gone** -- recipes in 6.3 |
@@ -1424,6 +1425,63 @@ feature.
 
 ### 7.10 First action next session
 
+*Done, see 7.11.  Kept as written.*
+
 Build **V1**.  It changes no file on disk, so its gate is the two suites
 green plus the sec 2.3 matrix reproduced in one session (recipe in 6.3,
 model A).  Then V2 with its gate 1 before anything else.
+
+### 7.11 V1, built (2026-09-05)
+
+`Part::Feature` now keeps `std::vector<ShapeVersion> _shapeVersions`,
+newest first, in place of the flat `_elementCache`; the struct is defined
+at the top of `PartFeature.cpp` (before the defaulted destructor, which
+needs it complete) and holds the source property, its prefix, the whole
+shape, the referrer set of 7.3 and the per-element search memo.  The
+Sketcher's `registerElementCache` prefix works as before: a generation
+belongs to one property, and `shapePropertyOfElement()` is the one place
+that maps an element name to its property and prefix.
+
+Four things the code settled that section 7 left implicit:
+
+- **When the gathering gates fail** (restore, undo/redo), no generation
+  is taken, exactly as no seed was taken before; but the generations
+  that *are* retained for a missing referrer stay, only their memos are
+  dropped.  The generation nobody is retained for -- normally the newest
+  -- is dropped at the next `onBeforeChange` of its property whether or
+  not the gates hold, which is what today's clear did.  Invisible,
+  because a retained referrer is never searched again: its indexed name
+  carries the `?` marker and the caller skips it.
+- **The memo is per generation and is cleared whenever that property's
+  live shape changes**, in `onBeforeChange`.  It was implicitly cleared
+  before by the cache being rebuilt; with generations that outlive one
+  change it has to be explicit, or an older generation would answer
+  with names resolved against a shape that is gone.
+- **The reconcile of 7.5 runs in memory already**: after
+  `GeoFeature::onChanged(Shape)` has re-resolved the references, a
+  referrer stays on a generation only if some element of its link
+  property into that generation's property is missing now, and an
+  emptied generation is dropped unless it is the newest of its property.
+  The missing element is attributed to a property by its prefix after
+  the `?` marker (`?InternalEdge3` -> `InternalShape`).  V2 adds the
+  materialization on top of this; the retention logic does not change.
+- **The one caller still passes the indexed name** (`shadow.second`), so
+  the lookup is by position today, and a newest-first walk answers from
+  the newest generation that has that index.  That is what the flat
+  cache did implicitly, and it is exactly right while the caller only
+  asks about references that were healthy at the last change.  A
+  request that must pick the right generation among several -- the
+  deferred repair UI, or a referrer loaded from another document after
+  two edits -- should pass the mapped name; `getSubTopoShape` already
+  resolves either form, so that is a caller change, not a cache change.
+  Noted for V3.
+
+Gate, all in one session, on `build/win-relwithdebinfo-801`:
+
+| check | result |
+| --- | --- |
+| sec 2.3 matrix (model A, recipe 6.3) | identical: `Face1`, `Face6` repaired silently to area 500.00, `Face3` -> `?Face3` |
+| C++ (`ctest -j 6`) | 473 of 473 passed, 1 disabled |
+| Python (`FreeCADCmd -t 0`) | 1317 ran, 6 failures + 8 errors, all of them this box: no `yaml` (which also keeps `TestCAMApp` from loading, hence 1317 and not 2628) and no `ply`, CRLF fixtures in the Material clipboard tests, two over-long temp paths in `FileBlobs`, one file lock in FEM.  Every Part, Sketcher, PartDesign, Document, ShapeStorage and FileBlobs geometry case passed. |
+
+Next: **V2**, gate 1 (the byte-identical healthy save) first.
