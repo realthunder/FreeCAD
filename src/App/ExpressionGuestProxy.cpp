@@ -183,7 +183,13 @@ bool isHookName(const char* attr)
         "getSubObject", "getSubObjects", "getLinkedObject", "canLinkProperties",
         "allowDuplicateLabel", "redirectSubName", "canLoadPartial", "hasChildElement",
         "isElementVisible", "isElementVisibleEx", "setElementVisible", "getElementMapVersion",
-        "editProperty", "dumps", "loads"};
+        "editProperty", "dumps", "loads",
+        // the GUI objects a workbench registers (docs/Sandbox.md 7.9, the
+        // prelude's CMD_HOOKS and WB_HOOKS): the command manager's
+        // hasattr("IsActive") on every poll costs no trip
+        "GetResources", "Activated", "IsActive", "GetCommands", "GetDefaultCommand",
+        "OnActionInit", "CmdHelpURL", "Initialize", "Deactivated", "ContextMenu",
+        "GetClassName"};
     for (const char* h : hooks)
         if (std::strcmp(h, attr) == 0)
             return true;

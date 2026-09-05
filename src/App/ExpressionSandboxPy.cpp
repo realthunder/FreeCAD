@@ -240,6 +240,33 @@ PyObject* resetFunc(PyObject*, PyObject*)
 // the stand-in (registered whether or not the class installed itself);
 // proxyInfo(proxy) describes a stand-in.
 
+// exec(source[, module]): statements in the guest (the exec op the
+// gtests push probe modules with), as the session principal.  The
+// guest's exception comes back as a RuntimeError naming it, with the
+// guest traceback when there is one.
+PyObject* execFunc(PyObject*, PyObject* args)
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    const char* source = nullptr;
+    const char* module = "";
+    if (!PyArg_ParseTuple(args, "s|s", &source, &module))
+        return nullptr;
+    ExpressionSandbox::ImageResult r = ExpressionSandbox::ImageHost::instance().exec(source, module);
+    if (!r.ok) {
+        std::string text = r.excType + ": " + r.message;
+        if (!r.traceback.empty())
+            text += "\n" + r.traceback;
+        PyErr_SetString(PyExc_RuntimeError, text.c_str());
+        return nullptr;
+    }
+    Py_Return;
+#else
+    (void)args;
+    PyErr_SetString(PyExc_RuntimeError, "this build has no sandbox host");
+    return nullptr;
+#endif
+}
+
 PyObject* proxyNewFunc(PyObject*, PyObject* args)
 {
 #ifdef FC_EXPR_IMAGE_HOST
@@ -422,6 +449,9 @@ PyMethodDef Methods[] = {
      "  How many guest->host hops (read_prop, get_attr, call, get_item,"
      " len, release, pkg.missing) a workload really makes; what prices a"
      " snapshot op before one is designed."},
+    {"exec", execFunc, METH_VARARGS,
+     "exec(source[, module]): run statements in the sandbox guest, as the session\n"
+     "principal; with module the source becomes that module in the guest."},
     {"proxyNew", proxyNewFunc, METH_VARARGS,
      "proxyNew(module, class, *args) -> stand-in -- construct a"
      " scripted object's Proxy IN THE SANDBOX GUEST (rung 2): the class's"

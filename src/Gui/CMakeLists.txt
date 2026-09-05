@@ -401,6 +401,7 @@ SOURCE_GROUP("Uic" FILES ${Gui_UIC_HDRS})
 # The command sources
 SET(Command_CPP_SRCS
     Action.cpp
+    SandboxGui.cpp
     ActionFunction.cpp
     Command.cpp
     CommandDoc.cpp
@@ -427,8 +428,14 @@ SET(Command_SRCS
     ShortcutManager.h
     CommandCompleter.h
     CommandActionPy.h
+    SandboxGui.h
 )
 SOURCE_GROUP("Command" FILES ${Command_SRCS})
+# the sandbox host seam (docs/Sandbox.md 7.9): the gui.* bridge ops live in
+# SandboxGui.cpp alone, so the host macro is scoped to it
+if(BUILD_EXPR_IMAGE_HOST)
+    set_source_files_properties(SandboxGui.cpp PROPERTIES COMPILE_DEFINITIONS FC_EXPR_IMAGE_HOST)
+endif()
 
 # The style parameter evaluator (upstream's theme parameter model)
 SET(StyleParameters_SRCS

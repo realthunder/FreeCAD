@@ -33,6 +33,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -203,6 +204,38 @@ AppExport PyObject* decodeHostValue(const HandleTable& table, const nlohmann::js
  * GIL itself; catches everything -- the reply is always well-formed.
  */
 AppExport nlohmann::json dispatchHostOp(HandleTable& table, const nlohmann::json& req);
+
+/// Reply builders for the op handlers registered below (the same ones
+/// the built-in ops use): a value reply, an error reply by exception
+/// type name, the pending Python error as an error reply (clears it),
+/// and a host result (reference STOLEN) encoded through the table.
+AppExport nlohmann::json okReply(nlohmann::json val);
+AppExport nlohmann::json errReply(const char* exc, const std::string& msg);
+AppExport nlohmann::json pyErrorReply();
+AppExport nlohmann::json encodeResult(HandleTable& table, PyObject* result);
+
+/** An op family another library owns (Gui's `gui.*`, docs/Sandbox.md
+ * 7.9).  A request whose op starts with `prefix` goes to `handler`,
+ * inside dispatchHostOp's GIL and exception net -- a
+ * PermissionNeededException it throws becomes a PermissionError reply,
+ * any other exception a RuntimeError reply.  The built-in ops are
+ * matched first; one handler per prefix, a later registration replaces
+ * the earlier.
+ */
+using BridgeOpHandler =
+    std::function<std::vector<unsigned char>(HandleTable&, const std::vector<unsigned char>&)>;
+AppExport void registerBridgeOps(const std::string& prefix, BridgeOpHandler handler);
+
+/// The same helpers over CBOR, for a registered handler in another
+/// library: a json object in a signature does not link across libraries
+/// (two nlohmann copies, 12), so the request and reply cross as CBOR
+/// bytes.  decodeHostValueCbor takes one wire value; encodeResultCbor
+/// steals `result` and returns a value reply; pyErrorReplyCbor is the
+/// pending Python error as an error reply.
+AppExport PyObject* decodeHostValueCbor(const HandleTable& table,
+                                        const std::vector<unsigned char>& valueCbor);
+AppExport std::vector<unsigned char> encodeResultCbor(HandleTable& table, PyObject* result);
+AppExport std::vector<unsigned char> pyErrorReplyCbor();
 
 /** The fixed-layout form of a bare read_prop / get_attr (FcxWire.h,
  * FixedRequestMagic): `data` is the whole request, the reply comes

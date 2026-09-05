@@ -21,6 +21,7 @@
 #include "PreCompiled.h"
 
 #include <cstring>
+#include <map>
 #include <string>
 
 #include <Base/BoundBoxPy.h>
@@ -287,8 +288,6 @@ void HandleTable::clear()
     uses.clear();
 }
 
-static json okReply(json val);
-static json errReply(const char* exc, const std::string& msg);
 
 // ---- durable document-object handles (docs/Sandbox.md 3.2) ----
 
@@ -758,7 +757,7 @@ bad:
 
 // ---- op dispatch ----
 
-static json okReply(json val)
+json okReply(json val)
 {
     json r;
     r["ok"] = true;
@@ -766,7 +765,7 @@ static json okReply(json val)
     return r;
 }
 
-static json errReply(const char* exc, const std::string& msg)
+json errReply(const char* exc, const std::string& msg)
 {
     json r;
     r["ok"] = false;
@@ -777,7 +776,7 @@ static json errReply(const char* exc, const std::string& msg)
 
 /// Current Python error -> error reply, mirroring the image's encoding
 /// (bare type name, str(value)).
-static json pyErrorReply()
+json pyErrorReply()
 {
     PyObject *type = nullptr, *value = nullptr, *trace = nullptr;
     PyErr_Fetch(&type, &value, &trace);
@@ -822,7 +821,7 @@ static std::string callableName(PyObject* obj)
     return name;
 }
 
-static json encodeResult(HandleTable& table, PyObject* result)
+json encodeResult(HandleTable& table, PyObject* result)
 {
     json val = encodeHostValue(table, result);
     Py_DECREF(result);
@@ -962,6 +961,55 @@ std::vector<unsigned char> dispatchHostOpFixed(HandleTable& table,
     return out;
 }
 
+// ---- registered op families (docs/Sandbox.md 7.9) ----
+
+static std::map<std::string, BridgeOpHandler>& bridgeOpHandlers()
+{
+    static std::map<std::string, BridgeOpHandler> handlers;
+    return handlers;
+}
+
+void registerBridgeOps(const std::string& prefix, BridgeOpHandler handler)
+{
+    bridgeOpHandlers()[prefix] = std::move(handler);
+}
+
+/// The handler whose prefix `op` starts with (the longest one), or nullptr.
+static const BridgeOpHandler* bridgeOpHandlerFor(const std::string& op)
+{
+    const BridgeOpHandler* best = nullptr;
+    std::size_t bestLen = 0;
+    for (const auto& entry : bridgeOpHandlers()) {
+        const std::string& prefix = entry.first;
+        if (prefix.size() >= bestLen && op.compare(0, prefix.size(), prefix) == 0) {
+            best = &entry.second;
+            bestLen = prefix.size();
+        }
+    }
+    return best;
+}
+
+PyObject* decodeHostValueCbor(const HandleTable& table, const std::vector<unsigned char>& valueCbor)
+{
+    try {
+        return decodeHostValue(table, json::from_cbor(valueCbor));
+    }
+    catch (const json::exception& e) {
+        PyErr_SetString(PyExc_ValueError, e.what());
+        return nullptr;
+    }
+}
+
+std::vector<unsigned char> encodeResultCbor(HandleTable& table, PyObject* result)
+{
+    return json::to_cbor(encodeResult(table, result));
+}
+
+std::vector<unsigned char> pyErrorReplyCbor()
+{
+    return json::to_cbor(pyErrorReply());
+}
+
 json dispatchHostOp(HandleTable& table, const json& req)
 {
     Base::PyGILStateLocker lock;
@@ -1060,6 +1108,11 @@ json dispatchHostOp(HandleTable& table, const json& req)
             Py_DECREF(fresh);  // the table holds its own reference
             return okReply(json(fresh_id));
         }
+
+        // an op family another library registered (Gui's gui.*, 7.9):
+        // no handle of its own, so before the handle ops below
+        if (const BridgeOpHandler* handler = bridgeOpHandlerFor(op))
+            return json::from_cbor((*handler)(table, json::to_cbor(req)));
 
         PyObject* base = table.get(id);
         if (!base)

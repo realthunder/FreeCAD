@@ -88,6 +88,7 @@
 #include "AxisOriginPy.h"
 #include "BitmapFactory.h"
 #include "Command.h"
+#include "SandboxGui.h"
 #include "CommandActionPy.h"
 #include "CommandPy.h"
 #include "Control.h"
@@ -487,6 +488,9 @@ Application::Application(bool GUIenabled)
 {
     //App::GetApplication().Attach(this);
     if (GUIenabled) {
+        // the sandbox guest's FreeCADGui reaches the host through the
+        // gui.* bridge ops (docs/Sandbox.md 7.9)
+        SandboxGui::registerOps();
         //NOLINTBEGIN
         App::GetApplication().signalNewDocument.connect(
             std::bind(&Gui::Application::slotNewDocument, this, sp::_1, sp::_2));

@@ -240,7 +240,16 @@ ring 2 is absent (`os`, `socket`, `ctypes`: no grant supplies them).
 
 Ops: `eval`, `exec`, `read_prop`, `get_attr`, `call`, `get_item`, `len`,
 `bool`, `str`, `release`, `resolve_alias`, `pkg.missing`, `write_prop`,
-`mod_call`, `mod_get`.  `bool` and `str` (2026-09-04) are the proxy's
+`mod_call`, `mod_get`; and the `gui.*` family (2026-09-05, 7.9) --
+`gui.cmd.add`, `gui.cmd.list`, `gui.wb.add`, `gui.wb.remove`, `gui.wb`,
+`gui.wb.active`, `gui.wb.list`, `gui.icon_path`, `gui.lang_path`,
+`gui.pref_page` -- which `App` does not answer: the bridge has an op
+REGISTRY (`registerBridgeOps(prefix, handler)`, matched after the
+built-in ops, inside the same GIL and exception net; request and reply
+cross that seam as CBOR bytes, since a json in a signature does not link
+between the two nlohmann copies, 12) and `Gui` registers
+the family when its `Application` is constructed (`SandboxGui.cpp`),
+every op checked against the catalog's `gui` permission.  `bool` and `str` (2026-09-04) are the proxy's
 `__bool__` and `__str__`: natively every object is truthy unless its
 type says otherwise (`if plane:` -- with only `__len__` on the proxy the
 host answered "no len()" and Draft's plane tests died), and Draft
@@ -539,8 +548,9 @@ CLOSED.  A view provider's Proxy is not routed -- the Gui side is not
 in the guest (G2).
 
 Python: `FreeCAD.ExpressionSandbox` -- `routed`, `setRouting`,
-`available`, `imageInfo`, `evaluate`, `evaluateNative`, `evalCount`,
-`stats`, `resetStats`, `reset`, `proxyNew`, `proxyInfo` (rung 2, 3.2),
+`available`, `imageInfo`, `evaluate`, `evaluateNative`, `exec` (statements
+in the guest as the session principal, optionally as a named module),
+`evalCount`, `stats`, `resetStats`, `reset`, `proxyNew`, `proxyInfo` (rung 2, 3.2),
 `pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
 `pyodideAbi`; constants `OptionCallFrame`, `OptionPythonMode`.
 
@@ -1582,6 +1592,160 @@ Draft and BIM, reopened and built.
     Blender layout API          neutral vocabulary but draw() per redraw  why retained
                                 in process with full access
 
+### 7.9 G2 sized: Draft and BIM register from the guest **[sized 2026-09-05]**
+
+G2 is U1 + U2 + U7 (7.1): the workbenches' `InitGui.py` runs in the
+guest, their commands and workbenches exist on the host as stand-ins,
+and the host services they reach at registration are ops.  The host
+facts that size it (`src/Gui`, 2026-09-05):
+
+- **A Python command** is `Gui::PythonCommand` (or `PythonGroupCommand`
+  when the object has `GetCommands`) holding the object.  `GetResources()`
+  is read ONCE at construction and again on a language change (a dict
+  of strings and bools: MenuText, ToolTip, StatusTip, Pixmap, Accel,
+  WhatsThis, CmdType, Checkable, Exclusive, DropDownMenu); `IsActive()`
+  is polled on every UI update tick and must be a real bool (anything
+  else, or an exception, reads as inactive); `Activated()` (or
+  `Activated(index)` for a checkable one) on trigger; `GetCommands()`
+  names, `GetDefaultCommand()` an index, `OnActionInit()` once,
+  `CmdHelpURL()` on help.  Only `IsActive` is hot.  The command's group
+  name is derived from the CALLER's file path (`Mod/<Group>/...`), and
+  the optional "activation string" makes `Activated` a host-side command
+  line that never calls Python.
+- **A workbench handler** crosses strings only: `GetClassName()`,
+  `Initialize()`, `Activated()`, `Deactivated()`, `ContextMenu(recipient)`;
+  `MenuText`/`ToolTip`/`Icon` are read at registration; the host WRITES
+  `__Workbench__` (the C++ workbench's own Python object) onto the
+  handler after `GetClassName`, and the handler's `appendToolbar`,
+  `appendMenu`, `appendContextMenu`, `appendCommandbar`, the removes and
+  the lists all go through it.  `addWorkbench` accepts an instance or a
+  subclass of `__main__.Workbench`, instantiates a class itself, and keys
+  the registry by the CLASS NAME.
+- **`InitGui.py`** is not imported: `FreeCADGuiInit.RunInitGuiPy` execs
+  the file's text in its own scope, with `FreeCAD`, `App`, `Gui`,
+  `FreeCADGui`, `Log`, `Err`, `Msg`, `Workbench` as globals, and a
+  failure is logged, never fatal.
+- **Resources.** `addIconPath(":/icons")` works because `import Draft_rc`
+  just registered the compiled Qt resources in the HOST's resource
+  system; a guest cannot register a qrc.  `addPreferencePage` has a
+  `.ui`-path form (data: the host's `PrefPageUiProducer`) and a class
+  form (the host instantiates a Python class -- U3, G3).
+- **View providers** are NOT G2.  `ViewProviderFeaturePythonImp` binds 46
+  hooks; `getIcon`, `getExtraIcons`, `setupContextMenu`, `iconMouseEvent`
+  take or return Qt objects, `getElement`, `getElementPicked`,
+  `getDetail`, `getDetailPath` take or return Coin objects, and `attach`
+  is where a proxy builds Coin nodes (`vobj.addDisplayMode(node, mode)`).
+  That is the mirror (G4, after Probe A); a view provider's Proxy stays
+  native until then (13).
+- **No C++ test constructs a `Gui::Application`**; the Gui-side gates are
+  Python test modules run under the Gui binary (`FreeCAD -t <Module>`,
+  the way `SandboxPyodide` already runs there), on Xvfb with the rig of
+  docs/Testing.md (`env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb
+  xvfb-run`; `offscreen` crashes in `QOpenGLWidget`).
+
+**What Draft's `Initialize()` needs before it appends one toolbar:**
+`import DraftTools`, which imports `DraftGui` (a `DraftToolBar()` of Qt
+widgets is BUILT at import), `gui_snapper` (a `Snapper()` at import) and
+`gui_trackers` (pivy at import) -- U3, U5 and U6 in the first three
+lines.  BIM's `createTools` does the same through `DraftTools` and
+`bimcommands`.  So G2 cannot gate on Draft's toolbars appearing: the
+registration MECHANISM is G2a with its own gate, and G2b runs the real
+`InitGui.py`s in the guest to measure how far they get -- that residue
+is G3's list, not a G2 failure.
+
+**G2a, the mechanism (build order):**
+
+1. A guest `FreeCADGui` module in the prelude beside `FreeCAD`:
+   `Workbench` base class (its `append*`/`remove*`/`list*` are one op
+   `gui.wb {name, m, a}` on the workbench's REGISTERED name -- the guest
+   never holds `__Workbench__`), `addCommand(name, obj, activation=None)`
+   (the object registers as a guest proxy with the COMMAND hook list and
+   crosses as its descriptor: `gui.cmd.add {name, desc, group,
+   activation}`), `addWorkbench(cls | inst)` (instantiated in the guest,
+   registered with the WORKBENCH hook list, MenuText/ToolTip/Icon read
+   there: `gui.wb.add {name, desc, MenuText, ToolTip, Icon}`),
+   `addIconPath`, `addLanguagePath`, `addPreferencePage(ui, group)` (the
+   `.ui` form; a class is a TypeError until G3), `listCommands`,
+   `listWorkbenches`, `getWorkbench` (the guest instance), `activeWorkbench`,
+   `updateLocale` (no-op).  `FreeCAD.GuiUp` stays 0: the App side's
+   `if App.GuiUp:` imports keep their meaning, there is no GUI in the
+   guest.
+2. A bridge op REGISTRY on the host (`registerBridgeOps(prefix,
+   handler)` in `ExpressionImageBridge.h`, consulted by `dispatchHostOp`
+   before "unknown bridge op"), so `Gui` owns every `gui.*` op without
+   `App` linking `Gui`; `src/Gui/SandboxGui.cpp` registers them when
+   `Gui::Application` is constructed.  Every `gui.*` op is
+   `checkPermission(Permission::Gui)`: the catalog's DENY for a document
+   (not promptable), ALLOW for session and addons.
+3. The command object on the host IS the stand-in (`makeGuestProxy` of
+   the descriptor): `new PythonCommand(name, standin)` or
+   `PythonGroupCommand` when the descriptor lists `GetCommands`, the
+   group name from the op.  The host's stand-in answers a missing
+   command or workbench hook without a trip (`isHookName` learns the GUI
+   names; the guest's `_proxy_register` takes the hook list), so the
+   `hasattr("IsActive")` of every poll costs nothing.
+4. The workbench on the host is a WRAPPER, `class GuestWorkbench(
+   Workbench)` holding the stand-in and forwarding the five hooks: the
+   host writes `__Workbench__` onto the handler, and a stand-in refuses
+   host objects (3.2), so the wrapper takes it; `gui.wb` calls the
+   wrapper's base-class method `m` (an allowlist: the fourteen
+   `Workbench` methods) on the registered name.
+5. Principal: registration and every forwarded hook run as `session`
+   (the proxy call has no owner) -- the built-in workbenches.  An addon's
+   principal (`addon:<name>`) is G2b's: the InitGui runner pushes the
+   scope for the exec, and the stand-in then has to carry it for the
+   hooks the host calls later.
+6. `FreeCAD.ExpressionSandbox.exec(source, module)` on the host (the
+   `exec` op the gtests already use), so a Python test can push a probe
+   module.
+
+**Gate G2a** (`SandboxGui`, a Test-workbench module under the Gui
+binary): a probe module exec'd in the guest registers a workbench, a
+plain command, a checkable command and a group; the host sees them in
+`listCommands()`/`listWorkbenches()`; `Command.get(name).getInfo()`
+equals the guest's `GetResources`; `IsActive` follows a guest flag;
+`runCommand` crosses `Activated` (a guest counter); `activateWorkbench`
+crosses `Initialize`, and the guest's `appendToolbar`/`appendMenu`
+produce host toolbars (`listToolbars`, `getToolbarItems`); switching
+away crosses `Deactivated`; a DOCUMENT principal calling
+`FreeCADGui.addIconPath` is refused with `PermissionError`; with
+routing off nothing of the above exists.
+
+**G2a BUILT 2026-09-05** as sized, with three facts the build added:
+the registry's request and reply cross App/Gui as CBOR bytes (a json
+in a signature does not link between the two nlohmann copies, 12); the
+registry is consulted BEFORE the handle ops resolve `h` (a `gui.*` op
+carries no handle, and the dispatcher's stale-handle check came first);
+and the host macro is scoped to `SandboxGui.cpp` alone
+(`set_source_files_properties`), since a Gui-wide define means a full
+Gui rebuild.  Gate `SandboxGui` (2 cases) green on the first complete
+run: three commands and the workbench registered from the guest, the
+resource dict read through the stand-in, `IsActive` following a guest
+flag, `Activated` crossing for the plain and the checkable command,
+`activateWorkbench` crossing `Initialize` (the toolbar and menu appended
+from the guest exist on the host, and the guest's own `listToolbars`/
+`getToolbarItems` read them back equal), `Activated` seeing itself as
+the active workbench, `Deactivated` on switching back, a second
+registration under the same names replacing the first, and a document
+principal refused (`Permission denied: gui`).  A document-principal
+`evaluate` that touched `FreeCADGui.activeWorkbench()` was refused too
+-- the test had to read that fact from the guest's `Activated` hook,
+which runs as session.  Suites after: pyodide 97/97, wasi 86 + 11
+skipped.
+
+**G2b, the runner (next):** a module whose GUI side is bundled as a
+wheel runs its `InitGui.py` in the guest instead of natively (the
+`Evaluate` preference plus the wheel's presence; native otherwise), with
+`gui.rc {module}` (the host imports `<Mod root>/<name>_rc.py`, compiled
+Qt resources, the one host import G2 makes, data not code) and the
+exec's principal.  A guest reset (a package install) kills every
+registered stand-in (`ReferenceError` on the next hook), so the runner
+re-runs the guest InitGui's after a reset, replacing the commands.
+With the runner on, FreeCAD's start boots the guest (about 1.8 s).
+Cost of the mechanism: one hop per `IsActive` poll per guest command
+(some 60 visible commands times 5 us per tick), one hop per activation
+plus whatever the command does -- U4 ops, G3 and later.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -1683,6 +1847,10 @@ Non-ASCII object names occur in real files.  Rig:
                                                           host 9, routing 9
     tests/src/App/ExpressionPyodide.cpp             10    layout, verify, scoping, offer
     src/Mod/Test/SandboxPyodide.py                   2    the offer end to end
+    src/Mod/Test/SandboxGui.py                       2    G2a: commands and a workbench
+                                                          registered from the guest (7.9);
+                                                          needs the GUI -- run through
+                                                          scripts/sandbox-gui-gate.py on Xvfb
     src/Mod/Spreadsheet/TestSpreadsheet*.py          --   run with routing ON for parity
 
 The acceptance harness opens a real saved-and-reopened `.FCStd` under a
@@ -1746,7 +1914,12 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    `draftTestObjectsBuiltRouted`: the whole Draft test document built
    with routing on, 70/70 Proxies in the guest); BIM remains (7.6).
 2. **G2** -- U1 + U2 + U7: Draft and BIM register from the guest; the
-   subset shim.  No dependency on G1; in parallel if hands allow.
+   subset shim.  SIZED 2026-09-05 (7.9): G2a the registration mechanism
+   (the guest's `FreeCADGui`, the `gui.*` op family, stand-in commands,
+   wrapped workbenches, gate `SandboxGui`), G2b the InitGui runner and
+   the measurement of how far Draft's and BIM's `InitGui.py` get -- their
+   `Initialize()` imports forms, the snapper and trackers before one
+   toolbar, so the residue is G3's list.
 3. **Probe A** -- Coin and pivy to wasm: compile the Coin fork with emcc
    (no GL, threads, fonts), build `pivy.coin` with the guest toolchain,
    time the boot and a 10 k-node graph.  **Probe B** -- ipywidgets in
@@ -1853,6 +2026,14 @@ sockets, any network for the reference image, a webview escape hatch.
 - A module property that raises AttributeError reads as "module has
   no attribute": the guest's `FreeCAD.ActiveDocument` property maps a
   refused `get_attr` to RuntimeError so the reason shows.
+- The Gui binary has NO `-t` mode: `FreeCAD -t Module` starts the GUI
+  and sits there until killed (the console binary's FreeCADTest path is
+  not run by `Gui::Application`).  A test that needs the GUI runs from a
+  script FreeCAD executes at startup (`scripts/sandbox-gui-gate.py`),
+  under Xvfb with `env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb` --
+  `QT_QPA_PLATFORM=offscreen` crashes in `QOpenGLWidget` before any
+  script runs.  Judge by the result file the script writes, not by the
+  exit code.
 - ONE recompute never meets a cached handle.  The handle table is
   cleared by every expression evaluation (`ExpressionEvaluator` ->
   `clearHandles()`), and a Spreadsheet's numeric cell IS an expression,
