@@ -24,7 +24,10 @@ run on two of the three platforms this project targets, and that the
 roadmap intends to put on the public internet. Fixing the tick first
 would be building on that.
 
-## 2. What the server is today
+## 2. What the server was (before stage 2)
+
+Written 2026-09-05 of the POSIX server; kept as the record of what the
+port replaced. What stands now is section 7.2.
 
 ### 2.1 Where it runs
 
@@ -333,10 +336,13 @@ Each stage lands alone and is judged by the stage-0 test.
   acceptor/connection abstraction between the protocol logic and the
   socket calls, still POSIX underneath. No behaviour change; the
   stage-0 test stayed 12/12 and the full ctest green.
-- **Stage 2 -- Beast underneath it, async.** Delete `Sha1`, the base64
-  helper, the handshake, `consumeFrames`, `sendFrame`, the HTTP head
-  parser, the `#ifndef _WIN32` and the stub. Three platforms build the
-  real server.
+- **Stage 2 -- Beast underneath it, async. DONE 2026-09-06** (section
+  7.2). `Sha1`, the base64 helper, the handshake, `consumeFrames`,
+  `sendFrame`, the HTTP head parser, the `#ifndef _WIN32` and the stub
+  are gone; the file has no platform guard left. The stage-0 test
+  passed 12/12 on the first run and on three, and the full ctest is
+  green. Windows and macOS build the same source now, unverified here
+  (section 8 item 1).
 - **Stage 3 -- the frame push.** The Cycles latency item, which by then
   is "append to the writer's queue and wake it" (section 6.6) rather
   than a fix.
@@ -399,6 +405,99 @@ deletes. The contract between them is five things:
    writer, the handshake, `sendFrame`, the poll loop and
    `consumeFrames` -- the stage-2 delete list, contiguous.
 
+### 7.2 The transport, as built
+
+Under the seam of 7.1, `SceneServer.cpp` now ends with the Beast
+transport, on every platform:
+
+1. **Threads.** One io thread runs a single `io_context` for the life
+   of the server, and a `thread_pool` of four is the section 6.5 pool;
+   both are made on the first `start()` and never destroyed, like the
+   level-builder threads, because `Private` itself never is. A
+   `stop()` closes the listener and kicks the connections; a `start()`
+   after it binds a new acceptor on the same machinery, which is what
+   the stop-and-restart case checks.
+2. **The listener** is a `tcp::acceptor` whose accept loop runs on the
+   io thread and hands each socket a strand of its own
+   (`make_strand`), through `admitPeer`, into a `Session`.
+   `closeListener()` closes the acceptor *on the io thread* -- the only
+   thread that touches it -- and waits for that, so the port is free
+   when the next `start()` binds. `running()` asks whether an acceptor
+   is open.
+3. **A `Session`** is one accepted socket for its whole life, owned by
+   the handlers in flight (`shared_ptr`), so it lives exactly as long
+   as something can still complete on it, and gives its accept-cap
+   slot back in its destructor. It holds a
+   `websocket::stream<tcp_stream>` whose executor is the connection's
+   strand: every completion on the stream, and everything posted to
+   that executor, runs serialized, which is the 6.2 invariant. It is
+   the `Link`: `wake()` posts `wakeWriter()` onto the strand from any
+   thread.
+4. **Four coroutines**, each a small struct deriving from
+   `asio::coroutine` that holds a `shared_ptr<Session>` and re-enters
+   its body in `operator()`, exactly the 5.4 idiom; `yield.hpp` before
+   them, `unyield.hpp` after.
+   - `Http`: `http::async_read` into a parser (16 KiB head limit, the
+     batch cap on the body, a 30 s deadline on the `tcp_stream`), the
+     parsed request mapped onto `HttpRequest`, then **`route()` on the
+     worker pool** -- `/scene` serializes under the scene mutex and
+     `/decisions` waits out a timeout, neither on the io thread -- and
+     back on the strand either `http::async_write` of the mapped
+     `HttpReply` and a hang-up, or `ws.async_accept(request)` and the
+     connection's start.
+   - `Reader`: `ws.async_read` in a loop, each complete message to
+     `handleMessage`, then a wake. Beast reassembles fragments,
+     answers pings, answers a close, and holds control frames to their
+     rules (section 4 item 5). A kicked connection drops what still
+     arrives, as the POSIX loop's shut read side did.
+   - `Writer`: `takeNext()` pops the outbox under `connMutex`; a Text
+     item goes as a text frame and Scene and Frame as binary, one
+     `async_write` in flight; a Close item is `async_close` and the
+     end. On an empty outbox it **parks**: `yield c.park(*this)` stores
+     the coroutine (its int) on the Session and returns.
+     `wakeWriter()` builds a fresh `Writer` from that int and invokes
+     it, so it resumes right after the park and looks again. That is
+     the 6.6 mechanism, and stage 3 is the callers who should wake it.
+   - `Tick`: a `steady_timer` every 200 ms; the 5 s bundle-stamp check;
+     then the scene push in three steps, `beginScenePush` on the
+     strand (re-home, pick the group and held version),
+     `computeScenePush` **on the worker pool** (`payloadFor` under the
+     scene mutex, for as long as it takes, stalling no one else) and
+     `commitScenePush` on the strand, which drops the bytes if a hello
+     or switch changed the group or reset the held version meanwhile
+     -- the next tick computes the right ones. A `DocGroup*` is safe
+     to hold across the worker because groups are never erased, only
+     marked not live. The tick ends when the connection is kicked: a
+     kicked connection pushes nothing more.
+5. **Teardown.** Each coroutine counts itself live; the reader's end
+   (peer gone, protocol error, idle timeout) or the writer's (Close
+   sent, write failed) cancels the tick, retires a parked writer and
+   closes the socket, which fails whatever else is in flight; when the
+   count reaches zero `closeConnection` runs, and the Session dies
+   with its last handler.
+6. **What Beast's options replace.** `auto_fragment(false)` keeps one
+   frame per message as the POSIX sender wrote them (the default
+   splits at 4 KiB). `read_message_max` is the 64 MB cap. The
+   `stream_base::timeout` is the keepalive: `keep_alive_pings` at half
+   a 60 s `idle_timeout` is the old ping-after-30-s-quiet, and a peer
+   silent for the whole of it is now closed rather than parked
+   forever, which also bounds a write stalled against a peer that
+   stopped reading, the job the 20 s `SO_SNDTIMEO` did. The 30 s
+   request deadline is the audit's missing read deadline (section 4)
+   and came with the `tcp_stream`, so it did not wait for stage 4.
+7. **What did not change.** `HttpRequest`, `HttpReply`, `route()`,
+   `WsBootstrap`, `Conn`, the outbox and its helpers, `openConnection`,
+   `closeConnection`, `admitPeer`/`releasePeer`, `handleMessage` and
+   everything the roster and the door are made of. `queueScenePush`
+   became the three steps of item 4; `Conn` lost its fragment
+   reassembly fields. IPv4 only, the cap keyed on the socket peer,
+   Content-Length without chunking: stage 4.
+8. **Latency.** The wire suite runs in 4.4 s where it ran in 3: a push
+   queued from the host still waits for the next tick to be drained,
+   because `sendControl`, `sendBinary`, `broadcastControl` and
+   `replyTo` append without waking. Making them wake is the whole of
+   stage 3.
+
 ## 8. Open questions for next session
 
 1. **Where do Windows and macOS get tested?** No Windows or macOS box is
@@ -406,29 +505,32 @@ deletes. The contract between them is five things:
    are unverifiable without one.
 2. ~~C++17.~~ Answered by section 5.4: the stackless idiom builds under
    either standard.
-3. **How many io threads**, and does the worker pool for serialization
-   belong to the server or to the existing LOD builder pool?
+3. ~~How many io threads~~ Stage 2 chose one io thread and a worker
+   pool of four owned by the server (section 7.2 item 1). Whether the
+   pool should be the LOD builder's is still open; nothing forces it.
 4. **permessage-deflate**: worth measuring on the cloud wire. Control
    JSON compresses well; mesh blobs are content-addressed and may
    already be compressed.
-5. **Keep-alive and HTTP/2**: the current server closes after every
-   request. Behind a gateway that is inefficient but correct. Does the
-   gateway design want keep-alive from the backend?
-6. Does the port change the wire at all? The intent is no. The stage-0
-   test is what will prove it.
+5. **Keep-alive and HTTP/2**: the server still closes after every
+   request (`res.keep_alive(false)`). Behind a gateway that is
+   inefficient but correct. Does the gateway design want keep-alive
+   from the backend?
+6. ~~Does the port change the wire at all?~~ Stage 2 did not: the
+   stage-0 suite passed unchanged. Two things changed *around* the
+   wire, both stated in 7.2 item 6: a silent peer is closed after 60 s,
+   and a request head has 30 s to arrive.
 
 ## 9. What was not verified
 
-- macOS behaviour of `MSG_NOSIGNAL` (line 1734) is asserted from
-  knowledge, not measured -- Darwin does not define it and wants
-  `SO_NOSIGPIPE` instead, and there is no shim anywhere in `src/`. No
-  Mac was available to compile on.
-- Beast's server-side API shapes quoted here (`ws.accept(req)`,
-  `tcp_stream::expires_after`) are design intent from the library's
-  documented model, not code that has been compiled in this tree. The
-  client side (`websocket::stream::handshake`, `async_read`,
-  `write_some` fragments, `ping`, `http::read/write`) has: the stage-0
-  test compiles and runs it against Boost 1.90.
-- The `asio::coroutine` headers (`boost/asio/coroutine.hpp`,
-  `yield.hpp`, `unyield.hpp`) were confirmed present in
-  `.conda/freecad/include`; nothing in this tree includes them yet.
+- ~~macOS behaviour of `MSG_NOSIGNAL`~~ moot since stage 2: the call
+  is gone, Asio handles the broken pipe itself. Whether the file
+  *compiles* on macOS and Windows is still unverified (section 8
+  item 1); the one platform-specific line left is the Asio-first
+  include order at the top of the file, which is Boost's documented
+  requirement for Windows and untested here.
+- ~~Beast's server-side API shapes~~ are compiled and exercised now:
+  the stage-0 suite runs against them (section 7.2).
+- ~~The `asio::coroutine` headers~~ are included by the transport.
+- The 60 s idle close and the 30 s request deadline (7.2 item 6) are
+  not covered by the wire suite, which runs in seconds; they are
+  Beast's own mechanisms, configured, not measured.

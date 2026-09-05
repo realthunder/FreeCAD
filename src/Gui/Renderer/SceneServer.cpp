@@ -19,6 +19,14 @@
  *   Suite 330, Boston, MA  02111-1307, USA                                 *
  ****************************************************************************/
 
+// Boost.Asio before anything else: on Windows it has to see winsock2.h
+// before a Qt or FreeCAD header pulls windows.h in (docs/SceneServerPort.md
+// sec 8 item 1 -- no Windows box here to verify on).
+#include <boost/asio.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+#include <boost/beast/websocket.hpp>
+
 #include "SceneServer.h"
 #include "SceneDump.h"
 #include "SceneLadder.h"
@@ -33,113 +41,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <future>
 #include <map>
 #include <mutex>
 #include <set>
 #include <string>
 #include <thread>
 
-#ifndef _WIN32
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
-
 using namespace Render;
-
-namespace {
-
-/// Compact SHA-1 (RFC 3174) for the WebSocket handshake accept key.
-struct Sha1 {
-    uint32_t h[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE,
-                     0x10325476, 0xC3D2E1F0};
-    uint8_t block[64];
-    uint64_t total = 0;
-    size_t fill = 0;
-
-    static uint32_t rol(uint32_t v, int n)
-    { return (v << n) | (v >> (32 - n)); }
-
-    void process(const uint8_t *p)
-    {
-        uint32_t w[80];
-        for (int i = 0; i < 16; ++i)
-            w[i] = (uint32_t(p[4*i]) << 24) | (uint32_t(p[4*i+1]) << 16)
-                 | (uint32_t(p[4*i+2]) << 8) | uint32_t(p[4*i+3]);
-        for (int i = 16; i < 80; ++i)
-            w[i] = rol(w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16], 1);
-        uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
-        for (int i = 0; i < 80; ++i) {
-            uint32_t f, k;
-            if (i < 20)      { f = (b & c) | (~b & d);          k = 0x5A827999; }
-            else if (i < 40) { f = b ^ c ^ d;                   k = 0x6ED9EBA1; }
-            else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
-            else             { f = b ^ c ^ d;                   k = 0xCA62C1D6; }
-            uint32_t t = rol(a, 5) + f + e + k + w[i];
-            e = d; d = c; c = rol(b, 30); b = a; a = t;
-        }
-        h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
-    }
-
-    void update(const void *data, size_t size)
-    {
-        const uint8_t *p = static_cast<const uint8_t *>(data);
-        total += size;
-        while (size) {
-            size_t n = std::min(size, sizeof(block) - fill);
-            std::memcpy(block + fill, p, n);
-            fill += n; p += n; size -= n;
-            if (fill == sizeof(block)) {
-                process(block);
-                fill = 0;
-            }
-        }
-    }
-
-    void finish(uint8_t digest[20])
-    {
-        uint64_t bits = total * 8;
-        uint8_t pad = 0x80;
-        update(&pad, 1);
-        uint8_t zero = 0;
-        while (fill != 56)
-            update(&zero, 1);
-        uint8_t len[8];
-        for (int i = 0; i < 8; ++i)
-            len[i] = uint8_t(bits >> (56 - 8 * i));
-        update(len, 8);
-        for (int i = 0; i < 5; ++i) {
-            digest[4*i]   = uint8_t(h[i] >> 24);
-            digest[4*i+1] = uint8_t(h[i] >> 16);
-            digest[4*i+2] = uint8_t(h[i] >> 8);
-            digest[4*i+3] = uint8_t(h[i]);
-        }
-    }
-};
-
-std::string base64(const uint8_t *data, size_t size)
-{
-    static const char tab[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string out;
-    out.reserve((size + 2) / 3 * 4);
-    for (size_t i = 0; i < size; i += 3) {
-        uint32_t v = uint32_t(data[i]) << 16;
-        if (i + 1 < size) v |= uint32_t(data[i+1]) << 8;
-        if (i + 2 < size) v |= uint32_t(data[i+2]);
-        out.push_back(tab[(v >> 18) & 63]);
-        out.push_back(tab[(v >> 12) & 63]);
-        out.push_back(i + 1 < size ? tab[(v >> 6) & 63] : '=');
-        out.push_back(i + 2 < size ? tab[v & 63] : '=');
-    }
-    return out;
-}
-
-} // namespace
 
 class SceneStreamServer::Private {
 public:
@@ -246,7 +155,6 @@ public:
     };
 
     std::mutex mutex;
-    int listenFd = -1;
     bool started = false;
 
     /// The shared door secret (docs/MultiDocServe.md §4/§8). Its own
@@ -1169,16 +1077,16 @@ public:
         std::vector<uint8_t> data;
     };
 
-    /// One live WebSocket connection, registered by its transport loop
-    /// (openConnection). All sends stay on that loop's thread: what is
-    /// to go out is queued on the outbox and drained by the loop within
-    /// its poll interval.
+    /// One live WebSocket connection, registered by its transport
+    /// (openConnection). All sends stay on that connection's strand:
+    /// what is to go out is queued on the outbox and drained by its
+    /// writer, woken through the link.
     struct Conn {
         Link *link = nullptr;
         /// Stable identity for cross-thread reply routing (the Conn
-        /// itself is stack-owned by its wsLoop): a control reply looks
-        /// the connection up by id under connMutex and is dropped when
-        /// it is gone. Never reused within a run.
+        /// itself is owned by its Session): a control reply looks the
+        /// connection up by id under connMutex and is dropped when it
+        /// is gone. Never reused within a run.
         uint64_t id = 0;
         /// The scene version this connection has been given, seeded
         /// with what the client said it held on the upgrade request.
@@ -1252,10 +1160,6 @@ public:
         /// The stamp a reload was already pushed for — one push per
         /// bundle generation, no loops.
         std::string reloadPushed;
-        /// WebSocket fragmentation reassembly (a browser may split a
-        /// large dumpFrame upload into continuation frames).
-        std::string fragData;
-        uint8_t fragOpcode = 0;
 
         /// Queue a control JSON. connMutex held.
         void queueText(const std::string &json)
@@ -1306,9 +1210,8 @@ public:
             Outgoing bye;
             bye.kind = Outgoing::Close;
             outbox.push_back(std::move(bye));
-            // Without the wake a loop parked in poll, or wedged in a
-            // send bounded by SO_SNDTIMEO, would outlive the kick by
-            // up to that long.
+            // Without the wake a writer parked on an empty outbox would
+            // outlive the kick until its next tick queued something.
             if (link)
                 link->wake();
         }
@@ -1316,8 +1219,8 @@ public:
     std::mutex connMutex;
     std::vector<Conn *> conns;
     uint64_t connIdCounter = 0;   ///< guarded by connMutex
-    /// Pre-auth accept caps (acceptLoop): every accepted socket —
-    /// HTTP and WS alike — counts until its handler thread exits.
+    /// Pre-auth accept caps (accepted): every accepted socket -- HTTP
+    /// and WS alike -- counts until its Session is destroyed.
     std::mutex acceptCountMutex;
     int activeConns = 0;                       ///< guarded above
     std::map<std::string, int> activeByIp;     ///< non-loopback only
@@ -2268,55 +2171,49 @@ public:
         notifyClientsChanged();
     }
 
-    /// The push half of one tick of a connection: re-home it if its
-    /// document went away, then serialize what it is missing and queue
-    /// that on its outbox. Called on the connection's own loop, the
-    /// only thread allowed to touch conn.group and conn.sent.
-    ///
-    /// THIS IS THE BLOCKING WORK OF docs/SceneServerPort.md sec 6.5:
-    /// payloadFor() serializes a snapshot under the scene mutex, for
-    /// as long as that takes. On a thread per connection that costs
-    /// this viewer only; on stage 2's shared io thread it would stall
-    /// every connection in the process, so there the serialization is
-    /// posted to a worker pool and only the group bookkeeping and the
-    /// queueing come back on the strand. Keep what must run on the
-    /// connection's own thread here, and nothing else.
-    void queueScenePush(Conn &conn)
-    {
+    /// One tick's scene push, in three steps (docs/SceneServerPort.md
+    /// sec 6.5). What must run on the connection's own strand -- the
+    /// re-home after a teardown, and reading which group and held
+    /// version to serialize from -- is beginScenePush; the
+    /// serialization itself, under the scene mutex for as long as it
+    /// takes, is computeScenePush on a worker thread, so no other
+    /// connection waits behind it; commitScenePush, back on the strand,
+    /// queues the bytes unless the connection moved on meanwhile. The
+    /// group pointer is safe to hold across the worker: groups are
+    /// never erased, only marked not live.
+    struct ScenePush {
+        DocGroup *group = nullptr;
+        uint64_t held = 0;
+        uint64_t version = 0;
         std::vector<uint8_t> body;
+    };
+
+    /// Strand. True when there is something to serialize.
+    bool beginScenePush(Conn &conn, ScenePush &push)
+    {
+        push = ScenePush();
         bool orphaned = false;
         const DocGroup *wasGroup = conn.group;
         {
             std::lock_guard<std::mutex> guard(mutex);
             // A torn-down document's connections re-home to the
-            // default document, here on their own loop thread --
-            // the only one allowed to touch conn.group
-            // (docs/MultiDocServe.md sec 5). When it was the last,
-            // the connection is joined to nothing and told so,
-            // once: group stays null, so this does not refire.
+            // default document, here on their own strand -- the only
+            // place allowed to touch conn.group (docs/MultiDocServe.md
+            // sec 5). When it was the last, the connection is joined
+            // to nothing and told so, once: group stays null, so this
+            // does not refire.
             if (conn.group && conn.group->wasServed
                     && !conn.group->live) {
                 conn.group = defaultJoin();
                 conn.sent = 0;
                 orphaned = !conn.group;
             }
-            // What this connection is missing, which after a
-            // coalesced tick may be several publishes rather than
-            // one -- the push loop sends the current scene, not
-            // every version of it. An unauthorized connection
-            // (token configured, none presented yet) gets no scene
-            // bytes at all -- its hello is what would open the door.
+            // An unauthorized connection (token configured, none
+            // presented yet) gets no scene bytes at all -- its hello is
+            // what would open the door.
             if (conn.group && conn.authorized) {
-                DocGroup &g = *conn.group;
-                std::vector<uint8_t> out = payloadFor(g, conn.sent);
-                if (!out.empty()) {
-                    body.resize(8 + out.size());
-                    uint64_t v = g.version;
-                    std::memcpy(body.data(), &v, 8);
-                    std::memcpy(body.data() + 8, out.data(),
-                                out.size());
-                    conn.sent = g.version;
-                }
+                push.group = conn.group;
+                push.held = conn.sent;
             }
         }
         if (conn.group != wasGroup) {
@@ -2328,15 +2225,44 @@ public:
             }
             notifyClientsChanged();
         }
-        std::lock_guard<std::mutex> guard(connMutex);
-        if (orphaned)
+        if (orphaned) {
+            std::lock_guard<std::mutex> guard(connMutex);
             conn.queueText("{\"cmd\":\"error\",\"code\":\"NoDocument\"}");
-        if (!body.empty())
-            conn.queueScene(std::move(body));
+        }
+        return push.group != nullptr;
     }
 
-    /// Ask every connection to hang up: each one's own loop sends the
-    /// farewell and closes (Conn::kick). The connection half of a
+    /// Worker. What the connection is missing, which after a coalesced
+    /// tick may be several publishes rather than one -- the push sends
+    /// the current scene, not every version of it.
+    void computeScenePush(ScenePush &push)
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        DocGroup &g = *push.group;
+        std::vector<uint8_t> out = payloadFor(g, push.held);
+        if (out.empty())
+            return;
+        push.version = g.version;
+        push.body.resize(8 + out.size());
+        std::memcpy(push.body.data(), &push.version, 8);
+        std::memcpy(push.body.data() + 8, out.data(), out.size());
+    }
+
+    /// Strand. Dropped when a hello or a switch changed the group, or
+    /// reset what the connection holds, while the bytes were being
+    /// made: the next tick computes the right ones.
+    void commitScenePush(Conn &conn, ScenePush &push)
+    {
+        if (push.body.empty() || conn.group != push.group
+                || conn.sent != push.held)
+            return;
+        conn.sent = push.version;
+        std::lock_guard<std::mutex> guard(connMutex);
+        conn.queueScene(std::move(push.body));
+    }
+
+    /// Ask every connection to hang up: each one's own writer sends
+    /// the farewell and closes (Conn::kick). The connection half of a
     /// stop; closeListener() is the other.
     void closeAll()
     {
@@ -2345,517 +2271,530 @@ public:
             conn->kick();
     }
 
-#ifndef _WIN32
     // ------------------------------------------------------------------
-    // The POSIX transport (docs/SceneServerPort.md sec 7.1): the
-    // listener, the accept loop, the head reader and reply writer, the
-    // WebSocket handshake and framing, and the poll loop that
-    // schedules one connection. Everything above this line is the
-    // protocol core and knows no socket; everything below is what
-    // stage 2 replaces with Boost.Beast, async, on a strand.
+    // The transport (docs/SceneServerPort.md sec 6 and 7.2): Boost.Beast,
+    // async, one strand per connection. Everything above this line is
+    // the protocol core and knows no socket. This is the listener, the
+    // HTTP exchange, and the WebSocket connection scheduled as three
+    // stackless coroutines on its strand (sec 5.4): a reader, a writer
+    // that parks on an empty outbox and is woken through Link::wake(),
+    // and a tick that pushes the scene. The blocking work -- route()
+    // for HTTP, payloadFor() for the tick -- runs on a worker pool with
+    // only its completion back on the strand (sec 6.5).
     // ------------------------------------------------------------------
 
-    /// The socket under one connection (Link).
-    struct PosixLink : Link {
-        int fd = -1;
+    using tcp = boost::asio::ip::tcp;
+
+    static constexpr int kWorkerThreads = 4;
+    static constexpr int kTickMs = 200;
+    /// A request head or a handshake that takes longer than this is
+    /// dropped: the audit's missing read deadline (sec 4).
+    static constexpr int kRequestSeconds = 30;
+    /// Keepalive (docs/ShareAccess.md sec 5): a parked viewer sends and
+    /// receives nothing while the model is unchanged, and anything with
+    /// an idle timeout in the path drops it -- Cloudflare at 100 s, 60 s
+    /// a common proxy default. Beast pings at half this when nothing has
+    /// arrived, the browser answers the pong itself, and a peer silent
+    /// for the whole of it is closed rather than parked forever -- which
+    /// also bounds a write stalled against a peer that stopped reading,
+    /// the job of the POSIX loop's 20 s send timeout.
+    static constexpr int kIdleSeconds = 60;
+    /// The cap accommodates a dumpFrame pixel upload (a hi-DPI phone
+    /// canvas is ~10MB of RGBA).
+    static constexpr std::size_t kMaxMessage = std::size_t(64) << 20;
+
+    /// The io thread and the worker pool, made on the first start() and
+    /// kept for the life of the server (Private is never destroyed): a
+    /// stop() closes the listener and the connections, not these, so a
+    /// restart binds anew on the same machinery.
+    struct Io {
+        boost::asio::io_context ctx{1};
+        boost::asio::executor_work_guard<boost::asio::io_context::executor_type> guard;
+        /// The section 6.5 pool. A few threads rather than one: a
+        /// /decisions route waits out its timeout here and must not
+        /// hold a scene push behind it.
+        boost::asio::thread_pool workers{kWorkerThreads};
+        Io()
+            : guard(boost::asio::make_work_guard(ctx))
+        {
+            std::thread([this]() { ctx.run(); }).detach();
+        }
+    };
+    Io *io = nullptr;                              ///< guarded by mutex
+    std::shared_ptr<tcp::acceptor> acceptor;       ///< guarded by mutex
+
+    static boost::beast::websocket::stream_base::timeout wsTimeouts()
+    {
+        boost::beast::websocket::stream_base::timeout t;
+        t.handshake_timeout = std::chrono::seconds(kRequestSeconds);
+        t.idle_timeout = std::chrono::seconds(kIdleSeconds);
+        t.keep_alive_pings = true;
+        return t;
+    }
+
+    struct Session;
+
+    /// One accepted socket for its whole life: the HTTP exchange, and
+    /// when the request upgrades, the WebSocket connection. Owned by
+    /// the handlers in flight (shared_ptr), so it lives exactly as long
+    /// as something can still complete on it; the peer's accept-cap
+    /// slot is given back when it is destroyed.
+    struct Session : Link, std::enable_shared_from_this<Session> {
+        Private &srv;
+        /// The stream: Beast's tcp_stream (a socket with a deadline
+        /// timer) that the WebSocket layer wraps once the request
+        /// upgrades. Its executor is this connection's strand, so every
+        /// completion on it, and everything posted to that executor,
+        /// runs serialized -- the invariant the POSIX loop kept with its
+        /// one thread (sec 6.2).
+        boost::beast::websocket::stream<boost::beast::tcp_stream> ws;
+        std::string ip;
+        unsigned port = 0;
+        bool loopback = false;
+        boost::beast::flat_buffer inbuf;
+        boost::beast::http::request_parser<boost::beast::http::string_body> parser;
+        boost::beast::http::response<boost::beast::http::vector_body<uint8_t>> res;
+        HttpRequest req;
+        HttpReply reply;
+        WsBootstrap boot;
+        Route routed = Route::Reply;
+        /// The connection, once the request upgraded: on the roster
+        /// between openConnection and closeConnection (\a open).
+        Conn conn;
+        bool open = false;
+        boost::asio::steady_timer tick;
+        int stampTick = 0;
+        /// The writer: what it is sending, and where it parked -- the
+        /// coroutine's state, an int, kept here so any thread can wake
+        /// it by posting a handler built from it (sec 6.6).
+        Outgoing outItem;
+        boost::asio::coroutine writerCo;
+        bool writerParked = false;
+        /// Coroutines still running (reader, writer, tick); the
+        /// connection is torn down when the last of them ends.
+        int live = 0;
+        bool closing = false;
+        /// The tick's push, computed off the strand (sec 6.5).
+        ScenePush push;
+
+        Session(Private &s, tcp::socket &&socket)
+            : srv(s)
+            , ws(std::move(socket))
+            , tick(ws.get_executor())
+        {
+        }
+
+        ~Session() override
+        {
+            srv.releasePeer(ip, loopback);
+        }
+
+        /// Link: act on the outbox now. From any thread.
         void wake() override
         {
-            // Shutting the read side down wakes a loop parked in poll()
-            // or recv() -- it sees EOF -- and a send wedged against a
-            // full buffer the moment its SO_SNDTIMEO expires. Read side
-            // only: the farewell still goes out on the intact write
-            // side.
-            if (fd >= 0)
-                ::shutdown(fd, SHUT_RD);
+            boost::asio::post(ws.get_executor(),
+                              [self = shared_from_this()]() { self->wakeWriter(); });
+        }
+
+        /// Strand. Resume the parked writer; nothing if it is running.
+        void wakeWriter()
+        {
+            srv.Session_wakeWriter(*this);
+        }
+
+        /// Strand. Park the writer at the state it carries.
+        void park(const boost::asio::coroutine &state)
+        {
+            writerCo = state;
+            writerParked = true;
+        }
+
+        bool kickedNow()
+        {
+            std::lock_guard<std::mutex> guard(srv.connMutex);
+            return conn.kicked;
+        }
+
+        /// Strand. The next outbox item into \a outItem.
+        bool takeNext()
+        {
+            std::lock_guard<std::mutex> guard(srv.connMutex);
+            if (conn.outbox.empty())
+                return false;
+            outItem = std::move(conn.outbox.front());
+            conn.outbox.pop_front();
+            return true;
+        }
+
+        /// The parsed request into the routing's struct. False for a
+        /// verb the server does not speak.
+        bool toRequest()
+        {
+            auto &r = parser.get();
+            req.method = std::string(r.method_string());
+            if (req.method != "GET" && req.method != "POST")
+                return false;
+            splitTarget(std::string(r.target()), req);
+            for (const auto &f : r) {
+                std::string name(f.name_string());
+                std::transform(name.begin(), name.end(), name.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                // emplace: a repeated name keeps its first value
+                req.headers.emplace(name, std::string(f.value()));
+            }
+            req.body = std::move(r.body());
+            req.peerIp = ip;
+            req.peerPort = port;
+            return true;
+        }
+
+        /// The routed reply into the response: the CORS header every
+        /// answer carries, the optional type and cache policy, the
+        /// length (none on a 204), Connection: close, then the body.
+        void toResponse()
+        {
+            namespace http = boost::beast::http;
+            res.version(11);
+            res.result(unsigned(reply.status));
+            res.set(http::field::access_control_allow_origin, "*");
+            if (reply.allowAnyHeader)
+                res.set(http::field::access_control_allow_headers, "*");
+            if (reply.contentType)
+                res.set(http::field::content_type, reply.contentType);
+            if (reply.cacheControl)
+                res.set(http::field::cache_control, reply.cacheControl);
+            res.keep_alive(false);
+            res.body() = std::move(reply.body);
+            if (reply.status != 204)
+                res.content_length(res.body().size());
+        }
+
+        /// The HTTP exchange is over, answered or not: hang up.
+        void finishHttp()
+        {
+            boost::beast::error_code ec;
+            ws.next_layer().socket().shutdown(tcp::socket::shutdown_send, ec);
+            ws.next_layer().close();
+        }
+
+        /// The request upgraded and the handshake is done: the
+        /// connection joins the roster and its three coroutines start.
+        void startConnection()
+        {
+            srv.Session_startConnection(*this);
+        }
+
+        void ended()
+        {
+            if (--live == 0 && open) {
+                open = false;
+                srv.closeConnection(conn);
+            }
+        }
+
+        /// The reader is done (the peer closed, a protocol error, the
+        /// idle timeout): nothing more will be sent either.
+        void endReader()
+        {
+            closing = true;
+            tick.cancel();
+            if (writerParked) {
+                writerParked = false;
+                --live;
+            }
+            boost::beast::get_lowest_layer(ws).close();
+            ended();
+        }
+
+        /// The writer is done (the Close item went out, or a write
+        /// failed): the socket closes under the reader.
+        void endWriter()
+        {
+            closing = true;
+            tick.cancel();
+            boost::beast::get_lowest_layer(ws).close();
+            ended();
+        }
+
+        void endTick()
+        {
+            ended();
         }
     };
 
-    static bool sendAll(int fd, const void *data, size_t size)
-    {
-        const char *p = static_cast<const char *>(data);
-        while (size) {
-            ssize_t n = ::send(fd, p, size, MSG_NOSIGNAL);
-            if (n <= 0)
-                return false;
-            p += n;
-            size -= size_t(n);
+#include <boost/asio/yield.hpp>
+
+    /// The HTTP exchange of a Session: read the request, route it off
+    /// the io thread, then either write the reply and hang up or accept
+    /// the WebSocket and start the connection.
+    struct Http : boost::asio::coroutine {
+        std::shared_ptr<Session> s;
+        explicit Http(std::shared_ptr<Session> p) : s(std::move(p)) {}
+        void operator()(boost::beast::error_code ec = {}, std::size_t = 0)
+        {
+            Session &c = *s;
+            reenter(this) {
+                // A head over 16 KiB or a body over the batch cap drops
+                // the connection unanswered, as it always did.
+                c.parser.header_limit(16384);
+                c.parser.body_limit(kMaxBatchBody);
+                c.ws.next_layer().expires_after(
+                        std::chrono::seconds(kRequestSeconds));
+                yield boost::beast::http::async_read(
+                        c.ws.next_layer(), c.inbuf, c.parser, *this);
+                if (ec || !c.toRequest()) {
+                    c.finishHttp();
+                    return;
+                }
+                // route() off the io thread (sec 6.5): /scene serializes
+                // under the scene mutex, /decisions waits out a timeout.
+                yield boost::asio::post(c.srv.io->workers,
+                                        [self = *this]() mutable {
+                    Session &cc = *self.s;
+                    cc.routed = cc.srv.route(cc.req, cc.reply, cc.boot);
+                    boost::asio::post(cc.ws.get_executor(), std::move(self));
+                });
+                if (c.routed == Route::Upgrade) {
+                    // The WebSocket layer keeps its own timeouts; the
+                    // tcp_stream's would fire under it.
+                    c.ws.next_layer().expires_never();
+                    c.ws.set_option(wsTimeouts());
+                    yield c.ws.async_accept(c.parser.get(), *this);
+                    if (ec) {
+                        c.finishHttp();
+                        return;
+                    }
+                    c.inbuf.consume(c.inbuf.size());
+                    c.startConnection();
+                    return;
+                }
+                c.toResponse();
+                yield boost::beast::http::async_write(
+                        c.ws.next_layer(), c.res, *this);
+                c.finishHttp();
+            }
         }
-        return true;
+    };
+
+    /// The reader of a connection: one complete message at a time --
+    /// Beast reassembles fragments, answers pings and closes, and holds
+    /// control frames to their rules -- handed to the protocol.
+    struct Reader : boost::asio::coroutine {
+        std::shared_ptr<Session> s;
+        explicit Reader(std::shared_ptr<Session> p) : s(std::move(p)) {}
+        void operator()(boost::beast::error_code ec = {}, std::size_t = 0)
+        {
+            Session &c = *s;
+            reenter(this) {
+                for (;;) {
+                    yield c.ws.async_read(c.inbuf, *this);
+                    if (ec)
+                        break;
+                    // A kicked connection reads nothing more (the POSIX
+                    // loop shut its read side): what still arrives is
+                    // dropped, and only the farewell goes out.
+                    if (!c.kickedNow())
+                        c.srv.handleMessage(
+                                c.conn, c.ws.got_text(),
+                                static_cast<const uint8_t *>(c.inbuf.cdata().data()),
+                                c.inbuf.size());
+                    c.inbuf.consume(c.inbuf.size());
+                    // Whatever the message queued goes out now, not at
+                    // the next tick.
+                    c.wakeWriter();
+                }
+                c.endReader();
+            }
+        }
+    };
+
+    /// The writer of a connection: drains the outbox in order with one
+    /// write in flight, stops at a Close item, and parks -- returns,
+    /// its state saved on the Session -- when the outbox is empty
+    /// (sec 6.6). wakeWriter() resumes it from that state.
+    struct Writer : boost::asio::coroutine {
+        std::shared_ptr<Session> s;
+        explicit Writer(std::shared_ptr<Session> p) : s(std::move(p)) {}
+        void operator()(boost::beast::error_code ec = {}, std::size_t = 0)
+        {
+            Session &c = *s;
+            reenter(this) {
+                for (;;) {
+                    while (!c.takeNext()) {
+                        yield c.park(*this);
+                    }
+                    if (c.outItem.kind == Outgoing::Close) {
+                        yield c.ws.async_close(
+                                boost::beast::websocket::close_code::normal,
+                                *this);
+                        break;
+                    }
+                    c.ws.text(c.outItem.kind == Outgoing::Text);
+                    yield c.ws.async_write(
+                            boost::asio::buffer(c.outItem.data), *this);
+                    if (ec)
+                        break;
+                }
+                c.endWriter();
+            }
+        }
+    };
+
+    /// The tick of a connection: every kTickMs, the live bundle-stamp
+    /// check (~every 5 s) and the scene push, whose serialization runs
+    /// on the worker pool (sec 6.5). Ends with the connection, or when
+    /// it is kicked: a kicked connection pushes nothing more.
+    struct Tick : boost::asio::coroutine {
+        std::shared_ptr<Session> s;
+        explicit Tick(std::shared_ptr<Session> p) : s(std::move(p)) {}
+        void operator()(boost::beast::error_code ec = {}, std::size_t = 0)
+        {
+            Session &c = *s;
+            reenter(this) {
+                for (;;) {
+                    if (c.closing)
+                        break;
+                    c.tick.expires_after(std::chrono::milliseconds(kTickMs));
+                    yield c.tick.async_wait(*this);
+                    if (ec || c.closing || c.kickedNow())
+                        break;
+                    // A WASM rebuild while this backend serves pushes
+                    // the reload to already-connected pages, not just
+                    // fresh hellos.
+                    if (++c.stampTick >= 25) {
+                        c.stampTick = 0;
+                        if (c.conn.viewer)
+                            c.srv.pushReloadIfStale(c.conn);
+                    }
+                    if (c.srv.beginScenePush(c.conn, c.push)) {
+                        yield boost::asio::post(c.srv.io->workers,
+                                                [self = *this]() mutable {
+                            Session &cc = *self.s;
+                            cc.srv.computeScenePush(cc.push);
+                            boost::asio::post(cc.ws.get_executor(),
+                                              std::move(self));
+                        });
+                        if (!c.closing)
+                            c.srv.commitScenePush(c.conn, c.push);
+                    }
+                    c.wakeWriter();
+                }
+                c.endTick();
+            }
+        }
+    };
+
+#include <boost/asio/unyield.hpp>
+
+    void Session_wakeWriter(Session &c)
+    {
+        if (!c.writerParked)
+            return;
+        c.writerParked = false;
+        Writer w{c.shared_from_this()};
+        static_cast<boost::asio::coroutine &>(w) = c.writerCo;
+        w();
+    }
+
+    void Session_startConnection(Session &c)
+    {
+        c.ws.read_message_max(kMaxMessage);
+        // One frame per message, as the POSIX sender wrote them; the
+        // default would split every push into 4 KiB frames.
+        c.ws.auto_fragment(false);
+        c.conn.link = &c;
+        c.srv.openConnection(c.conn, c.boot);
+        c.open = true;
+        c.live = 3;
+        c.writerParked = true;
+        Reader{c.shared_from_this()}();
+        Tick{c.shared_from_this()}();
+        // A fresh writer resumes from its top and parks again at once
+        // unless something is already queued.
+        c.wakeWriter();
+    }
+
+    /// The listener: accept on the io thread, each socket onto a strand
+    /// of its own, through the pre-auth caps, into a Session.
+    void doAccept(const std::shared_ptr<tcp::acceptor> &acc)
+    {
+        acc->async_accept(boost::asio::make_strand(io->ctx),
+                          [this, acc](boost::system::error_code ec,
+                                      tcp::socket socket) {
+            if (ec == boost::asio::error::operation_aborted || !acc->is_open())
+                return;
+            if (!ec)
+                accepted(std::move(socket));
+            doAccept(acc);
+        });
+    }
+
+    void accepted(tcp::socket &&socket)
+    {
+        boost::system::error_code ec;
+        auto ep = socket.remote_endpoint(ec);
+        std::string ip = ec ? std::string() : ep.address().to_string();
+        const unsigned port = ec ? 0 : ep.port();
+        const bool loopback = isLoopback(ip);
+        if (!admitPeer(ip, loopback))
+            return;     // the socket closes with the object
+        auto s = std::make_shared<Session>(*this, std::move(socket));
+        s->ip = ip;
+        s->port = port;
+        s->loopback = loopback;
+        boost::asio::dispatch(s->ws.get_executor(),
+                              [s]() { Http{s}(); });
     }
 
     bool start(int port)
     {
-        listenFd = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (listenFd < 0)
+        std::lock_guard<std::mutex> guard(mutex);
+        if (!io)
+            io = new Io;
+        auto acc = std::make_shared<tcp::acceptor>(io->ctx);
+        boost::system::error_code ec;
+        acc->open(tcp::v4(), ec);
+        if (ec)
             return false;
-        int on = 1;
-        ::setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-        sockaddr_in addr = {};
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        addr.sin_port = htons(uint16_t(port));
-        if (::bind(listenFd, reinterpret_cast<sockaddr *>(&addr),
-                   sizeof(addr)) < 0
-                || ::listen(listenFd, 4) < 0) {
-            ::close(listenFd);
-            listenFd = -1;
+        acc->set_option(boost::asio::socket_base::reuse_address(true), ec);
+        acc->bind(tcp::endpoint(tcp::v4(), uint16_t(port)), ec);
+        if (!ec)
+            acc->listen(4, ec);
+        if (ec)
             return false;
-        }
-        // The fd travels by value: a fast stop()/start() may reuse the
-        // fd number for the new socket, and an old loop re-reading the
-        // member would accept on — and fight over — the new listener.
-        std::thread([this, fd = listenFd]() { acceptLoop(fd); }).detach();
+        acceptor = acc;
+        doAccept(acc);
         return true;
     }
 
-    /// Close the listener: the accept loop wakes on the shutdown and
-    /// exits, and no new connection is accepted. A later start() binds
-    /// anew. The connection half of a stop is closeAll().
-    void closeListener()
+    bool listening()
     {
         std::lock_guard<std::mutex> guard(mutex);
-        if (listenFd >= 0) {
-            // shutdown() is what actually wakes a thread blocked
-            // in accept(); close() alone may leave it parked.
-            ::shutdown(listenFd, SHUT_RDWR);
-            ::close(listenFd);
-            listenFd = -1;
-        }
-        started = false;
+        return acceptor && acceptor->is_open();
     }
 
-    void acceptLoop(int acceptFd)
+    /// Close the listener: no new connection is accepted, and a later
+    /// start() binds anew. Closed on the io thread, where its accept
+    /// runs, and waited for, so that a start() right after finds the
+    /// port free. The connection half of a stop is closeAll().
+    void closeListener()
     {
-        for (;;) {
-            int fd = ::accept(acceptFd, nullptr, nullptr);
-            if (fd < 0)
-                break;
-            // A peer that stops reading must not park its thread in
-            // ::send forever — with the buffers full the send returns
-            // after this instead, the loop sees the failure and the
-            // connection closes. This is also what makes a kick or a
-            // server stop effective against such a peer.
-            timeval sndTimeout = {};
-            sndTimeout.tv_sec = 20;
-            ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &sndTimeout,
-                         sizeof(sndTimeout));
-            std::string ip;
-            {
-                sockaddr_in peer = {};
-                socklen_t plen = sizeof(peer);
-                if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
-                                  &plen) == 0) {
-                    char buf[64] = "";
-                    ::inet_ntop(AF_INET, &peer.sin_addr, buf, sizeof(buf));
-                    ip = buf;
-                }
-            }
-            const bool loopback = isLoopback(ip);
-            if (!admitPeer(ip, loopback)) {
-                ::close(fd);
-                continue;
-            }
-            // One thread per connection: a WebSocket client keeps its
-            // connection for the whole session and must not starve the
-            // HTTP fallback (or a second viewer).
-            std::thread([this, fd, ip, loopback]() {
-                handle(fd);
-                ::close(fd);
-                releasePeer(ip, loopback);
-            }).detach();
+        std::shared_ptr<tcp::acceptor> acc;
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+            acc = std::move(acceptor);
+            started = false;
         }
-    }
-
-    /// One accepted socket: read the request, route it, and either
-    /// write the reply or handshake and run the WebSocket connection.
-    void handle(int fd)
-    {
-        HttpRequest req;
-        if (!readRequest(fd, req))
+        if (!acc)
             return;
-        HttpReply reply;
-        WsBootstrap boot;
-        if (route(req, reply, boot) == Route::Upgrade) {
-            if (handshake(fd, req.header("sec-websocket-key")))
-                wsLoop(fd, boot);
-            return;
-        }
-        writeReply(fd, reply);
+        std::promise<void> done;
+        boost::asio::post(io->ctx, [acc, &done]() {
+            boost::system::error_code ec;
+            acc->close(ec);
+            done.set_value();
+        });
+        done.get_future().wait();
     }
-
-    /// The request line and the header block of \a head into \a req.
-    static bool parseHead(const std::string &head, HttpRequest &req)
-    {
-        size_t eol = head.find("\r\n");
-        if (eol == std::string::npos)
-            return false;
-        size_t sp1 = head.find(' ');
-        if (sp1 == std::string::npos || sp1 > eol)
-            return false;
-        req.method = head.substr(0, sp1);
-        size_t sp2 = head.find(' ', sp1 + 1);
-        if (sp2 == std::string::npos || sp2 > eol)
-            sp2 = eol;
-        splitTarget(head.substr(sp1 + 1, sp2 - sp1 - 1), req);
-        for (size_t at = eol + 2; at < head.size();) {
-            size_t end = head.find("\r\n", at);
-            if (end == std::string::npos)
-                end = head.size();
-            size_t colon = head.find(':', at);
-            if (colon != std::string::npos && colon < end) {
-                std::string name = head.substr(at, colon - at);
-                std::transform(name.begin(), name.end(), name.begin(),
-                               [](unsigned char c) {
-                                   return std::tolower(c);
-                               });
-                std::string value = head.substr(colon + 1,
-                                                end - colon - 1);
-                auto b = value.find_first_not_of(" \t");
-                auto e = value.find_last_not_of(" \t");
-                req.headers.emplace(name, b == std::string::npos
-                                              ? std::string()
-                                              : value.substr(b, e - b + 1));
-            }
-            at = end + 2;
-        }
-        return true;
-    }
-
-    /// Read one request off \a fd: the head, then the body the head
-    /// announced (only the mesh batch carries one). False drops the
-    /// connection unanswered, as it always did: a head over 16 KiB, a
-    /// verb other than GET or POST, a body over the batch cap, or a
-    /// peer that hung up first.
-    static bool readRequest(int fd, HttpRequest &req)
-    {
-        std::string raw;
-        char buf[1024];
-        size_t headEnd = std::string::npos;
-        while ((headEnd = raw.find("\r\n\r\n")) == std::string::npos) {
-            ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-            if (n <= 0)
-                return false;
-            raw.append(buf, size_t(n));
-            if (raw.size() > 16384)
-                return false;
-        }
-        if (!parseHead(raw.substr(0, headEnd + 2), req))
-            return false;
-        if (req.method != "GET" && req.method != "POST")
-            return false;
-        if (req.method == "POST") {
-            size_t want = size_t(std::strtoul(
-                req.header("content-length").c_str(), nullptr, 10));
-            if (want > kMaxBatchBody)
-                return false;
-            req.body = raw.substr(headEnd + 4);
-            while (req.body.size() < want) {
-                ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-                if (n <= 0)
-                    return false;
-                req.body.append(buf, size_t(n));
-            }
-            req.body.resize(want);
-        }
-        sockaddr_in peer = {};
-        socklen_t plen = sizeof(peer);
-        if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
-                          &plen) == 0) {
-            char ip[64] = "";
-            ::inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof(ip));
-            req.peerIp = ip;
-            req.peerPort = ntohs(peer.sin_port);
-        }
-        return true;
-    }
-
-    static const char *reasonPhrase(int status)
-    {
-        switch (status) {
-        case 200: return "OK";
-        case 202: return "Accepted";
-        case 204: return "No Content";
-        case 403: return "Forbidden";
-        default: return "Not Found";
-        }
-    }
-
-    /// Write one routed reply: the status line, the CORS header every
-    /// answer carries, the optional type and cache policy, the length
-    /// (none on a 204), `Connection: close`, then the body.
-    static bool writeReply(int fd, const HttpReply &reply)
-    {
-        std::string head = "HTTP/1.1 " + std::to_string(reply.status)
-            + " " + reasonPhrase(reply.status) + "\r\n"
-            "Access-Control-Allow-Origin: *\r\n";
-        if (reply.allowAnyHeader)
-            head += "Access-Control-Allow-Headers: *\r\n";
-        if (reply.contentType)
-            head += std::string("Content-Type: ") + reply.contentType
-                + "\r\n";
-        if (reply.cacheControl)
-            head += std::string("Cache-Control: ") + reply.cacheControl
-                + "\r\n";
-        if (reply.status != 204)
-            head += "Content-Length: " + std::to_string(reply.body.size())
-                + "\r\n";
-        head += "Connection: close\r\n\r\n";
-        if (!sendAll(fd, head.data(), head.size()))
-            return false;
-        return reply.body.empty()
-            || sendAll(fd, reply.body.data(), reply.body.size());
-    }
-
-    static bool handshake(int fd, const std::string &key)
-    {
-        static const char guid[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-        Sha1 sha;
-        sha.update(key.data(), key.size());
-        sha.update(guid, sizeof(guid) - 1);
-        uint8_t digest[20];
-        sha.finish(digest);
-        std::string accept = base64(digest, sizeof(digest));
-        char head[256];
-        int n = std::snprintf(head, sizeof(head),
-            "HTTP/1.1 101 Switching Protocols\r\n"
-            "Upgrade: websocket\r\n"
-            "Connection: Upgrade\r\n"
-            "Sec-WebSocket-Accept: %s\r\n\r\n", accept.c_str());
-        return sendAll(fd, head, size_t(n));
-    }
-
-    /// One server-to-client frame (unmasked): FIN + opcode, extended
-    /// length as needed, then the payload.
-    static bool sendFrame(int fd, uint8_t opcode,
-                          const void *data, size_t size)
-    {
-        uint8_t head[10];
-        size_t hn = 2;
-        head[0] = uint8_t(0x80 | opcode);
-        if (size < 126) {
-            head[1] = uint8_t(size);
-        }
-        else if (size < 65536) {
-            head[1] = 126;
-            head[2] = uint8_t(size >> 8);
-            head[3] = uint8_t(size);
-            hn = 4;
-        }
-        else {
-            head[1] = 127;
-            for (int i = 0; i < 8; ++i)
-                head[2 + i] = uint8_t(uint64_t(size) >> (56 - 8 * i));
-            hn = 10;
-        }
-        return sendAll(fd, head, hn)
-            && (!size || sendAll(fd, data, size));
-    }
-
-    /// One WebSocket connection, for its whole life: the Conn and its
-    /// link live on this thread's stack, on the roster between
-    /// openConnection and closeConnection.
-    void wsLoop(int fd, const WsBootstrap &boot)
-    {
-        PosixLink link;
-        link.fd = fd;
-        Conn conn;
-        conn.link = &link;
-        openConnection(conn, boot);
-        wsLoopBody(fd, conn);
-        closeConnection(conn);
-    }
-
-    /// The poll loop of one WebSocket connection: consume client
-    /// frames, queue the scene push, drain the outbox, keep alive. The
-    /// protocol is in what it calls -- consumeFrames and handleMessage
-    /// on the way in, queueScenePush and the outbox on the way out --
-    /// and this is only the scheduling of it, which is what stage 2
-    /// replaces with a reader and a writer coroutine on one strand
-    /// (docs/SceneServerPort.md sec 6.2).
-    void wsLoopBody(int fd, Conn &conn)
-    {
-        std::string inbuf;
-        int stampTick = 0;
-        // Keepalive (docs/ShareAccess.md §5): a parked viewer sends and
-        // receives nothing while the model is unchanged, and anything
-        // with an idle timeout in the path drops it — Cloudflare closes
-        // a quiet WebSocket at 100 s, 60 s is a common proxy default. A
-        // ping whenever 30 s pass without a send keeps the stream
-        // visibly alive in both directions (the browser answers the
-        // pong itself), and turns a silently dead connection into a
-        // send failure instead of a socket parked forever.
-        auto lastSend = std::chrono::steady_clock::now();
-        for (;;) {
-            // Live bundle-stamp check (~every 5s at the 200ms poll):
-            // a WASM rebuild while this backend serves pushes the
-            // reload to already-connected pages, not just fresh hellos.
-            if (++stampTick >= 25) {
-                stampTick = 0;
-                if (conn.viewer)
-                    pushReloadIfStale(conn);
-            }
-            // Consume before pushing: a hello (or switch) that arrived
-            // with the connection must pick the document *before* the
-            // first payload goes out, or every named join would be
-            // preceded by one spurious default-document snapshot. A
-            // client that sends its hello on open is consumed within
-            // the first poll; one that says nothing merely waits out
-            // one interval for its first frame.
-            pollfd p = {};
-            p.fd = fd;
-            p.events = POLLIN;
-            int r = ::poll(&p, 1, 200);
-            if (r < 0)
-                return;
-            // The host asked this connection closed (Conn::kick --
-            // kickClient, a server stop, its own bad-token hello): the
-            // farewell is already on the outbox, and nothing more is
-            // read -- the kick shut the read side down to wake the
-            // poll, so the recv would only see EOF -- the drain below
-            // sends what was queued, then the farewell, and hangs up.
-            bool kicked;
-            {
-                std::lock_guard<std::mutex> guard(connMutex);
-                kicked = conn.kicked;
-            }
-            if (!kicked) {
-                if (r > 0) {
-                    char buf[65536];
-                    ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-                    if (n <= 0)
-                        return;
-                    inbuf.append(buf, size_t(n));
-                    if (!consumeFrames(fd, conn, inbuf))
-                        return;
-                }
-                queueScenePush(conn);
-            }
-            // Drain the outbox in order -- sends stay on this
-            // connection's thread. A Close item is the end.
-            std::deque<Outgoing> batch;
-            {
-                std::lock_guard<std::mutex> guard(connMutex);
-                batch.swap(conn.outbox);
-            }
-            for (const Outgoing &item : batch) {
-                switch (item.kind) {
-                case Outgoing::Text:
-                    if (!sendFrame(fd, 1, item.data.data(),
-                                   item.data.size()))
-                        return;
-                    break;
-                case Outgoing::Scene:
-                case Outgoing::Frame:
-                    if (!sendFrame(fd, 2, item.data.data(),
-                                   item.data.size()))
-                        return;
-                    break;
-                case Outgoing::Close:
-                    sendFrame(fd, 8, nullptr, 0);
-                    return;
-                }
-            }
-            auto now = std::chrono::steady_clock::now();
-            if (!batch.empty()) {
-                lastSend = now;
-            } else if (now - lastSend >= std::chrono::seconds(30)) {
-                if (!sendFrame(fd, 9, nullptr, 0))
-                    return;
-                lastSend = now;
-            }
-        }
-    }
-
-    /// Parse complete client frames off the front of \a inbuf; false
-    /// ends the connection (close frame or protocol error).
-    bool consumeFrames(int fd, Conn &conn, std::string &inbuf)
-    {
-        for (;;) {
-            if (inbuf.size() < 2)
-                return true;
-            const uint8_t *p =
-                reinterpret_cast<const uint8_t *>(inbuf.data());
-            bool fin = (p[0] & 0x80) != 0;
-            uint8_t opcode = p[0] & 0x0f;
-            bool masked = (p[1] & 0x80) != 0;
-            uint64_t len = p[1] & 0x7f;
-            size_t off = 2;
-            if (len == 126) {
-                if (inbuf.size() < off + 2)
-                    return true;
-                len = (uint64_t(p[2]) << 8) | p[3];
-                off += 2;
-            }
-            else if (len == 127) {
-                if (inbuf.size() < off + 8)
-                    return true;
-                len = 0;
-                for (int i = 0; i < 8; ++i)
-                    len = (len << 8) | p[off + i];
-                off += 8;
-            }
-            // Client frames must be masked. The cap accommodates a
-            // dumpFrame pixel upload (a hi-DPI phone canvas is ~10MB
-            // of RGBA).
-            if (!masked || len > (64u << 20))
-                return false;
-            uint8_t mask[4];
-            if (inbuf.size() < off + 4 + len)
-                return true;
-            std::memcpy(mask, p + off, 4);
-            off += 4;
-            std::vector<uint8_t> data(static_cast<size_t>(len), 0);
-            for (size_t i = 0; i < len; ++i)
-                data[i] = p[off + i] ^ mask[i & 3];
-            inbuf.erase(0, off + size_t(len));
-
-            switch (opcode) {
-            case 8:     // close
-                sendFrame(fd, 8, data.data(),
-                          std::min<size_t>(data.size(), 2));
-                return false;
-            case 9:     // ping -> pong
-                if (!sendFrame(fd, 10, data.data(), data.size()))
-                    return false;
-                break;
-            case 0:     // continuation of a fragmented message
-                if (!conn.fragOpcode)
-                    break;      // stray continuation: ignore
-                conn.fragData.append(
-                        reinterpret_cast<const char *>(data.data()),
-                        data.size());
-                if (conn.fragData.size() > (64u << 20))
-                    return false;
-                if (fin) {
-                    handleMessage(conn, conn.fragOpcode == 1,
-                                  reinterpret_cast<const uint8_t *>(
-                                      conn.fragData.data()),
-                                  conn.fragData.size());
-                    conn.fragData.clear();
-                    conn.fragOpcode = 0;
-                }
-                break;
-            case 1:
-            case 2:
-                if (!fin) {     // a browser may fragment large uploads
-                    conn.fragOpcode = opcode;
-                    conn.fragData.assign(
-                            reinterpret_cast<const char *>(data.data()),
-                            data.size());
-                    break;
-                }
-                handleMessage(conn, opcode == 1, data.data(), data.size());
-                break;
-            default:    // pong: ignore
-                break;
-            }
-        }
-    }
-
-#else
-    bool start(int) { return false; }
-    void closeListener() {}
-#endif
 
     /// A complete client message: JSON control text (hello, and the
     /// dumpFrame answers' metadata rides binary), or one of the binary
@@ -3239,7 +3178,7 @@ bool SceneStreamServer::start(int port)
 
 bool SceneStreamServer::running() const
 {
-    return pimpl && pimpl->listenFd >= 0;
+    return pimpl && pimpl->listening();
 }
 
 void SceneStreamServer::stop()
