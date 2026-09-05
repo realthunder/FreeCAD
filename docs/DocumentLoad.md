@@ -977,7 +977,12 @@ third-party command**, which a list of names never will.
   `DocumentObjectItem::getParentItem` (the chess-flat render golden
   with three heavy tests in parallel, 2026-09-05; the same run's chess
   golden diverged by camera for the same reason, the fit still animating
-  under load when the harness restaged).
+  under load when the harness restaged). Pinned twice: the exemption
+  itself by `DocumentTest.liveImportUserEditExemptsTreeRankByIdentity`,
+  and the whole chain -- import, guard, nested loop, tree timer, the
+  tick after -- by `GuiLiveImportNestedLoop_tests_run`
+  (`tests/gui/live-import-nested-loop.py`), which opens the window on
+  purpose now that the goldens no longer animate through it.
 - **View provider properties.** Every chokepoint above is in App and a
   `ViewProvider` is a separate `PropertyContainer`, so none of them sees
   the write itself -- but the write does arrive, one step removed:
