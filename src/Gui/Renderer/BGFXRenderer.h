@@ -165,6 +165,8 @@ public:
     /// its own backbuffer (wasm dumpFrame protocol).
     virtual bool requestFrameDump(const FrameDumpRequest &req) override;
     virtual bool frameDumpPending() const override;
+    virtual void holdFrameDump() override;
+    virtual bool frameDumpHeld() const override;
     virtual bool getRenderStats(RenderStats &stats) const override;
     virtual bool reloadShaders() override;
     /// Drop this view's sized targets (BGFXView::destroyTargets, the

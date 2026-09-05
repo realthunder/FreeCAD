@@ -75,6 +75,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // post-pass setup).
     if (userShaderGen != _BGFXLib.userCompileGeneration)
         dirtyChanged = true;
+    // The stand-in record is per frame: the first submit of a sub-view
+    // sequence starts it, the later ones add to it, the tail reads it.
+    if (!subCtx.active || subCtx.first)
+        _BGFXLib.userProgramStoodIn = false;
 #endif
     (void)feedChanged;
     feedDirty = false;
@@ -6321,21 +6325,44 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // A sub-view rect is stated in the DESTINATION framebuffer's own
     // pixels -- the widget's device pixels -- because that is what the
     // blit writes into and what the y-flip has to measure against.
-    view->blit(dumpPending ? &pendingDump : nullptr, &lastStats,
+    // A draw that asked for a user program still compiling drew with
+    // the stock program standing in (getUserProgram). That frame is
+    // right to show and wrong to capture: a one-shot dump is a picture
+    // of the scene with its materials, and a surface drawn without one
+    // is not that -- it is how a chess piece came back plain white in a
+    // golden capture, always the piece whose compile finished last
+    // (docs/RenderDebug.md sec 5.2a). So the dump is held for a later
+    // frame: needsRedraw() keeps reporting it, the compile's finish
+    // bumps the generation, and the frame that draws with the program
+    // consumes it. Bounded by the compile itself -- a failed or killed
+    // compile is recorded and its draw stands in without asking again.
+    // And the host's word (holdFrameDump): the publish that fed this
+    // frame deferred shapes under its capture budget, so the scene is
+    // still arriving. Same hold, same release -- the follow-up publish
+    // the viewer schedules catches the deferred shapes up.
+    const bool holdDump = dumpPending
+        && (_BGFXLib.userProgramStoodIn || hostHold);
+    hostHold = false;
+    dumpHeld = holdDump;
+    view->blit(dumpPending && !holdDump ? &pendingDump : nullptr,
+               &lastStats,
                subCtx.active ? subCtx.x : 0,
                subCtx.active ? subCtx.y : 0,
                subCtx.active
                    ? int(widget->height() * widget->devicePixelRatioF() + 0.5)
                    : 0);
     cpuMark(CpuBlit);
-    if (dumpPending && !pendingDump.overlays) {
-        // That frame went to the screen as well as to the capture, and
-        // it is missing the chrome the capture asked to leave out. It
-        // would stay on screen until something else happened to dirty
-        // the scene, so redraw it whole.
-        sceneDirty = true;
+    if (dumpPending && !holdDump) {
+        dumpHeld = false;
+        if (!pendingDump.overlays) {
+            // That frame went to the screen as well as to the capture,
+            // and it is missing the chrome the capture asked to leave
+            // out. It would stay on screen until something else
+            // happened to dirty the scene, so redraw it whole.
+            sceneDirty = true;
+        }
+        dumpPending = false;
     }
-    dumpPending = false;
 #endif
 
     // The cull audit's id image lands a frame or two after the copy

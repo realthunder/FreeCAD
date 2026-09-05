@@ -612,6 +612,7 @@ bool BGFXRenderer::requestFrameDump(const FrameDumpRequest &req)
 #else
     pimpl->pendingDump = req;
     pimpl->dumpPending = true;
+    pimpl->dumpHeld = false;
     // The capture needs a real frame, and needsRedraw() below reports
     // the pending dump for exactly that reason.
     //
@@ -628,6 +629,16 @@ bool BGFXRenderer::requestFrameDump(const FrameDumpRequest &req)
 bool BGFXRenderer::frameDumpPending() const
 {
     return pimpl->dumpPending;
+}
+
+void BGFXRenderer::holdFrameDump()
+{
+    pimpl->hostHold = true;
+}
+
+bool BGFXRenderer::frameDumpHeld() const
+{
+    return pimpl->dumpHeld;
 }
 
 bool BGFXRenderer::getRenderStats(RenderStats &stats) const
@@ -2234,8 +2245,14 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
         entry.failed = true;
         return BGFX_INVALID_HANDLE;
     }
-    if (fsState == 1 || vsState == 1)
-        return BGFX_INVALID_HANDLE;   // still compiling — retry next frame
+    if (fsState == 1 || vsState == 1) {
+        // Still compiling: the stock program stands in this frame and
+        // the lookup is retried next frame. The stand-in is recorded
+        // so the frame tail holds a pending capture -- a capture is of
+        // the materials, and this frame does not have them yet.
+        userProgramStoodIn = true;
+        return BGFX_INVALID_HANDLE;
+    }
 
     bgfx::ShaderHandle fsh = loadShaderFile(fsBin.toStdString());
     if (!bgfx::isValid(fsh)) {

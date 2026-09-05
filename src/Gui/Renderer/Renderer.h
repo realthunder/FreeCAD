@@ -3513,6 +3513,19 @@ public:
     /// True while an armed frame dump has not been consumed by a
     /// rendered frame yet — the caller pumps frames until this clears.
     virtual bool frameDumpPending() const { return false; }
+    /// The host's word that the NEXT frame is not the whole scene -- a
+    /// publish deferred shapes under its capture budget, so what the
+    /// backend holds is a scene still arriving. A pending dump is not
+    /// consumed by that frame; the backend holds it for a later one,
+    /// as it does for a frame drawn with a user shader still compiling.
+    /// Per frame: cleared once the frame has run.
+    virtual void holdFrameDump() {}
+    /// Whether the last rendered frame held a pending dump (for a
+    /// compiling shader or at the host's word). A pumping caller reads
+    /// it as progress: a held frame is a frame, and one that builds a
+    /// dozen programs on a software driver takes longer than any quiet
+    /// timeout should.
+    virtual bool frameDumpHeld() const { return false; }
     /// Statistics of the last frame readback (a consumed frame dump);
     /// false while none has run.
     virtual bool getRenderStats(RenderStats &stats) const

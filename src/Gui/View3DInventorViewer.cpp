@@ -4467,8 +4467,19 @@ bool View3DInventorViewer::pumpFrameDump(Render::Renderer *renderer)
 {
     if (!renderer)
         return false;
-    QElapsedTimer timer;
-    timer.start();
+    // Two clocks: the backend holds a dump while a user shader the
+    // scene wears is still compiling (a surface drawn without its
+    // material is not the picture asked for), and a cold compile of a
+    // whole material set is a subprocess per shader and seconds of
+    // wall clock, so the quiet timeout is measured from the last
+    // pending compile rather than from the request. The total bounds a
+    // compile that never reports -- the backend's own watchdog is 20 s
+    // per shader, and a killed compile releases the hold -- and a
+    // scene that never finishes arriving.
+    QElapsedTimer quiet;
+    quiet.start();
+    QElapsedTimer total;
+    total.start();
     for (;;) {
         // Processing events can run scene/view scripts that destroy and
         // recreate the external renderer (e.g. a renderer-type or MSAA
@@ -4479,7 +4490,14 @@ bool View3DInventorViewer::pumpFrameDump(Render::Renderer *renderer)
             return false;
         if (!renderer->frameDumpPending())
             return true;
-        if (timer.elapsed() >= 5000)
+        // A held frame is a frame: the backend drew, and declined to
+        // consume the dump because the picture was not complete yet.
+        // Building the programs a finished compile unlocks is itself
+        // seconds on a software driver, so a frame's own duration
+        // must never run the quiet clock out.
+        if (renderer->shaderCompilePending() || renderer->frameDumpHeld())
+            quiet.restart();
+        if (quiet.elapsed() >= 5000 || total.elapsed() >= 120000)
             return false;
         if (auto rm = getSoRenderManager())
             rm->scheduleRedraw();
@@ -6418,6 +6436,17 @@ void View3DInventorViewer::renderScene()
                     Render::StyleAsIs, 0, false, nullptr, 0);
         _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
+        // The backend draws what the LAST traversal fed it. If that
+        // publish deferred shapes under its capture budget (the
+        // follow-up publish is scheduled below, after this frame), the
+        // scene it holds is partial, and a one-shot dump must not be
+        // consumed by this frame: say so before it runs.
+        if (selectionRoot) {
+            if (auto manager = selectionRoot->getRenderManager()) {
+                if (manager->getDeferredCaptureCount() > 0)
+                    _pimpl->renderer->holdFrameDump();
+            }
+        }
         // render() publishes on the way past when something is listening
         // (docs/HeadlessServe.md §4), and a published object entry names
         // its object for the viewer. The names come from here rather

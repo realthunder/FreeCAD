@@ -256,7 +256,10 @@ public:
                               const QColor& bgcolor, QImage& img);
     /// Pump paint events until an armed one-shot frame dump has been
     /// consumed by a rendered frame (docs/RenderDebug.md §4.2); false on
-    /// timeout, or if the renderer was replaced while pumping.
+    /// timeout, or if the renderer was replaced while pumping. The
+    /// backend holds the dump while a user shader is still compiling,
+    /// or the scene is still arriving under the capture budget, and
+    /// the timeout waits with it (5 s quiet, 120 s in all).
     bool pumpFrameDump(Render::Renderer *renderer);
     /// Capture the frame through the render backend's own one-shot dump
     /// rather than an offscreen Coin render, which cannot see what the
