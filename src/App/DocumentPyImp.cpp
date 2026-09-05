@@ -1069,6 +1069,11 @@ Py::Boolean DocumentPy::getImporting() const
     return {getDocumentPtr()->testStatus(Document::Status::Importing)};
 }
 
+Py::Boolean DocumentPy::getLiveImport() const
+{
+    return {getDocumentPtr()->testStatus(Document::Status::LiveImport)};
+}
+
 Py::Boolean DocumentPy::getRecomputing() const
 {
     return {getDocumentPtr()->testStatus(Document::Status::Recomputing)};

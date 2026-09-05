@@ -410,6 +410,12 @@ Reorder object(s) in the tree view before a given object
     </Documentation>
     <Parameter Name="Importing" Type="Boolean" />
   </Attribute>
+  <Attribute Name="LiveImport" ReadOnly="true">
+    <Documentation>
+          <UserDocu>Indicate if a progressive import or load is still filling the document while the GUI stays live. A user command may look at such a document but not change it until this clears</UserDocu>
+    </Documentation>
+    <Parameter Name="LiveImport" Type="Boolean" />
+  </Attribute>
   <Attribute Name="Recomputing" ReadOnly="true">
     <Documentation>
           <UserDocu>Indicate if the document is recomputing</UserDocu>
