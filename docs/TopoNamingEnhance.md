@@ -1107,10 +1107,12 @@ The gathering loop skips already-broken references
 (`PartFeature.cpp:1273`), so under section 5 the t2 snapshot does not
 even re-seed B -- B's evidence is simply overwritten.  Per referrer, a
 broken reference keeps the generation it last resolved against until
-*that reference* is repaired or removed.  The count of retained
-generations is bounded by the number of referrers currently broken, and
-content addressing collapses referrers broken at the same generation into
-one file (sec 2.5's material line: four properties, one hash).
+*that reference* is repaired or removed.  A generation is one shape
+however many referrers hold it: it is **reference counted by its
+referrers** (user ruling, 2026-09-05), materialized when the first broken
+referrer needs it and dropped when the last one lets go.  The count of
+retained generations is therefore bounded by the number of distinct
+generations that currently have a broken referrer.
 
 **Move 3: the element cache becomes versioned, and layer 2 is a request
 against it.**  Today `_elementCache` (`PartFeature.cpp:1206`) is a flat
@@ -1150,12 +1152,17 @@ referrer no longer needs it.
 
 ### 7.3 The stored form
 
-One dynamic property per broken referrer on the referenced feature:
+One dynamic shape property per retained generation, plus one manifest
+that carries the reference count, both on the referenced feature:
 
     name   _BaseShape<N>
     type   Part::PropertyPartShape
     group  BaseShape
-    doc    <referrer key>          -- see below
+    attr   Prop_Hidden | Prop_ReadOnly | Prop_Output | Prop_NoRecompute
+
+    name   _BaseShapeRefs
+    type   App::PropertyMap           -- referrer key -> "_BaseShape<N>"
+    group  BaseShape
     attr   Prop_Hidden | Prop_ReadOnly | Prop_Output | Prop_NoRecompute
 
 `Prop_Output` is what keeps a value change from touching the feature
@@ -1163,29 +1170,31 @@ One dynamic property per broken referrer on the referenced feature:
 recompute; both matter because the property is written from inside
 `onChanged(Shape)` during a recompute.
 
-**The referrer key rides in the property's documentation string.**  A
-dynamic property persists `group`, `attr`, `ro`, `hide` and `doc`
-(`DynamicProperty.cpp:347`; `doc` goes through the document hasher as
-`docID` and comes back through `getDoc()`), and `doc` is the one
-free-form persisted slot a property has.  The key is
-`Property::getFullName()` of the link property with the document part
-dropped when it is this document -- `Plane.AttachmentSupport` for a local
-referrer, `Other#Bracket.Support` for an XLink from another file.  Object
-and property names are identifiers, so the string is ASCII and
-unambiguous.  It is *not* encoded into the property name: names must be
-identifiers (`DynamicProperty.cpp:180`), and underscore-joining
-`Plane_Attachment` and `Support` would collide.
+**The manifest is the reference count.**  `_BaseShapeRefs` maps each
+referrer key to the generation it holds; a generation's count is the
+number of entries naming it, and it is removed in the same step as its
+last entry.  The two are created together on the first broken referrer
+and removed together when the map empties, so a healthy feature carries
+neither.  The key is `Property::getFullName()` of the link property with
+the document part dropped when it is this document --
+`Plane.AttachmentSupport` for a local referrer, `Other#Bracket.Support`
+for an XLink from another file.  Object and property names are
+identifiers, so the string is ASCII and unambiguous.
 
-*Considered and set aside: one property per generation plus a
-`PropertyMap` manifest of referrer -> generation.*  It saves the element
-map being written once per referrer when several referrers share a
-generation -- roughly 200 bytes deflated per map on the six-cut plate
-(sec 5.2: 1240 for six maps), the geometry itself being shared by content
-either way.  It costs a second property type, a manifest that has to be
-kept consistent with the properties it names, and a reconcile that walks
-two structures.  Retained generations are rare by construction, so the
-per-referrer form is the recommendation; the manifest form is the fallback
-if a real model shows many referrers broken on one generation.
+Counting on the feature rather than on the referrer is deliberate: the
+decision that costs file size is taken at the feature's `beforeSave`
+(7.5), and a feature can only count references it holds a record of.  A
+`base=` attribute on the link property would give a referrer in another
+document a reference of its own, but the feature could not see it until
+that document is loaded, so it would still need this manifest.  It is
+withdrawn (7.2).
+
+*One shape, one map, however many referrers.*  A generation shared by
+several broken referrers is one file and one element map.  The
+per-referrer alternative -- one shape property per referrer, deduplicated
+by content -- would have written the element map once per referrer,
+roughly 200 bytes deflated per map on the six-cut plate (sec 5.2: 1240
+for six maps), and was set aside by the same ruling.
 
 **The blob is transferred, not re-serialized.**  `Feature` is a friend of
 `PropertyPartShape` (`PropertyTopoShape.h:151`), and at `onBeforeChange`
@@ -1220,7 +1229,7 @@ property, false for versions, is the whole change.
         std::string         blobPlan;
         TopLoc_Location     blobMotion;
         PropertyPartShape  *prop;       // the materialized form, or null
-        std::set<std::string> referrers;   // keys, sec 7.3
+        std::set<std::string> referrers;   // the reference count, sec 7.3
         // the search memo, per element, exactly today's ElementCache
         mutable std::map<std::string, std::pair<std::vector<std::string>, bool>> searched;
     };
@@ -1260,13 +1269,14 @@ that pass returns, `Feature::onChanged` reconciles: for each in-memory
 generation, keep a referrer only if its reference into this feature is
 still missing (the same enumeration as the seeding loop); a generation
 with referrers left is materialized -- `addDynamicProperty`, the blob
-handed over, `setValue(shape)` -- and one with none is dropped, except
-the newest, which stays in memory unpersisted.
+handed over, `setValue(shape)`, its referrers entered in
+`_BaseShapeRefs` -- and one whose count is zero is dropped, except the
+newest, which stays in memory unpersisted.
 
 **Reload.**  The version properties restore by type name and park their
 blobs like any shape.  `Feature::onDocumentRestored` rebuilds
-`_shapeVersions` from the properties named `_BaseShape*` (referrer key
-from `getDocumentationOfProperty`), and then -- this is sec 5.5's S3,
+`_shapeVersions` from the properties named `_BaseShape*` and their
+referrers from `_BaseShapeRefs`, and then -- this is sec 5.5's S3,
 unchanged -- calls `PropertyLinkBase::updateElementReferences(this)` if
 any generation is held, so a reference that was broken when the file was
 saved makes its request now, against the persisted generation.  A restore
@@ -1278,10 +1288,11 @@ repaired is reconciled at the next save.
 **Referrer-side change.**  A reference repaired by hand, a referrer
 deleted, its document closed: none of these reach the feature.
 Reconcile at `Feature::beforeSave`, which already exists
-(`PartFeature.cpp:1701`): for each generation, drop a referrer whose key
+(`PartFeature.cpp:1701`): for each manifest entry, drop it when its key
 names a loaded document in which the object or property no longer
-exists, or whose reference into this feature now resolves; drop a
-generation left with no referrers.  A key naming a document that is
+exists, or when its reference into this feature now resolves; drop a
+generation whose count reaches zero, and the manifest itself when it is
+empty.  A key naming a document that is
 **not loaded** is kept -- that is the only protection an external
 referrer gets, and it is more than today's none.  This is where the
 file's size is decided, so it is the right place for the invariant of
@@ -1311,14 +1322,16 @@ answered.  Gates, extending `src/Mod/Test/ShapeStorage.py`:
 
 1. a healthy document saves byte-identically;
 2. break one reference, save, reopen in a second process:
-   `_BaseShape1` is present, its doc string names the referrer, and
-   `blobs/Content.xml` lists the geometry once;
+   `_BaseShape1` is present, `_BaseShapeRefs` maps the referrer to it,
+   and `blobs/Content.xml` lists the geometry once;
 3. break A at one generation and B at the next: two properties, two
-   distinct hashes;
-4. break A and B at the same generation: two properties, one hash, two
-   referrer tokens;
-5. repair B by hand, save: B's property is gone, A's remains;
-6. delete the referrer object, save: its property is gone;
+   distinct hashes, two manifest entries;
+4. break A and B at the same generation: **one** property, two manifest
+   entries naming it;
+5. repair B by hand, save: B's entry is gone; the generation stays while
+   A still names it, and goes when A is repaired too;
+6. delete the referrer object, save: its entry is gone, and the
+   generation with it if the count reached zero;
 7. undo across the break: the version property is removed with it, redo
    brings it back (the transaction records the add).
 
@@ -1329,15 +1342,14 @@ repointed at a plausible neighbour.  This gate matters most, for the
 reason sec 2.3 gives.
 
 **V4. Nothing to build for Python.**  Sec 5.5's S4 accessor is moot: a
-dynamic property is already reachable as `obj._BaseShape1` and its
-referrer as `obj.getDocumentationOfProperty("_BaseShape1")`.  The
-deferred UI has what it needs.
+dynamic property is already reachable as `obj._BaseShape1` and the
+referrers holding it as `obj._BaseShapeRefs`.  The deferred UI has what
+it needs.
 
 **V5, later, each its own commit.**  The Sketcher prefix (D2 stands:
 `ShapeVersion` carries the source property, so extending is mechanical,
-but it waits for the merge); widening the `onBeforeChange` gates so a
-break inside a transaction is seeded (the cost D3 accepted); and the
-policy knob of 7.8.
+but it waits for the merge); and widening the `onBeforeChange` gates so
+a break inside a transaction is seeded (the cost D3 accepted).
 
 ### 7.7 Traps
 
@@ -1356,10 +1368,16 @@ policy knob of 7.8.
   during restore would land in no transaction and could race the
   deferred blob drain.
 - **Copy and paste carries the versions along.**  `copyObject` copies
-  dynamic properties, and the referrer keys then name objects in the
+  dynamic properties, and the manifest keys then name objects in the
   source document.  They are stale, not wrong: the next `beforeSave`
-  reconcile drops them.  If that proves noisy, skip `_BaseShape*` when
-  the owner `isExporting()`.
+  reconcile drops them, and the generations with them.  If that proves
+  noisy, skip `_BaseShape*` and `_BaseShapeRefs` when the owner
+  `isExporting()`.
+- **The manifest and the shapes must move together.**  Every path that
+  adds, drops or restores a generation goes through one helper, so the
+  count and the property can never disagree; a manifest entry naming a
+  property that does not exist, or a `_BaseShape*` no entry names, is
+  dropped at `onDocumentRestored` with a warning.
 - **The gathering gates still exclude transactions** -- D3 is accepted
   as is, and a break that happens entirely inside an undo/redo is still
   unprotected until V5.
@@ -1385,20 +1403,15 @@ Closed by this section:
   schedules a recompute.
 - Sec 5.3's static `_SavedShape` / `_SavedElements` pair is withdrawn;
   sec 2.6's `base=` attribute is withdrawn (7.2).
+- **The retention predicate is "missing", and only that** (user ruling,
+  2026-09-05).  A reference repaired by the geometry search keeps no
+  generation; the silently repaired references of sec 2.3 are not
+  evidence this pre-task retains.
+- **One generation per shape, reference counted by its referrers**
+  (user ruling, 2026-09-05): the manifest form of 7.3, not one property
+  per referrer.
 
-Still open, each with a recommendation:
-
-- **The retention predicate.**  "Missing" is the settled policy.  The
-  reconcile of 7.5 is one predicate, and widening it to "repaired by
-  geometry search this recompute" would keep a generation for the
-  silently repaired references of sec 2.3 as well -- which is the
-  evidence the deferred repair record (old P3) needs.  Recommendation:
-  ship "missing" first; the widening is a one-line change behind a
-  preference, and it is what turns 2.3's silent success into something
-  checkable.
-- **Per referrer or per generation with a manifest** (7.3).
-  Recommendation: per referrer, measure on a real model, revisit only if
-  the duplicated maps show up.
+Nothing in the pre-task is open.
 
 ### 7.9 Not measured, still
 
