@@ -9,7 +9,8 @@
 #   cd ~/works/sw/coin && emcmake cmake -S . -B build_wasm -G Ninja \
 #     -DCMAKE_BUILD_TYPE=Release -DCOIN_BUILD_SHARED_LIBS=OFF -DCOIN_BUILD_TESTS=OFF \
 #     -DCOIN_BUILD_GLX=OFF -DCOIN_BUILD_EGL=OFF -DCOIN_BUILD_GL_STUB=ON -DHAVE_SOUND=OFF \
-#     -DBoost_INCLUDE_DIR=$FCAD/.conda/freecad/include \
+#     -DBoost_DIR=$FCAD/.conda/freecad/lib/cmake/Boost-1.90.0 \
+#     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
 #     -DCMAKE_CXX_FLAGS="-fPIC -fwasm-exceptions -sSUPPORT_LONGJMP=wasm" \
 #     -DCMAKE_C_FLAGS="-fPIC -fwasm-exceptions -sSUPPORT_LONGJMP=wasm" \
 #     -DCMAKE_INSTALL_PREFIX=$PWD/install/wasm && ninja -C build_wasm install

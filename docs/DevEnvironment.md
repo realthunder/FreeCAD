@@ -929,10 +929,69 @@ The payoff is exact: without the wheel, 60 C++ tests fail with
 (`ExpressionImageEvalTest`, `...HostTest`, `...BridgeTest`, `...BudgetTest`,
 `...AcceptanceTest`, `ExpressionRoutingTest`); with it, ctest is 559/559.
 
-`FREECAD_PIVY_WHEEL` (Coin and `pivy.coin` in the guest, `docs/Sandbox.md` 7.10)
-is built the same way and is not needed for the suites. `BUILD_EXPR_WASI_RUNTIME`
-never turns itself on; its `wasmtime-capi` is on the realthunder channel if it is
-ever wanted.
+`BUILD_EXPR_WASI_RUNTIME` never turns itself on; its `wasmtime-capi` is on the
+realthunder channel if it is ever wanted.
+
+**The pivy wheel** (`FREECAD_PIVY_WHEEL`: Coin and `pivy.coin` inside the guest,
+`docs/Sandbox.md` 7.10) is a second cross build on the same toolchain, not needed
+for the suites but needed before Draft's `Initialize()` gets past its pivy
+self-test in the guest. Two steps, Coin first, verified 2026-09-05 with the
+commands below (the same recipe heads `src/App/PyodideHost/pivy/CMakeLists.txt`):
+
+```sh
+cd ~/works/sw/fcad
+source src/App/PyodideHost/guest/emsdk-env.sh
+export PATH="$PATH:$PWD/.conda/freecad/bin"     # cmake, ninja, swig
+unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS
+FCAD=$PWD
+
+# 1. The Coin fork (branch LinkVibe, which carries COIN_BUILD_GL_STUB) as a
+#    static wasm library: no GL platform, no sound, GLX/EGL off.
+cd ~/works/sw/coin
+emcmake cmake -S . -B build_wasm -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCOIN_BUILD_SHARED_LIBS=OFF -DCOIN_BUILD_TESTS=OFF \
+  -DCOIN_BUILD_GLX=OFF -DCOIN_BUILD_EGL=OFF -DCOIN_BUILD_GL_STUB=ON -DHAVE_SOUND=OFF \
+  -DBoost_DIR=$FCAD/.conda/freecad/lib/cmake/Boost-1.90.0 \
+  -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+  -DCMAKE_CXX_FLAGS="-fPIC -fwasm-exceptions -sSUPPORT_LONGJMP=wasm" \
+  -DCMAKE_C_FLAGS="-fPIC -fwasm-exceptions -sSUPPORT_LONGJMP=wasm" \
+  -DCMAKE_INSTALL_PREFIX=$PWD/install/wasm
+ninja -C build_wasm install                     # -> install/wasm/lib/libCoinRT.a, 911 steps
+
+# 2. pivy's SWIG wrapper compiled for the guest, Coin linked in statically,
+#    packed as a wheel.  The pivy checkout (~/works/sw/pivy, rt-0.6.10) must
+#    already hold its swigified Inventor/ headers -- its native conda build
+#    runs install_helpers.py at configure and leaves them there.
+cd $FCAD
+emcmake cmake -S src/App/PyodideHost/pivy -B build/pyodide-pivy -G Ninja \
+  -DPIVY_SOURCE_DIR=$HOME/works/sw/pivy \
+  -DCOIN_WASM_PREFIX=$HOME/works/sw/coin/install/wasm \
+  -DSWIG_EXECUTABLE=$FCAD/.conda/freecad/bin/swig
+cmake --build build/pyodide-pivy
+# -> build/pyodide-pivy/dist/pivy-<ver>-cp314-cp314-pyodide_2026_0_wasm32.whl
+
+# 3. Ship it beside the fcx_image wheel (a preset change does not reach an
+#    existing tree: give it on the command line).
+$RUN cmake -S . -B build/conda-relwithdebinfo-801 \
+  -DFREECAD_PIVY_WHEEL=$PWD/build/pyodide-pivy/dist/pivy-0.6.10-cp314-cp314-pyodide_2026_0_wasm32.whl
+$RUN cmake --build build/conda-relwithdebinfo-801 --target pivy_wheel
+```
+
+On this box the whole thing is two minutes: Coin 47 s (911 steps), the pivy
+wrapper 69 s (one 17.8 MB SWIG output), and `scripts/sandbox-pivy-probe.py` then
+reports the guest's `import pivy.coin` at 0.45 s and a 30,001-node graph built in
+0.56 s -- Probe A's numbers, reproduced. Two things the Emscripten toolchain does
+that the recipe works around: it confines
+`find_package` to its own sysroot, so Coin's `find_package(Boost)` sees nothing
+until `Boost_DIR` names the conda config AND `CMAKE_FIND_ROOT_PATH_MODE_PACKAGE`
+lets the config's own nested lookup out of the sysroot (the first alone fails at
+`BoostConfig.cmake:141`); and `find_library` is confined the same way, which is why
+the pivy project names Coin's archive by path. The build products are large and
+local (`libCoinRT.a` 11.8 MB, `_coin.so` 13.7 MB, the wheel 2.7 MB) and both trees
+sit outside the FreeCAD build directory, so a `build/` cleanup takes the wheel with
+it -- which is how this box lost it between 2026-09-05 sessions; check
+`FREECAD_PIVY_WHEEL` in `CMakeCache.txt` when Draft's guest `Initialize()`
+suddenly reports "Pivy not found".
 
 The forms (`docs/Sandbox.md` 7.3) bundle two third-party pure wheels the build
 does not download itself: fetch them once by pinned hash and name them in
