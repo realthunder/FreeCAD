@@ -37,7 +37,7 @@ TEST(ExpressionSecurity, permissionNames)
     // Round trip every catalog name.
     for (Permission perm : {Permission::DocReadSelf, Permission::DocWriteSelf,
             Permission::DocForeign, Permission::GeomCall, Permission::AppQuery,
-            Permission::PrefsRead, Permission::Gui, Permission::HostImport,
+            Permission::PrefsRead, Permission::PrefsWrite, Permission::Gui, Permission::HostImport,
             Permission::UnsafeGetattr}) {
         auto parsed = permissionFromName(permissionName(perm));
         ASSERT_TRUE(parsed.has_value()) << permissionName(perm);

@@ -36,6 +36,7 @@ user decision, quoted where the wording matters.
     GUI registration from the guest  built       src/Gui/SandboxGui.cpp, the guest FreeCADGui (7.9)
     Coin + pivy inside the guest     built       src/App/PyodideHost/pivy/, Coin's COIN_BUILD_GL_STUB (7.10)
     forms: ipywidgets over comm, Qt  built       src/App/ExpressionImage/widgets/ (guest), src/Ext/freecad/widgets/ (host), SandboxGui.cpp (7.3)
+    forms: the Qt subset, .ui, panel built       G3a: freecad.widgets in the guest (the Qt classes as models), loadUi both sides, Control (7.11)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -154,7 +155,11 @@ across the board.
     prefs.read        ALLOW      ALLOW     ALLOW   the parameter store, read only, through a
                                                    curated reader (draftutils.params); added
                                                    2026-09-04, user ruling (7.6 G1c decision 2)
-    gui               DENY (np)  ALLOW     ALLOW   the only non-promptable cell
+    prefs.write       DENY (np)  ALLOW     ALLOW   the parameter store, written through the
+                                                   same facade (draftutils.params.set_param,
+                                                   ParamGet(...).Set*): a task panel storing
+                                                   the user's choice; added 2026-09-06 (7.11)
+    gui               DENY (np)  ALLOW     ALLOW   non-promptable for a document, as prefs.write
     host.import:<m>   PROMPT     PROMPT    ALLOW   per module
     unsafe.getattr    DENY       PROMPT    ALLOW   host-side Python attribute walks
     pkg.install:<p>   PROMPT     PROMPT    PROMPT  an ACTION, never a grant (sec 5.5)
@@ -1963,6 +1968,260 @@ the Emscripten toolchain confines `find_library` to its sysroot (name
 the archive); the console binary does not flush `stdout` at exit (a
 probe prints to stderr); `SoPathList` has no `len()`.
 
+### 7.11 G3 sized: the forms, Qt-shaped **[sized 2026-09-05]**
+
+G3 is U3 over the widget protocol (7.3) for the code as it is written:
+`Gui.PySideUic.loadUi(":/ui/X.ui")` then `self.form.<name>.<Qt method>`
+(41 panels), and forms built in code from `QtWidgets.QLabel(parent)`,
+`QHBoxLayout()`, `layout.addWidget(w)` (DraftGui's toolbar, ArchPrecast,
+ArchComponent, ArchWindow).  What the linter counts as U3 (1504 uses)
+is, by chain: `SIGNAL`/`QObject.connect` 285, the widget constructors
+(`QLabel` 94, `QPushButton` 86, `QWidget` 49, `QHBoxLayout` 49,
+`QComboBox` 35, `QVBoxLayout` 29, `QLineEdit` 27, `QCheckBox` 24,
+`QGridLayout` 21, `QDoubleSpinBox` 14, `QFormLayout` 13, `QSpinBox` 11,
+`QGroupBox` 10, `QRadioButton` 7), the item models (`QStandardItem` 88,
+`QTreeWidgetItem` 47, `QTableWidgetItem` 20, `QListWidgetItem` 12,
+`QStandardItemModel` 9, `QStyledItemDelegate` 20), `QAction` 76 and
+`QToolBar` 24 and `QMenu` 7, `Gui.Control.*` 124, `Gui.getMainWindow`
+56, `loadUi` 41, `UiLoader().createWidget` 29 (all `Gui::InputField`
+and `Gui::ToolBar`), `Gui.draftToolBar.*` 60.  The methods the panels
+call on a form's widgets, by count: `text` 82, `setText` 80,
+`isChecked` 72, `setProperty` 68 (`rawValue` on an InputField), `value`
+58, `setEnabled` 49, `setValue` 45, `clicked` 44, `property` 38,
+`currentIndex` 36, `setChecked` 34, `setCurrentIndex` 29, `addItem` 23,
+`hide` 22, `setIcon` 21, `currentIndexChanged` 20, `selectedItems` 19,
+`stateChanged`/`checkStateChanged` 34, `pressed` 16, `show` 11,
+`expandAll` 11, `currentText` 11.  The `.ui` files (68) use 41 widget
+classes: QLabel 409, `Gui::PrefCheckBox` 136, QPushButton 118,
+QGroupBox 93, QCheckBox 51, QComboBox 45, `Gui::InputField` 45,
+QWidget 44, `Gui::PrefLineEdit` 42, QDialog 32, `Gui::PrefComboBox` 32,
+`Gui::ColorButton` 31, QSpinBox 29, QLineEdit 28, QDialogButtonBox 26,
+`Gui::PrefSpinBox` 26, `Gui::QuantitySpinBox` 21,
+`Gui::PrefColorButton` 21, `Gui::PrefDoubleSpinBox` 20, QRadioButton
+15, `Gui::PrefUnitSpinBox` 15, then the trees, lists and tables (QTreeView
+10, QListWidget 10, QTreeWidget 7, QTableWidget 2) and singletons.
+
+**The decision: one model per Qt class, Qt's property names as the
+state.**  Probe B put UNMODIFIED ipywidgets in the guest and rendered
+its core models; the corpus does not speak ipywidgets, it speaks Qt,
+and the core models fit it badly (a `QPushButton` is a Button or a
+ToggleButton by a runtime `setCheckable`; a `QLabel` has no `enabled`;
+every DOMWidget drags a Layout and a Style model, three comms a widget,
+where a form is sixty widgets).  So the FreeCAD widget module 7.3
+called for is the Qt subset itself: a guest package `freecad.widgets`
+(the fcx_widgets wheel; `freecad` is a namespace package the bundled
+wheels share -- they all `loadPackage` into one site-packages) of
+`ipywidgets.Widget` subclasses (`Widget`, not `DOMWidget`: ONE comm a
+widget, no layout/style models) with `_model_module = "freecad.widgets"`
+and a model per Qt class -- `QWidgetModel`, `QLabelModel`,
+`QPushButtonModel`, `QToolButtonModel`, `QCheckBoxModel`,
+`QRadioButtonModel`, `QLineEditModel`, `QTextEditModel`,
+`QSpinBoxModel`, `QDoubleSpinBoxModel`, `QComboBoxModel`,
+`QGroupBoxModel`, `InputFieldModel` (also `Gui::QuantitySpinBox`),
+`ColorButtonModel`, `UiFormModel` -- whose synced traits ARE the Qt
+properties (`text`, `checked`, `enabled`, `visible`, `toolTip`,
+`value`, `minimum`, `maximum`, `singleStep`, `decimals`, `items`,
+`currentIndex`, `rawValue`, `unit`, `color`, ...), so a `.ui`
+`<property>` is a state key and the host view's `apply` is a
+property-by-property `setX`.  The Qt-flavored accessors (U7) are the
+methods of those classes: `setText`/`text`, `setChecked`/`isChecked`,
+`setValue`/`value`, `setProperty`/`property`, `show`/`hide`/
+`setVisible`/`isVisible`, `setEnabled`/`isEnabled`, `setToolTip`,
+`addItem`/`addItems`/`clear`/`count`/`itemText`/`currentText`/
+`setCurrentIndex`, `setObjectName`/`objectName`, `findChild`,
+`setWindowTitle`, `setWindowIcon`, `setFocus` (a custom message),
+`selectAll`, `setStyleSheet` and the size hints (accepted, most
+ignored).  The guest classes `PySide.QtWidgets.QLabel` and the rest
+ARE those models, so the corpus constructs them unchanged; the
+`Gui::Pref*` classes are their base class in the guest plus
+`prefEntry`/`prefPath`, and the HOST makes the real `Gui::Pref*`
+widget (through uic for a `.ui`, `UiLoader().createWidget` for a built
+one), so the preference reading and saving stays native.  The core
+ipywidgets models and their views stay for scripts that use them.
+
+**Signals.**  `PySide.QtCore.Signal` is a descriptor yielding a
+per-instance signal with `connect`/`disconnect`/`emit`; `SIGNAL("x()")`
+is the name and `QObject.connect(obj, sig, fn)` is
+`getattr(obj, name).connect(fn)` (the 285 old-style uses).  A value
+signal is a trait observer emitting with Qt's argument
+(`stateChanged(2)` for checked, `currentIndexChanged(i)`,
+`valueChanged(v)`, `textChanged(s)`), so a programmatic `setChecked`
+fires it exactly as Qt does; an event signal (`clicked`, `pressed`,
+`returnPressed`, `editingFinished`, `textEdited`) is a custom message
+`{"event": name, "args": [...]}` from the host view.  A radio button's
+exclusivity is native on the host and mirrored in the guest among
+siblings of one parent.
+
+**`loadUi` on both sides.**  The guest's `FreeCADGui.PySideUic.loadUi(
+path)` reads the file's text through `gui.ui.read` (the host's Qt
+resource system or a file under the module roots: data, not code),
+parses it with `xml.etree` (every `<widget class= name=>`, its
+`<property>`s and `<item>`s), builds the model of each class (an
+unknown class is a `QWidgetModel`) and a `UiFormModel` root carrying
+`uiFile` and `widgets {name: ref}`, each named widget an attribute of
+the root, as uic does.  The values parsed from the file are the
+model's initial state but NOT the host's: a model lists in `_touched`
+the properties the guest SET (a setter, a constructor argument), the
+file's values are written silently, and the host's `UiFormView` loads
+the same file through `FreeCADGui.UiLoader().load` (Qt's uic: the
+layout exact, the strings TRANSLATED, the custom widgets real) and
+BINDS each named child widget to its model -- the same view class,
+adopting the existing widget instead of building one -- applying the
+touched properties only; a built widget likewise gets the touched
+ones and keeps Qt's defaults for the rest (a default `prefPath` of ""
+applied to an InputField throws).  A view therefore has two entries,
+`build(parent)` and `bind(widget)`.
+
+**The task panel.**  `FreeCADGui.Control.showDialog(panel)` registers
+the guest panel as a proxy with the panel hook list (`accept`,
+`reject`, `clicked`, `open`, `getStandardButtons`,
+`modifyStandardButtons`, `needsFullSpace`, `isAllowedAlterDocument`,
+`isAllowedAlterView`, `isAllowedAlterSelection`, `helpRequested`,
+`shouldShow`; `isHookName` learns them) and crosses
+`gui.control.show [descriptor, form ids]`; the host builds a
+`GuestTaskPanel` whose `form` is the rendered forms' widgets and whose
+hooks forward to the stand-in (the standard buttons an int of Qt's
+values, which the shim's `QDialogButtonBox` enum carries), and shows
+it through the native `Control.showDialog`.  `closeDialog`,
+`activeDialog`, `clearTaskWatcher` are one op each.  `showWidget`
+stays for plain ipywidgets.
+
+**In stages, each with its gate:**
+
+- **G3a** -- the models above for the plain Qt classes plus
+  `Gui::InputField`/`Gui::QuantitySpinBox` and `Gui::ColorButton`, the
+  signals, `loadUi` on both sides, the task panel bridge.  Gate
+  `SandboxForms`: a probe in the guest loads Draft's
+  `TaskPanel_OrthoArray.ui` (9 InputFields, 3 spin boxes, 3 check
+  boxes, 3 radio buttons, 4 buttons, 4 group boxes), sets fields
+  Qt-style, connects old- and new-style signals, shows it as a task
+  panel; the host's uic form is the active dialog with the guest's
+  values in the bound widgets and a `.ui` default left untouched; a
+  host edit of each kind reaches the guest state and its Qt-named
+  signal with Qt's argument; OK crosses `accept` where the guest reads
+  every field back; and Draft's real `task_orthoarray.py`, exec'd
+  unmodified in the guest, constructs, shows, and answers
+  `get_numbers()`/`get_intervals()` from the bound form.
+- **G3b** -- the rest of the `.ui` subset: `QDialog` with
+  `QDialogButtonBox` and a synchronous `exec_()` (a nested Qt event
+  loop on the host inside one op; the guest's callbacks nest as the
+  slider already does), the tree/list/table family with typed items
+  (`QTreeWidgetItem`, `QStandardItem`, `QListWidgetItem`, delegates as
+  cell types), `QTabWidget`/`QStackedWidget`/`QScrollArea`/`QSplitter`
+  as containers, `Gui::FileChooser` (an `fs` grant), `QFontComboBox`,
+  `QTextBrowser`, `QProgressBar`.  Gate: every one of the 41 `loadUi`
+  panels of Draft and BIM opens from the guest and round-trips its
+  fields (a harness over the list, the way the reopen gate walks the
+  corpus).
+- **G3c** -- forms built in code: the layout classes as a widget's
+  `layout` state (`{type, items}` nested, re-synced on mutation), the
+  `QWidget` container, `QSpacerItem`/`QSizePolicy` accepted, `QAction`/
+  `QToolBar`/`QMenu`/`QDockWidget`, `QFont`/`QColor`/`QIcon`/`QPixmap`
+  as data, `getMainWindow()` as a shim (`addToolBar`,
+  `mainWindowClosed.connect`, `addStatusBarItem`), `DraftLineEdit`'s
+  `keyPressEvent` and `DraftBaseWidget`'s `eventFilter` as a `keys`
+  custom event stream the host sends for the widgets that ask.  Gate:
+  `DraftGui` imported in the guest, `draftToolBar.taskUi()`/`lineUi()`
+  shown from the guest and `validatePoint` round-tripping the point.
+  This is the wall both `Initialize()`s stop at (7.9), so the G2b
+  runner follows it.
+- **G3d** -- the selection input (U4's `Selection` as a model) and the
+  U2 dialogs (`QMessageBox.question`, `QInputDialog.getText`,
+  `QFileDialog.getOpenFileName`, `QColorDialog.getColor`: one
+  synchronous op each, the static calls the subset already names).
+
+Cost, expected: one comm per widget (a sixty-widget form about 60
+opens at 0.5 ms), the panel's construction in the guest, one hop per
+host event; measured at G3a.
+
+**G3a BUILT 2026-09-06**, the gate green on the fourth complete run
+(`SandboxForms`, 3 cases; all seven GUI gate cases OK).  What the
+build settled beyond the sizing:
+
+- **The traits are `q_<property>`.**  A trait named `text` would
+  shadow Qt's getter `text()` on the same object (the corpus calls
+  `w.text()`, `w.value()`, `w.icon()`, `w.color()`), so every Qt
+  property is the trait `q_text`, `q_value`, ...; the host strips the
+  prefix and calls Qt's own `setProperty`, with handlers for what is
+  not a Q_PROPERTY (a combo's items and icons, an icon path, a color
+  as four floats).  `setProperty("rawValue", v)` and `property(...)`
+  map by name.
+- **`_touched`, not `_uiDefaults`.**  The class default is as wrong to
+  apply as the file's value: `prefPath = ""` applied to an InputField
+  throws in `GetParameterGroupByPath`, an empty `toolTip` would clear
+  uic's.  So a model lists the properties the guest SET (setters,
+  constructor arguments), the `.ui` loader writes the file's values
+  silently, and a view applies the touched properties at bind/build and
+  every key of a later update (equal or not: a text the guest set that
+  the file already had still overrides uic's translation of it).
+- **Layouts came forward from G3c.**  Draft's `task_orthoarray.py`
+  rearranges its form at construction (`group.layout().takeAt(0)`,
+  `item.widget().setParent(None)`, `grid.addWidget(w, r, c, 1, 2)`,
+  `form.findChild(QtWidgets.QGridLayout, "grid_number")`), so the
+  layout classes exist in the guest as plain objects on their widget
+  (`QVBoxLayout`, `QHBoxLayout`, `QGridLayout`, `QFormLayout`, items
+  and spacers), the `.ui` parser builds them with their names, and a
+  mutation crosses as a layout op on the OWNING widget's comm
+  (`{"layout": name, "op": addWidget|insertWidget|removeWidget|takeAt|
+  addLayout|addStretch|addSpacing|setContentsMargins|setSpacing, ...}`)
+  that the host applies to the real layout of that name under that
+  widget (a `.ui` file reuses names -- OrthoArray has two
+  `gridLayout_5` -- so the search starts at the owner).  A widget the
+  guest made in code and adds to a layout gets a view BUILT under the
+  layout's widget then (`QLabel(translate(...))` in linear mode).
+  `setParent` crosses as an event (`None` hides, as Qt's does).  A
+  layout with no name reaches no host layout: code-built forms are
+  still G3c.
+- **`prefs.write`** joined the catalog (2.2): the panel's first act is
+  `params.set_param("LinearModeOn", ...)`, and DraftGui's ContinueMode,
+  the 83 `set_param` sites of Draft's GUI side and every `Pref*` widget
+  write the store.  DENY for a document (not promptable, like `gui`),
+  ALLOW for the session and addons; the guest's `ParamGet(...).Set*` /
+  `Rem*` now cross through `freecad.prefs.write`/`remove` instead of
+  warning once, and `draftutils.params.set_param*` are a second facade
+  entry on the same guest module (the generator merges entries by
+  module: one permission per entry).
+- **`FreeCADGui.ActiveDocument`**, the first U4 op: every Draft
+  panel's `finish()` is `Gui.ActiveDocument.resetEdit()`; the guest
+  gets a `GuiDocument` (`resetEdit`, `Document`) while the host has an
+  active document, None otherwise; `setEdit`/`getObject` wait for U4.
+- **The host's `Control.activeDialog()` is a bool** in this fork (as
+  its `showDialog` returns None), so a gate drives OK/Cancel through
+  the manager's panel object; `TaskDialogPython::reject` reading None
+  as False is what Draft relies on (its `finish()` closes the dialog
+  itself through the command's `completed()`).
+- Facts of the run: a `Manager.reset()` between cases must keep the
+  dispatcher (the guest is the same one; a real reset re-registers);
+  `faulthandler` in the gate script needs `sys.__stderr__` (FreeCAD's
+  console has no fileno) and the runner prints a failure's traceback
+  as it happens, since the crash that followed (a `setParent` on a
+  uic child whose form the failed bind had let go) took the buffered
+  report with it -- a failed bind now deletes the form itself; the
+  guest's `Quantity.UserString` has no decimals setting ("120 mm" to
+  the host's "120.00 mm"), so an InputField's text differs between the
+  two until a host edit sends the host's -- both parse to the same
+  value, which is all the corpus does with it (13).
+
+Measured (RelWithDebInfo, Xvfb, `scripts/sandbox-gui-gate.py`):
+
+    TaskPanel_OrthoArray.ui loaded in the guest,   0.084 s: 40 models, 91 comm
+      5 fields set, shown as a task panel           ops, 1 gui.ui.read, 1 control.show
+    Draft's TaskPanelOrthoArray() + show           0.067-0.094 s: 127 comm ops (the
+      (params, linear-mode re-layout included)       layout ops among them), 12 mod_call
+    host spin-box edit -> guest state + signal     0.19-0.21 ms each
+    guest setValue -> Qt widget                    0.09 ms each
+
+Gate `SandboxForms` (3 cases): the probe form from the .ui with its
+values in uic's widgets and the file's own left alone, a hundred host
+edits and a hundred guest sets, every edit kind reaching its Qt-named
+signal with Qt's argument, OK reading every field back, Cancel,
+close from the guest; Draft's `task_orthoarray.py` unmodified --
+constructed (linear mode re-layout included), shown, `get_numbers()`/
+`get_intervals()` answered from host edits, its checkbox callback,
+its reject; a document principal refused at `loadUi`.  Suites after:
+the three GUI gates 7/7; `Tests_run --gtest_filter='Expression*'`
+pyodide 104 passed + 1 skipped, wasi 31 + 74 skipped on this box.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -2072,6 +2331,10 @@ Non-ASCII object names occur in real files.  Rig:
                                                           the guest rendered in Qt, driven
                                                           both ways (7.3); the same gate
                                                           script (its default module list)
+    src/Mod/Test/SandboxForms.py                     3    G3a: a Draft .ui form and Draft's
+                                                          own OrthoArray panel from the
+                                                          guest, Qt-shaped, both ways
+                                                          (7.11); the same gate script
     src/Mod/Spreadsheet/TestSpreadsheet*.py          --   run with routing ON for parity
 
 The acceptance harness opens a real saved-and-reopened `.FCStd` under a
@@ -2153,10 +2416,14 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    stand-in (`fcx_widgets`), the host manager and twenty Qt views, a
    six-widget form shown as a task panel from a guest script; 0.13 s
    import, 0.5 ms per model, 0.22 ms per slider event, +0.02 s boot;
-   gate `SandboxWidgets`.  Then **G3** (U3), which is what both
-   workbenches' `Initialize()` now stop at (`import DraftTools` ->
-   `DraftGui`'s widgets), and the G2b runner once there is something to
-   switch to.
+   gate `SandboxWidgets`.  **G3a** BUILT 2026-09-06 (7.11): the Qt
+   subset as models, `loadUi` on both sides, the task panel, layouts
+   from `.ui` files, `prefs.write`; Draft's OrthoArray panel runs
+   unmodified in the guest; gate `SandboxForms`.  Next **G3b** (the
+   rest of the `.ui` subset and the 41-panel harness), **G3c** (forms
+   built in code: DraftGui's toolbar -- what both workbenches'
+   `Initialize()` stop at), and the G2b runner once there is something
+   to switch to.
 4. **P2** -- in-place install into a running guest (the sec 9.3 probe of
    `SandboxNetwork.md`: does a wheel with compiled extensions import
    synchronously without `loadPackage`?).  Moved after G1: nothing
@@ -2167,12 +2434,15 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    session guest, denied from a document guest, redirect hops.
 6. **PyPI sources** for `install_package`, written once against N1's
    client.
-7. **G3** -- U3 over the widget protocol: the Qt manager (BUILT by
-   Probe B for the core models), the FreeCAD widget module (quantity
-   input, selection input, color button, the tree/table model), the
-   `.ui` loader on both sides, the U7 Qt-flavored accessors.  Gate:
-   every Draft and BIM task panel opens from the guest and round-trips
-   its fields.
+7. **G3** -- U3 over the widget protocol, sized in 7.11 as four stages:
+   G3a BUILT 2026-09-06 (the Qt classes as models, `loadUi` both sides,
+   the task panel, `.ui` layouts, `prefs.write`, `Gui.ActiveDocument`);
+   G3b the rest of the `.ui` subset (dialogs with `exec_()`, the
+   tree/list/table family, containers, the file chooser) with the
+   41-panel harness as its gate; G3c forms built in code (layouts
+   without a file, actions, tool bars, the main window shim, the key
+   event stream) gated on DraftGui's toolbar; G3d the selection input
+   and the U2 dialogs.
 8. **G4** -- the mirror: generated Coin models, the reader with its
    allowlist and quotas, host-scene query ops, stand-ins, the event
    stream.  Gate: the Draft test documents render identically (pixel
@@ -2362,7 +2632,17 @@ sockets, any network for the reference image, a webview escape hatch.
   carries it for the hooks the host calls later, is G2b's.
 - Draft's `InitGui.py` in the guest needs `FreeCADGui.getMainWindow()`
   (its `Initialize` connects `mainWindowClosed`) -- a U2 op or a shim,
-  with G3.
+  with G3c.
+- The forms (G3a, 7.11): a guest InputField's `text` is the guest's
+  `Quantity.UserString` ("120 mm"), the host's its own decimals
+  ("120.00 mm") until a host edit sends the host's -- the corpus parses
+  the text, never compares it; a code-built layout (no name) reaches no
+  host layout until G3c; `.ui` strings are untranslated in the guest
+  (`translate` is the identity there) while uic's are translated on
+  the host -- a guest `setText(translate(...))` therefore shows the
+  English; a widget re-added to a layout it is already in duplicates
+  the item, as Qt does; `Gui.ActiveDocument` carries `resetEdit` and
+  `Document` only.
 - The GUI live expression editors evaluate as session, unconfined.
 - No memory ceiling for a guest.
 - Addon principal granularity (per addon, per file?) is still open.

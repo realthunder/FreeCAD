@@ -171,6 +171,20 @@ MODULE_FACADES = {
         "exceptions": [],
         "permission": "prefs.read",
     },
+    # Draft's preference WRITER, the same module: a task panel stores
+    # what the user chose (task_orthoarray's LinearModeOn on toggle,
+    # DraftGui's ContinueMode, 83 call sites in Draft's GUI side).  A
+    # module facade carries one permission, so the writers are a facade
+    # of their own merged into the same guest module: prefs.write, DENY
+    # for a document (not promptable), ALLOW for the session and addons
+    # (G3a, docs/Sandbox.md 7.11).
+    "draftutils.params#write": {
+        "module": "draftutils.params",
+        "callables": ["set_param", "set_param_arch", "set_param_view"],
+        "constants": [],
+        "exceptions": [],
+        "permission": "prefs.write",
+    },
     # The guest's FreeCAD.ParamGet (a Python shim in the in-image
     # FreeCAD module, ImageDispatch.cpp) answers every Get* through
     # this host module (src/Ext/freecad/prefs.py), read only: BIM's
@@ -181,6 +195,15 @@ MODULE_FACADES = {
         "constants": [],
         "exceptions": [],
         "permission": "prefs.read",
+    },
+    # ... and its Set* / RemBool family through `write` and `remove`,
+    # under prefs.write (a panel's ParamGet(...).SetBool from the guest).
+    "freecad.prefs#write": {
+        "module": "freecad.prefs",
+        "callables": ["write", "remove"],
+        "constants": [],
+        "exceptions": [],
+        "permission": "prefs.write",
     },
 }
 
@@ -314,7 +337,10 @@ def emit_host(facades, out):
                          % (f.type_key, mname))
     lines.append("};")
     lines.append("static const ModuleMember ModuleTable[] = {")
-    for modname, spec in MODULE_FACADES.items():
+    for key, spec in MODULE_FACADES.items():
+        # an entry may name its module (a second permission for the
+        # same guest module: "draftutils.params#write")
+        modname = spec.get("module", key)
         perm = spec["permission"]
         for n in spec["callables"]:
             lines.append('    {"%s", "%s", ModuleKind::Callable, "%s"},' % (modname, n, perm))
@@ -354,7 +380,13 @@ def emit_image(facades, out):
     py.append("# entry -- callables forward over mod_call, constants read once over")
     py.append("# mod_get, exceptions are local classes the bridge raises by name.")
     py.append("MODULES = {")
-    for modname, spec in MODULE_FACADES.items():
+    merged = {}
+    for key, spec in MODULE_FACADES.items():
+        modname = spec.get("module", key)
+        entry = merged.setdefault(modname, {"callables": [], "constants": [], "exceptions": []})
+        for k in ("callables", "constants", "exceptions"):
+            entry[k].extend(spec[k])
+    for modname, spec in merged.items():
         py.append("    '%s': {" % modname)
         for key in ("callables", "constants", "exceptions"):
             py.append("        '%s': (%s)," % (key, "".join("'%s', " % n for n in spec[key])))

@@ -54,6 +54,11 @@ enum class Permission {
                     // curated reader (Draft's get_param); ALLOW for every
                     // principal class (user ruling 2026-09-04: "allow read
                     // only for params anywhere")
+    PrefsWrite,     // prefs.write -- the parameter store, written through the
+                    // same curated facade (Draft's set_param, a panel's
+                    // ParamGet(...).Set*): DENY for a document, not
+                    // promptable; ALLOW for the session and addons (G3a,
+                    // docs/Sandbox.md 7.11)
     Gui,            // gui
     HostImport,     // host.import:<module>, the module is the target
     UnsafeGetattr,  // unsafe.getattr

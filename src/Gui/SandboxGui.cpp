@@ -37,9 +37,13 @@
 #include <App/ExpressionImageBridge.h>
 #include <App/ExpressionSecurityRuntime.h>
 #include <Base/Exception.h>
+#include <Base/Type.h>
 
 #include "Application.h"
 #include "Command.h"
+
+#include <QFile>
+#include <QFileInfo>
 
 using namespace Gui;
 using json = nlohmann::json;
@@ -524,6 +528,87 @@ Reply widgetHide(HandleTable& table, const json& a)
     return replyResult(table, r);
 }
 
+// ---- G3a, the forms (docs/Sandbox.md 7.11): a .ui file's text for
+// the guest's loader, and the task panel.  The panel object on the
+// host is the manager's (freecad.widgets.show_panel): its form is the
+// rendered widgets and its hooks forward to the guest's stand-in.
+
+/// A .ui file the host's own uic would load: a Qt resource (`:/ui/...`)
+/// or a file under one of the module roots, and nothing else -- data
+/// for the guest's parser, never code.
+Reply uiRead(const json& a)
+{
+    if (!a.is_string())
+        return replyErr("ProtocolError", "gui.ui.read: path");
+    const std::string& path = a.get_ref<const std::string&>();
+    QString qpath = QString::fromStdString(path);
+    if (!qpath.startsWith(QLatin1String(":/")) && !qpath.startsWith(QLatin1String(":ui"))) {
+        QString canon = QFileInfo(qpath).canonicalFilePath();
+        bool under = false;
+        for (const auto& root : Base::Type::getModuleRoots()) {
+            QString r = QFileInfo(QString::fromStdString(root)).canonicalFilePath();
+            if (!r.isEmpty() && canon.startsWith(r + QLatin1Char('/')))
+                under = true;
+        }
+        if (!under)
+            return replyErr("PermissionError",
+                            "gui.ui.read: '" + path + "' is not a resource or under a module root");
+    }
+    if (!qpath.endsWith(QLatin1String(".ui")))
+        return replyErr("ValueError", "gui.ui.read: '" + path + "' is not a .ui file");
+    QFile file(qpath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return replyErr("FileNotFoundError", "gui.ui.read: cannot read '" + path + "'");
+    QByteArray text = file.readAll();
+    return replyOk(json(std::string(text.constData(), static_cast<size_t>(text.size()))));
+}
+
+Reply controlShow(HandleTable& table, const json& a)
+{
+    // [panel descriptor, [form model ids]]
+    if (!a.is_array() || a.size() != 2 || !a[0].is_object() || !a[1].is_array())
+        return replyErr("ProtocolError", "gui.control.show: [panel, form ids]");
+    PyObject* standin = decodeValue(table, a[0]);
+    if (!standin)
+        return replyPyError();
+    if (!isGuestProxy(standin)) {
+        Py_DECREF(standin);
+        return replyErr("TypeError", "gui.control.show: the panel is not a guest proxy");
+    }
+    PyObject* ids = decodeValue(table, a[1]);
+    PyObject* hooks = PyList_New(0);
+    for (const auto& h : a[0].value("hooks", json::array()))
+        if (h.is_string())
+            PyList_Append(hooks, PyUnicode_FromString(h.get_ref<const std::string&>().c_str()));
+    PyObject* mgr = ids ? widgetManager() : nullptr;
+    PyObject* r = mgr ? PyObject_CallMethod(mgr, "show_panel", "OOO", standin, ids, hooks)
+                      : nullptr;
+    Py_XDECREF(mgr);
+    Py_DECREF(hooks);
+    Py_XDECREF(ids);
+    Py_DECREF(standin);
+    if (!r)
+        return replyPyError();
+    Py_DECREF(r);
+    return replyOk(true);
+}
+
+/// `gui.control.close` / `.active` / `.clear_watcher` / `.query name`:
+/// the manager's `control(op, arg)`.
+Reply controlCall(HandleTable& table, const std::string& op, const json& a)
+{
+    PyObject* mgr = widgetManager();
+    if (!mgr)
+        return replyPyError();
+    PyObject* arg = a.is_null() ? Py_NewRef(Py_None) : decodeValue(table, a);
+    PyObject* r = arg ? PyObject_CallMethod(mgr, "control", "sO", op.c_str() + 12, arg) : nullptr;
+    Py_XDECREF(arg);
+    Py_DECREF(mgr);
+    if (!r)
+        return replyPyError();
+    return replyResult(table, r);
+}
+
 Reply guiOp(HandleTable& table, const Reply& requestCbor)
 {
     const json req = json::from_cbor(requestCbor);
@@ -571,6 +656,13 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
         return widgetShow(table, arg);
     if (op == "gui.widget.hide")
         return widgetHide(table, arg);
+    if (op == "gui.ui.read")
+        return uiRead(arg);
+    if (op == "gui.control.show")
+        return controlShow(table, arg);
+    if (op == "gui.control.close" || op == "gui.control.active" || op == "gui.control.query"
+        || op == "gui.control.clear_watcher")
+        return controlCall(table, op, arg);
     if (op == "gui.pref_page") {
         if (!arg.is_array() || arg.size() != 2 || !arg[0].is_string() || !arg[1].is_string())
             return replyErr("ProtocolError", "gui.pref_page: [ui file, group]");

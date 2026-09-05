@@ -192,7 +192,12 @@ bool isHookName(const char* attr)
         "GetClassName",
         // the guest's comm manager (docs/Sandbox.md 7.3, the prelude's
         // COMM_HOOKS): what the host's widget manager calls
-        "host_msg", "host_close", "host_open"};
+        "host_msg", "host_close", "host_open",
+        // a task panel shown from the guest (docs/Sandbox.md 7.11, the
+        // prelude's PANEL_HOOKS): what TaskDialogPython probes
+        "accept", "reject", "clicked", "open", "getStandardButtons", "modifyStandardButtons",
+        "needsFullSpace", "isAllowedAlterDocument", "isAllowedAlterView",
+        "isAllowedAlterSelection", "helpRequested", "shouldShow"};
     for (const char* h : hooks)
         if (std::strcmp(h, attr) == 0)
             return true;

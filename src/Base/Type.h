@@ -105,6 +105,8 @@ public:
     /// A directory a type-string import may resolve into (a Mod root);
     /// registered by the application before any document loads.
     static void addModuleRoot(const std::string& dir);
+    /// The registered module roots, in registration order.
+    static const std::vector<std::string>& getModuleRoots();
     /// Whether importModule would import `module`: already loaded, or found
     /// under a registered root (None from the finder counts as allowed:
     /// the import fails on its own with the usual error).

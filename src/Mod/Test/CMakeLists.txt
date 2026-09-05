@@ -21,6 +21,7 @@ SET(Test_SRCS
     SandboxPyodide.py
     SandboxGui.py
     SandboxWidgets.py
+    SandboxForms.py
 )
 
 SET(TestData_SRCS

@@ -188,16 +188,18 @@ int initEvalGlobals()
             "        setattr(Base, _n, globals()[_n])\n"
             "_sys.modules['FreeCAD.Base'] = Base\n"
             "del _sys, _types, _n\n"
-            // FreeCAD.ParamGet, read only: every Get* is a prefs.read
-            // through the freecad.prefs module facade (BIM's
-            // ArchSchedule reads the store at import); a Set* is
-            // refused here, nothing crosses.
+            // FreeCAD.ParamGet: every Get* is a prefs.read through the
+            // freecad.prefs module facade (BIM's ArchSchedule reads the
+            // store at import); a Set*/Rem* is a prefs.write through the
+            // same facade -- ALLOW for the session and addons (a task
+            // panel storing what the user chose, G3a), DENY for a
+            // document, where it raises PermissionError.
             "class _ParamGrp:\n"
             "    __slots__ = ('_path',)\n"
             "    def __init__(self, path):\n"
             "        self._path = path\n"
             "    def __repr__(self):\n"
-            "        return '<sandbox parameter group %s (read only)>' % self._path\n"
+            "        return '<sandbox parameter group %s>' % self._path\n"
             "    def _get(self, kind, name, default):\n"
             "        from freecad import prefs\n"
             "        return prefs.read(self._path, name, kind, default)\n"
@@ -229,23 +231,44 @@ int initEvalGlobals()
             "    def HasGroup(self, name):\n"
             "        from freecad import prefs\n"
             "        return prefs.has_group(self._path, name)\n"
-            // A write is not performed and says so once per group: the
-            // user's preferences are not document code's to change.
-            // The one recompute-time write workbench code used to make
-            // (Arch areas and hatches toggling TechDraw's allowCrazyEdge
-            // around a projection) is gone: findShapeOutline and
-            // makeGeomHatch take allowCrazyEdge=True as a keyword, scoped
-            // to the call (2026-09-05).
-            "    _warned = set()\n"
+            // A write crosses under prefs.write.  The one recompute-time
+            // write workbench code used to make (Arch areas and hatches
+            // toggling TechDraw's allowCrazyEdge around a projection) is
+            // gone: findShapeOutline and makeGeomHatch take
+            // allowCrazyEdge=True as a keyword, scoped to the call
+            // (2026-09-05), so no document object writes.
+            "    def _put(self, kind, name, value):\n"
+            "        from freecad import prefs\n"
+            "        return prefs.write(self._path, name, kind, value)\n"
+            "    def SetBool(self, name, value):\n"
+            "        self._put('Bool', name, bool(value))\n"
+            "    def SetInt(self, name, value):\n"
+            "        self._put('Int', name, int(value))\n"
+            "    def SetUnsigned(self, name, value):\n"
+            "        self._put('Unsigned', name, int(value))\n"
+            "    def SetFloat(self, name, value):\n"
+            "        self._put('Float', name, float(value))\n"
+            "    def SetString(self, name, value):\n"
+            "        self._put('String', name, str(value))\n"
+            "    def _rem(self, kind, name):\n"
+            "        from freecad import prefs\n"
+            "        return prefs.remove(self._path, name, kind)\n"
+            "    def RemBool(self, name):\n"
+            "        self._rem('Bool', name)\n"
+            "    def RemInt(self, name):\n"
+            "        self._rem('Int', name)\n"
+            "    def RemUnsigned(self, name):\n"
+            "        self._rem('Unsigned', name)\n"
+            "    def RemFloat(self, name):\n"
+            "        self._rem('Float', name)\n"
+            "    def RemString(self, name):\n"
+            "        self._rem('String', name)\n"
+            "    def RemGroup(self, name):\n"
+            "        from freecad import prefs\n"
+            "        return prefs.remove(self._path, name, 'Group')\n"
             "    def _ignore(self, *args, **kw):\n"
-            "        if self._path not in _ParamGrp._warned:\n"
-            "            _ParamGrp._warned.add(self._path)\n"
-            "            import sys\n"
-            "            sys.stderr.write('sandbox: parameter write to %s ignored (the guest reads"
-            " parameters, it does not write them)\\n' % self._path)\n"
-            "    SetBool = SetInt = SetUnsigned = SetFloat = SetString = _ignore\n"
-            "    RemBool = RemInt = RemUnsigned = RemFloat = RemString = _ignore\n"
-            "    RemGroup = Clear = Notify = NotifyAll = _ignore\n"
+            "        pass\n"
+            "    Clear = Notify = NotifyAll = _ignore\n"
             "def ParamGet(path):\n"
             "    return _ParamGrp(path)\n"
             // FreeCAD.Qt: the translation helpers workbench modules

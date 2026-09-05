@@ -94,8 +94,9 @@ class Manager:
     def __init__(self):
         self.models = {}
         self.dispatcher = None
-        self.stats = {"open": 0, "msg": 0, "close": 0, "sent": 0, "custom": 0}
+        self.stats = {"open": 0, "msg": 0, "close": 0, "sent": 0, "custom": 0, "panel": 0}
         self.log = None  # a list to record traffic into (the gate)
+        self.panel = None  # the last GuestTaskPanel shown
 
     # -- the guest's comm manager (a stand-in) ------------------------
 
@@ -106,11 +107,19 @@ class Manager:
             self.reset()
         self.dispatcher = standin
 
+    def forget_guest(self):
+        """The guest is gone (a reset): its models and its dispatcher."""
+        self.reset()
+        self.dispatcher = None
+
     def reset(self):
+        """Drop every model and its views.  The dispatcher stays: the
+        guest is still the one that registered it (a new guest replaces
+        it through set_dispatcher)."""
         for model in list(self.models.values()):
             self._close_model(model)
         self.models.clear()
-        self.dispatcher = None
+        self.panel = None
 
     # -- guest -> host ---------------------------------------------------
 
@@ -139,13 +148,12 @@ class Manager:
         if method == "update":
             state = dict(data.get("state") or {})
             _put_buffers(state, data.get("buffer_paths"), buffers)
-            changed = set()
-            for key, value in state.items():
-                if key not in model.state or model.state[key] != value:
-                    changed.add(key)
-                model.state[key] = value
+            # every key of an update is applied, equal or not: the guest
+            # setting a text a .ui file already had still means the
+            # widget shows THAT text, not uic's translation of it
+            model.state.update(state)
             for view in list(model.views):
-                view.update(changed)
+                view.update(set(state))
         elif method == "echo_update":
             # the guest confirming a state the host sent: already applied
             pass
@@ -190,7 +198,7 @@ class Manager:
             getattr(self.dispatcher, hook)(*args)
         except ReferenceError:
             # the guest was reset under us: its models are gone
-            self.reset()
+            self.forget_guest()
             raise
 
     # -- models ------------------------------------------------------------
@@ -236,6 +244,58 @@ class Manager:
 
         qt.hide(self, model)
         return True
+
+    # -- the task panel (docs/Sandbox.md 7.11, G3a) --------------------
+
+    def show_panel(self, standin, form_ids, hooks):
+        """Show the guest's panel `standin` with the models `form_ids`
+        as its forms, through the host's own Control."""
+        import FreeCADGui
+        from . import qt
+
+        models = []
+        for comm_id in form_ids:
+            model = self.models.get(comm_id)
+            if model is None:
+                raise KeyError("no widget model %s" % comm_id)
+            models.append(model)
+        panel = qt.GuestTaskPanel(self, standin, models, hooks)
+        self.stats["panel"] = self.stats.get("panel", 0) + 1
+        self._record("panel", form_ids)
+        FreeCADGui.Control.showDialog(panel)
+        self.panel = panel
+        return panel
+
+    def control(self, op, arg=None):
+        """`Control.closeDialog` / `activeDialog` / `clearTaskWatcher` /
+        a boolean query, from the guest."""
+        import FreeCADGui
+
+        if op == "close":
+            # the dialog deletes its forms; the views detach now, not
+            # when the deferred delete lands
+            if self.panel is not None:
+                self.panel._detach()
+            FreeCADGui.Control.closeDialog()
+            return True
+        if op == "active":
+            return bool(FreeCADGui.Control.activeDialog())
+        if op == "clear_watcher":
+            FreeCADGui.Control.clearTaskWatcher()
+            return True
+        if op == "query":
+            if arg in ("isAllowedAlterDocument", "isAllowedAlterView",
+                       "isAllowedAlterSelection"):
+                return bool(getattr(FreeCADGui.Control, arg)())
+            if arg == "activeDocument":
+                return FreeCADGui.ActiveDocument is not None
+            if arg == "resetEdit":
+                doc = FreeCADGui.ActiveDocument
+                if doc is not None:
+                    doc.resetEdit()
+                return True
+            raise ValueError("Control: unknown query %r" % (arg,))
+        raise ValueError("Control: unknown op %r" % (op,))
 
     def _close_model(self, model):
         model.closed = True

@@ -38,21 +38,36 @@ Select, Label and HTML, the boxes; Layout and the style models are data
 import FreeCAD
 from PySide import QtCore, QtGui, QtWidgets
 
+from . import MODEL_REF
+
 Qt = QtCore.Qt
+
+
+def _alive(widget):
+    """Whether the C++ object behind a wrapper still exists (a task
+    dialog deletes its forms; a form's children go with it)."""
+    try:
+        import shiboken6
+
+        return shiboken6.isValid(widget)
+    except ImportError:
+        return True
 
 
 class View:
     """A rendering of one model."""
 
-    def __init__(self, manager, model, parent=None):
+    def __init__(self, manager, model, parent=None, widget=None):
         self.manager = manager
         self.model = model
         self.applying = False
-        self.widget = self.build(parent)
+        self.bound = widget is not None
+        self.widget = widget if widget is not None else self.build(parent)
+        self.bind()
         model.views.append(self)
         self.applying = True
         try:
-            self.update(set(model.state))
+            self.update(self.initial_keys())
         finally:
             self.applying = False
 
@@ -60,6 +75,13 @@ class View:
 
     def build(self, parent):
         raise NotImplementedError
+
+    def bind(self):
+        """Connect the widget's signals (built or adopted)."""
+
+    def initial_keys(self):
+        """The state keys applied at construction: all of them."""
+        return set(self.model.state)
 
     def apply(self, keys):
         """Apply the state under `keys` to the widget."""
@@ -93,7 +115,7 @@ class View:
         if self in self.model.views:
             self.model.views.remove(self)
         widget, self.widget = self.widget, None
-        if widget is not None and delete:
+        if widget is not None and delete and _alive(widget):
             widget.setParent(None)
             widget.deleteLater()
 
@@ -551,8 +573,14 @@ VIEWS = {
 }
 
 
-def make_view(manager, model, parent=None):
-    cls = VIEWS.get(model.name, Placeholder)
+def make_view(manager, model, parent=None, widget=None):
+    """The view of `model`: built under `parent`, or bound to `widget`
+    (a uic-made child of a form, docs/Sandbox.md 7.11)."""
+    cls = VIEWS.get(model.name)
+    if cls is None:
+        cls = QT_VIEWS.get(model.name, QtView if widget is not None else Placeholder)
+    if widget is not None:
+        return cls(manager, model, widget=widget)
     return cls(manager, model, parent)
 
 
@@ -615,3 +643,479 @@ def hide(manager, model, closing=False):
         view.close(delete=False)
     else:
         view.close()
+
+
+# -- the Qt-shaped models of freecad.widgets (docs/Sandbox.md 7.11) -------
+#
+# A model per Qt class, its state the Qt properties under a `q_`
+# prefix: the view is the real Qt widget of the model's `qtClass`,
+# BUILT (`QtWidgets.<class>` or `UiLoader().createWidget` for a `Gui::`
+# one) or BOUND to a child uic made (a form loaded from a .ui file),
+# and `apply` strips the prefix and calls Qt's own `setProperty`, with a
+# handler where a property is not one (a combo's items, an icon path).
+# At construction only the properties the guest SET (`_touched`) are
+# applied: the rest a bound widget has from uic, translated, and a built
+# one from Qt (a default `prefPath` of "" would throw on a Pref widget).
+
+
+def _icon(path):
+    if not path:
+        return QtGui.QIcon()
+    if path.startswith("theme:"):
+        return QtGui.QIcon.fromTheme(path[6:])
+    return QtGui.QIcon(path)
+
+
+class QtView(View):
+    """The generic view: any model of the freecad.widgets module."""
+
+    #: the Qt class to build when the model names none the toolkit has
+    fallback_class = "QWidget"
+    #: property -> handler(self, value); others go through setProperty
+    handlers = {}
+
+    def build(self, parent):
+        cls = self.get("qtClass") or self.fallback_class
+        return make_qt_widget(cls, parent)
+
+    def initial_keys(self):
+        return {"q_" + k for k in (self.get("_touched") or [])}
+
+    def apply(self, keys):
+        w = self.widget
+        if w is None:
+            return
+        for key in keys:
+            if not key.startswith("q_"):
+                continue
+            prop = key[2:]
+            value = self.get(key)
+            handler = self.handlers.get(prop)
+            if handler is not None:
+                handler(self, value)
+            elif prop == "visible":
+                w.setVisible(bool(value))
+            elif prop in ("windowIcon", "icon"):
+                getattr(w, "set" + prop[0].upper() + prop[1:])(_icon(value))
+            elif prop == "pixmap":
+                if value:
+                    w.setPixmap(QtGui.QPixmap(value))
+            elif prop == "color":
+                w.setProperty("color", QtGui.QColor.fromRgbF(*value))
+            elif prop == "maximumWidth" and value <= 0:
+                continue
+            elif prop == "maximumHeight" and value <= 0:
+                continue
+            elif w.metaObject().indexOfProperty(prop) >= 0:
+                w.setProperty(prop, value)
+
+    def custom(self, content, buffers):
+        """A request from the guest's widget: focus, selection, a
+        re-parent, or a layout op on one of the widget's layouts."""
+        if not isinstance(content, dict) or self.widget is None:
+            return
+        if "layout" in content:
+            self.layout_op(content)
+            return
+        event = content.get("event")
+        args = content.get("args") or []
+        if event in ("setFocus", "selectAll", "setSelection", "setCursorPosition"):
+            fn = getattr(self.widget, event, None)
+            if fn is not None:
+                fn(*args)
+        elif event == "setParent":
+            parent = self.manager.resolve(MODEL_REF + args[0]) if args and args[0] else None
+            pw = parent.views[0].widget if parent is not None and parent.views else None
+            if parent is None or pw is not None:
+                self.widget.setParent(pw)
+
+    def layout_op(self, content):
+        """`{"layout": name, "op": ..., ...}` from a guest layout of this
+        widget: applied to the real layout of that name (docs/Sandbox.md
+        7.11; a .ui file's layouts keep their names through uic)."""
+        name = content.get("layout")
+        layout = self.widget.findChild(QtWidgets.QLayout, name) if name else None
+        if layout is None:
+            FreeCAD.Console.PrintWarning("freecad.widgets: no layout %r under %r\n"
+                                         % (name, self.widget.objectName()))
+            return
+        op = content.get("op")
+        args = list(content.get("args") or [])
+        if op in ("addWidget", "insertWidget"):
+            w = self.widget_of(content.get("widget"), layout.parentWidget())
+            if w is None:
+                return
+            if op == "insertWidget":
+                layout.insertWidget(int(content.get("index", 0)), w, *args)
+            else:
+                layout.addWidget(w, *args)
+            w.show()
+        elif op == "removeWidget":
+            w = self.widget_of(content.get("widget"), None)
+            if w is not None:
+                layout.removeWidget(w)
+        elif op == "takeAt":
+            layout.takeAt(int(content.get("index", 0)))
+        elif op == "addLayout":
+            sub = self.widget.findChild(QtWidgets.QLayout, content.get("sublayout") or "")
+            if sub is not None:
+                layout.addLayout(sub, *args)
+        elif op == "addStretch" and hasattr(layout, "addStretch"):
+            layout.addStretch(*args)
+        elif op == "addSpacing" and hasattr(layout, "addSpacing"):
+            layout.addSpacing(int(args[0]) if args else 0)
+        elif op == "setContentsMargins":
+            layout.setContentsMargins(*[int(a) for a in args])
+        elif op == "setSpacing":
+            layout.setSpacing(int(args[0]))
+
+    def widget_of(self, model_id, parent):
+        """The Qt widget of a guest model: its view's, or a view built
+        now under `parent` for a widget the guest made in code."""
+        model = self.manager.resolve(MODEL_REF + model_id) if model_id else None
+        if model is None:
+            return None
+        for view in model.views:
+            if view.widget is not None:
+                return view.widget
+        if parent is None:
+            return None
+        view = make_view(self.manager, model, parent=parent)
+        return view.widget
+
+    def event(self, name, *args):
+        """A Qt signal the guest's model carries as an event signal."""
+        self.send_custom({"event": name, "args": list(args)})
+
+    def close(self, delete=True):
+        View.close(self, delete)
+
+
+def make_qt_widget(cls, parent=None):
+    """The real widget of a Qt class name: FreeCAD's own through the
+    widget factory, Qt's from QtWidgets, else a QWidget."""
+    if cls.startswith("Gui::"):
+        import FreeCADGui
+
+        w = FreeCADGui.UiLoader().createWidget(cls, parent)
+        if w is not None:
+            return w
+        FreeCAD.Console.PrintWarning("freecad.widgets: no host widget %s\n" % cls)
+        return QtWidgets.QWidget(parent)
+    qt_cls = getattr(QtWidgets, cls, None)
+    if qt_cls is None:
+        FreeCAD.Console.PrintWarning("freecad.widgets: unknown Qt class %s\n" % cls)
+        return QtWidgets.QWidget(parent)
+    return qt_cls(parent)
+
+
+class QLabelQtView(QtView):
+    fallback_class = "QLabel"
+
+    def bind(self):
+        self.widget.linkActivated.connect(lambda link: self.event("linkActivated", link))
+
+
+class QAbstractButtonQtView(QtView):
+    fallback_class = "QPushButton"
+
+    def bind(self):
+        w = self.widget
+        w.toggled.connect(self._toggled)
+        w.clicked.connect(lambda on=False: self.event("clicked", bool(w.isChecked())))
+        w.pressed.connect(lambda: self.event("pressed"))
+        w.released.connect(lambda: self.event("released"))
+
+    def _toggled(self, on):
+        self.send(q_checked=bool(on))
+
+
+class QCheckBoxQtView(QAbstractButtonQtView):
+    fallback_class = "QCheckBox"
+
+
+class QRadioButtonQtView(QAbstractButtonQtView):
+    fallback_class = "QRadioButton"
+
+
+class QToolButtonQtView(QAbstractButtonQtView):
+    fallback_class = "QToolButton"
+
+
+class ColorButtonQtView(QAbstractButtonQtView):
+    fallback_class = "Gui::ColorButton"
+
+    def bind(self):
+        QAbstractButtonQtView.bind(self)
+        self.widget.changed.connect(self._changed)
+
+    def _changed(self):
+        c = self.widget.color()
+        self.send(q_color=[c.redF(), c.greenF(), c.blueF(), c.alphaF()])
+
+
+class QGroupBoxQtView(QtView):
+    fallback_class = "QGroupBox"
+
+    def bind(self):
+        w = self.widget
+        w.toggled.connect(lambda on: self.send(q_checked=bool(on)))
+        w.clicked.connect(lambda on=False: self.event("clicked", bool(w.isChecked())))
+
+
+class QLineEditQtView(QtView):
+    fallback_class = "QLineEdit"
+
+    def bind(self):
+        w = self.widget
+        w.textEdited.connect(self._edited)
+        w.returnPressed.connect(lambda: self.event("returnPressed"))
+        w.editingFinished.connect(lambda: self.event("editingFinished"))
+
+    def _edited(self, text):
+        self.send(q_text=text)
+        self.event("textEdited", text)
+
+
+class InputFieldQtView(QLineEditQtView):
+    fallback_class = "Gui::InputField"
+
+    def bind(self):
+        QLineEditQtView.bind(self)
+        self.widget.valueChanged.connect(self._value)
+
+    def _value(self, value):
+        try:
+            value = float(value)
+        except TypeError:
+            value = float(value.Value)
+        self.send(q_rawValue=value, q_text=self.widget.text())
+
+    def apply(self, keys):
+        # a value the guest set comes with the text it formatted; the
+        # value alone is applied and the widget formats its own text
+        keys = set(keys)
+        if "q_rawValue" in keys:
+            keys.discard("q_text")
+        QLineEditQtView.apply(self, keys)
+
+
+class QTextEditQtView(QtView):
+    fallback_class = "QTextEdit"
+    handlers = {
+        "plainText": lambda self, v: self.widget.setPlainText(v)
+        if self.widget.toPlainText() != v else None,
+        "html": lambda self, v: self.widget.setHtml(v) if v else None,
+    }
+
+    def bind(self):
+        self.widget.textChanged.connect(
+            lambda: self.send(q_plainText=self.widget.toPlainText()))
+
+
+class QSpinBoxQtView(QtView):
+    fallback_class = "QSpinBox"
+
+    def bind(self):
+        w = self.widget
+        w.valueChanged.connect(lambda v: self.send(q_value=v))
+        if hasattr(w, "editingFinished"):
+            w.editingFinished.connect(lambda: self.event("editingFinished"))
+
+    def apply(self, keys):
+        # the range before the value, else Qt clamps the value
+        keys = set(keys)
+        first = keys & {"q_minimum", "q_maximum", "q_decimals"}
+        QtView.apply(self, first)
+        QtView.apply(self, keys - first)
+
+
+class QSliderQtView(QSpinBoxQtView):
+    fallback_class = "QSlider"
+
+
+class QProgressBarQtView(QtView):
+    fallback_class = "QProgressBar"
+
+
+class QComboBoxQtView(QtView):
+    fallback_class = "QComboBox"
+
+    def bind(self):
+        w = self.widget
+        w.currentIndexChanged.connect(lambda i: self.send(q_currentIndex=int(i)))
+        w.activated.connect(lambda i: self.event("activated", int(i)))
+        w.editTextChanged.connect(self._edit_text)
+
+    def _edit_text(self, text):
+        if self.widget.isEditable():
+            self.send(q_editText=text)
+
+    def apply(self, keys):
+        keys = set(keys)
+        w = self.widget
+        if keys & {"q_items", "q_itemIcons"}:
+            items = self.get("q_items") or []
+            icons = self.get("q_itemIcons") or []
+            w.clear()
+            for i, text in enumerate(items):
+                icon = icons[i] if i < len(icons) else ""
+                if icon:
+                    w.addItem(_icon(icon), text)
+                else:
+                    w.addItem(text)
+            keys.add("q_currentIndex")
+        keys -= {"q_items", "q_itemIcons"}
+        if "q_currentIndex" in keys:
+            w.setCurrentIndex(int(self.get("q_currentIndex", -1)))
+            keys.discard("q_currentIndex")
+        if "q_editText" in keys:
+            if w.isEditable():
+                w.setEditText(self.get("q_editText", ""))
+            keys.discard("q_editText")
+        QtView.apply(self, keys)
+
+
+class UiFormQtView(QtView):
+    """A form loaded from a .ui file: the same file through the host's
+    uic (layout exact, strings translated, FreeCAD's widgets real), and
+    each named child bound to the guest's model of it."""
+
+    def build(self, parent):
+        import FreeCADGui
+
+        path = self.get("uiFile") or ""
+        widget = FreeCADGui.UiLoader().load(path)
+        if widget is None:
+            raise RuntimeError("freecad.widgets: cannot load %r" % (path,))
+        if parent is not None:
+            widget.setParent(parent)
+        self.bound = True
+        self.children = []
+        try:
+            for name, ref in (self.get("widgets") or {}).items():
+                model = self.manager.resolve(ref)
+                if model is None:
+                    continue
+                child = widget.findChild(QtCore.QObject, name)
+                if child is None:
+                    FreeCAD.Console.PrintWarning("freecad.widgets: %s has no %r\n" % (path, name))
+                    continue
+                self.children.append(make_view(self.manager, model, widget=child))
+        except Exception:
+            # the form goes with its children: detach what was bound
+            for child in self.children:
+                child.close(delete=False)
+            self.children = []
+            widget.deleteLater()
+            raise
+        return widget
+
+    def close(self, delete=True):
+        for child in getattr(self, "children", []):
+            child.close(delete=False)
+        self.children = []
+        QtView.close(self, delete)
+
+
+QT_VIEWS = {
+    "QWidgetModel": QtView,
+    "QLabelModel": QLabelQtView,
+    "QPushButtonModel": QAbstractButtonQtView,
+    "QToolButtonModel": QToolButtonQtView,
+    "QCheckBoxModel": QCheckBoxQtView,
+    "QRadioButtonModel": QRadioButtonQtView,
+    "QGroupBoxModel": QGroupBoxQtView,
+    "QFrameModel": QtView,
+    "QLineEditModel": QLineEditQtView,
+    "QTextEditModel": QTextEditQtView,
+    "QPlainTextEditModel": QTextEditQtView,
+    "QTextBrowserModel": QTextEditQtView,
+    "QSpinBoxModel": QSpinBoxQtView,
+    "QDoubleSpinBoxModel": QSpinBoxQtView,
+    "QSliderModel": QSliderQtView,
+    "QProgressBarModel": QProgressBarQtView,
+    "QComboBoxModel": QComboBoxQtView,
+    "QFontComboBoxModel": QComboBoxQtView,
+    "InputFieldModel": InputFieldQtView,
+    "QuantitySpinBoxModel": InputFieldQtView,
+    "ColorButtonModel": ColorButtonQtView,
+    "UiFormModel": UiFormQtView,
+}
+
+
+class GuestTaskPanel:
+    """The task panel object the host's Control shows for a panel the
+    guest built: `form` is the rendered forms' widgets, and every hook
+    TaskDialogPython reads forwards to the guest's panel when it has
+    it, else answers as the C++ default would.  When the dialog goes,
+    its widgets go with it (TaskDialogPython deletes the forms), so the
+    views detach on `destroyed`."""
+
+    STANDARD = 0x00000400 | 0x00400000  # Ok | Cancel, TaskDialog's default
+
+    def __init__(self, manager, standin, models, hooks):
+        self.manager = manager
+        self.standin = standin
+        self.hooks = set(hooks)
+        self.views = [make_view(manager, m) for m in models]
+        self.form = [v.widget for v in self.views]
+        for v in self.views:
+            v.widget.destroyed.connect(lambda *a, v=v: v.close(delete=False))
+
+    def _hook(self, name, *args):
+        return getattr(self.standin, name)(*args)
+
+    def _detach(self):
+        for v in self.views:
+            v.close(delete=False)
+
+    def accept(self):
+        ok = bool(self._hook("accept")) if "accept" in self.hooks else True
+        if ok:
+            self._detach()
+        return ok
+
+    def reject(self):
+        ok = bool(self._hook("reject")) if "reject" in self.hooks else True
+        if ok:
+            self._detach()
+        return ok
+
+    def clicked(self, index):
+        if "clicked" in self.hooks:
+            self._hook("clicked", int(index))
+
+    def open(self):
+        if "open" in self.hooks:
+            self._hook("open")
+
+    def helpRequested(self):
+        if "helpRequested" in self.hooks:
+            self._hook("helpRequested")
+
+    def getStandardButtons(self):
+        if "getStandardButtons" in self.hooks:
+            return int(self._hook("getStandardButtons"))
+        return self.STANDARD
+
+    def needsFullSpace(self):
+        return bool(self._hook("needsFullSpace")) if "needsFullSpace" in self.hooks else False
+
+    def shouldShow(self):
+        return bool(self._hook("shouldShow")) if "shouldShow" in self.hooks else True
+
+    def isAllowedAlterDocument(self):
+        if "isAllowedAlterDocument" in self.hooks:
+            return bool(self._hook("isAllowedAlterDocument"))
+        return True
+
+    def isAllowedAlterView(self):
+        if "isAllowedAlterView" in self.hooks:
+            return bool(self._hook("isAllowedAlterView"))
+        return True
+
+    def isAllowedAlterSelection(self):
+        if "isAllowedAlterSelection" in self.hooks:
+            return bool(self._hook("isAllowedAlterSelection"))
+        return True

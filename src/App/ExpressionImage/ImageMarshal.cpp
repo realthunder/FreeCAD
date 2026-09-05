@@ -264,6 +264,12 @@ static const char ProxyPrelude[] =
     // fcx_widgets wheel, docs/Sandbox.md 7.3): the host's widget manager
     // delivers a model's messages through these
     "COMM_HOOKS = ('host_msg', 'host_close', 'host_open')\n"
+    // a task panel shown from the guest (docs/Sandbox.md 7.11, G3a):
+    // what the host's TaskDialogPython reads off a panel object
+    "PANEL_HOOKS = ('accept', 'reject', 'clicked', 'open', 'getStandardButtons',\n"
+    "               'modifyStandardButtons', 'needsFullSpace', 'isAllowedAlterDocument',\n"
+    "               'isAllowedAlterView', 'isAllowedAlterSelection', 'helpRequested',\n"
+    "               'shouldShow')\n"
     "def _proxy_register(inst, hooks=None):\n"
     "    pid = PROXY_IDS.get(id(inst))\n"
     "    if pid is None:\n"
@@ -441,6 +447,24 @@ static const char ProxyPrelude[] =
     "_gui._register_comm_manager = _gui_register_comm_manager\n"
     "_gui.showWidget = _gui_show_widget\n"
     "_gui.hideWidget = _gui_hide_widget\n"
+    // G3a (docs/Sandbox.md 7.11): the forms.  Control, PySideUic and
+    // UiLoader live in the fcx_widgets wheel (freecad.widgets.gui) and
+    // load on first use; a panel shown through Control registers as a
+    // guest proxy with the panel hooks and crosses with its form ids.
+    "def _gui_show_panel(panel, form_ids):\n"
+    "    _fcx.op('gui.control.show', 0, [_proxy_register(panel, PANEL_HOOKS), list(form_ids)])\n"
+    "_gui._show_panel = _gui_show_panel\n"
+    "def _gui_getattr(name):\n"
+    "    if name in ('Control', 'PySideUic', 'UiLoader'):\n"
+    "        from freecad.widgets import gui as _forms\n"
+    "        return getattr(_forms, name)\n"
+    // the panels' finish(): `Gui.ActiveDocument.resetEdit()` -- the
+    // first U4 op, the GUI document of the active document, or None
+    "    if name == 'ActiveDocument':\n"
+    "        from freecad.widgets import gui as _forms\n"
+    "        return _forms.active_document()\n"
+    "    raise AttributeError('FreeCADGui.%s is not in the sandbox (docs/Sandbox.md 7)' % name)\n"
+    "_gui.__getattr__ = _gui_getattr\n"
     "_sys.modules['FreeCADGui'] = _gui\n"
     "del _sys, _types, _m\n";
 

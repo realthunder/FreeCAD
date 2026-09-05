@@ -131,6 +131,11 @@ void Type::addModuleRoot(const std::string& dir)
     moduleRoots.push_back(s);
 }
 
+const std::vector<std::string>& Type::getModuleRoots()
+{
+    return moduleRoots;
+}
+
 namespace
 {
 /// Is `file` inside `root` (a canonical directory), at a separator boundary?
