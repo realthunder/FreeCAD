@@ -993,10 +993,12 @@ driver is even mapped. That is the gap this set closes.
 | `RenderSmokeVg_tests_run` | `fcvgsmoke`: bgfx up headless in its own process, vg paths/gradients/strokes/text drawn offscreen, pixels read back, ink checked per primitive | 0.3 s |
 | `RenderSmokePage2D_tests_run` | the same binary's retained-`Page2D` scenario: pan, in-band zoom, band crossing, rotation, damage, removal | 0.3 s |
 | `RenderGoldenRaster_tests_run` | `scripts/render-test-scene.py` staged in a real FreeCAD under xvfb, one camera, the five pipeline stages, compared against blessed references | 28 s |
+| `RenderGoldenRasterFlat_tests_run` | the same scene and stages with `FC_RENDER_TEST_BG=0`: the environment still lights the model but is not drawn, so the frame is the model | 20 s |
 | `RenderGoldenCycles_tests_run` | the same scene path traced on the CPU (64 spp, 240x180) | 29 s |
 | `RenderGoldenChess_tests_run` | the MaterialX chess set: a real asset with a real material library, raster and path traced | 65 s, see below |
+| `RenderGoldenChessFlat_tests_run` | the chess set the same way, background off | 65 s |
 
-The first three run in a default `ctest`. The last two are opt-in:
+The first four run in a default `ctest`. The path-traced legs and the chess set are opt-in:
 
     cmake -DFC_RENDER_HEAVY_TESTS=ON <build> && ctest -L render-heavy
 
@@ -1029,6 +1031,31 @@ submodule, which is the case that exercises map binding, the texture path
 and the MaterialX splice. A synthetic scene cannot fail the way a real
 document does, and a real document is too slow to run every time; hence
 one of each.
+
+**Each scene is registered twice, with the background drawn and without
+it** (`FC_RENDER_TEST_BG`, read by both scene scripts). They are not the
+same test. With a background most of the frame is scenery, so a change to
+the model moves a few hundred pixels while a camera that lands slightly
+differently moves a hundred thousand and buries it. Without one, the
+frame is the model and the diff is about what is under test. The
+background is drawn by the engine too, so neither case replaces the
+other.
+
+WARNING: **the flat leg has to turn off the environment, not just the
+gradient.** `Render_PBREnvBackground` defaults to *on*, and the drawn
+environment sits over the viewer's gradient -- so a scene that clears
+`Gradient`/`RadialGradient` and sets `BackgroundColor` while leaving the
+environment alone produces the *same frame* as its lit sibling. That was
+`refs/raster-flat` as first blessed on 2026-09-05: its beauty frame
+differed from `refs/raster` on 7.9% of pixels with a maximum channel
+delta of **1** -- twenty seconds of default `ctest` spent re-testing the
+frame the previous test had just checked. `render-test-chess.py` had it
+right (`p.SetBool("PBREnvBackground", BACKGROUND)`); `render-test-scene.py`
+did not, and now does. Blessed correctly, the two legs diverge on 79.5%
+of the beauty pixels (max 121) with depth, normal, AO and shadow
+byte-identical -- the same geometry, a different background, which is
+exactly the shape the pair should have. If a *-flat set ever compares
+near-identical to its sibling, this is the first thing to check.
 
 **The Cycles leg is reproducible as it stands, and must be kept that
 way.** The offline path sets no seed, so the integrator default applies,

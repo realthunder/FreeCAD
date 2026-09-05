@@ -70,6 +70,12 @@ try:
     render.SetString("Type", "bgfx - OpenGL")
     render.SetFloat("LightIntensity", 0.55)
     render.SetBool("PBR", True)
+    # The environment is what actually fills the background here: the PBR
+    # env is drawn by default, over the viewer's gradient, so turning the
+    # gradient off alone left the flat leg pixel-for-pixel the same frame
+    # as the lit one (max channel delta 1). Off, the flat colour set
+    # above is what the model sits on, which is the point of the leg.
+    render.SetBool("PBREnvBackground", BACKGROUND)
     render.SetBool("AO", True)
     render.SetFloat("AOIntensity", 1.0)
     render.SetBool("Bloom", False)          # a halo is not what is under test
