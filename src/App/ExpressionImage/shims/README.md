@@ -6,6 +6,11 @@ workbench's App side imports but never needs in the guest: the three names
 Draft reaches PySide through (`QT_TRANSLATE_NOOP`, `QCoreApplication.translate`,
 `QTimer.singleShot`), the compiled Qt resource modules (`Draft_rc`, `Arch_rc`),
 and the `freecad` namespace package that carries `freecad.deprecation`.
+`nativeifc/` (fcx_bim, 2026-09-05) answers the one recompute-time reach into
+BIM's IFC layer -- ArchSchedule's `save_ifc_props` -> `ifc_psets.edit_pset`,
+which natively looks the object's IFC file up and returns when there is
+none -- the same way for a plain document, and raises `IfcUnavailableError`
+for an IFC-backed object rather than editing or skipping it silently.
 
 The rule (docs/Sandbox.md sec 7): the guest sees FreeCAD's API, never Qt's.
 These files exist so that UNMODIFIED App-side sources import; anything a GUI

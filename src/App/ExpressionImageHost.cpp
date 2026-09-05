@@ -271,7 +271,14 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         json reply;
         try {
             json req = json::from_cbor(data, data + len);
-            ++ops[req.is_object() ? req.value("op", std::string("?")) : std::string("?")];
+            const std::string opName =
+                req.is_object() ? req.value("op", std::string("?")) : std::string("?");
+            ++ops[opName];
+            // A failed guest import is counted by NAME as well: which
+            // module asked is what a corpus gate needs to read (a name
+            // in the package lock becomes an install prompt).
+            if (opName == FcxWire::OpPkgMissing && req.is_object())
+                ++ops[opName + ":" + req.value("a", std::string("?"))];
             reply = dispatchHostOp(handles, req);
         }
         catch (const std::exception& e) {
@@ -449,6 +456,7 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         else {
             res.excType = reply.value("exc", "Exception");
             res.message = reply.value("msg", "");
+            res.traceback = reply.value("tb", "");
         }
         return res;
     }
@@ -657,6 +665,7 @@ ImageResult ImageHost::eval(const std::string& source,
     else {
         res.excType = reply.value("exc", "Exception");
         res.message = reply.value("msg", "");
+        res.traceback = reply.value("tb", "");
     }
     return res;
 }
@@ -689,6 +698,7 @@ ImageResult ImageHost::exec(const std::string& source, const std::string& module
     if (!res.ok) {
         res.excType = reply.value("exc", "Exception");
         res.message = reply.value("msg", "");
+        res.traceback = reply.value("tb", "");
     }
     return res;
 }
@@ -892,6 +902,7 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
     else {
         res.excType = reply.value("exc", "Exception");
         res.message = reply.value("msg", "");
+        res.traceback = reply.value("tb", "");
     }
     return res;
 }

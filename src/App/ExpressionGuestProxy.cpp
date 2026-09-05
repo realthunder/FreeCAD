@@ -99,12 +99,18 @@ PyObject* guestProxyRepr(PyObject* self)
 /// -- as the guest bridge does for host errors.
 void raiseGuestError(const ImageResult& r)
 {
+    // The guest's traceback follows the message: a failed execute()
+    // reports "Failed to recompute X: <message>" and, natively, the
+    // traceback; the guest's is the only record of where it failed.
+    std::string message = r.message;
+    if (!r.traceback.empty())
+        message += "\n" + r.traceback;
     PyObject* builtins = PyEval_GetBuiltins();
     PyObject* type = builtins ? PyDict_GetItemString(builtins, r.excType.c_str()) : nullptr;
     if (type && PyExceptionClass_Check(type))
-        PyErr_SetString(type, r.message.c_str());
+        PyErr_SetString(type, message.c_str());
     else
-        PyErr_Format(PyExc_RuntimeError, "%s: %s", r.excType.c_str(), r.message.c_str());
+        PyErr_Format(PyExc_RuntimeError, "%s: %s", r.excType.c_str(), message.c_str());
 }
 
 /// The hook forwarder: `self` is the (proxy id, hook name) pair bound

@@ -121,6 +121,7 @@ attach (Boolean): if True, then bind the document object first before adding to 
         the document, it will try to call Python binding object's attach(obj) method.
 viewType (String): override the view provider type directly, only effective when attach is False.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="addProperty" Keyword="true">
         <Documentation>
@@ -144,6 +145,7 @@ viewType (String): override the view provider type directly, only effective when
       <Documentation>
         <UserDocu>Remove an object from the document</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="removeObjects">
       <Documentation>

@@ -18,6 +18,7 @@
       <Documentation>
         <UserDocu>Set data into a cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="get">
       <Documentation>
@@ -29,16 +30,19 @@
       <Documentation>
         <UserDocu>Get cell contents</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="clear">
       <Documentation>
         <UserDocu>Clear a cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="clearAll">
       <Documentation>
         <UserDocu>Clear all cells in the spreadsheet</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="importFile">
       <Documentation>
@@ -54,66 +58,79 @@
       <Documentation>
         <UserDocu>Merge given cell area into one cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="splitCell">
       <Documentation>
         <UserDocu>Split a previously merged cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="insertColumns">
       <Documentation>
         <UserDocu>Insert a given number of columns into the spreadsheet.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="removeColumns">
       <Documentation>
         <UserDocu>Remove a given number of columns from the spreadsheet.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="insertRows">
       <Documentation>
         <UserDocu>Insert a given number of rows into the spreadsheet.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="removeRows">
       <Documentation>
         <UserDocu>Remove a given number of rows from the spreadsheet.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setAlignment">
       <Documentation>
         <UserDocu>Set alignment of the cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getAlignment">
       <Documentation>
         <UserDocu>Get alignment of the cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setStyle">
       <Documentation>
         <UserDocu>Set style of the cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getStyle">
       <Documentation>
         <UserDocu>Get style of the cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setDisplayUnit">
       <Documentation>
         <UserDocu>Set display unit for cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setAlias">
       <Documentation>
         <UserDocu>Set alias for cell address</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getAlias">
       <Documentation>
         <UserDocu>Get alias for cell address</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getCellFromAlias">
       <Documentation>
@@ -125,31 +142,37 @@
       <Documentation>
         <UserDocu>Get display unit for cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setForeground">
       <Documentation>
         <UserDocu>Set foreground color of the cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getForeground">
       <Documentation>
         <UserDocu>Get foreground color of the cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setBackground">
       <Documentation>
         <UserDocu>Set background color of the cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getBackground">
       <Documentation>
         <UserDocu>Get background color of the cell</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setColumnWidth">
       <Documentation>
         <UserDocu>Set given spreadsheet column to given width</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getColumnWidth">
       <Documentation>
@@ -161,11 +184,13 @@
       <Documentation>
         <UserDocu>Set given spreadsheet row to given height</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getRowHeight">
       <Documentation>
         <UserDocu>Get given spreadsheet row height</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getEditMode">
       <Documentation>
@@ -204,6 +229,7 @@ Enable/Disable given spreadsheet cell persistent edit mode.</UserDocu>
       <Documentation>
         <UserDocu>touchCells(from, to=None): touch cells in the given range</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="recomputeCells">
       <Documentation>
@@ -214,6 +240,7 @@ Manually recompute cells in the given range with the given order without
 following dependency order.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
 
     <Methode Name="getUsedCells">
@@ -225,6 +252,7 @@ Get a list of the names of all cells that are marked as used. These cells may
 or may not have a non-empty string content.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
 
     <Methode Name="getNonEmptyCells">
@@ -235,6 +263,7 @@ getNonEmptyCells()
 Get a list of the names of all cells with data in them.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
 
     <Methode Name="getUsedRange">
@@ -263,6 +292,7 @@ column that contain data (inclusive). Note that the actual first and last cell
 of the block do not necessarily contain anything.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
 
   </PythonExport>

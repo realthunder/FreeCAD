@@ -41,29 +41,14 @@
   var py = null;
   var linked = null;
 
-  // The last-in-line import finder (docs/Sandbox.md, network model):
-  // when nothing in the guest can import a module, ask the host what it
-  // knows through the one bridge op the guest has.  An empty answer is
-  // "unknown" and the ordinary ModuleNotFoundError follows; anything
-  // else is the message to raise -- an offer the host has recorded for
-  // the user, or "installed, next evaluation".  Nothing is loaded from
-  // inside an import: the install is the user's click on the host side,
-  // and a fresh guest picks the package up at boot.
-  var FINDER =
-    "import sys, importlib.abc\n" +
-    "class _FcxPackageFinder(importlib.abc.MetaPathFinder):\n" +
-    "    def find_spec(self, fullname, path=None, target=None):\n" +
-    "        if path is not None:\n" +
-    "            return None\n" +
-    "        import _fcx\n" +
-    "        try:\n" +
-    "            answer = _fcx.op('pkg.missing', 0, fullname)\n" +
-    "        except Exception:\n" +
-    "            return None\n" +
-    "        if not answer:\n" +
-    "            return None\n" +
-    "        raise ModuleNotFoundError(answer, name=fullname)\n" +
-    "sys.meta_path.append(_FcxPackageFinder())\n";
+  // There is no import finder of ours any more (retired 2026-09-05):
+  // a `sys.meta_path` finder asked the host about EVERY failed import,
+  // including one a workload catches itself (`try: import regex` in
+  // lark, uuid's `_uuid`), and a name in pyodide's lock became an
+  // install offer nobody asked for.  The question is now asked by the
+  // guest's error reply (ImageDispatch.cpp errorReply) for a
+  // ModuleNotFoundError that leaves the guest uncaught -- the import
+  // that actually ended the work.
 
   globalThis.__fcx_boot = async function (root, wheel, packagesDir, packages) {
     if (typeof globalThis.__fcx_host_call !== "function" ||
@@ -93,7 +78,6 @@
         errorCallback: function (m) { printErr("sandbox package: " + m); },
       });
     }
-    py.runPython(FINDER);
     // The import runs PyInit__fcx_image: the in-image FreeCAD module,
     // the _fcx bridge, the eval globals.
     py.pyimport("_fcx_image").destroy();

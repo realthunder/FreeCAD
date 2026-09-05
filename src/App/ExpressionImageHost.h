@@ -61,6 +61,11 @@ struct ImageResult
     /// Python exception type name and message when !ok.
     std::string excType;
     std::string message;
+    /// The guest's formatted traceback when !ok and the guest could
+    /// format one (empty otherwise): what native FreeCAD prints for a
+    /// failed execute(), so a failure inside a guest Proxy is not just
+    /// its last line.
+    std::string traceback;
 };
 
 class AppExport ImageHost

@@ -510,6 +510,17 @@ with no failed run at all.
 
 ### 9.3 At the import: a finder of our own
 
+**REVISED 2026-09-05: the finder is retired.**  Asking at `find_spec`
+asked for EVERY failed import, including one the workload catches
+itself -- lark's `try: import regex` (in BIM's generated SQL parser),
+uuid's `_uuid` -- and `regex` is in pyodide's lock, so a recompute of
+the BIM corpus recorded an install offer nobody asked for.  The same
+`pkg.missing {import_name}` op is now sent by the guest's error reply
+(`ImageDispatch.cpp` `errorReply`) for a `ModuleNotFoundError` that
+LEAVES the guest uncaught: the import that actually ended the work,
+and only that one.  The host's three answers below are unchanged; an
+`offer`/`installed` text replaces the exception's message.
+
 For what the scan cannot see (imports inside functions, `importlib`,
 conditional imports), a `sys.meta_path` finder appended LAST, after
 pyodide's own, whose `find_spec` calls one host op,

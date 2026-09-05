@@ -142,7 +142,9 @@ across the board.
     permission        document   session   addon   notes
     ----------------  --------   -------   -----   -------------------------------
     doc.read.self     ALLOW      ALLOW     ALLOW   same-origin rule
-    doc.write.self    ALLOW      ALLOW     ALLOW   write_prop + write family, owner only (3.2)
+    doc.write.self    ALLOW      ALLOW     ALLOW   write_prop + write family, the owner's
+                                                   DOCUMENT: self = same origin (3.2; user
+                                                   ruling 2026-09-05, owner-only retired)
     doc.foreign       PROMPT     ALLOW     ALLOW   the cross-origin wall
     geom.call         ALLOW      ALLOW     ALLOW   cost bounded by budget, not grant
     app.query         PROMPT     ALLOW     ALLOW
@@ -285,11 +287,21 @@ bundled wheel (5.6).  Value tags: `quantity`,
 as a tuple, the first corpus-gate finding).  Reply shape `{ok, val}` or
 `{ok:false, exc, msg}`.  The one write op is `write_prop` (2026-09-04,
 `{op, h, a: name, v: value}`, the proxy's `__setattr__`): the handle
-must be the EVALUATION OWNER -- `HandleTable::owner()`, set by
-`evalExpression` and by a raw `eval` that names one; rung 2 writes self
-and nothing else -- under `doc.write.self`, then the C++ property
-system's `setPyObject` (typed; a shape re-maps its element map), never
-host Python.  `Immutable` refuses, as native `setattr` does; `ReadOnly`
+must belong to the EVALUATION OWNER'S DOCUMENT -- the owner itself
+(`HandleTable::owner()`, set by `evalExpression` and by a raw `eval`
+that names one), any object of its document, or that document -- under
+`doc.write.self`, then the C++ property system's `setPyObject` (typed;
+a shape re-maps its element map), never host Python.  "Self" is the
+same-origin document, as 2.2 defines the principal: a document
+rewriting its own objects is native behaviour (ArchStairs sets its
+railings' `Base`, a PipeConnector its pipes' offsets, a Schedule its
+Result sheet's cells), and the wall that matters is `doc.foreign`, an
+object of another document.  Until 2026-09-05 the gate was OWNER ONLY
+-- rung 2's "an execute() writes self" scoping, encoded as policy; the
+user ruled it retired ("I thought it means an object can write anything
+inside its own document"), and with it `Document.addObject`/
+`removeObject` on the owner's own document are declared under the same
+permission (7.6 decision 1 revised).  `Immutable` refuses, as native `setattr` does; `ReadOnly`
 is the editor's status and writes through it succeed natively, so they
 do here too (the gate is parity, not extra policy).  The value
 decodes through the handle table, so a host object crossing back as a
@@ -298,8 +310,13 @@ object, not its wire face).  `addProperty`, `removeProperty`,
 `setPropertyStatus` are declared `call` members (DocumentObjectPy.xml,
 PropertyContainerPy.xml -- the facade chain now reaches
 PropertyContainer through ExtensionContainer) and ride the `call` op
-behind the same owner-only gate (so do `configLinkProperty` and
-`setLink` of the Link extension, G1d).  A `write_prop` on a handle
+behind the same same-document gate (so do `configLinkProperty` and
+`setLink` of the Link extension, G1d; `Document.addObject`/
+`removeObject`; and the Sheet's cell writes `set`, `clear`, `clearAll`,
+`mergeCells`, `splitCell`, `setStyle`, `setAlignment`, `setForeground`,
+`setBackground`, `setColumnWidth`, `setRowHeight`, `setAlias`,
+`setDisplayUnit`, `insert/removeRows/Columns`, `touchCells`,
+`recomputeCells` -- Schedule and Report fill their Result, 2026-09-05).  A `write_prop` on a handle
 that is NOT a property container -- a value object the transaction
 holds: a shape the guest built, a property's copy -- is no document
 write: it takes a DECLARED attribute of the type (the same closed
@@ -370,11 +387,11 @@ ONE handle id per object for the life of a transaction (a use count
 per id, the entry going with the last release), and a proxy compares
 and hashes by id, so `obj in o.Hosts` and `a == b` hold as they do
 natively (ArchComponent found no window to subtract from its wall
-before); and `touch` is allowed on any object of the OWNER'S document
--- it marks for recompute and changes no data -- since ArchWindow
+before); and `touch` on any object of the OWNER'S document (ArchWindow
 touches its host wall from its own execute so the wall subtracts the
-opening in the same recompute.  Every other write-family member stays
-owner-only.
+opening in the same recompute) was the first same-document write
+allowed -- the special case the 2026-09-05 ruling made the rule for
+every write.
 
 The fixed layout (2026-09-04, step 7 of the coding order): a bare
 `read_prop`/`get_attr` with a name -- 2738 of the 3575 hops in the
@@ -708,9 +725,13 @@ Downloads go through the Addon Manager's `NetworkManager` with a GUI,
 raises "PyPI packages are not supported yet".
 
 Boot loads `fcx_image` then `loadPackage(names)` in manifest order; a
-manifest for another ABI is ignored with a warning.  The offer: a
-`sys.meta_path` finder appended LAST asks the host one op,
-`pkg.missing {a: name}`; the host answers from the lock's import map
+manifest for another ABI is ignored with a warning.  The offer: the
+guest's error reply asks the host one op, `pkg.missing {a: name}`,
+for a `ModuleNotFoundError` that leaves the guest UNCAUGHT (2026-09-05;
+until then a `sys.meta_path` finder asked at every failed import, and
+lark's optional `try: import regex` in BIM's generated parser -- `regex`
+is in the lock -- recorded an install offer nobody asked for; stats
+now count `pkg.missing:<name>`); the host answers from the lock's import map
 (304 names): installed -> `ImageHost::scheduleReset()` and the next
 evaluation boots with the package; else
 `Runtime::requestPending(PkgInstall, name)` records a pending request,
@@ -1186,6 +1207,14 @@ gate runs under a plain document principal with no grant.**
    creates or removes objects; in BIM, `ArchStairs.execute` adds and
    removes its `RailingWire` objects and `ArchReference.execute` removes
    -- those two fail with routing ON until declared, G1d's list.
+   **REVISED 2026-09-05 (user ruling, "yes agree"):** `doc.write.self`
+   means the owner's DOCUMENT -- the same-origin reading its name always
+   had (2.2) -- so the write gate is same-document, not owner-only, and
+   `Document.addObject`/`removeObject` on the owner's own document are
+   declared under it (3.2).  The alternatives listed for the four
+   non-owner writers (an "objects I own" relation; a prompting
+   `doc.write.other`) existed only to preserve owner-only and fell
+   away with it.  `moveObject` (crosses documents) stays undeclared.
 2. The principal of wheel code.  Ruling 1.4 says a Proxy runs as the
    document; `draftutils.params` is `app.query` = PROMPT for documents,
    and `Wire.__init__` reads `MakeFaceMode` -- a prompt per Draft object
@@ -1426,8 +1455,47 @@ the proxy's `__setattr__` = `write_prop`, on a value handle through
 the type's own setter (3.2).  Result: reopen routed 59/59 Proxies in
 the guest, invalid only Stairs, Schedule, Report; built routed 59/59,
 plus the pipe Connector -- all four are writes to objects other than
-the owner, ruled undeclared (13).  Traffic for the reopen: ~1100 proxy
-calls, ~9000 hops for 59 objects.
+the owner, at the time undeclared (13).  Traffic for the reopen: ~1100
+proxy calls, ~9000 hops for 59 objects.  **2026-09-05: the four are
+same-document writes, allowed by the revised decision 1 above; see
+"G1d CLOSED" at the end of this section for the gates after it.**
+
+**G1d CLOSED 2026-09-05: the BIM corpus gates are STRICT.**  Three
+changes: (1) the write gate is same-document (3.2) and
+`Document.addObject`/`removeObject` plus the Sheet's cell writes are
+declared -- Stairs, PipeConnector and Report recompute routed at once;
+(2) TechDraw's `findShapeOutline`/`makeGeomHatch` take
+`allowCrazyEdge=True` as a keyword (a scoped `DrawUtil::
+CrazyEdgeAllowance` the projector's `isCrazy` consults), and Arch's
+area/perimeter computation, ArchTessellation and Draft's Hatch pass it
+instead of writing the `Mod/TechDraw/debug` preference around the
+call -- natively too, so a recompute never writes the parameter store
+(`project`/`projectEx` never consult `isCrazy`; no keyword there);
+(3) Schedule's last failure was not a write at all: its execute ends
+in `save_ifc_props` -> `nativeifc.ifc_psets.edit_pset`, which natively
+looks the object's IFC file up and returns when there is none, and
+nothing of `nativeifc` (ifcopenshell) is in the guest -- the fcx_bim
+wheel now carries a `nativeifc` shim (shims/README.md) that answers
+that path the native way for a plain document and raises
+`IfcUnavailableError` for an IFC-backed object.  Found on the way:
+a guest exception reached the host as its last line only, so the
+reply now carries the formatted traceback (`tb`, ImageResult::
+traceback) and a failed hook raises message + traceback, as native
+FreeCAD prints for a failed execute(); and `pkg.missing` is counted
+per module name in the stats.  Gates: reopen routed 68 objects, 59
+guest Proxies, 0 host, 0 invalid, differ Pipe001 at 0.25 ULP of its
+largest coordinate (4.5e-13); built routed the same.  Traffic for the
+reopen: 1218 proxy calls, ~11000 hops.
+OPEN, found by recomputing the routed corpus a SECOND time: ArchReport
+caches its Result sheet on the Proxy (`self.spreadsheet = o`) and the
+next execute reads it -- a HANDLE from the previous transaction, gone
+with it -> `ReferenceError: stale host handle` (ArchSchedule's same
+cache sits under a bare `except` and silently returns None instead).
+Caching a document object on a Proxy across hooks is a native pattern
+(sec 13); the fix is durable document-object handles -- a
+`(document, name)` key on every DocumentObject handle, re-resolved by
+the guest on a stale id through one `resolve` op, `__eq__` by key --
+sized, not built: the user's call.
 
 ### 7.7 Decisions, numbered
 
@@ -1754,21 +1822,32 @@ sockets, any network for the reference image, a webview escape hatch.
   container, no document object -- native until the Gui side is in the
   guest, G2), and `Base::Type::importModule`'s type-string import
   (`Type.cpp:85`).
-- What BIM's App side cannot do in the guest (the corpus gates' list,
-  2026-09-04, all ruled or structural): `ArchStairs` makes and writes
-  its railing objects, `ArchPipeConnector` trims the pipes it joins,
-  `ArchSchedule` and `ArchReport` fill and recompute their result
-  spreadsheet -- writes to objects other than the owner, undeclared by
-  ruling (7.6 decision 1) -- so those four recompute INVALID with
-  routing on and the objects they would have made are missing; a
-  parameter WRITE from a recompute is ignored with one stderr line
-  per group (`ArchComponent.getSection` sets TechDraw's
-  `allowCrazyEdge` while it projects, so a section of an edge over
-  10 m differs from native); `ArchSchedule`'s IFC branch imports
-  `nativeifc` (ifcopenshell) -- nothing of it is in the guest.  A
-  nested write-back's refusal is silent, as it is natively: a guest
-  `obj.Placement.Base = v` on a non-owner raises inside
+- What BIM's App side cannot do in the guest (the corpus gates' list):
+  `ArchSchedule`'s IFC branch imports `nativeifc` (ifcopenshell) --
+  nothing of it is in the guest.  CLOSED 2026-09-05: the four writers
+  to objects other than the owner (`ArchStairs` makes and writes its
+  railing objects, `ArchPipeConnector` trims the pipes it joins,
+  `ArchSchedule` and `ArchReport` fill and recompute their Result
+  sheet) are same-document writes under the revised `doc.write.self`
+  (3.2, 7.6 decision 1); and the one parameter WRITE a recompute made
+  (Arch areas, hatches, tessellation toggling TechDraw's
+  `allowCrazyEdge` around a projection, ignored in the guest so a
+  section of an edge over 10 m differed from native) is gone --
+  `TechDraw.findShapeOutline`/`makeGeomHatch` take `allowCrazyEdge=True`
+  as a keyword, a scoped `DrawUtil::CrazyEdgeAllowance` on the host,
+  and the preference is never written by document code, natively
+  either.  A nested write-back's refusal is silent, as it is natively:
+  a guest `obj.Placement.Base = v` on a foreign object raises inside
   `startNotify`, which clears it.
+- A Proxy that keeps a document object on `self` across hooks
+  (ArchReport's `self.spreadsheet`, ArchSchedule's, the `self.obj = obj`
+  of several `onDocumentRestored`s) holds a HANDLE of the transaction
+  that minted it; the next hook finds it stale (`ReferenceError`).  The
+  corpus gates recompute once and do not see it; a second routed
+  recompute of the BIM corpus fails ArchReport (2026-09-05, 7.6 "G1d
+  CLOSED").  Durable document-object handles (a `(document, name)` key,
+  guest-side re-resolution on a stale id, `__eq__` by key) are the fix;
+  sized, pending the user's decision.
 - The GUI live expression editors evaluate as session, unconfined.
 - No memory ceiling for a guest.
 - Addon principal granularity (per addon, per file?) is still open.

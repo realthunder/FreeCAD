@@ -615,12 +615,16 @@ TEST_F(ExpressionImageEvalTest, bridgeCountersPerOp)
     host.clearHandles();
 }
 
-TEST_F(ExpressionImageEvalTest, writePropOwnerOnly)
+TEST_F(ExpressionImageEvalTest, writePropSameDocument)
 {
     // write_prop and the write-family calls (addProperty,
-    // removeProperty, setPropertyStatus): the evaluation owner only,
-    // under doc.write.self; a handle in the value dereferences to the
-    // live object.
+    // removeProperty, setPropertyStatus, the Document's addObject and
+    // removeObject): the evaluation owner's DOCUMENT -- the owner, any
+    // object of its document, the document itself -- under
+    // doc.write.self, "self" being the same-origin document (user
+    // ruling 2026-09-05; owner-only was rung 2's scoping).  An object
+    // of another document is refused.  A handle in the value
+    // dereferences to the live object.
     auto& host = ImageHost::instance();
     auto other = doc->addObject("App::FeaturePython", "Other");
     auto otherWidth = Base::freecad_dynamic_cast<App::PropertyFloat>(
@@ -629,13 +633,30 @@ TEST_F(ExpressionImageEvalTest, writePropOwnerOnly)
     otherWidth->setValue(1.0);
     auto width = Base::freecad_dynamic_cast<App::PropertyFloat>(obj->getPropertyByName("Width"));
     ASSERT_NE(width, nullptr);
+    auto doc2 = App::GetApplication().newDocument("FcxWriteForeign", "testUser");
+    struct CloseDoc
+    {
+        App::Document* d;
+        ~CloseDoc()
+        {
+            App::GetApplication().closeDocument(d->getName());
+        }
+    } closeDoc {doc2};
+    auto foreign = doc2->addObject("App::FeaturePython", "Foreign");
+    auto foreignWidth = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        foreign->addDynamicProperty("App::PropertyFloat", "Width"));
+    ASSERT_NE(foreignWidth, nullptr);
+    foreignWidth->setValue(2.0);
 
-    // both objects in one pack: o is the owner, p is not
+    // three objects in one pack: o is the owner, p its sibling, q
+    // belongs to another document
     auto pack = [&]() {
         auto a = objectBinding("o", obj);
         auto b = objectBinding("p", other);
+        auto c = objectBinding("q", foreign);
         json m = json::from_cbor(a.begin(), a.end());
         m.update(json::from_cbor(b.begin(), b.end()));
+        m.update(json::from_cbor(c.begin(), c.end()));
         auto v = json::to_cbor(m);
         return std::vector<unsigned char>(v.begin(), v.end());
     };
@@ -655,11 +676,37 @@ TEST_F(ExpressionImageEvalTest, writePropOwnerOnly)
     EXPECT_DOUBLE_EQ(width->getValue(), 5.0);
     EXPECT_EQ(host.stats().ops["write_prop"], 1u);
 
-    // the owner writing ANOTHER object: refused, untouched
-    r = host.eval("setattr(p, 'Width', 7.0)", pack(), obj);
+    // the owner writing a SIBLING (same document): allowed, the
+    // same-origin write (ArchStairs sets its railings' Base)
+    r = host.eval("setattr(p, 'Width', 7.0) or p.Width", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_DOUBLE_EQ(value(r).get<double>(), 7.0);
+    EXPECT_DOUBLE_EQ(otherWidth->getValue(), 7.0);
+
+    // the owner writing an object of ANOTHER document: refused, untouched
+    r = host.eval("setattr(q, 'Width', 9.0)", pack(), obj);
     EXPECT_FALSE(r.ok);
     EXPECT_EQ(r.excType, "PermissionError") << r.message;
-    EXPECT_DOUBLE_EQ(otherWidth->getValue(), 1.0);
+    EXPECT_DOUBLE_EQ(foreignWidth->getValue(), 2.0);
+
+    // the Document itself: addObject/removeObject on the owner's
+    // document ride the call op behind the same gate; another
+    // document's are refused
+    r = host.eval("o.Document.addObject('App::FeaturePython', 'Made').Name", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_EQ(value(r).get<std::string>(), "Made");
+    ASSERT_NE(doc->getObject("Made"), nullptr);
+    r = host.eval("o.Document.removeObject('Made')", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_EQ(doc->getObject("Made"), nullptr);
+    r = host.eval("q.Document.addObject('App::FeaturePython', 'Smuggled')", pack(), obj);
+    EXPECT_FALSE(r.ok);
+    EXPECT_EQ(r.excType, "PermissionError") << r.message;
+    EXPECT_EQ(doc2->getObject("Smuggled"), nullptr);
+    r = host.eval("q.Document.removeObject('Foreign')", pack(), obj);
+    EXPECT_FALSE(r.ok);
+    EXPECT_EQ(r.excType, "PermissionError") << r.message;
+    EXPECT_EQ(doc2->getObject("Foreign"), foreign);
 
     // a property that does not exist, a read-only one
     r = host.eval("setattr(o, 'Nope', 1.0)", pack(), obj);
@@ -675,9 +722,12 @@ TEST_F(ExpressionImageEvalTest, writePropOwnerOnly)
     ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
     EXPECT_DOUBLE_EQ(value(r).get<double>(), 3.0);
     r = host.eval("p.addProperty('App::PropertyFloat', 'Depth')", pack(), obj);
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_NE(other->getPropertyByName("Depth"), nullptr);
+    r = host.eval("q.addProperty('App::PropertyFloat', 'Depth')", pack(), obj);
     EXPECT_FALSE(r.ok);
     EXPECT_EQ(r.excType, "PermissionError") << r.message;
-    EXPECT_EQ(other->getPropertyByName("Depth"), nullptr);
+    EXPECT_EQ(foreign->getPropertyByName("Depth"), nullptr);
     r = host.eval("o.setPropertyStatus('Depth', 'ReadOnly')", pack(), obj);
     ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
     EXPECT_TRUE(obj->getPropertyByName("Depth")->testStatus(App::Property::ReadOnly));
@@ -3448,8 +3498,12 @@ struct CorpusGate
 
 const CorpusGate DraftCorpus {"Draft test document", "drafttests.draft_test_objects", "fcx_draft-",
                               60, true};
+// strict since 2026-09-05: the four writers to sibling objects
+// (Stairs, PipeConnector, Schedule, Report) recompute under the
+// same-document write gate, and Schedule's IFC property save meets the
+// nativeifc guest shim -- nothing of BIM's App side fails routed
 const CorpusGate BimCorpus {"BIM test document", "bimtests.bim_test_objects", "fcx_bim-", 10,
-                            false};
+                            true};
 
 std::string corpusRig(const CorpusGate& gate)
 {
@@ -3606,10 +3660,11 @@ void corpusReport(const CorpusGate& gate, const char* how, const json& j,
     for (const auto& d : j["differ"]) {
         ASSERT_TRUE(d.is_array() && d.size() == 3);
         EXPECT_TRUE(d[2].is_number()) << d[0] << ": shapes differ in structure, not in rounding";
-        if (d[2].is_number())
+        if (d[2].is_number()) {
             EXPECT_LE(d[2].get<double>(), 4.0)
                 << d[0] << ": " << d[2] << " ULPs of the largest coordinate (delta " << d[1]
                 << "), more than a last-bit libm difference";
+        }
     }
 }
 
@@ -3701,8 +3756,8 @@ TEST_F(ExpressionImageEvalTest, draftTestObjectsBuiltRouted)
 }
 
 // ---- the same two gates over the BIM corpus (bimtests.bim_test_objects,
-// ---- the fcx_bim wheel): reporting, not yet strict -- the list of
-// ---- what BIM's execute() paths still need is the output ----
+// ---- the fcx_bim wheel), strict since 2026-09-05: 68 objects, 59
+// ---- guest Proxies, none invalid, one shape a quarter ULP off ----
 
 TEST_F(ExpressionImageEvalTest, bimTestObjectsReopenRouted)
 {

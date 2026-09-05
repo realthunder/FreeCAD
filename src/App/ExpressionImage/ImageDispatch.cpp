@@ -230,10 +230,12 @@ int initEvalGlobals()
             "        from freecad import prefs\n"
             "        return prefs.has_group(self._path, name)\n"
             // A write is not performed and says so once per group: the
-            // user's preferences are not document code's to change,
-            // and the writes workbench code makes from a recompute
-            // (ArchComponent registering a TechDraw debug default)
-            // are defaults it then reads back with the same default.
+            // user's preferences are not document code's to change.
+            // The one recompute-time write workbench code used to make
+            // (Arch areas and hatches toggling TechDraw's allowCrazyEdge
+            // around a projection) is gone: findShapeOutline and
+            // makeGeomHatch take allowCrazyEdge=True as a keyword, scoped
+            // to the call (2026-09-05).
             "    _warned = set()\n"
             "    def _ignore(self, *args, **kw):\n"
             "        if self._path not in _ParamGrp._warned:\n"
@@ -343,6 +345,56 @@ static json errorReply()
     const char *text = msg ? PyUnicode_AsUTF8(msg) : nullptr;
     r["msg"] = text ? text : "unprintable error";
     Py_XDECREF(msg);
+    // A module the guest could not import and that ENDED the work (the
+    // error is leaving the guest uncaught) is the one to ask the host
+    // about: `pkg.missing <name>` answers with the offer the host has
+    // recorded ("FreeCAD can install ...") or "installed, next
+    // evaluation", and that becomes the message.  Asking here, not in
+    // a meta_path finder, means an import a workload catches itself
+    // (`try: import regex`, uuid's `_uuid`) never becomes a question
+    // -- and `regex` IS in pyodide's lock, so the finder turned lark's
+    // optional accelerator into an install prompt (2026-09-05).
+    if (type && value && PyErr_GivenExceptionMatches(type, PyExc_ModuleNotFoundError)) {
+        PyObject *name = PyObject_GetAttrString(value, "name");
+        if (name && PyUnicode_Check(name)) {
+            PyObject *fcx = PyImport_ImportModule("_fcx");
+            PyObject *answer = fcx ? PyObject_CallMethod(fcx, "op", "sKO", "pkg.missing",
+                                                         (unsigned long long)0, name)
+                                   : nullptr;
+            const char *offer = answer && PyUnicode_Check(answer) ? PyUnicode_AsUTF8(answer)
+                                                                  : nullptr;
+            if (offer && *offer)
+                r["msg"] = offer;
+            Py_XDECREF(answer);
+            Py_XDECREF(fcx);
+        }
+        Py_XDECREF(name);
+        PyErr_Clear();
+    }
+    // The formatted traceback rides along as "tb": the host prints it
+    // with a failed hook the way native FreeCAD prints a failed
+    // execute()'s.  Best effort -- a stdlib slice without `traceback`
+    // (the WASI image) sends none.
+    if (trace) {
+        PyObject *tbmod = PyImport_ImportModule("traceback");
+        if (tbmod) {
+            PyObject *lines = PyObject_CallMethod(tbmod, "format_exception", "OOO",
+                                                  type ? type : Py_None,
+                                                  value ? value : Py_None, trace);
+            if (lines) {
+                PyObject *empty = PyUnicode_FromString("");
+                PyObject *joined = empty ? PyUnicode_Join(empty, lines) : nullptr;
+                const char *tbText = joined ? PyUnicode_AsUTF8(joined) : nullptr;
+                if (tbText)
+                    r["tb"] = tbText;
+                Py_XDECREF(joined);
+                Py_XDECREF(empty);
+                Py_DECREF(lines);
+            }
+            Py_DECREF(tbmod);
+        }
+        PyErr_Clear();
+    }
     Py_XDECREF(type);
     Py_XDECREF(value);
     Py_XDECREF(trace);

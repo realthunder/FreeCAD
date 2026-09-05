@@ -40,6 +40,7 @@
 #include "Extension.h"
 #include "ExtensionContainer.h"
 #include "DocumentObjectPy.h"
+#include "DocumentPy.h"
 #include "ExtensionContainerPy.h"
 #include "PropertyContainerPy.h"
 #ifdef FC_EXPR_PYODIDE_HOST
@@ -996,15 +997,48 @@ json dispatchHostOp(HandleTable& table, const json& req)
         }
 
         // The write gate (FcxWire::OpWriteProp and the write-family
-        // calls): the object must be the evaluation owner -- rung 2
-        // writes self and nothing else -- and the principal must hold
-        // doc.write.self.  A PermissionError, not a ProtocolError: the
-        // request is well-formed, the principal is not allowed.
+        // calls): the target must belong to the evaluation owner's
+        // document -- the owner itself, any object of its document, or
+        // the document -- and the principal must hold doc.write.self.
+        // "self" is the same-origin document, as the catalog defines it
+        // (docs/Sandbox.md 2.2): the principal IS the document, and a
+        // document rewriting its own objects is native behaviour (Stairs
+        // rebuilds its railings' Base, a PipeConnector sets its pipes'
+        // offsets, a Schedule fills its Result sheet).  An object of
+        // another document is doc.foreign, the wall that matters.  Owner
+        // only was rung 2's scoping, retired 2026-09-05 by user ruling.
+        // A PermissionError, not a ProtocolError: the request is
+        // well-formed, the principal is not allowed.
+        auto ownerDocument = [&]() -> App::Document* {
+            PyObject* o = table.owner();
+            if (!o)
+                return nullptr;
+            if (PyObject_TypeCheck(o, &App::DocumentObjectPy::Type)) {
+                auto* obj = static_cast<App::DocumentObjectPy*>(o)->getDocumentObjectPtr();
+                return obj ? obj->getDocument() : nullptr;
+            }
+            if (PyObject_TypeCheck(o, &App::DocumentPy::Type))
+                return static_cast<App::DocumentPy*>(o)->getDocumentPtr();
+            return nullptr;
+        };
+        auto targetDocument = [&](PyObject* t) -> App::Document* {
+            if (PyObject_TypeCheck(t, &App::DocumentObjectPy::Type)) {
+                auto* obj = static_cast<App::DocumentObjectPy*>(t)->getDocumentObjectPtr();
+                return obj ? obj->getDocument() : nullptr;
+            }
+            if (PyObject_TypeCheck(t, &App::DocumentPy::Type))
+                return static_cast<App::DocumentPy*>(t)->getDocumentPtr();
+            return nullptr;
+        };
         auto writeGate = [&](const char* what) -> json {
-            if (!table.owner() || base != table.owner())
+            App::Document* ownerDoc = ownerDocument();
+            bool sameDocument = base == table.owner()
+                || (ownerDoc && targetDocument(base) == ownerDoc);
+            if (!table.owner() || !sameDocument)
                 return errReply("PermissionError",
                                 std::string(what)
-                                    + ": writes are allowed on the evaluation owner only");
+                                    + ": writes are allowed on the evaluation owner's"
+                                      " document only");
             ExpressionSecurity::checkPermission(
                 ExpressionSecurity::Permission::DocWriteSelf);
             return json();
@@ -1092,32 +1126,26 @@ json dispatchHostOp(HandleTable& table, const json& req)
                                     + Py_TYPE(base)->tp_name
                                     + "' is not declared for sandbox access");
             // The write family: declared like any call, but a write to
-            // the document, so the owner-only gate applies.
+            // the document, so the same-document gate applies.  Property
+            // containers, the Document itself (addObject/removeObject,
+            // ArchStairs' RailingWire objects, ArchReference), and the
+            // Sheet's cell writes (Schedule and Report fill their Result).
             static const char* const writeFamily[] = {
                 "addProperty", "removeProperty", "setPropertyStatus", "setEditorMode",
                 "setGroupOfProperty", "recompute", "configLinkProperty", "setLink",
                 "addExtension", "changeAttacherType", "touch", "purgeTouched",
-                "renameProperty", "setExpression"};
+                "renameProperty", "setExpression",
+                // App::Document (moveObject crosses documents: not declared)
+                "addObject", "removeObject",
+                // Spreadsheet::Sheet
+                "set", "clear", "clearAll", "mergeCells", "splitCell", "insertColumns",
+                "removeColumns", "insertRows", "removeRows", "setAlignment", "setStyle",
+                "setDisplayUnit", "setAlias", "setForeground", "setBackground",
+                "setColumnWidth", "setRowHeight", "setEditMode", "setPersistentEdit",
+                "touchCells", "recomputeCells"};
             for (const char* w : writeFamily) {
                 if (member != w)
                     continue;
-                // touch marks an object for recompute and changes no
-                // data: allowed on any object of the OWNER'S document
-                // (ArchWindow.execute touches its host wall so the wall
-                // subtracts the opening in the same recompute); the
-                // permission is still the owner's own write permission
-                if (member == "touch" && table.owner()
-                        && PyObject_TypeCheck(base, &App::DocumentObjectPy::Type)
-                        && PyObject_TypeCheck(table.owner(), &App::DocumentObjectPy::Type)
-                        && static_cast<App::DocumentObjectPy*>(base)->getDocumentObjectPtr()
-                                   ->getDocument()
-                            == static_cast<App::DocumentObjectPy*>(table.owner())
-                                   ->getDocumentObjectPtr()
-                                   ->getDocument()) {
-                    ExpressionSecurity::checkPermission(
-                        ExpressionSecurity::Permission::DocWriteSelf);
-                    break;
-                }
                 json denied = writeGate(w);
                 if (!denied.is_null())
                     return denied;

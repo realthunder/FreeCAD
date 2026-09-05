@@ -410,11 +410,15 @@ IF (BUILD_EXPR_PYODIDE_HOST)
                 --add-data ${CMAKE_CURRENT_SOURCE_DIR}/Presets=fcx_resources/Mod/BIM/Presets
                 --add ${BIM_GENERATED_PARSER}=generated_sql_parser.py
                 --add ${_bim_wheel_shims}/importers=importers
+                --add ${_bim_wheel_shims}/nativeifc=nativeifc
                 --summary ${CMAKE_CURRENT_BINARY_DIR}/fcx_bim_wheel.txt
                 ${BIM_sandbox_wheel_files}
         DEPENDS ${_bim_wheel_packer} ${_bim_wheel_deps} ${BIM_GENERATED_PARSER}
                 ${_bim_wheel_shims}/importers/__init__.py
                 ${_bim_wheel_shims}/importers/importDAE.py
+                ${_bim_wheel_shims}/nativeifc/__init__.py
+                ${_bim_wheel_shims}/nativeifc/ifc_tools.py
+                ${_bim_wheel_shims}/nativeifc/ifc_psets.py
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Packing BIM's App side as the fcx_bim sandbox wheel"
     )
