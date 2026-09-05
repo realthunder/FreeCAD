@@ -31,6 +31,19 @@ endif ()
 foreach(COMPONENT IN LISTS FREECAD_QT_COMPONENTS)
     find_package(Qt${FREECAD_QT_MAJOR_VERSION} REQUIRED COMPONENTS ${COMPONENT})
     set(Qt${COMPONENT}_LIBRARIES ${Qt${FREECAD_QT_MAJOR_VERSION}${COMPONENT}_LIBRARIES})
+    # Qt6 defines the deprecated Qt6<C>_LIBRARIES compat variable only in the
+    # find_package call that actually includes that component's targets file
+    # (it is guarded by __qt_<C>_targets_file_included).  Finding the
+    # components one at a time, as this loop does, means any component already
+    # pulled in transitively by an earlier one -- Widgets, OpenGL and
+    # OpenGLWidgets all arrive that way -- silently yields an EMPTY variable.
+    # Every consumer that leans on it then links no Qt at all; FreeCADRenderer
+    # is the one target whose whole Qt exposure is those three, so it failed to
+    # compile with "QColor: No such file or directory".  Fall back to the
+    # imported target, which is what Qt recommends using directly anyway.
+    if(NOT Qt${COMPONENT}_LIBRARIES AND TARGET Qt${FREECAD_QT_MAJOR_VERSION}::${COMPONENT})
+        set(Qt${COMPONENT}_LIBRARIES Qt${FREECAD_QT_MAJOR_VERSION}::${COMPONENT})
+    endif()
     set(Qt${COMPONENT}_INCLUDE_DIRS ${Qt${FREECAD_QT_MAJOR_VERSION}${COMPONENT}_INCLUDE_DIRS})
     set(Qt${COMPONENT}_FOUND ${Qt${FREECAD_QT_MAJOR_VERSION}${COMPONENT}_FOUND})
     set(Qt${COMPONENT}_VERSION ${Qt${FREECAD_QT_MAJOR_VERSION}${COMPONENT}_VERSION})
