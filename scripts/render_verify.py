@@ -33,6 +33,24 @@ Environment contract (all optional except RV_OUT):
                viewer to connect. The viewer keeps its own camera (pin it
                with the page's &cam= URL parameter), so viewer captures are
                named <scene>--viewercam--mode<N>--viewer.png.
+  RV_SETTLE    frames to run before capturing (default 150). A scene
+               whose content arrives over several frames -- imported
+               textures, a MaterialX splice, a stateful emitter -- needs
+               enough of them or a capture races what is still loading.
+  RV_CYCLES    "1" -> also path trace each staged camera with the Cycles
+               engine (docs/CyclesIntegration.md phase 3), written as
+               <prefix>--cycles--mode0.png so render_diff.py pairs it as a
+               group of its own. Needs a BUILD_CYCLES build.
+  RV_CYCLES_SAMPLES  samples per pixel for that leg (default 32)
+  RV_CYCLES_DEVICE   Cycles device (default "CPU" -- see below)
+  RV_CYCLES_SIZE     "WxH" for that leg (default "320x240")
+
+The Cycles leg is deterministic as it stands and must be kept that way:
+the offline path sets no seed, so the integrator's default applies, and
+denoising is enabled only on the *viewport* path, never here. A CPU
+device is the default because it is the only one every box has, and
+because two devices do not produce identical pixels -- a golden blessed
+on CUDA cannot be compared against a CPU run.
 """
 import glob
 import json
@@ -52,6 +70,11 @@ MODES = [int(m) for m in os.environ.get("RV_MODES", "0,1,2,3,4").split(",") if m
 GOLDEN = os.environ.get("RV_GOLDEN", "")
 VIEWER = os.environ.get("RV_VIEWER", "") == "1"
 VIEWER_TIMEOUT = float(os.environ.get("RV_VIEWER_TIMEOUT", "120"))
+SETTLE = int(os.environ.get("RV_SETTLE", "150"))
+CYCLES = os.environ.get("RV_CYCLES", "") == "1"
+CYCLES_SAMPLES = int(os.environ.get("RV_CYCLES_SAMPLES", "32"))
+CYCLES_DEVICE = os.environ.get("RV_CYCLES_DEVICE", "CPU")
+CYCLES_W, _, CYCLES_H = os.environ.get("RV_CYCLES_SIZE", "320x240").partition("x")
 
 # Named standard views the manifest may use (View3DInventorPy methods).
 VIEW_METHODS = {
@@ -284,10 +307,10 @@ def settle_state():
     one settle here covers every staging that follows.
     """
     v = view()
-    for _ in range(150):
+    for _ in range(SETTLE):
         v.redraw()
         FreeCADGui.updateGui()
-    note("state settled")
+    note("state settled (%d frames)" % SETTLE)
 
 
 def stage_named(cam):
@@ -326,6 +349,34 @@ def capture(prefix, m):
             else view().saveRenderDump(path)
         check("capture %s" % os.path.basename(path),
               r == path and os.path.getsize(path) > 1000)
+    return fn
+
+
+def capture_cycles(prefix):
+    """Path trace the staged camera to <prefix>--cycles--mode0.png.
+
+    Named with a --mode0 tail so render_diff.py's existing filename
+    grammar pairs it: the leg becomes a group of its own ("...--cycles")
+    whose single stage is the beauty frame. Nothing about the diff
+    needed to change to gain a second renderer.
+
+    A failure here is reported and does not abort the run -- the raster
+    captures already taken still stand, and a build without BUILD_CYCLES
+    should not take the whole harness down.
+    """
+    def fn():
+        path = os.path.join(OUT, "%s--cycles--mode0.png" % prefix)
+        try:
+            stats = view().cyclesRender(path, int(CYCLES_W), int(CYCLES_H),
+                                        CYCLES_SAMPLES, CYCLES_DEVICE)
+        except Exception as exc:
+            check("cycles %s" % os.path.basename(path), False, exc)
+            return
+        check("cycles %s" % os.path.basename(path),
+              os.path.exists(path) and os.path.getsize(path) > 1000,
+              "objects=%s triangles=%s seconds=%s" % (
+                  stats.get("objects"), stats.get("triangles"),
+                  stats.get("seconds")) if isinstance(stats, dict) else stats)
     return fn
 
 
@@ -377,11 +428,16 @@ def build_steps():
             add_step(300, stage_golden(prefix, camera, props, prefs))
             for m in MODES:
                 add_step(700 if m == MODES[0] else 200, capture(prefix, m))
+            if CYCLES:
+                add_step(300, capture_cycles(prefix))
     else:
         for cam in CAMERAS:
             add_step(300, stage_named(cam))
+            prefix = "%s--%s" % (SCENE, cam)
             for m in MODES:
-                add_step(700 if m == MODES[0] else 200, capture("%s--%s" % (SCENE, cam), m))
+                add_step(700 if m == MODES[0] else 200, capture(prefix, m))
+            if CYCLES:
+                add_step(300, capture_cycles(prefix))
     if VIEWER:
         add_step(500, viewer_wait(), auto=False)  # polls; advances itself
         for m in MODES:
