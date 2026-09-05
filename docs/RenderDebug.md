@@ -622,6 +622,21 @@ view.saveRenderDump(path,
 
 - One-shot: arms a capture that executes on the next rendered frame, then
   disarms. No env vars, no per-frame overwrite.
+- **Consumed only by a complete frame.** The backend declines to consume
+  the dump with a frame that is not yet the picture asked for, and holds
+  it for a later one: a frame in which a draw asked for a user-shader
+  program still compiling (`shaderc` runs in a subprocess; the stock
+  program stands in meanwhile -- a surface without its material), or a
+  frame drawn from a publish that deferred shapes under its capture
+  budget (`Render CaptureBudgetMS`; the viewer says so through
+  `Renderer::holdFrameDump()` before the frame). `frameDumpHeld()`
+  reports a held frame, and `View3DInventorViewer::pumpFrameDump`
+  counts it as progress: its quiet timeout (5 s) restarts on every held
+  frame and every pending compile, under a 120 s total. Both holds are
+  bounded by what they wait for -- a failed or watchdog-killed compile
+  is recorded and its draw stands in for good without asking again, and
+  each follow-up publish captures at least one more deferred shape. The
+  case that made this necessary is section 5.2a.
 - `source="renderer"` reuses the existing readback code path, promoted from
   env-gated static to a renderer-level `requestFrameDump(path, mode)` API;
   PNG via Qt's imagewriter instead of hand-rolled PPM.
@@ -1014,41 +1029,68 @@ capture would have looked fine right up until the traced leg was added.
 `scripts/render-verify.sh` takes `--cycles`, `--cycles-device`,
 `--cycles-samples` and `--cycles-size` for the traced leg.
 
-#### 5.2a The chess set has no blessed reference yet, on purpose
+#### 5.2a The chess set: the race the test found on its first day
 
-`RenderGoldenChess_tests_run` is registered but **`refs/chess` is
-deliberately not blessed**, so the test skips. The scene, the ctest entry
-and the reblessing procedure are all in place; what is missing is a run
-that can be trusted as a reference.
+`refs/chess` was not blessed with the rest of the set: on the raster leg
+a piece of the MaterialX chess set intermittently came back plain
+untextured white instead of jade-with-gold-trim -- 2 runs in 12, same
+build, same restaged camera, nothing logged, the differing pixels in one
+tight box around the black queen (y 318-400, x 325-361 at 858x582), the
+Cycles leg of the same runs right every time, and a 4x settle no help.
+Chased 2026-09-05 and fixed the same day. Three findings, all three now
+in the code:
 
-**A piece intermittently renders with no material at all.** On the
-raster leg the black queen comes back plain untextured white instead of
-jade-with-gold-trim, in 2 of 7 otherwise identical runs -- same build,
-same scene, same restaged camera, nothing between them. The differing
-pixels sit in one tight box around that single piece (y 318-400,
-x 325-361 at 858x582); every other piece, the board and the environment
-are unchanged, which is what says it is one surface losing its material
-rather than a camera, a tolerance or a texture-upload race across the
-frame.
+- **The white piece was a capture of a program still compiling.** A
+  MaterialX material is compiled by a `shaderc` subprocess
+  (`BGFXRendererLibP::ensureUserShaderBin`, asynchronous, cached on disk
+  under `$XDG_CACHE_HOME/FreeCAD/BGFXUserShaders`), and until its binary
+  lands `getUserProgram` returns an invalid handle and the draw uses the
+  stock program: no maps, no material, white. Compile order is
+  deterministic, the black set's surfaces are asked last (see the next
+  item), and the black queen's is the last of those -- which is why the
+  rare failure was always that piece and byte-identical. Fix: the frame
+  records that a draw stood in, and the tail of such a frame does not
+  consume a pending dump (section 4.2). The wait is bounded by the
+  compile's own watchdog; a failed compile is recorded and never asked
+  again, so a capture of a scene with a broken material still returns.
+- **The scene was still arriving.** A publish that spends its capture
+  budget (`Render CaptureBudgetMS`) leaves first-time shapes out of the
+  frame and catches them up in follow-up publishes, one or more shapes
+  per pass. On this box the chess set's black pieces reach the backend
+  some fifteen seconds after the white ones, because the frames in
+  between are cold -- generating fifteen MaterialX variants and, once
+  their binaries land, building fifteen programs and uploading their
+  maps on llvmpipe is a second or more per program. A dump consumed in
+  that window is a picture of half a chess set. Fix: the viewer tells
+  the backend before each frame whether the last publish deferred
+  anything (`Renderer::holdFrameDump`), and the dump is held the same
+  way. And a held frame counts as progress for `pumpFrameDump`: its old
+  5 s timeout, measured from the request, expired inside the one frame
+  that built five programs -- which is also why every wait tried before
+  this one "did not work".
+- **The deterministic repro measured the camera, not the material.**
+  `--settle 0` failed 100% of the time at 31.7022% of pixels, and that
+  number never moved, fixed or not. It was the camera: the scene's
+  `fitAll()` animates the position into place in ten per-frame steps
+  (`viewBoundBox` -> `animatedViewAll`), and with frames of seconds
+  during the cold compile the animation was still overwriting the
+  restaged camera thirty seconds later -- the diff image shows the board
+  twice, offset, on an unchanged environment. Both `render_verify.py`
+  (in `freeze()`) and the chess scene now switch navigation animation
+  off (`setAnimationEnabled(False)`), so a fit and a `view<Name>()` land
+  in one step. The material race was real and is fixed; its repro was
+  measuring something else.
 
-What has been established about it:
-
-- **It is the raster path only.** The Cycles leg of the very same runs
-  gets the material right every time, so the MaterialX document, the
-  import and the scene are all fine; it is the bgfx-side splice that
-  intermittently does not take.
-- **It is not a settling window.** Raising the settle from 150 frames to
-  600 (`--settle 600`) did not fix it -- one of three long-settle runs
-  still lost the piece. So it is a race, not content that had yet to
-  arrive, and waiting longer is not the answer.
-- **Nothing is logged.** A good run and a bad run produce identical
-  console output, the same two MaterialX translation notes and no error,
-  which is why this survived until an image was compared.
-
-Bless `refs/chess` only once that is fixed, and re-read this section
-before deciding a chess diff is noise: a lone divergence around one piece
-is this defect, not the harness.
-
+Verified after the fix: zero-settle restage captures of the chess set
+compare clean against a good capture, run after run, with a private
+shader cache (a cold compile every run); the default-settle runs the
+same; and the rest of the render set unchanged. `refs/chess` and
+`refs/chess-flat` are blessed from restaged captures, so
+`RenderGoldenChess_tests_run` and its flat variant run with
+`-DFC_RENDER_HEAVY_TESTS=ON`. If a chess diff ever again shows a lone
+piece, re-read this section before calling it noise: the hold is what
+guarantees the material, and a lone divergence around one piece would
+mean it has been bypassed.
 
 ---
 
@@ -1142,7 +1184,9 @@ Implementation notes from the second slice (`material` stage):
   user contract is one color output), section-clip discard is not applied
   to user programs, and a draw with a user shader is excluded from the
   cross-object instancing path. While the async compile is pending or
-  failed the standard program stands in — never a black object.
+  failed the standard program stands in -- never a black object. A
+  pending frame dump is not consumed by a frame that stood in (section
+  4.2): the capture waits for the material, the screen does not.
 - **User vertex stage.** A program carrying a vertex source replaces the
   stock `vs_fc_mesh` pairing (vertex contract: `$input a_position,
   a_normal, a_color0` / `$output v_normal, v_color0, v_vpos`; the

@@ -227,12 +227,11 @@ slower and because a label alone cannot hold them back:
 
 The reference images live in a separate repository mounted at
 `tests/render/refs`; when it is not checked out the golden tests are
-**skipped, not failed**. `RenderGoldenChess_tests_run` skips even with it
-checked out: it has no blessed reference, because a piece of the chess
-set intermittently renders with no material on the raster leg and no run
-of it can be trusted as one yet. Full design, the reblessing procedure
-and the traps: `docs/RenderDebug.md` section 5.2 (and 5.2a for that
-defect).
+**skipped, not failed**. Full design, the reblessing procedure and the
+traps: `docs/RenderDebug.md` section 5.2 -- and 5.2a for the defect the
+chess set found on its first day (a capture taken while a material was
+still compiling), which is why a frame dump now waits for a complete
+frame.
 
 ## 4. What is deliberately not run, and why
 
