@@ -928,19 +928,6 @@ passes on a build the user can see is broken is worse than no harness.
   preference that changes what a frame looks like, add it to `viewKeys`
   in the same commit.
 
-This closes the "no reliable way to verify rendering" gap: the SwiftShader
-blindspot is covered by the desktop leg being a *real-GPU readback* of the
-same knob-for-knob staged frame.
-
-The user-shader feature (section 6) has its own companion harness,
-`scripts/user-shader-verify.sh`: a desktop leg running the
-document-object-model GUI suites under xvfb (`user_shader_params.py`,
-`user_shader_post.py` — property binding, per-binding overrides,
-activation/deactivation with byte-exact restores) and a viewer leg
-re-running the pipeline against a live headless-Chromium WASM viewer
-(`user_shader_viewer.py` scene-graph route,
-`user_shader_viewer_appearance.py` document-object route).
-
 ---
 
 ## 6. Endgame: user-loadable shaders
