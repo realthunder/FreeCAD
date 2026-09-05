@@ -30,8 +30,11 @@ scratchpad, following the `DrawBrokenView` convention of not committing
 them.  **Section 6.3 restates the three models so every number here can
 be reproduced without them.**
 
-**Resuming?  Start at section 6.**  It carries the state of play, the
-five decisions that are still open, and the first thing to build.
+**Resuming?  Start at section 7.**  It re-plans the pre-task around
+versioned base shapes held as dynamic properties on the referenced
+feature, closes three of section 6's five open decisions, and names the
+first thing to build.  Section 6 is kept for its state of play and the
+measurement recipes.
 
 
 ## 1. The short answers
@@ -1043,6 +1046,9 @@ cost, regex `<ElementMap2 count="\d+">(.*?)</ElementMap2>` out of
 
 ### 6.4 First action next session
 
+*Superseded by section 7.10 on the same day: S1 as planned here would
+have failed gate 1, for the reason 7.1 gives.  Kept as written.*
+
 Build **S1** (5.5) under decisions D1 and D3 as recommended: add
 `_SavedShape` and `_SavedElements` to `Part::Feature`, populate them at
 `beforeSave` from the existing untouched `_elementCache`, clear them when
@@ -1054,3 +1060,357 @@ wrong and the cheapest to check, and until it passes there is no point
 running the rest.
 
 Then D5's verification, before S2 touches anything.
+
+
+## 7. The pre-task, re-planned: versioned base shapes on the feature (2026-09-05)
+
+Written the same day as section 5, after the user's rethink of where the
+snapshot lives and how many of them there are.  Everything section 5
+measured still holds and is reused; what changes is the *shape* of the
+storage and the *unit* of retention.  Where this section and sections 5
+or 6 disagree, this section wins.
+
+### 7.1 Three moves, and what each one buys
+
+**Move 1: the snapshot is a dynamic property, not a member.**  Section
+5.3 gave `Part::Feature` a static `PropertyPartShape _SavedShape`.  That
+would have failed its own gate 1 by construction: `PropertyPartShape`
+does not opt into the shared-default elision
+(`Property::canShareDefault()` is false for it, and `PropertyContainer::
+Save` at `PropertyContainer.cpp:343` writes every property that does not
+opt in), so an *empty* `_SavedShape` is still a `<Property>` element with
+an empty `<Part>` in every object of every document -- 17743 of them on
+`MiSTer_imported.FCStd`.  A dynamic property exists only on a feature
+that currently holds a generation, so a healthy document is byte-for-byte
+what it is today and gate 1 becomes trivially true.  The machinery is
+the one `ShapeContents` already uses on the same class
+(`getShapeContentsProperty(bool force)`, `PartFeature.cpp:1513`):
+`addDynamicProperty` with a `Part::PropertyPartShape` type name, created
+by `Base::Type::createInstance` (`DynamicProperty.cpp:198`), removed
+through the `Feature::removeDynamicProperty` override
+(`PartFeature.cpp:1478`), recorded in the undo transaction
+(`Transactions.cpp:486`, `:508`), and restored by type name with no code
+on the reading side (`PropertyContainer.cpp:625`).
+
+**Move 2: one generation per referrer, not one per feature.**  Section
+5.4's single previous generation loses evidence on the second edit.
+Walk it:
+
+| time | event | single generation (sec 5) | per referrer (this section) |
+| --- | --- | --- | --- |
+| t0 | shape S0; A and B resolve | -- | -- |
+| t1 | S0 -> S1; A survives, B breaks | holds S0 for B | holds S0 for B |
+| t2 | S1 -> S2; A breaks too | **overwrites with S1**; B's S0 is gone | holds S0 for B and S1 for A |
+| t3 | user repairs B | drops S1 (A's evidence, not B's) | drops S0; keeps S1 for A |
+
+The gathering loop skips already-broken references
+(`PartFeature.cpp:1273`), so under section 5 the t2 snapshot does not
+even re-seed B -- B's evidence is simply overwritten.  Per referrer, a
+broken reference keeps the generation it last resolved against until
+*that reference* is repaired or removed.  The count of retained
+generations is bounded by the number of referrers currently broken, and
+content addressing collapses referrers broken at the same generation into
+one file (sec 2.5's material line: four properties, one hash).
+
+**Move 3: the element cache becomes versioned, and layer 2 is a request
+against it.**  Today `_elementCache` (`PartFeature.cpp:1206`) is a flat
+map from element name to a detached sub-shape, cleared and re-seeded on
+every shape change.  It becomes a list of *generations*, newest first,
+each holding the whole base shape of that generation.  The one caller,
+`PropertyLinkBase::_updateElementReference` calling
+`geo->searchElementCache(oldElement)` (`PropertyLinks.cpp:382`), is the
+**referencing request**: "find element `X`, as it was when I last
+resolved, in the live shape".  The feature answers it from whichever
+generation holds `X`, in memory or persisted, and nothing on the App side
+changes -- the virtual and its one caller stay as they are.
+
+### 7.2 What identifies a version
+
+Not a counter on the live shape.  A persisted generation counter would be
+one more property on every feature, which is exactly what move 1
+avoids; and the object revision that exists (`DocumentObject::_revision`,
+`DocumentObject.cpp:1046`) is an in-memory counter that is neither
+persisted nor tied to the geometry.
+
+Versions are **minted only when a snapshot is taken**, and the snapshot
+is anonymous until it is materialized, at which point its name is the
+dynamic property's ordinal (`_BaseShape1`, `_BaseShape2`, ...; next
+ordinal = max existing + 1, so a reload cannot reuse a name).
+
+The *lookup* key is not the version at all.  It is the element's mapped
+name: the whole point of the element map is that an unchanged element
+carries the same mapped name from one generation to the next, so "which
+generation holds `;Face3;:H87a,F.Face3`" is well defined and the newest
+generation holding it is the right answer.  A reference therefore does
+not need to remember which version it was resolved against, and the link
+properties need no new attribute -- section 2.6's `base=` is dead.
+Referrer identity is recorded for **retention only**: it says which
+referrer a generation is being kept for, so it can be dropped when that
+referrer no longer needs it.
+
+### 7.3 The stored form
+
+One dynamic property per broken referrer on the referenced feature:
+
+    name   _BaseShape<N>
+    type   Part::PropertyPartShape
+    group  BaseShape
+    doc    <referrer key>          -- see below
+    attr   Prop_Hidden | Prop_ReadOnly | Prop_Output | Prop_NoRecompute
+
+`Prop_Output` is what keeps a value change from touching the feature
+(`DocumentObject.cpp:1035`), and `Prop_NoRecompute` keeps it out of the
+recompute; both matter because the property is written from inside
+`onChanged(Shape)` during a recompute.
+
+**The referrer key rides in the property's documentation string.**  A
+dynamic property persists `group`, `attr`, `ro`, `hide` and `doc`
+(`DynamicProperty.cpp:347`; `doc` goes through the document hasher as
+`docID` and comes back through `getDoc()`), and `doc` is the one
+free-form persisted slot a property has.  The key is
+`Property::getFullName()` of the link property with the document part
+dropped when it is this document -- `Plane.AttachmentSupport` for a local
+referrer, `Other#Bracket.Support` for an XLink from another file.  Object
+and property names are identifiers, so the string is ASCII and
+unambiguous.  It is *not* encoded into the property name: names must be
+identifiers (`DynamicProperty.cpp:180`), and underscore-joining
+`Plane_Attachment` and `Support` would collide.
+
+*Considered and set aside: one property per generation plus a
+`PropertyMap` manifest of referrer -> generation.*  It saves the element
+map being written once per referrer when several referrers share a
+generation -- roughly 200 bytes deflated per map on the six-cut plate
+(sec 5.2: 1240 for six maps), the geometry itself being shared by content
+either way.  It costs a second property type, a manifest that has to be
+kept consistent with the properties it names, and a reconcile that walks
+two structures.  Retained generations are rare by construction, so the
+per-referrer form is the recommendation; the manifest form is the fallback
+if a real model shows many referrers broken on one generation.
+
+**The blob is transferred, not re-serialized.**  `Feature` is a friend of
+`PropertyPartShape` (`PropertyTopoShape.h:151`), and at `onBeforeChange`
+the live property still holds the blob of the last save (`_blob`,
+`_blobPlan`, `_blobMotion`; `setValue` drops them a moment later through
+`dropBlob`).  The snapshot takes the three along with the shape, and the
+materialized property is given them back.  So a generation that was saved
+as the feature's `Shape` costs the next save **no new geometry** -- the
+file is already in the store under its hash, and the version property
+only adds a referrer token to it.  That is the "free while the feature
+has not been saved since" case of sec 5.4, made exact.  The `Copy()`
+trap of sec 5.6 (it carries `_Shape` and `_Ver` and not the blob) is
+avoided by never going through `Copy()`.
+
+**A version publishes nothing.**  `makeBlob` (`PropertyTopoShape.cpp:
+431`) both borrows sub-shapes from earlier files and publishes its own
+into the owner table (`refs.publish`) and the congruence index
+(`congruent->add`).  A version property must borrow -- within one object
+`Shape` sorts before `_BaseShape*`, so the old generation borrows what it
+still shares with the new one -- and must **not** publish: a later object
+that borrowed from a generation would have to be rewritten the day that
+generation is dropped.  The rewrite exists and is tested
+(`testABorrowerIsRewrittenWhenWhatItBorrowedIsGone`), so this is a cost
+to avoid rather than a corruption to prevent; a `_publishes` flag on the
+property, false for versions, is the whole change.
+
+### 7.4 The versioned cache, in memory
+
+    struct Feature::ShapeVersion {
+        TopoShape           shape;      // the whole base shape, a handle
+        App::FileBlobHandle blob;       // what the last save wrote for it
+        std::string         blobPlan;
+        TopLoc_Location     blobMotion;
+        PropertyPartShape  *prop;       // the materialized form, or null
+        std::set<std::string> referrers;   // keys, sec 7.3
+        // the search memo, per element, exactly today's ElementCache
+        mutable std::map<std::string, std::pair<std::vector<std::string>, bool>> searched;
+    };
+    std::vector<ShapeVersion> _shapeVersions;   // newest first
+
+`onBeforeChange(Shape)` -- gates unchanged, per D3 -- pushes one
+`ShapeVersion` holding the old shape whole instead of extracting a
+sub-shape per referenced element, and records the keys of the loaded
+referrers whose elements are healthy (the same loop and the same
+`hasMissingElement` skip as today).  The sub-shape extraction moves to
+search time.  Memory is a handle copy: the old TShape was alive a moment
+ago and is released with the generation.
+
+`searchElementCache(element)` walks `_shapeVersions` newest first.  For
+a mapped element name it looks the name up in that generation's element
+map and takes the indexed sub-shape it names; for an indexed name it
+takes the position (that is what today's cache does implicitly, and it
+is the D1 answer: the mapped form goes through the map, the indexed
+form falls back to position).  Then the same
+`newShape.searchSubShape(sub, &names, options, tol, atol)` as today,
+the same single-sub-shape fallback, memoized per generation and element.
+First generation with a hit answers.  A persisted generation that has
+not been parsed yet is parsed on this first request
+(`getShape()` -> `ensureRestored()`), which is what keeps the open of a
+document holding generations as cheap as today.
+
+The newest generation is always kept in memory whether or not it is
+persisted, so the `reverse` regeneration path and the same-session
+behaviour are exactly what they are today.
+
+### 7.5 The three flows
+
+**Live change.**  `onBeforeChange(Shape)` snapshots.  `onChanged(Shape)`
+runs `GeoFeature::onChanged` -> `updateElementReferences(this)`; every
+referrer re-resolves and the missing ones make their request.  *After*
+that pass returns, `Feature::onChanged` reconciles: for each in-memory
+generation, keep a referrer only if its reference into this feature is
+still missing (the same enumeration as the seeding loop); a generation
+with referrers left is materialized -- `addDynamicProperty`, the blob
+handed over, `setValue(shape)` -- and one with none is dropped, except
+the newest, which stays in memory unpersisted.
+
+**Reload.**  The version properties restore by type name and park their
+blobs like any shape.  `Feature::onDocumentRestored` rebuilds
+`_shapeVersions` from the properties named `_BaseShape*` (referrer key
+from `getDocumentationOfProperty`), and then -- this is sec 5.5's S3,
+unchanged -- calls `PropertyLinkBase::updateElementReferences(this)` if
+any generation is held, so a reference that was broken when the file was
+saved makes its request now, against the persisted generation.  A restore
+**never writes**: no property is added or removed here, the document
+must come up not-touched (the `purgeTouched` discipline of
+`serveFromBlob`, `PropertyTopoShape.cpp:685`), and anything the request
+repaired is reconciled at the next save.
+
+**Referrer-side change.**  A reference repaired by hand, a referrer
+deleted, its document closed: none of these reach the feature.
+Reconcile at `Feature::beforeSave`, which already exists
+(`PartFeature.cpp:1701`): for each generation, drop a referrer whose key
+names a loaded document in which the object or property no longer
+exists, or whose reference into this feature now resolves; drop a
+generation left with no referrers.  A key naming a document that is
+**not loaded** is kept -- that is the only protection an external
+referrer gets, and it is more than today's none.  This is where the
+file's size is decided, so it is the right place for the invariant of
+sec 5.4 to be enforced: *a generation is written only while some
+referrer still needs it.*
+
+### 7.6 Build steps
+
+**V1. The versioned cache, in memory only.**  Replace `ElementCache`
+with `ShapeVersion`; `onBeforeChange` snapshots the whole shape;
+`searchElementCache` searches generations.  No persistence, no dynamic
+property.  Gate: both suites green and the sec 2.3 matrix unchanged in
+one session -- this step must be invisible.
+
+**V2. Materialize and drop.**  The reconcile of 7.5 in `onChanged` and
+`beforeSave`; the property flags; the blob hand-over; the no-publish
+flag; and two fixes the value set needs:
+`PropertyPartShape::validateShape` (`PropertyTopoShape.cpp:798`) writes
+`InvalidShape` on the owner for *any* shape property, and must be
+limited to the owner's geometry property; and
+`PropertyPartShape::Restore` (`PropertyTopoShape.cpp:1234`) schedules a
+recompute of the owner when a property's element map version is behind
+the current one, which a retained generation with an old map would
+trigger on every open -- `Feature::checkElementMapVersion(prop, ver)`
+answers false for a non-geometry property.  That second fix is D5,
+answered.  Gates, extending `src/Mod/Test/ShapeStorage.py`:
+
+1. a healthy document saves byte-identically;
+2. break one reference, save, reopen in a second process:
+   `_BaseShape1` is present, its doc string names the referrer, and
+   `blobs/Content.xml` lists the geometry once;
+3. break A at one generation and B at the next: two properties, two
+   distinct hashes;
+4. break A and B at the same generation: two properties, one hash, two
+   referrer tokens;
+5. repair B by hand, save: B's property is gone, A's remains;
+6. delete the referrer object, save: its property is gone;
+7. undo across the break: the version property is removed with it, redo
+   brings it back (the transaction records the add).
+
+**V3. Serve after restore.**  The reload flow of 7.5.  Gates: the sec
+2.3 matrix across a save boundary (gate 3 of sec 5.7), and gate 4 of
+sec 5.7 verbatim -- `Face3` still reports missing and is **not**
+repointed at a plausible neighbour.  This gate matters most, for the
+reason sec 2.3 gives.
+
+**V4. Nothing to build for Python.**  Sec 5.5's S4 accessor is moot: a
+dynamic property is already reachable as `obj._BaseShape1` and its
+referrer as `obj.getDocumentationOfProperty("_BaseShape1")`.  The
+deferred UI has what it needs.
+
+**V5, later, each its own commit.**  The Sketcher prefix (D2 stands:
+`ShapeVersion` carries the source property, so extending is mechanical,
+but it waits for the merge); widening the `onBeforeChange` gates so a
+break inside a transaction is seeded (the cost D3 accepted); and the
+policy knob of 7.8.
+
+### 7.7 Traps
+
+- **`setValue` on a version property runs the owner's hooks.**
+  `validateShape` (fixed in V2), `reTagElementMap` (a no-op here: the
+  old shape carries the owner's own tag), `Feature::onChanged` (tests
+  `prop == &Shape`, so the placement sync does not fire) and
+  `GeoFeature::onChanged` (tests `getPropertyOfGeometry()`, likewise).
+  Check each again when V2 lands; the list is from reading, not running.
+- **Adding a property inside a recompute.**  `addDynamicProperty` fires
+  `signalAppendDynamicProperty` and is transaction-recorded; the property
+  editor and the undo stack both see it.  Nothing here may touch the
+  feature again or the recompute loops -- `Prop_Output` on the value is
+  the guard, and gate 1 of V2 is what proves it held.
+- **Restore never writes** (7.5).  Not even a removal: a reconcile
+  during restore would land in no transaction and could race the
+  deferred blob drain.
+- **Copy and paste carries the versions along.**  `copyObject` copies
+  dynamic properties, and the referrer keys then name objects in the
+  source document.  They are stale, not wrong: the next `beforeSave`
+  reconcile drops them.  If that proves noisy, skip `_BaseShape*` when
+  the owner `isExporting()`.
+- **The gathering gates still exclude transactions** -- D3 is accepted
+  as is, and a break that happens entirely inside an undo/redo is still
+  unprotected until V5.
+- **A version's blob must be noted at save or it is pruned.**  Handled by
+  `Save()` calling `noteBlob` as for any shape; a version that is
+  dropped is simply not written and its file falls out of the index.
+- **Two shape properties, one hasher.**  Both the live shape and every
+  generation share the document's string hasher, so `addStringHasher`
+  returns the same index for all of them and nothing is written twice.
+  A generation restored from a file whose hasher was *saved* (the
+  `SaveHasher="1"` case) needs checking in V3.
+
+### 7.8 Decisions
+
+Closed by this section:
+
+- **D1**: the lookup is by mapped name through the generation's own
+  element map, position as fallback.  Nothing is stored beyond the shape.
+- **D3**: gathering gates unchanged; persistence decided after the
+  resolve pass and at `beforeSave`.
+- **D5**: `Feature::checkElementMapVersion` answers false for a
+  non-geometry shape property, so an old generation's map never
+  schedules a recompute.
+- Sec 5.3's static `_SavedShape` / `_SavedElements` pair is withdrawn;
+  sec 2.6's `base=` attribute is withdrawn (7.2).
+
+Still open, each with a recommendation:
+
+- **The retention predicate.**  "Missing" is the settled policy.  The
+  reconcile of 7.5 is one predicate, and widening it to "repaired by
+  geometry search this recompute" would keep a generation for the
+  silently repaired references of sec 2.3 as well -- which is the
+  evidence the deferred repair record (old P3) needs.  Recommendation:
+  ship "missing" first; the widening is a one-line change behind a
+  preference, and it is what turns 2.3's silent success into something
+  checkable.
+- **Per referrer or per generation with a manifest** (7.3).
+  Recommendation: per referrer, measure on a real model, revisit only if
+  the duplicated maps show up.
+
+### 7.9 Not measured, still
+
+Everything sec 5.8 lists.  Plus: the cost of an old generation *not*
+sharing TShapes with the new one -- when OCCT rebuilds every sub-shape,
+the generation borrows nothing from the live file and the retained
+geometry is a whole second file; sec 5.3's 9.1% per broken feature is
+the measured bound for that case, per referrer now rather than per
+feature.
+
+### 7.10 First action next session
+
+Build **V1**.  It changes no file on disk, so its gate is the two suites
+green plus the sec 2.3 matrix reproduced in one session (recipe in 6.3,
+model A).  Then V2 with its gate 1 before anything else.
