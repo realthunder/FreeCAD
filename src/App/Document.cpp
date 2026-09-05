@@ -1534,6 +1534,18 @@ void Document::checkUserEdit(const Document *doc, const DocumentObject *obj,
     if (obj && prop == &obj->Visibility) {
         return;
     }
+    // The tree view's own ordering bookkeeping. TreeRank is written by
+    // the tree as it populates, from its own timer, never by a command --
+    // it reaches this check only when a command runs a nested event loop
+    // (the animated view fit the import itself runs while the load is
+    // still live, a modal dialog) and the timer fires inside that
+    // command's scope. Refusing it unwinds the tree mid-populate and
+    // leaves a root item that was never inserted, which the next tick
+    // dereferences (SIGSEGV in DocumentObjectItem::getParentItem, the
+    // chess-flat render golden under load, 2026-09-05).
+    if (obj && prop == &obj->TreeRank) {
+        return;
+    }
     // Named as precisely as the caller knew, because the whole point is that
     // the command did not say what it was going to do -- so the report has to.
     std::ostringstream str;

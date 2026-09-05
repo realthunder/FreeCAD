@@ -966,6 +966,18 @@ third-party command**, which a list of names never will.
   assigning a shape *is* an edit. There are two Visibility properties --
   the object's and the view provider's -- and one exemption covers both,
   because the view provider mirrors its own onto the object.
+- **`TreeRank`.** The tree view's own ordering bookkeeping, written by
+  the tree as it populates, from its own timer, never by a command.
+  Exempted by identity like Visibility, because a command that runs a
+  nested event loop -- the animated view fit `ImportGui.insert` runs
+  while the load is still live, or a modal dialog -- lets that timer
+  fire inside its own guard scope. Before the exemption the refusal
+  unwound `DocumentItem::createNewItem` between `rootItem` being set
+  and the item being inserted, and the next tick crashed in
+  `DocumentObjectItem::getParentItem` (the chess-flat render golden
+  with three heavy tests in parallel, 2026-09-05; the same run's chess
+  golden diverged by camera for the same reason, the fit still animating
+  under load when the harness restaged).
 - **View provider properties**, which no chokepoint above can see: every
   one is in App, and a `ViewProvider` is a separate `PropertyContainer`.
   This is right rather than merely convenient -- they are presentation,
