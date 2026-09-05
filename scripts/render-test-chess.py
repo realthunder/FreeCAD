@@ -43,6 +43,16 @@ MTLX = os.path.join(
 HDR = os.path.join(RES, "Lights/san_giuseppe_bridge.hdr")
 RENDER = "User parameter:BaseApp/Preferences/View/Render"
 
+# FC_RENDER_TEST_BG=0 keeps the HDR environment as the LIGHT but stops
+# drawing it as the picture behind the model. It matters most here: the
+# chess set occupies a modest part of the frame and the Venice HDR fills
+# the rest, so with the background on most of a golden's pixels are
+# scenery. A regression in the material of a piece moves a few hundred
+# of them; a camera that lands a degree off moves a hundred thousand.
+# The flat case makes the model the subject of its own test, and the
+# background case still covers the environment path -- so both exist.
+BACKGROUND = os.environ.get("FC_RENDER_TEST_BG", "1") != "0"
+
 
 def say(s):
     FreeCAD.Console.PrintMessage("[render-test-chess] %s\n" % s)
@@ -62,7 +72,7 @@ def stage():
     p = FreeCAD.ParamGet(RENDER)
     p.SetBool("PBR", True)
     p.SetBool("PBRFromSpecular", False)
-    p.SetBool("PBREnvBackground", True)
+    p.SetBool("PBREnvBackground", BACKGROUND)
     p.SetFloat("PBREnvBlur", 0.0)
     p.SetFloat("PBREnvIntensity", 1.0)
     p.SetString("PBREnvImage", HDR)
@@ -85,6 +95,11 @@ def stage():
     view.SetBool("ShowNaviCube", False)
     view.SetBool("CornerCoordSystem", False)
     view.SetBool("ShowFPS", False)
+    if not BACKGROUND:
+        view.SetBool("Gradient", False)
+        view.SetBool("RadialGradient", False)
+        view.SetBool("UseBackgroundColorMid", False)
+        view.SetUnsigned("BackgroundColor", 858993663)
 
     doc = FreeCAD.newDocument("RenderTestChess")
     FreeCADGui.ActiveDocument = FreeCADGui.getDocument(doc.Name)

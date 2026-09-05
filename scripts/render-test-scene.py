@@ -25,10 +25,20 @@ Kept out on purpose: the NaviCube and the FPS counter (chrome adds
 pixels to a capture and the counter changes every frame), autosave (it
 fires mid-capture), and any effect with stateful or temporal content.
 """
+import os
 import traceback
 
 import FreeCAD
 import FreeCADGui
+
+# FC_RENDER_TEST_BG=0 draws the model over a FLAT background instead of
+# the viewer's gradient. Two cases, not one, because they fail
+# differently: with a background most of the frame is not the model at
+# all, so a change to the model moves few pixels while anything that
+# moves the camera moves nearly all of them; without one, the frame is
+# the model and the diff is about what is under test. Neither case
+# subsumes the other -- the background is drawn by the engine too.
+BACKGROUND = os.environ.get("FC_RENDER_TEST_BG", "1") != "0"
 
 try:
     view = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
@@ -42,6 +52,14 @@ try:
     # plane would only enlarge the view-fit bounds.
     view.SetBool("ShadowShowGround", False)
     view.SetInt("ShadowSmoothBorder", 40)
+    if not BACKGROUND:
+        # Flat, and a stated colour: the gradient is three colours and a
+        # radial flag, all of which are background pixels that have
+        # nothing to do with the geometry under test.
+        view.SetBool("Gradient", False)
+        view.SetBool("RadialGradient", False)
+        view.SetBool("UseBackgroundColorMid", False)
+        view.SetUnsigned("BackgroundColor", 858993663)
 
     # Autosave fires on a timer and would land in the middle of a capture
     # run (docs/Testing.md).

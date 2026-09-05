@@ -99,61 +99,74 @@ if(NOT BUILD_BGFX OR NOT FC_XVFB_RUN OR NOT EXISTS "${CMAKE_SOURCE_DIR}/.conda/r
     set(_fc_golden_ready FALSE)
 endif()
 
+# Each scene is registered TWICE, with the environment drawn behind the
+# model and without it (FC_RENDER_TEST_BG). They are not the same test:
+# with a background most of the frame is scenery, so a change to the
+# model moves a few hundred pixels while a camera that lands slightly
+# differently moves a hundred thousand and buries it; without one, the
+# frame is the model and the diff is about what is under test. The
+# background is drawn by the engine too, so neither case replaces the
+# other.
+function(fc_add_golden_test name scene refs bg)
+    if(NOT IS_DIRECTORY "${FC_RENDER_REFS_DIR}/${refs}")
+        return()
+    endif()
+    add_test(NAME ${name}
+             COMMAND "${_fc_verify}" capture "${_fc_render_work}/${refs}"
+                     --scene "${scene}"
+                     --golden "${FC_RENDER_REFS_DIR}/${refs}"
+                     ${ARGN})
+    set_tests_properties(${name} PROPERTIES
+        ENVIRONMENT "FC_BUILD=${CMAKE_BINARY_DIR};FC_RENDER_TEST_BG=${bg}")
+endfunction()
+
 if(_fc_golden_ready AND IS_DIRECTORY "${FC_RENDER_REFS_DIR}")
     set(_fc_verify "${CMAKE_SOURCE_DIR}/scripts/render-verify.sh")
     set(_fc_scene "${CMAKE_SOURCE_DIR}/scripts/render-test-scene.py")
+    set(_fc_chess "${CMAKE_SOURCE_DIR}/scripts/render-test-chess.py")
+    set(_fc_chess_glb
+        "${CMAKE_SOURCE_DIR}/src/3rdParty/MaterialX/resources/Geometry/chess_set.glb")
 
     # The small committed scene, raster only: one camera, the five
-    # pipeline stages. This is the one that guards every run.
-    if(IS_DIRECTORY "${FC_RENDER_REFS_DIR}/raster")
-        add_test(NAME RenderGoldenRaster_tests_run
-                 COMMAND "${_fc_verify}" capture "${_fc_render_work}/raster"
-                         --scene "${_fc_scene}"
-                         --golden "${FC_RENDER_REFS_DIR}/raster"
-                         --modes 0,1,2,3,4 --timeout 420)
-        set_tests_properties(RenderGoldenRaster_tests_run PROPERTIES
-            ENVIRONMENT "FC_BUILD=${CMAKE_BINARY_DIR}" TIMEOUT 600)
-    endif()
+    # pipeline stages. These two are what guard every run.
+    fc_add_golden_test(RenderGoldenRaster_tests_run "${_fc_scene}" raster 1
+                       --modes 0,1,2,3,4 --timeout 420)
+    fc_add_golden_test(RenderGoldenRasterFlat_tests_run "${_fc_scene}"
+                       raster-flat 0 --modes 0,1,2,3,4 --timeout 420)
+    foreach(t RenderGoldenRaster_tests_run RenderGoldenRasterFlat_tests_run)
+        if(TEST ${t})
+            set_tests_properties(${t} PROPERTIES TIMEOUT 600)
+        endif()
+    endforeach()
 
     # Same scene, path traced. CPU on purpose: it is the only device
     # every box has, and a golden blessed on one device does not compare
     # against another.
-    if(FC_RENDER_HEAVY_TESTS AND BUILD_CYCLES
-       AND IS_DIRECTORY "${FC_RENDER_REFS_DIR}/cycles")
-        add_test(NAME RenderGoldenCycles_tests_run
-                 COMMAND "${_fc_verify}" capture "${_fc_render_work}/cycles"
-                         --scene "${_fc_scene}"
-                         --golden "${FC_RENDER_REFS_DIR}/cycles"
-                         --modes 0 --cycles --cycles-device CPU
-                         --cycles-samples 64 --cycles-size 240x180
-                         --timeout 600)
-        set_tests_properties(RenderGoldenCycles_tests_run PROPERTIES
-            ENVIRONMENT "FC_BUILD=${CMAKE_BINARY_DIR}"
-            LABELS render-heavy TIMEOUT 900)
-    endif()
-
-    # The real-document leg: the MaterialX chess set, raster and path
-    # traced. A synthetic scene cannot fail the way an imported asset
-    # with a real material library does -- map binding, the texture path,
-    # the MaterialX splice -- and an imported asset is too slow to run
-    # every time, so there is one of each and this is the slow one.
-    #
-    # Both assets ship in the MaterialX submodule; when it is not checked
-    # out the scene has nothing to import, so the test is not registered.
-    set(_fc_chess_glb
-        "${CMAKE_SOURCE_DIR}/src/3rdParty/MaterialX/resources/Geometry/chess_set.glb")
-    if(FC_RENDER_HEAVY_TESTS AND BUILD_CYCLES
-       AND EXISTS "${_fc_chess_glb}"
-       AND IS_DIRECTORY "${FC_RENDER_REFS_DIR}/chess")
-        add_test(NAME RenderGoldenChess_tests_run
-                 COMMAND "${_fc_verify}" capture "${_fc_render_work}/chess"
-                         --scene "${CMAKE_SOURCE_DIR}/scripts/render-test-chess.py"
-                         --golden "${FC_RENDER_REFS_DIR}/chess"
-                         --modes 0 --cycles --cycles-device CPU
-                         --cycles-samples 64 --cycles-size 240x180
-                         --timeout 900)
-        set_tests_properties(RenderGoldenChess_tests_run PROPERTIES
-            ENVIRONMENT "FC_BUILD=${CMAKE_BINARY_DIR}"
-            LABELS render-heavy TIMEOUT 1200)
+    if(FC_RENDER_HEAVY_TESTS AND BUILD_CYCLES)
+        fc_add_golden_test(RenderGoldenCycles_tests_run "${_fc_scene}" cycles 1
+                           --modes 0 --cycles --cycles-device CPU
+                           --cycles-samples 64 --cycles-size 240x180
+                           --timeout 600)
+        # The real-document leg: a real asset with a real material
+        # library, which is the case a synthetic scene cannot fail the
+        # way an import does. Both assets ship in the MaterialX
+        # submodule; without it the scene has nothing to import.
+        if(EXISTS "${_fc_chess_glb}")
+            fc_add_golden_test(RenderGoldenChess_tests_run "${_fc_chess}"
+                               chess 1 --modes 0 --cycles --cycles-device CPU
+                               --cycles-samples 64 --cycles-size 240x180
+                               --timeout 900)
+            fc_add_golden_test(RenderGoldenChessFlat_tests_run "${_fc_chess}"
+                               chess-flat 0 --modes 0 --cycles
+                               --cycles-device CPU --cycles-samples 64
+                               --cycles-size 240x180 --timeout 900)
+        endif()
+        foreach(t RenderGoldenCycles_tests_run RenderGoldenChess_tests_run
+                  RenderGoldenChessFlat_tests_run)
+            if(TEST ${t})
+                set_tests_properties(${t} PROPERTIES
+                    LABELS render-heavy TIMEOUT 1200)
+            endif()
+        endforeach()
     endif()
 endif()
