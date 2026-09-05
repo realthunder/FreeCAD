@@ -1633,5 +1633,134 @@ Gate for what was built, on `build/win-relwithdebinfo-801`:
 | C++ (`ctest -j 6`) | 474 entries passed, 0 failed, 1 disabled |
 | Python (`FreeCADCmd -t 0`) | 1325 ran; the same 6 failures + 8 errors as 7.11, all this box's environment |
 
-Next session, in order: the foreign store with the two checks above;
-the widened search and serve-on-restore (V3 folded in); then V5.
+*Next was the foreign store; built in 7.14, with V3 folded in.*
+
+### 7.14 The foreign store and the reload request, built (2026-09-06)
+
+The store of 7.13 exists, and the reload flow of 7.5 (V3) with it, since
+the store is useless without a request to serve.
+
+**The two checks, answered.**  `App::Document` saves and restores its
+own dynamic properties through the same `PropertyContainer::Save` /
+`Restore` an object uses (`Document.cpp:1142`, `:1231`), and the dynamic
+restore resolves the type name with module loading
+(`Base::Type::getTypeIfDerivedFrom(..., true)`, `DynamicProperty.cpp:184`),
+so a `Part::PropertyPartShape` on the document loads Part before any of
+the document's objects do.  A document-owned shape property does get
+blob storage: `blobManager()` reaches the manager through
+`getOwnerDocument()`, which a document answers with itself, and
+`serveFromBlob` already tolerated a missing owner.  The one gap was
+`ensureRestored()`, which cleared the pending flag and gave up when the
+container was not an object; the blob branch now runs without one.  No
+hidden document object was needed.  The ordering trap is answered by the
+restore sequence itself: document properties come first in the XML pass,
+the blobs are dispatched before `afterRestore`, and the links re-resolve
+in `afterRestore` -- the compound is a parked blob parsed on the first
+request, which is exactly when the XLink asks.
+
+**`Part::ForeignBaseShapes`** (`ForeignBaseShapes.h/.cpp`): two dynamic
+properties of the referrer document, `_ForeignBaseShapes` (a compound of
+bare sub-shapes) and `_ForeignBaseShapeRefs` (reference name -> child
+index, 1-based), group `BaseShape`, hidden and read-only.  Rebuilt from
+`App::Application::signalStartSaveDocument`, connected in the Part module
+init, before the collect pass: the references are enumerated from the
+element-reference registry by a new `PropertyLinkBase::
+getExternalElementReferences(doc)` (every feature in another document
+that a property owned by `doc` references, with those properties), each
+sub-name resolved with `resolveElement`, and the key formed as ruled:
+the XLink's persisted path (`getFilePath(getPathResolveMode())`, which is
+what its `Save` writes) + `#` + object + sub-name path ending in the
+indexed element (`part.FCStd#Cut.Face3`); a reference through a local
+object -- a `Part::Plane` attached through an `App::Link` -- is
+`Link.Face3`.  A healthy reference is refreshed from the live foreign
+shape (the feature's own shape space, which is what the search runs
+against); a missing one keeps the child it has; everything else is
+dropped; an empty store removes both properties, so a document with no
+foreign reference is byte-for-byte what it was.  The rebuild is skipped
+when nothing changed (same keys, same children by `IsSame`), so a re-save
+keeps its file.  The properties are added and removed through
+`PropertyContainer`'s own interface rather than `Document`'s override:
+the store is a save artifact and must not open or enter an undo
+transaction (the Gui save command runs under a pending auto-transaction
+name).
+
+**The widened search.**  `GeoFeature::searchElementCache` takes the
+referring property, its linked object and the sub-name path ending in the
+old indexed element; `_updateElementReference` passes them.  `Part::
+Feature` answers from its own generations first, then, for a referrer in
+another document, from that document's store, searching the live shape
+for the stored sub-shape exactly as the local path does (one helper,
+`searchLiveShape`, serves both).
+
+**The reload request (V3).**  A reference is asked about when it is
+*restored* and missing.  Three changes in `PropertyLinks.cpp`, all in
+the restore path: `_updateElementReference` treats a call with no
+feature as a restore when the property carries `LinkRestoring`
+(`PropertyXLink::restoreLink`, the linked document arriving later) or
+its document is `Restoring` (`onContainerRestored`, the same document's
+`afterRestore`), and then the old element is the indexed name the file
+carried -- which the missing marker preserves, so `?Face3` asks for
+`Face3`; the "unchanged" early return (`shadow == elementName`) is
+skipped for a missing reference being restored, because the XML pass
+resolves the same reference once before the shapes have arrived and
+would otherwise have used up the request; and `_registerElementReference`
+sends a sub-name carrying the marker through `_updateElementReference`
+even when its shadow was restored, which is the branch that registered
+without looking.  The request runs with `notify` off, as every
+restore-time resolve does: a repaired reference changes the sub-name in
+memory and the document comes up not touched; the next save writes the
+new name and, on the feature side, lets the generation go.  In-session
+behaviour is unchanged: a reference marked missing is not searched again
+at the next change, so a face that comes back is recovered on the next
+reload, not before (`testAReferenceComesBackOnReload`).
+
+**What the reload request does not cover, found while testing.**  A
+reference saved *healthy* is resolved by its indexed name on reload, not
+by its mapped name: `PropertyXLink::restoreLink` discards every restored
+shadow except a missing one's (`updateLinkReference`, the `!feature`
+block), and the same-document links register a restored shadow without
+checking it (`_registerElementReference`, the branch above).  So a part
+edited while the assembly is closed does not break the assembly's
+references at all -- they follow the index, silently, which is sec 2.3's
+plausible-wrong-answer risk in its purest form -- and the persisted
+`shadow=` mapped name is informational.  The store therefore serves the
+reference that was broken *in the session that had both documents open*
+and saved missing, when the assembly is reopened after the part was
+repaired (`testAReferenceComesBackAcrossDocuments`); the moved face
+stays missing (`testAMovedFaceStaysMissingAndKeepsItsChild`).  Whether
+reload should verify the persisted mapped name, and on a mismatch ask
+the store, is the next decision: it is a few lines here, but it would
+turn every reference whose element map version changed into a missing
+one before the `reverse` regeneration runs, so it needs the `reverse`
+path to strip the marker the way the restore path now does.  Not built.
+
+**Three smaller things the tests settled.**  A `Part::Plane` cannot be
+the referrer in a reload test: its attach extension re-sets the support
+from the attacher's stored sub-names by position at every recompute
+(7.12), which repairs a missing reference in-session whenever the index
+exists again -- `testAReferenceComesBackOnReload` uses a SubShapeBinder.
+A binder's reference, given by mapped name, is persisted as
+`sub="Face3" shadow=";Face6;:M;CUT;:H9c0:7,F.Face3"`, and once missing
+its sub-name reads `;Face6;...,F.?Face3`: the indexed name is after the
+last dot, which is where the store reads it.  And two dangling references
+to a shape returned by value, `ShapeVersion::geometry()` (V2's, caught
+by MSVC's C4172) and the store's `children()`, are fixed; the second one
+was why the store came back empty after a break.
+
+**Not built, deliberately.**  A restore-time repair does not touch the
+referrer: the geometry search found the *same* geometry, so the saved
+result is still right.  The Sketcher's prefixed properties are served
+from the store like any element (the prefix is on the indexed name), but
+no test covers them until V5.
+
+Gates, on `build/win-relwithdebinfo-801`:
+
+| check | result |
+| --- | --- |
+| `FreeCADCmd -t ShapeStorage` | 49 of 49: the 7 `BaseShapeCases` plus 2 reload cases, and 5 `ForeignBaseShapeCases` |
+| sec 2.3 matrix | identical to 7.11: `Face1`, `Face6` -> area 500.00, `Face3` -> `?Face3` |
+| C++ (`ctest -j 6`) | 473 of 473 passed, 1 disabled |
+| Python (`FreeCADCmd -t 0`) | 1332 ran; the same 6 failures + 8 errors as 7.13, all this box's environment (no `yaml`/`ply`, CRLF material fixtures, two over-long blob paths, one FEM file lock), not one new |
+
+Next: V5 -- the Sketcher prefix persisted, and the `onBeforeChange`
+gates widened so a break inside a transaction is seeded.
