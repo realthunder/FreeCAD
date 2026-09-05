@@ -170,6 +170,10 @@ PyObject *DocumentObject::getPyObject()
     h["ty"] = "obj";
     if (!tx->ownerFacade().empty())
         h["fc"] = tx->ownerFacade();
+    // the durable key (FcxWire OpResolve), as a host-minted handle
+    // carries it: the transaction's document and owner names
+    if (document_)
+        h["k"] = nlohmann::json::array({document_->name_, name_});
     PyObject *proxy = FcxImage::decodeValue(h);
     if (!proxy)
         throw Base::PyException();

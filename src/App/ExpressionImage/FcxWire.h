@@ -89,6 +89,21 @@ inline const char* const OpActiveDoc = "active_doc";
 // trip under the transaction's deferral.
 inline const char* const OpRelease = "release";
 inline const char* const OpResolveAlias = "resolve_alias";
+// {op:"resolve", a:[document, name]} or {op:"resolve", a:[document]}: a
+// durable document-object handle re-resolved by its key (docs/Sandbox.md
+// 3.2).  A handle's id lives one transaction (the table is cleared after
+// an expression evaluation), but a Proxy keeps document objects on
+// itself across hooks natively (ArchReport's Result sheet, the `self.obj
+// = obj` of onDocumentRestored), so every handle to a DocumentObject or
+// Document carries its key in "k", the guest proxy compares by it, and
+// on a stale id the guest asks for a fresh one here: the object of the
+// evaluation owner's document with that name -- what
+// `owner.Document.getObject(name)` already gives under doc.read.self;
+// another document is refused, a deleted object is a ReferenceError.
+// Reply: the new id (an integer, with one use minted for the caller).
+// A stale handle with a key that arrives as an ARGUMENT (a PropertyLink
+// write of a cached object) re-resolves the same way while decoding.
+inline const char* const OpResolve = "resolve";
 // {op:"write_prop", h, a: property name, v: wire value}: set a property
 // on the handle's object.  Owner only -- the handle must be the
 // evaluation owner -- under Permission::DocWriteSelf; the value is
@@ -152,6 +167,9 @@ inline const char* const TagRotation = "rot";
 inline const char* const TagPlacement = "pla";
 inline const char* const TagMatrix = "mat";
 inline const char* const TagBoundBox = "bb";
+// {"t":"h", "id":N, "ty":tp_name, "fc"?:facade key, "ext"?:[facade keys],
+// "m"?:bound method, "k"?:[document, name] | [document]} -- "k" is the
+// durable key of a DocumentObject or Document handle (OpResolve above).
 inline const char* const TagHandle = "h";
 // a module facade's class object as a call argument -- Draft's
 // `shape.ancestorsOfType(v, Part.Edge)` -- crosses as {"t":"ty",

@@ -420,6 +420,38 @@ flush DECREFs under the GIL, only when an interpreter exists
 (`e2969a8503`; this paragraph existed only in that commit message
 before).
 
+Durable document-object handles (2026-09-05, 7.6 "G1d CLOSED"): an id
+lives one transaction, but a Proxy keeps document objects on itself
+across hooks natively -- ArchReport's `self.spreadsheet`, the `self.obj
+= obj` of several `onDocumentRestored`s -- and the table that minted
+the id is cleared by every expression evaluation in between (a
+Schedule's Result sheet has a numeric cell, and a numeric cell is an
+expression), so the second routed recompute of the BIM corpus found
+ArchReport's cached sheet stale.  Every handle to a DocumentObject or
+Document now carries its key in `"k"`: `[document, name]`, or
+`[document]` for the Document itself (the host's `encodeHostValue`, the
+guest's `getPyObject` for the expression owner).  The guest proxy keeps
+it in `_k`, compares and hashes by key when both sides have one (so a
+cached object equals a fresh handle to it, as natively), and sends
+every op through `_hop`: on a `ReferenceError` from a stale id it asks
+`resolve {a: key}` once and retries with the fresh id the host replies
+(an integer; one use minted for the caller, the proxy keeps its class).
+A cached handle that arrives as an ARGUMENT -- `obj.Ref = self.other`,
+a PropertyLink taking a kept object -- re-resolves the same way inside
+the host's decode, no op of its own.  The reach of a key is exactly
+what the guest already has: the evaluation owner's document under
+`doc.read.self` (what `owner.Document.getObject(name)` gives); a key
+into another document is a `PermissionError` (a key is names the guest
+could make up, a handle a capability it was handed), a name no longer
+in the document a `ReferenceError` (deleted natively too, the Proxy
+holds a dead object).  A value object -- a shape, a curve -- has no
+key and stays transaction-scoped (natively a shape kept across hooks is
+a copy anyway).  Two more from the same fix: `clearHandles()` is a no-op
+while a round trip is nested (an expression an outer hook's write
+recomputed would otherwise drop the hook's own live arguments), and the
+corpus gates recompute TWICE, since one recompute never meets a cached
+handle.  Gate: `guestHandlesDurableAcrossHooks` (both runtimes).
+
 The bindings pack: identifiers are pre-resolved host-side
 (`getIdentifiers()`/`getDeps()`) and shipped with the request as values
 or handles, so a pack hit costs zero crossings; on a miss the real
@@ -1486,16 +1518,19 @@ per module name in the stats.  Gates: reopen routed 68 objects, 59
 guest Proxies, 0 host, 0 invalid, differ Pipe001 at 0.25 ULP of its
 largest coordinate (4.5e-13); built routed the same.  Traffic for the
 reopen: 1218 proxy calls, ~11000 hops.
-OPEN, found by recomputing the routed corpus a SECOND time: ArchReport
-caches its Result sheet on the Proxy (`self.spreadsheet = o`) and the
-next execute reads it -- a HANDLE from the previous transaction, gone
-with it -> `ReferenceError: stale host handle` (ArchSchedule's same
-cache sits under a bare `except` and silently returns None instead).
-Caching a document object on a Proxy across hooks is a native pattern
-(sec 13); the fix is durable document-object handles -- a
-`(document, name)` key on every DocumentObject handle, re-resolved by
-the guest on a stale id through one `resolve` op, `__eq__` by key --
-sized, not built: the user's call.
+Found by recomputing the routed corpus a SECOND time, and CLOSED
+2026-09-05: ArchReport caches its Result sheet on the Proxy
+(`self.spreadsheet = o`) and the next execute reads it -- a HANDLE from
+the previous transaction, gone with it -> `ReferenceError: stale host
+handle` (ArchSchedule's same cache sits under a bare `except` and
+silently returned None instead).  Caching a document object on a Proxy
+across hooks is a native pattern; the fix is durable document-object
+handles (3.2): a `[document, name]` key on every DocumentObject and
+Document handle, re-resolved by the guest on a stale id through one
+`resolve` op (owner's document only), `__eq__`/`__hash__` by key, and
+a stale handle used as an argument re-resolved while decoding.  The
+corpus gates now recompute twice (the harness too) and stay green:
+Draft and BIM, reopened and built.
 
 ### 7.7 Decisions, numbered
 
@@ -1633,10 +1668,11 @@ Non-ASCII object names occur in real files.  Rig:
     --------------------------------------------  -----   ----------------------------------
     tests/src/App/ExpressionSecurity.cpp            11    catalog, hash, grant store
     tests/src/App/ExpressionSecurityRuntime.cpp      9    resolve, scopes, pending, audit
-    tests/src/App/ExpressionImageHost.cpp           66    acceptance 6, bench 6 (disabled),
-                                                          bridge 8, budget 4, eval 24 (the
+    tests/src/App/ExpressionImageHost.cpp           67    acceptance 6, bench 6 (disabled),
+                                                          bridge 8, budget 4, eval 25 (the
                                                           G1a-G1d gates among them, the
-                                                          Draft and BIM corpus gates),
+                                                          Draft and BIM corpus gates, the
+                                                          durable-handle gate),
                                                           host 9, routing 9
     tests/src/App/ExpressionPyodide.cpp             10    layout, verify, scoping, offer
     src/Mod/Test/SandboxPyodide.py                   2    the offer end to end
@@ -1645,8 +1681,9 @@ Non-ASCII object names occur in real files.  Rig:
 The acceptance harness opens a real saved-and-reopened `.FCStd` under a
 real `document:sha256` principal and runs hostile expressions through
 every layer.  Suites green at `fd14ba2878`: C++ 536/536, Python 2630;
-the sandbox suites at the BIM commit (2026-09-04): pyodide 90/90, wasi
-79 + 11 skipped, the four corpus gates passing.
+the sandbox suites at the durable-handles commit (2026-09-05): pyodide
+91/91, wasi 80 + 11 skipped, the four corpus gates passing with two
+recomputes each.
 Every gtest and the corpus gate select a runtime per process through
 `FCX_RUNTIME`.
 
@@ -1809,6 +1846,15 @@ sockets, any network for the reference image, a webview escape hatch.
 - A module property that raises AttributeError reads as "module has
   no attribute": the guest's `FreeCAD.ActiveDocument` property maps a
   refused `get_attr` to RuntimeError so the reason shows.
+- ONE recompute never meets a cached handle.  The handle table is
+  cleared by every expression evaluation (`ExpressionEvaluator` ->
+  `clearHandles()`), and a Spreadsheet's numeric cell IS an expression,
+  so a Proxy that kept a document object on `self` (ArchReport) failed
+  only on the SECOND routed recompute of the corpus.  A gate that
+  recomputes once proves nothing about state kept across hooks; the
+  corpus gates and the harness recompute twice (3.2, durable handles).
+  And `clearHandles()` inside a nested round trip would drop the OUTER
+  hook's live arguments -- it is a no-op while nested.
 
 ## 13. Known gaps and open questions
 
@@ -1839,15 +1885,17 @@ sockets, any network for the reference image, a webview escape hatch.
   either.  A nested write-back's refusal is silent, as it is natively:
   a guest `obj.Placement.Base = v` on a foreign object raises inside
   `startNotify`, which clears it.
-- A Proxy that keeps a document object on `self` across hooks
-  (ArchReport's `self.spreadsheet`, ArchSchedule's, the `self.obj = obj`
-  of several `onDocumentRestored`s) holds a HANDLE of the transaction
-  that minted it; the next hook finds it stale (`ReferenceError`).  The
-  corpus gates recompute once and do not see it; a second routed
-  recompute of the BIM corpus fails ArchReport (2026-09-05, 7.6 "G1d
-  CLOSED").  Durable document-object handles (a `(document, name)` key,
-  guest-side re-resolution on a stale id, `__eq__` by key) are the fix;
-  sized, pending the user's decision.
+- CLOSED 2026-09-05: a Proxy that keeps a document object on `self`
+  across hooks (ArchReport's `self.spreadsheet`, ArchSchedule's, the
+  `self.obj = obj` of several `onDocumentRestored`s) held a HANDLE of
+  the transaction that minted it and the next hook found it stale.
+  Durable document-object handles (3.2: a `[document, name]` key on
+  every DocumentObject and Document handle, guest-side re-resolution on
+  a stale id through `resolve`, `__eq__`/`__hash__` by key, re-resolution
+  of a stale argument while decoding) fix it, and the corpus gates
+  recompute twice.  Still transaction-scoped: a VALUE object kept across
+  hooks (a shape, a curve) -- natively a copy, in the guest a
+  `ReferenceError` on the next hook; no corpus object does it.
 - The GUI live expression editors evaluate as session, unconfined.
 - No memory ceiling for a guest.
 - Addon principal granularity (per addon, per file?) is still open.

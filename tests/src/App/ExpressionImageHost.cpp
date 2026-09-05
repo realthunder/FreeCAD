@@ -2746,6 +2746,7 @@ TEST_F(ExpressionImageEvalTest, tupleCrossesIntoTheImageAsTuple)
 #include <initializer_list>
 
 #include <App/ExpressionGuestProxy.h>
+#include <App/PropertyLinks.h>
 #include <App/PropertyPythonObject.h>
 #include <Base/Writer.h>
 
@@ -3473,13 +3474,135 @@ TEST_F(ExpressionImageEvalTest, guestProxyAttrsAndConstruct)
     }
 }
 
+// ---- durable document-object handles (docs/Sandbox.md 3.2, 7.6 "G1d
+// ---- CLOSED"): a Proxy that keeps document objects on itself across
+// ---- hooks -- ArchReport's Result sheet, the `self.obj = obj` of
+// ---- several onDocumentRestored -- finds them alive in the next hook
+// ---- although the table that minted their ids was cleared between ----
+
+TEST_F(ExpressionImageEvalTest, guestHandlesDurableAcrossHooks)
+{
+    auto& host = ImageHost::instance();
+    const std::string source =
+        "class Keeper:\n"
+        "    def __init__(self, obj):\n"
+        "        obj.Proxy = self\n"
+        "        self.runs = 0\n"
+        "        self.report = ''\n"
+        "    def execute(self, obj):\n"
+        "        self.runs += 1\n"
+        "        if self.runs == 1:\n"
+        // the first hook keeps what a Report keeps: the object, its
+        // document, a sibling looked up by name (twice: one to read
+        // through, one to hand back untouched as a value) and one the
+        // host deletes before the next hook
+        "            self.me = obj\n"
+        "            self.doc = obj.Document\n"
+        "            self.other = obj.Document.getObject('Other')\n"
+        "            self.other_as_value = obj.Document.getObject('Other')\n"
+        "            self.gone = obj.Document.getObject('Gone')\n"
+        "            return\n"
+        // the second hook: every cached id is stale, every use
+        // re-resolves by key -- reads, a write, a link value, identity
+        "        out = []\n"
+        "        obj.Width = self.other.Width + self.me.Width\n"
+        "        obj.Label = self.doc.Label + '/' + self.other.Name\n"
+        "        obj.Ref = self.other_as_value\n"
+        "        out.append('eq' if self.me == obj and self.other != obj and self.me in [obj] else 'ne')\n"
+        "        out.append('hash' if len({self.me, obj}) == 1 else 'nohash')\n"
+        "        try:\n"
+        "            self.gone.Label\n"
+        "            out.append('gone-alive')\n"
+        "        except ReferenceError:\n"
+        "            out.append('gone-refused')\n"
+        // a key the guest made up, into another document: refused
+        "        H = [c for c in type(obj).__mro__ if c.__name__ == 'HostHandle'][0]\n"
+        "        fake = H()\n"
+        "        fake._id = 0\n"
+        "        fake._ty = 'obj'\n"
+        "        fake._fc = None\n"
+        "        fake._k = ('Elsewhere', 'X')\n"
+        "        try:\n"
+        "            fake.Label\n"
+        "            out.append('foreign-allowed')\n"
+        "        except PermissionError:\n"
+        "            out.append('foreign-refused')\n"
+        "        self.report = ' '.join(out)\n"
+        "    def dumps(self):\n"
+        "        return None\n"
+        "    def loads(self, state):\n"
+        "        pass\n";
+    auto r = host.exec(source, "fcxkeeper");
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+
+    App::DocumentObject* other = doc->addObject("App::FeaturePython", "Other");
+    ASSERT_NE(other, nullptr);
+    auto otherWidth = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        other->addDynamicProperty("App::PropertyFloat", "Width"));
+    ASSERT_NE(otherWidth, nullptr);
+    otherWidth->setValue(2.5);
+    ASSERT_NE(doc->addObject("App::FeaturePython", "Gone"), nullptr);
+    auto ref = Base::freecad_dynamic_cast<App::PropertyLink>(
+        obj->addDynamicProperty("App::PropertyLink", "Ref"));
+    ASSERT_NE(ref, nullptr);
+    auto width = Base::freecad_dynamic_cast<App::PropertyFloat>(obj->getPropertyByName("Width"));
+    ASSERT_NE(width, nullptr);
+    width->setValue(10.5);
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* py = obj->getPyObject();
+        PyObject* args = Py_BuildValue("(O)", py);
+        Py_DECREF(py);
+        auto n = host.proxyNew("fcxkeeper", "Keeper", args, false, obj);
+        Py_DECREF(args);
+        ASSERT_TRUE(n.ok) << n.excType << ": " << n.message;
+        PyObject* standIn = host.decodeResult(n);
+        ASSERT_NE(standIn, nullptr);
+        Py_DECREF(standIn);
+    }
+
+    // 1. the first recompute caches the handles
+    obj->touch();
+    doc->recompute();
+    ASSERT_FALSE(obj->isError()) << obj->getStatusString();
+    // the transaction boundary as an expression evaluation makes it
+    // (ExpressionEvaluator clears the table): every id the guest kept is
+    // stale now; and one cached object is gone for good
+    host.clearHandles();
+    doc->removeObject("Gone");
+
+    // 2. the second recompute finds them again by key
+    host.resetStats();
+    obj->touch();
+    doc->recompute();
+    EXPECT_FALSE(obj->isError()) << obj->getStatusString();
+    EXPECT_DOUBLE_EQ(width->getValue(), 13.0);
+    EXPECT_EQ(std::string(obj->Label.getValue()), std::string(doc->Label.getValue()) + "/Other");
+    EXPECT_EQ(ref->getValue(), other) << "a cached object as a link value re-resolves while decoding";
+    std::string report;
+    ASSERT_TRUE(hostEvalStr(
+        "__import__('FreeCAD').getDocument('FcxEvalTest').getObject('Obj').Proxy.report", report));
+    EXPECT_EQ(report, "eq hash gone-refused foreign-refused");
+    auto st = host.stats();
+    // me, doc, other, gone and the forged key each asked once; the link
+    // value re-resolved inside the decode, no op of its own
+    EXPECT_GE(st.ops["resolve"], 4u);
+    std::cout << "durable handles: bridge ops:";
+    for (const auto& [k, v] : st.ops)
+        std::cout << " " << k << "=" << v;
+    std::cout << std::endl;
+}
+
 /// A corpus gate (G1d): a test document of one workbench's scripted
 /// objects, generated natively by `generator._create_objects(doc)`
 /// (drafttests.draft_test_objects, bimtests.bim_test_objects) and
 /// carried by a bundled wheel (`wheelPrefix`).  Two passes each: the
 /// reopen gate saves the native build and reopens it natively then
 /// routed (the Restore route); the built gate builds it twice, natively
-/// then routed (the construction dispatch).  A pass snapshots every
+/// then routed (the construction dispatch).  Each pass recomputes the
+/// document TWICE (a Proxy caching a document object across hooks
+/// survives the transaction boundary only with durable handles), then
+/// snapshots every
 /// object -- proxy kind, shape hash, vertices, state -- and the routed
 /// pass is compared to the native one: every scripted object's Proxy a
 /// guest stand-in, none imported or constructed on the host, no object
@@ -3540,13 +3663,24 @@ std::string corpusRig(const CorpusGate& gate)
           "        return 'none'\n"
           "    return 'guest' if S.proxyInfo(p) else 'host'\n"
           "SNAP = {}\n"
+          // TWICE: a Proxy that keeps a document object on itself across
+          // hooks (ArchReport's Result sheet) holds a handle of the first
+          // recompute's transaction; the second recompute must find it
+          // alive (durable handles, docs/Sandbox.md 3.2) -- one recompute
+          // never saw the failure
+          "def recompute_twice(doc):\n"
+          "    invalid = set()\n"
+          "    for _ in range(2):\n"
+          "        for o in doc.Objects:\n"
+          "            o.touch()\n"
+          "        doc.recompute()\n"
+          "        invalid.update(o.Name for o in doc.Objects if 'Invalid' in o.State)\n"
+          "    return invalid\n"
           "def pass_(path, routed):\n"
           "    doc = App.openDocument(path)\n"
           "    restored = {o.Name: proxy(o) for o in doc.Objects}\n"
-          "    for o in doc.Objects:\n"
-          "        o.touch()\n"
-          "    doc.recompute()\n"
-          "    SNAP[routed] = {o.Name: (restored[o.Name], sig(o), verts(o), 'Invalid' in o.State)\n"
+          "    invalid = recompute_twice(doc)\n"
+          "    SNAP[routed] = {o.Name: (restored[o.Name], sig(o), verts(o), o.Name in invalid)\n"
           "                    for o in doc.Objects}\n"
           "    App.closeDocument(doc.Name)\n"
           "    return 'ok'\n"
@@ -3554,7 +3688,8 @@ std::string corpusRig(const CorpusGate& gate)
           "    doc = App.newDocument('FcxCorpusBuild')\n"
           "    gen._create_objects(doc)\n"
           "    doc.recompute()\n"
-          "    SNAP[routed] = {o.Name: (proxy(o), sig(o), verts(o), 'Invalid' in o.State)\n"
+          "    invalid = recompute_twice(doc)\n"
+          "    SNAP[routed] = {o.Name: (proxy(o), sig(o), verts(o), o.Name in invalid)\n"
           "                    for o in doc.Objects}\n"
           "    App.closeDocument(doc.Name)\n"
           "    return 'ok'\n"

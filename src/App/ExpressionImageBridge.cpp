@@ -287,6 +287,113 @@ void HandleTable::clear()
     uses.clear();
 }
 
+static json okReply(json val);
+static json errReply(const char* exc, const std::string& msg);
+
+// ---- durable document-object handles (docs/Sandbox.md 3.2) ----
+
+/// The document a Python face belongs to: a DocumentObject's, or the
+/// Document itself; nullptr for anything else (a shape, a curve).
+static App::Document* documentOf(PyObject* obj)
+{
+    if (!obj)
+        return nullptr;
+    if (PyObject_TypeCheck(obj, &App::DocumentObjectPy::Type)) {
+        // PyObjectBase::isValid (the Python method of the same name on
+        // DocumentObjectPy shadows it): a face whose C++ object is gone
+        auto* py = static_cast<App::DocumentObjectPy*>(obj);
+        auto* o = static_cast<Base::PyObjectBase*>(py)->isValid() ? py->getDocumentObjectPtr()
+                                                                  : nullptr;
+        return o ? o->getDocument() : nullptr;
+    }
+    if (PyObject_TypeCheck(obj, &App::DocumentPy::Type)) {
+        auto* py = static_cast<App::DocumentPy*>(obj);
+        return static_cast<Base::PyObjectBase*>(py)->isValid() ? py->getDocumentPtr() : nullptr;
+    }
+    return nullptr;
+}
+
+/// The durable key a handle to `obj` carries ("k"): [document, name]
+/// for a DocumentObject, [document] for a Document, null for a value
+/// object -- a shape has no name to come back by, and natively a shape
+/// kept across hooks is a copy anyway.
+static json handleKey(PyObject* obj)
+{
+    App::Document* doc = documentOf(obj);
+    if (!doc)
+        return json();
+    if (PyObject_TypeCheck(obj, &App::DocumentObjectPy::Type)) {
+        auto* o = static_cast<App::DocumentObjectPy*>(obj)->getDocumentObjectPtr();
+        const char* name = o ? o->getNameInDocument() : nullptr;
+        if (!name)
+            return json();
+        return json::array({doc->getName(), name});
+    }
+    return json::array({doc->getName()});
+}
+
+/** The object a key names, as a NEW reference; nullptr with `denied`
+ * filled in when it cannot be handed out.  A key is a pair of names the
+ * guest could make up, where a handle is a capability it was handed, so
+ * the reach is exactly what the guest already has through
+ * `owner.Document.getObject(name)` (a declared call under
+ * doc.read.self): the evaluation owner's document only.  A foreign
+ * document is a PermissionError, a name no longer in the document a
+ * ReferenceError -- the object was deleted, which natively leaves the
+ * Proxy holding a dead object too.  Never throws: the decode path runs
+ * outside the op dispatcher's catch as well.
+ */
+static PyObject* resolveByKey(const HandleTable& table, const json& key, json& denied)
+{
+    const bool wellFormed = key.is_array() && !key.empty() && key.size() <= 2
+        && key[0].is_string() && (key.size() == 1 || key[1].is_string());
+    if (!wellFormed) {
+        denied = errReply("ProtocolError", "malformed handle key");
+        return nullptr;
+    }
+    const std::string& docName = key[0].get_ref<const std::string&>();
+    App::Document* ownerDoc = documentOf(table.owner());
+    if (!ownerDoc || docName != ownerDoc->getName()) {
+        denied = errReply("PermissionError",
+                          "a handle into document '" + docName
+                              + "' cannot be re-resolved: not the evaluation owner's document");
+        return nullptr;
+    }
+    try {
+        ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::DocReadSelf);
+    }
+    catch (const ExpressionSecurity::PermissionNeededException& e) {
+        if (PyErr_Occurred())
+            PyErr_Clear();
+        denied = errReply("PermissionError", e.what());
+        return nullptr;
+    }
+    if (key.size() == 1)
+        return ownerDoc->getPyObject();
+    const std::string& name = key[1].get_ref<const std::string&>();
+    App::DocumentObject* obj = ownerDoc->getObject(name.c_str());
+    if (!obj) {
+        denied = errReply("ReferenceError",
+                          "object '" + name + "' no longer exists in document '" + docName + "'");
+        return nullptr;
+    }
+    return obj->getPyObject();
+}
+
+/// An error reply as the current Python error (the decode path raises
+/// where the op dispatcher would reply).
+static void setPyErrorFromReply(const json& reply)
+{
+    const std::string exc = reply.value("exc", "RuntimeError");
+    const std::string msg = reply.value("msg", "");
+    PyObject* builtins = PyEval_GetBuiltins();
+    PyObject* type = builtins ? PyDict_GetItemString(builtins, exc.c_str()) : nullptr;
+    if (type && PyExceptionClass_Check(type))
+        PyErr_SetString(type, msg.c_str());
+    else
+        PyErr_Format(PyExc_RuntimeError, "%s: %s", exc.c_str(), msg.c_str());
+}
+
 // ---- host value marshal (mirror of the image's ImageMarshal.cpp,
 // ---- except non-marshalable objects become handles, never errors) ----
 
@@ -429,6 +536,9 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
             json ext = extensionFacadeKeys(self);
             if (!ext.empty())
                 h["ext"] = std::move(ext);
+            json key = handleKey(self);
+            if (!key.is_null())
+                h["k"] = std::move(key);
             return h;
         }
     }
@@ -441,6 +551,9 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
     json ext = extensionFacadeKeys(obj);
     if (!ext.empty())
         h["ext"] = std::move(ext);
+    json key = handleKey(obj);
+    if (!key.is_null())
+        h["k"] = std::move(key);
     return h;
 }
 
@@ -608,6 +721,17 @@ PyObject* decodeHostValue(const HandleTable& table, const json& v)
         if (id != v.end() && id->is_number_integer()) {
             PyObject* obj = table.get(id->get<uint64_t>());
             if (!obj) {
+                // a document object cached on a guest Proxy across
+                // transactions, arriving as an argument: its key finds
+                // the live object (FcxWire OpResolve)
+                auto key = v.find("k");
+                if (key != v.end()) {
+                    json denied;
+                    PyObject* fresh = resolveByKey(table, *key, denied);
+                    if (!fresh)
+                        setPyErrorFromReply(denied);
+                    return fresh;
+                }
                 PyErr_SetString(PyExc_ReferenceError, "stale host handle");
                 return nullptr;
             }
@@ -923,6 +1047,20 @@ json dispatchHostOp(HandleTable& table, const json& req)
             return callWithWireArgs(table, attr, req);
         }
 
+        if (op == FcxWire::OpResolve) {
+            // a guest proxy whose id went stale asks for a fresh one by
+            // its (document, name) key; the reply is the id alone -- the
+            // proxy keeps its class, the object is the same
+            auto a = req.find("a");
+            json denied;
+            PyObject* fresh = resolveByKey(table, a == req.end() ? json() : *a, denied);
+            if (!fresh)
+                return denied;
+            const uint64_t fresh_id = table.add(fresh);
+            Py_DECREF(fresh);  // the table holds its own reference
+            return okReply(json(fresh_id));
+        }
+
         PyObject* base = table.get(id);
         if (!base)
             return errReply("ReferenceError", "stale host handle");
@@ -1009,31 +1147,10 @@ json dispatchHostOp(HandleTable& table, const json& req)
         // only was rung 2's scoping, retired 2026-09-05 by user ruling.
         // A PermissionError, not a ProtocolError: the request is
         // well-formed, the principal is not allowed.
-        auto ownerDocument = [&]() -> App::Document* {
-            PyObject* o = table.owner();
-            if (!o)
-                return nullptr;
-            if (PyObject_TypeCheck(o, &App::DocumentObjectPy::Type)) {
-                auto* obj = static_cast<App::DocumentObjectPy*>(o)->getDocumentObjectPtr();
-                return obj ? obj->getDocument() : nullptr;
-            }
-            if (PyObject_TypeCheck(o, &App::DocumentPy::Type))
-                return static_cast<App::DocumentPy*>(o)->getDocumentPtr();
-            return nullptr;
-        };
-        auto targetDocument = [&](PyObject* t) -> App::Document* {
-            if (PyObject_TypeCheck(t, &App::DocumentObjectPy::Type)) {
-                auto* obj = static_cast<App::DocumentObjectPy*>(t)->getDocumentObjectPtr();
-                return obj ? obj->getDocument() : nullptr;
-            }
-            if (PyObject_TypeCheck(t, &App::DocumentPy::Type))
-                return static_cast<App::DocumentPy*>(t)->getDocumentPtr();
-            return nullptr;
-        };
         auto writeGate = [&](const char* what) -> json {
-            App::Document* ownerDoc = ownerDocument();
+            App::Document* ownerDoc = documentOf(table.owner());
             bool sameDocument = base == table.owner()
-                || (ownerDoc && targetDocument(base) == ownerDoc);
+                || (ownerDoc && documentOf(base) == ownerDoc);
             if (!table.owner() || !sameDocument)
                 return errReply("PermissionError",
                                 std::string(what)

@@ -3,11 +3,11 @@
 same with its scripted objects' Proxies in the sandbox guest?
 
 For each document: reopen it NATIVELY, touch every object, recompute
-and snapshot (the honest baseline -- a re-execute drifts on its own,
-Draft's Fillet does); then set the routing preference, reopen it
+twice and snapshot (the honest baseline -- a re-execute drifts on its
+own, Draft's Fillet does); then set the routing preference, reopen it
 through PropertyPythonObject's Restore route (every saved
 <Python module=".." class=".."> allocated in the guest, the property
-holding a stand-in), touch, recompute, snapshot; print one row per
+holding a stand-in), touch, recompute twice, snapshot; print one row per
 object: how the Proxy came back (GUEST stand-in / host instance /
 none), whether the shape hash equals the native one (with the max
 vertex delta when it does not), and the recompute state.  With no
@@ -102,12 +102,21 @@ def reopen(path, routed):
     S.setRouting(routed)
     doc = App.openDocument(path)
     restored = {o.Name: proxy_desc(o) for o in doc.Objects}
-    for o in doc.Objects:
-        o.touch()
+    # twice: a Proxy that keeps a document object on itself across hooks
+    # (ArchReport's Result sheet) holds a handle of the first recompute's
+    # transaction, and the second recompute must find it alive (durable
+    # handles, docs/Sandbox.md 3.2); one recompute never saw the failure
+    invalid = set()
     S.resetStats()
-    doc.recompute()
+    for _ in range(2):
+        for o in doc.Objects:
+            o.touch()
+        doc.recompute()
+        invalid.update(o.Name for o in doc.Objects if "Invalid" in o.State)
     stats = S.stats()
     snap = snapshot(doc)
+    for name in invalid:
+        snap[name]["invalid"] = True
     App.closeDocument(doc.Name)
     return restored, snap, stats
 

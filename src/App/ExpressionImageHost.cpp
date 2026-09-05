@@ -523,6 +523,14 @@ uint64_t ImageHost::exportObject(PyObject* obj)
 void ImageHost::clearHandles()
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    // Nested inside a round trip -- an expression recomputed by a guest
+    // hook's write (a Schedule filling its Result sheet: every numeric
+    // cell is an expression) -- the table is the OUTER transaction's,
+    // and its handles are the hook's live arguments.  Only the
+    // outermost evaluation clears; the guest's queued releases cover
+    // what the nested one exported.
+    if (d->depth > 0)
+        return;
     Base::PyGILStateLocker lock;
     d->handles.clear();
 }

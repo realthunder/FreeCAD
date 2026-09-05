@@ -34,22 +34,41 @@ namespace FcxImage
  * __del__ queues the host table entry's release, which rides the next
  * request or the reply (never a hop of its own); by then the bridge
  * may be gone, hence the bare except.
+ * A handle to a DocumentObject or Document carries its durable key in
+ * _k ((document, name) or (document,), FcxWire OpResolve): an id lives
+ * one transaction, but a Proxy keeps document objects on itself across
+ * hooks natively (ArchReport's Result sheet), so every op goes through
+ * _hop, which on a stale id re-resolves the key once and retries, and
+ * two handles compare and hash by key when both have one.
  */
 static const char ProxyPrelude[] =
     "import _fcx\n"
+    "def _hop(self, op, *args):\n"
+    "    try:\n"
+    "        return _fcx.op(op, self._id, *args)\n"
+    "    except ReferenceError:\n"
+    "        if self._k is None:\n"
+    "            raise\n"
+    "        object.__setattr__(self, '_id', _fcx.op('resolve', 0, list(self._k)))\n"
+    "        return _fcx.op(op, self._id, *args)\n"
     "class HostHandle:\n"
-    "    __slots__ = ('_id', '_ty', '_fc')\n"
+    "    __slots__ = ('_id', '_ty', '_fc', '_k')\n"
     "    def __repr__(self):\n"
     "        return '<HostHandle %s #%d>' % (self._ty, self._id)\n"
     // identity is the host object's: the host mints one id per object
     // per transaction, so `obj in o.Hosts` and `a == b` hold as they
-    // do natively
+    // do natively; across transactions a document object's key is
+    // what stays the same
     "    def __eq__(self, other):\n"
-    "        return isinstance(other, HostHandle) and other._id == self._id\n"
+    "        if not isinstance(other, HostHandle):\n"
+    "            return False\n"
+    "        if self._k is not None and other._k is not None:\n"
+    "            return other._k == self._k\n"
+    "        return other._id == self._id\n"
     "    def __ne__(self, other):\n"
-    "        return not (isinstance(other, HostHandle) and other._id == self._id)\n"
+    "        return not self.__eq__(other)\n"
     "    def __hash__(self):\n"
-    "        return hash(self._id)\n"
+    "        return hash(self._k) if self._k is not None else hash(self._id)\n"
     // A value read off a handle (read_prop here, get_attr in _attr) is
     // stamped as that attribute of the proxy: a nested write --
     // `obj.Placement.Base = v`, ArchFrame's `profile.Placement.Rotation
@@ -59,7 +78,7 @@ static const char ProxyPrelude[] =
     "    def __getattr__(self, name):\n"
     "        if name.startswith('_'):\n"
     "            raise AttributeError(name)\n"
-    "        return _fcx.track(_fcx.op('read_prop', self._id, name), self, name)\n"
+    "        return _fcx.track(_hop(self, 'read_prop', name), self, name)\n"
     "    def __setattr__(self, name, value):\n"
     "        if name in HostHandle.__slots__ or name == '__class__':\n"
     "            object.__setattr__(self, name, value)\n"
@@ -69,15 +88,15 @@ static const char ProxyPrelude[] =
     // the host builds the stand-in (FcxWire TagGuestProxy).
     "            if name == 'Proxy' and value is not None and not isinstance(value, HostHandle):\n"
     "                value = _proxy_register(value)\n"
-    "            _fcx.op('write_prop', self._id, name, value)\n"
+    "            _hop(self, 'write_prop', name, value)\n"
     "    def __bool__(self):\n"
-    "        return _fcx.op('bool', self._id)\n"
+    "        return _hop(self, 'bool')\n"
     "    def __str__(self):\n"
-    "        return _fcx.op('str', self._id)\n"
+    "        return _hop(self, 'str')\n"
     "    def __getitem__(self, key):\n"
-    "        return _fcx.op('get_item', self._id, key)\n"
+    "        return _hop(self, 'get_item', key)\n"
     "    def __len__(self):\n"
-    "        return _fcx.op('len', self._id)\n"
+    "        return _hop(self, 'len')\n"
     "    def __del__(self):\n"
     "        try:\n"
     "            _fcx.release_later(self._id)\n"
@@ -85,19 +104,19 @@ static const char ProxyPrelude[] =
     "            pass\n"
     "def _attr(name):\n"
     "    def get(self):\n"
-    "        return _fcx.track(_fcx.op('get_attr', self._id, name), self, name)\n"
+    "        return _fcx.track(_hop(self, 'get_attr', name), self, name)\n"
     "    return property(get)\n"
     "def _method(name):\n"
     "    if name == 'addExtension':\n"
     // the object's extensions changed under the proxy: recompose
     // its class from the facades the host now reports (FcxWire OpExt)
     "        def call(self, *args, **kw):\n"
-    "            r = _fcx.op('call', self._id, name, args, kw)\n"
-    "            self.__class__ = _composed(self._fc, tuple(_fcx.op('ext', self._id)))\n"
+    "            r = _hop(self, 'call', name, args, kw)\n"
+    "            self.__class__ = _composed(self._fc, tuple(_hop(self, 'ext')))\n"
     "            return r\n"
     "    else:\n"
     "        def call(self, *args, **kw):\n"
-    "            return _fcx.op('call', self._id, name, args, kw)\n"
+    "            return _hop(self, 'call', name, args, kw)\n"
     "    call.__name__ = name\n"
     "    return call\n"
     // The module facades (generated MODULES): a module object per
@@ -539,15 +558,34 @@ PyObject* decodeValue(const json& v)
             PyObject* pty = PyUnicode_FromString(
                 ty->get_ref<const std::string&>().c_str());
             PyObject* pfc = fcKey ? PyUnicode_FromString(fcKey) : (Py_INCREF(Py_None), Py_None);
-            int rc = (pid && pty && pfc) ? PyObject_SetAttrString(inst, "_id", pid)
-                                         : -1;
+            // the durable key of a document object ("k"): a tuple of
+            // its names, None for a value object
+            PyObject* pk = nullptr;
+            auto key = v.find("k");
+            if (key != v.end() && key->is_array() && !key->empty()) {
+                pk = PyTuple_New((Py_ssize_t)key->size());
+                Py_ssize_t i = 0;
+                for (const auto& part : *key)
+                    if (pk)
+                        PyTuple_SET_ITEM(pk, i++, PyUnicode_FromString(
+                            part.is_string() ? part.get_ref<const std::string&>().c_str() : ""));
+            }
+            else {
+                Py_INCREF(Py_None);
+                pk = Py_None;
+            }
+            int rc = (pid && pty && pfc && pk) ? PyObject_SetAttrString(inst, "_id", pid)
+                                               : -1;
             if (rc == 0)
                 rc = PyObject_SetAttrString(inst, "_ty", pty);
             if (rc == 0)
                 rc = PyObject_SetAttrString(inst, "_fc", pfc);
+            if (rc == 0)
+                rc = PyObject_SetAttrString(inst, "_k", pk);
             Py_XDECREF(pid);
             Py_XDECREF(pty);
             Py_XDECREF(pfc);
+            Py_XDECREF(pk);
             if (rc != 0) {
                 Py_DECREF(inst);
                 return nullptr;
@@ -712,10 +750,25 @@ bool encodeValue(PyObject* obj, json& out, std::string& err)
         PyObject* pid = PyObject_GetAttrString(obj, "_id");
         PyObject* pty = PyObject_GetAttrString(obj, "_ty");
         bool ok = pid && pty && PyLong_Check(pid) && PyUnicode_Check(pty);
-        if (ok)
+        if (ok) {
             out = {{FcxWire::TagKey, FcxWire::TagHandle},
                    {"id", (uint64_t)PyLong_AsUnsignedLongLong(pid)},
                    {"ty", std::string(PyUnicode_AsUTF8(pty))}};
+            // the durable key rides along, so a stale id re-resolves
+            // on the host while decoding (FcxWire OpResolve)
+            PyObject* pk = PyObject_GetAttrString(obj, "_k");
+            if (pk && PyTuple_Check(pk)) {
+                json key = json::array();
+                for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(pk); ++i) {
+                    PyObject* part = PyTuple_GET_ITEM(pk, i);
+                    key.push_back(std::string(PyUnicode_Check(part) ? PyUnicode_AsUTF8(part) : ""));
+                }
+                out["k"] = std::move(key);
+            }
+            Py_XDECREF(pk);
+            if (!pk)
+                PyErr_Clear();
+        }
         Py_XDECREF(pid);
         Py_XDECREF(pty);
         if (ok)
