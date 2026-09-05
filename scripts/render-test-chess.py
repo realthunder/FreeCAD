@@ -21,8 +21,8 @@ Deterministic by construction, as a golden scene must be: every setting
 is a literal, the environment picture is the one in the tree, and the
 camera is assigned as a literal rotation rather than animated into place
 (viewIsometric() and friends animate, and a capture taken mid-flight is
-not reproducible), with navigation animation switched off so that the
-fit does not animate either.
+not reproducible), with navigation animation switched off before the
+import runs its own fit, so that no fit animates.
 """
 import os
 import traceback
@@ -104,6 +104,17 @@ def stage():
 
     doc = FreeCAD.newDocument("RenderTestChess")
     FreeCADGui.ActiveDocument = FreeCADGui.getDocument(doc.Name)
+    # Animation off BEFORE anything fits: ImportGui.insert runs a view
+    # fit of its own while the progressive load is still live, and an
+    # animated fit is a nested event loop that lasts as long as ten
+    # frames take -- seconds under load. That is the window in which
+    # the tree widget's timer once crashed the process (a rank write
+    # judged as a user edit), and in which a camera restaged by the
+    # harness gets overwritten by the animation still in flight. There
+    # is no preference for this: the navigation style starts with
+    # animation on and only the view's own switch turns it off.
+    v = FreeCADGui.ActiveDocument.ActiveView
+    v.setAnimationEnabled(False)
     ImportGui.insert(GLB, doc.Name)
     ImportGui.insert(MTLX, doc.Name)
     doc.recompute()
@@ -115,7 +126,6 @@ def stage():
                if o.ShapeMaterial
                and o.ShapeMaterial.getAppearanceValue("MaterialXSurface"))))
 
-    v = FreeCADGui.ActiveDocument.ActiveView
     try:
         v.ShowNaviCube = False
     except Exception:
@@ -125,11 +135,10 @@ def stage():
     except Exception:
         pass
     v.setCameraType("Perspective")
-    # fitAll() animates the camera into place in ten per-frame steps
-    # unless animation is off, and a frame during the cold compile of
-    # this material set is seconds: the animation was still moving the
-    # camera when the harness captured, thirty seconds on.
-    v.setAnimationEnabled(False)
+    # fitAll() would animate the camera into place in ten per-frame
+    # steps, and a frame during the cold compile of this material set
+    # is seconds: the animation was still moving the camera when the
+    # harness captured, thirty seconds on. Animation is off (above).
     v.getCameraNode().orientation.setValue(
         coin.SbRotation(0.4247, 0.1759, 0.3389, 0.8226))
     v.fitAll()
