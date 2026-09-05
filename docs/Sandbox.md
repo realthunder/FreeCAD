@@ -1733,7 +1733,38 @@ principal refused (`Permission denied: gui`).  A document-principal
 which runs as session.  Suites after: pyodide 97/97, wasi 86 + 11
 skipped.
 
-**G2b, the runner (next):** a module whose GUI side is bundled as a
+**G2b MEASURED 2026-09-05, before the runner exists:** the real
+`InitGui.py` of Draft and of BIM, exec'd unmodified in the guest with
+the runner's globals (`FreeCAD`, `App`, `Gui`, `FreeCADGui`, `Workbench`,
+`Log`, `Err`, `Msg`, an empty `FreeCAD.__unit_test__`), the native
+workbench removed first:
+
+    module level   Draft: OK -- 1 gui.wb.add, 4 gui.pref_page (the .ui
+                   resources exist on the host because the native
+                   Draft_rc had been imported at startup: the runner
+                   needs gui.rc).  BIM: OK -- 1 gui.wb.add, 5
+                   gui.pref_page, 4 mod_call (prefs).
+    activation     Draft: the host activates it; Initialize() runs in
+                   the guest and RETURNS AT ITS FIRST LINE -- `from pivy
+                   import coin` fails, "Pivy not found, Draft Workbench
+                   will be disabled" -- so no icon path, no language
+                   path, no toolbar; Activated() and Deactivated() cross
+                   and run (the WorkingPlane/grid_observer view
+                   observers are GUI-only, warned about).  BIM:
+                   Initialize() crosses gui.icon_path and gui.lang_path,
+                   then `import DraftTools` -- not in any wheel --
+                   ModuleNotFoundError.
+
+So the first thing either `Initialize()` needs is not a form: it is
+pivy (Draft's self-test) and `DraftTools` (which imports `DraftGui`'s
+widgets and `gui_snapper` at module level).  That is Probe A and G3
+in that order; the runner itself is a small switch and waits for
+something to switch to.  A host `activateWorkbench` whose `Initialize`
+raises ends in a modal "Workbench failure" box (`Application.cpp`
+~1850) -- under Xvfb that is a hang, so a probe calls the guest's
+`Initialize` through `exec` instead.
+
+**G2b, the runner:** a module whose GUI side is bundled as a
 wheel runs its `InitGui.py` in the guest instead of natively (the
 `Evaluate` preference plus the wheel's presence; native otherwise), with
 `gui.rc {module}` (the host imports `<Mod root>/<name>_rc.py`, compiled
