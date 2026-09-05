@@ -183,10 +183,12 @@ plausible wrong answer is worse than a visible missing one.
 Storing the old *sub-shape* would already fix the durability half.  It
 is worth being explicit about why the base shape is the right unit:
 
-- **The element map comes with it.**  A stored base shape carries its
-  `<ElementMap2>` block, so the old mapped name can be looked up in the
-  old map, and layer 3's ancestry walk becomes available across a reload
-  rather than only while every ancestor object still exists.
+- **The element map comes with it** -- *only if it is stored as a shape
+  property rather than as a bare content hash.  Corrected in sec 5.2;
+  the blob a hash names is geometry alone.*  A stored base shape carries
+  its `<ElementMap2>` block, so the old mapped name can be looked up in
+  the old map, and layer 3's ancestry walk becomes available across a
+  reload rather than only while every ancestor object still exists.
 - **Adjacency and neighbourhood.**  "The face between these two edges",
   "the face that shared an edge with the one that is still there" are
   answerable from a base shape and unanswerable from a detached face.
@@ -581,3 +583,315 @@ result.
   editing is not measured, and the two side faces in the same run were
   repaired correctly.  The case for the pre-task rests on
   accountability, not on a claimed failure rate.
+
+
+## 5. The pre-task, planned (2026-09-05)
+
+Written after reading the storage path end to end and measuring four
+things sections 2 and 4 left open.  **Three of section 2's claims do not
+survive that reading and are corrected in 5.2.**  The plan that follows
+is what is left standing.
+
+### 5.1 Scope: what this builds, and what waits
+
+**In scope.** Make the evidence for an element reference *durable* --
+persist the snapshot that `Feature::onBeforeChange` already takes, and
+feed the existing layer-2 search from it after a reload.  No new matching
+algorithm, no new user interface, no change to what a repair decides.
+
+**Deferred, by user ruling (2026-09-05), until upstream's `PartDesign`
+and `Sketcher` are merged**: the repair record (old sec 2.9 P3) and the
+repair dialog (P4).  This is the right ordering rather than only a
+convenient one.  The candidate-list UI a repair dialog would extend
+already exists, in `src/Mod/PartDesign/Gui/Utils.cpp:1727` -- it warns on
+a missing element reference and offers `getRelatedElements` candidates in
+a tree widget -- and that file is squarely inside the merge.  Building a
+second UI on top of it now buys rework.
+
+So the pre-task ships as **storage plus the search that consumes it**,
+and stops there.  What it produces is not user-visible; what it produces
+is a document that still knows what a broken reference used to point at,
+which is the thing the deferred UI cannot be built without.
+
+**The failure it exists to fix, stated exactly.**  Section 2.3 measured
+`?Face3` and called it "geometry gone forever".  Reading the gathering
+code says why, and it is sharper than that:
+
+    if(!element || !element[0] || Data::hasMissingElement(element))
+        continue;                       // PartFeature.cpp:1273
+
+A reference that is *already* broken is skipped when the cache is seeded.
+So the ladder has no second chance: the snapshot is only ever taken while
+the reference is healthy, it lives in memory, and if the document is
+saved between the break and the next edit, the last healthy snapshot is
+gone.  Layer 2 does not fail because it is weak.  It fails because its
+evidence was never written down.
+
+### 5.2 Three corrections from writing the plan
+
+**Correction 1: a content hash names geometry, not names.**  Section 2.4
+said "the element map comes with it".  It does not.
+`PropertyPartShape::Save` (`PropertyTopoShape.cpp:1060`) writes the
+geometry as the blob referenced by `hash=`, and then writes the element
+map *separately* -- `_Shape.Save(writer)`, which lands as the
+`<ElementMap2>` block inline in `Document.xml` or as a `.Map` file -- and
+the string hasher separately again, as a `.Table`.  Three artifacts, one
+of which is content-addressed.  Storing a hash and nothing else buys
+geometry with no names on it.
+
+Measured on the six-cut plate (`probe_prune.py`), deflated:
+
+| artifact | deflate |
+| --- | --- |
+| one whole base shape (`Cut5`, 12 faces) | 1613 |
+| all six element maps in `Document.xml` | 1240 |
+
+so the map is the same order of cost as the geometry, not a rounding
+error on it.  This is what decides 5.3: the stored thing has to be a
+*shape property*, which writes all three, and not a bare hash.
+
+**Correction 2: hash plus two more attributes, if the hash route were
+taken anyway.**  A blob is not a self-contained shape.  The top-level
+location is stripped out of the file and written as `loc=` on `<Part/>`
+(`docs/SharedShapeStorage.md` sec 12.2), and a shape that borrows a
+congruent instance's file carries `motion=` as well
+(`PropertyTopoShape.cpp:1088`).  Only the borrowing *plan* is recoverable
+from the file itself -- `serveFromBlob` reads it back out of the parsed
+content on purpose.  So "hash -> shape" is not a function; it is
+`(hash, loc, motion) -> shape`.
+
+**Correction 3: neighbourhood pruning is dead.**  Section 2.7 left open
+whether to store the whole base shape or prune it to the referenced
+element plus its adjacent faces, and guessed pruning would save "an order
+of magnitude".  Measured, on the same shape, deflated:
+
+| stored | deflate | share |
+| --- | --- | --- |
+| whole base shape (12 faces) | 1613 | 100% |
+| neighbourhood: picked face + the 4 sharing an edge | 1286 | **80%** |
+| the picked face alone | 432 | 27% |
+
+Pruning to a neighbourhood saves **20%**, not an order of magnitude.
+BRep size is dominated by surfaces and curves, and on any part small
+enough to care about, the neighbourhood of a face *is* most of the part.
+It is the worst of both options: it keeps most of the cost, and because
+the pruned shape is content nothing else in the file holds, it forfeits
+the free-when-healthy sharing that the whole shape gets.
+
+**Drop P5.**  The real choice is binary -- the whole shape (free when
+healthy, shareable, carries context) or the bare sub-shape (27%, never
+free, no context).  The whole shape wins on the common path, which is the
+one that runs every save.
+
+### 5.3 Where the shape goes: the layering question, answered
+
+The question is real: `App::PropertyLinkSub` and its three siblings live
+in `src/App/`, which cannot see `Part::TopoShape`.
+
+**An App-space geometry property is possible.**  This is worth stating
+because it is the option the question implies, and it is not blocked by
+layering:
+
+- `App::PropertyComplexGeoData` (`src/App/PropertyGeo.h:611`) is
+  App-space and abstract over `Data::ComplexGeoData`, which is itself an
+  App-space `Base::Persistence`.  App can `Save` and `Restore` one
+  polymorphically without naming the concrete type.
+- `Part::PropertyPartShape` is registered --
+  `TYPESYSTEM_SOURCE(Part::PropertyPartShape, App::PropertyComplexGeoData)`
+  (`PropertyTopoShape.cpp:83`) -- so
+  `Base::Type::fromName("Part::PropertyPartShape").createInstance()`
+  builds one from App with no link against Part.  That is not a
+  speculative trick: it is exactly what
+  `DynamicProperty::_addDynamicProperty` already does
+  (`DynamicProperty.cpp:184`, `198`) for every dynamic property in every
+  document.
+- The blob layer is entirely App-space and content-opaque: a
+  `FileBlobHandle` is hash, path and size (`FileBlobManager.h:112`), so
+  App can *retain* content it cannot parse, and holding the handle is
+  itself the retention -- a blob is deleted only when the last handle
+  goes away.
+
+So the reason not to put it on the link property is **cost, not
+layering**, and the cost is measured.
+
+**The unit is the feature, not the reference.**  Measured on the six-cut
+plate (`probe_gen2.py`), against a 17187-byte file:
+
+| retention policy | added, deflated | file growth |
+| --- | --- | --- |
+| one generation for the one referenced feature | 1572 | **+9.1%** |
+| one generation for every feature | 8422 | **+48.9%** |
+
+A base shape is one shape per *feature* however many references point
+into it, and the existing `_elementCache` is already keyed that way -- a
+map on the feature, from element name to sub-shape.  Storing it on the
+link property instead multiplies a 9.1% item by the reference count, and
+makes it worse than that: `PropertyPartShape::Copy()`
+(`PropertyTopoShape.cpp:984`) copies `_Shape` and `_Ver` and **not**
+`_blob`, so every per-reference copy re-serializes and none of them share
+the free hash.
+
+**Decision: the snapshot is persisted on the referenced feature, in Part
+space, as a shape property.**  Concretely, `Part::Feature` gains
+
+    PropertyPartShape  _SavedShape;      // hidden, the previous generation
+    PropertyStringList _SavedElements;   // the element names it was taken for
+
+This is the persistent form of `_elementCache`, put where `TopoShape` is
+in scope and where the cache already lives.
+
+**And App needs almost nothing**, because the seam is already there.
+`GeoFeature::searchElementCache` is declared virtual in App
+(`src/App/GeoFeature.h:176`), returns nothing in the base
+(`GeoFeature.cpp:272`), and is implemented in `Part::Feature`.  The one
+consumer, `PropertyLinkBase::_updateElementReference`
+(`PropertyLinks.cpp:382`), calls it through that virtual and does not
+know or care where the evidence came from.  Persist the cache behind the
+virtual and every App-side caller gets the durable version with no App
+change at all.
+
+The single App-side addition is a **trigger**, not a store -- see step
+S3.
+
+### 5.4 What is stored, and when it is not
+
+`_SavedShape` is the *previous* generation, and the invariant is what
+keeps the file from growing:
+
+> `_SavedShape` is empty whenever every recorded reference into this
+> feature resolves.  It holds geometry only while at least one is
+> missing.
+
+Which gives three cases:
+
+| state | what is written |
+| --- | --- |
+| all references healthy | nothing -- the property is empty |
+| a reference just broke | the previous shape; its geometry is a blob the file **already holds** if the feature has not been saved since, otherwise one new blob |
+| broken and still broken | the same previous shape, unchanged, so the blob is skipped by the existing content hash and costs no write |
+
+The healthy case is the one that runs on every save of every document
+that is working correctly, and it costs nothing.  The 9.1% is what a
+document pays *per feature that currently has a broken reference*, which
+is the case the feature exists for.
+
+**No ceiling is needed after all.**  Section 2.7 asked for a per-document
+cap.  With one generation per feature and retention conditional on an
+unresolved reference, the worst case is bounded by the number of features
+that simultaneously have broken references -- and a document in that
+state has a bigger problem than its size.  A preference to disable the
+whole thing is still worth having; a cap is not.
+
+### 5.5 Build steps
+
+**S1. Persist the snapshot.**  Add `_SavedShape` and `_SavedElements` to
+`Part::Feature`, both `Prop_Hidden`.  Populate them at the end of the
+existing gathering block in `Feature::onBeforeChange`
+(`PartFeature.cpp:1226`) -- the snapshot is already taken there, this
+only writes it down.  Clear both whenever every entry in
+`_SavedElements` resolves against the current `Shape`.
+
+No behaviour change: nothing reads them yet.  This step is measurable on
+its own -- a healthy document must save byte-identically to what it saves
+today.
+
+**S2. Feed layer 2 from it.**  `Feature::searchElementCache`
+(`PartFeature.cpp:1354`) currently returns `none` when `_elementCache`
+has no entry for the element.  Make that the point where it falls back to
+`_SavedShape`: take the sub-shape named by the element out of the saved
+shape, and run the same `searchSubShape` against the live one.
+
+The matching is unchanged.  What changes is that it now also works in
+every situation 2.2 listed as opportunistic -- after a reload, inside a
+transaction, during an undo, and for a reference whose break happened in
+a session that has since ended.
+
+**S3. Fire the search after a restore.**  Storage is inert without this,
+and it is the one App-side change.  `GeoFeature::onDocumentRestored`
+(`GeoFeature.cpp:265`) already recomputes `_ElementMapVersion`; add: if
+this feature has a saved snapshot and any reference into it is missing,
+call `PropertyLinkBase::updateElementReferences(this, false)`.
+
+That lands in `_updateElementReference` with `feature == geo` and
+`missing == true`, which is exactly the gate the existing recovery
+already waits behind (`PropertyLinks.cpp:373`).  Nothing new is invented;
+a path that could never fire for a document reopened broken now can.
+
+**S4. A Python accessor, and nothing more.**  Expose the saved element
+names and whether a snapshot is held, so the deferred UI has something to
+build on and so the gates below can be written.  No dialog, no report
+view, no automatic repoint that does not already happen.
+
+Deferred to the `PartDesign` / `Sketcher` merge: the repair record and
+the two-picture dialog (old sec 2.9 P3 and P4).
+
+### 5.6 Traps
+
+- **A second `PropertyPartShape` on `Part::Feature` is visited by
+  everything that walks shapes.**  The blob owner table, the render
+  cache, the store, the property editor and every `getPropertyOfGeometry`
+  consumer.  `getPropertyOfGeometry()` returns `&Shape` and
+  `onBeforeChange` tests `prop == &Shape`, so the geometry paths are
+  safe, but this wants checking against the borrowing and dedup passes of
+  `docs/SharedShapeStorage.md` sec 12.12 to 12.14 before it is called
+  done -- a saved generation must not become a *source* other shapes
+  borrow from, or dropping it later invalidates them.
+- **`Copy()` drops the blob.**  `PropertyPartShape::Copy()` carries
+  `_Shape` and `_Ver` only.  Assigning the saved shape by copying the
+  live property therefore re-serializes rather than sharing the file.
+  Take the handle deliberately (`getBlob()`, `PropertyTopoShape.h:148`)
+  or accept the extra write and say so.
+- **`onBeforeChange` is skipped while restoring and inside a
+  transaction.**  Those gates are why the cache is missing exactly when
+  it is most wanted, and S1 must not simply inherit them -- but neither
+  may it write a snapshot *during* a restore, which would overwrite the
+  one being restored.  The condition is "the shape is changing for a
+  reason other than being loaded", and it is not the same condition the
+  existing block uses.
+- **An already-broken reference is skipped by the gathering loop**
+  (`PartFeature.cpp:1273`).  That is correct and must stay: the snapshot
+  worth keeping is the last *healthy* one, and re-seeding from a broken
+  reference would overwrite it with nothing.
+- **Do not let S3 turn a restore into a recompute.**  The recovery path
+  calls `aboutToSetValue` / `hasSetValue` on link properties.  Firing it
+  from `onDocumentRestored` must leave the document not-touched, the way
+  `serveFromBlob` takes care to (`PropertyTopoShape.cpp:657`,
+  `purgeTouched`).
+
+### 5.7 Gates
+
+Extend `src/Mod/Test/ShapeStorage.py`, run with
+`FreeCADCmd -t ShapeStorage`:
+
+1. A document with only healthy references saves byte-identically to a
+   build without the feature.
+2. Break a reference, save, reopen in a second process: the saved shape
+   is present and `_SavedElements` names the element that broke.
+3. The same document, reopened: the reference is recovered where the
+   geometry still exists -- the `probe_fix3.py` matrix, moved into the
+   suite and run across a save boundary rather than in one session.
+4. `Face3` of that matrix -- the case that legitimately cannot be
+   recovered -- still reports missing, and does **not** get silently
+   repointed at a plausible neighbour.
+5. Repair the reference by hand, save: the saved shape is dropped and the
+   file returns to its healthy size.
+6. Undo across the break: the snapshot is not clobbered by the
+   transaction the existing gate excludes.
+
+Item 4 is the one that matters most.  The whole argument of section 2.3
+is that a plausible wrong answer is worse than a visible missing one, and
+a change that makes recovery reach further is exactly the kind that
+regresses it.
+
+### 5.8 What this still does not measure
+
+- **Whether persisted layer 2 repairs materially more than live layer
+  2.**  It repairs *later*, which is the whole claim and is what gate 3
+  tests.  It does not repair *better*: S2 changes when the search runs,
+  not how it matches.
+- **The cost on a real assembly.**  9.1% is one feature in a 17 KB
+  synthetic file.  `docs/SharedShapeStorage.md` sec 11.4's
+  `scanner.FCStd` is the model to weigh this against, and nobody has.
+- **How often references actually break in ordinary editing.**  Still
+  unmeasured, still the honest limit on the case for this work, and still
+  the reason it is scoped as accountability rather than as a fix.
