@@ -204,6 +204,36 @@ Counting individual test cases instead, across all 32 binaries, gives
 | `src/Gui/QuantitySpinBox_Tests_run` | 5 | QtTest, +3 skipped, section 4 |
 | `Points_tests_run` | 1 | |
 
+### The render tests (`tests/render/`)
+
+Not gtest binaries and not in the table above: these are driven scripts,
+and they are the only tests in the tree that put pixels on a surface.
+Everything else called "render" here tests the cache, the view properties
+or the generated shader source with no GL context at all -- and
+`PublishOnly_tests_run` asserts outright that no driver is mapped.
+
+Three run in a default `ctest`:
+
+| Test | What | Cost |
+|---|---|---|
+| `RenderSmokeVg_tests_run` | `fcvgsmoke`, bgfx headless offscreen, ink checked per primitive | 0.3 s |
+| `RenderSmokePage2D_tests_run` | the retained `Page2D` scenario in the same binary | 0.3 s |
+| `RenderGoldenRaster_tests_run` | a staged scene under xvfb vs blessed reference images, per pipeline stage | 28 s |
+
+The path-traced and real-document ones are opt-in, because they are
+slower and because a label alone cannot hold them back:
+
+    cmake -DFC_RENDER_HEAVY_TESTS=ON <build> && ctest -L render-heavy
+
+The reference images live in a separate repository mounted at
+`tests/render/refs`; when it is not checked out the golden tests are
+**skipped, not failed**. `RenderGoldenChess_tests_run` skips even with it
+checked out: it has no blessed reference, because a piece of the chess
+set intermittently renders with no material on the raster leg and no run
+of it can be trusted as one yet. Full design, the reblessing procedure
+and the traps: `docs/RenderDebug.md` section 5.2 (and 5.2a for that
+defect).
+
 ## 4. What is deliberately not run, and why
 
 Seven cases. **None of them is a known defect**; each is a place where this

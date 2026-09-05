@@ -928,6 +928,128 @@ passes on a build the user can see is broken is worse than no harness.
   preference that changes what a frame looks like, add it to `viewKeys`
   in the same commit.
 
+
+### 5.2 The committed test set (what ctest actually runs)
+
+Everything above describes the harness. This is the part of it that is
+wired into the build, so a regression is caught by a test run rather than
+by someone remembering to capture a set by hand -- `tests/render/`.
+
+**Nothing else in ctest draws a pixel.** The suites whose names suggest
+rendering -- `RenderProperties`, `RenderCacheMaterial`, `MaterialXGen`,
+`MaskedOcclusion`, `CullBenefit` -- are all deliberately built without a
+GL context, and `PublishOnly_tests_run` goes further and asserts that no
+driver is even mapped. That is the gap this set closes.
+
+| test | what it is | cost |
+|---|---|---|
+| `RenderSmokeVg_tests_run` | `fcvgsmoke`: bgfx up headless in its own process, vg paths/gradients/strokes/text drawn offscreen, pixels read back, ink checked per primitive | 0.3 s |
+| `RenderSmokePage2D_tests_run` | the same binary's retained-`Page2D` scenario: pan, in-band zoom, band crossing, rotation, damage, removal | 0.3 s |
+| `RenderGoldenRaster_tests_run` | `scripts/render-test-scene.py` staged in a real FreeCAD under xvfb, one camera, the five pipeline stages, compared against blessed references | 28 s |
+| `RenderGoldenCycles_tests_run` | the same scene path traced on the CPU (64 spp, 240x180) | 29 s |
+| `RenderGoldenChess_tests_run` | the MaterialX chess set: a real asset with a real material library, raster and path traced | 65 s, see below |
+
+The first three run in a default `ctest`. The last two are opt-in:
+
+    cmake -DFC_RENDER_HEAVY_TESTS=ON <build> && ctest -L render-heavy
+
+WARNING: **a ctest LABEL does not keep a test out of a default run.** It
+only gives `-L` something to select on; `ctest` with no arguments still
+executes it. Neither does the `CONFIGURATIONS` property, which is not
+filtered at all when no `-C` is passed -- measured directly: a test
+carrying `CONFIGURATIONS render-heavy` ran anyway on a plain `ctest`.
+**Registration is the only gate that actually holds**, which is why the
+heavy tests are behind a CMake option and not behind their label alone.
+The label is kept so `-L` can select them once the option is on.
+
+**The reference images are their own repository**, mounted at
+`tests/render/refs`, because a golden set is binary and is rewritten on
+every reblessing -- churn that does not belong in the history of the
+source tree. Every golden test is *skipped, not failed*, when that
+checkout is absent, the same courtesy `MaterialXGen_tests_run` extends to
+the MaterialX submodule. Its README carries the reblessing procedure.
+
+**The two scenes are deliberately different in kind.**
+`scripts/render-test-scene.py` is four primitives built in process -- a
+matte floor, a rough box, a metal sphere, a glass rod and one
+shadow-casting bulb -- chosen so that one cheap scene still puts content
+in every stage the diff walks, the shadow buffer included.
+`scripts/render-test-chess.py` imports the MaterialX chess set from the
+submodule, which is the case that exercises map binding, the texture path
+and the MaterialX splice. A synthetic scene cannot fail the way a real
+document does, and a real document is too slow to run every time; hence
+one of each.
+
+**The Cycles leg is reproducible as it stands, and must be kept that
+way.** The offline path sets no seed, so the integrator default applies,
+and denoising is enabled only on the *viewport* path
+(`CyclesViewport.cpp`), never on `cyclesRender`. Measured on the small
+scene: two restaged runs are byte-exact at `--tol 0 --frac 0`, and the
+trace costs 1.3 s at 64 spp. CPU is the device on purpose -- it is the
+one every box has, and two devices do not produce identical pixels, so a
+set blessed on CUDA cannot be compared against a CPU run.
+
+Captures are named so that `render_diff.py` needed no change to gain a
+second renderer: a traced frame is written as
+`<prefix>--cycles--mode0.png`, which its existing filename grammar reads
+as a group of its own whose single stage is the beauty frame.
+
+WARNING: **Bless the restaged set, never the fresh one** (the rule stated
+in section 5, now with numbers). Fresh-vs-restaged on the small scene
+differs on up to 0.0098% of pixels with a maximum channel delta of 254,
+purely from the sidecar camera's ~8 significant digits;
+restaged-vs-restaged is byte-exact.
+
+**Path tracing amplifies that rounding, and the chess set shows it.**
+Where the small scene's traced frame moved by a maximum delta of 1
+between a fresh and a restaged camera, the chess set's moved by 53 over
+0.25% of its pixels -- enough to fail the default tolerance. Nothing is
+wrong with the renderer: a camera that differs in its last digit sends
+different rays, and a detailed textured scene under an HDR environment
+turns that into visibly different noise where four primitives under a
+single bulb did not. It is the sharpest argument for the rule -- the
+raster leg of the same run compared clean, so a set blessed from a fresh
+capture would have looked fine right up until the traced leg was added.
+
+`scripts/render-verify.sh` takes `--cycles`, `--cycles-device`,
+`--cycles-samples` and `--cycles-size` for the traced leg.
+
+#### 5.2a The chess set has no blessed reference yet, on purpose
+
+`RenderGoldenChess_tests_run` is registered but **`refs/chess` is
+deliberately not blessed**, so the test skips. The scene, the ctest entry
+and the reblessing procedure are all in place; what is missing is a run
+that can be trusted as a reference.
+
+**A piece intermittently renders with no material at all.** On the
+raster leg the black queen comes back plain untextured white instead of
+jade-with-gold-trim, in 2 of 7 otherwise identical runs -- same build,
+same scene, same restaged camera, nothing between them. The differing
+pixels sit in one tight box around that single piece (y 318-400,
+x 325-361 at 858x582); every other piece, the board and the environment
+are unchanged, which is what says it is one surface losing its material
+rather than a camera, a tolerance or a texture-upload race across the
+frame.
+
+What has been established about it:
+
+- **It is the raster path only.** The Cycles leg of the very same runs
+  gets the material right every time, so the MaterialX document, the
+  import and the scene are all fine; it is the bgfx-side splice that
+  intermittently does not take.
+- **It is not a settling window.** Raising the settle from 150 frames to
+  600 (`--settle 600`) did not fix it -- one of three long-settle runs
+  still lost the piece. So it is a race, not content that had yet to
+  arrive, and waiting longer is not the answer.
+- **Nothing is logged.** A good run and a bad run produce identical
+  console output, the same two MaterialX translation notes and no error,
+  which is why this survived until an image was compared.
+
+Bless `refs/chess` only once that is fixed, and re-read this section
+before deciding a chess diff is noise: a lone divergence around one piece
+is this defect, not the harness.
+
+
 ---
 
 ## 6. Endgame: user-loadable shaders

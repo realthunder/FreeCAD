@@ -184,6 +184,13 @@ foreach (exe ${TestExecutables})
     gtest_discover_tests(${exe})
 endforeach()
 
+# The pixel-drawing tests (tests/render/CMakeLists.txt): the offscreen
+# vg smokes in the default run, the golden capture sets behind the
+# "render-heavy" label. Kept in a directory of its own because they are
+# driven scripts rather than gtest binaries, and because their reference
+# images are a separate repository.
+add_subdirectory(render)
+
 if(FC_TESTS_CARRY_DLL_PATH)
     # Last, so that every add_test() in the tree above has run.
     fc_add_test_dll_path(${CMAKE_CURRENT_SOURCE_DIR})
