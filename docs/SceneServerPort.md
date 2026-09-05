@@ -329,9 +329,10 @@ Each stage lands alone and is judged by the stage-0 test.
   client-side lesson: Beast treats a cancelled read as the end of the
   stream, so the "nothing arrives" probe leaves its read pending and
   the next read picks it up.
-- **Stage 1 -- the seam.** Put an acceptor/connection abstraction
-  between the protocol logic and the socket calls, still POSIX
-  underneath. No behaviour change.
+- **Stage 1 -- the seam. DONE 2026-09-05** (section 7.1). An
+  acceptor/connection abstraction between the protocol logic and the
+  socket calls, still POSIX underneath. No behaviour change; the
+  stage-0 test stayed 12/12 and the full ctest green.
 - **Stage 2 -- Beast underneath it, async.** Delete `Sha1`, the base64
   helper, the handshake, `consumeFrames`, `sendFrame`, the HTTP head
   parser, the `#ifndef _WIN32` and the stub. Three platforms build the
@@ -343,6 +344,60 @@ Each stage lands alone and is judged by the stage-0 test.
   read deadlines, the connection cap keyed on the judged address,
   control-frame rules, and a decision on chunked bodies.
 - **Stage 5 -- verify on all three platforms.**
+
+### 7.1 The seam, as built
+
+`SceneServer.cpp` is now two halves. Everything outside the
+`#ifndef _WIN32` block is the protocol core and survives stage 2;
+everything inside it is the POSIX transport and is what stage 2
+deletes. The contract between them is five things:
+
+1. **HTTP is a request struct and a reply struct.** The transport
+   reads the head and body into `HttpRequest` (method, path, query,
+   headers lowercased with the first value winning, body, socket
+   peer) and calls `route()`. That returns either `Route::Reply` with
+   an `HttpReply` filled -- status, optional content type and cache
+   policy, the `/log` beacon's allow-any-header flag, the body -- or
+   `Route::Upgrade` with a `WsBootstrap`: everything a connection
+   inherits from the request that opened it (held version, session,
+   document, the door's judgement, the presented token, the peer, the
+   forwarded address, the identity, the judged address). Every reply
+   carries `Access-Control-Allow-Origin: *` and closes; the transport
+   adds those and the length. Beast maps `http::request` onto
+   `HttpRequest` and `HttpReply` onto `http::response`; the routing
+   does not change.
+2. **One outbox per connection.** `Conn::outbox` is a FIFO
+   `std::deque<Outgoing>` of kinds Text, Scene, Frame and Close,
+   replacing `pendingText` and the single-slot `pendingBinary`.
+   `queueText` appends; `queueFrame` replaces an already queued frame
+   in place ("a frame is a state, not an event", now a stated rule of
+   the queue rather than an accident of a member); `kick` appends the
+   `Kicked` farewell and a Close item and wakes the link. The
+   transport drains the outbox in order and stops at Close, which is
+   exactly what the stage-2 writer coroutine does with one
+   `async_write` in flight. The one ordering that changed: a scene
+   push is queued when the tick computes it, so a text queued during
+   the same tick's read now precedes it instead of following it.
+   Nothing on the wire depends on that order and the test does not
+   assert it.
+3. **`Link::wake()`** is the only thing the core asks of the socket:
+   act on your flags and your outbox now, not at your next poll.
+   POSIX shuts the read side down; stage 2 posts to the strand.
+   `kickClient` and `stop()` lose their `#ifndef` because of it.
+4. **Lifecycle and the tick.** `openConnection` registers a
+   connection from its bootstrap and `closeConnection` unregisters
+   it and tells the closed handler; `queueScenePush` is the push half
+   of one tick -- the re-home after a teardown, `payloadFor`, the
+   version bookkeeping, the Scene item -- and its comment marks it as
+   THE blocking work of section 6.5 that leaves the io thread in
+   stage 2. The pre-auth accept caps are `admitPeer` / `releasePeer`,
+   keyed on the peer for now (stage 4 re-keys them).
+5. **The guard moved up.** `handleMessage`, `handleFrameDump`,
+   `handleEvent`, `serveViewerFile`, `route`, the caps and the
+   lifecycle compile on every platform. What remains under the guard
+   is the listener, the accept loop, the head reader, the reply
+   writer, the handshake, `sendFrame`, the poll loop and
+   `consumeFrames` -- the stage-2 delete list, contiguous.
 
 ## 8. Open questions for next session
 
