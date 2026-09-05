@@ -33,6 +33,10 @@
   BaseShapeCases      retained base shapes (docs/TopoNamingEnhance.md sec 7):
                       the generation a missing reference was resolved against
                       is kept as a `_BaseShape<N>` property while it is needed
+  ForeignBaseShapeCases  the sub-shapes a document's references into other
+                      documents resolved against (sec 7.13): kept by the
+                      referring document, rebuilt at every save, served when
+                      the reference comes back missing
 
 Run headless with:  FreeCADCmd -t ShapeStorage
 """
@@ -1290,3 +1294,250 @@ class BaseShapeCases(ShapeTestCase):
         doc.redo()
         self.assertEqual(self.versions(cut), ["_BaseShape1"])
         self.assertEqual(self.refs(cut), self.entries({plane: "_BaseShape1"}))
+
+    def testAMovedFaceStaysMissingAfterReload(self):
+        """V3, gate 4 of sec 5.7: the retained generation is asked again on
+        reload, and a face that moved is still not repointed at a plausible
+        neighbour."""
+        doc = self.newDocument()
+        cut, (plane,) = self.model(doc)
+        project = self.directoryPath()
+        self.replaceBase(doc, cut, "NewBox")
+        self.assertTrue(self.support(plane).startswith("?"))
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        self.assertEqual(self.support(reopened.getObject("Plane")), "?Face3")
+        self.assertEqual(self.versions(reopened.getObject("Cut")), ["_BaseShape1"])
+
+    def testAReferenceComesBackOnReload(self):
+        """V3: a reference is asked about once per session.  Broken by a
+        moved face and not repaired when the face comes back, it is repaired
+        on reload from the persisted generation, and the generation is let
+        go at the next save.
+
+        The referrer is a SubShapeBinder: a plane's attach extension re-sets
+        its support by position at every recompute (7.12), which would
+        repair the reference in-session and leave nothing to reload.
+        """
+        doc = self.newDocument()
+        cut, () = self.model(doc, ())
+        binder = doc.addObject("Part::SubShapeBinder", "Binder")
+        binder.Support = [(cut, ("Face3",))]
+        doc.recompute()
+        project = self.directoryPath()
+        self.replaceBase(doc, cut, "NewBox")
+        self.assertEqual(binder.Support[0][1][0], "?Face3")
+        doc.getObject("NewBox").Height = 20
+        doc.recompute()
+        self.assertEqual(binder.Support[0][1][0], "?Face3")
+        self.assertEqual(self.versions(cut), ["_BaseShape1"])
+        self.assertEqual(self.refs(cut), {"Binder.Support": "_BaseShape1"})
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        self.assertEqual(reopened.getObject("Binder").Support[0][1][0], "Face3")
+        reopened.save()
+        self.assertEqual(self.versions(reopened.getObject("Cut")), [])
+        self.assertNotIn("_BaseShape", self.documentXml(project))
+
+
+class ForeignBaseShapeCases(ShapeTestCase):
+    """The evidence a document keeps for its references into other documents
+    (docs/TopoNamingEnhance.md 7.13).
+
+    A feature counts only the referrers in its own document, so an assembly
+    referencing a part's face keeps the face itself: one document-wide
+    `_ForeignBaseShapes` compound of every foreign sub-shape its element
+    references resolved against, and a `_ForeignBaseShapeRefs` map from the
+    full reference name to the child index.  Both are rebuilt at every save
+    and served when the reference comes back missing on reload -- the case
+    the feature side can never protect, because the part is edited while
+    the assembly is closed.
+
+    The part is the box cut by a cylinder of BaseShapeCases.  The assembly
+    references it two ways, both SubShapeBinders (a plane's attach
+    extension re-sets by position, 7.12): one linking the part's Cut
+    directly, an XLink filed under the part's file path, and one through a
+    local App::Link, filed under the link (`Link.Face1`).
+
+    What the store serves is a reference saved *missing*: on reload a
+    healthy reference is resolved by its persisted indexed name (the
+    shadow is discarded by PropertyXLink::restoreLink), so a break can only
+    happen in the session that has both documents open, and the request
+    on reload is the retry of 7.14 -- the case that matters is the part
+    being repaired while the assembly is closed.
+    """
+
+    SHAPES = "_ForeignBaseShapes"
+    REFS = "_ForeignBaseShapeRefs"
+
+    def openDocument(self, path):
+        """Open, recording the dependency documents too."""
+        before = set(FreeCAD.listDocuments())
+        doc = FreeCAD.openDocument(path)
+        for name in FreeCAD.listDocuments():
+            if name not in before:
+                self.docs.append(name)
+        return doc
+
+    def part(self, name="part"):
+        """The part, saved so that it can be linked to."""
+        doc = self.newDocument("PartDoc")
+        box = self.box(doc, "Box", length=20, width=20, height=20)
+        cyl = doc.addObject("Part::Cylinder", "Cylinder")
+        cyl.Radius = 3
+        cyl.Height = 40
+        cyl.Placement = self.placement(10, 10, -10)
+        cut = doc.addObject("Part::Cut", "Cut")
+        cut.Base = box
+        cut.Tool = cyl
+        doc.recompute()
+        path = os.path.join(self.tmp, name + ".FCStd")
+        doc.saveAs(path)
+        return doc, path
+
+    def assembly(self, part, face="Face1", through="Face1"):
+        """The assembly: a binder on the part directly, and one through a
+        local link, both by mapped name."""
+        cut = part.getObject("Cut")
+        mapped = lambda name: ";" + cut.Shape.getElementMappedName(name)
+        doc = self.newDocument("AsmDoc")
+        link = doc.addObject("App::Link", "Link")
+        link.LinkedObject = cut
+        direct = doc.addObject("Part::SubShapeBinder", "Binder")
+        direct.Support = [(cut, (mapped(face),))]
+        binderLink = doc.addObject("Part::SubShapeBinder", "BinderLink")
+        binderLink.Support = [(link, (mapped(through),))]
+        doc.recompute()
+        path = os.path.join(self.tmp, "asm.FCStd")
+        doc.saveAs(path)
+        return doc, path
+
+    def support(self, binder):
+        """The reference as the binder holds it, in the indexed form."""
+        return binder.Support[0][1][0]
+
+    def children(self, doc):
+        if self.SHAPES not in doc.PropertiesList:
+            return []
+        return getattr(doc, self.SHAPES).SubShapes
+
+    def refs(self, doc):
+        if self.REFS not in doc.PropertiesList:
+            return {}
+        return dict(getattr(doc, self.REFS))
+
+    def replaceBase(self, part, height=20):
+        """The edit that changes every mapped name of the cut: a brand new
+        box as its Base.  At the same height the faces keep their geometry;
+        taller, the top face moves."""
+        cut = part.getObject("Cut")
+        cut.Base = self.box(part, "NewBox", length=20, width=20, height=height)
+        part.recompute()
+        part.save()
+
+    def testAPartAloneCarriesNoStore(self):
+        """A document without a reference into another document saves as it
+        did before any of this existed."""
+        part, path = self.part()
+        self.assertNotIn(self.SHAPES, part.PropertiesList)
+        self.assertNotIn("_ForeignBaseShape", self.documentXml(path))
+        self.assertNotIn("_BaseShape", self.documentXml(path))
+
+    def testTheStoreNamesEveryForeignReference(self):
+        """One child per distinct reference name: the direct binder's is
+        filed under the part's file, the other under its local link."""
+        part, partPath = self.part()
+        asm, asmPath = self.assembly(part, through="Face2")
+        refs = self.refs(asm)
+        self.assertEqual(len(refs), 2)
+        self.assertEqual(refs["Link.Face2"], "1")
+        (xref,) = [k for k in refs if k != "Link.Face2"]
+        self.assertTrue(xref.endswith("part.FCStd#Cut.Face1"), xref)
+        self.assertEqual(refs[xref], "2")
+        children = self.children(asm)
+        self.assertEqual(len(children), 2)
+        for child in children:
+            self.assertAlmostEqual(child.Area, 400.0)
+        self.assertIn('name="_ForeignBaseShapes"', self.documentXml(asmPath))
+        # The part itself retains nothing: a foreign referrer is not counted
+        self.assertNotIn("_BaseShape", self.documentXml(partPath))
+
+        FreeCAD.closeDocument(asm.Name)
+        reopened = self.openDocument(asmPath)
+        self.assertEqual(self.refs(reopened), refs)
+        self.assertEqual(len(self.children(reopened)), 2)
+
+    def breakInSession(self, part, asm):
+        """The top face moves with both documents open: the part's own
+        in-memory generation answers the request, finds nothing, and the
+        references go missing.  The part retains nothing for them -- they
+        are foreign -- and the assembly's store keeps the child it has."""
+        self.replaceBase(part, height=25)
+        self.assertEqual(self.support(asm.getObject("Binder")), "?Face3")
+        self.assertEqual(self.support(asm.getObject("BinderLink")), "?Face3")
+        self.assertNotIn("_BaseShapeRefs", part.getObject("Cut").PropertiesList)
+        asm.save()
+        self.assertEqual(len(self.refs(asm)), 2)
+        children = self.children(asm)
+        self.assertEqual(len(children), 1)
+        self.assertAlmostEqual(children[0].CenterOfMass.z, 20.0)
+
+    def testAReferenceComesBackAcrossDocuments(self):
+        """The case the feature side cannot protect: broken with both
+        documents open, the assembly is closed; the part is repaired while
+        it is closed; on reopening, both references ask the store and are
+        repaired from the child it kept."""
+        part, partPath = self.part()
+        asm, asmPath = self.assembly(part, face="Face3", through="Face3")
+        self.breakInSession(part, asm)
+        FreeCAD.closeDocument(asm.Name)
+        part.getObject("NewBox").Height = 20
+        part.recompute()
+        part.save()
+        FreeCAD.closeDocument(part.Name)
+
+        reopened = self.openDocument(asmPath)
+        self.assertEqual(self.support(reopened.getObject("Binder")), "Face3")
+        self.assertEqual(self.support(reopened.getObject("BinderLink")), "Face3")
+        reopened.save()
+        self.assertEqual(len(self.refs(reopened)), 2)
+        self.assertAlmostEqual(self.children(reopened)[0].CenterOfMass.z, 20.0)
+
+    def testAMovedFaceStaysMissingAndKeepsItsChild(self):
+        """Gate 4 across documents: reopened with the face still moved, the
+        references are not repointed at a plausible neighbour, and the
+        store keeps the child they were resolved against -- the face as it
+        was, not as it is."""
+        part, partPath = self.part()
+        asm, asmPath = self.assembly(part, face="Face3", through="Face3")
+        self.breakInSession(part, asm)
+        FreeCAD.closeDocument(asm.Name)
+        FreeCAD.closeDocument(part.Name)
+
+        reopened = self.openDocument(asmPath)
+        self.assertEqual(self.support(reopened.getObject("Binder")), "?Face3")
+        self.assertEqual(self.support(reopened.getObject("BinderLink")), "?Face3")
+        reopened.save()
+        self.assertEqual(len(self.refs(reopened)), 2)
+        self.assertAlmostEqual(self.children(reopened)[0].CenterOfMass.z, 20.0)
+
+    def testADroppedReferenceLeavesTheStore(self):
+        """A reference removed is not kept; the last one takes the store."""
+        part, partPath = self.part()
+        asm, asmPath = self.assembly(part, through="Face2")
+        asm.removeObject("Binder")
+        asm.recompute()
+        asm.save()
+        self.assertEqual(list(self.refs(asm)), ["Link.Face2"])
+        self.assertEqual(len(self.children(asm)), 1)
+
+        asm.removeObject("BinderLink")
+        asm.recompute()
+        asm.save()
+        self.assertNotIn(self.SHAPES, asm.PropertiesList)
+        self.assertNotIn(self.REFS, asm.PropertiesList)
+        self.assertNotIn("_ForeignBaseShape", self.documentXml(asmPath))

@@ -172,11 +172,18 @@ public:
      * the newest generation that holds 'element' (a mapped name goes through
      * that generation's own element map, an indexed name is taken by
      * position), by searching the live shape for the same geometry.
+     *
+     * When no generation of this feature holds the element and the request
+     * names its referrer, a referrer in another document is answered from
+     * the sub-shape that document kept for the reference (ForeignBaseShapes).
      */
     const std::vector<std::string>& searchElementCache(const std::string &element,
                                                        Data::SearchOptions options = Data::SearchOption::CheckGeometry,
                                                        double tol = 1e-7,
-                                                       double atol = 1e-10) const override;
+                                                       double atol = 1e-10,
+                                                       const App::PropertyLinkBase *referrer = nullptr,
+                                                       const App::DocumentObject *obj = nullptr,
+                                                       const char *subname = nullptr) const override;
 
     const std::vector<const char*>& getElementTypes(bool all=false) const override;
 
@@ -300,6 +307,7 @@ protected:
     std::pair<std::string,std::string> getExportElementName(TopoShape shape, const char *name) const;
 
 private:
+    friend class ForeignBaseShapes;
     /// One retained generation of a shape property, see PartFeature.cpp
     struct ShapeVersion;
     /// The retained generations, newest first (of every registered property)

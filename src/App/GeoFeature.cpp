@@ -276,13 +276,19 @@ const std::vector<std::string>&
 GeoFeature::searchElementCache(const std::string &element,
                                Data::SearchOptions options,
                                double tol,
-                               double atol) const
+                               double atol,
+                               const PropertyLinkBase *referrer,
+                               const DocumentObject *obj,
+                               const char *subname) const
 {
     static std::vector<std::string> none;
     (void)element;
     (void)options;
     (void)tol;
     (void)atol;
+    (void)referrer;
+    (void)obj;
+    (void)subname;
     return none;
 }
 

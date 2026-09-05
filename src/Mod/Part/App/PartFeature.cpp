@@ -81,6 +81,7 @@ typedef boost::iterator_range<const char*> CharRange;
 #include <Mod/Material/App/MaterialManager.h>
 #include <Mod/Material/App/Materials.h>
 
+#include "ForeignBaseShapes.h"
 #include "PartFeature.h"
 #include "PartFeaturePy.h"
 #include "PartParams.h"
@@ -109,8 +110,9 @@ struct Feature::ShapeVersion {
     PropertyPartShape *prop = nullptr;
     /// The element-name prefix of that property, empty for Shape
     std::string prefix;
-    /// The whole shape of the generation, a handle
-    TopoShape shape;
+    /// The whole shape of the generation, a handle; read from the
+    /// persisted form on first use (geometry())
+    mutable TopoShape shape;
     /** The referrers this generation is retained for: the link properties
      * (keyed as in section 7.3, 'Object.Property', with a 'Doc#' prefix for
      * another document) whose reference into 'prop' was healthy when the
@@ -138,7 +140,7 @@ struct Feature::ShapeVersion {
     const TopoShape &geometry() const
     {
         if (shape.isNull() && materialized)
-            return materialized->getShape();
+            shape = materialized->getShape();
         return shape;
     }
 };
@@ -159,6 +161,12 @@ static std::string referrerKey(const App::Property *prop, const App::Document *d
     auto pos = key.find('#');
     if (pos != std::string::npos)
         key.erase(0, pos + 1);
+    // A link inside a sub-list is named after its parent property plus its
+    // own address, which is not stable across sessions: the parent property
+    // is the referrer.
+    pos = key.find(':');
+    if (pos != std::string::npos)
+        key.erase(pos);
     return key;
 }
 
@@ -1708,11 +1716,46 @@ bool Feature::shouldApplyPlacement()
     return isRecomputing();
 }
 
+/** Find 'sub', an element as some earlier generation had it, in the live
+ * shape of 'propShape'; the names found, prefixed for that property.
+ */
+static void searchLiveShape(const PropertyPartShape *propShape,
+                            const std::string *prefix,
+                            const TopoShape &sub,
+                            std::vector<std::string> &names,
+                            Data::SearchOptions options,
+                            double tol,
+                            double atol)
+{
+    TopoShape newShape = propShape->getShape();
+    newShape.searchSubShape(sub, &names, options, tol, atol);
+    if (names.empty()) {
+        // Can't find any shape with the same geometry. But in
+        // case the new shape has only one sub-shape with the
+        // searching shape type, we can safely choose that
+        // sub-shape.
+        TopAbs_ShapeEnum shapeType = sub.shapeType();
+        if (newShape.countSubShapes(shapeType) == 1)
+            names.push_back(newShape.shapeName(shapeType) + "1");
+    }
+    if (prefix) {
+        for (auto &name : names) {
+            if (auto dot = strrchr(name.c_str(), '.'))
+                name.insert(dot+1-name.c_str(), *prefix);
+            else
+                name.insert(0, *prefix);
+        }
+    }
+}
+
 const std::vector<std::string> &
 Feature::searchElementCache(const std::string &element,
                             Data::SearchOptions options,
                             double tol,
-                            double atol) const
+                            double atol,
+                            const App::PropertyLinkBase *referrer,
+                            const App::DocumentObject *obj,
+                            const char *subname) const
 {
     static std::vector<std::string> none;
     if(element.empty())
@@ -1729,31 +1772,33 @@ Feature::searchElementCache(const std::string &element,
             // the generation's own element map, an indexed name by position.
             TopoShape sub = version.geometry().getSubTopoShape(
                     element.c_str() + version.prefix.size(), true);
-            if (!sub.isNull()) {
-                TopoShape newShape = propShape->getShape();
-                newShape.searchSubShape(sub, &names, options, tol, atol);
-                if (names.empty()) {
-                    // Can't find any shape with the same geometry. But in
-                    // case the new shape has only one sub-shape with the
-                    // searching shape type, we can safely choose that
-                    // sub-shape.
-                    TopAbs_ShapeEnum shapeType = sub.shapeType();
-                    if (newShape.countSubShapes(shapeType) == 1)
-                        names.push_back(newShape.shapeName(shapeType) + "1");
-                }
-                if (prefix) {
-                    for (auto &name : names) {
-                        if (auto dot = strrchr(name.c_str(), '.'))
-                            name.insert(dot+1-name.c_str(), *prefix);
-                        else
-                            name.insert(0, *prefix);
-                    }
-                }
-            }
+            if (!sub.isNull())
+                searchLiveShape(propShape, prefix, sub, names, options, tol, atol);
         }
         // The newest generation that holds the element answers
         if (!names.empty())
             return names;
+    }
+
+    // No generation of this feature's own holds it.  A referrer in another
+    // document keeps the sub-shape itself, filed under the reference as
+    // that referrer holds it (docs/TopoNamingEnhance.md 7.13).
+    if (referrer && obj && subname && subname[0]) {
+        auto owner = Base::freecad_dynamic_cast<const App::DocumentObject>(referrer->getContainer());
+        auto refDoc = owner ? owner->getDocument() : nullptr;
+        if (refDoc && refDoc != getDocument()) {
+            TopoShape sub = ForeignBaseShapes::find(refDoc,
+                    ForeignBaseShapes::referenceKey(referrer, obj, subname));
+            if (!sub.isNull()) {
+                // Valid until the next request, which is as long as the
+                // caller reads it
+                static std::vector<std::string> foreign;
+                foreign.clear();
+                searchLiveShape(propShape, prefix, sub, foreign, options, tol, atol);
+                if (!foreign.empty())
+                    return foreign;
+            }
+        }
     }
     return none;
 }

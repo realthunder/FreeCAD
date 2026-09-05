@@ -149,6 +149,7 @@ public:
     //@}
 
     friend class Feature;
+    friend class ForeignBaseShapes;
     /// Stamps _StorePos during the pre-save collect, and serves it on restore.
     friend class PropertyShapeStore;
 

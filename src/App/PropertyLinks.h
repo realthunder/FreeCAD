@@ -379,6 +379,17 @@ public:
     /// Obtain link properties that contain element references to a given object
     static const std::unordered_set<PropertyLinkBase*>& getElementReferences(DocumentObject *);
 
+    /** The element references that leave a document.
+     *
+     * Every feature in another document that a link property owned by an
+     * object of \a doc holds element references into, with those
+     * properties.  What the referrer document keeps evidence for
+     * (docs/TopoNamingEnhance.md 7.13): the referenced feature cannot see
+     * such a referrer while its document is closed.
+     */
+    static std::map<DocumentObject*, std::vector<PropertyLinkBase*>>
+        getExternalElementReferences(const Document *doc);
+
     /** Forget every element reference into \a feature, which is going away.
      *
      * A referrer's own record still names the feature, so that a referrer

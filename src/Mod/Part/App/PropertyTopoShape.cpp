@@ -696,22 +696,27 @@ void PropertyPartShape::ensureRestored() const
         return;
     auto self = const_cast<PropertyPartShape*>(this);
     auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
-    if (!owner || !owner->getDocument()) {
-        self->_RestorePending = false;
-        return;
-    }
     if (!_RestoreHash.empty()) {
         // The blob arrives with the archive entries, which are drained after
         // the whole XML pass -- and the XML pass asks for this shape itself,
         // through the element map version check at the end of Restore(). Stay
         // pending until the file is here, exactly as the store branch does:
         // the property then reads as the null shape it is.
+        //
+        // No owning object is needed for this branch: the manager is the
+        // document's, reached through whatever container the property has,
+        // and a property the document itself owns (ForeignBaseShapes) comes
+        // back this way.
         if (!_blob)
             return;
         // Cleared before serving: whatever runs below reads the property
         // again, and must find a settled state instead of re-entering.
         self->_RestorePending = false;
         self->serveFromBlob();
+    }
+    else if (!owner || !owner->getDocument()) {
+        self->_RestorePending = false;
+        return;
     }
     else if (_StorePos != PropertyShapeStore::NoPosition) {
         // The store arrives with the archive entries, which are drained

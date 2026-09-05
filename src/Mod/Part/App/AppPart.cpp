@@ -36,6 +36,7 @@
 #include <Base/Parameter.h>
 #include <Base/PrecisionPy.h>
 
+#include "ForeignBaseShapes.h"
 #include "PartFeature.h"
 #include "ArcOfCirclePy.h"
 #include "ArcOfConicPy.h"
@@ -221,6 +222,10 @@ PyMOD_INIT_FUNC(Part)
     // Retained base shapes let go of a released referrer once the recompute
     // that released it is over (docs/TopoNamingEnhance.md section 7).
     App::GetApplication().signalRecomputed.connect(&Part::Feature::releasePendingShapeVersions);
+    // A document keeps the sub-shapes its element references into other
+    // documents resolved against, rebuilt at every save (section 7.13).
+    App::GetApplication().signalStartSaveDocument.connect(
+            &Part::ForeignBaseShapes::onStartSaveDocument);
 
     Py::Object module(partModule);
     module.setAttr("OCC_VERSION", Py::String(OCC_VERSION_STRING_EXT));
