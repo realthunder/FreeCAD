@@ -754,18 +754,31 @@ Two version traps in that line, both silent:
   installed and reports `not found`. It is vestigial; the `libmed hdf5` in the FEM
   install line is belt-and-braces.
 
-*** **The package's plugin search path is broken, and it takes out every
-nativeifc geometry path.** `get_plugin_search_paths()` starts empty and
-`plugin::add_search_paths_or_default()` then hands boost::dll the lib DIRECTORY:
+*** **The `_8` package's plugin search path is broken, and it takes out every
+nativeifc geometry path.** With no search path configured,
+`plugin::add_search_paths_or_default()` hands boost::dll the lib DIRECTORY:
 
     RuntimeError: boost::dll::shared_library::load() failed
     (dlerror: <prefix>/lib: cannot read file data: Is a directory)
 
-The plugins themselves ship correctly in `<prefix>/lib`
-(`ifcopenshell_geometry_kernel_opencascade.so` and ~30 siblings); only the default
-resolution is wrong, and FreeCAD never calls `set_plugin_search_paths`, so the
-source build must resolve it differently. Two `bimtests.TestArchBuildingPart`
-tests error until the path is seeded:
+**Root cause (found 2026-09-05):** a conda relocation bug in IfcOpenShell.
+`IFCOPENSHELL_INSTALL_PLUGIN_DIRECTORY` is a string literal baked into
+`libifcopenshell.plugin.so`; conda rewrites it to the real prefix and NUL-pads
+the rest, and GCC had folded the literal's length at compile time, so the
+`std::filesystem::path` built from it was 259 bytes with `strlen()` 46. Every
+syscall only sees the C string, so `exists()` and the directory scan worked and
+each candidate came out as `<prefix>/lib\0...\0/ifcopenshell_parse_schema_ifc4.so`,
+which `dlopen()` reads as the directory. That is why any explicitly configured
+path (the branch that never touches the literal) made it go away. Fixed in the
+fork at `0dc561db2` (measure the literal at run time), on top of the `9b3ba2700`
+guard; a package built from a `fork_rev` at or past that commit needs nothing
+below. A related detail for anyone probing this again: an `LD_PRELOAD` shim
+prints C strings, so it shows the directory being loaded and never the file
+name hiding behind the first NUL -- do not read that as "discover() returned
+the directory".
+
+Until `ifcopenshell-feedstock` is bumped (needs a push of the fork and the new
+tarball sha256), the packaged `_8` still needs the path seeded:
 
 ```python
 import ifcopenshell
@@ -774,8 +787,9 @@ ifcopenshell.set_plugin_search_paths(["<prefix>/lib"])   # then nativeifc works
 
 The box set up on 2026-09-05 carries that as a few lines appended to the installed
 `ifcopenshell/__init__.py`, seeding the path from the package's own location.
-**That file is conda-owned and the edit is lost on any reinstall** -- the fix
-belongs in `ifcopenshell-feedstock`.
+**That file is conda-owned and the edit is lost on any reinstall** -- reinstall
+the workaround or, better, the fixed package. Two `bimtests.TestArchBuildingPart`
+tests error without it.
 
 Verify afterwards that the packaged build shares ONE libarea with FreeCAD, which
 is what keeps a single ClipperLib in the process:
