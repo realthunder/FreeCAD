@@ -182,14 +182,10 @@ class Hatch(DraftObject):
             return
 
         # In TechDraw edges longer than 9999.9 (ca. 10m) are considered 'crazy'.
-        # Lines in hatch patterns are also checked. We need to change a parameter:
-        param_grp = App.ParamGet("User parameter:BaseApp/Preferences/Mod/TechDraw/debug")
-        if "allowCrazyEdge" not in param_grp.GetBools():
-            old_allow_crazy_edge = None
-        else:
-            old_allow_crazy_edge = param_grp.GetBool("allowCrazyEdge")
-        param_grp.SetBool("allowCrazyEdge", True)
-
+        # Lines in hatch patterns are also checked; makeGeomHatch takes
+        # allowCrazyEdge=True for the length of the call (the scoped form of the
+        # Mod/TechDraw/debug preference), so a recompute never writes the user's
+        # parameter store.
         shapes = []
         for face in faces:
             if face.findPlane():  # Only planar faces.
@@ -223,18 +219,15 @@ class Hatch(DraftObject):
                 if obj.Rotation.Value:
                     face.rotate(App.Vector(), App.Vector(0, 0, 1), -obj.Rotation)
 
-                shape = TechDraw.makeGeomHatch(face, obj.Scale, obj.Pattern, pat_file)
+                shape = TechDraw.makeGeomHatch(
+                    face, obj.Scale, obj.Pattern, pat_file, allowCrazyEdge=True
+                )
 
                 if obj.Rotation.Value:
                     shape.rotate(App.Vector(), App.Vector(0, 0, 1), obj.Rotation)
                 if obj.Translate:
                     shape = shape.transformShape(mtx)
                 shapes.append(shape)
-
-        if old_allow_crazy_edge is None:
-            param_grp.RemBool("allowCrazyEdge")
-        else:
-            param_grp.SetBool("allowCrazyEdge", old_allow_crazy_edge)
 
         if shapes:
             obj.Shape = Part.makeCompound(shapes)

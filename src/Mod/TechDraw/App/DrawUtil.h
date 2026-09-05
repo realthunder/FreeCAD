@@ -223,6 +223,25 @@ public:
     static App::Color pyTupleToColor(PyObject* pColor);
     static PyObject* colorToPyTuple(App::Color color);
     static bool isCrazy(TopoDS_Edge e);
+    /// While one of these is alive with allow=true, isCrazy() accepts
+    /// every edge: the caller vouches for its geometry (a building's
+    /// outline runs past the 10 m "crazy" limit legitimately).  The
+    /// scoped form of the allowCrazyEdge debug preference, so document
+    /// code (Arch areas, hatches) passes `allowCrazyEdge=True` to the
+    /// Python entry points instead of writing the user's parameter
+    /// store around a call.  Nests; a guard with allow=false is inert.
+    class TechDrawExport CrazyEdgeAllowance
+    {
+    public:
+        explicit CrazyEdgeAllowance(bool allow);
+        ~CrazyEdgeAllowance();
+        CrazyEdgeAllowance(const CrazyEdgeAllowance&) = delete;
+        CrazyEdgeAllowance& operator=(const CrazyEdgeAllowance&) = delete;
+        static bool active();
+
+    private:
+        bool allowed;
+    };
     static Base::Vector3d getFaceCenter(TopoDS_Face f);
     static bool circulation(Base::Vector3d A, Base::Vector3d B, Base::Vector3d C);
     static Base::Vector3d getTrianglePoint(Base::Vector3d p1, Base::Vector3d d, Base::Vector3d p2);

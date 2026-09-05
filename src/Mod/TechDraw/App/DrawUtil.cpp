@@ -1149,6 +1149,31 @@ PyObject* DrawUtil::colorToPyTuple(App::Color color)
     return pTuple;
 }
 
+// The scoped allowance: a depth count, since a hatch inside an area
+// computation nests two guards.  One thread runs TechDraw geometry
+// under the GIL, so a plain static suffices.
+static int s_crazyEdgeAllowances = 0;
+
+DrawUtil::CrazyEdgeAllowance::CrazyEdgeAllowance(bool allow)
+    : allowed(allow)
+{
+    if (allowed) {
+        ++s_crazyEdgeAllowances;
+    }
+}
+
+DrawUtil::CrazyEdgeAllowance::~CrazyEdgeAllowance()
+{
+    if (allowed) {
+        --s_crazyEdgeAllowances;
+    }
+}
+
+bool DrawUtil::CrazyEdgeAllowance::active()
+{
+    return s_crazyEdgeAllowances > 0;
+}
+
 //check for crazy edge.  This is probably a geometry error of some sort.
 bool DrawUtil::isCrazy(TopoDS_Edge e)
 {
@@ -1157,7 +1182,8 @@ bool DrawUtil::isCrazy(TopoDS_Edge e)
         return true;
     }
 
-    bool crazyOK = Preferences::getPreferenceGroup("debug")->GetBool("allowCrazyEdge", false);
+    bool crazyOK = CrazyEdgeAllowance::active()
+        || Preferences::getPreferenceGroup("debug")->GetBool("allowCrazyEdge", false);
     if (crazyOK) {
         return false;
     }
