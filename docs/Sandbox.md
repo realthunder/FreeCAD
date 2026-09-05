@@ -1777,6 +1777,68 @@ Cost of the mechanism: one hop per `IsActive` poll per guest command
 (some 60 visible commands times 5 us per tick), one hop per activation
 plus whatever the command does -- U4 ops, G3 and later.
 
+### 7.10 Probe A sized: Coin and pivy in the guest **[sized 2026-09-05]**
+
+What 7.9's measurement made the next blocker: Draft's `Initialize()`
+opens with `from pivy import coin`.  The facts (the Coin fork on
+`LinkVibe`, `~/works/sw/pivy` on `rt-0.6.10`, the guest toolchain):
+
+- **Coin's hard build dependency is Boost headers only** (`scoped_ptr`,
+  `intrusive_ptr`, `lexical_cast` ...).  expat is vendored
+  (`src/xml/expat`); zlib, bzip2, freetype, fontconfig, simage, GLU,
+  OpenAL are `*_RUNTIME_LINKING=ON` by default, never found at
+  configure time and `dlopen`ed through `src/glue/dl.cpp` -- under wasm
+  those opens return NULL and each feature turns itself off (fonts:
+  Coin's built-in bitmap font remains).  `src/threads` compiles
+  unconditionally against emscripten's pthread headers (no `-pthread`:
+  pyodide is single-threaded); `COIN_THREADSAFE` is OFF already.
+- **No no-GL path exists**: `find_package(OpenGL REQUIRED)` is
+  unconditional, `find_package(X11 REQUIRED)` fires because `UNIX` is
+  true under emcmake (behind `COIN_BUILD_GLX`, OFF-able, with
+  `COIN_BUILD_EGL`).  Zero `EMSCRIPTEN` mentions.  Six files include a
+  real GL header; 168 include `Inventor/system/gl.h`, a configure-time
+  substitution; extension entry points (263 of them) go through the
+  glue and resolve at runtime via `cc_glglue_getprocaddress` (NULL =
+  absent, fine); but 73 files under `elements/GL`, `nodes`,
+  `shapenodes`, `rendering`, `shaders` call core desktop `gl*()`
+  directly.  emscripten's `GL/gl.h` declares them all, so it COMPILES;
+  nothing implements them in a side module, so it fails at LOAD.  The
+  fix is a generated stub translation unit (every core `gl*` symbol as
+  an empty function, `glGetString`/`glGetIntegerv` answering "no GL"),
+  which is right for the guest: the guest never renders, the host does
+  (7.2, the mirror).
+- **Nothing fork-specific in the way**: no Qt, no bgfx in Coin's CMake;
+  the fork's additions are the `CoinRT` output name, the `coin_fork_abi`
+  C API, elements and shapes.
+- **pivy** is one SWIG extension (`interfaces/coin.i` over a 736-line
+  header list -> a 17.8 MB `coinPYTHON_wrap.cxx`, a 2.0 MB `coin.py`,
+  a 33.8 MB `_coin.so` with symbols natively); SoQt/Qt are looked up
+  only `if (SoQt_FOUND)`, so a guest build without SoQt drops
+  `pivy.gui` by itself; `fake_headers/` already stubs GL/X11/Qt for
+  SWIG's parse.  SWIG 4.4.1 is in `.conda/freecad`.
+- **The guest toolchain** (`src/App/PyodideHost/guest`, emsdk 5.0.3,
+  pyodide xbuildenv 314.0.6, `-fwasm-exceptions -sSIDE_MODULE=2 -flto`,
+  `make_wheel.py` taking directories) has NO compiled third-party
+  library yet -- Coin would be the first.  `SIDE_MODULE=2` exports
+  only listed symbols, so Coin links STATICALLY into `_coin.so` (one
+  module, the native shape) rather than as a second side module.
+  Today's guest: 1.4 MB `.so`, 0.38 MB wheel.
+
+**The probe, in order:** (1) the Coin fork configures and builds with
+`emcmake` -- `COIN_BUILD_GLX=OFF`, `COIN_BUILD_EGL=OFF`, the OpenGL
+`find_package` made conditional (a fork commit on `LinkVibe`: an
+`COIN_BUILD_GL_STUB` option that skips the GL/X11 lookups and adds the
+stub TU), `-fwasm-exceptions`, no `-pthread`, static library; (2) pivy
+against it with the guest's Python headers, SWIG 4.4.1, no SoQt, the
+single `_coin.so` as `SIDE_MODULE=2` exporting `PyInit__coin`; (3) a
+`pivy` wheel through `make_wheel.py`, loaded beside `fcx_image`; gate:
+`from pivy import coin; coin.SoDB.getVersion()` in the guest, a 10 k
+node graph built and traversed by `SoSearchAction` and `SoGetBoundingBoxAction`
+(no GL action), timed; then 7.9's probe re-run -- Draft's `Initialize()`
+passes its self-test and reaches `import DraftTools`.  Sizes and boot
+cost are the numbers to record.  The fallback if (1) or (2) fails on
+something structural is 7.2's Coin-shaped model library.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
