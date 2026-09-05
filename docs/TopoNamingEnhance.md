@@ -25,9 +25,13 @@ blob store the pre-task rides on, especially sec 12.1 to 12.3),
 `docs/TechDrawPortAndSection.md` (the upstream port, now complete, and
 the section-view work the main task builds on).
 
-Probe scripts for everything measured here are in the session
+Probe scripts for everything measured here were kept in the session
 scratchpad, following the `DrawBrokenView` convention of not committing
-them: `probe_ref.py`, `probe_ref3.py`, `probe_fix3.py`.
+them.  **Section 6.3 restates the three models so every number here can
+be reproduced without them.**
+
+**Resuming?  Start at section 6.**  It carries the state of play, the
+five decisions that are still open, and the first thing to build.
 
 
 ## 1. The short answers
@@ -895,3 +899,158 @@ regresses it.
 - **How often references actually break in ordinary editing.**  Still
   unmeasured, still the honest limit on the case for this work, and still
   the reason it is scoped as accountability rather than as a fix.
+
+
+## 6. Where to resume (written 2026-09-05, end of session)
+
+Nothing in this document is built.  Sections 1 to 4 are the survey,
+section 5 is the plan for the pre-task, and this section is what a next
+session needs that neither of them says.
+
+### 6.1 State of play
+
+| | state |
+| --- | --- |
+| pre-task (sec 5) | planned, decided, **not started** |
+| main task, TechDraw (sec 3) | surveyed, sequenced, **not started** |
+| measurements | done; all numbers in secs 2.3, 2.5, 5.2, 5.3 are real |
+| probe scripts | session scratchpad only, **will be gone** -- recipes in 6.3 |
+
+**Settled, do not relitigate:**
+
+- The snapshot is persisted **on the referenced feature in Part space**,
+  as a shape property, not on the App-space link property (5.3).  An
+  App-space property was checked and is possible; the reason against it
+  is the measured per-reference cost, not layering.
+- The stored unit is **the whole base shape**, not a neighbourhood and
+  not the bare sub-shape (5.2, correction 3).
+- Retention is **conditional on an unresolved reference**; the healthy
+  case writes nothing (5.4).  No per-document ceiling.
+- **No user-facing repair UI** until upstream's `PartDesign` and
+  `Sketcher` are merged (5.1).
+
+### 6.2 Open decisions the next session has to make
+
+These are genuinely open.  Each carries a recommendation, and the
+recommendation is not a decision.
+
+**D1. What `_SavedElements` stores -- indexed names, mapped names, or
+both.**  This is the one that can quietly defeat the whole feature.  If
+the saved element names are *indexed* (`Face3`), they are positional in
+the saved shape exactly as they were in the live one, and a saved
+snapshot whose map is not consulted has bought nothing over storing the
+sub-shape.  The gathering loop keys `_elementCache` on whatever
+`Data::findElementName(sub)` returns for each link, which is whichever
+form the link holds.
+
+*Recommendation:* store the pair, the way `ShadowSub` already does --
+mapped name first, indexed second -- so a lookup can go through the
+saved shape's element map and fall back to position only when the map is
+absent.  It also makes the saved property self-describing when read by
+hand.
+
+**D2. The Sketcher prefix.**  `Part::Feature` supports more than one
+geometry property through `registerElementCache(prefix, prop)`, and
+`SketchObject` uses it: `registerElementCache(internalPrefix(),
+&InternalShape)` (`src/Mod/Sketcher/App/SketchObject.cpp:229`).  A single
+`_SavedShape` covers `Shape` only, and references into `InternalShape`
+would get nothing.
+
+*Recommendation:* scope S1 to the primary `Shape` and say so in the
+commit.  `Sketcher` is one of the two modules in the coming merge, so a
+prefix-aware version built now is a version built against code that is
+about to move.  Revisit it as part of that merge.
+
+**D3. Where the persistence decision is taken: `onBeforeChange` or
+`beforeSave`.**  Trap 3 of 5.6 is that `onBeforeChange` is gated off
+during restore and during a transaction, which is exactly when the cache
+is most wanted -- but writing a snapshot *during* a restore would
+overwrite the one being restored.
+
+*Recommendation:* leave the gathering in `onBeforeChange` completely
+unchanged, and take the persistence decision at `beforeSave`: if the
+in-memory cache holds a generation, write it; if it does not and
+`_SavedShape` already holds one whose references are still missing, keep
+what is there.  That makes S1 the safest possible change -- it adds a
+writer and touches no existing condition.
+
+*The cost of that recommendation, stated:* a break that happens entirely
+inside a transaction is never seeded into the cache in the first place,
+so no amount of save-time persistence recovers it.  Undo/redo-mediated
+breaks stay unprotected.  Accepting that is the price of not touching
+the gathering gates in the first commit; widening them is a separate,
+riskier change and should be its own step with its own gate.
+
+**D4. Other `GeoFeature` kinds.**  Mesh and Fem carry element references
+too and would get nothing from a `Part::Feature` property.
+
+*Recommendation:* leave them.  `searchElementCache` is virtual on
+`App::GeoFeature`, so each kind can implement its own storage later
+without any of this changing.
+
+**D5. Whether the saved shape's hasher and map version need handling of
+their own.**  `PropertyPartShape::Save` registers its hasher through
+`owner->getDocument()->addStringHasher(...)` and writes an
+`ElementMap="<version>"` attribute.  A second shape property on the same
+object goes through the same path with a *different* generation's map.
+
+*Recommendation:* verify before building, not after.  The specific
+question is whether two shape properties on one object can carry element
+maps of different vintages without `GeoFeature::updateElementReference`'s
+version comparison (`GeoFeature.cpp:243`) reading the wrong one --
+`getElementMapVersion(prop)` takes the property, so it probably behaves,
+but "probably" is not what this should rest on.
+
+### 6.3 Reproducing the measurements
+
+The probe scripts are in the session scratchpad and are not committed,
+per the `DrawBrokenView` convention.  The recipes are short enough to
+restate, and every number in this document comes from one of these three
+models under
+`.conda\run.cmd build\win-relwithdebinfo-801\bin\FreeCADCmd.exe <script>`:
+
+**Model A -- the reference-recovery matrix** (secs 2.3, 2.6; `probe_ref3.py`,
+`probe_fix3.py`).  `Part::Box` 20x20x20; `Part::Cylinder` r=3 h=40 at
+(10, 10, -10); `Part::Cut` of the two; a `Part::Plane` with
+`AttachmentSupport = [(cut, ("FaceN",))]` and `MapMode = "FlatFace"`.
+Break it by assigning `cut.Base` a **brand new** `Part::Box` of a
+different height -- a new object is what defeats layer 1, changing the
+existing box is not.  Read the outcome from
+`pl.AttachmentSupport[0][1]`.  Save with
+`doc.SaveSchemaVersion = 5` and read `Document.xml` out of the zip for
+the `<Link .../>` and `<Part .../>` serialization.
+
+**Model B -- the retention cost** (sec 5.3; `probe_gen2.py`).  A
+120x80x10 `Part::Box` plate, then six `Part::Cylinder` r=4 h=30 at
+(15 + 18i, 40, -10), each consumed by a `Part::Cut` chained onto the
+previous.  Attach a `Part::Plane` to `Face1` of the last cut.  Save at
+schema 5, then set `plate.Height = 14` and save again.  Compare
+`compress_size` of `blobs/*.brp` across the two saves, and the count of
+distinct `hash="..."` in `Document.xml`.
+
+*Do not use a `Part::Fillet` in this model.*  The first attempt did, with
+`Edges` built from `range(len(shape.Edges))`, and it failed with "There
+are no suitable edges for chamfer or fillet" -- leaving a null shape and
+a 154-byte blob that looked like a real measurement.
+
+**Model C -- pruning and map cost** (sec 5.2, correction 3;
+`probe_prune.py`).  Model B without the plane.  Export three shapes to
+BRep and deflate each with `zlib.compress(data, 6)`: the whole shape;
+the picked face; and a `Part::Compound` of the picked face plus every
+face sharing an edge with it (compare by `Edge.hashCode()`).  For the map
+cost, regex `<ElementMap2 count="\d+">(.*?)</ElementMap2>` out of
+`Document.xml` and deflate the concatenated bodies.
+
+### 6.4 First action next session
+
+Build **S1** (5.5) under decisions D1 and D3 as recommended: add
+`_SavedShape` and `_SavedElements` to `Part::Feature`, populate them at
+`beforeSave` from the existing untouched `_elementCache`, clear them when
+every saved element resolves against the current `Shape`.
+
+The gate to write first is **gate 1** of 5.7 -- a healthy document saves
+byte-identically to what it saves today.  It is the cheapest thing to get
+wrong and the cheapest to check, and until it passes there is no point
+running the rest.
+
+Then D5's verification, before S2 touches anything.
