@@ -37,7 +37,8 @@ user decision, quoted where the wording matters.
     Coin + pivy inside the guest     built       src/App/PyodideHost/pivy/, Coin's COIN_BUILD_GL_STUB (7.10)
     forms: ipywidgets over comm, Qt  built       src/App/ExpressionImage/widgets/ (guest), src/Ext/freecad/widgets/ (host), SandboxGui.cpp (7.3)
     forms: the Qt subset, .ui, panel built       G3a: freecad.widgets in the guest (the Qt classes as models), loadUi both sides, Control (7.11)
-    host widget layer (native panels) sized       H0-H3: the same classes in C++, the C++ Qt view, native dialogs ported; DOM walker later (7.4, 7.12)
+    host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
+    native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -2409,6 +2410,133 @@ way.  Next step: H0, starting with the property core and the
 generator, gated on OrthoArray through the guest before any native
 port -- that gate already exists.
 
+**H0 BUILT 2026-09-06**, gate green: OrthoArray from the guest renders
+through the C++ store and the C++ Qt view, `SandboxForms` 3/3 with the
+Python Qt manager holding no `freecad.widgets` model, the seven GUI
+gate cases OK.  What is there, in `src/Gui/Fw/` (4.7k lines, namespace
+`Gui::Fw` for the toolkit-neutral half, `Gui::FwQt` for the Qt
+consumer):
+
+- **`FwCore`** -- `Fw::Widget`, a QObject whose state is a QVariantMap
+  under Qt's property names with declared defaults, a touched set, and
+  the signals `propertiesChanged(names, source)`, `requested(name,
+  args)` (model to backend: `setFocus`, `selectAll`, `setSelection`,
+  `setCursorPosition`, `setParent`), `eventEmitted(name, args)`
+  (backend to model: `clicked`, `pressed`, `editingFinished`, ...) and
+  `layoutChanged(op)`.  Three writers, one rule each: a typed setter
+  (`Source::Native`) marks touched; a backend (`Source::Backend`)
+  reporting the user does not; the guest (`Source::Guest`) does not
+  either -- it syncs its own `_touched` list, and marking on its
+  behalf was the one bug the gate caught (a `.ui` value the guest's
+  loader wrote silently came back touched, since traitlets does not
+  resend an unchanged `_touched = []`).  `propertiesChanged` names
+  every key written, equal or not; the typed value signals fire on a
+  real change only, whichever side made it.  `property`/`setProperty`
+  HIDE QObject's, since Qt's would read a Q_PROPERTY of the model
+  object instead of the bag.  `Fw::Layout` holds items and positions
+  and emits every mutation as an op on the OWNING widget (through
+  parent layouts), the guest's payload shape exactly, with the widget
+  as a `QObject*` instead of a comm id; an unnamed layout emits
+  nothing.  The QObject tree IS the model tree: `findChild` works,
+  radio exclusivity walks siblings, `setParent` requests the backend
+  to move the realized widget.
+- **`FwWidgets`** -- the 22 classes with Qt's methods and moc'd
+  signals (`Fw::QSpinBox::valueChanged(int)`, `Fw::QCheckBox::
+  stateChanged(int)`, `Fw::InputField::valueChanged(double)`, ...),
+  `Fw::UiForm` (the file and its named widgets), and the factory
+  `createWidget(name)` keyed by Qt class name as a `.ui` spells it OR
+  by guest model name (`Gui::PrefCheckBox` -> `Fw::QCheckBox` with
+  `qtClass` kept; `InputFieldModel` -> `Fw::InputField`).  An
+  `InputField::setValue` formats its `text` in the unit schema at the
+  user's decimals, so the bag carries what a DOM tier would show.
+- **`FwStore`** -- the guest's objects by comm id: `commOpen` creates
+  by `_model_name`, writes the `q_` state silently, takes `_touched`,
+  `qtClass`, `uiFile` and the `widgets` map; `commUpdate` is
+  `setProperties(Guest)`; `commCustom` is a request, a `setParent`
+  (ids resolved to objects) or a layout op relayed; `commClose`
+  deletes (children the guest re-parented under it are unparented
+  first, their comms being open).  The way back is a sink: a
+  non-guest `propertiesChanged` goes out as an `update` with `q_`
+  keys, an `eventEmitted` as a `custom`.  The store knows neither
+  Python nor Qt.
+- **`FwQtView`** -- the port of the Python Qt manager's Qt-shaped
+  half.  One `View` per realized model; `build` makes the real widget
+  of `qtClass` (FreeCAD's through the widget factory, Qt's through a
+  cached `UiLoader`), a `UiForm` loads its file through the same
+  loader and binds each named child; `bind` READS the widget back into
+  the bag silently first (every bag key the widget has as a
+  Q_PROPERTY, `visible` excepted, colors as four floats, enums as
+  ints), then applies the touched keys.  `apply` orders range before
+  value, items before index, drops `text` beside `rawValue`, and
+  otherwise calls Qt's `setProperty`; the Qt signals are connected by
+  the REAL widget's type (`qobject_cast` down a fixed list), writing
+  the bag from `Source::Backend` under an `applying` guard so nothing
+  echoes.  A view lives on the model, watches the widget's `destroyed`,
+  and `release`s when a dialog deletes its content.
+- **`FwQtPanel`** -- `PanelDialog`, a `TaskDialog` whose content is
+  the realized forms and whose hooks go to a `PanelHooks` interface;
+  `SandboxGui.cpp` implements it over the guest's stand-in (the
+  descriptor's hook list decides `has`, a None answer reads False as
+  TaskDialogPython does).  `TaskView` never learns anything new.
+- **`FwPy`** -- `FreeCADGui.FormWidgets`: `ids`, `count`, `info(id)`
+  (class, qtClass, properties, touched, bound, the form's map),
+  `find`, `resolve`, `widget(id)` (the PySide wrapper of the realized
+  widget), `setProperty`, `stats`, `reset`, and `accept`/`reject` --
+  the active `PanelDialog`'s buttons, needed because this fork's
+  `TaskView` never hands a dialog its button box, so
+  `Control.activeTaskDialog().accept()` clicks nothing (the gate's
+  first false alarm).  Plus the QVariant <-> PyObject conversions the
+  bridge shares.
+- **`src/Tools/fwuic.py`** (0.4k) -- the generator: `Ui_X::setupUi(
+  Fw::UiForm*)` with typed members (`Gui::Fw::InputField* input_X_x`),
+  the file's layouts by name (a reused name gets `_2`, as uic does),
+  values through `setInitial`, `<item>`s as a combo's lists, spacers
+  and positions; the parse rules are the guest loader's, and the
+  guest's `qtdata.Qt` supplies the enum values.  `quantity` maps to
+  `rawValue`.  Strings are emitted untranslated: the Qt backend reads
+  uic's translations back at bind time, and the DOM tier's
+  translation is its own question.  The header is named `fwui_X.h`,
+  since CMake's AUTOUIC claims every `ui_*.h` include for uic.
+- **The bridge** (`SandboxGui.cpp`): a `jupyter.widget` comm whose
+  opening state says `_model_module == "freecad.widgets"` goes to the
+  store, and every later message on an id the store holds; the plain
+  ipywidgets models of Probe B still go to the Python manager, so
+  `SandboxWidgets` is untouched.  `gui.control.show` builds a
+  `PanelDialog` when every form id is the store's (else the Python
+  `show_panel`); `close`/`active`/`query` run in C++ against
+  `Control()` and the active Gui document.  `freecad.widgets.qt` lost
+  its Qt-shaped views (402 lines); `GuestTaskPanel` stays for plain
+  ipywidgets roots.
+
+Measured (RelWithDebInfo, Xvfb, the same gate):
+
+    TaskPanel_OrthoArray.ui loaded in the guest,   0.077 s: 40 objects opened, 50
+      5 fields set, shown as a task panel           updates, 91 comm ops (was 0.084)
+    Draft's TaskPanelOrthoArray() + show           0.074 s: 42 objects, 75 updates, 10
+                                                     customs (layout ops), 127 comm ops
+    host spin-box edit -> guest state + signal     0.16-0.20 ms each (was 0.19-0.21)
+    guest setValue -> Qt widget                    0.05-0.06 ms each (was 0.09)
+
+Tests: `tests/src/Gui/FormWidgets.cpp` (11 cases, QTest, offscreen: the
+bag's defaults, touched and signal semantics, coercion, radio
+exclusivity, combo items, layout ops reaching the owner and not from
+an unnamed layout, the factory, the generated OrthoArray form's names
+and values, the Qt view binding uic's form from the file path -- read-
+back, touched applied over uic's, both directions, a layout op on the
+real layout, a request, detaching when the widget dies -- and a built
+widget).  A fact it recorded: uic writes the file's `quantity` double
+into `Gui::InputField`'s `Base::Quantity` property, which does not
+take, so the real widget shows 0 and the bag, mirroring the widget,
+does too; the generated form holds the file's 100 until bound.
+Suites after: the GUI gates 7/7, FormWidgets 11/11, `Tests_run
+--gtest_filter='Expression*'` 104 passed + 1 skipped.
+
+Next: **H1**, the first native ports -- a form-only panel in `src/Gui`
+(TaskAppearance or TaskOrientation) onto `Ui_X::setupUi` plus
+`FwQt::realize`, then a PartDesign panel with expression binding
+(Pad), which brings the custom widget seam of the sizing above
+(`ExpressionBinding` on the host `QuantitySpinBox` model).
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -2518,10 +2646,18 @@ Non-ASCII object names occur in real files.  Rig:
                                                           the guest rendered in Qt, driven
                                                           both ways (7.3); the same gate
                                                           script (its default module list)
-    src/Mod/Test/SandboxForms.py                     3    G3a: a Draft .ui form and Draft's
-                                                          own OrthoArray panel from the
-                                                          guest, Qt-shaped, both ways
-                                                          (7.11); the same gate script
+    src/Mod/Test/SandboxForms.py                     3    G3a/H0: a Draft .ui form and
+                                                          Draft's own OrthoArray panel from
+                                                          the guest, Qt-shaped, both ways,
+                                                          through the C++ store and the
+                                                          C++ Qt view (7.11, 7.12); the
+                                                          same gate script
+    tests/src/Gui/FormWidgets.cpp                   11    H0: the host widget layer's
+                                                          property core, class set, layout
+                                                          ops, the fwuic generator's output
+                                                          for OrthoArray, the Qt backend
+                                                          binding uic's widgets (7.12);
+                                                          FormWidgets_Tests_run, offscreen
     src/Mod/Spreadsheet/TestSpreadsheet*.py          --   run with routing ON for parity
 
 The acceptance harness opens a real saved-and-reopened `.FCStd` under a
@@ -2606,13 +2742,17 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    gate `SandboxWidgets`.  **G3a** BUILT 2026-09-06 (7.11): the Qt
    subset as models, `loadUi` on both sides, the task panel, layouts
    from `.ui` files, `prefs.write`; Draft's OrthoArray panel runs
-   unmodified in the guest; gate `SandboxForms`.  Next **H0** and
-   **H1** (7.12: the host widget layer -- the same classes in C++, the
-   C++ Qt view, gated on OrthoArray through the guest, then the first
-   native ports), then **G3b** (the rest of the `.ui` subset and the
-   41-panel harness) on the C++ store, **G3c** (forms built in code:
-   DraftGui's toolbar -- what both workbenches' `Initialize()` stop
-   at), and the G2b runner once there is something to switch to.
+   unmodified in the guest; gate `SandboxForms`.  **H0** BUILT
+   2026-09-06 (7.12: the host widget layer -- `src/Gui/Fw/`, the same
+   22 classes in C++ over a property bag, the store of the guest's
+   objects, the C++ Qt view, the `PanelDialog`, `fwuic.py`,
+   `FreeCADGui.FormWidgets`; OrthoArray from the guest renders through
+   it and the Python Qt-shaped views are gone).  Next **H1** (the
+   first native ports: a form-only `src/Gui` panel, then Pad with
+   expression binding), then **G3b** (the rest of the `.ui` subset and
+   the 41-panel harness) on the C++ store, **G3c** (forms built in
+   code: DraftGui's toolbar -- what both workbenches' `Initialize()`
+   stop at), and the G2b runner once there is something to switch to.
 4. **P2** -- in-place install into a running guest (the sec 9.3 probe of
    `SandboxNetwork.md`: does a wheel with compiled extensions import
    synchronously without `loadPackage`?).  Moved after G1: nothing
@@ -2632,9 +2772,9 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    without a file, actions, tool bars, the main window shim, the key
    event stream) gated on DraftGui's toolbar; G3d the selection input
    and the U2 dialogs.
-   H0 and H1 (7.12) come before G3b so G3b's views are written once,
-   in C++; H2 and H3, the native ports, interleave with G3b-G3d as
-   the class set grows.
+   H0 (BUILT 2026-09-06) and H1 (7.12) come before G3b so G3b's views
+   are written once, in C++; H2 and H3, the native ports, interleave
+   with G3b-G3d as the class set grows.
 8. **G4** -- the mirror: generated Coin models, the reader with its
    allowlist and quotas, host-scene query ops, stand-ins, the event
    stream.  Gate: the Draft test documents render identically (pixel

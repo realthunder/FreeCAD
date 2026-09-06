@@ -431,6 +431,26 @@ SET(Command_SRCS
     SandboxGui.h
 )
 SOURCE_GROUP("Command" FILES ${Command_SRCS})
+
+# The host widget layer (docs/Sandbox.md 7.12): form models with Qt's
+# names over a property bag, their Qt backend, the task panel on them,
+# the store of the sandbox guest's objects.  Toolkit-neutral core and
+# store in Fw::, the Qt consumer in FwQt::.
+SET(Fw_SRCS
+    Fw/FwCore.cpp
+    Fw/FwCore.h
+    Fw/FwWidgets.cpp
+    Fw/FwWidgets.h
+    Fw/FwStore.cpp
+    Fw/FwStore.h
+    Fw/FwQtView.cpp
+    Fw/FwQtView.h
+    Fw/FwQtPanel.cpp
+    Fw/FwQtPanel.h
+    Fw/FwPy.cpp
+    Fw/FwPy.h
+)
+SOURCE_GROUP("Fw" FILES ${Fw_SRCS})
 # the sandbox host seam (docs/Sandbox.md 7.9): the gui.* bridge ops live in
 # SandboxGui.cpp alone, so the host macro is scoped to it
 if(BUILD_EXPR_IMAGE_HOST)
@@ -1439,6 +1459,7 @@ SET(FreeCADGui_SRCS
     ${Gui_UIC_HDRS}
     ${Command_SRCS}
     ${StyleParameters_SRCS}
+    ${Fw_SRCS}
     ${Dialog_SRCS}
     ${Dialog_Customize_SRCS}
     ${Dialog_Settings_SRCS}

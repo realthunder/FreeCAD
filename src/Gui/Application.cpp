@@ -89,6 +89,7 @@
 #include "BitmapFactory.h"
 #include "Command.h"
 #include "SandboxGui.h"
+#include "Fw/FwPy.h"
 #include "CommandActionPy.h"
 #include "CommandPy.h"
 #include "Control.h"
@@ -620,6 +621,9 @@ Application::Application(bool GUIenabled)
         ExpressionBindingPy::init_type();
         Base::Interpreter().addType(ExpressionBindingPy::type_object(),
             module,"ExpressionBinding");
+
+        // the host widget layer's store (docs/Sandbox.md 7.12)
+        Fw::addPyModule(module);
 
         //insert Selection module
         static struct PyModuleDef SelectionModuleDef = {

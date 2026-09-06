@@ -23,11 +23,13 @@
 """Qt-shaped forms from the sandbox guest (docs/Sandbox.md 7.11, G3a):
 a guest loads Draft's TaskPanel_OrthoArray.ui with `Gui.PySideUic.loadUi`,
 drives the widgets with Qt's own accessors and signals, and shows the
-panel through `Gui.Control.showDialog`; the host renders the same .ui
-through uic, binds each named child to the guest's model, and what the
-user does in the Qt widgets reaches the guest as state and Qt-named
-signals.  Then Draft's real task_orthoarray.py, exec'd unmodified in
-the guest, constructs, shows and reads its form.
+panel through `Gui.Control.showDialog`; the host keeps each model as a
+C++ object of the host widget layer (docs/Sandbox.md 7.12, H0: the
+store behind `FreeCADGui.FormWidgets`), renders the same .ui through
+uic with the C++ Qt view, binds each named child to its object, and
+what the user does in the Qt widgets reaches the guest as state and
+Qt-named signals.  Then Draft's real task_orthoarray.py, exec'd
+unmodified in the guest, constructs, shows and reads its form.
 
 Needs the GUI: run it through scripts/sandbox-gui-gate.py under Xvfb.
 Skips headless, on a build without the sandbox host, when the image
@@ -158,6 +160,7 @@ class SandboxFormsTest(unittest.TestCase):
             from freecad import widgets
 
             widgets.manager().reset()
+            FreeCADGui.FormWidgets.reset()
         finally:
             FreeCAD.closeDocument(self.doc.Name)
             self.prefs.restore()
@@ -166,6 +169,14 @@ class SandboxFormsTest(unittest.TestCase):
         """A python-mode read of the probe module's state."""
         return self.S.evaluate(self.owner, "import %s; %s" % (module, expr), self.opts)
 
+    @staticmethod
+    def dialog():
+        """The active task dialog (this fork's `activeDialog()` is a bool;
+        `activeTaskDialog()` is the object, for its content)."""
+        import FreeCADGui
+
+        return FreeCADGui.Control.activeTaskDialog()
+
     def test_a_ui_form_from_the_guest(self):
         import FreeCADGui as Gui
         from PySide import QtWidgets
@@ -173,45 +184,59 @@ class SandboxFormsTest(unittest.TestCase):
 
         S = self.S
         M = widgets.manager()
+        FW = Gui.FormWidgets
+        FW.resetStats()
         S.resetStats()
         t0 = time.perf_counter()
         S.exec(PROBE, "fcx_formprobe")
         t_probe = time.perf_counter() - t0
         ops = S.stats()["ops"]
-        # the measurement the doc records (docs/Sandbox.md 7.11)
-        sys.stderr.write("SandboxForms: loadUi + set + show %.3f s, %d models, ops %s\n"
-                         % (t_probe, len(M.models), sorted(ops.items())))
+        # the measurement the doc records (docs/Sandbox.md 7.11, 7.12)
+        sys.stderr.write("SandboxForms: loadUi + set + show %.3f s, %d objects, ops %s, "
+                         "store %s\n" % (t_probe, FW.count(), sorted(ops.items()),
+                                          sorted(FW.stats().items())))
         self.assertEqual(ops.get("gui.ui.read"), 1, ops)
         self.assertEqual(ops.get("gui.control.show"), 1, ops)
         self.assertGreaterEqual(ops.get("gui.comm", 0), 30, ops)  # one comm a widget
 
-        # the models, as the host manager holds them
-        forms = M.find("UiFormModel")
+        # the models, as the C++ store holds them: the Python manager
+        # has none (they are freecad.widgets models, the store's)
+        self.assertEqual(M.models, {})
+        self.assertGreaterEqual(FW.count(), 30)
+        forms = FW.find("UiFormModel")
         self.assertEqual(len(forms), 1)
-        root = forms[0]
-        self.assertEqual(root.state["uiFile"], UI_FILE)
-        named = {name: M.resolve(ref) for name, ref in root.state["widgets"].items()}
+        root = FW.info(forms[0])
+        self.assertEqual(root["uiFile"], UI_FILE)
+        named = {name: FW.info(ref) for name, ref in root["widgets"].items()}
         for name in ("spinbox_n_X", "input_X_x", "checkbox_fuse", "radiobutton_y_axis",
                      "button_linear_mode", "label_n_Z", "group_copies"):
             self.assertIn(name, named)
-        self.assertEqual(named["spinbox_n_X"].name, "QSpinBoxModel")
-        self.assertEqual(named["input_X_x"].name, "InputFieldModel")
-        self.assertEqual(named["input_X_x"].state["qtClass"], "Gui::InputField")
-        self.assertEqual(named["group_copies"].name, "QGroupBoxModel")
+        self.assertEqual(named["spinbox_n_X"]["class"], "QSpinBoxModel")
+        self.assertEqual(named["input_X_x"]["class"], "InputFieldModel")
+        self.assertEqual(named["input_X_x"]["qtClass"], "Gui::InputField")
+        self.assertEqual(named["group_copies"]["class"], "QGroupBoxModel")
         # what the guest set is listed; a .ui value is not
-        self.assertEqual(named["label_n_X"].state["_touched"], [])
-        self.assertEqual(named["label_n_Z"].state["_touched"], ["text"])
-        self.assertEqual(named["spinbox_n_X"].state["_touched"], ["value"])
-        self.assertEqual(named["spinbox_n_Y"].state["_touched"], [])
-        self.assertEqual(named["input_X_x"].state["_touched"], ["rawValue", "text"])
+        self.assertEqual(named["label_n_X"]["touched"], [])
+        self.assertEqual(named["label_n_Z"]["touched"], ["text"])
+        self.assertEqual(named["spinbox_n_X"]["touched"], ["value"])
+        self.assertEqual(named["spinbox_n_Y"]["touched"], [])
+        self.assertEqual(named["input_X_x"]["touched"], ["rawValue", "text"])
+        # the bag: the guest's values, the file's for the rest, Qt-typed
+        self.assertEqual(named["spinbox_n_X"]["properties"]["value"], 4)
+        self.assertEqual(named["spinbox_n_X"]["properties"]["maximum"], 1000000)
+        self.assertEqual(named["label_n_X"]["properties"]["text"], "X")
+        self.assertEqual(named["input_X_x"]["properties"]["unit"], "mm")
 
-        # the host: uic's form is the active task dialog, the guest's
-        # values in the bound widgets, the file's own left to uic
+        # the host: uic's form is the active task dialog (a C++
+        # PanelDialog on the store's objects), the guest's values in the
+        # bound widgets, the file's own left to uic
         self.assertTrue(Gui.Control.activeDialog())
-        panel = M.panel
-        self.assertIsNotNone(panel)
-        self.assertEqual(len(panel.form), 1)
-        w = panel.form[0]
+        dialog = self.dialog()
+        self.assertIsNotNone(dialog)
+        content = dialog.getDialogContent()
+        self.assertEqual(len(content), 1)
+        w = content[0]
+        self.assertIs(FW.widget(forms[0]), w)
         self.assertEqual(w.windowTitle(), "Ortho probe")
         self.assertEqual(w.objectName(), "DraftOrthoArrayTaskPanel")
         n_x = w.findChild(QtWidgets.QSpinBox, "spinbox_n_X")
@@ -228,7 +253,7 @@ class SandboxFormsTest(unittest.TestCase):
         label_x = w.findChild(QtWidgets.QLabel, "label_n_X")
         self.assertEqual(x_x.metaObject().className(), "Gui::InputField")
         self.assertEqual(n_x.value(), 4)
-        self.assertEqual(n_y.value(), named["spinbox_n_Y"].state["q_value"])  # the file's
+        self.assertEqual(n_y.value(), named["spinbox_n_Y"]["properties"]["value"])  # the file's
         self.assertEqual(x_x.property("rawValue"), 120.0)
         self.assertTrue(fuse.isChecked())
         self.assertTrue(link.isChecked())  # the file's own default
@@ -237,8 +262,9 @@ class SandboxFormsTest(unittest.TestCase):
         self.assertTrue(linear.isChecked())
         self.assertEqual(label_z.text(), "Z-count")
         self.assertEqual(label_x.text(), "X")
-        for model in named.values():
-            self.assertEqual(len(model.views), 1, model)
+        for name, info in named.items():
+            self.assertTrue(info["bound"], name)
+        self.assertIs(FW.widget(root["widgets"]["spinbox_n_X"]), n_x)
         # the guest formatted the text it set (its own quantity string,
         # not the host's decimals), the host its own; both parse back
         self.assertEqual(FreeCAD.Units.Quantity(
@@ -280,7 +306,7 @@ class SandboxFormsTest(unittest.TestCase):
 
         # guest -> host: state set from the guest reaches the widgets and
         # the views send nothing back for it
-        sent = M.stats["sent"]
+        sent = FW.stats()["sent"]
         S.exec("import fcx_formprobe as p\n"
                "p.form.spinbox_n_X.setValue(9)\n"
                "p.form.checkbox_fuse.setChecked(False)\n"
@@ -294,16 +320,18 @@ class SandboxFormsTest(unittest.TestCase):
         self.assertEqual(w.findChild(QtWidgets.QGroupBox, "group_copies").title(), "Copies")
         self.assertFalse(w.findChild(QtWidgets.QPushButton, "button_reset_Y").isEnabled())
         self.assertTrue(w.findChild(QtWidgets.QGroupBox, "group_Z").isHidden())
-        self.assertEqual(M.stats["sent"], sent)
+        self.assertEqual(FW.stats()["sent"], sent)
         self.assertEqual(self.guest("fcx_formprobe.events")[-1], ["fuse", 0])
+        # the store's bag followed the guest
+        self.assertEqual(FW.info(root["widgets"]["group_copies"])["properties"]["title"],
+                         "Copies")
 
-        # OK: the dialog's accept crosses to the guest's panel, which
-        # reads every field back; the views detach with the widgets
-        # (this fork's Control.activeDialog() is a bool: the panel
-        # object the dialog holds is driven directly, as the widgets
-        # gate does)
-        self.assertTrue(M.panel.accept())
-        Gui.Control.closeDialog()
+        # OK: FormWidgets.accept() drives the C++ dialog as its OK button
+        # would (this fork's Control.activeDialog() is a bool and its
+        # TaskView hands the dialog no button box), so the accept crosses
+        # to the guest's panel, which reads every field back, and the
+        # True closes the dialog; the views detach with the widgets
+        self.assertTrue(FW.accept())
         accepted = self.guest("fcx_formprobe.panel.accepted")
         self.assertEqual(FreeCAD.Units.Quantity(accepted.pop("Xx_text")).Value, 33.0)
         self.assertEqual(accepted, {
@@ -311,15 +339,16 @@ class SandboxFormsTest(unittest.TestCase):
             "fuse": False, "link": False, "z": True, "y": False,
             "linear": False, "title": "Ortho probe"})
         self.assertFalse(Gui.Control.activeDialog())
-        self.assertEqual(root.views, [])
-        self.assertEqual(named["spinbox_n_X"].views, [])
+        self.assertFalse(FW.info(forms[0])["bound"])
+        self.assertFalse(FW.info(root["widgets"]["spinbox_n_X"])["bound"])
+        # the objects outlive their views: the guest's panel is reusable
+        self.assertEqual(FW.info(root["widgets"]["spinbox_n_X"])["properties"]["value"], 9)
 
         # shown again, cancelled from the host: reject crosses
         S.exec("import fcx_formprobe as p, FreeCADGui\nFreeCADGui.Control.showDialog(p.panel)\n")
         self.assertTrue(Gui.Control.activeDialog())
-        self.assertEqual(len(root.views), 1)
-        self.assertTrue(M.panel.reject())
-        Gui.Control.closeDialog()
+        self.assertTrue(FW.info(forms[0])["bound"])
+        self.assertTrue(FW.reject())
         self.assertEqual(self.guest("fcx_formprobe.panel.rejected"), 1)
         self.assertFalse(Gui.Control.activeDialog())
 
@@ -330,7 +359,7 @@ class SandboxFormsTest(unittest.TestCase):
         self.assertTrue(self.guest("fcx_formprobe.active"))
         S.exec("import FreeCADGui\nFreeCADGui.Control.closeDialog()\n")
         self.assertFalse(Gui.Control.activeDialog())
-        self.assertEqual(root.views, [])
+        self.assertFalse(FW.info(forms[0])["bound"])
 
     def test_draft_orthoarray_panel(self):
         """Draft's task_orthoarray.py, unmodified, in the guest."""
@@ -347,18 +376,21 @@ class SandboxFormsTest(unittest.TestCase):
         with open(path, encoding="utf-8") as f:
             source = f.read()
         S = self.S
-        M = widgets.manager()
+        FW = Gui.FormWidgets
         S.exec(source, "fcx_task_orthoarray")
         S.resetStats()
+        FW.resetStats()
         t0 = time.perf_counter()
         S.exec("import fcx_task_orthoarray as m, FreeCADGui, types\n"
                "panel = m.TaskPanelOrthoArray()\n"
                "panel.source_command = types.SimpleNamespace(completed=lambda: None)\n"
                "FreeCADGui.Control.showDialog(panel)\n", "fcx_orthoprobe")
-        sys.stderr.write("SandboxForms: TaskPanelOrthoArray() + show %.3f s, ops %s\n"
-                         % (time.perf_counter() - t0, sorted(S.stats()["ops"].items())))
+        sys.stderr.write("SandboxForms: TaskPanelOrthoArray() + show %.3f s, ops %s, store %s\n"
+                         % (time.perf_counter() - t0, sorted(S.stats()["ops"].items()),
+                            sorted(FW.stats().items())))
         self.assertTrue(Gui.Control.activeDialog())
-        w = M.panel.form[0]
+        self.assertEqual(widgets.manager().models, {})
+        w = self.dialog().getDialogContent()[0]
         self.assertEqual(w.windowTitle(), "Orthogonal Array")
         # the panel's __init__ wrote its defaults into the form
         n_x = w.findChild(QtWidgets.QSpinBox, "spinbox_n_X")
@@ -384,7 +416,7 @@ class SandboxFormsTest(unittest.TestCase):
         # completed(), which natively closes the dialog itself (reject
         # answers None, so the dialog is not auto-closed: the same
         # False as TaskDialogPython reads natively)
-        self.assertFalse(M.panel.reject())
+        self.assertFalse(FW.reject())
         self.assertTrue(Gui.Control.activeDialog())
         Gui.Control.closeDialog()
         self.assertFalse(Gui.Control.activeDialog())

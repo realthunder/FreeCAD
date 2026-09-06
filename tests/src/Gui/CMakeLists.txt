@@ -8,6 +8,24 @@ target_sources(
 # Qt tests
 setup_qt_test(QuantitySpinBox)
 
+# The host widget layer (docs/Sandbox.md 7.12, H0): the property core,
+# the generator's output for Draft's OrthoArray form, and the Qt backend
+# binding uic's widgets to the models.  The header is generated here
+# from the .ui in the tree by the generator under test.
+set(_fw_test_ui ${CMAKE_SOURCE_DIR}/src/Mod/Draft/Resources/ui/TaskPanel_OrthoArray.ui)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fwui_TaskPanel_OrthoArray.h
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/src/Tools/fwuic.py ${_fw_test_ui}
+            -o ${CMAKE_CURRENT_BINARY_DIR}/fwui_TaskPanel_OrthoArray.h
+    DEPENDS ${_fw_test_ui} ${CMAKE_SOURCE_DIR}/src/Tools/fwuic.py
+    COMMENT "fwuic: TaskPanel_OrthoArray.ui as host widget models")
+setup_qt_test(FormWidgets)
+target_sources(FormWidgets_Tests_run PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/fwui_TaskPanel_OrthoArray.h)
+target_include_directories(FormWidgets_Tests_run PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/src/Gui)
+target_compile_definitions(FormWidgets_Tests_run PRIVATE FW_TEST_UI_FILE="${_fw_test_ui}")
+
 # The drain's walk over a live document (docs/DocumentLoad.md §13). The
 # cursor is header-only over App, and the claim being tested -- that the
 # walk survives objects coming and going between slices -- needs no window,

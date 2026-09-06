@@ -21,8 +21,10 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <climits>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #endif
@@ -36,14 +38,26 @@
 #include <App/ExpressionGuestProxy.h>
 #include <App/ExpressionImageBridge.h>
 #include <App/ExpressionSecurityRuntime.h>
+#include <Base/Console.h>
 #include <Base/Exception.h>
+#include <Base/Interpreter.h>
+#include <Base/PyObjectBase.h>
 #include <Base/Type.h>
 
 #include "Application.h"
 #include "Command.h"
+#include "Control.h"
+#include "Document.h"
+#include "Fw/FwPy.h"
+#include "Fw/FwQtPanel.h"
+#include "Fw/FwStore.h"
+#include "Fw/FwWidgets.h"
+#include "TaskView/TaskDialog.h"
+#include "TaskView/TaskView.h"
 
 #include <QFile>
 #include <QFileInfo>
+#include <QVariant>
 
 using namespace Gui;
 using json = nlohmann::json;
@@ -430,6 +444,118 @@ PyObject* widgetManager()
     return mgr;
 }
 
+// ---- H0, the host widget layer (docs/Sandbox.md 7.12): a guest model of
+// the `freecad.widgets` module is a C++ object in Fw::Store, rendered by
+// the C++ Qt view; the plain ipywidgets models (Probe B) still go to the
+// Python manager.  The split is by `_model_module` at comm_open, and by
+// who holds the comm id after.
+
+QVariant jsonToVariant(const json& j)
+{
+    switch (j.type()) {
+        case json::value_t::null:
+            return QVariant();
+        case json::value_t::boolean:
+            return QVariant(j.get<bool>());
+        case json::value_t::number_integer:
+        case json::value_t::number_unsigned: {
+            long long v = j.get<long long>();
+            if (v >= INT_MIN && v <= INT_MAX)
+                return QVariant(static_cast<int>(v));
+            return QVariant(static_cast<qlonglong>(v));
+        }
+        case json::value_t::number_float:
+            return QVariant(j.get<double>());
+        case json::value_t::string:
+            return QVariant(QString::fromUtf8(j.get_ref<const std::string&>().c_str()));
+        case json::value_t::array: {
+            QVariantList out;
+            bool allStrings = !j.empty();
+            for (const auto& item : j) {
+                if (!item.is_string())
+                    allStrings = false;
+                out.append(jsonToVariant(item));
+            }
+            if (allStrings) {
+                QStringList sl;
+                for (const auto& v : out)
+                    sl.append(v.toString());
+                return QVariant(sl);
+            }
+            return QVariant(out);
+        }
+        case json::value_t::object: {
+            QVariantMap out;
+            for (auto it = j.begin(); it != j.end(); ++it)
+                out.insert(QString::fromUtf8(it.key().c_str()), jsonToVariant(it.value()));
+            return QVariant(out);
+        }
+        default:
+            return QVariant();
+    }
+}
+
+/// The guest's comm manager stand-in, held for the C++ store's way back
+/// (the Python manager holds its own reference for the plain models).
+PyObject*& storeDispatcher()
+{
+    static PyObject* standin = nullptr;
+    return standin;
+}
+
+/// Send `content` to the guest's comm `id` as `method` ("update" with
+/// the q_ state, or "custom") through the stand-in's host_msg hook.
+void storeSink(const QString& id, const QString& method, const QVariantMap& content)
+{
+    PyObject* standin = storeDispatcher();
+    if (!standin) {
+        Base::Console().Warning("SandboxGui: no guest comm manager to send to\n");
+        return;
+    }
+    Base::PyGILStateLocker lock;
+    PyObject* msg = PyDict_New();
+    PyObject* m = PyUnicode_FromString(method.toUtf8().constData());
+    PyDict_SetItemString(msg, "method", m);
+    Py_DECREF(m);
+    PyObject* body = Gui::Fw::variantToPy(content);
+    if (method == QLatin1String("update")) {
+        PyDict_SetItemString(msg, "state", body);
+        PyObject* paths = PyList_New(0);
+        PyDict_SetItemString(msg, "buffer_paths", paths);
+        Py_DECREF(paths);
+    }
+    else {
+        PyDict_SetItemString(msg, "content", body);
+    }
+    Py_DECREF(body);
+    PyObject* buffers = PyList_New(0);
+    PyObject* r = PyObject_CallMethod(standin, "host_msg", "sOO", id.toUtf8().constData(), msg,
+                                      buffers);
+    Py_DECREF(buffers);
+    Py_DECREF(msg);
+    if (!r) {
+        // the guest is gone (a reset) or raised: the store's objects
+        // are stale either way
+        Base::PyException e;
+        e.ReportException();
+        return;
+    }
+    Py_DECREF(r);
+}
+
+void setStoreDispatcher(PyObject* standin)
+{
+    PyObject*& held = storeDispatcher();
+    if (held && held != standin) {
+        // a new guest: the old guest's objects are gone
+        Gui::Fw::Store::instance().reset();
+    }
+    Py_XINCREF(standin);
+    Py_XDECREF(held);
+    held = standin;
+    Gui::Fw::Store::instance().setSink(&storeSink);
+}
+
 Reply commManager(HandleTable& table, const json& a)
 {
     if (!a.is_object())
@@ -441,6 +567,7 @@ Reply commManager(HandleTable& table, const json& a)
         Py_DECREF(standin);
         return replyErr("TypeError", "gui.comm.manager: the manager is not a guest proxy");
     }
+    setStoreDispatcher(standin);
     PyObject* mgr = widgetManager();
     PyObject* r = mgr ? PyObject_CallMethod(mgr, "set_dispatcher", "O", standin) : nullptr;
     Py_XDECREF(mgr);
@@ -449,6 +576,47 @@ Reply commManager(HandleTable& table, const json& a)
         return replyPyError();
     Py_DECREF(r);
     return replyOk(true);
+}
+
+/// A comm message for the C++ store: true when it took it.
+bool storeComm(const std::string& type, const QString& id, const json& data)
+{
+    Gui::Fw::Store& store = Gui::Fw::Store::instance();
+    if (type == "comm_open") {
+        if (!data.is_object())
+            return false;
+        auto st = data.find("state");
+        if (st == data.end() || !st->is_object())
+            return false;
+        QVariantMap state = jsonToVariant(*st).toMap();
+        if (!Gui::Fw::Store::owns(state))
+            return false;
+        store.commOpen(id, state);
+        return true;
+    }
+    if (!store.object(id))
+        return false;
+    if (type == "comm_close") {
+        store.commClose(id);
+        return true;
+    }
+    if (!data.is_object())
+        return true;
+    const std::string method = data.value("method", "");
+    if (method == "update") {
+        auto st = data.find("state");
+        if (st != data.end() && st->is_object())
+            store.commUpdate(id, jsonToVariant(*st).toMap());
+    }
+    else if (method == "custom") {
+        auto c = data.find("content");
+        if (c != data.end() && c->is_object())
+            store.commCustom(id, jsonToVariant(*c).toMap());
+    }
+    else if (method != "echo_update") {
+        Base::Console().Warning("SandboxGui: unknown comm method '%s'\n", method.c_str());
+    }
+    return true;
 }
 
 Reply commPublish(HandleTable& table, const json& a)
@@ -465,6 +633,9 @@ Reply commPublish(HandleTable& table, const json& a)
                                              : nullptr;
     if (!method)
         return replyErr("ProtocolError", "gui.comm: unknown message type '" + type + "'");
+    if (a[2].get_ref<const std::string&>() == "jupyter.widget"
+        && storeComm(type, QString::fromUtf8(a[1].get_ref<const std::string&>().c_str()), a[3]))
+        return replyOk(true);
     PyObject* data = decodeValue(table, a[3]);
     PyObject* metadata = data ? decodeValue(table, a[4]) : nullptr;
     PyObject* buffers = metadata ? decodeValue(table, a[5]) : nullptr;
@@ -502,8 +673,9 @@ Reply widgetShow(HandleTable& table, const json& a)
     PyObject* title = a[1].is_string()
         ? PyUnicode_FromString(a[1].get_ref<const std::string&>().c_str())
         : Py_NewRef(Py_None);
-    PyObject* r = PyObject_CallMethod(mgr, "show", "sOs", a[0].get_ref<const std::string&>().c_str(),
-                                      title, a[2].get_ref<const std::string&>().c_str());
+    PyObject* r = PyObject_CallMethod(mgr, "show", "sOs",
+                                      a[0].get_ref<const std::string&>().c_str(), title,
+                                      a[2].get_ref<const std::string&>().c_str());
     Py_DECREF(title);
     Py_DECREF(mgr);
     if (!r)
@@ -563,6 +735,54 @@ Reply uiRead(const json& a)
     return replyOk(json(std::string(text.constData(), static_cast<size_t>(text.size()))));
 }
 
+/// The guest panel's hooks: each a method of the stand-in, called
+/// through the bridge (a round trip into the guest nested in the Qt
+/// event that fired it).  `hooks` is the descriptor's list, so no
+/// hasattr crosses.
+class GuestPanelHooks : public Gui::FwQt::PanelHooks
+{
+public:
+    GuestPanelHooks(PyObject* standin, std::set<std::string> hooks)
+        : standin(standin)
+        , hooks(std::move(hooks))
+    {
+        Py_INCREF(standin);
+    }
+    ~GuestPanelHooks() override
+    {
+        Base::PyGILStateLocker lock;
+        Py_DECREF(standin);
+    }
+    bool has(const char* hook) const override
+    {
+        return hooks.count(hook) > 0;
+    }
+    QVariant call(const char* hook, const QVariantList& args) override
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* tuple = PyTuple_New(args.size());
+        for (int i = 0; i < args.size(); ++i)
+            PyTuple_SET_ITEM(tuple, i, Gui::Fw::variantToPy(args.at(i)));
+        PyObject* fn = PyObject_GetAttrString(standin, hook);
+        PyObject* r = fn ? PyObject_CallObject(fn, tuple) : nullptr;
+        Py_XDECREF(fn);
+        Py_DECREF(tuple);
+        if (!r) {
+            Base::PyException e;
+            e.ReportException();
+            return QVariant();
+        }
+        // None answers as TaskDialogPython reads it: False
+        QVariant v = r == Py_None ? QVariant(false) : Gui::Fw::pyToVariant(r);
+        Py_DECREF(r);
+        return v;
+    }
+
+private:
+    PyObject* standin;
+    std::set<std::string> hooks;
+};
+
 Reply controlShow(HandleTable& table, const json& a)
 {
     // [panel descriptor, [form model ids]]
@@ -575,11 +795,49 @@ Reply controlShow(HandleTable& table, const json& a)
         Py_DECREF(standin);
         return replyErr("TypeError", "gui.control.show: the panel is not a guest proxy");
     }
-    PyObject* ids = decodeValue(table, a[1]);
-    PyObject* hooks = PyList_New(0);
+    std::set<std::string> hookSet;
     for (const auto& h : a[0].value("hooks", json::array()))
         if (h.is_string())
-            PyList_Append(hooks, PyUnicode_FromString(h.get_ref<const std::string&>().c_str()));
+            hookSet.insert(h.get<std::string>());
+
+    // every form in the C++ store: the C++ panel; else (plain ipywidgets
+    // roots) the Python manager's
+    Gui::Fw::Store& store = Gui::Fw::Store::instance();
+    QList<Gui::Fw::Widget*> forms;
+    bool allOurs = !a[1].empty();
+    for (const auto& id : a[1]) {
+        Gui::Fw::Widget* w = id.is_string()
+            ? store.object(QString::fromUtf8(id.get_ref<const std::string&>().c_str()))
+            : nullptr;
+        if (!w) {
+            allOurs = false;
+            break;
+        }
+        forms.append(w);
+    }
+    if (allOurs) {
+        if (Gui::Control().activeDialog()) {
+            Py_DECREF(standin);
+            return replyErr("RuntimeError", "Control.showDialog: a task dialog is already active");
+        }
+        Gui::FwQt::PanelDialog* dlg = nullptr;
+        try {
+            dlg = new Gui::FwQt::PanelDialog(std::make_unique<GuestPanelHooks>(standin, hookSet),
+                                             forms);
+        }
+        catch (const Base::Exception& e) {
+            Py_DECREF(standin);
+            return replyErr("RuntimeError", e.what());
+        }
+        Py_DECREF(standin);
+        Gui::Control().showDialog(dlg);
+        return replyOk(true);
+    }
+
+    PyObject* ids = decodeValue(table, a[1]);
+    PyObject* hooks = PyList_New(0);
+    for (const auto& h : hookSet)
+        PyList_Append(hooks, PyUnicode_FromString(h.c_str()));
     PyObject* mgr = ids ? widgetManager() : nullptr;
     PyObject* r = mgr ? PyObject_CallMethod(mgr, "show_panel", "OOO", standin, ids, hooks)
                       : nullptr;
@@ -593,20 +851,55 @@ Reply controlShow(HandleTable& table, const json& a)
     return replyOk(true);
 }
 
-/// `gui.control.close` / `.active` / `.clear_watcher` / `.query name`:
-/// the manager's `control(op, arg)`.
+/// `gui.control.close` / `.active` / `.clear_watcher` / `.query name`.
 Reply controlCall(HandleTable& table, const std::string& op, const json& a)
 {
-    PyObject* mgr = widgetManager();
-    if (!mgr)
-        return replyPyError();
-    PyObject* arg = a.is_null() ? Py_NewRef(Py_None) : decodeValue(table, a);
-    PyObject* r = arg ? PyObject_CallMethod(mgr, "control", "sO", op.c_str() + 12, arg) : nullptr;
-    Py_XDECREF(arg);
-    Py_DECREF(mgr);
-    if (!r)
-        return replyPyError();
-    return replyResult(table, r);
+    (void)table;
+    if (op == "gui.control.close") {
+        if (auto dlg = dynamic_cast<Gui::FwQt::PanelDialog*>(Gui::Control().activeDialog())) {
+            // the dialog deletes its forms; the views detach now, not
+            // when the deferred delete lands
+            dlg->detachViews();
+        }
+        else {
+            // a Python-managed panel (plain ipywidgets): its views too
+            PyObject* mgr = widgetManager();
+            PyObject* r = mgr ? PyObject_CallMethod(mgr, "control", "sO", "close", Py_None)
+                              : nullptr;
+            Py_XDECREF(mgr);
+            if (!r)
+                return replyPyError();
+            Py_DECREF(r);
+            return replyOk(true);
+        }
+        Gui::Control().closeDialog();
+        return replyOk(true);
+    }
+    if (op == "gui.control.active")
+        return replyOk(Gui::Control().activeDialog() != nullptr);
+    if (op == "gui.control.clear_watcher") {
+        if (Gui::TaskView::TaskView* view = Gui::Control().taskWatcherPanel())
+            view->clearTaskWatcher();
+        return replyOk(true);
+    }
+    // gui.control.query
+    if (!a.is_string())
+        return replyErr("ProtocolError", "gui.control.query: name");
+    const std::string& q = a.get_ref<const std::string&>();
+    if (q == "isAllowedAlterDocument")
+        return replyOk(Gui::Control().isAllowedAlterDocument());
+    if (q == "isAllowedAlterView")
+        return replyOk(Gui::Control().isAllowedAlterView());
+    if (q == "isAllowedAlterSelection")
+        return replyOk(Gui::Control().isAllowedAlterSelection());
+    if (q == "activeDocument")
+        return replyOk(Application::Instance->activeDocument() != nullptr);
+    if (q == "resetEdit") {
+        if (Gui::Document* doc = Application::Instance->activeDocument())
+            doc->resetEdit();
+        return replyOk(true);
+    }
+    return replyErr("ValueError", "Control: unknown query '" + q + "'");
 }
 
 Reply guiOp(HandleTable& table, const Reply& requestCbor)
