@@ -2596,17 +2596,24 @@ on, no longer silences the mirror to the widget).
 Gates: `test_expressionSeam` in `FormWidgets_Tests_run` (13/13: bind,
 document -> bag -> value, the widget's dialog -> document -> bag, clear,
 a `DoubleSpinBox` on a sub-path, the signal-blocker semantics) is the
-in-process proof.  `SandboxNative.py` (a new GUI-gate module, run on
-its own: `SANDBOX_GUI_GATE_MODULES=SandboxNative`) opens Pad's real
-panel, drives `Pad.Length` from the widget, sets an expression on the
-document and reads it back read-only through the widget, and OKs it
-into the `ExpressionEngine` -- RESULT OK.  It is NOT in the default
-gate list: closing a 3D-view document and then pumping the event loop
-trips a teardown crash in this fork (a deferred `View3DInventor`
-deletion corrupts the heap; reproduced on the committed HEAD with a
-bare empty document, unrelated to the sandbox), so a run that first
-closes the guest gates' documents and then opens Pad's aborts; run
-alone it is clean, and the three-module default gate stays 7/7.
+in-process proof.  `SandboxNative.py` (a GUI-gate module, in the
+default list) opens Pad's real panel, drives `Pad.Length` from the
+widget, sets an expression on the document and reads it back read-only
+through the widget, and OKs it into the `ExpressionEngine` -- RESULT
+OK, 8/8 for the four-module gate.  It first ran alone: closing a
+3D-view document and then pumping the event loop tripped a teardown
+crash in this fork, unrelated to the sandbox (reproduced with a bare
+empty document), so a run that closed the guest gates' documents and
+then opened Pad's aborted.  The cause was in `ViewAreaCell`: the
+hosted view is a Qt child, deleted by `~QWidget` AFTER the cell's
+member destructors, and the `destroyed` lambda `hostView` connects
+then stored nullptr into the already-destructed `QPointer` member --
+a second weak release that freed Qt's refcount block under the dying
+view, which `QObject::~QObject` then wrote into ("shared QObject was
+deleted directly", a corrupted heap at the next malloc).  Fixed
+2026-09-06 by deleting the view in `~ViewAreaCell` while the member is
+alive; the gate with `SandboxNative` in the default list is the
+regression test.
 
 Next, **G3b** on the C++ store (the rest of the `.ui` subset with the
 41-panel harness), then **G3c** and the G2b runner.
@@ -2826,8 +2833,9 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    `test_taskOrientationPort`).  **H1b** BUILT 2026-09-06 (Pad/Pocket's
    form onto the generated models, the expression seam
    `Fw::ExpressionBound` on the `QuantitySpinBox`/`DoubleSpinBox`
-   models; gate `test_expressionSeam` 13/13 and `SandboxNative` run
-   alone).  Next **G3b** (the rest of the `.ui` subset and
+   models; gate `test_expressionSeam` 13/13 and `SandboxNative`, in the
+   default gate list since the `ViewAreaCell` teardown fix of
+   2026-09-06).  Next **G3b** (the rest of the `.ui` subset and
    the 41-panel harness) on the C++ store, **G3c** (forms built in
    code: DraftGui's toolbar -- what both workbenches' `Initialize()`
    stop at), and the G2b runner once there is something to switch to.

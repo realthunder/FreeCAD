@@ -353,7 +353,22 @@ ViewAreaCell::ViewAreaCell(ViewArea *area)
     _highlight = new ViewAreaHighlight(this);
 }
 
-ViewAreaCell::~ViewAreaCell() = default;
+ViewAreaCell::~ViewAreaCell()
+{
+    // The hosted view is a Qt child, and ~QWidget deletes children only
+    // after this body and the member destructors have run.  The
+    // destroyed-lambda hostView connects then still finds `self` alive
+    // (the QObject half of the cell dies last) and stores nullptr into
+    // `_child` -- a QPointer whose destructor has already released its
+    // weak reference.  That second release frees Qt's refcount block
+    // under the dying view, which QObject::~QObject then writes into
+    // ("shared QObject was deleted directly", and a corrupted heap at
+    // the next malloc).  Take the view down while the member is alive.
+    if (MDIView *view = _child) {
+        _child = nullptr;
+        delete view;
+    }
+}
 
 void ViewAreaCell::updateHighlight()
 {

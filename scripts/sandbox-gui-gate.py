@@ -19,7 +19,7 @@ The result goes to $SANDBOX_GUI_GATE_RESULT (default: sandbox-gui-gate.txt
 in the user data directory) and the last line is `RESULT OK` or `RESULT
 FAILED`; judge by that file, not by the exit code (the GUI's exit is not
 clean on every box).  $SANDBOX_GUI_GATE_MODULES selects the modules
-(comma-separated, default SandboxGui,SandboxWidgets,SandboxForms).
+(comma-separated, default SandboxGui,SandboxWidgets,SandboxForms,SandboxNative).
 """
 
 import faulthandler
@@ -65,7 +65,7 @@ class _EagerResult(unittest.TextTestResult):
 
 
 def main():
-    default_modules = "SandboxGui,SandboxWidgets,SandboxForms"
+    default_modules = "SandboxGui,SandboxWidgets,SandboxForms,SandboxNative"
     modules = os.environ.get("SANDBOX_GUI_GATE_MODULES", default_modules).split(",")
     out = os.environ.get("SANDBOX_GUI_GATE_RESULT") or os.path.join(
         FreeCAD.getUserAppDataDir(), "sandbox-gui-gate.txt"
