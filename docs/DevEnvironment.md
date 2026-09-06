@@ -28,6 +28,8 @@ Qt6 / toolchain / mcp_console work.
 
 Paths above are the Linux box; the Windows box mirrors the same set of repos and
 branches under a different root — see [Layout](#layout-1) in the Windows section.
+A macOS box has never built this fork; the bring-up, written for a session
+starting from a blank machine, is `PlatformVerification.md` section 4.
 
 Fork-local patches, now committed on their `LinkVibe` branches (don't discard):
 - `pivy/interfaces/CMakeLists.txt` — `INSTALL_RPATH` extended with `${CMAKE_INSTALL_RPATH}`

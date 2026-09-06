@@ -361,7 +361,10 @@ Each stage lands alone and is judged by the stage-0 test.
   judged address only as the fallback for the anonymous, legacy door.
   The pre-auth accept cap (before any of those exist) stays as it is.
   **Done the same day: section 7.4.**
-- **Stage 5 -- verify on all three platforms.**
+- **Stage 5 -- verify on all three platforms.** The brief for the
+  Windows and macOS sessions is `PlatformVerification.md`: what to
+  establish, what to record (a section 7.5 here), and the macOS
+  bring-up from a blank machine.
 
 ### 7.1 The seam, as built
 
@@ -626,7 +629,9 @@ case (`SceneServerWire_tests_run`, now 17 cases):
 
 1. **Where do Windows and macOS get tested?** No Windows or macOS box is
    available here, and no CI in this repo builds them. Stages 2 and 5
-   are unverifiable without one.
+   are unverifiable without one. Answered 2026-09-06 by delegation: a
+   session on each box, briefed by `PlatformVerification.md`, reports
+   into section 7.5.
 2. ~~C++17.~~ Answered by section 5.4: the stackless idiom builds under
    either standard.
 3. ~~How many io threads~~ Stage 2 chose one io thread and a worker
