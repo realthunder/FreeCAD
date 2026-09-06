@@ -2344,3 +2344,100 @@ chance there.  And keep T2's own scope honest -- the 2D faces are
 rebuilt from projected wires in `mapToPage`, so they take their name
 from the wires that bound them rather than from any shape identity,
 which is the change that kills the area-sort fragility.
+
+### 8.4 T1b, built: the complex tool is named from its profile (2026-09-06)
+
+8.2 left `DrawComplexSection::makeCuttingTool` returning its tool
+unnamed, and 8.3 named the reason: that tool is three different
+constructions, and no fixed six-name scheme fits any of them.  It is
+built now, from the profile object's own elements.
+
+**Probed first, two questions, and both answers were yes.**
+
+1. *Do the profile's edges arrive named?*  Yes.  A three segment sketch
+   used as a profile gives `Part.getShape` a wire whose edges are
+   `g1;SKT`, `g2;SKT`, `g3;SKT` -- and `noElementMap=True` does not
+   strip them, the same as every other whole-feature shape (8.1).  The
+   old code lost them anyway: `makeProfileWire` assigned
+   `Part::Feature::getShape` (a `TopoDS_Shape`) into a `Part::TopoShape`,
+   which is a conversion, not a copy of the map.
+2. *Does `makEPrism` put those names on the extrusion?*  Yes, on both
+   sweeps.  Extruding the wire sideways gives a shell whose three faces
+   are `#9;:G;XTR;...`, `#a;...`, `#b;...` -- one per profile edge --
+   and extruding that shell along the section normal keeps those three
+   names on the faces that lie on the cut surface, which are exactly the
+   faces the section face is cut from.  The `#` forms are hashed because
+   a profile from a document carries that document's hasher; they
+   resolve back to the sketch geometry, as the evidence below shows.
+
+**What changed.**  Four new members beside the raw ones they shadow, so
+nothing that wanted a bare `TopoDS_Wire` had to change:
+
+- `makeProfileShape` -- the profile as a named `Part::TopoShape`, via
+  `getTopoShape` rather than `getShape`.  `makeProfileWire` is now this
+  plus `.getShape()`, so there is one implementation of what the profile
+  *is*.
+- `makeNoseToTailShape` -- `makeNoseToTailWire`'s reordering with the
+  names put back.  Nothing is rebuilt but the wire itself, so
+  `mapSubElement` finds every edge by identity; a one-edge profile comes
+  back untouched.
+- `extrudeWireToFace(Part::TopoShape&, ...)` -- the same sweep through
+  `makEPrism`, leaving the wire moved the way the raw version leaves it.
+- `makeProfileFace` -- `makEFace` for the closed profile, falling back
+  to the plain `BRepBuilderAPI_MakeFace` when the name propagating face
+  maker will not take the wire.  A profile that used to build a tool
+  still builds one.
+
+`m_toolFaceShape` is a `Part::TopoShape` now, so the names survive into
+the second extrusion, and the empty-solid filter is a `makECompound`
+over the solids it keeps (`force` left at its default, which always
+wraps -- the trap 8.1 records).  The aligned worker still receives a
+bare `BRepBuilderAPI_Copy` of the tool face: mapping names writes to the
+document's `App::StringHasher` and that has no locking (8.2), while
+`makeCuttingTool` itself runs on the main thread, from
+`DrawViewSection::makeSectionCut` before the future is launched.
+
+The one behaviour change is that the second `BRepPrimAPI_MakePrism` the
+old code built and threw away is gone; the prism is computed once.
+
+**Evidence**, driven in a running application, on an Offset complex
+section of a 70x40x20 box with a hole, stepped profile
+`(-30,0) -> (-5,0) -> (-5,10) -> (30,10)`:
+
+    tool            : Compound, faces=12, elementMapSize=52
+    section faces   : #75;:G;XTR;:H6ea:7,F;:H,F;:M;CUT;:H6ea:7,F;:H,F
+                      #77;:G;XTR;:H6ea:7,F;:M;CUT;:H6ea:7,F;:H,F
+    resolved        : {{g1;SKT};:H6ea,E};:G;XTR;...;:M;CUT;...
+                      {{g3;SKT};:H6ea,E};:G;XTR;...;:M;CUT;...
+
+Seven PASS lines: the tool is named; the section face is named; the name
+is one step off the tool rather than a combo of the edges the cut
+created (`;:L(` -- the instability 8.2 measured); the name resolves
+through the document hasher back to a segment of the profile sketch; it
+survives `SectionOrigin` moving and the model changing; and when the
+profile gains a fourth and fifth segment the two existing section faces
+keep their names while the new segment brings a third of its own.
+
+Two things the probe had to get right, both of which made an earlier run
+say nothing:
+
+- **A profile segment parallel to the extrude direction makes no tool
+  solid**, by design -- that is what the empty-solid filter is for.  A
+  three segment stepped profile therefore gives a tool of two solids and
+  twelve faces, not three and eighteen, and a "new segment" added along
+  the section normal changes the tool not at all.  The added segment has
+  to be one that sweeps a volume.
+- **The section faces have to be told apart from the model's own faces
+  that happen to face the same way.**  Filtering only on the surface
+  normal picked up the box's front and back, which arrive named
+  `Face2;:H,F` from the source and have nothing to do with the tool.
+
+**Gates.**  TechDraw 11 of 11 (28.5 s); `ctest` 477 of 477 (26 s); the
+Python suite 1338 tests, 6 failures and 8 errors, exactly this box's
+known environment set.
+
+**Still left for T2**, unchanged from 8.2: `prepareShape` centers,
+scales and rotates through `ShapeUtils`, which is `TopoDS_Shape` in and
+out, so the names stop at `m_cutPieces` / `m_cutShapeRaw`; and the 2D
+section faces are rebuilt from projected wires in `mapToPage`, so they
+need the name carried beside them in `BaseGeom`'s `ref3D` slot.
