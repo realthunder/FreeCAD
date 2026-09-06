@@ -32,8 +32,10 @@ Qt6 / toolchain / mcp_console work.
 
 Paths above are the Linux box; the Windows box mirrors the same set of repos and
 branches under a different root — see [Layout](#layout-1) in the Windows section.
-A macOS box has never built this fork; the bring-up, written for a session
-starting from a blank machine, is `PlatformVerification.md` section 4.
+The macOS box builds the whole fork and is green as of 2026-09-07 (`ctest`
+478 of 478); the bring-up, written for a session starting from a blank
+machine, is `PlatformVerification.md` section 4, and what the tree itself
+needed is `SceneServerPort.md` 7.7.
 
 Fork-local patches, now committed on their `LinkVibe` branches (don't discard):
 - `pivy/interfaces/CMakeLists.txt` — `INSTALL_RPATH` extended with `${CMAKE_INSTALL_RPATH}`
@@ -44,6 +46,16 @@ Fork-local patches, now committed on their `LinkVibe` branches (don't discard):
 - `occt` `NCollection_IncAllocator.cxx` and `Aspect_VKeySet.cxx` -- `#include <mutex>`
   for `std::lock_guard`. Only libc++ needs it, so only macOS found it; harmless and
   correct everywhere (`LinkVibe-801`).
+- `OndselSolver` `PiecewiseFunction.cpp`, `Polynomial.cpp`, `Sum.cpp` -- `#include
+  <iterator>` for `std::back_inserter`, the same libc++ gap. The submodule now points
+  at `realthunder/OndselSolver` branch `LinkVibe` (the fork was made for this), with
+  the fix rebased onto upstream `main` at 458510d. Upstream still has it wrong in
+  three of the four files that call `back_inserter`; only `Product.cpp` includes
+  `<iterator>`, and by accident rather than by fix.
+- `bgfx` `renderer_mtl.cpp` -- do not build the screenshot blit pipeline when there
+  is no swap chain (`realthunder/bgfx` `master`). Headless Metal otherwise aborts
+  inside `bgfx::init()`, which is any offscreen Metal user's problem and not
+  specific to this tree.
 
 ## Primary stack: conda (Qt 6.10 + PySide6)
 
