@@ -300,6 +300,20 @@ being filled, all live at once.
 | `GuiLiveImportNestedLoop_tests_run` | the live-import nested-loop crash (`docs/DocumentLoad.md` sec 15.2): a command pumps a nested event loop while the chess set is still importing, so the tree populates inside the user-edit guard | 25 s |
 | `GuiServeSelectionEcho_tests_run` | a remote pick on a headless serve source (`Gui.serveDocument`) comes back as a scene push (`docs/ThinClient.md` sec 8.9 step 0): a raw-socket client in a thread sends `'P'` rays and times the frame back; also that a no-change pick pushes nothing and a `'B'` batch pushes one frame | 10 s |
 
+**On Windows they do not register**, and cannot: `tests/gui/CMakeLists.txt`
+wants `xvfb-run` and `.conda/run.sh`, and the box has neither. Run one by
+hand instead -- nothing in these scripts needs a display of its own, only a
+running application:
+
+    powershell -File D:\works\sw\tools\run_cdb.ps1 -UserHome <dir> -StartupScript <wrap.py>
+
+where `wrap.py` is three lines that set `GT_OUT` and `GT_RESULT` in
+`os.environ` and `exec` the test file in its own globals. `-UserHome` is the
+isolated configuration `gui-test.sh` builds with XDG variables, and the cdb
+console is where a crash leaves a stack. The verdict is the result file, as
+it is on Linux: PASS lines and `DONE`. `GuiServeSelectionEcho_tests_run` was
+run this way for stage 5 of `SceneServerPort.md` (section 7.5 there).
+
 That one exists because the render goldens found the crash by accident
 under load and then had to stop finding it: a golden must not animate,
 and the ten-frame animated fit was the window. The test opens the same
