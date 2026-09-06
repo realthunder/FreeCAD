@@ -459,7 +459,11 @@ Each phase ships standalone value; later phases proceed on evidence, per RoadMap
   menu; operation catalog advertised by the backend; a first real op end-to-end (e.g.
   primitive create + transform).
 - **Phase 4 — direct manipulation + sketch tier.** In-scene bgfx handles with DOM numeric
-  readout; client-side sketch constraint solver (interaction tier); previews before commit.
+  readout; previews before commit. The sketch tier is **input mirroring** (section 8): the
+  browser streams its camera and pointer/key events, a per-client offscreen Coin viewer on
+  the server replays them through the real sketcher, and the resulting scene changes come
+  back as deltas. A client-side constraint solver, the earlier plan, is demoted to a
+  prediction layer to add only if the measured round trip demands it.
 - **Cross-cutting:** Tauri shell reusing the bundle (desktop/mobile); session/auth for
   remote; the operation catalog unified with the MCP surface (RoadMap §5); delta snapshots
   (today the whole snapshot re-sends — fine at demo scale, revisit for large models).
@@ -480,7 +484,9 @@ Each phase ships standalone value; later phases proceed on evidence, per RoadMap
   the dormant `'P'`/`'B'` → `pickAndSelect` path) or stay stateless (address objects by name
   per request). *Stateless-by-name is favored* — it keeps the fast tier decoupled and matches
   the semantic protocol's stateless-operation shape; the dormant pick channel can drive
-  desktop selection later if a co-editing story needs it.
+  desktop selection later if a co-editing story needs it. **Revisited 2026-09-06:** the
+  co-editing story is section 8, and the "desktop selection" it drives is no longer one
+  object -- section 8.4 makes the selection a per-client instance behind the same accessor.
 - **Snapshot churn as feedback signal.** Animated scenes (water/fire) republish continuously,
   so "a snapshot arrived" is not proof an edit applied — rely on the `setProperty` ack, not on
   a frame update (a known trap from the debug handoff).
@@ -494,3 +500,257 @@ Each phase ships standalone value; later phases proceed on evidence, per RoadMap
 - **Where the DOM bundle is served.** Today `main.cpp`+`shell.html` are emscripten output. The
   new `web/` bundle needs its own build/serve lane alongside `build/wasm`; fold it into
   `wasm-viewer.sh`.
+
+---
+
+## 8. Input mirroring -- editing from the browser (2026-09-06)
+
+The sketcher, and every other edit mode, is a large body of interaction code that lives in
+view providers and their handlers: tool state machines, snapping, autoconstraints, pixel
+tolerances for preselection, the cursor readout, on-view parameters. None of it was ever
+going to be reimplemented in the browser, and a client-side constraint solver (the phase 4
+plan above) would not have covered it anyway -- the solver is the small part. This section
+records the design that replaces that plan: **stream the client's camera and input to the
+server, replay it there against a per-client mirror of the client's viewer, and stream the
+resulting scene changes back as the deltas the wire already carries.** VNC does the same
+loop with pixels and is usable; this loop has fewer stages, and none of them touches a
+framebuffer, so it should come in under VNC, not over it.
+
+### 8.1 What the July experiment actually measured
+
+An eager selection sync over the dormant `'B'` channel was tried in July 2026 and removed
+because the highlight coming back from the server visibly lagged the instant local one.
+The record of that session names the cause: the server's echo was a **full re-stream** that
+sent the client through `setScene` and a warmup, stalling the view right after the local
+highlight had already drawn. Three properties of the server at the time made that so, and
+none is inherent to the idea:
+
+- the connection loop ran on a **200 ms poll tick**, so any push waited for the next tick;
+- every publish **re-sent the whole scene**; there was no delta;
+- the echo **replaced** the client's state instead of merging into it.
+
+Two of the three are gone since: publishes are content-addressed deltas
+(`SceneStreaming.md`, 425 KB to 1.4 KB per publish), and the headless source coalesces on a
+zero timer instead of a frame (`HeadlessServe.md`). The third is exactly stage 3 of
+`SceneServerPort.md`: a push queued from the host still waits for the next tick because the
+host-side senders append to the writer's queue without waking it. Stage 3 is therefore a
+**prerequisite** of this section (landed the same day: `SceneServerPort.md` section 7.3,
+every path at a fraction of a millisecond on loopback), and the first thing to do after it is to re-run the
+July measurement on the dormant `'P'` channel: click, let the selection come back as a
+delta, and log click-to-delta arrival. If that lands near the round-trip time plus a few
+milliseconds, the rest of this section is building on a proven floor.
+
+**Measured 2026-09-06, no browser in the loop** (a raw-socket client sends the `'P'` ray
+and times the first binary frame back; `tests/gui/serve-selection-echo.py` is the
+permanent form). Three boxes, alternating picks, loopback:
+
+| serve shape | click to delta, median | p90 | of which pick dispatch to the GUI thread |
+|---|---|---|---|
+| `FC_BGFX_SERVE_SCENE` viewer under Xvfb (the July setup) | 6.5 ms | 8.3 ms | 1.3 ms |
+| `Gui.serveDocument`, headless, no display | 2.9 ms | 3.2 ms | 1.4 ms |
+
+A `'B'` batch of three picks comes back as one frame; a pick that changes nothing sends
+nothing. The delta is 0.8 to 1.3 KB. So the diagnosis above holds: nothing in the loop
+costs more than the pick's hop to the GUI thread plus the publish, and the rest of this
+section builds on that floor. The headless row did not exist before the measurement: a
+headless source selected and never published, because the selection root fed the render
+cache only through its viewer and the source was not a selection observer at all
+(`HeadlessServe.md`, fixed the same day).
+
+### 8.2 The shape
+
+```
+ browser                                      server (one process per session)
+ -------                                      --------------------------------
+ local tier: orbit, hover, pick  (unchanged)  per-client MirrorViewer
+   |                                            camera + viewport = the client's
+   | 'C' camera frames  (coalesced)  ---------> SoEventManager -> SoHandleEventAction
+   | 'E' input  frames  (one-way)    ---------> ViewProvider::eventCallback
+   |                                            -> sketcher mouseMove / pressed / key
+   |                                            -> solver, edit graph updated
+   v                                            -> change-driven traversal
+ apply deltas  <--------------------------------  delta publish (editing feed, hilites)
+ (prediction reconciled, never replaced)
+```
+
+Three rules make it fast, and each one is a lesson from 8.1:
+
+1. **Navigation never leaves the client.** The camera goes up only so the mirror can pick
+   with the client's exact projection; the client keeps rendering from its own camera, so
+   orbit and zoom are as lag-free as today.
+2. **The uplink is a one-way event stream.** No per-event reply, ever. X11 over a WAN is
+   slow because of synchronous round trips, not bytes; this design must not grow one.
+3. **No tick anywhere on the path.** Input is coalesced to one client frame, the server
+   traverses on change, the writer is woken on push. A single 200 ms tick or debounce costs
+   more than the entire budget below.
+
+### 8.3 The mirror viewer: pure offscreen Coin, no widget, no GL
+
+The claim to verify by building it: a client's viewer can be mirrored with Coin alone --
+viewport, camera, event handling -- with no Qt widget and no GL context. Coin already
+splits these: `SoRenderManager` holds the camera and the `SbViewportRegion` and touches GL
+only inside `render()`, which the mirror never calls; `SoEventManager` runs
+`SoHandleEventAction` over a scene graph with that camera and viewport, which is all a
+pick, a preselect and a sketcher drag need. The serving process stays what `MultiDocServe.md`
+section 7 prices it as: no GL library loaded, no GPU ever.
+
+What stands in the way is the type. The edit path is written against
+`View3DInventorViewer`, a `QuarterWidget`: `ViewProvider::mouseMove`, `mouseButtonPressed`,
+`mouseWheelEvent` take one, and `ViewProvider::eventCallback` casts the event callback
+node's user data straight to it. A count of what the sketcher, PartDesign, Part and the
+core view providers actually ask of that pointer, from the sources on 2026-09-06:
+
+| viewer method | calls | headless answer |
+|---|---|---|
+| `getSoRenderManager()` (camera, viewport region) | 18 | the mirror's `SoRenderManager` |
+| `getSceneGraph()`, `getDocument()`, `getRenderCacheManager()` | 9 | shared with the document |
+| `setupEditingRoot()`, `setEditing()`, `appendDetailPath()` | 7 | per mirror, as today |
+| `getPointOnRay()`, `getPointOnViewport()`, `getCenterPointOnFocalPlane()`, `getViewportRegion()`, `getNearPlane()`, `getMaxDimension()`, `screenCoordsOfPath()` | 9 | camera math, view-less |
+| `devicePixelRatio()`, `getPickRadius()` | 3 | values sent by the client |
+| `getGLWidget()`, `getWidget()`, `screen()`, `setFocus()` | 13 | **widget: no answer** |
+| `addGraphicsItem()`, `removeGraphicsItem()`, `redraw()`, `getGLPolygon()` | 5 | **widget or GL: no answer** |
+
+So the extraction is: a `Gui::ViewerContext` (name to settle) base that carries the
+view-less rows, `View3DInventorViewer` deriving from it unchanged in behavior, and the
+view-provider entry points retyped to the base. That is a mechanical, wide, low-risk change
+whose regression test is the whole desktop. The widget rows are the residue: the
+`getWidget()` callers are almost all rubber-band and cursor code, `addGraphicsItem` is the
+sketcher's on-view widgets. The mirror answers them with null and the DOM layer takes over
+those surfaces (8.7); an edit mode that cannot run without a widget is discovered by
+exactly that null, not by a crash in a headless process.
+
+Two smaller leaks of desktop state to fix on the way: `eventCallback` consults
+`QApplication::mouseButtons()` to decide whether Escape is safe, and the sketcher reads the
+pick radius from a global `ViewParams`. Both become fields of the context, fed by the
+client.
+
+### 8.4 The selection stack: `SelectionSingleton` stops being single
+
+`Gui::Selection` is process-global by construction: `SelectionSingleton::instance()`
+returns one static object, reached through the `Gui::Selection()` accessor from roughly
+1500 call sites in 197 files, including the preselect path inside `SoFCUnifiedSelection`
+and everything the sketcher does with picks. `MultiDocServe.md` section 7 took that as a
+fact and defined a room around it: one viewer's pick changes what every viewer sees. With a
+mirror per client, two clients hovering would fight over one preselection, and a sketcher
+drag in one browser would drive the other's highlights.
+
+The simple start is to keep the accessor and make the instance **current** rather than
+unique. `_pcSingleton` becomes the top of a stack of instances; a scoped guard pushes a
+client's instance for the dynamic extent of one replayed event, and again for the publish
+that follows it. Every one of the 1500 call sites then lands in the right instance without
+being touched, because it runs inside that extent: the sketcher's preselect, the
+`SoFCUnifiedSelection` handler, the selection-stack undo. What is per instance is what the
+class already holds as members: the selection list, the current preselection, the
+back/forward selection stacks, the notification queue, the selection style. What stays
+shared is the document.
+
+The one thing that does not fall out for free is the observer list. The tree view, the
+task panels and the property view attach to the selection and expect one. In the first cut
+they stay attached to the **room** instance -- the desktop's, or the headless source's
+default -- and a mirror's instance notifies only its own client, through that client's
+publish. The room's shared selection then becomes a **policy** rather than a fact: a click
+in a mirror commits into the room selection (so every viewer and every panel sees it, as
+today), while preselection and in-edit picks stay in the mirror's own instance. Later
+options, per-client observers or a merged view for collaboration, are open, and this
+layering does not close them.
+
+### 8.5 The wire
+
+Both directions ride the existing `/scene` socket, so ordering is free and nothing new is
+exposed to the tunnel or the gateway.
+
+**Uplink, binary, one-way.** Two frame kinds beside the existing `'P'`/`'B'` picks:
+
+- `'C'` camera: the `SoCamera` fields (type, position, orientation, height or height angle,
+  near, far, aspect) plus viewport pixel size and device pixel ratio. Sent as fields, not as
+  matrices, so the mirror's pick radius and the sketcher's pixel tolerances match the
+  client's exactly. Coalesced: at most one per client frame, only when changed.
+- `'E'` input: pointer move, press, release with button and modifier bits; wheel; key press
+  and release with the Coin key code. Moves are coalesced so the latest position wins;
+  presses and releases are never dropped and keep their order relative to the moves around
+  them. Each frame carries the client's timestamp so the replayed `SoEvent` has a real
+  time.
+
+**Downlink: the deltas that exist.** Two demands on them that are new:
+
+- The **editing overlay feed** (`OverlayEditing`, captured from `pcEditingRoot`) must delta
+  at draw granularity during a drag -- the moved curves and their hilites, nothing else --
+  and must never invalidate the main scene's ladder. Today that capture runs inside a GL
+  render action on the desktop viewer; under the headless source it has to hang off the
+  change-driven traversal instead. Whether the overlay feed already deltas that finely is
+  the one open measurement in this section.
+- Hilite deltas need a **client tag**: a mirror's preselection goes to its own client only;
+  the room selection goes to everyone, as today.
+
+### 8.6 Reconciliation: prediction, then an idempotent echo
+
+The local tier keeps doing what it does: hover and pick resolve client-side and draw
+immediately. That is now a **prediction**. The server's answer for the same event arrives
+as a delta that the client **merges**; if the prediction was right the delta is byte-
+identical to what is already drawn and nothing on screen changes. This is the netcode
+model, not the VNC model. VNC has no client state to reconcile; this design does, and the
+July stall was precisely a reconciliation that replaced instead of merging. The rule is
+therefore absolute: **a server echo may never trigger `setScene` or a warmup.** Inside an
+edit mode there is no prediction at first -- the solver is on the server -- and the mirror's
+deltas are simply applied.
+
+### 8.7 The Qt-only chrome
+
+Two surfaces of the sketcher are Qt widgets outside the scene and so outside the feed: the
+task panel, which is already the DOM layer's job (section 4), and the on-view parameters,
+the small entry widgets the sketcher places next to the cursor while a tool is active. The
+latter need either a DOM counterpart driven by a small "widget" feed (position, label,
+value, focus) or a rendered stand-in through the existing text ports. Keys must stream for
+the same reason: Escape, Tab and numeric entry are how those tools are driven.
+
+### 8.8 Budget
+
+| hop | cost |
+|---|---|
+| input coalesced to one client frame | 0 to 16 ms |
+| one way on the wire | RTT / 2 |
+| mirror: pick on the edit graph plus one solver step | 1 to 5 ms |
+| delta build plus writer wake | a few ms, event-driven |
+| one way back plus one client frame | RTT / 2 plus 16 ms |
+
+On a LAN that is under 40 ms end to end, dominated by the two frame boundaries; on a WAN
+it is the round trip plus roughly 35 ms. VNC's loop adds a redraw, a framebuffer diff, an
+encode and a decode, and caps the update rate at the encoder's. The comparison only holds
+while rule 3 of 8.2 holds.
+
+### 8.9 Staging
+
+Each step is a standalone landing with the desktop as its regression oracle.
+
+0. ~~**Stage 3 of the server port, then the measurement.** Wake the writer on push; re-enable
+   the eager `'P'` send in a test build; log click-to-selection-delta. This decides
+   whether 8.1's diagnosis was right before anything else is built.~~ Done 2026-09-06: the
+   table in 8.1. The eager send was exercised from a socket client rather than a viewer
+   build, which measures the whole server side of the loop and leaves the browser's own
+   few hundred microseconds out; the viewer-side re-enable is part of stage 3 below.
+1. **The viewer context.** Extract the view-less base from `View3DInventorViewer`, retype
+   the view-provider entry points, kill the two desktop-state leaks in 8.3. No behavior
+   change; the whole test set and a desktop sketch session are the check.
+2. **The selection stack.** Current-instance accessor, the scoped guard, observers pinned
+   to the room instance. Again no behavior change on the desktop, where the stack has one
+   entry.
+3. **The mirror, hover only.** A `MirrorViewer` per connection in the headless source; `'C'`
+   and `'E'` frames; the mirror's preselect published back as a client-tagged hilite delta
+   and compared on screen against the local hover. This is the first user-visible latency
+   number for the full loop.
+4. **Edit mode.** `setEdit` under the mirror, the editing root captured by the change-driven
+   traversal, keys streamed; a sketch drawn and dragged from a phone.
+5. **On-view parameters in the DOM** and whatever the widget residue of 8.3 turned up.
+
+### 8.10 Open questions
+
+- `Gui::Document::setEdit` admits one editing view provider per document, and a view
+  provider is bound to a single edit viewer through `setEditViewer`. One editor per document
+  is the first cut; two browsers in the same sketch is a collaboration question, deferred
+  with the rest of collaboration.
+- Whether the overlay feed deltas at draw granularity today (8.5), and what a per-move
+  publish of a mid-size sketch costs.
+- Pick radius and device pixel ratio: the client sends them, but a touch client wants a
+  larger radius than a mouse, so the value is per client, not per document.
+- The mirror has no frame; anything a view provider does "on the next redraw" needs the
+  change-driven traversal to be that redraw.

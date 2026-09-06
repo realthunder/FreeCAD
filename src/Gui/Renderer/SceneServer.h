@@ -199,6 +199,18 @@ public:
     void setTrustProxy(bool on);
     bool trustProxy();
 
+    /// The admitted-connection caps (docs/SceneServerPort.md sec 7.4):
+    /// how many distinct users may be connected at once, and how many
+    /// connections each may hold. A user is the identity a trusted
+    /// front door asserted, else the grant that admitted the
+    /// connection, else the judged address -- so a gateway on another
+    /// host is not one user for everybody behind it, as the old
+    /// per-peer cap made it. An anonymous connection judged by a
+    /// loopback address (the legacy door behind a same-box tunnel,
+    /// where every remote client looks the same) is not counted.
+    /// Defaults 64 and 16; the pre-auth accept caps stay underneath.
+    void setConnectionCaps(int users, int perUser);
+
     /// The request header carrying a verified identity from an
     /// authenticating front door (docs/ShareAccess.md §4). Read only
     /// under the trust rule of setTrustProxy — trust on, loopback

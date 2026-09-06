@@ -2195,6 +2195,16 @@ public:
     /// each renderer's dirty state so the next frame retries the lookup
     /// (and the scene server republishes with the fresh bins).
     int userCompileGeneration = 0;
+    /// Set by getUserProgram when a draw asked for a program whose
+    /// compile is still in flight and was handed the stock program to
+    /// stand in. Cleared at the head of every frame (a sub-view
+    /// sequence's first submit) and read at its tail: a one-shot frame
+    /// dump is not consumed by a frame that drew a stand-in, because
+    /// the picture asked for is the scene with its materials, and a
+    /// surface drawn without one is not that. A failed compile does
+    /// not set it -- its draw stands in for good and the frame is the
+    /// picture there is.
+    bool userProgramStoodIn = false;
 
     /// Disk-cache / async-compile step for one user shader. The default
     /// target is the active bgfx backend; \a platform / \a profile
@@ -9605,6 +9615,22 @@ public:
     /// frame's blit; lastStats keeps that readback's statistics.
     Render::FrameDumpRequest pendingDump;
     bool dumpPending = false;
+    /// The host said the next frame is not the whole scene
+    /// (Renderer::holdFrameDump); read and cleared at the frame tail
+    /// beside the lib's stand-in record.
+    bool hostHold = false;
+    /// Whether the last frame held the pending dump (frameDumpHeld).
+    bool dumpHeld = false;
+    /// This frame still owes something the picture depends on: a
+    /// frozen frame's particle warm-up not yet reached, a mesh refine
+    /// the level plan just asked for. Per frame, like the lib's
+    /// stand-in record; the tail folds both into the verdict.
+    bool frameOwes = false;
+    /// The last frame's verdict and the counters behind
+    /// Renderer::frameComplete / renderedFrames / completeFrames.
+    bool lastFrameComplete = false;
+    uint64_t renderedFrameCount = 0;
+    uint64_t completeFrameCount = 0;
     Render::RenderStats lastStats;
     bool sceneDumped = false;   ///< FC_BGFX_DUMP_SCENE fired
     /// Frames since the feeds last changed, and the fingerprint that is

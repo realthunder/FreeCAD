@@ -66,6 +66,7 @@
 #include "ObjectMetaFeed.h"
 #include "SceneControl.h"
 #include "Selection.h"
+#include "SoFCSelectionAction.h"
 #include "SoFCUnifiedSelection.h"
 #include "ViewProviderDocumentObject.h"
 
@@ -246,6 +247,10 @@ public:
     std::unique_ptr<Render::Renderer> renderer;
     QTimer timer;
     std::vector<fastsignals::scoped_connection> connections;
+    struct SelectionMirror;
+    /// The selection observer a view is and this source was not; see
+    /// its definition below.
+    std::unique_ptr<SelectionMirror> selectionMirror;
 
     /// The served Cycles viewports (sec 7.1) and what they were last
     /// fed: the scene as translated for them, kept so a stream that
@@ -446,6 +451,8 @@ public:
             }
             reply[QLatin1String("available")] = Render::Cycles::available();
             reply[QLatin1String("devices")] = list;
+            reply[QLatin1String("streams")] = Render::Cycles::FrameStream::liveCount();
+            reply[QLatin1String("maxStreams")] = int(RenderParams::getCyclesMaxStreams());
             return reply;
         }
         const int cell = cellOf(req);
@@ -501,10 +508,47 @@ public:
             req.value(QLatin1String("minIntervalMs")).toInt(options.minIntervalMs);
         options.maxPixels =
             long(req.value(QLatin1String("maxPixels")).toDouble(double(options.maxPixels)));
+        // The server's policy, not the viewer's: read fresh at every
+        // start, so a change of the preference takes on the next one.
+        options.maxStreams = int(RenderParams::getCyclesMaxStreams());
         Render::Cycles::CameraInput camera;
         if (!readCamera(req, camera))
             return error("BadRequest",
                          QStringLiteral("a start needs view, proj, width and height"));
+
+        // A start on a cell that already traces is a restart, so its
+        // own stream goes BEFORE the replacement is made: two device
+        // contexts for one cell should not overlap, and the one on its
+        // way out must not be what refuses the one taking its place.
+        // Its slot is held until the reaper is done with the session,
+        // so the replacement is told to forgive exactly that slot --
+        // once, and only while it is still held. The cost is that a
+        // restart the engine then refuses leaves the cell dark rather
+        // than on its old frame -- which is what the viewer is told.
+        {
+            auto gone = streams->take(client, cell);
+            for (const auto &s : gone)
+                options.replacing = s->slotHandle();
+            gone.clear();
+        }
+
+        // The cap itself, so that the refusal is named and logged. The
+        // engine checks it again as it constructs (it is the one place
+        // the count cannot be raced), but that answer arrives as a
+        // plain device failure; this one is the server's own.
+        const int live = Render::Cycles::FrameStream::liveCount()
+            - (options.replacing.expired() ? 0 : 1);
+        if (options.maxStreams > 0 && live >= options.maxStreams) {
+            Base::Console().Warning(
+                "SceneServeSource: path tracing refused for connection %llu cell %d -- "
+                "%d served sessions already run (CyclesMaxStreams %d)\n",
+                (unsigned long long)client, cell, live, options.maxStreams);
+            return error("TooManyStreams",
+                         QStringLiteral("this server already path traces for %1 viewers, "
+                                        "which is its limit (%2)")
+                             .arg(live)
+                             .arg(options.maxStreams));
+        }
 
         auto &server = Render::SceneStreamServer::instance();
         std::string message;
@@ -521,14 +565,10 @@ public:
         if (!stream)
             return error("NoDevice", QString::fromStdString(message));
         stream->setCamera(camera);
-        std::shared_ptr<Render::Cycles::FrameStream> previous;
         {
             std::lock_guard<std::mutex> lock(streams->mutex);
-            auto &slot = streams->byClient[CyclesStreams::Key(client, cell)];
-            previous = std::move(slot);
-            slot = stream;
+            streams->byClient[CyclesStreams::Key(client, cell)] = stream;
         }
-        previous.reset();
         feedCyclesStreams(false, stream);
         reply[QLatin1String("running")] = true;
         reply[QLatin1String("device")] = QString::fromStdString(vp.device);
@@ -549,6 +589,75 @@ public:
         pickroot->addChild(camera);
         pickroot->addChild(root);
         return pickroot;
+    }
+};
+
+/*!
+ * What View3DInventorViewer::onSelectionChanged does for a view: hand
+ * every selection change of this document to the selection root, whose
+ * render-cache feed is what the wire carries. A view is a
+ * SelectionObserver; this source was not, so a remote pick landed in
+ * Gui::Selection on the GUI thread and no publish ever showed it --
+ * the selection root never heard of it (docs/ThinClient.md sec 8.9,
+ * step 0, found by the pick-echo measurement of 2026-09-06).
+ */
+struct SceneServeSource::Private::SelectionMirror : public SelectionObserver
+{
+    SceneServeSource *source;
+    SoFCSelectionAction selectionAction;
+    SoFCHighlightAction highlightAction;
+
+    explicit SelectionMirror(SceneServeSource *src)
+        : SelectionObserver(true, ResolveMode::NoResolve)
+        , source(src)
+    {}
+
+    void onSelectionChanged(const SelectionChanges &reason) override
+    {
+        Private *p = source->pimpl.get();
+        if (!p->root || !p->doc || !p->doc->getDocument())
+            return;
+        SelectionChanges Reason(reason);
+        if (Reason.pDocName && *Reason.pDocName
+                && std::strcmp(p->doc->getDocument()->getName(),
+                               Reason.pDocName) != 0)
+            return;
+        switch (Reason.Type) {
+        case SelectionChanges::ShowSelection:
+            Reason.Type = SelectionChanges::AddSelection;
+            break;
+        case SelectionChanges::HideSelection:
+            Reason.Type = SelectionChanges::RmvSelection;
+            break;
+        case SelectionChanges::SetPreselect:
+        case SelectionChanges::RmvPreselect:
+        case SelectionChanges::SetSelection:
+        case SelectionChanges::AddSelection:
+        case SelectionChanges::RmvSelection:
+        case SelectionChanges::ClrSelection:
+            break;
+        default:
+            return;
+        }
+        // The same re-entrancy guard the viewer keeps: a notification
+        // raised from inside the traversal is dropped, not nested.
+        if (Reason.Type == SelectionChanges::SetPreselect
+                || Reason.Type == SelectionChanges::RmvPreselect) {
+            if (highlightAction.SelChange)
+                return;
+            highlightAction.SelChange = &Reason;
+            highlightAction.apply(p->root);
+            highlightAction.SelChange = nullptr;
+        }
+        else {
+            if (selectionAction.SelChange)
+                return;
+            selectionAction.SelChange = &Reason;
+            selectionAction.apply(p->root);
+            selectionAction.SelChange = nullptr;
+        }
+        // The feed changed, and with no frame loop nothing else asks.
+        source->schedulePublish();
     }
 };
 
@@ -594,6 +703,7 @@ SceneServeSource::SceneServeSource(Document *doc)
     pimpl->root->setExternalRenderer(pimpl->renderer.get(),
                                      &pimpl->renderProps);
     pimpl->attachViewProviders();
+    pimpl->selectionMirror = std::make_unique<Private::SelectionMirror>(this);
 
     // Coalesce: a recompute or a load changes many objects, and each one
     // would otherwise be a full traversal. Zero-timer, so the publish
@@ -653,6 +763,9 @@ SceneServeSource::SceneServeSource(Document *doc)
 
 SceneServeSource::~SceneServeSource()
 {
+    // Stop listening first: a selection change during the teardown
+    // below must not traverse a root that is going away.
+    pimpl->selectionMirror.reset();
     // Hand the group back before anything of this source goes away:
     // clears its publisher claim and handler slots and purges its
     // queued level jobs, so no server thread dispatches into a source

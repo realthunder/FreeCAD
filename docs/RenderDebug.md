@@ -622,6 +622,53 @@ view.saveRenderDump(path,
 
 - One-shot: arms a capture that executes on the next rendered frame, then
   disarms. No env vars, no per-frame overwrite.
+- **Consumed only by a complete frame.** The backend declines to consume
+  the dump with a frame that is not yet the picture asked for, and holds
+  it for a later one: a frame in which a draw asked for a user-shader
+  program still compiling (`shaderc` runs in a subprocess; the stock
+  program stands in meanwhile -- a surface without its material), or a
+  frame drawn from a publish that deferred shapes under its capture
+  budget (`Render CaptureBudgetMS`; the viewer says so through
+  `Renderer::holdFrameDump()` before the frame). `frameDumpHeld()`
+  reports a held frame, and `View3DInventorViewer::pumpFrameDump`
+  counts it as progress: its quiet timeout (5 s) restarts on every held
+  frame and every pending compile, under a 120 s total. Both holds are
+  bounded by what they wait for -- a failed or watchdog-killed compile
+  is recorded and its draw stands in for good without asking again, and
+  each follow-up publish captures at least one more deferred shape. The
+  case that made this necessary is section 5.2a.
+- **The same verdict is a signal in its own right.** `Renderer::
+  frameComplete()` is the last frame's verdict; `renderedFrames()` and
+  `completeFrames()` count frames since the backend came up, so a
+  waiter records the complete count and stops when it advances (a
+  verdict left over from before the request proves nothing). What a
+  complete frame means: every user-shader program compiled, every
+  deferred shape arrived, a frozen frame's particle warm-up reached
+  (`stepParticles` still owing steps under `DebugFreezeFrame`), and no
+  mesh refine the level plan just asked for. On the frame path this is
+  two flag writes, two increments and a compare -- nothing waits there.
+  The consumers: `View3DInventorViewer::waitFrameComplete(timeoutMs)`
+  pumps frames until one complete frame has rendered since the call
+  (quiet 5 s restarting on every frame rendered and every pending
+  compile, 120 s in all), the Qt signal `frameCompleted()` fires from
+  `renderScene` on the frame that advanced the count, and Python has
+  `view.waitFrameComplete(timeout=120000)` and `view.isFrameComplete()`.
+  `render_verify.py` settles on the wait instead of a frame count
+  (`RV_SETTLE` is now extra frames, default 0), which is what lets the
+  chess set take exactly the time it needs and the small scene almost
+  none. Cycles too: `view.cyclesRender()` waits for a complete frame
+  before it translates the render cache (a publish still catching up
+  deferred shapes would otherwise trace half a scene), and
+  `view.cyclesViewportStatus()['complete']` says the live session has
+  rendered its whole sample budget for the scene and camera as last
+  stated -- what a probe polls instead of sleeping.
+- **The wait is the default of every capture, and an argument.**
+  `FrameDumpRequest::waitComplete` (default true) is what the frame
+  tail honours; `saveRenderDump`, `saveImage`, `getRenderStats` and
+  `cyclesRender` take `wait=True` and pass it down (`savePicture` /
+  `imageFromRenderer` carry it in C++, so a Std_ViewScreenShot waits
+  too). `wait=False` takes the very next frame as it stands, mid-arrival
+  included -- the one thing a probe of the arrival itself needs.
 - `source="renderer"` reuses the existing readback code path, promoted from
   env-gated static to a renderer-level `requestFrameDump(path, mode)` API;
   PNG via Qt's imagewriter instead of hand-rolled PPM.
@@ -928,18 +975,184 @@ passes on a build the user can see is broken is worse than no harness.
   preference that changes what a frame looks like, add it to `viewKeys`
   in the same commit.
 
-This closes the "no reliable way to verify rendering" gap: the SwiftShader
-blindspot is covered by the desktop leg being a *real-GPU readback* of the
-same knob-for-knob staged frame.
 
-The user-shader feature (section 6) has its own companion harness,
-`scripts/user-shader-verify.sh`: a desktop leg running the
-document-object-model GUI suites under xvfb (`user_shader_params.py`,
-`user_shader_post.py` — property binding, per-binding overrides,
-activation/deactivation with byte-exact restores) and a viewer leg
-re-running the pipeline against a live headless-Chromium WASM viewer
-(`user_shader_viewer.py` scene-graph route,
-`user_shader_viewer_appearance.py` document-object route).
+### 5.2 The committed test set (what ctest actually runs)
+
+Everything above describes the harness. This is the part of it that is
+wired into the build, so a regression is caught by a test run rather than
+by someone remembering to capture a set by hand -- `tests/render/`.
+
+**Nothing else in ctest draws a pixel.** The suites whose names suggest
+rendering -- `RenderProperties`, `RenderCacheMaterial`, `MaterialXGen`,
+`MaskedOcclusion`, `CullBenefit` -- are all deliberately built without a
+GL context, and `PublishOnly_tests_run` goes further and asserts that no
+driver is even mapped. That is the gap this set closes.
+
+| test | what it is | cost |
+|---|---|---|
+| `RenderSmokeVg_tests_run` | `fcvgsmoke`: bgfx up headless in its own process, vg paths/gradients/strokes/text drawn offscreen, pixels read back, ink checked per primitive | 0.3 s |
+| `RenderSmokePage2D_tests_run` | the same binary's retained-`Page2D` scenario: pan, in-band zoom, band crossing, rotation, damage, removal | 0.3 s |
+| `RenderGoldenRaster_tests_run` | `scripts/render-test-scene.py` staged in a real FreeCAD under xvfb, one camera, the five pipeline stages, compared against blessed references | 28 s |
+| `RenderGoldenRasterFlat_tests_run` | the same scene and stages with `FC_RENDER_TEST_BG=0`: the environment still lights the model but is not drawn, so the frame is the model | 20 s |
+| `RenderGoldenCycles_tests_run` | the same scene path traced on the CPU (64 spp, 240x180) | 29 s |
+| `RenderGoldenChess_tests_run` | the MaterialX chess set: a real asset with a real material library, raster and path traced | 65 s, see below |
+| `RenderGoldenChessFlat_tests_run` | the chess set the same way, background off | 65 s |
+
+The first four run in a default `ctest`. The path-traced legs and the chess set are opt-in:
+
+    cmake -DFC_RENDER_HEAVY_TESTS=ON <build> && ctest -L render-heavy
+
+WARNING: **a ctest LABEL does not keep a test out of a default run.** It
+only gives `-L` something to select on; `ctest` with no arguments still
+executes it. Neither does the `CONFIGURATIONS` property, which is not
+filtered at all when no `-C` is passed -- measured directly: a test
+carrying `CONFIGURATIONS render-heavy` ran anyway on a plain `ctest`.
+**Registration is the only gate that actually holds**, which is why the
+heavy tests are behind a CMake option and not behind their label alone.
+The label is kept so `-L` can select them once the option is on.
+
+**The reference images are their own repository**
+(`realthunder/fcad-render-refs`, branch `LinkVibe`), mounted at
+`tests/render/refs` as a git submodule (`git submodule update --init
+tests/render/refs`), because a golden set is binary and is rewritten on
+every reblessing -- churn that does not belong in the history of the
+source tree. Every golden test is *skipped, not failed*, when that
+checkout is absent, the same courtesy `MaterialXGen_tests_run` extends to
+the MaterialX submodule. Its README carries the reblessing procedure; a
+reblessing is a commit there and a submodule bump here.
+
+**The two scenes are deliberately different in kind.**
+`scripts/render-test-scene.py` is four primitives built in process -- a
+matte floor, a rough box, a metal sphere, a glass rod and one
+shadow-casting bulb -- chosen so that one cheap scene still puts content
+in every stage the diff walks, the shadow buffer included.
+`scripts/render-test-chess.py` imports the MaterialX chess set from the
+submodule, which is the case that exercises map binding, the texture path
+and the MaterialX splice. A synthetic scene cannot fail the way a real
+document does, and a real document is too slow to run every time; hence
+one of each.
+
+**Each scene is registered twice, with the background drawn and without
+it** (`FC_RENDER_TEST_BG`, read by both scene scripts). They are not the
+same test. With a background most of the frame is scenery, so a change to
+the model moves a few hundred pixels while a camera that lands slightly
+differently moves a hundred thousand and buries it. Without one, the
+frame is the model and the diff is about what is under test. The
+background is drawn by the engine too, so neither case replaces the
+other.
+
+WARNING: **the flat leg has to turn off the environment, not just the
+gradient.** `Render_PBREnvBackground` defaults to *on*, and the drawn
+environment sits over the viewer's gradient -- so a scene that clears
+`Gradient`/`RadialGradient` and sets `BackgroundColor` while leaving the
+environment alone produces the *same frame* as its lit sibling. That was
+`refs/raster-flat` as first blessed on 2026-09-05: its beauty frame
+differed from `refs/raster` on 7.9% of pixels with a maximum channel
+delta of **1** -- twenty seconds of default `ctest` spent re-testing the
+frame the previous test had just checked. `render-test-chess.py` had it
+right (`p.SetBool("PBREnvBackground", BACKGROUND)`); `render-test-scene.py`
+did not, and now does. Blessed correctly, the two legs diverge on 79.5%
+of the beauty pixels (max 121) with depth, normal, AO and shadow
+byte-identical -- the same geometry, a different background, which is
+exactly the shape the pair should have. If a *-flat set ever compares
+near-identical to its sibling, this is the first thing to check.
+
+**The Cycles leg is reproducible as it stands, and must be kept that
+way.** The offline path sets no seed, so the integrator default applies,
+and denoising is enabled only on the *viewport* path
+(`CyclesViewport.cpp`), never on `cyclesRender`. Measured on the small
+scene: two restaged runs are byte-exact at `--tol 0 --frac 0`, and the
+trace costs 1.3 s at 64 spp. CPU is the device on purpose -- it is the
+one every box has, and two devices do not produce identical pixels, so a
+set blessed on CUDA cannot be compared against a CPU run.
+
+Captures are named so that `render_diff.py` needed no change to gain a
+second renderer: a traced frame is written as
+`<prefix>--cycles--mode0.png`, which its existing filename grammar reads
+as a group of its own whose single stage is the beauty frame.
+
+WARNING: **Bless the restaged set, never the fresh one** (the rule stated
+in section 5, now with numbers). Fresh-vs-restaged on the small scene
+differs on up to 0.0098% of pixels with a maximum channel delta of 254,
+purely from the sidecar camera's ~8 significant digits;
+restaged-vs-restaged is byte-exact.
+
+**Path tracing amplifies that rounding, and the chess set shows it.**
+Where the small scene's traced frame moved by a maximum delta of 1
+between a fresh and a restaged camera, the chess set's moved by 53 over
+0.25% of its pixels -- enough to fail the default tolerance. Nothing is
+wrong with the renderer: a camera that differs in its last digit sends
+different rays, and a detailed textured scene under an HDR environment
+turns that into visibly different noise where four primitives under a
+single bulb did not. It is the sharpest argument for the rule -- the
+raster leg of the same run compared clean, so a set blessed from a fresh
+capture would have looked fine right up until the traced leg was added.
+
+`scripts/render-verify.sh` takes `--cycles`, `--cycles-device`,
+`--cycles-samples` and `--cycles-size` for the traced leg.
+
+#### 5.2a The chess set: the race the test found on its first day
+
+`refs/chess` was not blessed with the rest of the set: on the raster leg
+a piece of the MaterialX chess set intermittently came back plain
+untextured white instead of jade-with-gold-trim -- 2 runs in 12, same
+build, same restaged camera, nothing logged, the differing pixels in one
+tight box around the black queen (y 318-400, x 325-361 at 858x582), the
+Cycles leg of the same runs right every time, and a 4x settle no help.
+Chased 2026-09-05 and fixed the same day. Three findings, all three now
+in the code:
+
+- **The white piece was a capture of a program still compiling.** A
+  MaterialX material is compiled by a `shaderc` subprocess
+  (`BGFXRendererLibP::ensureUserShaderBin`, asynchronous, cached on disk
+  under `$XDG_CACHE_HOME/FreeCAD/BGFXUserShaders`), and until its binary
+  lands `getUserProgram` returns an invalid handle and the draw uses the
+  stock program: no maps, no material, white. Compile order is
+  deterministic, the black set's surfaces are asked last (see the next
+  item), and the black queen's is the last of those -- which is why the
+  rare failure was always that piece and byte-identical. Fix: the frame
+  records that a draw stood in, and the tail of such a frame does not
+  consume a pending dump (section 4.2). The wait is bounded by the
+  compile's own watchdog; a failed compile is recorded and never asked
+  again, so a capture of a scene with a broken material still returns.
+- **The scene was still arriving.** A publish that spends its capture
+  budget (`Render CaptureBudgetMS`) leaves first-time shapes out of the
+  frame and catches them up in follow-up publishes, one or more shapes
+  per pass. On this box the chess set's black pieces reach the backend
+  some fifteen seconds after the white ones, because the frames in
+  between are cold -- generating fifteen MaterialX variants and, once
+  their binaries land, building fifteen programs and uploading their
+  maps on llvmpipe is a second or more per program. A dump consumed in
+  that window is a picture of half a chess set. Fix: the viewer tells
+  the backend before each frame whether the last publish deferred
+  anything (`Renderer::holdFrameDump`), and the dump is held the same
+  way. And a held frame counts as progress for `pumpFrameDump`: its old
+  5 s timeout, measured from the request, expired inside the one frame
+  that built five programs -- which is also why every wait tried before
+  this one "did not work".
+- **The deterministic repro measured the camera, not the material.**
+  `--settle 0` failed 100% of the time at 31.7022% of pixels, and that
+  number never moved, fixed or not. It was the camera: the scene's
+  `fitAll()` animates the position into place in ten per-frame steps
+  (`viewBoundBox` -> `animatedViewAll`), and with frames of seconds
+  during the cold compile the animation was still overwriting the
+  restaged camera thirty seconds later -- the diff image shows the board
+  twice, offset, on an unchanged environment. Both `render_verify.py`
+  (in `freeze()`) and the chess scene now switch navigation animation
+  off (`setAnimationEnabled(False)`), so a fit and a `view<Name>()` land
+  in one step. The material race was real and is fixed; its repro was
+  measuring something else.
+
+Verified after the fix: zero-settle restage captures of the chess set
+compare clean against a good capture, run after run, with a private
+shader cache (a cold compile every run); the default-settle runs the
+same; and the rest of the render set unchanged. `refs/chess` and
+`refs/chess-flat` are blessed from restaged captures, so
+`RenderGoldenChess_tests_run` and its flat variant run with
+`-DFC_RENDER_HEAVY_TESTS=ON`. If a chess diff ever again shows a lone
+piece, re-read this section before calling it noise: the hold is what
+guarantees the material, and a lone divergence around one piece would
+mean it has been bypassed.
 
 ---
 
@@ -1033,7 +1246,9 @@ Implementation notes from the second slice (`material` stage):
   user contract is one color output), section-clip discard is not applied
   to user programs, and a draw with a user shader is excluded from the
   cross-object instancing path. While the async compile is pending or
-  failed the standard program stands in — never a black object.
+  failed the standard program stands in -- never a black object. A
+  pending frame dump is not consumed by a frame that stood in (section
+  4.2): the capture waits for the material, the screen does not.
 - **User vertex stage.** A program carrying a vertex source replaces the
   stock `vs_fc_mesh` pairing (vertex contract: `$input a_position,
   a_normal, a_color0` / `$output v_normal, v_color0, v_vpos`; the

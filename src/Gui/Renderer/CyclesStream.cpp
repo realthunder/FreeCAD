@@ -40,6 +40,7 @@
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -149,6 +150,10 @@ public:
         viewport = Viewport::create(options.viewport, error);
         if (!viewport)
             return false;
+        // The slot this stream holds in the cap travels with whatever
+        // the viewport retires, so that a session still being torn
+        // down is still counted (sec 7.1).
+        viewport->setRetireToken(capSlot());
         // Cycles' threads report a staged frame; the encoder thread
         // is what takes it.
         viewport->setRedrawCallback([this] {
@@ -370,7 +375,29 @@ std::unique_ptr<FrameStream> FrameStream::create(
         std::function<void(const std::string &)> notify,
         std::string *error)
 {
-    auto stream = std::make_unique<FrameStreamImpl>(options, std::move(send), std::move(notify));
+    std::unique_ptr<FrameStreamImpl> stream;
+    {
+        // The cap (sec 7.1) is read with the count frozen: the
+        // construction that takes the slot happens under the same
+        // lock, so two connections cannot both find room for the last
+        // one. The device, which is what takes the time, is created
+        // outside it by start().
+        static std::mutex admit;
+        std::lock_guard<std::mutex> lock(admit);
+        // The stream being replaced does not count against its own
+        // replacement while its device is still going away.
+        const int live = liveCount() - (options.replacing.expired() ? 0 : 1);
+        if (options.maxStreams > 0 && live >= options.maxStreams) {
+            if (error) {
+                *error = "this server already runs " + std::to_string(live)
+                    + " path-traced sessions, which is its limit ("
+                    + std::to_string(options.maxStreams) + ")";
+            }
+            return nullptr;
+        }
+        stream =
+            std::make_unique<FrameStreamImpl>(options, std::move(send), std::move(notify));
+    }
     if (!stream->start(error))
         return nullptr;
     return stream;

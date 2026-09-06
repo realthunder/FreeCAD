@@ -256,14 +256,32 @@ public:
                               const QColor& bgcolor, QImage& img);
     /// Pump paint events until an armed one-shot frame dump has been
     /// consumed by a rendered frame (docs/RenderDebug.md §4.2); false on
-    /// timeout, or if the renderer was replaced while pumping.
+    /// timeout, or if the renderer was replaced while pumping. The
+    /// backend holds the dump while a user shader is still compiling,
+    /// or the scene is still arriving under the capture budget, and
+    /// the timeout waits with it (5 s quiet, 120 s in all).
     bool pumpFrameDump(Render::Renderer *renderer);
+    /** Pump frames until the external backend has rendered a COMPLETE
+     * one since this call (Render::Renderer::frameComplete: every user
+     * shader compiled, every deferred shape arrived, a frozen frame's
+     * particle warm-up reached, no mesh refine outstanding) -- the
+     * picture, rather than a number of frames. The built-in signal a
+     * test settles on; frameCompleted() is the same event as a Qt
+     * signal. The quiet timeout (5 s) restarts on every frame rendered
+     * and every pending compile, under \a timeoutMs in all. Without a
+     * backend one frame is rendered and that is the picture. False on
+     * timeout, or if the renderer was replaced while pumping.
+     */
+    bool waitFrameComplete(int timeoutMs = 120000);
     /// Capture the frame through the render backend's own one-shot dump
     /// rather than an offscreen Coin render, which cannot see what the
     /// backend drew. False when there is no backend or it has no capture
     /// path, and the caller falls back to the Coin route.
+    /// \a waitComplete: the dump is consumed only by a complete frame
+    /// (Render::FrameDumpRequest::waitComplete); false takes the next
+    /// frame as it stands.
     bool imageFromRenderer(int width, int height, const QColor& bgcolor,
-                           QImage& img);
+                           QImage& img, bool waitComplete = true);
 
     void setViewing(bool enable) override;
     virtual void setCursorEnabled(bool enable);
@@ -408,7 +426,8 @@ public:
      * Creates an image with width \a width and height \a height of the current scene graph
      * using a multi-sampling of \a sample and exports the rendered scenegraph to an image.
      */
-    void savePicture(int width, int height, int sample, const QColor& bg, QImage& img) const;
+    void savePicture(int width, int height, int sample, const QColor& bg, QImage& img,
+                     bool waitComplete = true) const;
     void saveGraphic(int pagesize, const QColor&, SoVectorizeAction* va) const;
     //@}
     /**
@@ -880,6 +899,13 @@ public:
 
     struct Private;
     friend struct Private;
+
+Q_SIGNALS:
+    /// The external backend has just rendered a complete frame (see
+    /// waitFrameComplete): emitted from renderScene, on the frame that
+    /// advanced Render::Renderer::completeFrames. Nothing listens by
+    /// default; an unconnected emit is a connection-list check.
+    void frameCompleted();
 
 public Q_SLOTS:
     /** Redraw the view, subject to the live-operation redraw throttle.

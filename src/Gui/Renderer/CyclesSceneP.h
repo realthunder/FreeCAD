@@ -318,6 +318,10 @@ private:
     /// scene of a thousand draws sharing one material reports its
     /// warnings -- or its refusal -- once and not once per draw.
     std::set<std::string> materialXReported;
+    /// The notes already made, keyed by DOCUMENT and message rather
+    /// than by surface: a note about the model a document is authored
+    /// against is one note, whatever the number of surfaces wearing it.
+    std::set<std::string> materialXNoted;
     /// And of those, the ones that failed: the negative cache that
     /// stops the next restate importing the data library all over
     /// again only to fail the same way.

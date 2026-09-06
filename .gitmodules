@@ -17,3 +17,7 @@
 	path = src/3rdParty/imgui-node-editor
 	url = https://github.com/realthunder/imgui-node-editor.git
 	branch = LinkVibe
+[submodule "tests/render/refs"]
+	path = tests/render/refs
+	url = https://github.com/realthunder/fcad-render-refs.git
+	branch = LinkVibe

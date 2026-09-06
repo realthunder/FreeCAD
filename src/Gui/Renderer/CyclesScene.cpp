@@ -2558,9 +2558,20 @@ ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip
     imageNodes += built.images;
     ccl::Shader *shader = acquireShader();
     shader->name = ccl::ustring(key);
-    if (materialXReported.insert(identity).second) {
-        for (const auto &w : built.warnings)
-            Base::Console().Warning("MaterialX: %s\n", w.c_str());
+    // Per DOCUMENT, not per surface: a note about the model a document
+    // is authored against is true of every surface in it, and a set
+    // like the chess set carries fifteen. The message is part of the
+    // key, so two surfaces with different notes still both report.
+    // Kept apart from materialXReported, which gates the FAILURE
+    // report and has to stay per surface -- one surface of a document
+    // can fail where another does not.
+    {
+        const std::string document =
+            user.sourcePath.empty() ? user.fragmentSource : user.sourcePath;
+        for (const auto &w : built.warnings) {
+            if (materialXNoted.insert(document + '\0' + w).second)
+                Base::Console().Warning("MaterialX: %s\n", w.c_str());
+        }
     }
     connectSurface(graph.get(), built.surface, clip);
     if (built.volume)

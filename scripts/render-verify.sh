@@ -21,6 +21,19 @@
 #   --gpu            real-GPU leg: WSLg wayland + Mesa d3d12 (OPENS A WINDOW
 #                    ON THE DESKTOP; default is headless xvfb = llvmpipe,
 #                    which verifies logic but not device-GPU precision)
+#   --settle N       extra frames to run before capturing (default 0).
+#                    The harness first waits for the backend's own
+#                    "complete frame" signal (view.waitFrameComplete:
+#                    shaders compiled, deferred shapes arrived, frozen
+#                    warm-up reached), so this is only for content that
+#                    signal does not cover
+#   --cycles         also path trace each staged camera with Cycles
+#                    (CPU by default -- see --cycles-device). Needs a
+#                    BUILD_CYCLES build; adds <prefix>--cycles--mode0.png
+#   --cycles-samples N   samples per pixel for that leg (default 32)
+#   --cycles-device D    Cycles device (default CPU; a golden blessed on
+#                    one device does not compare against another)
+#   --cycles-size WxH    size of the traced frame (default 320x240)
 #   --viewer         also capture the browser leg: serves the scene
 #                    (FC_BGFX_SERVE_SCENE) + the built WASM viewer, holds a
 #                    headless-Chromium page (swiftshader) on it and drives
@@ -38,9 +51,11 @@
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 RUN="$REPO/.conda/run.sh"
-# The tree the fork builds against (docs/DevEnvironment.md); FC_BUILD
-# repoints the capture runs at another one.
-BUILD=${FC_BUILD:-"$REPO/build/conda-debug-occt801"}
+# The standard build and the one every test run uses (CLAUDE.md,
+# docs/DevEnvironment.md); FC_BUILD repoints the capture runs at another
+# one. It used to default to build/conda-debug-occt801, which is the
+# debugger tree and not what anything is measured on.
+BUILD=${FC_BUILD:-"$REPO/build/conda-relwithdebinfo-801"}
 FCBIN="$BUILD/bin/FreeCAD"
 [ -x "$FCBIN" ] || {
     echo "no FreeCAD binary at $FCBIN (set FC_BUILD to another build tree)"
@@ -62,6 +77,7 @@ OUT=${1:?capture needs an output dir}
 shift
 SCENE="$REPO/scripts/demo-lights.py"
 GOLDEN= CAMS= MODES= GPU=0 VIEWER=0 PORT=8123 HTTP=8124 TIMEOUT=600
+CYCLES=0 CYCLES_SAMPLES= CYCLES_DEVICE= CYCLES_SIZE= SETTLE=
 CAM="0.6,0.3,70,0,0,5,0,0"
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -71,6 +87,11 @@ while [ $# -gt 0 ]; do
         --modes)   MODES=$2; shift 2;;
         --gpu)     GPU=1; shift;;
         --viewer)  VIEWER=1; shift;;
+        --settle)  SETTLE=$2; shift 2;;
+        --cycles)  CYCLES=1; shift;;
+        --cycles-samples) CYCLES_SAMPLES=$2; shift 2;;
+        --cycles-device)  CYCLES_DEVICE=$2; shift 2;;
+        --cycles-size)    CYCLES_SIZE=$2; shift 2;;
         --port)    PORT=$2; shift 2;;
         --http)    HTTP=$2; shift 2;;
         --cam)     CAM=$2; shift 2;;
@@ -83,6 +104,13 @@ mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 ISO="$OUT/.iso"
 mkdir -p "$ISO/cache" "$ISO/config"
+# RV_CACHE shares one cache directory across runs instead of giving each
+# its own. It matters more than it sounds: the generated MaterialX
+# shaders are compiled by shaderc into $XDG_CACHE_HOME/FreeCAD/
+# BGFXUserShaders, and a private cache means every run recompiles the
+# whole material set from cold while the capture clock is running.
+CACHE="$ISO/cache"
+[ -n "${RV_CACHE:-}" ] && { mkdir -p "$RV_CACHE"; CACHE=$(cd "$RV_CACHE" && pwd); }
 rm -f "$ISO/cache/FreeCAD/Cache/FreeCAD_"*.lock 2>/dev/null
 RESULT="$OUT/result.txt"
 : > "$RESULT"
@@ -100,12 +128,19 @@ cleanup() {
 trap cleanup EXIT
 
 COMMON_ENV=(
-    XDG_CACHE_HOME="$ISO/cache" XDG_CONFIG_HOME="$ISO/config"
+    XDG_CACHE_HOME="$CACHE" XDG_CONFIG_HOME="$ISO/config"
     RV_OUT="$OUT" RV_RESULT="$RESULT" RV_SCENE_NAME="$NAME"
     ${CAMS:+RV_CAMERAS="$CAMS"} ${MODES:+RV_MODES="$MODES"}
     ${GOLDEN:+RV_GOLDEN="$GOLDEN"}
+    ${SETTLE:+RV_SETTLE="$SETTLE"}
 )
 [ "$VIEWER" = 1 ] && COMMON_ENV+=(RV_VIEWER=1 FC_BGFX_SERVE_SCENE=$PORT)
+if [ "$CYCLES" = 1 ]; then
+    COMMON_ENV+=(RV_CYCLES=1
+        ${CYCLES_SAMPLES:+RV_CYCLES_SAMPLES="$CYCLES_SAMPLES"}
+        ${CYCLES_DEVICE:+RV_CYCLES_DEVICE="$CYCLES_DEVICE"}
+        ${CYCLES_SIZE:+RV_CYCLES_SIZE="$CYCLES_SIZE"})
+fi
 
 if [ "$GPU" = 1 ]; then
     echo "real-GPU leg: WSLg wayland + d3d12 (a FreeCAD window will appear)"

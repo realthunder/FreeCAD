@@ -196,6 +196,23 @@ public:
         return false;
     }
 
+    /// Start \a path where the render cache manager resolves \a vp:
+    /// a viewer puts its own groups between this root and the
+    /// provider's root (View3DInventorViewer::appendDetailPath), a
+    /// view-less root -- a headless serve source, SceneServeSource.cpp
+    /// -- holds the provider's root as a direct child, so there is
+    /// nothing to prepend. False when \a vp is not in this scene.
+    bool beginDetailPath(SoPath *path, ViewProvider *vp) const {
+        if (this->pcViewer) {
+            if (!this->pcViewer->hasViewProvider(vp))
+                return false;
+            this->pcViewer->appendDetailPath(path, vp);
+            return true;
+        }
+        SoNode *root = vp->getRoot();
+        return root && master->findChild(root) >= 0;
+    }
+
     void touch() {
         if (this->pcViewer && this->pcViewer->getRootPath()) {
             SoNode * head = this->pcViewer->getRootPath()->getHead();
@@ -1005,11 +1022,8 @@ bool SoFCUnifiedSelection::Private::checkSelection(SelectionChanges::MsgType sel
     {
         SoDetail *detail = nullptr;
         detailPath->truncate(0);
-        if (useRenderer()) {
-            if (!pcViewer || !pcViewer->hasViewProvider(vp))
-                return false;
-            pcViewer->appendDetailPath(detailPath, vp);
-        }
+        if (useRenderer() && !beginDetailPath(detailPath, vp))
+            return false;
         if(vp->getDetailPath(objT.getSubName().c_str(),detailPath,true,detail)) {
             SoSelectionElementAction::Type type = SoSelectionElementAction::None;
             if (selType == SelectionChanges::AddSelection) {
@@ -1034,7 +1048,7 @@ bool SoFCUnifiedSelection::Private::checkSelection(SelectionChanges::MsgType sel
                         // on top if any of its sub element is
                         // selected.
                         nodePath = new SoPath(detailPath->getLength());
-                        pcViewer->appendDetailPath(nodePath, vp);
+                        beginDetailPath(nodePath, vp);
                         SoDetail *tmp = nullptr;
                         std::string sub = objT.getSubNameNoElement();
                         vp->getDetailPath(sub.c_str(),
@@ -1126,11 +1140,8 @@ bool SoFCUnifiedSelection::Private::doAction(SoAction * action)
             {
                 detailPath->truncate(0);
                 SoDetail *det = 0;
-                if (useRenderer()) {
-                    if (!pcViewer || !pcViewer->hasViewProvider(vp))
-                        return false;
-                    pcViewer->appendDetailPath(detailPath, vp);
-                }
+                if (useRenderer() && !beginDetailPath(detailPath, vp))
+                    return false;
                 if(vp->getDetailPath(hilaction->SelChange->pSubName,detailPath,true,det)) {
                     setHighlight(detailPath,det,static_cast<ViewProviderDocumentObject*>(vp),
                                  hilaction->SelChange->pSubName,

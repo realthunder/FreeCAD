@@ -180,4 +180,23 @@ if(TARGET FreeCADRenderer)
         target_link_libraries(PublishOnly_tests_run gtest_main FreeCADRenderer)
         add_test(NAME PublishOnly_tests_run COMMAND PublishOnly_tests_run)
     endif()
+
+    # The scene server over a real socket (docs/SceneServerPort.md
+    # stage 0): the oracle every stage of the port is judged by. The
+    # client side is Boost.Beast -- header-only, hence the include dir
+    # and no Boost component to link -- so the test is portable and the
+    # handshake is checked by an implementation that is not ours. Built
+    # on every platform on purpose: where the listener is still the
+    # POSIX-only stub the failure is the verdict.
+    add_executable(SceneServerWire_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/SceneServerWire.cpp)
+    target_include_directories(SceneServerWire_tests_run PRIVATE
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(SceneServerWire_tests_run gtest_main FreeCADRenderer)
+    if(WIN32)
+        target_link_libraries(SceneServerWire_tests_run ws2_32 mswsock)
+    elseif(UNIX)
+        target_link_libraries(SceneServerWire_tests_run pthread)
+    endif()
+    add_test(NAME SceneServerWire_tests_run COMMAND SceneServerWire_tests_run)
 endif()

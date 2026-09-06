@@ -2476,9 +2476,9 @@ Rulings:
 
 - **One session per connection, not per document.** The camera is the
   viewer's, and two viewers looking from two places are two renders.
-  The cost is a device context per viewer (a CUDA context each). No
-  cap is built in: the grant list decides who is admitted at all, and
-  a stream dies with its connection.
+  The cost is a device context per viewer (a CUDA context each), which
+  is what the cap below counts. Who is admitted at all is still the
+  grant list's answer, and a stream dies with its connection.
 - **The frame rides the existing socket** as a new binary kind, not a
   new channel or an HTTP route: same door, same lifetime, in order
   with the scene deltas. A scene payload starts with a 64-bit version
@@ -2527,7 +2527,8 @@ The wire (`FrameStreamWire.h` is the one place the layout is spelled):
   "pixelSize":1,"quality":85,"maxPixels":2073600,"width":W,
   "height":H,"view":[16 floats],"proj":[16 floats]}` -> `{"id":N,
   "ok":true,"device":"CPU"}`; `"action":"stop"`; `"action":"devices"`
-  -> `{"id":N,"ok":true,"devices":[{"type":..,"description":..}]}`;
+  -> `{"id":N,"ok":true,"devices":[{"type":..,"description":..}],
+  "streams":N,"maxStreams":N}`;
   `"action":"status"` -> the `ViewportStatus` fields. Every one takes
   `"cell"` (default 0). Not refused for a view-only connection: a
   path-traced view mutates nothing.
@@ -2605,7 +2606,83 @@ the same rig: a two-cell layout pushed, cell 2 started on CUDA at its
 the two halves 51/255 apart (raster left, traced right, each under
 its own lines), the cell's stream stopped by clearing the layout.
 
-What this does NOT do yet: a cap on sessions per server; the interop
+**A cap on served sessions** (built 2026-09-04). A session is the most
+expensive thing a viewer can ask of this process -- a device context,
+the scene resident on that device, an encoder thread -- and anyone
+admitted could ask for one per traced cell, as often as they liked, on
+a box that may be hosting a live rig. `RenderParams::CyclesMaxStreams`
+(4 by default; 0 or less means no cap) is how many may live at once,
+across every served document and every connection. A start made when
+the cap is reached is answered `{"ok":false,"code":"TooManyStreams"}`
+with the count in its message, which the viewer already puts on its
+status line and into the `fc:cycles` event, and the server logs a line
+naming the connection and the cell. Nothing that is not a served
+stream is counted or capped: the desktop views, the shader graph
+editor's preview and the offline `cyclesRender` are not streams.
+
+- **It counts devices, not objects.** `FrameStream` makes one slot in
+  its base constructor -- so no implementation can forget to count,
+  and a build without the engine has the same counter -- and shares
+  it with its viewport, which copies it into every session it hands
+  to the reaper (sec 5.12). The reaper drops it after the session is
+  destroyed and never before. A stream that has stopped therefore
+  keeps its place for as long as its device is still being torn down,
+  which is the number that matters: the point of a cap on a machine
+  is what the machine is carrying, not how many objects are alive.
+  `FrameStream::liveCount()` reads it; `slotHandle()` is a handle on
+  one slot that outlives its stream.
+- **A restart frees its own slot first, and is forgiven it.** A
+  `start` for a cell that is already tracing releases that cell's
+  stream before it makes the replacement, where the two used to
+  overlap -- and, since that slot is now held until the teardown
+  finishes, hands the replacement a `StreamOptions::replacing` handle
+  on it, which is forgiven once against the cap. Without the release
+  a restart would double the cell's devices for no reason; without
+  the forgiveness a viewer at the cap could not restart its own
+  render at all -- the wait would be the whole teardown, minutes of
+  it on the cold-kernel-compile case sec 5.12 is about. Exactly one
+  slot is ever forgiven, and only while it is still held, so a viewer
+  that restarts in a loop still leaves every earlier session counted
+  and is refused at the cap. What it costs: a restart the engine then
+  refuses (no such device) leaves the cell with no stream instead of
+  the one it had, which is what the viewer is told.
+- **Checked twice, deliberately.** The serve source checks before it
+  creates, which is what produces the named code and the log line; the
+  engine checks again inside `FrameStream::create`, under the same
+  lock that constructs, which is the check two connections cannot race
+  through for the same last slot. Serve ops run on the GUI thread, so
+  today the second is a backstop rather than a live race.
+- The `devices` action's reply carries `"streams"` and `"maxStreams"`
+  as well, so a viewer or a probe can read the policy without
+  provoking a refusal.
+
+Verified 2026-09-04 under Xvfb, with `cycles_cap.sh` and its two arms
+in `~/works/sw/fcad-probes` (a serving FreeCAD on a port of its own,
+so a live serve is not touched, and a raw-WebSocket client asking for
+one more stream than the cap allows -- each start a CPU session of one sample
+at 128x96, so what is measured is the cap and not the machine). At a
+cap of 2: the first two connections were taken and the third refused
+with `TooManyStreams` and the message naming the limit, the count
+still 2 after the refusal, the server logging the connection and the
+cell; the `devices` reply reported `streams` 0 then 2; a restart of a
+cell already tracing was taken at the cap and left the count at 2,
+while a second cell of that same connection was refused; five
+restarts in a row were all taken and left the count where it started,
+which is the check that matters for the forgiveness -- a slot leaked
+by it would shrink the server's capacity for good; and a `stop` and,
+separately, a connection simply dropped each returned the slot and
+let the refused viewer in, the count reading its new value 0.25 s and
+0.51 s later, through the reaper rather than at the stop. At a cap of
+0 all three were admitted. ctest 473/473 after the change.
+
+What the probe cannot show is the hold itself: a CPU session tears
+down in milliseconds, so the slot is back before the next message is
+answered. The hold is for the case sec 5.12 is about -- a device
+whose teardown takes minutes -- where the old count would have handed
+the freed slot to another viewer while the first device was still
+resident.
+
+What this does NOT do yet: the interop
 path (the GPU frame still crosses the CPU twice,
 once into the staging buffer and once into the encoder); the
 frame-push latency of the connection loop's 200 ms poll (a queued

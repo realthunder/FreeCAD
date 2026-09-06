@@ -67,7 +67,17 @@ Params = [
            "geometry is flattened as before."),
     ParamInt("SelectionPickThreshold", 1000),
     ParamInt("SelectionPickThreshold2", 500),
-    ParamBool("SelectionPickRTree", False),
+    ParamBool("SelectionPickRTree", True,
+       doc="Pick with a per-triangle R-tree instead of walking every\n"
+           "triangle of a part. Without it the only spatial filter is the\n"
+           "per-part bounding box, so a ray that reaches a dense part\n"
+           "sends all of its triangles through Coin's primitive callbacks:\n"
+           "on an imported mesh (one part carrying everything) a selecting\n"
+           "click cost 116 ms, and 18 ms with this on. The tree is built\n"
+           "lazily, per part, on the first pick that reaches it -- that\n"
+           "first pick pays about 15 ms more, every one after it is the\n"
+           "cheap one. Parts smaller than SelectionPickThreshold2 are\n"
+           "picked directly either way."),
 ]
 
 def declare():

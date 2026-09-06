@@ -204,6 +204,87 @@ Counting individual test cases instead, across all 32 binaries, gives
 | `src/Gui/QuantitySpinBox_Tests_run` | 5 | QtTest, +3 skipped, section 4 |
 | `Points_tests_run` | 1 | |
 
+### The render tests (`tests/render/`)
+
+Not gtest binaries and not in the table above: these are driven scripts,
+and they are the only tests in the tree that put pixels on a surface.
+Everything else called "render" here tests the cache, the view properties
+or the generated shader source with no GL context at all -- and
+`PublishOnly_tests_run` asserts outright that no driver is mapped.
+
+Three run in a default `ctest`:
+
+| Test | What | Cost |
+|---|---|---|
+| `RenderSmokeVg_tests_run` | `fcvgsmoke`, bgfx headless offscreen, ink checked per primitive | 0.3 s |
+| `RenderSmokePage2D_tests_run` | the retained `Page2D` scenario in the same binary | 0.3 s |
+| `RenderGoldenRaster_tests_run` | a staged scene under xvfb vs blessed reference images, per pipeline stage | 28 s |
+
+The path-traced and real-document ones are opt-in, because they are
+slower and because a label alone cannot hold them back:
+
+    cmake -DFC_RENDER_HEAVY_TESTS=ON <build> && ctest -L render-heavy
+
+The reference images live in a separate repository
+(`realthunder/fcad-render-refs`), the submodule at `tests/render/refs`
+(`git submodule update --init tests/render/refs`); when it is not
+checked out the golden tests are **skipped, not failed**. Full design, the reblessing procedure and the
+traps: `docs/RenderDebug.md` section 5.2 -- and 5.2a for the defect the
+chess set found on its first day (a capture taken while a material was
+still compiling), which is why a frame dump now waits for a complete
+frame.
+
+### The GUI tests (`tests/gui/`)
+
+Driven scripts as well, but with no pixels under test: each is a Python
+file handed to the FreeCAD binary under xvfb by `scripts/gui-test.sh`
+(isolated `user.cfg` and XDG directories, `WAYLAND_DISPLAY` unset so the
+window cannot land on the desktop, `timeout` around the whole process
+group), which judges it by the result file the script writes -- PASS and
+FAIL lines ending in `DONE` -- and reports the exit status on its own
+line. They are for the class of defect a gtest binary cannot reach: the
+event loop, the tree widget, a command's guard scope and a document
+being filled, all live at once.
+
+| Test | What | Cost |
+|---|---|---|
+| `GuiLiveImportNestedLoop_tests_run` | the live-import nested-loop crash (`docs/DocumentLoad.md` sec 15.2): a command pumps a nested event loop while the chess set is still importing, so the tree populates inside the user-edit guard | 25 s |
+| `GuiServeSelectionEcho_tests_run` | a remote pick on a headless serve source (`Gui.serveDocument`) comes back as a scene push (`docs/ThinClient.md` sec 8.9 step 0): a raw-socket client in a thread sends `'P'` rays and times the frame back; also that a no-change pick pushes nothing and a `'B'` batch pushes one frame | 10 s |
+
+That one exists because the render goldens found the crash by accident
+under load and then had to stop finding it: a golden must not animate,
+and the ten-frame animated fit was the window. The test opens the same
+window on purpose -- a command registered by the script pumps a
+`QEventLoop` for three seconds, invoked from a timer that waits for the
+document to carry `LiveImport` -- and it checks that the window was
+actually reached rather than merely that nothing crashed: the tree
+created items inside the loop and rewrote `TreeRank` doing so, which is
+the write the guard judges. That last one is not free: the tree only
+renumbers once it has connected the document's change signal, at the end
+of its first tick over that document, so the script seeds the document
+with one object and waits for the tree to show it before importing. The
+first version did not, populated and connected in the same tick inside
+the loop, wrote no rank, and passed with the exemption reverted -- which
+is why the rewrite is asserted. The second version wrote the rank and
+still passed reverted: the load's own claim on `LiveImport` ends with
+its visual drain, and an idle box drains the chess set before the tick,
+so the document was no longer live at the write -- the reason the crash
+needed three heavy tests in parallel to show. So the script holds the
+document live through `Gui.setLiveImport` around the import, the way a
+Python progressive importer does, and asserts the document was still
+live when the loop ended. Proven by reverting the `TreeRank` exemption
+in `App::Document::checkUserEdit`: the run then reports the refusal at
+`Face.TreeRank` and dies in `DocumentObjectItem::getParentItem` on the
+next tick, the original crash frame for frame. The same run found a
+second refusal the fix had not covered, the origin group's resize timer
+reaching the guard as `Origin.ViewObject` (`docs/DocumentLoad.md` sec
+15.2), which is now the third identity exemption.
+
+Registration needs `FreeCADMain`, `FreeCADGui`, `xvfb-run` and
+`.conda/run.sh`; the tree says so at configure time when one is missing.
+The chess asset comes from the MaterialX submodule, so without that
+checkout the test is not registered.
+
 ## 4. What is deliberately not run, and why
 
 Seven cases. **None of them is a known defect**; each is a place where this

@@ -1082,14 +1082,19 @@ with no pick or reload in between. `Preview > Device > CUDA` logged the
 device, started a session on CUDA, took a frame from it and restated
 the scene once. ctest 473/473 after the change.
 
-Seen, not fixed: the first-ever GPU kernel compile blocks the session's
-teardown. Picking CUDA on a machine whose kernel cache is cold starts
-an `nvcc` run of several minutes, and the next `stopTracer` -- closing
-the 3D view, switching back to Raster, closing the editor -- waits
-inside `Viewport`'s destructor for that thread to join, with the GUI
-thread in it. Cycles behaves the same way in Blender; a fix would have
-to make the session's teardown asynchronous, and it costs nothing on a
-warm cache.
+Found here, fixed elsewhere: picking a device whose kernel cache is
+cold used to freeze the application. Picking CUDA on this machine
+starts an `nvcc` run of several minutes, and the next `stopTracer` --
+closing the 3D view, switching back to Raster, closing the editor --
+waited inside `Viewport`'s destructor for that thread to join, with the
+GUI thread in it. The two commits after this section fixed it on both
+sides: a released session is now destroyed on a reaper worker instead
+of on the caller, and the kernel compile itself can be stopped and
+leaves no torn cache behind. It is written up as
+`docs/CyclesIntegration.md` sec 5.12, which now covers Windows too --
+`CreateProcessW` suspended into a job object with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, `TerminateJobObject` on cancel --
+so there is nothing left open here on any platform.
 
 Still open, from sec 15.5: GPU interop -- a traced frame crosses the
 CPU twice (half4 to bytes, bytes to the texture), which a pane of a few

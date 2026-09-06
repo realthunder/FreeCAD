@@ -764,6 +764,9 @@ struct View3DInventorViewer::Private
     int cyclesSubView = 0;
     uint64_t cyclesSceneGen = 0;
     bool cyclesFed = false;
+    /// Render::Renderer::completeFrames as last seen by renderScene,
+    /// so frameCompleted() fires once per complete frame.
+    uint64_t completeFramesSeen = 0;
     Render::PBRConfig cyclesPbr;
     Render::BumpConfig cyclesBump;
     Render::OutputConfig cyclesOutput;
@@ -3738,7 +3741,8 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
     syncLightRotation();
 }
 
-void View3DInventorViewer::savePicture(int width, int height, int sample, const QColor& bg, QImage& img) const
+void View3DInventorViewer::savePicture(int width, int height, int sample, const QColor& bg, QImage& img,
+                                       bool waitComplete) const
 {
     // An external render backend draws the scene from its own feeds into
     // its own targets; the Coin scene graph it was fed from renders to
@@ -3748,7 +3752,7 @@ void View3DInventorViewer::savePicture(int width, int height, int sample, const 
     // overlays and background included.
     if (getExternalRenderer()) {
         auto self = const_cast<View3DInventorViewer*>(this);  // NOLINT
-        if (self->imageFromRenderer(width, height, bg, img))
+        if (self->imageFromRenderer(width, height, bg, img, waitComplete))
             return;
         Base::Console().Warning("Render backend frame capture failed; "
                                 "falling back to the plain GL capture\n");
@@ -4467,8 +4471,19 @@ bool View3DInventorViewer::pumpFrameDump(Render::Renderer *renderer)
 {
     if (!renderer)
         return false;
-    QElapsedTimer timer;
-    timer.start();
+    // Two clocks: the backend holds a dump while a user shader the
+    // scene wears is still compiling (a surface drawn without its
+    // material is not the picture asked for), and a cold compile of a
+    // whole material set is a subprocess per shader and seconds of
+    // wall clock, so the quiet timeout is measured from the last
+    // pending compile rather than from the request. The total bounds a
+    // compile that never reports -- the backend's own watchdog is 20 s
+    // per shader, and a killed compile releases the hold -- and a
+    // scene that never finishes arriving.
+    QElapsedTimer quiet;
+    quiet.start();
+    QElapsedTimer total;
+    total.start();
     for (;;) {
         // Processing events can run scene/view scripts that destroy and
         // recreate the external renderer (e.g. a renderer-type or MSAA
@@ -4479,7 +4494,53 @@ bool View3DInventorViewer::pumpFrameDump(Render::Renderer *renderer)
             return false;
         if (!renderer->frameDumpPending())
             return true;
-        if (timer.elapsed() >= 5000)
+        // A held frame is a frame: the backend drew, and declined to
+        // consume the dump because the picture was not complete yet.
+        // Building the programs a finished compile unlocks is itself
+        // seconds on a software driver, so a frame's own duration
+        // must never run the quiet clock out.
+        if (renderer->shaderCompilePending() || renderer->frameDumpHeld())
+            quiet.restart();
+        if (quiet.elapsed() >= 5000 || total.elapsed() >= 120000)
+            return false;
+        if (auto rm = getSoRenderManager())
+            rm->scheduleRedraw();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+}
+
+bool View3DInventorViewer::waitFrameComplete(int timeoutMs)
+{
+    Render::Renderer *renderer = getExternalRenderer();
+    if (!renderer) {
+        // Nothing asynchronous stands between Coin and its frame.
+        redraw(true);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        return true;
+    }
+    // Same two clocks as pumpFrameDump, and for the same reason: a
+    // frame that builds a dozen programs on a software driver is
+    // longer than any quiet timeout, so progress is a frame rendered
+    // (complete or not) or a compile still pending, never wall clock
+    // since the request.
+    const uint64_t startComplete = renderer->completeFrames();
+    uint64_t seenRendered = renderer->renderedFrames();
+    QElapsedTimer quiet;
+    quiet.start();
+    QElapsedTimer total;
+    total.start();
+    for (;;) {
+        Render::Renderer *current = getExternalRenderer();
+        if (!current || current != renderer)
+            return false;
+        if (renderer->completeFrames() > startComplete)
+            return true;
+        const uint64_t rendered = renderer->renderedFrames();
+        if (rendered != seenRendered || renderer->shaderCompilePending()) {
+            seenRendered = rendered;
+            quiet.restart();
+        }
+        if (quiet.elapsed() >= 5000 || total.elapsed() >= timeoutMs)
             return false;
         if (auto rm = getSoRenderManager())
             rm->scheduleRedraw();
@@ -4488,7 +4549,8 @@ bool View3DInventorViewer::pumpFrameDump(Render::Renderer *renderer)
 }
 
 bool View3DInventorViewer::imageFromRenderer(int width, int height,
-                                             const QColor& bgcolor, QImage& img)
+                                             const QColor& bgcolor, QImage& img,
+                                             bool waitComplete)
 {
     Render::Renderer *renderer = getExternalRenderer();
     if (!renderer)
@@ -4522,6 +4584,7 @@ bool View3DInventorViewer::imageFromRenderer(int width, int height,
     // axis cross, no on-screen text — which is what the Coin route this
     // stands in for produced.
     req.overlays = false;
+    req.waitComplete = waitComplete;
     bool ok = renderer->requestFrameDump(req) && pumpFrameDump(renderer);
 
     if (bgcolor.isValid()) {
@@ -6418,6 +6481,17 @@ void View3DInventorViewer::renderScene()
                     Render::StyleAsIs, 0, false, nullptr, 0);
         _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
+        // The backend draws what the LAST traversal fed it. If that
+        // publish deferred shapes under its capture budget (the
+        // follow-up publish is scheduled below, after this frame), the
+        // scene it holds is partial, and a one-shot dump must not be
+        // consumed by this frame: say so before it runs.
+        if (selectionRoot) {
+            if (auto manager = selectionRoot->getRenderManager()) {
+                if (manager->getDeferredCaptureCount() > 0)
+                    _pimpl->renderer->holdFrameDump();
+            }
+        }
         // render() publishes on the way past when something is listening
         // (docs/HeadlessServe.md §4), and a published object entry names
         // its object for the viewer. The names come from here rather
@@ -6437,6 +6511,13 @@ void View3DInventorViewer::renderScene()
         outPre.stop();
         externalRendered =
             _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
+        if (externalRendered) {
+            const uint64_t n = _pimpl->renderer->completeFrames();
+            if (n != _pimpl->completeFramesSeen) {
+                _pimpl->completeFramesSeen = n;
+                Q_EMIT frameCompleted();
+            }
+        }
         // Time-animated backend content (e.g. water caustics) keeps
         // advancing by itself: schedule the follow-up frame.
         if (externalRendered && _pimpl->renderer->animating())

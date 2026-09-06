@@ -187,6 +187,8 @@ private:
     Gui::PrefCheckBox *CyclesDenoise = nullptr;
     QLabel *labelCyclesPixelSize = nullptr;
     Gui::PrefSpinBox *CyclesPixelSize = nullptr;
+    QLabel *labelCyclesMaxStreams = nullptr;
+    Gui::PrefSpinBox *CyclesMaxStreams = nullptr;
 // Auto generated code (Tools/params_utils.py:573)
 };
 } // namespace Dialog

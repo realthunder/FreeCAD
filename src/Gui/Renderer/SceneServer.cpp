@@ -19,6 +19,14 @@
  *   Suite 330, Boston, MA  02111-1307, USA                                 *
  ****************************************************************************/
 
+// Boost.Asio before anything else: on Windows it has to see winsock2.h
+// before a Qt or FreeCAD header pulls windows.h in (docs/SceneServerPort.md
+// sec 8 item 1 -- no Windows box here to verify on).
+#include <boost/asio.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+#include <boost/beast/websocket.hpp>
+
 #include "SceneServer.h"
 #include "SceneDump.h"
 #include "SceneLadder.h"
@@ -33,120 +41,22 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <future>
 #include <map>
 #include <mutex>
 #include <set>
 #include <string>
 #include <thread>
 
-#ifndef _WIN32
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
-
 using namespace Render;
-
-namespace {
-
-/// Compact SHA-1 (RFC 3174) for the WebSocket handshake accept key.
-struct Sha1 {
-    uint32_t h[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE,
-                     0x10325476, 0xC3D2E1F0};
-    uint8_t block[64];
-    uint64_t total = 0;
-    size_t fill = 0;
-
-    static uint32_t rol(uint32_t v, int n)
-    { return (v << n) | (v >> (32 - n)); }
-
-    void process(const uint8_t *p)
-    {
-        uint32_t w[80];
-        for (int i = 0; i < 16; ++i)
-            w[i] = (uint32_t(p[4*i]) << 24) | (uint32_t(p[4*i+1]) << 16)
-                 | (uint32_t(p[4*i+2]) << 8) | uint32_t(p[4*i+3]);
-        for (int i = 16; i < 80; ++i)
-            w[i] = rol(w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16], 1);
-        uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
-        for (int i = 0; i < 80; ++i) {
-            uint32_t f, k;
-            if (i < 20)      { f = (b & c) | (~b & d);          k = 0x5A827999; }
-            else if (i < 40) { f = b ^ c ^ d;                   k = 0x6ED9EBA1; }
-            else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
-            else             { f = b ^ c ^ d;                   k = 0xCA62C1D6; }
-            uint32_t t = rol(a, 5) + f + e + k + w[i];
-            e = d; d = c; c = rol(b, 30); b = a; a = t;
-        }
-        h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
-    }
-
-    void update(const void *data, size_t size)
-    {
-        const uint8_t *p = static_cast<const uint8_t *>(data);
-        total += size;
-        while (size) {
-            size_t n = std::min(size, sizeof(block) - fill);
-            std::memcpy(block + fill, p, n);
-            fill += n; p += n; size -= n;
-            if (fill == sizeof(block)) {
-                process(block);
-                fill = 0;
-            }
-        }
-    }
-
-    void finish(uint8_t digest[20])
-    {
-        uint64_t bits = total * 8;
-        uint8_t pad = 0x80;
-        update(&pad, 1);
-        uint8_t zero = 0;
-        while (fill != 56)
-            update(&zero, 1);
-        uint8_t len[8];
-        for (int i = 0; i < 8; ++i)
-            len[i] = uint8_t(bits >> (56 - 8 * i));
-        update(len, 8);
-        for (int i = 0; i < 5; ++i) {
-            digest[4*i]   = uint8_t(h[i] >> 24);
-            digest[4*i+1] = uint8_t(h[i] >> 16);
-            digest[4*i+2] = uint8_t(h[i] >> 8);
-            digest[4*i+3] = uint8_t(h[i]);
-        }
-    }
-};
-
-std::string base64(const uint8_t *data, size_t size)
-{
-    static const char tab[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string out;
-    out.reserve((size + 2) / 3 * 4);
-    for (size_t i = 0; i < size; i += 3) {
-        uint32_t v = uint32_t(data[i]) << 16;
-        if (i + 1 < size) v |= uint32_t(data[i+1]) << 8;
-        if (i + 2 < size) v |= uint32_t(data[i+2]);
-        out.push_back(tab[(v >> 18) & 63]);
-        out.push_back(tab[(v >> 12) & 63]);
-        out.push_back(i + 1 < size ? tab[(v >> 6) & 63] : '=');
-        out.push_back(i + 2 < size ? tab[v & 63] : '=');
-    }
-    return out;
-}
-
-} // namespace
 
 class SceneStreamServer::Private {
 public:
     // Defined up front: these are used from nested-class member bodies
     // (struct Conn) and from members declared above their old position,
-    // where the enclosing class is still incomplete. Both are pure string
-    // helpers -- the socket ones stay under the POSIX guard below.
+    // where the enclosing class is still incomplete. All pure string
+    // helpers and plain structs -- the socket code stays under the
+    // POSIX guard below.
     static std::string queryValue(const std::string &query,
                                   const char *name)
     {
@@ -164,31 +74,87 @@ public:
         return {};
     }
 
-    /// Case-insensitive lookup of one request-header value.
-    static std::string headerValue(const std::string &req,
-                                   const char *lowerName)
+    /// A well-formed content key: 40 lowercase hex characters. Checked
+    /// before it reaches the store so a malformed request can never be
+    /// anything but a 404.
+    static bool isBlobKey(const std::string &key)
     {
-        std::string lower(req);
-        std::transform(lower.begin(), lower.end(), lower.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        std::string needle = std::string("\r\n") + lowerName + ":";
-        auto pos = lower.find(needle);
-        if (pos == std::string::npos)
-            return {};
-        pos += needle.size();
-        auto end = req.find("\r\n", pos);
-        if (end == std::string::npos)
-            return {};
-        std::string value = req.substr(pos, end - pos);
-        auto b = value.find_first_not_of(" \t");
-        auto e = value.find_last_not_of(" \t");
-        if (b == std::string::npos)
-            return {};
-        return value.substr(b, e - b + 1);
+        if (key.size() != 40)
+            return false;
+        for (char c : key) {
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+                return false;
+        }
+        return true;
     }
 
+    static bool isLoopback(const std::string &ip)
+    {
+        return ip == "127.0.0.1" || ip == "::1";
+    }
+
+    /// One HTTP request as the routing sees it, whatever read it off
+    /// the wire (docs/SceneServerPort.md sec 7.1): the POSIX head
+    /// reader below today, a Beast parser after stage 2.
+    struct HttpRequest {
+        std::string method;   ///< "GET" or "POST"; nothing else gets here
+        std::string path;     ///< the request target up to its '?'
+        std::string query;    ///< what followed the '?', if anything
+        /// Names lowercased (they match case-insensitively), values
+        /// trimmed; a repeated name keeps its first value.
+        std::map<std::string, std::string> headers;
+        std::string body;     ///< the POST body, complete
+        std::string peerIp;   ///< the socket peer; empty when unknown
+        unsigned peerPort = 0;
+
+        std::string header(const char *lowerName) const
+        {
+            auto it = headers.find(lowerName);
+            return it == headers.end() ? std::string() : it->second;
+        }
+
+        /// The peer as the roster shows it, ip:port -- the port is
+        /// what tells two tunnelled viewers apart.
+        std::string peer() const
+        {
+            if (peerIp.empty())
+                return {};
+            return peerIp + ":" + std::to_string(peerPort);
+        }
+    };
+
+    /// A request target into path and query. The values in play are
+    /// hex keys and decimal versions, so nothing is percent-decoded.
+    static void splitTarget(const std::string &target, HttpRequest &req)
+    {
+        auto q = target.find('?');
+        req.path = target.substr(0, q);
+        req.query = q == std::string::npos ? std::string()
+                                           : target.substr(q + 1);
+    }
+
+    /// What the routing answers with. Every reply carries
+    /// `Access-Control-Allow-Origin: *` and closes the connection; the
+    /// transport adds those, the reason phrase and the length.
+    struct HttpReply {
+        int status = 404;
+        const char *contentType = nullptr;    ///< sent when set
+        const char *cacheControl = nullptr;   ///< sent when set
+        /// `Access-Control-Allow-Headers: *` -- the /log beacon's
+        /// preflight wants it.
+        bool allowAnyHeader = false;
+        std::vector<uint8_t> body;
+
+        void set(int s, const char *type = nullptr,
+                 const char *cache = nullptr)
+        {
+            status = s;
+            contentType = type;
+            cacheControl = cache;
+        }
+    };
+
     std::mutex mutex;
-    int listenFd = -1;
     bool started = false;
 
     /// The shared door secret (docs/MultiDocServe.md §4/§8). Its own
@@ -214,28 +180,27 @@ public:
     /// once per accepted connection.
     std::string identityHeaderName;
 
-    /// The client address to believe for a connection whose socket
-    /// peer is \a peerIp, given the request head \a req. Empty unless
-    /// trust is on, the peer is loopback, and a header named one.
+    /// The client address to believe for the connection \a req came
+    /// on. Empty unless trust is on, the socket peer is loopback, and
+    /// a header named one.
     ///
     /// The peer check is the whole security of this: a proxy or the
     /// local end of a tunnel is on this machine, so anything arriving
     /// from elsewhere is talking to us directly and its headers are
     /// its own invention.
-    std::string forwardedFor(const std::string &req,
-                             const std::string &peerIp)
+    std::string forwardedFor(const HttpRequest &req)
     {
         if (!trustProxy.load())
             return {};
-        if (peerIp != "127.0.0.1" && peerIp != "::1")
+        if (!isLoopback(req.peerIp))
             return {};
         // Cloudflare guarantees CF-Connecting-IP (docs/ShareAccess.md
         // §5); X-Forwarded-For is everyone else's spelling, a list of
         // client, proxy, proxy… whose first entry is the one that
         // reached the outermost proxy.
-        std::string value = headerValue(req, "cf-connecting-ip");
+        std::string value = req.header("cf-connecting-ip");
         if (value.empty())
-            value = headerValue(req, "x-forwarded-for");
+            value = req.header("x-forwarded-for");
         if (value.empty())
             return {};
         auto comma = value.find(',');
@@ -263,12 +228,11 @@ public:
     /// this request (docs/ShareAccess.md §4), under the same trust
     /// rule as forwardedFor: trust on, loopback peer, or the header
     /// is the client's own invention. Empty when nothing asserted one.
-    std::string assertedIdentity(const std::string &req,
-                                 const std::string &peerIp)
+    std::string assertedIdentity(const HttpRequest &req)
     {
         if (!trustProxy.load())
             return {};
-        if (peerIp != "127.0.0.1" && peerIp != "::1")
+        if (!isLoopback(req.peerIp))
             return {};
         std::string configured;
         {
@@ -277,7 +241,7 @@ public:
         }
         std::string value;
         if (!configured.empty()) {
-            value = headerValue(req, configured.c_str());
+            value = req.header(configured.c_str());
         } else {
             // The front doors we know of (SceneServer.h,
             // setIdentityHeader): Cloudflare Access, oauth2-proxy,
@@ -288,7 +252,7 @@ public:
                 "x-forwarded-email",
             };
             for (const char *name : wellKnown) {
-                value = headerValue(req, name);
+                value = req.header(name);
                 if (!value.empty())
                     break;
             }
@@ -1088,15 +1052,44 @@ public:
             notify();
     }
 
-    /// One live WebSocket connection, registered by its wsLoop. All
-    /// sends stay on that loop's thread: control messages are queued
-    /// here and drained by the loop within its poll interval.
+    /// The transport's end of one connection -- what the protocol core
+    /// may ask of the socket without knowing it (docs/SceneServerPort.md
+    /// sec 7.1): a POSIX fd today, a Beast stream on its strand after
+    /// stage 2. Owned by the transport for exactly the connection's
+    /// life, and only ever reached through a Conn on the roster, under
+    /// connMutex.
+    struct Link {
+        virtual ~Link() = default;
+        /// Act on the connection's flags, its outbox and the scene now
+        /// rather than at its next tick (docs/SceneServerPort.md sec
+        /// 7.3): something was queued, a version was published, a kick,
+        /// a server stop. Posted, never run inline; any thread, and
+        /// coalesced by Conn::nudge so a burst costs one post.
+        virtual void wake() = 0;
+    };
+
+    /// One queued outbound message (Conn::outbox).
+    struct Outgoing {
+        enum Kind : uint8_t {
+            Text,    ///< a control JSON: a text frame
+            Scene,   ///< the versioned scene bytes: a binary frame
+            Frame,   ///< a streamed frame (sendBinary): a binary frame
+            Close    ///< the end: a close frame, then hang up
+        };
+        Kind kind = Text;
+        std::vector<uint8_t> data;
+    };
+
+    /// One live WebSocket connection, registered by its transport
+    /// (openConnection). All sends stay on that connection's strand:
+    /// what is to go out is queued on the outbox and drained by its
+    /// writer, woken through the link.
     struct Conn {
-        int fd = -1;
+        Link *link = nullptr;
         /// Stable identity for cross-thread reply routing (the Conn
-        /// itself is stack-owned by its wsLoop): a control reply looks
-        /// the connection up by id under connMutex and is dropped when
-        /// it is gone. Never reused within a run.
+        /// itself is owned by its Session): a control reply looks the
+        /// connection up by id under connMutex and is dropped when it
+        /// is gone. Never reused within a run.
         uint64_t id = 0;
         /// The scene version this connection has been given, seeded
         /// with what the client said it held on the upgrade request.
@@ -1108,10 +1101,10 @@ public:
         /// only on this connection's own loop thread — joins, switches
         /// and the re-home after a teardown all happen there.
         DocGroup *group = nullptr;
-        std::vector<std::string> pendingText; ///< queued control JSONs
-        /// A queued binary message for this connection (a streamed
-        /// frame, sendBinary): at most one -- a newer one replaces it.
-        std::vector<uint8_t> pendingBinary;
+        /// The outbox (docs/SceneServerPort.md sec 6.4): what is to go
+        /// out, in order, drained by this connection's own loop.
+        /// Guarded by connMutex; appended through the helpers below.
+        std::deque<Outgoing> outbox;
         bool viewer = false;   ///< sent a hello — answers control requests
         std::string build;     ///< bundle build stamp from the hello
         /// Display label from the hello (docs/MultiDocServe.md §4):
@@ -1164,26 +1157,104 @@ public:
         /// GUI thread): picks dropped, mutating ops refused.
         bool viewOnly = false;
         /// The host asked this connection closed (guarded by
-        /// connMutex); its own loop tells it and hangs up.
+        /// connMutex): its farewell is on the outbox, and its own loop
+        /// sends that and hangs up. Set only through kick().
         bool kicked = false;
         /// The stamp a reload was already pushed for — one push per
         /// bundle generation, no loops.
         std::string reloadPushed;
-        /// WebSocket fragmentation reassembly (a browser may split a
-        /// large dumpFrame upload into continuation frames).
-        std::string fragData;
-        uint8_t fragOpcode = 0;
+        /// The user this connection is counted under (sec 7.4), empty
+        /// when it is not counted. Owner-thread-only: written at each
+        /// admission and cleared at the close.
+        std::string userKey;
+        /// A wake is posted and has not run yet (guarded by connMutex):
+        /// the next nudge is free. Cleared by the transport on the
+        /// strand before it acts, so anything queued after that clear
+        /// posts anew.
+        bool wakePosted = false;
+
+        /// Have the link act now (sec 7.3): every append and every
+        /// publish ends here, so nothing queued from the host waits for
+        /// the tick. connMutex held.
+        void nudge()
+        {
+            if (!link || wakePosted)
+                return;
+            wakePosted = true;
+            link->wake();
+        }
+
+        /// Queue a control JSON. connMutex held.
+        void queueText(const std::string &json)
+        {
+            Outgoing item;
+            item.kind = Outgoing::Text;
+            item.data.assign(json.begin(), json.end());
+            outbox.push_back(std::move(item));
+            nudge();
+        }
+
+        /// Queue the versioned scene bytes. connMutex held.
+        void queueScene(std::vector<uint8_t> &&body)
+        {
+            Outgoing item;
+            item.kind = Outgoing::Scene;
+            item.data = std::move(body);
+            outbox.push_back(std::move(item));
+            nudge();
+        }
+
+        /// Queue a streamed frame. One still queued is replaced, in
+        /// the place it held: a frame is a state, not an event, and a
+        /// slow link should see the newest one. connMutex held.
+        void queueFrame(std::vector<uint8_t> &&data)
+        {
+            for (Outgoing &item : outbox) {
+                if (item.kind == Outgoing::Frame) {
+                    item.data = std::move(data);
+                    nudge();
+                    return;
+                }
+            }
+            Outgoing item;
+            item.kind = Outgoing::Frame;
+            item.data = std::move(data);
+            outbox.push_back(std::move(item));
+            nudge();
+        }
+
+        /// Ask this connection closed: after whatever is already
+        /// queued -- a BadToken refusal rides there -- it is told
+        /// {"cmd":"error","code":"Kicked"}, so a compliant viewer
+        /// stops reconnecting, then closed by its own loop. Once;
+        /// connMutex held. Not a ban -- changing the token is.
+        void kick()
+        {
+            if (kicked)
+                return;
+            kicked = true;
+            queueText("{\"cmd\":\"error\",\"code\":\"Kicked\"}");
+            Outgoing bye;
+            bye.kind = Outgoing::Close;
+            outbox.push_back(std::move(bye));
+            nudge();
+        }
     };
     std::mutex connMutex;
     std::vector<Conn *> conns;
     uint64_t connIdCounter = 0;   ///< guarded by connMutex
-    /// Pre-auth accept caps (acceptLoop): every accepted socket —
-    /// HTTP and WS alike — counts until its handler thread exits.
+    /// Pre-auth accept caps (accepted): every accepted socket -- HTTP
+    /// and WS alike -- counts until its Session is destroyed.
     std::mutex acceptCountMutex;
     int activeConns = 0;                       ///< guarded above
     std::map<std::string, int> activeByIp;     ///< non-loopback only
     static constexpr int kMaxConns = 128;
     static constexpr int kMaxConnsPerIp = 16;
+    /// Post-admission caps (sec 7.4), keyed on the user rather than
+    /// on any address; setConnectionCaps.
+    std::map<std::string, int> connsByUser;    ///< guarded above
+    int maxUsers = 64;                          ///< guarded above
+    int maxConnsPerUser = 16;                   ///< guarded above
     std::condition_variable dumpCv;    ///< guarded by connMutex
     /// In-flight dumpFrame collection (one at a time).
     struct DumpCollect {
@@ -1217,7 +1288,7 @@ public:
         std::lock_guard<std::mutex> guard(connMutex);
         for (Conn *conn : conns) {
             if (conn->viewer)
-                conn->pendingText.push_back(json);
+                conn->queueText(json);
         }
     }
 
@@ -1303,9 +1374,9 @@ public:
                                       conn->matchAddr);
                 }
                 if (!entry.admitted) {
-                    conn->pendingText.push_back(
+                    conn->queueText(
                         "{\"cmd\":\"error\",\"code\":\"Refused\"}");
-                    conn->kicked = true;
+                    conn->kick();
                     changed = true;
                 }
                 else {
@@ -1357,7 +1428,7 @@ public:
                 if (conn->id == id) {
                     conn->viewOnly = viewOnly;
                     // Tell the client its mode, so its UI can say so.
-                    conn->pendingText.push_back(
+                    conn->queueText(
                         viewOnly
                             ? "{\"cmd\":\"config\",\"viewOnly\":true}"
                             : "{\"cmd\":\"config\",\"viewOnly\":false}");
@@ -1376,16 +1447,7 @@ public:
         std::lock_guard<std::mutex> guard(connMutex);
         for (Conn *conn : conns) {
             if (conn->id == id) {
-                conn->kicked = true;
-#ifndef _WIN32
-                // Same wake as stopListening: without it a connection
-                // wedged in a send (bounded by SO_SNDTIMEO) or parked
-                // in poll would outlive the kick by up to that long.
-                // Guarded like every other socket call here — the
-                // listener itself is POSIX-only for now.
-                if (conn->fd >= 0)
-                    ::shutdown(conn->fd, SHUT_RD);
-#endif
+                conn->kick();
                 return true;
             }
         }
@@ -1445,7 +1507,7 @@ public:
                       collect.id, mode);
         for (Conn *conn : conns) {
             if (conn->viewer) {
-                conn->pendingText.push_back(msg);
+                conn->queueText(msg);
                 collect.awaited.insert(conn->id);
             }
         }
@@ -1479,7 +1541,7 @@ public:
                       "{\"cmd\":\"dumpDecisions\",\"id\":%u}", collect.id);
         for (Conn *conn : conns) {
             if (conn->viewer) {
-                conn->pendingText.push_back(msg);
+                conn->queueText(msg);
                 collect.awaited.insert(conn->id);
             }
         }
@@ -1564,9 +1626,8 @@ public:
         return stampCache;
     }
 
-#ifndef _WIN32 // serveViewerFile writes to a socket
     /// GET fallback for the viewer bundle itself: map \a pathIn onto
-    /// the FC_BGFX_VIEWER_BUILD directory and send the file, so one
+    /// the FC_BGFX_VIEWER_BUILD directory and answer with the file, so one
     /// hostname (one tunnel) carries the page, the scene stream and
     /// the blobs alike (docs/ShareAccess.md §5). Returns false when
     /// the feature is off, the path is not a plausible bundle file, or
@@ -1578,7 +1639,11 @@ public:
     /// a cached copy of those could survive a rebuild. When assets
     /// grow content-hashed names they can take the /blob policy
     /// (immutable) instead.
-    bool serveViewerFile(int fd, const std::string &pathIn)
+    ///
+    /// The file read is the second piece of blocking work of
+    /// docs/SceneServerPort.md sec 6.5, after payloadFor: on stage 2's
+    /// shared io thread it is posted to the worker pool.
+    bool serveViewerFile(const std::string &pathIn, HttpReply &reply)
     {
         static const char *dir = std::getenv("FC_BGFX_VIEWER_BUILD");
         if (!dir || !*dir)
@@ -1620,25 +1685,16 @@ public:
         std::FILE *f = std::fopen((std::string(dir) + path).c_str(), "rb");
         if (!f)
             return false;
-        std::vector<char> body;
-        char buf[65536];
+        std::vector<uint8_t> body;
+        uint8_t buf[65536];
         size_t n;
         while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0)
             body.insert(body.end(), buf, buf + n);
         std::fclose(f);
-        char head[256];
-        int h = std::snprintf(head, sizeof(head),
-            "HTTP/1.1 200 OK\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "Content-Type: %s\r\n"
-            "Cache-Control: no-store\r\n"
-            "Content-Length: %zu\r\n"
-            "Connection: close\r\n\r\n", type, body.size());
-        if (sendAll(fd, head, size_t(h)))
-            sendAll(fd, body.data(), body.size());
+        reply.set(200, type, "no-store");
+        reply.body = std::move(body);
         return true;
     }
-#endif // !_WIN32
 
     /// Queue a cache-busting reload for a viewer whose reported bundle
     /// build no longer matches the on-disk stamp (once per stamp; the
@@ -1657,7 +1713,7 @@ public:
             std::snprintf(msg, sizeof(msg),
                           "{\"cmd\":\"reload\",\"cacheBust\":\"%s\"}",
                           expected.c_str());
-            conn.pendingText.push_back(msg);
+            conn.queueText(msg);
             conn.reloadPushed = expected;
         }
         std::printf("fcviewer server: viewer build stale, reload pushed\n");
@@ -1681,7 +1737,7 @@ public:
         std::lock_guard<std::mutex> guard(connMutex);
         for (Conn *conn : conns) {
             if (conn->id == connId) {
-                conn->pendingText.push_back(json);
+                conn->queueText(json);
                 return;
             }
         }
@@ -1726,201 +1782,164 @@ public:
         req.reply(msg);
     }
 
-#ifndef _WIN32
-    static bool sendAll(int fd, const void *data, size_t size)
+    /// Pre-auth flood control (docs/SceneServerPort.md sec 4): each
+    /// connection may legitimately buffer tens of MiB (frame + fragment
+    /// caps), and the door only judges after the WS handshake -- with
+    /// no cap a LAN or direct-mode peer could hold unbounded threads
+    /// and memory. Every accepted socket, HTTP and WS alike, is
+    /// admitted here and released once its handler is done. Loopback
+    /// is exempt from the per-address cap: the tunnel front door
+    /// (cloudflared) funnels every remote client through it, and the
+    /// global cap still bounds it. Keyed on the socket peer for now;
+    /// stage 4 of the port keys it on the judged address, which is
+    /// what a gateway on another host needs.
+    bool admitPeer(const std::string &ip, bool loopback)
     {
-        const char *p = static_cast<const char *>(data);
-        while (size) {
-            ssize_t n = ::send(fd, p, size, MSG_NOSIGNAL);
-            if (n <= 0)
-                return false;
-            p += n;
-            size -= size_t(n);
-        }
+        std::lock_guard<std::mutex> guard(acceptCountMutex);
+        int perIp = 0;
+        auto it = activeByIp.find(ip);
+        if (it != activeByIp.end())
+            perIp = it->second;
+        if (activeConns >= kMaxConns
+                || (!loopback && perIp >= kMaxConnsPerIp))
+            return false;
+        ++activeConns;
+        if (!loopback)
+            activeByIp[ip] = perIp + 1;
         return true;
     }
 
-    bool start(int port)
+    void releasePeer(const std::string &ip, bool loopback)
     {
-        listenFd = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (listenFd < 0)
-            return false;
-        int on = 1;
-        ::setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-        sockaddr_in addr = {};
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        addr.sin_port = htons(uint16_t(port));
-        if (::bind(listenFd, reinterpret_cast<sockaddr *>(&addr),
-                   sizeof(addr)) < 0
-                || ::listen(listenFd, 4) < 0) {
-            ::close(listenFd);
-            listenFd = -1;
-            return false;
-        }
-        // The fd travels by value: a fast stop()/start() may reuse the
-        // fd number for the new socket, and an old loop re-reading the
-        // member would accept on — and fight over — the new listener.
-        std::thread([this, fd = listenFd]() { acceptLoop(fd); }).detach();
-        return true;
-    }
-
-    /// Close the listener and ask every connection to hang up. The
-    /// accept loop wakes on the shutdown and exits; each connection's
-    /// own loop notices the kick within a poll interval. A later
-    /// start() binds anew.
-    void stopListening()
-    {
-        {
-            std::lock_guard<std::mutex> guard(mutex);
-            if (listenFd >= 0) {
-                // shutdown() is what actually wakes a thread blocked
-                // in accept(); close() alone may leave it parked.
-                ::shutdown(listenFd, SHUT_RDWR);
-                ::close(listenFd);
-                listenFd = -1;
-            }
-            started = false;
-        }
-        std::lock_guard<std::mutex> guard(connMutex);
-        for (Conn *conn : conns) {
-            conn->kicked = true;
-            // Wake a loop parked in poll() so the stop takes effect
-            // now, not a poll interval later. Read side only: the
-            // goodbye frames still go out on the intact write side.
-            if (conn->fd >= 0)
-                ::shutdown(conn->fd, SHUT_RD);
+        std::lock_guard<std::mutex> guard(acceptCountMutex);
+        --activeConns;
+        if (!loopback) {
+            auto it = activeByIp.find(ip);
+            if (it != activeByIp.end() && --it->second <= 0)
+                activeByIp.erase(it);
         }
     }
 
-    void acceptLoop(int acceptFd)
+    /// Who an admitted connection counts as (sec 7.4): the front
+    /// door's identity outranks the admitting grant outranks the
+    /// judged address -- the same order the door ranks a grant's
+    /// patterns by. The anonymous legacy door on a loopback address is
+    /// nobody in particular: a same-box tunnel puts every remote
+    /// client there, and the old per-peer cap exempted it for that
+    /// reason. Owner thread.
+    static std::string userKeyFor(const Conn &conn)
     {
-        for (;;) {
-            int fd = ::accept(acceptFd, nullptr, nullptr);
-            if (fd < 0)
-                break;
-            // A peer that stops reading must not park its thread in
-            // ::send forever — with the buffers full the send returns
-            // after this instead, the loop sees the failure and the
-            // connection closes. This is also what makes a kick or a
-            // server stop effective against such a peer.
-            timeval sndTimeout = {};
-            sndTimeout.tv_sec = 20;
-            ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &sndTimeout,
-                         sizeof(sndTimeout));
-            // Pre-auth flood control: each connection may legitimately
-            // buffer tens of MiB (frame + fragment caps), and the door
-            // only judges after the WS handshake — with no cap a LAN
-            // or direct-mode peer could hold unbounded threads and
-            // memory. Loopback is exempt from the per-address cap: the
-            // tunnel front door (cloudflared) funnels every remote
-            // client through it, and the global cap still bounds it.
-            std::string ip;
-            {
-                sockaddr_in peer = {};
-                socklen_t plen = sizeof(peer);
-                if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
-                                  &plen) == 0) {
-                    char buf[64] = "";
-                    ::inet_ntop(AF_INET, &peer.sin_addr, buf, sizeof(buf));
-                    ip = buf;
-                }
-            }
-            const bool loopback = ip == "127.0.0.1" || ip == "::1";
-            {
-                std::lock_guard<std::mutex> guard(acceptCountMutex);
-                int perIp = 0;
-                auto it = activeByIp.find(ip);
-                if (it != activeByIp.end())
-                    perIp = it->second;
-                if (activeConns >= kMaxConns
-                        || (!loopback && perIp >= kMaxConnsPerIp)) {
-                    ::close(fd);
-                    continue;
-                }
-                ++activeConns;
-                if (!loopback)
-                    activeByIp[ip] = perIp + 1;
-            }
-            // One thread per connection: a WebSocket client keeps its
-            // connection for the whole session and must not starve the
-            // HTTP fallback (or a second viewer).
-            std::thread([this, fd, ip, loopback]() {
-                handle(fd);
-                ::close(fd);
-                std::lock_guard<std::mutex> guard(acceptCountMutex);
-                --activeConns;
-                if (!loopback) {
-                    auto it = activeByIp.find(ip);
-                    if (it != activeByIp.end() && --it->second <= 0)
-                        activeByIp.erase(it);
-                }
-            }).detach();
-        }
+        if (!conn.identity.empty())
+            return "id:" + conn.identity;
+        if (conn.grant)
+            return "grant:" + std::to_string(conn.grant);
+        if (conn.matchAddr.empty() || isLoopback(conn.matchAddr))
+            return {};
+        return "addr:" + conn.matchAddr;
     }
 
-    void handle(int fd)
+    void releaseUserLocked(Conn &conn)
     {
-        // Read the request head (only the mesh batch carries a body).
-        std::string req;
-        char buf[1024];
-        size_t headEnd = std::string::npos;
-        while ((headEnd = req.find("\r\n\r\n")) == std::string::npos) {
-            ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-            if (n <= 0)
-                return;
-            req.append(buf, size_t(n));
-            if (req.size() > 16384)
-                return;
-        }
-        bool post = req.compare(0, 5, "POST ") == 0;
-        if (!post && req.compare(0, 4, "GET ") != 0)
+        if (conn.userKey.empty())
             return;
-        size_t verb = post ? 5 : 4;
+        auto it = connsByUser.find(conn.userKey);
+        if (it != connsByUser.end() && --it->second <= 0)
+            connsByUser.erase(it);
+        conn.userKey.clear();
+    }
 
-        std::string reqBody;
-        if (post) {
-            size_t want = size_t(std::strtoul(
-                headerValue(req, "content-length").c_str(), nullptr, 10));
-            if (want > kMaxBatchBody)
-                return;
-            reqBody = req.substr(headEnd + 4);
-            while (reqBody.size() < want) {
-                ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-                if (n <= 0)
-                    return;
-                reqBody.append(buf, size_t(n));
-            }
-            reqBody.resize(want);
+    /// Count an admitted connection under its user. False, and the
+    /// connection counted nowhere, when that would be one user too
+    /// many or one connection too many for its user. Called on the
+    /// connection's own thread at every admission -- the upgrade, the
+    /// hello -- so a re-judged connection whose user changed moves its
+    /// count rather than being counted twice.
+    bool admitUser(Conn &conn)
+    {
+        const std::string key = userKeyFor(conn);
+        std::lock_guard<std::mutex> guard(acceptCountMutex);
+        if (key == conn.userKey)
+            return true;
+        releaseUserLocked(conn);
+        if (key.empty())
+            return true;
+        auto it = connsByUser.find(key);
+        if (it == connsByUser.end()) {
+            if (int(connsByUser.size()) >= maxUsers)
+                return false;
+            connsByUser[key] = 1;
         }
+        else if (it->second >= maxConnsPerUser) {
+            return false;
+        }
+        else {
+            ++it->second;
+        }
+        conn.userKey = key;
+        return true;
+    }
 
-        std::string path = req.substr(verb, req.find(' ', verb) - verb);
-        std::string query;
-        auto q = path.find('?');
-        if (q != std::string::npos) {
-            query = path.substr(q + 1);
-            path.resize(q);
-        }
+    void releaseUser(Conn &conn)
+    {
+        std::lock_guard<std::mutex> guard(acceptCountMutex);
+        releaseUserLocked(conn);
+    }
+
+    /// The refusal a connection over the caps gets: told, then closed
+    /// like a bad token. connMutex held.
+    static void refuseOverCap(Conn &conn)
+    {
+        conn.queueText("{\"cmd\":\"error\",\"code\":\"TooMany\"}");
+        conn.kick();
+    }
+
+    /// Where a request goes once routed: answered with the reply, or
+    /// upgraded to a WebSocket connection built from the bootstrap.
+    enum class Route { Reply, Upgrade };
+
+    /// Everything a WebSocket connection inherits from the request
+    /// that opened it, resolved by route() and handed to the transport
+    /// to build the Conn from (openConnection).
+    struct WsBootstrap {
+        /// What the client said it already has, from the same `?v=&s=`
+        /// on the upgrade request that the polling transport uses --
+        /// read at handshake time, so a reconnecting viewer that is
+        /// already current costs no payload and needs no round trip to
+        /// say so. ~0 = nothing stated.
+        uint64_t held = ~uint64_t(0);
+        std::string session;        ///< the raw `?s=`, judged per group
+        /// The `?doc=`: a reconnect rejoins its document before the
+        /// hello even arrives, which is what makes the held version
+        /// mean anything. An unknown name joins nothing and leaves the
+        /// rest to the hello.
+        std::string doc;
+        Judgement entry;            ///< the door's verdict on the upgrade
+        std::string presentedToken; ///< the `?token=`, if any
+        std::string addr;           ///< peer ip:port, for the roster
+        std::string fwd;            ///< forwardedFor, if any
+        std::string identity;       ///< assertedIdentity, if any
+        std::string matchAddr;      ///< what the door judges by
+    };
+
+    /// Route one request (docs/SceneServerPort.md sec 7.1, item 1):
+    /// the whole of what the server says over HTTP, and the decision
+    /// to upgrade, with no socket in sight. The transport reads the
+    /// request, calls this, and writes the reply or runs the
+    /// connection. Two routes block on this thread -- the /scene
+    /// serialization and the /decisions collection -- which is the
+    /// section 6.5 work that leaves the io thread in stage 2.
+    Route route(const HttpRequest &req, HttpReply &reply, WsBootstrap &boot)
+    {
+        const std::string &path = req.path;
+        const std::string &query = req.query;
+        const std::string &reqBody = req.body;
 
         // Who is asking, resolved before the door judges: the socket
         // peer, what a trusted proxy said the client's address is, and
         // the identity an authenticating front door asserted.
-        char addr[80] = "";
-        std::string peerIp;
-        {
-            sockaddr_in peer = {};
-            socklen_t plen = sizeof(peer);
-            if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
-                              &plen) == 0) {
-                char ip[64] = "";
-                ::inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof(ip));
-                peerIp = ip;
-                std::snprintf(addr, sizeof(addr), "%s:%u", ip,
-                              unsigned(ntohs(peer.sin_port)));
-            }
-        }
-        std::string fwd = forwardedFor(req, peerIp);
-        std::string identity = assertedIdentity(req, peerIp);
+        const std::string &peerIp = req.peerIp;
+        std::string fwd = forwardedFor(req);
+        std::string identity = assertedIdentity(req);
 
         // The door (docs/MultiDocServe.md §8, docs/ShareAccess.md §2):
         // every route is gated, not just the hello — the polling
@@ -1931,7 +1950,7 @@ public:
         // the name a grant may require) may arrive in the hello
         // instead; until they do the connection is unauthorized and
         // gets nothing.
-        std::string wsKey = headerValue(req, "sec-websocket-key");
+        std::string wsKey = req.header("sec-websocket-key");
 
         // The viewer bundle answers before the door: it is the
         // published viewer code, not scene bytes, and the browser
@@ -1939,8 +1958,8 @@ public:
         // tail — behind the door the page would load and its script
         // would 403. The door still judges everything that carries
         // scene data.
-        if (wsKey.empty() && serveViewerFile(fd, path))
-            return;
+        if (wsKey.empty() && serveViewerFile(path, reply))
+            return Route::Reply;
 
         std::string presentedToken = queryValue(query, "token");
         Judgement entry = judge(presentedToken, identity,
@@ -1948,12 +1967,8 @@ public:
                                 fwd.empty() ? peerIp : fwd);
         bool authorized = entry.admitted;
         if (!authorized && wsKey.empty()) {
-            static const char forbidden[] =
-                "HTTP/1.1 403 Forbidden\r\n"
-                "Access-Control-Allow-Origin: *\r\n"
-                "Content-Length: 0\r\nConnection: close\r\n\r\n";
-            sendAll(fd, forbidden, sizeof(forbidden) - 1);
-            return;
+            reply.status = 403;
+            return Route::Reply;
         }
 
         // /blob?key=<content key>: one out-of-band texture payload
@@ -1973,24 +1988,13 @@ public:
                 }
             }
             if (!found) {
-                static const char notFound[] =
-                    "HTTP/1.1 404 Not Found\r\n"
-                    "Access-Control-Allow-Origin: *\r\n"
-                    "Content-Length: 0\r\nConnection: close\r\n\r\n";
-                sendAll(fd, notFound, sizeof(notFound) - 1);
-                return;
+                reply.status = 404;
+                return Route::Reply;
             }
-            char head[256];
-            int n = std::snprintf(head, sizeof(head),
-                "HTTP/1.1 200 OK\r\n"
-                "Access-Control-Allow-Origin: *\r\n"
-                "Content-Type: application/octet-stream\r\n"
-                "Cache-Control: public, max-age=31536000, immutable\r\n"
-                "Content-Length: %zu\r\n"
-                "Connection: close\r\n\r\n", body.size());
-            if (sendAll(fd, head, size_t(n)))
-                sendAll(fd, body.data(), body.size());
-            return;
+            reply.set(200, "application/octet-stream",
+                      "public, max-age=31536000, immutable");
+            reply.body = std::move(body);
+            return Route::Reply;
         }
 
         // POST /log, body = console lines: what a viewer saw, sent
@@ -2023,13 +2027,9 @@ public:
             // disk before the next line is read rather than sitting in
             // a buffer that a crash would take with it.
             std::fflush(stderr);
-            static const char ok[] =
-                "HTTP/1.1 204 No Content\r\n"
-                "Access-Control-Allow-Origin: *\r\n"
-                "Access-Control-Allow-Headers: *\r\n"
-                "Content-Length: 0\r\nConnection: close\r\n\r\n";
-            sendAll(fd, ok, sizeof(ok) - 1);
-            return;
+            reply.status = 204;
+            reply.allowAnyHeader = true;
+            return Route::Reply;
         }
 
         // POST /blobs, body = one content key per line: several
@@ -2071,21 +2071,13 @@ public:
             uint8_t header[8] = {'F', 'C', 'B', 'B'};
             std::memcpy(header + 4, &count, 4);
             out.insert(out.begin(), header, header + 8);
-            char h[256];
-            int n = std::snprintf(h, sizeof(h),
-                "HTTP/1.1 200 OK\r\n"
-                "Access-Control-Allow-Origin: *\r\n"
-                "Content-Type: application/octet-stream\r\n"
-                // Content addressed like /blob, but a batch is named by
-                // the request body, which no HTTP cache keys on — so it
-                // must not be stored. The viewer's own IndexedDB is
-                // what makes a second visit free.
-                "Cache-Control: no-store\r\n"
-                "Content-Length: %zu\r\n"
-                "Connection: close\r\n\r\n", out.size());
-            if (sendAll(fd, h, size_t(n)))
-                sendAll(fd, out.data(), out.size());
-            return;
+            // Content addressed like /blob, but a batch is named by
+            // the request body, which no HTTP cache keys on -- so it
+            // must not be stored. The viewer's own IndexedDB is
+            // what makes a second visit free.
+            reply.set(200, "application/octet-stream", "no-store");
+            reply.body = std::move(out);
+            return Route::Reply;
         }
 
         // GET /level?source=<key>&level=<n>: ask for a declared level
@@ -2110,26 +2102,15 @@ public:
             }
             bool accepted = g && isBlobKey(source)
                 && requestLevel(*g, source, level);
-            static const char acceptedReply[] =
-                "HTTP/1.1 202 Accepted\r\n"
-                "Access-Control-Allow-Origin: *\r\n"
-                "Content-Length: 0\r\nConnection: close\r\n\r\n";
-            static const char refusedReply[] =
-                "HTTP/1.1 404 Not Found\r\n"
-                "Access-Control-Allow-Origin: *\r\n"
-                "Content-Length: 0\r\nConnection: close\r\n\r\n";
-            if (accepted)
-                sendAll(fd, acceptedReply, sizeof(acceptedReply) - 1);
-            else
-                sendAll(fd, refusedReply, sizeof(refusedReply) - 1);
-            return;
+            reply.status = accepted ? 202 : 404;
+            return Route::Reply;
         }
 
         // GET /decisions: pull every connected viewer's decision
         // journal (plan runs, fetches with their reasons, releases,
         // full-scene requests) — the backend command that reads what
         // the client decided and why, after the fact. Plain text, one
-        // section per viewer.
+        // section per viewer. Blocks up to the collection timeout.
         if (path == "/decisions") {
             std::vector<std::string> logs;
             requestDecisionLogs(4000, logs);
@@ -2143,16 +2124,9 @@ public:
             }
             if (out.empty())
                 out = "no viewers connected\n";
-            char h[256];
-            int n = std::snprintf(h, sizeof(h),
-                "HTTP/1.1 200 OK\r\n"
-                "Access-Control-Allow-Origin: *\r\n"
-                "Content-Type: text/plain; charset=utf-8\r\n"
-                "Content-Length: %zu\r\n"
-                "Connection: close\r\n\r\n", out.size());
-            if (sendAll(fd, h, size_t(n)))
-                sendAll(fd, out.data(), out.size());
-            return;
+            reply.set(200, "text/plain; charset=utf-8");
+            reply.body.assign(out.begin(), out.end());
+            return Route::Reply;
         }
 
         // /scene?v=<version>&s=<session>&doc=<name>: what the client
@@ -2170,23 +2144,27 @@ public:
         std::string s = queryValue(query, "s");
         std::string doc = queryValue(query, "doc");
         if (path != "/scene" && path != "/scene.fcsd") {
-            static const char notFound[] =
-                "HTTP/1.1 404 Not Found\r\n"
-                "Access-Control-Allow-Origin: *\r\n"
-                "Content-Length: 0\r\nConnection: close\r\n\r\n";
-            sendAll(fd, notFound, sizeof(notFound) - 1);
-            return;
+            reply.status = 404;
+            return Route::Reply;
         }
 
-        // WebSocket upgrade: handshake, then stay in the push loop.
+        // WebSocket upgrade: the transport handshakes and runs the
+        // connection from what the request resolved to.
         if (!wsKey.empty()) {
-            if (handshake(fd, wsKey))
-                wsLoop(fd, clientVersion, s, doc, entry, presentedToken,
-                       addr, fwd, identity,
-                       fwd.empty() ? peerIp : fwd);
-            return;
+            boot.held = clientVersion;
+            boot.session = s;
+            boot.doc = doc;
+            boot.entry = entry;
+            boot.presentedToken = presentedToken;
+            boot.addr = req.peer();
+            boot.fwd = fwd;
+            boot.identity = identity;
+            boot.matchAddr = fwd.empty() ? peerIp : fwd;
+            return Route::Upgrade;
         }
 
+        // The polling transport's payload: serialized here, under the
+        // scene mutex, on the caller's thread (section 6.5).
         std::vector<uint8_t> body;
         bool unknownDoc = false;
         {
@@ -2214,140 +2192,57 @@ public:
             }
         }
         if (unknownDoc) {
-            static const char notFound[] =
-                "HTTP/1.1 404 Not Found\r\n"
-                "Access-Control-Allow-Origin: *\r\n"
-                "Content-Length: 0\r\nConnection: close\r\n\r\n";
-            sendAll(fd, notFound, sizeof(notFound) - 1);
-            return;
+            reply.status = 404;
+            return Route::Reply;
         }
         if (body.empty()) {
             // Current, or nothing served at all — both are "you have
             // everything there is".
-            static const char noContent[] =
-                "HTTP/1.1 204 No Content\r\n"
-                "Access-Control-Allow-Origin: *\r\n"
-                "Connection: close\r\n\r\n";
-            sendAll(fd, noContent, sizeof(noContent) - 1);
-            return;
+            reply.status = 204;
+            return Route::Reply;
         }
-        char head[256];
-        int n = std::snprintf(head, sizeof(head),
-            "HTTP/1.1 200 OK\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "Content-Type: application/octet-stream\r\n"
-            "Content-Length: %zu\r\n"
-            "Connection: close\r\n\r\n", body.size());
-        if (sendAll(fd, head, size_t(n)))
-            sendAll(fd, body.data(), body.size());
+        reply.set(200, "application/octet-stream");
+        reply.body = std::move(body);
+        return Route::Reply;
     }
 
-    /// One `name=value` out of a request-target query string. The
-    /// values in play are hex keys and decimal versions, so no
-    /// percent-decoding is needed.
-
-    /// A well-formed content key: 40 lowercase hex characters. Checked
-    /// before it reaches the store so a malformed request can never be
-    /// anything but a 404.
-    static bool isBlobKey(const std::string &key)
+    /// Register a connection built from the request that opened it
+    /// (route's WsBootstrap): join the document it named, seed its
+    /// version, give it an id, put it on the roster. Called on the
+    /// connection's own loop thread, before its first tick; the
+    /// transport has already set conn.link.
+    void openConnection(Conn &conn, const WsBootstrap &boot)
     {
-        if (key.size() != 40)
-            return false;
-        for (char c : key) {
-            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
-                return false;
-        }
-        return true;
-    }
-
-    static bool handshake(int fd, const std::string &key)
-    {
-        static const char guid[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-        Sha1 sha;
-        sha.update(key.data(), key.size());
-        sha.update(guid, sizeof(guid) - 1);
-        uint8_t digest[20];
-        sha.finish(digest);
-        std::string accept = base64(digest, sizeof(digest));
-        char head[256];
-        int n = std::snprintf(head, sizeof(head),
-            "HTTP/1.1 101 Switching Protocols\r\n"
-            "Upgrade: websocket\r\n"
-            "Connection: Upgrade\r\n"
-            "Sec-WebSocket-Accept: %s\r\n\r\n", accept.c_str());
-        return sendAll(fd, head, size_t(n));
-    }
-
-    /// One server-to-client frame (unmasked): FIN + opcode, extended
-    /// length as needed, then the payload.
-    static bool sendFrame(int fd, uint8_t opcode,
-                          const void *data, size_t size)
-    {
-        uint8_t head[10];
-        size_t hn = 2;
-        head[0] = uint8_t(0x80 | opcode);
-        if (size < 126) {
-            head[1] = uint8_t(size);
-        }
-        else if (size < 65536) {
-            head[1] = 126;
-            head[2] = uint8_t(size >> 8);
-            head[3] = uint8_t(size);
-            hn = 4;
-        }
-        else {
-            head[1] = 127;
-            for (int i = 0; i < 8; ++i)
-                head[2 + i] = uint8_t(uint64_t(size) >> (56 - 8 * i));
-            hn = 10;
-        }
-        return sendAll(fd, head, hn)
-            && (!size || sendAll(fd, data, size));
-    }
-
-    /// Push loop of one WebSocket connection: send the versioned
-    /// payload whenever it changes (including right after the
-    /// handshake), and consume client frames (pick requests, pings,
-    /// close).
-    ///
-    /// \a held is what the client said it already has, from the same
-    /// `?v=&s=` on the upgrade request that the polling transport uses
-    /// — read at handshake time, so a reconnecting viewer that is
-    /// already current costs no payload and needs no round trip to say
-    /// so. \a session is the raw `?s=`, checked against the joined
-    /// group (sessions are per document); \a doc is the `?doc=` — a
-    /// reconnect rejoins its document before the hello even arrives,
-    /// which is what makes the held version mean anything. An unknown
-    /// name joins nothing and leaves the rest to the hello.
-    void wsLoop(int fd, uint64_t held, const std::string &session,
-                const std::string &doc, const Judgement &entry,
-                const std::string &presentedToken,
-                const char *addr, const std::string &fwd,
-                const std::string &identity,
-                const std::string &matchAddr)
-    {
-        Conn conn;
-        conn.fd = fd;
-        conn.sent = held;
-        conn.authorized = entry.admitted;
-        conn.admitted = entry.admitted;
-        conn.viewOnly = entry.viewOnly;
-        conn.grant = entry.grant;
-        conn.presentedToken = presentedToken;
-        conn.addr = addr ? addr : "";
-        conn.fwd = fwd;
-        conn.identity = identity;
-        conn.matchAddr = portlessAddress(matchAddr);
+        conn.sent = boot.held;
+        conn.authorized = boot.entry.admitted;
+        conn.admitted = boot.entry.admitted;
+        conn.viewOnly = boot.entry.viewOnly;
+        conn.grant = boot.entry.grant;
+        conn.presentedToken = boot.presentedToken;
+        conn.addr = boot.addr;
+        conn.fwd = boot.fwd;
+        conn.identity = boot.identity;
+        conn.matchAddr = portlessAddress(boot.matchAddr);
         conn.since = std::chrono::steady_clock::now();
+        // Admitted at the upgrade: counted now (sec 7.4). Over the
+        // caps, the connection is unauthorized after all -- told and
+        // closed once it is on the roster, so the refusal goes out on
+        // the writer the session starts right after this.
+        bool overCap = false;
+        if (conn.admitted && !admitUser(conn)) {
+            overCap = true;
+            conn.authorized = false;
+            conn.admitted = false;
+        }
         {
             std::lock_guard<std::mutex> guard(mutex);
-            conn.group = joinable(doc);
+            conn.group = joinable(boot.doc);
             // A version stated without a session, or with one from
             // another run (or another document's stream), names a
             // publish that never happened on this stream.
-            if (held != ~uint64_t(0)
-                    && (session.empty() || !conn.group
-                        || std::strtoull(session.c_str(), nullptr, 10)
+            if (boot.held != ~uint64_t(0)
+                    && (boot.session.empty() || !conn.group
+                        || std::strtoull(boot.session.c_str(), nullptr, 10)
                                != conn.group->ensureSession()))
                 conn.sent = 0;
         }
@@ -2357,9 +2252,18 @@ public:
             if (conn.group)
                 conn.docName = conn.group->name;
             conns.push_back(&conn);
+            if (overCap)
+                refuseOverCap(conn);
         }
         notifyClientsChanged();
-        wsLoopBody(fd, conn);
+    }
+
+    /// The connection is over: off the roster, the closed handler
+    /// told, the roster cue fired. Called on the loop thread as it
+    /// leaves; after this nothing can reach conn or its link.
+    void closeConnection(Conn &conn)
+    {
+        releaseUser(conn);
         {
             std::lock_guard<std::mutex> guard(connMutex);
             conns.erase(std::find(conns.begin(), conns.end(), &conn));
@@ -2382,247 +2286,765 @@ public:
         notifyClientsChanged();
     }
 
-    void wsLoopBody(int fd, Conn &conn)
-    {
-        uint64_t &sent = conn.sent;
-        std::string inbuf;
-        int stampTick = 0;
-        // Keepalive (docs/ShareAccess.md §5): a parked viewer sends and
-        // receives nothing while the model is unchanged, and anything
-        // with an idle timeout in the path drops it — Cloudflare closes
-        // a quiet WebSocket at 100 s, 60 s is a common proxy default. A
-        // ping whenever 30 s pass without a send keeps the stream
-        // visibly alive in both directions (the browser answers the
-        // pong itself), and turns a silently dead connection into a
-        // send failure instead of a socket parked forever.
-        auto lastSend = std::chrono::steady_clock::now();
-        for (;;) {
-            // Live bundle-stamp check (~every 5s at the 200ms poll):
-            // a WASM rebuild while this backend serves pushes the
-            // reload to already-connected pages, not just fresh hellos.
-            if (++stampTick >= 25) {
-                stampTick = 0;
-                if (conn.viewer)
-                    pushReloadIfStale(conn);
-            }
-            // Consume before pushing: a hello (or switch) that arrived
-            // with the connection must pick the document *before* the
-            // first payload goes out, or every named join would be
-            // preceded by one spurious default-document snapshot. A
-            // client that sends its hello on open is consumed within
-            // the first poll; one that says nothing merely waits out
-            // one interval for its first frame.
-            pollfd p = {};
-            p.fd = fd;
-            p.events = POLLIN;
-            int r = ::poll(&p, 1, 200);
-            if (r < 0)
-                return;
-            // The host asked this connection closed (kickClient, a
-            // server stop, or its own bad-token hello): drain what was
-            // queued for it — a BadToken refusal rides there — then
-            // say so, so a compliant viewer stops reconnecting, and
-            // hang up. Checked before the read: a kick shuts the read
-            // side down to wake the poll, so the recv below would see
-            // EOF and skip this farewell.
-            {
-                bool kicked;
-                std::vector<std::string> texts;
-                {
-                    std::lock_guard<std::mutex> guard(connMutex);
-                    kicked = conn.kicked;
-                    if (kicked)
-                        texts.swap(conn.pendingText);
-                }
-                if (kicked) {
-                    for (const std::string &text : texts)
-                        sendFrame(fd, 1, text.data(), text.size());
-                    static const char bye[] =
-                        "{\"cmd\":\"error\",\"code\":\"Kicked\"}";
-                    sendFrame(fd, 1, bye, sizeof(bye) - 1);
-                    sendFrame(fd, 8, nullptr, 0);
-                    return;
-                }
-            }
-            if (r > 0) {
-                char buf[65536];
-                ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-                if (n <= 0)
-                    return;
-                inbuf.append(buf, size_t(n));
-                if (!consumeFrames(fd, conn, inbuf))
-                    return;
-            }
-            std::vector<uint8_t> body;
-            bool orphaned = false;
-            const DocGroup *wasGroup = conn.group;
-            {
-                std::lock_guard<std::mutex> guard(mutex);
-                // A torn-down document's connections re-home to the
-                // default document, here on their own loop thread —
-                // the only one allowed to touch conn.group
-                // (docs/MultiDocServe.md §5). When it was the last,
-                // the connection is joined to nothing and told so,
-                // once: group stays null, so this does not refire.
-                if (conn.group && conn.group->wasServed
-                        && !conn.group->live) {
-                    conn.group = defaultJoin();
-                    sent = 0;
-                    orphaned = !conn.group;
-                }
-                // What this connection is missing, which after a
-                // coalesced tick may be several publishes rather than
-                // one — the push loop sends the current scene, not
-                // every version of it. An unauthorized connection
-                // (token configured, none presented yet) gets no scene
-                // bytes at all — its hello is what would open the door.
-                if (conn.group && conn.authorized) {
-                    DocGroup &g = *conn.group;
-                    std::vector<uint8_t> out = payloadFor(g, sent);
-                    if (!out.empty()) {
-                        body.resize(8 + out.size());
-                        uint64_t v = g.version;
-                        std::memcpy(body.data(), &v, 8);
-                        std::memcpy(body.data() + 8, out.data(),
-                                    out.size());
-                        sent = g.version;
-                    }
-                }
-            }
-            if (conn.group != wasGroup) {
-                // Re-homed: keep the roster's document mirror true.
-                {
-                    std::lock_guard<std::mutex> guard(connMutex);
-                    conn.docName = conn.group ? conn.group->name
-                                              : std::string();
-                }
-                notifyClientsChanged();
-            }
-            if (orphaned) {
-                std::lock_guard<std::mutex> guard(connMutex);
-                conn.pendingText.push_back(
-                    "{\"cmd\":\"error\",\"code\":\"NoDocument\"}");
-            }
-            if (!body.empty()
-                    && !sendFrame(fd, 2, body.data(), body.size()))
-                return;
+    /// One tick's scene push, in three steps (docs/SceneServerPort.md
+    /// sec 6.5). What must run on the connection's own strand -- the
+    /// re-home after a teardown, and reading which group and held
+    /// version to serialize from -- is beginScenePush; the
+    /// serialization itself, under the scene mutex for as long as it
+    /// takes, is computeScenePush on a worker thread, so no other
+    /// connection waits behind it; commitScenePush, back on the strand,
+    /// queues the bytes unless the connection moved on meanwhile. The
+    /// group pointer is safe to hold across the worker: groups are
+    /// never erased, only marked not live.
+    struct ScenePush {
+        DocGroup *group = nullptr;
+        uint64_t held = 0;
+        uint64_t version = 0;
+        std::vector<uint8_t> body;
+    };
 
-            // Drain queued control messages (dumpFrame/reload) — sends
-            // stay on this connection's thread.
-            std::vector<std::string> texts;
-            {
-                std::lock_guard<std::mutex> guard(connMutex);
-                texts.swap(conn.pendingText);
+    /// Strand. True when there is something to serialize.
+    bool beginScenePush(Conn &conn, ScenePush &push)
+    {
+        push = ScenePush();
+        bool orphaned = false;
+        const DocGroup *wasGroup = conn.group;
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+            // A torn-down document's connections re-home to the
+            // default document, here on their own strand -- the only
+            // place allowed to touch conn.group (docs/MultiDocServe.md
+            // sec 5). When it was the last, the connection is joined
+            // to nothing and told so, once: group stays null, so this
+            // does not refire.
+            if (conn.group && conn.group->wasServed
+                    && !conn.group->live) {
+                conn.group = defaultJoin();
+                conn.sent = 0;
+                orphaned = !conn.group;
             }
-            for (const std::string &text : texts) {
-                if (!sendFrame(fd, 1, text.data(), text.size()))
-                    return;
-            }
-            // A queued frame for this viewer (sendBinary), after the
-            // scene it belongs under.
-            std::vector<uint8_t> frame;
-            {
-                std::lock_guard<std::mutex> guard(connMutex);
-                frame.swap(conn.pendingBinary);
-            }
-            if (!frame.empty()
-                    && !sendFrame(fd, 2, frame.data(), frame.size()))
-                return;
-            auto now = std::chrono::steady_clock::now();
-            if (!body.empty() || !texts.empty() || !frame.empty()) {
-                lastSend = now;
-            } else if (now - lastSend >= std::chrono::seconds(30)) {
-                if (!sendFrame(fd, 9, nullptr, 0))
-                    return;
-                lastSend = now;
+            // An unauthorized connection (token configured, none
+            // presented yet) gets no scene bytes at all -- its hello is
+            // what would open the door.
+            if (conn.group && conn.authorized) {
+                push.group = conn.group;
+                push.held = conn.sent;
             }
         }
+        if (conn.group != wasGroup) {
+            // Re-homed: keep the roster's document mirror true.
+            {
+                std::lock_guard<std::mutex> guard(connMutex);
+                conn.docName = conn.group ? conn.group->name
+                                          : std::string();
+            }
+            notifyClientsChanged();
+        }
+        if (orphaned) {
+            std::lock_guard<std::mutex> guard(connMutex);
+            conn.queueText("{\"cmd\":\"error\",\"code\":\"NoDocument\"}");
+        }
+        return push.group != nullptr;
     }
 
-    /// Parse complete client frames off the front of \a inbuf; false
-    /// ends the connection (close frame or protocol error).
-    bool consumeFrames(int fd, Conn &conn, std::string &inbuf)
+    /// Worker. What the connection is missing, which after a coalesced
+    /// tick may be several publishes rather than one -- the push sends
+    /// the current scene, not every version of it.
+    void computeScenePush(ScenePush &push)
     {
-        for (;;) {
-            if (inbuf.size() < 2)
-                return true;
-            const uint8_t *p =
-                reinterpret_cast<const uint8_t *>(inbuf.data());
-            bool fin = (p[0] & 0x80) != 0;
-            uint8_t opcode = p[0] & 0x0f;
-            bool masked = (p[1] & 0x80) != 0;
-            uint64_t len = p[1] & 0x7f;
-            size_t off = 2;
-            if (len == 126) {
-                if (inbuf.size() < off + 2)
-                    return true;
-                len = (uint64_t(p[2]) << 8) | p[3];
-                off += 2;
-            }
-            else if (len == 127) {
-                if (inbuf.size() < off + 8)
-                    return true;
-                len = 0;
-                for (int i = 0; i < 8; ++i)
-                    len = (len << 8) | p[off + i];
-                off += 8;
-            }
-            // Client frames must be masked. The cap accommodates a
-            // dumpFrame pixel upload (a hi-DPI phone canvas is ~10MB
-            // of RGBA).
-            if (!masked || len > (64u << 20))
-                return false;
-            uint8_t mask[4];
-            if (inbuf.size() < off + 4 + len)
-                return true;
-            std::memcpy(mask, p + off, 4);
-            off += 4;
-            std::vector<uint8_t> data(static_cast<size_t>(len), 0);
-            for (size_t i = 0; i < len; ++i)
-                data[i] = p[off + i] ^ mask[i & 3];
-            inbuf.erase(0, off + size_t(len));
+        std::lock_guard<std::mutex> guard(mutex);
+        DocGroup &g = *push.group;
+        std::vector<uint8_t> out = payloadFor(g, push.held);
+        if (out.empty())
+            return;
+        push.version = g.version;
+        push.body.resize(8 + out.size());
+        std::memcpy(push.body.data(), &push.version, 8);
+        std::memcpy(push.body.data() + 8, out.data(), out.size());
+    }
 
-            switch (opcode) {
-            case 8:     // close
-                sendFrame(fd, 8, data.data(),
-                          std::min<size_t>(data.size(), 2));
-                return false;
-            case 9:     // ping -> pong
-                if (!sendFrame(fd, 10, data.data(), data.size()))
-                    return false;
-                break;
-            case 0:     // continuation of a fragmented message
-                if (!conn.fragOpcode)
-                    break;      // stray continuation: ignore
-                conn.fragData.append(
-                        reinterpret_cast<const char *>(data.data()),
-                        data.size());
-                if (conn.fragData.size() > (64u << 20))
-                    return false;
-                if (fin) {
-                    handleMessage(conn, conn.fragOpcode == 1,
-                                  reinterpret_cast<const uint8_t *>(
-                                      conn.fragData.data()),
-                                  conn.fragData.size());
-                    conn.fragData.clear();
-                    conn.fragOpcode = 0;
-                }
-                break;
-            case 1:
-            case 2:
-                if (!fin) {     // a browser may fragment large uploads
-                    conn.fragOpcode = opcode;
-                    conn.fragData.assign(
-                            reinterpret_cast<const char *>(data.data()),
-                            data.size());
-                    break;
-                }
-                handleMessage(conn, opcode == 1, data.data(), data.size());
-                break;
-            default:    // pong: ignore
-                break;
+    /// Strand. Dropped when a hello or a switch changed the group, or
+    /// reset what the connection holds, while the bytes were being
+    /// made: the next tick computes the right ones.
+    void commitScenePush(Conn &conn, ScenePush &push)
+    {
+        if (push.body.empty() || conn.group != push.group
+                || conn.sent != push.held)
+            return;
+        conn.sent = push.version;
+        std::lock_guard<std::mutex> guard(connMutex);
+        conn.queueScene(std::move(push.body));
+    }
+
+    /// A version was published: every connection looks at the scene
+    /// now (sec 7.3). All of them rather than the group's, because
+    /// which group a connection is in is its own strand's business;
+    /// the look itself (pushDue) is cheap and answers no for the rest.
+    /// Called with no lock held: nudge takes connMutex, and the
+    /// publisher has just released the scene mutex.
+    void wakeAll()
+    {
+        std::lock_guard<std::mutex> guard(connMutex);
+        for (Conn *conn : conns)
+            conn->nudge();
+    }
+
+    /// Strand. Whether a scene push would send anything: the
+    /// connection is joined and in, and holds a version other than the
+    /// group's -- or its group was torn down and it must re-home
+    /// (beginScenePush does that). The cheap look that keeps a wake
+    /// for a control reply from costing a worker hop and the scene
+    /// mutex for nothing.
+    bool pushDue(Conn &conn)
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        if (!conn.group)
+            return false;
+        if (conn.group->wasServed && !conn.group->live)
+            return true;
+        return conn.authorized && conn.group->version != conn.sent;
+    }
+
+    /// Ask every connection to hang up: each one's own writer sends
+    /// the farewell and closes (Conn::kick). The connection half of a
+    /// stop; closeListener() is the other.
+    void closeAll()
+    {
+        std::lock_guard<std::mutex> guard(connMutex);
+        for (Conn *conn : conns)
+            conn->kick();
+    }
+
+    // ------------------------------------------------------------------
+    // The transport (docs/SceneServerPort.md sec 6 and 7.2): Boost.Beast,
+    // async, one strand per connection. Everything above this line is
+    // the protocol core and knows no socket. This is the listener, the
+    // HTTP exchange, and the WebSocket connection scheduled as three
+    // stackless coroutines on its strand (sec 5.4): a reader, a writer
+    // that parks on an empty outbox and is woken through Link::wake(),
+    // and a tick that is the fallback for the scene push -- the push
+    // itself is a fourth, short-lived coroutine started by a wake (sec
+    // 7.3). The blocking work -- route() for HTTP, payloadFor() for a
+    // push -- runs on a worker pool with only its completion back on
+    // the strand (sec 6.5).
+    // ------------------------------------------------------------------
+
+    using tcp = boost::asio::ip::tcp;
+
+    static constexpr int kWorkerThreads = 4;
+    static constexpr int kTickMs = 200;
+    /// A request head or a handshake that takes longer than this is
+    /// dropped: the audit's missing read deadline (sec 4).
+    static constexpr int kRequestSeconds = 30;
+    /// Keepalive (docs/ShareAccess.md sec 5): a parked viewer sends and
+    /// receives nothing while the model is unchanged, and anything with
+    /// an idle timeout in the path drops it -- Cloudflare at 100 s, 60 s
+    /// a common proxy default. Beast pings at half this when nothing has
+    /// arrived, the browser answers the pong itself, and a peer silent
+    /// for the whole of it is closed rather than parked forever -- which
+    /// also bounds a write stalled against a peer that stopped reading,
+    /// the job of the POSIX loop's 20 s send timeout.
+    static constexpr int kIdleSeconds = 60;
+    /// The cap accommodates a dumpFrame pixel upload (a hi-DPI phone
+    /// canvas is ~10MB of RGBA).
+    static constexpr std::size_t kMaxMessage = std::size_t(64) << 20;
+
+    /// The io thread and the worker pool, made on the first start() and
+    /// kept for the life of the server (Private is never destroyed): a
+    /// stop() closes the listener and the connections, not these, so a
+    /// restart binds anew on the same machinery.
+    struct Io {
+        boost::asio::io_context ctx{1};
+        boost::asio::executor_work_guard<boost::asio::io_context::executor_type> guard;
+        /// The section 6.5 pool. A few threads rather than one: a
+        /// /decisions route waits out its timeout here and must not
+        /// hold a scene push behind it.
+        boost::asio::thread_pool workers{kWorkerThreads};
+        Io()
+            : guard(boost::asio::make_work_guard(ctx))
+        {
+            std::thread([this]() { ctx.run(); }).detach();
+        }
+    };
+    Io *io = nullptr;                              ///< guarded by mutex
+    std::shared_ptr<tcp::acceptor> acceptor;       ///< guarded by mutex
+
+    static boost::beast::websocket::stream_base::timeout wsTimeouts()
+    {
+        boost::beast::websocket::stream_base::timeout t;
+        t.handshake_timeout = std::chrono::seconds(kRequestSeconds);
+        t.idle_timeout = std::chrono::seconds(kIdleSeconds);
+        t.keep_alive_pings = true;
+        return t;
+    }
+
+    struct Session;
+
+    /// One accepted socket for its whole life: the HTTP exchange, and
+    /// when the request upgrades, the WebSocket connection. Owned by
+    /// the handlers in flight (shared_ptr), so it lives exactly as long
+    /// as something can still complete on it; the peer's accept-cap
+    /// slot is given back when it is destroyed.
+    struct Session : Link, std::enable_shared_from_this<Session> {
+        Private &srv;
+        /// The stream: Beast's tcp_stream (a socket with a deadline
+        /// timer) that the WebSocket layer wraps once the request
+        /// upgrades. Its executor is this connection's strand, so every
+        /// completion on it, and everything posted to that executor,
+        /// runs serialized -- the invariant the POSIX loop kept with its
+        /// one thread (sec 6.2).
+        boost::beast::websocket::stream<boost::beast::tcp_stream> ws;
+        std::string ip;
+        unsigned port = 0;
+        bool loopback = false;
+        boost::beast::flat_buffer inbuf;
+        boost::beast::http::request_parser<boost::beast::http::string_body> parser;
+        boost::beast::http::response<boost::beast::http::vector_body<uint8_t>> res;
+        HttpRequest req;
+        HttpReply reply;
+        WsBootstrap boot;
+        Route routed = Route::Reply;
+        /// The connection, once the request upgraded: on the roster
+        /// between openConnection and closeConnection (\a open).
+        Conn conn;
+        bool open = false;
+        boost::asio::steady_timer tick;
+        int stampTick = 0;
+        /// The writer: what it is sending, and where it parked -- the
+        /// coroutine's state, an int, kept here so any thread can wake
+        /// it by posting a handler built from it (sec 6.6).
+        Outgoing outItem;
+        boost::asio::coroutine writerCo;
+        bool writerParked = false;
+        /// Coroutines still running (reader, writer, tick, and a push
+        /// while one is in flight); the connection is torn down when
+        /// the last of them ends.
+        int live = 0;
+        bool closing = false;
+        /// The push in flight, computed off the strand (sec 6.5). One
+        /// at a time (\a pushing); a wake meanwhile asks for another
+        /// after it (\a pushAgain), which then sends the current scene
+        /// -- several publishes coalesce into one push, as they did
+        /// under a tick.
+        ScenePush push;
+        bool pushing = false;
+        bool pushAgain = false;
+
+        Session(Private &s, tcp::socket &&socket)
+            : srv(s)
+            , ws(std::move(socket))
+            , tick(ws.get_executor())
+        {
+        }
+
+        ~Session() override
+        {
+            srv.releasePeer(ip, loopback);
+        }
+
+        /// Link: act on the outbox and the scene now. From any thread.
+        void wake() override
+        {
+            boost::asio::post(ws.get_executor(),
+                              [self = shared_from_this()]() { self->onWake(); });
+        }
+
+        /// Strand. The posted half of wake(): clear the coalescing flag
+        /// first, so a nudge that lands from here on posts again, then
+        /// drain the outbox and look at the scene.
+        void onWake()
+        {
+            {
+                std::lock_guard<std::mutex> guard(srv.connMutex);
+                conn.wakePosted = false;
+            }
+            wakeWriter();
+            startPush();
+        }
+
+        /// Strand. Start a scene push if one would send anything and
+        /// none is in flight; note the ask otherwise.
+        void startPush()
+        {
+            srv.Session_startPush(*this);
+        }
+
+        /// Strand. The push in flight ended.
+        void endPush()
+        {
+            pushing = false;
+            ended();
+            if (pushAgain) {
+                pushAgain = false;
+                startPush();
             }
         }
+
+        /// Strand. Resume the parked writer; nothing if it is running.
+        void wakeWriter()
+        {
+            srv.Session_wakeWriter(*this);
+        }
+
+        /// Strand. Park the writer at the state it carries.
+        void park(const boost::asio::coroutine &state)
+        {
+            writerCo = state;
+            writerParked = true;
+        }
+
+        bool kickedNow()
+        {
+            std::lock_guard<std::mutex> guard(srv.connMutex);
+            return conn.kicked;
+        }
+
+        /// Strand. The next outbox item into \a outItem.
+        bool takeNext()
+        {
+            std::lock_guard<std::mutex> guard(srv.connMutex);
+            if (conn.outbox.empty())
+                return false;
+            outItem = std::move(conn.outbox.front());
+            conn.outbox.pop_front();
+            return true;
+        }
+
+        /// The parsed request into the routing's struct. False for a
+        /// verb the server does not speak.
+        bool toRequest()
+        {
+            auto &r = parser.get();
+            req.method = std::string(r.method_string());
+            if (req.method != "GET" && req.method != "POST")
+                return false;
+            splitTarget(std::string(r.target()), req);
+            for (const auto &f : r) {
+                std::string name(f.name_string());
+                std::transform(name.begin(), name.end(), name.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                // emplace: a repeated name keeps its first value
+                req.headers.emplace(name, std::string(f.value()));
+            }
+            req.body = std::move(r.body());
+            req.peerIp = ip;
+            req.peerPort = port;
+            return true;
+        }
+
+        /// The routed reply into the response: the CORS header every
+        /// answer carries, the optional type and cache policy, the
+        /// length (none on a 204), Connection: close, then the body.
+        void toResponse()
+        {
+            namespace http = boost::beast::http;
+            res.version(11);
+            res.result(unsigned(reply.status));
+            res.set(http::field::access_control_allow_origin, "*");
+            if (reply.allowAnyHeader)
+                res.set(http::field::access_control_allow_headers, "*");
+            if (reply.contentType)
+                res.set(http::field::content_type, reply.contentType);
+            if (reply.cacheControl)
+                res.set(http::field::cache_control, reply.cacheControl);
+            res.keep_alive(false);
+            res.body() = std::move(reply.body);
+            if (reply.status != 204)
+                res.content_length(res.body().size());
+        }
+
+        /// The HTTP exchange is over, answered or not: hang up.
+        void finishHttp()
+        {
+            boost::beast::error_code ec;
+            ws.next_layer().socket().shutdown(tcp::socket::shutdown_send, ec);
+            ws.next_layer().close();
+        }
+
+        /// The request upgraded and the handshake is done: the
+        /// connection joins the roster and its three coroutines start.
+        void startConnection()
+        {
+            srv.Session_startConnection(*this);
+        }
+
+        void ended()
+        {
+            if (--live == 0 && open) {
+                open = false;
+                srv.closeConnection(conn);
+            }
+        }
+
+        /// The reader is done (the peer closed, a protocol error, the
+        /// idle timeout): nothing more will be sent either.
+        void endReader()
+        {
+            closing = true;
+            tick.cancel();
+            if (writerParked) {
+                writerParked = false;
+                --live;
+            }
+            boost::beast::get_lowest_layer(ws).close();
+            ended();
+        }
+
+        /// The writer is done (the Close item went out, or a write
+        /// failed): the socket closes under the reader.
+        void endWriter()
+        {
+            closing = true;
+            tick.cancel();
+            boost::beast::get_lowest_layer(ws).close();
+            ended();
+        }
+
+        void endTick()
+        {
+            ended();
+        }
+    };
+
+#include <boost/asio/yield.hpp>
+
+    /// The HTTP exchange of a Session: read the request, route it off
+    /// the io thread, then either write the reply and hang up or accept
+    /// the WebSocket and start the connection.
+    struct Http : boost::asio::coroutine {
+        std::shared_ptr<Session> s;
+        explicit Http(std::shared_ptr<Session> p) : s(std::move(p)) {}
+        void operator()(boost::beast::error_code ec = {}, std::size_t = 0)
+        {
+            Session &c = *s;
+            reenter(this) {
+                // A head over 16 KiB or a body over the batch cap drops
+                // the connection unanswered, as it always did.
+                c.parser.header_limit(16384);
+                c.parser.body_limit(kMaxBatchBody);
+                c.ws.next_layer().expires_after(
+                        std::chrono::seconds(kRequestSeconds));
+                yield boost::beast::http::async_read(
+                        c.ws.next_layer(), c.inbuf, c.parser, *this);
+                if (ec || !c.toRequest()) {
+                    c.finishHttp();
+                    return;
+                }
+                // route() off the io thread (sec 6.5): /scene serializes
+                // under the scene mutex, /decisions waits out a timeout.
+                yield boost::asio::post(c.srv.io->workers,
+                                        [self = *this]() mutable {
+                    Session &cc = *self.s;
+                    cc.routed = cc.srv.route(cc.req, cc.reply, cc.boot);
+                    boost::asio::post(cc.ws.get_executor(), std::move(self));
+                });
+                if (c.routed == Route::Upgrade) {
+                    // The WebSocket layer keeps its own timeouts; the
+                    // tcp_stream's would fire under it.
+                    c.ws.next_layer().expires_never();
+                    c.ws.set_option(wsTimeouts());
+                    yield c.ws.async_accept(c.parser.get(), *this);
+                    if (ec) {
+                        c.finishHttp();
+                        return;
+                    }
+                    c.inbuf.consume(c.inbuf.size());
+                    c.startConnection();
+                    return;
+                }
+                c.toResponse();
+                yield boost::beast::http::async_write(
+                        c.ws.next_layer(), c.res, *this);
+                c.finishHttp();
+            }
+        }
+    };
+
+    /// The reader of a connection: one complete message at a time --
+    /// Beast reassembles fragments, answers pings and closes, and holds
+    /// control frames to their rules -- handed to the protocol.
+    struct Reader : boost::asio::coroutine {
+        std::shared_ptr<Session> s;
+        explicit Reader(std::shared_ptr<Session> p) : s(std::move(p)) {}
+        void operator()(boost::beast::error_code ec = {}, std::size_t = 0)
+        {
+            Session &c = *s;
+            reenter(this) {
+                for (;;) {
+                    yield c.ws.async_read(c.inbuf, *this);
+                    if (ec)
+                        break;
+                    // A kicked connection reads nothing more (the POSIX
+                    // loop shut its read side): what still arrives is
+                    // dropped, and only the farewell goes out.
+                    if (!c.kickedNow())
+                        c.srv.handleMessage(
+                                c.conn, c.ws.got_text(),
+                                static_cast<const uint8_t *>(c.inbuf.cdata().data()),
+                                c.inbuf.size());
+                    c.inbuf.consume(c.inbuf.size());
+                    // Whatever the message queued goes out now, not at
+                    // the next tick -- and a hello, a switch or a
+                    // resync gets its scene now too.
+                    c.wakeWriter();
+                    c.startPush();
+                }
+                c.endReader();
+            }
+        }
+    };
+
+    /// The writer of a connection: drains the outbox in order with one
+    /// write in flight, stops at a Close item, and parks -- returns,
+    /// its state saved on the Session -- when the outbox is empty
+    /// (sec 6.6). wakeWriter() resumes it from that state.
+    struct Writer : boost::asio::coroutine {
+        std::shared_ptr<Session> s;
+        explicit Writer(std::shared_ptr<Session> p) : s(std::move(p)) {}
+        void operator()(boost::beast::error_code ec = {}, std::size_t = 0)
+        {
+            Session &c = *s;
+            reenter(this) {
+                for (;;) {
+                    while (!c.takeNext()) {
+                        yield c.park(*this);
+                    }
+                    if (c.outItem.kind == Outgoing::Close) {
+                        yield c.ws.async_close(
+                                boost::beast::websocket::close_code::normal,
+                                *this);
+                        break;
+                    }
+                    c.ws.text(c.outItem.kind == Outgoing::Text);
+                    yield c.ws.async_write(
+                            boost::asio::buffer(c.outItem.data), *this);
+                    if (ec)
+                        break;
+                }
+                c.endWriter();
+            }
+        }
+    };
+
+    /// One scene push of a connection (sec 7.3): the three steps of
+    /// sec 6.5 -- what to serialize, on the strand; the serialization
+    /// on the worker pool; the bytes onto the outbox, back on the
+    /// strand -- then the writer is woken. Started by a wake, whether
+    /// from a publish, from the message that changed what this
+    /// connection holds, or from the tick.
+    struct Push : boost::asio::coroutine {
+        std::shared_ptr<Session> s;
+        explicit Push(std::shared_ptr<Session> p) : s(std::move(p)) {}
+        void operator()(boost::beast::error_code = {}, std::size_t = 0)
+        {
+            Session &c = *s;
+            reenter(this) {
+                if (c.srv.beginScenePush(c.conn, c.push)) {
+                    yield boost::asio::post(c.srv.io->workers,
+                                            [self = *this]() mutable {
+                        Session &cc = *self.s;
+                        cc.srv.computeScenePush(cc.push);
+                        boost::asio::post(cc.ws.get_executor(),
+                                          std::move(self));
+                    });
+                    if (!c.closing)
+                        c.srv.commitScenePush(c.conn, c.push);
+                }
+                c.wakeWriter();
+                c.endPush();
+            }
+        }
+    };
+
+    /// The tick of a connection: every kTickMs, the live bundle-stamp
+    /// check (~every 5 s) and a look at the scene -- the fallback
+    /// behind the wakes, and the path that re-homes a connection whose
+    /// document was torn down. Ends with the connection, or when it is
+    /// kicked: a kicked connection pushes nothing more.
+    struct Tick : boost::asio::coroutine {
+        std::shared_ptr<Session> s;
+        explicit Tick(std::shared_ptr<Session> p) : s(std::move(p)) {}
+        void operator()(boost::beast::error_code ec = {}, std::size_t = 0)
+        {
+            Session &c = *s;
+            reenter(this) {
+                for (;;) {
+                    if (c.closing)
+                        break;
+                    c.tick.expires_after(std::chrono::milliseconds(kTickMs));
+                    yield c.tick.async_wait(*this);
+                    if (ec || c.closing || c.kickedNow())
+                        break;
+                    // A WASM rebuild while this backend serves pushes
+                    // the reload to already-connected pages, not just
+                    // fresh hellos.
+                    if (++c.stampTick >= 25) {
+                        c.stampTick = 0;
+                        if (c.conn.viewer)
+                            c.srv.pushReloadIfStale(c.conn);
+                    }
+                    c.wakeWriter();
+                    c.startPush();
+                }
+                c.endTick();
+            }
+        }
+    };
+
+#include <boost/asio/unyield.hpp>
+
+    void Session_wakeWriter(Session &c)
+    {
+        if (!c.writerParked)
+            return;
+        c.writerParked = false;
+        Writer w{c.shared_from_this()};
+        static_cast<boost::asio::coroutine &>(w) = c.writerCo;
+        w();
+    }
+
+    void Session_startPush(Session &c)
+    {
+        if (c.closing || !c.open || c.kickedNow())
+            return;
+        if (c.pushing) {
+            c.pushAgain = true;
+            return;
+        }
+        if (!pushDue(c.conn))
+            return;
+        c.pushing = true;
+        ++c.live;
+        Push{c.shared_from_this()}();
+    }
+
+    void Session_startConnection(Session &c)
+    {
+        c.ws.read_message_max(kMaxMessage);
+        // One frame per message, as the POSIX sender wrote them; the
+        // default would split every push into 4 KiB frames.
+        c.ws.auto_fragment(false);
+        c.conn.link = &c;
+        c.srv.openConnection(c.conn, c.boot);
+        c.open = true;
+        c.live = 3;
+        c.writerParked = true;
+        Reader{c.shared_from_this()}();
+        Tick{c.shared_from_this()}();
+        // A fresh writer resumes from its top and parks again at once
+        // unless something is already queued. No push yet: the scene
+        // follows the hello (the reader starts it), which is what says
+        // which snapshot format the viewer reads; a viewer that never
+        // says hello gets it from the tick, as before.
+        c.wakeWriter();
+    }
+
+    /// The listener: accept on the io thread, each socket onto a strand
+    /// of its own, through the pre-auth caps, into a Session.
+    void doAccept(const std::shared_ptr<tcp::acceptor> &acc)
+    {
+        acc->async_accept(boost::asio::make_strand(io->ctx),
+                          [this, acc](boost::system::error_code ec,
+                                      tcp::socket socket) {
+            if (ec == boost::asio::error::operation_aborted || !acc->is_open())
+                return;
+            if (!ec)
+                accepted(std::move(socket));
+            doAccept(acc);
+        });
+    }
+
+    void accepted(tcp::socket &&socket)
+    {
+        boost::system::error_code ec;
+        auto ep = socket.remote_endpoint(ec);
+        // A dual-stack listener sees a v4 peer as a v4-mapped v6
+        // address; the roster, the loopback rule and the grants'
+        // address patterns all speak v4 for those, as before.
+        boost::asio::ip::address peerAddr = ec ? boost::asio::ip::address()
+                                               : ep.address();
+        if (peerAddr.is_v6() && peerAddr.to_v6().is_v4_mapped())
+            peerAddr = boost::asio::ip::make_address_v4(
+                    boost::asio::ip::v4_mapped, peerAddr.to_v6());
+        std::string ip = ec ? std::string() : peerAddr.to_string();
+        const unsigned port = ec ? 0 : ep.port();
+        const bool loopback = isLoopback(ip);
+        if (!admitPeer(ip, loopback))
+            return;     // the socket closes with the object
+        // A control reply is a small frame that may follow a large
+        // one; with Nagle on it would sit behind the peer's delayed
+        // ACK, tens of milliseconds on a path this design measures in
+        // single ones (sec 7.3).
+        socket.set_option(tcp::no_delay(true), ec);
+        auto s = std::make_shared<Session>(*this, std::move(socket));
+        s->ip = ip;
+        s->port = port;
+        s->loopback = loopback;
+        boost::asio::dispatch(s->ws.get_executor(),
+                              [s]() { Http{s}(); });
+    }
+
+    bool start(int port)
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        if (!io)
+            io = new Io;
+        auto acc = std::make_shared<tcp::acceptor>(io->ctx);
+        boost::system::error_code ec;
+        // One dual-stack v6 listener takes v4 too (sec 7.4); a host
+        // without IPv6 falls back to the v4 listener it always had.
+        acc->open(tcp::v6(), ec);
+        bool dual = !ec;
+        if (dual) {
+            acc->set_option(boost::asio::ip::v6_only(false), ec);
+            if (ec) {
+                acc->close(ec);
+                dual = false;
+            }
+        }
+        if (!dual) {
+            acc->open(tcp::v4(), ec);
+            if (ec)
+                return false;
+        }
+        acc->set_option(boost::asio::socket_base::reuse_address(true), ec);
+        acc->bind(tcp::endpoint(dual ? tcp::v6() : tcp::v4(), uint16_t(port)), ec);
+        if (!ec)
+            acc->listen(4, ec);
+        if (ec)
+            return false;
+        acceptor = acc;
+        doAccept(acc);
+        return true;
+    }
+
+    bool listening()
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        return acceptor && acceptor->is_open();
+    }
+
+    /// Close the listener: no new connection is accepted, and a later
+    /// start() binds anew. Closed on the io thread, where its accept
+    /// runs, and waited for, so that a start() right after finds the
+    /// port free. The connection half of a stop is closeAll().
+    void closeListener()
+    {
+        std::shared_ptr<tcp::acceptor> acc;
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+            acc = std::move(acceptor);
+            started = false;
+        }
+        if (!acc)
+            return;
+        std::promise<void> done;
+        boost::asio::post(io->ctx, [acc, &done]() {
+            boost::system::error_code ec;
+            acc->close(ec);
+            done.set_value();
+        });
+        done.get_future().wait();
     }
 
     /// A complete client message: JSON control text (hello, and the
@@ -2655,10 +3077,10 @@ public:
                                             conn.matchAddr);
                     if (!entry.admitted) {
                         std::lock_guard<std::mutex> guard(connMutex);
-                        conn.pendingText.push_back(grants
+                        conn.queueText(grants
                             ? "{\"cmd\":\"error\",\"code\":\"Refused\"}"
                             : "{\"cmd\":\"error\",\"code\":\"BadToken\"}");
-                        conn.kicked = true;
+                        conn.kick();
                         return;
                     }
                     conn.authorized = true;
@@ -2668,6 +3090,14 @@ public:
                     conn.grant = entry.grant;
                     if (grants)
                         conn.viewOnly = entry.viewOnly;
+                    // The user is known only now when the grant or the
+                    // name decided it (sec 7.4).
+                    if (!admitUser(conn)) {
+                        conn.authorized = false;
+                        conn.admitted = false;
+                        refuseOverCap(conn);
+                        return;
+                    }
                 }
             }
             else if (!conn.authorized) {
@@ -2699,7 +3129,7 @@ public:
                     reply = docsJsonLocked();
                 }
                 std::lock_guard<std::mutex> guard(connMutex);
-                conn.pendingText.push_back(reply);
+                conn.queueText(reply);
                 return;
             }
             // Rename this connection (docs/MultiDocServe.md §4): the
@@ -2755,7 +3185,7 @@ public:
                 }
                 else {
                     std::lock_guard<std::mutex> guard(connMutex);
-                    conn.pendingText.push_back(
+                    conn.queueText(
                         "{\"cmd\":\"error\",\"code\":\"UnknownDocument\""
                         ",\"doc\":\"" + jsonEscape(name) + "\"}");
                 }
@@ -2784,10 +3214,10 @@ public:
                         docs = docsJsonLocked();
                     }
                     std::lock_guard<std::mutex> guard(connMutex);
-                    conn.pendingText.push_back(
+                    conn.queueText(
                         "{\"cmd\":\"error\",\"code\":\"UnknownDocument\""
                         ",\"doc\":\"" + jsonEscape(docName) + "\"}");
-                    conn.pendingText.push_back(docs);
+                    conn.queueText(docs);
                 }
                 // A serving backend schedules no frames of its own
                 // (BGFXRenderer::animating / localAudience), and the
@@ -2813,7 +3243,7 @@ public:
                                   "{\"cmd\":\"reload\",\"cacheBust\":\"v%u\"}",
                                   sceneDumpVersion());
                     std::lock_guard<std::mutex> guard(connMutex);
-                    conn.pendingText.push_back(msg);
+                    conn.queueText(msg);
                 }
                 // Viewer policy push: the dropped-stream reconnect
                 // budget (viewer default 10). FC_BGFX_VIEWER_RECONNECT
@@ -2830,7 +3260,7 @@ public:
                                   "{\"cmd\":\"config\",\"reconnect\":%ld}",
                                   reconnect);
                     std::lock_guard<std::mutex> guard(connMutex);
-                    conn.pendingText.push_back(msg);
+                    conn.queueText(msg);
                 }
             }
             return;
@@ -2956,10 +3386,6 @@ public:
             }
         }
     }
-#else
-    bool start(int) { return false; }
-    void stopListening() {}
-#endif
 };
 
 /// Header names compare case-insensitively; store and match lowercase.
@@ -3011,13 +3437,15 @@ bool SceneStreamServer::start(int port)
 
 bool SceneStreamServer::running() const
 {
-    return pimpl && pimpl->listenFd >= 0;
+    return pimpl && pimpl->listening();
 }
 
 void SceneStreamServer::stop()
 {
-    if (pimpl)
-        pimpl->stopListening();
+    if (!pimpl)
+        return;
+    pimpl->closeListener();
+    pimpl->closeAll();
 }
 
 void SceneStreamServer::setToken(const std::string &token)
@@ -3113,6 +3541,14 @@ bool SceneStreamServer::trustProxy()
     return ensure()->trustProxy.load();
 }
 
+void SceneStreamServer::setConnectionCaps(int users, int perUser)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->acceptCountMutex);
+    p->maxUsers = std::max(1, users);
+    p->maxConnsPerUser = std::max(1, perUser);
+}
+
 int SceneStreamServer::clients(std::vector<SceneClientInfo> &out)
 {
     return ensure()->clients(out);
@@ -3178,7 +3614,7 @@ void SceneStreamServer::endPublish(const void *publisher,
 void SceneStreamServer::publish(ScenePublish &&pub, const std::string &doc)
 {
     Private *p = ensure();
-    std::lock_guard<std::mutex> guard(p->mutex);
+    std::unique_lock<std::mutex> guard(p->mutex);
     Private::DocGroup &g = p->group(doc);
     if (pub.version <= g.version)
         return;   // superseded before it was installed
@@ -3199,6 +3635,10 @@ void SceneStreamServer::publish(ScenePublish &&pub, const std::string &doc)
     // must always be the bytes the version names.
     g.version = pub.version;
     p->retireBlobs(g);
+    guard.unlock();
+    // The version is installed: every connection looks at it now
+    // (docs/SceneServerPort.md sec 7.3), not at its next tick.
+    p->wakeAll();
 }
 
 void SceneStreamServer::publishBlob(const std::string &key,
@@ -3323,7 +3763,7 @@ bool SceneStreamServer::sendControl(uint64_t client, const std::string &json)
     std::lock_guard<std::mutex> guard(p->connMutex);
     for (Private::Conn *conn : p->conns) {
         if (conn->id == client) {
-            conn->pendingText.push_back(json);
+            conn->queueText(json);
             return true;
         }
     }
@@ -3336,7 +3776,7 @@ bool SceneStreamServer::sendBinary(uint64_t client, std::vector<uint8_t> &&data)
     std::lock_guard<std::mutex> guard(p->connMutex);
     for (Private::Conn *conn : p->conns) {
         if (conn->id == client) {
-            conn->pendingBinary = std::move(data);
+            conn->queueFrame(std::move(data));
             return true;
         }
     }

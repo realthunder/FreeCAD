@@ -1534,6 +1534,30 @@ void Document::checkUserEdit(const Document *doc, const DocumentObject *obj,
     if (obj && prop == &obj->Visibility) {
         return;
     }
+    // The tree view's own ordering bookkeeping. TreeRank is written by
+    // the tree as it populates, from its own timer, never by a command --
+    // it reaches this check only when a command runs a nested event loop
+    // (the animated view fit the import itself runs while the load is
+    // still live, a modal dialog) and the timer fires inside that
+    // command's scope. Refusing it unwinds the tree mid-populate and
+    // leaves a root item that was never inserted, which the next tick
+    // dereferences (SIGSEGV in DocumentObjectItem::getParentItem, the
+    // chess-flat render golden under load, 2026-09-05).
+    if (obj && prop == &obj->TreeRank) {
+        return;
+    }
+    // The object's mirror of its view provider. A view provider property
+    // write touches ViewObject so the document notices presentation
+    // changing (ViewProviderDocumentObject::onChanged), and presentation
+    // is exactly what the live view exists to keep usable: the origin
+    // group's timer resizing its origin, a colour, a display mode. This is
+    // the only route by which a view provider property reaches this
+    // check, and it is exempted by identity like the two above (found by
+    // tests/gui/live-import-nested-loop.py: the origin resize fired
+    // inside the nested loop and aborted the command, 2026-09-06).
+    if (obj && prop == &obj->ViewObject) {
+        return;
+    }
     // Named as precisely as the caller knew, because the whole point is that
     // the command did not say what it was going to do -- so the report has to.
     std::ostringstream str;
