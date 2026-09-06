@@ -1928,4 +1928,82 @@ Gates, on `build/win-relwithdebinfo-801`:
 | C++ (`ctest -j 6`) | 473 of 473 passed, 1 disabled |
 | Python (`FreeCADCmd -t 0`) | 1336 ran; the same 6 failures + 8 errors as 7.14, all this box's environment (no `yaml`/`ply`, CRLF material fixtures, two over-long blob paths, one FEM file lock, the tetra10 yml import), not one new |
 
-Next: 7.15 items 2 to 4, in that order.
+Next: section 7.17.
+
+### 7.17 The transaction gates, measured: nothing to widen (2026-09-06)
+
+Item 2 of 7.15 asked for the `onBeforeChange` gathering to be widened so
+a break inside undo/redo is seeded.  Probed first (`probe_v5.py`, model
+A with a plane on `Face3`, `UndoMode = 1`, the generations and the
+references printed after every step), and the premise did not hold.
+
+**What the gate excludes.**  `Document::isPerformingTransaction()` is
+`undoing || rollback || Transaction::isApplying()`: true while a
+transaction is *applied* -- undo, redo, abort -- and false while one is
+merely open.  A break inside `openTransaction` / `commitTransaction` is
+therefore gathered like any other, before the commit
+(`testABreakInsideAnOpenTransactionIsSeeded`: `_BaseShape1` and the
+manifest are there with the transaction still open; the abort, which
+restores the recorded properties, takes them away and the plane reads
+`Face3` again).  D3's stated cost -- "a break that happens entirely
+inside a transaction is never seeded" -- described the open transaction,
+and that was never the case.
+
+**What the apply of a transaction does.**  The generation is a dynamic
+property and the manifest a property; both are recorded in the same
+transaction as the reference that broke and the shape that changed, so
+every state an undo or redo restores is self-consistent (`U1`: break,
+repair, undo the repair -> `?Face3` and `_BaseShape1` are back together;
+redo -> both gone; undo twice, redo -> the break again, with its
+generation; `testUndoOfARepairBringsTheGenerationBack`).  A shape change
+applied by a transaction replaces the outgoing shape with a *recorded*
+one; there is no new generation to keep, and none is lost.  Widening the
+gate would gather a generation the reconcile releases at once (no local
+referrer is missing against it), for nothing.
+
+**The one thing undo does leave behind, and why the gate is not the
+answer.**  `GeoFeature::onChanged` skips `updateElementReference()`
+while a transaction is applied, so a reference in *another* document --
+not part of the record -- is not re-resolved by the part's undo.  `U3`:
+the assembly's `?Face3` stays `?Face3` after the part's undo brings the
+face back (and stays so until the next reload, by the in-session rule of
+7.14).  `U4`, the other direction: an assembly reference made while the
+part was 25 tall reads healthy after the part's undo to 20, resolving to
+the face at z=20 by index, until the part's next change re-resolves it
+by geometry from the gathered generation (the z=20 shape, not its
+z=25 baseline) and marks it `?Face3` -- conservative, and the assembly's
+own store holds the z=25 face for the reload.  Neither is a gathering
+problem: the feature retains for local referrers only (7.13), and a
+foreign referrer's evidence is its own store.  If anything is to be done
+it is a re-resolve of foreign referrers after a transaction is applied,
+which is a question for the user, put with item 3 of 7.15 (below).
+
+**Not built.**  No gate changes; two tests record the answer.  D3 stands
+with its cost corrected: the persistence decision at save time loses
+nothing to transactions.
+
+Gates, on `build/win-relwithdebinfo-801` (tests only, no C++ change
+since 7.16):
+
+| check | result |
+| --- | --- |
+| `FreeCADCmd -t ShapeStorage` | 55 of 55 (the 2 transaction cases added) |
+| sec 2.3 matrix, C++, Python suite | as 7.16, the binaries unchanged |
+
+**For the user, before the next step (items 3 of 7.15 and the above):**
+
+1. A repair made at reload leaves the referrer untouched: the geometry
+   search found the *same* geometry, so the saved result stands and the
+   document opens clean.  The alternative is `addRecomputeObject` on the
+   referrer, as a map-version mismatch does -- the document opens
+   touched and asks for a recompute, which redoes work whose input has
+   not changed but makes the repair visible.  Which?
+2. Should references from other documents be re-resolved after a
+   transaction is applied (undo/redo/abort) in the referenced document,
+   so that an assembly's reference follows the part's undo in-session
+   rather than at the next change or reload?  It costs a resolve pass
+   over foreign referrers per applied transaction, and it changes
+   documents that the undo was not opened in.
+
+Next: item 4 of 7.15 (the Sketcher prefix) stays parked until the
+upstream merge; the two questions above decide what follows.
