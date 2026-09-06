@@ -534,7 +534,8 @@ Two of the three are gone since: publishes are content-addressed deltas
 zero timer instead of a frame (`HeadlessServe.md`). The third is exactly stage 3 of
 `SceneServerPort.md`: a push queued from the host still waits for the next tick because the
 host-side senders append to the writer's queue without waking it. Stage 3 is therefore a
-**prerequisite** of this section, and the first thing to do after it lands is to re-run the
+**prerequisite** of this section (landed the same day: `SceneServerPort.md` section 7.3,
+every path at a fraction of a millisecond on loopback), and the first thing to do after it is to re-run the
 July measurement on the dormant `'P'` channel: click, let the selection come back as a
 delta, and log click-to-delta arrival. If that lands near the round-trip time plus a few
 milliseconds, the rest of this section is building on a proven floor.

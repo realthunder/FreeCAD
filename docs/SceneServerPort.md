@@ -343,9 +343,9 @@ Each stage lands alone and is judged by the stage-0 test.
   passed 12/12 on the first run and on three, and the full ctest is
   green. Windows and macOS build the same source now, unverified here
   (section 8 item 1).
-- **Stage 3 -- the frame push.** The Cycles latency item, which by then
+- ~~**Stage 3 -- the frame push.** The Cycles latency item, which by then
   is "append to the writer's queue and wake it" (section 6.6) rather
-  than a fix.
+  than a fix.~~ Done, and wider than the frame push: section 7.3.
 - **Stage 4 -- the cloud-readiness items** from section 4: IPv6 listen,
   read deadlines, the connection cap keyed on the judged address,
   control-frame rules, and a decision on chunked bodies.
@@ -492,11 +492,74 @@ transport, on every platform:
    became the three steps of item 4; `Conn` lost its fragment
    reassembly fields. IPv4 only, the cap keyed on the socket peer,
    Content-Length without chunking: stage 4.
-8. **Latency.** The wire suite runs in 4.4 s where it ran in 3: a push
+8. ~~**Latency.** The wire suite runs in 4.4 s where it ran in 3: a push
    queued from the host still waits for the next tick to be drained,
    because `sendControl`, `sendBinary`, `broadcastControl` and
    `replyTo` append without waking. Making them wake is the whole of
-   stage 3.
+   stage 3.~~ Stage 3, section 7.3.
+
+### 7.3 Stage 3, as built: nothing waits for the tick
+
+Stage 3 was scoped as "the senders wake the writer". Read against the
+latency budget that `ThinClient.md` section 8 now puts on this server
+-- an input event replayed on the server and its scene delta back
+inside a few tens of milliseconds -- the tick turned out to gate more
+than the senders, and every one of those gates was worth more than
+that whole budget. Four changes, all in `SceneServer.cpp`:
+
+1. **Every append wakes.** `Conn::nudge()` is called by `queueText`,
+   `queueScene`, `queueFrame` and `kick`: with `connMutex` held it
+   posts the link's wake unless one is already posted and has not run
+   (`Conn::wakePosted`, cleared on the strand before the wake acts).
+   So `sendControl`, `sendBinary`, `broadcastControl`, `replyTo` and
+   every host-side push go out on the next turn of the io thread, and
+   a burst of appends costs one post.
+2. **A publish wakes every connection.** `publish()` installs the
+   version under the scene mutex, releases it, then `wakeAll()`. The
+   scene push is no longer the tick's body but its own short-lived
+   coroutine, `Push` -- the same three steps (what to serialize on the
+   strand, `payloadFor` on the worker pool, the bytes onto the outbox
+   back on the strand) started by `Session_startPush`. One push in
+   flight per connection; a wake meanwhile sets `pushAgain`, and the
+   push after it sends the current scene, so a burst of publishes
+   still coalesces as it did under the tick. `pushDue()` is the cheap
+   look that starts it -- joined, in, and holding a version other than
+   the group's, or a torn-down group to re-home from -- so a wake for a
+   control reply costs no worker hop and does not touch the scene
+   mutex.
+3. **A message wakes the scene too.** The reader already woke the
+   writer after each message; it now also starts a push, so a hello, a
+   switch or a resync gets its snapshot at once instead of at the next
+   tick. The connection start deliberately does not: a first try had
+   it push there too, and the snapshot then raced ahead of the hello
+   that names the viewer and its snapshot format -- two wire tests
+   that look the client up by its hello label right after reading the
+   snapshot caught it. A viewer that never says hello still gets its
+   scene from the tick, as before.
+4. **`TCP_NODELAY`** on every accepted socket. A control reply is a
+   small frame that may follow a large one; with Nagle on it sat
+   behind the peer's delayed ACK, tens of milliseconds on a path the
+   rest of this section measures in single ones.
+
+The tick stays, as a fallback and as the path that re-homes a
+connection whose document was torn down (`beginScenePush`), and it
+still carries the 5 s bundle-stamp check; its period is unchanged.
+What changed is that nothing user-visible depends on it.
+
+`nothingWaitsForTheTick` in the wire suite pins it: a hello's
+snapshot, eight publishes and eight host pushes each arrive inside
+half a tick, which under the tick would be (1/2)^8 of luck for either
+run of eight. Measured on loopback (RelWithDebInfo, 2026-09-06), the
+suite's `[ latency ]` line over five runs:
+
+| path | worst of the run |
+|---|---|
+| hello to snapshot | 0.3 to 0.4 ms |
+| publish to the versioned bytes | 0.2 to 0.3 ms |
+| host `sendControl` from a foreign thread to the frame | 0.2 to 0.3 ms |
+
+The whole wire suite runs in 1.1 s where item 8 had it at 4.4 s: the
+3.3 s that vanished were ticks being waited for.
 
 ## 8. Open questions for next session
 

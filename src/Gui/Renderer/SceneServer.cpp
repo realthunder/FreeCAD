@@ -1060,8 +1060,11 @@ public:
     /// connMutex.
     struct Link {
         virtual ~Link() = default;
-        /// Act on the connection's flags and its outbox now rather
-        /// than at its next poll: a kick, a server stop.
+        /// Act on the connection's flags, its outbox and the scene now
+        /// rather than at its next tick (docs/SceneServerPort.md sec
+        /// 7.3): something was queued, a version was published, a kick,
+        /// a server stop. Posted, never run inline; any thread, and
+        /// coalesced by Conn::nudge so a burst costs one post.
         virtual void wake() = 0;
     };
 
@@ -1160,6 +1163,22 @@ public:
         /// The stamp a reload was already pushed for — one push per
         /// bundle generation, no loops.
         std::string reloadPushed;
+        /// A wake is posted and has not run yet (guarded by connMutex):
+        /// the next nudge is free. Cleared by the transport on the
+        /// strand before it acts, so anything queued after that clear
+        /// posts anew.
+        bool wakePosted = false;
+
+        /// Have the link act now (sec 7.3): every append and every
+        /// publish ends here, so nothing queued from the host waits for
+        /// the tick. connMutex held.
+        void nudge()
+        {
+            if (!link || wakePosted)
+                return;
+            wakePosted = true;
+            link->wake();
+        }
 
         /// Queue a control JSON. connMutex held.
         void queueText(const std::string &json)
@@ -1168,6 +1187,7 @@ public:
             item.kind = Outgoing::Text;
             item.data.assign(json.begin(), json.end());
             outbox.push_back(std::move(item));
+            nudge();
         }
 
         /// Queue the versioned scene bytes. connMutex held.
@@ -1177,6 +1197,7 @@ public:
             item.kind = Outgoing::Scene;
             item.data = std::move(body);
             outbox.push_back(std::move(item));
+            nudge();
         }
 
         /// Queue a streamed frame. One still queued is replaced, in
@@ -1187,6 +1208,7 @@ public:
             for (Outgoing &item : outbox) {
                 if (item.kind == Outgoing::Frame) {
                     item.data = std::move(data);
+                    nudge();
                     return;
                 }
             }
@@ -1194,6 +1216,7 @@ public:
             item.kind = Outgoing::Frame;
             item.data = std::move(data);
             outbox.push_back(std::move(item));
+            nudge();
         }
 
         /// Ask this connection closed: after whatever is already
@@ -1210,10 +1233,7 @@ public:
             Outgoing bye;
             bye.kind = Outgoing::Close;
             outbox.push_back(std::move(bye));
-            // Without the wake a writer parked on an empty outbox would
-            // outlive the kick until its next tick queued something.
-            if (link)
-                link->wake();
+            nudge();
         }
     };
     std::mutex connMutex;
@@ -2261,6 +2281,35 @@ public:
         conn.queueScene(std::move(push.body));
     }
 
+    /// A version was published: every connection looks at the scene
+    /// now (sec 7.3). All of them rather than the group's, because
+    /// which group a connection is in is its own strand's business;
+    /// the look itself (pushDue) is cheap and answers no for the rest.
+    /// Called with no lock held: nudge takes connMutex, and the
+    /// publisher has just released the scene mutex.
+    void wakeAll()
+    {
+        std::lock_guard<std::mutex> guard(connMutex);
+        for (Conn *conn : conns)
+            conn->nudge();
+    }
+
+    /// Strand. Whether a scene push would send anything: the
+    /// connection is joined and in, and holds a version other than the
+    /// group's -- or its group was torn down and it must re-home
+    /// (beginScenePush does that). The cheap look that keeps a wake
+    /// for a control reply from costing a worker hop and the scene
+    /// mutex for nothing.
+    bool pushDue(Conn &conn)
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        if (!conn.group)
+            return false;
+        if (conn.group->wasServed && !conn.group->live)
+            return true;
+        return conn.authorized && conn.group->version != conn.sent;
+    }
+
     /// Ask every connection to hang up: each one's own writer sends
     /// the farewell and closes (Conn::kick). The connection half of a
     /// stop; closeListener() is the other.
@@ -2278,9 +2327,11 @@ public:
     // HTTP exchange, and the WebSocket connection scheduled as three
     // stackless coroutines on its strand (sec 5.4): a reader, a writer
     // that parks on an empty outbox and is woken through Link::wake(),
-    // and a tick that pushes the scene. The blocking work -- route()
-    // for HTTP, payloadFor() for the tick -- runs on a worker pool with
-    // only its completion back on the strand (sec 6.5).
+    // and a tick that is the fallback for the scene push -- the push
+    // itself is a fourth, short-lived coroutine started by a wake (sec
+    // 7.3). The blocking work -- route() for HTTP, payloadFor() for a
+    // push -- runs on a worker pool with only its completion back on
+    // the strand (sec 6.5).
     // ------------------------------------------------------------------
 
     using tcp = boost::asio::ip::tcp;
@@ -2370,12 +2421,19 @@ public:
         Outgoing outItem;
         boost::asio::coroutine writerCo;
         bool writerParked = false;
-        /// Coroutines still running (reader, writer, tick); the
-        /// connection is torn down when the last of them ends.
+        /// Coroutines still running (reader, writer, tick, and a push
+        /// while one is in flight); the connection is torn down when
+        /// the last of them ends.
         int live = 0;
         bool closing = false;
-        /// The tick's push, computed off the strand (sec 6.5).
+        /// The push in flight, computed off the strand (sec 6.5). One
+        /// at a time (\a pushing); a wake meanwhile asks for another
+        /// after it (\a pushAgain), which then sends the current scene
+        /// -- several publishes coalesce into one push, as they did
+        /// under a tick.
         ScenePush push;
+        bool pushing = false;
+        bool pushAgain = false;
 
         Session(Private &s, tcp::socket &&socket)
             : srv(s)
@@ -2389,11 +2447,42 @@ public:
             srv.releasePeer(ip, loopback);
         }
 
-        /// Link: act on the outbox now. From any thread.
+        /// Link: act on the outbox and the scene now. From any thread.
         void wake() override
         {
             boost::asio::post(ws.get_executor(),
-                              [self = shared_from_this()]() { self->wakeWriter(); });
+                              [self = shared_from_this()]() { self->onWake(); });
+        }
+
+        /// Strand. The posted half of wake(): clear the coalescing flag
+        /// first, so a nudge that lands from here on posts again, then
+        /// drain the outbox and look at the scene.
+        void onWake()
+        {
+            {
+                std::lock_guard<std::mutex> guard(srv.connMutex);
+                conn.wakePosted = false;
+            }
+            wakeWriter();
+            startPush();
+        }
+
+        /// Strand. Start a scene push if one would send anything and
+        /// none is in flight; note the ask otherwise.
+        void startPush()
+        {
+            srv.Session_startPush(*this);
+        }
+
+        /// Strand. The push in flight ended.
+        void endPush()
+        {
+            pushing = false;
+            ended();
+            if (pushAgain) {
+                pushAgain = false;
+                startPush();
+            }
         }
 
         /// Strand. Resume the parked writer; nothing if it is running.
@@ -2600,8 +2689,10 @@ public:
                                 c.inbuf.size());
                     c.inbuf.consume(c.inbuf.size());
                     // Whatever the message queued goes out now, not at
-                    // the next tick.
+                    // the next tick -- and a hello, a switch or a
+                    // resync gets its scene now too.
                     c.wakeWriter();
+                    c.startPush();
                 }
                 c.endReader();
             }
@@ -2640,10 +2731,41 @@ public:
         }
     };
 
+    /// One scene push of a connection (sec 7.3): the three steps of
+    /// sec 6.5 -- what to serialize, on the strand; the serialization
+    /// on the worker pool; the bytes onto the outbox, back on the
+    /// strand -- then the writer is woken. Started by a wake, whether
+    /// from a publish, from the message that changed what this
+    /// connection holds, or from the tick.
+    struct Push : boost::asio::coroutine {
+        std::shared_ptr<Session> s;
+        explicit Push(std::shared_ptr<Session> p) : s(std::move(p)) {}
+        void operator()(boost::beast::error_code = {}, std::size_t = 0)
+        {
+            Session &c = *s;
+            reenter(this) {
+                if (c.srv.beginScenePush(c.conn, c.push)) {
+                    yield boost::asio::post(c.srv.io->workers,
+                                            [self = *this]() mutable {
+                        Session &cc = *self.s;
+                        cc.srv.computeScenePush(cc.push);
+                        boost::asio::post(cc.ws.get_executor(),
+                                          std::move(self));
+                    });
+                    if (!c.closing)
+                        c.srv.commitScenePush(c.conn, c.push);
+                }
+                c.wakeWriter();
+                c.endPush();
+            }
+        }
+    };
+
     /// The tick of a connection: every kTickMs, the live bundle-stamp
-    /// check (~every 5 s) and the scene push, whose serialization runs
-    /// on the worker pool (sec 6.5). Ends with the connection, or when
-    /// it is kicked: a kicked connection pushes nothing more.
+    /// check (~every 5 s) and a look at the scene -- the fallback
+    /// behind the wakes, and the path that re-homes a connection whose
+    /// document was torn down. Ends with the connection, or when it is
+    /// kicked: a kicked connection pushes nothing more.
     struct Tick : boost::asio::coroutine {
         std::shared_ptr<Session> s;
         explicit Tick(std::shared_ptr<Session> p) : s(std::move(p)) {}
@@ -2666,18 +2788,8 @@ public:
                         if (c.conn.viewer)
                             c.srv.pushReloadIfStale(c.conn);
                     }
-                    if (c.srv.beginScenePush(c.conn, c.push)) {
-                        yield boost::asio::post(c.srv.io->workers,
-                                                [self = *this]() mutable {
-                            Session &cc = *self.s;
-                            cc.srv.computeScenePush(cc.push);
-                            boost::asio::post(cc.ws.get_executor(),
-                                              std::move(self));
-                        });
-                        if (!c.closing)
-                            c.srv.commitScenePush(c.conn, c.push);
-                    }
                     c.wakeWriter();
+                    c.startPush();
                 }
                 c.endTick();
             }
@@ -2696,6 +2808,21 @@ public:
         w();
     }
 
+    void Session_startPush(Session &c)
+    {
+        if (c.closing || !c.open || c.kickedNow())
+            return;
+        if (c.pushing) {
+            c.pushAgain = true;
+            return;
+        }
+        if (!pushDue(c.conn))
+            return;
+        c.pushing = true;
+        ++c.live;
+        Push{c.shared_from_this()}();
+    }
+
     void Session_startConnection(Session &c)
     {
         c.ws.read_message_max(kMaxMessage);
@@ -2710,7 +2837,10 @@ public:
         Reader{c.shared_from_this()}();
         Tick{c.shared_from_this()}();
         // A fresh writer resumes from its top and parks again at once
-        // unless something is already queued.
+        // unless something is already queued. No push yet: the scene
+        // follows the hello (the reader starts it), which is what says
+        // which snapshot format the viewer reads; a viewer that never
+        // says hello gets it from the tick, as before.
         c.wakeWriter();
     }
 
@@ -2738,6 +2868,11 @@ public:
         const bool loopback = isLoopback(ip);
         if (!admitPeer(ip, loopback))
             return;     // the socket closes with the object
+        // A control reply is a small frame that may follow a large
+        // one; with Nagle on it would sit behind the peer's delayed
+        // ACK, tens of milliseconds on a path this design measures in
+        // single ones (sec 7.3).
+        socket.set_option(tcp::no_delay(true), ec);
         auto s = std::make_shared<Session>(*this, std::move(socket));
         s->ip = ip;
         s->port = port;
@@ -3347,7 +3482,7 @@ void SceneStreamServer::endPublish(const void *publisher,
 void SceneStreamServer::publish(ScenePublish &&pub, const std::string &doc)
 {
     Private *p = ensure();
-    std::lock_guard<std::mutex> guard(p->mutex);
+    std::unique_lock<std::mutex> guard(p->mutex);
     Private::DocGroup &g = p->group(doc);
     if (pub.version <= g.version)
         return;   // superseded before it was installed
@@ -3368,6 +3503,10 @@ void SceneStreamServer::publish(ScenePublish &&pub, const std::string &doc)
     // must always be the bytes the version names.
     g.version = pub.version;
     p->retireBlobs(g);
+    guard.unlock();
+    // The version is installed: every connection looks at it now
+    // (docs/SceneServerPort.md sec 7.3), not at its next tick.
+    p->wakeAll();
 }
 
 void SceneStreamServer::publishBlob(const std::string &key,

@@ -19,7 +19,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -796,6 +798,66 @@ TEST_F(SceneServerWire, documentsJoinSwitchAndReHome)
     EXPECT_EQ(m.data, asString(versioned(version, payload)));
     EXPECT_TRUE(waitFor([&] { return findClient("wire-doc", info) && info.doc.empty(); }))
         << "the roster still shows the released document";
+}
+
+TEST_F(SceneServerWire, nothingWaitsForTheTick)
+{
+    // docs/SceneServerPort.md sec 7.3: a hello's snapshot, a publish and
+    // a host push each reach the wire on their own wake. The 200 ms
+    // tick is a fallback; under it each of these would wait anywhere up
+    // to a tick, so eight in a row under half of one is (1/2)^8 of
+    // luck, and on the wake it is a loopback round trip.
+    using clock = std::chrono::steady_clock;
+    auto since = [](clock::time_point t0) {
+        return std::chrono::duration<double, std::milli>(clock::now() - t0).count();
+    };
+    const double kBudgetMs = 100.0;   // half the fallback tick
+
+    auto& server = Render::SceneStreamServer::instance();
+    WsClient c(port, "/scene");
+    clock::time_point t0 = clock::now();
+    c.hello("wire-latency");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    const double helloMs = since(t0);
+    EXPECT_LT(helloMs, kBudgetMs) << "the snapshot after a hello waited for a tick";
+
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] { return findClient("wire-latency", info); }));
+
+    double publishMs = 0;
+    for (int i = 0; i < 8; ++i) {
+        const std::vector<uint8_t> next = makePayload(uint8_t(10 + i), 5000);
+        t0 = clock::now();
+        const uint64_t v = publishBytes(next);
+        ASSERT_GT(v, 0u);
+        m = c.readBinary();
+        ASSERT_TRUE(m.ok) << m.ec.message();
+        ASSERT_EQ(m.data, asString(versioned(v, next)));
+        publishMs = std::max(publishMs, since(t0));
+    }
+    EXPECT_LT(publishMs, kBudgetMs) << "a publish waited for a tick";
+
+    double pushMs = 0;
+    for (int i = 0; i < 8; ++i) {
+        const std::string note = "{\"cmd\":\"note\",\"n\":" + std::to_string(i) + "}";
+        t0 = clock::now();
+        // From a foreign thread, as the host does it.
+        std::thread([&] { EXPECT_TRUE(server.sendControl(info.id, note)); }).join();
+        m = c.read();
+        ASSERT_TRUE(m.ok) << m.ec.message();
+        ASSERT_EQ(m.data, note);
+        pushMs = std::max(pushMs, since(t0));
+    }
+    EXPECT_LT(pushMs, kBudgetMs) << "a host push waited for a tick";
+    std::printf("[ latency  ] hello %.1f ms, publish max %.1f ms, host push max %.1f ms\n",
+                helloMs, publishMs, pushMs);
+
+    // Leave the suite's payload current for the cases that follow.
+    version = publishBytes(payload);
+    m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    EXPECT_EQ(m.data, asString(versioned(version, payload)));
 }
 
 TEST_F(SceneServerWire, stopClosesEveryConnectionAndARestartServesAgain)
