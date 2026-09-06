@@ -282,7 +282,7 @@ Part::TopoShape DrawComplexSection::getShapeToPrepare() const
 }
 
 //get the shape ready for projection and cut surface finding
-TopoDS_Shape DrawComplexSection::prepareShape(const Part::TopoShape& cutShape, double shapeSize)
+Part::TopoShape DrawComplexSection::prepareShape(const Part::TopoShape& cutShape, double shapeSize)
 {
     //    Base::Console().Message("DCS::prepareShape() - strategy: %d\n", ProjectionStrategy.getValue());
     if (ProjectionStrategy.getValue() == 0) {
@@ -292,7 +292,7 @@ TopoDS_Shape DrawComplexSection::prepareShape(const Part::TopoShape& cutShape, d
 
     //"Aligned" projection (Aligned Section)
     if (m_alignResult.IsNull()) {
-        return TopoDS_Shape();
+        return Part::TopoShape();
     }
 
     // The unfolded fiction is not one rigid move of the cut shape: a
@@ -300,7 +300,9 @@ TopoDS_Shape DrawComplexSection::prepareShape(const Part::TopoShape& cutShape, d
     m_preparedFrameValid = false;
     m_cutFrameValid = false;
 
-    TopoDS_Shape centeredShape = ShapeUtils::centerShapeXY(m_alignResult, getProjectionCS());
+    //the aligned pieces are assembled in a worker from bare shapes, so there
+    //are no names to carry here -- only the type follows the base class
+    Part::TopoShape centeredShape(ShapeUtils::centerShapeXY(m_alignResult, getProjectionCS()));
     m_preparedShape = ShapeUtils::scaleShape(centeredShape, getScale());
     if (!DrawUtil::fpCompare(Rotation.getValue(), 0.0)) {
         m_preparedShape =
@@ -735,7 +737,7 @@ TopoDS_Shape DrawComplexSection::getShapeToIntersect()
         return DrawViewSection::getShapeToIntersect();
     }
     //Aligned
-    return m_preparedShape;
+    return m_preparedShape.getShape();
 }
 
 TopoDS_Shape DrawComplexSection::getShapeForDetail() const
@@ -744,7 +746,7 @@ TopoDS_Shape DrawComplexSection::getShapeForDetail() const
         return DrawViewSection::getShapeForDetail();
     }
     //Aligned
-    return m_preparedShape;
+    return m_preparedShape.getShape();
 }
 
 bool DrawComplexSection::getShapeForDetailFrame(gp_Trsf& frame) const

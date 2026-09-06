@@ -53,7 +53,7 @@ public:
     gp_Ax2 getCSFromBase(const std::string sectionName) const override;
     bool isBaseValid() const override;
     TopoDS_Compound findSectionPlaneIntersections(const TopoDS_Shape& cutShape) override;
-    TopoDS_Shape prepareShape(const Part::TopoShape& cutShape, double shapeSize) override;
+    Part::TopoShape prepareShape(const Part::TopoShape& cutShape, double shapeSize) override;
     Part::TopoShape getShapeToPrepare() const override;
     TopoDS_Shape getShapeToIntersect() override;
     gp_Pln getSectionPlane() const override;
@@ -134,7 +134,7 @@ private:
 
     Part::TopoShape m_toolFaceShape;
     TopoDS_Shape m_alignResult;
-    TopoDS_Shape m_preparedShape;//saved for detail views
+    Part::TopoShape m_preparedShape;//saved for detail views
 
     static const char* ProjectionStrategyEnums[];
 

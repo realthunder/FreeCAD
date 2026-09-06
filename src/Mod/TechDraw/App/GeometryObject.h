@@ -81,8 +81,11 @@ public:
     void setVertexGeometry(std::vector<VertexPtr> newVerts) { vertexGeom = newVerts; }
     void setEdgeGeometry(BaseGeomPtrVector newGeoms) { edgeGeom = newGeoms; }
 
-    void projectShape(const TopoDS_Shape& input, const gp_Ax2& viewAxis);
-    void projectShapeWithPolygonAlgo(const TopoDS_Shape& input, const gp_Ax2& viewAxis);
+    void projectShape(const Part::TopoShape& input, const gp_Ax2& viewAxis);
+    void projectShapeWithPolygonAlgo(const Part::TopoShape& input, const gp_Ax2& viewAxis);
+    //! The shape the projection was run on, element map and all.  It is what
+    //! the projected geometry has to be named from, so it is kept.
+    const Part::TopoShape& getProjectionShape() const { return m_projectionShape; }
     static TopoDS_Shape projectSimpleShape(const TopoDS_Shape& shape, const gp_Ax2& CS);
     static TopoDS_Shape simpleProjection(const TopoDS_Shape& shape, const gp_Ax2& projCS);
     static TopoDS_Shape projectFace(const TopoDS_Shape& face, const gp_Ax2& CS);
@@ -131,6 +134,9 @@ public:
     int addCenterLine(TechDraw::BaseGeomPtr bg, std::string tag);
 
 protected:
+    //the shape HLR was run on, kept so the projection can be named from it
+    Part::TopoShape m_projectionShape;
+
     //HLR output
     TopoDS_Shape visHard;
     TopoDS_Shape visOutline;

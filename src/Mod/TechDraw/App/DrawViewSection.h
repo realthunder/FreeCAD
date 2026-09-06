@@ -140,7 +140,7 @@ public:
     static void nameToolFaces(Part::TopoShape& tool, const gp_Pln& sectionPlane);
     virtual Part::TopoShape getShapeToCut();
     virtual bool isBaseValid() const;
-    virtual TopoDS_Shape prepareShape(const Part::TopoShape& rawShape, double shapeSize);
+    virtual Part::TopoShape prepareShape(const Part::TopoShape& rawShape, double shapeSize);
     virtual Part::TopoShape getShapeToPrepare() const { return m_cutPieces; }
 
     //CS related methods
@@ -175,7 +175,7 @@ public:
     //! until a cut has run, and for an aligned complex section, which cuts
     //! with a tool of its own.
     Part::TopoShape getCuttingToolAsBuilt() const { return m_cuttingTool; }
-    TopoDS_Shape getPreparedShape() const { return m_preparedShape; }
+    TopoDS_Shape getPreparedShape() const { return m_preparedShape.getShape(); }
 
     //! The exact build-time frames (doc sec 31), committed together
     //! with the shapes they describe: m_cutShapeRaw -> global, and
@@ -276,7 +276,7 @@ protected:
 
     Part::TopoShape m_cutPieces;//the shape after cutting, but before centering & scaling
     gp_Ax2 m_projectionCS;
-    TopoDS_Shape m_preparedShape;//the shape after cutting, centering, scaling etc
+    Part::TopoShape m_preparedShape;//the shape after cutting, centering, scaling etc
     double m_shapeSize;
 
     //! set when the cut is launched, read when it lands, then released

@@ -140,7 +140,7 @@ public:
     const char* getViewProviderName() const override { return "TechDrawGui::ViewProviderViewPart"; }
     PyObject* getPyObject() override;
 
-    static TopoDS_Shape centerScaleRotate(DrawViewPart* dvp, TopoDS_Shape& inOutShape,
+    static Part::TopoShape centerScaleRotate(DrawViewPart* dvp, Part::TopoShape& inOutShape,
                                           Base::Vector3d centroid);
 
     std::vector<TechDraw::DrawHatch*> getHatches() const;
@@ -214,6 +214,9 @@ public:
     //! the compound of the source shapes, carrying their element maps
     //! (docs/TopoNamingEnhance.md section 3)
     virtual Part::TopoShape getSourceShape(bool fuse = false) const;
+    //! the shape the last projection was run on -- centered, scaled, rotated,
+    //! and still carrying the element map.  Null until HLR has run.
+    Part::TopoShape getProjectionShape() const;
     virtual TopoDS_Shape getShapeForDetail() const;
     //! The exact transform mapping getShapeForDetail()'s result frame
     //! back to the global (source) frame -- the inverse of whatever
@@ -259,9 +262,9 @@ protected:
     void onChanged(const App::Property* prop) override;
     void unsetupObject() override;
 
-    void buildGeometryObject(TopoDS_Shape& shape, const gp_Ax2& viewAxis);
-    void makeGeometryForShape(TopoDS_Shape& shape);//const??
-    void partExec(TopoDS_Shape& shape);
+    void buildGeometryObject(const Part::TopoShape& shape, const gp_Ax2& viewAxis);
+    void makeGeometryForShape(const Part::TopoShape& shape);//const??
+    void partExec(const Part::TopoShape& shape);
 
     struct ExtractFaceParams {
         std::string featureName;

@@ -20,6 +20,14 @@ in the global frame and carrying the element map of the source features.
 With fuse=True the 3D shapes are fused first, as FuseBeforeCut does.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getProjectionShape">
+      <Documentation>
+        <UserDocu>getProjectionShape() - the 3D shape this View was projected from, as it
+reached the hidden line removal: centered on the origin, scaled and rotated, and
+carrying the element map that came with the source features.  Null until the
+projection has run.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getVisibleEdges">
       <Documentation>
         <UserDocu>getVisibleEdges() - get the visible edges in the View as Part::TopoShapeEdges</UserDocu>

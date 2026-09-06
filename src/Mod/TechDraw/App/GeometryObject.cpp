@@ -140,16 +140,17 @@ void GeometryObject::clear()
     edgeGeom.clear();
 }
 
-void GeometryObject::projectShape(const TopoDS_Shape& inShape, const gp_Ax2& viewAxis)
+void GeometryObject::projectShape(const Part::TopoShape& inShape, const gp_Ax2& viewAxis)
 {
 //    Base::Console().Message("GO::projectShape()\n");
     clear();
+    m_projectionShape = inShape;
 
     Handle(HLRBRep_Algo) brep_hlr;
     try {
         brep_hlr = new HLRBRep_Algo();
         //        brep_hlr->Debug(true);
-        brep_hlr->Add(inShape, m_isoCount);
+        brep_hlr->Add(inShape.getShape(), m_isoCount);
         if (m_isPersp) {
             double fLength = std::max(Precision::Confusion(), m_focus);
             HLRAlgo_Projector projector(viewAxis, fLength);
@@ -303,7 +304,8 @@ TopoDS_Shape ShapeUtils::invertGeometry(const TopoDS_Shape s)
 }
 
 //!set up a hidden line remover and project a shape with it
-void GeometryObject::projectShapeWithPolygonAlgo(const TopoDS_Shape& input, const gp_Ax2& viewAxis)
+void GeometryObject::projectShapeWithPolygonAlgo(const Part::TopoShape& input,
+                                                 const gp_Ax2& viewAxis)
 {
 //    Base::Console().Message("GO::projectShapeWithPolygonAlgo()\n");
     // Clear previous Geometry
@@ -312,26 +314,26 @@ void GeometryObject::projectShapeWithPolygonAlgo(const TopoDS_Shape& input, cons
     //work around for Mantis issue #3332
     //if 3332 gets fixed in OCC, this will produce shifted views and will need
     //to be reverted.
-    TopoDS_Shape inCopy;
+    Part::TopoShape inCopy;
     if (!m_isPersp) {
-        gp_Pnt gCenter = ShapeUtils::findCentroid(input, viewAxis);
+        gp_Pnt gCenter = ShapeUtils::findCentroid(input.getShape(), viewAxis);
         Base::Vector3d motion(-gCenter.X(), -gCenter.Y(), -gCenter.Z());
         inCopy = ShapeUtils::moveShape(input, motion);
     }
     else {
-        BRepBuilderAPI_Copy BuilderCopy(input);
-        inCopy = BuilderCopy.Shape();
+        inCopy = input.makECopy();
     }
+    m_projectionShape = inCopy;
 
     Handle(HLRBRep_PolyAlgo) brep_hlrPoly;
 
     try {
         // HLRBRep_PolyAlgo will fail if the whole input shape has not been meshed.
         // meshing the faces is not sufficient.
-        BRepMesh_IncrementalMesh(inCopy, 0.10);
+        BRepMesh_IncrementalMesh(inCopy.getShape(), 0.10);
 
         brep_hlrPoly = new HLRBRep_PolyAlgo();
-        brep_hlrPoly->Load(inCopy);
+        brep_hlrPoly->Load(inCopy.getShape());
 
         if (m_isPersp) {
             double fLength = std::max(Precision::Confusion(), m_focus);

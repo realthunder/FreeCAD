@@ -75,6 +75,16 @@ PyObject* DrawViewPartPy::getSourceShape(PyObject *args, PyObject *kwds)
         Part::shape2pyshape(dvp->getSourceShape(Base::asBoolean(fuse))));
 }
 
+PyObject* DrawViewPartPy::getProjectionShape(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    return Py::new_reference_to(Part::shape2pyshape(dvp->getProjectionShape()));
+}
+
 PyObject* DrawViewPartPy::getVisibleEdges(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, "")) {

@@ -674,7 +674,7 @@ void DrawViewSection::doSectionCut(const SectionParams &params)
 
 //! position, scale and rotate shape for  buildGeometryObject
 //! save the cut shape for further processing
-TopoDS_Shape DrawViewSection::prepareShape(const Part::TopoShape& rawShape, double shapeSize)
+Part::TopoShape DrawViewSection::prepareShape(const Part::TopoShape& rawShape, double shapeSize)
 {
     //    Base::Console().Message("DVS::prepareShape - %s - rawShape.IsNull: %d
     //    shapeSize: %.3f\n",
@@ -683,7 +683,7 @@ TopoDS_Shape DrawViewSection::prepareShape(const Part::TopoShape& rawShape, doub
     (void)shapeSize;// shapeSize is not used in this base class, but is
                     // interesting for derived classes
     // build display geometry as in DVP, with minor mods
-    TopoDS_Shape preparedShape;
+    Part::TopoShape preparedShape;
     try {
         Base::Vector3d origin(0.0, 0.0, 0.0);
         m_projectionCS = getProjectionCS(origin);
@@ -695,8 +695,8 @@ TopoDS_Shape DrawViewSection::prepareShape(const Part::TopoShape& rawShape, doub
         // commit the frame beside the shape it describes (doc sec 31)
         m_cutFrame = m_pendingCutFrame;
         m_cutFrameValid = m_pendingCutFrameValid;
-        preparedShape = ShapeUtils::moveShape(rawShape.getShape(), centroid * -1.0);
-        m_cutShape = preparedShape;
+        preparedShape = ShapeUtils::moveShape(rawShape, centroid * -1.0);
+        m_cutShape = preparedShape.getShape();
         m_saveCentroid = centroid;
 
         preparedShape = ShapeUtils::scaleShape(preparedShape, getScale());
@@ -859,7 +859,7 @@ void DrawViewSection::onSectionCutFinished(std::shared_ptr<TopoDS_Shape> cutPiec
 
     m_preparedShape = prepareShape(getShapeToPrepare(), m_shapeSize);
     if (debugSection()) {
-        BRepTools::Write(m_preparedShape, "DVSPreparedShape.brep");// debug
+        BRepTools::Write(m_preparedShape.getShape(), "DVSPreparedShape.brep");// debug
     }
 
     postSectionCutTasks();

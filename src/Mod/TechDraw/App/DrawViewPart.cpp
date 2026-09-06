@@ -200,8 +200,8 @@ Part::TopoShape DrawViewPart::getSourceShape(bool fuse) const
 //! version of the shape?  Should we have a getShapeForSection?
 TopoDS_Shape DrawViewPart::getShapeForDetail() const
 {
-    return ShapeUtils::rotateShape(getSourceShape(true).getShape(), getProjectionCS(),
-                                   Rotation.getValue());
+    return ShapeUtils::rotateShape(getSourceShape(true), getProjectionCS(), Rotation.getValue())
+        .getShape();
 }
 
 bool DrawViewPart::getShapeForDetailFrame(gp_Trsf& frame) const
@@ -265,8 +265,6 @@ App::DocumentObjectExecReturn* DrawViewPart::execute(void)
         Base::Console().Message("DVP::execute - %s - Source shape is Null.\n", getNameInDocument());
         return DrawView::execute();
     }
-    TopoDS_Shape shape = sourceShape.getShape();
-
     //make sure the XDirection property is valid. Mostly for older models.
     if (!checkXDirection()) {
         Base::Vector3d newX = getXDirection();
@@ -274,7 +272,7 @@ App::DocumentObjectExecReturn* DrawViewPart::execute(void)
         XDirection.purgeTouched();//don't trigger updates!
     }
 
-    partExec(shape);
+    partExec(sourceShape);
 
     return DrawView::execute();
 }
@@ -309,25 +307,30 @@ void DrawViewPart::onChanged(const App::Property* prop)
     DrawView::onChanged(prop);
 }
 
-void DrawViewPart::partExec(TopoDS_Shape& shape)
+//! the shape handed to HLR by the last projection, element map and all
+Part::TopoShape DrawViewPart::getProjectionShape() const
+{
+    if (!m_geometryObject) {
+        return Part::TopoShape();
+    }
+    return m_geometryObject->getProjectionShape();
+}
+
+void DrawViewPart::partExec(const Part::TopoShape& shape)
 {
     makeGeometryForShape(shape);
 }
 
 //! prepare the shape for HLR processing by centering, scaling and rotating it
-void DrawViewPart::makeGeometryForShape(TopoDS_Shape& shape)
+void DrawViewPart::makeGeometryForShape(const Part::TopoShape& shape)
 {
 //    Base::Console().Message("DVP::makeGeometryForShape() - %s\n", getNameInDocument());
 
-    // if we use the passed reference directly, the centering doesn't work.  Maybe the underlying OCC TShape
-    // isn't modified?  using a copy works and the referenced shape (from getSourceShape in execute())
-    // isn't used for anything anyway.
-    bool copyGeometry = true;
-    bool copyMesh = false;
-    BRepBuilderAPI_Copy copier(shape, copyGeometry, copyMesh);
-    TopoDS_Shape localShape = copier.Shape();
+    // the source shape must not be transformed in place, so the pipeline works
+    // on a copy.  makECopy is BRepBuilderAPI_Copy plus the element map.
+    Part::TopoShape localShape = shape.makECopy();
 
-    gp_Pnt gCentroid = ShapeUtils::findCentroid(localShape, getProjectionCS());
+    gp_Pnt gCentroid = ShapeUtils::findCentroid(localShape.getShape(), getProjectionCS());
     m_saveCentroid = DU::toVector3d(gCentroid);
     m_saveShape = centerScaleRotate(this, localShape, m_saveCentroid);
 
@@ -335,26 +338,26 @@ void DrawViewPart::makeGeometryForShape(TopoDS_Shape& shape)
 }
 
 //! Modify a shape by centering, scaling and rotating and return the centered (but not rotated) shape
-TopoDS_Shape DrawViewPart::centerScaleRotate(DrawViewPart* dvp, TopoDS_Shape& inOutShape,
-                                             Base::Vector3d centroid)
+Part::TopoShape DrawViewPart::centerScaleRotate(DrawViewPart* dvp, Part::TopoShape& inOutShape,
+                                                Base::Vector3d centroid)
 {
 //    Base::Console().Message("DVP::centerScaleRotate() - %s\n", dvp->getNameInDocument());
     gp_Ax2 viewAxis = dvp->getProjectionCS();
 
     //center shape on origin
-    TopoDS_Shape centeredShape = ShapeUtils::moveShape(inOutShape, centroid * -1.0);
+    Part::TopoShape centeredShape = ShapeUtils::moveShape(inOutShape, centroid * -1.0);
 
     inOutShape = ShapeUtils::scaleShape(centeredShape, dvp->getScale());
     if (!DrawUtil::fpCompare(dvp->Rotation.getValue(), 0.0)) {
         inOutShape = ShapeUtils::rotateShape(inOutShape, viewAxis,
                                            dvp->Rotation.getValue());//conventional rotation
     }
-    //    BRepTools::Write(inOutShape, "DVPScaled.brep");            //debug
+    //    BRepTools::Write(inOutShape.getShape(), "DVPScaled.brep");            //debug
     return centeredShape;
 }
 
 //! create a geometry object and trigger the HLR process in another thread
-void DrawViewPart::buildGeometryObject(TopoDS_Shape& shape, const gp_Ax2& viewAxis)
+void DrawViewPart::buildGeometryObject(const Part::TopoShape& shape, const gp_Ax2& viewAxis)
 {
     abortMakeGeometry();
 
@@ -501,8 +504,7 @@ void DrawViewPart::postHlrTasks()
         double newScale = autoScale();
         Scale.setValue(newScale);
         Scale.purgeTouched();
-        TopoDS_Shape saved = m_saveShape.getShape();
-        partExec(saved);
+        partExec(m_saveShape);
     }
 
     overrideKeepUpdated(false);
