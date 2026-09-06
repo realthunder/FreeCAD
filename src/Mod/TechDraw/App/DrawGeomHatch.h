@@ -63,6 +63,10 @@ public:
     App::PropertyFloatConstraint ScalePattern;
     App::PropertyFloat       PatternRotation;
     App::PropertyVector      PatternOffset;
+    //! the name each face of Source carried when it was picked, one entry per
+    //! subname.  A face is numbered by its area, so the number is the one
+    //! thing about it that will not last; the name is what finds it again.
+    App::PropertyStringList  SavedNames;
 
     App::DocumentObjectExecReturn *execute(void) override;
     void onChanged(const App::Property* prop) override;
@@ -76,6 +80,13 @@ public:
 
 
     DrawViewPart* getSourceView(void) const;
+
+    //! record the names of the faces Source points at, and find them again by
+    //! name when the numbering has moved.  Both are driven from the view, in
+    //! postFaceExtractionTasks: before the faces exist there is nothing to
+    //! record and nothing to find.
+    void updateSavedNames();
+    bool fixByName();
 
     std::vector<LineSet> getFaceOverlay(int i = 0);
     std::vector<LineSet> getTrimmedLines(int i = 0);

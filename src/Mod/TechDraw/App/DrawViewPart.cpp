@@ -524,6 +524,18 @@ void DrawViewPart::postFaceExtractionTasks()
     // Some centerlines depend on faces so we could not add CL geometry before now
     addCenterLinesToGeom();
 
+    // A face is numbered by its area, so a hatch's reference into this view can
+    // only be checked now that the faces exist -- and it is checked by name,
+    // which the numbering does not disturb.
+    for (auto& hatch : getHatches()) {
+        hatch->fixByName();
+        hatch->updateSavedNames();
+    }
+    for (auto& hatch : getGeomHatches()) {
+        hatch->fixByName();
+        hatch->updateSavedNames();
+    }
+
     // Dimensions need to be recomputed because their references will be invalid
     //  until all the geometry (including centerlines dependent on faces) exists.
     std::vector<TechDraw::DrawViewDimension*> dims = getDimensions();
@@ -963,6 +975,47 @@ std::string DrawViewPart::getGeometryReference(const std::string& geometryName) 
     }
 
     return {};
+}
+
+//! one name per subName, empty where the element has none
+std::vector<std::string> DrawViewPart::geometryNamesOf(App::DocumentObject* obj,
+                                                       const std::vector<std::string>& subNames)
+{
+    std::vector<std::string> names;
+    auto dvp = dynamic_cast<DrawViewPart*>(obj);
+    for (auto& subName : subNames) {
+        names.push_back(dvp ? dvp->getGeometryName(subName) : std::string());
+    }
+    return names;
+}
+
+//! move every reference whose stored name belongs to another element now
+bool DrawViewPart::repointByName(App::DocumentObject* obj,
+                                 const std::vector<std::string>& geometryNames,
+                                 std::vector<std::string>& subNames)
+{
+    auto dvp = dynamic_cast<DrawViewPart*>(obj);
+    if (!dvp || geometryNames.size() != subNames.size()) {
+        //out of step with the references, so we can not tell which name
+        //belongs to which
+        return false;
+    }
+
+    bool moved{false};
+    for (size_t i = 0; i < subNames.size(); i++) {
+        if (geometryNames.at(i).empty()) {
+            continue;
+        }
+        std::string subName = dvp->getGeometryReference(geometryNames.at(i));
+        if (subName.empty() || subName == subNames.at(i)) {
+            //nothing carries that name now, or the reference already points at it
+            continue;
+        }
+        subNames.at(i) = subName;
+        moved = true;
+    }
+
+    return moved;
 }
 
 const std::vector<TechDraw::FacePtr> DrawViewPart::getFaceGeometry() const

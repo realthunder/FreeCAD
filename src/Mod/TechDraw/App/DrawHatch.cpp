@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <iomanip>
 # include <sstream>
 #endif
@@ -54,6 +55,9 @@ DrawHatch::DrawHatch(void)
     ADD_PROPERTY_TYPE(HatchPattern, (prefSvgHatch()), vgroup, App::Prop_None, "The hatch pattern file for this area");
     ADD_PROPERTY_TYPE(SvgIncluded, (""), vgroup, App::Prop_None,
                                             "Embedded SVG hatch file. System use only.");   // n/a to end users
+    ADD_PROPERTY_TYPE(SavedNames, (), vgroup, App::Prop_None,
+                      "Names of the projected faces Source points at");
+    SavedNames.setStatus(App::Property::Hidden, true);
     std::string svgFilter("SVG files (*.svg *.SVG);;Bitmap files(*.jpg *.jpeg *.png *.bmp);;All files (*)");
     HatchPattern.setFilter(svgFilter);
 }
@@ -68,7 +72,41 @@ void DrawHatch::onChanged(const App::Property* prop)
     if (prop == &HatchPattern) {
         replaceFileIncluded(HatchPattern.getValue());
     }
+    else if (prop == &Source) {
+        updateSavedNames();
+    }
     App::DocumentObject::onChanged(prop);
+}
+
+//! record the name of each face Source points at
+void DrawHatch::updateSavedNames()
+{
+    std::vector<std::string> names =
+        DrawViewPart::geometryNamesOf(Source.getValue(), Source.getSubValues());
+
+    // while the view has no faces there is nothing to record, and recording
+    // nothing would throw away what the document brought with it
+    bool anyNamed = std::any_of(names.begin(), names.end(),
+                                [](const std::string& name) { return !name.empty(); });
+    if (!anyNamed && !SavedNames.getValues().empty()) {
+        return;
+    }
+
+    if (names != SavedNames.getValues()) {
+        SavedNames.setValues(names);
+    }
+}
+
+//! point Source at whatever faces carry the stored names now
+bool DrawHatch::fixByName()
+{
+    std::vector<std::string> subNames = Source.getSubValues();
+    if (!DrawViewPart::repointByName(Source.getValue(), SavedNames.getValues(), subNames)) {
+        return false;
+    }
+
+    Source.setValue(Source.getValue(), subNames);
+    return true;
 }
 
 App::DocumentObjectExecReturn *DrawHatch::execute(void)
