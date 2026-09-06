@@ -989,8 +989,15 @@ conda create -y -p D:\Zheng.Lei\sw\fcad\.conda\freecad ^
   libboost-devel=1.90 eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype expat ^
   fmt pybind11 numpy matplotlib-base ^
   tbb-devel "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel lazy_loader ^
-  lark
+  lark pyyaml
 ```
+
+**`pyyaml` is there for the tests, and leaving it out costs 1343 of them
+silently.** `Mod/CAM`'s tool-bit serializers `import yaml` at module scope, so
+without it `TestCAMApp` does not import -- and `FreeCADCmd -t 0` reports that as
+one loader error among thousands of passes rather than as a missing module.
+Read the total, as the note at the top of `docs/Testing.md` says. It is in the
+env on the Linux box only because something else pulled it in.
 
 **`lark` is there for the build, not the runtime**, which is why it is easy to leave
 out of an env that otherwise looks complete. `src/Mod/BIM` generates its Arch SQL
@@ -1158,6 +1165,55 @@ Confirm afterwards that the env has `Library/lib/cmake/libarea/libareaConfig.cma
 `Library/lib/area.lib`. The Windows package depends only on `vc`/`vc14_runtime`/
 `ucrt`, so unlike `smesh` it brings no `occt` question with it.
 
+**When there is no host with reachability either, build it.** libarea is its
+own repository -- `realthunder/libarea`, which GitHub serves even where
+anaconda.org is refused -- and it is a plain CMake project with Clipper built
+in and no dependency of its own, so the source route costs a minute:
+
+```bat
+git clone https://github.com/realthunder/libarea.git D:\works\sw\libarea
+.conda\run.cmd cmake -S D:/works/sw/libarea -B D:/works/sw/libarea/build/win-relwithdebinfo ^
+    -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_SHARED_LIBS=ON ^
+    -DCMAKE_INSTALL_PREFIX=D:/works/sw/fcad/.conda/freecad/Library
+.conda\run.cmd cmake --build   D:/works/sw/libarea/build/win-relwithdebinfo
+.conda\run.cmd cmake --install D:/works/sw/libarea/build/win-relwithdebinfo
+```
+
+The prefix is the env's `Library` for the reason the Linux section gives -- one
+libarea in the process, not one per consumer. What this gives up is exactly
+what the `@EXPLICIT` form was chosen for: **conda does not own these files**,
+so this is the untracked hand-install the Linux
+[libarea section](#packages-from-the-realthunder-channel) says to clean up
+before laying the package over it. Delete `Library\bin\area.dll`,
+`Library\lib\area.lib`, `Library\lib\cmake\libarea` and
+`Library\include\libarea` first if the channel ever becomes reachable.
+
+`smesh` has no such fallback -- so a box in this position builds with
+`BUILD_FEM=OFF`, which is what the preset table below already has. IfcOpenShell
+does, because it comes from conda-forge rather than from this fork's channel,
+and `prefix.dev` serves that.
+
+**IfcOpenShell without a throwaway env.** The recipe in
+[IfcOpenShell, for Arch/BIM](#ifcopenshell-for-archbim) says to solve into a
+scratch env and subtract what is already installed; a **dry run against the
+real env** answers the same question and cannot be wrong about the second half
+of it:
+
+```bat
+conda install -p .conda\freecad --override-channels -c https://prefix.dev/conda-forge ^
+    ifcopenshell --dry-run --json > ifc-dryrun.json
+```
+
+Its `actions.LINK` list is the packages to fetch -- 11 of them here. Drop
+`occt` and the `vtk` metapackage, turn the rest into
+`<base_url>/<platform>/<dist_name>.conda` lines under an `@EXPLICIT` header,
+and install that file. The URL has to be assembled because the dry-run records
+carry neither one nor a checksum; `.conda` is the extension for everything
+current on conda-forge. Confirm afterwards that `Library\bin` still holds no
+`TK*.dll`, and that `import ifcopenshell.geom` works -- that is the half which
+links OCCT, and here it resolves against the fork's kernel through the
+`add_dll_directory` entries of the `.pth` below.
+
 ### The dev shell: `.conda\run.cmd`
 
 The analogue of `.conda/run.sh`. It resolves the VS install with `vswhere`, calls
@@ -1230,7 +1286,8 @@ inherits `conda-windows-release` and overrides:
 | `CMAKE_PREFIX_PATH`, `OCC_INCLUDE_DIR` | point at the local OCCT/Coin installs instead of conda packages |
 | `OCCT_CMAKE_FALLBACK=OFF` | **required** — see below |
 | `BUILD_BGFX=ON` | the renderer |
-| `BUILD_WEB/FREECAD_USE_PCL=OFF` | same trims as the Linux local preset |
+| `FREECAD_USE_PCL=OFF` | same trim as the Linux local preset |
+| `BUILD_WEB=ON` | the env above installs a matched `qt6-webengine`, so Web/Help/AddonManager build; the version-skew dance later in this section is only for an env already pinned to an older Qt. It costs the Web module's targets and a `-DQTWEBENGINE` on every FreeCADGui TU, so decide before the cold build rather than after |
 | `BUILD_FEM/FREECAD_USE_EXTERNAL_SMESH=OFF` | Windows only -- both are **ON** on Linux now |
 | `ENABLE_DEVELOPER_TESTS=ON` | as on Linux since 2026-09-04; see "Running the C++ (GoogleTest) suites" |
 
@@ -1338,10 +1395,55 @@ An explicit `-j N` still wins over the first; nothing but reconfiguring changes 
 pool. Measured on a bare `ninja`, whose own default here is 18, sampling running
 `cl.exe` every 200 ms through an 86-edge build: 6 concurrent, never more.
 
+**The number is per box, and RAM is what sets it.** A second Windows box --
+28 threads but only 32 GB -- runs 12, in the same two places, and a cold build
+of the whole tree (7765 edges, `BUILD_WEB=ON`, bgfx's shader tools included)
+took about 75 minutes with no `C1060`. Copy the structure, not the 6.
+
 Note also that `BGFX_BUILD_TOOLS_SHADER=ON` drags in **tint/Dawn** from bgfx's
 3rdparty tree — hundreds of heavy C++ TUs that dwarf FreeCAD's own code. It is needed
 to compile shaders (`ninja Renderer_assets`), but it is the single largest
 contributor to a cold Windows build.
+
+### When processes start and then never run: endpoint security
+
+On a corporate-managed box, budget for a failure that looks like nothing in
+this document: a process starts and simply does not proceed. What it looks
+like, and how to recognise it rather than chase it:
+
+- one thread, `ThreadState Wait`, `WaitReason UserRequest` or `LpcReply`
+- **cumulative CPU near zero** and staying there -- this is the tell that
+  separates it from a slow build step
+- `Stop-Process -Force` on it alone does nothing; it dies when its parent does
+
+It is not deterministic and not tied to one program. Seen here on `ninja.exe`
+launched by a nested `try_compile` (`ninja -t restat`, the tiny invocation
+CMake makes inside every compile feature test), on freshly linked test
+executables, and on an installer under `start /wait`. Meanwhile a 5666-edge
+OCCT build and a 7765-edge FreeCAD build ran through without one.
+
+This box carries **Trend Micro Apex One** -- `TMiACAgentSvc` (Application
+Control) and `TMBMServer` (Unauthorized Change Prevention) -- plus a Check
+Point endpoint client, on top of Defender. An agent that adjudicates process
+creation over an LPC to its service is exactly the shape of that wait, and a
+just-linked unsigned binary is exactly what it holds. **The real fix is an IT
+exclusion for the tree and the env**; without one, drive the two long steps
+through a watchdog, because both resume:
+
+- **configure**: CMake writes a `try_compile` result into `CMakeCache.txt`
+  only when the test finishes, so an interrupted attempt is simply retried and
+  every completed one is kept. Killing cmake and re-running the preset is
+  monotonic progress, not a fresh start. It took two attempts here.
+- **build**: ninja keeps every finished object. Restarting is free.
+
+`D:\works\sw\tools\configure-fcad.ps1` and `build-fcad.ps1` are that loop:
+launch, poll the log's mtime, and if it has not moved for 150 s (configure) or
+300 s (build), kill that attempt's process tree and start again. Scope the kill
+to descendants of the attempt: killing every `cmake.exe` and `ninja.exe` on
+the box takes out whatever else it is building.
+
+Do not reach for these on a box without the problem; a stall watchdog will
+eventually misfire on a genuinely slow link.
 
 ### The wrapper scripts in `D:\works\sw\tools`
 
@@ -1355,6 +1457,11 @@ covered in the next section.
 | `run_cdb.ps1` | launch FreeCAD under `cdb` in one reused console |
 | `mcp_run.py <script.py>` | run Python inside the *running* FreeCAD over MCP |
 | `run-cycles.cmd` | `run.cmd` plus the two variables Cycles' GPU devices need |
+| `build-occt.cmd` / `build-coin.cmd` | the dependency recipes above, with the suffixes and prefixes filled in |
+| `build-libarea.cmd` / `build-pivy.cmd` | the two from-source packages, with the swig-421 prefix wired in |
+| `configure-fcad.ps1` / `build-fcad.ps1` | the stall-watchdog forms, for a box with the endpoint-security problem |
+| `ctest-fcad.cmd` | `cd` to the build tree and `ctest` through `run.cmd` |
+| `ctest-fcad-cleantmp.cmd` / `pytest-fcad-pty.cmd` | the same with `TMP` redirected, and the Python suite under a ConPTY -- see `docs/Testing.md` |
 
 **`build-fcad.cmd`** exists because `run.cmd` alone hid cmake failures -- it
 propagates the exit code, printing `BUILD-FCAD: CONFIGURE FAILED` or
@@ -1651,6 +1758,28 @@ Two things differ from the feedstock's `bld.bat`:
 - **SoQt is not built here**, so `find_package(SoQt CONFIG)` (not `REQUIRED`) misses
   and `pivy.gui.soqt` is skipped. FreeCAD only ever imports `pivy.coin`, so this
   costs nothing; `PIVY_USE_QT6` is irrelevant while SoQt is absent.
+- **SWIG has to be older than 4.3, and it cannot be the env's.** pivy's
+  typemaps still use the Python 2 spellings -- `PyInt_FromLong`,
+  `PyInt_AsLong`, `PyString_Check` -- which SWIG defined as macros over the
+  Python 3 API in `pyhead.swg` until **4.3.0 dropped Python 2 support and
+  removed them**. Against a newer SWIG the generated `coinPYTHON_wrap.cxx`
+  compiles into a wall of `error C3861: 'PyInt_FromLong': identifier not
+  found`, which reads as a broken checkout rather than a tool version. The env
+  carries 4.5.0, and a downgrade in place is not available -- swig 4.2.1 wants
+  a `pcre2` older than `qt6-main` 6.11.2 allows, so the solve fails outright.
+  Give it its own prefix and name it explicitly, the way `CUDA_BIN_PATH` gets
+  its own:
+
+  ```bat
+  conda create -y -p D:\works\sw\fcad\.conda\swig-421 ^
+      --override-channels -c https://prefix.dev/conda-forge swig=4.2.1
+  :: then add to the configure line
+  ::   -DSWIG_EXECUTABLE=D:/works/sw/fcad/.conda/swig-421/Library/bin/swig.exe
+  ```
+
+  Nothing else in the tree runs SWIG -- `src/Base/swigpyrun.cpp` is checked in
+  -- so the env's own copy exists only to satisfy the `find_package(SWIG)` in
+  the configure summary, and its version does not matter.
 
 `_coin.pyd` links `Coin4.lib` and needs `Coin4.dll` at runtime, which is the same
 no-rpath problem as everything else — the `.pth` in the section below already covers
