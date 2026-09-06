@@ -14,6 +14,7 @@ as "the primary tree"; that was wrong.
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **472 of 472 passing** (2026-09-04), 1 disabled -- see "C++ on Windows" |
+| C++ on macOS (`build/mac-relwithdebinfo-801`) | **not yet run in full**; the two SceneServerPort stage 5 targets pass (2026-09-06) -- see "C++ on macOS" |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -66,6 +67,24 @@ builds. It costs build time and nothing else.
 One binary directly, which is the fastest loop while working on a suite:
 
     ./tests/src/Mod/Part/TopoShapeEx_tests_run --gtest_filter='*makEBoolean*'
+
+### C++ on macOS
+
+Not green yet, because it has not been run: only the two stage 5 targets
+were built on the macOS box (`SceneServerPort.md` section 7.5), not the tree.
+What those two say, on macOS 12.7.6 Intel with conda clang 23.1.0, 2026-09-06:
+
+- `SceneServerWire_tests_run` -- **17 of 17 passing**, `listensOnIPv6Too`
+  running rather than skipping.
+- `PublishOnly_tests_run` -- 4 passing, **1 skipped**:
+  `noGraphicsDeviceIsCreated` reads `/proc/self/maps`, which macOS does not
+  have, and the case guards itself. It needs a `<mach-o/dyld.h>` port before
+  a macOS count can be called complete; until then that assertion is simply
+  not made there.
+
+The stack, and the four source fixes macOS needed to build at all, are in
+`DevEnvironment.md`, "macOS stack". The GUI tests do not register there for
+the same reason as on Windows: their guard looks for `xvfb-run`.
 
 ### C++ on Windows
 

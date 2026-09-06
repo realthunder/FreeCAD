@@ -361,10 +361,11 @@ Each stage lands alone and is judged by the stage-0 test.
   judged address only as the fallback for the anonymous, legacy door.
   The pre-auth accept cap (before any of those exist) stays as it is.
   **Done the same day: section 7.4.**
-- **Stage 5 -- verify on all three platforms.** The brief for the
-  Windows and macOS sessions is `PlatformVerification.md`: what to
-  establish, what to record (a section 7.5 here), and the macOS
-  bring-up from a blank machine.
+- **Stage 5 -- verify on all three platforms. DONE for the wire suite
+  2026-09-06** (Windows 2026-09-04, macOS 2026-09-06); see section 7.5.
+  The brief was `PlatformVerification.md`. macOS still owes a full
+  `ctest`, the headless echo test, and the `noGraphicsDeviceIsCreated`
+  dyld port.
 
 ### 7.1 The seam, as built
 
@@ -624,6 +625,57 @@ case (`SceneServerWire_tests_run`, now 17 cases):
    1002. `anOversizeControlFrameEndsTheConnection` writes a 126-byte
    ping underneath a Beast client (which would refuse to send one) and
    sees the connection closed.
+
+### 7.5 Stage 5, as verified
+
+One row per platform. Linux is the box the port was written on; the other
+two are the check that it was not written to one platform's habits.
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| OS | Ubuntu 24.04 | Windows 10 | **12.7.6 Monterey, Intel** |
+| Compiler | gcc 15.2 | MSVC 2022 | **conda clang 23.1.0, libc++** |
+| Boost | 1.90 | 1.89 | **1.92** |
+| Wire suite | 17/17 | 17/17 (2026-09-04) | **17/17** |
+| `listensOnIPv6Too` | ran | ran | **ran, passed** |
+| Peer normalisation | `127.0.0.1:` | `127.0.0.1:` | **`127.0.0.1:`** |
+| Full ctest | 485/485 | 472/472 | not yet run |
+
+macOS, 2026-09-06. Qt/PySide6 6.11.1 (6.11.2 will not install on macOS 12,
+see `DevEnvironment.md`), OCCT 8.0.1, Coin 4.0.6, SDK 11.3 from Xcode 12.5.
+
+**The transport needed no source change on macOS**, which is the result the
+stage was after. `handshakeThenHelloThenSnapshot` sees the peer as
+`127.0.0.1:`, so Asio's `is_v4_mapped` normalisation of the dual-stack
+listener (stage 4 item 1) behaves as it does on Linux, and
+`listensOnIPv6Too` ran rather than skipping, so `::1` is really being served.
+The three stage 4 protocol cases -- `theCapCountsUsersNotAddresses`,
+`aChunkedPostBodyIsRead`, `anOversizeControlFrameEndsTheConnection` -- all
+passed unchanged, so that work is Beast's behaviour and not Linux's.
+Latency on the box: hello 0.2 ms, publish max 0.2 ms, host push max 0.1 ms.
+
+`PublishOnly_tests_run`: 4 passed, 1 skipped. `noGraphicsDeviceIsCreated`
+reads `/proc/self/maps` and skips where there is none. The brief predicted a
+failure; the case already carries the guard, so macOS is a skip. **That is a
+coverage gap, not a pass** -- on macOS nothing currently asserts that a
+publish-only process maps no graphics device. The port wants
+`_dyld_image_count()` / `_dyld_get_image_name()` from `<mach-o/dyld.h>`,
+refusing `OpenGL.framework`, `Metal.framework`, `GLEngine`, `AppleGVA` and
+`/System/Library/Extensions/`. Not done.
+
+What macOS did cost was four fixes outside the transport, three of them the
+same defect: **libc++ does not include transitively where libstdc++ does.**
+`<mutex>` for `std::lock_guard` in two OCCT files, `<exception>` for
+`std::terminate` in imgui-node-editor, and -- the interesting one -- a
+`BX_PLATFORM_OSX` branch in `BGFXRendererP.h` calling a
+`get_nswindow_from_nsview()` that exists nowhere, because no macOS build had
+ever compiled it. Plus a link-order fix for Apple's `ld`, which rejects the
+duplicate fontstash symbols GNU ld accepts. All four are in
+`DevEnvironment.md`, "What macOS needed in source".
+
+Still open on macOS: the full tree and `ctest` (only the two stage 5 targets
+were built), the headless echo test of `PlatformVerification.md` section 2
+item 5 (it needs a FreeCAD binary), and the dyld port above.
 
 ## 8. Open questions for next session
 

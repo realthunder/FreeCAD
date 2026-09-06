@@ -210,10 +210,10 @@ GL to install; Qt uses Cocoa and Metal, bgfx uses Metal). On Intel use
 ```sh
 ~/miniforge3/bin/mamba create -y -p ~/works/sw/fcad/.conda/freecad \
   clang_osx-arm64 clangxx_osx-arm64 cmake ninja make swig pkg-config \
-  qt6-main=6.11.2 pyside6=6.11.2 \
+  qt6-main=6.11.1 pyside6=6.11.1 \
   python=3.12 libboost-devel eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype \
   expat fmt pybind11 numpy matplotlib-base lark
-printf 'qt6-main ==6.11.2\npyside6 ==6.11.2\npython ==3.12.*\n' \
+printf 'qt6-main ==6.11.1\npyside6 ==6.11.1\npython ==3.12.*\n' \
   > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
 cd ~/works/sw/fcad/.conda/freecad
 ln -sfn share/PySide6/typesystems typesystems    # the pyside6 CMake-config quirk, as on Linux
@@ -255,8 +255,24 @@ chmod +x ~/works/sw/fcad/.conda/run.sh
 ```
 
 The strip of `-O2` only matters for a Debug tree; the RelWithDebInfo
-builds below set their own optimisation. conda's macOS activation also
-exports `MACOSX_DEPLOYMENT_TARGET` and `-isysroot`; leave them.
+builds below set their own optimisation.
+
+*** **Corrections, from the box that ran this (2026-09-06).** Three things
+above are wrong as written, and are right in `DevEnvironment.md`, "macOS
+stack":
+- **Qt 6.11.2 does not install on macOS 12** -- its `moltenvk` wants
+  `__osx >=14.0`. The create line and the pin now say 6.11.1. A macOS 14+
+  box can and should use 6.11.2.
+- **conda's activation exports no `MACOSX_DEPLOYMENT_TARGET`,
+  `CONDA_BUILD_SYSROOT` or `CMAKE_OSX_SYSROOT`** with these compiler
+  packages. There is nothing to leave; the SDK is found through `xcrun`.
+- **`run.sh` must `unset CPATH CPLUS_INCLUDE_PATH C_INCLUDE_PATH
+  OBJC_INCLUDE_PATH LIBRARY_PATH`.** `xcrun` exports
+  `CPATH=/usr/local/include`, and `/usr/bin/python3` is an xcrun shim, so
+  any build launched through one inherits it. `CPATH` is searched as if
+  `-I` and therefore beats every `-isystem`, which is how CMake passes Qt6
+  and Boost: Homebrew's Qt5 then shadows conda's Qt6 (loudly) and
+  Homebrew's Boost shadows conda's (silently, an ABI mismatch).
 
 ### 4.4 OCCT and Coin
 
@@ -331,7 +347,7 @@ here through `CMAKE_CXX_FLAGS`.
         "OCCT_CMAKE_FALLBACK": "OFF",
         "Coin_DIR": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/lib/cmake/Coin-4.0.6",
         "COIN3D_INCLUDE_DIRS": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/include",
-        "COIN3D_LIBRARIES": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/lib/libCoin.dylib",
+        "COIN3D_LIBRARIES": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/lib/libCoinRT.dylib",
         "CMAKE_DISABLE_FIND_PACKAGE_Spnav": "TRUE",
         "FREECAD_USE_3DCONNEXION": "OFF",
         "BUILD_BGFX": "ON",
@@ -371,6 +387,15 @@ two-target build only saves compile time. That is still the right order:
 a stage 5 answer in an hour, the full tree afterwards.
 
 ### 4.6 What is expected to break on macOS, and what is not
+
+*** **What actually happened (2026-09-06), against the list below.** Item 1
+skips rather than fails -- the case already guards on `/proc/self/maps`, so
+the dyld port is still wanted but nothing goes red. Item 2 did not happen:
+bgfx built SHARED and its C++ symbols resolved. Items 3 to 5 were not
+reached, because only the two stage 5 targets were built. What did break was
+not on this list: three missing includes that only libc++ needs, a
+`BX_PLATFORM_OSX` branch calling a function that exists nowhere, and Apple
+`ld` rejecting duplicate fontstash symbols. See `SceneServerPort.md` 7.5.
 
 Known, in likely order of appearance:
 
