@@ -66,6 +66,7 @@
 #include "ObjectMetaFeed.h"
 #include "SceneControl.h"
 #include "Selection.h"
+#include "SoFCSelectionAction.h"
 #include "SoFCUnifiedSelection.h"
 #include "ViewProviderDocumentObject.h"
 
@@ -246,6 +247,10 @@ public:
     std::unique_ptr<Render::Renderer> renderer;
     QTimer timer;
     std::vector<fastsignals::scoped_connection> connections;
+    struct SelectionMirror;
+    /// The selection observer a view is and this source was not; see
+    /// its definition below.
+    std::unique_ptr<SelectionMirror> selectionMirror;
 
     /// The served Cycles viewports (sec 7.1) and what they were last
     /// fed: the scene as translated for them, kept so a stream that
@@ -587,6 +592,75 @@ public:
     }
 };
 
+/*!
+ * What View3DInventorViewer::onSelectionChanged does for a view: hand
+ * every selection change of this document to the selection root, whose
+ * render-cache feed is what the wire carries. A view is a
+ * SelectionObserver; this source was not, so a remote pick landed in
+ * Gui::Selection on the GUI thread and no publish ever showed it --
+ * the selection root never heard of it (docs/ThinClient.md sec 8.9,
+ * step 0, found by the pick-echo measurement of 2026-09-06).
+ */
+struct SceneServeSource::Private::SelectionMirror : public SelectionObserver
+{
+    SceneServeSource *source;
+    SoFCSelectionAction selectionAction;
+    SoFCHighlightAction highlightAction;
+
+    explicit SelectionMirror(SceneServeSource *src)
+        : SelectionObserver(true, ResolveMode::NoResolve)
+        , source(src)
+    {}
+
+    void onSelectionChanged(const SelectionChanges &reason) override
+    {
+        Private *p = source->pimpl.get();
+        if (!p->root || !p->doc || !p->doc->getDocument())
+            return;
+        SelectionChanges Reason(reason);
+        if (Reason.pDocName && *Reason.pDocName
+                && std::strcmp(p->doc->getDocument()->getName(),
+                               Reason.pDocName) != 0)
+            return;
+        switch (Reason.Type) {
+        case SelectionChanges::ShowSelection:
+            Reason.Type = SelectionChanges::AddSelection;
+            break;
+        case SelectionChanges::HideSelection:
+            Reason.Type = SelectionChanges::RmvSelection;
+            break;
+        case SelectionChanges::SetPreselect:
+        case SelectionChanges::RmvPreselect:
+        case SelectionChanges::SetSelection:
+        case SelectionChanges::AddSelection:
+        case SelectionChanges::RmvSelection:
+        case SelectionChanges::ClrSelection:
+            break;
+        default:
+            return;
+        }
+        // The same re-entrancy guard the viewer keeps: a notification
+        // raised from inside the traversal is dropped, not nested.
+        if (Reason.Type == SelectionChanges::SetPreselect
+                || Reason.Type == SelectionChanges::RmvPreselect) {
+            if (highlightAction.SelChange)
+                return;
+            highlightAction.SelChange = &Reason;
+            highlightAction.apply(p->root);
+            highlightAction.SelChange = nullptr;
+        }
+        else {
+            if (selectionAction.SelChange)
+                return;
+            selectionAction.SelChange = &Reason;
+            selectionAction.apply(p->root);
+            selectionAction.SelChange = nullptr;
+        }
+        // The feed changed, and with no frame loop nothing else asks.
+        source->schedulePublish();
+    }
+};
+
 SceneServeSource::SceneServeSource(Document *doc)
     : pimpl(new Private)
 {
@@ -629,6 +703,7 @@ SceneServeSource::SceneServeSource(Document *doc)
     pimpl->root->setExternalRenderer(pimpl->renderer.get(),
                                      &pimpl->renderProps);
     pimpl->attachViewProviders();
+    pimpl->selectionMirror = std::make_unique<Private::SelectionMirror>(this);
 
     // Coalesce: a recompute or a load changes many objects, and each one
     // would otherwise be a full traversal. Zero-timer, so the publish
@@ -688,6 +763,9 @@ SceneServeSource::SceneServeSource(Document *doc)
 
 SceneServeSource::~SceneServeSource()
 {
+    // Stop listening first: a selection change during the teardown
+    // below must not traverse a root that is going away.
+    pimpl->selectionMirror.reset();
     // Hand the group back before anything of this source goes away:
     // clears its publisher claim and handler slots and purges its
     // queued level jobs, so no server thread dispatches into a source

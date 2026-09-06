@@ -47,3 +47,9 @@ if(EXISTS "${_fc_chess_glb}")
     fc_add_gui_test(GuiLiveImportNestedLoop_tests_run live-import-nested-loop.py
                     --timeout 420)
 endif()
+
+# A remote pick on a headless serve source comes back as a scene push
+# (docs/ThinClient.md sec 8.9 step 0): the selection root fed nothing
+# without a viewer, and the source was no selection observer.
+fc_add_gui_test(GuiServeSelectionEcho_tests_run serve-selection-echo.py
+                --timeout 180)

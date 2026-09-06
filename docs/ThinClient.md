@@ -540,6 +540,23 @@ July measurement on the dormant `'P'` channel: click, let the selection come bac
 delta, and log click-to-delta arrival. If that lands near the round-trip time plus a few
 milliseconds, the rest of this section is building on a proven floor.
 
+**Measured 2026-09-06, no browser in the loop** (a raw-socket client sends the `'P'` ray
+and times the first binary frame back; `tests/gui/serve-selection-echo.py` is the
+permanent form). Three boxes, alternating picks, loopback:
+
+| serve shape | click to delta, median | p90 | of which pick dispatch to the GUI thread |
+|---|---|---|---|
+| `FC_BGFX_SERVE_SCENE` viewer under Xvfb (the July setup) | 6.5 ms | 8.3 ms | 1.3 ms |
+| `Gui.serveDocument`, headless, no display | 2.9 ms | 3.2 ms | 1.4 ms |
+
+A `'B'` batch of three picks comes back as one frame; a pick that changes nothing sends
+nothing. The delta is 0.8 to 1.3 KB. So the diagnosis above holds: nothing in the loop
+costs more than the pick's hop to the GUI thread plus the publish, and the rest of this
+section builds on that floor. The headless row did not exist before the measurement: a
+headless source selected and never published, because the selection root fed the render
+cache only through its viewer and the source was not a selection observer at all
+(`HeadlessServe.md`, fixed the same day).
+
 ### 8.2 The shape
 
 ```
@@ -705,9 +722,12 @@ while rule 3 of 8.2 holds.
 
 Each step is a standalone landing with the desktop as its regression oracle.
 
-0. **Stage 3 of the server port, then the measurement.** Wake the writer on push; re-enable
+0. ~~**Stage 3 of the server port, then the measurement.** Wake the writer on push; re-enable
    the eager `'P'` send in a test build; log click-to-selection-delta. This decides
-   whether 8.1's diagnosis was right before anything else is built.
+   whether 8.1's diagnosis was right before anything else is built.~~ Done 2026-09-06: the
+   table in 8.1. The eager send was exercised from a socket client rather than a viewer
+   build, which measures the whole server side of the loop and leaves the browser's own
+   few hundred microseconds out; the viewer-side re-enable is part of stage 3 below.
 1. **The viewer context.** Extract the view-less base from `View3DInventorViewer`, retype
    the view-provider entry points, kill the two desktop-state leaks in 8.3. No behavior
    change; the whole test set and a desktop sketch session are the check.
