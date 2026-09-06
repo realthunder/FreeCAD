@@ -44,7 +44,12 @@ if(BUILD_BGFX)
     # Private: nothing outside this library calls bgfx, and example-common
     # carries bgfx's own entry point, which asks any executable that links
     # it for a _main_ it does not have.
-    list(APPEND Renderer_PRIVATE_LIBS bgfx bx bimg example-common vg-renderer)
+    # vg-renderer BEFORE example-common: both vendor fontstash (vg-renderer
+    # compiles it directly, bgfx inlines it into nanovg.cpp), and nothing here
+    # uses bgfx's nanovg. With example-common first, Apple's ld resolves the
+    # fons* symbols out of nanovg.cpp.o, then pulls vg-renderer's fontstash.cpp.o
+    # for its own symbols and fails with 32 duplicates. GNU ld happens not to.
+    list(APPEND Renderer_PRIVATE_LIBS bgfx bx bimg vg-renderer example-common)
 endif(BUILD_BGFX)
 
 if(BUILD_DILIGENT)
