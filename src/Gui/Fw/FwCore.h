@@ -85,6 +85,12 @@ public:
     virtual void propertiesWritten(const QStringList& names, int source) = 0;
     virtual void requested(const QString& name, const QVariantList& args) = 0;
     virtual void layoutChanged(const QVariantMap& op) = 0;
+    /// An item view's rows changed (see `Fw::ItemView::applyItemOp`);
+    /// a backend without item views ignores it.
+    virtual void itemsChanged(const QVariantMap& op)
+    {
+        Q_UNUSED(op)
+    }
 };
 
 /// Who wrote a property.

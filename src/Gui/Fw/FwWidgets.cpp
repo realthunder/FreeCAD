@@ -957,11 +957,805 @@ void ColorButton::propertyDidChange(const QString& name, const QVariant& value)
         Q_EMIT changed();
 }
 
+// ---- dialogs (G3b) ----------------------------------------------------------
+
+Gui::Fw::QDialog::QDialog(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("QDialog"));
+    declare(QStringLiteral("modal"), false);
+    declare(QStringLiteral("result"), 0);
+    declare(QStringLiteral("width"), 0);
+    declare(QStringLiteral("height"), 0);
+}
+
+void Gui::Fw::QDialog::dispatchEvent(const QString& name, const QVariantList& args)
+{
+    if (name == QLatin1String("accepted"))
+        Q_EMIT accepted();
+    else if (name == QLatin1String("rejected"))
+        Q_EMIT rejected();
+    else if (name == QLatin1String("finished"))
+        Q_EMIT finished(args.value(0).toInt());
+}
+
+QDialogButtonBox::QDialogButtonBox(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("QDialogButtonBox"));
+    declare(QStringLiteral("standardButtons"), 0);
+    declare(QStringLiteral("orientation"), 1);
+    declare(QStringLiteral("centerButtons"), false);
+}
+
+void QDialogButtonBox::dispatchEvent(const QString& name, const QVariantList& args)
+{
+    if (name == QLatin1String("accepted"))
+        Q_EMIT accepted();
+    else if (name == QLatin1String("rejected"))
+        Q_EMIT rejected();
+    else if (name == QLatin1String("helpRequested"))
+        Q_EMIT helpRequested();
+    else if (name == QLatin1String("clicked"))
+        Q_EMIT clicked(args.value(0).toInt());
+}
+
+// ---- containers (G3b) --------------------------------------------------------
+
+QTabWidget::QTabWidget(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("QTabWidget"));
+    declare(QStringLiteral("tabs"), QStringList());
+    declare(QStringLiteral("currentIndex"), -1);
+    declare(QStringLiteral("tabsClosable"), false);
+    declare(QStringLiteral("documentMode"), false);
+    declare(QStringLiteral("tabPosition"), 0);
+}
+
+int QTabWidget::addTab(Widget* page, const QString& title, const QString& iconPath)
+{
+    return insertTab(_pages.size(), page, title, iconPath);
+}
+
+int QTabWidget::insertTab(int index, Widget* page, const QString& title, const QString& iconPath)
+{
+    if (!page)
+        return -1;
+    index = std::min(std::max(index, 0), static_cast<int>(_pages.size()));
+    page->QObject::setParent(this);
+    _pages.insert(index, page);
+    QStringList t = tabs();
+    t.insert(index, title);
+    QVariantMap m;
+    m.insert(QStringLiteral("tabs"), t);
+    if (currentIndex() < 0)
+        m.insert(QStringLiteral("currentIndex"), 0);
+    setProperties(m);
+    request(QStringLiteral("insertTab"),
+            QVariantList {index, QVariant::fromValue<QObject*>(page), title, iconPath});
+    return index;
+}
+
+void QTabWidget::removeTab(int index)
+{
+    if (index < 0 || index >= _pages.size())
+        return;
+    _pages.removeAt(index);
+    QStringList t = tabs();
+    t.removeAt(index);
+    QVariantMap m;
+    m.insert(QStringLiteral("tabs"), t);
+    m.insert(QStringLiteral("currentIndex"),
+             std::min(currentIndex(), static_cast<int>(t.size()) - 1));
+    setProperties(m);
+    request(QStringLiteral("removeTab"), QVariantList {index});
+}
+
+void QTabWidget::setTabText(int index, const QString& text)
+{
+    QStringList t = tabs();
+    if (index < 0 || index >= t.size())
+        return;
+    t[index] = text;
+    setProperty("tabs", t);
+}
+
+void QTabWidget::addPage(Widget* page, const QString& title)
+{
+    _pages.append(page);
+    QStringList t = tabs();
+    t.append(title);
+    setInitial(QStringLiteral("tabs"), t);
+    if (currentIndex() < 0)
+        setInitial(QStringLiteral("currentIndex"), 0);
+}
+
+void QTabWidget::propertyDidChange(const QString& name, const QVariant& value)
+{
+    if (name == QLatin1String("currentIndex"))
+        Q_EMIT currentChanged(value.toInt());
+}
+
+void QTabWidget::dispatchEvent(const QString& name, const QVariantList& args)
+{
+    if (name == QLatin1String("tabCloseRequested"))
+        Q_EMIT tabCloseRequested(args.value(0).toInt());
+    else if (name == QLatin1String("tabBarClicked"))
+        Q_EMIT tabBarClicked(args.value(0).toInt());
+}
+
+QStackedWidget::QStackedWidget(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("QStackedWidget"));
+    declare(QStringLiteral("currentIndex"), -1);
+}
+
+int QStackedWidget::addWidget(Widget* page)
+{
+    return insertWidget(_pages.size(), page);
+}
+
+int QStackedWidget::insertWidget(int index, Widget* page)
+{
+    if (!page)
+        return -1;
+    index = std::min(std::max(index, 0), static_cast<int>(_pages.size()));
+    page->QObject::setParent(this);
+    _pages.insert(index, page);
+    if (currentIndex() < 0)
+        setProperty("currentIndex", 0);
+    request(QStringLiteral("insertWidget"),
+            QVariantList {index, QVariant::fromValue<QObject*>(page)});
+    return index;
+}
+
+void QStackedWidget::removeWidget(Widget* page)
+{
+    if (!_pages.removeOne(page))
+        return;
+    request(QStringLiteral("removeWidget"), QVariantList {QVariant::fromValue<QObject*>(page)});
+}
+
+void QStackedWidget::propertyDidChange(const QString& name, const QVariant& value)
+{
+    if (name == QLatin1String("currentIndex"))
+        Q_EMIT currentChanged(value.toInt());
+}
+
+QScrollArea::QScrollArea(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("QScrollArea"));
+    declare(QStringLiteral("widgetResizable"), false);
+}
+
+void QScrollArea::setWidget(Widget* content)
+{
+    _content = content;
+    if (content)
+        content->QObject::setParent(this);
+    request(QStringLiteral("setWidget"), QVariantList {QVariant::fromValue<QObject*>(content)});
+}
+
+QSplitter::QSplitter(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("QSplitter"));
+    declare(QStringLiteral("orientation"), 1);
+    declare(QStringLiteral("childrenCollapsible"), true);
+    declare(QStringLiteral("sizes"), QVariantList());
+}
+
+void QSplitter::addWidget(Widget* pane)
+{
+    insertWidget(_panes.size(), pane);
+}
+
+void QSplitter::insertWidget(int index, Widget* pane)
+{
+    if (!pane)
+        return;
+    index = std::min(std::max(index, 0), static_cast<int>(_panes.size()));
+    pane->QObject::setParent(this);
+    _panes.insert(index, pane);
+    request(QStringLiteral("insertWidget"),
+            QVariantList {index, QVariant::fromValue<QObject*>(pane)});
+}
+
+void QSplitter::setSizes(const QList<int>& sizes)
+{
+    QVariantList v;
+    for (int s : sizes)
+        v.append(s);
+    setProperty("sizes", v);
+}
+
+QList<int> QSplitter::sizes() const
+{
+    QList<int> out;
+    for (const QVariant& v : property("sizes").toList())
+        out.append(v.toInt());
+    return out;
+}
+
+void QSplitter::dispatchEvent(const QString& name, const QVariantList& args)
+{
+    if (name == QLatin1String("splitterMoved"))
+        Q_EMIT splitterMoved(args.value(0).toInt(), args.value(1).toInt());
+}
+
+FileChooser::FileChooser(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("Gui::FileChooser"));
+    declare(QStringLiteral("fileName"), QString());
+    declare(QStringLiteral("mode"), 0);
+    declare(QStringLiteral("acceptMode"), 0);
+    declare(QStringLiteral("filter"), QString());
+    declare(QStringLiteral("buttonText"), QString());
+}
+
+void FileChooser::propertyDidChange(const QString& name, const QVariant& value)
+{
+    if (name == QLatin1String("fileName"))
+        Q_EMIT fileNameChanged(value.toString());
+}
+
+void FileChooser::dispatchEvent(const QString& name, const QVariantList& args)
+{
+    if (name == QLatin1String("fileNameSelected"))
+        Q_EMIT fileNameSelected(args.value(0).toString());
+}
+
+// ---- item views (G3b) ---------------------------------------------------------
+
+QVariantMap ItemCell::toMap() const
+{
+    QVariantMap m;
+    if (!text.isEmpty())
+        m.insert(QStringLiteral("text"), text);
+    if (!icon.isEmpty())
+        m.insert(QStringLiteral("icon"), icon);
+    if (!toolTip.isEmpty())
+        m.insert(QStringLiteral("toolTip"), toolTip);
+    if (!statusTip.isEmpty())
+        m.insert(QStringLiteral("statusTip"), statusTip);
+    if (!whatsThis.isEmpty())
+        m.insert(QStringLiteral("whatsThis"), whatsThis);
+    if (check.isValid())
+        m.insert(QStringLiteral("check"), check.toInt());
+    if (flags.isValid())
+        m.insert(QStringLiteral("flags"), flags.toInt());
+    if (!fg.isEmpty())
+        m.insert(QStringLiteral("fg"), fg);
+    if (!bg.isEmpty())
+        m.insert(QStringLiteral("bg"), bg);
+    if (bold)
+        m.insert(QStringLiteral("bold"), true);
+    if (align)
+        m.insert(QStringLiteral("align"), align);
+    return m;
+}
+
+void ItemCell::merge(const QVariantMap& m)
+{
+    for (auto it = m.constBegin(); it != m.constEnd(); ++it) {
+        const QString& k = it.key();
+        const QVariant& v = it.value();
+        if (k == QLatin1String("text"))
+            text = v.toString();
+        else if (k == QLatin1String("icon"))
+            icon = v.toString();
+        else if (k == QLatin1String("toolTip"))
+            toolTip = v.toString();
+        else if (k == QLatin1String("statusTip"))
+            statusTip = v.toString();
+        else if (k == QLatin1String("whatsThis"))
+            whatsThis = v.toString();
+        else if (k == QLatin1String("check"))
+            check = v.isNull() ? QVariant() : QVariant(v.toInt());
+        else if (k == QLatin1String("flags"))
+            flags = v.isNull() ? QVariant() : QVariant(v.toInt());
+        else if (k == QLatin1String("fg"))
+            fg = v.toList();
+        else if (k == QLatin1String("bg"))
+            bg = v.toList();
+        else if (k == QLatin1String("bold"))
+            bold = v.toBool();
+        else if (k == QLatin1String("align"))
+            align = v.toInt();
+    }
+}
+
+ItemView::ItemView(Widget* parent)
+    : Widget(parent)
+{
+    declare(QStringLiteral("columns"), QStringList());
+    declare(QStringLiteral("columnCount"), 1);
+    declare(QStringLiteral("rowLabels"), QStringList());
+    declare(QStringLiteral("selection"), QVariantList());
+    declare(QStringLiteral("currentId"), 0);
+    declare(QStringLiteral("currentColumn"), 0);
+    declare(QStringLiteral("selectionMode"), 1);
+    declare(QStringLiteral("selectionBehavior"), 0);
+    declare(QStringLiteral("editTriggers"), 10);
+    declare(QStringLiteral("dragDropMode"), 0);
+    declare(QStringLiteral("sortingEnabled"), false);
+    declare(QStringLiteral("alternatingRowColors"), false);
+    declare(QStringLiteral("headerHidden"), false);
+    declare(QStringLiteral("rootIsDecorated"), true);
+    declare(QStringLiteral("uniformRowHeights"), false);
+    declare(QStringLiteral("itemsExpandable"), true);
+    declare(QStringLiteral("indentation"), 20);
+    declare(QStringLiteral("showGrid"), true);
+    declare(QStringLiteral("wordWrap"), true);
+    declare(QStringLiteral("columnWidths"), QVariantList());
+    declare(QStringLiteral("cellTypes"), QVariantList());
+}
+
+const ItemRow* ItemView::row(int id) const
+{
+    auto it = _rows.constFind(id);
+    return it == _rows.constEnd() ? nullptr : &*it;
+}
+
+int ItemView::rowCount(int parentId) const
+{
+    if (parentId == 0)
+        return _top.size();
+    const ItemRow* r = row(parentId);
+    return r ? r->children.size() : 0;
+}
+
+QVariantMap ItemView::rowMap(const ItemRow& r) const
+{
+    QVariantMap m;
+    m.insert(QStringLiteral("id"), r.id);
+    QVariantList cells;
+    for (const ItemCell& c : r.cells)
+        cells.append(c.toMap());
+    m.insert(QStringLiteral("cells"), cells);
+    if (!r.children.isEmpty()) {
+        QVariantList kids;
+        for (int cid : r.children)
+            if (const ItemRow* c = row(cid))
+                kids.append(rowMap(*c));
+        m.insert(QStringLiteral("children"), kids);
+    }
+    if (r.expanded)
+        m.insert(QStringLiteral("expanded"), true);
+    if (r.hidden)
+        m.insert(QStringLiteral("hidden"), true);
+    if (r.flags.isValid())
+        m.insert(QStringLiteral("flags"), r.flags.toInt());
+    return m;
+}
+
+QVariantList ItemView::snapshot() const
+{
+    QVariantList out;
+    for (int id : _top)
+        if (const ItemRow* r = row(id))
+            out.append(rowMap(*r));
+    return out;
+}
+
+void ItemView::emitItemOp(const QVariantMap& op)
+{
+    if (backend())
+        backend()->itemsChanged(op);
+    Q_EMIT itemsChanged(op);
+}
+
+void ItemView::insertRows(int parentId, int index, const QVariantList& rows)
+{
+    if (parentId != 0 && !_rows.contains(parentId))
+        return;
+    {
+        const QList<int>& siblings = parentId == 0 ? _top : _rows[parentId].children;
+        if (index < 0 || index > siblings.size())
+            index = siblings.size();
+    }
+    for (const QVariant& v : rows) {
+        QVariantMap m = v.toMap();
+        ItemRow r;
+        r.id = m.value(QStringLiteral("id")).toInt();
+        if (r.id <= 0)
+            r.id = _nextId++;
+        else
+            _nextId = std::max(_nextId, r.id + 1);
+        r.parent = parentId;
+        for (const QVariant& c : m.value(QStringLiteral("cells")).toList()) {
+            ItemCell cell;
+            cell.merge(c.toMap());
+            r.cells.append(cell);
+        }
+        r.expanded = m.value(QStringLiteral("expanded")).toBool();
+        r.hidden = m.value(QStringLiteral("hidden")).toBool();
+        if (m.contains(QStringLiteral("flags")))
+            r.flags = m.value(QStringLiteral("flags")).toInt();
+        const int id = r.id;
+        _rows.insert(id, r);
+        // fetched anew each time: the recursion below rehashes
+        (parentId == 0 ? _top : _rows[parentId].children).insert(index++, id);
+        QVariantList kids = m.value(QStringLiteral("children")).toList();
+        if (!kids.isEmpty())
+            insertRows(id, 0, kids);
+    }
+}
+
+void ItemView::eraseRow(int id)
+{
+    auto it = _rows.find(id);
+    if (it == _rows.end())
+        return;
+    QList<int> kids = it->children;
+    int parent = it->parent;
+    _rows.erase(it);
+    for (int k : kids)
+        eraseRow(k);
+    if (parent == 0)
+        _top.removeAll(id);
+    else if (_rows.contains(parent))
+        _rows[parent].children.removeAll(id);
+}
+
+void ItemView::applyItemOp(const QVariantMap& op)
+{
+    const QString kind = op.value(QStringLiteral("item")).toString();
+    const int id = op.value(QStringLiteral("id")).toInt();
+    if (kind == QLatin1String("insert")) {
+        insertRows(op.value(QStringLiteral("parent")).toInt(),
+                   op.contains(QStringLiteral("index")) ? op.value(QStringLiteral("index")).toInt()
+                                                        : -1,
+                   op.value(QStringLiteral("rows")).toList());
+    }
+    else if (kind == QLatin1String("set")) {
+        auto it = _rows.find(id);
+        if (it == _rows.end())
+            return;
+        int col = op.value(QStringLiteral("col")).toInt();
+        while (it->cells.size() <= col)
+            it->cells.append(ItemCell());
+        it->cells[col].merge(op.value(QStringLiteral("cell")).toMap());
+    }
+    else if (kind == QLatin1String("row")) {
+        auto it = _rows.find(id);
+        if (it == _rows.end())
+            return;
+        QVariantMap r = op.value(QStringLiteral("row")).toMap();
+        if (r.contains(QStringLiteral("expanded")))
+            it->expanded = r.value(QStringLiteral("expanded")).toBool();
+        if (r.contains(QStringLiteral("hidden")))
+            it->hidden = r.value(QStringLiteral("hidden")).toBool();
+        if (r.contains(QStringLiteral("flags")))
+            it->flags = r.value(QStringLiteral("flags")).toInt();
+    }
+    else if (kind == QLatin1String("remove")) {
+        eraseRow(id);
+        QVariantList sel = property("selection").toList();
+        if (sel.removeAll(QVariant(id)) > 0)
+            setProperty("selection", sel);
+        if (currentId() == id)
+            setProperty("currentId", 0);
+    }
+    else if (kind == QLatin1String("clear")) {
+        _rows.clear();
+        _top.clear();
+    }
+    else if (kind != QLatin1String("sort")) {
+        return;
+    }
+    emitItemOp(op);
+}
+
+int ItemView::insertRow(int parentId, int index, const QStringList& texts)
+{
+    QVariantList cells;
+    for (const QString& t : texts) {
+        ItemCell c;
+        c.text = t;
+        cells.append(c.toMap());
+    }
+    QVariantMap r;
+    r.insert(QStringLiteral("id"), _nextId);
+    r.insert(QStringLiteral("cells"), cells);
+    QVariantMap op;
+    op.insert(QStringLiteral("item"), QStringLiteral("insert"));
+    op.insert(QStringLiteral("parent"), parentId);
+    op.insert(QStringLiteral("index"), index < 0 ? rowCount(parentId) : index);
+    op.insert(QStringLiteral("rows"), QVariantList {r});
+    int id = _nextId;
+    applyItemOp(op);
+    return id;
+}
+
+void ItemView::removeRow(int id)
+{
+    QVariantMap op;
+    op.insert(QStringLiteral("item"), QStringLiteral("remove"));
+    op.insert(QStringLiteral("id"), id);
+    applyItemOp(op);
+}
+
+void ItemView::clearRows()
+{
+    QVariantMap op;
+    op.insert(QStringLiteral("item"), QStringLiteral("clear"));
+    applyItemOp(op);
+    QVariantMap m;
+    m.insert(QStringLiteral("selection"), QVariantList());
+    m.insert(QStringLiteral("currentId"), 0);
+    setProperties(m);
+}
+
+namespace
+{
+QVariantMap cellOp(int id, int column, const QString& key, const QVariant& value)
+{
+    QVariantMap cell;
+    cell.insert(key, value);
+    QVariantMap op;
+    op.insert(QStringLiteral("item"), QStringLiteral("set"));
+    op.insert(QStringLiteral("id"), id);
+    op.insert(QStringLiteral("col"), column);
+    op.insert(QStringLiteral("cell"), cell);
+    return op;
+}
+
+QVariantMap rowOp(int id, const QString& key, const QVariant& value)
+{
+    QVariantMap r;
+    r.insert(key, value);
+    QVariantMap op;
+    op.insert(QStringLiteral("item"), QStringLiteral("row"));
+    op.insert(QStringLiteral("id"), id);
+    op.insert(QStringLiteral("row"), r);
+    return op;
+}
+}  // namespace
+
+QString ItemView::text(int id, int column) const
+{
+    const ItemRow* r = row(id);
+    return r ? r->cells.value(column).text : QString();
+}
+
+void ItemView::setText(int id, int column, const QString& text)
+{
+    if (row(id)) {
+        applyItemOp(cellOp(id, column, QStringLiteral("text"), text));
+        Q_EMIT itemChanged(id, column);
+    }
+}
+
+void ItemView::setIcon(int id, int column, const QString& iconPath)
+{
+    if (row(id))
+        applyItemOp(cellOp(id, column, QStringLiteral("icon"), iconPath));
+}
+
+void ItemView::setToolTip(int id, int column, const QString& text)
+{
+    if (row(id))
+        applyItemOp(cellOp(id, column, QStringLiteral("toolTip"), text));
+}
+
+int ItemView::checkState(int id, int column) const
+{
+    const ItemRow* r = row(id);
+    return r ? r->cells.value(column).check.toInt() : 0;
+}
+
+void ItemView::setCheckState(int id, int column, int state)
+{
+    if (row(id)) {
+        applyItemOp(cellOp(id, column, QStringLiteral("check"), state));
+        Q_EMIT itemChanged(id, column);
+    }
+}
+
+void ItemView::setFlags(int id, int flags)
+{
+    if (row(id))
+        applyItemOp(rowOp(id, QStringLiteral("flags"), flags));
+}
+
+void ItemView::setExpanded(int id, bool on)
+{
+    if (row(id))
+        applyItemOp(rowOp(id, QStringLiteral("expanded"), on));
+}
+
+bool ItemView::isExpanded(int id) const
+{
+    const ItemRow* r = row(id);
+    return r && r->expanded;
+}
+
+void ItemView::setRowHidden(int id, bool on)
+{
+    if (row(id))
+        applyItemOp(rowOp(id, QStringLiteral("hidden"), on));
+}
+
+void ItemView::setColumns(const QStringList& labels)
+{
+    QVariantMap m;
+    m.insert(QStringLiteral("columns"), labels);
+    m.insert(QStringLiteral("columnCount"),
+             std::max(columnCount(), static_cast<int>(labels.size())));
+    setProperties(m);
+}
+
+int ItemView::columnCount() const
+{
+    return std::max(property("columnCount").toInt(), static_cast<int>(columns().size()));
+}
+
+QList<int> ItemView::selection() const
+{
+    QList<int> out;
+    for (const QVariant& v : property("selection").toList())
+        out.append(v.toInt());
+    return out;
+}
+
+void ItemView::setSelection(const QList<int>& ids)
+{
+    QVariantList v;
+    for (int id : ids)
+        v.append(id);
+    setProperty("selection", v);
+}
+
+void ItemView::select(int id, bool on)
+{
+    QList<int> sel = selection();
+    if (on && !sel.contains(id))
+        sel.append(id);
+    else if (!on)
+        sel.removeAll(id);
+    else
+        return;
+    setSelection(sel);
+}
+
+void ItemView::setCurrent(int id, int column)
+{
+    QVariantMap m;
+    m.insert(QStringLiteral("currentId"), id);
+    m.insert(QStringLiteral("currentColumn"), column);
+    setProperties(m);
+    if (id)
+        select(id, true);
+}
+
+void ItemView::setColumnWidth(int column, int width)
+{
+    QVariantList widths = property("columnWidths").toList();
+    while (widths.size() <= column)
+        widths.append(100);
+    widths[column] = width;
+    setProperty("columnWidths", widths);
+}
+
+void ItemView::propertyDidChange(const QString& name, const QVariant& value)
+{
+    if (name == QLatin1String("selection")) {
+        Q_EMIT itemSelectionChanged();
+    }
+    else if (name == QLatin1String("currentId")) {
+        int prev = _previousCurrent;
+        _previousCurrent = value.toInt();
+        Q_EMIT currentItemChanged(value.toInt(), prev);
+    }
+}
+
+void ItemView::dispatchEvent(const QString& name, const QVariantList& args)
+{
+    const int id = args.value(0).toInt();
+    const int col = args.value(1).toInt();
+    if (name == QLatin1String("itemClicked"))
+        Q_EMIT itemClicked(id, col);
+    else if (name == QLatin1String("itemDoubleClicked"))
+        Q_EMIT itemDoubleClicked(id, col);
+    else if (name == QLatin1String("itemActivated"))
+        Q_EMIT itemActivated(id, col);
+    else if (name == QLatin1String("itemPressed"))
+        Q_EMIT itemPressed(id, col);
+    else if (name == QLatin1String("itemEdited")) {
+        auto it = _rows.find(id);
+        if (it == _rows.end())
+            return;
+        while (it->cells.size() <= col)
+            it->cells.append(ItemCell());
+        it->cells[col].merge(args.value(2).toMap());
+        Q_EMIT itemChanged(id, col);
+    }
+    else if (name == QLatin1String("itemExpanded")) {
+        auto it = _rows.find(id);
+        if (it != _rows.end())
+            it->expanded = true;
+        Q_EMIT itemExpanded(id);
+    }
+    else if (name == QLatin1String("itemCollapsed")) {
+        auto it = _rows.find(id);
+        if (it != _rows.end())
+            it->expanded = false;
+        Q_EMIT itemCollapsed(id);
+    }
+}
+
+QListWidget::QListWidget(Widget* parent)
+    : ItemView(parent)
+{
+    setQtClass(QStringLiteral("QListWidget"));
+    setInitial(QStringLiteral("rootIsDecorated"), false);
+}
+
+QTreeWidget::QTreeWidget(Widget* parent)
+    : ItemView(parent)
+{
+    setQtClass(QStringLiteral("QTreeWidget"));
+}
+
+QTreeView::QTreeView(Widget* parent)
+    : ItemView(parent)
+{
+    setQtClass(QStringLiteral("QTreeView"));
+}
+
+QTableWidget::QTableWidget(Widget* parent)
+    : ItemView(parent)
+{
+    setQtClass(QStringLiteral("QTableWidget"));
+    setInitial(QStringLiteral("rootIsDecorated"), false);
+    setInitial(QStringLiteral("columnCount"), 0);
+}
+
+void QTableWidget::setRowCount(int n)
+{
+    while (rowCount() > n)
+        removeRow(topLevel().last());
+    while (rowCount() < n) {
+        QStringList texts;
+        for (int c = 0; c < columnCount(); ++c)
+            texts.append(QString());
+        addRow(texts);
+    }
+}
+
+void QTableWidget::setItemText(int rowIndex, int column, const QString& text)
+{
+    if (rowCount() <= rowIndex)
+        setRowCount(rowIndex + 1);
+    setText(topLevel().value(rowIndex), column, text);
+}
+
+QListView::QListView(Widget* parent)
+    : ItemView(parent)
+{
+    setQtClass(QStringLiteral("QListView"));
+    setInitial(QStringLiteral("rootIsDecorated"), false);
+}
+
+QTableView::QTableView(Widget* parent)
+    : ItemView(parent)
+{
+    setQtClass(QStringLiteral("QTableView"));
+    setInitial(QStringLiteral("rootIsDecorated"), false);
+}
+
 // ---- the form -------------------------------------------------------------------
 
 UiForm::UiForm(Widget* parent)
-    : Widget(parent)
-{}
+    : Gui::Fw::QDialog(parent)
+{
+    setQtClass(QStringLiteral("QWidget"));
+}
 
 void UiForm::addNamed(const QString& name, Widget* widget)
 {
@@ -1023,6 +1817,21 @@ const std::map<QString, Maker>& classTable()
         {QStringLiteral("Gui::PrefSlider"), maker<QSlider>()},
         {QStringLiteral("Gui::PrefCheckableGroupBox"), maker<QGroupBox>()},
         {QStringLiteral("Gui::PrefFontBox"), maker<QFontComboBox>()},
+        {QStringLiteral("QDialog"), maker<Gui::Fw::QDialog>()},
+        {QStringLiteral("QDialogButtonBox"), maker<QDialogButtonBox>()},
+        {QStringLiteral("QTabWidget"), maker<QTabWidget>()},
+        {QStringLiteral("QStackedWidget"), maker<QStackedWidget>()},
+        {QStringLiteral("QScrollArea"), maker<QScrollArea>()},
+        {QStringLiteral("QSplitter"), maker<QSplitter>()},
+        {QStringLiteral("Gui::FileChooser"), maker<FileChooser>()},
+        {QStringLiteral("Gui::PrefFileChooser"), maker<FileChooser>()},
+        {QStringLiteral("QListWidget"), maker<QListWidget>()},
+        {QStringLiteral("QTreeWidget"), maker<QTreeWidget>()},
+        {QStringLiteral("QTreeView"), maker<QTreeView>()},
+        {QStringLiteral("QTableWidget"), maker<QTableWidget>()},
+        {QStringLiteral("QListView"), maker<QListView>()},
+        {QStringLiteral("QTableView"), maker<QTableView>()},
+        {QStringLiteral("QColumnView"), maker<QTreeView>()},
         {QStringLiteral("UiForm"), maker<UiForm>()},
     };
     return table;
@@ -1040,6 +1849,8 @@ QString classOfModel(const QString& modelName)
         return QStringLiteral("Gui::QuantitySpinBox");
     if (base == QLatin1String("ColorButton"))
         return QStringLiteral("Gui::ColorButton");
+    if (base == QLatin1String("FileChooser"))
+        return QStringLiteral("Gui::FileChooser");
     return base;
 }
 }  // namespace

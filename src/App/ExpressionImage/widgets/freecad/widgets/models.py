@@ -169,6 +169,11 @@ def _q(name):
     return PREFIX + name
 
 
+def _ref(widget):
+    """A widget named in a request: its model ref, the host resolves it."""
+    return None if widget is None else "IPY_MODEL_" + widget.model_id
+
+
 class QWidget(ipywidgets.Widget):
     """The base: identity, visibility, enablement, tooltip, the window
     properties of a root, and the children tree (guest side)."""
@@ -1882,19 +1887,737 @@ class ColorButton(QPushButton):
 # -- the form loaded from a .ui file ----------------------------------------
 
 
-class UiForm(QWidget):
+
+# -- dialogs (G3b) ------------------------------------------------------------
+
+
+class QDialog(QWidget):
+    """A dialog: `exec_()` is one synchronous op (the host runs a nested
+    event loop; the guest's slots run nested in it), `accept`/`reject`/
+    `done` are requests, `accepted`/`rejected`/`finished` come back as
+    events, `result` as state.  A `.ui` file whose root is a QDialog
+    loads as a UiForm, which IS one of these."""
+
+    _model_name = Unicode("QDialogModel").tag(sync=True)
+    qt_class = "QDialog"
+    q_modal = Bool(False).tag(sync=True)
+    q_result = Int(0).tag(sync=True)
+    q_width = Int(0).tag(sync=True)
+    q_height = Int(0).tag(sync=True)
+
+    Rejected = 0
+    Accepted = 1
+
+    accepted = Signal()
+    rejected = Signal()
+    finished = Signal(int)
+
+    def _fcx_init_args(self, args, kwargs):
+        # QDialog(parent, flags): the flags are not a subset concern
+        args[:] = [a for a in args if not isinstance(a, int)]
+        QWidget._fcx_init_args(self, args, kwargs)
+
+    def exec_(self):
+        import _fcx
+
+        return int(_fcx.op("gui.dialog.exec", 0, self.model_id) or 0)
+
+    exec = exec_
+
+    # NOT `open`: ipywidgets' Widget.open() makes the comm, and Qt's
+    # modeless QDialog.open() would shadow it (no form would have one)
+
+    def accept(self):
+        self._event("accept")
+
+    def reject(self):
+        self._event("reject")
+
+    def done(self, r):
+        self._event("done", int(r))
+
+    def close(self):
+        """Qt's: the window closes (rejected if it was open); the object
+        lives on.  ipywidgets' close (the comm's) is `__del__`'s."""
+        self._event("close")
+        return True
+
+    def __del__(self):
+        try:
+            ipywidgets.Widget.close(self)
+        except Exception:
+            pass
+
+    def result(self):
+        return self.q_result
+
+    def setResult(self, r):
+        self._set(result=int(r))
+
+    def setModal(self, on):
+        self._set(modal=bool(on))
+
+    def isModal(self):
+        return self.q_modal
+
+    def setWindowModality(self, m):
+        self._set(modal=int(m) != 0)
+
+    def setWindowFlags(self, flags):
+        pass
+
+    def setWindowFlag(self, flag, on=True):
+        pass
+
+    def windowFlags(self):
+        return 0
+
+    def setSizeGripEnabled(self, on):
+        pass
+
+    def move(self, *args):
+        pt = args[0] if len(args) == 1 else qtdata.QPoint(*args)
+        self._event("move", int(pt.x()), int(pt.y()))
+
+    def resize(self, *args):
+        sz = args[0] if len(args) == 1 else qtdata.QSize(*args)
+        self._event("resize", int(sz.width()), int(sz.height()))
+
+    def raise_(self):
+        self._event("raise")
+
+    def activateWindow(self):
+        self._event("activateWindow")
+
+    def adjustSize(self):
+        self._event("adjustSize")
+
+    def width(self):
+        return self.q_width
+
+    def height(self):
+        return self.q_height
+
+    def rect(self):
+        return qtdata.QRect(0, 0, self.q_width, self.q_height)
+
+    def geometry(self):
+        return self.rect()
+
+    def frameGeometry(self):
+        return self.rect()
+
+    def size(self):
+        return qtdata.QSize(self.q_width, self.q_height)
+
+    def pos(self):
+        return qtdata.QPoint(0, 0)
+
+
+class _ButtonBoxButton:
+    """`buttonBox.button(QDialogButtonBox.Ok)`: a handle on one of the
+    box's buttons; each call a request the host applies to the real
+    button."""
+
+    def __init__(self, box, which):
+        self._box = box
+        self._which = int(which)
+
+    def _call(self, method, *args):
+        self._box._event("button", self._which, method, list(args))
+
+    def setEnabled(self, on):
+        self._call("setEnabled", bool(on))
+
+    def setDisabled(self, on):
+        self._call("setEnabled", not on)
+
+    def setText(self, text):
+        self._call("setText", str(text))
+
+    def setDefault(self, on):
+        self._call("setDefault", bool(on))
+
+    def setAutoDefault(self, on):
+        self._call("setAutoDefault", bool(on))
+
+    def setFocus(self, *args):
+        self._call("setFocus")
+
+    def setIcon(self, icon):
+        self._call("setIcon", _icon_path(icon))
+
+    def setToolTip(self, text):
+        self._call("setToolTip", str(text))
+
+    def setVisible(self, on):
+        self._call("setVisible", bool(on))
+
+    def hide(self):
+        self.setVisible(False)
+
+    def show(self):
+        self.setVisible(True)
+
+    def click(self):
+        self._call("click")
+
+    def animateClick(self, *args):
+        self._call("click")
+
+    @property
+    def clicked(self):
+        return self._box._button_signal(self._which)
+
+
+class QDialogButtonBox(QWidget):
+    """The standard buttons of a dialog: which ones (Qt's flag values,
+    the enum the guest's getStandardButtons already returns), their
+    orientation; `accepted`/`rejected`/`clicked`/`helpRequested` from
+    the host."""
+
+    _model_name = Unicode("QDialogButtonBoxModel").tag(sync=True)
+    qt_class = "QDialogButtonBox"
+    q_standardButtons = Int(0).tag(sync=True)
+    q_orientation = Int(1).tag(sync=True)
+    q_centerButtons = Bool(False).tag(sync=True)
+
+    AcceptRole = 0
+    RejectRole = 1
+    DestructiveRole = 2
+    ActionRole = 3
+    HelpRole = 4
+    YesRole = 5
+    NoRole = 6
+    ResetRole = 7
+    ApplyRole = 8
+
+    accepted = Signal()
+    rejected = Signal()
+    helpRequested = Signal()
+    clicked = Signal(object)
+
+    def _fcx_init_args(self, args, kwargs):
+        rest = []
+        for a in args:
+            if isinstance(a, int):
+                if a in (1, 2):
+                    kwargs["q_orientation"] = a
+                else:
+                    kwargs["q_standardButtons"] = a
+            else:
+                rest.append(a)
+        args[:] = rest
+        QWidget._fcx_init_args(self, args, kwargs)
+        self._button_signals = {}
+
+    def setStandardButtons(self, buttons):
+        self._set(standardButtons=int(buttons))
+
+    def standardButtons(self):
+        return self.q_standardButtons
+
+    def setOrientation(self, o):
+        self._set(orientation=int(o))
+
+    def orientation(self):
+        return self.q_orientation
+
+    def setCenterButtons(self, on):
+        self._set(centerButtons=bool(on))
+
+    def button(self, which):
+        return _ButtonBoxButton(self, which)
+
+    def _button_signal(self, which):
+        s = self._button_signals.get(which)
+        if s is None:
+            s = self._button_signals[which] = BoundSignal(self, "clicked")
+        return s
+
+    def addButton(self, *args):
+        if len(args) == 1 and isinstance(args[0], int):
+            self._set(standardButtons=self.q_standardButtons | int(args[0]))
+            return self.button(args[0])
+        raise TypeError("QDialogButtonBox.addButton(widget, role) is not in the sandbox's"
+                        " subset yet (G3c)")
+
+    def removeButton(self, button):
+        if isinstance(button, _ButtonBoxButton):
+            self._set(standardButtons=self.q_standardButtons & ~button._which)
+
+    def standardButton(self, button):
+        return button._which if isinstance(button, _ButtonBoxButton) else 0
+
+    def buttons(self):
+        return [self.button(b) for b in _standard_button_values() if self.q_standardButtons & b]
+
+    def _handle_custom_msg(self, content, buffers):
+        if isinstance(content, dict) and content.get("event") == "clicked":
+            which = (content.get("args") or [0])[0]
+            handle = self.button(which)
+            self.clicked.emit(handle)
+            sig = self._button_signals.get(int(which))
+            if sig is not None:
+                sig.emit(False)
+            return
+        QWidget._handle_custom_msg(self, content, buffers)
+
+
+def _standard_button_values():
+    return [v for k, v in vars(qtdata.QDialogButtonBoxButtons).items()
+            if isinstance(v, int) and not k.startswith("_")]
+
+
+for _k, _v in vars(qtdata.QDialogButtonBoxButtons).items():
+    if isinstance(_v, int) and not _k.startswith("_"):
+        setattr(QDialogButtonBox, _k, _v)
+del _k, _v
+QDialogButtonBox.StandardButton = qtdata.QDialogButtonBoxButtons
+
+
+# -- containers (G3b) --------------------------------------------------------
+
+
+class QTabWidget(QWidget):
+    """Pages with titles: the pages are child widgets, the titles the
+    `tabs` state, the current one an index."""
+
+    _model_name = Unicode("QTabWidgetModel").tag(sync=True)
+    qt_class = "QTabWidget"
+    q_tabs = List(Unicode()).tag(sync=True)
+    q_currentIndex = Int(-1).tag(sync=True)
+    q_tabsClosable = Bool(False).tag(sync=True)
+    q_documentMode = Bool(False).tag(sync=True)
+    q_tabPosition = Int(0).tag(sync=True)
+
+    North = 0
+    South = 1
+    West = 2
+    East = 3
+    Rounded = 0
+    Triangular = 1
+
+    currentChanged = Signal(int)
+    tabCloseRequested = Signal(int)
+    tabBarClicked = Signal(int)
+
+    def _fcx_init_args(self, args, kwargs):
+        QWidget._fcx_init_args(self, args, kwargs)
+        self._pages = []
+
+    def addTab(self, widget, *args):
+        return self.insertTab(len(self._pages), widget, *args)
+
+    def insertTab(self, index, widget, *args):
+        title = ""
+        icon = None
+        for a in args:
+            if isinstance(a, str):
+                title = a
+            elif isinstance(a, qtdata.QIcon):
+                icon = a
+        widget._attach(self)
+        self._pages.insert(index, widget)
+        tabs = list(self.q_tabs)
+        tabs.insert(index, title)
+        current = self.q_currentIndex if self.q_currentIndex >= 0 else 0
+        self._set(tabs=tabs, currentIndex=current)
+        self._event("insertTab", index, _ref(widget), title, _icon_path(icon) if icon else "")
+        return index
+
+    def removeTab(self, index):
+        if 0 <= index < len(self._pages):
+            self._pages.pop(index)
+            tabs = list(self.q_tabs)
+            tabs.pop(index)
+            current = min(self.q_currentIndex, len(tabs) - 1)
+            self._set(tabs=tabs, currentIndex=current)
+            self._event("removeTab", index)
+
+    def clear(self):
+        while self._pages:
+            self.removeTab(0)
+
+    def count(self):
+        return len(self.q_tabs)
+
+    def widget(self, index):
+        return self._pages[index] if 0 <= index < len(self._pages) else None
+
+    def indexOf(self, widget):
+        try:
+            return self._pages.index(widget)
+        except ValueError:
+            return -1
+
+    def currentIndex(self):
+        return self.q_currentIndex
+
+    def setCurrentIndex(self, index):
+        self._set(currentIndex=int(index))
+
+    def currentWidget(self):
+        return self.widget(self.q_currentIndex)
+
+    def setCurrentWidget(self, widget):
+        i = self.indexOf(widget)
+        if i >= 0:
+            self.setCurrentIndex(i)
+
+    def tabText(self, index):
+        return self.q_tabs[index] if 0 <= index < len(self.q_tabs) else ""
+
+    def setTabText(self, index, text):
+        tabs = list(self.q_tabs)
+        if 0 <= index < len(tabs):
+            tabs[index] = str(text)
+            self._set(tabs=tabs)
+
+    def setTabEnabled(self, index, on):
+        self._event("setTabEnabled", int(index), bool(on))
+
+    def isTabEnabled(self, index):
+        return True
+
+    def setTabVisible(self, index, on):
+        self._event("setTabVisible", int(index), bool(on))
+
+    def setTabToolTip(self, index, text):
+        self._event("setTabToolTip", int(index), str(text))
+
+    def setTabIcon(self, index, icon):
+        self._event("setTabIcon", int(index), _icon_path(icon))
+
+    def setTabsClosable(self, on):
+        self._set(tabsClosable=bool(on))
+
+    def setDocumentMode(self, on):
+        self._set(documentMode=bool(on))
+
+    def setTabPosition(self, p):
+        self._set(tabPosition=int(p))
+
+    def setTabShape(self, s):
+        pass
+
+    def setMovable(self, on):
+        pass
+
+    def setUsesScrollButtons(self, on):
+        pass
+
+    def setElideMode(self, m):
+        pass
+
+    def tabBar(self):
+        return self
+
+    def _fcx_page(self, widget, title):
+        """The .ui loader: a page uic already placed."""
+        self._pages.append(widget)
+
+    @observe("q_currentIndex")
+    def _fcx_index(self, change):
+        self.currentChanged.emit(change["new"])
+
+
+class QStackedWidget(QWidget):
+    _model_name = Unicode("QStackedWidgetModel").tag(sync=True)
+    qt_class = "QStackedWidget"
+    q_currentIndex = Int(-1).tag(sync=True)
+
+    currentChanged = Signal(int)
+    widgetRemoved = Signal(int)
+
+    def _fcx_init_args(self, args, kwargs):
+        QWidget._fcx_init_args(self, args, kwargs)
+        self._pages = []
+
+    def addWidget(self, widget):
+        return self.insertWidget(len(self._pages), widget)
+
+    def insertWidget(self, index, widget):
+        widget._attach(self)
+        self._pages.insert(index, widget)
+        if self.q_currentIndex < 0:
+            self._set(currentIndex=0)
+        self._event("insertWidget", index, _ref(widget))
+        return index
+
+    def removeWidget(self, widget):
+        if widget in self._pages:
+            i = self._pages.index(widget)
+            self._pages.remove(widget)
+            self._event("removeWidget", _ref(widget))
+            self.widgetRemoved.emit(i)
+
+    def count(self):
+        return len(self._pages)
+
+    def widget(self, index):
+        return self._pages[index] if 0 <= index < len(self._pages) else None
+
+    def indexOf(self, widget):
+        try:
+            return self._pages.index(widget)
+        except ValueError:
+            return -1
+
+    def currentIndex(self):
+        return self.q_currentIndex
+
+    def setCurrentIndex(self, index):
+        self._set(currentIndex=int(index))
+
+    def currentWidget(self):
+        return self.widget(self.q_currentIndex)
+
+    def setCurrentWidget(self, widget):
+        i = self.indexOf(widget)
+        if i >= 0:
+            self.setCurrentIndex(i)
+
+    def _fcx_page(self, widget, title=""):
+        self._pages.append(widget)
+
+    @observe("q_currentIndex")
+    def _fcx_index(self, change):
+        self.currentChanged.emit(change["new"])
+
+
+class QScrollArea(QWidget):
+    _model_name = Unicode("QScrollAreaModel").tag(sync=True)
+    qt_class = "QScrollArea"
+    q_widgetResizable = Bool(False).tag(sync=True)
+
+    def _fcx_init_args(self, args, kwargs):
+        QWidget._fcx_init_args(self, args, kwargs)
+        self._widget = None
+
+    def setWidget(self, widget):
+        widget._attach(self)
+        self._widget = widget
+        self._event("setWidget", _ref(widget))
+
+    def widget(self):
+        return self._widget
+
+    def takeWidget(self):
+        w = self._widget
+        self._widget = None
+        if w is not None:
+            self._event("setWidget", None)
+        return w
+
+    def setWidgetResizable(self, on):
+        self._set(widgetResizable=bool(on))
+
+    def widgetResizable(self):
+        return self.q_widgetResizable
+
+    def setVerticalScrollBarPolicy(self, p):
+        pass
+
+    def setHorizontalScrollBarPolicy(self, p):
+        pass
+
+    def setFrameShape(self, s):
+        pass
+
+    def setFrameStyle(self, s):
+        pass
+
+    def ensureWidgetVisible(self, *args):
+        pass
+
+    def verticalScrollBar(self):
+        return _ScrollBarStub()
+
+    def horizontalScrollBar(self):
+        return _ScrollBarStub()
+
+    def _fcx_page(self, widget, title=""):
+        self._widget = widget
+
+
+class _ScrollBarStub:
+    def setValue(self, v):
+        pass
+
+    def value(self):
+        return 0
+
+    def maximum(self):
+        return 0
+
+    def minimum(self):
+        return 0
+
+
+class QSplitter(QWidget):
+    _model_name = Unicode("QSplitterModel").tag(sync=True)
+    qt_class = "QSplitter"
+    q_orientation = Int(1).tag(sync=True)
+    q_childrenCollapsible = Bool(True).tag(sync=True)
+    q_sizes = List(Int()).tag(sync=True)
+
+    splitterMoved = Signal(int, int)
+
+    def _fcx_init_args(self, args, kwargs):
+        rest = []
+        for a in args:
+            if isinstance(a, int):
+                kwargs["q_orientation"] = a
+            else:
+                rest.append(a)
+        args[:] = rest
+        QWidget._fcx_init_args(self, args, kwargs)
+        self._panes = []
+
+    def addWidget(self, widget):
+        self.insertWidget(len(self._panes), widget)
+
+    def insertWidget(self, index, widget):
+        widget._attach(self)
+        self._panes.insert(index, widget)
+        self._event("insertWidget", index, _ref(widget))
+
+    def widget(self, index):
+        return self._panes[index] if 0 <= index < len(self._panes) else None
+
+    def count(self):
+        return len(self._panes)
+
+    def indexOf(self, widget):
+        try:
+            return self._panes.index(widget)
+        except ValueError:
+            return -1
+
+    def setOrientation(self, o):
+        self._set(orientation=int(o))
+
+    def orientation(self):
+        return self.q_orientation
+
+    def setChildrenCollapsible(self, on):
+        self._set(childrenCollapsible=bool(on))
+
+    def setCollapsible(self, index, on):
+        self._event("setCollapsible", int(index), bool(on))
+
+    def setStretchFactor(self, index, factor):
+        self._event("setStretchFactor", int(index), int(factor))
+
+    def setSizes(self, sizes):
+        self._set(sizes=[int(x) for x in sizes])
+
+    def sizes(self):
+        return list(self.q_sizes)
+
+    def setHandleWidth(self, w):
+        pass
+
+    def setOpaqueResize(self, on):
+        pass
+
+    def saveState(self):
+        return b""
+
+    def restoreState(self, state):
+        return False
+
+    def _fcx_page(self, widget, title=""):
+        self._panes.append(widget)
+
+
+class FileChooser(QWidget):
+    """`Gui::FileChooser`: a path and a browse button.  The path is data
+    the HOST consumes (a font file for a ShapeString); the guest never
+    reads it, so it needs no file permission (the catalog offers none)."""
+
+    _model_name = Unicode("FileChooserModel").tag(sync=True)
+    qt_class = "Gui::FileChooser"
+    q_fileName = Unicode("").tag(sync=True)
+    q_mode = Int(0).tag(sync=True)
+    q_acceptMode = Int(0).tag(sync=True)
+    q_filter = Unicode("").tag(sync=True)
+    q_buttonText = Unicode("").tag(sync=True)
+
+    File = 0
+    Directory = 1
+    AcceptOpen = 0
+    AcceptSave = 1
+
+    fileNameChanged = Signal(str)
+    fileNameSelected = Signal(str)
+
+    def fileName(self):
+        return self.q_fileName
+
+    def setFileName(self, name):
+        self._set(fileName=str(name))
+
+    def setMode(self, mode):
+        self._set(mode=int(mode))
+
+    def mode(self):
+        return self.q_mode
+
+    def setAcceptMode(self, mode):
+        self._set(acceptMode=int(mode))
+
+    def setFilter(self, text):
+        self._set(filter=str(text))
+
+    def filter(self):
+        return self.q_filter
+
+    def setButtonText(self, text):
+        self._set(buttonText=str(text))
+
+    def buttonText(self):
+        return self.q_buttonText
+
+    @observe("q_fileName")
+    def _fcx_name(self, change):
+        self.fileNameChanged.emit(change["new"])
+
+
+class UiForm(QDialog):
     """The root `loadUi` returns: the file, and the named widgets in it
-    by name (each an attribute too, as uic makes them)."""
+    by name (each an attribute too, as uic makes them).  A QDialog too,
+    for the files whose root is one (`exec_`, `accept`, `rejected`);
+    a QWidget root never calls that half."""
 
     _model_name = Unicode("UiFormModel").tag(sync=True)
     uiFile = Unicode("").tag(sync=True)
     widgets = Dict().tag(sync=True, **widget_serialization)
 
 
+from .items import *  # noqa: E402,F401,F403  (the item views, G3b)
+from . import items as _items  # noqa: E402
+
 # The Qt class name -> the model class, for the .ui loader and
 # `UiLoader().createWidget`.  A `Gui::Pref*` is its base class here
 # (the host makes the real one); an unknown class is a QWidget.
 CLASSES = {
+    "QDialog": QDialog,
+    "QDialogButtonBox": QDialogButtonBox,
+    "QTabWidget": QTabWidget,
+    "QStackedWidget": QStackedWidget,
+    "QScrollArea": QScrollArea,
+    "QSplitter": QSplitter,
+    "Gui::FileChooser": FileChooser,
+    "Gui::PrefFileChooser": FileChooser,
+    "QTreeWidget": _items.QTreeWidget,
+    "QListWidget": _items.QListWidget,
+    "QTableWidget": _items.QTableWidget,
+    "QTreeView": _items.QTreeView,
+    "QListView": _items.QListView,
+    "QTableView": _items.QTableView,
+    "QColumnView": _items.QColumnView,
     "QWidget": QWidget,
     "QLabel": QLabel,
     "QPushButton": QPushButton,
@@ -1942,4 +2665,5 @@ def make(qt_class, *args, **kwargs):
 
 __all__ = [n for n in list(globals())
            if n[:1] == "Q" or n in ("Signal", "SIGNAL", "SLOT", "InputField", "QuantitySpinBox",
-                                    "ColorButton", "UiForm", "CLASSES", "LAYOUTS", "make")]
+                                    "ColorButton", "FileChooser", "UiForm", "CLASSES", "LAYOUTS",
+                                    "make")]

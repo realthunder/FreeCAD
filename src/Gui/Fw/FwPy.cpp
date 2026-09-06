@@ -237,6 +237,8 @@ PyObject* py_info(PyObject*, PyObject* args)
             named.insert(it.key(), store().idOf(it.value()));
         m.insert(QStringLiteral("widgets"), named);
     }
+    if (auto view = qobject_cast<ItemView*>(w))
+        m.insert(QStringLiteral("items"), view->snapshot());
     QString parentId = w->parentWidget() ? store().idOf(w->parentWidget()) : QString();
     m.insert(QStringLiteral("parent"), parentId.isEmpty() ? QVariant() : QVariant(parentId));
     return variantToPy(m);

@@ -49,9 +49,12 @@
 
 #include "FwCore.h"
 
+#include <memory>
+
 QT_BEGIN_NAMESPACE
 class QWidget;
 class QLayout;
+class QModelIndex;
 QT_END_NAMESPACE
 
 namespace Gui
@@ -99,6 +102,15 @@ public:
     void propertiesWritten(const QStringList& names, int source) override;
     void requested(const QString& name, const QVariantList& args) override;
     void layoutChanged(const QVariantMap& op) override;
+    void itemsChanged(const QVariantMap& op) override;
+    /// An item view's rows, applied to the real view through Qt's
+    /// abstract item model -- one path for a tree widget, a list, a
+    /// table and a tree view over a QStandardItemModel made here.
+    void applyItemOp(const QVariantMap& op);
+    /// The real index of a row id (invalid if none).
+    QModelIndex indexOf(int id, int column = 0) const;
+    /// The row id of a real index (0 if none).
+    int idOf(const QModelIndex& index) const;
 
 private:
     View(Fw::Widget* model, QWidget* widget, bool bound);
@@ -111,12 +123,28 @@ private:
     void onLayoutOp(const QVariantMap& op);
     QWidget* widgetOf(const QVariant& ref, QWidget* parent);
     static View* buildForm(Fw::Widget* model, QWidget* parent);
+    // containers: pages a model holds before it is realized
+    void initContainers();
+    // item views
+    struct Items;
+    void initItems();
+    void readBackItems();
+    void insertItemRows(int parentId, int index, const QVariantList& rows);
+    void applyCell(const QModelIndex& index, const QVariantMap& cell);
+    void setItemFlags(const QModelIndex& index, int flags, bool wholeRow);
+    void ensureColumns(int count, const QModelIndex& parent);
+    void applySelection();
+    void applyCurrent();
+    void applyCellTypes();
+    void headerCall(const QString& which, const QString& method, const QVariantList& args);
+    bool onItemRequest(const QString& name, const QVariantList& args);
 
     Fw::Widget* _model;
     QPointer<QWidget> _widget;
     bool _bound;
     bool _applying = false;
     QList<QPointer<View>> _children;  // a form's bound children
+    std::unique_ptr<Items> _items;
 };
 
 /// The real widget of a Qt class name: FreeCAD's own through the widget
@@ -128,6 +156,14 @@ GuiExport QWidget* realize(Fw::Widget* model, QWidget* parent = nullptr);
 /// -- for the Qt-only calls a ported panel keeps (an event filter, a
 /// button group, a blink target).
 GuiExport QWidget* widgetOf(const Fw::Widget* model);
+/// Realize a root model as a window of its own: a QDialog root under
+/// the main window (a dialog is a window whatever its parent), any other
+/// with none.  The widget dies with the model.  The existing rendering
+/// if there is one.
+GuiExport QWidget* realizeTopLevel(Fw::Widget* root);
+/// Run a dialog root modally (a nested event loop); the dialog code.
+/// Throws Base::TypeError when the root is not a QDialog.
+GuiExport int execDialog(Fw::Widget* root);
 
 }  // namespace FwQt
 }  // namespace Gui

@@ -35,7 +35,9 @@
  */
 
 #include <QColor>
+#include <QHash>
 #include <QStringList>
+#include <QVariantMap>
 
 #include <Base/Quantity.h>
 
@@ -1048,14 +1050,718 @@ protected:
     void propertyDidChange(const QString& name, const QVariant& value) override;
 };
 
+// ---- dialogs (G3b) ----------------------------------------------------------
+
+/// A dialog: `accept`/`reject`/`done` are requests to the backend,
+/// `accepted`/`rejected`/`finished` events from it, `result` state.
+/// `exec` is the backend's (`FwQt::execDialog`): a nested event loop
+/// is a backend fact, not a model one.
+class GuiExport QDialog : public Widget
+{
+    Q_OBJECT
+public:
+    explicit QDialog(Widget* parent = nullptr);
+    FW_MODEL("QDialogModel")
+
+    enum DialogCode
+    {
+        Rejected = 0,
+        Accepted = 1
+    };
+
+    void accept()
+    {
+        request(QStringLiteral("accept"));
+    }
+    void reject()
+    {
+        request(QStringLiteral("reject"));
+    }
+    void done(int r)
+    {
+        request(QStringLiteral("done"), QVariantList {r});
+    }
+    void close()
+    {
+        request(QStringLiteral("close"));
+    }
+    int result() const
+    {
+        return property("result").toInt();
+    }
+    void setModal(bool on)
+    {
+        setProperty("modal", on);
+    }
+    bool isModal() const
+    {
+        return property("modal").toBool();
+    }
+    void move(int x, int y)
+    {
+        request(QStringLiteral("move"), QVariantList {x, y});
+    }
+    void resize(int w, int h)
+    {
+        request(QStringLiteral("resize"), QVariantList {w, h});
+    }
+    void adjustSize()
+    {
+        request(QStringLiteral("adjustSize"));
+    }
+    /// The realized window's size, written back by the backend.
+    int width() const
+    {
+        return property("width").toInt();
+    }
+    int height() const
+    {
+        return property("height").toInt();
+    }
+
+Q_SIGNALS:
+    void accepted();
+    void rejected();
+    void finished(int result);
+
+protected:
+    void dispatchEvent(const QString& name, const QVariantList& args) override;
+};
+
+/// The standard buttons of a dialog (Qt's flag values).
+class GuiExport QDialogButtonBox : public Widget
+{
+    Q_OBJECT
+public:
+    explicit QDialogButtonBox(Widget* parent = nullptr);
+    FW_MODEL("QDialogButtonBoxModel")
+
+    enum StandardButton
+    {
+        NoButton = 0,
+        Ok = 0x00000400,
+        Save = 0x00000800,
+        SaveAll = 0x00001000,
+        Open = 0x00002000,
+        Yes = 0x00004000,
+        YesToAll = 0x00008000,
+        No = 0x00010000,
+        NoToAll = 0x00020000,
+        Abort = 0x00040000,
+        Retry = 0x00080000,
+        Ignore = 0x00100000,
+        Close = 0x00200000,
+        Cancel = 0x00400000,
+        Discard = 0x00800000,
+        Help = 0x01000000,
+        Apply = 0x02000000,
+        Reset = 0x04000000,
+        RestoreDefaults = 0x08000000
+    };
+
+    void setStandardButtons(int buttons)
+    {
+        setProperty("standardButtons", buttons);
+    }
+    int standardButtons() const
+    {
+        return property("standardButtons").toInt();
+    }
+    void setOrientation(int orientation)
+    {
+        setProperty("orientation", orientation);
+    }
+    void setCenterButtons(bool on)
+    {
+        setProperty("centerButtons", on);
+    }
+    /// One of the box's buttons: `setEnabled`, `setText`, `setDefault`,
+    /// `setFocus`, `click` on it, as a request the backend applies.
+    void setButtonEnabled(int button, bool on)
+    {
+        buttonCall(button, QStringLiteral("setEnabled"), QVariantList {on});
+    }
+    void setButtonText(int button, const QString& text)
+    {
+        buttonCall(button, QStringLiteral("setText"), QVariantList {text});
+    }
+    void setButtonDefault(int button, bool on)
+    {
+        buttonCall(button, QStringLiteral("setDefault"), QVariantList {on});
+    }
+    void clickButton(int button)
+    {
+        buttonCall(button, QStringLiteral("click"));
+    }
+
+Q_SIGNALS:
+    void accepted();
+    void rejected();
+    void helpRequested();
+    /// The standard button clicked (its flag value).
+    void clicked(int button);
+
+protected:
+    void dispatchEvent(const QString& name, const QVariantList& args) override;
+
+private:
+    void buttonCall(int button, const QString& method, const QVariantList& args = QVariantList())
+    {
+        request(QStringLiteral("button"), QVariantList {button, method, args});
+    }
+};
+
+// ---- containers (G3b) --------------------------------------------------------
+
+/// Pages with titles: the pages are child widgets, the titles the
+/// `tabs` state, the current one an index.
+class GuiExport QTabWidget : public Widget
+{
+    Q_OBJECT
+public:
+    explicit QTabWidget(Widget* parent = nullptr);
+    FW_MODEL("QTabWidgetModel")
+
+    /// Adds `page` (re-parented here) as a tab; the index.
+    int addTab(Widget* page, const QString& title, const QString& iconPath = QString());
+    int insertTab(int index, Widget* page, const QString& title,
+                  const QString& iconPath = QString());
+    void removeTab(int index);
+    int count() const
+    {
+        return tabs().size();
+    }
+    QStringList tabs() const
+    {
+        return property("tabs").toStringList();
+    }
+    Widget* widget(int index) const
+    {
+        return _pages.value(index);
+    }
+    int indexOf(const Widget* page) const
+    {
+        return _pages.indexOf(const_cast<Widget*>(page));
+    }
+    int currentIndex() const
+    {
+        return property("currentIndex").toInt();
+    }
+    void setCurrentIndex(int index)
+    {
+        setProperty("currentIndex", index);
+    }
+    Widget* currentWidget() const
+    {
+        return widget(currentIndex());
+    }
+    void setCurrentWidget(Widget* page)
+    {
+        int i = indexOf(page);
+        if (i >= 0)
+            setCurrentIndex(i);
+    }
+    QString tabText(int index) const
+    {
+        return tabs().value(index);
+    }
+    void setTabText(int index, const QString& text);
+    void setTabEnabled(int index, bool on)
+    {
+        request(QStringLiteral("setTabEnabled"), QVariantList {index, on});
+    }
+    void setTabToolTip(int index, const QString& text)
+    {
+        request(QStringLiteral("setTabToolTip"), QVariantList {index, text});
+    }
+    void setTabsClosable(bool on)
+    {
+        setProperty("tabsClosable", on);
+    }
+    void setDocumentMode(bool on)
+    {
+        setProperty("documentMode", on);
+    }
+    /// The generated setupUi: a page the file placed (no request).
+    void addPage(Widget* page, const QString& title);
+
+Q_SIGNALS:
+    void currentChanged(int index);
+    void tabCloseRequested(int index);
+    void tabBarClicked(int index);
+
+protected:
+    void propertyDidChange(const QString& name, const QVariant& value) override;
+    void dispatchEvent(const QString& name, const QVariantList& args) override;
+
+private:
+    QList<Widget*> _pages;
+};
+
+class GuiExport QStackedWidget : public Widget
+{
+    Q_OBJECT
+public:
+    explicit QStackedWidget(Widget* parent = nullptr);
+    FW_MODEL("QStackedWidgetModel")
+
+    int addWidget(Widget* page);
+    int insertWidget(int index, Widget* page);
+    void removeWidget(Widget* page);
+    int count() const
+    {
+        return _pages.size();
+    }
+    Widget* widget(int index) const
+    {
+        return _pages.value(index);
+    }
+    int indexOf(const Widget* page) const
+    {
+        return _pages.indexOf(const_cast<Widget*>(page));
+    }
+    int currentIndex() const
+    {
+        return property("currentIndex").toInt();
+    }
+    void setCurrentIndex(int index)
+    {
+        setProperty("currentIndex", index);
+    }
+    Widget* currentWidget() const
+    {
+        return widget(currentIndex());
+    }
+    void setCurrentWidget(Widget* page)
+    {
+        int i = indexOf(page);
+        if (i >= 0)
+            setCurrentIndex(i);
+    }
+    void addPage(Widget* page)
+    {
+        _pages.append(page);
+    }
+
+Q_SIGNALS:
+    void currentChanged(int index);
+
+protected:
+    void propertyDidChange(const QString& name, const QVariant& value) override;
+
+private:
+    QList<Widget*> _pages;
+};
+
+class GuiExport QScrollArea : public Widget
+{
+    Q_OBJECT
+public:
+    explicit QScrollArea(Widget* parent = nullptr);
+    FW_MODEL("QScrollAreaModel")
+
+    void setWidget(Widget* content);
+    Widget* widget() const
+    {
+        return _content;
+    }
+    void setWidgetResizable(bool on)
+    {
+        setProperty("widgetResizable", on);
+    }
+    void addPage(Widget* content)
+    {
+        _content = content;
+    }
+
+private:
+    Widget* _content = nullptr;
+};
+
+class GuiExport QSplitter : public Widget
+{
+    Q_OBJECT
+public:
+    explicit QSplitter(Widget* parent = nullptr);
+    FW_MODEL("QSplitterModel")
+
+    void addWidget(Widget* pane);
+    void insertWidget(int index, Widget* pane);
+    int count() const
+    {
+        return _panes.size();
+    }
+    Widget* widget(int index) const
+    {
+        return _panes.value(index);
+    }
+    void setOrientation(int orientation)
+    {
+        setProperty("orientation", orientation);
+    }
+    int orientation() const
+    {
+        return property("orientation").toInt();
+    }
+    void setChildrenCollapsible(bool on)
+    {
+        setProperty("childrenCollapsible", on);
+    }
+    void setSizes(const QList<int>& sizes);
+    QList<int> sizes() const;
+    void setStretchFactor(int index, int factor)
+    {
+        request(QStringLiteral("setStretchFactor"), QVariantList {index, factor});
+    }
+    void addPage(Widget* pane)
+    {
+        _panes.append(pane);
+    }
+
+Q_SIGNALS:
+    void splitterMoved(int pos, int index);
+
+protected:
+    void dispatchEvent(const QString& name, const QVariantList& args) override;
+
+private:
+    QList<Widget*> _panes;
+};
+
+/// `Gui::FileChooser`: a path and a browse button.  The path is data
+/// the host consumes; a DOM tier would supply its own picker.
+class GuiExport FileChooser : public Widget
+{
+    Q_OBJECT
+public:
+    explicit FileChooser(Widget* parent = nullptr);
+    FW_MODEL("FileChooserModel")
+
+    enum Mode
+    {
+        File = 0,
+        Directory = 1
+    };
+
+    QString fileName() const
+    {
+        return property("fileName").toString();
+    }
+    void setFileName(const QString& name)
+    {
+        setProperty("fileName", name);
+    }
+    void setMode(int mode)
+    {
+        setProperty("mode", mode);
+    }
+    int mode() const
+    {
+        return property("mode").toInt();
+    }
+    void setAcceptMode(int mode)
+    {
+        setProperty("acceptMode", mode);
+    }
+    void setFilter(const QString& filter)
+    {
+        setProperty("filter", filter);
+    }
+    QString filter() const
+    {
+        return property("filter").toString();
+    }
+    void setButtonText(const QString& text)
+    {
+        setProperty("buttonText", text);
+    }
+
+Q_SIGNALS:
+    void fileNameChanged(const QString& name);
+    void fileNameSelected(const QString& name);
+
+protected:
+    void propertyDidChange(const QString& name, const QVariant& value) override;
+    void dispatchEvent(const QString& name, const QVariantList& args) override;
+};
+
+// ---- item views (G3b) ---------------------------------------------------------
+
+/// One cell of a row.
+struct GuiExport ItemCell
+{
+    QString text;
+    QString icon;
+    QString toolTip;
+    QString statusTip;
+    QString whatsThis;
+    QVariant check;  ///< invalid: no check box; else Qt::CheckState as int
+    QVariant flags;  ///< invalid: the view class's default
+    QVariantList fg;
+    QVariantList bg;
+    bool bold = false;
+    int align = 0;
+    QVariantMap toMap() const;
+    /// The keys present in `m` overwrite.
+    void merge(const QVariantMap& m);
+};
+
+/// One row: cells, children (a tree), the row's own state.
+struct GuiExport ItemRow
+{
+    int id = 0;
+    int parent = 0;  ///< 0: top level
+    QList<ItemCell> cells;
+    QList<int> children;
+    bool expanded = false;
+    bool hidden = false;
+    QVariant flags;  ///< a tree item's flags, for every cell
+};
+
+/// What the four Qt item views share: ROWS of cells, a tree of them,
+/// with the columns, the selection and the current row as state.  The
+/// rows are not in the bag -- a thousand-row tree resending itself on
+/// every setText is what the bag must not carry -- but a tree this
+/// object owns, changed by item OPS (`{"item": "insert" | "set" |
+/// "row" | "remove" | "clear" | "sort", ...}`, the guest's wire shape,
+/// the native setters below making the same ops) that reach the
+/// backend through `Backend::itemsChanged` and the `itemsChanged`
+/// signal; `snapshot()` is the tree as data for whoever needs it whole
+/// (a DOM tier's first paint, a test).  Events come back with row ids:
+/// `itemClicked`, `itemEdited` (the user edited a cell: merged here,
+/// `itemChanged` fired), `itemExpanded`, ...
+class GuiExport ItemView : public Widget
+{
+    Q_OBJECT
+public:
+    explicit ItemView(Widget* parent = nullptr);
+
+    // -- the rows
+    const ItemRow* row(int id) const;
+    const QList<int>& topLevel() const
+    {
+        return _top;
+    }
+    int rowCount(int parentId = 0) const;
+    /// The tree as nested maps (`id`, `cells`, `children`, ...).
+    QVariantList snapshot() const;
+    /// Apply an item op to the tree and pass it to the backend.  The
+    /// guest's ops carry their own ids; a native insert mints them.
+    void applyItemOp(const QVariantMap& op);
+
+    // -- native setters (each an op)
+    /// Insert a row of `texts` under `parentId` (0: top) at `index`
+    /// (-1: append); the new id.
+    int insertRow(int parentId, int index, const QStringList& texts);
+    int addRow(const QStringList& texts, int parentId = 0)
+    {
+        return insertRow(parentId, -1, texts);
+    }
+    void removeRow(int id);
+    void clearRows();
+    QString text(int id, int column = 0) const;
+    void setText(int id, int column, const QString& text);
+    void setIcon(int id, int column, const QString& iconPath);
+    void setToolTip(int id, int column, const QString& text);
+    int checkState(int id, int column = 0) const;
+    void setCheckState(int id, int column, int state);
+    void setFlags(int id, int flags);
+    void setExpanded(int id, bool on);
+    bool isExpanded(int id) const;
+    void setRowHidden(int id, bool on);
+
+    // -- the state
+    QStringList columns() const
+    {
+        return property("columns").toStringList();
+    }
+    void setColumns(const QStringList& labels);
+    int columnCount() const;
+    void setColumnCount(int n)
+    {
+        setProperty("columnCount", n);
+    }
+    QList<int> selection() const;
+    void setSelection(const QList<int>& ids);
+    void select(int id, bool on = true);
+    int currentId() const
+    {
+        return property("currentId").toInt();
+    }
+    int currentColumn() const
+    {
+        return property("currentColumn").toInt();
+    }
+    void setCurrent(int id, int column = 0);
+    void setSelectionMode(int mode)
+    {
+        setProperty("selectionMode", mode);
+    }
+    void setSortingEnabled(bool on)
+    {
+        setProperty("sortingEnabled", on);
+    }
+    void setHeaderHidden(bool on)
+    {
+        setProperty("headerHidden", on);
+    }
+    void setRootIsDecorated(bool on)
+    {
+        setProperty("rootIsDecorated", on);
+    }
+    void setColumnWidth(int column, int width);
+    void expandAll()
+    {
+        request(QStringLiteral("expandAll"));
+    }
+    void collapseAll()
+    {
+        request(QStringLiteral("collapseAll"));
+    }
+    void resizeColumnToContents(int column)
+    {
+        request(QStringLiteral("resizeColumnToContents"), QVariantList {column});
+    }
+    void scrollTo(int id)
+    {
+        request(QStringLiteral("scrollTo"), QVariantList {id});
+    }
+    void editItem(int id, int column = 0)
+    {
+        request(QStringLiteral("edit"), QVariantList {id, column});
+    }
+
+Q_SIGNALS:
+    void itemsChanged(const QVariantMap& op);
+    void itemClicked(int id, int column);
+    void itemDoubleClicked(int id, int column);
+    void itemActivated(int id, int column);
+    void itemPressed(int id, int column);
+    void itemChanged(int id, int column);
+    void itemSelectionChanged();
+    void currentItemChanged(int id, int previous);
+    void itemExpanded(int id);
+    void itemCollapsed(int id);
+
+protected:
+    void propertyDidChange(const QString& name, const QVariant& value) override;
+    void dispatchEvent(const QString& name, const QVariantList& args) override;
+
+private:
+    void insertRows(int parentId, int index, const QVariantList& rows);
+    void eraseRow(int id);
+    QVariantMap rowMap(const ItemRow& r) const;
+    void emitItemOp(const QVariantMap& op);
+
+    QHash<int, ItemRow> _rows;
+    QList<int> _top;
+    int _nextId = 1;
+    int _previousCurrent = 0;
+};
+
+class GuiExport QListWidget : public ItemView
+{
+    Q_OBJECT
+public:
+    explicit QListWidget(Widget* parent = nullptr);
+    FW_MODEL("QListWidgetModel")
+    int addItem(const QString& text)
+    {
+        return addRow(QStringList {text});
+    }
+    int count() const
+    {
+        return rowCount();
+    }
+    int currentRow() const
+    {
+        return topLevel().indexOf(currentId());
+    }
+    void setCurrentRow(int index)
+    {
+        setCurrent(topLevel().value(index));
+    }
+};
+
+class GuiExport QTreeWidget : public ItemView
+{
+    Q_OBJECT
+public:
+    explicit QTreeWidget(Widget* parent = nullptr);
+    FW_MODEL("QTreeWidgetModel")
+    void setHeaderLabels(const QStringList& labels)
+    {
+        setColumns(labels);
+    }
+    int topLevelItemCount() const
+    {
+        return rowCount();
+    }
+};
+
+class GuiExport QTreeView : public ItemView
+{
+    Q_OBJECT
+public:
+    explicit QTreeView(Widget* parent = nullptr);
+    FW_MODEL("QTreeViewModel")
+};
+
+class GuiExport QTableWidget : public ItemView
+{
+    Q_OBJECT
+public:
+    explicit QTableWidget(Widget* parent = nullptr);
+    FW_MODEL("QTableWidgetModel")
+    void setHorizontalHeaderLabels(const QStringList& labels)
+    {
+        setColumns(labels);
+    }
+    void setVerticalHeaderLabels(const QStringList& labels)
+    {
+        setProperty("rowLabels", labels);
+    }
+    void setRowCount(int n);
+    int currentRow() const
+    {
+        return topLevel().indexOf(currentId());
+    }
+    void setCurrentCell(int row, int column)
+    {
+        setCurrent(topLevel().value(row), column);
+    }
+    void setItemText(int row, int column, const QString& text);
+    QString itemText(int row, int column) const
+    {
+        return text(topLevel().value(row), column);
+    }
+};
+
+class GuiExport QListView : public ItemView
+{
+    Q_OBJECT
+public:
+    explicit QListView(Widget* parent = nullptr);
+    FW_MODEL("QListViewModel")
+};
+
+class GuiExport QTableView : public ItemView
+{
+    Q_OBJECT
+public:
+    explicit QTableView(Widget* parent = nullptr);
+    FW_MODEL("QTableViewModel")
+};
+
 // ---- the form loaded from a .ui file ------------------------------------------
 
 /// The root a form has: the file it came from and its named widgets.
 /// A backend realizes it by loading the same file through its own
 /// loader (uic on the Qt side: the layout exact, the strings
 /// translated, FreeCAD's widgets real) and binding each named child
-/// to the model of that name.
-class GuiExport UiForm : public Widget
+/// to the model of that name.  A QDialog as well, for the files whose
+/// root is one; a QWidget root never calls that half.
+class GuiExport UiForm : public QDialog
 {
     Q_OBJECT
 public:

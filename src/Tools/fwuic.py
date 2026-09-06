@@ -89,7 +89,27 @@ CLASSES = {
     "Gui::PrefSlider": "QSlider",
     "Gui::PrefCheckableGroupBox": "QGroupBox",
     "Gui::PrefFontBox": "QFontComboBox",
+    # G3b
+    "QDialog": "QDialog",
+    "QDialogButtonBox": "QDialogButtonBox",
+    "QTabWidget": "QTabWidget",
+    "QStackedWidget": "QStackedWidget",
+    "QScrollArea": "QScrollArea",
+    "QSplitter": "QSplitter",
+    "Gui::FileChooser": "FileChooser",
+    "Gui::PrefFileChooser": "FileChooser",
+    "QListWidget": "QListWidget",
+    "QTreeWidget": "QTreeWidget",
+    "QTreeView": "QTreeView",
+    "QTableWidget": "QTableWidget",
+    "QListView": "QListView",
+    "QTableView": "QTableView",
 }
+
+# the containers whose direct child widgets are pages
+CONTAINERS = ("QTabWidget", "QStackedWidget", "QScrollArea", "QSplitter")
+ITEM_VIEWS = ("QListWidget", "QTreeWidget", "QTreeView", "QTableWidget", "QListView",
+              "QTableView")
 
 # a .ui property whose bag key differs
 RENAMED = {"quantity": "rawValue"}
@@ -248,7 +268,7 @@ class Emitter:
                           % (var, cpp_string(cls), parent_var))
             elif cls.startswith("Gui::") and cls not in (
                     "Gui::InputField", "Gui::QuantitySpinBox", "Gui::DoubleSpinBox",
-                    "Gui::ColorButton"):
+                    "Gui::ColorButton", "Gui::FileChooser"):
                 self.members.append(("Gui::Fw::%s*" % fw, var))
                 self.line("%s = static_cast<Gui::Fw::%s*>(Gui::Fw::createWidget(%s, %s));"
                           % (var, fw, cpp_string(cls), parent_var))
@@ -271,8 +291,30 @@ class Emitter:
                 self.line("%s->setInitial(QStringLiteral(\"itemIcons\"), QStringList {%s});"
                           % (var, ", ".join(icons)))
             self.line("%s->setInitial(QStringLiteral(\"currentIndex\"), 0);" % var)
+        if cls in ITEM_VIEWS:
+            self.headers(var, elem)
         self.children(elem, var, form_var)
         return var
+
+    def headers(self, var, elem):
+        """A tree or table's `<column>` / `<row>` headers and its header
+        attributes, as the models' initial state."""
+        cols = [str((self.props(c)).get("text") or "") for c in elem.findall("column")]
+        rows = [str((self.props(r)).get("text") or "") for r in elem.findall("row")]
+        if cols:
+            self.line("%s->setInitial(QStringLiteral(\"columns\"), QStringList {%s});"
+                      % (var, ", ".join(cpp_string(c) for c in cols)))
+            self.line("%s->setInitial(QStringLiteral(\"columnCount\"), %d);" % (var, len(cols)))
+        if rows:
+            self.line("%s->setInitial(QStringLiteral(\"rowLabels\"), QStringList {%s});"
+                      % (var, ", ".join(cpp_string(r) for r in rows)))
+        for attr in elem.findall("attribute"):
+            if attr.get("name") == "headerVisible" and value_of(attr) is False:
+                self.line("%s->setInitial(QStringLiteral(\"headerHidden\"), true);" % var)
+
+    @staticmethod
+    def props(elem):
+        return {p.get("name"): value_of(p) for p in elem.findall("property")}
 
     @staticmethod
     def items(elem):
@@ -283,9 +325,19 @@ class Emitter:
         return out
 
     def children(self, elem, var, form_var):
+        container = elem.get("class", "") in CONTAINERS
         for child in elem:
             if child.tag == "widget":
-                self.widget(child, var, form_var)
+                child_var = self.widget(child, var, form_var)
+                if container:
+                    title = ""
+                    for attr in child.findall("attribute"):
+                        if attr.get("name") == "title":
+                            title = str(value_of(attr) or "")
+                    if elem.get("class") == "QTabWidget":
+                        self.line("%s->addPage(%s, %s);" % (var, child_var, cpp_string(title)))
+                    else:
+                        self.line("%s->addPage(%s);" % (var, child_var))
             elif child.tag == "layout":
                 # the owner argument sets it as the widget's layout
                 self.layout(child, var, form_var, owner=var)

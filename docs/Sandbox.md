@@ -37,6 +37,7 @@ user decision, quoted where the wording matters.
     Coin + pivy inside the guest     built       src/App/PyodideHost/pivy/, Coin's COIN_BUILD_GL_STUB (7.10)
     forms: ipywidgets over comm, Qt  built       src/App/ExpressionImage/widgets/ (guest), src/Ext/freecad/widgets/ (host), SandboxGui.cpp (7.3)
     forms: the Qt subset, .ui, panel built       G3a: freecad.widgets in the guest (the Qt classes as models), loadUi both sides, Control (7.11)
+    forms: dialogs, item views, ...  built       G3b: exec_(), the tree/list/table family as rows, containers, the file chooser; the 40-file harness (7.11)
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
@@ -2615,8 +2616,140 @@ deleted directly", a corrupted heap at the next malloc).  Fixed
 alive; the gate with `SandboxNative` in the default list is the
 regression test.
 
-Next, **G3b** on the C++ store (the rest of the `.ui` subset with the
-41-panel harness), then **G3c** and the G2b runner.
+**G3b BUILT 2026-09-06**, on the C++ store: the rest of the `.ui`
+subset, and every `.ui` file Draft and BIM load with `loadUi` opens
+from the guest and round-trips its fields.  The class set grew by
+`QDialog` with `QDialogButtonBox`, `QTabWidget`, `QStackedWidget`,
+`QScrollArea`, `QSplitter`, `Gui::FileChooser`, and the item views --
+`QListWidget`, `QTreeWidget`, `QTableWidget`, `QTreeView` (with
+`QListView`, `QTableView`) -- on both sides (guest `items.py`, 2.9k;
+the host classes, the Qt view and the store's additions, 3.3k C++).
+What the build settled:
+
+- **The item views are ROWS, and the rows are not in the bag.**  One
+  representation serves the four Qt classes: a row is cells (text,
+  icon, tool tip, check state, flags, colors, bold, alignment) and,
+  for a tree, child rows; a view holds the top-level rows and the
+  columns, the selection and the current row as state.  A thousand-row
+  tree resending itself on every `setText` is exactly what the bag
+  must not carry, so the rows are a tree the `Fw::ItemView` object
+  owns, changed by ITEM OPS on the view's comm -- `{"item": "insert" |
+  "set" | "row" | "remove" | "clear" | "sort", ...}`, one small message
+  per mutation, the layout-op pattern -- that reach the backend through
+  `Backend::itemsChanged` and the `itemsChanged` signal; `snapshot()`
+  is the tree as data (a DOM tier's first paint, `FormWidgets.info`).
+  An item built before it is attached sends nothing; `addTopLevelItem`
+  sends its whole subtree as one insert.  The guest's `QStandardItemModel`
+  is a plain object, not a comm: its rows cross on the comm of every
+  view it is set on (`setModel` resyncs), so a DOM tier sees one kind
+  of thing.  User-role data stays on the guest (it holds FreeCAD
+  objects the wire could not carry); the host never needs it.
+- **One Qt path through the abstract item model.**  The Qt view keeps
+  a persistent index per row id and applies every op through
+  `QAbstractItemModel` -- `insertRows`, `setData` by role -- whether
+  the widget is a `QTreeWidget`, a `QListWidget`, a `QTableWidget`, or
+  a `QTreeView` that uic left without a model (the backend makes a
+  `QStandardItemModel` for it).  Where the abstract interface refuses,
+  the typed call: item flags (`QTreeWidgetItem::setFlags` by walking
+  the row path, a table's or a standard item created on demand) and
+  header labels (a table's model has no header item to write to;
+  `setHorizontalHeaderLabels` makes them).  What the user does comes
+  back as state (`selection`, `currentId`, `currentColumn`) and events
+  with row ids (`itemClicked`, `itemDoubleClicked`, `itemExpanded`,
+  `itemEdited` -- a cell the user edited, merged into the row and
+  `itemChanged` fired); the guest maps ids to its item objects and
+  fires the Qt-named signals with Qt's arguments (`itemClicked(item,
+  col)`, `cellChanged(r, c)`, `clicked(index)` on a view, the selection
+  model's `selectionChanged`).  Header calls (`setSectionResizeMode`,
+  `setStretchLastSection`, ...) are requests on the view.
+- **Delegates are cell types.**  A corpus delegate dispatches
+  `createEditor` on the column and returns a combo, a spin box, a
+  line edit, a check box (Draft's and BIM's layer delegates).  The
+  guest calls it once per column at `setItemDelegate` with a probe
+  index, classifies the editor (`{"type": "combo", "items": [...]}`,
+  `int`/`double` with range, `text`, `check`), closes the throwaway
+  editor and sends `cellTypes`; the host's `CellDelegate` makes that
+  editor and writes the text back.  The delegate's own paint,
+  `setEditorData` and `setModelData` never run; the color columns'
+  `QColorDialog` inside them is G3d.
+- **`exec_()` is one op.**  `gui.dialog.exec [form id]` realizes the
+  root as a window (`FwQt::realizeTopLevel`: a QDialog root under the
+  main window, the widget dying with the model) and runs `QDialog::exec`
+  inside the op; what the user does in the nested loop reaches the
+  guest's slots nested (the comm messages call into the guest, as
+  `addCommand`'s GetResources round trip already did), and the dialog
+  code is the op's result.  `accept`/`reject`/`done`/`close`/`move`/
+  `resize` are requests, `accepted`/`rejected`/`finished` events,
+  `result`/`width`/`height` state.  A guest `form.show()` on a dialog
+  root (`visible` TOUCHED true on an unrealized root) shows it as a
+  window through the same helper -- only a dialog or a form root: a
+  named child's `show()` is a property of a widget in a layout.  The
+  `.ui` file's own `buttonBox -> accept` connection is uic's, so OK
+  closes the dialog where the file says so and the code's
+  `buttonBox.accepted.connect` where it does not.  `UiForm` IS a
+  `QDialog` on both sides (a QWidget root never calls that half).
+- **Containers.**  A tab widget's pages are child widgets, the titles
+  the `tabs` state (translated by uic, read back at bind), the current
+  one an index; `addTab`/`insertWidget`/`setWidget` cross as requests
+  naming the page by model ref (`IPY_MODEL_<id>`, which the store
+  resolves in any request argument), and a container built in code
+  gets the pages its model collected before it had a backend.  The
+  splitter's `setSizes` comes back as what Qt made of it (the ratio
+  within the real width), a backend write.  `Gui::FileChooser` needs no
+  file permission: the catalog offers no `fs`, and the path is data the
+  HOST consumes (ShapeString's font file); its PySide wrapper is a
+  plain `QWidget`, so a host test drives it by Q_PROPERTY.
+- **Lessons the gate taught.**  Qt's modeless `QDialog.open()` on the
+  guest class shadowed ipywidgets' `Widget.open()`, the method that
+  makes the comm: no dialog form had one until the harness asked for
+  `model_id` (the guest is exercised on the host's Python now:
+  the wheel's modules with a stubbed bridge load all 40 files in a
+  second, the loop that found it).  Qt's `close()` keeps the object
+  and ipywidgets' closes the comm, so a dialog's `close` is Qt's and
+  `__del__` the comm's.  A label's text flows one way (no user edit
+  reports it).  `deleteLater` outside an event loop needs the deferred
+  deletes flushed explicitly.  A python-mode `evaluate` keeps the
+  module object it first imported, so a guest harness module is
+  defined once per process and reset per test.  The QtWidgets shim
+  in the guest image imports `QDialogButtonBox` from `qtdata` by name,
+  so that module answers the name with the widget class through a
+  module `__getattr__` (the image untouched; `QtCore.QModelIndex` is
+  likewise not in the shim, and the corpus never touches it).
+- **Left for later.**  A bare `QWidget` root shown with `show()` as a
+  window (G3c, with DraftGui's toolbar); `QDialogButtonBox.addButton(
+  widget, role)` (G3c); the delegates' color editors (G3d); a host-side
+  sort leaves the guest's row order as inserted (ids still map).
+
+Measured (RelWithDebInfo, Xvfb, `scripts/sandbox-gui-gate.py`,
+`SandboxPanels`):
+
+    the 40 .ui files loaded in the guest, shown,   1.4 s in all, 672 objects in the
+      round-tripped, closed                          store; load 2-32 ms, show 2-39 ms each
+    dialogNudgeValue.ui exec_() from the guest,    0.22 s (the timer's 0.2 s inside it)
+      OK clicked by a host timer inside the loop
+
+Gate `SandboxPanels` (2 cases): every one of the 40 files behind the
+corpus's 41 `loadUi` sites (one site is Draft's generic
+`loadUi(ui_file)` helper) loads in the guest with every named widget
+of a known class as that class's model, shows -- a QDialog root as a
+window, a QWidget root as a task panel -- with every named widget
+bound to uic's, and round-trips one field of each kind it has (text,
+plain text, int, double, quantity, check, combo, tabs, list, tree,
+table, a tree view over a `QStandardItemModel` with a nested row,
+file, the button box's `clicked`/`accepted`, the splitter's sizes,
+the scroll area) guest to host and host to guest; `exec_()` returns
+the dialog code the host's OK produced, `accepted` having crossed.
+`tests/src/Gui/FormWidgets.cpp` gained `test_itemViews` (the four
+views built from native models: rows, children, checks, expansion,
+selection and current both ways, a widget edit back as `itemChanged`,
+clear) and `test_dialogsAndContainers` (tabs both ways, the splitter,
+the scroll area, the file chooser, a dialog as a window with its
+button box `exec`'d and accepted from a timer, the window dying with
+the model): 15/15.  Suites after: the GUI gates 10/10 (five modules),
+`Tests_run --gtest_filter='Expression*'` 104 passed + 1 skipped.
+
+Next, **G3c** (forms built in code: DraftGui's toolbar, the main
+window shim, the key event stream) and the G2b runner.
 
 ## 8. Measurements
 
@@ -2733,11 +2866,21 @@ Non-ASCII object names occur in real files.  Rig:
                                                           through the C++ store and the
                                                           C++ Qt view (7.11, 7.12); the
                                                           same gate script
-    tests/src/Gui/FormWidgets.cpp                   11    H0: the host widget layer's
-                                                          property core, class set, layout
-                                                          ops, the fwuic generator's output
-                                                          for OrthoArray, the Qt backend
-                                                          binding uic's widgets (7.12);
+    src/Mod/Test/SandboxNative.py                    1    H1b: Pad's real panel on the
+                                                          host widget layer, the expression
+                                                          seam (7.12); the same gate script
+    src/Mod/Test/SandboxPanels.py                    2    G3b: the 40 .ui files behind
+                                                          Draft's and BIM's 41 loadUi sites
+                                                          opened from the guest and
+                                                          round-tripped, exec_() (7.11);
+                                                          the same gate script
+    tests/src/Gui/FormWidgets.cpp                   15    H0-H1, G3b: the host widget
+                                                          layer's property core, class set,
+                                                          layout ops, the fwuic generator's
+                                                          output for OrthoArray, the Qt
+                                                          backend binding uic's widgets, the
+                                                          ports, the item views, dialogs and
+                                                          containers (7.12, 7.11);
                                                           FormWidgets_Tests_run, offscreen
     src/Mod/Spreadsheet/TestSpreadsheet*.py          --   run with routing ON for parity
 
@@ -2835,10 +2978,12 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    `Fw::ExpressionBound` on the `QuantitySpinBox`/`DoubleSpinBox`
    models; gate `test_expressionSeam` 13/13 and `SandboxNative`, in the
    default gate list since the `ViewAreaCell` teardown fix of
-   2026-09-06).  Next **G3b** (the rest of the `.ui` subset and
-   the 41-panel harness) on the C++ store, **G3c** (forms built in
-   code: DraftGui's toolbar -- what both workbenches' `Initialize()`
-   stop at), and the G2b runner once there is something to switch to.
+   2026-09-06).  **G3b** BUILT 2026-09-06 on the C++ store (7.11: the
+   item views as rows with item ops, dialogs with `exec_()`, the
+   containers, the file chooser; gate `SandboxPanels`, the 40 files).
+   Next **G3c** (forms built in code: DraftGui's toolbar -- what both
+   workbenches' `Initialize()` stop at), and the G2b runner once there
+   is something to switch to.
 4. **P2** -- in-place install into a running guest (the sec 9.3 probe of
    `SandboxNetwork.md`: does a wheel with compiled extensions import
    synchronously without `loadPackage`?).  Moved after G1: nothing
@@ -2852,9 +2997,9 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
 7. **G3** -- U3 over the widget protocol, sized in 7.11 as four stages:
    G3a BUILT 2026-09-06 (the Qt classes as models, `loadUi` both sides,
    the task panel, `.ui` layouts, `prefs.write`, `Gui.ActiveDocument`);
-   G3b the rest of the `.ui` subset (dialogs with `exec_()`, the
-   tree/list/table family, containers, the file chooser) with the
-   41-panel harness as its gate; G3c forms built in code (layouts
+   G3b BUILT 2026-09-06 (dialogs with `exec_()`, the tree/list/table
+   family as rows with item ops, containers, the file chooser; the
+   40-file harness `SandboxPanels` is its gate); G3c forms built in code (layouts
    without a file, actions, tool bars, the main window shim, the key
    event stream) gated on DraftGui's toolbar; G3d the selection input
    and the U2 dialogs.

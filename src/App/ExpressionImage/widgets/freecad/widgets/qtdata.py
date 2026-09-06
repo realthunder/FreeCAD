@@ -26,7 +26,17 @@ class _QtNamespace(_Enum):
     DecorationRole = 1
     EditRole = 2
     ToolTipRole = 3
+    StatusTipRole = 4
+    WhatsThisRole = 5
+    FontRole = 6
+    TextAlignmentRole = 7
+    BackgroundRole = 8
+    ForegroundRole = 9
     CheckStateRole = 10
+    AccessibleTextRole = 11
+    AccessibleDescriptionRole = 12
+    SizeHintRole = 13
+    InitialSortOrderRole = 14
     UserRole = 0x0100
     # item flags
     ItemIsSelectable = 1
@@ -36,6 +46,9 @@ class _QtNamespace(_Enum):
     ItemIsUserCheckable = 16
     ItemIsEnabled = 32
     ItemIsTristate = 64
+    ItemIsAutoTristate = 64
+    ItemNeverHasChildren = 128
+    ItemIsUserTristate = 256
     # orientation
     Horizontal = 1
     Vertical = 2
@@ -53,6 +66,10 @@ class _QtNamespace(_Enum):
     MatchContains = 1
     MatchStartsWith = 2
     MatchEndsWith = 3
+    MatchRegularExpression = 4
+    MatchWildcard = 5
+    MatchFixedString = 8
+    MatchWrap = 32
     MatchCaseSensitive = 16
     MatchRecursive = 64
     # keys
@@ -397,12 +414,43 @@ class QDialogButtonBoxButtons(_Enum):
     RestoreDefaults = 0x08000000
 
 
-class QDialogButtonBox(QDialogButtonBoxButtons):
-    """Until G3b makes it a widget, the enum alone (`getStandardButtons`
-    returns these)."""
-
-    def __init__(self, *args):
-        raise TypeError("QDialogButtonBox as a widget is not in the sandbox yet (G3b)")
-
-
 StandardButton = QDialogButtonBoxButtons
+
+
+class QRect:
+    def __init__(self, x=0, y=0, w=0, h=0):
+        self._x, self._y, self._w, self._h = int(x), int(y), int(w), int(h)
+
+    def x(self):
+        return self._x
+
+    def y(self):
+        return self._y
+
+    def width(self):
+        return self._w
+
+    def height(self):
+        return self._h
+
+    def center(self):
+        return QPoint(self._x + self._w // 2, self._y + self._h // 2)
+
+    def topLeft(self):
+        return QPoint(self._x, self._y)
+
+    def size(self):
+        return QSize(self._w, self._h)
+
+    def isValid(self):
+        return self._w > 0 and self._h > 0
+
+
+def __getattr__(name):
+    # `PySide.QtWidgets` imports QDialogButtonBox from here by name (the
+    # shim predates G3b); the widget class lives with the models
+    if name == "QDialogButtonBox":
+        from . import models
+
+        return models.QDialogButtonBox
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))

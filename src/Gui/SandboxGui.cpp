@@ -50,6 +50,7 @@
 #include "Document.h"
 #include "Fw/FwPy.h"
 #include "Fw/FwQtPanel.h"
+#include "Fw/FwQtView.h"
 #include "Fw/FwStore.h"
 #include "Fw/FwWidgets.h"
 #include "TaskView/TaskDialog.h"
@@ -578,6 +579,31 @@ Reply commManager(HandleTable& table, const json& a)
     return replyOk(true);
 }
 
+/// A dialog root the guest showed (`form.show()`: `visible` set true)
+/// becomes a window of its own, as it would natively (docs/Sandbox.md
+/// 7.11, G3b).  Only a dialog or a form: a named child's `show()` is a
+/// property of a widget in a layout.
+void showTopLevelIfAsked(Gui::Fw::Widget* w)
+{
+    if (!w || w->parentWidget() || !qobject_cast<Gui::Fw::QDialog*>(w))
+        return;
+    if (!w->isTouched(QStringLiteral("visible")) || !w->property("visible").toBool())
+        return;
+    if (Gui::FwQt::View::of(w))
+        return;
+    try {
+        if (QWidget* window = Gui::FwQt::realizeTopLevel(w)) {
+            window->show();
+            w->setProperties(QVariantMap {{QStringLiteral("width"), window->width()},
+                                          {QStringLiteral("height"), window->height()}},
+                             Gui::Fw::Source::Backend);
+        }
+    }
+    catch (const Base::Exception& e) {
+        Base::Console().Error("SandboxGui: cannot show the guest's dialog: %s\n", e.what());
+    }
+}
+
 /// A comm message for the C++ store: true when it took it.
 bool storeComm(const std::string& type, const QString& id, const json& data)
 {
@@ -605,8 +631,10 @@ bool storeComm(const std::string& type, const QString& id, const json& data)
     const std::string method = data.value("method", "");
     if (method == "update") {
         auto st = data.find("state");
-        if (st != data.end() && st->is_object())
+        if (st != data.end() && st->is_object()) {
             store.commUpdate(id, jsonToVariant(*st).toMap());
+            showTopLevelIfAsked(store.object(id));
+        }
     }
     else if (method == "custom") {
         auto c = data.find("content");
@@ -851,6 +879,31 @@ Reply controlShow(HandleTable& table, const json& a)
     return replyOk(true);
 }
 
+/// `gui.dialog.exec [form id]`: the guest's `QDialog.exec_()`.  The
+/// root is realized as a window and run modally in a nested event
+/// loop inside this one op; what the user does in it reaches the
+/// guest's slots nested (the comm messages call into the guest), and
+/// the dialog code comes back as the op's result.
+Reply dialogExec(HandleTable& table, const json& a)
+{
+    (void)table;
+    if (!a.is_string())
+        return replyErr("ProtocolError", "gui.dialog.exec: form id");
+    Gui::Fw::Widget* w = Gui::Fw::Store::instance().object(
+        QString::fromUtf8(a.get_ref<const std::string&>().c_str()));
+    if (!w)
+        return replyErr("KeyError", "gui.dialog.exec: no such form");
+    if (w->parentWidget())
+        return replyErr("TypeError", "gui.dialog.exec: the form is not a top-level widget");
+    try {
+        int r = Gui::FwQt::execDialog(w);
+        return replyOk(r);
+    }
+    catch (const Base::Exception& e) {
+        return replyErr("TypeError", e.what());
+    }
+}
+
 /// `gui.control.close` / `.active` / `.clear_watcher` / `.query name`.
 Reply controlCall(HandleTable& table, const std::string& op, const json& a)
 {
@@ -953,6 +1006,8 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
         return uiRead(arg);
     if (op == "gui.control.show")
         return controlShow(table, arg);
+    if (op == "gui.dialog.exec")
+        return dialogExec(table, arg);
     if (op == "gui.control.close" || op == "gui.control.active" || op == "gui.control.query"
         || op == "gui.control.clear_watcher")
         return controlCall(table, op, arg);

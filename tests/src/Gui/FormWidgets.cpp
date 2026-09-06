@@ -6,10 +6,22 @@
  * main window, no Gui::Application. */
 
 #include <QDebug>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QGridLayout>
 #include <QLineEdit>
+#include <QListWidget>
+#include <QPushButton>
+#include <QScrollArea>
 #include <QSignalSpy>
 #include <QSpinBox>
+#include <QSplitter>
+#include <QStandardItemModel>
+#include <QTabWidget>
+#include <QTableWidget>
+#include <QTimer>
+#include <QTreeView>
+#include <QTreeWidget>
 #include <QCheckBox>
 #include <QRadioButton>
 #include <QGroupBox>
@@ -26,6 +38,7 @@
 #include <src/App/InitApplication.h>
 
 #include "Gui/Camera.h"
+#include "Gui/FileDialog.h"
 #include "Gui/Fw/FwQtView.h"
 #include "Gui/Fw/FwWidgets.h"
 #include "Gui/InputField.h"
@@ -241,8 +254,13 @@ private Q_SLOTS:
         QCOMPARE(w->qtClass(), QStringLiteral("Gui::InputField"));
         delete w;
         w = Fw::createWidget(QStringLiteral("QTreeWidget"));
+        QVERIFY(qobject_cast<Fw::QTreeWidget*>(w));
+        QCOMPARE(w->modelName(), QStringLiteral("QTreeWidgetModel"));
+        delete w;
+        // an unknown class is a plain Widget under that name: the gap shows
+        w = Fw::createWidget(QStringLiteral("QCalendarWidget"));
         QCOMPARE(w->modelName(), QStringLiteral("QWidgetModel"));
-        QCOMPARE(w->qtClass(), QStringLiteral("QTreeWidget"));
+        QCOMPARE(w->qtClass(), QStringLiteral("QCalendarWidget"));
         delete w;
         QVERIFY(Fw::knownClasses().contains(QStringLiteral("Gui::QuantitySpinBox")));
     }
@@ -481,6 +499,246 @@ private Q_SLOTS:
     // expression set on either side, or on the document, meets in the
     // bag and the value.  (`apply` runs a command through the Gui
     // application, which this test has none of: the GUI gate covers it.)
+    // G3b: the item views (docs/Sandbox.md 7.11).  One row tree on the
+    // model, one Qt path through the abstract item model for the tree
+    // widget, the list, the table and a tree view over a model made by
+    // the backend; the selection and the current row as state; a host
+    // edit back as an event.
+    void test_itemViews()
+    {
+        // a tree widget: rows with children, columns, flags, checks
+        Fw::QTreeWidget tree;
+        tree.setHeaderLabels({QStringLiteral("Name"), QStringLiteral("Value")});
+        int a = tree.addRow({QStringLiteral("A"), QStringLiteral("1")});
+        int b = tree.addRow({QStringLiteral("B"), QStringLiteral("2")});
+        int a1 = tree.addRow({QStringLiteral("A.1"), QStringLiteral("11")}, a);
+        tree.setCheckState(a1, 0, Qt::Checked);
+        tree.setExpanded(a, true);
+        QCOMPARE(tree.rowCount(), 2);
+        QCOMPARE(tree.rowCount(a), 1);
+        QCOMPARE(tree.text(a1, 1), QStringLiteral("11"));
+
+        QSignalSpy ops(&tree, &Fw::ItemView::itemsChanged);
+        auto qw = qobject_cast<QTreeWidget*>(Gui::FwQt::realize(&tree, nullptr));
+        QVERIFY(qw);
+        QCOMPARE(qw->columnCount(), 2);
+        QCOMPARE(qw->headerItem()->text(1), QStringLiteral("Value"));
+        QCOMPARE(qw->topLevelItemCount(), 2);
+        QTreeWidgetItem* ia = qw->topLevelItem(0);
+        QCOMPARE(ia->text(0), QStringLiteral("A"));
+        QCOMPARE(ia->childCount(), 1);
+        QCOMPARE(ia->child(0)->text(1), QStringLiteral("11"));
+        QCOMPARE(ia->child(0)->checkState(0), Qt::Checked);
+        QVERIFY(ia->isExpanded());
+
+        // a later row and a cell reach the widget; a removal too
+        int c = tree.addRow({QStringLiteral("C")});
+        QCOMPARE(qw->topLevelItemCount(), 3);
+        tree.setText(c, 1, QStringLiteral("3"));
+        QCOMPARE(qw->topLevelItem(2)->text(1), QStringLiteral("3"));
+        tree.removeRow(b);
+        QCOMPARE(qw->topLevelItemCount(), 2);
+        QCOMPARE(qw->topLevelItem(1)->text(0), QStringLiteral("C"));
+        QVERIFY(ops.count() >= 3);
+
+        // the selection and the current row, both ways
+        QSignalSpy selChanged(&tree, &Fw::ItemView::itemSelectionChanged);
+        QSignalSpy curChanged(&tree, &Fw::ItemView::currentItemChanged);
+        tree.setCurrent(c);
+        QCOMPARE(qw->currentItem()->text(0), QStringLiteral("C"));
+        QVERIFY(qw->currentItem()->isSelected());
+        QCOMPARE(curChanged.count(), 1);
+        QCOMPARE(selChanged.count(), 1);
+        qw->setCurrentItem(ia);
+        QCOMPARE(tree.currentId(), a);
+        QCOMPARE(tree.selection(), QList<int> {a});
+        ia->child(0)->setSelected(true);
+        QVERIFY(tree.selection().contains(a1));
+
+        // an edit in the widget comes back as itemChanged and the cell
+        QSignalSpy changed(&tree, &Fw::ItemView::itemChanged);
+        ia->setText(1, QStringLiteral("one"));
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(tree.text(a, 1), QStringLiteral("one"));
+        ia->child(0)->setCheckState(0, Qt::Unchecked);
+        QCOMPARE(tree.checkState(a1, 0), static_cast<int>(Qt::Unchecked));
+
+        // clear
+        tree.clearRows();
+        QCOMPARE(qw->topLevelItemCount(), 0);
+        QCOMPARE(tree.currentId(), 0);
+        delete qw;
+        QCoreApplication::processEvents();
+
+        // a list widget
+        Fw::QListWidget list;
+        list.addItem(QStringLiteral("x"));
+        list.addItem(QStringLiteral("y"));
+        auto ql = qobject_cast<QListWidget*>(Gui::FwQt::realize(&list, nullptr));
+        QVERIFY(ql);
+        QCOMPARE(ql->count(), 2);
+        QCOMPARE(ql->item(1)->text(), QStringLiteral("y"));
+        list.setCurrentRow(1);
+        QCOMPARE(ql->currentRow(), 1);
+        ql->setCurrentRow(0);
+        QCOMPARE(list.currentRow(), 0);
+        delete ql;
+
+        // a table widget: rows of cells, header labels
+        Fw::QTableWidget table;
+        table.setHorizontalHeaderLabels({QStringLiteral("k"), QStringLiteral("v")});
+        table.setRowCount(2);
+        table.setItemText(0, 0, QStringLiteral("k0"));
+        table.setItemText(1, 1, QStringLiteral("v1"));
+        auto qt = qobject_cast<QTableWidget*>(Gui::FwQt::realize(&table, nullptr));
+        QVERIFY(qt);
+        QCOMPARE(qt->rowCount(), 2);
+        QCOMPARE(qt->columnCount(), 2);
+        QCOMPARE(qt->horizontalHeaderItem(1)->text(), QStringLiteral("v"));
+        QCOMPARE(qt->item(0, 0)->text(), QStringLiteral("k0"));
+        QCOMPARE(qt->item(1, 1)->text(), QStringLiteral("v1"));
+        table.setCurrentCell(1, 1);
+        QCOMPARE(qt->currentRow(), 1);
+        QCOMPARE(qt->currentColumn(), 1);
+        qt->item(0, 0)->setText(QStringLiteral("edited"));
+        QCOMPARE(table.itemText(0, 0), QStringLiteral("edited"));
+        delete qt;
+
+        // a tree view: the backend makes the model
+        Fw::QTreeView view;
+        view.setColumns({QStringLiteral("c0"), QStringLiteral("c1")});
+        int r = view.addRow({QStringLiteral("r"), QStringLiteral("rv")});
+        view.addRow({QStringLiteral("r.0")}, r);
+        auto qv = qobject_cast<QTreeView*>(Gui::FwQt::realize(&view, nullptr));
+        QVERIFY(qv);
+        auto model = qobject_cast<QStandardItemModel*>(qv->model());
+        QVERIFY(model);
+        QCOMPARE(model->columnCount(), 2);
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(model->item(0, 1)->text(), QStringLiteral("rv"));
+        QCOMPARE(model->item(0, 0)->rowCount(), 1);
+        QCOMPARE(model->item(0, 0)->child(0)->text(), QStringLiteral("r.0"));
+        QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("c1"));
+        view.setExpanded(r, true);
+        QVERIFY(qv->isExpanded(model->index(0, 0)));
+        delete qv;
+        QCoreApplication::processEvents();
+    }
+
+    // G3b: dialogs and containers.  A tab widget's pages and current
+    // index both ways, a splitter's sizes, a scroll area's content, a
+    // dialog realized as a window of its own with its button box.
+    void test_dialogsAndContainers()
+    {
+        Fw::QTabWidget tabs;
+        auto p1 = new Fw::QLabel(QStringLiteral("one"));
+        auto p2 = new Fw::QLabel(QStringLiteral("two"));
+        tabs.addTab(p1, QStringLiteral("One"));
+        tabs.addTab(p2, QStringLiteral("Two"));
+        QCOMPARE(tabs.count(), 2);
+        QCOMPARE(tabs.currentIndex(), 0);
+        auto qtabs = qobject_cast<QTabWidget*>(Gui::FwQt::realize(&tabs, nullptr));
+        QVERIFY(qtabs);
+        QCOMPARE(qtabs->count(), 2);
+        QCOMPARE(qtabs->tabText(1), QStringLiteral("Two"));
+        QCOMPARE(qobject_cast<QLabel*>(qtabs->widget(1))->text(), QStringLiteral("two"));
+        QSignalSpy tabChanged(&tabs, &Fw::QTabWidget::currentChanged);
+        tabs.setCurrentIndex(1);
+        QCOMPARE(qtabs->currentIndex(), 1);
+        QCOMPARE(tabChanged.count(), 1);
+        qtabs->setCurrentIndex(0);
+        QCOMPARE(tabs.currentIndex(), 0);
+        tabs.setTabText(0, QStringLiteral("Uno"));
+        QCOMPARE(qtabs->tabText(0), QStringLiteral("Uno"));
+        auto p3 = new Fw::QLabel(QStringLiteral("three"));
+        tabs.addTab(p3, QStringLiteral("Three"));
+        QCOMPARE(qtabs->count(), 3);
+        delete qtabs;
+        QCoreApplication::processEvents();
+
+        Fw::QSplitter split;
+        split.addWidget(new Fw::QLabel(QStringLiteral("l")));
+        split.addWidget(new Fw::QLabel(QStringLiteral("r")));
+        auto qsplit = qobject_cast<QSplitter*>(Gui::FwQt::realize(&split, nullptr));
+        QVERIFY(qsplit);
+        QCOMPARE(qsplit->count(), 2);
+        qsplit->resize(400, 100);
+        split.setSizes({300, 100});
+        // Qt keeps the ratio, less the handle
+        QVERIFY(qsplit->sizes().at(0) >= 290);
+        QVERIFY(qsplit->sizes().at(0) > qsplit->sizes().at(1));
+        delete qsplit;
+
+        Fw::QScrollArea area;
+        area.setWidgetResizable(true);
+        area.setWidget(new Fw::QLabel(QStringLiteral("content")));
+        auto qarea = qobject_cast<QScrollArea*>(Gui::FwQt::realize(&area, nullptr));
+        QVERIFY(qarea);
+        QVERIFY(qarea->widgetResizable());
+        QVERIFY(qobject_cast<QLabel*>(qarea->widget()));
+        delete qarea;
+
+        Fw::FileChooser chooser;
+        chooser.setFilter(QStringLiteral("Fonts (*.ttf)"));
+        chooser.setFileName(QStringLiteral("/tmp/a.ttf"));
+        auto qchooser = qobject_cast<Gui::FileChooser*>(Gui::FwQt::realize(&chooser, nullptr));
+        QVERIFY(qchooser);
+        QCOMPARE(qchooser->fileName(), QStringLiteral("/tmp/a.ttf"));
+        QCOMPARE(qchooser->filter(), QStringLiteral("Fonts (*.ttf)"));
+        QSignalSpy nameChanged(&chooser, &Fw::FileChooser::fileNameChanged);
+        qchooser->setFileName(QStringLiteral("/tmp/b.ttf"));
+        QCOMPARE(chooser.fileName(), QStringLiteral("/tmp/b.ttf"));
+        QCOMPARE(nameChanged.count(), 1);
+        delete qchooser;
+
+        // a dialog with a button box, as a window of its own
+        Fw::QDialog dialog;
+        dialog.setWindowTitle(QStringLiteral("Ask"));
+        auto box = new Fw::QDialogButtonBox(&dialog);
+        box->setStandardButtons(Fw::QDialogButtonBox::Ok | Fw::QDialogButtonBox::Cancel);
+        QWidget* window = Gui::FwQt::realizeTopLevel(&dialog);
+        auto qdialog = qobject_cast<QDialog*>(window);
+        QVERIFY(qdialog);
+        QVERIFY(qdialog->isWindow());
+        QCOMPARE(qdialog->windowTitle(), QStringLiteral("Ask"));
+        auto qbox = qobject_cast<QDialogButtonBox*>(Gui::FwQt::realize(box, qdialog));
+        QVERIFY(qbox);
+        QVERIFY(qbox->button(QDialogButtonBox::Ok));
+        QVERIFY(qbox->button(QDialogButtonBox::Cancel));
+        QSignalSpy accepted(&dialog, &Fw::QDialog::accepted);
+        QSignalSpy finished(&dialog, &Fw::QDialog::finished);
+        QSignalSpy boxClicked(box, &Fw::QDialogButtonBox::clicked);
+        QSignalSpy boxAccepted(box, &Fw::QDialogButtonBox::accepted);
+        QObject::connect(qbox, &QDialogButtonBox::accepted, qdialog, &QDialog::accept);
+        // exec: the nested loop, OK clicked from a timer inside it
+        QTimer::singleShot(50, qbox->button(QDialogButtonBox::Ok), &QPushButton::click);
+        int code = Gui::FwQt::execDialog(&dialog);
+        QCOMPARE(code, static_cast<int>(QDialog::Accepted));
+        QCOMPARE(accepted.count(), 1);
+        QCOMPARE(finished.count(), 1);
+        QCOMPARE(boxAccepted.count(), 1);
+        QCOMPARE(boxClicked.count(), 1);
+        QCOMPARE(boxClicked.at(0).at(0).toInt(), static_cast<int>(Fw::QDialogButtonBox::Ok));
+        QCOMPARE(dialog.result(), static_cast<int>(QDialog::Accepted));
+        QVERIFY(!dialog.isVisible());
+        // reject from the model
+        QSignalSpy rejected(&dialog, &Fw::QDialog::rejected);
+        qdialog->show();
+        dialog.reject();
+        QCOMPARE(rejected.count(), 1);
+        QVERIFY(!qdialog->isVisible());
+        // the window dies with the model
+        QPointer<QWidget> guard(window);
+        {
+            Fw::QDialog temp;
+            QWidget* tw = Gui::FwQt::realizeTopLevel(&temp);
+            guard = tw;
+        }
+        // deleteLater from outside an event loop: flushed explicitly
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(guard.isNull());
+    }
+
     void test_expressionSeam()
     {
         App::Document* doc = App::GetApplication().newDocument("FwExpression");

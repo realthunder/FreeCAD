@@ -116,6 +116,7 @@ def _build(elem, parent, named):
     items = _items(elem)
     widget = models.make(cls, parent)
     _set_initial(widget, props, items)
+    _set_headers(widget, elem)
     if name:
         named[name] = widget
         root = parent
@@ -123,7 +124,56 @@ def _build(elem, parent, named):
             root = root._parent
         setattr(root, name, widget)
     _build_children(elem, widget, named)
+    _set_pages(widget, elem)
     return widget
+
+
+def _set_headers(widget, elem):
+    """A tree or table's `<column>` / `<row>` headers and the header
+    attributes, as initial state (uic makes the real ones, translated)."""
+    if not isinstance(widget, models.QAbstractItemView):
+        return
+    cols = [str(_properties(c).get("text", "")) for c in elem.findall("column")]
+    rows = [str(_properties(r).get("text", "")) for r in elem.findall("row")]
+    attrs = {a.get("name"): _value(a) for a in elem.findall("attribute")}
+    with widget.hold_sync():
+        if cols:
+            widget.q_columns = cols
+            if widget.q_columnCount < len(cols):
+                widget.q_columnCount = len(cols)
+        if rows:
+            widget.q_rowLabels = rows
+        if attrs.get("headerVisible") is False:
+            widget.q_headerHidden = True
+        widget._touched = []
+
+
+def _set_pages(widget, elem):
+    """A tab widget's pages (`<attribute name="title">`), a stacked
+    widget's, a scroll area's or a splitter's children: the container
+    learns them, and a tab widget its titles, silently."""
+    if not hasattr(widget, "_fcx_page"):
+        return
+    titles = []
+    for child in elem.findall("widget"):
+        page = None
+        for w in widget._children:
+            if w.objectName() == child.get("name", ""):
+                page = w
+        if page is None:
+            continue
+        title = ""
+        for a in child.findall("attribute"):
+            if a.get("name") == "title":
+                title = str(_value(a) or "")
+        widget._fcx_page(page, title)
+        titles.append(title)
+    if isinstance(widget, models.QTabWidget) and titles:
+        with widget.hold_sync():
+            widget.q_tabs = titles
+            if widget.q_currentIndex < 0:
+                widget.q_currentIndex = 0
+            widget._touched = []
 
 
 def _apply_properties(widget, elem):

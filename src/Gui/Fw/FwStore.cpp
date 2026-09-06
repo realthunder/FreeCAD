@@ -94,6 +94,12 @@ bool Store::commCustom(const QString& id, const QVariantMap& content)
         w->forwardLayoutOp(op);
         return true;
     }
+    if (content.contains(QStringLiteral("item"))) {
+        // an item op on a view's rows (docs/Sandbox.md 7.11, G3b)
+        if (auto view = qobject_cast<ItemView*>(w))
+            view->applyItemOp(content);
+        return true;
+    }
     QString event = content.value(QStringLiteral("event")).toString();
     QVariantList args = content.value(QStringLiteral("args")).toList();
     if (event.isEmpty())
@@ -103,6 +109,13 @@ bool Store::commCustom(const QString& id, const QVariantMap& content)
         Widget* parent = pid.isEmpty() ? nullptr : resolve(pid);
         w->setParent(parent);
         return true;
+    }
+    // a widget the guest names in a request (a tab's page, a scroll
+    // area's content, an item's widget) is a model ref; the backend
+    // wants the object
+    for (QVariant& a : args) {
+        if (a.typeId() == QMetaType::QString && a.toString().startsWith(kModelRef))
+            a = QVariant::fromValue<QObject*>(resolve(a.toString()));
     }
     w->request(event, args);
     return true;
