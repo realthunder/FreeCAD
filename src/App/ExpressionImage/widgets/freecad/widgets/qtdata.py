@@ -301,7 +301,8 @@ class QIcon:
 
 
 class QPixmap:
-    """A pixmap by resource path; drawing into one is not in the subset."""
+    """A pixmap by resource path, or one made of an image drawn in code
+    (`fromImage`: the drawing as an SVG data URI the host renders)."""
 
     __slots__ = ("path", "size")
 
@@ -313,14 +314,38 @@ class QPixmap:
         elif len(args) >= 2:
             self.size = (args[0], args[1])
 
+    @staticmethod
+    def fromImage(image, *args):
+        pm = QPixmap()
+        pm.path = image._data_uri()
+        pm.size = (image.width(), image.height())
+        return pm
+
     def isNull(self):
         return not self.path
+
+    def width(self):
+        return self.size[0] if self.size else 0
+
+    def height(self):
+        return self.size[1] if self.size else 0
+
+    def scaled(self, *args, **kwargs):
+        return self
+
+    def toImage(self):
+        im = QImage(self.width(), self.height())
+        im._path = self.path
+        return im
 
     def __repr__(self):
         return "QPixmap(%r)" % (self.path,)
 
 
 class QFont:
+    """A font as data: what `setFont` carries to the host (bold, italic,
+    pointSize, family), the widget's own font for the rest."""
+
     Bold = 75
     Normal = 50
 
@@ -337,11 +362,64 @@ class QFont:
     def setPointSize(self, size):
         self.pointSize = size
 
+    def setPointSizeF(self, size):
+        self.pointSize = int(size)
+
     def setItalic(self, on):
         self.italic = bool(on)
 
     def setFamily(self, family):
         self.family = family
+
+    def setWeight(self, weight):
+        self.weight = weight
+        self.bold = weight >= QFont.Bold
+
+    def setUnderline(self, on):
+        self.underline = bool(on)
+
+    def family_(self):
+        return self.family
+
+    def toDict(self):
+        d = {"bold": self.bold, "italic": self.italic}
+        if self.pointSize and self.pointSize > 0:
+            d["pointSize"] = int(self.pointSize)
+        if self.family:
+            d["family"] = str(self.family)
+        return d
+
+    @staticmethod
+    def fromDict(d):
+        f = QFont(d.get("family"), d.get("pointSize", -1), -1, bool(d.get("italic", False)))
+        f.bold = bool(d.get("bold", False))
+        return f
+
+
+class QFontMetrics:
+    """An estimate: nothing is measured in the guest.  About seven
+    pixels a character, sixteen high (the host lays the real text out)."""
+
+    CHAR_WIDTH = 7
+    LINE_HEIGHT = 16
+
+    def __init__(self, font=None):
+        self.font = font
+
+    def width(self, text):
+        return self.CHAR_WIDTH * len(str(text))
+
+    def horizontalAdvance(self, text):
+        return self.width(text)
+
+    def height(self):
+        return self.LINE_HEIGHT
+
+    def boundingRect(self, text):
+        return QRect(0, 0, self.width(text), self.LINE_HEIGHT)
+
+
+QFontMetricsF = QFontMetrics
 
 
 class QSize:
@@ -415,6 +493,386 @@ class QDialogButtonBoxButtons(_Enum):
 
 
 StandardButton = QDialogButtonBoxButtons
+
+
+class QMargins:
+    def __init__(self, left=0, top=0, right=0, bottom=0):
+        self._m = [int(left), int(top), int(right), int(bottom)]
+
+    def left(self):
+        return self._m[0]
+
+    def top(self):
+        return self._m[1]
+
+    def right(self):
+        return self._m[2]
+
+    def bottom(self):
+        return self._m[3]
+
+
+# -- events (G3c): what the host relays to a widget that asked --------------
+
+
+class QEvent:
+    """A relayed QEvent: Qt's own type values, so `event.type() ==
+    QtCore.QEvent.KeyPress` reads as natively."""
+
+    MouseButtonPress = 2
+    MouseButtonRelease = 3
+    MouseButtonDblClick = 4
+    MouseMove = 5
+    KeyPress = 6
+    KeyRelease = 7
+    FocusIn = 8
+    FocusOut = 9
+    Enter = 10
+    Leave = 11
+    Paint = 12
+    Move = 13
+    Resize = 14
+    Show = 17
+    Hide = 18
+    Close = 19
+    Wheel = 31
+    LanguageChange = 89
+    ContextMenu = 82
+
+    Type = None  # filled below: the enum namespace
+
+    def __init__(self, type_):
+        self._type = int(type_)
+        self._accepted = True
+        self._to_host = True
+
+    def type(self):
+        return self._type
+
+    def accept(self):
+        self._accepted = True
+
+    def ignore(self):
+        self._accepted = False
+
+    def isAccepted(self):
+        return self._accepted
+
+    def setAccepted(self, on):
+        self._accepted = bool(on)
+
+    def spontaneous(self):
+        return True
+
+    @staticmethod
+    def make(args):
+        """The event the host's relay described: `[type, ...]`."""
+        t = int(args[0])
+        if t in (QEvent.KeyPress, QEvent.KeyRelease):
+            return QKeyEvent(t, *args[1:])
+        if t in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease,
+                 QEvent.MouseButtonDblClick, QEvent.MouseMove):
+            return QMouseEvent(t, *args[1:])
+        if t in (QEvent.FocusIn, QEvent.FocusOut):
+            return QFocusEvent(t, *args[1:])
+        return QEvent(t)
+
+
+QEvent.Type = QEvent
+
+
+class QKeyEvent(QEvent):
+    def __init__(self, type_, key=0, modifiers=0, text="", autorep=False, count=1):
+        QEvent.__init__(self, type_)
+        self._key = int(key)
+        self._modifiers = int(modifiers)
+        self._text = str(text or "")
+        self._autorep = bool(autorep)
+        self._count = int(count)
+
+    def key(self):
+        return self._key
+
+    def modifiers(self):
+        return self._modifiers
+
+    def text(self):
+        return self._text
+
+    def isAutoRepeat(self):
+        return self._autorep
+
+    def count(self):
+        return self._count
+
+    def matches(self, key):
+        return False
+
+
+class QMouseEvent(QEvent):
+    def __init__(self, type_, x=0, y=0, button=0, buttons=0, modifiers=0):
+        QEvent.__init__(self, type_)
+        self._pos = QPoint(int(x), int(y))
+        self._button = int(button)
+        self._buttons = int(buttons)
+        self._modifiers = int(modifiers)
+
+    def pos(self):
+        return self._pos
+
+    def position(self):
+        return QPointF(self._pos.x(), self._pos.y())
+
+    def x(self):
+        return self._pos.x()
+
+    def y(self):
+        return self._pos.y()
+
+    def button(self):
+        return self._button
+
+    def buttons(self):
+        return self._buttons
+
+    def modifiers(self):
+        return self._modifiers
+
+
+class QFocusEvent(QEvent):
+    def __init__(self, type_, reason=7):
+        QEvent.__init__(self, type_)
+        self._reason = int(reason)
+
+    def reason(self):
+        return self._reason
+
+    def gotFocus(self):
+        return self._type == QEvent.FocusIn
+
+    def lostFocus(self):
+        return self._type == QEvent.FocusOut
+
+
+class QCursor:
+    """The cursor as the guest sees it: a position the host reports
+    when asked (`getMainWindow().cursor().pos()`), a shape as data."""
+
+    def __init__(self, shape=0):
+        self.shape = shape
+
+    @staticmethod
+    def pos():
+        import _fcx
+
+        p = _fcx.op("gui.mainwindow", 0, ["cursorPos"])
+        return QPoint(int(p[0]), int(p[1]))
+
+    def setPos(self, *args):
+        pass
+
+
+class QKeySequence:
+    def __init__(self, keys=""):
+        self._keys = str(keys)
+
+    def toString(self, *args):
+        return self._keys
+
+    def __str__(self):
+        return self._keys
+
+
+# -- painting in code (G3c): a QImage drawn with a QPainter crosses as
+# an SVG the host renders (DraftGui's style button); nothing is
+# rasterized here.
+
+
+class QPen:
+    def __init__(self, color=None, width=1, style=1, cap=0, join=0):
+        self.color = color if isinstance(color, QColor) else QColor(color) if color else None
+        self.width = width
+        self.style = style
+        self.cap = cap
+        self.join = join
+
+    def setColor(self, color):
+        self.color = QColor(color)
+
+    def setWidth(self, width):
+        self.width = width
+
+    def setStyle(self, style):
+        self.style = style
+
+
+class QBrush:
+    def __init__(self, color=None, style=1):
+        if isinstance(color, int) and not isinstance(color, bool) and not isinstance(color, QColor):
+            # QBrush(Qt.NoBrush)
+            self.color, self.style = None, color
+        else:
+            self.color = color if isinstance(color, QColor) else QColor(color) if color else None
+            self.style = style
+
+    def setColor(self, color):
+        self.color = QColor(color)
+
+    def setStyle(self, style):
+        self.style = style
+
+
+class QImage:
+    Format_ARGB32 = 5
+    Format_RGB32 = 4
+    Format_ARGB32_Premultiplied = 6
+
+    def __init__(self, *args):
+        self._w, self._h = 0, 0
+        self._ops = []
+        self._fill = None
+        self._path = ""
+        if len(args) >= 2 and isinstance(args[0], int):
+            self._w, self._h = int(args[0]), int(args[1])
+        elif args and isinstance(args[0], str):
+            self._path = args[0]
+        elif args and isinstance(args[0], QSize):
+            self._w, self._h = args[0].width(), args[0].height()
+
+    def width(self):
+        return self._w
+
+    def height(self):
+        return self._h
+
+    def size(self):
+        return QSize(self._w, self._h)
+
+    def isNull(self):
+        return not (self._w and self._h) and not self._path
+
+    def fill(self, color):
+        c = color if isinstance(color, QColor) else QColor(color)
+        self._fill = None if c.alpha() == 0 else c
+
+    def save(self, *args):
+        return False
+
+    def scaled(self, *args, **kwargs):
+        return self
+
+    def _svg(self):
+        body = []
+        if self._fill is not None:
+            body.append('<rect width="%d" height="%d" fill="%s"/>'
+                        % (self._w, self._h, self._fill.name()))
+        body.extend(self._ops)
+        return ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" '
+                'viewBox="0 0 %d %d">%s</svg>' % (self._w, self._h, self._w, self._h,
+                                                  "".join(body)))
+
+    def _data_uri(self):
+        if self._path:
+            return self._path
+        return "data:image/svg+xml;utf8," + self._svg()
+
+
+def _style_attrs(pen, brush):
+    attrs = []
+    if brush is not None and brush.color is not None and brush.style:
+        attrs.append('fill="%s"' % brush.color.name())
+        if brush.color.alpha() < 255:
+            attrs.append('fill-opacity="%.3f"' % (brush.color.alpha() / 255.0))
+    else:
+        attrs.append('fill="none"')
+    if pen is not None and pen.color is not None and pen.style:
+        attrs.append('stroke="%s"' % pen.color.name())
+        attrs.append('stroke-width="%s"' % pen.width)
+        if pen.color.alpha() < 255:
+            attrs.append('stroke-opacity="%.3f"' % (pen.color.alpha() / 255.0))
+    return " ".join(attrs)
+
+
+class QPainter:
+    Antialiasing = 1
+
+    def __init__(self, device=None):
+        self._device = device
+        self._pen = QPen(Qt.black)
+        self._brush = QBrush(None, 0)
+        self._active = device is not None
+
+    def begin(self, device):
+        self._device = device
+        self._active = True
+        return True
+
+    def end(self):
+        self._active = False
+        return True
+
+    def isActive(self):
+        return self._active
+
+    def setPen(self, pen):
+        self._pen = pen if isinstance(pen, QPen) else QPen(pen)
+
+    def setBrush(self, brush):
+        self._brush = brush if isinstance(brush, QBrush) else QBrush(brush)
+
+    def setRenderHint(self, *args):
+        pass
+
+    def setFont(self, font):
+        pass
+
+    def _emit(self, element):
+        if isinstance(self._device, QImage):
+            self._device._ops.append(element)
+
+    def drawPolygon(self, points, *args):
+        pts = " ".join("%g,%g" % (p.x(), p.y()) for p in points)
+        self._emit('<polygon points="%s" %s/>' % (pts, _style_attrs(self._pen, self._brush)))
+
+    def drawRect(self, *args):
+        if len(args) == 1:
+            r = args[0]
+            x, y, w, h = r.x(), r.y(), r.width(), r.height()
+        else:
+            x, y, w, h = args[:4]
+        self._emit('<rect x="%g" y="%g" width="%g" height="%g" %s/>'
+                   % (x, y, w, h, _style_attrs(self._pen, self._brush)))
+
+    def fillRect(self, *args):
+        brush = args[-1]
+        if not isinstance(brush, QBrush):
+            brush = QBrush(brush)
+        pen, self._pen = self._pen, QPen(None, 0, 0)
+        try:
+            self.drawRect(*args[:-1])
+        finally:
+            self._pen = pen
+
+    def drawEllipse(self, *args):
+        if len(args) == 1:
+            r = args[0]
+            x, y, w, h = r.x(), r.y(), r.width(), r.height()
+        else:
+            x, y, w, h = args[:4]
+        self._emit('<ellipse cx="%g" cy="%g" rx="%g" ry="%g" %s/>'
+                   % (x + w / 2.0, y + h / 2.0, w / 2.0, h / 2.0,
+                      _style_attrs(self._pen, self._brush)))
+
+    def drawLine(self, *args):
+        if len(args) == 2:
+            x1, y1, x2, y2 = args[0].x(), args[0].y(), args[1].x(), args[1].y()
+        else:
+            x1, y1, x2, y2 = args[:4]
+        self._emit('<line x1="%g" y1="%g" x2="%g" y2="%g" %s/>'
+                   % (x1, y1, x2, y2, _style_attrs(self._pen, None)))
+
+    def drawText(self, *args):
+        pass
 
 
 class QRect:

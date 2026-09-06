@@ -2716,9 +2716,11 @@ What the build settled:
   module `__getattr__` (the image untouched; `QtCore.QModelIndex` is
   likewise not in the shim, and the corpus never touches it).
 - **Left for later.**  A bare `QWidget` root shown with `show()` as a
-  window (G3c, with DraftGui's toolbar); `QDialogButtonBox.addButton(
-  widget, role)` (G3c); the delegates' color editors (G3d); a host-side
-  sort leaves the guest's row order as inserted (ids still map).
+  window (still left after G3c: DraftGui's tray is a tool bar the main
+  window takes, and its panel goes through Control); `QDialogButtonBox.
+  addButton(widget, role)`; `QDockWidget` (one BIM site); the delegates'
+  color editors (G3d); a host-side sort leaves the guest's row order as
+  inserted (ids still map).
 
 Measured (RelWithDebInfo, Xvfb, `scripts/sandbox-gui-gate.py`,
 `SandboxPanels`):
@@ -2748,8 +2750,120 @@ button box `exec`'d and accepted from a timer, the window dying with
 the model): 15/15.  Suites after: the GUI gates 10/10 (five modules),
 `Tests_run --gtest_filter='Expression*'` 104 passed + 1 skipped.
 
-Next, **G3c** (forms built in code: DraftGui's toolbar, the main
-window shim, the key event stream) and the G2b runner.
+**G3c BUILT 2026-09-06**: forms built in code.  Draft's `DraftGui.py`
+runs UNMODIFIED in the guest -- `DraftToolBar()` at import builds the
+tray tool bar (buttons in code, the style button's icon painted with
+`QPainter`, `getMainWindow().addToolBar`), `taskUi()`/`lineUi()` build
+the task panel (28 items in 16 nested box layouts, a spacer, a bold
+font, the field-lock actions, two event filters), and `validatePoint`
+round-trips a point typed on the host.  What the build settled beyond
+the sizing (7.11):
+
+- **The layout tree crosses whole, as `layoutSpec`.**  A code-built
+  layout carries a generated name (`_fcx_layout_<n>`), and every
+  mutation on it re-syncs the OWNING widget's `layoutSpec` (the whole
+  tree: `{class, name, items, margins, spacing}`, an item a widget ref,
+  a nested layout, a spacer with its policies, a stretch, a spacing, an
+  action or a separator) and then sends the op as before -- two
+  messages a mutation, sixty-odd for DraftGui's panel, nothing.  The
+  store rebuilds the object's `Fw::Layout` from the spec silently; the
+  Qt view realizes it when it builds the widget (`View::makeLayout`,
+  the real layouts named after the guest's), and the ops that follow
+  find them by name.  A widget the guest hid before placing it stays
+  hidden (`showInLayout`); a child no layout placed is built as a child
+  still.  A `.ui` file's layouts are uic's and cross as ops only
+  (`_from_ui`).
+- **A tool bar's and a menu's content is a bar** (`Layout::Bar`, name
+  `_fcx_bar`): widgets, actions and separators in order, realized
+  without a QLayout (`fillBar`/`barOp`; a sub-menu is a `QMenu` widget
+  item).  `QAction` is a model like a widget (text, icon, checkable,
+  checked, enabled, visible, tool tip, shortcut), rendered by an
+  `ActionView` on whatever carries it -- a widget's `addAction` (the
+  `actions` state, a line edit's trailing lock icon among them), a bar,
+  a menu -- or bound to a real one (the bar's `toggleViewAction`, the
+  `toggleViewAction` state).  `getMainWindow()` is a shim: `addToolBar`
+  realizes the bar on the host (`gui.mainwindow`, the bar dying with
+  its model), `mainWindowClosed.connect` registers a hook, `showMessage`
+  and `cursor().pos()` are data; `getActiveWindow`/`getWindows` wait
+  for the mirror (G4).  `QMenu.exec_()` is one op (`gui.menu.exec`, a
+  nested loop at the cursor), the chosen action its result and the
+  menu's `triggered`; `runCommand` is `gui.cmd.run`;
+  `Control.addTaskWatcher` registers each watcher as a proxy the host's
+  `TaskWatcherPython` reads (`gui.control.add_watcher`).
+- **The key event stream is `watchEvents`.**  A widget that installs an
+  event filter or overrides `keyPressEvent` lists the QEvent types it
+  wants (`watchEvents`, Qt's values; every text input asks for focus
+  too, so `hasFocus()` is state), the host's relay sends each as the
+  `qevent` event (`[type, key, modifiers, text, autoRepeat]`, a mouse
+  event's position and buttons, a focus event's reason), the guest
+  runs its filters and handler and answers `eventDone [eaten]` INSIDE
+  the event, and an eaten event stops at the relay -- DraftGui's
+  snap-cycling key never reaches the line edit, the lock filter's Enter
+  does.  A key press costs 1.3 ms end to end.
+- **`QTimer.singleShot` is a queue** the image drains at the end of
+  every dispatched request (`_drain_timers`, prelude + dispatcher):
+  Draft's `todo.delay` schedules `doTasks` before appending to the
+  itinerary, so a shot that ran at once ran on an empty list.
+- **A `QPainter` on a `QImage` records an SVG** (polygons, rectangles,
+  ellipses, lines with the pen and brush) that crosses as a
+  `data:image/svg+xml` icon path the host renders (`svgDataIcon`); a
+  `QFont` crosses as `{bold, italic, pointSize, family}` over the
+  widget's own; `sizeHint()`/`QFontMetrics` are estimates (seven
+  pixels a character).  `InputField.valueChanged` carries a `Quantity`
+  (the overload PySide connects; DraftGui reads `d.Value`), and
+  `UiLoader().createWidget` answers None for a class outside the subset
+  (DraftGui's `Gui::ToolBar` fallback).
+- **The prelude delegates.**  Every `FreeCADGui` name it does not define
+  is `freecad.widgets.gui.attr(name)` (the AttributeError `hasattr(Gui,
+  "Snapper")` expects), and `_proxy_register` is exposed to the wheel:
+  a new name is a host build, not an image rebuild.  The `fcx_draft`
+  wheel gained `DraftGui`, `draftguitools/gui_field_locks` and
+  `draftutils/todo`.
+- **Lessons the gate taught.**  A later `def` in a class body wins over
+  an earlier one (the old `installEventFilter` stub shadowed the real
+  one; the host-python harness found it in a second).  Enter on a
+  field locks it and, on Z, `validatePoint` unlocks every field right
+  after -- natively too.  The fork's sequencer holds a WAIT CURSOR --
+  whose filter eats every key and mouse event -- until a poll queued on
+  the event loop sees the sequence over (`finishAggregate`), and a gate
+  runs its modules in one callback: after SandboxNative's pad recompute
+  the keys vanished, so a gate module spins the loop first (`settle`).
+  A document principal may not open widgets (correctly refused), so a
+  gate builds them through a session exec and reads through evaluate,
+  where `__import__` is blocked.
+
+Measured (RelWithDebInfo, Xvfb, `scripts/sandbox-gui-gate.py`,
+`SandboxDraftGui`):
+
+    DraftGui imported in the guest (the tray built,    (in the host-python harness,
+      the style icon painted, addToolBar)                the whole import 0.15 s)
+    draftToolBar.lineUi(): the panel built in code     0.09-0.20 s, 46 objects; 352
+      and shown (28 items, 16 sublayouts)                comm ops (39 opens, 253
+                                                         updates, 59 ops), 19 mod_call
+    a key press on the host -> the guest's filters     1.3 ms
+      -> eaten or not
+    a guest menu exec_() with a host click 100 ms in   0.12 s
+
+Gate `SandboxDraftGui` (3 cases): the tray as a tool bar of the main
+window with its four buttons, the painted icon, the square checkable
+tool button, the toggle-view action bound (a host trigger reaching the
+guest, the guest's hide reaching the bar); `lineUi()` as the active
+task panel with its layout tree, the shown and hidden fields, the bold
+label, the lock actions; a point typed on the host (focus, values,
+Enter) delivered to the guest's callback by Enter, by the Enter Point
+button and by the panel's accept, the lock filter locking on Enter and
+unlocking on a double-click, the snap-cycling key eaten, a digit not;
+`offsetUi()` and a close from the guest; a command registered and run
+from the guest, the main window's message and close hook, a guest
+menu run modally with a host click choosing its second item; a
+document principal refused.  `tests/src/Gui/FormWidgets.cpp` gained
+`test_codeBuiltLayouts` and `test_barsActionsAndKeys`: 17/17.  Suites
+after: the six GUI gate modules 13/13, `Tests_run
+--gtest_filter='Expression*'` 104 passed + 1 skipped.
+
+Next, the **G2b runner** (Draft's and BIM's `InitGui.py` in the guest:
+`Initialize()` now stops at `gui_snapper` and `gui_trackers`, pivy --
+Probe A passed -- and at `FreeCADGui.Selection`, G3d), then G3d.
 
 ## 8. Measurements
 
@@ -2874,9 +2988,17 @@ Non-ASCII object names occur in real files.  Rig:
                                                           opened from the guest and
                                                           round-tripped, exec_() (7.11);
                                                           the same gate script
-    tests/src/Gui/FormWidgets.cpp                   15    H0-H1, G3b: the host widget
+    src/Mod/Test/SandboxDraftGui.py                  3    G3c: Draft's DraftGui.py in the
+                                                          guest -- the tray tool bar, the
+                                                          panel built in code, a point
+                                                          typed on the host, the key
+                                                          stream, a menu, the main window
+                                                          shim (7.11); the same gate script
+    tests/src/Gui/FormWidgets.cpp                   17    H0-H1, G3b, G3c: the host widget
                                                           layer's property core, class set,
-                                                          layout ops, the fwuic generator's
+                                                          layout ops, code-built layouts,
+                                                          bars, actions, the key relay,
+                                                          the fwuic generator's
                                                           output for OrthoArray, the Qt
                                                           backend binding uic's widgets, the
                                                           ports, the item views, dialogs and
@@ -2981,9 +3103,12 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    2026-09-06).  **G3b** BUILT 2026-09-06 on the C++ store (7.11: the
    item views as rows with item ops, dialogs with `exec_()`, the
    containers, the file chooser; gate `SandboxPanels`, the 40 files).
-   Next **G3c** (forms built in code: DraftGui's toolbar -- what both
-   workbenches' `Initialize()` stop at), and the G2b runner once there
-   is something to switch to.
+   **G3c** BUILT 2026-09-06 (7.12: forms built in code -- the layout
+   tree as `layoutSpec`, bars, actions, the main window shim, the key
+   event stream; Draft's `DraftGui.py` unmodified in the guest, gate
+   `SandboxDraftGui`).  Next the **G2b runner**: both `Initialize()`s
+   now stop at the snapper and the trackers (pivy) and at
+   `FreeCADGui.Selection` (G3d).
 4. **P2** -- in-place install into a running guest (the sec 9.3 probe of
    `SandboxNetwork.md`: does a wheel with compiled extensions import
    synchronously without `loadPackage`?).  Moved after G1: nothing
@@ -2999,9 +3124,10 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    the task panel, `.ui` layouts, `prefs.write`, `Gui.ActiveDocument`);
    G3b BUILT 2026-09-06 (dialogs with `exec_()`, the tree/list/table
    family as rows with item ops, containers, the file chooser; the
-   40-file harness `SandboxPanels` is its gate); G3c forms built in code (layouts
-   without a file, actions, tool bars, the main window shim, the key
-   event stream) gated on DraftGui's toolbar; G3d the selection input
+   40-file harness `SandboxPanels` is its gate); G3c BUILT 2026-09-06
+   (forms built in code: layouts without a file, actions, tool bars,
+   menus, the main window shim, the key event stream; DraftGui's tray
+   and panel are the gate, `SandboxDraftGui`); G3d the selection input
    and the U2 dialogs.
    H0 (BUILT 2026-09-06) and H1 (7.12) come before G3b so G3b's views
    are written once, in C++; H2 and H3, the native ports, interleave
@@ -3121,11 +3247,25 @@ sockets, any network for the reference image, a webview escape hatch.
   The same under Xvfb: a document left open at exit is a save prompt,
   and a prompt is a hang until the timeout -- a probe closes its
   documents and dialogs before the main window.
-- The guest prelude (`ImageMarshal.cpp`) is compiled into the GUEST
-  image: an edit needs `cmake --build build/pyodide-guest` (outside the
-  conda env, docs/DevEnvironment.md) and the mirror step, not a host
-  rebuild -- the host build silently keeps the old wheel and the new
-  `FreeCADGui` names are "missing".
+- The guest prelude (`ImageMarshal.cpp`) and dispatcher
+  (`ImageDispatch.cpp`) are compiled into the GUEST image: an edit
+  needs `cmake --build build/pyodide-guest` (outside the conda env,
+  docs/DevEnvironment.md) and the mirror step (`--target
+  fcx_image_wheel` on the host), not a host rebuild -- the host build
+  silently keeps the old wheel.  Since G3c the prelude delegates every
+  `FreeCADGui` name it lacks to `freecad.widgets.gui.attr`, in the
+  wheel the HOST build packs: a new name is a host build.
+- The fork's sequencer holds a wait cursor until a poll queued on the
+  event loop sees the sequence over, and the wait cursor's filter eats
+  every key and mouse event: a test that recomputes and then sends
+  keys or clicks without returning to the loop sees them vanish
+  (SandboxNative's pad, then SandboxDraftGui's Enter).  Spin the loop
+  until `QApplication.overrideCursor()` is None first.
+- A `def` later in a class body wins over an earlier one of the same
+  name: a stub left behind (`installEventFilter: pass`) silently
+  replaced the real method above it.  The host-python harness of the
+  guest package (a stubbed `_fcx`/`FreeCAD`/`FreeCADGui`/`draftutils.
+  params`) shows such a thing in a second; the gate takes a minute.
 - A tuple crosses the wire as a tuple (ipywidgets' `_options_labels`),
   a list as a list; compare with `list()` on the host when the guest's
   type is traitlets' choice.
@@ -3196,14 +3336,19 @@ sockets, any network for the reference image, a webview escape hatch.
 - Every GUI registration from the guest (7.9) runs as `session`: the
   addon principal for a workbench's guest code, and how a stand-in
   carries it for the hooks the host calls later, is G2b's.
-- Draft's `InitGui.py` in the guest needs `FreeCADGui.getMainWindow()`
-  (its `Initialize` connects `mainWindowClosed`) -- a U2 op or a shim,
-  with G3c.
+- `getMainWindow()` is a shim (G3c): `addToolBar`, `mainWindowClosed`,
+  `showMessage`, `cursor()` -- its document windows (`getActiveWindow`,
+  94 corpus sites, `getWindows`, `setActiveWindow`) are the mirror's
+  (G4); `QDockWidget` and `addStatusBarItem` are not in the subset.
 - The forms (G3a, 7.11): a guest InputField's `text` is the guest's
   `Quantity.UserString` ("120 mm"), the host's its own decimals
   ("120.00 mm") until a host edit sends the host's -- the corpus parses
-  the text, never compares it; a code-built layout (no name) reaches no
-  host layout until G3c; `.ui` strings are untranslated in the guest
+  the text, never compares it; a code-built widget's `sizeHint()` and
+  `QFontMetrics` are estimates (G3c), `hasFocus()` follows the focus
+  events the host relays, a `QTimer` fires once at the next drain and
+  never repeats, `QMenu.popup()` blocks like `exec_()`, a `QPainter`
+  records polygons, rectangles, ellipses and lines only (no text, no
+  images); `.ui` strings are untranslated in the guest
   (`translate` is the identity there) while uic's are translated on
   the host -- a guest `setText(translate(...))` therefore shows the
   English; a widget re-added to a layout it is already in duplicates

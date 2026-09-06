@@ -213,6 +213,29 @@ PyObject* py_resolve(PyObject*, PyObject* args)
     return variantToPy(store().idOf(w));
 }
 
+/// A layout spec's objects as their store ids (a Python reader).
+QVariant withIds(const QVariant& v)
+{
+    if (v.typeId() == QMetaType::QVariantMap) {
+        QVariantMap out;
+        QVariantMap in = v.toMap();
+        for (auto it = in.constBegin(); it != in.constEnd(); ++it)
+            out.insert(it.key(), withIds(it.value()));
+        return out;
+    }
+    if (v.typeId() == QMetaType::QVariantList) {
+        QVariantList out;
+        for (const QVariant& x : v.toList())
+            out.append(withIds(x));
+        return out;
+    }
+    if (v.canConvert<QObject*>() && v.typeId() != QMetaType::QString) {
+        QObject* o = v.value<QObject*>();
+        return o ? QVariant(store().idOf(o)) : QVariant();
+    }
+    return v;
+}
+
 PyObject* py_info(PyObject*, PyObject* args)
 {
     Widget* w = objectArg(args);
@@ -239,6 +262,13 @@ PyObject* py_info(PyObject*, PyObject* args)
     }
     if (auto view = qobject_cast<ItemView*>(w))
         m.insert(QStringLiteral("items"), view->snapshot());
+    if (Layout* lay = w->layout())
+        m.insert(QStringLiteral("layout"), withIds(lay->spec()));
+    QVariantList actions;
+    for (Widget* a : w->actions())
+        actions.append(store().idOf(a));
+    if (!actions.isEmpty())
+        m.insert(QStringLiteral("actions"), actions);
     QString parentId = w->parentWidget() ? store().idOf(w->parentWidget()) : QString();
     m.insert(QStringLiteral("parent"), parentId.isEmpty() ? QVariant() : QVariant(parentId));
     return variantToPy(m);

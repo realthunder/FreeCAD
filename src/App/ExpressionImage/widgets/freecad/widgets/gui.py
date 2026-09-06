@@ -1,12 +1,20 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 """What `FreeCADGui` carries for the forms in the sandbox guest:
 `Control` (the task panel), `UiLoader` and `PySideUic` (the .ui loader
-and `createWidget`).  Reached through the guest FreeCADGui module's
-`__getattr__`, so nothing here loads before a form is made
-(docs/Sandbox.md 7.11)."""
+and `createWidget`), `getMainWindow()` as a shim, `runCommand`.
+Reached through the guest FreeCADGui module's `__getattr__` (`attr`
+below), so nothing here loads before a form is made; the models load
+on first use (docs/Sandbox.md 7.11)."""
 
-from . import models
-from . import uic
+
+def attr(name):
+    """`FreeCADGui.<name>` for a name the prelude does not define: the
+    forms' names, else the AttributeError `hasattr` expects."""
+    if name in ("Control", "PySideUic", "UiLoader", "getMainWindow", "runCommand"):
+        return globals()[name]
+    if name == "ActiveDocument":
+        return active_document()
+    raise AttributeError("FreeCADGui.%s is not in the sandbox (docs/Sandbox.md 7)" % name)
 
 
 class _PySideUic:
@@ -14,6 +22,8 @@ class _PySideUic:
 
     @staticmethod
     def loadUi(path, base=None):
+        from . import uic
+
         return uic.loadUi(path, base)
 
     @staticmethod
@@ -34,18 +44,28 @@ class UiLoader:
     is `loadUi`."""
 
     def createWidget(self, class_name, parent=None, name=""):
+        """The model of that class; None for a class the subset lacks,
+        as this fork's UiLoader answers (DraftGui falls back on it)."""
+        from . import models
+
+        if str(class_name) not in models.CLASSES:
+            return None
         w = models.make(str(class_name), parent)
         if name:
             w.setObjectName(name)
         return w
 
     def load(self, path, parent=None):
+        from . import uic
+
         form = uic.loadUi(path)
         if parent is not None:
             form.setParent(parent)
         return form
 
     def availableWidgets(self):
+        from . import models
+
         return sorted(models.CLASSES)
 
 
@@ -56,6 +76,7 @@ class _Control:
 
     def showDialog(self, panel):
         import FreeCADGui
+        from . import models
 
         form = getattr(panel, "form", None)
         forms = form if isinstance(form, (list, tuple)) else [form]
@@ -104,7 +125,15 @@ class _Control:
             _fcx.op("gui.control.close", 0)
 
     def addTaskWatcher(self, watchers):
-        raise TypeError("Control.addTaskWatcher is not in the sandbox's subset yet (G3c)")
+        """Each watcher registers as a guest proxy: the host's
+        TaskWatcherPython reads its `title`, `icon`, `commands`,
+        `filter` through it and calls `shouldShow` on every selection
+        change (docs/Sandbox.md 7.11, G3c)."""
+        import _fcx
+        import FreeCADGui
+
+        descs = [FreeCADGui._proxy_register(w, WATCHER_HOOKS) for w in watchers]
+        _fcx.op("gui.control.add_watcher", 0, descs)
 
     def showTaskView(self):
         pass
@@ -118,6 +147,128 @@ Control = _Control()
 PANEL_HOOKS = ("accept", "reject", "clicked", "open", "getStandardButtons",
                "modifyStandardButtons", "needsFullSpace", "isAllowedAlterDocument",
                "isAllowedAlterView", "isAllowedAlterSelection", "helpRequested", "shouldShow")
+WATCHER_HOOKS = ("shouldShow",)
+MAIN_WINDOW_HOOKS = ("mainWindowClosed",)
+
+
+def runCommand(name, index=0):
+    """`FreeCADGui.runCommand(name[, index])`: the host's command by
+    name (a guest-registered one crosses back to its `Activated`)."""
+    import _fcx
+
+    _fcx.op("gui.cmd.run", 0, [str(name), int(index)])
+
+
+class _MainWindowSignal:
+    """`getMainWindow().mainWindowClosed`: `connect(slot)` registers the
+    slots' holder as a guest proxy the host calls when it closes."""
+
+    def __init__(self, owner):
+        self._owner = owner
+        self._slots = []
+
+    def connect(self, slot):
+        import _fcx
+        import FreeCADGui
+
+        self._slots.append(slot)
+        if len(self._slots) == 1:
+            desc = FreeCADGui._proxy_register(self._owner, MAIN_WINDOW_HOOKS)
+            _fcx.op("gui.mainwindow", 0, ["watch", desc])
+
+    def disconnect(self, slot=None):
+        self._slots = [] if slot is None else [s for s in self._slots if s != slot]
+
+    def emit(self):
+        for slot in list(self._slots):
+            slot()
+
+    # the host calls the hook by the signal's name on its holder: the
+    # signal object itself answers, running the slots
+    __call__ = emit
+
+
+class _StatusBar:
+    def showMessage(self, text, timeout=0):
+        import _fcx
+
+        _fcx.op("gui.mainwindow", 0, ["showMessage", str(text), int(timeout)])
+
+    def clearMessage(self):
+        self.showMessage("", 0)
+
+
+class MainWindow:
+    """`FreeCADGui.getMainWindow()` in the guest: a shim over the host's
+    main window -- `addToolBar(bar)` realizes a tool bar model there,
+    `mainWindowClosed` crosses as a hook, messages and the cursor are
+    data.  The document windows (`getActiveWindow`, `getWindows`) are
+    not here: they are the mirror's (docs/Sandbox.md 7.2, G4)."""
+
+    _fcx_mainwindow = True
+
+    def __init__(self):
+        self.mainWindowClosed = _MainWindowSignal(self)
+        self._status = _StatusBar()
+
+    def addToolBar(self, *args):
+        import _fcx
+
+        bar = args[-1]
+        _fcx.op("gui.mainwindow", 0, ["addToolBar", bar.model_id])
+        bar._attach(None)
+
+    def removeToolBar(self, bar):
+        import _fcx
+
+        _fcx.op("gui.mainwindow", 0, ["removeToolBar", bar.model_id])
+
+    def insertToolBar(self, before, bar):
+        self.addToolBar(bar)
+
+    def showMessage(self, text, timeout=0):
+        self._status.showMessage(text, timeout)
+
+    def statusBar(self):
+        return self._status
+
+    def windowTitle(self):
+        import _fcx
+
+        return _fcx.op("gui.mainwindow", 0, ["windowTitle"])
+
+    def cursor(self):
+        from .qtdata import QCursor
+
+        return QCursor()
+
+    def isVisible(self):
+        return True
+
+    def setActiveWindow(self, *args):
+        raise AttributeError("getMainWindow().setActiveWindow is not in the sandbox yet (G4)")
+
+    def getActiveWindow(self):
+        raise AttributeError("getMainWindow().getActiveWindow is not in the sandbox yet (G4)")
+
+    def getWindows(self):
+        raise AttributeError("getMainWindow().getWindows is not in the sandbox yet (G4)")
+
+    def findChild(self, *args):
+        return None
+
+    def findChildren(self, *args):
+        return []
+
+    def __repr__(self):
+        return "<sandbox main window>"
+
+
+_main_window = MainWindow()
+
+
+def getMainWindow():
+    return _main_window
 
 
 class GuiDocument:

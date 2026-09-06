@@ -1761,6 +1761,173 @@ public:
 /// translated, FreeCAD's widgets real) and binding each named child
 /// to the model of that name.  A QDialog as well, for the files whose
 /// root is one; a QWidget root never calls that half.
+// ---- actions, tool bars, menus (G3c, docs/Sandbox.md 7.11) --------------------
+
+/// A `QAction`: not a widget, but the same bag mechanics (text, icon,
+/// checkable, checked, enabled, visible, toolTip, shortcut), realized
+/// by a backend on the widget, bar or menu that carries it.
+class GuiExport QAction : public Widget
+{
+    Q_OBJECT
+public:
+    explicit QAction(Widget* parent = nullptr);
+    QAction(const QString& text, Widget* parent = nullptr);
+    FW_MODEL("QActionModel")
+
+    void setText(const QString& text)
+    {
+        setProperty("text", text);
+    }
+    QString text() const
+    {
+        return property("text").toString();
+    }
+    void setIcon(const QString& path)
+    {
+        setProperty("icon", path);
+    }
+    QString icon() const
+    {
+        return property("icon").toString();
+    }
+    void setCheckable(bool on)
+    {
+        setProperty("checkable", on);
+    }
+    bool isCheckable() const
+    {
+        return property("checkable").toBool();
+    }
+    void setChecked(bool on)
+    {
+        setProperty("checked", on);
+    }
+    bool isChecked() const
+    {
+        return property("checked").toBool();
+    }
+    void setShortcut(const QString& keys)
+    {
+        setProperty("shortcut", keys);
+    }
+    QString shortcut() const
+    {
+        return property("shortcut").toString();
+    }
+    void setSeparator(bool on)
+    {
+        setProperty("separator", on);
+    }
+    bool isSeparator() const
+    {
+        return property("separator").toBool();
+    }
+    /// A programmatic trigger: toggles a checkable, fires `triggered`.
+    void trigger();
+    /// Ask the backend to trigger the real action.
+    void activate()
+    {
+        request(QStringLiteral("trigger"));
+    }
+
+Q_SIGNALS:
+    void triggered(bool checked);
+    void toggled(bool checked);
+    void hovered();
+
+protected:
+    void propertyDidChange(const QString& name, const QVariant& value) override;
+    void dispatchEvent(const QString& name, const QVariantList& args) override;
+};
+
+/// A tool bar: its content is a `Layout::Bar` (widgets, actions and
+/// separators in order); `toggleViewAction` is the `QAction` model the
+/// backend binds to the real bar's own.
+class GuiExport QToolBar : public Widget
+{
+    Q_OBJECT
+public:
+    explicit QToolBar(Widget* parent = nullptr);
+    QToolBar(const QString& title, Widget* parent = nullptr);
+    FW_MODEL("QToolBarModel")
+
+    /// The content layout (made on first use).
+    Layout* bar();
+    void addWidget(Widget* widget);
+    void addAction(Widget* action);
+    void addSeparator();
+    void clear();
+    QList<Widget*> actions() const;
+    /// The action that shows and hides the bar (made on first use; a
+    /// backend binds it to the real bar's `toggleViewAction()`).
+    QAction* toggleViewAction();
+    void setIconSize(int px)
+    {
+        setProperty("iconSize", px);
+    }
+    void setToolButtonStyle(int style)
+    {
+        setProperty("toolButtonStyle", style);
+    }
+    void setMovable(bool on)
+    {
+        setProperty("movable", on);
+    }
+    void setFloatable(bool on)
+    {
+        setProperty("floatable", on);
+    }
+    void setOrientation(int orientation)
+    {
+        setProperty("orientation", orientation);
+    }
+
+Q_SIGNALS:
+    void actionTriggered(Gui::Fw::Widget* action);
+
+protected:
+    void dispatchEvent(const QString& name, const QVariantList& args) override;
+};
+
+/// A menu: its content is a `Layout::Bar` (actions, separators and
+/// sub-menus, a sub-menu a `QMenu` widget item); `exec` is the
+/// backend's business (a nested loop), the chosen action comes back
+/// as `triggered`.
+class GuiExport QMenu : public Widget
+{
+    Q_OBJECT
+public:
+    explicit QMenu(Widget* parent = nullptr);
+    QMenu(const QString& title, Widget* parent = nullptr);
+    FW_MODEL("QMenuModel")
+
+    Layout* bar();
+    void addAction(Widget* action);
+    void addMenu(QMenu* menu);
+    void addSeparator();
+    void clear();
+    QList<Widget*> actions() const;
+    void setTitle(const QString& title)
+    {
+        setProperty("title", title);
+    }
+    QString title() const
+    {
+        return property("title").toString();
+    }
+    void setIcon(const QString& path)
+    {
+        setProperty("icon", path);
+    }
+
+Q_SIGNALS:
+    void triggered(Gui::Fw::Widget* action);
+    void aboutToShow();
+
+protected:
+    void dispatchEvent(const QString& name, const QVariantList& args) override;
+};
+
 class GuiExport UiForm : public QDialog
 {
     Q_OBJECT

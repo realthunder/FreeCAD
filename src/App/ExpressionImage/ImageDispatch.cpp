@@ -846,6 +846,14 @@ json dispatch(const json &req)
         reply = protocolError("unknown op");
     if (PyErr_Occurred())
         PyErr_Clear();
+    // What the request queued on the guest's QTimer shim runs now, in
+    // order, before the reply goes back (docs/Sandbox.md 7.11, G3c).
+    if (PyObject* drain = FcxImage::preludeFunction("_drain_timers")) {
+        PyObject* r = PyObject_CallNoArgs(drain);
+        if (!r)
+            PyErr_Print();
+        Py_XDECREF(r);
+    }
     // The proxies the evaluation let go (its globals died with it):
     // their releases ride the reply, not a hop each.
     json released = FcxImage::takePendingReleases();

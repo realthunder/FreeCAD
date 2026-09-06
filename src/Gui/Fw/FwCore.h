@@ -352,6 +352,42 @@ public:
     {
         request(QStringLiteral("setFocus"));
     }
+    /// Whether the realized widget has focus (the backend writes it
+    /// when the widget asks for focus events, see `setWatchEvents`).
+    bool hasFocus() const
+    {
+        return property("focus").toBool();
+    }
+    /// A font as data: `{"bold", "italic", "pointSize", "family"}`,
+    /// the keys given overriding the widget's own font.
+    void setFont(const QVariantMap& font)
+    {
+        setProperty("font", font);
+    }
+    QVariantMap font() const
+    {
+        return property("font").toMap();
+    }
+    /// The QEvent types (`QEvent::Type` values) the backend relays as
+    /// the `qevent` event (docs/Sandbox.md 7.11, G3c): a key press
+    /// `[type, key, modifiers, text, autoRepeat]`, a mouse event
+    /// `[type, x, y, button, buttons]`, a focus event `[type]` (the
+    /// backend writes `focus` too).  Whoever handles `qevent` answers
+    /// with the request `eventDone [eaten]` INSIDE the event, and an
+    /// eaten event stops at the backend's filter.
+    void setWatchEvents(const QVariantList& types)
+    {
+        setProperty("watchEvents", types);
+    }
+    QVariantList watchEvents() const
+    {
+        return property("watchEvents").toList();
+    }
+    /// Add an action (a `QAction` model): `{"action": QObject*,
+    /// "position": -1 | QLineEdit::ActionPosition}` joins `actions`.
+    void addAction(Widget* action, int position = -1);
+    void removeAction(Widget* action);
+    QList<Widget*> actions() const;
 
     /// The backend rendering this model (see `Backend`); nullptr if none.
     Backend* backend() const
@@ -421,19 +457,28 @@ private:
 };
 
 /// What a layout holds at a position: a widget, a nested layout, a
-/// spacer or a stretch.
+/// spacer or a stretch -- and on a bar (a tool bar's or a menu's
+/// content, `Layout::Bar`) an action or a separator.
 struct GuiExport LayoutItem
 {
     Widget* widget = nullptr;
     Layout* layout = nullptr;
+    /// A `QAction` model on a bar (docs/Sandbox.md 7.11, G3c).
+    Widget* action = nullptr;
+    bool separator = false;
     bool spacer = false;
     int stretch = 0;
     int spacing = 0;
+    /// A spacer's size hint and size policies (`QSizePolicy::Policy`).
+    int width = 0;
+    int height = 0;
+    int hPolicy = 1;
+    int vPolicy = 1;
     /// grid: row, column, rowSpan, columnSpan; form: row, role
     QVariantList position;
     bool isEmpty() const
     {
-        return !widget && !layout;
+        return !widget && !layout && !action;
     }
 };
 
@@ -441,7 +486,11 @@ struct GuiExport LayoutItem
 /// items in order, and every mutation is a layout op on the OWNING
 /// widget (`Widget::layoutChanged`) that a backend applies to the real
 /// layout of that name (a .ui file names its layouts; uic keeps the
-/// names).  A layout with no name reaches no backend layout.
+/// names; a layout built in code carries a generated name and its whole
+/// tree as the widget's layout spec, docs/Sandbox.md 7.11, G3c).  A
+/// layout with no name reaches no backend layout.  `Bar` is a tool
+/// bar's or a menu's content: widgets, actions and separators in order,
+/// realized without a QLayout.
 class GuiExport Layout : public QObject
 {
     Q_OBJECT
@@ -452,7 +501,8 @@ public:
         VBox,
         HBox,
         Grid,
-        Form
+        Form,
+        Bar
     };
     explicit Layout(Kind kind, Widget* owner = nullptr);
     ~Layout() override;
@@ -493,10 +543,37 @@ public:
     }
     void addStretch(int stretch = 0);
     void addSpacing(int size);
-    /// A spacer item: a `<spacer>` of the .ui file.
-    void addSpacer(int w, int h, const QVariantList& position = QVariantList());
+    /// A spacer item: a `<spacer>` of the .ui file, or code's
+    /// `QSpacerItem(w, h, hPolicy, vPolicy)` (`QSizePolicy::Policy`
+    /// values; Minimum is 1, Expanding 7).
+    void addSpacer(int w, int h, const QVariantList& position = QVariantList(), int hPolicy = 1,
+                   int vPolicy = 1);
+    /// A bar's action (a `QAction` model) and separator.
+    void addAction(Widget* action);
+    void insertAction(int index, Widget* action);
+    void removeAction(Widget* action);
+    void addSeparator();
+    /// Every item out (a bar's `clear()`).
+    void clear();
     void setContentsMargins(int left, int top, int right, int bottom);
     void setSpacing(int spacing);
+    /// The margins set, as [left, top, right, bottom]; empty if never set.
+    QVariantList contentsMargins() const
+    {
+        return _margins;
+    }
+    /// The spacing set; -1 if never set.
+    int spacing() const
+    {
+        return _spacing;
+    }
+    /// The whole tree as data (`{"class", "name", "items", "margins",
+    /// "spacing"}`; an item `{"widget": QObject*}`, `{"layout": {...}}`,
+    /// `{"spacer": [w, h]}`, `{"stretch": n}`, `{"spacing": n}`,
+    /// `{"action": QObject*}` or `{"separator": true}`, each with its
+    /// `"pos"`): what a backend builds a code-built layout from, and
+    /// what the guest's layout spec becomes here.
+    QVariantMap spec() const;
     // QFormLayout
     void addRow(Widget* label, Widget* field);
     void addRow(Widget* field);
@@ -512,6 +589,8 @@ private:
     Kind _kind;
     QList<LayoutItem> _items;
     Layout* _parentLayout = nullptr;
+    QVariantList _margins;
+    int _spacing = -1;
     friend class Widget;
 };
 

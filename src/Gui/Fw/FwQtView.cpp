@@ -23,6 +23,7 @@
 #ifndef _PreComp_
 #include <QAbstractButton>
 #include <QAbstractItemView>
+#include <QAction>
 #include <QBoxLayout>
 #include <QBrush>
 #include <QComboBox>
@@ -37,28 +38,37 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QItemSelectionModel>
+#include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
 #include <QListWidget>
+#include <QMenu>
 #include <QMetaProperty>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
+#include <QSpacerItem>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStandardItemModel>
 #include <QStyledItemDelegate>
+#include <QSvgRenderer>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTableWidget>
 #include <QTextEdit>
 #include <QTreeView>
+#include <QToolBar>
 #include <QTreeWidget>
 #include <QWidget>
+#include <QWidgetAction>
 #endif
 
 #include <Base/Console.h>
@@ -88,12 +98,37 @@ QHash<const Fw::Widget*, View*>& registry()
     return views;
 }
 
+/// An icon the guest painted in code (`QPainter` on a `QImage`,
+/// DraftGui's style button): the drawing crosses as an SVG data URI,
+/// rendered here.
+QIcon svgDataIcon(const QString& path)
+{
+    int comma = path.indexOf(QLatin1Char(','));
+    if (comma < 0)
+        return QIcon();
+    QByteArray svg = path.mid(comma + 1).toUtf8();
+    QSvgRenderer renderer(svg);
+    if (!renderer.isValid())
+        return QIcon();
+    QSize size = renderer.defaultSize();
+    if (!size.isValid() || size.isEmpty())
+        size = QSize(32, 32);
+    QPixmap pm(size);
+    pm.fill(Qt::transparent);
+    QPainter painter(&pm);
+    renderer.render(&painter);
+    painter.end();
+    return QIcon(pm);
+}
+
 QIcon iconOf(const QString& path)
 {
     if (path.isEmpty())
         return QIcon();
     if (path.startsWith(QLatin1String("theme:")))
         return QIcon::fromTheme(path.mid(6));
+    if (path.startsWith(QLatin1String("data:image/svg+xml")))
+        return svgDataIcon(path);
     return QIcon(path);
 }
 
@@ -179,7 +214,13 @@ struct View::Items
 QWidget* Gui::FwQt::makeQtWidget(const QString& className, QWidget* parent)
 {
     QWidget* w = nullptr;
-    if (className.startsWith(QLatin1String("Gui::"))) {
+    if (className == QLatin1String("QToolBar")) {
+        w = new QToolBar(parent);
+    }
+    else if (className == QLatin1String("QMenu")) {
+        w = new QMenu(parent);
+    }
+    else if (className.startsWith(QLatin1String("Gui::"))) {
         GetWidgetFactorySupplier();
         w = WidgetFactory().createWidget(className.toUtf8().constData(), parent);
     }
@@ -203,6 +244,246 @@ QWidget* Gui::FwQt::widgetOf(const Fw::Widget* model)
 {
     View* v = model ? View::of(model) : nullptr;
     return v ? v->widget() : nullptr;
+}
+
+// ---- actions (G3c) ---------------------------------------------------------------
+
+namespace Gui
+{
+namespace FwQt
+{
+
+/// The backend of an action model: a real QAction, made under a widget
+/// or adopted (a bar's toggle-view action).
+class ActionView : public QObject, public Fw::Backend
+{
+public:
+    static QHash<const Fw::Widget*, ActionView*>& byModel()
+    {
+        static QHash<const Fw::Widget*, ActionView*> h;
+        return h;
+    }
+    static QHash<const QAction*, ActionView*>& byAction()
+    {
+        static QHash<const QAction*, ActionView*> h;
+        return h;
+    }
+
+    ActionView(Fw::Widget* model, QAction* action, bool owned)
+        : QObject(model)
+        , _model(model)
+        , _action(action)
+        , _owned(owned)
+    {
+        byModel().insert(model, this);
+        byAction().insert(action, this);
+        model->setBackend(this);
+        connect(action, &QAction::triggered, this, [this](bool checked) {
+            if (!_applying)
+                _model->notify(QStringLiteral("triggered"), QVariantList {checked});
+        });
+        connect(action, &QAction::toggled, this, [this](bool checked) {
+            if (!_applying)
+                _model->setProperties(QVariantMap {{QStringLiteral("checked"), checked}},
+                                      Fw::Source::Backend);
+        });
+        connect(action, &QAction::hovered, this,
+                [this]() { _model->notify(QStringLiteral("hovered")); });
+        connect(action, &QObject::destroyed, this, [this]() {
+            byAction().remove(_action);
+            _action = nullptr;
+            release();
+        });
+        if (owned)
+            connect(model, &QObject::destroyed, action, &QObject::deleteLater);
+    }
+    ~ActionView() override
+    {
+        auto it = byModel().find(_model);
+        if (it != byModel().end() && it.value() == this)
+            byModel().erase(it);
+        if (_action)
+            byAction().remove(_action);
+        if (_model->backend() == this)
+            _model->setBackend(nullptr);
+    }
+    QAction* action() const
+    {
+        return _action;
+    }
+    Fw::Widget* model() const
+    {
+        return _model;
+    }
+    void release()
+    {
+        auto it = byModel().find(_model);
+        if (it != byModel().end() && it.value() == this)
+            byModel().erase(it);
+        if (_model->backend() == this)
+            _model->setBackend(nullptr);
+        deleteLater();
+    }
+    void readBack()
+    {
+        if (!_action)
+            return;
+        _model->setInitial(QStringLiteral("text"), _action->text());
+        _model->setInitial(QStringLiteral("checkable"), _action->isCheckable());
+        _model->setInitial(QStringLiteral("checked"), _action->isChecked());
+        _model->setInitial(QStringLiteral("enabled"), _action->isEnabled());
+        _model->setInitial(QStringLiteral("visible"), _action->isVisible());
+        _model->setInitial(QStringLiteral("toolTip"), _action->toolTip());
+    }
+    void apply(const QStringList& keys)
+    {
+        QAction* a = _action.data();
+        if (!a)
+            return;
+        const bool was = _applying;
+        _applying = true;
+        for (const QString& key : keys) {
+            QVariant v = _model->property(key);
+            if (key == QLatin1String("text"))
+                a->setText(v.toString());
+            else if (key == QLatin1String("icon"))
+                a->setIcon(iconOf(v.toString()));
+            else if (key == QLatin1String("toolTip"))
+                a->setToolTip(v.toString());
+            else if (key == QLatin1String("statusTip"))
+                a->setStatusTip(v.toString());
+            else if (key == QLatin1String("whatsThis"))
+                a->setWhatsThis(v.toString());
+            else if (key == QLatin1String("checkable"))
+                a->setCheckable(v.toBool());
+            else if (key == QLatin1String("checked"))
+                a->setChecked(v.toBool());
+            else if (key == QLatin1String("enabled"))
+                a->setEnabled(v.toBool());
+            else if (key == QLatin1String("visible"))
+                a->setVisible(v.toBool());
+            else if (key == QLatin1String("shortcut"))
+                a->setShortcut(QKeySequence(v.toString()));
+            else if (key == QLatin1String("separator"))
+                a->setSeparator(v.toBool());
+            else if (key == QLatin1String("objectName") && !v.toString().isEmpty())
+                a->setObjectName(v.toString());
+        }
+        _applying = was;
+    }
+    void propertiesWritten(const QStringList& names, int source) override
+    {
+        if (source != static_cast<int>(Fw::Source::Backend))
+            apply(names);
+    }
+    void requested(const QString& name, const QVariantList&) override
+    {
+        if (name == QLatin1String("trigger") && _action)
+            _action->trigger();
+    }
+    void layoutChanged(const QVariantMap&) override
+    {}
+
+private:
+    Fw::Widget* _model;
+    QPointer<QAction> _action;
+    bool _owned;
+    bool _applying = false;
+};
+
+/// Relays the QEvent types a model asked for (`watchEvents`) as the
+/// `qevent` event, and takes the `eventDone` answer given inside it.
+class EventRelay : public QObject
+{
+public:
+    EventRelay(View* view, QWidget* widget)
+        : QObject(widget)
+        , _view(view)
+    {}
+    QSet<int> types;
+
+    bool eventFilter(QObject* obj, QEvent* e) override
+    {
+        if (!_view || !types.contains(static_cast<int>(e->type())))
+            return QObject::eventFilter(obj, e);
+        QVariantList args {static_cast<int>(e->type())};
+        switch (e->type()) {
+            case QEvent::KeyPress:
+            case QEvent::KeyRelease: {
+                auto k = static_cast<QKeyEvent*>(e);
+                args << k->key() << static_cast<int>(k->modifiers()) << k->text()
+                     << k->isAutoRepeat();
+                break;
+            }
+            case QEvent::MouseButtonPress:
+            case QEvent::MouseButtonRelease:
+            case QEvent::MouseButtonDblClick:
+            case QEvent::MouseMove: {
+                auto m = static_cast<QMouseEvent*>(e);
+                args << m->position().toPoint().x() << m->position().toPoint().y()
+                     << static_cast<int>(m->button()) << static_cast<int>(m->buttons());
+                break;
+            }
+            case QEvent::FocusIn:
+            case QEvent::FocusOut:
+                _view->send(QVariantMap {{QStringLiteral("focus"), e->type() == QEvent::FocusIn}});
+                args << static_cast<int>(static_cast<QFocusEvent*>(e)->reason());
+                break;
+            default:
+                break;
+        }
+        _view->_eventEaten = false;
+        _view->event(QStringLiteral("qevent"), args);
+        return _view->_eventEaten;
+    }
+
+private:
+    QPointer<View> _view;
+};
+
+}  // namespace FwQt
+}  // namespace Gui
+
+QAction* Gui::FwQt::realizeAction(Fw::Widget* model, QObject* parent)
+{
+    if (!model || !qobject_cast<Fw::QAction*>(model))
+        return nullptr;
+    if (ActionView* v = ActionView::byModel().value(model))
+        return v->action();
+    auto a = new QAction(parent);
+    auto view = new ActionView(model, a, true);
+    QStringList keys = QStringList(model->touched().begin(), model->touched().end());
+    if (!model->objectName().isEmpty() && !keys.contains(QLatin1String("objectName")))
+        keys.append(QStringLiteral("objectName"));
+    view->apply(keys);
+    return a;
+}
+
+QAction* Gui::FwQt::actionWidgetOf(const Fw::Widget* model)
+{
+    ActionView* v = model ? ActionView::byModel().value(model) : nullptr;
+    return v ? v->action() : nullptr;
+}
+
+void Gui::FwQt::bindAction(Fw::Widget* model, QAction* action)
+{
+    if (!model || !action)
+        return;
+    if (ActionView* existing = ActionView::byModel().value(model)) {
+        if (existing->action() == action)
+            return;
+        existing->release();
+    }
+    auto view = new ActionView(model, action, false);
+    view->readBack();
+    QStringList keys = QStringList(model->touched().begin(), model->touched().end());
+    view->apply(keys);
+}
+
+Fw::Widget* Gui::FwQt::modelOfAction(const QAction* action)
+{
+    ActionView* v = action ? ActionView::byAction().value(action) : nullptr;
+    return v ? v->model() : nullptr;
 }
 
 View* View::of(const Fw::Widget* model)
@@ -303,11 +584,296 @@ View* View::build(Fw::Widget* model, QWidget* parent)
     QWidget* w = makeQtWidget(model->qtClass(), parent);
     auto view = new View(model, w, false);
     view->initContainers();
+    view->initLayout();
+    // a child no layout placed: a child widget still, as Qt has it
+    for (Fw::Widget* child : model->childWidgets()) {
+        if (of(child) || qobject_cast<Fw::QAction*>(child))
+            continue;
+        if (qobject_cast<QToolBar*>(w) || qobject_cast<QMenu*>(w))
+            continue;
+        build(child, w);
+    }
     QStringList keys = QStringList(model->touched().begin(), model->touched().end());
     if (!model->objectName().isEmpty() && !keys.contains(QLatin1String("objectName")))
         keys.append(QStringLiteral("objectName"));
     view->apply(keys);
     return view;
+}
+
+// ---- code-built layouts (G3c) ------------------------------------------------------
+
+void View::initLayout()
+{
+    QWidget* w = _widget.data();
+    Fw::Layout* lay = _model->layout();
+    if (!w || !lay)
+        return;
+    if (lay->kind() == Fw::Layout::Bar)
+        fillBar(lay, w);
+    else if (!w->layout())
+        makeLayout(lay, w);
+}
+
+void View::showInLayout(QWidget* child, const QVariant& modelRef)
+{
+    // a widget the guest hid before placing it stays hidden
+    auto m = qobject_cast<Fw::Widget*>(modelRef.value<QObject*>());
+    if (m && m->isTouched(QStringLiteral("visible")) && !m->isVisible())
+        return;
+    child->show();
+}
+
+QLayout* View::makeLayout(Fw::Layout* lay, QWidget* owner)
+{
+    QLayout* ql = nullptr;
+    switch (lay->kind()) {
+        case Fw::Layout::VBox:
+            ql = new QVBoxLayout(owner);
+            break;
+        case Fw::Layout::HBox:
+            ql = new QHBoxLayout(owner);
+            break;
+        case Fw::Layout::Grid:
+            ql = new QGridLayout(owner);
+            break;
+        case Fw::Layout::Form:
+            ql = new QFormLayout(owner);
+            break;
+        default:
+            ql = new QBoxLayout(QBoxLayout::LeftToRight, owner);
+            break;
+    }
+    ql->setObjectName(lay->objectName());
+    QVariantList margins = lay->contentsMargins();
+    if (margins.size() == 4)
+        ql->setContentsMargins(margins.at(0).toInt(), margins.at(1).toInt(),
+                               margins.at(2).toInt(), margins.at(3).toInt());
+    if (lay->spacing() >= 0)
+        ql->setSpacing(lay->spacing());
+    auto box = qobject_cast<QBoxLayout*>(ql);
+    auto grid = qobject_cast<QGridLayout*>(ql);
+    auto form = qobject_cast<QFormLayout*>(ql);
+    QWidget* top = _widget.data();
+    for (int i = 0; i < lay->count(); ++i) {
+        const Fw::LayoutItem* item = lay->itemAt(i);
+        const QVariantList& pos = item->position;
+        if (item->widget) {
+            QWidget* child = widgetOf(QVariant::fromValue<QObject*>(item->widget), top);
+            if (!child)
+                continue;
+            if (grid && pos.size() >= 2)
+                grid->addWidget(child, pos.at(0).toInt(), pos.at(1).toInt(),
+                                pos.size() > 2 ? pos.at(2).toInt() : 1,
+                                pos.size() > 3 ? pos.at(3).toInt() : 1);
+            else if (form && pos.size() >= 2)
+                form->setWidget(pos.at(0).toInt(),
+                                static_cast<QFormLayout::ItemRole>(pos.at(1).toInt()), child);
+            else if (box)
+                box->addWidget(child, pos.value(0).toInt());
+            else
+                ql->addWidget(child);
+            showInLayout(child, QVariant::fromValue<QObject*>(item->widget));
+        }
+        else if (item->layout) {
+            QLayout* sub = makeLayout(item->layout, nullptr);
+            if (grid && pos.size() >= 2)
+                grid->addLayout(sub, pos.at(0).toInt(), pos.at(1).toInt(),
+                                pos.size() > 2 ? pos.at(2).toInt() : 1,
+                                pos.size() > 3 ? pos.at(3).toInt() : 1);
+            else if (form && pos.size() >= 2)
+                form->setLayout(pos.at(0).toInt(),
+                                static_cast<QFormLayout::ItemRole>(pos.at(1).toInt()), sub);
+            else if (form)
+                form->addRow(sub);
+            else if (box)
+                box->addLayout(sub, pos.value(0).toInt());
+            else
+                ql->addItem(sub);
+        }
+        else if (item->spacer && item->stretch) {
+            if (box)
+                box->addStretch(item->stretch);
+        }
+        else if (item->spacer && item->spacing) {
+            if (box)
+                box->addSpacing(item->spacing);
+        }
+        else if (item->spacer) {
+            auto sp = new QSpacerItem(item->width, item->height,
+                                      static_cast<QSizePolicy::Policy>(item->hPolicy),
+                                      static_cast<QSizePolicy::Policy>(item->vPolicy));
+            if (grid && pos.size() >= 2)
+                grid->addItem(sp, pos.at(0).toInt(), pos.at(1).toInt(),
+                              pos.size() > 2 ? pos.at(2).toInt() : 1,
+                              pos.size() > 3 ? pos.at(3).toInt() : 1);
+            else if (box)
+                box->addSpacerItem(sp);
+            else
+                ql->addItem(sp);
+        }
+    }
+    return ql;
+}
+
+QAction* View::actionOf(const QVariant& ref, QObject* parent)
+{
+    auto model = qobject_cast<Fw::Widget*>(ref.value<QObject*>());
+    return model ? realizeAction(model, parent) : nullptr;
+}
+
+void View::fillBar(Fw::Layout* lay, QWidget* bar)
+{
+    auto tb = qobject_cast<QToolBar*>(bar);
+    auto menu = qobject_cast<QMenu*>(bar);
+    for (int i = 0; i < lay->count(); ++i) {
+        const Fw::LayoutItem* item = lay->itemAt(i);
+        if (item->widget) {
+            QWidget* child = widgetOf(QVariant::fromValue<QObject*>(item->widget), bar);
+            if (!child)
+                continue;
+            if (menu && qobject_cast<QMenu*>(child))
+                menu->addMenu(static_cast<QMenu*>(child));
+            else if (tb)
+                tb->addWidget(child);
+        }
+        else if (item->action) {
+            if (QAction* a = actionOf(QVariant::fromValue<QObject*>(item->action), bar))
+                bar->addAction(a);
+        }
+        else if (item->separator) {
+            if (tb)
+                tb->addSeparator();
+            else if (menu)
+                menu->addSeparator();
+        }
+    }
+}
+
+void View::barOp(const QVariantMap& op)
+{
+    QWidget* w = _widget.data();
+    auto tb = qobject_cast<QToolBar*>(w);
+    auto menu = qobject_cast<QMenu*>(w);
+    if (!tb && !menu)
+        return;
+    const QString kind = op.value(QStringLiteral("op")).toString();
+    QList<QAction*> actions = w->actions();
+    auto actionAt = [&](int index) -> QAction* {
+        return index >= 0 && index < actions.size() ? actions.at(index) : nullptr;
+    };
+    if (kind == QLatin1String("addWidget") || kind == QLatin1String("insertWidget")) {
+        QWidget* child = widgetOf(op.value(QStringLiteral("widget")), w);
+        if (!child)
+            return;
+        if (menu && qobject_cast<QMenu*>(child)) {
+            if (QAction* before = actionAt(op.value(QStringLiteral("index"), -1).toInt()))
+                menu->insertMenu(before, static_cast<QMenu*>(child));
+            else
+                menu->addMenu(static_cast<QMenu*>(child));
+        }
+        else if (tb) {
+            if (QAction* before = actionAt(op.value(QStringLiteral("index"), -1).toInt()))
+                tb->insertWidget(before, child);
+            else
+                tb->addWidget(child);
+        }
+    }
+    else if (kind == QLatin1String("removeWidget")) {
+        QWidget* child = widgetOf(op.value(QStringLiteral("widget")), nullptr);
+        for (QAction* a : actions) {
+            auto wa = qobject_cast<QWidgetAction*>(a);
+            if (wa && child && wa->defaultWidget() == child) {
+                w->removeAction(a);
+                child->hide();
+            }
+            else if (menu && a->menu() && a->menu() == child) {
+                w->removeAction(a);
+            }
+        }
+    }
+    else if (kind == QLatin1String("addAction") || kind == QLatin1String("insertAction")) {
+        QAction* a = actionOf(op.value(QStringLiteral("action")), w);
+        if (!a)
+            return;
+        if (QAction* before = actionAt(op.value(QStringLiteral("index"), -1).toInt()))
+            w->insertAction(before, a);
+        else
+            w->addAction(a);
+    }
+    else if (kind == QLatin1String("removeAction")) {
+        if (QAction* a = actionOf(op.value(QStringLiteral("action")), nullptr))
+            w->removeAction(a);
+    }
+    else if (kind == QLatin1String("addSeparator")) {
+        if (tb)
+            tb->addSeparator();
+        else
+            menu->addSeparator();
+    }
+    else if (kind == QLatin1String("takeAt")) {
+        if (QAction* a = actionAt(op.value(QStringLiteral("index")).toInt()))
+            w->removeAction(a);
+    }
+    else if (kind == QLatin1String("clear")) {
+        if (tb)
+            tb->clear();
+        else
+            menu->clear();
+    }
+}
+
+void View::applyActions(const QVariantList& entries)
+{
+    QWidget* w = _widget.data();
+    if (!w)
+        return;
+    QSet<QObject*> listed;
+    for (const QVariant& v : entries) {
+        QVariantMap entry = v.toMap();
+        QAction* a = actionOf(entry.value(QStringLiteral("action")), w);
+        if (!a)
+            continue;
+        listed.insert(a);
+        if (_added.contains(a))
+            continue;
+        int position = entry.value(QStringLiteral("position"), -1).toInt();
+        auto edit = qobject_cast<QLineEdit*>(w);
+        if (edit && position >= 0)
+            edit->addAction(a, static_cast<QLineEdit::ActionPosition>(position));
+        else
+            w->addAction(a);
+        _added.insert(a);
+    }
+    for (QObject* o : QList<QObject*>(_added.begin(), _added.end())) {
+        if (!listed.contains(o)) {
+            w->removeAction(static_cast<QAction*>(o));
+            _added.remove(o);
+        }
+    }
+}
+
+void View::applyWatchEvents(const QVariantList& types)
+{
+    QWidget* w = _widget.data();
+    if (!w)
+        return;
+    if (types.isEmpty()) {
+        if (_relay) {
+            w->removeEventFilter(_relay);
+            _relay->deleteLater();
+            _relay = nullptr;
+        }
+        return;
+    }
+    auto relay = static_cast<EventRelay*>(_relay.data());  // only ever one of these
+    if (!relay) {
+        relay = new EventRelay(this, w);
+        _relay = relay;
+        w->installEventFilter(relay);
+    }
+    relay->types.clear();
+    for (const QVariant& t : types)
+        relay->types.insert(t.toInt());
 }
 
 void View::initContainers()
@@ -620,6 +1186,55 @@ void View::applyOne(const QString& key, const QVariant& value)
              && value.toInt() <= 0) {
         // a zero maximum would collapse the widget; the guest's default
     }
+    else if (key == QLatin1String("font")) {
+        QVariantMap f = value.toMap();
+        if (f.isEmpty())
+            return;
+        QFont font = w->font();
+        if (f.contains(QStringLiteral("bold")))
+            font.setBold(f.value(QStringLiteral("bold")).toBool());
+        if (f.contains(QStringLiteral("italic")))
+            font.setItalic(f.value(QStringLiteral("italic")).toBool());
+        if (f.value(QStringLiteral("pointSize")).toInt() > 0)
+            font.setPointSize(f.value(QStringLiteral("pointSize")).toInt());
+        if (!f.value(QStringLiteral("family")).toString().isEmpty())
+            font.setFamily(f.value(QStringLiteral("family")).toString());
+        w->setFont(font);
+    }
+    else if (key == QLatin1String("actions")) {
+        applyActions(value.toList());
+    }
+    else if (key == QLatin1String("watchEvents")) {
+        applyWatchEvents(value.toList());
+    }
+    else if (key == QLatin1String("focus")) {
+        // written by the backend
+    }
+    else if (key == QLatin1String("toggleViewAction")) {
+        auto tb = qobject_cast<QToolBar*>(w);
+        auto model = qobject_cast<Fw::Widget*>(value.value<QObject*>());
+        if (tb && model)
+            bindAction(model, tb->toggleViewAction());
+    }
+    else if (key == QLatin1String("iconSize")) {
+        int px = value.toInt();
+        if (px <= 0)
+            return;
+        if (auto tb = qobject_cast<QToolBar*>(w))
+            tb->setIconSize(QSize(px, px));
+        else if (auto b = qobject_cast<QAbstractButton*>(w))
+            b->setIconSize(QSize(px, px));
+    }
+    else if (key == QLatin1String("orientation")) {
+        if (auto tb = qobject_cast<QToolBar*>(w))
+            tb->setOrientation(static_cast<Qt::Orientation>(value.toInt()));
+        else if (w->metaObject()->indexOfProperty("orientation") >= 0)
+            w->setProperty("orientation", value);
+    }
+    else if (key == QLatin1String("toolButtonStyle")) {
+        if (auto tb = qobject_cast<QToolBar*>(w))
+            tb->setToolButtonStyle(static_cast<Qt::ToolButtonStyle>(value.toInt()));
+    }
     else if (w->metaObject()->indexOfProperty(key.toUtf8().constData()) >= 0) {
         w->setProperty(key.toUtf8().constData(), value);
     }
@@ -808,6 +1423,26 @@ void View::connectWidget()
         });
         return;
     }
+    if (auto tb = qobject_cast<QToolBar*>(w)) {
+        connect(tb, &QToolBar::actionTriggered, this, [this](QAction* a) {
+            if (Fw::Widget* m = modelOfAction(a))
+                event(QStringLiteral("actionTriggered"),
+                      QVariantList {QVariant::fromValue<QObject*>(m)});
+        });
+        connect(tb, &QToolBar::visibilityChanged, this, [this](bool on) {
+            send(QVariantMap {{QStringLiteral("visible"), on}});
+        });
+        return;
+    }
+    if (auto menu = qobject_cast<QMenu*>(w)) {
+        connect(menu, &QMenu::triggered, this, [this](QAction* a) {
+            if (Fw::Widget* m = modelOfAction(a))
+                event(QStringLiteral("triggered"), QVariantList {QVariant::fromValue<QObject*>(m)});
+        });
+        connect(menu, &QMenu::aboutToShow, this,
+                [this]() { event(QStringLiteral("aboutToShow")); });
+        return;
+    }
     if (auto fc = qobject_cast<Gui::FileChooser*>(w)) {
         connect(fc, &Gui::FileChooser::fileNameChanged, this, [this](const QString& name) {
             send(QVariantMap {{QStringLiteral("fileName"), name}});
@@ -828,6 +1463,9 @@ void View::onRequest(const QString& name, const QVariantList& args)
         return;
     if (name == QLatin1String("setFocus")) {
         w->setFocus();
+    }
+    else if (name == QLatin1String("eventDone")) {
+        _eventEaten = args.value(0).toBool();
     }
     else if (name == QLatin1String("selectAll")) {
         QMetaObject::invokeMethod(w, "selectAll");
@@ -1011,8 +1649,14 @@ void View::onLayoutOp(const QVariantMap& op)
     QWidget* w = _widget.data();
     if (!w)
         return;
+    if (qobject_cast<QToolBar*>(w) || qobject_cast<QMenu*>(w)) {
+        barOp(op);
+        return;
+    }
     const QString name = op.value(QStringLiteral("layout")).toString();
     QLayout* layout = name.isEmpty() ? nullptr : w->findChild<QLayout*>(name);
+    if (!layout && w->layout() && w->layout()->objectName() == name)
+        layout = w->layout();
     if (!layout) {
         Base::Console().Warning("FwQt: no layout %s under %s\n", qPrintable(name),
                                 qPrintable(w->objectName()));
@@ -1046,7 +1690,14 @@ void View::onLayoutOp(const QVariantMap& op)
         else {
             layout->addWidget(child);
         }
-        child->show();
+        showInLayout(child, op.value(QStringLiteral("widget")));
+    }
+    else if (kind == QLatin1String("clear")) {
+        while (QLayoutItem* item = layout->takeAt(0)) {
+            if (item->widget())
+                item->widget()->hide();
+            delete item;
+        }
     }
     else if (kind == QLatin1String("removeWidget")) {
         if (QWidget* child = widgetOf(op.value(QStringLiteral("widget")), nullptr))

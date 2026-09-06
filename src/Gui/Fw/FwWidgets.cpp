@@ -1765,6 +1765,190 @@ void UiForm::addNamed(const QString& name, Widget* widget)
     connect(widget, &QObject::destroyed, this, [this, name]() { _named.remove(name); });
 }
 
+// ---- actions, tool bars, menus (G3c) -------------------------------------------
+
+Gui::Fw::QAction::QAction(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("QAction"));
+    declare(kText, QString());
+    declare(QStringLiteral("icon"), QString());
+    declare(QStringLiteral("checkable"), false);
+    declare(kChecked, false);
+    declare(QStringLiteral("shortcut"), QString());
+    declare(QStringLiteral("separator"), false);
+}
+
+Gui::Fw::QAction::QAction(const QString& text, Widget* parent)
+    : QAction(parent)
+{
+    setText(text);
+}
+
+void Gui::Fw::QAction::trigger()
+{
+    if (isCheckable())
+        setChecked(!isChecked());
+    notify(QStringLiteral("triggered"), QVariantList {isChecked()});
+}
+
+void Gui::Fw::QAction::propertyDidChange(const QString& name, const QVariant& value)
+{
+    if (name == kChecked)
+        Q_EMIT toggled(value.toBool());
+}
+
+void Gui::Fw::QAction::dispatchEvent(const QString& name, const QVariantList& args)
+{
+    if (name == QLatin1String("triggered"))
+        Q_EMIT triggered(args.isEmpty() ? isChecked() : args.at(0).toBool());
+    else if (name == QLatin1String("hovered"))
+        Q_EMIT hovered();
+}
+
+namespace
+{
+const QString kBar = QStringLiteral("_fcx_bar");
+
+Layout* barOf(Widget* w)
+{
+    if (Layout* lay = w->layout())
+        return lay;
+    auto lay = new Layout(Layout::Bar, w);
+    lay->setObjectName(kBar);
+    return lay;
+}
+
+QList<Widget*> actionsOf(const Widget* w)
+{
+    QList<Widget*> out;
+    Layout* lay = w->layout();
+    for (int i = 0; lay && i < lay->count(); ++i)
+        if (const LayoutItem* item = lay->itemAt(i))
+            if (item->action)
+                out.append(item->action);
+    return out;
+}
+}  // namespace
+
+Gui::Fw::QToolBar::QToolBar(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("QToolBar"));
+    declare(QStringLiteral("iconSize"), 0);
+    declare(QStringLiteral("toolButtonStyle"), 0);
+    declare(QStringLiteral("movable"), true);
+    declare(QStringLiteral("floatable"), true);
+    declare(QStringLiteral("orientation"), 1);
+    declare(QStringLiteral("toggleViewAction"), QVariant());
+}
+
+Gui::Fw::QToolBar::QToolBar(const QString& title, Widget* parent)
+    : QToolBar(parent)
+{
+    setWindowTitle(title);
+}
+
+Layout* Gui::Fw::QToolBar::bar()
+{
+    return barOf(this);
+}
+
+void Gui::Fw::QToolBar::addWidget(Widget* widget)
+{
+    bar()->addWidget(widget);
+}
+
+void Gui::Fw::QToolBar::addAction(Widget* action)
+{
+    bar()->addAction(action);
+}
+
+void Gui::Fw::QToolBar::addSeparator()
+{
+    bar()->addSeparator();
+}
+
+void Gui::Fw::QToolBar::clear()
+{
+    bar()->clear();
+}
+
+QList<Widget*> Gui::Fw::QToolBar::actions() const
+{
+    return actionsOf(this);
+}
+
+Gui::Fw::QAction* Gui::Fw::QToolBar::toggleViewAction()
+{
+    auto a = qobject_cast<QAction*>(property("toggleViewAction").value<QObject*>());
+    if (!a) {
+        a = new QAction(windowTitle(), this);
+        a->setCheckable(true);
+        setProperty("toggleViewAction", QVariant::fromValue<QObject*>(a));
+    }
+    return a;
+}
+
+void Gui::Fw::QToolBar::dispatchEvent(const QString& name, const QVariantList& args)
+{
+    if (name == QLatin1String("actionTriggered"))
+        Q_EMIT actionTriggered(qobject_cast<Widget*>(args.value(0).value<QObject*>()));
+}
+
+Gui::Fw::QMenu::QMenu(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("QMenu"));
+    declare(QStringLiteral("title"), QString());
+    declare(QStringLiteral("icon"), QString());
+    declare(QStringLiteral("tearOffEnabled"), false);
+}
+
+Gui::Fw::QMenu::QMenu(const QString& title, Widget* parent)
+    : QMenu(parent)
+{
+    setTitle(title);
+}
+
+Layout* Gui::Fw::QMenu::bar()
+{
+    return barOf(this);
+}
+
+void Gui::Fw::QMenu::addAction(Widget* action)
+{
+    bar()->addAction(action);
+}
+
+void Gui::Fw::QMenu::addMenu(QMenu* menu)
+{
+    bar()->addWidget(menu);
+}
+
+void Gui::Fw::QMenu::addSeparator()
+{
+    bar()->addSeparator();
+}
+
+void Gui::Fw::QMenu::clear()
+{
+    bar()->clear();
+}
+
+QList<Widget*> Gui::Fw::QMenu::actions() const
+{
+    return actionsOf(this);
+}
+
+void Gui::Fw::QMenu::dispatchEvent(const QString& name, const QVariantList& args)
+{
+    if (name == QLatin1String("triggered"))
+        Q_EMIT triggered(qobject_cast<Widget*>(args.value(0).value<QObject*>()));
+    else if (name == QLatin1String("aboutToShow"))
+        Q_EMIT aboutToShow();
+}
+
 // ---- the factory --------------------------------------------------------------
 
 namespace
@@ -1833,6 +2017,9 @@ const std::map<QString, Maker>& classTable()
         {QStringLiteral("QTableView"), maker<QTableView>()},
         {QStringLiteral("QColumnView"), maker<QTreeView>()},
         {QStringLiteral("UiForm"), maker<UiForm>()},
+        {QStringLiteral("QAction"), maker<Gui::Fw::QAction>()},
+        {QStringLiteral("QToolBar"), maker<Gui::Fw::QToolBar>()},
+        {QStringLiteral("QMenu"), maker<Gui::Fw::QMenu>()},
     };
     return table;
 }
@@ -1889,6 +2076,8 @@ Layout* Gui::Fw::createLayout(const QString& className, Widget* owner)
         kind = Layout::Form;
     else if (className == QLatin1String("QBoxLayout"))
         kind = Layout::Box;
+    else if (className == QLatin1String("_bar"))
+        kind = Layout::Bar;
     return new Layout(kind, owner);
 }
 

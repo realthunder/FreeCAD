@@ -31,6 +31,99 @@ namespace
 {
 const QString kPrefix = QStringLiteral("q_");
 const QString kModelRef = QStringLiteral("IPY_MODEL_");
+
+/// A model ref (`IPY_MODEL_<id>`) anywhere in a value -- a string, a
+/// list, a map -- becomes the object it names (a property whose value
+/// is a widget: a line edit's actions, a bar's toggle action).
+QVariant resolveRefs(const Store& store, const QVariant& v)
+{
+    switch (v.typeId()) {
+        case QMetaType::QString: {
+            QString s = v.toString();
+            if (s.startsWith(kModelRef))
+                return QVariant::fromValue<QObject*>(store.resolve(s));
+            return v;
+        }
+        case QMetaType::QVariantList: {
+            QVariantList out;
+            for (const QVariant& x : v.toList())
+                out.append(resolveRefs(store, x));
+            return out;
+        }
+        case QMetaType::QVariantMap: {
+            QVariantMap out;
+            QVariantMap in = v.toMap();
+            for (auto it = in.constBegin(); it != in.constEnd(); ++it)
+                out.insert(it.key(), resolveRefs(store, it.value()));
+            return out;
+        }
+        default:
+            return v;
+    }
+}
+
+/// The reverse: an object in an event's arguments crosses as its ref.
+QVariant refsOf(const Store& store, const QVariant& v)
+{
+    if (v.canConvert<QObject*>() && v.typeId() != QMetaType::QString) {
+        QObject* o = v.value<QObject*>();
+        QString id = o ? store.idOf(o) : QString();
+        return id.isEmpty() ? QVariant() : QVariant(kModelRef + id);
+    }
+    if (v.typeId() == QMetaType::QVariantList) {
+        QVariantList out;
+        for (const QVariant& x : v.toList())
+            out.append(refsOf(store, x));
+        return out;
+    }
+    return v;
+}
+
+/// A layout spec from the guest (`{"class", "name", "items", "margins",
+/// "spacing"}`, docs/Sandbox.md 7.11, G3c) as a Layout tree, refs
+/// resolved; silent (no owner yet, so nothing is notified).
+Layout* layoutFromSpec(const Store& store, const QVariantMap& spec)
+{
+    Layout* lay = createLayout(spec.value(QStringLiteral("class")).toString());
+    lay->setObjectName(spec.value(QStringLiteral("name")).toString());
+    for (const QVariant& v : spec.value(QStringLiteral("items")).toList()) {
+        QVariantMap item = v.toMap();
+        QVariantList pos = item.value(QStringLiteral("pos")).toList();
+        if (item.contains(QStringLiteral("widget"))) {
+            if (Widget* w = store.resolve(item.value(QStringLiteral("widget")).toString()))
+                lay->addWidget(w, pos);
+        }
+        else if (item.contains(QStringLiteral("layout"))) {
+            lay->addLayout(layoutFromSpec(store, item.value(QStringLiteral("layout")).toMap()),
+                           pos);
+        }
+        else if (item.contains(QStringLiteral("action"))) {
+            if (Widget* a = store.resolve(item.value(QStringLiteral("action")).toString()))
+                lay->addAction(a);
+        }
+        else if (item.contains(QStringLiteral("separator"))) {
+            lay->addSeparator();
+        }
+        else if (item.contains(QStringLiteral("stretch"))) {
+            lay->addStretch(item.value(QStringLiteral("stretch")).toInt());
+        }
+        else if (item.contains(QStringLiteral("spacing"))) {
+            lay->addSpacing(item.value(QStringLiteral("spacing")).toInt());
+        }
+        else if (item.contains(QStringLiteral("spacer"))) {
+            QVariantList size = item.value(QStringLiteral("spacer")).toList();
+            lay->addSpacer(size.value(0).toInt(), size.value(1).toInt(), pos,
+                           size.value(2, 1).toInt(), size.value(3, 1).toInt());
+        }
+    }
+    QVariantList margins = spec.value(QStringLiteral("margins")).toList();
+    if (margins.size() == 4)
+        lay->setContentsMargins(margins.at(0).toInt(), margins.at(1).toInt(),
+                                margins.at(2).toInt(), margins.at(3).toInt());
+    if (spec.contains(QStringLiteral("spacing")))
+        lay->setSpacing(spec.value(QStringLiteral("spacing")).toInt());
+    return lay;
+}
 }  // namespace
 
 Store::Store() = default;
@@ -86,10 +179,10 @@ bool Store::commCustom(const QString& id, const QVariantMap& content)
         // a layout op: the guest names widgets by comm id, the backend
         // wants the objects
         QVariantMap op = content;
-        auto ref = op.constFind(QStringLiteral("widget"));
-        if (ref != op.constEnd()) {
-            Widget* target = resolve(ref->toString());
-            op[QStringLiteral("widget")] = QVariant::fromValue<QObject*>(target);
+        for (const char* key : {"widget", "action"}) {
+            auto ref = op.constFind(QLatin1String(key));
+            if (ref != op.constEnd())
+                op[QLatin1String(key)] = QVariant::fromValue<QObject*>(resolve(ref->toString()));
         }
         w->forwardLayoutOp(op);
         return true;
@@ -158,7 +251,7 @@ void Store::watch(Widget* w, const QString& id)
                     return;
                 QVariantMap content;
                 content.insert(QStringLiteral("event"), name);
-                content.insert(QStringLiteral("args"), args);
+                content.insert(QStringLiteral("args"), refsOf(*this, args));
                 ++_stats.events;
                 _sink(id, QStringLiteral("custom"), content);
             });
@@ -177,10 +270,23 @@ void Store::applyState(Widget* w, const QVariantMap& state, bool initial)
         const QString& key = it.key();
         if (key.startsWith(kPrefix)) {
             QString name = key.mid(kPrefix.size());
+            QVariant value = resolveRefs(*this, it.value());
             if (initial)
-                w->setInitial(name, it.value());
+                w->setInitial(name, value);
             else
-                props.insert(name, it.value());
+                props.insert(name, value);
+        }
+        else if (key == QLatin1String("layoutSpec")) {
+            // a code-built layout tree (G3c): the object's Layout is
+            // rebuilt from it, silently; a backend realizes it when it
+            // builds the widget, and the ops that follow apply to the
+            // real layouts by name
+            Layout* old = w->layout();
+            if (it->typeId() == QMetaType::QVariantMap && !it->toMap().isEmpty())
+                w->setLayout(layoutFromSpec(*this, it->toMap()));
+            else
+                w->setLayout(nullptr);
+            delete old;
         }
         else if (key == QLatin1String("qtClass")) {
             w->setQtClass(it->toString());

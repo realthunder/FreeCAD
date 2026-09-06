@@ -161,6 +161,35 @@ class QObject:
     def deleteLater(self):
         pass
 
+    def eventFilter(self, obj, event):
+        """The base: nothing filtered (a subclass installed on a widget
+        sees the events the host relays, docs/Sandbox.md 7.11 G3c)."""
+        return False
+
+    def emit(self, signal, *args):
+        """Old-style `self.emit(QtCore.SIGNAL("escaped()"))`: the signal
+        of that name, made on the object if it declares none."""
+        name = SIGNAL(signal) if isinstance(signal, str) else signal.name
+        sig = getattr(self, name, None)
+        if not isinstance(sig, BoundSignal):
+            try:
+                signals = self._fcx_signals
+            except AttributeError:
+                signals = {}
+                object.__setattr__(self, "_fcx_signals", signals)
+            sig = signals.get(name)
+            if sig is None:
+                sig = signals[name] = BoundSignal(self, name)
+        sig.emit(*args)
+
+    def __getattr__(self, name):
+        # a signal connected by name before it was ever emitted
+        # (`QtCore.QObject.connect(w, SIGNAL("escaped()"), fn)`)
+        signals = self.__dict__.get("_fcx_signals")
+        if signals is not None and name in signals:
+            return signals[name]
+        raise AttributeError("%r has no attribute %r" % (type(self).__name__, name))
+
 
 # -- the widget base ---------------------------------------------------------
 
@@ -172,6 +201,23 @@ def _q(name):
 def _ref(widget):
     """A widget named in a request: its model ref, the host resolves it."""
     return None if widget is None else "IPY_MODEL_" + widget.model_id
+
+
+# every model by id: what a ref in a host event resolves to
+_REGISTRY = {}
+
+
+def _deref(value):
+    """A model ref (`IPY_MODEL_<id>`) in a host event's arguments, or a
+    list of them, as the model; anything else as it is."""
+    if isinstance(value, str) and value.startswith("IPY_MODEL_"):
+        return _REGISTRY.get(value[10:])
+    if isinstance(value, list):
+        return [_deref(v) for v in value]
+    return value
+
+
+_MAIN_WINDOW_ATTR = "_fcx_mainwindow"
 
 
 class QWidget(ipywidgets.Widget):
@@ -203,6 +249,15 @@ class QWidget(ipywidgets.Widget):
     q_maximumHeight = Int(16777215).tag(sync=True)
     q_prefEntry = Unicode("").tag(sync=True)
     q_prefPath = Unicode("").tag(sync=True)
+    # G3c (docs/Sandbox.md 7.11): a font as data, the actions the widget
+    # carries, the QEvent types the host relays, the focus it reports
+    q_font = Dict().tag(sync=True)
+    q_actions = List().tag(sync=True)
+    q_watchEvents = List(Int()).tag(sync=True)
+    q_focus = Bool(False).tag(sync=True)
+    # a code-built layout tree, whole, re-synced on every mutation (the
+    # host builds the real layouts from it when it realizes the widget)
+    layoutSpec = Dict(allow_none=True, default_value=None).tag(sync=True)
 
     destroyed = Signal()
 
@@ -222,12 +277,19 @@ class QWidget(ipywidgets.Widget):
         self._children = []
         self._layout = None
         self._data = {}
+        self._filters = []
         self._fcx_init_args(args, kwargs)
         # a constructor argument is a set: QLabel("text") shows "text"
         kwargs["_touched"] = [k[len(PREFIX):] for k in kwargs if k.startswith(PREFIX)]
         super().__init__(**kwargs)
+        _REGISTRY[self.model_id] = self
         if parent is not None:
+            if getattr(parent, _MAIN_WINDOW_ATTR, False):
+                parent = None
             self._attach(parent)
+        # a subclass handling key presses itself asks for them
+        if type(self).keyPressEvent is not QWidget.keyPressEvent:
+            self._watch(qtdata.QEvent.KeyPress)
 
     def _fcx_init_args(self, args, kwargs):
         """A subclass reads its Qt-style positional arguments here."""
@@ -239,11 +301,97 @@ class QWidget(ipywidgets.Widget):
 
     def _handle_custom_msg(self, content, buffers):
         if isinstance(content, dict) and "event" in content:
+            args = _deref(content.get("args") or [])
+            if content["event"] == "qevent":
+                # a relayed QEvent: answered inside it, so the host's
+                # filter knows whether to let the widget have it
+                self._event("eventDone", bool(self._dispatch_qevent(args)))
+                return
             signal = getattr(self, content["event"], None)
             if isinstance(signal, BoundSignal):
-                signal.emit(*(content.get("args") or []))
+                signal.emit(*args)
                 return
         super()._handle_custom_msg(content, buffers)
+
+    # -- the event stream (G3c): the QEvent types the widget asked for
+
+    def _watch(self, *types):
+        want = list(self.q_watchEvents)
+        new = [int(t) for t in types if int(t) not in want]
+        if new:
+            self._set(watchEvents=want + new)
+
+    def _dispatch_qevent(self, args):
+        """The event through the installed filters, then the widget's
+        own handler; True when one of them ate it."""
+        if not args:
+            return False
+        ev = qtdata.QEvent.make(args)
+        for f in list(self._filters):
+            try:
+                if f.eventFilter(self, ev):
+                    return True
+            except Exception:
+                import traceback
+
+                traceback.print_exc()
+        if ev.type() == qtdata.QEvent.KeyPress \
+                and type(self).keyPressEvent is not QWidget.keyPressEvent:
+            ev._to_host = False
+            self.keyPressEvent(ev)
+            return not ev._to_host
+        return False
+
+    def keyPressEvent(self, event):
+        """The base handler: the real widget takes the key."""
+        event._to_host = True
+
+    emit = QObject.emit
+
+    def eventFilter(self, obj, event):
+        return False
+
+    def installEventFilter(self, obj):
+        if obj not in self._filters:
+            self._filters.append(obj)
+        self._watch(qtdata.QEvent.KeyPress, qtdata.QEvent.MouseButtonDblClick)
+
+    def removeEventFilter(self, obj):
+        if obj in self._filters:
+            self._filters.remove(obj)
+
+    # -- actions (G3c): `addAction` on any widget, positioned on a line edit
+
+    def addAction(self, *args):
+        """`addAction(action)`, `addAction(icon, position)` (a line edit's
+        trailing icon), `addAction(text)`: the action, carried as state."""
+        action = None
+        position = -1
+        for a in args:
+            if isinstance(a, QAction):
+                action = a
+            elif isinstance(a, (qtdata.QIcon, qtdata.QPixmap)):
+                action = QAction(a, "", self)
+            elif isinstance(a, str) and action is None:
+                action = QAction(a, self)
+            elif isinstance(a, int):
+                position = a
+        if action is None:
+            raise TypeError("addAction: an action, an icon or a text")
+        entries = [dict(e) for e in self.q_actions]
+        entries.append({"action": _ref(action), "position": position})
+        self._set(actions=entries)
+        return action
+
+    def removeAction(self, action):
+        ref = _ref(action)
+        self._set(actions=[dict(e) for e in self.q_actions if e.get("action") != ref])
+
+    def actions(self):
+        return [w for w in (_deref(e.get("action")) for e in self.q_actions) if w is not None]
+
+    def insertAction(self, before, action):
+        return self.addAction(action)
 
     def _set(self, **props):
         """A Qt setter of the properties `props` (Qt names): the keys
@@ -275,7 +423,10 @@ class QWidget(ipywidgets.Widget):
     def setParent(self, parent):
         """Re-parent: the guest tree, and the host's widget (None makes
         it a hidden top-level, as Qt does; a layout's addWidget brings
-        it back)."""
+        it back).  The main window shim as a parent is a top-level too
+        (a tool bar the main window owns already)."""
+        if parent is not None and getattr(parent, _MAIN_WINDOW_ATTR, False):
+            parent = None
         if parent is self._parent:
             return
         self._attach(parent)
@@ -324,6 +475,18 @@ class QWidget(ipywidgets.Widget):
         self._layout = layout
         if layout is not None:
             layout._owner = self
+            for item in layout._items:
+                if item._widget is not None and item._widget._parent is not self:
+                    item._widget.setParent(self)
+        self._sync_layout()
+
+    def _sync_layout(self):
+        """A code-built layout crosses whole as `layoutSpec` (a `.ui`
+        file's layouts are uic's on the host and cross as ops only)."""
+        lay = self._layout
+        if lay is None or lay._from_ui or self.comm is None:
+            return
+        self.layoutSpec = lay._spec()
 
     # -- identity
 
@@ -444,6 +607,11 @@ class QWidget(ipywidgets.Widget):
         pass
 
     def sizeHint(self):
+        """An estimate (nothing is laid out here): a text's width at
+        about seven pixels a character, a widget's 100 x 24."""
+        text = getattr(self, "q_text", None)
+        if isinstance(text, str):
+            return qtdata.QSize(qtdata.QFontMetrics(self.font()).width(text) + 8, 24)
         return qtdata.QSize(100, 24)
 
     def width(self):
@@ -453,10 +621,10 @@ class QWidget(ipywidgets.Widget):
         return self.q_minimumHeight or 24
 
     def setFont(self, font):
-        pass
+        self._set(font=font.toDict() if isinstance(font, qtdata.QFont) else dict(font))
 
     def font(self):
-        return qtdata.QFont()
+        return qtdata.QFont.fromDict(self.q_font)
 
     def setContentsMargins(self, *args):
         pass
@@ -468,12 +636,6 @@ class QWidget(ipywidgets.Widget):
         pass
 
     def setContextMenuPolicy(self, policy):
-        pass
-
-    def installEventFilter(self, obj):
-        pass
-
-    def removeEventFilter(self, obj):
         pass
 
     def adjustSize(self):
@@ -494,7 +656,9 @@ class QWidget(ipywidgets.Widget):
         self._event("setFocus")
 
     def hasFocus(self):
-        return False
+        """What the host reported (a widget that asked for focus events;
+        every text input does)."""
+        return self.q_focus
 
     def clearFocus(self):
         pass
@@ -544,10 +708,25 @@ def _icon_path(icon):
 # host layout: code-built layouts are G3c (docs/Sandbox.md 7.11).
 
 
+_LAYOUT_SEQ = [0]
+
+
+def _layout_name():
+    _LAYOUT_SEQ[0] += 1
+    return "_fcx_layout_%d" % _LAYOUT_SEQ[0]
+
+
 class QSpacerItem:
     def __init__(self, w=0, h=0, hPolicy=None, vPolicy=None):
         self.w, self.h = w, h
         self.hPolicy, self.vPolicy = hPolicy, vPolicy
+
+    def _policies(self):
+        def value(p, default):
+            if p is None:
+                return default
+            return int(getattr(p, "value", p))
+        return [value(self.hPolicy, 1), value(self.vPolicy, 1)]
 
     def widget(self):
         return None
@@ -582,6 +761,7 @@ class QLayoutItem:
 
 class QLayout(QObject):
     kind = "layout"
+    qt_class = "QBoxLayout"
 
     def __init__(self, parent=None):
         QObject.__init__(self, None)
@@ -589,12 +769,49 @@ class QLayout(QObject):
         self._positions = []
         self._owner = None
         self._parent_layout = None
-        self._objectName = ""
+        # a code-built layout carries a generated name: the host names
+        # the real one after it, so the ops that follow find it
+        self._objectName = _layout_name()
+        self._from_ui = False
+        self._margins = None
+        self._spacing = None
         if parent is not None:
             if isinstance(parent, QWidget):
                 parent.setLayout(self)
             elif isinstance(parent, QLayout):
                 parent.addLayout(self)
+
+    def _spec(self):
+        """The whole tree as data: what the host builds the real layouts
+        from (docs/Sandbox.md 7.11, G3c)."""
+        items = []
+        for item, pos in zip(self._items, self._positions):
+            if item._widget is not None:
+                entry = {"widget": _ref(item._widget)}
+            elif item._layout is not None:
+                entry = {"layout": item._layout._spec()}
+            elif isinstance(item, _ActionItem):
+                entry = {"action": _ref(item._action)}
+            elif isinstance(item, _SeparatorItem):
+                entry = {"separator": True}
+            elif pos[:1] == ("stretch",):
+                entry = {"stretch": pos[1]}
+            elif pos[:1] == ("spacing",):
+                entry = {"spacing": pos[1]}
+            elif item._spacer is not None:
+                sp = item._spacer
+                entry = {"spacer": [sp.w, sp.h] + sp._policies()}
+            else:
+                continue
+            if pos and isinstance(pos[0], int):
+                entry["pos"] = list(pos)
+            items.append(entry)
+        spec = {"class": self.qt_class, "name": self._objectName, "items": items}
+        if self._margins is not None:
+            spec["margins"] = list(self._margins)
+        if self._spacing is not None:
+            spec["spacing"] = self._spacing
+        return spec
 
     # -- the owner: the widget this layout (or its parent layout) sits on
 
@@ -608,6 +825,9 @@ class QLayout(QObject):
         owner = self.parentWidget()
         if owner is None or not self._objectName or owner.comm is None:
             return
+        # the whole tree first (a widget not yet realized is built from
+        # it), then the op (a realized one applies it to the real layout)
+        owner._sync_layout()
         msg = {"layout": self._objectName, "op": op}
         msg.update(fields)
         owner.send(msg)
@@ -710,10 +930,22 @@ class QLayout(QObject):
         self._add_widget(widget, tuple(args), index=index)
 
     def setContentsMargins(self, *args):
+        if len(args) == 4:
+            self._margins = [int(a) for a in args]
         self._notify("setContentsMargins", args=list(args))
 
     def setSpacing(self, n):
+        self._spacing = int(n)
         self._notify("setSpacing", args=[n])
+
+    def contentsMargins(self):
+        return qtdata.QMargins(*(self._margins or [0, 0, 0, 0]))
+
+    def spacing(self):
+        return self._spacing if self._spacing is not None else -1
+
+    def parent(self):
+        return self._owner if self._owner is not None else self._parent_layout
 
     def setAlignment(self, *args):
         pass
@@ -770,6 +1002,7 @@ class QBoxLayout(QLayout):
 
 class QVBoxLayout(QBoxLayout):
     kind = "vbox"
+    qt_class = "QVBoxLayout"
 
     def __init__(self, parent=None):
         QBoxLayout.__init__(self, QBoxLayout.TopToBottom, parent)
@@ -777,6 +1010,7 @@ class QVBoxLayout(QBoxLayout):
 
 class QHBoxLayout(QBoxLayout):
     kind = "hbox"
+    qt_class = "QHBoxLayout"
 
     def __init__(self, parent=None):
         QBoxLayout.__init__(self, QBoxLayout.LeftToRight, parent)
@@ -784,6 +1018,7 @@ class QHBoxLayout(QBoxLayout):
 
 class QGridLayout(QLayout):
     kind = "grid"
+    qt_class = "QGridLayout"
 
     def rowCount(self):
         rows = 0
@@ -808,6 +1043,7 @@ class QGridLayout(QLayout):
 
 class QFormLayout(QLayout):
     kind = "form"
+    qt_class = "QFormLayout"
 
     def addRow(self, label, field=None):
         if field is None:
@@ -837,6 +1073,72 @@ class QFormLayout(QLayout):
 
     def setLayout(self, row, role, layout):
         self._add_layout(layout, (row, role))
+
+
+class _ActionItem(QLayoutItem):
+    """An action on a bar."""
+
+    __slots__ = ("_action",)
+
+    def __init__(self, action):
+        QLayoutItem.__init__(self)
+        self._action = action
+
+    def action(self):
+        return self._action
+
+
+class _SeparatorItem(QLayoutItem):
+    __slots__ = ()
+
+
+class _Bar(QLayout):
+    """A tool bar's or a menu's content: widgets, actions and separators
+    in order, the layout of that widget on both sides (the host fills
+    the real bar from it, no QLayout involved)."""
+
+    kind = "bar"
+    qt_class = "_bar"
+
+    def __init__(self, owner):
+        QLayout.__init__(self, None)
+        self._objectName = "_fcx_bar"
+        owner._layout = self
+        self._owner = owner
+
+    def _add_action(self, action, index=None):
+        if not isinstance(action, QAction):
+            raise TypeError("addAction: %r is not an action" % (action,))
+        item = _ActionItem(action)
+        if index is None:
+            self._items.append(item)
+            self._positions.append(())
+            self._notify("addAction", action=_ref(action))
+        else:
+            self._items.insert(index, item)
+            self._positions.insert(index, ())
+            self._notify("insertAction", action=_ref(action), index=index)
+
+    def _remove_action(self, action):
+        for i, item in enumerate(self._items):
+            if isinstance(item, _ActionItem) and item._action is action:
+                self._items.pop(i)
+                self._positions.pop(i)
+                self._notify("removeAction", action=_ref(action))
+                return
+
+    def _add_separator(self):
+        self._items.append(_SeparatorItem())
+        self._positions.append(())
+        self._notify("addSeparator")
+
+    def _clear(self):
+        self._items = []
+        self._positions = []
+        self._notify("clear")
+
+    def _actions(self):
+        return [item._action for item in self._items if isinstance(item, _ActionItem)]
 
 
 LAYOUTS = {
@@ -1200,8 +1502,13 @@ class QLineEdit(QWidget):
     def setInputMask(self, mask):
         pass
 
-    def addAction(self, *args):
-        pass
+    def hasAcceptableInput(self):
+        return True
+
+    def __init__(self, *args, **kwargs):
+        QWidget.__init__(self, *args, **kwargs)
+        # a text input's focus is state the corpus reads (`hasFocus()`)
+        self._watch(qtdata.QEvent.FocusIn, qtdata.QEvent.FocusOut)
 
     @observe("q_text")
     def _fcx_text(self, change):
@@ -1721,7 +2028,7 @@ class InputField(QLineEdit):
     q_format = Unicode("g").tag(sync=True)
     q_quantityString = Unicode("").tag(sync=True)
 
-    valueChanged = Signal(float)
+    valueChanged = Signal(object)
     parseError = Signal(str)
 
     def setValue(self, value):
@@ -1811,7 +2118,19 @@ class InputField(QLineEdit):
 
     @observe("q_rawValue")
     def _fcx_raw(self, change):
-        self.valueChanged.emit(change["new"])
+        # `valueChanged(const Base::Quantity&)` is the overload PySide
+        # connects (DraftGui reads `d.Value`); the double is the other
+        self.valueChanged.emit(self._fcx_quantity(change["new"]))
+
+    def _fcx_quantity(self, value):
+        try:
+            import FreeCAD
+
+            if self.q_unit:
+                return FreeCAD.Units.Quantity(value, self.q_unit)
+            return FreeCAD.Units.Quantity(value)
+        except Exception:
+            return value
 
 
 _DECIMALS = []
@@ -1889,6 +2208,319 @@ class ColorButton(QPushButton):
 
 
 # -- dialogs (G3b) ------------------------------------------------------------
+
+
+# -- actions, tool bars, menus (G3c, docs/Sandbox.md 7.11) ---------------
+
+
+class QAction(QWidget):
+    """A `QAction`: not a widget, but a model like one (text, icon,
+    checkable, checked, enabled, visible, tool tip, shortcut); the host
+    makes the real action on whatever carries it -- a widget's
+    `addAction`, a tool bar, a menu."""
+
+    _model_name = Unicode("QActionModel").tag(sync=True)
+    qt_class = "QAction"
+    q_text = Unicode("").tag(sync=True)
+    q_icon = Unicode("").tag(sync=True)
+    q_checkable = Bool(False).tag(sync=True)
+    q_checked = Bool(False).tag(sync=True)
+    q_shortcut = Unicode("").tag(sync=True)
+    q_separator = Bool(False).tag(sync=True)
+
+    triggered = Signal(bool)
+    toggled = Signal(bool)
+    hovered = Signal()
+    changed = Signal()
+
+    def _fcx_init_args(self, args, kwargs):
+        for a in list(args):
+            if isinstance(a, str):
+                kwargs["q_text"] = a
+                args.remove(a)
+            elif isinstance(a, (qtdata.QIcon, qtdata.QPixmap)):
+                kwargs["q_icon"] = _icon_path(a)
+                args.remove(a)
+        self._data_value = None
+        QWidget._fcx_init_args(self, args, kwargs)
+
+    def setText(self, text):
+        self._set(text=str(text))
+
+    def text(self):
+        return self.q_text
+
+    def setIcon(self, icon):
+        self._set(icon=_icon_path(icon))
+
+    def icon(self):
+        return qtdata.QIcon(self.q_icon)
+
+    def setCheckable(self, on):
+        self._set(checkable=bool(on))
+
+    def isCheckable(self):
+        return self.q_checkable
+
+    def setChecked(self, on):
+        self._set(checked=bool(on))
+
+    def isChecked(self):
+        return self.q_checked
+
+    def toggle(self):
+        self.setChecked(not self.q_checked)
+
+    def setShortcut(self, keys):
+        self._set(shortcut=str(getattr(keys, "toString", lambda: keys)()))
+
+    def shortcut(self):
+        return self.q_shortcut
+
+    def setSeparator(self, on):
+        self._set(separator=bool(on))
+
+    def isSeparator(self):
+        return self.q_separator
+
+    def setData(self, value):
+        self._data_value = value
+
+    def data(self):
+        return self._data_value
+
+    def setMenu(self, menu):
+        self._menu = menu
+
+    def menu(self):
+        return getattr(self, "_menu", None)
+
+    def trigger(self):
+        """A programmatic trigger: toggles a checkable, fires
+        `triggered` here and asks the host to trigger the real one."""
+        if self.q_checkable:
+            self.setChecked(not self.q_checked)
+        self.triggered.emit(self.q_checked)
+
+    def activate(self, *args):
+        self._event("trigger")
+
+    def setIconText(self, text):
+        pass
+
+    def setPriority(self, p):
+        pass
+
+    def setMenuRole(self, role):
+        pass
+
+    @observe("q_checked")
+    def _fcx_checked(self, change):
+        self.toggled.emit(bool(change["new"]))
+
+
+def _make_action(args, parent):
+    """The action `addAction(...)` names: an action, or one made from
+    `(text)`, `(icon, text)`, with an optional callable to connect."""
+    action = None
+    icon = None
+    text = None
+    slot = None
+    for a in args:
+        if isinstance(a, QAction):
+            action = a
+        elif isinstance(a, (qtdata.QIcon, qtdata.QPixmap)):
+            icon = a
+        elif isinstance(a, str):
+            text = a
+        elif callable(a):
+            slot = a
+    if action is None:
+        action = QAction(text or "", parent)
+        if icon is not None:
+            action.setIcon(icon)
+    if slot is not None:
+        action.triggered.connect(slot)
+    return action
+
+
+class QToolBar(QWidget):
+    """A tool bar: its content is a bar (widgets, actions, separators in
+    order); `getMainWindow().addToolBar(bar)` realizes it on the host."""
+
+    _model_name = Unicode("QToolBarModel").tag(sync=True)
+    qt_class = "QToolBar"
+    q_iconSize = Int(0).tag(sync=True)
+    q_toolButtonStyle = Int(0).tag(sync=True)
+    q_movable = Bool(True).tag(sync=True)
+    q_floatable = Bool(True).tag(sync=True)
+    q_orientation = Int(1).tag(sync=True)
+    q_toggleViewAction = Unicode("", allow_none=True).tag(sync=True)
+
+    actionTriggered = Signal(object)
+    visibilityChanged = Signal(bool)
+
+    def _fcx_init_args(self, args, kwargs):
+        if args and isinstance(args[0], str):
+            kwargs["q_windowTitle"] = args.pop(0)
+        self._toggle = None
+        QWidget._fcx_init_args(self, args, kwargs)
+
+    def __init__(self, *args, **kwargs):
+        QWidget.__init__(self, *args, **kwargs)
+        _Bar(self)
+
+    def addWidget(self, widget):
+        self._layout._add_widget(widget, ())
+        return None
+
+    def insertWidget(self, before, widget):
+        i = self._layout.indexOf(before) if not isinstance(before, int) else before
+        self._layout._add_widget(widget, (), index=i if i >= 0 else None)
+        return None
+
+    def removeWidget(self, widget):
+        self._layout.removeWidget(widget)
+
+    def addAction(self, *args):
+        action = _make_action(args, self)
+        self._layout._add_action(action)
+        return action
+
+    def insertAction(self, before, action):
+        i = -1
+        for k, item in enumerate(self._layout._items):
+            if isinstance(item, _ActionItem) and item._action is before:
+                i = k
+        self._layout._add_action(action, index=i if i >= 0 else None)
+
+    def removeAction(self, action):
+        self._layout._remove_action(action)
+
+    def addSeparator(self):
+        self._layout._add_separator()
+        return None
+
+    def clear(self):
+        self._layout._clear()
+
+    def actions(self):
+        return self._layout._actions()
+
+    def toggleViewAction(self):
+        """The action that shows and hides the bar (the host binds it to
+        the real bar's own)."""
+        if self._toggle is None:
+            self._toggle = QAction(self.q_windowTitle)
+            self._toggle.setCheckable(True)
+            self._set(toggleViewAction=_ref(self._toggle))
+        return self._toggle
+
+    def setIconSize(self, size):
+        self._set(iconSize=int(size.width() if hasattr(size, "width") else size))
+
+    def setToolButtonStyle(self, style):
+        self._set(toolButtonStyle=int(style))
+
+    def setMovable(self, on):
+        self._set(movable=bool(on))
+
+    def setFloatable(self, on):
+        self._set(floatable=bool(on))
+
+    def setOrientation(self, o):
+        self._set(orientation=int(o))
+
+    def setAllowedAreas(self, areas):
+        pass
+
+    def widgetForAction(self, action):
+        return None
+
+    @observe("q_visible")
+    def _fcx_visible(self, change):
+        self.visibilityChanged.emit(bool(change["new"]))
+
+
+class QMenu(QWidget):
+    """A menu: its content is a bar (actions, separators, sub-menus);
+    `exec_()` is one synchronous op (the host pops the real menu at the
+    cursor and runs a nested loop), the chosen action comes back as
+    `triggered` and as the result."""
+
+    _model_name = Unicode("QMenuModel").tag(sync=True)
+    qt_class = "QMenu"
+    q_title = Unicode("").tag(sync=True)
+    q_icon = Unicode("").tag(sync=True)
+    q_tearOffEnabled = Bool(False).tag(sync=True)
+
+    triggered = Signal(object)
+    aboutToShow = Signal()
+    aboutToHide = Signal()
+
+    def _fcx_init_args(self, args, kwargs):
+        if args and isinstance(args[0], str):
+            kwargs["q_title"] = args.pop(0)
+        QWidget._fcx_init_args(self, args, kwargs)
+
+    def __init__(self, *args, **kwargs):
+        QWidget.__init__(self, *args, **kwargs)
+        _Bar(self)
+
+    def addAction(self, *args):
+        action = _make_action(args, self)
+        self._layout._add_action(action)
+        return action
+
+    def insertAction(self, before, action):
+        self._layout._add_action(action)
+
+    def removeAction(self, action):
+        self._layout._remove_action(action)
+
+    def addSeparator(self):
+        self._layout._add_separator()
+        return None
+
+    def addMenu(self, *args):
+        menu = args[0] if args and isinstance(args[0], QMenu) else QMenu(*args)
+        self._layout._add_widget(menu, ())
+        return menu
+
+    def clear(self):
+        self._layout._clear()
+
+    def actions(self):
+        return self._layout._actions()
+
+    def setTitle(self, title):
+        self._set(title=str(title))
+
+    def title(self):
+        return self.q_title
+
+    def setIcon(self, icon):
+        self._set(icon=_icon_path(icon))
+
+    def setTearOffEnabled(self, on):
+        self._set(tearOffEnabled=bool(on))
+
+    def isEmpty(self):
+        return not self._layout._items
+
+    def exec_(self, pos=None, *args):
+        import _fcx
+
+        chosen = _fcx.op("gui.menu.exec", 0, self.model_id)
+        return _REGISTRY.get(chosen) if chosen else None
+
+    exec = exec_
+
+    def popup(self, pos=None, *args):
+        self.exec_(pos)
+
+    def menuAction(self):
+        return None
 
 
 class QDialog(QWidget):
@@ -2619,6 +3251,9 @@ CLASSES = {
     "QTableView": _items.QTableView,
     "QColumnView": _items.QColumnView,
     "QWidget": QWidget,
+    "QToolBar": QToolBar,
+    "QMenu": QMenu,
+    "QAction": QAction,
     "QLabel": QLabel,
     "QPushButton": QPushButton,
     "QToolButton": QToolButton,

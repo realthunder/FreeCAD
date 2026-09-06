@@ -368,8 +368,8 @@ INSTALL(
 # Draft's App side as a bundled sandbox wheel (docs/Sandbox.md sec 5.6):
 # the objects, geometry, functions and make_* modules UNMODIFIED, the
 # support modules minus params (a host-answered facade in the guest)
-# and minus the two that import FreeCADGui unconditionally (todo,
-# init_draft_statusbar: GUI-side, reached only under GuiUp), plus what
+# and minus init_draft_statusbar (GUI-side, reached only under GuiUp;
+# todo joined at G3c, the guest has FreeCADGui and QTimer now), plus what
 # they import that the guest lacks -- lazy_loader, freecad.deprecation,
 # the PySide/resource shims.  Boots with the pyodide guest from
 # <datadir>/Pyodide/wheels like the fcx_image wheel.
@@ -377,11 +377,17 @@ IF (BUILD_EXPR_PYODIDE_HOST)
     # Draft.py imports view_base and view_draftlink unguarded, and BIM
     # derives view provider classes from Draft.ViewProviderDraft at
     # module level; both modules keep their GUI reach under GuiUp.
+    # G3c (docs/Sandbox.md 7.11): DraftGui -- the toolbar and task
+    # panel built in code -- and what it imports that the App side does
+    # not (the field locks, todo: FreeCADGui exists in the guest now).
     SET(Draft_sandbox_wheel_files
         Draft.py
         DraftVecUtils.py
         DraftGeomUtils.py
         WorkingPlane.py
+        DraftGui.py
+        draftguitools/__init__.py
+        draftguitools/gui_field_locks.py
         draftviewproviders/__init__.py
         draftviewproviders/view_base.py
         draftviewproviders/view_draftlink.py
@@ -405,7 +411,6 @@ IF (BUILD_EXPR_PYODIDE_HOST)
                 --out-dir ${_draft_wheel_dir}
                 --root ${CMAKE_CURRENT_SOURCE_DIR}
                 --exclude draftutils/params.py
-                --exclude draftutils/todo.py
                 --exclude draftutils/init_draft_statusbar.py
                 --add ${CMAKE_SOURCE_DIR}/src/3rdParty/lazy_loader=lazy_loader
                 --add ${CMAKE_SOURCE_DIR}/src/Ext/freecad/deprecation.py=freecad/deprecation.py

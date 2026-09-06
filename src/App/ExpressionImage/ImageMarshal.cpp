@@ -454,17 +454,31 @@ static const char ProxyPrelude[] =
     "def _gui_show_panel(panel, form_ids):\n"
     "    _fcx.op('gui.control.show', 0, [_proxy_register(panel, PANEL_HOOKS), list(form_ids)])\n"
     "_gui._show_panel = _gui_show_panel\n"
+    // Every other name is the forms' module's to answer (Control,
+    // PySideUic, UiLoader, ActiveDocument, getMainWindow, runCommand,
+    // ... -- docs/Sandbox.md 7.11, G3c): that module ships in the
+    // fcx_widgets wheel the HOST build packs, so a new FreeCADGui name
+    // is a host build, not an image rebuild.  A name it lacks is the
+    // AttributeError `hasattr(FreeCADGui, 'Snapper')` expects.
     "def _gui_getattr(name):\n"
-    "    if name in ('Control', 'PySideUic', 'UiLoader'):\n"
-    "        from freecad.widgets import gui as _forms\n"
-    "        return getattr(_forms, name)\n"
-    // the panels' finish(): `Gui.ActiveDocument.resetEdit()` -- the
-    // first U4 op, the GUI document of the active document, or None
-    "    if name == 'ActiveDocument':\n"
-    "        from freecad.widgets import gui as _forms\n"
-    "        return _forms.active_document()\n"
-    "    raise AttributeError('FreeCADGui.%s is not in the sandbox (docs/Sandbox.md 7)' % name)\n"
+    "    if name.startswith('__'):\n"
+    "        raise AttributeError(name)\n"
+    "    from freecad.widgets import gui as _forms\n"
+    "    return _forms.attr(name)\n"
     "_gui.__getattr__ = _gui_getattr\n"
+    // the wheel registers its own proxies (task watchers, the main
+    // window's close hook) with the hook lists it names
+    "_gui._proxy_register = _proxy_register\n"
+    // The guest has no event loop: what `QTimer.singleShot` queued (the
+    // PySide shim in the fcx_draft wheel) runs when the request that
+    // queued it is done -- the dispatcher calls this after every
+    // exec, evaluate and hook (Draft's todo.delay relies on the order).
+    "def _drain_timers():\n"
+    "    import sys\n"
+    "    m = sys.modules.get('PySide.QtCore')\n"
+    "    drain = getattr(m, '_drain', None) if m is not None else None\n"
+    "    if drain is not None:\n"
+    "        drain()\n"
     "_sys.modules['FreeCADGui'] = _gui\n"
     "del _sys, _types, _m\n";
 

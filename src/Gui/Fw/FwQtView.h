@@ -45,6 +45,7 @@
 
 #include <QHash>
 #include <QPointer>
+#include <QSet>
 #include <QStringList>
 
 #include "FwCore.h"
@@ -55,6 +56,7 @@ QT_BEGIN_NAMESPACE
 class QWidget;
 class QLayout;
 class QModelIndex;
+class QAction;
 QT_END_NAMESPACE
 
 namespace Gui
@@ -113,6 +115,7 @@ public:
     int idOf(const QModelIndex& index) const;
 
 private:
+    friend class EventRelay;
     View(Fw::Widget* model, QWidget* widget, bool bound);
     void connectWidget();
     void readBack();
@@ -125,6 +128,16 @@ private:
     static View* buildForm(Fw::Widget* model, QWidget* parent);
     // containers: pages a model holds before it is realized
     void initContainers();
+    // code-built layouts (G3c): the model's Layout tree realized under
+    // the widget; a bar (a tool bar's or a menu's content) filled
+    void initLayout();
+    QLayout* makeLayout(Fw::Layout* lay, QWidget* owner);
+    void fillBar(Fw::Layout* lay, QWidget* bar);
+    void barOp(const QVariantMap& op);
+    void applyActions(const QVariantList& entries);
+    void applyWatchEvents(const QVariantList& types);
+    QAction* actionOf(const QVariant& ref, QObject* parent);
+    void showInLayout(QWidget* child, const QVariant& modelRef);
     // item views
     struct Items;
     void initItems();
@@ -143,9 +156,24 @@ private:
     QPointer<QWidget> _widget;
     bool _bound;
     bool _applying = false;
+    bool _eventEaten = false;   // the `eventDone` answer to a relayed event
+    QPointer<QObject> _relay;   // the event filter relaying `watchEvents`
+    QSet<QObject*> _added;      // the actions added to the widget
     QList<QPointer<View>> _children;  // a form's bound children
     std::unique_ptr<Items> _items;
 };
+
+/// The real QAction rendering an action model (a `Fw::QAction`), made
+/// under `parent` if there is none yet; nullptr for a model that is not
+/// an action.  The action dies with its model.
+GuiExport QAction* realizeAction(Fw::Widget* model, QObject* parent);
+/// The real action of a model, or nullptr when it is not realized.
+GuiExport QAction* actionWidgetOf(const Fw::Widget* model);
+/// Adopt `action` (a bar's toggle-view action, a widget's own) as the
+/// rendering of the model.
+GuiExport void bindAction(Fw::Widget* model, QAction* action);
+/// The model a real action renders, or nullptr.
+GuiExport Fw::Widget* modelOfAction(const QAction* action);
 
 /// The real widget of a Qt class name: FreeCAD's own through the widget
 /// factory, Qt's by name, else a QWidget (never nullptr).

@@ -3,7 +3,10 @@ QPixmap, QFont) are data, and the widget classes old PySide code
 reaches through QtGui are the models of freecad.widgets
 (docs/Sandbox.md 7.11).  Nothing is drawn here."""
 
-from freecad.widgets.qtdata import QColor, QIcon, QPixmap, QFont  # noqa: F401
+from freecad.widgets.qtdata import (  # noqa: F401
+    QColor, QIcon, QPixmap, QFont, QFontMetrics, QFontMetricsF, QImage, QPainter, QPen,
+    QBrush, QKeyEvent, QMouseEvent, QFocusEvent, QCursor, QKeySequence,
+)
 
 
 def qAlpha(rgb):

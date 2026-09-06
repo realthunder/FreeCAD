@@ -57,7 +57,10 @@ def _build_children(elem, widget, named):
 def _build_layout(elem, widget, named):
     cls = models.LAYOUTS.get(elem.get("class", ""), models.QVBoxLayout)
     layout = cls()
-    layout.setObjectName(elem.get("name", ""))
+    if elem.get("name"):
+        layout.setObjectName(elem.get("name"))
+    # uic makes the real one on the host: no spec crosses, ops do
+    layout._from_ui = True
     for item in elem:
         if item.tag != "item":
             continue

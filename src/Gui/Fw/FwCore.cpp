@@ -45,6 +45,14 @@ Widget::Widget(Widget* parent)
     declare(QStringLiteral("maximumHeight"), 16777215);
     declare(QStringLiteral("prefEntry"), QString());
     declare(QStringLiteral("prefPath"), QString());
+    // G3c (docs/Sandbox.md 7.11): a font as data (bold, italic,
+    // pointSize, family), the actions a widget carries (`addAction`),
+    // the QEvent types the backend relays (`watchEvents`), and the
+    // focus the backend reports
+    declare(QStringLiteral("font"), QVariantMap());
+    declare(QStringLiteral("actions"), QVariantList());
+    declare(QStringLiteral("watchEvents"), QVariantList());
+    declare(QStringLiteral("focus"), false);
 }
 
 Widget::~Widget() = default;
@@ -220,6 +228,41 @@ Layout* Widget::findLayout(const QString& name) const
     return findChild<Layout*>(name);
 }
 
+void Widget::addAction(Widget* action, int position)
+{
+    if (!action)
+        return;
+    QVariantList list = property("actions").toList();
+    QVariantMap entry;
+    entry.insert(QStringLiteral("action"), QVariant::fromValue<QObject*>(action));
+    entry.insert(QStringLiteral("position"), position);
+    list.append(entry);
+    setProperty("actions", list);
+}
+
+void Widget::removeAction(Widget* action)
+{
+    QVariantList list = property("actions").toList();
+    for (int i = 0; i < list.size(); ++i) {
+        if (list.at(i).toMap().value(QStringLiteral("action")).value<QObject*>() == action) {
+            list.removeAt(i);
+            setProperty("actions", list);
+            return;
+        }
+    }
+}
+
+QList<Widget*> Widget::actions() const
+{
+    QList<Widget*> out;
+    for (const QVariant& v : property("actions").toList()) {
+        QObject* o = v.toMap().value(QStringLiteral("action")).value<QObject*>();
+        if (auto a = qobject_cast<Widget*>(o))
+            out.append(a);
+    }
+    return out;
+}
+
 void Widget::setFixedWidth(int w)
 {
     QVariantMap m;
@@ -288,6 +331,8 @@ QString Layout::className() const
             return QStringLiteral("QGridLayout");
         case Form:
             return QStringLiteral("QFormLayout");
+        case Bar:
+            return QStringLiteral("_bar");
         default:
             return QStringLiteral("QBoxLayout");
     }
@@ -436,10 +481,14 @@ void Layout::addSpacing(int size)
     notify(QStringLiteral("addSpacing"), f);
 }
 
-void Layout::addSpacer(int w, int h, const QVariantList& position)
+void Layout::addSpacer(int w, int h, const QVariantList& position, int hPolicy, int vPolicy)
 {
     LayoutItem item;
     item.spacer = true;
+    item.width = w;
+    item.height = h;
+    item.hPolicy = hPolicy;
+    item.vPolicy = vPolicy;
     item.position = position;
     _items.append(item);
     QVariantMap f;
@@ -447,18 +496,109 @@ void Layout::addSpacer(int w, int h, const QVariantList& position)
     notify(QStringLiteral("addSpacing"), f);
 }
 
+void Layout::addAction(Widget* action)
+{
+    if (!action)
+        return;
+    LayoutItem item;
+    item.action = action;
+    _items.append(item);
+    QVariantMap f;
+    f.insert(QStringLiteral("action"), QVariant::fromValue<QObject*>(action));
+    notify(QStringLiteral("addAction"), f);
+}
+
+void Layout::insertAction(int index, Widget* action)
+{
+    if (!action)
+        return;
+    LayoutItem item;
+    item.action = action;
+    if (index < 0 || index > _items.size())
+        index = _items.size();
+    _items.insert(index, item);
+    QVariantMap f;
+    f.insert(QStringLiteral("action"), QVariant::fromValue<QObject*>(action));
+    f.insert(QStringLiteral("index"), index);
+    notify(QStringLiteral("insertAction"), f);
+}
+
+void Layout::removeAction(Widget* action)
+{
+    for (int i = 0; i < _items.size(); ++i) {
+        if (_items.at(i).action == action) {
+            _items.removeAt(i);
+            QVariantMap f;
+            f.insert(QStringLiteral("action"), QVariant::fromValue<QObject*>(action));
+            notify(QStringLiteral("removeAction"), f);
+            return;
+        }
+    }
+}
+
+void Layout::addSeparator()
+{
+    LayoutItem item;
+    item.separator = true;
+    _items.append(item);
+    notify(QStringLiteral("addSeparator"));
+}
+
+void Layout::clear()
+{
+    _items.clear();
+    notify(QStringLiteral("clear"));
+}
+
 void Layout::setContentsMargins(int left, int top, int right, int bottom)
 {
+    _margins = QVariantList {left, top, right, bottom};
     QVariantMap f;
-    f.insert(QStringLiteral("args"), QVariantList {left, top, right, bottom});
+    f.insert(QStringLiteral("args"), _margins);
     notify(QStringLiteral("setContentsMargins"), f);
 }
 
 void Layout::setSpacing(int spacing)
 {
+    _spacing = spacing;
     QVariantMap f;
     f.insert(QStringLiteral("args"), QVariantList {spacing});
     notify(QStringLiteral("setSpacing"), f);
+}
+
+QVariantMap Layout::spec() const
+{
+    QVariantMap out;
+    out.insert(QStringLiteral("class"), className());
+    out.insert(QStringLiteral("name"), objectName());
+    QVariantList items;
+    for (const auto& item : _items) {
+        QVariantMap m;
+        if (item.widget)
+            m.insert(QStringLiteral("widget"), QVariant::fromValue<QObject*>(item.widget));
+        else if (item.layout)
+            m.insert(QStringLiteral("layout"), item.layout->spec());
+        else if (item.action)
+            m.insert(QStringLiteral("action"), QVariant::fromValue<QObject*>(item.action));
+        else if (item.separator)
+            m.insert(QStringLiteral("separator"), true);
+        else if (item.stretch)
+            m.insert(QStringLiteral("stretch"), item.stretch);
+        else if (item.spacing)
+            m.insert(QStringLiteral("spacing"), item.spacing);
+        else
+            m.insert(QStringLiteral("spacer"),
+                     QVariantList {item.width, item.height, item.hPolicy, item.vPolicy});
+        if (!item.position.isEmpty())
+            m.insert(QStringLiteral("pos"), item.position);
+        items.append(m);
+    }
+    out.insert(QStringLiteral("items"), items);
+    if (!_margins.isEmpty())
+        out.insert(QStringLiteral("margins"), _margins);
+    if (_spacing >= 0)
+        out.insert(QStringLiteral("spacing"), _spacing);
+    return out;
 }
 
 void Layout::addRow(Widget* label, Widget* field)

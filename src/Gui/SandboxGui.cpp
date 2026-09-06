@@ -53,11 +53,18 @@
 #include "Fw/FwQtView.h"
 #include "Fw/FwStore.h"
 #include "Fw/FwWidgets.h"
+#include "MainWindow.h"
 #include "TaskView/TaskDialog.h"
+#include "TaskView/TaskDialogPython.h"
 #include "TaskView/TaskView.h"
 
+#include <QAction>
+#include <QCursor>
 #include <QFile>
 #include <QFileInfo>
+#include <QMenu>
+#include <QStatusBar>
+#include <QToolBar>
 #include <QVariant>
 
 using namespace Gui;
@@ -955,6 +962,173 @@ Reply controlCall(HandleTable& table, const std::string& op, const json& a)
     return replyErr("ValueError", "Control: unknown query '" + q + "'");
 }
 
+// ---- G3c (docs/Sandbox.md 7.11): the main window as a shim, a
+// command run by name, a menu's exec, the task watchers.
+
+/// Call one hook of a guest stand-in (no arguments), reporting a raise.
+void callHook(PyObject* standin, const char* hook)
+{
+    Base::PyGILStateLocker lock;
+    PyObject* r = PyObject_CallMethod(standin, hook, nullptr);
+    if (!r) {
+        Base::PyException e;
+        e.ReportException();
+        return;
+    }
+    Py_DECREF(r);
+}
+
+PyObject*& mainWindowWatcher()
+{
+    static PyObject* standin = nullptr;
+    return standin;
+}
+
+/// `gui.mainwindow [method, args...]`: `getMainWindow()` in the guest.
+/// `addToolBar id` realizes a tool bar model under the main window
+/// (the real bar dies with the model); `watch descriptor` connects the
+/// guest's `mainWindowClosed` slot (a stand-in hook); `showMessage`,
+/// `windowTitle`, `cursorPos` are data.
+Reply mainWindowCall(HandleTable& table, const json& a)
+{
+    if (!a.is_array() || a.empty() || !a[0].is_string())
+        return replyErr("ProtocolError", "gui.mainwindow: [method, ...]");
+    const std::string& m = a[0].get_ref<const std::string&>();
+    MainWindow* mw = getMainWindow();
+    if (!mw)
+        return replyErr("RuntimeError", "no main window");
+    if (m == "addToolBar" || m == "removeToolBar") {
+        if (a.size() != 2 || !a[1].is_string())
+            return replyErr("ProtocolError", "gui.mainwindow: [" + m + ", model id]");
+        Gui::Fw::Widget* w = Gui::Fw::Store::instance().object(
+            QString::fromUtf8(a[1].get_ref<const std::string&>().c_str()));
+        if (!w)
+            return replyErr("KeyError", "gui.mainwindow: no such widget");
+        if (!qobject_cast<Gui::Fw::QToolBar*>(w))
+            return replyErr("TypeError", "gui.mainwindow." + m + ": not a tool bar");
+        QWidget* qw = Gui::FwQt::widgetOf(w);
+        if (m == "removeToolBar") {
+            if (auto tb = qobject_cast<QToolBar*>(qw))
+                mw->removeToolBar(tb);
+            return replyOk(true);
+        }
+        if (!qw) {
+            qw = Gui::FwQt::realize(w, mw);
+            QObject::connect(w, &QObject::destroyed, qw, &QObject::deleteLater);
+        }
+        auto tb = qobject_cast<QToolBar*>(qw);
+        if (!tb)
+            return replyErr("RuntimeError", "gui.mainwindow.addToolBar: no tool bar realized");
+        mw->addToolBar(tb);
+        return replyOk(true);
+    }
+    if (m == "watch") {
+        if (a.size() != 2 || !a[1].is_object())
+            return replyErr("ProtocolError", "gui.mainwindow: [watch, descriptor]");
+        PyObject* standin = decodeValue(table, a[1]);
+        if (!standin)
+            return replyPyError();
+        if (!isGuestProxy(standin)) {
+            Py_DECREF(standin);
+            return replyErr("TypeError", "gui.mainwindow.watch: not a guest proxy");
+        }
+        PyObject*& held = mainWindowWatcher();
+        bool first = held == nullptr;
+        Py_XDECREF(held);
+        held = standin;
+        if (first) {
+            QObject::connect(mw, &MainWindow::mainWindowClosed, mw, []() {
+                if (PyObject* s = mainWindowWatcher())
+                    callHook(s, "mainWindowClosed");
+            });
+        }
+        return replyOk(true);
+    }
+    if (m == "showMessage") {
+        if (a.size() < 2 || !a[1].is_string())
+            return replyErr("ProtocolError", "gui.mainwindow: [showMessage, text, ms]");
+        int ms = a.size() > 2 && a[2].is_number() ? a[2].get<int>() : 0;
+        mw->showMessage(QString::fromUtf8(a[1].get_ref<const std::string&>().c_str()), ms);
+        return replyOk(true);
+    }
+    if (m == "windowTitle")
+        return replyOk(json(mw->windowTitle().toStdString()));
+    if (m == "cursorPos") {
+        QPoint p = QCursor::pos();
+        return replyOk(json::array({p.x(), p.y()}));
+    }
+    return replyErr("ValueError", "gui.mainwindow: unknown method '" + m + "'");
+}
+
+/// `gui.cmd.run [name, index]`: `FreeCADGui.runCommand`.
+Reply runCommandByName(const json& a)
+{
+    if (!a.is_array() || a.empty() || !a[0].is_string())
+        return replyErr("ProtocolError", "gui.cmd.run: [name, index]");
+    int idx = a.size() > 1 && a[1].is_number() ? a[1].get<int>() : 0;
+    Application::Instance->commandManager().runCommandByName(
+        a[0].get_ref<const std::string&>().c_str(), idx);
+    return replyOk(true);
+}
+
+/// `gui.menu.exec [id]`: the guest's `QMenu.exec_()`, a nested loop at
+/// the cursor; the chosen action's model id, or null.
+Reply menuExec(const json& a)
+{
+    if (!a.is_string())
+        return replyErr("ProtocolError", "gui.menu.exec: menu id");
+    Gui::Fw::Store& store = Gui::Fw::Store::instance();
+    Gui::Fw::Widget* w = store.object(QString::fromUtf8(a.get_ref<const std::string&>().c_str()));
+    if (!w || !qobject_cast<Gui::Fw::QMenu*>(w))
+        return replyErr("KeyError", "gui.menu.exec: no such menu");
+    QWidget* qw = Gui::FwQt::widgetOf(w);
+    if (!qw) {
+        qw = Gui::FwQt::realize(w, getMainWindow());
+        QObject::connect(w, &QObject::destroyed, qw, &QObject::deleteLater);
+    }
+    auto menu = qobject_cast<QMenu*>(qw);
+    if (!menu)
+        return replyErr("RuntimeError", "gui.menu.exec: no menu realized");
+    QAction* chosen = menu->exec(QCursor::pos());
+    Gui::Fw::Widget* m = Gui::FwQt::modelOfAction(chosen);
+    QString id = m ? store.idOf(m) : QString();
+    if (id.isEmpty())
+        return replyOk(nullptr);
+    return replyOk(json(id.toStdString()));
+}
+
+/// `gui.control.add_watcher [descriptors]`: `Control.addTaskWatcher`.
+/// Each watcher is a guest stand-in: `TaskWatcherPython` reads its
+/// `title`, `icon`, `commands`, `filter` through the proxy and calls
+/// `shouldShow` on every selection change (one hop each).
+Reply addTaskWatchers(HandleTable& table, const json& a)
+{
+    if (!a.is_array())
+        return replyErr("ProtocolError", "gui.control.add_watcher: [descriptors]");
+    std::vector<Gui::TaskView::TaskWatcher*> watchers;
+    for (const auto& d : a) {
+        if (!d.is_object())
+            return replyErr("ProtocolError", "gui.control.add_watcher: descriptor");
+        PyObject* standin = decodeValue(table, d);
+        if (!standin)
+            return replyPyError();
+        if (!isGuestProxy(standin)) {
+            Py_DECREF(standin);
+            return replyErr("TypeError", "gui.control.add_watcher: not a guest proxy");
+        }
+        try {
+            Base::PyGILStateLocker lock;
+            watchers.push_back(new Gui::TaskView::TaskWatcherPython(Py::Object(standin, true)));
+        }
+        catch (Py::Exception&) {
+            return replyPyError();
+        }
+    }
+    if (Gui::TaskView::TaskView* view = Gui::Control().taskWatcherPanel())
+        view->addTaskWatcher(watchers);
+    return replyOk(true);
+}
+
 Reply guiOp(HandleTable& table, const Reply& requestCbor)
 {
     const json req = json::from_cbor(requestCbor);
@@ -969,6 +1143,14 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
     const json& arg = a != req.end() ? *a : none;
     if (op == "gui.cmd.add")
         return addCommand(table, arg);
+    if (op == "gui.cmd.run")
+        return runCommandByName(arg);
+    if (op == "gui.mainwindow")
+        return mainWindowCall(table, arg);
+    if (op == "gui.menu.exec")
+        return menuExec(arg);
+    if (op == "gui.control.add_watcher")
+        return addTaskWatchers(table, arg);
     if (op == "gui.cmd.list") {
         PyObject* names = callGui("listCommands", PyTuple_New(0));
         return names ? replyResult(table, names) : replyPyError();

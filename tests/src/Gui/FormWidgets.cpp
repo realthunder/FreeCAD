@@ -25,6 +25,11 @@
 #include <QCheckBox>
 #include <QRadioButton>
 #include <QGroupBox>
+#include <QAction>
+#include <QBoxLayout>
+#include <QMenu>
+#include <QToolBar>
+#include <QWidgetAction>
 #include <QTest>
 
 #include <QLabel>
@@ -628,6 +633,206 @@ private Q_SLOTS:
     // G3b: dialogs and containers.  A tab widget's pages and current
     // index both ways, a splitter's sizes, a scroll area's content, a
     // dialog realized as a window of its own with its button box.
+    /// G3c (docs/Sandbox.md 7.11): a form built in code -- the model's
+    /// Layout tree realized when the widget is, hidden children left
+    /// hidden, the ops after realization applied to the real layouts
+    /// by their generated names, a font as data.
+    void test_codeBuiltLayouts()
+    {
+        auto root = new Fw::Widget;
+        root->setObjectName(QStringLiteral("root"));
+        auto vbox = new Fw::Layout(Fw::Layout::VBox, root);
+        vbox->setObjectName(QStringLiteral("v"));
+        auto label = new Fw::QLabel(root);
+        label->setText(QStringLiteral("Label"));
+        auto edit = new Fw::QLineEdit(root);
+        edit->setObjectName(QStringLiteral("edit"));
+        auto row = new Fw::Layout(Fw::Layout::HBox);
+        row->setObjectName(QStringLiteral("row"));
+        vbox->addLayout(row);
+        row->addWidget(label);
+        row->addWidget(edit);
+        auto grid = new Fw::Layout(Fw::Layout::Grid);
+        grid->setObjectName(QStringLiteral("grid"));
+        vbox->addLayout(grid);
+        auto one = new Fw::QPushButton(QStringLiteral("One"), root);
+        one->hide();  // hidden before it is placed: stays hidden
+        auto two = new Fw::QPushButton(QStringLiteral("Two"), root);
+        grid->addWidget(one, 0, 0);
+        grid->addWidget(two, 0, 1, 1, 2);
+        vbox->addSpacer(20, 40, QVariantList(), 1, 7);
+        vbox->addStretch(1);
+        vbox->setContentsMargins(1, 2, 3, 4);
+        vbox->setSpacing(5);
+        QVariantMap spec = vbox->spec();
+        QCOMPARE(spec.value(QStringLiteral("class")).toString(), QStringLiteral("QVBoxLayout"));
+        QCOMPARE(spec.value(QStringLiteral("items")).toList().size(), 4);
+        QCOMPARE(spec.value(QStringLiteral("margins")).toList(), QVariantList({1, 2, 3, 4}));
+
+        QWidget* w = Gui::FwQt::realize(root, nullptr);
+        QVERIFY(w);
+        QVERIFY(w->layout());
+        QCOMPARE(w->layout()->objectName(), QStringLiteral("v"));
+        QCOMPARE(w->layout()->count(), 4);
+        QCOMPARE(w->layout()->contentsMargins(), QMargins(1, 2, 3, 4));
+        QCOMPARE(w->layout()->spacing(), 5);
+        auto qrow = w->findChild<QHBoxLayout*>(QStringLiteral("row"));
+        QVERIFY(qrow);
+        QCOMPARE(qrow->count(), 2);
+        QCOMPARE(qrow->itemAt(1)->widget(), Gui::FwQt::widgetOf(edit));
+        auto qgrid = w->findChild<QGridLayout*>(QStringLiteral("grid"));
+        QVERIFY(qgrid);
+        QCOMPARE(qgrid->count(), 2);
+        int r = 0, c = 0, rs = 0, cs = 0;
+        qgrid->getItemPosition(1, &r, &c, &rs, &cs);
+        QCOMPARE(c, 1);
+        QCOMPARE(cs, 2);
+        QVERIFY(qobject_cast<QPushButton*>(Gui::FwQt::widgetOf(one)));
+        QVERIFY(Gui::FwQt::widgetOf(one)->isHidden());
+        QVERIFY(!Gui::FwQt::widgetOf(two)->isHidden());
+
+        // an op after realization finds the real layout by name
+        auto three = new Fw::QPushButton(QStringLiteral("Three"), root);
+        grid->addWidget(three, 1, 0);
+        QCOMPARE(qgrid->count(), 3);
+        QCOMPARE(qgrid->itemAt(2)->widget(), Gui::FwQt::widgetOf(three));
+        row->takeAt(0);
+        QCOMPARE(qrow->count(), 1);
+        label->setFont(QVariantMap {{QStringLiteral("bold"), true}});
+        QVERIFY(Gui::FwQt::widgetOf(label)->font().bold());
+
+        delete w;
+        delete root;
+    }
+
+    /// G3c: a tool bar's content as a bar (widgets, actions,
+    /// separators), the action model on both sides, the bar's toggle
+    /// action bound, an action on a line edit, the key stream a widget
+    /// asked for (eaten when answered so), a menu with a sub-menu.
+    void test_barsActionsAndKeys()
+    {
+        auto bar = new Fw::QToolBar(QStringLiteral("Tray"));
+        auto btn = new Fw::QPushButton(QStringLiteral("WP"));
+        bar->addWidget(btn);
+        auto act = new Fw::QAction(QStringLiteral("Act"));
+        act->setCheckable(true);
+        bar->addAction(act);
+        bar->addSeparator();
+        QCOMPARE(bar->actions().size(), 1);
+        QWidget* w = Gui::FwQt::realize(bar, nullptr);
+        auto tb = qobject_cast<QToolBar*>(w);
+        QVERIFY(tb);
+        QCOMPARE(tb->windowTitle(), QStringLiteral("Tray"));
+        QCOMPARE(tb->actions().size(), 3);
+        QVERIFY(qobject_cast<QWidgetAction*>(tb->actions().at(0)));
+        QVERIFY(tb->actions().at(2)->isSeparator());
+        QAction* qa = Gui::FwQt::actionWidgetOf(act);
+        QVERIFY(qa);
+        QCOMPARE(tb->actions().at(1), qa);
+        QCOMPARE(qa->text(), QStringLiteral("Act"));
+        QVERIFY(qa->isCheckable());
+        QSignalSpy triggered(act, &Fw::QAction::triggered);
+        QSignalSpy barTriggered(bar, &Fw::QToolBar::actionTriggered);
+        qa->trigger();
+        QCOMPARE(triggered.count(), 1);
+        QVERIFY(triggered.at(0).at(0).toBool());
+        QVERIFY(act->isChecked());
+        QCOMPARE(barTriggered.count(), 1);
+        QCOMPARE(barTriggered.at(0).at(0).value<Fw::Widget*>(), act);
+        act->setChecked(false);
+        QVERIFY(!qa->isChecked());
+        act->setText(QStringLiteral("Renamed"));
+        QCOMPARE(qa->text(), QStringLiteral("Renamed"));
+        // added after realization
+        auto act2 = new Fw::QAction(QStringLiteral("Two"));
+        bar->addAction(act2);
+        QCOMPARE(tb->actions().size(), 4);
+        QCOMPARE(tb->actions().at(3), Gui::FwQt::actionWidgetOf(act2));
+        bar->clear();
+        QCOMPARE(tb->actions().size(), 0);
+        // the toggle-view action is the real bar's own
+        Fw::QAction* toggle = bar->toggleViewAction();
+        QCOMPARE(Gui::FwQt::actionWidgetOf(toggle), tb->toggleViewAction());
+        QCOMPARE(toggle->text(), QStringLiteral("Tray"));
+        toggle->setVisible(false);
+        QVERIFY(!tb->toggleViewAction()->isVisible());
+
+        // an action on a line edit, positioned
+        auto edit = new Fw::QLineEdit;
+        auto lock = new Fw::QAction;
+        lock->setIcon(QStringLiteral(":/icons/Draft_Snap_Lock.svg"));
+        edit->addAction(lock, 1);
+        QCOMPARE(edit->actions().size(), 1);
+        QWidget* ew = Gui::FwQt::realize(edit, nullptr);
+        auto qe = qobject_cast<QLineEdit*>(ew);
+        QVERIFY(qe);
+        QCOMPARE(qe->actions().size(), 1);
+        QCOMPARE(qe->actions().at(0), Gui::FwQt::actionWidgetOf(lock));
+        lock->setVisible(false);
+        QVERIFY(!qe->actions().at(0)->isVisible());
+        edit->removeAction(lock);
+        QCOMPARE(qe->actions().size(), 0);
+
+        // the key stream: a watched type crosses as `qevent`, the
+        // answer given inside it decides whether the widget gets it
+        edit->setWatchEvents(QVariantList {6, 8});
+        QVariantList seen;
+        bool eat = false;
+        connect(edit, &Fw::Widget::eventEmitted, [&](const QString& n, const QVariantList& a) {
+            if (n == QLatin1String("qevent")) {
+                seen = a;
+                if (a.value(0).toInt() == 6)
+                    edit->request(QStringLiteral("eventDone"), QVariantList {eat});
+            }
+        });
+        QTest::keyClick(qe, Qt::Key_A);
+        QCOMPARE(seen.value(0).toInt(), 6);
+        QCOMPARE(seen.value(1).toInt(), static_cast<int>(Qt::Key_A));
+        QCOMPARE(seen.value(3).toString(), QStringLiteral("a"));
+        QCOMPARE(qe->text(), QStringLiteral("a"));
+        eat = true;
+        QTest::keyClick(qe, Qt::Key_B);
+        QCOMPARE(qe->text(), QStringLiteral("a"));
+        QVERIFY(!edit->hasFocus());
+        QFocusEvent focus(QEvent::FocusIn);
+        QCoreApplication::sendEvent(qe, &focus);
+        QVERIFY(edit->hasFocus());
+        edit->setWatchEvents(QVariantList());
+        QTest::keyClick(qe, Qt::Key_C);
+        QCOMPARE(qe->text(), QStringLiteral("ac"));
+
+        // a menu: actions, a separator, a sub-menu
+        auto menu = new Fw::QMenu(QStringLiteral("M"));
+        auto item = new Fw::QAction(QStringLiteral("Item"));
+        menu->addAction(item);
+        menu->addSeparator();
+        auto sub = new Fw::QMenu(QStringLiteral("Sub"));
+        menu->addMenu(sub);
+        sub->addAction(new Fw::QAction(QStringLiteral("SubItem")));
+        QWidget* mw = Gui::FwQt::realize(menu, nullptr);
+        auto qm = qobject_cast<QMenu*>(mw);
+        QVERIFY(qm);
+        QCOMPARE(qm->title(), QStringLiteral("M"));
+        QCOMPARE(qm->actions().size(), 3);
+        QVERIFY(qm->actions().at(2)->menu());
+        QCOMPARE(qm->actions().at(2)->menu()->title(), QStringLiteral("Sub"));
+        QCOMPARE(qm->actions().at(2)->menu()->actions().size(), 1);
+        QSignalSpy menuTriggered(menu, &Fw::QMenu::triggered);
+        Gui::FwQt::actionWidgetOf(item)->trigger();
+        QCOMPARE(menuTriggered.count(), 1);
+        QCOMPARE(menuTriggered.at(0).at(0).value<Fw::Widget*>(), item);
+
+        delete mw;
+        delete menu;  // the sub-menu is its child (the bar attached it)
+        delete ew;
+        delete edit;
+        delete lock;
+        delete w;
+        delete bar;  // the button is its child
+        delete act;
+        delete act2;
+    }
+
     void test_dialogsAndContainers()
     {
         Fw::QTabWidget tabs;

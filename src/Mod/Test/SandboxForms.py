@@ -66,7 +66,7 @@ if hasattr(form.checkbox_link, "checkStateChanged"):
     form.checkbox_link.checkStateChanged.connect(lambda s: events.append(["link", s]))
 QtCore.QObject.connect(form.button_reset_X, QtCore.SIGNAL("clicked()"),
                        lambda: events.append(["resetX"]))
-form.input_Y_y.valueChanged.connect(lambda d: events.append(["Yy", d]))
+form.input_Y_y.valueChanged.connect(lambda d: events.append(["Yy", d.Value]))
 form.radiobutton_z_axis.toggled.connect(lambda on: events.append(["zaxis", on]))
 form.button_linear_mode.clicked.connect(lambda on: events.append(["linear", on]))
 form.checkbox_fuse.stateChanged.connect(lambda s: events.append(["fuse", s]))
