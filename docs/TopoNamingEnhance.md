@@ -2279,3 +2279,68 @@ stop at `m_cutPieces` / `m_cutShapeRaw`.  And the 2D section faces are
 rebuilt from projected wires in `mapToPage`, so they can never inherit
 a name through the shape: they need the name carried beside them, in
 the `ref3D` slot `BaseGeom` reserves.  That is what T2 is for.
+
+### 8.3 Schedule for the next session (written 2026-09-06)
+
+The user's instruction, given at the end of the T1 session: **the next
+session does T1b and T2.**  In that order, each its own commit, each
+gated as 8.0 to 8.2 were -- the TechDraw 11, `ctest`, the Python suite
+against this box's known set, and evidence that the step did what it
+claims.
+
+**T1b, the complex section's tool.**  `DrawComplexSection::makeCuttingTool`
+returns three different shapes depending on the profile: a prism from a
+face when the profile wire is closed, a prism from `m_toolFaceShape`
+(the wire extruded sideways) when it is open, and a compound of the
+solid pieces of that prism when the extrusion produces empty ones.  A
+fixed six-name scheme does not fit any of them.  The names should come
+from the **profile object's own elements** instead, which is a better
+identity than `SectionPlane`: it says which segment of the profile made
+the face, so a section whose profile gains a segment keeps the names of
+the segments it already had.
+
+The route: fetch the profile with `Part::Feature::getTopoShape` rather
+than as a bare `TopoDS_Wire` (`makeProfileWire`), and build the tool
+with the name-propagating makers -- `makEFace` for the closed case,
+`makEPrism` (`TopoShape.h:1598`, op code `PSM`) for both extrusions.
+The compound-of-solids filter is already a loop over the prism's
+solids, so it becomes `makECompound` over the kept ones.  Probe first,
+as ever: check that a profile sketch's edges arrive named through
+`getTopoShape`, and that `makEPrism` puts those names on the side faces
+of the extrusion.  Then the same evidence as 8.2 -- move the profile,
+change the model, the names hold -- with the section-face name reading
+back through `getCuttingTool()` / `getCutPieces()`.
+
+**T2, carry names through HLR.**  The hard one, and the one 3.5 already
+did the research for: `HLRBRep_Data::EDataArray()` is indexed like
+`EdgeMap()`, so an in-tree reimplementation of
+`HLRBRep_HLRToShape::InternalCompound` (about 60 lines) emits the same
+edges in the same order **and reports the source edge index with each**.
+The polygon path (`HLRBRep_PolyAlgo`, `projectShapeWithPolygonAlgo`,
+`GeometryObject.cpp:306`) hands the source shape back directly through
+`Hide`/`Show`.  Both entry points are in `GeometryObject.cpp`
+(`projectShape` at 143, the poly one at 306), each currently calling the
+stock `HLRToShape`/`PolyHLRToShape`.
+
+Two things have to be in place before the traversal is worth writing:
+
+1. The projection input has to still be named when it reaches HLR.
+   Today it is not: `DrawViewPart::partExec` takes a `TopoDS_Shape`, and
+   `ShapeUtils::rotateShape` / `mirrorShape` / `scaleShape` /
+   `centerShapeXY` and `DrawUtil::shapeVectorToCompound` are all
+   `TopoDS_Shape` in and out.  They need `Part::TopoShape` overloads
+   built on `makETransform` / `makEGTransform`, which the 8.1 probe
+   already showed preserve the map (move, scale and mirror all keep
+   every name).  That is the first commit of T2 and it is mechanical.
+2. `BaseGeom` has to carry the name.  The `int ref3D` slot it reserves
+   and never fills (3.3) is where the source element goes -- as a
+   mapped name, not an int -- and the projected edge's own name is
+   `<sourceElementName>;HLR:<class>:<ordinal>` per 3.6.
+
+Watch for the trap 3.7 records: `DrawViewDimension::execute()` runs
+while the document is still restoring, against a view that has not
+projected yet, so anything keyed on "have I run once" spends its one
+chance there.  And keep T2's own scope honest -- the 2D faces are
+rebuilt from projected wires in `mapToPage`, so they take their name
+from the wires that bound them rather than from any shape identity,
+which is the change that kills the area-sort fragility.
