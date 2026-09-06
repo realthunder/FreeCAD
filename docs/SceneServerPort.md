@@ -661,11 +661,11 @@ Nothing in the transport had to change:
    now set `0x0A00` next to the include-order rule they already carry.
    The suite is 17 of 17 either way; the skew was the reason to fix it,
    not a failure.
-4. **The full ctest: 475 of 477**, 26 s with `-j 6`, the same one entry
-   disabled as before. The two failures are `RenderSmokeVg_tests_run`
-   and `RenderSmokePage2D_tests_run`, both new with this pull, both
-   about bgfx on Windows and neither about the server. Diagnosed in
-   `Testing.md`, "The vg smokes on Windows".
+4. **The full ctest: 476 of 477**, 26 s with `-j 6`, the same one entry
+   disabled as before. The failure is `RenderSmokeVg_tests_run`, new
+   with this pull, about bgfx's Windows backend and not about the
+   server; `RenderSmokePage2D_tests_run` was the other and is fixed.
+   Both are diagnosed in `Testing.md`, "The vg smokes on Windows".
 5. **The headless echo test passes by hand**: eight PASS lines and
    DONE. `scripts/gui-test.sh` needs `xvfb-run` and `.conda/run.sh`, so
    the GUI tests do not register on Windows; the local stand-in is a
