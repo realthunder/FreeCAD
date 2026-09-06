@@ -84,7 +84,8 @@ CLASSES = {
     "Gui::PrefTextEdit": "QTextEdit",
     "Gui::PrefComboBox": "QComboBox",
     "Gui::PrefSpinBox": "QSpinBox",
-    "Gui::PrefDoubleSpinBox": "QDoubleSpinBox",
+    "Gui::DoubleSpinBox": "DoubleSpinBox",
+    "Gui::PrefDoubleSpinBox": "DoubleSpinBox",
     "Gui::PrefSlider": "QSlider",
     "Gui::PrefCheckableGroupBox": "QGroupBox",
     "Gui::PrefFontBox": "QFontComboBox",
@@ -245,8 +246,9 @@ class Emitter:
                 self.members.append(("Gui::Fw::Widget*", var))
                 self.line("%s = Gui::Fw::createWidget(%s, %s);"
                           % (var, cpp_string(cls), parent_var))
-            elif cls.startswith("Gui::") and cls != "Gui::InputField" \
-                    and cls != "Gui::QuantitySpinBox" and cls != "Gui::ColorButton":
+            elif cls.startswith("Gui::") and cls not in (
+                    "Gui::InputField", "Gui::QuantitySpinBox", "Gui::DoubleSpinBox",
+                    "Gui::ColorButton"):
                 self.members.append(("Gui::Fw::%s*" % fw, var))
                 self.line("%s = static_cast<Gui::Fw::%s*>(Gui::Fw::createWidget(%s, %s));"
                           % (var, fw, cpp_string(cls), parent_var))

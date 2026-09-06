@@ -28,7 +28,7 @@
 #include <Mod/PartDesign/App/FeaturePad.h>
 #include <Mod/PartDesign/App/FeatureExtrusion.h>
 
-#include "ui_TaskPadPocketParameters.h"
+#include "fwui_TaskPadPocketParameters.h"
 #include "TaskPadParameters.h"
 #include "ReferenceSelection.h"
 #include "Utils.h"

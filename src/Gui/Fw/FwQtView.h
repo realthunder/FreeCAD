@@ -59,7 +59,7 @@ namespace Gui
 namespace FwQt
 {
 
-class GuiExport View : public QObject
+class GuiExport View : public QObject, public Fw::Backend
 {
     Q_OBJECT
 public:
@@ -94,6 +94,12 @@ public:
     /// Apply the bag under `keys` to the widget.
     void apply(const QStringList& keys);
 
+    // Fw::Backend: the model's direct channel (a QSignalBlocker on the
+    // model does not reach it)
+    void propertiesWritten(const QStringList& names, int source) override;
+    void requested(const QString& name, const QVariantList& args) override;
+    void layoutChanged(const QVariantMap& op) override;
+
 private:
     View(Fw::Widget* model, QWidget* widget, bool bound);
     void connectWidget();
@@ -118,6 +124,10 @@ private:
 GuiExport QWidget* makeQtWidget(const QString& className, QWidget* parent);
 /// `View::build(model, parent)->widget()`.
 GuiExport QWidget* realize(Fw::Widget* model, QWidget* parent = nullptr);
+/// The real widget rendering `model`, or nullptr when it is not realized
+/// -- for the Qt-only calls a ported panel keeps (an event filter, a
+/// button group, a blink target).
+GuiExport QWidget* widgetOf(const Fw::Widget* model);
 
 }  // namespace FwQt
 }  // namespace Gui

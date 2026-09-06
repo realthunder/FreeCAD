@@ -39,6 +39,7 @@
 
 #include <Base/Quantity.h>
 
+#include <Gui/ExpressionBinding.h>
 #include "FwCore.h"
 
 namespace Gui
@@ -769,6 +770,7 @@ Q_SIGNALS:
     void currentIndexChanged(int index);
     void currentTextChanged(const QString& text);
     void activated(int index);
+    void highlighted(int index);
     void editTextChanged(const QString& text);
 
 protected:
@@ -881,6 +883,14 @@ public:
     {
         setPrefPath(path);
     }
+    void setParamGrpPath(const QByteArray& path)
+    {
+        setPrefPath(QString::fromUtf8(path));
+    }
+    void setEntryName(const QByteArray& name)
+    {
+        setPrefEntry(QString::fromUtf8(name));
+    }
     /// The text for `value` in the unit schema at the user's decimals.
     QString formatValue(double value) const;
 
@@ -893,7 +903,58 @@ protected:
     void dispatchEvent(const QString& name, const QVariantList& args) override;
 };
 
-class GuiExport QuantitySpinBox : public InputField
+/// The expression seam (docs/Sandbox.md 7.12): a model bound to a
+/// property OWNS the binding -- `Gui::ExpressionBinding` is already a
+/// non-widget mixin -- and mirrors it in two bag keys: `binding`, the
+/// bound path as the real widget's `binding` property spells it, and
+/// `expression`, the expression's text or empty.  The Qt backend binds
+/// the real widget to the same path, so its f(x) label and expression
+/// dialog work as they do today; what the dialog sets lands in the
+/// document, and the document's change comes back here through the
+/// binding (`onChange`) into the bag and the value.  `apply` is the
+/// real widgets' `apply`: the expression stands, else the value goes
+/// to the property through a command.
+class GuiExport ExpressionBound : public Gui::ExpressionBinding
+{
+public:
+    explicit ExpressionBound(Widget* owner);
+    ~ExpressionBound() override;
+
+    void bind(const App::ObjectIdentifier& path) override;
+    using Gui::ExpressionBinding::bind;
+    bool apply(const std::string& propName) override;
+    using Gui::ExpressionBinding::apply;
+    /// Set (or clear, with nullptr) the bound property's expression.
+    void setExpression(std::shared_ptr<App::Expression> expr) override;
+    /// Parse and set (empty clears); false, with the message in `error`,
+    /// when it did not take.
+    bool setExpressionText(const QString& text, QString* error = nullptr);
+    /// The bag's `expression`: the text, or empty.
+    QString expressionText() const;
+    /// The bag's `binding`: the path, or empty.
+    QString boundToName() const;
+    /// The typed path (a backend binds the real widget to it).
+    const App::ObjectIdentifier& boundPath() const
+    {
+        return getPath();
+    }
+    /// Evaluate a bound expression into the value.
+    void evaluateExpression();
+
+protected:
+    void onChange() override;
+    /// The value `apply` writes when there is no expression.
+    virtual double boundValue() const = 0;
+    /// An expression evaluated to a number: the value follows.
+    virtual void setEvaluated(double value) = 0;
+    /// Write `expression` from the binding's state and evaluate it.
+    void syncExpression();
+
+private:
+    Widget* _owner;
+};
+
+class GuiExport QuantitySpinBox : public InputField, public ExpressionBound
 {
     Q_OBJECT
 public:
@@ -911,6 +972,49 @@ public:
     Base::Quantity value() const
     {
         return getQuantity();
+    }
+    /// `Gui::QuantitySpinBox::selectNumber`: a request.
+    void selectNumber()
+    {
+        request(QStringLiteral("selectNumber"));
+    }
+    /// `Gui::PrefQuantitySpinBox`'s history, kept on the Qt side: requests.
+    void setToLastUsedValue()
+    {
+        request(QStringLiteral("setToLastUsedValue"));
+    }
+    void pushToHistory()
+    {
+        request(QStringLiteral("pushToHistory"));
+    }
+
+protected:
+    double boundValue() const override
+    {
+        return rawValue();
+    }
+    void setEvaluated(double v) override
+    {
+        setValue(v);
+    }
+};
+
+/// `Gui::DoubleSpinBox`: a QDoubleSpinBox with the expression seam.
+class GuiExport DoubleSpinBox : public QDoubleSpinBox, public ExpressionBound
+{
+    Q_OBJECT
+public:
+    explicit DoubleSpinBox(Widget* parent = nullptr);
+    FW_MODEL("DoubleSpinBoxModel")
+
+protected:
+    double boundValue() const override
+    {
+        return value();
+    }
+    void setEvaluated(double v) override
+    {
+        setValue(v);
     }
 };
 

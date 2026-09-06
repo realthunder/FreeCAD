@@ -48,6 +48,7 @@
 #include "Fw/FwQtView.h"
 #include "Fw/FwWidgets.h"
 #include "InputField.h"
+#include "PrefWidgets.h"
 #include "QuantitySpinBox.h"
 #include "UiLoader.h"
 #include "WidgetFactory.h"
@@ -143,6 +144,12 @@ QWidget* Gui::FwQt::realize(Fw::Widget* model, QWidget* parent)
     return v ? v->widget() : nullptr;
 }
 
+QWidget* Gui::FwQt::widgetOf(const Fw::Widget* model)
+{
+    View* v = model ? View::of(model) : nullptr;
+    return v ? v->widget() : nullptr;
+}
+
 View* View::of(const Fw::Widget* model)
 {
     return registry().value(model);
@@ -155,13 +162,7 @@ View::View(Fw::Widget* model, QWidget* widget, bool bound)
     , _bound(bound)
 {
     registry().insert(model, this);
-    connect(model, &Fw::Widget::propertiesChanged, this,
-            [this](const QStringList& names, int source) {
-                if (source != static_cast<int>(Fw::Source::Backend))
-                    apply(names);
-            });
-    connect(model, &Fw::Widget::requested, this, &View::onRequest);
-    connect(model, &Fw::Widget::layoutChanged, this, &View::onLayoutOp);
+    model->setBackend(this);
     connect(widget, &QObject::destroyed, this, [this]() {
         _widget = nullptr;
         release(false);
@@ -174,6 +175,24 @@ View::~View()
     auto it = registry().find(_model);
     if (it != registry().end() && it.value() == this)
         registry().erase(it);
+    if (_model->backend() == this)
+        _model->setBackend(nullptr);
+}
+
+void View::propertiesWritten(const QStringList& names, int source)
+{
+    if (source != static_cast<int>(Fw::Source::Backend))
+        apply(names);
+}
+
+void View::requested(const QString& name, const QVariantList& args)
+{
+    onRequest(name, args);
+}
+
+void View::layoutChanged(const QVariantMap& op)
+{
+    onLayoutOp(op);
 }
 
 void View::release(bool deleteWidget)
@@ -194,6 +213,8 @@ void View::release(bool deleteWidget)
     auto it = registry().find(_model);
     if (it != registry().end() && it.value() == this)
         registry().erase(it);
+    if (_model->backend() == this)
+        _model->setBackend(nullptr);
     disconnect(_model, nullptr, this, nullptr);
     deleteLater();
 }
@@ -354,6 +375,26 @@ void View::applyOne(const QString& key, const QVariant& value)
     }
     else if (key == QLatin1String("color")) {
         w->setProperty("color", colorOf(value));
+    }
+    else if (key == QLatin1String("binding")) {
+        // the model owns the binding; the real widget binds to the same
+        // path (typed, not by name), so its f(x) label and expression
+        // dialog work as they do today
+        auto bound = dynamic_cast<Fw::ExpressionBound*>(_model);
+        auto eb = dynamic_cast<Gui::ExpressionBinding*>(w);
+        if (bound && eb) {
+            if (bound->isBound()) {
+                eb->bind(bound->boundPath());
+                if (auto q = qobject_cast<Gui::QuantitySpinBox*>(w))
+                    q->evaluateExpression();
+            }
+            else {
+                eb->unbind();
+            }
+        }
+    }
+    else if (key == QLatin1String("expression")) {
+        // derived from the document; the real widget reads its own binding
     }
     else if (key == QLatin1String("items")) {
         auto c = qobject_cast<QComboBox*>(w);
@@ -518,6 +559,9 @@ void View::connectWidget()
         connect(c, qOverload<int>(&QComboBox::activated), this, [this](int i) {
             event(QStringLiteral("activated"), QVariantList {i});
         });
+        connect(c, qOverload<int>(&QComboBox::highlighted), this, [this](int i) {
+            event(QStringLiteral("highlighted"), QVariantList {i});
+        });
         connect(c, &QComboBox::editTextChanged, this, [this, c](const QString& text) {
             if (c->isEditable())
                 send(QVariantMap {{QStringLiteral("editText"), text}});
@@ -558,6 +602,18 @@ void View::onRequest(const QString& name, const QVariantList& args)
     else if (name == QLatin1String("setCursorPosition")) {
         if (auto e = qobject_cast<QLineEdit*>(w))
             e->setCursorPosition(args.value(0).toInt());
+    }
+    else if (name == QLatin1String("selectNumber")) {
+        if (auto q = qobject_cast<Gui::QuantitySpinBox*>(w))
+            q->selectNumber();
+    }
+    else if (name == QLatin1String("setToLastUsedValue")) {
+        if (auto p = qobject_cast<Gui::PrefQuantitySpinBox*>(w))
+            p->setToLastUsedValue();
+    }
+    else if (name == QLatin1String("pushToHistory")) {
+        if (auto p = qobject_cast<Gui::PrefQuantitySpinBox*>(w))
+            p->pushToHistory();
     }
     else if (name == QLatin1String("setParent")) {
         auto parentModel = qobject_cast<Fw::Widget*>(args.value(0).value<QObject*>());

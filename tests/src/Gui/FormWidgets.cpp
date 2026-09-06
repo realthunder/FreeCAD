@@ -19,7 +19,10 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/Expression.h>
+#include <App/ExpressionParser.h>
 #include <App/Placement.h>
+#include <App/PropertyUnits.h>
 #include <src/App/InitApplication.h>
 
 #include "Gui/Camera.h"
@@ -471,6 +474,95 @@ private Q_SLOTS:
         delete dialog;
         QCoreApplication::processEvents();
         App::GetApplication().closeDocument("FwOrientation");
+    }
+
+    // H1b: the expression seam (docs/Sandbox.md 7.12).  The model owns
+    // the binding; the real widget binds to the same path; an
+    // expression set on either side, or on the document, meets in the
+    // bag and the value.  (`apply` runs a command through the Gui
+    // application, which this test has none of: the GUI gate covers it.)
+    void test_expressionSeam()
+    {
+        App::Document* doc = App::GetApplication().newDocument("FwExpression");
+        App::DocumentObject* obj = doc->addObject("App::Placement", "Holder");
+        QVERIFY(obj);
+        auto length = static_cast<App::PropertyLength*>(
+            obj->addDynamicProperty("App::PropertyLength", "Length"));
+        QVERIFY(length);
+        length->setValue(4.0);
+
+        Fw::QuantitySpinBox spin;
+        spin.setUnitText(QStringLiteral("mm"));
+        QVERIFY(!spin.isBound());
+        QVERIFY(spin.has(QStringLiteral("binding")));
+        QVERIFY(spin.has(QStringLiteral("expression")));
+        spin.bind(*length);
+        QVERIFY(spin.isBound());
+        QVERIFY(spin.isTouched(QStringLiteral("binding")));
+        QVERIFY(!spin.boundToName().isEmpty());
+        QCOMPARE(spin.property("binding").toString(), spin.boundToName());
+        QCOMPARE(spin.expressionText(), QString());
+
+        // the document gets an expression: the model hears it, the value follows
+        QSignalSpy valueChanged(&spin, &Fw::QuantitySpinBox::valueChanged);
+        obj->setExpression(App::ObjectIdentifier(*length),
+                           App::Expression::parse(obj, "2 * 5 mm"));
+        QVERIFY(spin.hasExpression());
+        QCOMPARE(spin.expressionText(), QStringLiteral("2 * 5 mm"));
+        QCOMPARE(spin.rawValue(), 10.0);
+        QCOMPARE(valueChanged.count(), 1);
+
+        // realized: the real widget binds to the same path and shows it
+        QWidget* w = Gui::FwQt::realize(&spin, nullptr);
+        auto q = qobject_cast<Gui::QuantitySpinBox*>(w);
+        QVERIFY(q);
+        QVERIFY(q->isBound());
+        QCOMPARE(q->expressionText(), QStringLiteral("2 * 5 mm"));
+        QCOMPARE(q->rawValue(), 10.0);
+        QVERIFY(q->isReadOnly());
+
+        // the widget's dialog path: what it sets lands in the document
+        // and comes back into the bag
+        q->setExpression(App::Expression::parse(obj, "7 mm"));
+        QCOMPARE(spin.expressionText(), QStringLiteral("7 mm"));
+        QCOMPARE(spin.rawValue(), 7.0);
+
+        // the model clears it: the widget is editable again
+        QString error;
+        QVERIFY(spin.setExpressionText(QString(), &error));
+        QVERIFY(!spin.hasExpression());
+        QCOMPARE(spin.expressionText(), QString());
+        QVERIFY(!q->hasExpression());
+        QVERIFY(!q->isReadOnly());
+
+        // an expression that does not parse is refused with the reason
+        QVERIFY(!spin.setExpressionText(QStringLiteral("2 * ("), &error));
+        QVERIFY(!error.isEmpty());
+        QVERIFY(!spin.hasExpression());
+
+        // a double spin box carries the same seam
+        Fw::DoubleSpinBox dbl;
+        auto x = obj->getPropertyByName("Placement");
+        QVERIFY(x);
+        dbl.bind(App::ObjectIdentifier::parse(obj, std::string("Placement.Base.x")));
+        QVERIFY(dbl.isBound());
+        obj->setExpression(App::ObjectIdentifier::parse(obj, std::string("Placement.Base.x")),
+                           App::Expression::parse(obj, "3 + 4"));
+        QCOMPARE(dbl.value(), 7.0);
+        QCOMPARE(dbl.expressionText(), QStringLiteral("3 + 4"));
+
+        // a QSignalBlocker on the model silences its typed signals but
+        // not the backend's mirror
+        {
+            QSignalBlocker blocker(&spin);
+            spin.setValue(22.0);
+        }
+        QCOMPARE(q->rawValue(), 22.0);
+        QCOMPARE(valueChanged.count(), 2);  // 10, 7 (clearing kept 7); not 22
+
+        delete w;
+        QCoreApplication::processEvents();
+        App::GetApplication().closeDocument("FwExpression");
     }
 };
 

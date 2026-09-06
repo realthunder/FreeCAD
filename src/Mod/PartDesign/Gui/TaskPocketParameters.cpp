@@ -27,7 +27,7 @@
 
 #include <Mod/PartDesign/App/FeaturePocket.h>
 
-#include "ui_TaskPadPocketParameters.h"
+#include "fwui_TaskPadPocketParameters.h"
 #include "TaskPocketParameters.h"
 
 

@@ -149,6 +149,10 @@ void Widget::setProperties(const QVariantMap& values, Source source)
     }
     if (written.isEmpty())
         return;
+    // the backend first, so the widget shows the value before the typed
+    // signals fire and a slot reads it back
+    if (_backend)
+        _backend->propertiesWritten(written, static_cast<int>(source));
     for (auto it = changed.constBegin(); it != changed.constEnd(); ++it)
         propertyDidChange(it.key(), it.value());
     Q_EMIT propertiesChanged(written, static_cast<int>(source));
@@ -250,6 +254,8 @@ void Widget::setMaximumSize(int w, int h)
 
 void Widget::request(const QString& name, const QVariantList& args)
 {
+    if (_backend)
+        _backend->requested(name, args);
     Q_EMIT requested(name, args);
 }
 

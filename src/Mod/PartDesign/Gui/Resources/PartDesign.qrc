@@ -1,4 +1,7 @@
 <RCC>
+    <qresource prefix="/ui">
+        <file alias="TaskPadPocketParameters.ui">../TaskPadPocketParameters.ui</file>
+    </qresource>
     <qresource>
         <file>icons/PartDesign_AdditiveBox.svg</file>
         <file>icons/PartDesign_AdditiveCone.svg</file>

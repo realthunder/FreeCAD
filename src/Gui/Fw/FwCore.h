@@ -69,6 +69,23 @@ namespace Fw
 {
 
 class Layout;
+class Widget;
+
+/// What a backend hears from a model DIRECTLY, not through the moc'd
+/// signals below.  A native panel wraps a field in `QSignalBlocker`
+/// while it fills the form (as it did the widget), and that must
+/// silence the typed signals its slots hang on -- not the backend's
+/// mirror, or the value never reaches the widget.  One backend per
+/// model; the signals stay for everything else (the guest store's
+/// sink, tests).
+class GuiExport Backend
+{
+public:
+    virtual ~Backend() = default;
+    virtual void propertiesWritten(const QStringList& names, int source) = 0;
+    virtual void requested(const QString& name, const QVariantList& args) = 0;
+    virtual void layoutChanged(const QVariantMap& op) = 0;
+};
 
 /// Who wrote a property.
 enum class Source
@@ -323,10 +340,21 @@ public:
     {
         return property("prefPath").toString();
     }
-    /// Focus is a request to the backend, not state.
-    void setFocus()
+    /// Focus is a request to the backend, not state.  Invokable: a panel
+    /// queues it by name (`QMetaObject::invokeMethod(edit, "setFocus", ...)`).
+    Q_INVOKABLE void setFocus()
     {
         request(QStringLiteral("setFocus"));
+    }
+
+    /// The backend rendering this model (see `Backend`); nullptr if none.
+    Backend* backend() const
+    {
+        return _backend;
+    }
+    void setBackend(Backend* backend)
+    {
+        _backend = backend;
     }
 
     // -- the two event directions ------------------------------------------
@@ -344,7 +372,7 @@ public:
     /// object) to the backend as `layoutChanged`.
     void forwardLayoutOp(const QVariantMap& op)
     {
-        Q_EMIT layoutChanged(op);
+        emitLayoutOp(op);
     }
 
 Q_SIGNALS:
@@ -373,9 +401,12 @@ private:
     friend class Layout;
     void emitLayoutOp(const QVariantMap& op)
     {
+        if (_backend)
+            _backend->layoutChanged(op);
         Q_EMIT layoutChanged(op);
     }
 
+    Backend* _backend = nullptr;
     QString _qtClass;
     QVariantMap _props;
     QVariantMap _dynamic;

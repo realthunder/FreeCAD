@@ -2556,18 +2556,60 @@ placement into the models and the widgets follow, the widget drives
 the property (offset, plane, reverse), the model drives the widget,
 accept; the GUI gates stay 7/7.
 
-Next, **H1b**: a PartDesign panel with expression binding.  Pad's
-form is `TaskPadPocketParameters.ui`, owned by `TaskExtrudeParameters`
-(Pad and Pocket share it: 245 `ui->` uses, 10 `bind(` sites, seven
-`Gui::PrefQuantitySpinBox`, three `Gui::DoubleSpinBox`), under
-`TaskSketchBasedParameters` whose code-built widgets (the profile
-edit, `LinkSubListWidget`, the fitting group) stay Qt for now -- the
-port is the FORM, not the box.  That brings the custom widget seam of
-the sizing above: `ExpressionBinding` on the host `QuantitySpinBox`
-and `DoubleSpinBox` models (`binding` and `expression` in the bag),
-the Qt backend binding the real widget to the same path so its f(x)
-label and expression dialog keep working, and the requests the pref
-widgets need (`selectNumber`, `setToLastUsedValue`, `pushToHistory`).
+**H1b BUILT 2026-09-06**: Pad and Pocket's panel, with the expression
+seam.  Their shared form `TaskPadPocketParameters.ui`, owned by
+`TaskExtrudeParameters` (245 `ui->` uses, 10 `bind(` sites, seven
+`Gui::PrefQuantitySpinBox`, three `Gui::DoubleSpinBox`), is now the
+models fwuic generates (`fwui_TaskPadPocketParameters.h`, the .ui in
+`Resources/PartDesign.qrc` under `:/ui/`); `ui->lengthEdit` is a typed
+`Gui::Fw::QuantitySpinBox*` and the file's 245 uses, its `connect`s
+(retyped to the models' signal classes) and its two grid connections
+compile unchanged.  `TaskSketchBasedParameters`'s code-built widgets
+(the profile edit, `LinkSubListWidget`, the fitting group, the
+operation combo) stay Qt: the port is the FORM, and the surrounding
+`TaskBox` is realized into the same `proxy` by `FwQt::realize`.  The
+Qt-only calls the panel keeps -- an event filter, a `ButtonGroup`, the
+blink target, the select-reference label, `hookPropertyBool` -- reach
+the real widget through `FwQt::widgetOf(model)`.
+
+The seam, the sizing's `ExpressionBinding` on the host models:
+`Fw::ExpressionBound` mixes `Gui::ExpressionBinding` (already a
+non-widget mixin) into `QuantitySpinBox` and `DoubleSpinBox`, so a
+bound model owns the binding and mirrors it in two bag keys --
+`binding` (the path) and `expression` (the text, or empty).  `bind`
+writes `binding` once (rewriting it inside the expression-changed
+handler would make the backend re-bind the real widget mid-emission,
+a heap corruption the Pad gate caught); the document's own change
+comes back through the binding's `onChange` into `expression` and the
+value.  The Qt backend, on the `binding` key, binds the REAL
+`Gui::PrefQuantitySpinBox`/`Gui::DoubleSpinBox` to the same typed path,
+so its f(x) label, its read-only-while-expression state and its
+expression dialog work exactly as before; `apply` is the real
+widgets' `apply` (the expression stands, else the value goes to the
+property through a command).  The pref widgets' history and
+`selectNumber` are requests the backend forwards.  A new channel in
+the core, `Fw::Backend`, carries a write straight to the one backend
+(the widget shows the value BEFORE the typed signals fire, and a
+panel's `QSignalBlocker` on a field, which silences the slot it hangs
+on, no longer silences the mirror to the widget).
+
+Gates: `test_expressionSeam` in `FormWidgets_Tests_run` (13/13: bind,
+document -> bag -> value, the widget's dialog -> document -> bag, clear,
+a `DoubleSpinBox` on a sub-path, the signal-blocker semantics) is the
+in-process proof.  `SandboxNative.py` (a new GUI-gate module, run on
+its own: `SANDBOX_GUI_GATE_MODULES=SandboxNative`) opens Pad's real
+panel, drives `Pad.Length` from the widget, sets an expression on the
+document and reads it back read-only through the widget, and OKs it
+into the `ExpressionEngine` -- RESULT OK.  It is NOT in the default
+gate list: closing a 3D-view document and then pumping the event loop
+trips a teardown crash in this fork (a deferred `View3DInventor`
+deletion corrupts the heap; reproduced on the committed HEAD with a
+bare empty document, unrelated to the sandbox), so a run that first
+closes the guest gates' documents and then opens Pad's aborts; run
+alone it is clean, and the three-module default gate stays 7/7.
+
+Next, **G3b** on the C++ store (the rest of the `.ui` subset with the
+41-panel harness), then **G3c** and the G2b runner.
 
 ## 8. Measurements
 
@@ -2781,8 +2823,11 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    `FreeCADGui.FormWidgets`; OrthoArray from the guest renders through
    it and the Python Qt-shaped views are gone).  **H1a** BUILT
    2026-09-06 (TaskOrientation onto the generated form, gate
-   `test_taskOrientationPort`).  Next **H1b** (Pad/Pocket's form
-   with expression binding), then **G3b** (the rest of the `.ui` subset and
+   `test_taskOrientationPort`).  **H1b** BUILT 2026-09-06 (Pad/Pocket's
+   form onto the generated models, the expression seam
+   `Fw::ExpressionBound` on the `QuantitySpinBox`/`DoubleSpinBox`
+   models; gate `test_expressionSeam` 13/13 and `SandboxNative` run
+   alone).  Next **G3b** (the rest of the `.ui` subset and
    the 41-panel harness) on the C++ store, **G3c** (forms built in
    code: DraftGui's toolbar -- what both workbenches' `Initialize()`
    stop at), and the G2b runner once there is something to switch to.

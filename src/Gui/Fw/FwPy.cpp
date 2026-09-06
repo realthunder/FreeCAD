@@ -303,10 +303,20 @@ PyObject* py_setProperty(PyObject*, PyObject* args)
 /// `Control.activeTaskDialog().accept()` clicks nothing.)
 PyObject* panelButton(bool accept)
 {
-    auto dlg = dynamic_cast<FwQt::PanelDialog*>(Gui::Control().activeDialog());
-    if (!dlg) {
-        PyErr_SetString(PyExc_RuntimeError, "no form panel is the active task dialog");
+    auto active = Gui::Control().activeDialog();
+    if (!active) {
+        PyErr_SetString(PyExc_RuntimeError, "no task dialog is active");
         return nullptr;
+    }
+    auto dlg = dynamic_cast<FwQt::PanelDialog*>(active);
+    if (!dlg) {
+        // a native dialog (a ported panel among them): the task view's
+        // own OK/Cancel path, the one the button box would take
+        if (accept)
+            Gui::Control().accept();
+        else
+            Gui::Control().reject();
+        return PyBool_FromLong(Gui::Control().activeDialog() != active ? 1 : 0);
     }
     bool ok = accept ? dlg->accept() : dlg->reject();
     if (ok)
@@ -345,9 +355,9 @@ PyMethodDef Methods[] = {
      "setProperty(id, name, value) -> bool: write the bag as native code would"},
     {"knownClasses", py_knownClasses, METH_NOARGS, "knownClasses() -> [Qt class name]"},
     {"accept", py_accept, METH_NOARGS,
-     "accept() -> bool: the active form panel's OK; True closed the dialog"},
+     "accept() -> bool: the active task dialog's OK; True closed the dialog"},
     {"reject", py_reject, METH_NOARGS,
-     "reject() -> bool: the active form panel's Cancel; True closed the dialog"},
+     "reject() -> bool: the active task dialog's Cancel; True closed the dialog"},
     {nullptr, nullptr, 0, nullptr}};
 
 PyModuleDef ModuleDef = {PyModuleDef_HEAD_INIT,

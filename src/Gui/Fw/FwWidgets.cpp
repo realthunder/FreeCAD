@@ -29,6 +29,14 @@
 #include <Base/Exception.h>
 #include <Base/UnitsApi.h>
 
+#include <App/Document.h>
+#include <App/DocumentObject.h>
+#include <App/Expression.h>
+#include <App/ExpressionParser.h>
+#include <App/PropertyGeo.h>
+#include <Base/Tools.h>
+
+#include "Command.h"
 #include "Fw/FwWidgets.h"
 
 using namespace Gui::Fw;
@@ -39,6 +47,8 @@ const QString kText = QStringLiteral("text");
 const QString kChecked = QStringLiteral("checked");
 const QString kValue = QStringLiteral("value");
 const QString kMinimum = QStringLiteral("minimum");
+const QString kBinding = QStringLiteral("binding");
+const QString kExpression = QStringLiteral("expression");
 const QString kMaximum = QStringLiteral("maximum");
 const QString kSingleStep = QStringLiteral("singleStep");
 }  // namespace
@@ -214,7 +224,7 @@ QFrame::QFrame(Widget* parent)
 
 // ---- text inputs ------------------------------------------------------------
 
-QLineEdit::QLineEdit(Widget* parent)
+Gui::Fw::QLineEdit::QLineEdit(Widget* parent)
     : Widget(parent)
 {
     setQtClass(QStringLiteral("QLineEdit"));
@@ -226,19 +236,19 @@ QLineEdit::QLineEdit(Widget* parent)
     declare(QStringLiteral("clearButtonEnabled"), false);
 }
 
-QLineEdit::QLineEdit(const QString& text, Widget* parent)
+Gui::Fw::QLineEdit::QLineEdit(const QString& text, Widget* parent)
     : QLineEdit(parent)
 {
     setText(text);
 }
 
-void QLineEdit::propertyDidChange(const QString& name, const QVariant& value)
+void Gui::Fw::QLineEdit::propertyDidChange(const QString& name, const QVariant& value)
 {
     if (name == kText)
         Q_EMIT textChanged(value.toString());
 }
 
-void QLineEdit::dispatchEvent(const QString& name, const QVariantList& args)
+void Gui::Fw::QLineEdit::dispatchEvent(const QString& name, const QVariantList& args)
 {
     if (name == QLatin1String("textEdited"))
         Q_EMIT textEdited(args.value(0).toString());
@@ -665,6 +675,8 @@ void QComboBox::dispatchEvent(const QString& name, const QVariantList& args)
 {
     if (name == QLatin1String("activated"))
         Q_EMIT activated(args.value(0).toInt());
+    else if (name == QLatin1String("highlighted"))
+        Q_EMIT highlighted(args.value(0).toInt());
 }
 
 QFontComboBox::QFontComboBox(Widget* parent)
@@ -758,11 +770,157 @@ void InputField::dispatchEvent(const QString& name, const QVariantList& args)
         Q_EMIT parseError(args.value(0).toString());
 }
 
+// ---- the expression seam ---------------------------------------------------------
+
+ExpressionBound::ExpressionBound(Widget* owner)
+    : _owner(owner)
+{
+    owner->setInitial(kBinding, QString());
+    owner->setInitial(kExpression, QString());
+}
+
+ExpressionBound::~ExpressionBound() = default;
+
+void ExpressionBound::bind(const App::ObjectIdentifier& path)
+{
+    Gui::ExpressionBinding::bind(path);
+    // `binding` is written HERE only: a change handler rewriting it
+    // would make the backend re-bind the real widget inside the
+    // expression-changed signal it is reacting to (a reconnect during
+    // the emission -- a crash the Pad gate found)
+    _owner->setProperty(kBinding, boundToName());
+    syncExpression();
+}
+
+QString ExpressionBound::boundToName() const
+{
+    if (!isBound())
+        return QString();
+    return QString::fromStdString(getPath().toString());
+}
+
+QString ExpressionBound::expressionText() const
+{
+    return _owner->property(kExpression).toString();
+}
+
+void ExpressionBound::syncExpression()
+{
+    QString text;
+    if (isBound()) {
+        try {
+            if (auto expr = getExpression())
+                text = QString::fromStdString(expr->toString());
+        }
+        catch (const Base::Exception&) {
+        }
+    }
+    _owner->setProperty(kExpression, text);
+    if (!text.isEmpty())
+        evaluateExpression();
+}
+
+void ExpressionBound::evaluateExpression()
+{
+    if (!isBound())
+        return;
+    try {
+        auto expr = getExpression();
+        if (!expr)
+            return;
+        std::unique_ptr<App::Expression> result(expr->eval());
+        if (auto num = freecad_dynamic_cast<App::NumberExpression>(result.get()))
+            setEvaluated(num->getQuantity().getValue());
+    }
+    catch (const Base::Exception& e) {
+        _owner->notify(QStringLiteral("expressionError"),
+                       QVariantList {QString::fromUtf8(e.what())});
+    }
+}
+
+void ExpressionBound::setExpression(std::shared_ptr<App::Expression> expr)
+{
+    if (!isBound())
+        return;
+    Gui::ExpressionBinding::setExpression(expr);
+    syncExpression();
+}
+
+bool ExpressionBound::setExpressionText(const QString& text, QString* error)
+{
+    App::DocumentObject* obj = isBound() ? getPath().getDocumentObject() : nullptr;
+    if (!obj) {
+        if (error)
+            *error = QStringLiteral("not bound");
+        return false;
+    }
+    try {
+        std::shared_ptr<App::Expression> expr;
+        if (!text.trimmed().isEmpty()) {
+            expr = App::Expression::parse(obj, text.toStdString());
+            std::string msg = obj->ExpressionEngine.validateExpression(getPath(), expr);
+            if (!msg.empty()) {
+                if (error)
+                    *error = QString::fromStdString(msg);
+                return false;
+            }
+        }
+        setExpression(expr);
+        return true;
+    }
+    catch (const Base::Exception& e) {
+        if (error)
+            *error = QString::fromUtf8(e.what());
+    }
+    catch (const std::exception& e) {
+        if (error)
+            *error = QString::fromUtf8(e.what());
+    }
+    return false;
+}
+
+void ExpressionBound::onChange()
+{
+    syncExpression();
+}
+
+bool ExpressionBound::apply(const std::string& propName)
+{
+    // Gui::QuantitySpinBox::apply, on the bag's value
+    if (Gui::ExpressionBinding::apply(propName))
+        return false;
+    double dValue = boundValue();
+    if (isBound()) {
+        const App::ObjectIdentifier& path = getPath();
+        const App::Property* prop = path.getProperty();
+        if (prop && prop->isReadOnly())
+            return true;
+        if (prop && prop->isDerivedFrom<App::PropertyPlacement>()) {
+            if (path.getSubPathStr() == ".Rotation.Angle")
+                dValue = Base::toRadians(dValue);
+        }
+    }
+    Gui::Command::doCommand(Gui::Command::Doc, "%s = %f", propName.c_str(), dValue);
+    return true;
+}
+
 QuantitySpinBox::QuantitySpinBox(Widget* parent)
     : InputField(parent)
+    , ExpressionBound(this)
 {
     setQtClass(QStringLiteral("Gui::QuantitySpinBox"));
     declare(QStringLiteral("displayUnit"), QString());
+    declare(kBinding, QString());
+    declare(kExpression, QString());
+}
+
+DoubleSpinBox::DoubleSpinBox(Widget* parent)
+    : QDoubleSpinBox(parent)
+    , ExpressionBound(this)
+{
+    setQtClass(QStringLiteral("Gui::DoubleSpinBox"));
+    declare(kBinding, QString());
+    declare(kExpression, QString());
 }
 
 ColorButton::ColorButton(Widget* parent)
@@ -838,7 +996,7 @@ const std::map<QString, Maker>& classTable()
         {QStringLiteral("QRadioButton"), maker<QRadioButton>()},
         {QStringLiteral("QGroupBox"), maker<QGroupBox>()},
         {QStringLiteral("QFrame"), maker<QFrame>()},
-        {QStringLiteral("QLineEdit"), maker<QLineEdit>()},
+        {QStringLiteral("QLineEdit"), maker<Gui::Fw::QLineEdit>()},
         {QStringLiteral("QTextEdit"), maker<QTextEdit>()},
         {QStringLiteral("QPlainTextEdit"), maker<QPlainTextEdit>()},
         {QStringLiteral("QTextBrowser"), maker<QTextBrowser>()},
@@ -856,11 +1014,12 @@ const std::map<QString, Maker>& classTable()
         {QStringLiteral("Gui::PrefColorButton"), maker<ColorButton>()},
         {QStringLiteral("Gui::PrefCheckBox"), maker<QCheckBox>()},
         {QStringLiteral("Gui::PrefRadioButton"), maker<QRadioButton>()},
-        {QStringLiteral("Gui::PrefLineEdit"), maker<QLineEdit>()},
+        {QStringLiteral("Gui::PrefLineEdit"), maker<Gui::Fw::QLineEdit>()},
         {QStringLiteral("Gui::PrefTextEdit"), maker<QTextEdit>()},
         {QStringLiteral("Gui::PrefComboBox"), maker<QComboBox>()},
         {QStringLiteral("Gui::PrefSpinBox"), maker<QSpinBox>()},
-        {QStringLiteral("Gui::PrefDoubleSpinBox"), maker<QDoubleSpinBox>()},
+        {QStringLiteral("Gui::DoubleSpinBox"), maker<DoubleSpinBox>()},
+        {QStringLiteral("Gui::PrefDoubleSpinBox"), maker<DoubleSpinBox>()},
         {QStringLiteral("Gui::PrefSlider"), maker<QSlider>()},
         {QStringLiteral("Gui::PrefCheckableGroupBox"), maker<QGroupBox>()},
         {QStringLiteral("Gui::PrefFontBox"), maker<QFontComboBox>()},
