@@ -123,9 +123,18 @@ void PropertyLinkBase::unregisterElementReference() {
             it->second.erase(this);
             if(it->second.empty())
                 _ElementRefMap.erase(it);
+            // Found in the map, so the feature is alive: a feature that is
+            // destroyed takes its entry with it (clearElementReferences).
+            if (auto geo = Base::freecad_dynamic_cast<GeoFeature>(obj))
+                geo->onElementReferenceReleased(this);
         }
     }
     _ElementRefs.clear();
+}
+
+void PropertyLinkBase::clearElementReferences(DocumentObject *feature)
+{
+    _ElementRefMap.erase(feature);
 }
 
 void PropertyLinkBase::unregisterLabelReferences()
@@ -256,6 +265,24 @@ PropertyLinkBase::getElementReferences(DocumentObject *feature)
     return it->second;
 }
 
+std::map<DocumentObject*, std::vector<PropertyLinkBase*>>
+PropertyLinkBase::getExternalElementReferences(const Document *doc)
+{
+    std::map<DocumentObject*, std::vector<PropertyLinkBase*>> res;
+    if (!doc)
+        return res;
+    for (auto &v : _ElementRefMap) {
+        if (!v.first || v.first->getDocument() == doc)
+            continue;
+        for (auto prop : v.second) {
+            auto owner = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
+            if (owner && owner->getDocument() == doc)
+                res[v.first].push_back(prop);
+        }
+    }
+    return res;
+}
+
 void PropertyLinkBase::updateElementReferences(DocumentObject *feature, bool reverse) {
     if(!feature || !feature->isAttachedToDocument())
         return;
@@ -284,7 +311,11 @@ void PropertyLinkBase::_registerElementReference(App::DocumentObject *obj, std::
 {
     if(!obj || !obj->isAttachedToDocument() || sub.empty())
         return;
-    if(shadow.first.empty()) {
+    // A sub-name carrying the missing marker is asked about again rather
+    // than taken as it is: restored with its old shadow, it is the reload
+    // request of docs/TopoNamingEnhance.md section 7 (_updateElementReference
+    // searches the retained evidence while the document is restoring).
+    if(shadow.first.empty() || GeoFeature::hasMissingElement(sub.c_str())) {
         _updateElementReference(0,obj,sub,shadow,false);
         return;
     }
@@ -295,6 +326,22 @@ void PropertyLinkBase::_registerElementReference(App::DocumentObject *obj, std::
                 GeoFeature::ElementNameType::Export,0,&element,&geo);
     if(!geo || !element || !element[0])
         return;
+
+    // A restored shadow is taken as it is when the geometry it names was
+    // saved together with this document.  Reached through a link into
+    // another document it was not: that document may have been edited
+    // while this one was closed, and a reference merely registered here
+    // reads as saved whatever happened to the face, until a later
+    // regeneration confirms it against the wrong baseline.  So it is
+    // verified now, while the document is restoring and the reload
+    // request above can serve it (docs/TopoNamingEnhance.md 7.16).
+    auto owner = Base::freecad_dynamic_cast<DocumentObject>(getContainer());
+    if (owner && owner->getDocument() && geo->getDocument() != owner->getDocument()
+            && (testFlag(LinkRestoring)
+                || owner->getDocument()->testStatus(Document::Restoring))) {
+        _updateElementReference(0,obj,sub,shadow,false);
+        return;
+    }
 
     if(_ElementRefs.insert(geo).second)
         _ElementRefMap[geo].insert(this);
@@ -363,23 +410,62 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
     if(_ElementRefs.insert(geo).second)
         _ElementRefMap[geo].insert(this);
 
+    bool missing = GeoFeature::hasMissingElement(elementName.second.c_str());
+    if (!missing && Data::hasMissingElement(element)) {
+        // The sub-name is itself the missing marker ('?Face3', what a
+        // missing reference reads as once it has been saved and restored).
+        // Looked up as a name it comes back as an unknown mapped name with
+        // no indexed one, which a regeneration below would adopt and then
+        // write out as an empty sub-name.  It is missing, as marked; the
+        // search below may still recover it.
+        elementName.first.clear();
+        elementName.second.assign(subname, element - subname);
+        elementName.second += element;
+        missing = true;
+    }
+    // A reference being restored: the link is coming back from a file
+    // (restoreLink), or the whole document is (onContainerRestored).  A
+    // reference that is missing now was resolved against a shape the file
+    // no longer holds, and this is its one chance to ask for the evidence
+    // the feature, or this document, kept for it (docs/TopoNamingEnhance.md
+    // section 7, the reload flow).
+    auto owner = Base::freecad_dynamic_cast<DocumentObject>(getContainer());
+    bool restoring = !feature
+        && (testFlag(LinkRestoring)
+            || (owner && owner->getDocument()
+                      && owner->getDocument()->testStatus(Document::Restoring)));
     if (!reverse) {
         if (elementName.first.empty()) {
             shadow.second.swap(elementName.second);
             return false;
         }
-        if(shadow==elementName)
+        // Unchanged, unless it is a missing reference being restored: the
+        // XML pass may have resolved it before the shapes arrived, and the
+        // request below is what the restore is for.
+        if(shadow==elementName && !(restoring && missing))
             return false;
     }
-
-    bool missing = GeoFeature::hasMissingElement(elementName.second.c_str());
-    if (feature == geo && (missing || reverse)) {
+    if ((feature == geo || restoring) && (missing || reverse)) {
         // If the referenced element is missing, or we are generating element
         // map for the first time, or we are re-generating the element map due
         // to version change, i.e. 'reverse', try search by geometry first
         const char *oldElement = Data::findElementName(shadow.second.c_str());
-        if(!Data::hasMissingElement(oldElement)) {
-            const auto &names = geo->searchElementCache(oldElement);
+        if (restoring) {
+            // Nothing was resolved before in this session: the old element is
+            // the indexed name the file carried, which the missing marker
+            // preserves ('?Face3' for a reference that was 'Face3').
+            if (!oldElement || !oldElement[0])
+                oldElement = Data::findElementName(elementName.second.c_str());
+            if (oldElement && Data::hasMissingElement(oldElement))
+                oldElement += Data::missingPrefix().size();
+        }
+        if(oldElement && oldElement[0] && !Data::hasMissingElement(oldElement)) {
+            // The reference as this property holds it, ending in the old
+            // element: what evidence kept by this document is filed under.
+            std::string oldSub(subname, strlen(subname) - strlen(element));
+            oldSub += oldElement;
+            const auto &names = geo->searchElementCache(oldElement,
+                    Data::SearchOption::CheckGeometry, 1e-7, 1e-10, this, obj, oldSub.c_str());
             if(names.size()) {
                 missing = false;
                 std::string newsub(subname, strlen(subname) - strlen(element));
@@ -442,7 +528,6 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
         ss << propertyName(this) 
                 << " missing element reference " << ret->getFullName() << " "
                 << (elementName.first.size()?elementName.first:elementName.second);
-        auto owner = Base::freecad_dynamic_cast<DocumentObject>(getContainer());
         if (owner && owner->isRecomputing())
             FC_WARN(ss.str());
         else

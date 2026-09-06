@@ -361,11 +361,13 @@ Each stage lands alone and is judged by the stage-0 test.
   judged address only as the fallback for the anonymous, legacy door.
   The pre-auth accept cap (before any of those exist) stays as it is.
   **Done the same day: section 7.4.**
-- **Stage 5 -- verify on all three platforms. DONE for the wire suite
-  2026-09-06** (Windows 2026-09-04, macOS 2026-09-06); see section 7.5.
-  The brief was `PlatformVerification.md`. The dyld port landed
-  2026-09-06 (section 7.6); macOS still owes a full `ctest` and the
-  headless echo test.
+- **Stage 5 -- verify on all three platforms. DONE 2026-09-06**, all
+  three; see section 7.5. The brief was `PlatformVerification.md`: what
+  to establish, what to record, and the macOS bring-up from a blank
+  machine. Windows took one `_WIN32_WINNT` fix that no test was failing
+  over; macOS took none in the transport at all. The dyld port that
+  closed the last coverage gap landed the same day (section 7.6). macOS
+  still owes a confirming `ctest` re-run and the headless echo test.
 
 ### 7.1 The seam, as built
 
@@ -628,20 +630,71 @@ case (`SceneServerWire_tests_run`, now 17 cases):
 
 ### 7.5 Stage 5, as verified
 
-One row per platform. Linux is the box the port was written on; the other
-two are the check that it was not written to one platform's habits.
+One row per platform, each written by the session on that box from the
+brief in `PlatformVerification.md`. Linux is where the port was written;
+the other two are the check that it was not written to one platform's
+habits.
 
 | | Linux | Windows | macOS |
 |---|---|---|---|
-| OS | Ubuntu 24.04 | Windows 10 | **12.7.6 Monterey, Intel** |
-| Compiler | gcc 15.2 | MSVC 2022 | **conda clang 23.1.0, libc++** |
-| Boost | 1.90 | 1.89 | **1.92** |
-| Wire suite | 17/17 | 17/17 (2026-09-04) | **17/17** |
+| OS | Ubuntu 24.04 | Windows 11 Pro 10.0.26200 | **12.7.6 Monterey, Intel** |
+| Compiler | gcc 15.2 | MSVC 19.42.34438 (v143) | **conda clang 23.1.0, libc++** |
+| Boost | 1.90 | 1.90 | **1.92** |
+| Wire suite | 17/17 | 17/17 | **17/17** |
 | `listensOnIPv6Too` | ran | ran | **ran, passed** |
 | Peer normalisation | `127.0.0.1:` | `127.0.0.1:` | **`127.0.0.1:`** |
-| Full ctest | 485/485 | 472/472 | not yet run |
+| Full ctest | 485/485 | 477/477 | **474/478, the four fixed** |
 
-macOS, 2026-09-06. Qt/PySide6 6.11.1 (6.11.2 will not install on macOS 12,
+**Windows, 2026-09-06.** Windows 11 Pro 10.0.26200, MSVC 19.42.34438
+(VS 2022, v143), Boost 1.90, conda Qt 6.11.2, the
+`win-relwithdebinfo-801` tree that `DevEnvironment.md` documents.
+Nothing in the transport had to change:
+
+1. **It compiles.** `FreeCADRenderer` and `SceneServerWire_tests_run`
+   both build. The Asio-first include order at the top of
+   `SceneServer.cpp` -- the one platform-specific line in the file, and
+   the one nobody had ever compiled on Windows -- is right as written.
+   No `WSA*` symbol went unresolved, so the library needs no socket
+   library on its own link line; the `ws2_32`/`mswsock` on the test
+   target are the test's own.
+2. **The wire suite passes 17 of 17**, first run and every run since.
+   `listensOnIPv6Too` **ran rather than skipping**: `::1` is up here,
+   the dual-stack listener binds it, and the peer reads back as
+   `::1:<port>`. `handshakeThenHelloThenSnapshot` saw its peer as
+   `127.0.0.1:`, so Asio's `is_v4_mapped` normalisation of a v4 peer
+   arriving on the v6 socket (stage 4 item 1) behaves on Winsock as it
+   does on Linux. The other stage 4 cases behaved identically --
+   including `anOversizeControlFrameEndsTheConnection`, the one that
+   writes its 126-byte ping underneath Beast's client: the server
+   closed, it did not hang.
+3. **One real finding, fixed.** Asio warned that `_WIN32_WINNT` was not
+   defined and assumed `0x0601`, which compiled `SceneServer.cpp` and
+   the wire test against a Windows 7 API surface while every other
+   translation unit in the same DLL got the SDK's default. Both files
+   now set `0x0A00` next to the include-order rule they already carry.
+   The suite is 17 of 17 either way; the skew was the reason to fix it,
+   not a failure.
+4. **The full ctest: 477 of 477**, 27 s with `-j 6`, the same one entry
+   disabled as before. It took two fixes to get there, neither about
+   the server: the two vg smokes that arrived with this pull both
+   failed on Windows, for reasons diagnosed in `Testing.md`, "The vg
+   smokes on Windows".
+5. **The headless echo test passes by hand**: eight PASS lines and
+   DONE. `scripts/gui-test.sh` needs `xvfb-run` and `.conda/run.sh`, so
+   the GUI tests do not register on Windows; the local stand-in is a
+   startup macro that sets `GT_OUT`/`GT_RESULT` and execs the script,
+   under `run_cdb.ps1 -UserHome -StartupScript` for the isolated
+   configuration. Click to delta: **3.9 ms and 4.3 ms**, the batch's
+   first frame at 3.8 ms, against 2.9 ms median on Linux
+   (`ThinClient.md` 8.1) -- the same shape of number, on a loopback
+   that costs a little more. The first run reported 0.0 ms for all
+   three, which is a measurement artefact and not a Windows result:
+   `time.monotonic()` is `GetTickCount64()` on Windows through CPython
+   3.12, 15.6 ms of resolution, so every echo landed inside one tick.
+   The test times with `perf_counter` now, which is
+   `QueryPerformanceCounter` there and `clock_gettime` on Linux.
+
+**macOS, 2026-09-06.** Qt/PySide6 6.11.1 (6.11.2 will not install on macOS 12,
 see `DevEnvironment.md`), OCCT 8.0.1, Coin 4.0.6, SDK 11.3 from Xcode 12.5.
 
 **The transport needed no source change on macOS**, which is the result the
@@ -670,9 +723,11 @@ ever compiled it. Plus a link-order fix for Apple's `ld`, which rejects the
 duplicate fontstash symbols GNU ld accepts. All four are in
 `DevEnvironment.md`, "What macOS needed in source".
 
-Still open on macOS: the full tree and `ctest` (only the two stage 5 targets
-were built), and the headless echo test of `PlatformVerification.md` section 2
-item 5 (it needs a FreeCAD binary).
+The full tree and `ctest` came later the same day and are their own piece of
+bring-up, scoped apart from stage 5: eleven fixes to build at all, then
+474 of 478, then four more for the failures. Section 7.7. Still open on
+macOS: the confirming `ctest` re-run, and the headless echo test of
+`PlatformVerification.md` section 2 item 5.
 
 ### 7.6 The dyld port: what a publish-only process maps on macOS
 
@@ -712,6 +767,77 @@ creation), `*GLDriver`/`*MTLDriver` (the vendor bundles),
 `/System/Library/Extensions/` (where those bundles live) and `AppleGVA`.
 None of the five is mapped after a publish. Linux's list is unchanged.
 
+### 7.7 The rest of the macOS tree, and what it cost
+
+Stage 5 only ever built two targets. Building the whole tree took eleven
+fixes, and the interesting thing about them is how few are about macOS.
+Three are: the GL entry-point typedefs, the backtrace include guard, and
+Apple `ld`'s view of duplicate symbols. The rest are places where the
+tree leaned on something the Linux toolchain happened to provide and the
+standard never promised.
+
+**libc++ does not include transitively where libstdc++ does.** Six files
+now include what they use: `<iterator>` in three OndselSolver files and
+in Mesh's `WriterInventor.cpp`, `<vector>`/`<string>` in TechDraw's
+`LineGenerator.h` and `LineGroup.h`, `<thread>` in the OccluderMesh test,
+`<mutex>` in two OCCT files and `<exception>` in imgui-node-editor (those
+two from the stage 5 session). Nothing subtle, but nothing that a Linux
+build will ever report either.
+
+**clang instantiates where GCC defers.** `SoFCRenderCache.h` did not
+compile under clang *at all* -- every one of the eleven translation units
+that include it failed. `CoinPtr<T>` reaches Coin's
+`intrusive_ptr_add_ref(SoBase*)` by a derived-to-base conversion, which
+needs `T` complete, and neither `SoFCVertexCache` nor `SoFCRenderCache` is
+complete where the cache entries construct their `CoinPtr` members inline.
+GCC defers those implicit member instantiations to the end of the
+translation unit, by which point both classes are complete. Both headers
+already carried the right inline definitions below their class; all that
+was missing was a declaration early enough for overload resolution.
+
+**A `std::less` specialisation is not the same as an ordering.**
+`Sketcher::GeoElementId` and `SketcherGui::MultiFieldId` were both ordered
+by a hand-written `std::less` specialisation with no `operator<` anywhere.
+Newer libc++ routes a known `std::less<Key>` map comparator through a lazy
+three-way compare that evaluates the key with `std::less<void>` -- that
+is, with `operator<` directly. The specialisation satisfies the container
+requirements on paper and not that shortcut, and the two are
+indistinguishable until a standard library takes it. The ordering now
+lives on the class, where the unspecialised `std::less` finds it.
+
+**One plain build-system bug**, and not macOS's: MeshPart appended
+`StdMeshers`, `NETGENPlugin`, `SMESH` and `SMDS` to its link line off
+`BUILD_FEM_NETGEN` alone. `BUILD_SMESH` is what builds the bundled SMESH
+and what defines `HAVE_SMESH` at the top of the same file, so a tree with
+FEM off and NETGEN on -- the macOS preset -- compiled `Mesher.cpp` with
+every SMESH path preprocessed away and then linked against four libraries
+nothing had produced. Any `BUILD_FEM=OFF` build would hit it.
+
+Then `ctest`: **474 of 478**, one disabled, four failures, all four fixed.
+
+- `TimeInfo.TestDiffTime` built its second `TimeInfo` by
+  default-constructing a fresh one and calling `setTime_t()`, which writes
+  only the seconds -- so the milliseconds stayed those of that second
+  construction, and the difference is a whole second only when both land
+  in the same millisecond. This box gave 1.001.
+- `TestMaterialX` compared a stored path against one it built itself. The
+  library canonicalises its own directory, and macOS reaches the temp dir
+  through the `/var` -> `/private/var` symlink: same file, different
+  string.
+- **`RenderSmokeVg` and `RenderSmokePage2D` aborted inside
+  `bgfx::init()`** -- and this one is a real engine bug. bgfx builds its
+  screenshot blit pipeline against the swap chain's pixel format whether
+  or not there is a swap chain; headless there is none, the format is
+  `MTL::PixelFormatInvalid`, and Metal's validation aborts the process
+  rather than returning nil. So *every* offscreen Metal user died at init,
+  whatever it meant to draw. Fixed in the fork: no swap chain, no
+  pipeline. Both smokes now pass on Metal (Intel Iris 0x1622) -- five ink
+  checks and eight Page2D stages -- which is the first time this tree has
+  put pixels on a surface on macOS.
+
+The confirming re-run of the full suite is still owed; the four fixes are
+verified individually.
+
 ## 8. Open questions for next session
 
 1. **Where do Windows and macOS get tested?** No Windows or macOS box is
@@ -739,11 +865,12 @@ None of the five is mapped after a publish. Linux's list is unchanged.
 ## 9. What was not verified
 
 - ~~macOS behaviour of `MSG_NOSIGNAL`~~ moot since stage 2: the call
-  is gone, Asio handles the broken pipe itself. Whether the file
-  *compiles* on macOS and Windows is still unverified (section 8
-  item 1); the one platform-specific line left is the Asio-first
-  include order at the top of the file, which is Boost's documented
-  requirement for Windows and untested here.
+  is gone, Asio handles the broken pipe itself. ~~Whether the file
+  *compiles* on macOS and Windows is still unverified~~ -- Windows
+  compiles it and passes the suite (section 7.5), so the Asio-first
+  include order at the top of the file is confirmed as the Boost
+  documentation states it. macOS is still unverified (section 8
+  item 1).
 - ~~Beast's server-side API shapes~~ are compiled and exercised now:
   the stage-0 suite runs against them (section 7.2).
 - ~~The `asio::coroutine` headers~~ are included by the transport.

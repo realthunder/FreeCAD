@@ -105,6 +105,11 @@ are a `Docs:` commit.
 
 ## 3. Windows
 
+**Done 2026-09-06.** The result is `SceneServerPort.md` section 7.5: the
+suite is 17 of 17, `listensOnIPv6Too` ran, and the only source change the
+platform asked for was `_WIN32_WINNT` before the Asio include. What
+follows is the recipe it used, kept for the next Windows session.
+
 The box is set up: `DevEnvironment.md`, "Windows stack (MSVC 2022 +
 conda)", is the reference, and `Testing.md`, "C++ on Windows", is
 authoritative for the suites. In short: preset `win-relwithdebinfo-local`

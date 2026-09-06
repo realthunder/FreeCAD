@@ -54,7 +54,11 @@ GeoFeature::GeoFeature()
             (App::PropertyType)(Prop_Output|Prop_Hidden|Prop_Transient),"");
 }
 
-GeoFeature::~GeoFeature() = default;
+GeoFeature::~GeoFeature()
+{
+    // No referrer may notify a feature that is gone
+    PropertyLinkBase::clearElementReferences(this);
+}
 
 void GeoFeature::transformPlacement(const Base::Placement &transform)
 {
@@ -272,13 +276,19 @@ const std::vector<std::string>&
 GeoFeature::searchElementCache(const std::string &element,
                                Data::SearchOptions options,
                                double tol,
-                               double atol) const
+                               double atol,
+                               const PropertyLinkBase *referrer,
+                               const DocumentObject *obj,
+                               const char *subname) const
 {
     static std::vector<std::string> none;
     (void)element;
     (void)options;
     (void)tol;
     (void)atol;
+    (void)referrer;
+    (void)obj;
+    (void)subname;
     return none;
 }
 

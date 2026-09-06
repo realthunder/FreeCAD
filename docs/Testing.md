@@ -13,8 +13,8 @@ as "the primary tree"; that was wrong.
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
-| C++ on Windows (`build/win-relwithdebinfo-801`) | **472 of 472 passing** (2026-09-04), 1 disabled -- see "C++ on Windows" |
-| C++ on macOS (`build/mac-relwithdebinfo-801`) | **not yet run in full**; the two SceneServerPort stage 5 targets pass (2026-09-06) -- see "C++ on macOS" |
+| C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
+| C++ on macOS (`build/mac-relwithdebinfo-801`) | **474 of 478** (2026-09-06), 1 disabled; the four failures are fixed and awaiting a confirming re-run -- see "C++ on macOS" |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -70,9 +70,18 @@ One binary directly, which is the fastest loop while working on a suite:
 
 ### C++ on macOS
 
-Not green yet, because it has not been run: only the two stage 5 targets
-were built on the macOS box (`SceneServerPort.md` section 7.5), not the tree.
-What those two say, on macOS 12.7.6 Intel with conda clang 23.1.0, 2026-09-06:
+**474 of 478** on 2026-09-06, one entry disabled, on macOS 12.7.6 Intel
+with conda clang 23.1.0. The four failures are fixed and a confirming
+re-run is owed; `SceneServerPort.md` 7.7 has the whole bring-up -- eleven
+fixes to build the tree at all, then the four test fixes. In short: two
+tests leaning on a fast box and a real `/tmp`, and the two vg smokes,
+which aborted inside `bgfx::init()` because bgfx builds its screenshot
+blit pipeline against a swap chain that a headless Metal context does not
+have. That last one is an engine bug, fixed in the fork, and both smokes
+now pass on Metal.
+
+The two SceneServerPort stage 5 targets, which were all that had been
+built before the tree was:
 
 - `SceneServerWire_tests_run` -- **17 of 17 passing**, `listensOnIPv6Too`
   running rather than skipping.
@@ -83,8 +92,9 @@ What those two say, on macOS 12.7.6 Intel with conda clang 23.1.0, 2026-09-06:
   and refuses the macOS renderer plugins rather than the frameworks dyld
   maps at launch anyway -- `SceneServerPort.md` 7.6 has the image list.
 
-The stack, and the four source fixes macOS needed to build at all, are in
-`DevEnvironment.md`, "macOS stack". The GUI tests do not register there for
+The stack, and the four source fixes the two stage 5 targets needed, are in
+`DevEnvironment.md`, "macOS stack"; the eleven the rest of the tree needed
+are in `SceneServerPort.md` 7.7. The GUI tests do not register there for
 the same reason as on Windows: their guard looks for `xvfb-run`.
 
 ### C++ on Windows
@@ -97,6 +107,15 @@ That is 473 against the 453 above, and the difference is the date rather than
 the platform: 444 expanded cases and 29 whole-binary entries here, against 427
 and 26 on 2026-08-28, from suites added since (`MaterialXGen_tests_run` alone
 is 48 cases). Section 2 explains why the two kinds of entry count differently.
+
+**2026-09-06: 477 of 477**, 478 registered, 27s with `-j 6`. The scene
+server's own new suite is among them and passes -- `SceneServerWire_tests_run`,
+17 cases over real sockets, the Windows half of stage 5 of
+`SceneServerPort.md` (section 7.5 there). Two vg smokes arrived with the same
+pull and both failed on this platform the first time they ran, for reasons
+that were about bgfx on Windows rather than about the code under test. Both
+are fixed, and both are worth reading before trusting a Windows render
+result: below.
 
     D:\works\sw\tools\ctest-fcad.cmd -j 6
 
@@ -254,6 +273,77 @@ chess set found on its first day (a capture taken while a material was
 still compiling), which is why a frame dump now waits for a complete
 frame.
 
+#### The vg smokes on Windows
+
+Both failed here when they first ran (2026-09-06), for two unrelated
+reasons, neither a defect in what they test. Both are fixed the same
+day; what they were is worth keeping, because each is a way for a
+Windows build to be quietly wrong rather than loudly broken.
+
+- `RenderSmokeVg_tests_run` lost **one band of five**: `gradient-fill`
+  read 0 ink where Linux reads 21600. The cause is the backend bgfx
+  picks. On Windows it auto-selects **Direct3D 11**, and vg-renderer's
+  embedded shaders have no Direct3D profile at all: they are baked by
+  `src/3rdParty/vg-renderer/src/shaders/rebake.sh` on a Linux host into
+  glsl, essl, spirv, wgsl and metal, and `src/3rdParty/CMakeLists.txt`
+  then forces `BGFX_PLATFORM_SUPPORTS_DXBC=0` and `_DXIL=0` on the
+  target with the comment that "the bgfx backend never runs on Direct3D
+  anyway". On Windows it does, by default. So
+  `bgfx::createEmbeddedShader` finds no entry for `Direct3D11`, all four
+  of vg's programs come back invalid -- and **bgfx does not refuse the
+  draw**: `submit()` substitutes program handle 0 for an invalid one
+  (`bgfx.cpp:1558`), so the frame is drawn by an unrelated program and
+  comes out looking almost right. The gradient band is where the
+  substitution shows. Run the same binary with `--renderer vk` and it
+  passes 5 of 5 on the same box, which was the proof.
+
+  **Fixed 2026-09-06** where it was wrong, in the shader pack: the
+  eight `.bin.h` files are rebaked with `dxbc` (s_5_0) and `dxil`
+  (s_6_0) added, by the same in-tree `shaderc` -- run on Windows, which
+  is where it can produce them -- and the two `SUPPORTS` overrides are
+  gone from `src/3rdParty/CMakeLists.txt`. The five existing arrays come
+  out byte for byte identical, so the change is purely additive; the
+  vg-renderer fork carries it (`134c460`). The Direct3D 11 frame is now
+  identical to the Vulkan one, band for band, 51118 ink pixels against
+  the 31277 the substituted program was drawing.
+
+  Two things worth taking from it. `submit()`'s substitution means an
+  invalid program is not a visible failure but a *different picture*, so
+  "it drew something" is not evidence that the shaders loaded. And a
+  shader pack is only as portable as the host that baked it: a Linux
+  rebake silently drops both Direct3D profiles again.
+- `RenderSmokePage2D_tests_run` **crashed**, on Direct3D 11 and on
+  Vulkan alike: an access violation in `bx::alloc` inlined into
+  `bgfx::makeRef`, inside `FreeCADRenderer.dll`, with the allocator
+  pointer null. That is bgfx's global allocator in a copy of bgfx that
+  was never initialised. Windows is the platform where
+  `src/3rdParty/CMakeLists.txt` builds bgfx **STATIC** (a bgfx DLL
+  exports only the C API, so a C++ consumer cannot link one), and
+  `fcvgsmoke` linked `FreeCADRenderer` *and* `bgfx` -- so the exe and
+  the DLL each held their own copy of bgfx's globals. `bgfx::init` ran
+  in the exe's copy; `Page2D` and `Vg2D` live in the DLL and used the
+  DLL's, where `g_allocator` was still null. The raw-vg scenario did
+  not hit it because vg-renderer is linked into the exe too. On Linux
+  bgfx is SHARED and there is one copy, which is why the same source
+  never failed there.
+
+  **Fixed 2026-09-06** by making the tool self-contained: `Page2D.cpp`
+  and `Vg2D.cpp` are compiled into `fcvgsmoke` and `${Library}` is off
+  its link line, which is what the target's own comment always claimed.
+  Both files depend on nothing but bgfx, bx, vg and the STL, and
+  `FreeCADRenderer_STATIC` is the headers' switch for being compiled
+  outside the DLL; the three `RendererFactory` device hooks `Page2D`
+  calls live in a Qt translation unit, so the tool defines them as the
+  answers an empty `RendererLib` registry gives. The test passes on
+  Direct3D 11.
+
+  The general fix -- one copy of bgfx for everybody, as on Linux --
+  would be a bgfx DLL, and it needs `WINDOWS_EXPORT_ALL_SYMBOLS` on
+  that target because bgfx's own export macro reaches only its C99 API.
+  Worth doing when a second Windows executable wants bgfx; today
+  exactly one does, and it does not need to share.
+
+
 ### The GUI tests (`tests/gui/`)
 
 Driven scripts as well, but with no pixels under test: each is a Python
@@ -270,6 +360,20 @@ being filled, all live at once.
 |---|---|---|
 | `GuiLiveImportNestedLoop_tests_run` | the live-import nested-loop crash (`docs/DocumentLoad.md` sec 15.2): a command pumps a nested event loop while the chess set is still importing, so the tree populates inside the user-edit guard | 25 s |
 | `GuiServeSelectionEcho_tests_run` | a remote pick on a headless serve source (`Gui.serveDocument`) comes back as a scene push (`docs/ThinClient.md` sec 8.9 step 0): a raw-socket client in a thread sends `'P'` rays and times the frame back; also that a no-change pick pushes nothing and a `'B'` batch pushes one frame | 10 s |
+
+**On Windows they do not register**, and cannot: `tests/gui/CMakeLists.txt`
+wants `xvfb-run` and `.conda/run.sh`, and the box has neither. Run one by
+hand instead -- nothing in these scripts needs a display of its own, only a
+running application:
+
+    powershell -File D:\works\sw\tools\run_cdb.ps1 -UserHome <dir> -StartupScript <wrap.py>
+
+where `wrap.py` is three lines that set `GT_OUT` and `GT_RESULT` in
+`os.environ` and `exec` the test file in its own globals. `-UserHome` is the
+isolated configuration `gui-test.sh` builds with XDG variables, and the cdb
+console is where a crash leaves a stack. The verdict is the result file, as
+it is on Linux: PASS lines and `DONE`. `GuiServeSelectionEcho_tests_run` was
+run this way for stage 5 of `SceneServerPort.md` (section 7.5 there).
 
 That one exists because the render goldens found the crash by accident
 under load and then had to stop finding it: a golden must not animate,

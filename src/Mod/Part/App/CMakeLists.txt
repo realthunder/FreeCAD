@@ -199,6 +199,8 @@ SET(Features_SRCS
     FeatureOffset.h
     PartFeatures.cpp
     PartFeatures.h
+    ForeignBaseShapes.cpp
+    ForeignBaseShapes.h
     PartFeature.cpp
     PartFeature.h
     PartFeatureReference.cpp

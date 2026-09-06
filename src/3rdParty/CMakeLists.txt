@@ -123,15 +123,19 @@ if (BUILD_BGFX)
     # inherits bx's PUBLIC BX_CONFIG_DEBUG define, without which bx
     # headers refuse to compile.
     target_link_libraries(vg-renderer PUBLIC bx bgfx)
-    # The embedded shaders are baked by vg-renderer/src/shaders/rebake.sh,
-    # which runs shaderc on a Linux host and therefore cannot produce the
-    # two Direct3D bytecode profiles; embedded_shader.h's platform-support
-    # switches exist to be overridden for exactly this case. Nothing is
-    # lost: the renderer's own runtime shader packs are glsl/spirv/essl
-    # only, so the bgfx backend never runs on Direct3D anyway.
-    target_compile_definitions(vg-renderer PRIVATE
-        BGFX_PLATFORM_SUPPORTS_DXBC=0
-        BGFX_PLATFORM_SUPPORTS_DXIL=0)
+    # The embedded shaders are baked by vg-renderer/src/shaders/rebake.sh
+    # and carry every profile bgfx bakes for its own, Direct3D included
+    # since 2026-09-06 -- so nothing overrides embedded_shader.h's
+    # platform-support switches here any more. It used to: the set was
+    # baked on Linux, where shaderc cannot produce dxbc or dxil, and the
+    # two switches were forced off to match. That was wrong on Windows,
+    # where bgfx picks Direct3D 11 by default: createEmbeddedShader found
+    # no entry for the running renderer, every vg program came back
+    # invalid, and bgfx substitutes program handle 0 for an invalid
+    # program rather than refusing the draw -- so the frame was drawn by
+    # an unrelated program and only the gradient band of the smoke test
+    # noticed (docs/Testing.md, "The vg smokes on Windows"). Rebake on
+    # Windows if these are ever regenerated.
     # C++20 to match bgfx/bx (bx headers require it); PIC because the
     # static archive links into the FreeCADRenderer shared lib.
     set_target_properties(vg-renderer PROPERTIES
