@@ -1753,8 +1753,8 @@ that is what the branch was written for; through a link it does not.
 The fix is to resolve the restored shadow during the document's restore
 and let the request run (the store already has `Link.Face3`), but that
 touches the map-version upgrade path, where `reverse` re-resolves from
-the same shadow, so it is not done here.  The two tests assert the
-through-link reference as it reads today and say so.
+the same shadow, so it was not done here.  Section 7.16 probes that
+path and closes the gap; the two tests assert `Link` like `Cut` since.
 
 **Three smaller things the tests settled.**  A `Part::Plane` cannot be
 the referrer in a reload test: its attach extension re-sets the support
@@ -1834,3 +1834,98 @@ Before any of it, a ten-minute hygiene pass: grep the Part module for
 `getShape().getShape()` and `getShape().` bound to a reference -- the
 two dangling references of 7.14 were the same mistake twice, and
 `PropertyPartShape::getShape()` returning by value invites a third.
+
+### 7.16 The through-link reference, verified on reload (2026-09-06)
+
+Item 1 of 7.15: probed first, then built.  The hygiene pass before it
+found two more references bound to `Shape.getShape().getShape()`, both
+outside Part -- `Fem/Gui/TaskFemConstraintFluidBoundary.cpp` and
+`TechDraw/App/FeatureProjection.cpp` -- and both copy now; the remaining
+uses in `PrimitiveFeature.cpp`, `ViewProviderExt.cpp` and
+`DlgProjectionOnSurface.cpp` were already by value.
+
+**The probe.**  Model A's part; an assembly with an `App::Link` to the
+Cut and a FeaturePython holding an `App::PropertyXLinkSubList` to `Cut`
+and to `Link`, `Face1` and `Face3` each, by mapped name; the part's file
+aged one map version by rewriting `ElementMap="1.15.80001.4"` to `1.14.`
+in its `Document.xml`; then opened through the assembly, recomputed,
+saved, with the part unchanged (A), re-saved (A2), edited at the same
+height (B) or 5 mm taller (C) while the assembly was closed.  Three
+findings:
+
+1. **The upgrade is requested only for a part opened whole.**  A part
+   opened through the assembly is a *partial* document whenever the
+   assembly does not reach every object in it, which the edit produces at
+   once (the old base box stays in the file, unreferenced):
+   `PropertyPartShape::Restore` skips the version check for a partial
+   document, and `recompute()` on it refuses ("Please reload partial
+   document").  The Cut still recomputes -- with the *assembly's*
+   recompute, which crosses into the documents it depends on -- and that
+   is where `reverse` runs: after the assembly's references are fully
+   restored, in-session, over every reference registered under the Cut,
+   the through-link ones included (A: all four re-resolved, unchanged).
+2. **What `reverse` does with a restored shadow.**  It resolves
+   `shadow.first`, the mapped name; when that fails it takes the indexed
+   name from `shadow.second` and asks `searchElementCache`, which answers
+   from the feature's own newest generation first -- the shape the Cut
+   had *before this recompute*, gathered by `onBeforeChange` -- and from
+   the store only after.  Right for a same-session break; wrong for a
+   through-link reference never verified on reload, which it confirms
+   against the wrong baseline: in C the direct reference came back
+   `?Face3` at open (the store said so), while the through-link one was
+   "repaired" by the upgrade to whatever `Face3` is now (`auto change
+   element reference asm#Link ... -> ;Face6;:M;CUT;:H690:7,F.Face3`), the
+   face 5 mm away.  An empty `shadow.second` gives no old element and no
+   search; nothing to do there.
+3. **A missing reference is blanked by the regeneration.**  After the
+   reload request leaves a reference `?Face3`, the same-document
+   re-registration resolves it once more (`_registerElementReference`
+   sends every marker-carrying sub through `_updateElementReference`),
+   and `?Face3` looked up as a name is an unknown *mapped* name with no
+   indexed one: `_getElementName` answers `("?Face3", "")`, which is not
+   "missing", so the shadow becomes `("?Face3", "")`, saved as
+   `<Sub value="?Face3" shadow="?Face3"/>`.  The next `reverse` writes
+   `shadow.second` -- empty -- into the sub-name, and the reference
+   silently becomes the whole Cut (a `Part.Compound` where a face was).
+   In-session (D: the version property forced stale and the Cut
+   touched) the shadow still holds the old mapped name and the reference
+   stays `?Face3`; the blank needs the reload first.
+
+**Built.**  Two changes in `PropertyLinks.cpp`:
+
+- `_registerElementReference`: a restored shadow is taken as it is only
+  when the geometry it names lives in the referrer's document.  When the
+  resolved feature is in another document -- reached through a link --
+  and the document is restoring (`Document::Restoring`, or the property's
+  `LinkRestoring`), the reference goes through `_updateElementReference`
+  instead, which is the reload request of 7.14: a healthy one is
+  unchanged (`shadow == elementName`, one resolve), a missing one asks the
+  store under `Link.Face3`.  The narrower rule of 7.15 was chosen over
+  resolving every restored shadow: same-document references were saved
+  together, and re-resolving all of them on every open is cost with no
+  case behind it.
+- `_updateElementReference`: an element that is itself the missing marker
+  is missing by construction -- `elementName` set to the marker name,
+  `missing` true -- before the search and the write-back, so the
+  regeneration keeps `?Face3`, and the reload request may still recover
+  it.
+
+Tests (`ForeignBaseShapeCases`): the two edit-while-closed cases assert
+`Link` like `Cut`, and the recovered one checks that the saved
+`shadowed=` names are the Cut's current ones for both;
+`testAnUpgradeKeepsEveryReference` ages the part file (`ageElementMap`),
+reopens, recomputes through the assembly and finds nothing newly
+missing and the file on the current names;
+`testAMissingReferenceSurvivesTheUpgrade` does the same over the moved
+face and finds `?Face3` on both, in memory and in the file.
+
+Gates, on `build/win-relwithdebinfo-801`:
+
+| check | result |
+| --- | --- |
+| `FreeCADCmd -t ShapeStorage` | 53 of 53: the 7 `BaseShapeCases` plus 2 reload cases, and 9 `ForeignBaseShapeCases` (the 2 upgrade cases added) |
+| sec 2.3 matrix | identical to 7.11: `Face1`, `Face6` -> area 500.00, `Face3` -> `?Face3` |
+| C++ (`ctest -j 6`) | 473 of 473 passed, 1 disabled |
+| Python (`FreeCADCmd -t 0`) | 1336 ran; the same 6 failures + 8 errors as 7.14, all this box's environment (no `yaml`/`ply`, CRLF material fixtures, two over-long blob paths, one FEM file lock, the tetra10 yml import), not one new |
+
+Next: 7.15 items 2 to 4, in that order.
