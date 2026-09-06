@@ -37,6 +37,7 @@ user decision, quoted where the wording matters.
     Coin + pivy inside the guest     built       src/App/PyodideHost/pivy/, Coin's COIN_BUILD_GL_STUB (7.10)
     forms: ipywidgets over comm, Qt  built       src/App/ExpressionImage/widgets/ (guest), src/Ext/freecad/widgets/ (host), SandboxGui.cpp (7.3)
     forms: the Qt subset, .ui, panel built       G3a: freecad.widgets in the guest (the Qt classes as models), loadUi both sides, Control (7.11)
+    host widget layer (native panels) sized       H0-H3: the same classes in C++, the C++ Qt view, native dialogs ported; DOM walker later (7.4, 7.12)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -1101,19 +1102,36 @@ settled:
   OK as an event, window/hide, close and `close_all` dropping the host
   models, the document principal refused.
 
-### 7.4 The toolkit transition **[decided]**
+### 7.4 The toolkit transition **[decided 2026-09-06: two backends, Qt and DOM]**
 
 No Python toolkit has both a Qt and an imgui backend (Dear PyGui,
 imgui_bundle, pyimgui are imgui only and immediate mode; Toga has the
 shape but neither backend; Slint's royalty-free license requires
 attribution and is GPLv3 otherwise).  The transition goes through the
-managers: the Qt manager first, then a Qt-free manager over bgfx for the
-same models, drawn in the 3D viewer and identical in the browser viewer
--- the first shipped step of retiring Qt.  For its renderer RmlUi is
-preferred over Dear ImGui (the ipywidgets `Layout` model is CSS flexbox,
-which RmlUi implements; imgui would need Yoga plus a retained walker;
-imgui is vendored under bgfx, RmlUi is not); decided on a measured
-prototype when that manager is built.
+WIDGET LAYER -- a toolkit-neutral model per Qt class, Qt's property
+names as the state, an op log for layouts, Qt-named signals -- and
+that layer serves exactly two backends: **Qt on the desktop, the DOM
+in the browser.**  No in-canvas UI on either tier.  The 2026-09-03
+ruling here (a Qt-free manager over bgfx, RmlUi preferred over Dear
+ImGui for its flexbox) is WITHDRAWN: G3a made the models Qt-shaped
+(7.11), which took the flexbox argument away, and the sizing in 7.12
+took the rest.  On the desktop an imgui panel costs accessibility and
+the native look and buys nothing the Qt task panel does not already
+do; in the browser an imgui panel with a hidden DOM input fixes only
+typing, and task panels are mostly typed fields (7.12 has the
+comparison; `docs/ThinClient.md` ruled the same for the viewer's
+chrome, and its SolidJS inspector is the DOM path already working).
+
+The layer has two halves with one vocabulary.  The GUEST half is
+`freecad.widgets` (7.11, built): the models a sandboxed panel builds.
+The HOST half (7.12, sized) is the same Qt-shaped classes in C++, so
+NATIVE task panels port onto it and the Python Qt manager retires.
+User ruling, 2026-09-06: "I still want host side abstraction of
+widget layer like in the guest.  it's just that they now only need to
+serve two backends.  for now just focus on desktop.  later when Dom
+backend is in, all host/guest side task panel come into browser for
+free."  Ordering: the host layer's core and first native port (H0,
+H1) come BEFORE G3b, so G3b's views are written once, in C++.
 
 ### 7.5 What the linter found (`scripts/sandbox_gui_lint.py`)
 
@@ -1649,7 +1667,10 @@ Draft and BIM, reopened and built.
 6. pivy in the guest, the scene mirrored (7.2).
 7. The Jupyter widget protocol is U3's wire, ipywidgets the guest
    library (7.3).
-8. The toolkit transition goes through the managers (7.4).
+8. The toolkit transition goes through the widget layer, two
+   backends: Qt on the desktop, the DOM in the browser (7.4).
+9. The host half of the widget layer is built, in C++, and native
+   task panels port onto it; no imgui on either tier (7.12).
 
 ### 7.8 Prior art
 
@@ -2222,6 +2243,172 @@ its reject; a document principal refused at `loadUi`.  Suites after:
 the three GUI gates 7/7; `Tests_run --gtest_filter='Expression*'`
 pyodide 104 passed + 1 skipped, wasi 31 + 74 skipped on this box.
 
+### 7.12 The host widget layer sized: native task panels on the same models **[sized 2026-09-06]**
+
+The question, asked at the end of the G3a session: replace the Qt
+task panel with imgui through the same API translation the guest
+uses, for native code too.  Answered in three rulings the same day,
+each on a sizing: imgui out on the desktop, DOM in the browser, and
+the host abstraction itself KEPT -- two backends, desktop first.
+
+**What is there.**  The vocabulary is small and already toolkit-
+neutral: 22 model classes, about 60 `q_` properties, 9 layout ops,
+the custom events (`setFocus`, `selectAll`, `setParent`), 12 panel
+hooks; only the consumer, `freecad.widgets.qt` (1121 lines), is
+Qt-specific.  Dear ImGui 1.92.8 WIP is vendored under bgfx and, since
+`BGFX_BUILD_TOOLS` forces `example-common` on, already compiled and
+linked into `FreeCADRenderer` with bgfx's glue, nanovg and the SDF
+font code -- unused, harmless, left alone; the WASM build leaves it
+out.  The renderer has an overlay pass block fed with geometry, no
+text path in the 3D tier, and no input path at all (events go Qt to
+Quarter to Coin); Qt owns the GL context and bgfx blits into Qt's
+framebuffer.  The browser viewer renders locally from the scene
+stream and its chrome is SolidJS over the canvas.
+
+**The native corpus** (counts from the tree at `f9084a4ee6`):
+
+    TaskDialog subclasses / TaskBox subclasses      93 / 35
+    lines in the 90 dialog units                    ~60,000
+    TaskView framework + Control                    ~5,500
+    dialogs driven by a uic'd Ui_* header           74 of 90
+    units with item views (tree/list/table)         20
+    expression bind( sites                          261 in 40 files
+    units with SelectionObserver / gate / QTimer    17 / 14 / 12
+    C++ Control().showDialog call sites             171 (56 from setEdit)
+    Python Control.showDialog / loadUi sites        109 / 198
+    .ui files: 511, uic-compiled 365, Python-loaded 142
+
+    custom widgets the forms depend on             lines
+    QuantitySpinBox + ExpressionBinding + label    ~1,400
+    DlgExpressionInput + ExpressionCompleter       ~3,500
+    PrefWidgets (18 classes)                       ~2,300
+    Widgets.cpp (ColorButton, ActionSelector, ...) ~3,000
+    InputField, FileChooser, DlgPropertyLink       ~3,500
+
+By module the dialog code is PartDesign 14.8k, Fem 12.7k, TechDraw
+10.5k, Part 7.3k, Sketcher 4.8k, Surface 3.4k, Gui 2.0k, then Drawing,
+Robot, Mesh, Material.  Draft, BIM, Assembly, Spreadsheet, CAM have
+no native TaskDialog.  What makes the hard panels hard is mostly NOT
+widget code: selection observers and gates, document observers,
+timers, Coin callbacks sit on QtCore and App and survive a widget
+swap untouched.  What moves is the form, the item views and the
+custom widgets' presentation.  The outliers: Sketcher's constraint
+and element lists (custom item widgets, hover to 3D), Fem's
+`TaskPostBoxes` (2383 lines, VTK pipelines), Part's `TaskDimension`
+(Coin decorations), `TaskAttacher`, PartDesign's `TaskMultiTransform`
+(nested sub-dialogs) and `TaskHoleParameters`, `DlgPropertyLink`,
+Drawing's `TaskOrthoViews`.
+
+**imgui, and why not.**  On the desktop it cannot give back
+accessibility (none upstream, none planned), the stylesheet look, or
+rich text; focus, nested `exec()`, native dialogs, timers and
+observers would all have been fine, since Qt keeps the event loop.
+It would have cost a 3-5k walker, a 1k input/IME bridge and a panel
+host, for unification with tiers that do not exist yet.  In the
+browser, pure DOM against imgui-with-a-hidden-input: the walker is
+1.5-2k of TypeScript beside the existing inspector and ships nothing;
+imgui needs the walker plus 1.2-1.6k of browser-only bridge (pointer,
+the hidden input under the caret, touch to mouse, kinetic scroll,
+clipboard, arbitration with the viewer's navigation), about 1 MB of
+wasm plus shipped fonts (CJK a subset or a multi-MB TTF, wasm has no
+system fonts), redraws while a caret blinks, a second visual system
+on the page, and pixels for tests.  The hidden input fixes entry into
+a focused field, with upstream focus/backspace issues open, and
+nothing else: not scrolling physics, accessibility, wrap and reflow,
+or rich text; the EditContext API that would make it proper is
+Chromium-only with no Emscripten binding.  A task panel is mostly
+typed fields (`Gui::QuantitySpinBox` is the most common `.ui` control
+after labels, and a quantity field is a text field with a unit
+parser), so the case imgui was built for is the opposite of this one.
+
+**The host layer's shape.**
+
+- **The core is a property bag.**  Each host widget class is a QObject
+  in its own namespace with Qt's class and method names kept
+  (`Fw::QLabel::setText`, as the guest's `PySide.QtWidgets.QLabel` IS
+  the model), a variant map keyed by Qt's property names, a dirty set,
+  the layout op log, and moc'd signals with Qt's names and arguments:
+  traitlets in C++.  A backend is a consumer of the bag and nothing
+  else; whatever the DOM will need must be in the bag.  That is the
+  one design rule.
+- **Our own `.ui` generator, not uic.**  On the guest's `uic.py`
+  parser, a generator emits a C++ `Ui_X::setupUi` that instantiates
+  the host classes with their names, layouts and the file's values,
+  so a ported dialog keeps `ui->lengthEdit` as a typed member and its
+  `connect` calls compile unchanged.  A ported translation unit never
+  includes QtWidgets, so there is no name ambiguity.
+- **The Qt backend reuses G3a wholesale.**  For a `.ui` form the C++
+  Qt view loads the same file through `UiLoader` and binds each named
+  child to its host object, as `UiFormQtView` does for the guest:
+  uic's layout exact, strings translated, `Gui::Pref*` and the
+  quantity widgets real; layout ops cover mutations; no layout
+  fidelity code on the Qt side at all.  Binding writes uic's
+  translated strings back into the bag, which is what gives the DOM
+  tier translated text later for free.
+- **Custom widgets split on a seam that exists.**  `ExpressionBinding`
+  is already a non-widget mixin, so the host `QuantitySpinBox` mixes
+  it in and owns the binding, while the real `Gui::QuantitySpinBox`
+  stays the Qt presentation with its f(x) label and expression dialog.
+  Pref widgets are two properties in the bag and the real widget on
+  the Qt side.
+- **One store for both producers.**  A guest comm open creates the
+  same host object by model name, so the C++ Qt view renders guest and
+  native panels alike and the Python Qt manager retires; the plain
+  ipywidgets views of Probe B may stay in Python behind the same
+  `gui.comm` dispatch, split by model module.
+- **The task panel framework** keeps `TaskDialog` and its hooks
+  (already non-widget) and gains a `TaskBox` model; `Control` and
+  `TaskView` are untouched, a realized root being a QWidget to them
+  exactly as `GuestTaskPanel` is now.
+- **A second backend costs one consumer**, not a second design: the
+  C++ Qt view is the port of the Python manager (2.5-3.5k), every
+  vocabulary addition then lands once per backend, and gates run per
+  backend.  The DOM walker (G7) is 1.5-2k of TypeScript, the manager
+  beside the guest in the browser's worker when the panel is a guest
+  one, a remote view over the socket when it is native on a serving
+  host -- the thin-client model already.
+
+**Stages and gates.**
+
+    H0  the bag, signals, the generator, the class set the first two
+        targets need, the C++ Qt view with UiLoader binding, layout
+        ops, task panel integration.  Gate: OrthoArray from the guest
+        renders through the C++ store, SandboxForms green, the Python
+        Qt manager off for freecad.widgets models.
+    H1  first native ports: one form-only panel in src/Gui
+        (TaskAppearance or TaskOrientation), then a PartDesign panel
+        with expression binding (Pad).  Gate: the ported panel drives
+        its property, bind and f(x) round-trip, existing suites green.
+    H2  the form-only majority, about 60 units, mechanical.  Gate:
+        each module's tests plus a per-panel open and round-trip
+        harness.
+    H3  item views (tree/list/table items, model-backed views), then
+        the nine outliers, Sketcher's lists last.
+
+**Cost, desktop only** (lines, new or rewritten):
+
+    property core, signals, the 41 classes' API subset      6-9k
+    generator (Python, on uic.py)                           0.5-1k
+    C++ Qt view, binding, layout ops, item views            3-4k
+    task panel integration, guest store switch              ~2k (retires 1.4k Python)
+    custom widget seams (quantity, expression, pref, ...)   1-2k
+    dialog ports: 60 light, 29 heavy                        10-15k touched
+    total                                                   25-30k
+
+Every line serves the DOM tier later.  Out of scope even then: the
+property editor (8.4k), the tree view, preference pages, and the 154
+`QDialog` forms -- Qt stays the application shell.  The imgui route
+would have added a 3-5k walker, the input bridge and a host, for a
+30-40k total; that number is kept here as the record of why it lost.
+
+**Ordering.**  G3b's class set (dialogs, the tree/list/table family,
+containers, the file chooser) is H3's; done G3b-first its views would
+be written in Python and re-ported.  So H0 and H1 go before G3b, and
+G3b then lands on the C++ store.  The G2b runner waits on G3c either
+way.  Next step: H0, starting with the property core and the
+generator, gated on OrthoArray through the guest before any native
+port -- that gate already exists.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -2419,11 +2606,13 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    gate `SandboxWidgets`.  **G3a** BUILT 2026-09-06 (7.11): the Qt
    subset as models, `loadUi` on both sides, the task panel, layouts
    from `.ui` files, `prefs.write`; Draft's OrthoArray panel runs
-   unmodified in the guest; gate `SandboxForms`.  Next **G3b** (the
-   rest of the `.ui` subset and the 41-panel harness), **G3c** (forms
-   built in code: DraftGui's toolbar -- what both workbenches'
-   `Initialize()` stop at), and the G2b runner once there is something
-   to switch to.
+   unmodified in the guest; gate `SandboxForms`.  Next **H0** and
+   **H1** (7.12: the host widget layer -- the same classes in C++, the
+   C++ Qt view, gated on OrthoArray through the guest, then the first
+   native ports), then **G3b** (the rest of the `.ui` subset and the
+   41-panel harness) on the C++ store, **G3c** (forms built in code:
+   DraftGui's toolbar -- what both workbenches' `Initialize()` stop
+   at), and the G2b runner once there is something to switch to.
 4. **P2** -- in-place install into a running guest (the sec 9.3 probe of
    `SandboxNetwork.md`: does a wheel with compiled extensions import
    synchronously without `loadPackage`?).  Moved after G1: nothing
@@ -2443,6 +2632,9 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    without a file, actions, tool bars, the main window shim, the key
    event stream) gated on DraftGui's toolbar; G3d the selection input
    and the U2 dialogs.
+   H0 and H1 (7.12) come before G3b so G3b's views are written once,
+   in C++; H2 and H3, the native ports, interleave with G3b-G3d as
+   the class set grows.
 8. **G4** -- the mirror: generated Coin models, the reader with its
    allowlist and quotas, host-scene query ops, stand-ins, the event
    stream.  Gate: the Draft test documents render identically (pixel
@@ -2452,7 +2644,10 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    **N4** -- WebSocket (`net.ws:<origin>`), and `SOCKFS` under its own
    `net.socket` permission.
 10. **G5** -- the snapper in C++, when measured to matter.  **G7** --
-    the Qt-free manager over bgfx (no Draft/BIM gate of its own).
+    the DOM walker over the widget layer in the browser tier (7.12;
+    no Draft/BIM gate of its own): every panel, guest or native, in
+    the browser from the same models.  The Qt-free manager over bgfx
+    (RmlUi or imgui) is DROPPED, 7.4.
 11. **Rung 1** -- generated C++ dispatch for `call` members; the
     App-core severance.  **Rung 2** -- per-document guests.
 12. **N5 / G6 / the switch** -- `Python/Runtime = pyodide`, Draft and BIM
@@ -2726,6 +2921,9 @@ sockets, any network for the reference image, a webview escape hatch.
 - RmlUi: https://github.com/mikke89/RmlUi; Yoga: https://github.com/react/yoga;
   Dear ImGui bindings: https://github.com/ocornut/imgui/wiki/Bindings;
   Slint license: https://github.com/slint-ui/slint/blob/master/LICENSE.md
+  (the in-canvas route these were surveyed for is dropped, 7.4; the
+  viewer-side survey is `docs/ViewerUIResearch.md`, the browser
+  chrome ruling `docs/ThinClient.md`)
 - Deno permissions: https://docs.deno.com/runtime/reference/permissions/;
   Node permission model: https://nodejs.org/api/permissions.html;
   Spin outbound HTTP: https://spinframework.dev/v3/http-outbound;
