@@ -393,15 +393,26 @@ a stage 5 answer in an hour, the full tree afterwards.
 
 ### 4.6 What is expected to break on macOS, and what is not
 
-*** **What actually happened (2026-09-06), against the list below.** Item 1
-skipped rather than failed -- the case already guards on `/proc/self/maps`.
-The dyld port that closes it landed the same day (`SceneServerPort.md` 7.6),
-and it does not refuse the names item 1 names. Item 2 did not happen:
-bgfx built SHARED and its C++ symbols resolved. Items 3 to 5 were not
-reached, because only the two stage 5 targets were built. What did break was
-not on this list: three missing includes that only libc++ needs, a
-`BX_PLATFORM_OSX` branch calling a function that exists nowhere, and Apple
-`ld` rejecting duplicate fontstash symbols. See `SceneServerPort.md` 7.5.
+*** **What actually happened (2026-09-06/07), against the list below. The
+list scored badly.** Item 1 skipped rather than failed -- the case already
+guards on `/proc/self/maps` -- and the dyld port that closes it does not
+refuse the names item 1 names (`SceneServerPort.md` 7.6). Item 2 did not
+happen: bgfx built SHARED and its C++ symbols resolved. **Item 3 did not
+happen either**: the in-tree `shaderc` produced the metal pack without
+complaint, 104 shaders, the same count as glsl, spirv and essl. **Nor did
+item 4**: no `.mm` file needed a change and `sysctlbyname` compiled as it
+stood. Item 5 is advice, not a prediction.
+
+So four of the five predictions were wrong, and everything that did break
+was off-list. Two of the fifteen fixes are macOS-as-such -- the GL
+entry-point typedefs Apple ships only in the Core-profile header, and the
+backtrace include guard. The rest are the tree leaning on the Linux
+toolchain: libc++ not including transitively where libstdc++ does (six
+files), clang instantiating implicit members where GCC defers (which broke
+every TU including `SoFCRenderCache.h`), a `std::less` specialisation with
+no `operator<` behind it, a CMake bug any `BUILD_FEM=OFF` build would hit,
+and a bgfx bug any headless Metal context would hit. Full account:
+`SceneServerPort.md` 7.5 and 7.7. **Result: 478 of 478.**
 
 Known, in likely order of appearance:
 

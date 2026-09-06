@@ -14,7 +14,7 @@ as "the primary tree"; that was wrong.
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
-| C++ on macOS (`build/mac-relwithdebinfo-801`) | **474 of 478** (2026-09-06), 1 disabled; the four failures are fixed and awaiting a confirming re-run -- see "C++ on macOS" |
+| C++ on macOS (`build/mac-relwithdebinfo-801`) | **478 of 478 passing** (2026-09-07), 1 disabled -- see "C++ on macOS" |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -70,10 +70,14 @@ One binary directly, which is the fastest loop while working on a suite:
 
 ### C++ on macOS
 
-**474 of 478** on 2026-09-06, one entry disabled, on macOS 12.7.6 Intel
-with conda clang 23.1.0. The four failures are fixed and a confirming
-re-run is owed; `SceneServerPort.md` 7.7 has the whole bring-up -- eleven
-fixes to build the tree at all, then the four test fixes. In short: two
+Green: **478 of 478** on 2026-09-07, 51.6 s with `-j 4`, one entry
+disabled -- the same `FeaturePartCommonTest.testHistory` as everywhere
+else -- on macOS 12.7.6 Intel with conda clang 23.1.0. That is measured
+on the tree merged with the Windows box's work, so the three platforms
+are green on the same source.
+
+It took eleven fixes to build at all and four more to pass;
+`SceneServerPort.md` 7.7 has the whole bring-up. In short: two
 tests leaning on a fast box and a real `/tmp`, and the two vg smokes,
 which aborted inside `bgfx::init()` because bgfx builds its screenshot
 blit pipeline against a swap chain that a headless Metal context does not

@@ -366,8 +366,9 @@ Each stage lands alone and is judged by the stage-0 test.
   to establish, what to record, and the macOS bring-up from a blank
   machine. Windows took one `_WIN32_WINNT` fix that no test was failing
   over; macOS took none in the transport at all. The dyld port that
-  closed the last coverage gap landed the same day (section 7.6). macOS
-  still owes a confirming `ctest` re-run and the headless echo test.
+  closed the last coverage gap landed the same day (section 7.6), and the
+  rest of the macOS tree followed (section 7.7): 478 of 478. macOS still
+  owes the headless echo test.
 
 ### 7.1 The seam, as built
 
@@ -643,7 +644,7 @@ habits.
 | Wire suite | 17/17 | 17/17 | **17/17** |
 | `listensOnIPv6Too` | ran | ran | **ran, passed** |
 | Peer normalisation | `127.0.0.1:` | `127.0.0.1:` | **`127.0.0.1:`** |
-| Full ctest | 485/485 | 477/477 | **474/478, the four fixed** |
+| Full ctest | 485/485 | 477/477 | **478/478** |
 
 **Windows, 2026-09-06.** Windows 11 Pro 10.0.26200, MSVC 19.42.34438
 (VS 2022, v143), Boost 1.90, conda Qt 6.11.2, the
@@ -725,9 +726,9 @@ duplicate fontstash symbols GNU ld accepts. All four are in
 
 The full tree and `ctest` came later the same day and are their own piece of
 bring-up, scoped apart from stage 5: eleven fixes to build at all, then
-474 of 478, then four more for the failures. Section 7.7. Still open on
-macOS: the confirming `ctest` re-run, and the headless echo test of
-`PlatformVerification.md` section 2 item 5.
+474 of 478, then four more for the failures and 478 of 478. Section 7.7.
+Still open on macOS: the headless echo test of `PlatformVerification.md`
+section 2 item 5.
 
 ### 7.6 The dyld port: what a publish-only process maps on macOS
 
@@ -813,7 +814,9 @@ FEM off and NETGEN on -- the macOS preset -- compiled `Mesher.cpp` with
 every SMESH path preprocessed away and then linked against four libraries
 nothing had produced. Any `BUILD_FEM=OFF` build would hit it.
 
-Then `ctest`: **474 of 478**, one disabled, four failures, all four fixed.
+Then `ctest`: 474 of 478 first time out, one disabled, four failures --
+and **478 of 478 once they were fixed** (2026-09-07, 51.6 s at `-j 4`),
+measured on the tree merged with the Windows box's work. The four:
 
 - `TimeInfo.TestDiffTime` built its second `TimeInfo` by
   default-constructing a fresh one and calling `setTime_t()`, which writes
@@ -835,8 +838,7 @@ Then `ctest`: **474 of 478**, one disabled, four failures, all four fixed.
   checks and eight Page2D stages -- which is the first time this tree has
   put pixels on a surface on macOS.
 
-The confirming re-run of the full suite is still owed; the four fixes are
-verified individually.
+So macOS joins Linux and Windows: three platforms green on one source.
 
 ## 8. Open questions for next session
 
