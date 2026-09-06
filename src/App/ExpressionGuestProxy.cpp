@@ -47,18 +47,43 @@ struct GuestProxyObject
     PyObject_HEAD
     PyObject* dict;
     uint64_t id;
+    /// the guest (ImageHost::bootCount()) whose proxy `id` names: a
+    /// fresh guest numbers its proxies from 1 again, so a stand-in of
+    /// a guest that was reset must neither answer for, nor drop, the
+    /// new guest's proxy of the same number
+    int boot;
 };
 
 PyObject* baseType = nullptr;
 
-/// The live stand-ins by guest proxy id (borrowed): one guest proxy has
-/// ONE stand-in, so a descriptor decoded twice (write_prop Proxy, then
-/// the proxy_new reply) names the same object and a dying duplicate can
-/// never drop a proxy that is still in use.
+/// (boot, id): the identity of a guest proxy across resets.
+uint64_t liveKey(int boot, uint64_t id)
+{
+    return (static_cast<uint64_t>(static_cast<unsigned>(boot)) << 40) ^ id;
+}
+
+/// The live stand-ins by guest and proxy id (borrowed): one guest proxy
+/// has ONE stand-in, so a descriptor decoded twice (write_prop Proxy,
+/// then the proxy_new reply) names the same object and a dying
+/// duplicate can never drop a proxy that is still in use.
 std::unordered_map<uint64_t, PyObject*>& liveStandIns()
 {
     static std::unordered_map<uint64_t, PyObject*> table;
     return table;
+}
+
+/// A stand-in of a guest that was reset: its proxy is gone with that
+/// guest, and the number it holds now names something else in the
+/// live one.  ReferenceError, as the guest itself answers for a
+/// dropped proxy.
+bool staleStandIn(const GuestProxyObject* o)
+{
+    if (o->boot == ImageHost::instance().bootCount())
+        return false;
+    PyErr_Format(PyExc_ReferenceError,
+                 "guest proxy %llu belongs to a sandbox guest that was reset",
+                 static_cast<unsigned long long>(o->id));
+    return true;
 }
 
 void guestProxyDealloc(PyObject* self)
@@ -66,10 +91,10 @@ void guestProxyDealloc(PyObject* self)
     auto* o = reinterpret_cast<GuestProxyObject*>(self);
     if (o->id) {
         auto& live = liveStandIns();
-        auto it = live.find(o->id);
+        auto it = live.find(liveKey(o->boot, o->id));
         if (it != live.end() && it->second == self)
             live.erase(it);
-        ImageHost::instance().dropProxy(o->id);
+        ImageHost::instance().dropProxy(o->id, o->boot);
     }
     Py_CLEAR(o->dict);
     PyTypeObject* type = Py_TYPE(self);
@@ -118,14 +143,21 @@ void raiseGuestError(const ImageResult& r)
 /// document object, is the owner the guest may write.
 PyObject* hookCall(PyObject* self, PyObject* args, PyObject* kwargs)
 {
-    if (!PyTuple_Check(self) || PyTuple_GET_SIZE(self) != 2) {
+    if (!PyTuple_Check(self) || PyTuple_GET_SIZE(self) != 3) {
         PyErr_SetString(PyExc_SystemError, "guest proxy hook without its binding");
         return nullptr;
     }
     const uint64_t id = PyLong_AsUnsignedLongLong(PyTuple_GET_ITEM(self, 0));
     const char* hook = PyUnicode_AsUTF8(PyTuple_GET_ITEM(self, 1));
+    const int boot = static_cast<int>(PyLong_AsLong(PyTuple_GET_ITEM(self, 2)));
     if (!hook || PyErr_Occurred())
         return nullptr;
+    if (boot != ImageHost::instance().bootCount()) {
+        PyErr_Format(PyExc_ReferenceError,
+                     "guest proxy %llu belongs to a sandbox guest that was reset",
+                     static_cast<unsigned long long>(id));
+        return nullptr;
+    }
     const App::DocumentObject* owner = nullptr;
     if (args && PyTuple_Check(args) && PyTuple_GET_SIZE(args) > 0) {
         PyObject* first = PyTuple_GET_ITEM(args, 0);
@@ -147,11 +179,12 @@ PyMethodDef HookDef = {"hook", reinterpret_cast<PyCFunction>(reinterpret_cast<vo
                        METH_VARARGS | METH_KEYWORDS,
                        "A guest proxy hook: forwards to the Proxy living in the sandbox guest."};
 
-/// A forwarder bound to (id, name): what a hook attribute is, and what
-/// a callable attribute read through the guest becomes.
+/// A forwarder bound to (id, name, boot): what a hook attribute is, and
+/// what a callable attribute read through the guest becomes.
 PyObject* makeForwarder(uint64_t id, const char* name)
 {
-    PyObject* binding = Py_BuildValue("(Ks)", static_cast<unsigned long long>(id), name);
+    PyObject* binding = Py_BuildValue("(Ksi)", static_cast<unsigned long long>(id), name,
+                                      ImageHost::instance().bootCount());
     PyObject* fwd = binding ? PyCFunction_NewEx(&HookDef, binding, nullptr) : nullptr;
     Py_XDECREF(binding);
     return fwd;
@@ -214,6 +247,8 @@ PyObject* guestProxyGetAttr(PyObject* self, PyObject* name)
     if (!attr || o->id == 0 || (attr[0] == '_' && attr[1] == '_') || isHookName(attr))
         return nullptr;
     PyErr_Clear();
+    if (staleStandIn(o))
+        return nullptr;
     ImageResult r = ImageHost::instance().proxyGet(o->id, attr);
     if (!r.ok) {
         raiseGuestError(r);
@@ -245,6 +280,8 @@ int guestProxySetAttr(PyObject* self, PyObject* name, PyObject* value)
         PyErr_Format(PyExc_AttributeError, "cannot delete attribute '%s' of a guest proxy", attr);
         return -1;
     }
+    if (staleStandIn(o))
+        return -1;
     ImageResult r = ImageHost::instance().proxySet(o->id, attr, value);
     if (!r.ok) {
         raiseGuestError(r);
@@ -323,7 +360,8 @@ PyObject* makeGuestProxy(const json& desc)
         return nullptr;
     }
     auto& live = liveStandIns();
-    auto existing = live.find(id->get<uint64_t>());
+    const int boot = ImageHost::instance().bootCount();
+    auto existing = live.find(liveKey(boot, id->get<uint64_t>()));
     if (existing != live.end()) {
         Py_INCREF(existing->second);
         return existing->second;
@@ -356,7 +394,8 @@ PyObject* makeGuestProxy(const json& desc)
         }
     }
     o->id = pid;
-    live[o->id] = inst;
+    o->boot = boot;
+    live[liveKey(boot, pid)] = inst;
     return inst;
 }
 

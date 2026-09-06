@@ -182,6 +182,128 @@ class NoneWorkbench ( Workbench ):
         """Return the name of the associated C++ class."""
         return "Gui::NoneWorkbench"
 
+# ---- the InitGui runner of the Python sandbox (docs/Sandbox.md 7.9, G2b) ----
+#
+# A module whose GUI side is bundled for the sandbox guest as a wheel
+# (fcx_draft, fcx_bim: docs/Sandbox.md 5.6) runs its InitGui.py IN THE
+# GUEST instead of natively when the preference asks for it: its
+# workbench and commands then exist on the host as stand-ins (the G2a
+# mechanism, src/Gui/SandboxGui.cpp), and every hook the host calls on
+# them -- Initialize, IsActive, Activated -- crosses to the guest.  The
+# module's compiled Qt resources (<Mod>/*_rc.py) are imported on the
+# host first: a guest cannot register a qrc, and the icons the guest
+# names have to exist here.  A guest reset drops every stand-in, so the
+# runs are recorded and repeated after the next boot (_onGuestBoot,
+# called by the host's boot listener).
+
+_guestInitGui = []   # [Dir, module name, the boot it ran in]
+
+
+def GuestInitGuiWanted(Dir):
+    """Does this module's InitGui.py run in the sandbox guest?  With
+    Expression/Sandbox:InitGuiInGuest on, a build with the sandbox
+    host, and a bundled wheel named fcx_<module> (lower case)."""
+    import os
+    S = getattr(FreeCAD, "ExpressionSandbox", None)
+    if S is None:
+        return False
+    params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Expression/Sandbox")
+    env = os.environ.get("FCX_INITGUI_IN_GUEST")   # the rig's switch (docs/Sandbox.md 10)
+    if not (env == "1" if env in ("0", "1") else params.GetBool("InitGuiInGuest", False)):
+        return False
+    try:
+        if not S.imageInfo()["host"]:
+            return False
+        return GuestWheelOf(Dir) is not None
+    except Exception:
+        return False
+
+
+def GuestWheelOf(Dir):
+    """The bundled wheel carrying this module's code for the guest, or None."""
+    import os
+    name = "fcx_" + os.path.basename(os.path.normpath(Dir)).lower()
+    return FreeCAD.ExpressionSandbox.pyodideLayout().get("bundled", {}).get(name)
+
+
+def RunInitGuiInGuest(Dir) -> bool:
+    """Run Dir's InitGui.py in the sandbox guest (the guest's
+    FreeCADGui._run_initgui: the file's text exec'd there with the same
+    globals RunInitGuiPy gives it natively).  Logged, never fatal, as
+    the native run is; True when it ran.  Reachable as
+    FreeCADGui._runInitGuiInGuest for the gates."""
+    import glob, importlib, os, traceback, zipfile
+    S = FreeCAD.ExpressionSandbox
+    InstallFile = os.path.join(Dir, "InitGui.py")
+    name = os.path.basename(os.path.normpath(Dir))
+    wheel = GuestWheelOf(Dir)
+    if wheel is None:
+        Err("Init: %s has no bundled sandbox wheel\n" % name)
+        return False
+    try:
+        # the host's half: the module's compiled Qt resources (data);
+        # its directory is on sys.path since Init.py ran
+        for rc in sorted(glob.glob(os.path.join(Dir, "*_rc.py"))):
+            importlib.import_module(os.path.basename(rc)[:-3])
+        # the wheel's top-level names: the group its commands register under
+        tops = set()
+        with zipfile.ZipFile(wheel) as z:
+            for entry in z.namelist():
+                top = entry.split("/", 1)[0]
+                if top.endswith(".dist-info") or top == "fcx_resources":
+                    continue
+                tops.add(top[:-3] if top.endswith(".py") else top)
+        with open(InstallFile, "rt", encoding="utf-8") as f:
+            source = f.read()
+        S.setRouting(True)
+        boot_before = S.bootCount()
+        S.exec("import FreeCADGui\nFreeCADGui._run_initgui(%r, %r, %r, %r)\n"
+               % (source, InstallFile, name, sorted(tops)))
+    except Exception as inst:
+        Log('Init:      Initializing ' + Dir + ' in the sandbox guest... failed\n')
+        Log('-'*100+'\n')
+        Log(traceback.format_exc())
+        Log('-'*100+'\n')
+        Err('During initialization in the sandbox guest the error "' + str(inst)[:2000]
+            + '" occurred in ' + InstallFile + '\n')
+        Err('Please look into the log file for further information\n')
+        return False
+    boot = max(boot_before, S.bootCount())
+    for entry in _guestInitGui:
+        if entry[0] == Dir:
+            entry[2] = boot
+            break
+    else:
+        _guestInitGui.append([Dir, name, boot])
+    Log('Init:      Initializing ' + Dir + ' in the sandbox guest... done\n')
+    return True
+
+
+def _onGuestBoot(boot):
+    """The host's boot listener (SandboxGui.cpp): a fresh guest has no
+    stand-in of the previous one, so every InitGui.py run in an
+    earlier guest runs again, replacing its commands and workbench."""
+    try:
+        active = FreeCADGui.activeWorkbench().name()
+    except Exception:
+        active = None
+    rerun = [entry for entry in list(_guestInitGui) if entry[2] < boot]
+    for entry in rerun:
+        RunInitGuiInGuest(entry[0])
+    # a replaced workbench is a new handler (the manager dropped the
+    # old one, the active slot with it): the active one is activated
+    # again so its Initialize runs on the new guest
+    if rerun and active and active in FreeCADGui.listWorkbenches() \
+            and hasattr(FreeCADGui.getWorkbench(active), "_standin"):
+        FreeCADGui.activateWorkbench(active)
+
+
+FreeCADGui._runInitGuiInGuest = RunInitGuiInGuest
+FreeCADGui._guestInitGuiWanted = GuestInitGuiWanted
+FreeCADGui._onGuestBoot = _onGuestBoot
+FreeCADGui._guestInitGui = _guestInitGui
+
+
 def InitApplications():
     import sys,os,traceback
     import io as cStringIO
@@ -194,6 +316,8 @@ def InitApplications():
 
     def RunInitGuiPy(Dir) -> bool:
         InstallFile = os.path.join(Dir,"InitGui.py")
+        if os.path.exists(InstallFile) and GuestInitGuiWanted(Dir):
+            return RunInitGuiInGuest(Dir)
         if os.path.exists(InstallFile):
             Gui._setExecFile(InstallFile)
             try:

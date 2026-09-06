@@ -395,6 +395,11 @@ IF (BUILD_EXPR_PYODIDE_HOST)
         ArchWindow.py
         ArchWindowPresets.py
     )
+    # G2b (docs/Sandbox.md 7.9): the commands, so that BIM's InitGui.py
+    # runs in the guest; PartGui is a shim (bimcommands names it at
+    # import), the IFC commands answer an empty tool bar (no
+    # ifcopenshell in the guest).
+    SET(BIM_sandbox_wheel_files ${BIM_sandbox_wheel_files} BimStatus.py ${bimcommands_SRCS})
     SET(_bim_wheel_dir ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
     SET(_bim_wheel ${_bim_wheel_dir}/fcx_bim-${PACKAGE_VERSION}-py3-none-any.whl)
     SET(_bim_wheel_packer ${CMAKE_SOURCE_DIR}/src/Tools/bindings/packSandboxWheel.py)
@@ -411,6 +416,7 @@ IF (BUILD_EXPR_PYODIDE_HOST)
                 --add ${BIM_GENERATED_PARSER}=generated_sql_parser.py
                 --add ${_bim_wheel_shims}/importers=importers
                 --add ${_bim_wheel_shims}/nativeifc=nativeifc
+                --add ${_bim_wheel_shims}/PartGui.py=PartGui.py
                 --summary ${CMAKE_CURRENT_BINARY_DIR}/fcx_bim_wheel.txt
                 ${BIM_sandbox_wheel_files}
         DEPENDS ${_bim_wheel_packer} ${_bim_wheel_deps} ${BIM_GENERATED_PARSER}
@@ -419,6 +425,9 @@ IF (BUILD_EXPR_PYODIDE_HOST)
                 ${_bim_wheel_shims}/nativeifc/__init__.py
                 ${_bim_wheel_shims}/nativeifc/ifc_tools.py
                 ${_bim_wheel_shims}/nativeifc/ifc_psets.py
+                ${_bim_wheel_shims}/nativeifc/ifc_commands.py
+                ${_bim_wheel_shims}/nativeifc/ifc_observer.py
+                ${_bim_wheel_shims}/PartGui.py
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Packing BIM's App side as the fcx_bim sandbox wheel"
     )

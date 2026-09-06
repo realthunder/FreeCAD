@@ -186,6 +186,28 @@ int initEvalGlobals()
             "           'ExpressionError', 'ParserError', 'CADKernelError'):\n"
             "    if _n in globals():\n"
             "        setattr(Base, _n, globals()[_n])\n"
+            // Base.TypeId as data: a type NAME (Draft's snapper asks the
+            // main window for the views of `TypeId.fromName('Gui::
+            // View3DInventor')`, and the guest's main window has none,
+            // G4); no host type registry is consulted.
+            "class TypeId:\n"
+            "    __slots__ = ('Name',)\n"
+            "    def __init__(self, name=''):\n"
+            "        self.Name = str(name)\n"
+            "    @staticmethod\n"
+            "    def fromName(name):\n"
+            "        return TypeId(name)\n"
+            "    def isBad(self):\n"
+            "        return not self.Name\n"
+            "    def isDerivedFrom(self, other):\n"
+            "        return self.Name == getattr(other, 'Name', other)\n"
+            "    def __eq__(self, other):\n"
+            "        return isinstance(other, TypeId) and other.Name == self.Name\n"
+            "    def __hash__(self):\n"
+            "        return hash(self.Name)\n"
+            "    def __repr__(self):\n"
+            "        return '<TypeId %s>' % self.Name\n"
+            "Base.TypeId = TypeId\n"
             "_sys.modules['FreeCAD.Base'] = Base\n"
             "del _sys, _types, _n\n"
             // FreeCAD.ParamGet: every Get* is a prefs.read through the

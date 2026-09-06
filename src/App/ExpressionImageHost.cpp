@@ -167,6 +167,12 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     int depth = 0;
     /// a reset asked for while nested: done when the outermost call ends
     bool resetAfter = false;
+    /// ImageHost::bootCount(): guests booted so far
+    int boots = 0;
+    /// a boot happened inside the current outermost call: its listeners
+    /// run when that call ends
+    bool bootPending = false;
+    std::vector<std::function<void(int)>> bootListeners;
     /// stand-ins that died since the last request (FcxWire "pd")
     std::vector<uint64_t> proxyDrops;
 
@@ -209,6 +215,14 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
                 d.teardown();
                 d.triedInit = false;
             }
+            if (d.depth == 0 && d.bootPending) {
+                // the guest that booted during this call is idle now,
+                // and a listener may call into it (an exec of its own)
+                d.bootPending = false;
+                const int n = d.boots;
+                for (const auto& listener : std::vector<std::function<void(int)>>(d.bootListeners))
+                    listener(n);
+            }
         }
         Transaction(const Transaction&) = delete;
         Transaction& operator=(const Transaction&) = delete;
@@ -240,6 +254,8 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
             rt->teardown();
         rt.reset();
         live = false;
+        // the drops queued for this guest name nothing in the next one
+        proxyDrops.clear();
     }
 
     /// The guest's paths as the selected runtime resolves them.
@@ -304,6 +320,10 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         });
         if (!live)
             teardown();
+        else {
+            ++boots;
+            bootPending = true;
+        }
         return live;
     }
 
@@ -573,6 +593,18 @@ void ImageHost::reset()
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     d->requestReset();
+}
+
+int ImageHost::bootCount() const
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    return d->boots;
+}
+
+void ImageHost::addBootListener(std::function<void(int)> listener)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    d->bootListeners.push_back(std::move(listener));
 }
 
 PyObject* ImageHost::decodeResult(const ImageResult& result)
@@ -1038,10 +1070,11 @@ ImageResult ImageHost::proxySet(uint64_t id, const std::string& name, PyObject* 
     });
 }
 
-void ImageHost::dropProxy(uint64_t id)
+void ImageHost::dropProxy(uint64_t id, int boot)
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
-    d->proxyDrops.push_back(id);
+    if (boot == d->boots)
+        d->proxyDrops.push_back(id);
 }
 
 }  // namespace ExpressionSandbox

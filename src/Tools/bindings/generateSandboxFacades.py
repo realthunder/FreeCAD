@@ -169,6 +169,12 @@ MODULE_FACADES = {
         "callables": ["get_param", "get_param_arch", "get_param_view"],
         "constants": [],
         "exceptions": [],
+        # local no-ops: Draft's Initialize() starts the preference
+        # observer that refreshes the tray and grid on a change, and
+        # the native function is `if App.GuiUp:` -- 0 in the guest
+        # (docs/Sandbox.md 7.9, G2b; a change notification that
+        # crosses is a known gap, sec 13)
+        "stubs": ["_param_observer_start"],
         "permission": "prefs.read",
     },
     # Draft's preference WRITER, the same module: a task panel stores
@@ -378,17 +384,20 @@ def emit_image(facades, out):
     py.append("")
     py.append("# Module facades: the prelude's _install_modules builds a module per")
     py.append("# entry -- callables forward over mod_call, constants read once over")
-    py.append("# mod_get, exceptions are local classes the bridge raises by name.")
+    py.append("# mod_get, exceptions are local classes the bridge raises by name,")
+    py.append("# stubs are local no-ops (a native function that is a no-op without")
+    py.append("# a GUI, which the guest has none of).")
     py.append("MODULES = {")
     merged = {}
     for key, spec in MODULE_FACADES.items():
         modname = spec.get("module", key)
-        entry = merged.setdefault(modname, {"callables": [], "constants": [], "exceptions": []})
-        for k in ("callables", "constants", "exceptions"):
-            entry[k].extend(spec[k])
+        entry = merged.setdefault(modname, {"callables": [], "constants": [], "exceptions": [],
+                                            "stubs": []})
+        for k in ("callables", "constants", "exceptions", "stubs"):
+            entry[k].extend(spec.get(k, []))
     for modname, spec in merged.items():
         py.append("    '%s': {" % modname)
-        for key in ("callables", "constants", "exceptions"):
+        for key in ("callables", "constants", "exceptions", "stubs"):
             py.append("        '%s': (%s)," % (key, "".join("'%s', " % n for n in spec[key])))
         py.append("    },")
     py.append("}")

@@ -1671,6 +1671,12 @@ std::string Application::initializeWorkbench(const char *name, Py::Object handle
             Py::Tuple args;
             Py::String result(method.apply(args));
             type = result.as_std_string("ascii");
+            // no workbench under this name yet: a handler registered anew
+            // (removeWorkbench dropped the old one, and a sandbox guest
+            // re-registers its workbenches after a reset, docs/Sandbox.md
+            // 7.9 G2b) must run its Initialize() whatever the once-only
+            // guard below remembers of the name
+            const bool fresh = WorkbenchManager::instance()->getWorkbench(name) == nullptr;
             if (Base::Type::fromName(type.c_str())
                     .isDerivedFrom(Gui::PythonBaseWorkbench::getClassTypeId())) {
                 Workbench* wb = WorkbenchManager::instance()->createWorkbench(name, type);
@@ -1696,7 +1702,7 @@ std::string Application::initializeWorkbench(const char *name, Py::Object handle
             // whole of Initialize() a second time and doubling every message it
             // prints. Command.cpp's own _sPendingWorkbench guard does not cover
             // it, because the outer call came from activateWorkbench().
-            if (d->initializedWorkbenches.insert(name).second) {
+            if (d->initializedWorkbenches.insert(name).second || fresh) {
                 try {
                     Py::Callable activate(handler.getAttr(std::string("Initialize")));
                     activate.apply(args);

@@ -234,6 +234,15 @@ PyObject* resetFunc(PyObject*, PyObject*)
     Py_Return;
 }
 
+PyObject* bootCountFunc(PyObject*, PyObject*)
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    return PyLong_FromLong(ExpressionSandbox::ImageHost::instance().bootCount());
+#else
+    return PyLong_FromLong(0);
+#endif
+}
+
 // ---- rung 2 (docs/Sandbox.md 7.6, G1c): a scripted object's Proxy in
 // the guest.  proxyNew(module, class, *args) constructs it there -- the
 // class's `obj.Proxy = self` installs the host stand-in -- and returns
@@ -387,6 +396,18 @@ PyObject* pyodideLayoutFunc(PyObject*, PyObject*)
     for (const auto& w : l.wheels)
         wheels.setItem(w.first.c_str(), Py::String(w.second));
     d.setItem("wheels", wheels);
+    // the bundled pure wheels by distribution name (the file name up to
+    // its first '-'): what the InitGui runner asks for a module's
+    // fcx_<module> (docs/Sandbox.md 7.9, G2b)
+    Py::Dict bundled;
+    for (const auto& path : l.bundled) {
+        std::string fn = path;
+        auto slash = fn.find_last_of("/\\");
+        if (slash != std::string::npos)
+            fn = fn.substr(slash + 1);
+        bundled.setItem(fn.substr(0, fn.find('-')).c_str(), Py::String(path));
+    }
+    d.setItem("bundled", bundled);
 #endif
     return Py::new_reference_to(d);
 }
@@ -474,6 +495,11 @@ PyMethodDef Methods[] = {
     {"reset", resetFunc, METH_NOARGS,
      "reset() -- drop the live sandbox instance; the next evaluation starts"
      " a fresh one (after installing a package, so the guest boots with it)."},
+    {"bootCount", bootCountFunc, METH_NOARGS,
+     "bootCount() -> int -- how many guests have booted so far.  A reset"
+     " kills every stand-in a guest registered, so host state derived"
+     " from one is stamped with this and remade when it moves on; the"
+     " host calls FreeCADGui._onGuestBoot() after each boot."},
     {"pyodideReleases", pyodideReleasesFunc, METH_NOARGS,
      "pyodideReleases() -> list of dicts -- the pyodide versions this build"
      " agrees to run, each with the sha256 of every runtime file, the ABI"

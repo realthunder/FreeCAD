@@ -153,6 +153,14 @@ static const char ProxyPrelude[] =
     "    def __subclasscheck__(cls, sub):\n"
     "        proxy = FACADES.get(cls._fcx_qual)\n"
     "        return proxy is not None and isinstance(sub, type) and issubclass(sub, proxy)\n"
+    // a declared no-op: the native function does nothing without a
+    // GUI (docs/Sandbox.md 7.9, G2b)
+    "def _mod_stub(qual):\n"
+    "    def stub(*args, **kw):\n"
+    "        return None\n"
+    "    stub.__name__ = qual.rsplit('.', 1)[-1]\n"
+    "    stub.__qualname__ = qual\n"
+    "    return stub\n"
     "def _install_modules(modules):\n"
     "    for modname, spec in modules.items():\n"
     "        m = _FcxModule(modname)\n"
@@ -166,6 +174,8 @@ static const char ProxyPrelude[] =
     "            e = type(n, (Exception,), {'__module__': modname})\n"
     "            setattr(m, n, e)\n"
     "            EXCEPTIONS[n] = e\n"
+    "        for n in spec.get('stubs', ()):\n"
+    "            setattr(m, n, _mod_stub(modname + '.' + n))\n"
     "        m._fcx_constants = tuple(spec['constants'])\n"
     "        sys.modules[modname] = m\n"
     "        if modname == 'Part':\n"

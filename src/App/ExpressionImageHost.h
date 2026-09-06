@@ -34,6 +34,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -197,8 +198,11 @@ public:
      */
     ImageResult proxyGet(uint64_t id, const std::string& name);
     ImageResult proxySet(uint64_t id, const std::string& name, PyObject* value);
-    /// A stand-in died: the guest drops the proxy with the next request.
-    void dropProxy(uint64_t id);
+    /// A stand-in died: the guest drops the proxy with the next request
+    /// -- when it is the guest the stand-in came from (`boot`, its
+    /// bootCount() at creation); a reset took a previous guest's
+    /// proxies with it.
+    void dropProxy(uint64_t id, int boot);
 
     /** Decode the value of a successful result into a new host PyObject
      * reference (nullptr on failure).  Handles in the reply resolve
@@ -262,6 +266,22 @@ public:
     /// Drop the live instance (tests; recovering from a trapped image).
     /// Handles survive a reset: they are host-side state.
     void reset();
+
+    /** How many guests have booted so far (0 before the first).  A
+     * reset kills every stand-in the guest registered -- a command, a
+     * workbench handler -- so state the host derived from a guest is
+     * stamped with the boot it came from and remade when the count
+     * moves on.  The InitGui runner (docs/Sandbox.md 7.9, G2b) is the
+     * first user.
+     */
+    int bootCount() const;
+
+    /** Called after a fresh guest has booted, with the new bootCount(),
+     * once the host->guest call that booted it has returned (never
+     * from inside it: the listener is free to make calls of its own).
+     * Listeners live for the process.
+     */
+    void addBootListener(std::function<void(int)> listener);
 
     ~ImageHost();
     ImageHost(const ImageHost&) = delete;

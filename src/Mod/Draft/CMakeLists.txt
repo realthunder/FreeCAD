@@ -379,15 +379,19 @@ IF (BUILD_EXPR_PYODIDE_HOST)
     # module level; both modules keep their GUI reach under GuiUp.
     # G3c (docs/Sandbox.md 7.11): DraftGui -- the toolbar and task
     # panel built in code -- and what it imports that the App side does
-    # not (the field locks, todo: FreeCADGui exists in the guest now).
+    # not (todo: FreeCADGui exists in the guest now).  G2b (7.9): the
+    # commands -- DraftTools, every draftguitools module (the snapper
+    # and the trackers included: pivy is in the guest, 7.10) and the
+    # task panels -- so that the workbench's InitGui.py runs in the
+    # guest and its Initialize() registers them there; the status bar
+    # module with them (Activated reaches it).
     SET(Draft_sandbox_wheel_files
         Draft.py
         DraftVecUtils.py
         DraftGeomUtils.py
         WorkingPlane.py
         DraftGui.py
-        draftguitools/__init__.py
-        draftguitools/gui_field_locks.py
+        DraftTools.py
         draftviewproviders/__init__.py
         draftviewproviders/view_base.py
         draftviewproviders/view_draftlink.py
@@ -396,7 +400,10 @@ IF (BUILD_EXPR_PYODIDE_HOST)
         ${Draft_functions}
         ${Draft_make_functions}
         ${Draft_objects}
+        ${Draft_GUI_tools}
+        ${Draft_task_panels}
     )
+    LIST(FILTER Draft_sandbox_wheel_files EXCLUDE REGEX "README\\.md$")
     SET(_draft_wheel_dir ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
     SET(_draft_wheel ${_draft_wheel_dir}/fcx_draft-${PACKAGE_VERSION}-py3-none-any.whl)
     SET(_draft_wheel_packer ${CMAKE_SOURCE_DIR}/src/Tools/bindings/packSandboxWheel.py)
@@ -411,7 +418,6 @@ IF (BUILD_EXPR_PYODIDE_HOST)
                 --out-dir ${_draft_wheel_dir}
                 --root ${CMAKE_CURRENT_SOURCE_DIR}
                 --exclude draftutils/params.py
-                --exclude draftutils/init_draft_statusbar.py
                 --add ${CMAKE_SOURCE_DIR}/src/3rdParty/lazy_loader=lazy_loader
                 --add ${CMAKE_SOURCE_DIR}/src/Ext/freecad/deprecation.py=freecad/deprecation.py
                 --add ${_draft_wheel_shims}=.

@@ -37,6 +37,7 @@
 #include <CXX/Objects.hxx>
 #include <App/ExpressionGuestProxy.h>
 #include <App/ExpressionImageBridge.h>
+#include <App/ExpressionImageHost.h>
 #include <App/ExpressionSecurityRuntime.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -64,6 +65,7 @@
 #include <QFileInfo>
 #include <QMenu>
 #include <QStatusBar>
+#include <QTimer>
 #include <QToolBar>
 #include <QVariant>
 
@@ -138,16 +140,30 @@ class GuestWorkbench(FreeCADGui.Workbench):
     def GetClassName(self):
         return self._standin.GetClassName()
 
+    def _hook(self, name):
+        """A hook forwarded to the guest.  Its failure is an error in
+        the report view with the guest's traceback, not the modal
+        "Workbench failure" a native handler's raise ends in: a guest
+        workbench comes up with what it registered before the raise
+        (docs/Sandbox.md 7.9, G2b -- the InitGui runner's InitGui.py
+        failures are logged the same way natively)."""
+        try:
+            getattr(self._standin, name)()
+        except Exception as exc:
+            import FreeCAD
+            FreeCAD.Console.PrintError("%s.%s() in the sandbox guest failed: %s\n"
+                                       % (self._fcx_name, name, exc))
+
     def Initialize(self):
-        self._standin.Initialize()
+        self._hook("Initialize")
 
     def Activated(self):
         if hasattr(self._standin, "Activated"):
-            self._standin.Activated()
+            self._hook("Activated")
 
     def Deactivated(self):
         if hasattr(self._standin, "Deactivated"):
-            self._standin.Deactivated()
+            self._hook("Deactivated")
 
     def ContextMenu(self, recipient):
         if hasattr(self._standin, "ContextMenu"):
@@ -161,6 +177,26 @@ def make(standin, name, menutext, tooltip, icon):
 
 def is_guest(wb):
     return isinstance(wb, GuestWorkbench)
+
+
+def user_input():
+    """FreeCADGui.UserInput by value, for the guest's mirror of it."""
+    return {name: int(member.value) for name, member in FreeCADGui.UserInput.__members__.items()}
+
+
+def show_hints(spec):
+    """The guest's hints, [[message, [input | [input, ...], ...]], ...] by
+    value, shown on the main window as the native HintManager does."""
+    hints = []
+    for message, seqs in spec:
+        sequences = []
+        for seq in seqs:
+            if isinstance(seq, (list, tuple)):
+                sequences.append(tuple(FreeCADGui.UserInput(int(v)) for v in seq))
+            else:
+                sequences.append(FreeCADGui.UserInput(int(seq)))
+        hints.append(FreeCADGui.InputHint(str(message), *sequences))
+    FreeCADGui.getMainWindow().showHint(*hints)
 
 
 def name_of(wb):
@@ -1044,6 +1080,27 @@ Reply mainWindowCall(HandleTable& table, const json& a)
         }
         return replyOk(true);
     }
+    if (m == "showHint" || m == "hideHint") {
+        PyObject* ns = wrapperNamespace();
+        if (!ns)
+            return replyPyError();
+        PyObject* r = nullptr;
+        if (m == "hideHint") {
+            mw->hideHints();
+            return replyOk(true);
+        }
+        if (a.size() != 2 || !a[1].is_array())
+            return replyErr("ProtocolError", "gui.mainwindow: [showHint, hints]");
+        PyObject* spec = decodeValue(table, a[1]);
+        if (!spec)
+            return replyPyError();
+        r = PyObject_CallFunction(PyDict_GetItemString(ns, "show_hints"), "O", spec);
+        Py_DECREF(spec);
+        if (!r)
+            return replyPyError();
+        Py_DECREF(r);
+        return replyOk(true);
+    }
     if (m == "showMessage") {
         if (a.size() < 2 || !a[1].is_string())
             return replyErr("ProtocolError", "gui.mainwindow: [showMessage, text, ms]");
@@ -1169,6 +1226,13 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
         PyObject* v = callGui("getSoDBVersion", PyTuple_New(0));
         return v ? replyResult(table, v) : replyPyError();
     }
+    if (op == "gui.user_input") {
+        PyObject* ns = wrapperNamespace();
+        if (!ns)
+            return replyPyError();
+        PyObject* v = PyObject_CallFunction(PyDict_GetItemString(ns, "user_input"), nullptr);
+        return v ? replyResult(table, v) : replyPyError();
+    }
     if (op == "gui.icon_path" || op == "gui.lang_path") {
         if (!arg.is_string())
             return replyErr("ProtocolError", op + ": path");
@@ -1213,6 +1277,33 @@ void Gui::SandboxGui::registerOps()
         return;
     done = true;
     App::ExpressionSandbox::registerBridgeOps("gui.", &guiOp);
+    // A fresh guest has none of the stand-ins the previous one
+    // registered: the InitGui runner (FreeCADGuiInit.py, docs/Sandbox.md
+    // 7.9 G2b) re-runs the InitGui.py's it ran in the guest.  Queued on
+    // the event loop rather than run from the listener, so it never
+    // nests in the evaluation that booted the guest.
+    App::ExpressionSandbox::ImageHost::instance().addBootListener([](int boot) {
+        QTimer::singleShot(0, [boot]() {
+            if (!Application::Instance)
+                return;
+            Base::PyGILStateLocker lock;
+            PyObject* mod = PyImport_ImportModule("FreeCADGui");
+            PyObject* fn = mod ? PyObject_GetAttrString(mod, "_onGuestBoot") : nullptr;
+            Py_XDECREF(mod);
+            if (!fn) {
+                PyErr_Clear();
+                return;
+            }
+            PyObject* r = PyObject_CallFunction(fn, "i", boot);
+            Py_DECREF(fn);
+            if (!r) {
+                Base::PyException e;
+                Base::Console().Error("sandbox: FreeCADGui._onGuestBoot(%d) failed: %s\n",
+                                      boot, e.what());
+            }
+            Py_XDECREF(r);
+        });
+    });
 }
 
 #else

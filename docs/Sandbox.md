@@ -1889,6 +1889,108 @@ Cost of the mechanism: one hop per `IsActive` poll per guest command
 (some 60 visible commands times 5 us per tick), one hop per activation
 plus whatever the command does -- U4 ops, G3 and later.
 
+**G2b BUILT 2026-09-06**, as sized with four departures:
+
+- **The switch is its own preference**, `Expression/Sandbox:
+  InitGuiInGuest` (default OFF; the rig's `FCX_INITGUI_IN_GUEST=1|0`
+  overrides it), not `Evaluate`: with the residue below, `Evaluate`
+  alone would have taken Draft's status bar and BIM's tool bars away
+  from everyone routing expressions.  It folds into `Evaluate` when
+  the residue is gone.  The decision (`GuestInitGuiWanted` in
+  `FreeCADGuiInit.py`): the switch, a build with the host, and a
+  bundled wheel named `fcx_<module>` (`pyodideLayout()['bundled']`,
+  the wheels by distribution name).  `RunInitGuiPy` defers to
+  `RunInitGuiInGuest` for such a module; every other module's
+  InitGui.py runs natively as before.
+- **No `gui.rc` op.**  The runner imports the module's `<Mod>/*_rc.py`
+  on the host itself before the exec (Draft's is `Draft_rc`, BIM's is
+  `Arch_rc`: the name is the module's to know, not the guest's), and
+  the guest's `Draft_rc`/`Arch_rc` shims stay empty.
+- **The guest half is in the fcx_widgets wheel**, not the prelude:
+  `FreeCADGui._run_initgui(source, path, module, tops)` execs the
+  file's text with the native runner's globals (`FreeCAD`, `App`,
+  `Gui`, `FreeCADGui`, `Workbench`, `Log`, `Err`, `Msg`) and derives a
+  command's GROUP from the wheel its class came from (`tops`, the
+  wheel's top-level names, read from the zip on the host): the
+  host's own rule is the caller's `Mod/<Group>/` path, and a wheel
+  module has no such path.
+- **A guest hook's failure is an error in the report view**, not the
+  modal "Workbench failure" box a native handler's raise ends in: the
+  wrapper's `Initialize`/`Activated`/`Deactivated` catch and print the
+  guest's traceback, and the workbench comes up with what it
+  registered before the raise -- the InitGui.py failure rule ("logged,
+  never fatal") extended to the hooks, because a guest workbench is
+  partial by design until G3d and G4, and a modal at startup under
+  Xvfb is a hang.
+
+**The reset, built:** `ImageHost::bootCount()` counts guests;
+`addBootListener` fires after the outermost call that booted one
+returns (never inside it), and `SandboxGui.cpp` queues
+`FreeCADGui._onGuestBoot(n)` on the event loop, which re-runs every
+InitGui.py stamped with an earlier boot and re-activates the active
+workbench if it was a guest one.  Two host bugs surfaced on the way,
+both fixed: a stand-in is now stamped with its guest (`(boot, id)` is
+the identity of a guest proxy: a fresh guest numbers from 1 again, and
+the old guest's stand-in of the same number was answering for -- and
+on its death dropping -- the new guest's proxy; a stale stand-in now
+raises `ReferenceError: guest proxy N belongs to a sandbox guest that
+was reset`, and `teardown()` discards the drops queued for the dead
+guest), and `Application::initializeWorkbench`'s once-only guard kept
+a removed workbench's NAME, so a handler registered again under it
+never ran `Initialize()` -- it runs now whenever no C++ workbench of
+that name exists yet.  After a reset one UI tick of `IsActive` polls
+reaches the stale stand-ins (two `ReferenceError` lines in the report
+view) before the re-run replaces them.
+
+**The measurement -- how far the two `Initialize()`s get now**, with
+the wheels grown for it (Draft: `DraftTools`, every `draftguitools`
+module, the task panels, `init_draft_statusbar`; BIM: `bimcommands`,
+`BimStatus`, a `PartGui` shim, `nativeifc.ifc_commands` answering an
+empty tool bar and `ifc_observer` no-ops -- no ifcopenshell in the
+guest) and the small gaps filled on the way (`FreeCADGui.UserInput` as
+the host's IntEnum mirrored by value on first use, `InputHint` and
+`HintManager` crossing as data to the main window's `showHint`,
+`getMainWindow().getWindowsOfType()` answering none, `Base.TypeId` as
+a name, `draftutils.params._param_observer_start` a declared STUB in
+the facade -- the native function is `if App.GuiUp:`, 0 in the guest):
+
+    Draft   InitGui module level in the guest at startup; Initialize()
+            on activation: pivy's self-test, DraftTools imported (82
+            Draft_* commands registered from the guest, Draft_Hatch
+            excepted: its registration sits under `if FreeCAD.GuiUp`),
+            DraftGui's tray built, the five tool bars and the menus
+            appended and filled on the host.  Activated(): the snapper
+            shows, then `init_draft_statusbar` stops at the STATUS BAR
+            (`statusBar().findChild`, `addStatusBarItem`: widgets in
+            the status bar are not in the widget layer yet); the
+            WorkingPlane/grid_observer view observers warn (G4).
+            IsActive(): False for every Creator -- `get_3d_view()`
+            needs a 3D view (G4); the poll crosses (one proxy call).
+    BIM     InitGui module level OK; Initialize(): icon and language
+            paths cross, `bimcommands` registers 32 commands and stops
+            at `BimCovering` -- the one module of 83 that imports
+            FreeCADGui under `if FreeCAD.GuiUp` and registers its
+            command outside it -- so createTools never reaches its
+            tool bars; Activated()/Deactivated() fail on the missing
+            `draftingtools` the same way.
+
+So the wall both stop at is now **the `GuiUp` ruling** (G2a: "FreeCAD
+.GuiUp stays 0"), made when the guest had no GUI at all.  With the
+GUI side in the guest, two registrations hide behind it (Draft_Hatch,
+BimCovering -- the latter taking all of BIM's tool bars with it), and
+the App side's `if App.GuiUp:` branches (view providers, Qt imports,
+selection) are what the ruling protects for the document guests that
+share the instance.  Flipping it is a ruling, measured by the G1
+corpus gates with `GuiUp = 1` -- sec 13.  Behind it: the status bar
+widgets (G3d or G7 material), the 3D view and the observers (G4), the
+selection (G3d).  Gate `SandboxInitGui` (4 cases: the decision, Draft
+and BIM from the guest, the reset re-run) needs a session whose
+startup ran the runner, so it runs in a process of its own with
+`FCX_INITGUI_IN_GUEST=1` and skips in the default gate list.  Suites
+after: the seven GUI gate modules 13 + 4 skipped, `SandboxInitGui`
+alone 4/4, `Tests_run --gtest_filter='Expression*'` 104 passed + 1
+skipped.
+
 ### 7.10 Probe A sized: Coin and pivy in the guest **[sized 2026-09-05]**
 
 What 7.9's measurement made the next blocker: Draft's `Initialize()`
@@ -2861,9 +2963,9 @@ document principal refused.  `tests/src/Gui/FormWidgets.cpp` gained
 after: the six GUI gate modules 13/13, `Tests_run
 --gtest_filter='Expression*'` 104 passed + 1 skipped.
 
-Next, the **G2b runner** (Draft's and BIM's `InitGui.py` in the guest:
-`Initialize()` now stops at `gui_snapper` and `gui_trackers`, pivy --
-Probe A passed -- and at `FreeCADGui.Selection`, G3d), then G3d.
+The **G2b runner** followed, BUILT 2026-09-06 (7.9): Draft's and BIM's
+`InitGui.py` in the guest at startup, Draft's tool bars from the guest;
+both `Initialize()`s now stop at the GuiUp ruling (sec 13), then G3d.
 
 ## 8. Measurements
 
@@ -3023,6 +3125,10 @@ Preferences under `User parameter:BaseApp/Preferences/Expression/`:
     Sandbox:Evaluate         route evaluation through the image (default OFF);
                              also routes a document object's saved Proxy
                              to the guest at open, failing closed (3.5)
+    Sandbox:InitGuiInGuest   run the InitGui.py of a module whose GUI side
+                             is a bundled wheel (fcx_draft, fcx_bim) in the
+                             guest (default OFF; 7.9 G2b); the rig's
+                             FCX_INITGUI_IN_GUEST=1|0 overrides it
     Sandbox:BudgetMs         5000        Sandbox:GraceMs   1000
     Sandbox:ImagePath        Sandbox:StdlibPath          (WASI)
     Sandbox:PyodideDir       Sandbox:PyodideWheel        Sandbox:PyodideUserDir
@@ -3032,7 +3138,7 @@ Preferences under `User parameter:BaseApp/Preferences/Expression/`:
 Environment: `FCX_RUNTIME`, `FCX_IMAGE`, `FCX_STDLIB`, `FCX_PYODIDE`,
 `FCX_PYODIDE_WHEEL`, `FCX_PYODIDE_USER`, `FCX_PYODIDE_PACKAGES`,
 `FCX_PYODIDE_UNPINNED`; rig-only `FCX_GATE_ONLY`, `FCX_SHEET_REPORT`,
-`FCX_REPO`, `FCX_PROBE_*`.
+`FCX_REPO`, `FCX_PROBE_*`, `FCX_INITGUI_IN_GUEST`.
 
 CMake (`cMake/FreeCAD_Helpers/InitializeFreeCADBuildOptions.cmake`
 :151-177): `BUILD_EXPR_PYODIDE_HOST` (default `v8-embed_FOUND`),
@@ -3106,9 +3212,14 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    **G3c** BUILT 2026-09-06 (7.12: forms built in code -- the layout
    tree as `layoutSpec`, bars, actions, the main window shim, the key
    event stream; Draft's `DraftGui.py` unmodified in the guest, gate
-   `SandboxDraftGui`).  Next the **G2b runner**: both `Initialize()`s
-   now stop at the snapper and the trackers (pivy) and at
-   `FreeCADGui.Selection` (G3d).
+   `SandboxDraftGui`).  **G2b BUILT** 2026-09-06 (7.9: the runner in
+   `FreeCADGuiInit.py` under `InitGuiInGuest`, the re-run after a
+   reset, the stand-ins stamped with their guest; Draft's and BIM's
+   `InitGui.py` in the guest at startup, Draft's tool bars from the
+   guest; gate `SandboxInitGui`).  Both `Initialize()`s now stop at
+   the **GuiUp ruling** (Draft_Hatch, BimCovering and with it BIM's
+   tool bars), then the status bar, the 3D view (G4) and the
+   selection (G3d).
 4. **P2** -- in-place install into a running guest (the sec 9.3 probe of
    `SandboxNetwork.md`: does a wheel with compiled extensions import
    synchronously without `loadPackage`?).  Moved after G1: nothing
@@ -3280,6 +3391,30 @@ sockets, any network for the reference image, a webview escape hatch.
   hook's live arguments -- it is a no-op while nested.
 
 ## 13. Known gaps and open questions
+
+- **`FreeCAD.GuiUp` in the guest, with the GUI side running there
+  (7.9, G2b, 2026-09-06).**  The G2a ruling keeps it 0 so the App
+  side's `if App.GuiUp:` branches -- view providers, Qt imports,
+  selection -- stay off in the document guests that share the one
+  instance.  The runner shows the price on the GUI side: Draft_Hatch
+  registers under the guard, and BIM's `BimCovering` imports
+  FreeCADGui under it but registers outside it, so `bimcommands`
+  aborts and BIM has no tool bars from the guest.  OPEN, a ruling:
+  flip it to 1 (measure the G1 corpus gates
+  `draftTestObjectsBuiltRouted` / `bimTestObjectsBuiltRouted` with
+  it, since every `if App.GuiUp:` branch in `draftobjects` and the
+  Arch modules would then run in the guest), or make it the session
+  principal's alone (a per-request value; a module imported by a
+  document guest first would keep its GuiUp=0 imports for the
+  session), or leave it and carry the two registrations as known
+  losses.  Draft's preference observer (`_param_observer_start`) is
+  a declared no-op for the same reason: no change notification
+  crosses to the guest yet, so a preference edited on the host does
+  not refresh the guest's tray or grid.
+- **Widgets in the status bar** (`statusBar().findChild`,
+  `addStatusBarItem`, `BimStatus`, `init_draft_statusbar`): not in
+  the widget layer; Draft's `Activated()` and BIM's stop there
+  (7.9).  G3d or G7 material.
 
 - Document OPEN imports, before any expression runs.
   `PropertyPythonObject::Restore`'s `PyImport_ImportModule` on a

@@ -12,6 +12,12 @@ which natively looks the object's IFC file up and returns when there is
 none -- the same way for a plain document, and raises `IfcUnavailableError`
 for an IFC-backed object rather than editing or skipping it silently.
 
+G2b (docs/Sandbox.md 7.9, 2026-09-06) added what the workbenches' InitGui.py
+reach when they run in the guest: `PartGui` (named at import by
+`bimcommands`, nothing read), `nativeifc/ifc_commands.py` (`get_commands()`
+answers an empty IFC tool bar) and `nativeifc/ifc_observer.py` (the IFC
+document observer as no-ops: nothing to keep in step without ifcopenshell).
+
 The rule (docs/Sandbox.md sec 7): the guest sees FreeCAD's API, never Qt's.
 These files exist so that UNMODIFIED App-side sources import; anything a GUI
 would do is absent and raises `AttributeError` where it is reached.  G2's
