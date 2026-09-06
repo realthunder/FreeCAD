@@ -1296,6 +1296,53 @@ class BaseShapeCases(ShapeTestCase):
         self.assertEqual(self.versions(cut), ["_BaseShape1"])
         self.assertEqual(self.refs(cut), self.entries({plane: "_BaseShape1"}))
 
+    def testABreakInsideAnOpenTransactionIsSeeded(self):
+        """7.15 item 2, answered: the gathering gate excludes a transaction
+        being APPLIED (undo, redo, rollback), not one that is open, so a
+        break inside openTransaction / commitTransaction is retained
+        before the commit -- and the rollback, which restores the recorded
+        properties, takes it away again."""
+        doc = self.newDocument()
+        doc.UndoMode = 1
+        cut, (plane,) = self.model(doc)
+        doc.openTransaction("break")
+        self.replaceBase(doc, cut, "NewBox")
+        self.assertEqual(self.support(plane), "?Face3")
+        self.assertEqual(self.versions(cut), ["_BaseShape1"])
+        self.assertEqual(self.refs(cut), self.entries({plane: "_BaseShape1"}))
+
+        doc.abortTransaction()
+        self.assertEqual(self.support(plane), "Face3")
+        self.assertEqual(self.versions(cut), [])
+        self.assertEqual(self.refs(cut), {})
+
+    def testUndoOfARepairBringsTheGenerationBack(self):
+        """The repair let the generation go and the transaction recorded
+        that; undoing the repair re-breaks the reference and restores the
+        generation with it, since both are properties of the same record.
+        No gathering happens while the undo is applied, and none is
+        needed."""
+        doc = self.newDocument()
+        doc.UndoMode = 1
+        cut, (plane,) = self.model(doc)
+        doc.openTransaction("break")
+        self.replaceBase(doc, cut, "NewBox")
+        doc.commitTransaction()
+        doc.openTransaction("repair")
+        doc.getObject("NewBox").Height = 20
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertEqual(self.support(plane), "Face3")
+        self.assertEqual(self.versions(cut), [])
+
+        doc.undo()
+        self.assertEqual(self.support(plane), "?Face3")
+        self.assertEqual(self.versions(cut), ["_BaseShape1"])
+        self.assertEqual(self.refs(cut), self.entries({plane: "_BaseShape1"}))
+        doc.redo()
+        self.assertEqual(self.support(plane), "Face3")
+        self.assertEqual(self.versions(cut), [])
+
     def testAMovedFaceStaysMissingAfterReload(self):
         """V3, gate 4 of sec 5.7: the retained generation is asked again on
         reload, and a face that moved is still not repointed at a plausible
