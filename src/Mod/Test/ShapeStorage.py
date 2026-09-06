@@ -42,6 +42,7 @@ Run headless with:  FreeCADCmd -t ShapeStorage
 """
 
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -1532,12 +1533,12 @@ class ForeignBaseShapeCases(ShapeTestCase):
         """An assembly whose references keep their mapped names: one to the
         part's Cut directly, one through a local link.
 
-        Only the direct one is verified on reload.  A reference to a local
-        object -- the link -- is registered with its restored shadow and
-        not re-resolved until the target changes (7.14), so through the
-        link the reference reads as it was saved, whatever the part did
-        while the assembly was closed; the tests below assert the direct
-        reference and say so.
+        Both are verified on reload.  The direct one when its link is
+        restored; the one through the link when the document's references
+        are re-registered, because its geometry lives in another document
+        and was not saved together with the reference (7.16) -- before
+        that it was registered with its restored shadow and read as saved,
+        whatever the part did while the assembly was closed.
         """
         cut = part.getObject("Cut")
         mapped = ";" + cut.Shape.getElementMappedName(face)
@@ -1573,8 +1574,9 @@ class ForeignBaseShapeCases(ShapeTestCase):
         reopened = self.openDocument(asmPath)
         refs = self.refsOf(reopened.getObject("Ref"))
         self.assertEqual(refs["Cut"], "Face1")
-        # Not verified on reload: reads as saved, see referrer()
         self.assertEqual(refs["Link"], "Face1")
+        reopened.save()
+        self.assertEqual(self.shadowed(asmPath), [self.mapped(reopened)] * 2)
 
     def testAFaceMovedWhileClosedStaysMissing(self):
         """Gate 4 for the same edit: the top face moved, and neither
@@ -1588,12 +1590,85 @@ class ForeignBaseShapeCases(ShapeTestCase):
         reopened = self.openDocument(asmPath)
         refs = self.refsOf(reopened.getObject("Ref"))
         self.assertEqual(refs["Cut"], "?Face3")
-        # Not verified on reload: reads as saved, see referrer()
-        self.assertEqual(refs["Link"], "Face3")
+        self.assertEqual(refs["Link"], "?Face3")
+
+    def testAnUpgradeKeepsEveryReference(self):
+        """The part's element map is a version behind, so its first
+        recompute regenerates the map and re-resolves every reference to
+        it ('reverse').  A part opened through the assembly is partial and
+        recomputes with the assembly.  Nothing is newly missing, through
+        the link or not, and the file ends up with the current names."""
+        part, partPath = self.part()
+        version = part.getObject("Cut").getElementMapVersion("Shape")
+        asm, asmPath = self.referrer(part)
+        FreeCAD.closeDocument(asm.Name)
+        FreeCAD.closeDocument(part.Name)
+        self.ageElementMap(partPath, version)
+
+        reopened = self.openDocument(asmPath)
+        refs = self.refsOf(reopened.getObject("Ref"))
+        self.assertEqual([refs["Cut"], refs["Link"]], ["Face1", "Face1"])
+        reopened.recompute()
+        refs = self.refsOf(reopened.getObject("Ref"))
+        self.assertEqual([refs["Cut"], refs["Link"]], ["Face1", "Face1"])
+        reopened.save()
+        self.assertEqual(self.shadowed(asmPath), [self.mapped(reopened)] * 2)
+
+    def testAMissingReferenceSurvivesTheUpgrade(self):
+        """The same regeneration over a reference that came back missing:
+        it stays marked, and is not blanked into the whole object -- the
+        marker name looked up as a name is an unknown mapped name with no
+        indexed one, which is what a regeneration used to write out."""
+        part, partPath = self.part()
+        version = part.getObject("Cut").getElementMapVersion("Shape")
+        asm, asmPath = self.referrer(part, face="Face3")
+        FreeCAD.closeDocument(asm.Name)
+        self.replaceBase(part, height=25)
+        FreeCAD.closeDocument(part.Name)
+        self.ageElementMap(partPath, version)
+
+        reopened = self.openDocument(asmPath)
+        refs = self.refsOf(reopened.getObject("Ref"))
+        self.assertEqual([refs["Cut"], refs["Link"]], ["?Face3", "?Face3"])
+        reopened.recompute()
+        refs = self.refsOf(reopened.getObject("Ref"))
+        self.assertEqual([refs["Cut"], refs["Link"]], ["?Face3", "?Face3"])
+        reopened.save()
+        self.assertEqual(self.subs(asmPath), ["?Face3", "?Face3"])
 
     def xref(self, asm):
         (key,) = [k for k in self.refs(asm) if "#" in k]
         return key
+
+    def mapped(self, asm, face="Face1"):
+        """The face's mapped name as the assembly's references persist it."""
+        cut = [o for o, subs in asm.getObject("Ref").Refs if o.Name == "Cut"][0]
+        return ";" + cut.Shape.getElementMappedName(face) + "." + face
+
+    def subs(self, path):
+        """Every persisted sub-name: a lone one is an attribute of the
+        link, several are <Sub> elements."""
+        return re.findall(r'(?:<Sub value|\ssub)="([^"]*)"', self.documentXml(path))
+
+    def shadowed(self, path):
+        return re.findall(r'shadowed="([^"]*)"', self.documentXml(path))
+
+    def ageElementMap(self, path, version):
+        """Rewrite the saved part as if its element map were one map
+        version older, which is what a file from an earlier release is."""
+        major, minor, rest = version.split(".", 2)
+        older = "%s.%d.%s" % (major, int(minor) - 1, rest)
+        xml = self.documentXml(path)
+        self.assertIn('ElementMap="%s"' % version, xml)
+        xml = xml.replace(version, older)
+        tmp = path + ".tmp"
+        with zipfile.ZipFile(path) as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for info in zin.infolist():
+                data = zin.read(info.filename)
+                if info.filename == "Document.xml":
+                    data = xml.encode("utf-8")
+                zout.writestr(info, data)
+        os.replace(tmp, path)
 
     def testADroppedReferenceLeavesTheStore(self):
         """A reference removed is not kept; the last one takes the store."""
