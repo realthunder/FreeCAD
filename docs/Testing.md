@@ -76,11 +76,12 @@ What those two say, on macOS 12.7.6 Intel with conda clang 23.1.0, 2026-09-06:
 
 - `SceneServerWire_tests_run` -- **17 of 17 passing**, `listensOnIPv6Too`
   running rather than skipping.
-- `PublishOnly_tests_run` -- 4 passing, **1 skipped**:
-  `noGraphicsDeviceIsCreated` reads `/proc/self/maps`, which macOS does not
-  have, and the case guards itself. It needs a `<mach-o/dyld.h>` port before
-  a macOS count can be called complete; until then that assertion is simply
-  not made there.
+- `PublishOnly_tests_run` -- **5 of 5 passing** since the dyld port
+  (2026-09-06). It was 4 passing and 1 skipped: `noGraphicsDeviceIsCreated`
+  read `/proc/self/maps`, which macOS does not have, and the case guarded
+  itself. It now enumerates the loaded images through `<mach-o/dyld.h>`,
+  and refuses the macOS renderer plugins rather than the frameworks dyld
+  maps at launch anyway -- `SceneServerPort.md` 7.6 has the image list.
 
 The stack, and the four source fixes macOS needed to build at all, are in
 `DevEnvironment.md`, "macOS stack". The GUI tests do not register there for

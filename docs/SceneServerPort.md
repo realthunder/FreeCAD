@@ -363,9 +363,9 @@ Each stage lands alone and is judged by the stage-0 test.
   **Done the same day: section 7.4.**
 - **Stage 5 -- verify on all three platforms. DONE for the wire suite
   2026-09-06** (Windows 2026-09-04, macOS 2026-09-06); see section 7.5.
-  The brief was `PlatformVerification.md`. macOS still owes a full
-  `ctest`, the headless echo test, and the `noGraphicsDeviceIsCreated`
-  dyld port.
+  The brief was `PlatformVerification.md`. The dyld port landed
+  2026-09-06 (section 7.6); macOS still owes a full `ctest` and the
+  headless echo test.
 
 ### 7.1 The seam, as built
 
@@ -657,11 +657,8 @@ Latency on the box: hello 0.2 ms, publish max 0.2 ms, host push max 0.1 ms.
 `PublishOnly_tests_run`: 4 passed, 1 skipped. `noGraphicsDeviceIsCreated`
 reads `/proc/self/maps` and skips where there is none. The brief predicted a
 failure; the case already carries the guard, so macOS is a skip. **That is a
-coverage gap, not a pass** -- on macOS nothing currently asserts that a
-publish-only process maps no graphics device. The port wants
-`_dyld_image_count()` / `_dyld_get_image_name()` from `<mach-o/dyld.h>`,
-refusing `OpenGL.framework`, `Metal.framework`, `GLEngine`, `AppleGVA` and
-`/System/Library/Extensions/`. Not done.
+coverage gap, not a pass** -- on macOS nothing asserts that a publish-only
+process maps no graphics device. Closed the same day: section 7.6.
 
 What macOS did cost was four fixes outside the transport, three of them the
 same defect: **libc++ does not include transitively where libstdc++ does.**
@@ -674,8 +671,46 @@ duplicate fontstash symbols GNU ld accepts. All four are in
 `DevEnvironment.md`, "What macOS needed in source".
 
 Still open on macOS: the full tree and `ctest` (only the two stage 5 targets
-were built), the headless echo test of `PlatformVerification.md` section 2
-item 5 (it needs a FreeCAD binary), and the dyld port above.
+were built), and the headless echo test of `PlatformVerification.md` section 2
+item 5 (it needs a FreeCAD binary).
+
+### 7.6 The dyld port: what a publish-only process maps on macOS
+
+`noGraphicsDeviceIsCreated` now enumerates the loaded images on both
+UNIXes -- `/proc/self/maps` on Linux, `_dyld_image_count()` /
+`_dyld_get_image_name()` on macOS -- and `PublishOnly_tests_run` is
+**5 of 5 on macOS**, with nothing skipped.
+
+The finding, and it is a larger one than the brief assumed. A
+publish-only process on macOS 12.7.6 maps **283 images**, and the
+graphics stack is most of the way in among them before a single line of
+this code runs:
+
+- `OpenGL.framework` and its whole `Libraries/` set -- `libGL`,
+  `libGLU`, `libGFXShared`, `libGLImage`, `libCoreVMClient`,
+  `libCVMSPluginSupport`, `libCoreFSCache`
+- `Metal`, all seven `MetalPerformanceShaders` sub-frameworks, and the
+  private `MetalTools`
+- the private `GPUCompiler` (`libGPUCompilerUtils.dylib`), `GPUWrangler`,
+  `IOAccelerator`, `IOSurfaceAccelerator`
+- `IOSurface`, `QuartzCore`, `CoreImage`, `CoreVideo`, `CoreGraphics`
+- `libQt6OpenGL`, `libQt6OpenGLWidgets`, `libbgfx.dylib`
+
+None of that is a device. It is what the Mach-O load commands ask for:
+`libFreeCADRenderer.dylib` names `OpenGL.framework`, `libbgfx.dylib` and
+`Qt6OpenGLWidgets` directly, and the rest arrives transitively. dyld maps
+a dependency whether or not anyone calls into it, so the brief's list was
+wrong to refuse `OpenGL.framework` and `Metal.framework` -- doing so would
+have failed the case on every mac, and failed it on the link line rather
+than on any behaviour.
+
+The line that does mean something is one framework further in, and it is
+the exact analogue of the Linux one: the client-side API library is the
+dispatch layer, the *renderer plugin behind it* is the device. So macOS
+refuses `GLEngine` (the CGL renderer bundle, dlopened at context
+creation), `*GLDriver`/`*MTLDriver` (the vendor bundles),
+`/System/Library/Extensions/` (where those bundles live) and `AppleGVA`.
+None of the five is mapped after a publish. Linux's list is unchanged.
 
 ## 8. Open questions for next session
 

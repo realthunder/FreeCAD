@@ -65,12 +65,12 @@ In order. Each item is a fact to write down, not a box to tick.
    `aChunkedPostBodyIsRead`, `anOversizeControlFrameEndsTheConnection`)
    are pure protocol and should behave identically; if one does not, the
    difference is Beast's, and worth writing down exactly.
-3. **`PublishOnly_tests_run` (macOS only, see 4.6).** It is built on every
-   UNIX and its last case reads `/proc/self/maps`, which macOS does not
-   have. Expect that one case to fail on a mac; the fix is a Darwin branch
-   using `_dyld_image_count()` / `_dyld_get_image_name()` from
-   `<mach-o/dyld.h>` to enumerate the loaded images. That is a real
-   stage 5 commit.
+3. ~~**`PublishOnly_tests_run` (macOS only, see 4.6).**~~ **Done
+   2026-09-06.** Its last case read `/proc/self/maps` and skipped on
+   macOS; it now enumerates the loaded images through
+   `_dyld_image_count()` / `_dyld_get_image_name()`, and the suite is 5
+   of 5 there. What it refuses on macOS is not what this brief guessed --
+   `SceneServerPort.md` 7.6.
 4. **The whole tree, if it builds.** The full `ctest` (Windows: 472 of 472
    as of 2026-09-04, in `Testing.md`; Linux: 485 of 485 as of 2026-09-06).
    Not required for the stage; required before calling the platform
@@ -389,8 +389,9 @@ a stage 5 answer in an hour, the full tree afterwards.
 ### 4.6 What is expected to break on macOS, and what is not
 
 *** **What actually happened (2026-09-06), against the list below.** Item 1
-skips rather than fails -- the case already guards on `/proc/self/maps`, so
-the dyld port is still wanted but nothing goes red. Item 2 did not happen:
+skipped rather than failed -- the case already guards on `/proc/self/maps`.
+The dyld port that closes it landed the same day (`SceneServerPort.md` 7.6),
+and it does not refuse the names item 1 names. Item 2 did not happen:
 bgfx built SHARED and its C++ symbols resolved. Items 3 to 5 were not
 reached, because only the two stage 5 targets were built. What did break was
 not on this list: three missing includes that only libc++ needs, a
@@ -405,6 +406,12 @@ Known, in likely order of appearance:
    refuse are `OpenGL.framework`, `Metal.framework`, `GLEngine`, `AppleGVA`
    and `/System/Library/Extensions/`), and say in the commit which images
    a publish-only process does map, because that is the finding.
+   **Done, and the finding overruled half of that list**: dyld maps
+   `OpenGL.framework` and `Metal.framework` at launch as plain load-command
+   dependencies of the renderer, so refusing them would fail the case on
+   every mac. What is refused is the renderer plugin behind them --
+   `GLEngine`, `*GLDriver`/`*MTLDriver`, `/System/Library/Extensions/`,
+   `AppleGVA`. Image list and reasoning: `SceneServerPort.md` 7.6.
 2. **bgfx as a shared library.** `src/3rdParty/CMakeLists.txt` builds bgfx
    STATIC on Windows (a DLL exports only the C API) and SHARED everywhere
    else. Whether a Mach-O dylib built with conda's flags exports the C++
