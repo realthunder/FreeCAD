@@ -1784,5 +1784,53 @@ Gates, on `build/win-relwithdebinfo-801`:
 | C++ (`ctest -j 6`) | 473 of 473 passed, 1 disabled |
 | Python (`FreeCADCmd -t 0`) | 1332 ran; the same 6 failures + 8 errors as 7.13, all this box's environment (no `yaml`/`ply`, CRLF material fixtures, two over-long blob paths, one FEM file lock), not one new |
 
-Next: V5 -- the Sketcher prefix persisted, and the `onBeforeChange`
-gates widened so a break inside a transaction is seeded.
+Next: section 7.15.
+
+### 7.15 Schedule for the next session (written 2026-09-06)
+
+In value order, each its own commit, each gated as before (ShapeStorage,
+the sec 2.3 matrix, ctest, the Python suite against the known set):
+
+1. **The through-link reload gap of 7.14, characterized before it is
+   touched.**  An assembly places parts with `App::Link`s, so `Link.Face3`
+   is the common shape of a reference, and today it is not verified on
+   reload at all.  First a probe, not a fix: a document whose element map
+   version is behind (force it by editing `ElementMap=` in the XML of a
+   saved file, or by a parameter that changes the version string) opened
+   with a plane and a binder referencing the cut, to see what the
+   `reverse` regeneration does with a restored shadow -- whether it
+   resolves from `shadow.first`, what it does when `shadow.second` is
+   empty, and whether it recovers by geometry at all.  The answer decides
+   the shape of the fix: resolve restored shadows during the document's
+   restore (`_registerElementReference`, the branch that only registers)
+   and let the reload request run, with the `reverse` path stripping the
+   missing marker the way the restore path now does, or a narrower rule
+   keyed on the target being reached through a link to another document.
+   Gate: `testAnEditWhileClosedIsRecoveredOnOpen` and
+   `testAFaceMovedWhileClosedStaysMissing` assert `Link` like `Cut`, and
+   an upgrade case shows no reference newly missing.
+
+2. **V5, the transaction gates.**  Widen the `onBeforeChange` gathering so
+   a break inside undo/redo is seeded; the persistence decision stays at
+   save time (D3).  Gate: `testUndoTakesTheGenerationWithIt` unchanged,
+   plus a case that breaks a reference inside `openTransaction` /
+   `commitTransaction` without a recompute outside it and finds the
+   generation retained.
+
+3. **The reload-repair decision, put to the user, not built.**  A repair
+   made at reload leaves the referrer untouched (7.14, "Not built,
+   deliberately"): the geometry search found the same geometry, so the
+   saved result stands, and the document opens clean.  The alternative is
+   `addRecomputeObject` on the referrer, which is what a map-version
+   mismatch does.  One question, with the trade-off stated.
+
+4. **V5, the Sketcher prefix**, only if the upstream Sketcher merge has
+   happened; otherwise it stays parked.  A generation of a prefixed
+   property is materialized under a name that carries the property
+   (`_BaseShape<N>` with a `_BaseShapeProps` entry, or a prefix in the
+   manifest value), and `adoptShapeVersions` reads it back.
+
+Before any of it, a ten-minute hygiene pass: grep the Part module for
+`getShape().getShape()` and `getShape().` bound to a reference -- the
+two dangling references of 7.14 were the same mistake twice, and
+`PropertyPartShape::getShape()` returning by value invites a third.
