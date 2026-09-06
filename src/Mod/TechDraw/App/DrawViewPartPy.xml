@@ -53,6 +53,20 @@ elements its bounding wires were projected from.  The name does not depend on th
 area that gives the face its number.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getGeometryName">
+      <Documentation>
+        <UserDocu>getGeometryName(subName) - the name the projected element subName ("Edge3",
+"Vertex2", "Face1") carries, or an empty string if there is no such element or the
+projection could not name it.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getGeometryReference">
+      <Documentation>
+        <UserDocu>getGeometryReference(name) - the element of this View that carries name now,
+as "Edge3" / "Vertex2" / "Face1", or an empty string if nothing does.  This is how a
+reference stored by name finds its element again after the numbering has moved.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getVisibleEdges">
       <Documentation>
         <UserDocu>getVisibleEdges() - get the visible edges in the View as Part::TopoShapeEdges</UserDocu>

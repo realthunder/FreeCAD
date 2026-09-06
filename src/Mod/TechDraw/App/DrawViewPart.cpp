@@ -896,6 +896,75 @@ TechDraw::FacePtr DrawViewPart::getFace(std::string faceName) const
 }
 
 
+//! the name the element subName refers to carries, or nothing
+std::string DrawViewPart::getGeometryName(const std::string& subName) const
+{
+    int idx = DrawUtil::getIndexFromName(subName);
+    if (idx < 0) {
+        return {};
+    }
+    std::string geomType = DrawUtil::getGeomTypeFromName(subName);
+
+    if (geomType == "Edge") {
+        const BaseGeomPtrVector edges = getEdgeGeometry();
+        if (idx < int(edges.size()) && edges.at(idx)) {
+            return edges.at(idx)->getHlrName();
+        }
+    }
+    else if (geomType == "Vertex") {
+        const std::vector<TechDraw::VertexPtr> verts = getVertexGeometry();
+        if (idx < int(verts.size()) && verts.at(idx)) {
+            return verts.at(idx)->getHlrName();
+        }
+    }
+    else if (geomType == "Face") {
+        const std::vector<TechDraw::FacePtr> faces = getFaceGeometry();
+        if (idx < int(faces.size()) && faces.at(idx)) {
+            return faces.at(idx)->getHlrName();
+        }
+    }
+
+    return {};
+}
+
+//! the element that carries geometryName now, as a reference into this view
+std::string DrawViewPart::getGeometryReference(const std::string& geometryName) const
+{
+    if (geometryName.empty()) {
+        return {};
+    }
+
+    //the tag the name ends with says which pile to look in, so a name never
+    //matches an element of the wrong kind
+    if (geometryName.find(";HLRF:") != std::string::npos) {
+        const std::vector<TechDraw::FacePtr> faces = getFaceGeometry();
+        for (size_t i = 0; i < faces.size(); i++) {
+            if (faces.at(i) && faces.at(i)->getHlrName() == geometryName) {
+                return DrawUtil::makeGeomName("Face", int(i));
+            }
+        }
+    }
+    else if (geometryName.find(";HLRV:") != std::string::npos
+             || geometryName.find(";HLRC:") != std::string::npos) {
+        const std::vector<TechDraw::VertexPtr> verts = getVertexGeometry();
+        for (size_t i = 0; i < verts.size(); i++) {
+            if (verts.at(i) && verts.at(i)->getHlrName() == geometryName) {
+                return DrawUtil::makeGeomName("Vertex", int(i));
+            }
+        }
+    }
+    else if (geometryName.find(";HLR:") != std::string::npos) {
+        const BaseGeomPtrVector edges = getEdgeGeometry();
+        for (size_t i = 0; i < edges.size(); i++) {
+            if (edges.at(i) && edges.at(i)->getHlrName() == geometryName) {
+                return DrawUtil::makeGeomName("Edge", int(i));
+            }
+        }
+    }
+
+    return {};
+}
+
 const std::vector<TechDraw::FacePtr> DrawViewPart::getFaceGeometry() const
 {
     std::vector<TechDraw::FacePtr> result;

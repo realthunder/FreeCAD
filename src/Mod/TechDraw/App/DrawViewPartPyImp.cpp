@@ -157,6 +157,28 @@ PyObject* DrawViewPartPy::getFaceNames(PyObject *args)
     return Py::new_reference_to(result);
 }
 
+PyObject* DrawViewPartPy::getGeometryName(PyObject *args)
+{
+    char* subName{nullptr};
+    if (!PyArg_ParseTuple(args, "s", &subName)) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    return Py::new_reference_to(Py::String(dvp->getGeometryName(std::string(subName))));
+}
+
+PyObject* DrawViewPartPy::getGeometryReference(PyObject *args)
+{
+    char* geometryName{nullptr};
+    if (!PyArg_ParseTuple(args, "s", &geometryName)) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    return Py::new_reference_to(Py::String(dvp->getGeometryReference(std::string(geometryName))));
+}
+
 PyObject* DrawViewPartPy::getVisibleEdges(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, "")) {

@@ -162,6 +162,16 @@ public:
     TechDraw::BaseGeomPtr getEdge(std::string edgeName) const;
     TechDraw::FacePtr getFace(std::string faceName) const;
 
+    //! The two directions of the bridge between a reference into this view --
+    //! "Edge3", "Vertex2", "Face1" -- and the name the projected element
+    //! carries, which the numbering does not survive but the name does.
+    //! Both return an empty string when there is nothing to report: no such
+    //! element, or one the projection could not name.  Storing the name a
+    //! reference resolved to and asking for it back later is the first rung of
+    //! the recovery ladder (docs/TopoNamingEnhance.md sec 3.6).
+    std::string getGeometryName(const std::string& subName) const;
+    std::string getGeometryReference(const std::string& geometryName) const;
+
     //get existing geom for edge idx in projection
     TechDraw::BaseGeomPtr getGeomByIndex(int idx) const;
     //get existing geom for vertex idx in projection
