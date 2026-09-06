@@ -200,6 +200,8 @@ BaseGeomPtr BaseGeom::copy()
     result->setHlrVisible( hlrVisible);
     result->reversed = reversed;
     result->ref3D = ref3D;
+    result->source3D = source3D;
+    result->hlrName = hlrName;
     result->cosmetic = cosmetic;
     result->source(m_source);
     result->sourceIndex(m_sourceIndex);

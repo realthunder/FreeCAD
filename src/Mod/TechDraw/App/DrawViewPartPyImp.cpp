@@ -85,6 +85,25 @@ PyObject* DrawViewPartPy::getProjectionShape(PyObject *args)
     return Py::new_reference_to(Part::shape2pyshape(dvp->getProjectionShape()));
 }
 
+PyObject* DrawViewPartPy::getEdgeNames(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    Py::List result;
+    for (auto& geom : dvp->getEdgeGeometry()) {
+        Py::Tuple entry(3);
+        entry.setItem(0, Py::String(geom ? geom->getHlrName() : std::string()));
+        entry.setItem(1, Py::String(geom ? geom->getSource3d() : std::string()));
+        entry.setItem(2, Py::Long(geom && geom->getRef3d() > 0 ? geom->getRef3d() : 0));
+        result.append(entry);
+    }
+
+    return Py::new_reference_to(result);
+}
+
 PyObject* DrawViewPartPy::getVisibleEdges(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, "")) {

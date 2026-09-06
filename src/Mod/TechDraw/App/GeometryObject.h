@@ -34,6 +34,8 @@
 #include <string>
 #include <vector>
 
+#include <NCollection_DataMap.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS_Shape.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Pnt.hxx>
@@ -64,6 +66,9 @@ class Vertex;
 class TechDrawExport GeometryObject
 {
 public:
+    //! projected shape -> an index into the shape it was projected from
+    using ShapeIndexMap = NCollection_DataMap<TopoDS_Shape, int, TopTools_ShapeMapHasher>;
+
     /// Constructor
     GeometryObject(const std::string& parent, TechDraw::DrawView* parentObj);
     virtual ~GeometryObject();
@@ -86,6 +91,12 @@ public:
     //! The shape the projection was run on, element map and all.  It is what
     //! the projected geometry has to be named from, so it is kept.
     const Part::TopoShape& getProjectionShape() const { return m_projectionShape; }
+    //! Give every projected edge the name of the source element it came from.
+    //! MUST be called on the main thread: reading an element map adopts the
+    //! document's App::StringHasher, which has no locking of any kind
+    //! (docs/TopoNamingEnhance.md sec 8.2).  The projection itself runs in a
+    //! worker and only records indices.
+    void nameEdgeGeometry();
     static TopoDS_Shape projectSimpleShape(const TopoDS_Shape& shape, const gp_Ax2& CS);
     static TopoDS_Shape simpleProjection(const TopoDS_Shape& shape, const gp_Ax2& projCS);
     static TopoDS_Shape projectFace(const TopoDS_Shape& face, const gp_Ax2& CS);
@@ -134,8 +145,19 @@ public:
     int addCenterLine(TechDraw::BaseGeomPtr bg, std::string tag);
 
 protected:
+    //! Mirror a compound of projected edges the way ShapeUtils::invertGeometry
+    //! does, carrying a per-edge association across the copy the mirror makes.
+    //! sourceOf is keyed by the input edges on the way in and by the mirrored
+    //! ones on the way out.
+    static TopoDS_Shape invertAndTrack(const TopoDS_Shape& compound, ShapeIndexMap& sourceOf);
+    //! the single letter a projected edge's name carries for its class
+    static char edgeClassLetter(edgeClass category);
+
     //the shape HLR was run on, kept so the projection can be named from it
     Part::TopoShape m_projectionShape;
+    //projected edge -> index of its source element in m_projectionShape's
+    //Edge<n> numbering.  Filled by the projection, read by nameEdgeGeometry.
+    ShapeIndexMap m_edgeSource;
 
     //HLR output
     TopoDS_Shape visHard;

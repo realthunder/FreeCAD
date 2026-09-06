@@ -416,6 +416,11 @@ void DrawViewPart::onHlrFinished(GeometryObjectPtr geometryObject)
 {
     m_geometryObject = geometryObject;
 
+    //the projection ran in a worker and could only record indices; turning
+    //them into element names reads the map, so it happens here, on the main
+    //thread (docs/TopoNamingEnhance.md sec 8.2)
+    m_geometryObject->nameEdgeGeometry();
+
     //the last hlr related task is to make a bbox of the results
     bbox = geometryObject->calcBoundingBox();
 

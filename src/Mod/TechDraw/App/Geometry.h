@@ -134,8 +134,19 @@ class TechDrawExport BaseGeom : public std::enable_shared_from_this<BaseGeom>
         void setHlrVisible(bool state) { hlrVisible = state; }
         bool getReversed()  { return reversed; }
         void setReversed(bool state) { reversed = state; }
+        //! The index of the element this projected edge came from, in the
+        //! Edge<n> numbering of DrawViewPart::getProjectionShape().  -1 when
+        //! there is none -- a silhouette has no source edge.
         int getRef3d()  { return ref3D; }
         void setRef3d(int ref)  { ref3D = ref; }
+        //! The mapped name of that source element, and the name of this
+        //! projected edge derived from it:
+        //! <sourceElementName>;HLR:<class>:<ordinal>.  Both are empty until
+        //! the projection has been named (GeometryObject::nameEdgeGeometry).
+        const std::string& getSource3d() const { return source3D; }
+        void setSource3d(const std::string& name) { source3D = name; }
+        const std::string& getHlrName() const { return hlrName; }
+        void setHlrName(const std::string& name) { hlrName = name; }
         TopoDS_Edge getOCCEdge()  { return occEdge; }
         void setOCCEdge(TopoDS_Edge newEdge)  { occEdge = newEdge; }
         bool getCosmetic()  { return cosmetic; }
@@ -167,7 +178,9 @@ protected:
         edgeClass classOfEdge;
         bool hlrVisible;
         bool reversed;
-        int ref3D;                      //obs?
+        int ref3D;                      //source element index, 0 if unknown
+        std::string source3D;           //mapped name of the source element
+        std::string hlrName;            //name of this projected edge
         TopoDS_Edge occEdge;            //projected Edge
         bool cosmetic;
         //TODO: all these attributes should be private

@@ -43,9 +43,16 @@
 #include <HLRAlgo_Projector.hxx>
 #include <HLRBRep.hxx>
 #include <HLRBRep_Algo.hxx>
+#include <HLRAlgo_BiPoint.hxx>
+#include <HLRAlgo_EdgeIterator.hxx>
+#include <HLRAlgo_EdgeStatus.hxx>
+#include <HLRBRep_Data.hxx>
+#include <HLRBRep_EdgeData.hxx>
+#include <HLRBRep_FaceIterator.hxx>
 #include <HLRBRep_HLRToShape.hxx>
+#include <BRepLib_MakeEdge2d.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <HLRBRep_PolyAlgo.hxx>
-#include <HLRBRep_PolyHLRToShape.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
@@ -138,6 +145,355 @@ void GeometryObject::clear()
     vertexGeom.clear();
     faceGeom.clear();
     edgeGeom.clear();
+    m_edgeSource.Clear();
+}
+
+
+//===========================================================================
+// The HLR traversals, reimplemented so they can say where an edge came from
+//===========================================================================
+//
+// HLRBRep_HLRToShape and HLRBRep_PolyHLRToShape both know the source element
+// of every edge they emit and then throw it away: their public API returns a
+// bare compound.  These two traversals are the same walks, in the same order,
+// emitting the same edges, and they hand the source back with each one
+// (docs/TopoNamingEnhance.md sec 3.5).  Nothing here is a heuristic and there
+// is no second HLR pass -- the correspondence is the algorithm's own.
+//
+// The traversals only ever record indices and shapes.  Turning those into
+// element names is done on the main thread by nameEdgeGeometry, because
+// reading an element map adopts the document's App::StringHasher and that has
+// no locking (sec 8.2).
+
+namespace
+{
+
+//! HLRBRep_HLRToShape::DrawEdge.  ie is the index of ed in the data
+//! structure's EDataArray, which is also its index in EdgeMap.
+void hlrDrawEdge(bool visible, bool inFace, int typ, HLRBRep_EdgeData& ed, int ie,
+                 TopoDS_Shape& result, bool& added,
+                 std::vector<std::pair<TopoDS_Shape, int>>& produced)
+{
+    bool todraw = false;
+    if (inFace) {
+        todraw = true;
+    }
+    else if (typ == 3) {
+        todraw = ed.Rg1Line() && !ed.RgNLine();
+    }
+    else if (typ == 4) {
+        todraw = ed.RgNLine();
+    }
+    else {
+        todraw = !ed.Rg1Line();
+    }
+    if (!todraw) {
+        return;
+    }
+
+    double sta, end;
+    float tolsta, tolend;
+    BRep_Builder builder;
+    HLRAlgo_EdgeIterator it;
+    if (visible) {
+        for (it.InitVisible(ed.Status()); it.MoreVisible(); it.NextVisible()) {
+            it.Visible(sta, tolsta, end, tolend);
+            TopoDS_Edge edge = HLRBRep::MakeEdge(ed.Geometry(), sta, end);
+            if (!edge.IsNull()) {
+                builder.Add(result, edge);
+                produced.emplace_back(edge, ie);
+                added = true;
+            }
+        }
+    }
+    else {
+        for (it.InitHidden(ed.Status()); it.MoreHidden(); it.NextHidden()) {
+            it.Hidden(sta, tolsta, end, tolend);
+            TopoDS_Edge edge = HLRBRep::MakeEdge(ed.Geometry(), sta, end);
+            if (!edge.IsNull()) {
+                builder.Add(result, edge);
+                produced.emplace_back(edge, ie);
+                added = true;
+            }
+        }
+    }
+}
+
+//! HLRBRep_HLRToShape::DrawFace
+void hlrDrawFace(bool visible, int typ, int iface, const Handle(HLRBRep_Data)& ds,
+                 TopoDS_Shape& result, bool& added,
+                 std::vector<std::pair<TopoDS_Shape, int>>& produced)
+{
+    HLRBRep_FaceIterator itf;
+    for (itf.InitEdge(ds->FDataArray().ChangeValue(iface)); itf.MoreEdge(); itf.NextEdge()) {
+        int ie = itf.Edge();
+        HLRBRep_EdgeData& edf = ds->EDataArray().ChangeValue(ie);
+        if (edf.Used()) {
+            continue;
+        }
+
+        bool todraw;
+        if (typ == 1) {
+            todraw = itf.IsoLine();
+        }
+        else if (typ == 2) {// outlines
+            todraw = itf.Internal();
+        }
+        else if (typ == 3) {
+            todraw = edf.Rg1Line() && !edf.RgNLine() && !itf.OutLine();
+        }
+        else if (typ == 4) {
+            todraw = edf.RgNLine() && !itf.OutLine();
+        }
+        else {
+            todraw = !itf.IsoLine() && !itf.Internal() && (!edf.Rg1Line() || itf.OutLine());
+        }
+
+        if (todraw) {
+            hlrDrawEdge(visible, true, typ, edf, ie, result, added, produced);
+            edf.Used(true);
+        }
+        else if ((typ > 4 || typ == 2) && edf.Rg1Line() && !itf.OutLine()) {
+            //sharp or outlines: give the edge a second face to be drawn from
+            int hc = edf.HideCount();
+            if (hc > 0) {
+                edf.Used(true);
+            }
+            else {
+                edf.HideCount(hc + 1);
+            }
+        }
+        else {
+            edf.Used(true);
+        }
+    }
+}
+
+//! HLRBRep_HLRToShape::InternalCompound for the whole projection (no shape
+//! filter, and 2D output), plus the source edge index of every edge emitted.
+TopoDS_Shape hlrInternalCompound(const Handle(HLRBRep_Algo)& algo, int typ, bool visible,
+                                 std::vector<std::pair<TopoDS_Shape, int>>& produced)
+{
+    Handle(HLRBRep_Data) ds = algo->DataStructure();
+    if (ds.IsNull()) {
+        return TopoDS_Shape();
+    }
+
+    ds->Projector().Scaled(true);
+    const int e1 = 1;
+    const int e2 = ds->NbEdges();
+    const int f1 = 1;
+    const int f2 = ds->NbFaces();
+
+    TopoDS_Shape result;
+    BRep_Builder builder;
+    builder.MakeCompound(TopoDS::Compound(result));
+
+    for (int ie = e1; ie <= e2; ie++) {
+        HLRBRep_EdgeData& ed = ds->EDataArray().ChangeValue(ie);
+        if (ed.Selected() && !ed.Vertical()) {
+            ed.Used(false);
+            ed.HideCount(0);
+        }
+        else {
+            ed.Used(true);
+        }
+    }
+
+    bool added = false;
+    for (int iface = f1; iface <= f2; iface++) {
+        hlrDrawFace(visible, typ, iface, ds, result, added, produced);
+    }
+    if (typ >= 3) {
+        for (int ie = e1; ie <= e2; ie++) {
+            HLRBRep_EdgeData& ed = ds->EDataArray().ChangeValue(ie);
+            if (!ed.Used()) {
+                hlrDrawEdge(visible, false, typ, ed, ie, result, added, produced);
+                ed.Used(true);
+            }
+        }
+    }
+    ds->Projector().Scaled(false);
+
+    if (!added) {
+        produced.clear();
+        return TopoDS_Shape();
+    }
+    return result;
+}
+
+//! One segment of the polygon algorithm's output, with the shape it came from.
+struct PolySegment
+{
+    gp_Pnt2d first;
+    gp_Pnt2d last;
+    bool rg1Line;
+    bool rgNLine;
+    bool outLine;
+    bool intLine;
+    bool visible;
+    TopoDS_Shape source;
+};
+
+//! HLRBRep_PolyHLRToShape::Update -- the pass that turns the polygon
+//! algorithm's hidden line result into 2D segments.  Every segment reports
+//! the shape it came from, which is what this keeps.
+void polySegments(const Handle(HLRBRep_PolyAlgo)& algo, std::vector<PolySegment>& segments)
+{
+    double sta = 0.0, end = 0.0;
+    float tolsta = 0.0F, tolend = 0.0F;
+    HLRAlgo_EdgeIterator it;
+    HLRAlgo_EdgeStatus status;
+    TopoDS_Shape source;
+    bool reg1 = false, regn = false, outl = false, intl = false;
+    const gp_Trsf& projection = algo->Projector().Transformation();
+
+    for (algo->InitHide(); algo->MoreHide(); algo->NextHide()) {
+        HLRAlgo_BiPoint::PointsT& points = algo->Hide(status, source, reg1, regn, outl, intl);
+        gp_XYZ start3d = points.Pnt1;
+        gp_XYZ end3d = points.Pnt2;
+        projection.Transforms(start3d);
+        projection.Transforms(end3d);
+        const gp_XY start2d(start3d.X(), start3d.Y());
+        const gp_XY end2d(end3d.X(), end3d.Y());
+        const gp_XY along = end2d - start2d;
+        if (along.Modulus() <= 1.e-10) {
+            continue;
+        }
+        for (it.InitVisible(status); it.MoreVisible(); it.NextVisible()) {
+            it.Visible(sta, tolsta, end, tolend);
+            segments.push_back({gp_Pnt2d(start2d + sta * along), gp_Pnt2d(start2d + end * along),
+                                reg1, regn, outl, intl, true, source});
+        }
+        for (it.InitHidden(status); it.MoreHidden(); it.NextHidden()) {
+            it.Hidden(sta, tolsta, end, tolend);
+            segments.push_back({gp_Pnt2d(start2d + sta * along), gp_Pnt2d(start2d + end * along),
+                                reg1, regn, outl, intl, false, source});
+        }
+    }
+}
+
+//! HLRBRep_PolyHLRToShape::InternalCompound, over the segments above.  The
+//! type codes are the polygon algorithm's own and differ from the exact one's:
+//! 1 outline, 2 smooth, 3 seam, 4 hard.
+TopoDS_Shape polyInternalCompound(const std::vector<PolySegment>& segments, int typ, bool visible,
+                                  std::vector<std::pair<TopoDS_Shape, TopoDS_Shape>>& produced)
+{
+    TopoDS_Shape result;
+    BRep_Builder builder;
+    builder.MakeCompound(TopoDS::Compound(result));
+
+    bool added = false;
+    for (const auto& segment : segments) {
+        if (segment.visible != visible) {
+            continue;
+        }
+        bool todraw;
+        if (typ == 1) {
+            todraw = segment.intLine;
+        }
+        else if (typ == 2) {
+            todraw = segment.rg1Line && !segment.rgNLine && !segment.outLine;
+        }
+        else if (typ == 3) {
+            todraw = segment.rgNLine && !segment.outLine;
+        }
+        else {
+            todraw = !segment.intLine && (!segment.rg1Line || segment.outLine);
+        }
+        if (!todraw || segment.first.SquareDistance(segment.last) <= 1.e-20) {
+            continue;
+        }
+        TopoDS_Edge edge = BRepLib_MakeEdge2d(segment.first, segment.last);
+        builder.Add(result, edge);
+        produced.emplace_back(edge, segment.source);
+        added = true;
+    }
+
+    if (!added) {
+        produced.clear();
+        return TopoDS_Shape();
+    }
+    return result;
+}
+
+}// namespace
+
+//! The mirror of ShapeUtils::invertGeometry, with the per-edge association
+//! carried across the copy that mirror makes.  The transformation is composed
+//! exactly as mirrorShape composes it, so the geometry is unchanged.
+TopoDS_Shape GeometryObject::invertAndTrack(const TopoDS_Shape& compound,
+                                            GeometryObject::ShapeIndexMap& sourceOf)
+{
+    if (compound.IsNull()) {
+        return compound;
+    }
+
+    gp_Trsf transform;
+    transform.SetScale(gp_Pnt(0.0, 0.0, 0.0), 1.0);
+    gp_Trsf mirror;
+    mirror.SetMirror(gp_Ax2(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0, -1, 0)));
+    transform.Multiply(mirror);
+
+    BRepBuilderAPI_Transform mkTrf(compound, transform);
+    TopoDS_Shape mirrored = mkTrf.Shape();
+
+    ShapeIndexMap moved;
+    for (ShapeIndexMap::Iterator it(sourceOf); it.More(); it.Next()) {
+        TopoDS_Shape after = mkTrf.ModifiedShape(it.Key());
+        if (after.IsNull()) {
+            after = it.Key();
+        }
+        moved.Bind(after, it.Value());
+    }
+    sourceOf = moved;
+
+    return mirrored;
+}
+
+//! Give every projected edge the name of the element it was projected from.
+//! Called on the main thread once the projection has landed.
+void GeometryObject::nameEdgeGeometry()
+{
+    if (m_projectionShape.isNull() || m_projectionShape.getElementMapSize() == 0) {
+        return;
+    }
+
+    std::map<std::string, int> ordinals;
+    for (auto& geom : edgeGeom) {
+        if (!geom || geom->getRef3d() <= 0) {
+            continue;
+        }
+        Data::MappedName source = m_projectionShape.getMappedName(
+            Data::IndexedName::fromConst("Edge", geom->getRef3d()));
+        if (source.empty()) {
+            continue;
+        }
+
+        std::string sourceName = source.toString();
+        std::ostringstream stem;
+        stem << sourceName << ";HLR:" << (geom->getHlrVisible() ? 'V' : 'H')
+             << edgeClassLetter(geom->getClassOfEdge()) << ':';
+        //one source edge can be broken into several fragments by hiding, so
+        //the ordinal is what tells the fragments apart
+        int ordinal = ordinals[stem.str()]++;
+
+        geom->setSource3d(sourceName);
+        geom->setHlrName(stem.str() + std::to_string(ordinal));
+    }
+}
+
+//! the single letter a projected edge's name carries for its class
+char GeometryObject::edgeClassLetter(edgeClass category)
+{
+    switch (category) {
+        case ecUVISO: return 'I';
+        case ecOUTLINE: return 'O';
+        case ecSMOOTH: return 'S';
+        case ecSEAM: return 'E';
+        case ecHARD: return 'H';
+        default: return 'X';
+    }
 }
 
 void GeometryObject::projectShape(const Part::TopoShape& inShape, const gp_Ax2& viewAxis)
@@ -173,69 +529,53 @@ void GeometryObject::projectShape(const Part::TopoShape& inShape, const gp_Ax2& 
     }
 
     try {
-        HLRBRep_HLRToShape hlrToShape(brep_hlr);
+        //the traversal above HLRToShape's, which reports the source edge of
+        //every edge it emits.  The type codes are HLRToShape's own:
+        //1 iso, 2 outline, 3 smooth, 4 seam, 5 hard.
+        TopTools_IndexedMapOfShape sourceEdges;
+        TopExp::MapShapes(m_projectionShape.getShape(), TopAbs_EDGE, sourceEdges);
+        Handle(HLRBRep_Data) ds = brep_hlr->DataStructure();
 
-        if (!hlrToShape.VCompound().IsNull()) {
-            visHard = hlrToShape.VCompound();
-            BRepLib::BuildCurves3d(visHard);
-            visHard =ShapeUtils::invertGeometry(visHard);
-            //            BRepTools::Write(visHard, "GOvisHard.brep");            //debug
-        }
+        auto emit = [&](int typ, bool visible, TopoDS_Shape& target) {
+            std::vector<std::pair<TopoDS_Shape, int>> produced;
+            TopoDS_Shape compound = hlrInternalCompound(brep_hlr, typ, visible, produced);
+            if (compound.IsNull()) {
+                return;
+            }
+            BRepLib::BuildCurves3d(compound);
 
-        if (!hlrToShape.Rg1LineVCompound().IsNull()) {
-            visSmooth = hlrToShape.Rg1LineVCompound();
-            BRepLib::BuildCurves3d(visSmooth);
-            visSmooth =ShapeUtils::invertGeometry(visSmooth);
-        }
+            //the HLR edge index becomes the projection shape's own Edge<n>
+            //index; a silhouette is an edge HLR invented and has none
+            ShapeIndexMap sourceOf;
+            if (!ds.IsNull()) {
+                auto& edgeMap = ds->EdgeMap();
+                for (const auto& item : produced) {
+                    if (item.second < 1 || item.second > edgeMap.Extent()) {
+                        continue;
+                    }
+                    int index = sourceEdges.FindIndex(edgeMap.FindKey(item.second));
+                    if (index > 0) {
+                        sourceOf.Bind(item.first, index);
+                    }
+                }
+            }
 
-        if (!hlrToShape.RgNLineVCompound().IsNull()) {
-            visSeam = hlrToShape.RgNLineVCompound();
-            BRepLib::BuildCurves3d(visSeam);
-            visSeam =ShapeUtils::invertGeometry(visSeam);
-        }
+            target = invertAndTrack(compound, sourceOf);
+            for (ShapeIndexMap::Iterator it(sourceOf); it.More(); it.Next()) {
+                m_edgeSource.Bind(it.Key(), it.Value());
+            }
+        };
 
-        if (!hlrToShape.OutLineVCompound().IsNull()) {
-            //            BRepTools::Write(hlrToShape.OutLineVCompound(), "GOOutLineVCompound.brep");            //debug
-            visOutline = hlrToShape.OutLineVCompound();
-            BRepLib::BuildCurves3d(visOutline);
-            visOutline =ShapeUtils::invertGeometry(visOutline);
-        }
-
-        if (!hlrToShape.IsoLineVCompound().IsNull()) {
-            visIso = hlrToShape.IsoLineVCompound();
-            BRepLib::BuildCurves3d(visIso);
-            visIso =ShapeUtils::invertGeometry(visIso);
-        }
-
-        if (!hlrToShape.HCompound().IsNull()) {
-            hidHard = hlrToShape.HCompound();
-            BRepLib::BuildCurves3d(hidHard);
-            hidHard =ShapeUtils::invertGeometry(hidHard);
-        }
-
-        if (!hlrToShape.Rg1LineHCompound().IsNull()) {
-            hidSmooth = hlrToShape.Rg1LineHCompound();
-            BRepLib::BuildCurves3d(hidSmooth);
-            hidSmooth =ShapeUtils::invertGeometry(hidSmooth);
-        }
-
-        if (!hlrToShape.RgNLineHCompound().IsNull()) {
-            hidSeam = hlrToShape.RgNLineHCompound();
-            BRepLib::BuildCurves3d(hidSeam);
-            hidSeam =ShapeUtils::invertGeometry(hidSeam);
-        }
-
-        if (!hlrToShape.OutLineHCompound().IsNull()) {
-            hidOutline = hlrToShape.OutLineHCompound();
-            BRepLib::BuildCurves3d(hidOutline);
-            hidOutline =ShapeUtils::invertGeometry(hidOutline);
-        }
-
-        if (!hlrToShape.IsoLineHCompound().IsNull()) {
-            hidIso = hlrToShape.IsoLineHCompound();
-            BRepLib::BuildCurves3d(hidIso);
-            hidIso =ShapeUtils::invertGeometry(hidIso);
-        }
+        emit(5, true, visHard);
+        emit(3, true, visSmooth);
+        emit(4, true, visSeam);
+        emit(2, true, visOutline);
+        emit(1, true, visIso);
+        emit(5, false, hidHard);
+        emit(3, false, hidSmooth);
+        emit(4, false, hidSeam);
+        emit(2, false, hidOutline);
+        emit(1, false, hidIso);
     }
     catch (const Standard_Failure&) {
         throw Base::RuntimeError(
@@ -357,42 +697,50 @@ void GeometryObject::projectShapeWithPolygonAlgo(const Part::TopoShape& input,
     }
 
     try {
-        HLRBRep_PolyHLRToShape polyhlrToShape;
-        polyhlrToShape.Update(brep_hlrPoly);
+        //PolyHLRToShape's Update and InternalCompound, done here so the shape
+        //each segment came from is kept.  The polygon algorithm's type codes
+        //are its own and differ from the exact one's: 1 outline, 2 smooth,
+        //3 seam, 4 hard.  It produces no isoparametric lines.
+        std::vector<PolySegment> segments;
+        polySegments(brep_hlrPoly, segments);
 
-        visHard = polyhlrToShape.VCompound();
-        BRepLib::BuildCurves3d(visHard);
-        visHard =ShapeUtils::invertGeometry(visHard);
-        //        BRepTools::Write(visHard, "GOvisHardi.brep");            //debug
+        TopTools_IndexedMapOfShape sourceEdges;
+        TopExp::MapShapes(m_projectionShape.getShape(), TopAbs_EDGE, sourceEdges);
 
-        visSmooth = polyhlrToShape.Rg1LineVCompound();
-        BRepLib::BuildCurves3d(visSmooth);
-        visSmooth =ShapeUtils::invertGeometry(visSmooth);
+        auto emit = [&](int typ, bool visible, TopoDS_Shape& target) {
+            std::vector<std::pair<TopoDS_Shape, TopoDS_Shape>> produced;
+            TopoDS_Shape compound = polyInternalCompound(segments, typ, visible, produced);
+            if (compound.IsNull()) {
+                return;
+            }
+            BRepLib::BuildCurves3d(compound);
 
-        visSeam = polyhlrToShape.RgNLineVCompound();
-        BRepLib::BuildCurves3d(visSeam);
-        visSeam =ShapeUtils::invertGeometry(visSeam);
+            ShapeIndexMap sourceOf;
+            for (const auto& item : produced) {
+                //a segment off a silhouette reports the face, not an edge
+                if (item.second.IsNull() || item.second.ShapeType() != TopAbs_EDGE) {
+                    continue;
+                }
+                int index = sourceEdges.FindIndex(item.second);
+                if (index > 0) {
+                    sourceOf.Bind(item.first, index);
+                }
+            }
 
-        visOutline = polyhlrToShape.OutLineVCompound();
-        BRepLib::BuildCurves3d(visOutline);
-        visOutline =ShapeUtils::invertGeometry(visOutline);
+            target = invertAndTrack(compound, sourceOf);
+            for (ShapeIndexMap::Iterator it(sourceOf); it.More(); it.Next()) {
+                m_edgeSource.Bind(it.Key(), it.Value());
+            }
+        };
 
-        hidHard = polyhlrToShape.HCompound();
-        BRepLib::BuildCurves3d(hidHard);
-        hidHard =ShapeUtils::invertGeometry(hidHard);
-        //        BRepTools::Write(hidHard, "GOhidHardi.brep");            //debug
-
-        hidSmooth = polyhlrToShape.Rg1LineHCompound();
-        BRepLib::BuildCurves3d(hidSmooth);
-        hidSmooth =ShapeUtils::invertGeometry(hidSmooth);
-
-        hidSeam = polyhlrToShape.RgNLineHCompound();
-        BRepLib::BuildCurves3d(hidSeam);
-        hidSeam =ShapeUtils::invertGeometry(hidSeam);
-
-        hidOutline = polyhlrToShape.OutLineHCompound();
-        BRepLib::BuildCurves3d(hidOutline);
-        hidOutline =ShapeUtils::invertGeometry(hidOutline);
+        emit(4, true, visHard);
+        emit(2, true, visSmooth);
+        emit(3, true, visSeam);
+        emit(1, true, visOutline);
+        emit(4, false, hidHard);
+        emit(2, false, hidSmooth);
+        emit(3, false, hidSeam);
+        emit(1, false, hidOutline);
     }
     catch (const Standard_Failure& e) {
         Base::Console().Error(
@@ -574,6 +922,11 @@ void GeometryObject::addGeomFromCompound(TopoDS_Shape edgeCompound, edgeClass ca
         base->sourceIndex(i - 1);
         base->setClassOfEdge(category);
         base->setHlrVisible(hlrVisible);
+        //the source element, recorded by the traversal.  Only an index here --
+        //the name it stands for is resolved on the main thread.
+        if (m_edgeSource.IsBound(edge)) {
+            base->setRef3d(m_edgeSource.Find(edge));
+        }
         edgeGeom.push_back(base);
 
         //add vertices of new edge if not already in list
