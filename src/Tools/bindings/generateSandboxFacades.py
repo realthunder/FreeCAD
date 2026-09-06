@@ -50,6 +50,13 @@ ANNOTATED_XMLS = [
     "src/App/DocumentObjectPy.xml",
     "src/App/GeoFeaturePy.xml",
     "src/App/DocumentPy.xml",
+    # A document object's own view provider (G2b, ruling 2026-09-06:
+    # FreeCAD.GuiUp is the host's in the guest, so an execute() under
+    # `if App.GuiUp:` reaches obj.ViewObject.update() as natively;
+    # docs/Sandbox.md 7.9).  The view family is write-gated like the
+    # object's own writes: the same document, DocWriteSelf.
+    "src/Gui/ViewProviderPy.xml",
+    "src/Gui/ViewProviderDocumentObjectPy.xml",
     # Extensions (G1c): their methods are injected per INSTANCE on the
     # host, so a handle names its extensions' facades ("ext") and the
     # guest composes the proxy class; the host looks members up on the

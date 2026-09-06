@@ -323,8 +323,42 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         else {
             ++boots;
             bootPending = true;
+            tellGuiUp();
         }
         return live;
+    }
+
+    /** The guest's FreeCAD.GuiUp is the host's (user ruling 2026-09-06,
+     * docs/Sandbox.md 7.9 G2b, sec 13): the App side's `if App.GuiUp:`
+     * branches mean "a GUI is up" for the workbench code running in
+     * the guest, the same as natively, now that the GUI side runs
+     * there too.  Sent as the first request of a fresh guest, before
+     * any module of the boot's imports reads it; a headless host
+     * (FreeCADCmd, the test binary) leaves the guest's 0.
+     */
+    void tellGuiUp()
+    {
+        if (!Py_IsInitialized())
+            return;
+        int guiUp = 0;
+        {
+            Base::PyGILStateLocker lock;
+            PyObject* mod = PyImport_ImportModule("FreeCAD");
+            PyObject* v = mod ? PyObject_GetAttrString(mod, "GuiUp") : nullptr;
+            if (v)
+                guiUp = PyObject_IsTrue(v) == 1;
+            Py_XDECREF(v);
+            Py_XDECREF(mod);
+            PyErr_Clear();
+        }
+        if (!guiUp)
+            return;
+        json req;
+        req["op"] = FcxWire::OpExec;
+        req["src"] = "import FreeCAD\nFreeCAD.GuiUp = 1\n";
+        json reply;
+        if (!roundTrip(json::to_cbor(req), reply) || !reply.value("ok", false))
+            FC_ERR("expression sandbox: the guest did not take FreeCAD.GuiUp");
     }
 
     /** The time budget of one round trip (Outcome in

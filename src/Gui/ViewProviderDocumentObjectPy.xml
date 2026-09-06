@@ -17,6 +17,7 @@
             <Documentation>
                 <UserDocu>Update the view representation of the object</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
 		<Methode Name="isShowable">
 			<Documentation>
@@ -28,6 +29,7 @@
                 <UserDocu>Set/Get the associated data object</UserDocu>
             </Documentation>
             <Parameter Name="Object" Type="Object" />
+            <Sandbox tier="handle"/>
         </Attribute>
         <Attribute Name="ForceUpdate">
             <Documentation>

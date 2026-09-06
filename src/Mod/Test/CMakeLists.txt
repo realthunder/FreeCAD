@@ -26,6 +26,7 @@ SET(Test_SRCS
     SandboxPanels.py
     SandboxDraftGui.py
     SandboxInitGui.py
+    SandboxCorpusGui.py
 )
 
 SET(TestData_SRCS

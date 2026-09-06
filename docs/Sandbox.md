@@ -1974,22 +1974,95 @@ the facade -- the native function is `if App.GuiUp:`, 0 in the guest):
             tool bars; Activated()/Deactivated() fail on the missing
             `draftingtools` the same way.
 
-So the wall both stop at is now **the `GuiUp` ruling** (G2a: "FreeCAD
+So the wall both stopped at was **the `GuiUp` ruling** (G2a: "FreeCAD
 .GuiUp stays 0"), made when the guest had no GUI at all.  With the
-GUI side in the guest, two registrations hide behind it (Draft_Hatch,
+GUI side in the guest, two registrations hid behind it (Draft_Hatch,
 BimCovering -- the latter taking all of BIM's tool bars with it), and
 the App side's `if App.GuiUp:` branches (view providers, Qt imports,
-selection) are what the ruling protects for the document guests that
-share the instance.  Flipping it is a ruling, measured by the G1
-corpus gates with `GuiUp = 1` -- sec 13.  Behind it: the status bar
-widgets (G3d or G7 material), the 3D view and the observers (G4), the
-selection (G3d).  Gate `SandboxInitGui` (4 cases: the decision, Draft
-and BIM from the guest, the reset re-run) needs a session whose
+selection) are what the ruling protected for the document guests that
+share the instance.  Gate `SandboxInitGui` (4 cases: the decision,
+Draft and BIM from the guest, the reset re-run) needs a session whose
 startup ran the runner, so it runs in a process of its own with
-`FCX_INITGUI_IN_GUEST=1` and skips in the default gate list.  Suites
-after: the seven GUI gate modules 13 + 4 skipped, `SandboxInitGui`
-alone 4/4, `Tests_run --gtest_filter='Expression*'` 104 passed + 1
-skipped.
+`FCX_INITGUI_IN_GUEST=1` and skips in the default gate list.
+
+**GuiUp FLIPPED 2026-09-06, user ruling ("flip it").**  The guest's
+`FreeCAD.GuiUp` is the host's: `ImageHost` reads the host module's
+value after a boot and sends `FreeCAD.GuiUp = 1` as the fresh guest's
+first request (a headless host -- FreeCADCmd, the test binary --
+leaves the guest's 0, so the `*BuiltRouted` gtests measure what they
+always did).  What the flip needed, built the same day:
+
+- **The wheels**: every Draft view provider (the objects' `if
+  App.GuiUp:` imports reach all of them), BIM's `BimStatus`; shims for
+  `QDesktopServices`, `QFileSystemModel` (a base class BIM's library
+  browser derives from at import), `QtCore.Slot`.
+- **An object's own view provider is in its write scope.**  Draft's
+  Dimension `execute()` calls `obj.ViewObject.update()` under GuiUp;
+  BIM's Stairs hides its base's view.  `Gui.ViewProviderPy.xml` and
+  `ViewProviderDocumentObjectPy.xml` joined the annotated XMLs
+  (`show`, `hide`, `isVisible`, `signalChangeIcon`, `update` as call
+  tier, `Object` as a handle), the four are OpCall's "view family"
+  under the same-document write gate, and `documentOf` resolves a
+  view provider handle (any type whose MRO carries
+  `Gui.ViewProviderDocumentObject`) to its Object's document, through
+  Python -- App links no Gui type.  Property writes on a view
+  provider ride the same gate.
+- **`gui.user_input` is data** any principal may read: Draft's tool
+  modules read the enum at import, and a document guest imports them
+  under GuiUp now.
+- **A registration a document's import triggers is deferred**, not
+  refused: `import Draft` reaches `gui_hatch`, whose module registers
+  `Draft_Hatch`; the prelude's `addCommand` queues what the host
+  refuses for the principal and flushes the queue with the next
+  registration the session makes (Draft's Initialize).  A registration
+  only names wheel code.  Widget comm traffic is NOT deferred (tried
+  and reverted the same day: a document's models would reach the host
+  with the session's next traffic, and the widget gates' "a document
+  principal is refused" is the contract) -- so a document guest cannot
+  import `DraftTools` (DraftGui builds its tray at import), which is
+  BIM's Rebar below.
+- **The main window shim** answers `getActiveWindow()` None,
+  `getWindows()` empty, `findChild(QMdiArea)` a stub whose
+  `subWindowActivated` never fires (the view observers connect to it),
+  `getIcon` as data.
+- **Two host bugs the flip exposed, fixed.**  `ActionGroup::actions()`
+  cached raw `QAction*` past their deletion (a group's action belongs
+  to another command; the re-run after a reset replaced 82 of them
+  while Draft's groups held theirs, and `Command::testActive` read a
+  dead one -- SIGSEGV); every action the group lists is now tracked to
+  its destruction.  And the corpus gate's process hung in `exit()`:
+  `pthread_cond_destroy` on `MeshLevelSource.cpp`'s static condition
+  variable with its refine threads still waiting -- a renderer bug,
+  sec 12; the gate rig leaves through `os._exit` after writing its
+  result.
+
+**Measured with the flip** (gate `SandboxCorpusGui`, the G1 corpus
+built under the GUI in a routed session and compared with a native
+build, object by object -- the GUI twin of the `*BuiltRouted` gtests):
+
+    Draft   111 objects, 70 guest Proxies, 0 invalid, every shape
+            equal (Polygon 0 ULP); the view providers native (the
+            corpus makes its objects on the host).  STRICT.
+            Layer's onChanged calls its view provider's Proxy method
+            (`change_view_properties`): an error line, not a failure.
+    BIM     68 objects, 57 guest Proxies.  Invalid: the 3 BuildingParts
+            (execute calls `obj.ViewObject.Proxy.onChanged`, a host
+            Python object's method -- undeclared, G4).  Proxy stayed
+            native/None: Rebar (its module imports `bimcommands` under
+            GuiUp, which imports DraftTools, which builds Draft's tray
+            -- refused for a document), ArchReport (natively broken in
+            this fork's GUI: `ToggleVisibility`; in the guest
+            `QSyntaxHighlighter` next).  ReportResult missing for the
+            same reason; Pipe001 a quarter ULP.  NOT strict: the list
+            above is the record, `guest >= 50` and no native Proxy are
+            asserted.
+    InitGui Draft as before; BIM's `Initialize()` now completes -- its
+            tool bars on the host from the guest; `Activated()` stops
+            at `QDockWidget` (BimViews) and, for Draft, the status bar.
+
+Suites after the flip: `SandboxCorpusGui` 2/2, `SandboxInitGui` 4/4,
+the six other GUI gate modules 13/13, `Tests_run
+--gtest_filter='Expression*'` 104 passed + 1 skipped.
 
 ### 7.10 Probe A sized: Coin and pivy in the guest **[sized 2026-09-05]**
 
@@ -3216,10 +3289,12 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    `FreeCADGuiInit.py` under `InitGuiInGuest`, the re-run after a
    reset, the stand-ins stamped with their guest; Draft's and BIM's
    `InitGui.py` in the guest at startup, Draft's tool bars from the
-   guest; gate `SandboxInitGui`).  Both `Initialize()`s now stop at
-   the **GuiUp ruling** (Draft_Hatch, BimCovering and with it BIM's
-   tool bars), then the status bar, the 3D view (G4) and the
-   selection (G3d).
+   guest; gate `SandboxInitGui`).  **GuiUp flipped** the same day
+   (the guest's is the host's; gate `SandboxCorpusGui`, the G1 corpus
+   under the GUI): both `Initialize()`s complete, both workbenches'
+   tool bars come from the guest; `Activated()` stops at the status
+   bar and dock widgets, the 3D view (G4) and the selection (G3d)
+   are next.
 4. **P2** -- in-place install into a running guest (the sec 9.3 probe of
    `SandboxNetwork.md`: does a wheel with compiled extensions import
    synchronously without `loadPackage`?).  Moved after G1: nothing
@@ -3267,6 +3342,18 @@ sockets, any network for the reference image, a webview escape hatch.
 
 ## 12. Traps
 
+- The GUI process hangs in `exit()` once a 3D view refined a mesh:
+  `pthread_cond_destroy` on the static condition variable of
+  `src/Mod/Part/Gui/MeshLevelSource.cpp` with its refine threads still
+  waiting on it (found 2026-09-06 under gdb, the corpus gate).  A
+  renderer bug, not the sandbox's; the gate rig leaves through
+  `os._exit` after writing its result.  `gdb -p` is refused on this
+  box (ptrace scope): run the binary under gdb and send the inferior
+  SIGINT.
+- `Gui::ActionGroup::actions()` cached raw `QAction*` past deletion
+  (fixed 2026-09-06): a group's action may belong to another command,
+  and replacing that command left a dead pointer `Command::testActive`
+  read on the next UI tick.
 - A `FREECAD_USER_HOME` pointing at a nonexistent directory is silently
   ignored and writes the REAL `user.cfg`; an ad-hoc gate run once left
   `Enforce=0` there.
@@ -3392,29 +3479,24 @@ sockets, any network for the reference image, a webview escape hatch.
 
 ## 13. Known gaps and open questions
 
-- **`FreeCAD.GuiUp` in the guest, with the GUI side running there
-  (7.9, G2b, 2026-09-06).**  The G2a ruling keeps it 0 so the App
-  side's `if App.GuiUp:` branches -- view providers, Qt imports,
-  selection -- stay off in the document guests that share the one
-  instance.  The runner shows the price on the GUI side: Draft_Hatch
-  registers under the guard, and BIM's `BimCovering` imports
-  FreeCADGui under it but registers outside it, so `bimcommands`
-  aborts and BIM has no tool bars from the guest.  OPEN, a ruling:
-  flip it to 1 (measure the G1 corpus gates
-  `draftTestObjectsBuiltRouted` / `bimTestObjectsBuiltRouted` with
-  it, since every `if App.GuiUp:` branch in `draftobjects` and the
-  Arch modules would then run in the guest), or make it the session
-  principal's alone (a per-request value; a module imported by a
-  document guest first would keep its GuiUp=0 imports for the
-  session), or leave it and carry the two registrations as known
-  losses.  Draft's preference observer (`_param_observer_start`) is
-  a declared no-op for the same reason: no change notification
-  crosses to the guest yet, so a preference edited on the host does
-  not refresh the guest's tray or grid.
-- **Widgets in the status bar** (`statusBar().findChild`,
-  `addStatusBarItem`, `BimStatus`, `init_draft_statusbar`): not in
-  the widget layer; Draft's `Activated()` and BIM's stop there
-  (7.9).  G3d or G7 material.
+- **`FreeCAD.GuiUp` in the guest: RULED 2026-09-06, the host's
+  value** ("flip it"; 7.9).  What it costs until G4, measured by
+  `SandboxCorpusGui`: an App-side hook calling its VIEW PROVIDER'S
+  PROXY methods (BuildingPart's `ViewObject.Proxy.onChanged` -- 3
+  objects invalid when routed under a GUI; Layer's
+  `change_view_properties`, an error line) -- a host Python object's
+  method, undeclared by design, until the view providers live in the
+  guest; and a document guest importing a module whose GuiUp branch
+  builds widgets (`ArchRebar` -> `bimcommands` -> `DraftTools` ->
+  DraftGui's tray): refused, Rebar's Proxy stays native.  A document
+  principal's widget traffic is not deferred (7.9).  Draft's
+  preference observer (`_param_observer_start`) is a declared no-op:
+  no change notification crosses to the guest yet, so a preference
+  edited on the host does not refresh the guest's tray or grid.
+- **Widgets in the status bar and dock widgets** (`statusBar().
+  findChild`, `addStatusBarItem`, `BimStatus`, `init_draft_statusbar`,
+  `QDockWidget` for BimViews): not in the widget layer; Draft's
+  `Activated()` and BIM's stop there (7.9).  G3d or G7 material.
 
 - Document OPEN imports, before any expression runs.
   `PropertyPythonObject::Restore`'s `PyImport_ImportModule` on a

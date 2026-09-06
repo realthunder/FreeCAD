@@ -20,7 +20,7 @@ in the user data directory) and the last line is `RESULT OK` or `RESULT
 FAILED`; judge by that file, not by the exit code (the GUI's exit is not
 clean on every box).  $SANDBOX_GUI_GATE_MODULES selects the modules
 (comma-separated, default SandboxGui,SandboxWidgets,SandboxForms,SandboxNative,
-SandboxPanels,SandboxDraftGui,SandboxInitGui; SandboxInitGui
+SandboxPanels,SandboxDraftGui,SandboxCorpusGui,SandboxInitGui; SandboxInitGui
 last: it takes the native Draft and BIM workbenches out of the session).
 """
 
@@ -68,7 +68,7 @@ class _EagerResult(unittest.TextTestResult):
 
 def main():
     default_modules = ("SandboxGui,SandboxWidgets,SandboxForms,SandboxNative,SandboxPanels,"
-                       "SandboxDraftGui,SandboxInitGui")
+                       "SandboxDraftGui,SandboxCorpusGui,SandboxInitGui")
     modules = os.environ.get("SANDBOX_GUI_GATE_MODULES", default_modules).split(",")
     out = os.environ.get("SANDBOX_GUI_GATE_RESULT") or os.path.join(
         FreeCAD.getUserAppDataDir(), "sandbox-gui-gate.txt"
@@ -97,7 +97,32 @@ def finish():
     try:
         main()
     finally:
+        # a document a module left open would make the close ask (a
+        # modal, a hang under Xvfb)
+        for name in list(FreeCAD.listDocuments()):
+            try:
+                FreeCAD.closeDocument(name)
+            except Exception:
+                pass
+        # a close that does not end the process shows up as this stack
+        # on stderr (Python's view of it) two minutes later
+        try:
+            faulthandler.dump_traceback_later(120, repeat=False, file=2)
+        except Exception:
+            pass
+        sys.stderr.write("gate: closing the main window\n")
         FreeCADGui.getMainWindow().close()
+        sys.stderr.write("gate: main window closed\n")
+        # The process's exit() then hangs in pthread_cond_destroy on
+        # this box whenever a 3D view refined a mesh: the static
+        # condition variable of src/Mod/Part/Gui/MeshLevelSource.cpp is
+        # destroyed with its worker threads still waiting on it (found
+        # 2026-09-06 under gdb, a renderer bug, not the sandbox's).
+        # The result file is written and the streams are flushed, so
+        # the rig leaves without the C++ teardown.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
 
 
 # run inside the event loop, after the main window is up

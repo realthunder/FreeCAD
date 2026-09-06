@@ -1189,12 +1189,22 @@ Reply addTaskWatchers(HandleTable& table, const json& a)
 Reply guiOp(HandleTable& table, const Reply& requestCbor)
 {
     const json req = json::from_cbor(requestCbor);
+    const std::string op = req.value("op", "");
+    if (!Application::Instance)
+        return replyErr("RuntimeError", "no GUI application");
+    // data any principal may read: the UserInput enum (Qt key codes),
+    // which Draft's tool modules read at import -- and a document guest
+    // imports them under `if App.GuiUp:` now (docs/Sandbox.md 7.9, G2b)
+    if (op == "gui.user_input") {
+        PyObject* ns = wrapperNamespace();
+        if (!ns)
+            return replyPyError();
+        PyObject* v = PyObject_CallFunction(PyDict_GetItemString(ns, "user_input"), nullptr);
+        return v ? replyResult(table, v) : replyPyError();
+    }
     // the catalog's `gui`: DENY for a document (not promptable), ALLOW
     // for the session and addons
     App::ExpressionSecurity::checkPermission(App::ExpressionSecurity::Permission::Gui);
-    if (!Application::Instance)
-        return replyErr("RuntimeError", "no GUI application");
-    const std::string op = req.value("op", "");
     auto a = req.find("a");
     const json none;
     const json& arg = a != req.end() ? *a : none;
@@ -1224,13 +1234,6 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
         return listWorkbenches(table);
     if (op == "gui.sodb_version") {
         PyObject* v = callGui("getSoDBVersion", PyTuple_New(0));
-        return v ? replyResult(table, v) : replyPyError();
-    }
-    if (op == "gui.user_input") {
-        PyObject* ns = wrapperNamespace();
-        if (!ns)
-            return replyPyError();
-        PyObject* v = PyObject_CallFunction(PyDict_GetItemString(ns, "user_input"), nullptr);
         return v ? replyResult(table, v) : replyPyError();
     }
     if (op == "gui.icon_path" || op == "gui.lang_path") {

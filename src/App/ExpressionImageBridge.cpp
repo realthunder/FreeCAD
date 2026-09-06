@@ -293,6 +293,23 @@ void HandleTable::clear()
 
 /// The document a Python face belongs to: a DocumentObject's, or the
 /// Document itself; nullptr for anything else (a shape, a curve).
+/// A Gui.ViewProviderDocumentObject or a subtype of it (PartGui.
+/// ViewProviderPartExt, ...), by name along the MRO: App links no Gui type.
+static bool isViewProviderType(PyTypeObject* type)
+{
+    PyObject* mro = type->tp_mro;
+    if (!mro || !PyTuple_Check(mro))
+        return std::strcmp(type->tp_name, "Gui.ViewProviderDocumentObject") == 0;
+    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(mro); ++i) {
+        PyObject* t = PyTuple_GET_ITEM(mro, i);
+        if (PyType_Check(t)
+            && std::strcmp(reinterpret_cast<PyTypeObject*>(t)->tp_name,
+                           "Gui.ViewProviderDocumentObject") == 0)
+            return true;
+    }
+    return false;
+}
+
 static App::Document* documentOf(PyObject* obj)
 {
     if (!obj)
@@ -308,6 +325,22 @@ static App::Document* documentOf(PyObject* obj)
     if (PyObject_TypeCheck(obj, &App::DocumentPy::Type)) {
         auto* py = static_cast<App::DocumentPy*>(obj);
         return static_cast<Base::PyObjectBase*>(py)->isValid() ? py->getDocumentPtr() : nullptr;
+    }
+    // a view provider (Gui.ViewProviderDocumentObject, a type App does
+    // not link): its Object's document, read through Python -- so an
+    // object's execute() may update, show or hide its own view (the
+    // view family of OpCall) and write its view's properties, under
+    // the same-document gate (docs/Sandbox.md 7.9, G2b)
+    if (isViewProviderType(Py_TYPE(obj))) {
+        PyObject* o = PyObject_GetAttrString(obj, "Object");
+        if (!o) {
+            PyErr_Clear();
+            return nullptr;
+        }
+        App::Document* doc = PyObject_TypeCheck(o, &App::DocumentObjectPy::Type) ? documentOf(o)
+                                                                                : nullptr;
+        Py_DECREF(o);
+        return doc;
     }
     return nullptr;
 }
@@ -1301,6 +1334,9 @@ json dispatchHostOp(HandleTable& table, const json& req)
             // ArchStairs' RailingWire objects, ArchReference), and the
             // Sheet's cell writes (Schedule and Report fill their Result).
             static const char* const writeFamily[] = {
+                // the view family: an object's own view provider
+                // (Gui.ViewProvider*, documentOf resolves it)
+                "update", "show", "hide", "signalChangeIcon",
                 "addProperty", "removeProperty", "setPropertyStatus", "setEditorMode",
                 "setGroupOfProperty", "recompute", "configLinkProperty", "setLink",
                 "addExtension", "changeAttacherType", "touch", "purgeTouched",

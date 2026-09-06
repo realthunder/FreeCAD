@@ -384,7 +384,9 @@ IF (BUILD_EXPR_PYODIDE_HOST)
     # and the trackers included: pivy is in the guest, 7.10) and the
     # task panels -- so that the workbench's InitGui.py runs in the
     # guest and its Initialize() registers them there; the status bar
-    # module with them (Activated reaches it).
+    # module with them (Activated reaches it).  With FreeCAD.GuiUp the
+    # host's in the guest (ruling 2026-09-06), the objects' `if
+    # App.GuiUp:` imports reach every view provider: all of them.
     SET(Draft_sandbox_wheel_files
         Draft.py
         DraftVecUtils.py
@@ -392,9 +394,7 @@ IF (BUILD_EXPR_PYODIDE_HOST)
         WorkingPlane.py
         DraftGui.py
         DraftTools.py
-        draftviewproviders/__init__.py
-        draftviewproviders/view_base.py
-        draftviewproviders/view_draftlink.py
+        ${Draft_view_providers}
         ${Draft_geoutils}
         ${Draft_utilities}
         ${Draft_functions}

@@ -351,8 +351,9 @@ static const char ProxyPrelude[] =
     // workbench's toolbar/menu calls are one op on its registered name:
     // the guest never holds the host's __Workbench__.  Every gui.* op is
     // the catalog's `gui` permission on the host (DENY document, ALLOW
-    // session and addons).  FreeCAD.GuiUp stays 0: there is no GUI in
-    // the guest, and the App side's `if App.GuiUp:` keeps its meaning.
+    // session and addons).  FreeCAD.GuiUp is the host's, set at boot
+    // (ruling 2026-09-06, docs/Sandbox.md sec 13): the GUI side runs
+    // in here now, and its `if FreeCAD.GuiUp:` guards mean the same.
     "import sys as _sys, types as _types\n"
     "_gui = _types.ModuleType('FreeCADGui')\n"
     "_gui.__doc__ = 'FreeCADGui in the sandbox guest: registration only (docs/Sandbox.md 7.9)'\n"
@@ -385,13 +386,32 @@ static const char ProxyPrelude[] =
     "    setattr(_GuiWorkbench, _m, _wb_method(_m))\n"
     "_GuiWorkbench.__name__ = _GuiWorkbench.__qualname__ = 'Workbench'\n"
     "_GuiWorkbench.__module__ = 'FreeCADGui'\n"
+    // A registration a DOCUMENT principal's import triggers (Draft's
+    // gui_hatch registers Draft_Hatch when `Draft` is imported, and a
+    // document guest imports Draft under `if App.GuiUp:` now, ruling
+    // 2026-09-06) is the wheel's side effect, not the document's act:
+    // the host refuses it for that principal, and it waits here for
+    // the next registration the session makes (a workbench's
+    // Initialize), which flushes it first -- natively, importing Draft
+    // registers the command whoever imports it.
+    "_gui_pending = []\n"
     "def _gui_add_command(name, obj, activation=None):\n"
     "    if not isinstance(name, str):\n"
     "        raise TypeError('addCommand(name, object[, activation]): name must be a str')\n"
-    "    desc = _proxy_register(obj, CMD_HOOKS)\n"
     "    group = getattr(_gui, '_fcx_group', None) or type(obj).__module__.split('.')[0]\n"
-    "    _fcx.op('gui.cmd.add', 0, [name, desc, group, activation])\n"
-    "    _gui_commands[name] = obj\n"
+    "    _gui_pending.append((name, obj, group, activation))\n"
+    "    _gui_flush_commands()\n"
+    "def _gui_flush_commands():\n"
+    "    while _gui_pending:\n"
+    "        name, obj, group, activation = _gui_pending[0]\n"
+    "        desc = _proxy_register(obj, CMD_HOOKS)\n"
+    "        try:\n"
+    "            _fcx.op('gui.cmd.add', 0, [name, desc, group, activation])\n"
+    "        except PermissionError:\n"
+    "            return\n"
+    "        _gui_pending.pop(0)\n"
+    "        _gui_commands[name] = obj\n"
+    "_gui._flush_commands = _gui_flush_commands\n"
     "def _gui_add_workbench(wb):\n"
     "    if isinstance(wb, type) and issubclass(wb, _GuiWorkbench):\n"
     "        name = wb.__name__\n"

@@ -17,6 +17,10 @@ reach when they run in the guest: `PartGui` (named at import by
 `bimcommands`, nothing read), `nativeifc/ifc_commands.py` (`get_commands()`
 answers an empty IFC tool bar) and `nativeifc/ifc_observer.py` (the IFC
 document observer as no-ops: nothing to keep in step without ifcopenshell).
+With `FreeCAD.GuiUp` the host's in the guest (ruling 2026-09-06), the `PySide`
+shims also carry `QDesktopServices` (`openUrl` raises), `QFileSystemModel` (a
+base class BIM's library browser derives from; constructing raises) and
+`QtCore.Slot` (the identity decorator factory).
 
 The rule (docs/Sandbox.md sec 7): the guest sees FreeCAD's API, never Qt's.
 These files exist so that UNMODIFIED App-side sources import; anything a GUI

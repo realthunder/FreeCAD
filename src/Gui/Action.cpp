@@ -52,7 +52,9 @@
 
 #include <QWidgetAction>
 
+#include <algorithm>
 #include <cctype>
+#include <QSet>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/regex.hpp>
@@ -854,8 +856,11 @@ void ActionGroup::setVisible( bool check )
 
 QAction* ActionGroup::addAction(QAction* action)
 {
-    if (_actions.size() < groupAction()->actions().size())
+    if (_actions.size() < groupAction()->actions().size()) {
         _actions = groupAction()->actions();
+        for (auto a : _actions)
+            track(a);
+    }
     int index = _actions.size();
     action = groupAction()->addAction(action);
     action->setData(QVariant(index));
@@ -863,17 +868,22 @@ QAction* ActionGroup::addAction(QAction* action)
     // really reliable. Besides, it seems that Qt will auto remove duplicated
     // action from other groups if added to the same menu. So we can't really
     // rely on groupAction()->actions() to find the action either.
+    track(action);
     _actions.append(action);
     return action;
 }
 
 QAction* ActionGroup::addAction(const QString& text)
 {
-    if (_actions.size() < groupAction()->actions().size())
+    if (_actions.size() < groupAction()->actions().size()) {
         _actions = groupAction()->actions();
+        for (auto a : _actions)
+            track(a);
+    }
     int index = _actions.size();
     QAction* action = groupAction()->addAction(text);
     action->setData(QVariant(index));
+    track(action);
     _actions.append(action);
     return action;
 }
@@ -881,9 +891,50 @@ QAction* ActionGroup::addAction(const QString& text)
 QList<QAction*> ActionGroup::actions() const
 {
     auto acts = groupAction()->actions();
-    if (_actions.size() < acts.size())
+    if (_actions.size() < acts.size()) {
         const_cast<ActionGroup*>(this)->_actions = acts;
+        for (auto a : acts)
+            track(a);
+    }
+    // The list is kept past what Qt removed from the group (see
+    // addAction), so it must not keep what was DELETED: a group's
+    // action may belong to another command, and that command can go
+    // (a sandbox guest re-registering its commands after a reset,
+    // docs/Sandbox.md 7.9 G2b, replaced 82 of them while Draft's
+    // groups held their actions -- Command::testActive then read a
+    // dead QAction).  A deleted QAction is gone from the QActionGroup,
+    // so the ones Qt no longer lists are checked for life by the
+    // registry of every action Qt ever gave this group.
+    auto& live = const_cast<ActionGroup*>(this)->_actions;
+    live.erase(std::remove_if(live.begin(), live.end(),
+                              [&acts](QAction* a) {
+                                  return !acts.contains(a) && !ActionGroup::isAlive(a);
+                              }),
+               live.end());
     return _actions;
+}
+
+namespace {
+/// Every QAction an ActionGroup ever listed, dropped as it dies.
+QSet<QAction*>& liveGroupActions()
+{
+    static QSet<QAction*> set;
+    return set;
+}
+}  // namespace
+
+void ActionGroup::track(QAction* action)
+{
+    auto& set = liveGroupActions();
+    if (!action || set.contains(action))
+        return;
+    set.insert(action);
+    QObject::connect(action, &QObject::destroyed, [action]() { liveGroupActions().remove(action); });
+}
+
+bool ActionGroup::isAlive(QAction* action)
+{
+    return liveGroupActions().contains(action);
 }
 
 int ActionGroup::checkedAction() const

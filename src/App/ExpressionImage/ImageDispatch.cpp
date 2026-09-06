@@ -159,7 +159,8 @@ int initEvalGlobals()
         PyDict_SetItemString(eval_globals, "Units", units);
     Py_XDECREF(units);
     // What workbench Python reads off FreeCAD before doing geometry:
-    // GuiUp (False: there is no GUI in here) and a Console whose
+    // GuiUp (0 until the host's boot request sets it to the host's
+    // own, docs/Sandbox.md 7.9 G2b) and a Console whose
     // Print* go to the guest's stderr, which the host logs.  Not a
     // facade: nothing crosses.
     {

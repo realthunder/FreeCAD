@@ -104,6 +104,13 @@ class QLocale:
         return "."
 
 
+def Slot(*args, **kw):
+    """PySide's @Slot(...) decorator factory: the function itself
+    (ArchReport decorates at module level under `if FreeCAD.GuiUp`).
+    Always a factory -- `@Slot(int)` names a type, not the function."""
+    return lambda fn: fn
+
+
 class QUrl:
     def __init__(self, url=""):
         self._url = str(url)

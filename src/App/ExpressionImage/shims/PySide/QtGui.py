@@ -31,6 +31,24 @@ def qGray(r, g=None, b=None):
     return (r * 11 + g * 16 + b * 5) // 32
 
 
+class QDesktopServices:
+    """Named at import by the hyperlink tool and BIM's reports; opening
+    a URL from the guest is not in the sandbox (a network decision,
+    docs/Sandbox.md sec 6)."""
+
+    @staticmethod
+    def openUrl(url):
+        raise RuntimeError("QDesktopServices.openUrl is not in the sandbox (docs/Sandbox.md 6)")
+
+
+class QFileSystemModel:
+    """A base class BIM's library browser derives from at import; a
+    file system model is not in the sandbox (no file system to show)."""
+
+    def __init__(self, *args, **kw):
+        raise RuntimeError("QFileSystemModel is not in the sandbox's subset")
+
+
 def __getattr__(name):
     from freecad.widgets import models
 

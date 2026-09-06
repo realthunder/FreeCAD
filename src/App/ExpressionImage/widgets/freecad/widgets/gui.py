@@ -11,7 +11,7 @@ def attr(name):
     """`FreeCADGui.<name>` for a name the prelude does not define: the
     forms' names, else the AttributeError `hasattr` expects."""
     if name in ("Control", "PySideUic", "UiLoader", "getMainWindow", "runCommand",
-                "InputHint", "HintManager", "_run_initgui"):
+                "InputHint", "HintManager", "getIcon", "_run_initgui"):
         return globals()[name]
     if name == "ActiveDocument":
         return active_document()
@@ -152,6 +152,14 @@ PANEL_HOOKS = ("accept", "reject", "clicked", "open", "getStandardButtons",
                "isAllowedAlterView", "isAllowedAlterSelection", "helpRequested", "shouldShow")
 WATCHER_HOOKS = ("shouldShow",)
 MAIN_WINDOW_HOOKS = ("mainWindowClosed",)
+
+
+def getIcon(name):
+    """`FreeCADGui.getIcon(name)`: the icon as data, by name (the host
+    resolves it where it is shown)."""
+    from .qtdata import QIcon
+
+    return QIcon(str(name))
 
 
 def runCommand(name, index=0):
@@ -323,12 +331,18 @@ class MainWindow:
         raise AttributeError("getMainWindow().setActiveWindow is not in the sandbox yet (G4)")
 
     def getActiveWindow(self):
-        raise AttributeError("getMainWindow().getActiveWindow is not in the sandbox yet (G4)")
+        """None: no document window lives in the guest until the mirror
+        (G4) -- what `get_3d_view()` reads as "no 3D view"."""
+        return None
 
     def getWindows(self):
-        raise AttributeError("getMainWindow().getWindows is not in the sandbox yet (G4)")
+        return []
 
-    def findChild(self, *args):
+    def findChild(self, cls, name=None):
+        """The MDI area, as a stub whose `subWindowActivated` never
+        fires (the view observers connect to it); nothing else."""
+        if getattr(cls, "__name__", "") == "QMdiArea":
+            return _mdi_area
         return None
 
     def findChildren(self, *args):
@@ -338,6 +352,28 @@ class MainWindow:
         return "<sandbox main window>"
 
 
+class _NeverSignal:
+    def connect(self, slot):
+        pass
+
+    def disconnect(self, *args):
+        pass
+
+
+class _MdiArea:
+    """`getMainWindow().findChild(QMdiArea)`: no sub window in the guest."""
+
+    def __init__(self):
+        self.subWindowActivated = _NeverSignal()
+
+    def activeSubWindow(self):
+        return None
+
+    def subWindowList(self):
+        return []
+
+
+_mdi_area = _MdiArea()
 _main_window = MainWindow()
 
 
