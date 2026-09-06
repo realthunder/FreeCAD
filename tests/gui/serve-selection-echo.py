@@ -39,13 +39,21 @@ import FreeCAD
 import FreeCADGui
 from PySide import QtCore
 
+# time.monotonic() is GetTickCount64() on Windows through CPython 3.12,
+# 15.6 ms of resolution -- which reads every loopback echo below one
+# tick as 0.0 ms and makes the figure this test exists to report
+# unmeasurable there. perf_counter is QueryPerformanceCounter on
+# Windows and clock_gettime(MONOTONIC) on Linux: monotonic on both,
+# and the resolution the numbers need.
+clock = time.perf_counter
+
 OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 DOC = "ServeSelectionEcho"
 ECHO_BOUND_MS = 1000.0
 CLIENT_WAIT_S = 90
 
-state = {"doc": None, "port": 0, "client": None, "done": False, "t0": time.monotonic()}
+state = {"doc": None, "port": 0, "client": None, "done": False, "t0": clock()}
 
 
 def note(msg):
@@ -115,7 +123,7 @@ class WS:
 
     def _need(self, n, deadline):
         while len(self.buf) < n:
-            left = deadline - time.monotonic()
+            left = deadline - clock()
             if left <= 0:
                 return False
             self.sock.settimeout(left)
@@ -130,7 +138,7 @@ class WS:
 
     def recv(self, timeout):
         """(opcode, payload) or None when nothing whole arrives in time."""
-        deadline = time.monotonic() + timeout
+        deadline = clock() + timeout
         if not self._need(2, deadline):
             return None
         b0, b1 = self.buf[0], self.buf[1]
@@ -153,9 +161,9 @@ class WS:
         return b0 & 0x0F, data
 
     def next_binary(self, timeout):
-        deadline = time.monotonic() + timeout
+        deadline = clock() + timeout
         while True:
-            left = deadline - time.monotonic()
+            left = deadline - clock()
             if left <= 0:
                 return None
             m = self.recv(left)
@@ -213,17 +221,17 @@ class Client(threading.Thread):
         # second binary frame here would be a spurious publish.
         ws.next_binary(0.5)
         for i in (1, 2):
-            t0 = time.monotonic()
+            t0 = clock()
             ws.send(2, pick(*ray(i)))
             data = ws.next_binary(5.0)
             if data is None:
                 self.echo_ms.append(None)
             else:
-                self.echo_ms.append((time.monotonic() - t0) * 1000.0)
+                self.echo_ms.append((clock() - t0) * 1000.0)
             ws.next_binary(0.2)  # a second push would be a second publish
         ws.send(2, pick((-100.0, -100.0, 50.0), (0.0, 0.0, -1.0), 1))
         self.no_change_frames = 0 if ws.next_binary(0.7) is None else 1
-        t0 = time.monotonic()
+        t0 = clock()
         ws.send(2, batch([(ray(0)[0], ray(0)[1], 1), (ray(1)[0], ray(1)[1], 1)]))
         frames = 0
         while True:
@@ -232,7 +240,7 @@ class Client(threading.Thread):
                 break
             frames += 1
             if frames == 1:
-                self.batch_ms = (time.monotonic() - t0) * 1000.0
+                self.batch_ms = (clock() - t0) * 1000.0
         self.batch_frames = frames
         ws.sock.close()
 
@@ -269,7 +277,7 @@ def build():
 def poll():
     client = state["client"]
     if client.is_alive():
-        if time.monotonic() - state["t0"] > CLIENT_WAIT_S:
+        if clock() - state["t0"] > CLIENT_WAIT_S:
             check("the client finished", False, "still talking after %ds" % CLIENT_WAIT_S)
             finish()
             return
