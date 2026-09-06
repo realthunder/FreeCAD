@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <iterator>
+
 #include "Core/Iterator.h"
 #include <Base/Builder3D.h>
 #include <Base/Placement.h>

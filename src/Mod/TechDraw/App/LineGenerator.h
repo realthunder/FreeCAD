@@ -40,6 +40,9 @@
 
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
+#include <string>
+#include <vector>
+
 #include <QPen>
 
 namespace TechDraw {
