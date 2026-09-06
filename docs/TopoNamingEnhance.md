@@ -1714,25 +1714,47 @@ behaviour is unchanged: a reference marked missing is not searched again
 at the next change, so a face that comes back is recovered on the next
 reload, not before (`testAReferenceComesBackOnReload`).
 
-**What the reload request does not cover, found while testing.**  A
-reference saved *healthy* is resolved by its indexed name on reload, not
-by its mapped name: `PropertyXLink::restoreLink` discards every restored
-shadow except a missing one's (`updateLinkReference`, the `!feature`
-block), and the same-document links register a restored shadow without
-checking it (`_registerElementReference`, the branch above).  So a part
-edited while the assembly is closed does not break the assembly's
-references at all -- they follow the index, silently, which is sec 2.3's
-plausible-wrong-answer risk in its purest form -- and the persisted
-`shadow=` mapped name is informational.  The store therefore serves the
-reference that was broken *in the session that had both documents open*
-and saved missing, when the assembly is reopened after the part was
-repaired (`testAReferenceComesBackAcrossDocuments`); the moved face
-stays missing (`testAMovedFaceStaysMissingAndKeepsItsChild`).  Whether
-reload should verify the persisted mapped name, and on a mismatch ask
-the store, is the next decision: it is a few lines here, but it would
-turn every reference whose element map version changed into a missing
-one before the `reverse` regeneration runs, so it needs the `reverse`
-path to strip the marker the way the restore path now does.  Not built.
+**Which references the reload request reaches, found while testing.**
+A link property persists its sub-name in the old, indexed form and says
+which kind of reference it is by the attribute next to it
+(`PropertyXLink::Save`, `PropertyLinkSub::Save` likewise): a reference
+held by *mapped name* -- what a selection produces -- is written
+`sub="Face1" shadowed=";Face1;:H223,F.Face1"` and comes back with the
+mapped name as its sub-name, so the reload resolves it by mapped name;
+one held by *index* -- what a script gives -- is written
+`sub="Face1" shadow="..."`, and the `shadow=` mapped name is only the
+in-session tracker: on reload the reference is resolved by index, by
+design (`restoreLink` re-resolves the sub-names and keeps a restored
+shadow only for a missing one).  So the headline case is served: the
+part edited while the assembly is closed changes every mapped name, the
+assembly's mapped references come back missing on reopening and ask the
+store, the unchanged side face is repaired and the moved top face is not
+(`testAnEditWhileClosedIsRecoveredOnOpen`,
+`testAFaceMovedWhileClosedStaysMissing`, a FeaturePython with a plain
+`App::PropertyXLinkSubList`).  An indexed reference is never in that
+position; what the store does for it is the retry of a reference that
+broke with both documents open and was saved missing
+(`testAReferenceComesBackAcrossDocuments`).  A first reading of this
+section had the mapped name discarded on reload, which was the
+SubShapeBinder rewriting its support to indexed names (`setLinks`), not
+the link; the first test referrers were binders, and the two tests above
+are the correction.
+
+**One gap, not closed.**  A reference to a *local* object that leads to
+the foreign feature -- an `App::Link` in the assembly, referenced as
+`Link.Face3` -- is not verified on reload at all: the same-document
+restore registers a restored shadow without resolving it
+(`_registerElementReference`, the branch that only registers), and the
+reference is next checked when its target changes, which a part edited
+while the assembly was closed never triggers.  It reads as saved,
+healthy or not, whatever the part did.  For a reference between objects
+of one document the assumption holds -- they were saved together -- and
+that is what the branch was written for; through a link it does not.
+The fix is to resolve the restored shadow during the document's restore
+and let the request run (the store already has `Link.Face3`), but that
+touches the map-version upgrade path, where `reverse` re-resolves from
+the same shadow, so it is not done here.  The two tests assert the
+through-link reference as it reads today and say so.
 
 **Three smaller things the tests settled.**  A `Part::Plane` cannot be
 the referrer in a reload test: its attach extension re-sets the support
@@ -1757,7 +1779,7 @@ Gates, on `build/win-relwithdebinfo-801`:
 
 | check | result |
 | --- | --- |
-| `FreeCADCmd -t ShapeStorage` | 49 of 49: the 7 `BaseShapeCases` plus 2 reload cases, and 5 `ForeignBaseShapeCases` |
+| `FreeCADCmd -t ShapeStorage` | 51 of 51: the 7 `BaseShapeCases` plus 2 reload cases, and 7 `ForeignBaseShapeCases` |
 | sec 2.3 matrix | identical to 7.11: `Face1`, `Face6` -> area 500.00, `Face3` -> `?Face3` |
 | C++ (`ctest -j 6`) | 473 of 473 passed, 1 disabled |
 | Python (`FreeCADCmd -t 0`) | 1332 ran; the same 6 failures + 8 errors as 7.13, all this box's environment (no `yaml`/`ply`, CRLF material fixtures, two over-long blob paths, one FEM file lock), not one new |

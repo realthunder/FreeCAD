@@ -1363,12 +1363,15 @@ class ForeignBaseShapeCases(ShapeTestCase):
     directly, an XLink filed under the part's file path, and one through a
     local App::Link, filed under the link (`Link.Face1`).
 
-    What the store serves is a reference saved *missing*: on reload a
-    healthy reference is resolved by its persisted indexed name (the
-    shadow is discarded by PropertyXLink::restoreLink), so a break can only
-    happen in the session that has both documents open, and the request
-    on reload is the retry of 7.14 -- the case that matters is the part
-    being repaired while the assembly is closed.
+    A SubShapeBinder rewrites its support to indexed names, and a
+    reference given by index is resolved by index on reload, by design; so
+    the binder cases break with both documents open and are served on
+    reload.  The case that matters most -- the part edited while the
+    assembly is closed -- needs a reference held by mapped name, which is
+    what a selection produces: a FeaturePython with a plain
+    App::PropertyXLinkSubList keeps it (persisted as `shadowed=`), and on
+    reload it is resolved by the mapped name, comes back missing, and asks
+    the store.
     """
 
     SHAPES = "_ForeignBaseShapes"
@@ -1524,6 +1527,73 @@ class ForeignBaseShapeCases(ShapeTestCase):
         reopened.save()
         self.assertEqual(len(self.refs(reopened)), 2)
         self.assertAlmostEqual(self.children(reopened)[0].CenterOfMass.z, 20.0)
+
+    def referrer(self, part, face="Face1"):
+        """An assembly whose references keep their mapped names: one to the
+        part's Cut directly, one through a local link.
+
+        Only the direct one is verified on reload.  A reference to a local
+        object -- the link -- is registered with its restored shadow and
+        not re-resolved until the target changes (7.14), so through the
+        link the reference reads as it was saved, whatever the part did
+        while the assembly was closed; the tests below assert the direct
+        reference and say so.
+        """
+        cut = part.getObject("Cut")
+        mapped = ";" + cut.Shape.getElementMappedName(face)
+        doc = self.newDocument("AsmDoc")
+        link = doc.addObject("App::Link", "Link")
+        link.LinkedObject = cut
+        ref = doc.addObject("App::FeaturePython", "Ref")
+        ref.addProperty("App::PropertyXLinkSubList", "Refs")
+        ref.Refs = [(cut, (mapped,)), (link, (mapped,))]
+        doc.recompute()
+        path = os.path.join(self.tmp, "asm.FCStd")
+        doc.saveAs(path)
+        self.assertIn("shadowed=", self.documentXml(path))
+        return doc, path
+
+    def refsOf(self, ref):
+        """The references by target name: the order of the list is not
+        stable across a reload."""
+        return {obj.Name: subs[0] for obj, subs in ref.Refs}
+
+    def testAnEditWhileClosedIsRecoveredOnOpen(self):
+        """The case the feature side cannot protect: the part is edited with
+        the assembly closed, every mapped name changes, the geometry does
+        not.  On reopening, both references resolve by mapped name, come
+        back missing, and are repaired from the store."""
+        part, partPath = self.part()
+        asm, asmPath = self.referrer(part)
+        self.assertEqual(sorted(self.refs(asm)), ["Link.Face1", self.xref(asm)])
+        FreeCAD.closeDocument(asm.Name)
+        self.replaceBase(part)
+        FreeCAD.closeDocument(part.Name)
+
+        reopened = self.openDocument(asmPath)
+        refs = self.refsOf(reopened.getObject("Ref"))
+        self.assertEqual(refs["Cut"], "Face1")
+        # Not verified on reload: reads as saved, see referrer()
+        self.assertEqual(refs["Link"], "Face1")
+
+    def testAFaceMovedWhileClosedStaysMissing(self):
+        """Gate 4 for the same edit: the top face moved, and neither
+        reference is repointed at a plausible neighbour."""
+        part, partPath = self.part()
+        asm, asmPath = self.referrer(part, face="Face3")
+        FreeCAD.closeDocument(asm.Name)
+        self.replaceBase(part, height=25)
+        FreeCAD.closeDocument(part.Name)
+
+        reopened = self.openDocument(asmPath)
+        refs = self.refsOf(reopened.getObject("Ref"))
+        self.assertEqual(refs["Cut"], "?Face3")
+        # Not verified on reload: reads as saved, see referrer()
+        self.assertEqual(refs["Link"], "Face3")
+
+    def xref(self, asm):
+        (key,) = [k for k in self.refs(asm) if "#" in k]
+        return key
 
     def testADroppedReferenceLeavesTheStore(self):
         """A reference removed is not kept; the last one takes the store."""
