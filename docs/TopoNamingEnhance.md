@@ -2569,3 +2569,218 @@ old files still restore unchanged.  Both belong with T3, which migrates
 the consumers (`References2D`, `DrawHatch::Source`,
 `GeomFormat::m_geomIndex`, `CenterLine`, `CosmeticVertex::linkGeom`) and
 is where a stored name first has to survive a reload.
+
+### 8.6 T3, built: the consumers keep their references by name (2026-09-07)
+
+Four commits and one repair, in the order 3.6 gives.  The first finishes
+the naming T2 left half done; the other three migrate the consumers, and
+the repair is a crash the first probe to read a cosmetic from Python fell
+into.
+
+#### 8.6.1 Projected vertices and faces are named too
+
+`ccef54d5f8`.  T2 named the projected edges and stopped there.  3.6 says
+where the other two kinds get theirs: a vertex from the edges that meet
+at it, a face from the wires that bound it.
+
+`GeometryObject::nameVertexGeometry` runs beside `nameEdgeGeometry`, on
+the main thread and for the same reason -- it reads names the edges
+already carry.  A vertex takes the sources of every visible named edge
+that starts or ends there, sorted and without duplicates:
+
+    <sourceName>|<sourceName>|...;HLRV:<ordinal>
+
+A centre mark meets no edge; it belongs to the circle whose centre it
+is, so it takes that one source and `;HLRC:` instead.
+
+`nameFaceGeometry` runs from `onFacesFinished`, because face finding is
+a worker of its own.  A face's bounding fragments are **not** the
+projected edges: `DrawProjectSplit::scrubEdges` fuses copies of them and
+splits them where they cross, so each fragment is matched back to the
+edge it lies on by its midpoint, against the same edge list the finder
+was given, with a bounding box test to keep that to a few candidates.
+The face name is the sorted distinct sources of those edges plus
+`;HLRF:<ordinal>`.  `DrawViewPart.getVertexNames()` and `.getFaceNames()`
+read both back.
+
+Evidence, on a stepped block, a drilled plate and two disjoint blocks in
+one view:
+
+    vertices, stepped block : 6 of 6 named, all distinct
+    vertices, drilled plate : 7 of 7 named, one of them ;HLRC:
+    all-planar solid        : no vertex left without a source
+    faces                   : every face named, and every source a face
+                              names is one its own edges report
+    the area sort           : growing the small block past the big one
+                              swaps both face numbers; both faces keep
+                              their names
+
+That last line is the one 3.6 asked for.  A face's number is its rank in
+the sort by area, which is the most fragile identity in the module; the
+name does not move with it.
+
+#### 8.6.2 A dimension's 2D reference
+
+`6bbf82d4fc`.  The ladder 3.6 wants is *name -> exact geometry ->
+similar geometry -> ask the user*.  Only the middle rung existed:
+`SavedGeometry` kept a copy of each reference's geometry and, when it
+stopped matching, the reference was repointed by searching the
+projection for a shape that looked the same.
+
+`DrawViewPart` gained the two directions of the bridge.
+`getGeometryName()` turns a reference into the view -- `Edge3`,
+`Vertex2`, `Face1` -- into the name that element carries, and
+`getGeometryReference()` turns a name back into whatever number the
+element has now.  The tag the name ends with says which pile to search,
+so a name never resolves to an element of the wrong kind.  Both are on
+`DrawViewPartPy`.
+
+`DrawViewDimension` records those names in a new `SavedNames` property,
+one entry per entry of `References2D`, and consults them first:
+`fixByName()` repoints any reference whose name belongs to a different
+element now, and `execute()` then runs the geometry ladder over what is
+left -- which is the demotion 3.6 asks for.  Nothing here remembers
+whether it has run, so the trap of 3.7, a migration spending its one
+chance on the restoring pass, does not apply: while the view has not
+projected there is no name to find and the answer is simply no.
+`execute()` records the names of references it believes in, which is
+what gives a document written before this change something to recover
+with.
+
+Evidence, with the geometry fallback switched off
+(`Dimensions/AutoCorrectRefs`) so the name is the only rung that can
+move anything.  Two blocks in one view, a dimension on the right-hand
+block's 25 mm edge, and the edit slots the left-hand block, which comes
+first in the projection:
+
+    before        : Edge4, 25.000, name Edge1;:H926,E;HLR:VH:0
+    after         : 12 projected edges where there were 8
+    with the name : Edge8, 25.000 -- the element carrying that name
+    without it    : Edge4, 3.000  -- an edge of the new slot
+    saved, closed and reopened: the name comes back, still 25.000
+
+#### 8.6.3 A hatch's face reference
+
+`572035ebf0`.  `DrawHatch` and `DrawGeomHatch` point at a face by its
+number, which 8.6.1 has just shown to be the least durable identity
+there is.  Both gained a `SavedNames` property, recorded when `Source`
+changes and consulted when the faces are next found.
+
+The consulting is driven from the view, in `postFaceExtractionTasks`:
+face finding runs in a worker of its own, so before it lands there is no
+face to name and none to look up, and a hatch's own `execute()` runs too
+early to see either.  The loop both of them run is
+`DrawViewPart::geometryNamesOf` and `::repointByName`, the whole-link
+form of the pair 8.6.2 added.
+
+Evidence, two disjoint blocks in one view and hatches on the smaller
+one's face, the edit growing it past the larger:
+
+    before      : Face0 and Face1, all three hatches on Face0
+    after       : the two faces have swapped numbers
+    with a name : Face1, for the svg hatch and the geometric hatch alike
+    without one : Face0, which is the other block now
+
+#### 8.6.4 The cosmetic references
+
+`432e9e4d0b`.  `GeomFormat` gained `m_geomName` beside `m_geomIndex`;
+`CenterLine` gained `m_faceNames`, `m_edgeNames` and `m_vertNames`
+beside its three reference vectors.  Both write the name **as an
+attribute of the element that carries the reference** --
+`<GeomIndex value="4" name="..."/>`, `<Face value="Face0" name="..."/>`
+-- which is what keeps a document written before names existed reading
+back unchanged: `reader.hasAttribute("name")` is false and the vectors
+stay empty.  Appending a new element instead would have collided with
+the lookahead `GeomFormat::Restore` already does for `LineNumber`.
+
+`CosmeticExtension::syncGeomFormatNames` runs from `postHlrTasks`, where
+the projected edges first exist; `CenterLineBuilder` records names when
+the line is made and `addCenterLinesToGeom` repoints and re-records
+before the line is rebuilt, which is after face finding.
+`GeomFormatPy` gained `GeomIndex` and `GeomName`, `CenterLinePy` gained
+`EdgeNames`, `FaceNames` and `PointNames`.
+
+**`CosmeticVertex::linkGeom` is left alone**, and the header now says
+why.  3.6 lists it with the others, but it is derived, not a reference:
+`addCosmeticVertexesToGeom` rewrites it on every projection and nothing
+reads the stored value back.  The cosmetic vertex is identified by its
+tag, which does not move.
+
+Evidence, in two documents -- one where the edges renumber under a
+format, one where the faces swap under a centre line:
+
+    format, before : Edge4, name Edge1;:H1072,E;HLR:VH:0
+    format, after  : 12 edges where there were 8; the format is on
+                     Edge8, which carries that name, and Edge4 is a
+                     slot edge now
+    centre, before : Face0
+    centre, after  : the faces have swapped; the centre line is on Face1
+    both survive a save, a close and a reopen
+
+#### 8.6.5 The crash that reading a cosmetic from Python walks into
+
+`3fc9fc9fba`, and it is not part of T3 -- it is what T3's probe found.
+
+Reading a view's cosmetic list from Python and then closing the document
+hangs the application, allocating without bound until it stops
+responding.  `CosmeticVertex`, `CosmeticEdge`, `CenterLine` and
+`GeomFormat` all cache the Python wrapper they hand out inside
+themselves,
+
+    if (PythonObject.is(Py::_None())) {
+        PythonObject = Py::Object(new XPy(this), true);
+    }
+
+so the wrapper is kept alive by the object it wraps.  All four declared
+`Delete="true"`, which makes the generated wrapper destructor delete its
+twin (`templates/templateClassPyExport.py`).  Destroying the cosmetic
+destroys the wrapper, which deletes the cosmetic that is already being
+destroyed.  The list property owns these objects; the wrapper borrows
+one.  `Delete="false"` on all four, and none of the types is registered
+in a module, so there is nothing for it to leak.
+
+    reading the list, then closing        : hangs at 1 GB, not responding
+    closing without reading it            : closes
+    with the fix, reading then closing    : closes
+
+**This one cost most of the session's debugging time, twice over,** so
+both traps are written down in 8.6.6.
+
+#### 8.6.6 Traps this step paid for
+
+- **A changed class layout needs a full build, not `--target TechDraw`.**
+  Adding `std::string m_geomName` to `GeomFormat` moved `m_format`.
+  `TechDrawGui` was not rebuilt, kept the old offsets, and wrote through
+  them: `GeomIndex` read back as 875777200, OCCT threw "Illegal storage
+  access" and then "Not enough memory available" from unrelated calls,
+  and one probe hung.  None of it was a real defect.  On this box the
+  rule is: **any header change under `src/Mod/TechDraw/App` means
+  `cmake --build build/win-relwithdebinfo-801` with no target.**
+- **A hang is not evidence until the baseline has been run.**  The
+  wrapper-ownership hang looked like a pre-existing TechDraw bug, and
+  the check that settled it was a probe using no new API at all
+  (`fmt_cycle.py`: build, format, edit, save, close, reopen), run on the
+  stashed tree.  The baseline passed, which is what turned "probably not
+  mine" into "mine, and worth fixing".
+- **Two `DrawViewPart`s on one page do not both finish finding faces**
+  in a scripted run here -- the second view reports 8 edges and 0 faces
+  indefinitely.  Probes that need faces on two views use two documents.
+- **A restored `CenterLine` gets a new tag**, so `getCenterLine(tag)`
+  does not find it after a reload; read it out of the `CenterLines`
+  property instead.
+- `makeCenterLine` with two parallel edges was seen to fail with
+  `Illegal storage access` and `Not enough memory available` -- but only
+  on the mixed-layout build above, and it was not retried afterwards.
+  Treat it as unmeasured, not as a known defect.
+
+#### 8.6.7 What T3 does not do
+
+The recovery ladder's last rung, "ask the user", is still not built:
+that is the repair dialog of 2.8, and 7.18 settled that it waits for the
+upstream PartDesign and Sketcher merges.  `handleNoExactMatch` still
+declares the references correct and moves on.
+
+`BaseGeom::Save` still writes `ref3D` and not the names.  It does not
+need to: the projected geometry is rebuilt on every recompute, and what
+had to persist -- the name a *reference* was made against -- persists on
+the referring object instead, which is where a reader will look for it.
