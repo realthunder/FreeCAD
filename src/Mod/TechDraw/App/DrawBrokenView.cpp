@@ -146,7 +146,7 @@ App::DocumentObjectExecReturn* DrawBrokenView::execute()
         return DrawView::execute();     // NOLINT
     }
 
-    TopoDS_Shape shape = getSourceShape();
+    TopoDS_Shape shape = getSourceShape().getShape();
     if (shape.IsNull()) {
         Base::Console().message("DBV::execute - %s - Source shape is Null.\n", getNameInDocument());
         return DrawView::execute();     // NOLINT
@@ -353,7 +353,7 @@ std::pair<Base::Vector3d, Base::Vector3d> DrawBrokenView::breakPointsFromObj(con
         return breakPointsFromSketch(breakObj);
     }
 
-    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj);
+    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj).getShape();
     if (!locShape.IsNull() && locShape.ShapeType() == TopAbs_EDGE) {
         return breakPointsFromEdge(breakObj);
     }
@@ -393,7 +393,7 @@ bool DrawBrokenView::isBreakObject(const App::DocumentObject& breakObj)
     if (ShapeExtractor::isSketchObject(&breakObj)) {
         return isBreakObjectSketch(breakObj);
     }
-    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj);
+    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj).getShape();
     return  (!locShape.IsNull() && locShape.ShapeType() == TopAbs_EDGE);
 }
 
@@ -402,7 +402,7 @@ bool DrawBrokenView::isBreakObject(const App::DocumentObject& breakObj)
 //! horizontal or vertical
 bool DrawBrokenView::isBreakObjectSketch(const App::DocumentObject& breakObj)
 {
-    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj);
+    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj).getShape();
     if (locShape.IsNull()) {
         return false;
     }
@@ -428,7 +428,7 @@ bool DrawBrokenView::isBreakObjectSketch(const App::DocumentObject& breakObj)
 //! 2 vertical or horizontal edges only.
 std::pair<Base::Vector3d, Base::Vector3d> DrawBrokenView::breakPointsFromSketch(const App::DocumentObject& breakObj) const
 {
-    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj);
+    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj).getShape();
     if (locShape.IsNull()) {
         return {Base::Vector3d(), Base::Vector3d()};;
     }
@@ -483,7 +483,7 @@ std::pair<Base::Vector3d, Base::Vector3d> DrawBrokenView::breakPointsFromSketch(
 //! break lines.
 std::pair<Base::Vector3d, Base::Vector3d> DrawBrokenView::breakPointsFromEdge(const App::DocumentObject& breakObj) const
 {
-    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj);
+    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj).getShape();
     if (locShape.IsNull() || locShape.ShapeType() != TopAbs_EDGE) {
         return {Base::Vector3d(), Base::Vector3d()};
     }
@@ -503,7 +503,7 @@ std::pair<Base::Vector3d, Base::Vector3d> DrawBrokenView::breakBoundsFromObj(con
         return scalePair(unscaled);
     }
 
-    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj);
+    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj).getShape();
     if (!locShape.IsNull() && locShape.ShapeType() == TopAbs_EDGE) {
         auto unscaled = breakBoundsFromEdge(breakObj);
         return scalePair(unscaled);
@@ -541,7 +541,7 @@ std::pair<Base::Vector3d, Base::Vector3d> DrawBrokenView::breakBoundsFromSketch(
 //! extract the boundary of the break lines from an edge
 std::pair<Base::Vector3d, Base::Vector3d> DrawBrokenView::breakBoundsFromEdge(const App::DocumentObject& breakObj) const
 {
-    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj);
+    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj).getShape();
     if (locShape.IsNull() || locShape.ShapeType() != TopAbs_EDGE) {
         return {Base::Vector3d(), Base::Vector3d()};
     }
@@ -586,7 +586,7 @@ double DrawBrokenView::breaklineLength(const App::DocumentObject& breakObj) cons
         return breaklineLengthFromSketch(breakObj);
     }
 
-    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj);
+    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj).getShape();
     if (!locShape.IsNull() && locShape.ShapeType() == TopAbs_EDGE) {
         return  breaklineLengthFromEdge(breakObj);
     }
@@ -596,7 +596,7 @@ double DrawBrokenView::breaklineLength(const App::DocumentObject& breakObj) cons
 //! calculate the length of the breakline for a sketch based break
 double DrawBrokenView::breaklineLengthFromSketch(const App::DocumentObject& breakObj) const
 {
-    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj);
+    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj).getShape();
     if (locShape.IsNull()) {
         return 0;
     }
@@ -635,7 +635,7 @@ double DrawBrokenView::breaklineLengthFromSketch(const App::DocumentObject& brea
 //! calculate the length of the breakline for an edge based break
 double DrawBrokenView::breaklineLengthFromEdge(const App::DocumentObject& breakObj) const
 {
-    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj);
+    TopoDS_Shape locShape = ShapeExtractor::getLocatedShape(&breakObj).getShape();
     if (!locShape.IsNull() && locShape.ShapeType() != TopAbs_EDGE) {
         return 0.0;
     }

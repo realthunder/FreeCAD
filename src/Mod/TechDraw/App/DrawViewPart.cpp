@@ -182,12 +182,12 @@ void DrawViewPart::abortMakeGeometry()
 
 //! returns a compound of all the shapes from the DocumentObjects in the Source &
 //!  XSource property lists
-TopoDS_Shape DrawViewPart::getSourceShape(bool fuse) const
+Part::TopoShape DrawViewPart::getSourceShape(bool fuse) const
 {
 //    Base::Console().Message("DVP::getSourceShape()\n");
     const std::vector<App::DocumentObject*>& links = getAllSources();
     if (links.empty()) {
-        return TopoDS_Shape();
+        return Part::TopoShape();
     }
     if (fuse) {
         return ShapeExtractor::getShapesFused(links);
@@ -200,7 +200,8 @@ TopoDS_Shape DrawViewPart::getSourceShape(bool fuse) const
 //! version of the shape?  Should we have a getShapeForSection?
 TopoDS_Shape DrawViewPart::getShapeForDetail() const
 {
-    return ShapeUtils::rotateShape(getSourceShape(true), getProjectionCS(), Rotation.getValue());
+    return ShapeUtils::rotateShape(getSourceShape(true).getShape(), getProjectionCS(),
+                                   Rotation.getValue());
 }
 
 bool DrawViewPart::getShapeForDetailFrame(gp_Trsf& frame) const
@@ -238,8 +239,9 @@ void DrawViewPart::addPoints()
 
 //    Base::Console().Message("DVP::addPoints()\n");
     // get all the 2d shapes in the sources, then pick through them for vertices.
-    std::vector<TopoDS_Shape> shapes = ShapeExtractor::getShapes2d(getAllSources());
-    for (auto& s : shapes) {
+    std::vector<Part::TopoShape> shapes = ShapeExtractor::getShapes2d(getAllSources());
+    for (auto& ts : shapes) {
+        const TopoDS_Shape& s = ts.getShape();
         if (s.ShapeType() == TopAbs_VERTEX) {
             gp_Pnt gp = BRep_Tool::Pnt(TopoDS::Vertex(s));
             Base::Vector3d vp(gp.X(), gp.Y(), gp.Z());
@@ -258,11 +260,12 @@ App::DocumentObjectExecReturn* DrawViewPart::execute(void)
     if (!keepUpdated()) {
         return DrawView::execute();
     }
-    TopoDS_Shape shape = getSourceShape();
-    if (shape.IsNull()) {
+    Part::TopoShape sourceShape = getSourceShape();
+    if (sourceShape.isNull()) {
         Base::Console().Message("DVP::execute - %s - Source shape is Null.\n", getNameInDocument());
         return DrawView::execute();
     }
+    TopoDS_Shape shape = sourceShape.getShape();
 
     //make sure the XDirection property is valid. Mostly for older models.
     if (!checkXDirection()) {
@@ -1201,12 +1204,12 @@ Base::Vector3d DrawViewPart::getOriginalCentroid() const { return m_saveCentroid
 
 Base::Vector3d DrawViewPart::getCurrentCentroid() const
 {
-    TopoDS_Shape shape = getSourceShape();
-    if (shape.IsNull()) {
+    Part::TopoShape shape = getSourceShape();
+    if (shape.isNull()) {
         return Base::Vector3d(0.0, 0.0, 0.0);
     }
     gp_Ax2 cs = getProjectionCS();
-    gp_Pnt gCenter = ShapeUtils::findCentroid(shape, cs);
+    gp_Pnt gCenter = ShapeUtils::findCentroid(shape.getShape(), cs);
     return DU::toVector3d(gCenter);
 }
 

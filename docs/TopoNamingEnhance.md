@@ -30,11 +30,12 @@ scratchpad, following the `DrawBrokenView` convention of not committing
 them.  **Section 6.3 restates the three models so every number here can
 be reproduced without them.**
 
-**Resuming?  Start at section 7.**  It re-plans the pre-task around
-versioned base shapes held as dynamic properties on the referenced
-feature, closes three of section 6's five open decisions, and names the
-first thing to build.  Section 6 is kept for its state of play and the
-measurement recipes.
+**Resuming?  Start at section 8**, the state of the main task: T0 is
+built and T1 is next.  Section 7 is the pre-task, complete for the
+`Shape` property -- it re-plans that work around versioned base shapes
+held as dynamic properties on the referenced feature, closes section
+6's open decisions, and 7.11 to 7.18 record what was built.  Section 6
+is kept for its state of play and the measurement recipes.
 
 
 ## 1. The short answers
@@ -2038,3 +2039,124 @@ With these, items 1 to 3 of 7.15 are closed and item 4 waits for the
 upstream Sketcher merge.  The pre-task is complete for the `Shape`
 property; the main task, section 3 (TechDraw adopts element names), is
 next.
+
+
+## 8. The main task, built
+
+Section 3 is the plan; this section is the state, one subsection per
+step of the build order in 3.6.  Each step is gated the way section 7's
+were: the TechDraw suites, `ctest`, the Python suite against the known
+Windows set, and evidence that the step did what it claims.
+
+### 8.0 The gate harness, first (2026-09-06)
+
+TechDraw's meaningful tests do not run under `FreeCADCmd`.
+`TestTechDrawApp` is six cases -- hatch, annotation, balloon, image,
+symbol, projection group -- and the four suites that actually project
+geometry (`DrawViewPartTest`, `DrawViewSectionTest`, `DrawViewDetailTest`,
+`DrawViewDimensionTest`) are imported by `TestTechDrawGui` instead,
+because each waits for the HLR threads on a `QEventLoop` driven by a
+`QTimer`.  Console mode dispatches neither, so `FreeCADCmd -t
+TestTechDrawGui` **hangs** rather than failing -- it was killed at two
+minutes with no output.
+
+They need only a running application, not a display of its own, so on
+this box they run the way `docs/Testing.md` describes for the two
+registered GUI tests: a startup script under
+
+    run_cdb.ps1 -UserHome <isolated dir> -StartupScript <script>
+
+that loads both module lists into one `unittest` suite from a
+`QTimer.singleShot(0, ...)`, writes PASS/FAIL and `DONE` to a result
+file, and quits.  **11 tests, 28 s**, and that is the number every
+subsection below quotes.  The script is a scratchpad file, not
+committed, in keeping with the probe convention.
+
+### 8.1 T0, built: the element map reaches the view (2026-09-06)
+
+Probed first, and the probe is why the step was an afternoon rather than
+a week.  Every form a TechDraw source takes already carries an element
+map out of `Part::Feature::getTopoShape`, and every assembly step the
+extractor performs has a name-propagating equivalent that keeps it:
+
+| source | `ElementMapSize` | a face name |
+| --- | --- | --- |
+| `Part::Cut` feature | 32 | `Face1;:H961,F` |
+| the same through an `App::Link` | 32 | `Face1;:H961,F;:H963,F` |
+| an `App::Part` holding a box | 26 | `Face1;:H964,F` |
+| `makECompound` of two of them | 64 | both, unchanged |
+| `makEFuse` of two of them | 64 | `...;:M;CUT;...;:H965,F` |
+| `transformed()` (move, scale, mirror), `Placement =` | unchanged | unchanged |
+
+So nothing had to be invented: `ShapeExtractor` was throwing the map
+away by asking for `TopoDS_Shape` and rebuilding compounds with a bare
+`BRep_Builder`.
+
+**What changed.**  `ShapeExtractor::getShapes`, `getShapes2d`,
+`getShapesFromObject`, `getShapesFused`, `getLocatedShape` and
+`stripInfiniteShapes` return `Part::TopoShape` (or a vector of them);
+the compounds are built with `makECompound` and the fuse with
+`makEFuse` in place of a pairwise `BRepAlgoAPI_Fuse` loop;
+`getLocatedShape` asks `getTopoShape` instead of `getShape`.
+`DrawViewPart::getSourceShape` returns `Part::TopoShape` with it.  The
+callers that still want the raw shape -- `DrawBrokenView` (ten
+`getLocatedShape` sites and the source), `DrawViewMulti`,
+`DrawViewSection::getShapeToCut`, `ShadedUnderlay`,
+`DimensionValidators`, and `DrawViewPart::execute` itself -- take
+`.getShape()`.  Nothing downstream of `partExec` changed: the names
+reach the projection input and stop there, which is T2's job.
+
+**The one trap, and it is a real one.**  `makECompound`'s `force`
+parameter reads the opposite way from its doc comment.  The header says
+"if true and there is only one input shape, then return that shape
+instead"; the code (`TopoShapeEx.cpp:1586`) returns the lone shape when
+force is **false**, and the default `true` always wraps.  Passing
+`false` on the strength of the comment made a single-source view return
+a `Solid` where every caller since 2019 has had a `Compound` --
+`DrawViewMulti` casts the result with `TopoDS::Compound` -- and the
+TechDraw suites still passed, because none of them has a
+`DrawViewMulti`.  The probe caught it: the evidence script prints
+`ShapeType`, and it read `Solid`.  Print the type in any probe that
+replaces a compound builder.
+
+**Evidence** (`view.getSourceShape()`, the accessor added below):
+
+    one source           Compound  elementMapSize=32
+        Face1 -> Face1;:H8d8,F;:H8da,F;:H:8,F
+        Face3 -> Face6;:M;CUT;:H8d8:7,F;:H8da,F;:H:8,F
+    two sources          Compound  elementMapSize=58
+    two, fuse=True       Compound  elementMapSize=90
+        Face3 -> ...;:M;CUT;...;:M;FUS;:H8da:7,F
+    through an App::Link Compound  elementMapSize=32
+        Face1 -> Face1;:H8d8,F;:H8da,F;:H8df,F;:H:8,F
+
+and the geometry is untouched: the two-source compound is V=18 E=27
+F=13, two solids, 1874.3363 mm3, and the fused one V=26 E=45 F=19, one
+solid, 1594.0167 mm3, before and after.
+
+**A Python accessor came with it**, because there was no way to see a
+view's source shape from a test: `DrawViewPart.getSourceShape(fuse=False)`
+returns the compound as a `Part.Shape`, element map and all.  It is what
+the evidence above is read from, and T2's tests will read the projected
+names against it.
+
+The composite path was probed too, since `stripInfiniteShapes` no longer
+walks the compound with a `TopoDS_Iterator` but with
+`getSubTopoShapes()`: an `App::Part` holding a box and a
+`PartDesign::Plane` (an infinite `Face`) projects a compound of the box
+alone -- 6 faces, bound box `(0,0,0,10,10,10)`, `Face1 ->
+Face1;:Hbc8,F;:Hbc6,F;:H:8,F` -- so the infinite child is dropped and
+the finite one keeps its name.
+
+**Gates.**  TechDraw 11 of 11 (28.0 s); `ctest` 477 of 477 (26 s, `-j 6`);
+the Python suite unchanged against this box's known set -- 1338 tests,
+6 failures and 8 errors, the same ones, every one environment rather
+than geometry (no `yaml` for CAM, CRLF fixtures in the MaterialX graph
+tests, two over-long temp paths, and four FEM cases).
+
+**Not done here, deliberately**: `ShapeUtils::rotateShape` /
+`mirrorShape` / `scaleShape` and `DrawUtil::shapeVectorToCompound` still
+take and return `TopoDS_Shape`.  They sit between the source shape and
+HLR, so T2 has to make them name-preserving (`makETransform` /
+`makEGTransform` do it, as the probe table shows); doing it now would
+have been churn with no consumer.

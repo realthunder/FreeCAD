@@ -31,9 +31,11 @@
 #endif
 
 #include <Base/Console.h>
+#include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Base/Vector3D.h>
 #include <Base/VectorPy.h>
 
+#include <Mod/Part/App/PartPyCXX.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/TopoShapeEdgePy.h>
 #include <Mod/Part/App/TopoShapeVertexPy.h>
@@ -59,6 +61,19 @@ std::string DrawViewPartPy::representation() const
     return std::string("<DrawViewPart object>");
 }
 //TODO: gets & sets for geometry
+
+PyObject* DrawViewPartPy::getSourceShape(PyObject *args, PyObject *kwds)
+{
+    PyObject* fuse = Py_False;
+    static const std::array<const char *, 2> kwlist{"fuse", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|O!", kwlist, &PyBool_Type, &fuse)) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    return Py::new_reference_to(
+        Part::shape2pyshape(dvp->getSourceShape(Base::asBoolean(fuse))));
+}
 
 PyObject* DrawViewPartPy::getVisibleEdges(PyObject *args)
 {

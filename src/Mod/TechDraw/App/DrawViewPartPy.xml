@@ -13,6 +13,13 @@
       <Author Licence="LGPL" Name="WandererFan" EMail="wandererfan@gmail.com" />
       <UserDocu>Feature for creating and manipulating Technical Drawing Part Views</UserDocu>
     </Documentation>
+    <Methode Name="getSourceShape" Keyword="true">
+      <Documentation>
+        <UserDocu>getSourceShape(fuse=False) - the compound of the 3D shapes this View projects,
+in the global frame and carrying the element map of the source features.
+With fuse=True the 3D shapes are fused first, as FuseBeforeCut does.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getVisibleEdges">
       <Documentation>
         <UserDocu>getVisibleEdges() - get the visible edges in the View as Part::TopoShapeEdges</UserDocu>

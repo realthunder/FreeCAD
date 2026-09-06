@@ -37,6 +37,7 @@
 #include <App/PropertyFile.h>
 #include <App/PropertyLinks.h>
 #include <Base/BoundBox.h>
+#include <Mod/Part/App/TopoShape.h>
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
 #include "CosmeticExtension.h"
@@ -210,7 +211,9 @@ public:
 
     bool isUnsetting() { return nowUnsetting; }
 
-    virtual TopoDS_Shape getSourceShape(bool fuse = false) const;
+    //! the compound of the source shapes, carrying their element maps
+    //! (docs/TopoNamingEnhance.md section 3)
+    virtual Part::TopoShape getSourceShape(bool fuse = false) const;
     virtual TopoDS_Shape getShapeForDetail() const;
     //! The exact transform mapping getShapeForDetail()'s result frame
     //! back to the global (source) frame -- the inverse of whatever
