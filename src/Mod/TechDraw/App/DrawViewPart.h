@@ -282,7 +282,7 @@ protected:
 
     bool m_handleFaces;
 
-    TopoDS_Shape m_saveShape;     //TODO: make this a Property.  Part::TopoShapeProperty??
+    Part::TopoShape m_saveShape;  //TODO: make this a Property.  Part::TopoShapeProperty??
     Base::Vector3d m_saveCentroid;//centroid before centering shape in origin
 
     std::vector<TechDraw::VertexPtr> m_referenceVerts;

@@ -2160,3 +2160,122 @@ take and return `TopoDS_Shape`.  They sit between the source shape and
 HLR, so T2 has to make them name-preserving (`makETransform` /
 `makEGTransform` do it, as the probe table shows); doing it now would
 have been churn with no consumer.
+
+### 8.2 T1, built: the section cut is named from its tool (2026-09-06)
+
+Section 3.4 called the anonymous cut the load-bearing weakness of the
+section views, and 3.6 called T1 the highest-value change for section
+stability.  It is built for `DrawViewSection`; the complex section's
+tool is a different construction and is deliberately left for T1b
+(below).
+
+**Probed first, four questions, and two of the answers changed the
+design.**
+
+1. *Does an unnamed tool really leave the section face anonymous?*  No
+   -- worse than anonymous, it leaves it named after the intersection
+   that made it.  Cutting a named box with an unnamed prism gives the
+   cut face
+
+       Face1;:G;CUT;:H9d7:7,E;:L(Face2;:G;CUT;:H9d7:7,E|Face3;...|Face4;...);CUT;:H9d7:4d,F
+
+   a combo name built from the edges the cut created.  Every edge in
+   that list is a place where the tool met the model, so any edit that
+   changes which faces the plane crosses rewrites the name.  That is
+   the instability, spelled out.
+
+2. *Can the tool's faces be named by hand?*  Yes:
+   `setElementName("Face5", "SectionTool5")` on a `TopoShape` with no
+   hasher stores exactly that name, and the cut then reports the
+   section face as `SectionTool5;:M;CUT` -- one step, no combo.
+
+3. *Is the name stable when `SectionOrigin` moves?*  Yes.  The same
+   tool named and moved to z=10, 12 and 8 gives `SectionTool5;:M;CUT`
+   every time.
+
+4. *What does the shape handed to the cut carry?*  **A document's
+   `App::StringHasher`.**  `cut.Shape.Hasher` and
+   `Part.getShape(cut).Hasher` are the document's own hasher object,
+   and `App/StringHasher.{h,cpp}` contain no mutex, no lock, no atomic
+   -- only `Base::Handled`'s refcount is atomic.  The section cut runs
+   in a `QtConcurrent` worker, and mapping element names *writes* to
+   the hasher (`mapSubElement` adopts the source's hasher outright:
+   `Hasher = other.Hasher`).  So the obvious implementation -- call
+   `makEBoolean` in the worker -- would have had a background thread
+   hashing into a document-owned table while the main thread finished
+   the recompute.
+
+**The shape of the fix that question forced.**  The geometry stays in
+the worker and the naming happens on the main thread:
+
+- `doSectionCut` runs the same `BRepAlgoAPI_Cut` calls as before -- and
+  keeps them, in a `CutHistory` (the source solid and the maker per
+  piece, plus the trim pass).  Nothing about the boolean changed, so
+  the progress indicator and the cancel path are exactly as they were.
+  That is also why the cut is not simply `makEBoolean`: that API takes
+  no `Message_ProgressRange`, and a section cut of a real model is
+  where a progress bar earns its keep.
+- `onSectionCutFinished`, which already runs on the main thread when
+  the future lands, calls `nameCutPieces`: `makEShape(*maker, {source,
+  tool}, OpCodes::Cut)` per piece, `makECompound` over them, then the
+  trim pass the same way.  `makEShape` on a maker is what `makEBoolean`
+  does internally after `Build()`, so the names are identical to the
+  ones a plain `makEBoolean` would have produced.
+- Any failure -- no history, an aborted cut, a derived class that cuts
+  its own way -- falls back to the unnamed compound.  The names are an
+  addition; nothing depends on them yet.
+
+**The tool's names are decided by geometry, not by face order.**
+`makeCuttingTool` builds the same prism it always did, then
+`nameToolFaces` walks its planar faces and names each one from the
+section plane's own coordinate system: the face lying in the plane is
+**`SectionPlane`**, the parallel one behind it `SectionBack`, and the
+four sides `SectionSideXMin/XMax/YMin/YMax` by the axis they face
+along.  Nothing in that depends on `shapeSize`, on where the plane
+sits, or on the order `BRepPrimAPI_MakePrism` happened to build the
+faces in -- which is what makes the resulting name survive a move.
+
+**Evidence**, from a section through a box with a hole, driven in a
+running application because the cut is asynchronous:
+
+    tool faces      : 6, elementMapSize=6
+    tool names      : [SectionBack, SectionPlane, SectionSideXMax,
+                       SectionSideXMin, SectionSideYMax, SectionSideYMin]
+    cut pieces      : Compound, faces=7, elementMapSize=32
+    section face at z=10: SectionPlane;:M;CUT;:H,F
+    SectionOrigin 10 -> 14, same name
+    the hole's radius 3 -> 5, same name
+
+Three PASS lines: the name survives moving `SectionOrigin`, survives a
+model edit, and is derived from the tool's `SectionPlane` face.
+
+**A Python type for the section came with it.**  `DrawViewSection` had
+none -- it answered to `DrawViewPartPy` -- so there was no way to look
+at a cut result at all.  `DrawViewSectionPy` now carries
+`getCutPieces()` (the cut result, named, in the global frame) and
+`getCuttingTool()` (the tool of the last cut, with its six names).  T3
+has a home for the section-face API when it needs one.
+
+**Types that moved with it**, all mechanical: `getShapeToCut`,
+`makeCuttingTool`, `getShapeToPrepare`, `m_cutPieces`, `m_cutShapeRaw`,
+`m_saveShape` (on `DrawViewPart`) and the `sectionExec`/`makeSectionCut`/
+`prepareShape` signatures take or return `Part::TopoShape`.  The copy
+of the cut input is `makECopy` rather than `BRepBuilderAPI_Copy`, which
+is the same copy plus the element map.
+
+**Gates.**  TechDraw 11 of 11 (27.5 s); `ctest` 477 of 477 (26 s);
+the Python suite unchanged against this box's known set.
+
+**Left for T1b**: `DrawComplexSection::makeCuttingTool` returns its
+tool unnamed.  Its tool is extruded from the user's own profile object,
+so the right names for its faces are not a fixed scheme like the six
+above -- they are the profile's own element names, carried through the
+extrusion.  That is a better identity than this one (it says *which
+segment of the profile* made the face) and a different piece of work.
+
+**Left for T2**: `prepareShape` still centers, scales and rotates
+through `ShapeUtils`, which is `TopoDS_Shape` in and out, so the names
+stop at `m_cutPieces` / `m_cutShapeRaw`.  And the 2D section faces are
+rebuilt from projected wires in `mapToPage`, so they can never inherit
+a name through the shape: they need the name carried beside them, in
+the `ref3D` slot `BaseGeom` reserves.  That is what T2 is for.

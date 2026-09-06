@@ -39,6 +39,7 @@
 #include "DrawViewPart.h"
 
 class Bnd_Box;
+class BRepAlgoAPI_Cut;
 class gp_Pln;
 class gp_Pnt;
 class TopoDS_Face;
@@ -121,19 +122,26 @@ public:
     }
     void unsetupObject() override;
     short mustExecute() const override;
+    PyObject* getPyObject() override;
 
-    void sectionExec(TopoDS_Shape& s);
-    virtual void makeSectionCut(const TopoDS_Shape& baseShape);
+    void sectionExec(Part::TopoShape& s);
+    virtual void makeSectionCut(const Part::TopoShape& baseShape);
     void postHlrTasks() override;
     virtual void postSectionCutTasks();
     bool waitingForCut(void) const { return m_waitingForCut; }
     bool waitingForResult() const override;
 
-    virtual TopoDS_Shape makeCuttingTool(double shapeSize);
-    virtual TopoDS_Shape getShapeToCut();
+    //! The tool's faces carry fixed element names (SectionPlane and the box
+    //! sides), so the faces the cut creates inherit a stable name instead of
+    //! one derived from where the tool happened to meet the model.  See
+    //! docs/TopoNamingEnhance.md section 8.2.
+    virtual Part::TopoShape makeCuttingTool(double shapeSize);
+    //! name the tool's faces by geometry: SectionPlane, SectionBack and the sides
+    static void nameToolFaces(Part::TopoShape& tool, const gp_Pln& sectionPlane);
+    virtual Part::TopoShape getShapeToCut();
     virtual bool isBaseValid() const;
-    virtual TopoDS_Shape prepareShape(const TopoDS_Shape& rawShape, double shapeSize);
-    virtual TopoDS_Shape getShapeToPrepare() const { return m_cutPieces; }
+    virtual TopoDS_Shape prepareShape(const Part::TopoShape& rawShape, double shapeSize);
+    virtual Part::TopoShape getShapeToPrepare() const { return m_cutPieces; }
 
     //CS related methods
     gp_Ax2 getProjectionCS(Base::Vector3d pt = Base::Vector3d(0.0, 0.0, 0.0)) const override;
@@ -152,14 +160,21 @@ public:
     virtual TopoDS_Compound alignSectionFaces(TopoDS_Shape faceIntersections);
     TopoDS_Compound mapToPage(TopoDS_Shape& shapeToAlign);
     virtual std::vector<TechDraw::FacePtr> makeTDSectionFaces(TopoDS_Compound topoDSFaces);
-    virtual TopoDS_Shape getShapeToIntersect() { return m_cutPieces; }
+    virtual TopoDS_Shape getShapeToIntersect() { return m_cutPieces.getShape(); }
 
     void makeLineSets(void);
     std::vector<LineSet> getDrawableLines(int i = 0);
     std::vector<PATLineSpec> getDecodedSpecsFromFile(std::string fileSpec, std::string myPattern);
 
     TopoDS_Shape getCutShape() const { return m_cutShape; }
-    TopoDS_Shape getCutShapeRaw() const { return m_cutShapeRaw; }
+    //! the cut result before centering/scaling/rotating, with element names
+    Part::TopoShape getCutShapeRaw() const { return m_cutShapeRaw; }
+    //! the cut result as it came out of the boolean, one piece per source solid
+    Part::TopoShape getCutPieces() const { return m_cutPieces; }
+    //! the tool the last cut used, with the names its faces carry.  Empty
+    //! until a cut has run, and for an aligned complex section, which cuts
+    //! with a tool of its own.
+    Part::TopoShape getCuttingToolAsBuilt() const { return m_cuttingTool; }
     TopoDS_Shape getPreparedShape() const { return m_preparedShape; }
 
     //! The exact build-time frames (doc sec 31), committed together
@@ -192,15 +207,38 @@ protected:
     std::vector<LineSet> m_lineSets;
     std::vector<TechDraw::FacePtr> m_tdSectionFaces;
 
+    //! What the cut did, kept so that the element names can be mapped on the
+    //! main thread.  The boolean itself runs in a worker (QtConcurrent), and
+    //! mapping names there is not safe: a shape that came out of a document
+    //! carries that document's App::StringHasher, which has no locking, and
+    //! the mapping hashes new names into it.  So the worker keeps the OCCT
+    //! makers alive and onSectionCutFinished reads their history.
+    struct CutHistory {
+        std::vector<Part::TopoShape> sources;
+        std::vector<std::shared_ptr<BRepAlgoAPI_Cut>> makers;
+        std::shared_ptr<BRepAlgoAPI_Cut> trim;
+        Part::TopoShape tool;
+        //! what the worker produced, so a history left over from another cut
+        //! (an aligned complex section makes its pieces its own way) is not
+        //! mapped onto a shape it does not describe
+        TopoDS_Shape result;
+    };
+
     struct SectionParams {
         std::string featureName;
         std::shared_ptr<Base::SequencerLauncher> progress;
         std::shared_ptr<TopoDS_Shape> output;
-        TopoDS_Shape baseShape;
-        TopoDS_Shape cuttingTool;
+        std::shared_ptr<CutHistory> history;
+        Part::TopoShape baseShape;
+        Part::TopoShape cuttingTool;
         bool trimAfterCut;
     };
     static void doSectionCut(const SectionParams &params);
+
+    //! the named cut result, mapped from the history the worker recorded;
+    //! the unnamed compound when there is no history to map
+    Part::TopoShape nameCutPieces(const std::shared_ptr<CutHistory>& history,
+                                  const TopoDS_Shape& cutPieces) const;
 
     virtual gp_Pln getSectionPlane() const;
     virtual TopoDS_Compound findSectionPlaneIntersections(const TopoDS_Shape& shape);
@@ -212,7 +250,7 @@ protected:
     void abortSectionCut();
 
     TopoDS_Shape m_cutShape;        // centered, scaled, rotated result of cut
-    TopoDS_Shape m_cutShapeRaw;     // raw result of cut w/o center/scale/rotate
+    Part::TopoShape m_cutShapeRaw;  // raw result of cut w/o center/scale/rotate
 
     //! Frame of the shape getShapeToCut() returns -> global, resolved
     //! through the BaseView chain's stored frames (a detail ancestor
@@ -236,10 +274,14 @@ protected:
     void replaceSvgIncluded(std::string newSvgFile);
     void replacePatIncluded(std::string newPatFile);
 
-    TopoDS_Shape m_cutPieces;//the shape after cutting, but before centering & scaling
+    Part::TopoShape m_cutPieces;//the shape after cutting, but before centering & scaling
     gp_Ax2 m_projectionCS;
     TopoDS_Shape m_preparedShape;//the shape after cutting, centering, scaling etc
     double m_shapeSize;
+
+    //! set when the cut is launched, read when it lands, then released
+    std::shared_ptr<CutHistory> m_cutHistory;
+    Part::TopoShape m_cuttingTool;  // the tool of the last cut, kept for inspection
 
 private:
     std::unique_ptr<QFutureWatcher<void>> m_cutWatcher;

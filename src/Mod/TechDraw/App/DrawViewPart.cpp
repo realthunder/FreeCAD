@@ -501,7 +501,8 @@ void DrawViewPart::postHlrTasks()
         double newScale = autoScale();
         Scale.setValue(newScale);
         Scale.purgeTouched();
-        partExec(m_saveShape);
+        TopoDS_Shape saved = m_saveShape.getShape();
+        partExec(saved);
     }
 
     overrideKeepUpdated(false);

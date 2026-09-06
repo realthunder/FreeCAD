@@ -46,18 +46,21 @@ public:
     App::PropertyLink CuttingToolWireObject;
     App::PropertyEnumeration ProjectionStrategy;//Offset or Aligned
 
-    TopoDS_Shape makeCuttingTool(double dMax) override;
+    //! Unnamed for now: the complex tool is extruded from the user's profile,
+    //! so its faces are named from the profile's own elements rather than by
+    //! the fixed scheme of a simple section (docs/TopoNamingEnhance.md sec 8.2).
+    Part::TopoShape makeCuttingTool(double dMax) override;
     gp_Ax2 getCSFromBase(const std::string sectionName) const override;
     bool isBaseValid() const override;
     TopoDS_Compound findSectionPlaneIntersections(const TopoDS_Shape& cutShape) override;
-    TopoDS_Shape prepareShape(const TopoDS_Shape& cutShape, double shapeSize) override;
-    TopoDS_Shape getShapeToPrepare() const override;
+    TopoDS_Shape prepareShape(const Part::TopoShape& cutShape, double shapeSize) override;
+    Part::TopoShape getShapeToPrepare() const override;
     TopoDS_Shape getShapeToIntersect() override;
     gp_Pln getSectionPlane() const override;
     TopoDS_Compound alignSectionFaces(TopoDS_Shape faceIntersections) override;
     std::pair<Base::Vector3d, Base::Vector3d> sectionLineEnds() override;
 
-    void makeSectionCut(const TopoDS_Shape& baseShape) override;
+    void makeSectionCut(const Part::TopoShape& baseShape) override;
 
     void waitingForAlign(bool s) { m_waitingForAlign = s; }
     bool waitingForAlign(void) const { return m_waitingForAlign; }

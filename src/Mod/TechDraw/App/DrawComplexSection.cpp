@@ -154,7 +154,7 @@ DrawComplexSection::~DrawComplexSection()
     abortMakeAlignedPieces();
 }
 
-TopoDS_Shape DrawComplexSection::makeCuttingTool(double dMax)
+Part::TopoShape DrawComplexSection::makeCuttingTool(double dMax)
 {
     //    Base::Console().Message("DCS::makeCuttingTool()\n");
     TopoDS_Wire profileWire = makeProfileWire();
@@ -188,11 +188,11 @@ TopoDS_Shape DrawComplexSection::makeCuttingTool(double dMax)
         BRepBuilderAPI_MakeFace mkFace(profileWire);
         TopoDS_Face toolFace = mkFace.Face();
         if (toolFace.IsNull()) {
-            return TopoDS_Shape();
+            return Part::TopoShape();
         }
         gp_Dir gpNormal = getFaceNormal(toolFace);
         extrudeDir = 2.0 * dMax * gpNormal;
-        return BRepPrimAPI_MakePrism(toolFace, extrudeDir).Shape();
+        return Part::TopoShape(BRepPrimAPI_MakePrism(toolFace, extrudeDir).Shape());
     }
 
     // if the wire is open (the normal case of a more or less linear profile),
@@ -232,13 +232,14 @@ TopoDS_Shape DrawComplexSection::makeCuttingTool(double dMax)
                 builder.Add(comp, solid);
             }
         }
-        return comp;
+        return Part::TopoShape(comp);
     }
 
-    return BRepPrimAPI_MakePrism(m_toolFaceShape, extrudeDir).Shape();
+    return Part::TopoShape(
+        BRepPrimAPI_MakePrism(m_toolFaceShape, extrudeDir).Shape());
 }
 
-TopoDS_Shape DrawComplexSection::getShapeToPrepare() const
+Part::TopoShape DrawComplexSection::getShapeToPrepare() const
 {
     //    Base::Console().Message("DCS::getShapeToPrepare()\n");
     if (ProjectionStrategy.getValue() == 0) {
@@ -250,7 +251,7 @@ TopoDS_Shape DrawComplexSection::getShapeToPrepare() const
 }
 
 //get the shape ready for projection and cut surface finding
-TopoDS_Shape DrawComplexSection::prepareShape(const TopoDS_Shape& cutShape, double shapeSize)
+TopoDS_Shape DrawComplexSection::prepareShape(const Part::TopoShape& cutShape, double shapeSize)
 {
     //    Base::Console().Message("DCS::prepareShape() - strategy: %d\n", ProjectionStrategy.getValue());
     if (ProjectionStrategy.getValue() == 0) {
@@ -279,7 +280,7 @@ TopoDS_Shape DrawComplexSection::prepareShape(const TopoDS_Shape& cutShape, doub
 }
 
 
-void DrawComplexSection::makeSectionCut(const TopoDS_Shape& baseShape)
+void DrawComplexSection::makeSectionCut(const Part::TopoShape& baseShape)
 {
     abortMakeAlignedPieces();
 
@@ -324,7 +325,7 @@ void DrawComplexSection::makeSectionCut(const TopoDS_Shape& baseShape)
             });
 
         params.featureName = getFullName();
-        params.rawShape = BRepBuilderAPI_Copy(baseShape).Shape();
+        params.rawShape = BRepBuilderAPI_Copy(baseShape.getShape()).Shape();
         if (m_toolFaceShape.IsNull()) {
             //only the Offset path (DVS::makeSectionCut -> makeCuttingTool)
             //builds the tool face; a section created Aligned from the start
@@ -371,7 +372,7 @@ void DrawComplexSection::abortMakeAlignedPieces()
 
 void DrawComplexSection::onSectionCutFinished(std::shared_ptr<TopoDS_Shape> cutPieces)
 {
-    m_cutPieces = *cutPieces;
+    m_cutPieces = nameCutPieces(m_cutHistory, *cutPieces);
     if (waitingForAlign())
         return;
     DrawViewSection::onSectionCutFinished(cutPieces);
@@ -384,7 +385,7 @@ void DrawComplexSection::onMakeAlignedPiecedFinished(std::shared_ptr<TopoDS_Shap
     m_alignResult  = *result;
     if (waitingForCut())
         return;
-    *result = m_cutPieces;
+    *result = m_cutPieces.getShape();
     DrawViewSection::onSectionCutFinished(result);
 }
 
@@ -1081,7 +1082,7 @@ bool DrawComplexSection::validateProfilePosition(TopoDS_Wire profileWire, gp_Ax2
 
     Bnd_Box shapeBox;
     shapeBox.SetGap(0.0);
-    BRepBndLib::AddOptimal(m_saveShape, shapeBox);
+    BRepBndLib::AddOptimal(m_saveShape.getShape(), shapeBox);
     double xMin = 0, xMax = 0, yMin = 0, yMax = 0, zMin = 0, zMax = 0;
     shapeBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
     double spanLow = xMin;
