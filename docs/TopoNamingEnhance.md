@@ -2005,5 +2005,36 @@ since 7.16):
    over foreign referrers per applied transaction, and it changes
    documents that the undo was not opened in.
 
-Next: item 4 of 7.15 (the Sketcher prefix) stays parked until the
-upstream merge; the two questions above decide what follows.
+Next: section 7.18, the answers.
+
+### 7.18 The two questions, answered (2026-09-06)
+
+**D6, the reload repair stays silent -- when the search found the same
+shape.**  The principle, as the user put it: if the repair or resolve
+finds the same shape by geometry comparison it can be silent; otherwise
+the reference must be marked missing to get the user's attention.  The
+silent fix may be extended later, not now.  That is what 7.14 and 7.16
+built: a reference repaired from a retained generation or the foreign
+store keeps the saved result, the document opens clean, and a face that
+moved reads `?Face3`.  No recompute is requested for a repair.
+
+**D7, no re-resolve pass after a transaction is applied.**  By the
+recompute logic, the referenced document's recompute marks the referrer
+for recompute, and the resolve happens when the referrer itself
+recomputes -- not by a pass of its own after an undo.  Measured (`U4`
+extended): after the part's undo the Cut is touched; the assembly's
+recompute recomputes it as a dependency, the Cut's shape change
+re-resolves the assembly's reference, and the reference made at z=25
+follows by index and geometry to the top face at z=20 (`auto change
+element reference ... :Hfc3:7,F.Face3 -> ... :Hfbf:7,F.Face3`).  Silent,
+by the recompute flow, and against the only baseline the feature holds
+in-session -- the shape it had before that recompute, since a foreign
+referrer's own evidence is written at save (7.13) and not kept live.
+Accepted as the consequence of "local referrers only"; keeping a foreign
+referrer's baseline live in-session is the extension D6 leaves for
+later.
+
+With these, items 1 to 3 of 7.15 are closed and item 4 waits for the
+upstream Sketcher merge.  The pre-task is complete for the `Shape`
+property; the main task, section 3 (TechDraw adopts element names), is
+next.
