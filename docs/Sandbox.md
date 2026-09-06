@@ -2033,8 +2033,10 @@ always did).  What the flip needed, built the same day:
   its destruction.  And the corpus gate's process hung in `exit()`:
   `pthread_cond_destroy` on `MeshLevelSource.cpp`'s static condition
   variable with its refine threads still waiting -- a renderer bug,
-  sec 12; the gate rig leaves through `os._exit` after writing its
-  result.
+  fixed 2026-09-07 at the source (sec 12): the level workers are
+  joinable and `PartGui::shutdownMeshLevelWorkers()` stops and joins
+  them on the application's `aboutToQuit`; the rig's `os._exit`
+  workaround is gone and the gate's process exits normally.
 
 **Measured with the flip** (gate `SandboxCorpusGui`, the G1 corpus
 built under the GUI in a routed session and compared with a native
@@ -3342,13 +3344,20 @@ sockets, any network for the reference image, a webview escape hatch.
 
 ## 12. Traps
 
-- The GUI process hangs in `exit()` once a 3D view refined a mesh:
+- The GUI process hung in `exit()` once a 3D view refined a mesh
+  (found 2026-09-06 under gdb, the corpus gate; FIXED 2026-09-07):
   `pthread_cond_destroy` on the static condition variable of
   `src/Mod/Part/Gui/MeshLevelSource.cpp` with its refine threads still
-  waiting on it (found 2026-09-06 under gdb, the corpus gate).  A
-  renderer bug, not the sandbox's; the gate rig leaves through
-  `os._exit` after writing its result.  `gdb -p` is refused on this
-  box (ptrace scope): run the binary under gdb and send the inferior
+  waiting on it -- glibc's destroy blocks until every waiter has left,
+  and a detached worker parked on a static never does.  The fix keeps
+  the workers joinable and stops and joins them in
+  `PartGui::shutdownMeshLevelWorkers()`, hooked to `aboutToQuit` and
+  to a Qt post routine the first time a worker starts; the mutex and
+  condition variable are leaked on purpose so an exit that never ran
+  the hook cannot hang either.  A worker inside BRepMesh has no safe
+  interruption point, so a build in flight finishes before the join.
+  The rig no longer `os._exit`s.  `gdb -p` is refused on this box
+  (ptrace scope): run the binary under gdb and send the inferior
   SIGINT.
 - `Gui::ActionGroup::actions()` cached raw `QAction*` past deletion
   (fixed 2026-09-06): a group's action may belong to another command,

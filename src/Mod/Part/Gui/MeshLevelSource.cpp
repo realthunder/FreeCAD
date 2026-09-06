@@ -117,13 +117,27 @@ struct RefineJob {
     uint64_t gen = 0;
 };
 
-std::mutex s_refineMutex;
-std::condition_variable s_refineCv;
+/// The mutex and the condition variable are LEAKED on purpose: a
+/// worker waits on them, and glibc's pthread_cond_destroy blocks until
+/// every waiter has left -- destroying them as statics with a worker
+/// still parked hung the process in exit() (found 2026-09-06 under
+/// gdb, the sandbox's corpus gate). The orderly way out is
+/// shutdownMeshLevelWorkers(), hooked to the application's quit the
+/// first time a worker starts; the leak covers an exit that never ran
+/// the hook (no event loop, a script's exit()).
+std::mutex &s_refineMutex = *new std::mutex;
+std::condition_variable &s_refineCv = *new std::condition_variable;
 std::deque<RefineJob> s_refineQueue;
 /// tag -> the one live token; absent = nothing wanted (canceled).
 std::map<const void *, uint64_t> s_refineTokens;
 uint64_t s_refineCounter = 0;
-int s_refineThreads = 0;
+/// The refine workers, joinable, joined by shutdownMeshLevelWorkers();
+/// leaked like the primitives so a static destruction that arrives
+/// without the shutdown does not std::terminate on a joinable thread.
+std::vector<std::thread> &s_refineWorkers = *new std::vector<std::thread>;
+/// Set once by the shutdown, under s_refineMutex: the workers leave
+/// their wait and return, and nothing enqueues after it.
+bool s_refineStop = false;
 
 /// Same sizing rule as the scene server's level threads: modest by
 /// default, because BRepMesh already parallelizes each build over
@@ -219,10 +233,12 @@ std::deque<LandingItem> s_landingQueue;
 /// closures own is safe to destroy off-thread: OCCT handles carry
 /// atomic refcounts, Coin nodes appear only as raw unowned pointers,
 /// and the detached fill arrays are plain memory.
-std::mutex s_reaperMutex;
-std::condition_variable s_reaperCv;
+/// Leaked, joined and stopped like the refine pool (see s_refineMutex).
+std::mutex &s_reaperMutex = *new std::mutex;
+std::condition_variable &s_reaperCv = *new std::condition_variable;
 std::deque<std::function<void()>> s_reaperQueue;
-bool s_reaperStarted = false;
+std::thread &s_reaperThread = *new std::thread;
+bool s_reaperStop = false;
 
 void reapOffThread(std::function<void()> &&fn)
 {
@@ -230,22 +246,30 @@ void reapOffThread(std::function<void()> &&fn)
         return;
     {
         std::lock_guard<std::mutex> lock(s_reaperMutex);
+        if (s_reaperStop) {
+            // Shut down: destroy in place, there is no thread to hand
+            // it to any more.
+            fn = nullptr;
+            return;
+        }
         s_reaperQueue.push_back(std::move(fn));
-        if (!s_reaperStarted) {
-            s_reaperStarted = true;
-            std::thread([]() {
+        if (!s_reaperThread.joinable()) {
+            s_reaperThread = std::thread([]() {
                 for (;;) {
                     std::deque<std::function<void()>> batch;
                     {
                         std::unique_lock<std::mutex> lock(s_reaperMutex);
-                        s_reaperCv.wait(
-                            lock, [] { return !s_reaperQueue.empty(); });
+                        s_reaperCv.wait(lock, [] {
+                            return s_reaperStop || !s_reaperQueue.empty();
+                        });
+                        if (s_reaperQueue.empty())
+                            return; // stopped, and drained
                         batch.swap(s_reaperQueue);
                     }
                     // The destructions run here, unlocked.
                     batch.clear();
                 }
-            }).detach();
+            });
         }
     }
     s_reaperCv.notify_one();
@@ -440,7 +464,10 @@ void refineLoop()
         RefineJob job;
         {
             std::unique_lock<std::mutex> lock(s_refineMutex);
-            s_refineCv.wait(lock, [] { return !s_refineQueue.empty(); });
+            s_refineCv.wait(
+                lock, [] { return s_refineStop || !s_refineQueue.empty(); });
+            if (s_refineStop)
+                return;
             job = std::move(s_refineQueue.front());
             s_refineQueue.pop_front();
             auto it = s_refineTokens.find(job.tag);
@@ -556,6 +583,23 @@ void refineLoop()
     }
 }
 
+/// Arm shutdownMeshLevelWorkers() for the application's exit: on
+/// aboutToQuit (the event loop returning) and again as a post routine
+/// (the QCoreApplication's destruction, for an exit that never ran the
+/// loop out). Both before the statics go. GUI thread, once, when the
+/// first worker starts -- the resolveMemFloor pattern.
+void hookWorkerShutdown()
+{
+    static bool hooked = false;
+    if (hooked)
+        return;
+    hooked = true;
+    if (auto *app = QCoreApplication::instance())
+        QObject::connect(app, &QCoreApplication::aboutToQuit,
+                         shutdownMeshLevelWorkers);
+    qAddPostRoutine(shutdownMeshLevelWorkers);
+}
+
 void enqueueLevelJob(RefineJob &&job)
 {
     resolveMemFloor();
@@ -565,6 +609,11 @@ void enqueueLevelJob(RefineJob &&job)
         Render::MeshSourceRegistry::instance().noteDescentQueued(job.gen);
     }
     std::lock_guard<std::mutex> lock(s_refineMutex);
+    if (s_refineStop) {
+        // Shutting down: the job is dropped, its descent settled.
+        settleDescent(job);
+        return;
+    }
     job.token = ++s_refineCounter;
     s_refineTokens[job.tag] = job.token;
     if (job.descent) {
@@ -579,9 +628,9 @@ void enqueueLevelJob(RefineJob &&job)
     else {
         s_refineQueue.push_back(std::move(job));
     }
-    if (s_refineThreads < refineThreadCap()) {
-        ++s_refineThreads;
-        std::thread(refineLoop).detach();
+    if (int(s_refineWorkers.size()) < refineThreadCap()) {
+        hookWorkerShutdown();
+        s_refineWorkers.emplace_back(refineLoop);
     }
     s_refineCv.notify_one();
 }
@@ -613,6 +662,49 @@ void cancelExactRefine(const void *tag)
     std::lock_guard<std::mutex> lock(s_refineMutex);
     s_refineTokens.erase(tag);
 }
+
+} // anonymous namespace
+
+void PartGui::shutdownMeshLevelWorkers()
+{
+    // The refine pool: queued jobs are dropped (each descent settled
+    // exactly once, as on every other exit), the workers told to leave
+    // their wait and joined. A build in flight finishes first -- a
+    // worker inside BRepMesh has no safe interruption point -- and its
+    // landing is posted to an application that no longer runs a loop,
+    // which is fine: the queued event dies with the application, and
+    // the payload it owns (a meshed TopoShape copy) with it.
+    std::vector<std::thread> workers;
+    {
+        std::lock_guard<std::mutex> lock(s_refineMutex);
+        s_refineStop = true;
+        for (const auto &job : s_refineQueue)
+            settleDescent(job);
+        s_refineQueue.clear();
+        s_refineTokens.clear();
+        workers.swap(s_refineWorkers);
+    }
+    s_refineCv.notify_all();
+    for (auto &worker : workers) {
+        if (worker.joinable())
+            worker.join();
+    }
+    // The reaper: drained, then joined.
+    std::thread reaper;
+    {
+        std::lock_guard<std::mutex> lock(s_reaperMutex);
+        s_reaperStop = true;
+        reaper.swap(s_reaperThread);
+    }
+    s_reaperCv.notify_all();
+    if (reaper.joinable())
+        reaper.join();
+    if (!workers.empty())
+        Base::Console().Log("MeshLevelSource: joined %d level worker(s)\n",
+                            int(workers.size()));
+}
+
+namespace {
 
 /// Is \a doc's scene being served?
 ///

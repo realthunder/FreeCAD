@@ -113,16 +113,13 @@ def finish():
         sys.stderr.write("gate: closing the main window\n")
         FreeCADGui.getMainWindow().close()
         sys.stderr.write("gate: main window closed\n")
-        # The process's exit() then hangs in pthread_cond_destroy on
-        # this box whenever a 3D view refined a mesh: the static
-        # condition variable of src/Mod/Part/Gui/MeshLevelSource.cpp is
-        # destroyed with its worker threads still waiting on it (found
-        # 2026-09-06 under gdb, a renderer bug, not the sandbox's).
-        # The result file is written and the streams are flushed, so
-        # the rig leaves without the C++ teardown.
+        # The event loop ends with the window and the process leaves
+        # through the normal C++ teardown -- the exit() hang this once
+        # skipped with os._exit (MeshLevelSource's level workers parked
+        # on a static condition variable) is fixed at the source:
+        # PartGui::shutdownMeshLevelWorkers() joins them on aboutToQuit.
         sys.stdout.flush()
         sys.stderr.flush()
-        os._exit(0)
 
 
 # run inside the event loop, after the main window is up
