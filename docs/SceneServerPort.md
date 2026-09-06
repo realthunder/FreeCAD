@@ -348,7 +348,18 @@ Each stage lands alone and is judged by the stage-0 test.
   than a fix.~~ Done, and wider than the frame push: section 7.3.
 - **Stage 4 -- the cloud-readiness items** from section 4: IPv6 listen,
   read deadlines, the connection cap keyed on the judged address,
-  control-frame rules, and a decision on chunked bodies.
+  control-frame rules, and a decision on chunked bodies. Two of the
+  five came with Beast in stage 2 (the deadlines and the control-frame
+  rules, section 7.2 item 6); stage 4 confirms them. **Rulings
+  2026-09-06:** chunked request bodies are **accepted** (Beast's parser
+  already reads them; the Content-Length-only rule and its smuggling
+  shape go away rather than being enforced), and the connection cap is
+  **not keyed on an address at all**: it becomes a cap on the number of
+  users and on the connections per user. What a "user" is keyed by is
+  the one design point left: the asserted identity when a trusted front
+  door states one, else the grant that admitted the connection, with the
+  judged address only as the fallback for the anonymous, legacy door.
+  The pre-auth accept cap (before any of those exist) stays as it is.
 - **Stage 5 -- verify on all three platforms.**
 
 ### 7.1 The seam, as built
