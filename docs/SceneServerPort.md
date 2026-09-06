@@ -364,7 +364,9 @@ Each stage lands alone and is judged by the stage-0 test.
 - **Stage 5 -- verify on all three platforms.** The brief for the
   Windows and macOS sessions is `PlatformVerification.md`: what to
   establish, what to record (a section 7.5 here), and the macOS
-  bring-up from a blank machine.
+  bring-up from a blank machine. **Windows done 2026-09-06** (section
+  7.5): the same source, the same 17 cases, one `_WIN32_WINNT` fix that
+  no test was failing over. macOS is the half that is left.
 
 ### 7.1 The seam, as built
 
@@ -625,6 +627,62 @@ case (`SceneServerWire_tests_run`, now 17 cases):
    ping underneath a Beast client (which would refuse to send one) and
    sees the connection closed.
 
+### 7.5 Stage 5, as verified
+
+One row per platform, each written by the session on that box from the
+brief in `PlatformVerification.md`.
+
+**Windows, 2026-09-06.** Windows 11 Pro 10.0.26200, MSVC 19.42.34438
+(VS 2022, v143), Boost 1.90, conda Qt 6.11.2, the
+`win-relwithdebinfo-801` tree that `DevEnvironment.md` documents.
+Nothing in the transport had to change:
+
+1. **It compiles.** `FreeCADRenderer` and `SceneServerWire_tests_run`
+   both build. The Asio-first include order at the top of
+   `SceneServer.cpp` -- the one platform-specific line in the file, and
+   the one nobody had ever compiled on Windows -- is right as written.
+   No `WSA*` symbol went unresolved, so the library needs no socket
+   library on its own link line; the `ws2_32`/`mswsock` on the test
+   target are the test's own.
+2. **The wire suite passes 17 of 17**, first run and every run since.
+   `listensOnIPv6Too` **ran rather than skipping**: `::1` is up here,
+   the dual-stack listener binds it, and the peer reads back as
+   `::1:<port>`. `handshakeThenHelloThenSnapshot` saw its peer as
+   `127.0.0.1:`, so Asio's `is_v4_mapped` normalisation of a v4 peer
+   arriving on the v6 socket (stage 4 item 1) behaves on Winsock as it
+   does on Linux. The other stage 4 cases behaved identically --
+   including `anOversizeControlFrameEndsTheConnection`, the one that
+   writes its 126-byte ping underneath Beast's client: the server
+   closed, it did not hang.
+3. **One real finding, fixed.** Asio warned that `_WIN32_WINNT` was not
+   defined and assumed `0x0601`, which compiled `SceneServer.cpp` and
+   the wire test against a Windows 7 API surface while every other
+   translation unit in the same DLL got the SDK's default. Both files
+   now set `0x0A00` next to the include-order rule they already carry.
+   The suite is 17 of 17 either way; the skew was the reason to fix it,
+   not a failure.
+4. **The full ctest: 475 of 477**, 26 s with `-j 6`, the same one entry
+   disabled as before. The two failures are `RenderSmokeVg_tests_run`
+   and `RenderSmokePage2D_tests_run`, both new with this pull, both
+   about bgfx on Windows and neither about the server. Diagnosed in
+   `Testing.md`, "The vg smokes on Windows".
+5. **The headless echo test passes by hand**: eight PASS lines and
+   DONE. `scripts/gui-test.sh` needs `xvfb-run` and `.conda/run.sh`, so
+   the GUI tests do not register on Windows; the local stand-in is a
+   startup macro that sets `GT_OUT`/`GT_RESULT` and execs the script,
+   under `run_cdb.ps1 -UserHome -StartupScript` for the isolated
+   configuration. Click to delta: **3.9 ms and 4.3 ms**, the batch's
+   first frame at 3.8 ms, against 2.9 ms median on Linux
+   (`ThinClient.md` 8.1) -- the same shape of number, on a loopback
+   that costs a little more. The first run reported 0.0 ms for all
+   three, which is a measurement artefact and not a Windows result:
+   `time.monotonic()` is `GetTickCount64()` on Windows through CPython
+   3.12, 15.6 ms of resolution, so every echo landed inside one tick.
+   The test times with `perf_counter` now, which is
+   `QueryPerformanceCounter` there and `clock_gettime` on Linux.
+
+**macOS.** Not yet -- no box (section 8 item 1).
+
 ## 8. Open questions for next session
 
 1. **Where do Windows and macOS get tested?** No Windows or macOS box is
@@ -652,11 +710,12 @@ case (`SceneServerWire_tests_run`, now 17 cases):
 ## 9. What was not verified
 
 - ~~macOS behaviour of `MSG_NOSIGNAL`~~ moot since stage 2: the call
-  is gone, Asio handles the broken pipe itself. Whether the file
-  *compiles* on macOS and Windows is still unverified (section 8
-  item 1); the one platform-specific line left is the Asio-first
-  include order at the top of the file, which is Boost's documented
-  requirement for Windows and untested here.
+  is gone, Asio handles the broken pipe itself. ~~Whether the file
+  *compiles* on macOS and Windows is still unverified~~ -- Windows
+  compiles it and passes the suite (section 7.5), so the Asio-first
+  include order at the top of the file is confirmed as the Boost
+  documentation states it. macOS is still unverified (section 8
+  item 1).
 - ~~Beast's server-side API shapes~~ are compiled and exercised now:
   the stage-0 suite runs against them (section 7.2).
 - ~~The `asio::coroutine` headers~~ are included by the transport.

@@ -13,7 +13,7 @@ as "the primary tree"; that was wrong.
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
-| C++ on Windows (`build/win-relwithdebinfo-801`) | **472 of 472 passing** (2026-09-04), 1 disabled -- see "C++ on Windows" |
+| C++ on Windows (`build/win-relwithdebinfo-801`) | **475 of 477 passing** (2026-09-06), 1 disabled, 2 failing -- both the vg smokes, see "C++ on Windows" |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -77,6 +77,14 @@ That is 473 against the 453 above, and the difference is the date rather than
 the platform: 444 expanded cases and 29 whole-binary entries here, against 427
 and 26 on 2026-08-28, from suites added since (`MaterialXGen_tests_run` alone
 is 48 cases). Section 2 explains why the two kinds of entry count differently.
+
+**2026-09-06: 475 of 477**, 478 registered, 26s with `-j 6`. The scene
+server's own new suite is among them and passes -- `SceneServerWire_tests_run`,
+17 cases over real sockets, the Windows half of stage 5 of
+`SceneServerPort.md` (section 7.5 there). The two failures are the vg smokes
+that arrived with the same pull, below: they are about bgfx's Windows backend,
+not about the code under test, and they are the only thing between this box and
+green.
 
     D:\works\sw\tools\ctest-fcad.cmd -j 6
 
@@ -233,6 +241,47 @@ traps: `docs/RenderDebug.md` section 5.2 -- and 5.2a for the defect the
 chess set found on its first day (a capture taken while a material was
 still compiling), which is why a frame dump now waits for a complete
 frame.
+
+#### The vg smokes on Windows
+
+Both fail here (2026-09-06), for two unrelated reasons, and neither is a
+defect in what they test:
+
+- `RenderSmokeVg_tests_run` loses **one band of five**: `gradient-fill`
+  reads 0 ink where Linux reads 21600. The cause is the backend bgfx
+  picks. On Windows it auto-selects **Direct3D 11**, and vg-renderer's
+  embedded shaders have no Direct3D profile at all: they are baked by
+  `src/3rdParty/vg-renderer/src/shaders/rebake.sh` on a Linux host into
+  glsl, essl, spirv, wgsl and metal, and `src/3rdParty/CMakeLists.txt`
+  then forces `BGFX_PLATFORM_SUPPORTS_DXBC=0` and `_DXIL=0` on the
+  target with the comment that "the bgfx backend never runs on Direct3D
+  anyway". On Windows it does, by default. So
+  `bgfx::createEmbeddedShader` finds no entry for `Direct3D11`, all four
+  of vg's programs come back invalid -- and **bgfx does not refuse the
+  draw**: `submit()` substitutes program handle 0 for an invalid one
+  (`bgfx.cpp:1558`), so the frame is drawn by an unrelated program and
+  comes out looking almost right. The gradient band is where the
+  substitution shows. Run the same binary with `--renderer vk` and it
+  passes 5 of 5 on the same box, which is the proof.
+- `RenderSmokePage2D_tests_run` **crashes**, on Direct3D 11 and on
+  Vulkan alike: an access violation in `bx::alloc` inlined into
+  `bgfx::makeRef`, inside `FreeCADRenderer.dll`, with the allocator
+  pointer null. That is bgfx's global allocator in a copy of bgfx that
+  was never initialised. Windows is the platform where
+  `src/3rdParty/CMakeLists.txt` builds bgfx **STATIC** (a bgfx DLL
+  exports only the C API), and `fcvgsmoke` links `FreeCADRenderer`
+  *and* `bgfx` -- so the exe and the DLL each hold their own copy of
+  bgfx's globals. `bgfx::init` runs in the exe's copy; `Page2D` and
+  `Vg2D` live in the DLL and use the DLL's, where `g_allocator` is
+  still null. The raw-vg scenario does not hit it because vg-renderer
+  is linked into the exe too. On Linux bgfx is SHARED and there is one
+  copy.
+
+Neither is fixed yet, and neither should be papered over by pointing the
+tests at Vulkan: the first says the vg shader pack needs its Direct3D
+profiles baked (this box has a shaderc that can produce them, unlike the
+Linux one that baked the set), and the second says a tool must not link
+a static bgfx alongside a library that already carries one.
 
 ### The GUI tests (`tests/gui/`)
 
