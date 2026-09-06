@@ -37,6 +37,22 @@ getProjectionShape().  Empty strings and 0 where an edge has no source in the mo
 silhouette is an edge the projection invented.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getVertexNames">
+      <Documentation>
+        <UserDocu>getVertexNames() - one tuple (name, sourceNames) per projected vertex of the
+View, in the order of getVertexByIndex: the name this projected vertex carries, and the
+mapped names of the 3D elements the edges meeting at it were projected from.  Empty where
+nothing named meets there.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getFaceNames">
+      <Documentation>
+        <UserDocu>getFaceNames() - one tuple (name, sourceNames) per face of the View, in the
+order faces are numbered: the name this face carries, and the mapped names of the 3D
+elements its bounding wires were projected from.  The name does not depend on the sort by
+area that gives the face its number.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getVisibleEdges">
       <Documentation>
         <UserDocu>getVisibleEdges() - get the visible edges in the View as Part::TopoShapeEdges</UserDocu>

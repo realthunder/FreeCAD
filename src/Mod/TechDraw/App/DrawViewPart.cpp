@@ -420,6 +420,7 @@ void DrawViewPart::onHlrFinished(GeometryObjectPtr geometryObject)
     //them into element names reads the map, so it happens here, on the main
     //thread (docs/TopoNamingEnhance.md sec 8.2)
     m_geometryObject->nameEdgeGeometry();
+    m_geometryObject->nameVertexGeometry();
 
     //the last hlr related task is to make a bbox of the results
     bbox = geometryObject->calcBoundingBox();
@@ -754,8 +755,14 @@ void DrawViewPart::onFacesFinished(std::shared_ptr<std::vector<FacePtr>> faces)
     waitingForFaces(false);
     m_progress.reset();
 
-    if (m_geometryObject)
+    if (m_geometryObject) {
         m_geometryObject->setFaces(std::move(*faces));
+        //the faces were found in a worker; naming them reads the edges, so it
+        //happens here on the main thread, against the same edges the face
+        //finder was given
+        m_geometryObject->nameFaceGeometry(m_geometryObject->getVisibleFaceEdges(
+            SmoothVisible.getValue(), SeamVisible.getValue()));
+    }
 
     // Now we can recompute Dimensions and do other tasks possibly depending on Face extraction
     postFaceExtractionTasks();

@@ -97,6 +97,12 @@ public:
     //! (docs/TopoNamingEnhance.md sec 8.2).  The projection itself runs in a
     //! worker and only records indices.
     void nameEdgeGeometry();
+    //! Name the projected vertices from the edges that meet at them, and the
+    //! projected faces from the edges that bound them.  Both read the names
+    //! nameEdgeGeometry left behind and must follow it; the face one must also
+    //! follow face finding, so it is called from onFacesFinished.
+    void nameVertexGeometry();
+    void nameFaceGeometry(const BaseGeomPtrVector& faceEdges);
     static TopoDS_Shape projectSimpleShape(const TopoDS_Shape& shape, const gp_Ax2& CS);
     static TopoDS_Shape simpleProjection(const TopoDS_Shape& shape, const gp_Ax2& projCS);
     static TopoDS_Shape projectFace(const TopoDS_Shape& face, const gp_Ax2& CS);

@@ -1245,6 +1245,8 @@ Vertex::Vertex(const Vertex* v)
     extractType = v->extractType;       //obs?
     hlrVisible = v->hlrVisible;
     ref3D = v->ref3D;                  //obs. never used.
+    sources3D = v->sources3D;
+    hlrName = v->hlrName;
     m_center = v->m_center;
     occVertex = v->occVertex;
     cosmetic = v->cosmetic;

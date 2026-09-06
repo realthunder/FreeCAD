@@ -483,6 +483,145 @@ void GeometryObject::nameEdgeGeometry()
     }
 }
 
+//! the sorted, duplicate-free source names joined into the stem of a name
+static std::string nameStem(std::vector<std::string>& sources)
+{
+    std::sort(sources.begin(), sources.end());
+    sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
+
+    std::ostringstream stem;
+    for (size_t i = 0; i < sources.size(); i++) {
+        if (i > 0) {
+            stem << '|';
+        }
+        stem << sources.at(i);
+    }
+    return stem.str();
+}
+
+//! Give every projected vertex a name made from the elements the edges that
+//! meet at it were projected from.  Called on the main thread after
+//! nameEdgeGeometry, whose result is all it reads.
+void GeometryObject::nameVertexGeometry()
+{
+    std::map<std::string, int> ordinals;
+    for (auto& vert : vertexGeom) {
+        if (!vert || vert->getCosmetic()) {
+            continue;//a cosmetic vertex is identified by its tag, not by the model
+        }
+
+        //a centre mark belongs to its circle; every other vertex is where
+        //projected edges end
+        std::vector<std::string> sources;
+        for (auto& geom : edgeGeom) {
+            if (!geom || !geom->getHlrVisible() || geom->getSource3d().empty()) {
+                continue;
+            }
+            bool meets{false};
+            if (vert->isCenter()) {
+                auto circle = std::dynamic_pointer_cast<TechDraw::Circle>(geom);
+                meets = circle
+                    && (circle->center - vert->point()).Length() <= Precision::Confusion();
+            }
+            else {
+                meets =
+                    (geom->getStartPoint() - vert->point()).Length() <= Precision::Confusion()
+                    || (geom->getEndPoint() - vert->point()).Length() <= Precision::Confusion();
+            }
+            if (meets) {
+                sources.push_back(geom->getSource3d());
+            }
+        }
+        if (sources.empty()) {
+            continue;//only unnamed edges meet here -- silhouettes, or a detail view
+        }
+
+        std::string stem = nameStem(sources);
+        stem += vert->isCenter() ? ";HLRC:" : ";HLRV:";
+        int ordinal = ordinals[stem]++;
+
+        vert->setSources3d(std::move(sources));
+        vert->setHlrName(stem + std::to_string(ordinal));
+    }
+}
+
+//! Give every projected face a name made from the elements its bounding wires
+//! were projected from, which is an identity the sort by area cannot disturb.
+//! Called on the main thread once face finding has landed; like
+//! nameVertexGeometry it reads only names the edges already carry.
+//!
+//! The face finder does not work on the projected edges themselves but on
+//! copies of them, fused and split where they cross, so a bounding fragment is
+//! matched back to the edge it lies on by position.  The match is local to one
+//! view's own edges, and a bounding box test keeps it to a few candidates per
+//! fragment.
+void GeometryObject::nameFaceGeometry(const BaseGeomPtrVector& faceEdges)
+{
+    if (faceGeom.empty() || faceEdges.empty()) {
+        return;
+    }
+
+    //the fuse that splits the edges is allowed to move them by its fuzzy value
+    constexpr double fragmentTol{FUZZYADJUST * EWTOLERANCE};
+
+    std::vector<Bnd_Box> boxes;
+    boxes.reserve(faceEdges.size());
+    for (auto& geom : faceEdges) {
+        Bnd_Box box;
+        if (geom && !geom->getOCCEdge().IsNull()) {
+            BRepBndLib::AddOptimal(geom->getOCCEdge(), box);
+            box.SetGap(fragmentTol);
+        }
+        boxes.push_back(box);
+    }
+
+    std::map<std::string, int> ordinals;
+    for (auto& face : faceGeom) {
+        if (!face) {
+            continue;
+        }
+
+        std::vector<std::string> sources;
+        for (auto* wire : face->wires) {
+            if (!wire) {
+                continue;
+            }
+            for (auto& fragment : wire->geoms) {
+                if (!fragment || fragment->getOCCEdge().IsNull()) {
+                    continue;
+                }
+                Base::Vector3d mid = fragment->getMidPoint();
+                gp_Pnt probe(mid.x, mid.y, mid.z);
+                double best{fragmentTol};
+                std::string bestName;
+                for (size_t i = 0; i < faceEdges.size(); i++) {
+                    if (boxes.at(i).IsVoid() || boxes.at(i).IsOut(probe)
+                        || faceEdges.at(i)->getSource3d().empty()) {
+                        continue;
+                    }
+                    double dist = faceEdges.at(i)->minDist(mid);
+                    if (dist < best) {
+                        best = dist;
+                        bestName = faceEdges.at(i)->getSource3d();
+                    }
+                }
+                if (!bestName.empty()) {
+                    sources.push_back(bestName);
+                }
+            }
+        }
+        if (sources.empty()) {
+            continue;
+        }
+
+        std::string stem = nameStem(sources) + ";HLRF:";
+        int ordinal = ordinals[stem]++;
+
+        face->setSources3d(std::move(sources));
+        face->setHlrName(stem + std::to_string(ordinal));
+    }
+}
+
 //! the single letter a projected edge's name carries for its class
 char GeometryObject::edgeClassLetter(edgeClass category)
 {
