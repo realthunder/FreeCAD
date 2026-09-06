@@ -20,8 +20,17 @@
  ****************************************************************************/
 
 // Boost.Asio before anything else: on Windows it has to see winsock2.h
-// before a Qt or FreeCAD header pulls windows.h in (docs/SceneServerPort.md
-// sec 8 item 1 -- no Windows box here to verify on).
+// before a Qt or FreeCAD header pulls windows.h in. Compiled and run
+// there 2026-09-06 (docs/SceneServerPort.md sec 7.5).
+//
+// _WIN32_WINNT before Asio, on Windows: Asio warns when the target
+// version is unset and then assumes 0x0601 (Windows 7), which compiles
+// this one translation unit against a Windows 7 API surface while every
+// other unit in the same binary gets the SDK default. 0x0A00 is that
+// default.
+#if defined(_WIN32) && !defined(_WIN32_WINNT)
+#define _WIN32_WINNT 0x0A00
+#endif
 #include <boost/asio.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
