@@ -565,6 +565,13 @@ row, a little slower. Reading it took a clock change: `time.monotonic()` is
 every echo as 0.0 ms; `tests/gui/serve-selection-echo.py` times with `perf_counter` on
 both platforms now.
 
+**macOS, 2026-09-07** (`SceneServerPort.md` section 7.5): **4.5 and 4.1 ms**
+click-to-delta on the headless shape, the batch's first frame at 3.0 ms. Windows's
+numbers to within a fraction of a millisecond, and the same shape as the Linux row
+above. So the floor this section builds on is the same on all three platforms:
+single-digit milliseconds, dominated by the pick's hop to the GUI thread and the
+publish, with nothing platform-specific in between.
+
 ### 8.2 The shape
 
 ```

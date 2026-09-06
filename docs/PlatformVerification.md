@@ -91,6 +91,12 @@ In order. Each item is a fact to write down, not a box to tick.
    `run.cmd` line.) The `echo ms` figures are the click-to-selection-delta
    numbers of `ThinClient.md` section 8.1 on your platform; note them.
 
+   **Done on both boxes**: Windows 2026-09-06, macOS 2026-09-07, eight
+   PASS lines each. The numbers are in `SceneServerPort.md` 7.5, and the
+   exact macOS command -- there is no `xvfb-run` and no `timeout` on that
+   box -- is in `Testing.md`, "The GUI tests". **With it, stage 5 is
+   complete on all three platforms and this brief is spent.**
+
 ### 2.1 What to record
 
 Add a section **7.5 "Stage 5, as verified"** to `SceneServerPort.md` with

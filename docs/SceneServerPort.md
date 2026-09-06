@@ -367,8 +367,8 @@ Each stage lands alone and is judged by the stage-0 test.
   machine. Windows took one `_WIN32_WINNT` fix that no test was failing
   over; macOS took none in the transport at all. The dyld port that
   closed the last coverage gap landed the same day (section 7.6), and the
-  rest of the macOS tree followed (section 7.7): 478 of 478. macOS still
-  owes the headless echo test.
+  rest of the macOS tree followed (section 7.7): 478 of 478. The headless
+  echo test closed there on 2026-09-07, and the stage is complete.
 
 ### 7.1 The seam, as built
 
@@ -645,6 +645,7 @@ habits.
 | `listensOnIPv6Too` | ran | ran | **ran, passed** |
 | Peer normalisation | `127.0.0.1:` | `127.0.0.1:` | **`127.0.0.1:`** |
 | Full ctest | 485/485 | 477/477 | **478/478** |
+| Headless echo, click to delta | 2.9 ms median | 3.9, 4.3 ms | **4.5, 4.1 ms** |
 
 **Windows, 2026-09-06.** Windows 11 Pro 10.0.26200, MSVC 19.42.34438
 (VS 2022, v143), Boost 1.90, conda Qt 6.11.2, the
@@ -727,8 +728,25 @@ duplicate fontstash symbols GNU ld accepts. All four are in
 The full tree and `ctest` came later the same day and are their own piece of
 bring-up, scoped apart from stage 5: eleven fixes to build at all, then
 474 of 478, then four more for the failures and 478 of 478. Section 7.7.
-Still open on macOS: the headless echo test of `PlatformVerification.md`
-section 2 item 5.
+
+**The headless echo test, 2026-09-07.** The last stage 5 item, and the one
+that needed the full tree to exist before it could run. Eight PASS lines and
+`DONE`, first run, no source change: the hello answered with a snapshot, both
+picks followed by a scene push, a pick that changed nothing pushing nothing,
+a `'B'` batch of two ctrl-picks pushing one frame, and the in-process
+selection holding the three faces the client asked for. Click to delta
+**4.5 and 4.1 ms**, the batch's first frame at 3.0 ms -- Windows's numbers to
+within a fraction of a millisecond, and the same shape as Linux's 2.9 ms
+median (`ThinClient.md` 8.1) on a loopback that costs a little more. Like
+Windows, macOS does not register the GUI tests (the guard wants `xvfb-run`),
+so this was a hand run of the binary with `GT_OUT`/`GT_RESULT` set and an
+isolated configuration; `Testing.md`, "The GUI tests", carries the command.
+The run log is loud on that box for a reason unrelated to any of this --
+Qt 6.11 asks macOS 13 for an SF Symbol while painting a toolbar's overflow
+button, thirty times, on every GUI start there (`Testing.md`, "Toolbar paints
+throw on macOS 12"). The result file is the verdict and it is clean.
+
+**So stage 5 is done on all three platforms.**
 
 ### 7.6 The dyld port: what a publish-only process maps on macOS
 
@@ -871,8 +889,8 @@ So macOS joins Linux and Windows: three platforms green on one source.
   *compiles* on macOS and Windows is still unverified~~ -- Windows
   compiles it and passes the suite (section 7.5), so the Asio-first
   include order at the top of the file is confirmed as the Boost
-  documentation states it. macOS is still unverified (section 8
-  item 1).
+  documentation states it. macOS compiles it and passes the suite too
+  (section 7.5), so all three platforms agree on that order.
 - ~~Beast's server-side API shapes~~ are compiled and exercised now:
   the stage-0 suite runs against them (section 7.2).
 - ~~The `asio::coroutine` headers~~ are included by the transport.

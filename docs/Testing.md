@@ -99,7 +99,9 @@ built before the tree was:
 The stack, and the four source fixes the two stage 5 targets needed, are in
 `DevEnvironment.md`, "macOS stack"; the eleven the rest of the tree needed
 are in `SceneServerPort.md` 7.7. The GUI tests do not register there for
-the same reason as on Windows: their guard looks for `xvfb-run`.
+the same reason as on Windows: their guard looks for `xvfb-run`. Run by
+hand, `GuiServeSelectionEcho_tests_run` passes -- eight PASS lines and
+`DONE`, 2026-09-07; see "The GUI tests" below for the command.
 
 ### C++ on Windows
 
@@ -379,6 +381,21 @@ console is where a crash leaves a stack. The verdict is the result file, as
 it is on Linux: PASS lines and `DONE`. `GuiServeSelectionEcho_tests_run` was
 run this way for stage 5 of `SceneServerPort.md` (section 7.5 there).
 
+**On macOS they do not register either** -- the same `xvfb-run` guard -- but
+there the box has `.conda/run.sh` and a window server, so a hand run is the
+driver minus xvfb and `timeout`:
+
+    OUT=/tmp/gt-echo; mkdir -p "$OUT/.iso/cache" "$OUT/.iso/config"
+    XDG_CACHE_HOME=$OUT/.iso/cache XDG_CONFIG_HOME=$OUT/.iso/config \
+    GT_OUT=$OUT GT_RESULT=$OUT/result.txt \
+    .conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCAD \
+        --user-cfg "$OUT/.iso/user.cfg" tests/gui/serve-selection-echo.py
+
+`GuiServeSelectionEcho_tests_run` passes that way, 2026-09-07: eight PASS
+lines and `DONE`. Its run log is noisy for reasons that have nothing to do
+with the test -- see "Toolbar paints throw on macOS 12" below -- so read the
+result file, not the log.
+
 That one exists because the render goldens found the crash by accident
 under load and then had to stop finding it: a golden must not animate,
 and the ten-frame animated fit was the window. The test opens the same
@@ -412,6 +429,35 @@ Registration needs `FreeCADMain`, `FreeCADGui`, `xvfb-run` and
 `.conda/run.sh`; the tree says so at configure time when one is missing.
 The chess asset comes from the MaterialX submodule, so without that
 checkout the test is not registered.
+
+### Toolbar paints throw on macOS 12
+
+Every GUI run on the macOS box logs a burst of this over the first
+second, around thirty times:
+
+    +[NSImageSymbolConfiguration configurationPreferringMonochrome]:
+        unrecognized selector sent to class 0x...
+    ===== CAUGHT ... unknown exception =====
+      event type 12, receiver QToolBarExtension 'qt_toolbar_ext_button'
+    QBackingStore::endPaint() called with active painter
+    QPaintDevice: Cannot destroy paint device that is being painted
+
+and writes a `crash-*.log` under `~/Library/Application Support/FreeCAD/`
+holding nothing but those catches. It is not the test's, and not this
+tree's: a bare GUI start with a script that only closes the main window
+produces the same 28 of them. Event type 12 is `QEvent::Paint`, so what
+throws is the *paint* of a toolbar's overflow button and of a tool
+button's menu arrow -- Qt 6.11's macOS icon engine resolves those from
+SF Symbols lazily, at paint, and `configurationPreferringMonochrome` is
+macOS 13 API being called on macOS 12.7.6 without a guard. The
+Objective-C exception unwinds out of `QWidget::event`,
+`GUIApplication::notify` catches it as an unknown exception, and the
+painter it left open is what the two Qt warnings are about.
+
+Consequences: those two ornaments do not draw, and the log of any GUI
+run on that box is unreadable by default. Nothing else misbehaves --
+`GuiServeSelectionEcho_tests_run` passes through the noise. Read the
+result file, not the log, and delete the crash logs it leaves.
 
 ## 4. What is deliberately not run, and why
 
