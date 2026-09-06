@@ -2441,3 +2441,131 @@ scales and rotates through `ShapeUtils`, which is `TopoDS_Shape` in and
 out, so the names stop at `m_cutPieces` / `m_cutShapeRaw`; and the 2D
 section faces are rebuilt from projected wires in `mapToPage`, so they
 need the name carried beside them in `BaseGeom`'s `ref3D` slot.
+
+### 8.5 T2, built: names through HLR (2026-09-06)
+
+Two commits, as 8.3 planned them.  The first is the mechanical one that
+keeps the names alive as far as the projection; the second is the
+traversal that hands them to the projected geometry.
+
+#### 8.5.1 The projection input keeps its names
+
+`1f78bbd54d`.  Every name stopped at the door of the projection:
+`DrawViewPart::partExec` took a `TopoDS_Shape`, and the centering,
+scaling and rotating between the source and HLR went through
+`ShapeUtils`, which is `TopoDS_Shape` in and out.
+
+`ShapeUtils` has `Part::TopoShape` overloads now -- `mirrorShapeVec`,
+`mirrorShape`, `invertGeometry`, `scaleShape`, `rotateShape`,
+`moveShape`, `centerShapeXY` -- each composing the same `gp_Trsf` as
+before and handing it to `makETransform`, which copies the shape when
+the transformation scales or mirrors and only moves it when it does not.
+The map survives all four, the Y mirror into Qt's coordinate system
+included.  The pipeline is typed to match: `partExec`,
+`makeGeometryForShape`, `centerScaleRotate`, `buildGeometryObject`,
+`DrawViewSection::prepareShape` and its complex-section override, and
+`GeometryObject::projectShape` / `projectShapeWithPolygonAlgo`.  The
+copy `makeGeometryForShape` takes so it does not transform the source in
+place is `makECopy`.  `GeometryObject` keeps what it projected in
+`m_projectionShape`, and `DrawViewPart.getProjectionShape()` reads it
+back.
+
+Evidence, on a plain view at Scale 2 and Rotation 30, a section and a
+complex section: the shape HLR is given has an element map of the same
+size as the source (32 of 32), every one of its faces is named, the
+section face is still `SectionPlane;:M;CUT`, and the complex section
+face still resolves to `{g1;SKT}`.
+
+Two notes for whoever reads the diff.  `DrawUtil::shapeVectorToCompound`,
+which 8.3 named, has **no caller anywhere in the tree** and was left
+alone.  And the detail, multi and broken views, `DrawProjectSplit` and
+`DrawDimHelper` convert to `Part::TopoShape` at the call rather than
+through their own pipelines: their inputs are bare `TopoDS_Shape`
+already, so a map would stop there in any case -- the explicit
+conversion is there to make that visible instead of letting an implicit
+one hide it.
+
+#### 8.5.2 Every projected edge knows the element it came from
+
+`1ffb61df60`.  The reimplementation 3.5 argued for, of both entry
+points.
+
+`hlrInternalCompound` with `hlrDrawFace` and `hlrDrawEdge` is
+`HLRBRep_HLRToShape::InternalCompound` and its two helpers, minus the
+branches TechDraw never reaches (there is no shape filter and no `In3d`
+output), emitting the same edges in the same order and reporting the
+`ie` of each.  `polySegments` and `polyInternalCompound` are the same
+for `HLRBRep_PolyHLRToShape`: its `Update` pass keeps the shape each
+segment came from, which `HLRBRep_PolyAlgo::Hide` fills in, and
+`InternalCompound` then filters that list by type and visibility.  The
+polygon algorithm's type codes are its own and differ from the exact
+one's -- 1 outline, 2 smooth, 3 seam, 4 hard, against 1 iso, 2 outline,
+3 smooth, 4 seam, 5 hard -- which is the one thing to get wrong here.
+
+A side effect worth having: the old code called each accessor twice,
+once to test for null and once to keep the result, so it ran every one
+of the ten traversals twice.  Each runs once now.
+
+**The mirror is the join that had to be got right.**  Between the
+traversal and the geometry sits `invertGeometry`, whose transformation
+is negative and therefore copies every edge.  `invertAndTrack` composes
+exactly the transformation `mirrorShape` composes -- so the geometry is
+unchanged -- and carries the association across with
+`BRepBuilderAPI_Transform::ModifiedShape`, rather than assuming the copy
+preserves the order of a compound's children.
+
+`BaseGeom` carries the result.  `ref3D`, the slot 3.3 found reserved and
+never filled, is the index of the source element in the projection
+shape's own `Edge<n>` numbering, and the projected edge gets a name of
+its own,
+
+    <sourceElementName>;HLR:<class>:<ordinal>
+
+with `class` = visibility (`V`/`H`) plus edge class (`H` hard, `O`
+outline, `S` smooth, `E` seam, `I` iso) and `ordinal` telling apart the
+fragments one source edge is broken into by hiding.
+`DrawViewPart.getEdgeNames()` reads all three back.
+
+**The thread split is T1's.**  The projection runs in a worker and
+records nothing but indices and shapes; `DrawViewPart::onHlrFinished`
+turns them into names on the main thread, because reading an element map
+adopts the document's `App::StringHasher` and that has no locking (8.2).
+The bridge between the two is `TopExp::MapShapes(shape, TopAbs_EDGE,
+map)`, which is exactly what `TopoShape`'s own cache uses, so index *n*
+in the worker's map is `Edge<n>` in the element map -- no `TopoShape`
+API is touched off the main thread.
+
+**Evidence.**
+
+    plain box            : 12 projected edges, 12 distinct sources
+    box + slot (planar)  : 25 projected edges over all 24 edges, 0 unnamed
+    box + cylindrical    : 5 unnamed, all of them the hole's silhouettes
+    length agreement     : 9 agree, 0 differ
+    bar behind a block   : Edge9;...;HLR:VH:0, HLR:VH:1, HLR:HH:0
+    section              : SectionPlane;:G6;CUT;:H,E;HLR:VH:0
+    after a model edit   : 9 of 9 names unchanged
+
+The all-planar case is the one that settles what "unnamed" means: a
+solid with no curved face leaves *nothing* without a source, so the
+projected edges that have none appear only where a curved face does.
+A silhouette is an edge HLR invents; it has no source edge, and a
+cylinder's is a straight generatrix, not a curve -- which is why an
+earlier probe that expected the unnamed ones to be curved reported a
+false failure.
+
+The length check is the one that shows the reported source is the right
+one and not merely a plausible one: for every named edge of a view, the
+projected length times the scale equals the source edge's, 9 of 9.
+
+**Gates.**  TechDraw 11 of 11 (28.0 s); `ctest` 477 of 477; the Python
+suite 1338 tests, 6 failures and 8 errors, this box's known set.
+
+**What T2 does not do**, and does not claim to.  Vertices and 2D faces
+still take no name: 3.6 has vertices naming from the edges that meet at
+them and faces from the wires that bound them, and the second is the
+change that kills the area-sort fragility.  Nothing persists the name
+yet either -- `BaseGeom::Save` writes `ref3D` and not the strings, so
+old files still restore unchanged.  Both belong with T3, which migrates
+the consumers (`References2D`, `DrawHatch::Source`,
+`GeomFormat::m_geomIndex`, `CenterLine`, `CosmeticVertex::linkGeom`) and
+is where a stored name first has to survive a reload.
