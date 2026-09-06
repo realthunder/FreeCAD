@@ -44,6 +44,7 @@
 #include <Base/Console.h>
 #include <Base/Exception.h>
 
+#include "BitmapFactory.h"
 #include "Fw/FwQtView.h"
 #include "Fw/FwWidgets.h"
 #include "InputField.h"
@@ -71,6 +72,22 @@ QIcon iconOf(const QString& path)
     if (path.startsWith(QLatin1String("theme:")))
         return QIcon::fromTheme(path.mid(6));
     return QIcon(path);
+}
+
+/// A pixmap for a bag path: `bitmap:<name>` is one of FreeCAD's own
+/// through the BitmapFactory, rendered at `size` (an SVG icon at the
+/// label's size, as `pixmapFromSvg` does); anything else is a file or
+/// resource path.
+QPixmap pixmapOf(const QString& path, const QSize& size)
+{
+    if (path.startsWith(QLatin1String("bitmap:"))) {
+        QByteArray name = path.mid(7).toUtf8();
+        QPixmap px = Gui::BitmapFactory().pixmapFromSvg(name.constData(), size);
+        if (px.isNull())
+            px = Gui::BitmapFactory().pixmap(name.constData());
+        return px;
+    }
+    return QPixmap(path);
 }
 
 QVariantList colorList(const QColor& c)
@@ -333,7 +350,7 @@ void View::applyOne(const QString& key, const QVariant& value)
     else if (key == QLatin1String("pixmap")) {
         auto l = qobject_cast<QLabel*>(w);
         if (l && !value.toString().isEmpty())
-            l->setPixmap(QPixmap(value.toString()));
+            l->setPixmap(pixmapOf(value.toString(), l->size()));
     }
     else if (key == QLatin1String("color")) {
         w->setProperty("color", colorOf(value));

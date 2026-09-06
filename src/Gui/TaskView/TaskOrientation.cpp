@@ -23,38 +23,44 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
-# include <QDialog>
 # include <map>
 #endif
 
 #include <Base/Tools.h>
 #include <App/Document.h>
-#include <Gui/BitmapFactory.h>
 #include <Gui/Camera.h>
+#include <Gui/Fw/FwQtView.h>
+#include <Gui/Fw/FwWidgets.h>
 #include <Gui/TaskView/TaskView.h>
 
 #include "TaskOrientation.h"
-#include "ui_TaskOrientation.h"
+#include "fwui_TaskOrientation.h"
 
 
 using namespace Gui;
 
-TaskOrientation::TaskOrientation(App::GeoFeature* obj, QWidget* parent)
-  : QWidget(parent)
+TaskOrientation::TaskOrientation(App::GeoFeature* obj, QObject* parent)
+  : QObject(parent)
+  , _form(new Fw::UiForm)
   , ui(new Ui_TaskOrientation)
   , feature(obj)
 {
-    ui->setupUi(this);
+    ui->setupUi(_form.get());
 
-    connect(ui->Reverse_checkBox, &QCheckBox::clicked,    this, &TaskOrientation::onPreview);
-    connect(ui->XY_radioButton  , &QRadioButton::clicked, this, &TaskOrientation::onPreview);
-    connect(ui->XZ_radioButton  , &QRadioButton::clicked, this, &TaskOrientation::onPreview);
-    connect(ui->YZ_radioButton  , &QRadioButton::clicked, this, &TaskOrientation::onPreview);
-    connect(ui->Offset_doubleSpinBox, qOverload<double>(&QuantitySpinBox::valueChanged),
+    connect(ui->Reverse_checkBox, &Fw::QCheckBox::clicked,    this, &TaskOrientation::onPreview);
+    connect(ui->XY_radioButton  , &Fw::QRadioButton::clicked, this, &TaskOrientation::onPreview);
+    connect(ui->XZ_radioButton  , &Fw::QRadioButton::clicked, this, &TaskOrientation::onPreview);
+    connect(ui->YZ_radioButton  , &Fw::QRadioButton::clicked, this, &TaskOrientation::onPreview);
+    connect(ui->Offset_doubleSpinBox, qOverload<double>(&Fw::QuantitySpinBox::valueChanged),
             this, &TaskOrientation::onPreview);
 }
 
 TaskOrientation::~TaskOrientation() = default;
+
+QString TaskOrientation::windowTitle() const
+{
+    return _form->windowTitle();
+}
 
 void TaskOrientation::open()
 {
@@ -191,20 +197,29 @@ void TaskOrientation::updateIcon()
         icon = reverse ? "view-left" : "view-right";
     }
 
-    ui->previewLabel->setPixmap(
-        Gui::BitmapFactory().pixmapFromSvg(icon.c_str(),
-        ui->previewLabel->size()));
+    // the bag carries the icon's name; the backend renders it at the
+    // label's size (an SVG through the BitmapFactory on the Qt side)
+    ui->previewLabel->setPixmap(QStringLiteral("bitmap:") + QString::fromStdString(icon));
 }
 
 // ----------------------------------------------------------------------------
 
 TaskOrientationDialog::TaskOrientationDialog(App::GeoFeature* obj)
 {
-    widget = new TaskOrientation(obj);
+    widget = new TaskOrientation(obj, this);
+    QWidget* realized = FwQt::realize(widget->form(), nullptr);
     Gui::TaskView::TaskBox* taskbox = new Gui::TaskView::TaskBox(
         QPixmap(), widget->windowTitle(), true, nullptr);
-    taskbox->groupLayout()->addWidget(widget);
+    taskbox->groupLayout()->addWidget(realized);
     Content.push_back(taskbox);
+}
+
+TaskOrientationDialog::~TaskOrientationDialog()
+{
+    // the dialog deletes its content, and the view watches its widget;
+    // detach now so the models outlive the widgets cleanly
+    if (FwQt::View* v = FwQt::View::of(widget->form()))
+        v->release(false);
 }
 
 void TaskOrientationDialog::open()

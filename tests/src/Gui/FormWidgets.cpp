@@ -15,12 +15,19 @@
 #include <QGroupBox>
 #include <QTest>
 
+#include <QLabel>
+
 #include <App/Application.h>
+#include <App/Document.h>
+#include <App/Placement.h>
 #include <src/App/InitApplication.h>
 
+#include "Gui/Camera.h"
 #include "Gui/Fw/FwQtView.h"
 #include "Gui/Fw/FwWidgets.h"
 #include "Gui/InputField.h"
+#include "Gui/QuantitySpinBox.h"
+#include "Gui/TaskView/TaskOrientation.h"
 #include "fwui_TaskPanel_OrthoArray.h"
 
 namespace Fw = Gui::Fw;
@@ -396,6 +403,74 @@ private Q_SLOTS:
                  QStringLiteral("Gui::PrefCheckBox"));
         delete pw;
         delete pref;
+    }
+
+    // H1: the first native port (docs/Sandbox.md 7.12).  TaskOrientation
+    // is models over the generated form; the dialog realizes them
+    // through the Qt backend.  The gate: the panel drives its property
+    // from either side, and the file's title reached the model.
+    void test_taskOrientationPort()
+    {
+        App::Document* doc = App::GetApplication().newDocument("FwOrientation");
+        auto feature = dynamic_cast<App::GeoFeature*>(doc->addObject("App::Placement", "Plane"));
+        QVERIFY(feature);
+        feature->Placement.setValue(
+            Base::Placement(Base::Vector3d(0, 7, 0), Gui::Camera::convert(Gui::Camera::Rear)));
+
+        auto dialog = new Gui::TaskOrientationDialog(feature);
+        QCOMPARE(dialog->getDialogContent().size(), std::size_t(1));
+        QWidget* box = dialog->getDialogContent().front();
+        auto rXY = box->findChild<QRadioButton*>(QStringLiteral("XY_radioButton"));
+        auto rXZ = box->findChild<QRadioButton*>(QStringLiteral("XZ_radioButton"));
+        auto rYZ = box->findChild<QRadioButton*>(QStringLiteral("YZ_radioButton"));
+        auto reverse = box->findChild<QCheckBox*>(QStringLiteral("Reverse_checkBox"));
+        auto offset = box->findChild<Gui::QuantitySpinBox*>(QStringLiteral("Offset_doubleSpinBox"));
+        auto preview = box->findChild<QLabel*>(QStringLiteral("previewLabel"));
+        QVERIFY(rXY && rXZ && rYZ && reverse && offset && preview);
+        Gui::Fw::UiForm* form = dialog->panel()->form();
+        QVERIFY(Gui::FwQt::View::of(form));
+        QCOMPARE(dialog->panel()->windowTitle(), QStringLiteral("Choose orientation"));
+        QCOMPARE(preview->minimumWidth(), 48);
+
+        // open restores the placement into the models; the widgets follow
+        dialog->open();
+        QVERIFY(rXZ->isChecked());
+        QVERIFY(reverse->isChecked());
+        QCOMPARE(offset->rawValue(), 7.0);
+        QVERIFY(!preview->pixmap().isNull());
+        QCOMPARE(preview->pixmap().width(), 48);
+        auto mXZ = qobject_cast<Gui::Fw::QRadioButton*>(form->named(QStringLiteral("XZ_radioButton")));
+        auto mOffset = qobject_cast<Gui::Fw::QuantitySpinBox*>(
+            form->named(QStringLiteral("Offset_doubleSpinBox")));
+        QVERIFY(mXZ && mOffset);
+        QVERIFY(mXZ->isChecked());
+        QCOMPARE(mOffset->rawValue(), 7.0);
+
+        // the widget drives the model drives the property
+        offset->setValue(12.0);
+        QCOMPARE(mOffset->rawValue(), 12.0);
+        QCOMPARE(feature->Placement.getValue().getPosition().y, 12.0);
+        rYZ->click();
+        QCOMPARE(feature->Placement.getValue().getPosition().x, 12.0);
+        QVERIFY(feature->Placement.getValue().getRotation().isSame(
+            Gui::Camera::convert(Gui::Camera::Left), 1e-5));
+        reverse->click();
+        QVERIFY(feature->Placement.getValue().getRotation().isSame(
+            Gui::Camera::convert(Gui::Camera::Right), 1e-5));
+
+        // the model drives the widget
+        mOffset->setValue(3.0);
+        QCOMPARE(offset->rawValue(), 3.0);
+        QCOMPARE(feature->Placement.getValue().getPosition().x, 3.0);
+        auto mXY = qobject_cast<Gui::Fw::QRadioButton*>(form->named(QStringLiteral("XY_radioButton")));
+        mXY->setChecked(true);
+        QVERIFY(rXY->isChecked());
+        QVERIFY(!rYZ->isChecked());
+
+        QVERIFY(dialog->accept());
+        delete dialog;
+        QCoreApplication::processEvents();
+        App::GetApplication().closeDocument("FwOrientation");
     }
 };
 

@@ -372,3 +372,26 @@ MACRO(SET_PYTHON_PREFIX_SUFFIX ProjectName)
         set_target_properties(${ProjectName} PROPERTIES SUFFIX ".so")
     endif(WIN32)
 ENDMACRO(SET_PYTHON_PREFIX_SUFFIX)
+
+# The host widget layer's .ui generator (docs/Sandbox.md 7.12): for each
+# <dir/Name.ui> emit ${CMAKE_CURRENT_BINARY_DIR}/fwui_<Name>.h, a
+# `Ui_X::setupUi(Gui::Fw::UiForm*)` over the host widget models, and
+# append the header to <OUT_VAR>.  The header is named fwui_, not ui_,
+# because CMake's AUTOUIC claims every `ui_*.h` include for uic.  The
+# form's file is loaded at run time from the Qt resource
+# `:/ui/<Name>.ui`, so the .ui must be in a qrc under that prefix.
+macro(fc_wrap_fwui OUT_VAR)
+    foreach(_fwui_src ${ARGN})
+        get_filename_component(_fwui_name "${_fwui_src}" NAME_WE)
+        set(_fwui_out "${CMAKE_CURRENT_BINARY_DIR}/fwui_${_fwui_name}.h")
+        add_custom_command(
+            OUTPUT "${_fwui_out}"
+            COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/src/Tools/fwuic.py"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/${_fwui_src}" -o "${_fwui_out}"
+            MAIN_DEPENDENCY "${CMAKE_CURRENT_SOURCE_DIR}/${_fwui_src}"
+            DEPENDS "${CMAKE_SOURCE_DIR}/src/Tools/fwuic.py"
+            COMMENT "fwuic: ${_fwui_src} as host widget models"
+        )
+        list(APPEND ${OUT_VAR} "${_fwui_out}")
+    endforeach()
+endmacro(fc_wrap_fwui)

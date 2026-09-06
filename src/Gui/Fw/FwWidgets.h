@@ -94,6 +94,9 @@ public:
     {
         setProperty("openExternalLinks", on);
     }
+    /// A path (a resource or a file), or `bitmap:<name>` for one of
+    /// FreeCAD's own icons (the BitmapFactory's), rendered at the
+    /// label's size.
     void setPixmap(const QString& path)
     {
         setProperty("pixmap", path);

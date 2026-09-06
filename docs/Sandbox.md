@@ -2531,11 +2531,43 @@ does too; the generated form holds the file's 100 until bound.
 Suites after: the GUI gates 7/7, FormWidgets 11/11, `Tests_run
 --gtest_filter='Expression*'` 104 passed + 1 skipped.
 
-Next: **H1**, the first native ports -- a form-only panel in `src/Gui`
-(TaskAppearance or TaskOrientation) onto `Ui_X::setupUi` plus
-`FwQt::realize`, then a PartDesign panel with expression binding
-(Pad), which brings the custom widget seam of the sizing above
-(`ExpressionBinding` on the host `QuantitySpinBox` model).
+**H1a BUILT 2026-09-06**: the first native port, `TaskOrientation`
+(`src/Gui/TaskView/`).  Neither candidate is reachable from the app
+any more -- the Image module that opened `TaskOrientationDialog` was
+removed from this fork, and `TaskView` stopped adding `TaskAppearance`
+long ago -- so the port is the mechanics proof and its gate is a test.
+The panel is now a QObject over `Fw::UiForm` plus the generated
+`Ui_TaskOrientation` (`fwui_TaskOrientation.h`, `fc_wrap_fwui` in
+`cMake/FreeCadMacros.cmake`, the .ui in `src/Gui/Fw/fwui.qrc` under
+`:/ui/`); its five `connect`s compile unchanged against the models'
+signals; the dialog realizes the form through `FwQt::realize` into
+its `TaskBox`, and the unit includes no QtWidgets.  What the port
+needed and the layer gained: `<size>` properties as the width/height
+bag keys (`minimumSize`, `maximumSize`), in the generator and the
+guest loader alike; a grid item's `colspan` without `rowspan` (both
+readers dropped the span); the generated class named from `<class>`
+inside its namespaces, as uic does (`Gui::Ui_TaskOrientation`, plus
+the `Ui::` alias); and a pixmap path scheme, `bitmap:<name>`, the Qt
+backend renders through the BitmapFactory at the label's size (the
+preview icon; the bag carries a name a DOM tier can resolve).  Gate
+`test_taskOrientationPort` in `FormWidgets_Tests_run` (12/12): the
+file's title reached the model translated, `open()` restores the
+placement into the models and the widgets follow, the widget drives
+the property (offset, plane, reverse), the model drives the widget,
+accept; the GUI gates stay 7/7.
+
+Next, **H1b**: a PartDesign panel with expression binding.  Pad's
+form is `TaskPadPocketParameters.ui`, owned by `TaskExtrudeParameters`
+(Pad and Pocket share it: 245 `ui->` uses, 10 `bind(` sites, seven
+`Gui::PrefQuantitySpinBox`, three `Gui::DoubleSpinBox`), under
+`TaskSketchBasedParameters` whose code-built widgets (the profile
+edit, `LinkSubListWidget`, the fitting group) stay Qt for now -- the
+port is the FORM, not the box.  That brings the custom widget seam of
+the sizing above: `ExpressionBinding` on the host `QuantitySpinBox`
+and `DoubleSpinBox` models (`binding` and `expression` in the bag),
+the Qt backend binding the real widget to the same path so its f(x)
+label and expression dialog keep working, and the requests the pref
+widgets need (`selectNumber`, `setToLastUsedValue`, `pushToHistory`).
 
 ## 8. Measurements
 
@@ -2747,9 +2779,10 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    22 classes in C++ over a property bag, the store of the guest's
    objects, the C++ Qt view, the `PanelDialog`, `fwuic.py`,
    `FreeCADGui.FormWidgets`; OrthoArray from the guest renders through
-   it and the Python Qt-shaped views are gone).  Next **H1** (the
-   first native ports: a form-only `src/Gui` panel, then Pad with
-   expression binding), then **G3b** (the rest of the `.ui` subset and
+   it and the Python Qt-shaped views are gone).  **H1a** BUILT
+   2026-09-06 (TaskOrientation onto the generated form, gate
+   `test_taskOrientationPort`).  Next **H1b** (Pad/Pocket's form
+   with expression binding), then **G3b** (the rest of the `.ui` subset and
    the 41-panel harness) on the C++ store, **G3c** (forms built in
    code: DraftGui's toolbar -- what both workbenches' `Initialize()`
    stop at), and the G2b runner once there is something to switch to.

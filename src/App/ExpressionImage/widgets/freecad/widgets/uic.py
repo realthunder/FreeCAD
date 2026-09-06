@@ -79,12 +79,14 @@ def _build_layout(elem, widget, named):
 
 
 def _item_position(item):
-    pos = []
-    for key in ("row", "column", "rowspan", "colspan"):
-        v = item.get(key)
-        if v is None:
-            break
-        pos.append(int(v))
+    """A grid item's (row, column[, rowspan, colspan]): a span given
+    without the other means the other is 1, as uic reads it."""
+    if item.get("row") is None or item.get("column") is None:
+        return ()
+    pos = [int(item.get("row")), int(item.get("column"))]
+    if item.get("rowspan") is not None or item.get("colspan") is not None:
+        pos.append(int(item.get("rowspan") or 1))
+        pos.append(int(item.get("colspan") or 1))
     return tuple(pos)
 
 
@@ -149,12 +151,25 @@ def _set_initial(widget, props, items):
         widget._touched = []
 
 
+# a `<size>` property as the two keys it stands for
+_SIZES = {
+    "minimumSize": ("minimumWidth", "minimumHeight"),
+    "maximumSize": ("maximumWidth", "maximumHeight"),
+}
+
+
 def _properties(elem):
     out = {}
     for prop in elem.findall("property"):
         name = prop.get("name")
         value = _value(prop)
         if name is None or value is None:
+            continue
+        if isinstance(value, dict):
+            keys = _SIZES.get(name)
+            if keys:
+                out[keys[0]] = value["width"]
+                out[keys[1]] = value["height"]
             continue
         out[name] = value
     return out
@@ -198,7 +213,10 @@ def _value(prop):
             r, g, b = (int((v.findtext(k) or "0").strip()) for k in ("red", "green", "blue"))
             a = int((v.findtext("alpha") or "255").strip())
             return [r / 255.0, g / 255.0, b / 255.0, a / 255.0]
-        if tag in ("size", "rect", "font", "sizepolicy", "url", "pixmap", "date", "locale",
+        if tag == "size":
+            return {"width": int((v.findtext("width") or "0").strip()),
+                    "height": int((v.findtext("height") or "0").strip())}
+        if tag in ("rect", "font", "sizepolicy", "url", "pixmap", "date", "locale",
                    "stringlist", "char", "cursor", "cursorShape", "brush", "point"):
             return None
         return text or None

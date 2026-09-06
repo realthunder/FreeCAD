@@ -1,0 +1,9 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<!-- The .ui files of the task panels ported onto the host widget layer
+     (docs/Sandbox.md 7.12): the Qt backend loads a ported form from
+     `:/ui/<Name>.ui` at run time, through the same loader the guest's
+     forms use. -->
+<qresource prefix="/ui">
+    <file alias="TaskOrientation.ui">../TaskView/TaskOrientation.ui</file>
+</qresource>
+</RCC>
