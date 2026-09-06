@@ -1914,11 +1914,11 @@ public:
                 // d->offscreenWindow->setFormat(d->requestedFormat);
                 window->setGeometry(0, 0, widget->width(), widget->height());
                 window->create();
-#if BX_PLATFORM_OSX
-                init.platformData.nwh = get_nswindow_from_nsview(reinterpret_cast<void*>(window->winId()));
-#else
+                // winId() is an NSView* on macOS, an HWND on Windows and an X11
+                // Window elsewhere. bgfx takes all three: its Metal backend does its
+                // own isKindOfClass: dispatch over NSView/NSWindow/CAMetalLayer
+                // (renderer_mtl.cpp), so no Objective-C++ unwrapping is needed here.
                 init.platformData.nwh = reinterpret_cast<void*>(window->winId());
-#endif
             }
             // bgfx treats an all-null PlatformData as a request for a headless device, and
             // then rejects a non-zero resolution ("resolution of non-existing backbuffer
