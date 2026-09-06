@@ -14,6 +14,7 @@ as "the primary tree"; that was wrong.
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
+| Python on Windows | **2590 tests** (2026-09-07), 7 failures + 2 errors, 49 skipped, 6 expected failures -- three Windows-only defects, see "Python on Windows" |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -157,6 +158,63 @@ argument, semicolons and all, which prepends `--modify` and the rest to `PATH`
 as though they were directories and leaves the real ones out -- and the tests
 that happen to need only their first directory still pass, so it looks like it
 works.
+
+**Reproduced on a second Windows box, 2026-09-07: 477 of 477 in 127 s with
+`-j 8`** -- but only after redirecting `TMP`. First run there, one entry timed
+out:
+
+    453 - DeferredLoad_tests_run (Timeout)
+
+Nothing was wrong with it. Every case *passed*; each merely took **85 to 106
+seconds** instead of milliseconds, and fifteen of those overrun ctest's 1500 s
+default. The cost is in the fixture's teardown, not in the code under test:
+`removeArchiveAndBackups()` has to find whatever a save left beside the
+archive, so it walks `getDirectoryContent()` of the archive's directory and
+stats every entry. The archive is a `getTempFileName()` path, so that
+directory is `%TEMP%` -- and that profile's `%TEMP%` held **63,167 files**. The
+suite is O(files in the temp directory), once per test.
+
+Pointing `TMP`/`TEMP` at an empty directory takes the same binary from a
+1500 s timeout to **3.11 s**. `ctest-fcad-cleantmp.cmd` is `ctest-fcad.cmd`
+with those two variables set; a temp sweep does just as well. Worth knowing
+generally: any suite that saves into `%TEMP%` and then looks for its backups
+inherits this, and it degrades gradually rather than failing, so it presents
+as "that test got slow".
+
+### Python on Windows
+
+First run there is 2026-09-07, on `build/win-relwithdebinfo-801` with
+`BUILD_FEM=OFF`: **2590 tests, 7 failures and 2 errors**, 49 skipped, 6
+expected failures. Three things had to be true first.
+
+**A pseudo-console, which is what `script -qec` provides on Linux.** The same
+`CAMTests.TestCAMSanity` case named in section 1 leaves stdout closed here
+too; with a file or a pipe on the far end, the unittest runner's next
+`stream.flush()` raises `[Errno 9] Bad file descriptor` and the process dies
+with `0xC0000409` partway through. The Windows counterpart is a ConPTY:
+`tools\pty_run.py` spawns the command under one via `pywinpty` and tees it to
+a file, and `pytest-fcad-pty.cmd` is that wrapper around `FreeCADCmd -t 0`.
+Without it the run ends at 969 tests and still says `FAILED` rather than
+saying it stopped.
+
+**`pyyaml` and `ifcopenshell` in the env**, or `TestCAMApp` (1343 tests) and
+`TestArch` do not import at all -- see the two notes in
+`docs/DevEnvironment.md`. This is the checksum the top of this page describes,
+in its Windows form.
+
+**`TMP` redirected**, for the reason the C++ section above gives.
+
+The nine that remain are genuine and are Windows-only. None is a setup
+problem; all three groups are about text and paths rather than about geometry:
+
+| Group | Cases | What it is |
+|---|---|---|
+| `materialtests.TestMaterialClipboard`, `TestShaderGraph` | 6 | a `.mtlx` payload comes back with `\r\n` where it went in with `\n`, so the round trip through the material card's file blobs is going through a text-mode handle somewhere. The stored bytes carry the CRLF, so it is the write side |
+| `FileBlobs.BlobNamingCases` long names | 2 | a 250-character blob name under a temp path exceeds `MAX_PATH`, and `open()` fails with `FileNotFoundError`. Either the path needs the `\?\` prefix or the box needs long paths enabled |
+| `FileBlobs.BlobNamingCases.testANonAsciiNameIsKeptAsItIs` | 1 | a UTF-8 blob name (the test uses katakana) comes back from the directory listing as mojibake -- the name is written as UTF-8 bytes and read through a narrow/ANSI path |
+
+The Linux run has none of these, which is the point: they are the first thing
+this suite has ever said about the Windows file layer.
 
 ## 2. Why ctest says 453 and the binaries add up to 1305
 
