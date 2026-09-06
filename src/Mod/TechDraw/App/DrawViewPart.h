@@ -177,9 +177,9 @@ public:
     //! none; repointByName rewrites subNames in place for every stored name
     //! that belongs to a different element now, leaving the rest alone, and
     //! says whether it moved anything.
-    static std::vector<std::string> geometryNamesOf(App::DocumentObject* obj,
+    static std::vector<std::string> geometryNamesOf(const App::DocumentObject* obj,
                                                     const std::vector<std::string>& subNames);
-    static bool repointByName(App::DocumentObject* obj,
+    static bool repointByName(const App::DocumentObject* obj,
                               const std::vector<std::string>& geometryNames,
                               std::vector<std::string>& subNames);
 

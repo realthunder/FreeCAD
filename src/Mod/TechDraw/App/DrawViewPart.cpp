@@ -481,6 +481,11 @@ void DrawViewPart::postHlrTasks()
         return;
 
     //    Base::Console().Message("DVP::postHlrTasks() - %s\n", getNameInDocument());
+    //an edge's number moves whenever the projection gains or loses one, so a
+    //format override is carried by the edge's name and put back here, where
+    //the projected edges first exist
+    syncGeomFormatNames();
+
     //add geometry that doesn't come from HLR
     addCosmeticVertexesToGeom();
     addCosmeticEdgesToGeom();
@@ -978,11 +983,11 @@ std::string DrawViewPart::getGeometryReference(const std::string& geometryName) 
 }
 
 //! one name per subName, empty where the element has none
-std::vector<std::string> DrawViewPart::geometryNamesOf(App::DocumentObject* obj,
+std::vector<std::string> DrawViewPart::geometryNamesOf(const App::DocumentObject* obj,
                                                        const std::vector<std::string>& subNames)
 {
     std::vector<std::string> names;
-    auto dvp = dynamic_cast<DrawViewPart*>(obj);
+    auto dvp = dynamic_cast<const DrawViewPart*>(obj);
     for (auto& subName : subNames) {
         names.push_back(dvp ? dvp->getGeometryName(subName) : std::string());
     }
@@ -990,11 +995,11 @@ std::vector<std::string> DrawViewPart::geometryNamesOf(App::DocumentObject* obj,
 }
 
 //! move every reference whose stored name belongs to another element now
-bool DrawViewPart::repointByName(App::DocumentObject* obj,
+bool DrawViewPart::repointByName(const App::DocumentObject* obj,
                                  const std::vector<std::string>& geometryNames,
                                  std::vector<std::string>& subNames)
 {
-    auto dvp = dynamic_cast<DrawViewPart*>(obj);
+    auto dvp = dynamic_cast<const DrawViewPart*>(obj);
     if (!dvp || geometryNames.size() != subNames.size()) {
         //out of step with the references, so we can not tell which name
         //belongs to which
