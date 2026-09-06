@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -60,9 +61,9 @@ int freePort()
 
 /// Connect to the server, retrying while its accept thread is still
 /// getting to its feet.
-void connectWithRetry(tcp::socket& sock, int port)
+void connectWithRetry(tcp::socket& sock, int port, const char* host = "127.0.0.1")
 {
-    const tcp::endpoint ep(net::ip::make_address("127.0.0.1"), uint16_t(port));
+    const tcp::endpoint ep(net::ip::make_address(host), uint16_t(port));
     beast::error_code ec;
     for (int i = 0; i < 300; ++i) {
         sock.connect(ep, ec);
@@ -98,7 +99,7 @@ struct HttpReply
 /// One HTTP exchange on a fresh connection, the way the polling
 /// fallback and the blob fetches use the server.
 HttpReply httpRequest(int port, http::verb verb, const std::string& target,
-                      const std::string& body = {})
+                      const std::string& body = {}, bool chunked = false)
 {
     HttpReply out;
     net::io_context ioc;
@@ -109,7 +110,14 @@ HttpReply httpRequest(int port, http::verb verb, const std::string& target,
     req.set(http::field::connection, "close");
     if (!body.empty()) {
         req.body() = body;
-        req.prepare_payload();
+        // chunked(true) is Transfer-Encoding: chunked and no
+        // Content-Length; the serializer writes the chunks.
+        if (chunked) {
+            req.chunked(true);
+        }
+        else {
+            req.prepare_payload();
+        }
     }
     beast::error_code ec;
     http::write(sock, req, ec);
@@ -144,13 +152,27 @@ public:
         beast::error_code ec;
     };
 
-    WsClient(int port, const std::string& target)
+    using Headers = std::vector<std::pair<std::string, std::string>>;
+
+    /// \a headers ride the upgrade request, the way a proxy's
+    /// forwarded-address and identity headers do; \a host is the
+    /// address to connect to.
+    WsClient(int port, const std::string& target, Headers headers = {},
+             const char* host = "127.0.0.1")
         : ws(ioc)
     {
-        connectWithRetry(ws.next_layer(), port);
+        connectWithRetry(ws.next_layer(), port, host);
         ws.control_callback([this](websocket::frame_type t, beast::string_view s) {
             control.emplace_back(t, std::string(s));
         });
+        if (!headers.empty()) {
+            ws.set_option(websocket::stream_base::decorator(
+                [headers](websocket::request_type& r) {
+                    for (const auto& h : headers) {
+                        r.set(h.first, h.second);
+                    }
+                }));
+        }
         ws.handshake("localhost", target);
     }
 
@@ -858,6 +880,168 @@ TEST_F(SceneServerWire, nothingWaitsForTheTick)
     m = c.readBinary();
     ASSERT_TRUE(m.ok) << m.ec.message();
     EXPECT_EQ(m.data, asString(versioned(version, payload)));
+}
+
+TEST_F(SceneServerWire, listensOnIPv6Too)
+{
+    // Whether this host has IPv6 at all: a throwaway bind on ::1. A
+    // host without it is served by the v4 fallback, which every other
+    // case here exercises.
+    net::io_context ioc;
+    beast::error_code ec;
+    {
+        tcp::acceptor probe(ioc);
+        probe.open(tcp::v6(), ec);
+        if (!ec) {
+            probe.bind(tcp::endpoint(net::ip::make_address("::1"), 0), ec);
+        }
+        if (ec) {
+            GTEST_SKIP() << "no IPv6 on this host: " << ec.message();
+        }
+    }
+    WsClient c(port, "/scene", {}, "::1");
+    c.hello("wire-v6");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    EXPECT_EQ(m.data, asString(versioned(version, payload)));
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] { return findClient("wire-v6", info); }));
+    EXPECT_EQ(info.peer.rfind("::1:", 0), 0u) << "a v6 peer shown as itself: " << info.peer;
+    EXPECT_EQ(info.address, info.peer);
+    // And the v4 peers of the same dual-stack listener are not shown
+    // as v4-mapped v6 (handshakeThenHelloThenSnapshot checks the
+    // 127.0.0.1 form, so this is the other half of that).
+}
+
+TEST_F(SceneServerWire, aChunkedPostBodyIsRead)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    const std::string key(40, 'd');
+    const std::vector<uint8_t> blob = makePayload(3, 200);
+    server.publishBlob(key, std::vector<uint8_t>(blob));
+
+    // Transfer-Encoding: chunked, no Content-Length -- what a proxy
+    // that re-frames bodies sends. The audit's Content-Length-only
+    // reader would have read an empty body.
+    HttpReply r = httpRequest(port, http::verb::post, "/blobs", key + "\n", true);
+    ASSERT_TRUE(r.ok);
+    EXPECT_EQ(r.status, 200u);
+    ASSERT_GE(r.body.size(), 8u + 44 + blob.size());
+    EXPECT_EQ(r.body.substr(0, 4), "FCBB");
+    uint32_t count = 0;
+    std::memcpy(&count, r.body.data() + 4, 4);
+    EXPECT_EQ(count, 1u) << "the chunked body reached the route whole";
+    EXPECT_EQ(r.body.substr(8, 40), key);
+    uint32_t len = 0;
+    std::memcpy(&len, r.body.data() + 48, 4);
+    EXPECT_EQ(len, blob.size());
+}
+
+TEST_F(SceneServerWire, anOversizeControlFrameEndsTheConnection)
+{
+    WsClient c(port, "/scene");
+    c.hello("wire-control");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+
+    // RFC 6455 5.5: a control frame carries at most 125 bytes. A
+    // masked ping of 126 -- 0x89, mask bit | 126, u16 length, a zero
+    // mask, the payload -- written under Beast's client, which would
+    // refuse to send one itself.
+    std::vector<uint8_t> frame = {0x89, 0xFE, 0x00, 126, 0, 0, 0, 0};
+    frame.resize(8 + 126, 0x41);
+    beast::error_code ec;
+    net::write(c.ws.next_layer(), net::buffer(frame), ec);
+    ASSERT_FALSE(ec) << ec.message();
+    m = c.read();
+    EXPECT_FALSE(m.ok) << "still open after a 126-byte ping: " << m.data;
+    EXPECT_NE(m.ec, net::error::timed_out) << "closed, not merely quiet";
+}
+
+TEST_F(SceneServerWire, theCapCountsUsersNotAddresses)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    server.setTrustProxy(true);
+    server.setConnectionCaps(3, 2);
+    struct Restore
+    {
+        ~Restore()
+        {
+            auto& s = Render::SceneStreamServer::instance();
+            s.setTrustProxy(false);
+            s.setConnectionCaps(64, 16);
+        }
+    } restore;
+
+    // Every connection arrives on loopback through the "proxy" and is
+    // judged by what it forwarded: an address, or an identity.
+    auto from = [&](const char* addr, const char* email = nullptr) {
+        WsClient::Headers h {{"X-Forwarded-For", addr}};
+        if (email) {
+            h.emplace_back("X-Forwarded-Email", email);
+        }
+        return std::make_unique<WsClient>(port, "/scene", h);
+    };
+    auto served = [&](WsClient& c, const char* label) {
+        c.hello(label);
+        WsClient::Msg m = c.readBinary();
+        return m.ok && m.data == asString(versioned(version, payload));
+    };
+    // The refusal rides the kick path, like a bad token: the reason,
+    // the farewell, the close -- and it comes at the upgrade, before
+    // any hello, since the address alone decided it.
+    auto refused = [&](WsClient& c) {
+        WsClient::Msg m = c.read();
+        if (!m.ok || m.data != "{\"cmd\":\"error\",\"code\":\"TooMany\"}") {
+            ADD_FAILURE() << "not refused: " << (m.ok ? m.data : m.ec.message());
+            return false;
+        }
+        m = c.read();
+        if (!m.ok || m.data != "{\"cmd\":\"error\",\"code\":\"Kicked\"}") {
+            ADD_FAILURE() << "no farewell: " << (m.ok ? m.data : m.ec.message());
+            return false;
+        }
+        m = c.read();
+        return !m.ok && m.ec != net::error::timed_out;
+    };
+
+    // User A, by address: two connections; a third is one too many.
+    auto a1 = from("203.0.113.1");
+    EXPECT_TRUE(served(*a1, "cap-a1"));
+    auto a2 = from("203.0.113.1");
+    EXPECT_TRUE(served(*a2, "cap-a2"));
+    auto a3 = from("203.0.113.1");
+    EXPECT_TRUE(refused(*a3)) << "a third connection of one user";
+    // User B, another address, has a count of its own.
+    auto b1 = from("203.0.113.2");
+    EXPECT_TRUE(served(*b1, "cap-b1"));
+    // User C, by identity: one person from two addresses is one user,
+    // with one user's cap.
+    auto c1 = from("203.0.113.3", "c@example.test");
+    EXPECT_TRUE(served(*c1, "cap-c1"));
+    auto c2 = from("203.0.113.4", "c@example.test");
+    EXPECT_TRUE(served(*c2, "cap-c2"));
+    auto c3 = from("203.0.113.5", "c@example.test");
+    EXPECT_TRUE(refused(*c3)) << "a third connection of one identity";
+    // Three users are in; a fourth is one too many, wherever from.
+    auto d1 = from("203.0.113.6");
+    EXPECT_TRUE(refused(*d1)) << "a fourth user";
+
+    // User A leaves entirely, and the seat is free again.
+    a1.reset();
+    a2.reset();
+    a3.reset();
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] {
+        return !findClient("cap-a1", info) && !findClient("cap-a2", info);
+    }));
+    auto d2 = from("203.0.113.6");
+    EXPECT_TRUE(served(*d2, "cap-d2")) << "the seat a departed user held";
+
+    // The anonymous legacy door on loopback -- what this whole suite
+    // uses -- is counted nowhere: with three users in, it still gets in.
+    WsClient local(port, "/scene");
+    EXPECT_TRUE(served(local, "cap-local"));
 }
 
 TEST_F(SceneServerWire, stopClosesEveryConnectionAndARestartServesAgain)

@@ -1163,6 +1163,10 @@ public:
         /// The stamp a reload was already pushed for — one push per
         /// bundle generation, no loops.
         std::string reloadPushed;
+        /// The user this connection is counted under (sec 7.4), empty
+        /// when it is not counted. Owner-thread-only: written at each
+        /// admission and cleared at the close.
+        std::string userKey;
         /// A wake is posted and has not run yet (guarded by connMutex):
         /// the next nudge is free. Cleared by the transport on the
         /// strand before it acts, so anything queued after that clear
@@ -1246,6 +1250,11 @@ public:
     std::map<std::string, int> activeByIp;     ///< non-loopback only
     static constexpr int kMaxConns = 128;
     static constexpr int kMaxConnsPerIp = 16;
+    /// Post-admission caps (sec 7.4), keyed on the user rather than
+    /// on any address; setConnectionCaps.
+    std::map<std::string, int> connsByUser;    ///< guarded above
+    int maxUsers = 64;                          ///< guarded above
+    int maxConnsPerUser = 16;                   ///< guarded above
     std::condition_variable dumpCv;    ///< guarded by connMutex
     /// In-flight dumpFrame collection (one at a time).
     struct DumpCollect {
@@ -1811,6 +1820,79 @@ public:
         }
     }
 
+    /// Who an admitted connection counts as (sec 7.4): the front
+    /// door's identity outranks the admitting grant outranks the
+    /// judged address -- the same order the door ranks a grant's
+    /// patterns by. The anonymous legacy door on a loopback address is
+    /// nobody in particular: a same-box tunnel puts every remote
+    /// client there, and the old per-peer cap exempted it for that
+    /// reason. Owner thread.
+    static std::string userKeyFor(const Conn &conn)
+    {
+        if (!conn.identity.empty())
+            return "id:" + conn.identity;
+        if (conn.grant)
+            return "grant:" + std::to_string(conn.grant);
+        if (conn.matchAddr.empty() || isLoopback(conn.matchAddr))
+            return {};
+        return "addr:" + conn.matchAddr;
+    }
+
+    void releaseUserLocked(Conn &conn)
+    {
+        if (conn.userKey.empty())
+            return;
+        auto it = connsByUser.find(conn.userKey);
+        if (it != connsByUser.end() && --it->second <= 0)
+            connsByUser.erase(it);
+        conn.userKey.clear();
+    }
+
+    /// Count an admitted connection under its user. False, and the
+    /// connection counted nowhere, when that would be one user too
+    /// many or one connection too many for its user. Called on the
+    /// connection's own thread at every admission -- the upgrade, the
+    /// hello -- so a re-judged connection whose user changed moves its
+    /// count rather than being counted twice.
+    bool admitUser(Conn &conn)
+    {
+        const std::string key = userKeyFor(conn);
+        std::lock_guard<std::mutex> guard(acceptCountMutex);
+        if (key == conn.userKey)
+            return true;
+        releaseUserLocked(conn);
+        if (key.empty())
+            return true;
+        auto it = connsByUser.find(key);
+        if (it == connsByUser.end()) {
+            if (int(connsByUser.size()) >= maxUsers)
+                return false;
+            connsByUser[key] = 1;
+        }
+        else if (it->second >= maxConnsPerUser) {
+            return false;
+        }
+        else {
+            ++it->second;
+        }
+        conn.userKey = key;
+        return true;
+    }
+
+    void releaseUser(Conn &conn)
+    {
+        std::lock_guard<std::mutex> guard(acceptCountMutex);
+        releaseUserLocked(conn);
+    }
+
+    /// The refusal a connection over the caps gets: told, then closed
+    /// like a bad token. connMutex held.
+    static void refuseOverCap(Conn &conn)
+    {
+        conn.queueText("{\"cmd\":\"error\",\"code\":\"TooMany\"}");
+        conn.kick();
+    }
+
     /// Where a request goes once routed: answered with the reply, or
     /// upgraded to a WebSocket connection built from the bootstrap.
     enum class Route { Reply, Upgrade };
@@ -2142,6 +2224,16 @@ public:
         conn.identity = boot.identity;
         conn.matchAddr = portlessAddress(boot.matchAddr);
         conn.since = std::chrono::steady_clock::now();
+        // Admitted at the upgrade: counted now (sec 7.4). Over the
+        // caps, the connection is unauthorized after all -- told and
+        // closed once it is on the roster, so the refusal goes out on
+        // the writer the session starts right after this.
+        bool overCap = false;
+        if (conn.admitted && !admitUser(conn)) {
+            overCap = true;
+            conn.authorized = false;
+            conn.admitted = false;
+        }
         {
             std::lock_guard<std::mutex> guard(mutex);
             conn.group = joinable(boot.doc);
@@ -2160,6 +2252,8 @@ public:
             if (conn.group)
                 conn.docName = conn.group->name;
             conns.push_back(&conn);
+            if (overCap)
+                refuseOverCap(conn);
         }
         notifyClientsChanged();
     }
@@ -2169,6 +2263,7 @@ public:
     /// leaves; after this nothing can reach conn or its link.
     void closeConnection(Conn &conn)
     {
+        releaseUser(conn);
         {
             std::lock_guard<std::mutex> guard(connMutex);
             conns.erase(std::find(conns.begin(), conns.end(), &conn));
@@ -2863,7 +2958,15 @@ public:
     {
         boost::system::error_code ec;
         auto ep = socket.remote_endpoint(ec);
-        std::string ip = ec ? std::string() : ep.address().to_string();
+        // A dual-stack listener sees a v4 peer as a v4-mapped v6
+        // address; the roster, the loopback rule and the grants'
+        // address patterns all speak v4 for those, as before.
+        boost::asio::ip::address peerAddr = ec ? boost::asio::ip::address()
+                                               : ep.address();
+        if (peerAddr.is_v6() && peerAddr.to_v6().is_v4_mapped())
+            peerAddr = boost::asio::ip::make_address_v4(
+                    boost::asio::ip::v4_mapped, peerAddr.to_v6());
+        std::string ip = ec ? std::string() : peerAddr.to_string();
         const unsigned port = ec ? 0 : ep.port();
         const bool loopback = isLoopback(ip);
         if (!admitPeer(ip, loopback))
@@ -2888,11 +2991,24 @@ public:
             io = new Io;
         auto acc = std::make_shared<tcp::acceptor>(io->ctx);
         boost::system::error_code ec;
-        acc->open(tcp::v4(), ec);
-        if (ec)
-            return false;
+        // One dual-stack v6 listener takes v4 too (sec 7.4); a host
+        // without IPv6 falls back to the v4 listener it always had.
+        acc->open(tcp::v6(), ec);
+        bool dual = !ec;
+        if (dual) {
+            acc->set_option(boost::asio::ip::v6_only(false), ec);
+            if (ec) {
+                acc->close(ec);
+                dual = false;
+            }
+        }
+        if (!dual) {
+            acc->open(tcp::v4(), ec);
+            if (ec)
+                return false;
+        }
         acc->set_option(boost::asio::socket_base::reuse_address(true), ec);
-        acc->bind(tcp::endpoint(tcp::v4(), uint16_t(port)), ec);
+        acc->bind(tcp::endpoint(dual ? tcp::v6() : tcp::v4(), uint16_t(port)), ec);
         if (!ec)
             acc->listen(4, ec);
         if (ec)
@@ -2974,6 +3090,14 @@ public:
                     conn.grant = entry.grant;
                     if (grants)
                         conn.viewOnly = entry.viewOnly;
+                    // The user is known only now when the grant or the
+                    // name decided it (sec 7.4).
+                    if (!admitUser(conn)) {
+                        conn.authorized = false;
+                        conn.admitted = false;
+                        refuseOverCap(conn);
+                        return;
+                    }
                 }
             }
             else if (!conn.authorized) {
@@ -3415,6 +3539,14 @@ void SceneStreamServer::setTrustProxy(bool on)
 bool SceneStreamServer::trustProxy()
 {
     return ensure()->trustProxy.load();
+}
+
+void SceneStreamServer::setConnectionCaps(int users, int perUser)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->acceptCountMutex);
+    p->maxUsers = std::max(1, users);
+    p->maxConnsPerUser = std::max(1, perUser);
 }
 
 int SceneStreamServer::clients(std::vector<SceneClientInfo> &out)

@@ -346,9 +346,9 @@ Each stage lands alone and is judged by the stage-0 test.
 - ~~**Stage 3 -- the frame push.** The Cycles latency item, which by then
   is "append to the writer's queue and wake it" (section 6.6) rather
   than a fix.~~ Done, and wider than the frame push: section 7.3.
-- **Stage 4 -- the cloud-readiness items** from section 4: IPv6 listen,
+- ~~**Stage 4 -- the cloud-readiness items** from section 4: IPv6 listen,
   read deadlines, the connection cap keyed on the judged address,
-  control-frame rules, and a decision on chunked bodies. Two of the
+  control-frame rules, and a decision on chunked bodies.~~ Two of the
   five came with Beast in stage 2 (the deadlines and the control-frame
   rules, section 7.2 item 6); stage 4 confirms them. **Rulings
   2026-09-06:** chunked request bodies are **accepted** (Beast's parser
@@ -360,6 +360,7 @@ Each stage lands alone and is judged by the stage-0 test.
   door states one, else the grant that admitted the connection, with the
   judged address only as the fallback for the anonymous, legacy door.
   The pre-auth accept cap (before any of those exist) stays as it is.
+  **Done the same day: section 7.4.**
 - **Stage 5 -- verify on all three platforms.**
 
 ### 7.1 The seam, as built
@@ -571,6 +572,55 @@ suite's `[ latency ]` line over five runs:
 
 The whole wire suite runs in 1.1 s where item 8 had it at 4.4 s: the
 3.3 s that vanished were ticks being waited for.
+
+### 7.4 Stage 4, as built: the cloud-readiness items
+
+Landed 2026-09-06, the five findings of section 4 each with a wire
+case (`SceneServerWire_tests_run`, now 17 cases):
+
+1. **IPv6.** `start()` opens one dual-stack v6 listener (`v6_only`
+   off) and falls back to the v4 listener it always had on a host
+   without IPv6. A v4 peer arrives on the dual-stack socket as a
+   v4-mapped v6 address and is normalised back to its v4 text in
+   `accepted()`, so the roster, the loopback rule and the grants'
+   address patterns see `127.0.0.1` and not `::ffff:127.0.0.1`.
+   `listensOnIPv6Too` connects on `::1` (skipped where the host has
+   no IPv6) and reads its peer back as `::1:<port>`.
+2. **Read deadlines.** Confirmed as stage 2 left them (7.2 item 6):
+   30 s for the request head, a 60 s idle timeout with keep-alive
+   pings at 30 s. No code changed.
+3. **The cap is on users, not addresses** (the ruling in section 7).
+   `setConnectionCaps(users, perUser)`, defaults 64 and 16. A user is
+   keyed by the identity a trusted front door asserted, else the
+   admitting grant's id, else the judged address, in that order -- the
+   order the door ranks a grant's own patterns by. An anonymous
+   connection judged by a loopback address (the legacy door behind a
+   same-box tunnel, where every remote client looks alike) is counted
+   nowhere, which is the old per-peer exemption kept for the same
+   reason. Counting happens at each admission -- the upgrade, or the
+   hello when a grant or the name decided it -- on the connection's
+   own thread, so a re-judged connection whose user changed moves its
+   count; the count is released in `closeConnection`, before the
+   roster erase, so a seat is free by the time the roster says the
+   holder is gone. Over the caps, the connection is told
+   `{"cmd":"error","code":"TooMany"}` and kicked, the bad-token shape.
+   The pre-auth accept caps (`kMaxConns`, `kMaxConnsPerIp` on the
+   socket peer, loopback exempt) stay underneath as before.
+   `theCapCountsUsersNotAddresses` drives it through a trusted proxy:
+   two connections per user, a third refused; two users; one identity
+   from two addresses is one user; a fourth user refused; a departed
+   user's seat reused; the anonymous loopback door uncounted.
+4. **Chunked bodies are accepted** (the ruling). Nothing to build:
+   Beast's parser reads `Transfer-Encoding: chunked` under the same
+   `body_limit`, and when a request carries both headers it goes by
+   the transfer encoding, which is RFC 7230's rule and the end of the
+   smuggling shape. `aChunkedPostBodyIsRead` posts a chunked `/blobs`
+   batch.
+5. **Control-frame rules.** Beast enforces RFC 6455 5.5 -- at most
+   125 bytes, never fragmented -- by failing the read and closing with
+   1002. `anOversizeControlFrameEndsTheConnection` writes a 126-byte
+   ping underneath a Beast client (which would refuse to send one) and
+   sees the connection closed.
 
 ## 8. Open questions for next session
 
