@@ -10,7 +10,7 @@
       FatherInclude="Base/PyObjectBase.h"
       FatherNamespace="Base"
       Constructor="true"
-      Delete="true">
+      Delete="false">
     <Documentation>
       <Author Licence="LGPL" Name="WandererFan" EMail="wandererfan@gmail.com" />
       <UserDocu>GeomFormat specifies appearance parameters for TechDraw Geometry objects</UserDocu>
