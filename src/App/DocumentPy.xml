@@ -26,11 +26,13 @@ segments.</UserDocu>
       <Documentation>
         <UserDocu>Save the document to disk</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="saveAs">
       <Documentation>
         <UserDocu>Save the document under a new name to disk</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="saveCopy">
       <Documentation>
@@ -87,6 +89,7 @@ If more than one document is changed, all newly created transactions will have
 the same internal ID and will be undo/redo together.
           </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getBookedTransactionID">
       <Documentation>
@@ -100,11 +103,13 @@ there is none open.</UserDocu>
       <Documentation>
         <UserDocu>Abort an Undo/Redo transaction (rollback)</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="commitTransaction">
       <Documentation>
         <UserDocu>Commit an Undo/Redo transaction</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="addObject" Keyword="true">
       <Documentation>
@@ -164,6 +169,7 @@ return_all: if True, return all copied objects, or else return only the copied
             object corresponding to the input objects.
           </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="moveObject">
       <Documentation>
@@ -224,6 +230,7 @@ object of this document.
       <Documentation>
         <UserDocu>recompute(objs=None): Recompute the document and returns the amount of recomputed features</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="mustExecute">
       <Documentation>
@@ -251,6 +258,7 @@ object of this document.
       <UserDocu>Return the objects with the given label name.
 NOTE: It's possible that several objects have the same label name.</UserDocu>
     </Documentation>
+    <Sandbox tier="call"/>
   </Methode>
     <Methode Name="findObjects" Keyword="true">
     <Documentation>
@@ -311,6 +319,7 @@ Reorder object(s) in the tree view before a given object
       <Documentation>
         <UserDocu>The active object of the document</UserDocu>
       </Documentation>
+      <Sandbox tier="handle"/>
       <Parameter Name="ActiveObject" Type="Object" />
     </Attribute>
     <Attribute Name="Objects" ReadOnly="true">
@@ -330,6 +339,7 @@ Reorder object(s) in the tree view before a given object
       <Documentation>
         <UserDocu>The list of root object of this document</UserDocu>
       </Documentation>
+      <Sandbox tier="handle"/>
       <Parameter Name="RootObjects" Type="List" />
     </Attribute>
     <Attribute Name="UndoMode" ReadOnly="false">
@@ -348,6 +358,7 @@ Reorder object(s) in the tree view before a given object
       <Documentation>
         <UserDocu>Number of possible Undos</UserDocu>
       </Documentation>
+      <Sandbox tier="value"/>
       <Parameter Name="UndoCount" Type="Int" />
     </Attribute>
     <Attribute Name="RedoCount" ReadOnly="true">
@@ -360,6 +371,7 @@ Reorder object(s) in the tree view before a given object
       <Documentation>
         <UserDocu>A list of Undo names</UserDocu>
       </Documentation>
+      <Sandbox tier="value"/>
       <Parameter Name="UndoNames" Type="List"/>
     </Attribute>
     <Attribute Name="RedoNames" ReadOnly="true">

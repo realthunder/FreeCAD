@@ -59,6 +59,11 @@ enum class Permission {
                     // ParamGet(...).Set*): DENY for a document, not
                     // promptable; ALLOW for the session and addons (G3a,
                     // docs/Sandbox.md 7.11)
+    AppWrite,       // app.write -- newDocument/closeDocument/setActiveDocument:
+                    // the application's document set is the workbench's to
+                    // change, never a document's (DENY, not promptable);
+                    // ALLOW for the session and addons (S1, docs/Sandbox.md
+                    // 7.13, ruling 2026-09-07)
     Gui,            // gui
     HostImport,     // host.import:<module>, the module is the target
     UnsafeGetattr,  // unsafe.getattr

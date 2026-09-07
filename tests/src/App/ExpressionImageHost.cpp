@@ -619,12 +619,15 @@ TEST_F(ExpressionImageEvalTest, writePropSameDocument)
 {
     // write_prop and the write-family calls (addProperty,
     // removeProperty, setPropertyStatus, the Document's addObject and
-    // removeObject): the evaluation owner's DOCUMENT -- the owner, any
-    // object of its document, the document itself -- under
-    // doc.write.self, "self" being the same-origin document (user
-    // ruling 2026-09-05; owner-only was rung 2's scoping).  An object
-    // of another document is refused.  A handle in the value
-    // dereferences to the live object.
+    // removeObject): for a DOCUMENT principal the evaluation owner's
+    // DOCUMENT -- the owner, any object of its document, the document
+    // itself -- under doc.write.self, "self" being the same-origin
+    // document (user ruling 2026-09-05; owner-only was rung 2's
+    // scoping).  An object of another document is refused.  The reach
+    // is the PRINCIPAL's (S1, docs/Sandbox.md 7.13): with no owner
+    // there is no principal scope, which is host code driving the
+    // image, and that reaches every open document as the session does.
+    // A handle in the value dereferences to the live object.
     auto& host = ImageHost::instance();
     auto other = doc->addObject("App::FeaturePython", "Other");
     auto otherWidth = Base::freecad_dynamic_cast<App::PropertyFloat>(
@@ -661,11 +664,13 @@ TEST_F(ExpressionImageEvalTest, writePropSameDocument)
         return std::vector<unsigned char>(v.begin(), v.end());
     };
 
-    // no owner named: nothing may be written
+    // no owner named, no principal scope: host code driving the image
+    // (a test, the InitGui runner's exec) reaches every open document,
+    // as the session does (S1); the write lands
     auto r = host.eval("setattr(o, 'Width', 5.0)", pack());
-    EXPECT_FALSE(r.ok);
-    EXPECT_EQ(r.excType, "PermissionError") << r.message;
-    EXPECT_DOUBLE_EQ(width->getValue(), 21.0);
+    EXPECT_TRUE(r.ok) << r.excType << ": " << r.message;
+    EXPECT_DOUBLE_EQ(width->getValue(), 5.0);
+    width->setValue(21.0);
 
     // the owner writes itself: the proxy's __setattr__, visible on the
     // host at once, and counted
@@ -2129,13 +2134,17 @@ TEST_F(ExpressionImageAcceptanceTest, importedOsCannotSpawnFromExpression)
 
 TEST_F(ExpressionImageAcceptanceTest, appModuleHasNoDocumentGraph)
 {
-    // the in-image FreeCAD module is the Ring 0 math slice: the host's
-    // App.getDocument()...Proxy drill-down simply does not exist there
+    // The in-image FreeCAD module's document graph (getDocument,
+    // listDocuments -- S1, docs/Sandbox.md 7.13) is an app.query op on
+    // the host: a PROMPT for a document principal, so a PermissionError
+    // naming it until the user answers -- never a silent drill-down.
+    // (Before S1 the name did not exist in the image: an AttributeError.)
     auto res = ImageHost::instance().evalExpression(
         obj, "_app.getDocument(<<FcxAccept>>)");
     ASSERT_FALSE(res.ok);
-    EXPECT_EQ(res.excType, "AttributeError")
+    EXPECT_EQ(res.excType, "PermissionError")
         << res.excType << ": " << res.message;
+    EXPECT_NE(res.message.find("app.query"), std::string::npos) << res.message;
 }
 
 TEST_F(ExpressionImageAcceptanceTest, selfDrilldownDenied)
@@ -3515,18 +3524,31 @@ TEST_F(ExpressionImageEvalTest, guestHandlesDurableAcrossHooks)
         "            out.append('gone-alive')\n"
         "        except ReferenceError:\n"
         "            out.append('gone-refused')\n"
-        // a key the guest made up, into another document: refused
+        // a key the guest made up, into another OPEN document: refused
+        // (a document principal reaches its own document only, S1); into
+        // a document that is not open: a ReferenceError, as for a
+        // deleted object
         "        H = [c for c in type(obj).__mro__ if c.__name__ == 'HostHandle'][0]\n"
         "        fake = H()\n"
         "        fake._id = 0\n"
         "        fake._ty = 'obj'\n"
         "        fake._fc = None\n"
-        "        fake._k = ('Elsewhere', 'X')\n"
+        "        fake._k = ('FcxElsewhere', 'X')\n"
         "        try:\n"
         "            fake.Label\n"
         "            out.append('foreign-allowed')\n"
         "        except PermissionError:\n"
         "            out.append('foreign-refused')\n"
+        "        closed = H()\n"
+        "        closed._id = 0\n"
+        "        closed._ty = 'obj'\n"
+        "        closed._fc = None\n"
+        "        closed._k = ('FcxNowhere', 'X')\n"
+        "        try:\n"
+        "            closed.Label\n"
+        "            out.append('closed-allowed')\n"
+        "        except ReferenceError:\n"
+        "            out.append('closed-refused')\n"
         "        self.report = ' '.join(out)\n"
         "    def dumps(self):\n"
         "        return None\n"
@@ -3535,6 +3557,11 @@ TEST_F(ExpressionImageEvalTest, guestHandlesDurableAcrossHooks)
     auto r = host.exec(source, "fcxkeeper");
     ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
 
+    // the other OPEN document the forged key names
+    App::Document* elsewhere = App::GetApplication().newDocument("FcxElsewhere");
+    ASSERT_NE(elsewhere, nullptr);
+    ASSERT_STREQ(elsewhere->getName(), "FcxElsewhere");
+    ASSERT_NE(elsewhere->addObject("App::FeaturePython", "X"), nullptr);
     App::DocumentObject* other = doc->addObject("App::FeaturePython", "Other");
     ASSERT_NE(other, nullptr);
     auto otherWidth = Base::freecad_dynamic_cast<App::PropertyFloat>(
@@ -3582,11 +3609,12 @@ TEST_F(ExpressionImageEvalTest, guestHandlesDurableAcrossHooks)
     std::string report;
     ASSERT_TRUE(hostEvalStr(
         "__import__('FreeCAD').getDocument('FcxEvalTest').getObject('Obj').Proxy.report", report));
-    EXPECT_EQ(report, "eq hash gone-refused foreign-refused");
+    EXPECT_EQ(report, "eq hash gone-refused foreign-refused closed-refused");
     auto st = host.stats();
-    // me, doc, other, gone and the forged key each asked once; the link
-    // value re-resolved inside the decode, no op of its own
+    // me, doc, other, gone and the two forged keys each asked once; the
+    // link value re-resolved inside the decode, no op of its own
     EXPECT_GE(st.ops["resolve"], 4u);
+    App::GetApplication().closeDocument("FcxElsewhere");
     std::cout << "durable handles: bridge ops:";
     for (const auto& [k, v] : st.ops)
         std::cout << " " << k << "=" << v;

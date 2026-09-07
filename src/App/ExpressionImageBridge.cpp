@@ -22,6 +22,7 @@
 
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 
 #include <Base/BoundBoxPy.h>
@@ -35,6 +36,8 @@
 #include <Base/VectorPy.h>
 
 #include "ExpressionImage/FcxWire.h"
+#include "Application.h"
+#include "Document.h"
 #include "ExpressionGuestProxy.h"
 #include "ExpressionImageBridge.h"
 #include "ExpressionSecurityRuntime.h"
@@ -345,6 +348,68 @@ static App::Document* documentOf(PyObject* obj)
     return nullptr;
 }
 
+/// Whether the CURRENT principal is a document (the scope stack's
+/// class, ExpressionSecurity::Runtime).  No scope active -- host code
+/// calling in directly, a test's exec -- is host code, already
+/// trusted: not a document.
+static bool principalIsDocument()
+{
+    if (!ExpressionSecurity::Runtime::scopeActive())
+        return false;
+    auto pclass = ExpressionSecurity::principalClass(
+        ExpressionSecurity::Runtime::instance().currentPrincipal());
+    return pclass && *pclass == ExpressionSecurity::PrincipalClass::Document;
+}
+
+/** The reach set follows the PRINCIPAL, never the call shape
+ * (docs/Sandbox.md 7.13, S1, ruled 2026-09-07): a document principal
+ * reaches the evaluation owner's document only -- even if some op
+ * ever lands it in a transaction with no owner, it reaches nothing;
+ * the session and an addon (a command's Activated, a workbench hook,
+ * every gui op made inside them) reach every open document, the
+ * catalog's stance (doc.foreign ALLOW for both) made mechanism.
+ */
+static bool reachable(const HandleTable& table, App::Document* doc)
+{
+    if (!doc)
+        return false;
+    if (principalIsDocument())
+        return documentOf(table.owner()) == doc;
+    for (App::Document* open : App::GetApplication().getDocuments())
+        if (open == doc)
+            return true;
+    return false;
+}
+
+bool documentReachable(const HandleTable& table, App::Document* doc)
+{
+    return reachable(table, doc);
+}
+
+// ---- the picker-blessed paths (S1) ----
+
+static std::set<std::string>& blessedPaths()
+{
+    static std::set<std::string> paths;
+    return paths;
+}
+
+void blessPath(const std::string& path)
+{
+    if (!path.empty())
+        blessedPaths().insert(path);
+}
+
+bool pathBlessed(const std::string& path)
+{
+    return blessedPaths().count(path) != 0;
+}
+
+void clearBlessedPaths()
+{
+    blessedPaths().clear();
+}
+
 /// The durable key a handle to `obj` carries ("k"): [document, name]
 /// for a DocumentObject, [document] for a Document, null for a value
 /// object -- a shape has no name to come back by, and natively a shape
@@ -368,12 +433,16 @@ static json handleKey(PyObject* obj)
  * filled in when it cannot be handed out.  A key is a pair of names the
  * guest could make up, where a handle is a capability it was handed, so
  * the reach is exactly what the guest already has through
- * `owner.Document.getObject(name)` (a declared call under
- * doc.read.self): the evaluation owner's document only.  A foreign
- * document is a PermissionError, a name no longer in the document a
- * ReferenceError -- the object was deleted, which natively leaves the
- * Proxy holding a dead object too.  Never throws: the decode path runs
- * outside the op dispatcher's catch as well.
+ * `FreeCAD.getDocument(name).getObject(name)` (declared calls under
+ * app.query and doc.read.self): the principal's reach set (`reachable`)
+ * -- the evaluation owner's document for a document principal, every
+ * open document for the session and an addon, so a command's kept
+ * `self.doc` re-resolves wherever the user's focus is, as natively
+ * (S1).  A document no longer open is a ReferenceError, an open one
+ * out of reach a PermissionError naming both, a name no longer in the
+ * document a ReferenceError -- the object was deleted, which natively
+ * leaves the Proxy holding a dead object too.  Never throws: the
+ * decode path runs outside the op dispatcher's catch as well.
  */
 static PyObject* resolveByKey(const HandleTable& table, const json& key, json& denied)
 {
@@ -384,15 +453,27 @@ static PyObject* resolveByKey(const HandleTable& table, const json& key, json& d
         return nullptr;
     }
     const std::string& docName = key[0].get_ref<const std::string&>();
+    App::Document* doc = App::GetApplication().getDocument(docName.c_str());
+    if (!doc) {
+        denied = errReply("ReferenceError",
+                          "a handle into document '" + docName
+                              + "' cannot be re-resolved: the document is no longer open");
+        return nullptr;
+    }
     App::Document* ownerDoc = documentOf(table.owner());
-    if (!ownerDoc || docName != ownerDoc->getName()) {
+    if (!reachable(table, doc)) {
         denied = errReply("PermissionError",
                           "a handle into document '" + docName
-                              + "' cannot be re-resolved: not the evaluation owner's document");
+                              + "' cannot be re-resolved: this principal reaches "
+                              + (ownerDoc ? "document '" + std::string(ownerDoc->getName())
+                                                + "' only"
+                                          : std::string("no document")));
         return nullptr;
     }
     try {
         ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::DocReadSelf);
+        if (ownerDoc && doc != ownerDoc)
+            ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::DocForeign);
     }
     catch (const ExpressionSecurity::PermissionNeededException& e) {
         if (PyErr_Occurred())
@@ -401,9 +482,9 @@ static PyObject* resolveByKey(const HandleTable& table, const json& key, json& d
         return nullptr;
     }
     if (key.size() == 1)
-        return ownerDoc->getPyObject();
+        return doc->getPyObject();
     const std::string& name = key[1].get_ref<const std::string&>();
-    App::DocumentObject* obj = ownerDoc->getObject(name.c_str());
+    App::DocumentObject* obj = doc->getObject(name.c_str());
     if (!obj) {
         denied = errReply("ReferenceError",
                           "object '" + name + "' no longer exists in document '" + docName + "'");
@@ -1043,6 +1124,108 @@ std::vector<unsigned char> pyErrorReplyCbor()
     return json::to_cbor(pyErrorReply());
 }
 
+// ---- the application's document set (S1, docs/Sandbox.md 7.13) ----
+
+/// The host's FreeCAD module attribute `name` as a new reference, or
+/// nullptr with the Python error set.
+static PyObject* freecadAttr(const char* name)
+{
+    PyObject* mod = PyImport_ImportModule("FreeCAD");
+    if (!mod)
+        return nullptr;
+    PyObject* attr = PyObject_GetAttrString(mod, name);
+    Py_DECREF(mod);
+    return attr;
+}
+
+/// The open document the op's "a" names, within the principal's reach;
+/// nullptr with `denied` filled in otherwise (NameError for a name no
+/// document carries, as FreeCAD.getDocument raises; PermissionError
+/// for an open document out of reach).
+static App::Document* reachableDocumentArg(const HandleTable& table, const json& req,
+                                           const char* what, json& denied)
+{
+    auto a = req.find("a");
+    if (a == req.end() || !a->is_string()) {
+        denied = errReply("ProtocolError", std::string(what) + ": a document name");
+        return nullptr;
+    }
+    const std::string& name = a->get_ref<const std::string&>();
+    App::Document* doc = App::GetApplication().getDocument(name.c_str());
+    if (!doc) {
+        denied = errReply("NameError", "Unknown document '" + name + "'");
+        return nullptr;
+    }
+    if (!reachable(table, doc)) {
+        App::Document* ownerDoc = documentOf(table.owner());
+        denied = errReply("PermissionError",
+                          std::string(what) + ": document '" + name
+                              + "' is out of this principal's reach ("
+                              + (ownerDoc ? "the evaluation owner's document '"
+                                                + std::string(ownerDoc->getName()) + "' only"
+                                          : std::string("no document"))
+                              + ")");
+        return nullptr;
+    }
+    return doc;
+}
+
+/** The guest's FreeCAD.listDocuments / getDocument (app.query) and
+ * newDocument / closeDocument / setActiveDocument (app.write): the
+ * application's document set as the principal reaches it.  The
+ * writes go through the host's own FreeCAD module functions so the
+ * GUI observes them as it does a native call (a view for a new
+ * document, the views of a closed one gone).
+ */
+static json applicationOp(HandleTable& table, const std::string& op, const json& req)
+{
+    if (op == FcxWire::OpAppDocs) {
+        ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::AppQuery);
+        PyObject* dict = PyDict_New();
+        if (!dict)
+            return pyErrorReply();
+        for (App::Document* doc : App::GetApplication().getDocuments()) {
+            if (!reachable(table, doc))
+                continue;
+            PyObject* py = doc->getPyObject();
+            PyDict_SetItemString(dict, doc->getName(), py);
+            Py_DECREF(py);
+        }
+        return encodeResult(table, dict);
+    }
+    if (op == FcxWire::OpAppDoc) {
+        ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::AppQuery);
+        json denied;
+        App::Document* doc = reachableDocumentArg(table, req, "getDocument", denied);
+        if (!doc)
+            return denied;
+        App::Document* ownerDoc = documentOf(table.owner());
+        if (ownerDoc && doc != ownerDoc)
+            ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::DocForeign);
+        return encodeResult(table, doc->getPyObject());
+    }
+    ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::AppWrite);
+    if (op == FcxWire::OpAppNewDoc) {
+        PyObject* fn = freecadAttr("newDocument");
+        if (!fn)
+            return pyErrorReply();
+        return callWithWireArgs(table, fn, req);
+    }
+    const char* what = op == FcxWire::OpAppCloseDoc ? "closeDocument" : "setActiveDocument";
+    json denied;
+    App::Document* doc = reachableDocumentArg(table, req, what, denied);
+    if (!doc)
+        return denied;
+    PyObject* fn = freecadAttr(what);
+    if (!fn)
+        return pyErrorReply();
+    PyObject* r = PyObject_CallFunction(fn, "s", doc->getName());
+    Py_DECREF(fn);
+    if (!r)
+        return pyErrorReply();
+    return encodeResult(table, r);
+}
+
 json dispatchHostOp(HandleTable& table, const json& req)
 {
     Base::PyGILStateLocker lock;
@@ -1069,14 +1252,27 @@ json dispatchHostOp(HandleTable& table, const json& req)
             return okReply(json());
         }
         if (op == FcxWire::OpActiveDoc) {
-            // the guest's FreeCAD.ActiveDocument: the owner's Document,
-            // through get_attr on the owner's own handle (Document is a
-            // declared handle attribute of DocumentObject, not a
-            // property) so the same permission applies -- an Arch
-            // execute() reads FreeCAD.ActiveDocument.getObject(...) as
-            // the host would.  A refusal must not surface as an
-            // AttributeError: Python would read that as "no such
-            // attribute" and hide the reason.
+            // The guest's FreeCAD.ActiveDocument.  The session and an
+            // addon (a command's Activated, a workbench hook) get the
+            // host's LIVE active document, re-read on every call --
+            // BimLibrary calls setActiveDocument and then saves -- as a
+            // handle under doc.read.self, None with nothing open (S1,
+            // docs/Sandbox.md 7.13).  A document principal gets the
+            // owner's Document, through get_attr on the owner's own
+            // handle (Document is a declared handle attribute of
+            // DocumentObject, not a property) so the same permission
+            // applies -- an Arch execute() reads
+            // FreeCAD.ActiveDocument.getObject(...) as the host would.
+            // A refusal must not surface as an AttributeError: Python
+            // would read that as "no such attribute" and hide the reason.
+            if (!principalIsDocument()) {
+                App::Document* active = App::GetApplication().getActiveDocument();
+                if (!active)
+                    return okReply(json());
+                ExpressionSecurity::checkPermission(
+                    ExpressionSecurity::Permission::DocReadSelf);
+                return encodeResult(table, active->getPyObject());
+            }
             const uint64_t ownerId = table.owner() ? table.idOf(table.owner()) : 0;
             if (!ownerId)
                 return okReply(json());
@@ -1096,6 +1292,10 @@ json dispatchHostOp(HandleTable& table, const json& req)
             return okReply(json(""));
 #endif
         }
+        if (op == FcxWire::OpAppDocs || op == FcxWire::OpAppDoc || op == FcxWire::OpAppNewDoc
+            || op == FcxWire::OpAppCloseDoc || op == FcxWire::OpAppSetActiveDoc)
+            return applicationOp(table, op, req);
+
         if (op == FcxWire::OpModCall || op == FcxWire::OpModGet) {
             // The module facades: no handle, a declared "Module.name",
             // each module under the catalog permission its table row
@@ -1221,29 +1421,39 @@ json dispatchHostOp(HandleTable& table, const json& req)
         }
 
         // The write gate (FcxWire::OpWriteProp and the write-family
-        // calls): the target must belong to the evaluation owner's
-        // document -- the owner itself, any object of its document, or
-        // the document -- and the principal must hold doc.write.self.
-        // "self" is the same-origin document, as the catalog defines it
-        // (docs/Sandbox.md 2.2): the principal IS the document, and a
-        // document rewriting its own objects is native behaviour (Stairs
-        // rebuilds its railings' Base, a PipeConnector sets its pipes'
-        // offsets, a Schedule fills its Result sheet).  An object of
-        // another document is doc.foreign, the wall that matters.  Owner
-        // only was rung 2's scoping, retired 2026-09-05 by user ruling.
-        // A PermissionError, not a ProtocolError: the request is
-        // well-formed, the principal is not allowed.
+        // calls): the target must be in a document the PRINCIPAL
+        // reaches (`reachable`) -- for a document principal the
+        // evaluation owner's document: the owner itself, any object of
+        // its document, or the document; for the session and an addon
+        // any open document (S1, docs/Sandbox.md 7.13) -- and the
+        // principal must hold doc.write.self, plus doc.foreign when the
+        // target is not the owner's document.  "self" is the
+        // same-origin document, as the catalog defines it (2.2): the
+        // principal IS the document, and a document rewriting its own
+        // objects is native behaviour (Stairs rebuilds its railings'
+        // Base, a PipeConnector sets its pipes' offsets, a Schedule
+        // fills its Result sheet).  An object of another document is
+        // doc.foreign, the wall that matters.  Owner only was rung 2's
+        // scoping, retired 2026-09-05 by user ruling; owner-anchored
+        // reach was retired 2026-09-07 (7.13).  A PermissionError, not
+        // a ProtocolError: the request is well-formed, the principal is
+        // not allowed.
         auto writeGate = [&](const char* what) -> json {
             App::Document* ownerDoc = documentOf(table.owner());
-            bool sameDocument = base == table.owner()
-                || (ownerDoc && documentOf(base) == ownerDoc);
-            if (!table.owner() || !sameDocument)
+            App::Document* targetDoc = documentOf(base);
+            const bool onOwner = table.owner() && base == table.owner();
+            if (!onOwner && !reachable(table, targetDoc))
                 return errReply("PermissionError",
                                 std::string(what)
-                                    + ": writes are allowed on the evaluation owner's"
-                                      " document only");
+                                    + (ownerDoc ? ": writes are allowed on the evaluation"
+                                                  " owner's document only"
+                                                : ": the target is not in a document this"
+                                                  " principal reaches"));
             ExpressionSecurity::checkPermission(
                 ExpressionSecurity::Permission::DocWriteSelf);
+            if (ownerDoc && targetDoc && targetDoc != ownerDoc)
+                ExpressionSecurity::checkPermission(
+                    ExpressionSecurity::Permission::DocForeign);
             return json();
         };
 
@@ -1341,8 +1551,15 @@ json dispatchHostOp(HandleTable& table, const json& req)
                 "setGroupOfProperty", "recompute", "configLinkProperty", "setLink",
                 "addExtension", "changeAttacherType", "touch", "purgeTouched",
                 "renameProperty", "setExpression",
-                // App::Document (moveObject crosses documents: not declared)
-                "addObject", "removeObject",
+                // App::Document (moveObject crosses documents: not declared);
+                // the transaction, recompute, copy and save family are a
+                // command's (S1, 7.13): save writes the document's own
+                // file, saveAs a picker-blessed path only (below)
+                "addObject", "removeObject", "copyObject", "openTransaction",
+                "commitTransaction", "abortTransaction", "save", "saveAs",
+                // App::GroupExtension (a group's own membership writes)
+                "newObject", "addObjects", "setObjects", "removeObjects",
+                "removeObjectsFromDocument",
                 // Spreadsheet::Sheet
                 "set", "clear", "clearAll", "mergeCells", "splitCell", "insertColumns",
                 "removeColumns", "insertRows", "removeRows", "setAlignment", "setStyle",
@@ -1356,6 +1573,42 @@ json dispatchHostOp(HandleTable& table, const json& req)
                 if (!denied.is_null())
                     return denied;
                 break;
+            }
+            if (member == "saveAs" && PyObject_TypeCheck(base, &App::DocumentPy::Type)) {
+                // A path the guest made up is the file-system slice's
+                // business, which is not in the catalog; a path the
+                // host's file dialog returned to this guest is a
+                // capability it may hand back (S1, docs/Sandbox.md 7.13;
+                // 7.1 U2).
+                // (the arguments cross as one wire-encoded list, as
+                // callWithWireArgs decodes them)
+                std::string path;
+                bool named = false;
+                auto a = req.find("a");
+                if (a != req.end()) {
+                    PyObject* args = decodeHostValue(table, *a);
+                    if (!args)
+                        return pyErrorReply();
+                    PyObject* first = PySequence_Check(args) && PySequence_Size(args) > 0
+                        ? PySequence_GetItem(args, 0)
+                        : nullptr;
+                    if (first && PyUnicode_Check(first)) {
+                        if (const char* text = PyUnicode_AsUTF8(first)) {
+                            path = text;
+                            named = true;
+                        }
+                    }
+                    Py_XDECREF(first);
+                    Py_DECREF(args);
+                    if (PyErr_Occurred())
+                        PyErr_Clear();
+                }
+                if (!named || !pathBlessed(path))
+                    return errReply("PermissionError",
+                                    "saveAs: '" + path
+                                        + "' was not chosen through a file dialog by this"
+                                          " guest; a file-system grant is not in the"
+                                          " sandbox catalog (docs/Sandbox.md 7.1, U2)");
             }
             PyObject* callable = PyObject_GetAttrString(base, member.c_str());
             if (!callable)

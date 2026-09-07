@@ -20,7 +20,8 @@ in the user data directory) and the last line is `RESULT OK` or `RESULT
 FAILED`; judge by that file, not by the exit code (the GUI's exit is not
 clean on every box).  $SANDBOX_GUI_GATE_MODULES selects the modules
 (comma-separated, default SandboxGui,SandboxWidgets,SandboxForms,SandboxNative,
-SandboxPanels,SandboxDraftGui,SandboxSelection,SandboxCorpusGui,SandboxInitGui; SandboxInitGui
+SandboxPanels,SandboxDraftGui,SandboxSelection,SandboxSessionDoc,SandboxCorpusGui,SandboxInitGui;
+SandboxInitGui
 last: it takes the native Draft and BIM workbenches out of the session).
 """
 
@@ -68,7 +69,8 @@ class _EagerResult(unittest.TextTestResult):
 
 def main():
     default_modules = ("SandboxGui,SandboxWidgets,SandboxForms,SandboxNative,SandboxPanels,"
-                       "SandboxDraftGui,SandboxSelection,SandboxCorpusGui,SandboxInitGui")
+                       "SandboxDraftGui,SandboxSelection,SandboxSessionDoc,SandboxCorpusGui,"
+                       "SandboxInitGui")
     modules = os.environ.get("SANDBOX_GUI_GATE_MODULES", default_modules).split(",")
     out = os.environ.get("SANDBOX_GUI_GATE_RESULT") or os.path.join(
         FreeCAD.getUserAppDataDir(), "sandbox-gui-gate.txt"

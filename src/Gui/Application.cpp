@@ -2129,7 +2129,15 @@ void Application::refreshLiveLoad(const App::Document* starting)
         loading.insert(starting->getName());
     }
     for (auto doc : App::GetApplication().getDocuments()) {
-        if (doc->testStatus(App::Document::Restoring)) {
+        if (doc->testStatus(App::Document::Restoring)
+            && !doc->testStatus(App::Document::Importing)) {
+            // Restoring WITH Importing is an import into an open document
+            // -- copyObject, mergeProject -- reading a fragment through the
+            // restore path: the command's own doing, not a load the user
+            // is watching.  Claimed, it refused the command's next write,
+            // the view provider attach of the copied object (any command
+            // calling doc.copyObject aborted with "still being filled in";
+            // found by Draft_Heal from the sandbox guest, 2026-09-07).
             loading.insert(doc->getName());
             continue;
         }

@@ -37,8 +37,8 @@ TEST(ExpressionSecurity, permissionNames)
     // Round trip every catalog name.
     for (Permission perm : {Permission::DocReadSelf, Permission::DocWriteSelf,
             Permission::DocForeign, Permission::GeomCall, Permission::AppQuery,
-            Permission::PrefsRead, Permission::PrefsWrite, Permission::Gui, Permission::HostImport,
-            Permission::UnsafeGetattr}) {
+            Permission::PrefsRead, Permission::PrefsWrite, Permission::AppWrite, Permission::Gui,
+            Permission::HostImport, Permission::UnsafeGetattr}) {
         auto parsed = permissionFromName(permissionName(perm));
         ASSERT_TRUE(parsed.has_value()) << permissionName(perm);
         EXPECT_EQ(*parsed, perm);
@@ -85,6 +85,8 @@ TEST(ExpressionSecurity, catalogDefaults)
         {Permission::GeomCall,      Decision::Allow,  Decision::Allow},
         {Permission::AppQuery,      Decision::Prompt, Decision::Allow},
         {Permission::PrefsRead,     Decision::Allow,  Decision::Allow},
+        {Permission::PrefsWrite,    Decision::Deny,   Decision::Allow},
+        {Permission::AppWrite,      Decision::Deny,   Decision::Allow},
         {Permission::Gui,           Decision::Deny,   Decision::Allow},
         {Permission::HostImport,    Decision::Prompt, Decision::Prompt},
         {Permission::UnsafeGetattr, Decision::Deny,   Decision::Prompt},
@@ -98,8 +100,12 @@ TEST(ExpressionSecurity, catalogDefaults)
             << permissionName(row.perm);
     }
 
-    // Exactly one not-promptable cell: (document, gui).
+    // The not-promptable cells: (document, gui), (document, prefs.write),
+    // (document, app.write).
     EXPECT_FALSE(isPromptable(PrincipalClass::Document, Permission::Gui));
+    EXPECT_FALSE(isPromptable(PrincipalClass::Document, Permission::PrefsWrite));
+    EXPECT_FALSE(isPromptable(PrincipalClass::Document, Permission::AppWrite));
+    EXPECT_TRUE(isPromptable(PrincipalClass::Session, Permission::AppWrite));
     EXPECT_TRUE(isPromptable(PrincipalClass::Session, Permission::Gui));
     EXPECT_TRUE(isPromptable(PrincipalClass::Document, Permission::UnsafeGetattr));
 }

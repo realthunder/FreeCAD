@@ -337,10 +337,13 @@ int initEvalGlobals()
             "def removeDocumentObserver(observer):\n"
             "    if observer in _observers:\n"
             "        _observers.remove(observer)\n"
-            // FreeCAD.ActiveDocument: the document of the object whose
-            // hook is running (FcxWire OpActiveDoc, the owner's
-            // Document as read_prop reads it), None outside a hook --
-            // a module property, so the module's class is swapped.
+            // FreeCAD.ActiveDocument (FcxWire OpActiveDoc): for a document
+            // principal the document of the object whose hook is running
+            // (the owner's Document as read_prop reads it), None outside
+            // a hook; for the session and an addon -- a command's
+            // Activated -- the host's LIVE active document, re-read on
+            // every access (docs/Sandbox.md 7.13, S1).  A module
+            // property, so the module's class is swapped.
             "import sys as _sys, types as _types\n"
             "class _FcModule(_types.ModuleType):\n"
             "    @property\n"
@@ -348,7 +351,42 @@ int initEvalGlobals()
             "        import _fcx\n"
             "        return _fcx.op('active_doc', 0)\n"
             "_sys.modules['FreeCAD'].__class__ = _FcModule\n"
-            "del _sys, _types, _FcModule\n",
+            "del _sys, _types, _FcModule\n"
+            // The application's document set (S1): every document the
+            // principal reaches, not the transaction's one.  listDocuments
+            // and getDocument under app.query; newDocument, closeDocument
+            // and setActiveDocument under app.write, the workbench's
+            // (DENY for a document, not promptable).  The writes run the
+            // host's own FreeCAD functions, so the GUI follows them.
+            "def activeDocument():\n"
+            "    import _fcx\n"
+            "    return _fcx.op('active_doc', 0)\n"
+            "def listDocuments():\n"
+            "    import _fcx\n"
+            "    return _fcx.op('app.docs', 0)\n"
+            "def getDocument(name):\n"
+            "    import _fcx\n"
+            "    return _fcx.op('app.doc', 0, str(name))\n"
+            // by keyword: the host's newDocument takes no None for a
+            // name or label it was not given
+            "def newDocument(name=None, label=None, hidden=False, temp=False):\n"
+            "    import _fcx\n"
+            "    kw = {}\n"
+            "    if name is not None:\n"
+            "        kw['name'] = str(name)\n"
+            "    if label is not None:\n"
+            "        kw['label'] = str(label)\n"
+            "    if hidden:\n"
+            "        kw['hidden'] = True\n"
+            "    if temp:\n"
+            "        kw['temp'] = True\n"
+            "    return _fcx.op('app.new_doc', 0, [], kw)\n"
+            "def closeDocument(name):\n"
+            "    import _fcx\n"
+            "    return _fcx.op('app.close_doc', 0, str(name))\n"
+            "def setActiveDocument(name):\n"
+            "    import _fcx\n"
+            "    return _fcx.op('app.set_active_doc', 0, str(name))\n",
             Py_file_input, dict, dict);
         if (!r) {
             PyErr_Print();

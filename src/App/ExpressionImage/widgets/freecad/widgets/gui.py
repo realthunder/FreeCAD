@@ -12,7 +12,8 @@ def attr(name):
     """`FreeCADGui.<name>` for a name the prelude does not define: the
     forms' names, else the AttributeError `hasattr` expects."""
     if name in ("Control", "PySideUic", "UiLoader", "getMainWindow", "runCommand",
-                "InputHint", "HintManager", "getIcon", "_run_initgui"):
+                "InputHint", "HintManager", "getIcon", "_run_initgui", "activeDocument",
+                "getDocument"):
         return globals()[name]
     if name == "ActiveDocument":
         return active_document()
@@ -510,40 +511,89 @@ def getMainWindow():
 
 
 class GuiDocument:
-    """`FreeCADGui.ActiveDocument` in the guest: what a task panel's
-    finish() needs (`resetEdit`, `Document`); the rest of the GUI
-    document is U4 (docs/Sandbox.md 7.1)."""
+    """`FreeCADGui.ActiveDocument` / `getDocument(name)` in the guest: the
+    GUI document over one App document the principal reaches (S1,
+    docs/Sandbox.md 7.13).  `Document` is the App document; `getObject`
+    is its view provider, through the object's own `ViewObject` (the
+    view family G2b resolves); `setEdit`, `resetEdit`, `getInEdit`,
+    `activeObject` and `Modified` are one op each on the host's
+    Gui.Document (`gui.doc`), under the same reach check.  `ActiveView`
+    stays G4."""
 
-    def resetEdit(self):
+    def __init__(self, document):
+        self._doc = document
+
+    def _op(self, member, args=None):
         import _fcx
 
-        return _fcx.op("gui.control.query", 0, "resetEdit")
+        return _fcx.op("gui.doc", 0, [self._doc.Name, member, args])
 
     @property
     def Document(self):
-        import FreeCAD
+        return self._doc
 
-        return FreeCAD.ActiveDocument
+    @property
+    def Modified(self):
+        return self._op("Modified")
 
-    def setEdit(self, *args):
-        raise AttributeError("FreeCADGui.ActiveDocument.setEdit is not in the sandbox yet (U4)")
+    @property
+    def ActiveObject(self):
+        return self.activeObject()
+
+    def activeObject(self):
+        return self._op("activeObject", [])
 
     def getObject(self, name):
-        raise AttributeError("FreeCADGui.ActiveDocument.getObject is not in the sandbox yet"
-                             " (U4: view providers)")
+        obj = self._doc.getObject(name)
+        return obj.ViewObject if obj is not None else None
+
+    def setEdit(self, obj, mod=0, subName=""):
+        if not isinstance(obj, str):
+            # a view provider or an object: the host takes the object
+            obj = getattr(obj, "Object", obj)
+            obj = obj.Name
+        return self._op("setEdit", [obj, int(mod), str(subName)])
+
+    def resetEdit(self):
+        return self._op("resetEdit", [])
+
+    def getInEdit(self):
+        return self._op("getInEdit", [])
+
+    def __eq__(self, other):
+        return isinstance(other, GuiDocument) and other._doc == self._doc
+
+    def __hash__(self):
+        return hash(self._doc.Name)
 
     def __repr__(self):
-        return "<sandbox GUI document>"
+        return "<sandbox GUI document %s>" % self._doc.Name
 
 
 def active_document():
-    """`FreeCADGui.ActiveDocument`: a GuiDocument while the host has an
-    active document, else None (as natively)."""
-    import _fcx
+    """`FreeCADGui.ActiveDocument`: a GuiDocument over the host's live
+    active document (the same one `FreeCAD.ActiveDocument` answers),
+    else None (as natively)."""
+    import FreeCAD
 
-    if _fcx.op("gui.control.query", 0, "activeDocument"):
-        return GuiDocument()
-    return None
+    doc = FreeCAD.ActiveDocument
+    return GuiDocument(doc) if doc is not None else None
+
+
+def activeDocument():
+    """`FreeCADGui.activeDocument()`, the function form."""
+    return active_document()
+
+
+def getDocument(name):
+    """`FreeCADGui.getDocument(name)`: the GUI document of an open App
+    document within reach (a NameError / PermissionError as
+    `FreeCAD.getDocument` raises)."""
+    import FreeCAD
+
+    if not isinstance(name, str):
+        name = name.Name
+    return GuiDocument(FreeCAD.getDocument(name))
 
 
 # ---- the InitGui runner (docs/Sandbox.md 7.9, G2b) ----

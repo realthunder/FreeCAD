@@ -40,7 +40,7 @@ user decision, quoted where the wording matters.
     forms: dialogs, item views, ...  built       G3b: exec_(), the tree/list/table family as rows, containers, the file chooser; the 40-file harness (7.11)
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
-    the session document (commands) ruled       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2 doCommand in the guest (7.13)
+    the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; gate SandboxSessionDoc (7.13); S2 doCommand in the guest next
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -168,8 +168,9 @@ across the board.
     unsafe.getattr    DENY       PROMPT    ALLOW   host-side Python attribute walks
     pkg.install:<p>   PROMPT     PROMPT    PROMPT  an ACTION, never a grant (sec 5.5)
     gui.doCommand     DENY       ALLOW     PROMPT  designed (sec 7), not in the enum yet
-    app.write         DENY (np)  ALLOW     ALLOW   newDocument/closeDocument/setActiveDocument;
-                                                   ruled 2026-09-07 (7.13), not in the enum yet
+    app.write         DENY (np)  ALLOW     ALLOW   newDocument/closeDocument/setActiveDocument
+                                                   (FcxWire app.new_doc/close_doc/set_active_doc);
+                                                   ruled and built 2026-09-07 (7.13, S1)
     net.*             --         --        --      designed (sec 6), not in the enum yet
 
 The one deliberate compatibility break: `unsafe.getattr` (the
@@ -3117,7 +3118,7 @@ its name edit, not `selectFile`; `getCompleteSelection`,
 `getPickedList` and the preselection answer SelectionObjects, as the
 host does, wrapped on the guest side by shape.
 
-### 7.13 The session document sized: `FreeCAD.ActiveDocument` for a command **[sized and RULED 2026-09-07; build next]**
+### 7.13 The session document sized: `FreeCAD.ActiveDocument` for a command **[sized and RULED 2026-09-07; S1 BUILT 2026-09-07]**
 
 The question, asked after G3d ("next session size it first"): a guest
 command can read the selection now, but its `Activated()` runs as the
@@ -3200,10 +3201,13 @@ stand in front of most of the rest, and both stand on this one:
 - **`IsActive` is False** for every Draft creator (`bool(
   get_3d_view())`, 7.9) and for BIM's (`hasattr(getMainWindow().
   getActiveWindow(), "getSceneGraph")`; the shim's `getActiveWindow`
-  is None until G4).  `Command::invoke` does not consult it
-  (`runCommandByName` -> `invoke`), so a gate and `Gui.runCommand`
-  run a body today; a user cannot click one until G4 or a stub view.
-  Not this slice.
+  is None until G4).  CORRECTED while building S1: `Command::_invoke`
+  DOES consult it ("check if it really works NOW", Command.cpp) --
+  `Gui.runCommand` of a command whose IsActive is False is a silent
+  no-op.  Draft's `GuiCommandSimplest.IsActive` is
+  `bool(App.activeDocument())`, True in the guest since S1, so
+  `Draft_Heal` runs; BIM's wait for G4 or a stub view (the gate
+  stubs `IsActive` for its two BIM commands).  Not this slice.
 
 **RULED 2026-09-07 (user): "1. agree ... should also apply to
 Gui.ActiveDocument.  2. ... for a workbench, I incline to grant it
@@ -3358,6 +3362,73 @@ list, seven cases):
    no view: the object healed / in the Trash group and hidden / gone,
    and the host's undo stack holding each command's transaction.
 
+**S1 BUILT 2026-09-07.**  Gate `SandboxSessionDoc` 7/7 in about 9 s;
+the full GUI gate 30/30 (26 in the default process, the 4 InitGui
+cases in theirs); Expression gtests 104 + 1 skipped (three updated to
+the ruling, below).  What landed, and where it departs from the design above:
+
+- **Reach** (`reachable(table, doc)` in `ExpressionImageBridge.cpp`,
+  exported as `documentReachable` for Gui): the principal class comes
+  from `Runtime::currentPrincipal()`; a document principal reaches
+  `documentOf(table.owner())` only; the session, an addon, and host
+  code running under NO scope (a test's `eval`, the InitGui runner's
+  `exec`) reach every open document.  `writeGate`, `resolveByKey` and
+  `active_doc` are as designed; a key into a document no longer open
+  is a ReferenceError, into an open one out of reach a PermissionError
+  naming both.
+- **The document set is five bridge ops, not module facade entries**:
+  `app.docs`, `app.doc`, `app.new_doc`, `app.close_doc`,
+  `app.set_active_doc` (`FcxWire.h`, `applicationOp`).  A module
+  facade checks one permission and nothing else, and `getDocument`
+  needs the reach check in C++: a document principal WITH `app.query`
+  granted still lists and gets its own document only (gate case 5).
+  The three writes call the host's own `FreeCAD` functions, so the
+  GUI follows them (a view for a new document, a closed one's views
+  gone).  `newDocument` passes keywords: the host's takes no None for
+  a name it was not given.
+- **`app.write`** is in the enum (`Permission::AppWrite`), DENY and
+  not promptable for a document.
+- **Prelude** (guest image rebuilt): `activeDocument()`,
+  `listDocuments()`, `getDocument`, `newDocument`, `closeDocument`,
+  `setActiveDocument` beside the `ActiveDocument` property.
+- **Wheel** (`freecad/widgets/gui.py`): `GuiDocument` over one App
+  document -- `Document`, `getObject(name)` through the object's
+  `ViewObject` (a REAL property on this fork, commit 17300660d8, so
+  `read_prop` answers it: no view-family op needed), `setEdit`,
+  `resetEdit`, `getInEdit`, `activeObject`, `Modified` through one
+  op `gui.doc [name, member, args]` (`SandboxGui.cpp`) under the
+  same reach check; `FreeCADGui.activeDocument()` and
+  `getDocument(name)`.
+- **Facade**: `DocumentPy.xml` as listed (`FileName`/`Label` are
+  properties: `read_prop`, no annotation).  `GroupExtensionPy.xml`
+  joined the annotated XMLs (`BIM_Trash`'s `trash.addObject(obj)`),
+  its membership writes in the write family.
+- **Blessed paths**: `blessPath` / `pathBlessed` /
+  `clearBlessedPaths` in the bridge, fed by `gui.dialog.file`, cleared
+  when a guest boots (`Private::initialize`).  `saveAs` decodes its
+  path from the call's wire-encoded argument list (sec 12).
+- **Two host findings.**  Any command calling `doc.copyObject`
+  aborted natively ("still being filled in": the import's Restoring
+  bit claimed as a live load; fixed in `refreshLiveLoad`, sec 12).
+  And `Command::_invoke` DOES consult `IsActive` -- the sizing above
+  said it did not; corrected in place.  A consequence of S1 itself:
+  Draft's `GuiCommandSimplest.IsActive` (`bool(App.activeDocument())`)
+  is now True in the guest, so those commands run; BIM's stay False
+  until G4.
+- **Gtests updated to the ruling**: `appModuleHasNoDocumentGraph`
+  (the graph exists now: a PermissionError naming `app.query` for a
+  document, not an AttributeError), `guestHandlesDurableAcrossHooks`
+  (a forged key into an OPEN other document is the PermissionError, a
+  key into no document a ReferenceError), `writePropSameDocument`
+  (an ownerless eval, no scope, writes: host code).
+- **A loss to list**: the copy `Draft_Heal` makes is a guest Draft
+  object now, and its `onDocumentRestored` reaches
+  `getattr(vobj, "Proxy", None)` on the HOST view-provider proxy --
+  `__bool__` of a host Python instance, `unsafe.getattr`, a
+  PermissionError printed on the console (the object is fine).  The
+  view-provider Proxy class in the guest is G4's (7.9, BuildingPart's
+  losses).
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -3487,6 +3558,13 @@ Non-ASCII object names occur in real files.  Rig:
                                                           proxy, the four stock dialogs
                                                           driven from a host timer (7.11);
                                                           the same gate script
+    src/Mod/Test/SandboxSessionDoc.py                7    S1: the session document (7.13):
+                                                          a guest command's ActiveDocument,
+                                                          writes, a kept handle, two
+                                                          documents, the document-principal
+                                                          regression, save/saveAs, Draft_Heal
+                                                          and BIM_Trash/EmptyTrash from the
+                                                          guest; the same gate script
     src/Mod/Test/SandboxDraftGui.py                  3    G3c: Draft's DraftGui.py in the
                                                           guest -- the tray tool bar, the
                                                           panel built in code, a point
@@ -3640,17 +3718,17 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    and panel are the gate, `SandboxDraftGui`); G3d BUILT 2026-09-07
    (the selection input over the host's own Selection, observers as
    guest proxies, the four stock dialogs one op each; gate
-   `SandboxSelection`).  **S1 SIZED AND RULED 2026-09-07** (7.13),
-   NEXT TO BUILD: the session document -- a workbench (session or
-   addon) reaches every open document, reach computed from the
-   principal; `FreeCAD.ActiveDocument`/`Gui.ActiveDocument` are the
-   host's live one; `listDocuments`/`getDocument` under `app.query`,
-   `newDocument`/`closeDocument`/`setActiveDocument` under the new
-   `app.write`; `save` declared, `saveAs` on a picker-blessed path;
-   gate `SandboxSessionDoc` (7 cases).  **S2** follows it:
-   `Gui.doCommand` / `addModule` in the guest under the
-   `gui.doCommand` enum value.  Both come before the status bar /
-   dock widgets and G4.
+   `SandboxSelection`).  **S1 BUILT 2026-09-07** (7.13): the session
+   document -- a workbench (session or addon) reaches every open
+   document, reach computed from the principal (`reachable` in
+   `ExpressionImageBridge.cpp`); `FreeCAD.ActiveDocument` /
+   `Gui.ActiveDocument` are the host's live one; `listDocuments` /
+   `getDocument` under `app.query`, `newDocument` / `closeDocument` /
+   `setActiveDocument` under the new `app.write`; `save` declared,
+   `saveAs` on a picker-blessed path; gate `SandboxSessionDoc` (7
+   cases).  **S2 is NEXT TO BUILD**: `Gui.doCommand` / `addModule` in
+   the guest under the `gui.doCommand` enum value (sized in 7.13).
+   Both come before the status bar / dock widgets and G4.
    H0 (BUILT 2026-09-06) and H1 (7.12) come before G3b so G3b's views
    are written once, in C++; H2 and H3, the native ports, interleave
    with G3b-G3d as the class set grows.
@@ -3819,6 +3897,26 @@ sockets, any network for the reference image, a webview escape hatch.
   corpus gates and the harness recompute twice (3.2, durable handles).
   And `clearHandles()` inside a nested round trip would drop the OUTER
   hook's live arguments -- it is a no-op while nested.
+- A `call` op's arguments (`"a"`) cross as ONE wire-encoded list, not
+  a JSON array: a host-side check that reads `req["a"][0]` as a JSON
+  string sees nothing (the `saveAs` blessed-path check did, 2026-09-07:
+  every path was "''").  Decode with `decodeHostValue` first, as
+  `callWithWireArgs` does.
+- Any command calling `doc.copyObject` aborted with "still being
+  filled in" (fixed 2026-09-07, `Gui::Application::refreshLiveLoad`):
+  the import reads its fragment through the restore path, which sets
+  the Restoring bit, and the live-load claim took that for a load the
+  user was watching -- so the copied object's view provider attach
+  (a write of `<copy>.ViewObject`) tripped `checkUserEdit` inside the
+  command.  Restoring WITH Importing is an import into an open
+  document and is not claimed now.  Found by `Draft_Heal` run from the
+  guest (7.13, S1); the native command failed the same way.
+- A gate reading guest state through a DOCUMENT principal needs that
+  principal's document open: after closing every document (the "None
+  with nothing open" case) the owner is dead, its scope is the session,
+  and the read prompts for `host.import` -- make a fresh document for
+  the reads.  And a document's `Name` after `closeDocument` raises
+  natively too: keep the name before closing.
 
 ## 13. Known gaps and open questions
 
@@ -3840,11 +3938,11 @@ sockets, any network for the reference image, a webview escape hatch.
   findChild`, `addStatusBarItem`, `BimStatus`, `init_draft_statusbar`,
   `QDockWidget` for BimViews): not in the widget layer; Draft's
   `Activated()` and BIM's stop there (7.9).  G3d or G7 material.
-- **The session has no document** (7.13, sized and ruled 2026-09-07,
-  build next): a command's `Activated()` gets `FreeCAD.ActiveDocument`
-  None, no document write, and a handle for one evaluation;
-  `Gui.doCommand` is not in the guest.  Ruled: every open document
-  for a workbench, `app.write`, `save`, picker-blessed `saveAs`.
+- **`Gui.doCommand` is not in the guest** (7.13, S2, sized): every
+  Draft creator commits through it; built after S1 on its own go.
+  (The session document itself -- `FreeCAD.ActiveDocument` for a
+  command, document writes, a handle kept across activations -- is
+  S1, BUILT 2026-09-07.)
 
 - Document OPEN imports, before any expression runs.
   `PropertyPythonObject::Restore`'s `PyImport_ImportModule` on a

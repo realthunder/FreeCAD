@@ -54,6 +54,7 @@ const char *permissionName(Permission perm)
     case Permission::AppQuery:      return "app.query";
     case Permission::PrefsRead:     return "prefs.read";
     case Permission::PrefsWrite:    return "prefs.write";
+    case Permission::AppWrite:      return "app.write";
     case Permission::Gui:           return "gui";
     case Permission::HostImport:    return "host.import";
     case Permission::UnsafeGetattr: return "unsafe.getattr";
@@ -82,6 +83,7 @@ std::optional<Permission> permissionFromName(const std::string &name, std::strin
         {"app.query",      Permission::AppQuery},
         {"prefs.read",     Permission::PrefsRead},
         {"prefs.write",    Permission::PrefsWrite},
+        {"app.write",      Permission::AppWrite},
         {"gui",            Permission::Gui},
         {"host.import",    Permission::HostImport},
         {"unsafe.getattr", Permission::UnsafeGetattr},
@@ -141,6 +143,9 @@ Decision catalogDefault(PrincipalClass pclass, Permission perm)
     // a preference WRITE is the user's to make through a panel, never a
     // document's (G3a, 2026-09-06)
     case Permission::PrefsWrite:    return doc ? Decision::Deny : Decision::Allow;
+    // the document set -- new, close, which is active -- is the
+    // workbench's, never a document's (S1, 2026-09-07)
+    case Permission::AppWrite:      return doc ? Decision::Deny : Decision::Allow;
     case Permission::Gui:           return doc ? Decision::Deny : Decision::Allow;
     case Permission::HostImport:    return Decision::Prompt;
     case Permission::UnsafeGetattr: return doc ? Decision::Deny : Decision::Prompt;
@@ -152,11 +157,13 @@ Decision catalogDefault(PrincipalClass pclass, Permission perm)
 
 bool isPromptable(PrincipalClass pclass, Permission perm)
 {
-    // v1 marks two cells not-promptable: gui and prefs.write for a
-    // document principal. A document has no business driving the GUI or
-    // rewriting the user's preferences, and no prompt should offer to let it.
+    // v1 marks three cells not-promptable: gui, prefs.write and app.write
+    // for a document principal. A document has no business driving the
+    // GUI, rewriting the user's preferences or opening and closing the
+    // user's documents, and no prompt should offer to let it.
     return !(pclass == PrincipalClass::Document
-             && (perm == Permission::Gui || perm == Permission::PrefsWrite));
+             && (perm == Permission::Gui || perm == Permission::PrefsWrite
+                 || perm == Permission::AppWrite));
 }
 
 std::optional<Permission> pseudoPropertyPermission(

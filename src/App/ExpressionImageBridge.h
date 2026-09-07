@@ -47,6 +47,8 @@ typedef struct _typeobject PyTypeObject;
 
 namespace App
 {
+class Document;
+
 namespace ExpressionSandbox
 {
 
@@ -112,6 +114,28 @@ AppExport const char* facadeKeyFor(PyTypeObject* type);
  * is not annotated anywhere in the chain.  Caller holds the GIL.
  */
 AppExport const FacadeMember* facadeMemberLookup(PyTypeObject* type, const char* member);
+
+class HandleTable;
+
+/** Whether `doc` is in the current principal's reach set
+ * (docs/Sandbox.md 7.13, S1): a document principal reaches the
+ * evaluation owner's document only; the session, an addon, and host
+ * code running under no scope reach every open document.  Computed
+ * from the principal class, never from whether the transaction has
+ * an owner.  Caller holds the GIL.
+ */
+AppExport bool documentReachable(const HandleTable& table, App::Document* doc);
+
+/** The picker-blessed paths (S1): a path the host's file dialog
+ * returned to the guest (`gui.dialog.file`) is a capability the guest
+ * may hand back -- `Document.saveAs(path)` accepts exactly those.  The
+ * set lives for the life of one guest and is cleared when a fresh
+ * guest boots.  Not a file-system grant: the seed of the fs slice
+ * (docs/Sandbox.md 7.1, U2), not a substitute for it.
+ */
+AppExport void blessPath(const std::string& path);
+AppExport bool pathBlessed(const std::string& path);
+AppExport void clearBlessedPaths();
 
 /** Live host Python objects handed to the image as {"t":"h"} wire
  * handles.  One table per image instance, cleared per recompute

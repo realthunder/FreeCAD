@@ -77,11 +77,26 @@ inline const char* const OpLen = "len";
 // attach extension and calls changeAttacherType in the same breath),
 // so the guest recomposes the proxy's class.
 inline const char* const OpExt = "ext";
-// {op:"active_doc"}: the guest's FreeCAD.ActiveDocument -- the document
-// of the transaction's owner (the object whose hook runs), answered
-// exactly as `read_prop Document` on that owner would be; None when
-// no object owns the transaction.
+// {op:"active_doc"}: the guest's FreeCAD.ActiveDocument.  For a DOCUMENT
+// principal the document of the transaction's owner (the object whose
+// hook runs), answered exactly as `read_prop Document` on that owner
+// would be, None when no object owns the transaction; for the session
+// and an addon the host's LIVE active document (docs/Sandbox.md 7.13,
+// S1: reach follows the principal), None with nothing open.
 inline const char* const OpActiveDoc = "active_doc";
+// The application's document set, no handle (S1).  {op:"app.docs"} ->
+// {name: Document} for every document the principal reaches
+// (FreeCAD.listDocuments); {op:"app.doc", a: name} -> that document
+// (FreeCAD.getDocument: NameError when not open, PermissionError when
+// open but out of the principal's reach); both under app.query.
+// {op:"app.new_doc", a: [name, label, hidden]} (FreeCAD.newDocument),
+// {op:"app.close_doc", a: name}, {op:"app.set_active_doc", a: name}:
+// under app.write, DENY for a document principal and not promptable.
+inline const char* const OpAppDocs = "app.docs";
+inline const char* const OpAppDoc = "app.doc";
+inline const char* const OpAppNewDoc = "app.new_doc";
+inline const char* const OpAppCloseDoc = "app.close_doc";
+inline const char* const OpAppSetActiveDoc = "app.set_active_doc";
 // release: "h" one id, or "a" an array of ids.  In practice releases
 // never cross as an op: a proxy's __del__ queues its id and the queue
 // rides as "r" (an array of ids) on the next guest->host request or on

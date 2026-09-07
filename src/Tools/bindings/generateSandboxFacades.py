@@ -63,6 +63,11 @@ ANNOTATED_XMLS = [
     # container's extension types after the type's own MRO.
     "src/App/ExtensionPy.xml",
     "src/App/DocumentObjectExtensionPy.xml",
+    # A group's membership (S1, docs/Sandbox.md 7.13): BIM_Trash moves
+    # the selection into its Trash group from the guest.  addObject /
+    # removeObject and the rest of the membership writes are in the
+    # bridge's write family, so the same-document gate applies.
+    "src/App/GroupExtensionPy.xml",
     "src/App/LinkBaseExtensionPy.xml",
     "src/Mod/Part/App/AttachExtensionPy.xml",
     "src/Mod/Part/App/TopoShapePy.xml",

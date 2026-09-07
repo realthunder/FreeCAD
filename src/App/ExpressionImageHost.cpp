@@ -323,6 +323,9 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         else {
             ++boots;
             bootPending = true;
+            // a fresh guest has been handed no file-dialog path yet
+            // (the picker-blessed set, S1)
+            clearBlessedPaths();
             tellGuiUp();
         }
         return live;

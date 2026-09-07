@@ -36,6 +36,8 @@
 
 #include <nlohmann/json.hpp>
 #include <CXX/Objects.hxx>
+#include <App/Application.h>
+#include <App/Document.h>
 #include <App/ExpressionGuestProxy.h>
 #include <App/ExpressionImageBridge.h>
 #include <App/ExpressionImageHost.h>
@@ -974,6 +976,62 @@ Reply dialogExec(HandleTable& table, const json& a)
     }
 }
 
+/// `gui.doc [document name, member, args | null]`: the guest's
+/// `FreeCADGui.getDocument(name)` / `ActiveDocument` over the host's
+/// Gui.Document of an App document within the principal's reach (S1,
+/// docs/Sandbox.md 7.13; App::ExpressionSandbox::documentReachable) --
+/// `setEdit`, `resetEdit`, `getInEdit`, `activeObject` as calls with
+/// the decoded args, `Modified` as a read; the result by value or as
+/// a handle (a view provider resolves through the view family).
+Reply guiDocumentCall(HandleTable& table, const json& a)
+{
+    if (!a.is_array() || a.size() != 3 || !a[0].is_string() || !a[1].is_string())
+        return replyErr("ProtocolError", "gui.doc: [document, member, args]");
+    const std::string& name = a[0].get_ref<const std::string&>();
+    const std::string& member = a[1].get_ref<const std::string&>();
+    static const std::set<std::string> calls = {"setEdit", "resetEdit", "getInEdit",
+                                               "activeObject"};
+    static const std::set<std::string> reads = {"Modified"};
+    if (!calls.count(member) && !reads.count(member))
+        return replyErr("AttributeError",
+                        "Gui.Document." + member + " is not in the sandbox's subset");
+    App::Document* appDoc = App::GetApplication().getDocument(name.c_str());
+    if (!appDoc)
+        return replyErr("NameError", "Unknown document '" + name + "'");
+    if (!App::ExpressionSandbox::documentReachable(table, appDoc))
+        return replyErr("PermissionError",
+                        "gui.doc: document '" + name + "' is out of this principal's reach");
+    Gui::Document* doc = Application::Instance->getDocument(appDoc);
+    if (!doc)
+        return replyErr("RuntimeError", "document '" + name + "' has no GUI document");
+    PyObject* py = doc->getPyObject();
+    if (reads.count(member)) {
+        PyObject* v = PyObject_GetAttrString(py, member.c_str());
+        Py_DECREF(py);
+        return v ? replyResult(table, v) : replyPyError();
+    }
+    PyObject* args = a[2].is_null() ? PyTuple_New(0) : decodeValue(table, a[2]);
+    if (args && !PyTuple_Check(args)) {
+        PyObject* t = PySequence_Tuple(args);
+        Py_DECREF(args);
+        args = t;
+    }
+    if (!args) {
+        Py_DECREF(py);
+        return replyPyError();
+    }
+    PyObject* fn = PyObject_GetAttrString(py, member.c_str());
+    Py_DECREF(py);
+    if (!fn) {
+        Py_DECREF(args);
+        return replyPyError();
+    }
+    PyObject* r = PyObject_CallObject(fn, args);
+    Py_DECREF(fn);
+    Py_DECREF(args);
+    return r ? replyResult(table, r) : replyPyError();
+}
+
 /// `gui.control.close` / `.active` / `.clear_watcher` / `.query name`.
 Reply controlCall(HandleTable& table, const std::string& op, const json& a)
 {
@@ -1422,7 +1480,10 @@ Reply dialogInput(const json& a)
 /// the QFileDialog statics -- open, opens, save, dir; `[path(s),
 /// selected filter]`.  The path is DATA to the guest: what it may
 /// then read or write there is the file-system grant's business, not
-/// the dialog's (docs/Sandbox.md 7.1, U2).
+/// the dialog's (docs/Sandbox.md 7.1, U2) -- except that a path the
+/// user chose here is BLESSED for this guest (S1, 7.13:
+/// App::ExpressionSandbox::blessPath): `Document.saveAs` accepts
+/// exactly those, the seed of the fs slice.
 Reply dialogFile(const json& a)
 {
     if (!a.is_object() || !a.contains("mode") || !a["mode"].is_string())
@@ -1436,23 +1497,28 @@ Reply dialogFile(const json& a)
     QFileDialog::Options options(jnum<int>(a, "options", 0));
     if (mode == "open") {
         QString v = QFileDialog::getOpenFileName(parent, caption, dir, filter, &selected, options);
+        App::ExpressionSandbox::blessPath(v.toStdString());
         return replyOk(json::array({v.toStdString(), selected.toStdString()}));
     }
     if (mode == "opens") {
         QStringList v = QFileDialog::getOpenFileNames(parent, caption, dir, filter, &selected,
                                                       options);
         json paths = json::array();
-        for (const QString& p : v)
+        for (const QString& p : v) {
+            App::ExpressionSandbox::blessPath(p.toStdString());
             paths.push_back(p.toStdString());
+        }
         return replyOk(json::array({paths, selected.toStdString()}));
     }
     if (mode == "save") {
         QString v = QFileDialog::getSaveFileName(parent, caption, dir, filter, &selected, options);
+        App::ExpressionSandbox::blessPath(v.toStdString());
         return replyOk(json::array({v.toStdString(), selected.toStdString()}));
     }
     if (mode == "dir") {
         QString v = QFileDialog::getExistingDirectory(parent, caption, dir,
                                                       options ? options : QFileDialog::ShowDirsOnly);
+        App::ExpressionSandbox::blessPath(v.toStdString());
         return replyOk(json::array({v.toStdString(), ""}));
     }
     return replyErr("ValueError", "gui.dialog.file: unknown mode '" + mode + "'");
@@ -1565,6 +1631,8 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
     if (op == "gui.control.close" || op == "gui.control.active" || op == "gui.control.query"
         || op == "gui.control.clear_watcher")
         return controlCall(table, op, arg);
+    if (op == "gui.doc")
+        return guiDocumentCall(table, arg);
     if (op == "gui.pref_page") {
         if (!arg.is_array() || arg.size() != 2 || !arg[0].is_string() || !arg[1].is_string())
             return replyErr("ProtocolError", "gui.pref_page: [ui file, group]");
