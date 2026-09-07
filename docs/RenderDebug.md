@@ -1050,8 +1050,13 @@ macOS 12 / Metal, Intel iGPU `0x8086 0x1622`), so
 now register and pass on the macOS leg -- 21.4 s each. Both were
 restaged from their OpenGL siblings, so the camera is byte-identical to
 the one those were blessed on, and two such captures compare byte-exact
-at `--tol 0`. The chess and Cycles sets have no Metal counterpart yet
-and stay unregistered here.
+at `--tol 0`.
+
+**`refs/chess-metal` and `refs/chess-flat-metal` followed the same day**
+(section 5.2c), so the real-document leg gates on Metal too. Only the
+Cycles set has no Metal counterpart, and cannot get one from this box:
+`BUILD_CYCLES` is off and the `src/3rdParty/cycles` submodule is not
+checked out.
 
 **A golden is a picture of one backend, and the blessed sets are
 OpenGL.** So `fc_add_golden_test` looks for `refs/<set>-metal` on Apple
@@ -1391,6 +1396,71 @@ same; and the rest of the render set unchanged. `refs/chess` and
 piece, re-read this section before calling it noise: the hold is what
 guarantees the material, and a lone divergence around one piece would
 mean it has been bypassed.
+
+#### 5.2c The chess set on Metal: three faults, none of them the backend
+
+Chased 2026-09-07, the session after the Metal shader conventions were
+fixed (5.2b). The raster chess leg is the one that can break
+independently -- it is the only test that exercises MaterialX, map
+binding and the texture path, and the per-face texture and matcap
+shaders were not part of that sweep. It came up clean on Metal:
+**0.3288% of the beauty pixels past tolerance, max channel delta 140,
+mean 0.16**, against the 0.3527% the raster pair shows. Nothing in the
+material path needed a Metal fix.
+
+Getting there took three, and every one of them is a *portability* fault
+in the harness rather than anything the renderer did. They are worth
+stating because each failed silently or nearly so.
+
+- **The scene script named its backend.** `render-test-chess.py` set
+  `View/Render` `Type` to `"bgfx - OpenGL"` as a literal, where
+  `render-test-scene.py` picks per platform. The commit that gated the
+  harness by platform updated one scene script and missed the other.
+  On macOS that asks for a backend Apple's GL 2.1 compatibility profile
+  cannot run these shaders on, so no frame ever came: all five capture
+  steps failed, and what they *reported* was
+  `FreeCADGui.ActiveDocument` being None.
+- **The scene imported pivy, which this box does not have.** The camera
+  was staged as `getCameraNode().orientation.setValue(coin.SbRotation(
+  ...))`, and there is no `pivy` in the macOS conda env, so `stage()`
+  raised at its second import and the document was never created. That
+  is the None above. The staging failure was invisible because `say()`
+  wrote to `FreeCAD.Console`, which in a GUI run goes to the report
+  view: `run.log` held nothing. It now writes to stderr as well, which
+  is what `render-verify.sh` redirects, and the traceback was in the
+  log on the next run. The camera is staged through
+  `View3DInventor.setCameraOrientation((x, y, z, w))` -- same
+  quaternion, no pivy.
+- **A restage replayed an absolute asset path from the blessing box.**
+  With the scene finally staging, the frame came back with no
+  environment at all: flat grey where Venice should be, the model lit
+  by the fallback. 99.9782% of pixels, mean 71.09. The cause is in the
+  sidecar: `Render_PBREnvImage` (and the `View/Render` preference
+  behind it) is recorded as the absolute path of the HDR *on the box
+  that blessed the set*, `/home/thunder/works/sw/fcad/...`, and
+  `render_verify.py` wrote it back verbatim. The setting takes any
+  string; the renderer says `cannot embed environment image ... does
+  not exist` into the report view and carries on with the built-in
+  environment. A capture of a scene with its environment missing, and
+  a passing-looking harness.
+
+  `relocate()` in `render_verify.py` now maps such a value onto the
+  current checkout -- keep a path that exists, else take the longest
+  tail of it that exists under the repository, else write nothing and
+  report the setting as failed. Writing nothing is the point: the scene
+  script's own value is a better answer than a dead path, and a
+  reported failure is better than either.
+
+**The registration rule this leaves behind.** The chess entries asked
+for the traced leg unconditionally and so were gated on `BUILD_CYCLES`,
+which this box does not have -- a blessed `chess-metal` would still
+have registered nothing. They now register with the traced flags only
+when Cycles is built, and `fc_add_golden_test` refuses to register a
+test whose golden *holds* a traced frame when this build cannot produce
+one (`render_diff.py` reads the missing group as a divergence, and
+rightly). So the OpenGL sets keep their traced leg, the Metal ones are
+raster-only until someone blesses them with Cycles built, and the
+raster leg of the chess scene gates everywhere either way.
 
 ---
 

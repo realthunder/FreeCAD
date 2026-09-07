@@ -257,27 +257,42 @@ Everything else called "render" here tests the cache, the view properties
 or the generated shader source with no GL context at all -- and
 `PublishOnly_tests_run` asserts outright that no driver is mapped.
 
-Three run in a default `ctest`:
+Four run in a default `ctest`:
 
 | Test | What | Cost |
 |---|---|---|
 | `RenderSmokeVg_tests_run` | `fcvgsmoke`, bgfx headless offscreen, ink checked per primitive | 0.3 s |
 | `RenderSmokePage2D_tests_run` | the retained `Page2D` scenario in the same binary | 0.3 s |
-| `RenderGoldenRaster_tests_run` | a staged scene under xvfb vs blessed reference images, per pipeline stage | 28 s |
+| `RenderGoldenRaster_tests_run` | a staged scene under xvfb vs blessed reference images, per pipeline stage | 28 s (macOS 20 s) |
+| `RenderGoldenRasterFlat_tests_run` | the same scene and stages with the environment lighting the model but not drawn | 28 s (macOS 19 s) |
+
+A golden belongs to one backend, so the macOS leg runs against the
+`-metal` sets (`RenderDebug.md` 5.2b) and registers nothing where one
+has not been blessed.
 
 The path-traced and real-document ones are opt-in, because they are
 slower and because a label alone cannot hold them back:
 
     cmake -DFC_RENDER_HEAVY_TESTS=ON <build> && ctest -L render-heavy
 
+The chess pair no longer needs Cycles: it registers with the traced leg
+where `BUILD_CYCLES` is on and without it where the golden set holds no
+traced frame, which is what makes the raster chess leg -- the only test
+that exercises MaterialX, map binding and the texture path -- gate on a
+box that cannot path trace. Verified on macOS 12 / Metal 2026-09-07:
+`RenderGoldenChess_tests_run` 37.5 s, `RenderGoldenChessFlat_tests_run`
+35.4 s, both against the freshly blessed `chess-metal` sets.
+
 The reference images live in a separate repository
 (`realthunder/fcad-render-refs`), the submodule at `tests/render/refs`
 (`git submodule update --init tests/render/refs`); when it is not
 checked out the golden tests are **skipped, not failed**. Full design, the reblessing procedure and the
-traps: `docs/RenderDebug.md` section 5.2 -- and 5.2a for the defect the
+traps: `docs/RenderDebug.md` section 5.2 -- 5.2a for the defect the
 chess set found on its first day (a capture taken while a material was
 still compiling), which is why a frame dump now waits for a complete
-frame.
+frame, and 5.2c for the three portability faults its first Metal run
+found, one of which put a scene with no environment in it through the
+harness without a word.
 
 #### The vg smokes on Windows
 
