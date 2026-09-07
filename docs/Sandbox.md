@@ -3648,6 +3648,173 @@ Under a day with the gate.  Order: the user's call; it shares its
 mechanism with N3's network rows and closes the one host-execution
 path a guest has, so before N2 is the natural slot.
 
+### 7.15 The status bar and the dock widgets sized: the last wall in `Activated()` **[sized 2026-09-07]**
+
+**Where the two `Activated()`s stop** (7.9): Draft's at
+`init_draft_statusbar.show_draft_statusbar()`, BIM's at
+`BimStatus.setStatusIcons(True)` and then at `BIM_Views` (the
+`RestoreBimViews` default is True, so activation opens the Views
+Manager dock).  Read site by site (`init_draft_statusbar.py`,
+`BimStatus.py`, `bimcommands/BimViews.py`, `grid_observer.py:115`),
+what they ask for, in the order a guest would hit it:
+
+- **`getMainWindow().addStatusBarItem(widget, id=, title=, slot="Right",
+  order=)`** -- and this fork's main window HAS NO SUCH METHOD.
+  `MainWindowPy` exposes eight names (`getWindows` ... `hideHint`) over
+  a shiboken `QMainWindow`, and `MainWindow.cpp` says so at the hint
+  label ("upstream gets that from addStatusBarItem(), which this fork
+  has no equivalent of").  So natively, since the upstream Draft and
+  BIM syncs (`9ea92ae952`, `82a8a4478d`), every Draft activation ends
+  its two 500 ms timers in an `AttributeError` traceback and neither
+  workbench has its status bar widgets.  The guest did not break this;
+  the host API is built first, natively, and the guest op lands on it.
+- **`statusBar().findChild(QToolBar, name)`** -- the caller's own
+  registered items by object name; **`mw.findChild(QToolBar,
+  "Draft Snap")`** -- a HOST tool bar (the workbench's `appendToolbar`
+  built it), an existence check only.
+- **`Gui.UiLoader().createWidget("Gui::ToolBar")`** -- not in `CLASSES`,
+  so `None` today, and `toggleViewAction()` on it is the next error.
+- **`QPushButton.setMenu(menu)`** (raises today, "G3c"), **`QActionGroup`**
+  (absent: `QtGui.QActionGroup(menu)` is an `AttributeError`),
+  `QAction(group)` with the group as parent, `group.triggered(action)`;
+  BIM's `setNudge` walks `action.parent().parent().parent()` (group,
+  menu, button) back to the nudge button.
+- **`Gui.Command.get(name).getAction()[0]`** -- `FreeCADGui.Command` is
+  not in the guest at all (`attr()` does not name it).  Draft's snap
+  widget puts five of the guest's OWN commands' actions on a bar and
+  the rest into the lock button's menu; `grid_observer` writes
+  `setCheckable`/`setChecked` on `Draft_ToggleGrid`'s.  A command's
+  action lives on the host (`Command::getAction()`, an `ActionGroup`
+  for the group commands) and is shared into whatever bar carries it.
+- **`snap_widget.children()[-1]`** -- the `QToolButton` the real bar
+  made for the last action, then `setFixedWidth(40)` and
+  `addAction(...)` (the button's own popup) on it.
+- **`QDockWidget()`** (absent) with `setWidget(form)`, an instance
+  attribute `closeEvent`, `setFloating`, `setGeometry`, `x()`/`y()`/
+  `height()`, `isFloating`, `toggleViewAction()`, `dockLocationChanged`;
+  **`mw.addDockWidget(area, dock)`**, **`mw.tabifyDockWidget(other,
+  dock)`** where `other` is a HOST dock by name, **`mw.findChild(
+  QDockWidget, name)`** for its own dock (`findWidget()`) and, in
+  `ifc_viewproviders`, for the host's "Model" tree.
+- **`vm.tree.state() != vm.tree.State.EditingState`** -- neither the
+  method nor the enum is on the guest's item views.
+- **`QTimer.singleShot(2000, self.update)`** at the end of every
+  `BimViews.update()`: the guest's `singleShot` ignores the delay and
+  `_drain()` runs the queue UNTIL EMPTY ("a callback may queue more")
+  -- so the first update would re-queue itself inside the drain and
+  spin the guest forever.  Draft's 500 ms shows and hides go through
+  the same shim and merely run early.  The one blocking design item.
+- `mw.frameGeometry()`/`mw.rect()` (BimStatus centres the nudge
+  dialog), `QIcon.fromTheme`, `QColor.fromRgbF`, `QBrush`, the tree
+  item's `background`/`font` -- all present or data.
+
+**What is NOT this item, listed as losses**: the IFC widgets
+(`nativeifc.ifc_status` is not in the guest's shim package -- no
+ifcopenshell -- and `BimStatus` already guards the import: no IFC
+lock button, no property editor corner buttons via `findChild(
+QTabWidget, "propertyTab")`); the host's "Model" dock (`tabify` with
+it and `ifc_viewproviders`' lookup answer nothing: a host dock is not
+the guest's); the Views tree's icons (`obj.ViewObject.Icon` is a host
+handle, not a path: the rows come without icons); `BimTutorial`'s dock
+(the same model, not gated).
+
+**The design.**
+
+- **Host, native first: a status bar registry on `MainWindow`.**
+  `addStatusBarItem(QWidget*, id, title, slot, order)`,
+  `removeStatusBarItem(id)`, `statusBarItem(id)`.  Two slots, "Left"
+  (the message band, `insertWidget`) and "Right" (the permanent band,
+  `insertPermanentWidget`); the index is the item's rank by `order`
+  among the registered items of that slot, and the fork's own fixed
+  widgets register through the same call with orders above the
+  workbench band (progress 700, dimensions 710, the two indicators 800
+  and 810, the notification area 900) so "550-699 sits left of them"
+  holds without a second mechanism.  Visibility persists per id
+  (`BaseApp/Preferences/MainWindow/StatusBarItems`, bool `<id>`); the
+  status bar's context menu lists the titled items with check marks.
+  `MainWindowPy` gains `addStatusBarItem(widget, id=, title=, slot=,
+  order=)` (keyword form, as Draft calls it) and `removeStatusBarItem`.
+  This alone repairs native Draft and BIM.
+- **`gui.mainwindow` grows** `addStatusBarItem [model, id, title, slot,
+  order]` (realize the model under the status bar as `addToolBar`
+  realizes under the main window, then register), `removeStatusBarItem
+  [id]`, `hasToolBar [name]` (the host bar existence check -- a bool),
+  `geometry` (the frame rect as data), `addDockWidget [model, area]`,
+  `tabifyDockWidget [model, name]`, `removeDockWidget [model]`.
+- **Wheel, the main window shim**: `statusBar().findChild` and
+  `findChild(QToolBar, name)` over the guest's own registered bars by
+  object name, a host bar answered as a name-only stub (truthy, the
+  corpus tests `is None`), `findChild(QDockWidget, name)` over the
+  guest's own docks only.  `"Gui::ToolBar"` joins `CLASSES` as
+  `QToolBar`.
+- **`FreeCADGui.Command` in the guest**: `Command.get(name)` is a
+  handle by name (no op); `getInfo`, `isActive`, `run` cross (`run` is
+  `gui.cmd.run`); `getAction()` answers a list of `QAction` models
+  carrying a new synced `command` trait (`name`, `index`) that the host
+  realizes by BINDING to the real action (`bindAction(model,
+  cmd->getAction()->action())`, the group's members by index), so
+  `bar.addAction(it)` puts the command's own action on the guest's bar
+  and `setChecked` on it lands on the real one.  The rule: a guest may
+  bind any command's action it may run (the `gui` permission, as
+  `runCommand`), and may WRITE to it -- text, icon, checked, enabled,
+  visible -- only when the command is its own (`guestCommands()`);
+  a write to another's is dropped with a report-view line.  Draft's
+  snap commands are all the guest's.
+- **Models**: `QPushButton.setMenu` / `QToolButton.setMenu` as a synced
+  `menu` ref the host sets on the real button; `QActionGroup` guest-
+  only (members by parent or `addAction`, `exclusive`, `checkedAction`,
+  `triggered(action)` aggregated from the members'); a `QToolBar`'s
+  `widgetForAction(action)` and `children()` answer a lazily made
+  `QToolButton` model the host binds to `tb->widgetForAction(real)`,
+  with `setFixedWidth` and a bar of its own for `addAction`
+  (`QToolButton::addAction`, the popup) and `setDefaultAction`; the
+  item views get `state()` (`NoState`) and the `State` enum; a
+  `QDockWidget` model (`widget`, `windowTitle`, `floating`, `geometry`
+  and `area` written back by the host, `visible`; events `close` --
+  dispatched to `self.closeEvent(ev)` so BimViews' instance attribute
+  is what runs -- `dockLocationChanged`, `visibilityChanged`;
+  `toggleViewAction`).  On the host a `Fw::QDockWidget` whose Qt view
+  goes through `DockWindowManager::addDockWindow(name, content, area)`,
+  so a guest dock is a first-class panel: in the Panels menu, in the
+  saved layout, overlay-capable.
+- **Timers become the host's when they have a delay.**  `QTimer.
+  singleShot(msec, cb)` with `msec <= 0` stays the drain queue (todo's
+  order contract: a 0 queued during a drain runs in that drain);
+  `msec > 0`, and `QTimer.start()`, register a host timer (`gui.timer
+  [start, id, msec, repeat]` / `[stop, id]`) that fires ONE hook into
+  the guest (`fire(id)` on a per-boot dispatcher proxy, then the
+  drain), keyed by guest so a reset drops them.  Where the op is
+  refused (a document principal: `gui` DENY) the shim falls back to
+  the queue but defers a delayed callback to the NEXT drain, so a
+  self-re-arming update cannot spin.  Cost: one proxy call per firing;
+  BimViews' poll is one every 2 s while the dock is visible, the same
+  as native.
+
+**Gate** -- three cases in `SandboxInitGui` (the process whose startup
+ran the runner, `FCX_INITGUI_IN_GUEST=1`), plus one native:
+`test_status_bar_registry` (host Python: two items ordered by `order`,
+a hidden id persisted and restored, the context menu lists the titles;
+this is the fork repair); `test_draft_status_bar` (after activation and
+the timers, the HOST status bar holds `draft_scale_widget` and
+`draft_snap_widget`, the snap bar's first action IS
+`Gui.Command.get("Draft_ToggleGrid").getAction()[0]`, the lock button's
+menu carries the other snap commands, triggering the group's "1:50"
+action from the host sets `DefaultAnnoScaleMultiplier` and the label;
+deactivation hides both); `test_bim_status_bar_and_views` (the
+`BIMStatusWidget` with its two actions and the nudge button's menu,
+the "BIM Views Manager" dock registered with the dock manager and
+shown, its tree listing a Building and two levels after one host
+timer tick, the status bar's views button toggling it, deactivation
+hiding it and storing `RestoreBimViews`); `test_guest_timer` in
+`SandboxWidgets` (a session guest's `singleShot(50, cb)` fires with no
+traffic, a repeating timer stops on `stop()`, a document guest's
+delayed callback waits for the next drain).
+
+Budget: about 600 lines of host C++ (the registry 200, the dock model
+and view 200, the command binding and the button bar 120, timers 80),
+350 in the wheel and shims, 250 of gate.  Order settled 2026-09-07:
+this, then G4, then F1 (sec 11).
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -3953,8 +4120,13 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    the `gui.doCommand` enum value, one host op for the macro and audit
    lines; Draft's commit through `todo.doTasks` and BIM's `Arch_Site`
    run end to end from the guest; gate `SandboxSessionDoc` (9 cases).
-   NEXT (ruled 2026-09-07): the status bar / dock widgets, then G4
-   (its scope put to the user first), then F1.
+   NEXT (ruled 2026-09-07): the status bar / dock widgets (SIZED
+   2026-09-07, 7.15: a native status bar registry on `MainWindow` --
+   the fork has no `addStatusBarItem`, so Draft's and BIM's status
+   widgets are broken natively too -- `FreeCADGui.Command` in the
+   guest binding a command's real action, `QDockWidget` through the
+   dock manager, host timers for delayed callbacks), then G4 (its
+   scope put to the user first), then F1.
    **F1 -- the file and code chokepoints** (7.14, SIZED 2026-09-07, not
    built): `fs.read` / `fs.write` / `host.exec` checked inside the
    core's file and `runFile` primitives under the guest's scope, the
@@ -4171,7 +4343,10 @@ sockets, any network for the reference image, a webview escape hatch.
 - **Widgets in the status bar and dock widgets** (`statusBar().
   findChild`, `addStatusBarItem`, `BimStatus`, `init_draft_statusbar`,
   `QDockWidget` for BimViews): not in the widget layer; Draft's
-  `Activated()` and BIM's stop there (7.9).  G3d or G7 material.
+  `Activated()` and BIM's stop there (7.9).  SIZED 2026-09-07 (7.15):
+  the host has no `addStatusBarItem` either, so the native workbenches
+  are broken there too; the registry, the command action binding, the
+  dock model and host timers are the build.
 - **`Gui.runCommand` from a guest runs any host command under `gui`**
   (7.14, sized): `Std_RecentMacros`, `Std_RecentFiles` and
   `Std_DlgMacroExecuteDirect` run a file or open one with no picker,
