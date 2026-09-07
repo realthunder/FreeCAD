@@ -122,17 +122,17 @@ endif()
 # frame is the model and the diff is about what is under test. The
 # background is drawn by the engine too, so neither case replaces the
 # other.
-# A golden is a picture of ONE backend, and the blessed sets are
-# OpenGL. Handing them to another backend is not a stricter test, it is
-# a different one: measured here on 2026-09-07, a Metal capture restaged
-# from refs/raster -- identical camera, identical 858x608 viewport --
-# still came out vertically MIRRORED, with the far half of the scene
-# clipped away behind the flip, so every stage diverged (depth 24.8% of
-# pixels, beauty 89.9%). Real defects, and not ones a diff against the
-# wrong reference can describe (RenderDebug.md 5.2b has the
-# measurements). So a
-# backend that is not the blessed one looks for its own set beside it
-# and registers nothing at all until that set is blessed.
+# A golden is a picture of ONE backend, so a backend that is not the
+# blessed one looks for its own set beside it (refs/<set>-metal) and
+# registers nothing at all until that set is blessed. Handing the
+# OpenGL set to another backend is not a stricter test, it is a
+# different one -- and while the first such run did find three real
+# defects (a mirrored frame, a clipped far half, and every orthographic
+# camera read as perspective, all fixed 2026-09-07, RenderDebug.md
+# 5.2b), a diff against the wrong reference is not what describes them.
+# Even fixed, the Metal frame differs from the OpenGL golden on 0.35% of
+# the beauty pixels and 0.12% of the AO -- small, real, and the
+# residual a per-backend set exists to hold.
 set(_fc_refs_variant "")
 if(APPLE)
     set(_fc_refs_variant "-metal")

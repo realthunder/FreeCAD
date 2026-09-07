@@ -1044,6 +1044,15 @@ Requiring it everywhere is why the golden tests on macOS did not merely
 skip: they were never registered, so a `ctest` run there was short two
 tests and said nothing about it.
 
+**`refs/raster-metal` and `refs/raster-flat-metal` are blessed** (2026-09-07,
+macOS 12 / Metal, Intel iGPU `0x8086 0x1622`), so
+`RenderGoldenRaster_tests_run` and `RenderGoldenRasterFlat_tests_run`
+now register and pass on the macOS leg -- 21.4 s each. Both were
+restaged from their OpenGL siblings, so the camera is byte-identical to
+the one those were blessed on, and two such captures compare byte-exact
+at `--tol 0`. The chess and Cycles sets have no Metal counterpart yet
+and stay unregistered here.
+
 **A golden is a picture of one backend, and the blessed sets are
 OpenGL.** So `fc_add_golden_test` looks for `refs/<set>-metal` on Apple
 and registers nothing until that set exists. Handing the OpenGL set to
