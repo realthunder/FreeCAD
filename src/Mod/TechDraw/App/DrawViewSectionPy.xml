@@ -28,6 +28,13 @@ its faces carry (SectionPlane, SectionBack and the four sides).  Rebuilt on
 demand from the current section plane and the size of the last cut input.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getCutFaces">
+      <Documentation>
+        <UserDocu>getCutFaces() - the faces the cut opened, as a compound in the
+view coordinates the cut surface is drawn in.  Empty until the cut has run, or
+until a stored projection has been read back (docs/TechDrawStoredGeometry.md).</UserDocu>
+      </Documentation>
+    </Methode>
     <CustomAttributes />
   </PythonExport>
 </GenerateModel>

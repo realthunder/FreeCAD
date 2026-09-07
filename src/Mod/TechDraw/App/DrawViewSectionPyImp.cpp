@@ -61,6 +61,16 @@ PyObject* DrawViewSectionPy::getCuttingTool(PyObject* args)
     return Py::new_reference_to(Part::shape2pyshape(dvs->getCuttingToolAsBuilt()));
 }
 
+PyObject* DrawViewSectionPy::getCutFaces(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+
+    DrawViewSection* dvs = getDrawViewSectionPtr();
+    return Py::new_reference_to(Part::shape2pyshape(dvs->getSectionTopoDSFaces()));
+}
+
 PyObject* DrawViewSectionPy::getCustomAttributes(const char* /*attr*/) const
 {
     return nullptr;

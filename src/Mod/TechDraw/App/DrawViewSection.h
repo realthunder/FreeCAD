@@ -127,6 +127,10 @@ public:
     void sectionExec(Part::TopoShape& s);
     virtual void makeSectionCut(const Part::TopoShape& baseShape);
     void postHlrTasks() override;
+    //! the cut faces travel with the projection: they are what the cut
+    //! surface is drawn from, and making them again means cutting again
+    void captureGeometry() override;
+    bool restoreStoredGeometry() override;
     virtual void postSectionCutTasks();
     bool waitingForCut(void) const { return m_waitingForCut; }
     bool waitingForResult() const override;
@@ -157,6 +161,12 @@ public:
     //section face related methods
     std::vector<TechDraw::FacePtr> getTDFaceGeometry() { return m_tdSectionFaces; }
     TopoDS_Face getSectionTopoDSFace(int i);
+    //! all of them, as the compound the cut surface is drawn from.  Empty
+    //! until a cut has run or a stored one has been read back.
+    TopoDS_Compound getSectionTopoDSFaces() const
+    {
+        return m_sectionTopoDSFaces;
+    }
     virtual TopoDS_Compound alignSectionFaces(TopoDS_Shape faceIntersections);
     TopoDS_Compound mapToPage(TopoDS_Shape& shapeToAlign);
     virtual std::vector<TechDraw::FacePtr> makeTDSectionFaces(TopoDS_Compound topoDSFaces);

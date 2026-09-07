@@ -1478,6 +1478,33 @@ void DrawViewSection::unsetupObject()
     DrawViewPart::unsetupObject();
 }
 
+//! keep the cut faces beside the projection they belong to
+void DrawViewSection::captureGeometry()
+{
+    if (!m_geometryObject || !Preferences::storeProjectedGeometry()) {
+        ProjectedGeometry.clear();
+        return;
+    }
+    ProjectedGeometry.capture(*m_geometryObject, m_saveCentroid, m_sectionTopoDSFaces);
+}
+
+//! put the projection and the cut faces back.  The TechDraw faces the cut
+//! surface is drawn from are made from the stored compound the same way the
+//! cut made them, which costs a face walk instead of a boolean.
+bool DrawViewSection::restoreStoredGeometry()
+{
+    if (!DrawViewPart::restoreStoredGeometry()) {
+        return false;
+    }
+
+    const TopoDS_Shape& cutFaces = ProjectedGeometry.getCutFaces();
+    if (!cutFaces.IsNull() && cutFaces.ShapeType() == TopAbs_COMPOUND) {
+        m_sectionTopoDSFaces = TopoDS::Compound(cutFaces);
+        m_tdSectionFaces = makeTDSectionFaces(m_sectionTopoDSFaces);
+    }
+    return true;
+}
+
 void DrawViewSection::onDocumentRestored()
 {
     makeLineSets();
