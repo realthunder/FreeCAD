@@ -201,6 +201,26 @@ run again after the open and the page fills in half a second later --
 for a model that takes 4.7 s to build from scratch.  The file cost is
 about 35 compressed bytes per stored element.
 
+**And it draws the same drawing.**  The counts and the names are one
+thing; what reaches the paper is another.  The same page, exported with
+`TechDrawGui.exportPageAsSvg` straight off the stored projection and
+again after being forced to project the whole page: **the same 290313
+bytes, the same 705 path elements, the same path data**.  The two files
+are not byte-identical -- the vertex dots come out in a different order
+within the scene, because a rebuild recreates those items -- and that
+raised the obvious question, which was then asked of the geometry
+instead of the paper:
+
+    from the store           256 verts, 88 visible edges
+    projected again          256 verts, 88 visible edges
+    view    same vertex order = True, same edge order = True
+    section same vertex order = True
+    projection vs projection: same order = True
+
+So the numbering a stored projection comes back with is the numbering a
+fresh projection of the same shape produces, element for element; the
+SVG difference is the exporter's scene order and nothing else.
+
 ## 5. What this does not do
 
 - **The 3D shapes are still transient.**  A section's `m_cutShape`,
