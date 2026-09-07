@@ -1751,6 +1751,78 @@ the device argument is honoured rather than quietly falling back to CPU. The
 matching file sizes (158231/158231/158230/158231) are just PNG compressing four
 near-identical images of one scene, not evidence of a fallback.
 
+#### The second box (`D:\works\sw`): an older driver, and the two things that must match it
+
+Everything above was measured on `D:\Zheng.Lei\sw`. The other Windows box builds
+Cycles too, as of 2026-09-08, and needed no source changes -- but **two versions
+that section pins have to be chosen against the driver, not copied**, and
+getting either wrong fails in a way that does not name the cause.
+
+The hardware differs: an **NVIDIA RTX 2000 Ada** and an Intel iGPU, so CUDA and
+OptiX are in play and **HIP is not** -- there is no AMD adapter for it to
+enumerate, and the whole ROCm half of this section is inapplicable. The driver
+is **566.24 (2024-11-22)**, considerably older than the one above.
+
+**1. The OptiX headers must match the driver's `nvoptix.dll`, not the newest
+release.** The runtime always comes out of the driver store, so
+`CYCLES_RUNTIME_OPTIX_ROOT_DIR` cannot change it -- both variables only ever
+point at headers. Here the driver ships OptiX **8.1.0**:
+
+```bat
+powershell -c "(Get-ChildItem C:\Windows\System32\DriverStore\FileRepository -Recurse -Filter nvoptix.dll | Select-Object -First 1).VersionInfo.FileVersion"
+```
+
+Build against the 9.1.0 the recipe above names and `cyclesRenderTest` dies with
+an **access violation** (`0xC0000005`), not with
+`OPTIX_ERROR_UNSUPPORTED_ABI_VERSION` as OptiX's own design intends. Checking
+out `v8.1.0` in `optix-dev` turns the crash into a clean `RuntimeError`. Worth
+knowing generally: an ABI mismatch here presents as "OptiX is broken", not as
+"your driver is too old".
+
+**2. nvcc must emit PTX the driver's OptiX compiler can read.** Cycles compiles
+the OptiX kernel to PTX **at run time** with whatever `CUDA_BIN_PATH` points
+at, and hands it to `optixModuleCreate`. nvcc **12.9** emits `.version 8.8`,
+which needs an r575+ driver; on 566.24 the module is rejected with
+`OPTIX_ERROR_INTERNAL_COMPILER_ERROR`, quoting a `.ptx` path that is perfectly
+valid. So this box pins the runtime toolkit a release back:
+
+```bat
+conda create -p D:\works\sw\fcad\.conda\cuda-126 -c conda-forge ^
+    cuda-nvcc=12.6 cuda-cudart-dev=12.6
+```
+
+Read the ISA off the generated kernel to check -- `.version` in
+`build\win-relwithdebinfo-801\bin\cache\kernels\*.ptx`. **CPU and CUDA are
+insensitive to both of these**; only OptiX is, which is why a build can look
+fine on two devices out of three. Note also that the cached `.ptx` is keyed on
+the kernel source and flags, **not** on the toolkit or header version, so it is
+reused across exactly the changes you are trying to test -- clear
+`bin\cache\kernels` between them or you will measure the old artifact.
+
+Measured 2026-09-08, `cyclesRenderTest` at 640x480 / 64 samples, RTX 2000 Ada +
+i7-13850HX:
+
+| Device | Warm | Cold (first kernel compile) |
+| --- | --- | --- |
+| CPU | 0.6s | -- |
+| CUDA | 0.9s | 1.6s |
+| OptiX | 1.4s | **183.8s** |
+
+Three distinct PNG checksums, so the device argument is honoured rather than
+falling back to CPU. The 183.8s is the only true cold figure here -- the others
+were taken with the kernel cache already populated, which is the easy mistake
+to make when reading these numbers back.
+
+Both wrapper scripts referenced above now exist on this box as well:
+`build-fcad-cycles.cmd` (configure with `BUILD_CYCLES=ON` plus the two OptiX
+paths, then build) and `run-cycles.cmd` (`CUDA_BIN_PATH` and nothing else --
+no ROCm, for the reason given above).
+
+**Not isolated:** both changes were made before OptiX rendered, and the header
+pin alone was only shown to convert the crash into a clean error. Whether 9.1.0
+headers with nvcc 12.6 would also work was not tested. Pinning both to the
+driver is the right practice regardless.
+
 #### The one source fix Windows needed
 
 `BUILD_CYCLES=ON` did not link: `FreeCADRenderer.dll` died with `LNK1104` on a
