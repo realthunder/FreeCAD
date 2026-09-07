@@ -56,6 +56,7 @@ const char *permissionName(Permission perm)
     case Permission::PrefsWrite:    return "prefs.write";
     case Permission::AppWrite:      return "app.write";
     case Permission::Gui:           return "gui";
+    case Permission::GuiDoCommand:  return "gui.doCommand";
     case Permission::HostImport:    return "host.import";
     case Permission::UnsafeGetattr: return "unsafe.getattr";
     case Permission::PkgInstall:    return "pkg.install";
@@ -85,6 +86,7 @@ std::optional<Permission> permissionFromName(const std::string &name, std::strin
         {"prefs.write",    Permission::PrefsWrite},
         {"app.write",      Permission::AppWrite},
         {"gui",            Permission::Gui},
+        {"gui.doCommand",  Permission::GuiDoCommand},
         {"host.import",    Permission::HostImport},
         {"unsafe.getattr", Permission::UnsafeGetattr},
         {"pkg.install",    Permission::PkgInstall},
@@ -126,10 +128,11 @@ std::optional<PrincipalClass> principalClass(const std::string &principal)
 Decision catalogDefault(PrincipalClass pclass, Permission perm)
 {
     // The frozen v1 table. Addons default to ALLOW across the board (they
-    // are trusted at install time); the rows below spell out document and
-    // session.
+    // are trusted at install time) but one row: gui.doCommand is PROMPT
+    // for an addon, persisted per addon (U4, docs/Sandbox.md 7.1); the
+    // rows below spell out document and session.
     if (pclass == PrincipalClass::Addon)
-        return Decision::Allow;
+        return perm == Permission::GuiDoCommand ? Decision::Prompt : Decision::Allow;
     const bool doc = (pclass == PrincipalClass::Document);
     switch (perm) {
     case Permission::DocReadSelf:   return Decision::Allow;
@@ -147,6 +150,10 @@ Decision catalogDefault(PrincipalClass pclass, Permission perm)
     // workbench's, never a document's (S1, 2026-09-07)
     case Permission::AppWrite:      return doc ? Decision::Deny : Decision::Allow;
     case Permission::Gui:           return doc ? Decision::Deny : Decision::Allow;
+    // Gui.doCommand from the guest: the source runs in the caller's own
+    // guest under the caller's principal; a document never runs a
+    // command's script (S2, 2026-09-07)
+    case Permission::GuiDoCommand:  return doc ? Decision::Deny : Decision::Allow;
     case Permission::HostImport:    return Decision::Prompt;
     case Permission::UnsafeGetattr: return doc ? Decision::Deny : Decision::Prompt;
     // an install is always the user's click, whoever asked
@@ -157,13 +164,14 @@ Decision catalogDefault(PrincipalClass pclass, Permission perm)
 
 bool isPromptable(PrincipalClass pclass, Permission perm)
 {
-    // v1 marks three cells not-promptable: gui, prefs.write and app.write
-    // for a document principal. A document has no business driving the
-    // GUI, rewriting the user's preferences or opening and closing the
-    // user's documents, and no prompt should offer to let it.
+    // v1 marks four cells not-promptable: gui, gui.doCommand, prefs.write
+    // and app.write for a document principal. A document has no business
+    // driving the GUI, running a command's script, rewriting the user's
+    // preferences or opening and closing the user's documents, and no
+    // prompt should offer to let it.
     return !(pclass == PrincipalClass::Document
-             && (perm == Permission::Gui || perm == Permission::PrefsWrite
-                 || perm == Permission::AppWrite));
+             && (perm == Permission::Gui || perm == Permission::GuiDoCommand
+                 || perm == Permission::PrefsWrite || perm == Permission::AppWrite));
 }
 
 std::optional<Permission> pseudoPropertyPermission(

@@ -449,6 +449,16 @@ void Runtime::check(Permission perm, const std::string &target)
     throw PermissionNeededException(principal, perm, target, promptable);
 }
 
+void Runtime::auditAllowed(Permission perm, const std::string &target,
+        const std::string &context)
+{
+    if (_ScopeStack.empty())
+        return;  // host code outside any evaluation: not a principal's act
+    std::string principal = currentPrincipal();
+    std::lock_guard<std::recursive_mutex> guard(mutex);
+    audit(principal, perm, target, Decision::Allow, context);
+}
+
 bool Runtime::addPending(const std::string &principal, Permission perm,
         const std::string &target, const std::string &docName,
         const std::string &objName)
@@ -684,6 +694,11 @@ std::vector<std::pair<std::string, std::string>> Runtime::pendingObjects(
 void checkPermission(Permission perm, const std::string &target)
 {
     Runtime::instance().check(perm, target);
+}
+
+void auditAllowed(Permission perm, const std::string &target, const std::string &context)
+{
+    Runtime::instance().auditAllowed(perm, target, context);
 }
 
 // Ring-0 module roots: in-image in the final design, no permission attached

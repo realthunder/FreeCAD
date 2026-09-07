@@ -98,6 +98,7 @@ If the list contains 'Hidden' then the item even doesn't appear in the property 
 name : str
     Property name.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
       <Methode Name="getGroupOfProperty">
       <Documentation>

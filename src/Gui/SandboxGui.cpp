@@ -57,6 +57,7 @@
 #include "Fw/FwQtView.h"
 #include "Fw/FwStore.h"
 #include "Fw/FwWidgets.h"
+#include "Macro.h"
 #include "MainWindow.h"
 #include "Selection/SelectionObserverPython.h"
 #include "TaskView/TaskDialog.h"
@@ -983,16 +984,30 @@ Reply dialogExec(HandleTable& table, const json& a)
 /// `setEdit`, `resetEdit`, `getInEdit`, `activeObject` as calls with
 /// the decoded args, `Modified` as a read; the result by value or as
 /// a handle (a view provider resolves through the view family).
+/// `ActiveView.getActiveObject` / `ActiveView.setActiveObject` reach
+/// the document's active view's ACTIVE-OBJECT REGISTRY (the active
+/// Arch container, part, body, NativeIFC project: what
+/// `Draft.autogroup` asks at the end of every creator's commit, S2)
+/// and nothing else of the view -- the scene is G4's.
 Reply guiDocumentCall(HandleTable& table, const json& a)
 {
     if (!a.is_array() || a.size() != 3 || !a[0].is_string() || !a[1].is_string())
         return replyErr("ProtocolError", "gui.doc: [document, member, args]");
     const std::string& name = a[0].get_ref<const std::string&>();
-    const std::string& member = a[1].get_ref<const std::string&>();
+    std::string member = a[1].get_ref<const std::string&>();
     static const std::set<std::string> calls = {"setEdit", "resetEdit", "getInEdit",
                                                "activeObject"};
     static const std::set<std::string> reads = {"Modified"};
-    if (!calls.count(member) && !reads.count(member))
+    static const std::set<std::string> viewCalls = {"getActiveObject", "setActiveObject"};
+    bool onView = false;
+    if (member.rfind("ActiveView.", 0) == 0) {
+        member = member.substr(11);
+        onView = true;
+        if (!viewCalls.count(member))
+            return replyErr("AttributeError", "Gui.Document.ActiveView." + member
+                                                  + " is not in the sandbox's subset (G4)");
+    }
+    else if (!calls.count(member) && !reads.count(member))
         return replyErr("AttributeError",
                         "Gui.Document." + member + " is not in the sandbox's subset");
     App::Document* appDoc = App::GetApplication().getDocument(name.c_str());
@@ -1004,8 +1019,16 @@ Reply guiDocumentCall(HandleTable& table, const json& a)
     Gui::Document* doc = Application::Instance->getDocument(appDoc);
     if (!doc)
         return replyErr("RuntimeError", "document '" + name + "' has no GUI document");
-    PyObject* py = doc->getPyObject();
-    if (reads.count(member)) {
+    PyObject* py = nullptr;
+    if (onView) {
+        MDIView* view = doc->getActiveView();
+        if (!view)
+            return replyErr("RuntimeError", "document '" + name + "' has no active view");
+        py = view->getPyObject();
+    }
+    else
+        py = doc->getPyObject();
+    if (!onView && reads.count(member)) {
         PyObject* v = PyObject_GetAttrString(py, member.c_str());
         Py_DECREF(py);
         return v ? replyResult(table, v) : replyPyError();
@@ -1030,6 +1053,37 @@ Reply guiDocumentCall(HandleTable& table, const json& a)
     Py_DECREF(fn);
     Py_DECREF(args);
     return r ? replyResult(table, r) : replyPyError();
+}
+
+/// `gui.docommand {src, kind}`: the guest's `Gui.doCommand(src)` /
+/// `doCommandGui(src)` / `addModule(name)` (S2, docs/Sandbox.md 7.13).
+/// The source RUNS IN THE GUEST -- the caller's own `__main__`, under
+/// the caller's principal, never on the host (U4, 7.1); this op is what
+/// `Command::doCommand` does besides executing: the macro recorder line
+/// (kind "gui" a Gui line, "app" and "module" -- `import name` -- an App
+/// line, as `Application::sDoCommand` / `sDoCommandGui` / `addModule`
+/// record it) and the audit line, the source's sha256 as its target.
+/// Under `gui.doCommand`: DENY for a document (not promptable), ALLOW
+/// for the session, PROMPT for an addon.  The check comes first: a
+/// refused call records nothing and the guest runs nothing.
+Reply doCommandRecord(const json& a)
+{
+    if (!a.is_object() || !a.contains("src") || !a["src"].is_string())
+        return replyErr("ProtocolError", "gui.docommand: {src, kind}");
+    const std::string& src = a["src"].get_ref<const std::string&>();
+    const std::string kind = a.value("kind", "app");
+    if (kind != "app" && kind != "gui" && kind != "module")
+        return replyErr("ProtocolError", "gui.docommand: kind is app, gui or module");
+    using App::ExpressionSecurity::Permission;
+    App::ExpressionSecurity::checkPermission(Permission::GuiDoCommand);
+    App::ExpressionSecurity::auditAllowed(
+        Permission::GuiDoCommand, App::ExpressionSecurity::sha256Hex(src.data(), src.size()),
+        kind + ":" + std::to_string(src.size()));
+    Command::LogDisabler d1;
+    SelectionLogDisabler d2;
+    Application::Instance->macroManager()->addLine(
+        kind == "gui" ? MacroManager::Gui : MacroManager::App, src.c_str());
+    return replyOk(nullptr);
 }
 
 /// `gui.control.close` / `.active` / `.clear_watcher` / `.query name`.
@@ -1561,12 +1615,16 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
         PyObject* v = PyObject_CallFunction(PyDict_GetItemString(ns, "user_input"), nullptr);
         return v ? replyResult(table, v) : replyPyError();
     }
-    // the catalog's `gui`: DENY for a document (not promptable), ALLOW
-    // for the session and addons
-    App::ExpressionSecurity::checkPermission(App::ExpressionSecurity::Permission::Gui);
     auto a = req.find("a");
     const json none;
     const json& arg = a != req.end() ? *a : none;
+    // its own row, not `gui`: an addon holds `gui` and is PROMPTED for
+    // this one (S2, docs/Sandbox.md 7.13)
+    if (op == "gui.docommand")
+        return doCommandRecord(arg);
+    // the catalog's `gui`: DENY for a document (not promptable), ALLOW
+    // for the session and addons
+    App::ExpressionSecurity::checkPermission(App::ExpressionSecurity::Permission::Gui);
     if (op == "gui.cmd.add")
         return addCommand(table, arg);
     if (op == "gui.cmd.run")

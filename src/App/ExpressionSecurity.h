@@ -65,6 +65,13 @@ enum class Permission {
                     // ALLOW for the session and addons (S1, docs/Sandbox.md
                     // 7.13, ruling 2026-09-07)
     Gui,            // gui
+    GuiDoCommand,   // gui.doCommand -- Gui.doCommand / addModule from the
+                    // guest: the source runs in the CALLER's guest, never
+                    // on the host; the host records the macro line and
+                    // an audit line carrying the source's sha256 (S2,
+                    // docs/Sandbox.md 7.13).  DENY for a document, not
+                    // promptable; ALLOW session; PROMPT addon (the one
+                    // permission an addon does not hold by default)
     HostImport,     // host.import:<module>, the module is the target
     UnsafeGetattr,  // unsafe.getattr
     PkgInstall,     // pkg.install:<package> -- an ACTION, not a grant: the

@@ -92,6 +92,7 @@ public:
 };
 
 inline void checkPermission(Permission, const std::string & = "*") {}
+inline void auditAllowed(Permission, const std::string &, const std::string & = std::string()) {}
 inline void checkGetattr(PyObject *, const char *, PyObject *) {}
 inline void checkModuleImport(const std::string &) {}
 inline void checkCallablePermission(const std::string &, PyObject *) {}
@@ -269,6 +270,15 @@ public:
     /// The principal of the CURRENT scope (empty when none active).
     std::string currentPrincipal();
 
+    /// One audit line for an ALLOWED action the current principal took --
+    /// check() logs denials and prompts only, and a permission whose
+    /// design asks for a trail of what was let through (gui.doCommand:
+    /// the source's sha256 as the target, its length as the context;
+    /// docs/Sandbox.md 7.1 U4) records it here.  Host code outside any
+    /// scope is not logged.  Deduped like every other line.
+    void auditAllowed(Permission perm, const std::string &target,
+            const std::string &context = std::string());
+
     // --- configuration ---
 
     /// BaseApp/Preferences/Expression/Security:Enforce (default true).
@@ -316,6 +326,11 @@ private:
 /// Runtime::instance().check(...): throws PermissionNeededException unless
 /// the current principal may perform perm on target.
 AppExport void checkPermission(Permission perm, const std::string &target = "*");
+
+/// Runtime::instance().auditAllowed(...): the audit line of an allowed
+/// action (no check, no throw).
+AppExport void auditAllowed(Permission perm, const std::string &target,
+        const std::string &context = std::string());
 
 /** The C7 gate (docs/ExpressionSandbox.md sec 7.1). Classifies a simple
  * attribute read during identifier drill-down: reads on FreeCAD-bound

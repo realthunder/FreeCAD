@@ -33,6 +33,7 @@ ro : bool
 hd : bool
     Hidden property.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="removeProperty">
             <Documentation>
@@ -44,6 +45,7 @@ Only user-defined properties can be removed, not built-in ones.
 name : str
     Property name.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="supportedProperties">
             <Documentation>
@@ -206,6 +208,7 @@ mode : str
 
 Show a list of all display modes.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="toString">
             <Documentation>

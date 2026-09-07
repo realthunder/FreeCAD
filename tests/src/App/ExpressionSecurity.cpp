@@ -38,7 +38,7 @@ TEST(ExpressionSecurity, permissionNames)
     for (Permission perm : {Permission::DocReadSelf, Permission::DocWriteSelf,
             Permission::DocForeign, Permission::GeomCall, Permission::AppQuery,
             Permission::PrefsRead, Permission::PrefsWrite, Permission::AppWrite, Permission::Gui,
-            Permission::HostImport, Permission::UnsafeGetattr}) {
+            Permission::GuiDoCommand, Permission::HostImport, Permission::UnsafeGetattr}) {
         auto parsed = permissionFromName(permissionName(perm));
         ASSERT_TRUE(parsed.has_value()) << permissionName(perm);
         EXPECT_EQ(*parsed, perm);
@@ -88,6 +88,7 @@ TEST(ExpressionSecurity, catalogDefaults)
         {Permission::PrefsWrite,    Decision::Deny,   Decision::Allow},
         {Permission::AppWrite,      Decision::Deny,   Decision::Allow},
         {Permission::Gui,           Decision::Deny,   Decision::Allow},
+        {Permission::GuiDoCommand,  Decision::Deny,   Decision::Allow},
         {Permission::HostImport,    Decision::Prompt, Decision::Prompt},
         {Permission::UnsafeGetattr, Decision::Deny,   Decision::Prompt},
     };
@@ -96,7 +97,10 @@ TEST(ExpressionSecurity, catalogDefaults)
             << permissionName(row.perm);
         EXPECT_EQ(catalogDefault(PrincipalClass::Session, row.perm), row.session)
             << permissionName(row.perm);
-        EXPECT_EQ(catalogDefault(PrincipalClass::Addon, row.perm), Decision::Allow)
+        // an addon holds everything at install time but gui.doCommand,
+        // which is PROMPT persisted per addon (S2, docs/Sandbox.md 7.13)
+        EXPECT_EQ(catalogDefault(PrincipalClass::Addon, row.perm),
+                  row.perm == Permission::GuiDoCommand ? Decision::Prompt : Decision::Allow)
             << permissionName(row.perm);
     }
 
@@ -105,6 +109,8 @@ TEST(ExpressionSecurity, catalogDefaults)
     EXPECT_FALSE(isPromptable(PrincipalClass::Document, Permission::Gui));
     EXPECT_FALSE(isPromptable(PrincipalClass::Document, Permission::PrefsWrite));
     EXPECT_FALSE(isPromptable(PrincipalClass::Document, Permission::AppWrite));
+    EXPECT_FALSE(isPromptable(PrincipalClass::Document, Permission::GuiDoCommand));
+    EXPECT_TRUE(isPromptable(PrincipalClass::Addon, Permission::GuiDoCommand));
     EXPECT_TRUE(isPromptable(PrincipalClass::Session, Permission::AppWrite));
     EXPECT_TRUE(isPromptable(PrincipalClass::Session, Permission::Gui));
     EXPECT_TRUE(isPromptable(PrincipalClass::Document, Permission::UnsafeGetattr));

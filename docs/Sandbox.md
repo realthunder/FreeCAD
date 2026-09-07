@@ -40,7 +40,7 @@ user decision, quoted where the wording matters.
     forms: dialogs, item views, ...  built       G3b: exec_(), the tree/list/table family as rows, containers, the file chooser; the 40-file harness (7.11)
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
-    the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; gate SandboxSessionDoc (7.13); S2 doCommand in the guest next
+    the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -167,7 +167,11 @@ across the board.
     host.import:<m>   PROMPT     PROMPT    ALLOW   per module
     unsafe.getattr    DENY       PROMPT    ALLOW   host-side Python attribute walks
     pkg.install:<p>   PROMPT     PROMPT    PROMPT  an ACTION, never a grant (sec 5.5)
-    gui.doCommand     DENY       ALLOW     PROMPT  designed (sec 7), not in the enum yet
+    gui.doCommand     DENY (np)  ALLOW     PROMPT  Gui.doCommand / doCommandGui / addModule from
+                                                   the guest: the source runs IN the guest, the
+                                                   host records the macro line and an audit line
+                                                   (the source's sha256); the one row an addon
+                                                   is prompted for; built 2026-09-07 (7.13, S2)
     app.write         DENY (np)  ALLOW     ALLOW   newDocument/closeDocument/setActiveDocument
                                                    (FcxWire app.new_doc/close_doc/set_active_doc);
                                                    ruled and built 2026-09-07 (7.13, S1)
@@ -3118,7 +3122,7 @@ its name edit, not `selectFile`; `getCompleteSelection`,
 `getPickedList` and the preselection answer SelectionObjects, as the
 host does, wrapped on the guest side by shape.
 
-### 7.13 The session document sized: `FreeCAD.ActiveDocument` for a command **[sized and RULED 2026-09-07; S1 BUILT 2026-09-07]**
+### 7.13 The session document sized: `FreeCAD.ActiveDocument` for a command **[sized and RULED 2026-09-07; S1 and S2 BUILT 2026-09-07]**
 
 The question, asked after G3d ("next session size it first"): a guest
 command can read the selection now, but its `Activated()` runs as the
@@ -3429,6 +3433,79 @@ the ruling, below).  What landed, and where it departs from the design above:
   view-provider Proxy class in the guest is G4's (7.9, BuildingPart's
   losses).
 
+**S2 BUILT 2026-09-07.**  Gate `SandboxSessionDoc` 9/9 (two cases
+added); the full GUI gate 28 in the default process + the 4 InitGui
+cases in theirs; Expression gtests 104 + 1 skipped.  What landed, and
+where it departs from the sizing above:
+
+- **The permission** is in the enum (`Permission::GuiDoCommand`,
+  `gui.doCommand`): DENY and not promptable for a document, ALLOW
+  session, PROMPT addon -- the one row `catalogDefault` does not
+  answer ALLOW for an addon.  `checkPermission` logs denials and
+  prompts only, so the ALLOW trail U4 asked for is a new public
+  `Runtime::auditAllowed(perm, target, context)` (`auditAllowed` at
+  the chokepoint surface): one line per unique (principal, sha256,
+  context) per process, like every other line.
+- **The op carries the source**, not `{sha256, len}` as sized: the
+  macro recorder needs the text (`MacroManager::addLine`, the console
+  echo under `ScriptToPyConsole`), so `gui.docommand {src, kind}` with
+  kind `app` | `gui` | `module` (`import name` for `addModule`, an App
+  line as `Command::addModule` records it); the host hashes it for the
+  audit target and puts `kind:len` in the context.  The source is
+  never executed on the host: `doCommandRecord` in `SandboxGui.cpp`
+  checks, audits and records, then replies; the wheel execs.  The
+  check is the op's first act, so a refusal records nothing and the
+  guest runs nothing.  The op is dispatched BEFORE the `gui` check --
+  its own row, not `gui`'s (an addon holds `gui` and is prompted for
+  this one).
+- **The wheel** (`freecad/widgets/gui.py`): `doCommand`,
+  `doCommandGui`, `addModule` -- the op, then `exec` in the guest's
+  own `__main__` (`sys.modules["__main__"].__dict__`, with `FreeCAD`,
+  `App`, `FreeCADGui`, `Gui` bound on first use as the host's console
+  has them); `addModule` once per module name per guest.  Returns
+  None; a SyntaxError or the source's own exception propagates, as
+  `PyRun_String` does natively.  No image rebuild for these (the
+  prelude delegates unknown `FreeCADGui` names to the wheel).
+- **The commit runs in the same proxy call**, as sized: `finish()`
+  queues `delayCommit` / `delayAfter` on the shim's timer queue and
+  the dispatcher drains it when `Activated` returns -- the audit
+  trail of a `Draft_Upgrade` reads `import Draft`, the
+  `_objs_ = Draft.upgrade(...)` line, then the recompute line.
+- **Three facade gaps the corpus hit**, each a `call` annotation and
+  a guest image rebuild: `PropertyContainer.getEditorMode` (Draft's
+  `format_object`, the line after `setEditorMode` which was declared)
+  and `ViewProvider.listDisplayModes` (the same function), and
+  `ViewProvider.addProperty` / `removeProperty` (`_ViewProviderSite.
+  setProperties` in the guest; the bridge's view family already gated
+  both, only the XML lacked the tier).
+- **`Gui.ActiveDocument.ActiveView`** exists in the guest now, as
+  the active-object registry only: `getActiveObject(name[, resolve])`
+  and `setActiveObject(name, obj[, subname])` through the same
+  `gui.doc` op (`ActiveView.<member>`, the document's active view's
+  `MDIViewPy`).  `Draft.autogroup` asks it at the end of EVERY
+  creator's commit (`getActiveObject("NativeIFC")`, then `"Arch"`,
+  then `"part"`), so without it every Draft and BIM creator's commit
+  raised after making its object and left the transaction open.  Any
+  other view member raises an AttributeError naming G4;
+  `hasattr(view, "getSceneGraph")` stays False, so the corpus's
+  3D-view tests keep answering "no view".
+- **The main window shim's MDI area** answers `findChildren` with an
+  empty list: the snapper's `off()` (which `Modifier.finish` calls,
+  `Gui.Snapper` existing once `gui_snapper` is imported) walks the
+  MDI area's children for a QuarterWidget to set a cursor on.
+- **A loss to list**: the Site's view provider is built in the guest
+  (`_initializeArchObject` constructs it there), and its `attach`,
+  `onChanged` and `updateData` reach `vobj.Annotation`, `RootNode`
+  and `SwitchNode` -- Coin nodes, G4's mirror -- so the host prints
+  one AttributeError per hook call (four on a `makeSite`); the object,
+  the transaction and the recompute are right.  The gate stubs
+  `IsActive` for both commands (Draft's `Modifier.IsActive` and BIM's
+  ask for the 3D view).
+- **A gate fact**: a package's first command module imports them all
+  (`draftguitools.gui_heal` brings `gui_upgrade` with it), so a later
+  loader that hooks `addCommand` around the import records nothing
+  unless it `importlib.reload`s the module.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -3558,13 +3635,17 @@ Non-ASCII object names occur in real files.  Rig:
                                                           proxy, the four stock dialogs
                                                           driven from a host timer (7.11);
                                                           the same gate script
-    src/Mod/Test/SandboxSessionDoc.py                7    S1: the session document (7.13):
+    src/Mod/Test/SandboxSessionDoc.py                9    S1, S2: the session document (7.13):
                                                           a guest command's ActiveDocument,
                                                           writes, a kept handle, two
                                                           documents, the document-principal
                                                           regression, save/saveAs, Draft_Heal
                                                           and BIM_Trash/EmptyTrash from the
-                                                          guest; the same gate script
+                                                          guest; Gui.doCommand / addModule in
+                                                          the guest (the audit and macro lines,
+                                                          a document refused), Draft_Upgrade's
+                                                          commit and Arch_Site through
+                                                          doCommand; the same gate script
     src/Mod/Test/SandboxDraftGui.py                  3    G3c: Draft's DraftGui.py in the
                                                           guest -- the tray tool bar, the
                                                           panel built in code, a point
@@ -3725,10 +3806,12 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    `Gui.ActiveDocument` are the host's live one; `listDocuments` /
    `getDocument` under `app.query`, `newDocument` / `closeDocument` /
    `setActiveDocument` under the new `app.write`; `save` declared,
-   `saveAs` on a picker-blessed path; gate `SandboxSessionDoc` (7
-   cases).  **S2 is NEXT TO BUILD**: `Gui.doCommand` / `addModule` in
-   the guest under the `gui.doCommand` enum value (sized in 7.13).
-   Both come before the status bar / dock widgets and G4.
+   `saveAs` on a picker-blessed path.  **S2 BUILT 2026-09-07** (7.13):
+   `Gui.doCommand` / `doCommandGui` / `addModule` in the guest under
+   the `gui.doCommand` enum value, one host op for the macro and audit
+   lines; Draft's commit through `todo.doTasks` and BIM's `Arch_Site`
+   run end to end from the guest; gate `SandboxSessionDoc` (9 cases).
+   NEXT: the status bar / dock widgets, then G4 (ask first).
    H0 (BUILT 2026-09-06) and H1 (7.12) come before G3b so G3b's views
    are written once, in C++; H2 and H3, the native ports, interleave
    with G3b-G3d as the class set grows.
@@ -3938,11 +4021,16 @@ sockets, any network for the reference image, a webview escape hatch.
   findChild`, `addStatusBarItem`, `BimStatus`, `init_draft_statusbar`,
   `QDockWidget` for BimViews): not in the widget layer; Draft's
   `Activated()` and BIM's stop there (7.9).  G3d or G7 material.
-- **`Gui.doCommand` is not in the guest** (7.13, S2, sized): every
-  Draft creator commits through it; built after S1 on its own go.
-  (The session document itself -- `FreeCAD.ActiveDocument` for a
-  command, document writes, a handle kept across activations -- is
-  S1, BUILT 2026-09-07.)
+- **A guest view provider's scene is G4's** (7.13, S2 built note):
+  `Arch.makeSite()` from the guest builds `_ViewProviderSite` in the
+  guest, whose `attach`/`onChanged`/`updateData` reach `Annotation`,
+  `RootNode` and `SwitchNode` -- Coin nodes, the mirror -- and print
+  an AttributeError each from the host's hook call (the object and
+  the document are right; the terrain switches are not built).
+  `Gui.ActiveDocument.ActiveView` in the guest is the active-object
+  REGISTRY only (`getActiveObject`/`setActiveObject`); every other
+  view member is an AttributeError naming G4.  (`Gui.doCommand`
+  itself, S2, is BUILT 2026-09-07; the session document is S1.)
 
 - Document OPEN imports, before any expression runs.
   `PropertyPythonObject::Restore`'s `PyImport_ImportModule` on a

@@ -2,7 +2,9 @@
 """What `FreeCADGui` carries for the forms in the sandbox guest:
 `Control` (the task panel), `UiLoader` and `PySideUic` (the .ui loader
 and `createWidget`), `getMainWindow()` as a shim, `runCommand`,
-`Selection` (the host's, one op per call, observers as guest proxies).
+`Selection` (the host's, one op per call, observers as guest proxies),
+`ActiveDocument` / `getDocument` (S1) and `doCommand` / `addModule`
+(S2: the source runs here, the host records the macro and audit lines).
 Reached through the guest FreeCADGui module's `__getattr__` (`attr`
 below), so nothing here loads before a form is made; the models load
 on first use (docs/Sandbox.md 7.11)."""
@@ -13,7 +15,7 @@ def attr(name):
     forms' names, else the AttributeError `hasattr` expects."""
     if name in ("Control", "PySideUic", "UiLoader", "getMainWindow", "runCommand",
                 "InputHint", "HintManager", "getIcon", "_run_initgui", "activeDocument",
-                "getDocument"):
+                "getDocument", "doCommand", "doCommandGui", "addModule"):
         return globals()[name]
     if name == "ActiveDocument":
         return active_document()
@@ -175,6 +177,66 @@ def runCommand(name, index=0):
     import _fcx
 
     _fcx.op("gui.cmd.run", 0, [str(name), int(index)])
+
+
+# ---- Gui.doCommand in the guest (docs/Sandbox.md 7.13, S2) ----
+
+_MODULES = set()
+
+
+def _main_dict():
+    """The guest's `__main__` namespace, the console's natively: where
+    `doCommand` runs its source and `addModule` imports.  `FreeCAD`,
+    `App`, `FreeCADGui` and `Gui` are bound there the first time, as the
+    host's console has them."""
+    import sys
+
+    d = sys.modules["__main__"].__dict__
+    if "FreeCAD" not in d:
+        import FreeCAD
+        import FreeCADGui
+
+        d.setdefault("FreeCAD", FreeCAD)
+        d.setdefault("App", FreeCAD)
+        d.setdefault("FreeCADGui", FreeCADGui)
+        d.setdefault("Gui", FreeCADGui)
+    return d
+
+
+def _do_command(src, kind):
+    """One host op first -- the permission check (`gui.doCommand`: DENY
+    for a document, ALLOW for the session, PROMPT for an addon), the
+    macro recorder line and the audit line, a refusal running nothing
+    -- then the source exec'd HERE, in the caller's own guest under the
+    caller's principal (U4: never on the host, never escalating)."""
+    import _fcx
+
+    src = str(src)
+    _fcx.op("gui.docommand", 0, {"src": src, "kind": kind})
+    d = _main_dict()
+    exec(compile(src, "<doCommand>", "exec"), d, d)
+
+
+def doCommand(src):
+    """`FreeCADGui.doCommand(src)`: run `src` as a document-level action
+    in the guest's `__main__`, recorded in the macro as an App line."""
+    _do_command(src, "app")
+
+
+def doCommandGui(src):
+    """`FreeCADGui.doCommandGui(src)`: the same, recorded as a Gui line."""
+    _do_command(src, "gui")
+
+
+def addModule(name):
+    """`FreeCADGui.addModule(name)`: import `name` into the guest's
+    `__main__` and record `import name` in the macro once per module,
+    as `Command::addModule` does."""
+    name = str(name)
+    if name in _MODULES:
+        return
+    _do_command("import " + name, "module")
+    _MODULES.add(name)
 
 
 class _MainWindowSignal:
@@ -376,6 +438,11 @@ class _MdiArea:
     def activeSubWindow(self):
         return None
 
+    def findChildren(self, *args):
+        # the snapper's cursor walk (`get_quarter_widget`): no view widget
+        # in the guest's shim until G4, so nothing to set a cursor on
+        return []
+
     def subWindowList(self):
         return []
 
@@ -560,6 +627,10 @@ class GuiDocument:
     def getInEdit(self):
         return self._op("getInEdit", [])
 
+    @property
+    def ActiveView(self):
+        return _ActiveView(self)
+
     def __eq__(self, other):
         return isinstance(other, GuiDocument) and other._doc == self._doc
 
@@ -568,6 +639,37 @@ class GuiDocument:
 
     def __repr__(self):
         return "<sandbox GUI document %s>" % self._doc.Name
+
+
+class _ActiveView:
+    """`Gui.ActiveDocument.ActiveView` in the guest: the active view's
+    ACTIVE-OBJECT REGISTRY only -- `getActiveObject(name[, resolve])`
+    and `setActiveObject(name, obj[, subname])`, what `Draft.autogroup`
+    asks at the end of every creator's commit (the active Arch
+    container, part, body, NativeIFC project).  The view itself -- the
+    scene graph, the camera, the events -- is G4's: `hasattr(view,
+    "getSceneGraph")` is False, as the corpus tests for a 3D view."""
+
+    def __init__(self, gui_doc):
+        self._gui_doc = gui_doc
+
+    def getActiveObject(self, name, resolve=True):
+        return self._gui_doc._op("ActiveView.getActiveObject", [str(name), bool(resolve)])
+
+    def setActiveObject(self, name, obj=None, subname=""):
+        args = [str(name)]
+        if obj is not None or subname:
+            args.append(obj)
+        if subname:
+            args.append(str(subname))
+        return self._gui_doc._op("ActiveView.setActiveObject", args)
+
+    def __getattr__(self, name):
+        raise AttributeError("Gui.ActiveDocument.ActiveView.%s is not in the sandbox"
+                             " (the 3D view is G4, docs/Sandbox.md 7.9)" % name)
+
+    def __repr__(self):
+        return "<sandbox active view of %s>" % self._gui_doc._doc.Name
 
 
 def active_document():
