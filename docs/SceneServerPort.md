@@ -741,10 +741,13 @@ median (`ThinClient.md` 8.1) on a loopback that costs a little more. Like
 Windows, macOS does not register the GUI tests (the guard wants `xvfb-run`),
 so this was a hand run of the binary with `GT_OUT`/`GT_RESULT` set and an
 isolated configuration; `Testing.md`, "The GUI tests", carries the command.
-The run log is loud on that box for a reason unrelated to any of this --
-Qt 6.11 asks macOS 13 for an SF Symbol while painting a toolbar's overflow
-button, thirty times, on every GUI start there (`Testing.md`, "Toolbar paints
-throw on macOS 12"). The result file is the verdict and it is clean.
+
+The run also paid for itself twice: its log was 263 lines of caught
+Objective-C exceptions, which turned out to be every GUI start on that box
+and not this test -- Qt asks macOS 13 for an SF Symbol while painting a
+toolbar's overflow button, on a macOS 12 that has no such method. Fixed the
+same day in `src/Gui/MacSymbolIconCompat.mm`; `Testing.md`, "Toolbar paints
+threw on macOS 12".
 
 **So stage 5 is done on all three platforms.**
 

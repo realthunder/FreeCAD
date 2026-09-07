@@ -392,9 +392,9 @@ driver minus xvfb and `timeout`:
         --user-cfg "$OUT/.iso/user.cfg" tests/gui/serve-selection-echo.py
 
 `GuiServeSelectionEcho_tests_run` passes that way, 2026-09-07: eight PASS
-lines and `DONE`. Its run log is noisy for reasons that have nothing to do
-with the test -- see "Toolbar paints throw on macOS 12" below -- so read the
-result file, not the log.
+lines and `DONE`. Its run log used to be unreadable for a reason that had
+nothing to do with the test -- see "Toolbar paints threw on macOS 12" below,
+now fixed; the log is 16 lines.
 
 That one exists because the render goldens found the crash by accident
 under load and then had to stop finding it: a golden must not animate,
@@ -430,10 +430,14 @@ Registration needs `FreeCADMain`, `FreeCADGui`, `xvfb-run` and
 The chess asset comes from the MaterialX submodule, so without that
 checkout the test is not registered.
 
-### Toolbar paints throw on macOS 12
+### Toolbar paints threw on macOS 12
 
-Every GUI run on the macOS box logs a burst of this over the first
-second, around thirty times:
+**Found 2026-09-07 by the echo test's log, fixed the same day** --
+`src/Gui/MacSymbolIconCompat.mm`, which carries the full explanation.
+Kept here because the symptom is what a test run shows you.
+
+Every GUI run on the macOS box used to log a burst of this over the
+first second, around thirty times:
 
     +[NSImageSymbolConfiguration configurationPreferringMonochrome]:
         unrecognized selector sent to class 0x...
@@ -442,22 +446,38 @@ second, around thirty times:
     QBackingStore::endPaint() called with active painter
     QPaintDevice: Cannot destroy paint device that is being painted
 
-and writes a `crash-*.log` under `~/Library/Application Support/FreeCAD/`
-holding nothing but those catches. It is not the test's, and not this
+and write a `crash-*.log` under `~/Library/Application Support/FreeCAD/`
+holding nothing but those catches. It was not the test's, and not this
 tree's: a bare GUI start with a script that only closes the main window
-produces the same 28 of them. Event type 12 is `QEvent::Paint`, so what
-throws is the *paint* of a toolbar's overflow button and of a tool
-button's menu arrow -- Qt 6.11's macOS icon engine resolves those from
-SF Symbols lazily, at paint, and `configurationPreferringMonochrome` is
-macOS 13 API being called on macOS 12.7.6 without a guard. The
-Objective-C exception unwinds out of `QWidget::event`,
-`GUIApplication::notify` catches it as an unknown exception, and the
-painter it left open is what the two Qt warnings are about.
+produced the same 28 of them. Event type 12 is `QEvent::Paint`, so what
+threw was the *paint* of a toolbar's overflow button and of a tool
+button's menu arrow -- Qt 6.7 and later resolve `QStyle::standardIcon()`
+on a Mac to an SF Symbol (`SP_ToolBarHorizontalExtensionButton` is
+`chevron.forward.2`) and render it at paint through `QAppleIconEngine`,
+whose `configuredImage()` calls a macOS 13 class method with no
+availability guard. The Objective-C exception unwound out of
+`QWidget::event`, `GUIApplication::notify` caught it as an unknown
+exception, and the painter it left open is what the two Qt warnings were
+about. The `>>` overflow chevrons never drew.
 
-Consequences: those two ornaments do not draw, and the log of any GUI
-run on that box is unreadable by default. Nothing else misbehaves --
-`GuiServeSelectionEcho_tests_run` passes through the noise. Read the
-result file, not the log, and delete the crash logs it leaves.
+The fix supplies the missing class method, at image load and only when
+the running system lacks it, as an empty symbol configuration -- which is
+a verified no-op on the merge and says what macOS 12 does anyway. After
+it: no exceptions, no crash log, the chevrons draw, and the echo test's
+run log is 16 lines instead of 263.
+
+Whether Qt itself has been fixed is a separate question, and this asks
+it -- bare PySide6 loads no FreeCAD library, so our fix is not in it:
+
+    .conda/run.sh python -c 'import sys; from PySide6 import QtWidgets; \
+        a=QtWidgets.QApplication(sys.argv); \
+        a.style().standardIcon(QtWidgets.QStyle.StandardPixmap. \
+        SP_ToolBarHorizontalExtensionButton).pixmap(16,16)'
+
+Today it aborts with the uncaught `NSInvalidArgumentException`. A Qt that
+guards the call would return silently instead, and the compat file would
+then be dead weight rather than wrong -- it keys off the OS, not off Qt,
+so it already adds nothing on macOS 13 and later.
 
 ## 4. What is deliberately not run, and why
 

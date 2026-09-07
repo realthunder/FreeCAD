@@ -2187,6 +2187,15 @@ Linux at all.
 
 The OCCT patch joins the fork-local list at the top of this document.
 
+A fifth arrived on 2026-09-07, from running the GUI rather than from building
+it: `src/Gui/MacSymbolIconCompat.mm`. Qt 6.7 and later draw
+`QStyle::standardIcon()` on a Mac as an SF Symbol, and the engine applies
+`+[NSImageSymbolConfiguration configurationPreferringMonochrome]` -- macOS 13
+API -- with no availability guard, so on macOS 12 every paint of a toolbar's
+overflow button threw an Objective-C exception. The file adds the method at
+image load when the OS lacks it. Symptom and verification: `Testing.md`,
+"Toolbar paints threw on macOS 12".
+
 **What did not need touching**: the Beast/Asio transport, exactly as predicted.
 macOS is a BSD socket platform, `v6_only(false)` is honoured and `::1` is
 present, and `SceneServerWire_tests_run` passes 17 of 17 with `listensOnIPv6Too`
