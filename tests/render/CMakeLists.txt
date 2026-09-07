@@ -88,14 +88,29 @@ endif()
 # and the harness' own conda wrapper. Anything missing means the test
 # cannot run here -- report that once, at configure time, rather than
 # failing a build that is simply not set up for it.
-find_program(FC_XVFB_RUN xvfb-run)
 set(_fc_golden_ready TRUE)
 foreach(_req FreeCADMain FreeCADGui)
     if(NOT TARGET ${_req})
         set(_fc_golden_ready FALSE)
     endif()
 endforeach()
-if(NOT BUILD_BGFX OR NOT FC_XVFB_RUN OR NOT EXISTS "${CMAKE_SOURCE_DIR}/.conda/run.sh")
+if(NOT BUILD_BGFX OR NOT EXISTS "${CMAKE_SOURCE_DIR}/.conda/run.sh")
+    set(_fc_golden_ready FALSE)
+endif()
+
+# The display is per-platform, and only render-verify.sh knows how to
+# raise one -- this end just asks whether it could. Linux needs xvfb;
+# macOS draws on the window server of the logged-in session, so there is
+# nothing to find (and no xvfb-run to find: requiring it unconditionally
+# is why these tests did not merely skip on macOS, they were never
+# registered at all). Everything else has no leg in that script, which
+# is bash and Unix-shaped throughout.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_program(FC_XVFB_RUN xvfb-run)
+    if(NOT FC_XVFB_RUN)
+        set(_fc_golden_ready FALSE)
+    endif()
+elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(_fc_golden_ready FALSE)
 endif()
 
@@ -107,14 +122,31 @@ endif()
 # frame is the model and the diff is about what is under test. The
 # background is drawn by the engine too, so neither case replaces the
 # other.
+# A golden is a picture of ONE backend, and the blessed sets are
+# OpenGL. Handing them to another backend is not a stricter test, it is
+# a different one: measured here on 2026-09-07, a Metal capture restaged
+# from refs/raster -- identical camera, identical 858x608 viewport --
+# still came out vertically MIRRORED, with the far half of the scene
+# clipped away behind the flip, so every stage diverged (depth 24.8% of
+# pixels, beauty 89.9%). Real defects, and not ones a diff against the
+# wrong reference can describe (RenderDebug.md 5.2b has the
+# measurements). So a
+# backend that is not the blessed one looks for its own set beside it
+# and registers nothing at all until that set is blessed.
+set(_fc_refs_variant "")
+if(APPLE)
+    set(_fc_refs_variant "-metal")
+endif()
+
 function(fc_add_golden_test name scene refs bg)
-    if(NOT IS_DIRECTORY "${FC_RENDER_REFS_DIR}/${refs}")
+    set(_refs_dir "${FC_RENDER_REFS_DIR}/${refs}${_fc_refs_variant}")
+    if(NOT IS_DIRECTORY "${_refs_dir}")
         return()
     endif()
     add_test(NAME ${name}
              COMMAND "${_fc_verify}" capture "${_fc_render_work}/${refs}"
                      --scene "${scene}"
-                     --golden "${FC_RENDER_REFS_DIR}/${refs}"
+                     --golden "${_refs_dir}"
                      ${ARGN})
     set_tests_properties(${name} PROPERTIES
         ENVIRONMENT "FC_BUILD=${CMAKE_BINARY_DIR};FC_RENDER_TEST_BG=${bg}")

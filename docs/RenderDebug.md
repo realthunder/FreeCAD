@@ -992,7 +992,7 @@ driver is even mapped. That is the gap this set closes.
 |---|---|---|
 | `RenderSmokeVg_tests_run` | `fcvgsmoke`: bgfx up headless in its own process, vg paths/gradients/strokes/text drawn offscreen, pixels read back, ink checked per primitive | 0.3 s |
 | `RenderSmokePage2D_tests_run` | the same binary's retained-`Page2D` scenario: pan, in-band zoom, band crossing, rotation, damage, removal | 0.3 s |
-| `RenderGoldenRaster_tests_run` | `scripts/render-test-scene.py` staged in a real FreeCAD under xvfb, one camera, the five pipeline stages, compared against blessed references | 28 s |
+| `RenderGoldenRaster_tests_run` | `scripts/render-test-scene.py` staged in a real FreeCAD on the platform's own display leg (xvfb on Linux -- see 5.2b), one camera, the five pipeline stages, compared against blessed references | 28 s |
 | `RenderGoldenRasterFlat_tests_run` | the same scene and stages with `FC_RENDER_TEST_BG=0`: the environment still lights the model but is not drawn, so the frame is the model | 20 s |
 | `RenderGoldenCycles_tests_run` | the same scene path traced on the CPU (64 spp, 240x180) | 29 s |
 | `RenderGoldenChess_tests_run` | the MaterialX chess set: a real asset with a real material library, raster and path traced | 65 s, see below |
@@ -1020,6 +1020,103 @@ source tree. Every golden test is *skipped, not failed*, when that
 checkout is absent, the same courtesy `MaterialXGen_tests_run` extends to
 the MaterialX submodule. Its README carries the reblessing procedure; a
 reblessing is a commit there and a submodule bump here.
+
+#### 5.2b The platform legs, and why a golden belongs to one backend
+
+`scripts/render-verify.sh` picks its leg from `uname`, and it is the only
+place that knows how a display is raised:
+
+| | Linux | macOS |
+|---|---|---|
+| display | `xvfb-run` + `QT_QPA_PLATFORM=xcb` | the real window server, `QT_QPA_PLATFORM=cocoa` (a window appears) |
+| backend | `bgfx - OpenGL` (llvmpipe headless, `--gpu` for the device) | `bgfx - Metal`, registered by `FC_BGFX_METAL=1` |
+| launch | `setsid nohup`, cleanup kills the process group (xvfb-run, Xvfb and FreeCAD are three processes) | `nohup`, cleanup kills the pid -- there is no group, and no `setsid` to make one |
+| build tree | `build/conda-relwithdebinfo-801` | `build/mac-relwithdebinfo-801` |
+
+Isolation is unchanged by that: what keeps a capture off the live session
+is the private `XDG_*` dirs and `--user-cfg`, not the display. The macOS
+leg does need a logged-in window server, so it cannot run over a bare ssh
+session. `--gpu` is a no-op there -- every macOS run is already on the
+device.
+
+`tests/render/CMakeLists.txt` requires `xvfb-run` **on Linux only**.
+Requiring it everywhere is why the golden tests on macOS did not merely
+skip: they were never registered, so a `ctest` run there was short two
+tests and said nothing about it.
+
+**A golden is a picture of one backend, and the blessed sets are
+OpenGL.** So `fc_add_golden_test` looks for `refs/<set>-metal` on Apple
+and registers nothing until that set exists. Handing the OpenGL set to
+Metal is not a stricter test, it is a different one, and the first run
+that tried it said so (2026-09-07, this box, Metal on `0x8086 0x1622`):
+with the camera restaged from `refs/raster` -- byte-identical Coin camera
+string, identical 858x608 viewport -- every stage diverged (depth 24.8%
+of pixels past tolerance, normal 19.0%, AO 25.3%, shadow 18.7%, beauty
+89.9%), and the two defects behind that are worth stating exactly,
+because they are the first thing a Metal blessing would have to fix.
+
+*The frame is vertically mirrored.* Flip the golden and **100.00%** of
+the Metal geometry mask falls inside it, at zero shift; the depth stage
+then agrees to max delta 29, mean 2.01 (14.8% of pixels past tol 3),
+where the best-fitting shift left 92% of them past it. So this is an
+origin-convention fault, not a camera one. The capture path does ask --
+`BGFXFrame.cpp` 6494, `const bool flip = caps->originBottomLeft`, which
+reverses the rows on GL and correctly does not on Metal, where the flag
+is false -- and the frame still arrives mirrored, so what is mishandled
+is upstream of the readback, in the render-to-texture origin, not in the
+decode.
+
+*And the far half of the scene is clipped away.* With the flip
+understood, what survives is the FAR half -- which is exactly what
+feeding a GL [-1,1] projection to a [0,1] clipper predicts, and the
+reason to read the two defects together rather than separately. The
+floor ends in a flat cut instead of its far apex, and the glass rod and
+the bulb are gone entirely (`geometryPixels` 75236 against 108191). The
+camera projection is the one matrix that reaches bgfx unconverted: Coin
+builds it GL-convention (`View3DInventorViewer.cpp`,
+`cam->getViewVolume(aspect)`) and `BGFXFrame.cpp` hands it to
+`bgfx::setViewTransform` as it stands -- 3292 for the scene views, and
+3520, 3535, 3680, 3803 for the rest -- while `view->projMatrix` carries
+the same bytes on to the shaders and the CPU-side culling. Everything
+else consults `caps->homogeneousDepth` (1610, 1617, 1627-1628, 1713,
+`ProxyHierarchy.cpp`, `OcclusionCull.h`), but those are secondary
+consumers; the primary camera transform is the one place that does not,
+which is what you would expect of code no non-GL backend had run. For
+this scene's camera the constants are unambiguous: Coin's GL ortho gives
+`P[10] = -0.023595`, `P[14] = -1.038783`, while a correct [0,1] ortho for
+the same near/far is `-0.011797` and `-0.019392` -- a factor of two on
+one and nothing like a scale on the other, so a dump of what the frame
+receives settles it in one line. The remap to copy is the shadow crop's
+`sz`/`tz` pair at 1626-1634, but note that `setViewTransform` also feeds
+the predefined `u_proj`, which the AO and environment passes reconstruct
+view positions from: the conversion is not local to clipping.
+
+WARNING: **Test the flip before the shift.** Two wrong readings were
+published here before the right one, and both are cheap to repeat.
+First, "compressed 1.65x vertically" -- a bounding-box artefact: the
+ratio was the clipping, not a scale. Then "translated 119 px, with the
+surviving depth inverted" -- a silhouette coincidence, because the near
+and far halves of this floor are similar triangles and a shift matched
+one to the other at 99.90% while the flip that matches at 100.00% went
+untested. The "inverted depth" was the same flip seen through mode 1,
+which is `1.0 - clamp(prepass linear view depth * u_debugParams.y)`
+(`fs_fc_debug.sc`): a NORMALIZED PREPASS quantity written as `-v_vpos.z`
+from the model-view transform, not the depth buffer and not a function
+of the projection at all. It was never evidence about clip space. A
+mask comparison that does not try `flipud` first can align two lobes of
+a symmetric silhouette and read as confirmation.
+
+WARNING: **A restaging must not carry the backend across.** The sidecar records
+the whole `View/Render` group, `Type` included, and that key describes
+the machine that blessed the golden rather than the picture it blessed.
+`render_verify.py` skips it (`RESTAGE_SKIP`): replaying it put a macOS
+run on `bgfx - OpenGL`, where Apple's 2.1 compatibility profile cannot
+run these shaders at all -- the renderer stands aside for the render
+cache, and all five stages then failed with `Frame capture timed out`
+waiting for a frame that was never coming. The platform picks its own
+backend in `render-test-scene.py` (`FC_RENDER_BACKEND` overrides), and
+the sidecar's own `backend` and `device` fields are where the blessing's
+identity is recorded.
 
 **The two scenes are deliberately different in kind.**
 `scripts/render-test-scene.py` is four primitives built in process -- a

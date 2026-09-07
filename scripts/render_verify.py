@@ -154,6 +154,20 @@ PREF_SETTERS = {
 }
 
 
+# One key a restaging must NOT carry across: the renderer selection.
+# The sidecar records the whole View/Render group, "Type" included, and
+# that key describes the machine that blessed the golden rather than the
+# picture it blessed. Replaying it puts a macOS run on "bgfx - OpenGL",
+# where Apple's 2.1 compatibility profile cannot run these shaders at
+# all -- the renderer stands aside for the render cache and every
+# capture then times out waiting for a frame that is not coming
+# (measured: 5 of 5 stages, restaged from the GL-blessed raster set).
+# The platform picks its own backend in the scene script, and the
+# sidecar's own "backend" and "device" fields are where the blessing's
+# identity is recorded.
+RESTAGE_SKIP = {("View/Render", "Type")}
+
+
 def apply_preferences(prefs):
     """Re-apply a sidecar's preference groups, best-effort.
 
@@ -180,6 +194,8 @@ def apply_preferences(prefs):
                 continue
             setter, cast = entry
             for name, value in sorted(values.items()):
+                if (group, name) in RESTAGE_SKIP:
+                    continue
                 try:
                     getattr(grp, setter)(name, cast(value))
                     applied += 1

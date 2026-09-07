@@ -18,9 +18,11 @@
 #                    diff <dir> against the new captures when done
 #   --cams a,b,c     named views (default iso,front,top; see render_verify.py)
 #   --modes 0,1,..   debug view mode list (default 0,1,2,3,4; 0 = beauty)
-#   --gpu            real-GPU leg: WSLg wayland + Mesa d3d12 (OPENS A WINDOW
-#                    ON THE DESKTOP; default is headless xvfb = llvmpipe,
-#                    which verifies logic but not device-GPU precision)
+#   --gpu            Linux only: real-GPU leg, WSLg wayland + Mesa d3d12
+#                    (OPENS A WINDOW ON THE DESKTOP; the Linux default is
+#                    headless xvfb = llvmpipe, which verifies logic but
+#                    not device-GPU precision). On macOS every run is
+#                    already on the device and the flag is a no-op
 #   --settle N       extra frames to run before capturing (default 0).
 #                    The harness first waits for the backend's own
 #                    "complete frame" signal (view.waitFrameComplete:
@@ -51,11 +53,30 @@
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 RUN="$REPO/.conda/run.sh"
+
+# The display leg is per-platform, and this is the only place that knows
+# it. Linux fakes a display with xvfb; macOS has no X server to fake and
+# no xvfb-run, so the capture draws on the real window server -- which
+# costs nothing in isolation, because what keeps a run off the live
+# session is the private XDG dirs and user.cfg, not the display. macOS
+# also has no setsid, and Metal is the only backend that can carry this
+# renderer there (see BGFXRendererLibP, BGFXRendererP.h), registered
+# only when FC_BGFX_METAL is set.
+case "$(uname -s)" in
+    Darwin) HOST=macos;;
+    *)      HOST=linux;;
+esac
+
 # The standard build and the one every test run uses (CLAUDE.md,
 # docs/DevEnvironment.md); FC_BUILD repoints the capture runs at another
-# one. It used to default to build/conda-debug-occt801, which is the
-# debugger tree and not what anything is measured on.
-BUILD=${FC_BUILD:-"$REPO/build/conda-relwithdebinfo-801"}
+# one, and ctest always passes it. It used to default to
+# build/conda-debug-occt801, which is the debugger tree and not what
+# anything is measured on.
+if [ "$HOST" = macos ]; then
+    BUILD=${FC_BUILD:-"$REPO/build/mac-relwithdebinfo-801"}
+else
+    BUILD=${FC_BUILD:-"$REPO/build/conda-relwithdebinfo-801"}
+fi
 FCBIN="$BUILD/bin/FreeCAD"
 [ -x "$FCBIN" ] || {
     echo "no FreeCAD binary at $FCBIN (set FC_BUILD to another build tree)"
@@ -119,10 +140,26 @@ LOG="$OUT/run.log"
 # Scene id for capture filenames: demo-lights.py -> lights.
 NAME=$(basename "$SCENE" .py); NAME=${NAME#demo-}
 
+# setsid exists here so cleanup() can signal the whole process group --
+# xvfb-run, Xvfb and FreeCAD are three processes and killing the first
+# leaves the other two. macOS has no setsid, and needs none: without the
+# xvfb wrapper the launched pid IS the run, so the pid alone is what
+# there is to kill.
+if command -v setsid >/dev/null 2>&1; then
+    LAUNCH=(setsid nohup); KILL_GROUP=1
+else
+    LAUNCH=(nohup); KILL_GROUP=0
+fi
+
 FC_PIDS=()
 cleanup() {
     for pid in "${FC_PIDS[@]:-}"; do
-        [ -n "$pid" ] && kill -- -"$pid" 2>/dev/null
+        [ -n "$pid" ] || continue
+        if [ "$KILL_GROUP" = 1 ]; then
+            kill -- -"$pid" 2>/dev/null
+        else
+            kill "$pid" 2>/dev/null
+        fi
     done
 }
 trap cleanup EXIT
@@ -142,9 +179,22 @@ if [ "$CYCLES" = 1 ]; then
         ${CYCLES_SIZE:+RV_CYCLES_SIZE="$CYCLES_SIZE"})
 fi
 
-if [ "$GPU" = 1 ]; then
+if [ "$HOST" = macos ]; then
+    # No xvfb, no headless leg: the run draws on the window server of
+    # the logged-in session (so it needs one -- an ssh session without
+    # one cannot capture here). FC_BGFX_METAL registers the Metal
+    # backend; render-test-scene.py is what then selects it.
+    [ "$GPU" = 1 ] && echo "--gpu is a no-op on macOS: this leg is the device"
+    echo "macOS leg: cocoa + Metal (a FreeCAD window will appear)"
+    "${LAUNCH[@]}" env "${COMMON_ENV[@]}" \
+        QT_QPA_PLATFORM=cocoa FC_BGFX_METAL="${FC_BGFX_METAL:-1}" \
+        "$RUN" "$FCBIN" \
+        --user-cfg "$ISO/user.cfg" \
+        "$SCENE" "$REPO/scripts/render_verify.py" \
+        > "$LOG" 2>&1 </dev/null &
+elif [ "$GPU" = 1 ]; then
     echo "real-GPU leg: WSLg wayland + d3d12 (a FreeCAD window will appear)"
-    setsid nohup env "${COMMON_ENV[@]}" \
+    "${LAUNCH[@]}" env "${COMMON_ENV[@]}" \
         QT_QPA_PLATFORM=wayland WAYLAND_DISPLAY=wayland-0 \
         XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
         DISPLAY="${DISPLAY:-:0}" \
@@ -156,7 +206,7 @@ if [ "$GPU" = 1 ]; then
         "$SCENE" "$REPO/scripts/render_verify.py" \
         > "$LOG" 2>&1 </dev/null &
 else
-    setsid nohup env -u WAYLAND_DISPLAY "${COMMON_ENV[@]}" \
+    "${LAUNCH[@]}" env -u WAYLAND_DISPLAY "${COMMON_ENV[@]}" \
         QT_QPA_PLATFORM=xcb \
         xvfb-run -a -s "-screen 0 1280x1024x24" \
         "$RUN" "$FCBIN" \
@@ -171,7 +221,7 @@ if [ "$VIEWER" = 1 ]; then
     [ -f "$REPO/build/wasm/fcviewer.html" ] || {
         echo "--viewer needs build/wasm/fcviewer.html"; exit 2; }
     # no-store like wasm-viewer.sh: never serve a stale cached bundle.
-    setsid nohup python3 - "$HTTP" "$REPO/build/wasm" > "$OUT/http.log" 2>&1 <<'EOF' &
+    "${LAUNCH[@]}" python3 - "$HTTP" "$REPO/build/wasm" > "$OUT/http.log" 2>&1 <<'EOF' &
 import http.server, os, sys
 os.chdir(sys.argv[2])
 class H(http.server.SimpleHTTPRequestHandler):
@@ -187,7 +237,7 @@ EOF
         sleep 1
     done
     URL="http://127.0.0.1:$HTTP/fcviewer.html?scene=http://127.0.0.1:$PORT&cam=$CAM"
-    setsid nohup node "$REPO/scripts/wasm-hold.js" "$URL" $((TIMEOUT * 1000)) \
+    "${LAUNCH[@]}" node "$REPO/scripts/wasm-hold.js" "$URL" $((TIMEOUT * 1000)) \
         > "$OUT/hold.log" 2>&1 </dev/null &
     FC_PIDS+=($!)
     echo "viewer leg: $URL (hold log: $OUT/hold.log)"
