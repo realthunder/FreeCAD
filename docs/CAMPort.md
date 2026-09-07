@@ -447,6 +447,34 @@ Two things worth knowing about running the suite:
   handles the work; the deliberate attempts to make the 2D *builder* fail
   and fall through to the area path did not succeed.
 
+  **Which log codes actually discriminate.** `GEO140` "Processed fully in
+  2D" does **not**: `boolean_utils.cpp:1304` fires it whenever the 2D
+  specialisation left nothing for the 3D kernel, whichever of the builder or
+  the area path produced each face. It is the code you see in the good case
+  and it tells you nothing about which path ran. The ones that do are
+  `GEO404`, `GEO405`, `GEO406` and `GEO410` -- so it is the *absence* of
+  those alongside `GEO140` that shows the builder won.
+
+  **What "depth" means, since it is not what it sounds like.** `GEO157`
+  ("Processing N operands as M slabs") is guarded by `cuts.size() > 2` at
+  `boolean_utils.cpp:1140`, and `cuts` (1115-1127) collects only operand
+  interval endpoints that fall *strictly inside* A's own extrusion interval.
+  An opening that passes clean through the wall therefore contributes no
+  cut at all, however many there are and wherever they sit in elevation:
+  twelve through-openings at twelve different heights still give
+  `cuts.size() == 2`, one 2D problem, and no `GEO157`. The slab
+  decomposition exists for **blind pockets** -- the reveals and wall sweeps
+  the comment at 1099-1112 names, which stop short of the far face.
+  Confirmed here: through-openings never emit `GEO157`; pockets cut to a
+  fraction of the wall thickness immediately do ("Processing 1 operands as
+  2 slabs"). `GEO156` caps the whole thing at `max_slabs = 64`.
+
+  **And the slab path still is not the area path.** With `GEO157` firing,
+  the result is still `GEO140` with no `GEO404`/`405`/`406`/`410`, so the
+  builder handles the slabs too. Every route tried so far -- interior hole,
+  notches flush with the boundary, nine flush operands, twelve elevations,
+  and blind pockets at two and three depths -- ends the same way.
+
   Closing this properly now needs the branch instrumented, or a model
   chosen from the code rather than guessed at. Note the log-capture trap:
   `logger.set_output()` wants C++ streams and rejects Python objects, and
