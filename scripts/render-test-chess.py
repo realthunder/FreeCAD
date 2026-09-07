@@ -25,6 +25,7 @@ not reproducible), with navigation animation switched off before the
 import runs its own fit, so that no fit animates.
 """
 import os
+import sys
 import traceback
 
 import FreeCAD
@@ -33,8 +34,16 @@ import FreeCADGui
 # Before the first 3D view exists: the MaterialX splice only happens in
 # the bgfx renderer, which only exists in render-cache mode 3.
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt("RenderCache", 3)
+# The backend to gate, chosen the same way render-test-scene.py chooses
+# it: macOS caps the compatibility profile Coin needs at GL 2.1 while
+# these shaders need 3.1, so there IS no GL leg there and Metal is the
+# only backend the golden set can be taken on. FC_RENDER_BACKEND names
+# one explicitly; otherwise the platform's own is the default.
+BACKEND = os.environ.get("FC_RENDER_BACKEND")
+if not BACKEND:
+    BACKEND = "bgfx - Metal" if sys.platform == "darwin" else "bgfx - OpenGL"
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render").SetString(
-    "Type", "bgfx - OpenGL")
+    "Type", BACKEND)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(REPO, "src/3rdParty/MaterialX/resources")
@@ -56,12 +65,17 @@ BACKGROUND = os.environ.get("FC_RENDER_TEST_BG", "1") != "0"
 
 
 def say(s):
+    # stderr as well as the console: in a GUI run the console goes to the
+    # report view, which a headless capture has no way to read, so a
+    # staging failure left run.log empty and said nothing about itself.
+    # stderr is what render-verify.sh redirects into run.log.
     FreeCAD.Console.PrintMessage("[render-test-chess] %s\n" % s)
+    sys.stderr.write("[render-test-chess] %s\n" % s)
+    sys.stderr.flush()
 
 
 def stage():
     import ImportGui
-    from pivy import coin
 
     FreeCAD.ParamGet(
         "User parameter:BaseApp/Preferences/NotificationArea").SetBool(
@@ -139,8 +153,15 @@ def stage():
     # steps, and a frame during the cold compile of this material set
     # is seconds: the animation was still moving the camera when the
     # harness captured, thirty seconds on. Animation is off (above).
-    v.getCameraNode().orientation.setValue(
-        coin.SbRotation(0.4247, 0.1759, 0.3389, 0.8226))
+    # The view's own quaternion setter, not the camera node's field: a
+    # node reached through getCameraNode() is a pivy object, and pivy is
+    # not part of every box's environment (it is absent from the macOS
+    # conda env, where this import was the whole reason the scene never
+    # staged and every capture step then failed on a null ActiveDocument).
+    # The tuple overload takes the same four floats SbRotation did; it
+    # also repositions the camera to keep the rotation centre, which the
+    # fitAll() below settles either way.
+    v.setCameraOrientation((0.4247, 0.1759, 0.3389, 0.8226))
     v.fitAll()
     say("STAGED OK")
 
