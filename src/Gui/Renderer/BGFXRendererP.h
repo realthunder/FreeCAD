@@ -5988,17 +5988,6 @@ public:
         return bgfx::readTexture(idReadTex, dst);
     }
 
-    /// Does the scene depth have to be sampleable this frame?
-    ///
-    /// Only a capture reads it (through the ViewCaptureDepth encode),
-    /// and a sampleable depth attachment costs a resolve texture beside
-    /// the multisampled renderbuffer under MSAA -- so it is not what an
-    /// ordinary session pays for. The latch is sticky for the life of
-    /// the view: captures come in runs (a golden set is one camera and
-    /// five modes), and rebuilding the targets between them would throw
-    /// the temporal accumulation away on every shot.
-    bool depthSampledWanted() const { return captureWanted; }
-
     /// Targets for a portable frame capture, created on first use at
     /// viewport size.
     ///
@@ -6820,13 +6809,6 @@ public:
     bgfx::TextureFormat::Enum captureColorFormat = bgfx::TextureFormat::Count;
     uint16_t captureW = 0;
     uint16_t captureH = 0;
-    /// Sticky: something has asked for a capture on this view, so the
-    /// scene depth is built sampleable (depthSampledWanted).
-    bool captureWanted = false;
-    /// What the current targets were actually built with -- compared
-    /// against depthSampledWanted() to trigger the one rebuild that
-    /// turns a sampleable depth attachment on.
-    bool depthSampled = false;
     bgfx::UniformHandle s_texAccum = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texReveal = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCap = BGFX_INVALID_HANDLE;
@@ -7631,7 +7613,7 @@ public:
     X(debugSceneFbo) X(debugSceneTex) X(debugSceneDepth) X(idReadTex) \
     X(captureDepthFbo) X(captureDepthTex) X(captureColorRead) \
     X(captureDepthRead) X(captureColorFormat) \
-    X(captureW) X(captureH) X(captureWanted) X(depthSampled) \
+    X(captureW) X(captureH) \
     X(aoPrepassFbo) X(aoGenFbo) X(aoBlurFbo) X(aoMipFbo) \
     X(aoNormalZ) X(aoDepth) X(aoTex) X(aoBlurTex) X(aoNoiseTex) \
     X(aoMipTex) X(aoMipCount) X(aoMapHash) \

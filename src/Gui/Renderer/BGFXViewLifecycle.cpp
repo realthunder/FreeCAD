@@ -853,14 +853,24 @@ void BGFXView::init(bool keepShared)
     // orthogonal bits — masking BGFX_TEXTURE_RT out of them would
     // turn MSAA_X4 (0x3) into MSAA_X2 (0x2) and desync the depth
     // sample count from the color attachment's.
-    // Sampleable only while a capture wants it (depthSampledWanted):
-    // the ViewCaptureDepth encode samples this attachment, and there is
-    // no other reader. Under MSAA a sampled attachment costs a resolve
-    // texture beside the multisampled renderbuffer, so an ordinary
-    // session keeps the write-only one it always had.
-    depthSampled = depthSampledWanted();
-    bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags,
-                              depthSampled);
+    // Sampleable, always: the ViewCaptureDepth encode reads this
+    // attachment, and it must never be a REBUILD that makes it
+    // readable. accumTex is life-sized, so a rebuild destroys the
+    // temporal accumulation and zeroes accumFrames -- and building it
+    // on first capture put that rebuild AFTER the run had settled,
+    // so the first capture averaged fewer jittered samples than the
+    // frame anyone had looked at. frameComplete does not cover
+    // convergence (it means shaders compiled and shapes arrived), so
+    // nothing waited for it and the capture silently perturbed the
+    // thing it was capturing.
+    //
+    // The cost is a write-only attachment becoming a plain sampleable
+    // one, which is the same memory without MSAA -- and MSAA is off by
+    // default (View3DInventorViewer::getNumSamples), analytic line
+    // coverage having removed the reason it used to be mandatory. With
+    // MSAA on it adds a resolve texture, which is the honest price of a
+    // capture that works on every backend.
+    bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags, true);
     bgfx::Attachment attachment[2];
     // No mip chain on these render targets; the default resolve flag
     // (BGFX_RESOLVE_AUTO_GEN_MIPS) is also rejected for depth attachments.

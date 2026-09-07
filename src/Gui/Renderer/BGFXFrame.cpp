@@ -248,19 +248,6 @@ bool BGFXRenderer::Private::render(const QColor &col,
 #endif
     }
 
-    // Latch the capture demand on the view before the rebuild
-    // conditions below read it. The scene depth has to be SAMPLEABLE
-    // for the ViewCaptureDepth encode, and that is a property of the
-    // attachment, so it takes a target rebuild -- which is decided
-    // here, once, and never again for the life of the view.
-    //
-    // A capture asked on a view that was not built for one is not
-    // lost: dumpPending stays set, this latch turns the rebuild on,
-    // and the next frame captures. pumpFrameDump is a loop over
-    // frames for exactly this kind of reason.
-    if (dumpPending || getenv("FC_BGFX_DEBUG_READBACK"))
-        view->captureWanted = true;
-
 #ifdef FC_RENDERER_STANDALONE
     // Warmup rebuild: a few frames after the scene first appears,
     // force a single target re-create to clear the bad
@@ -319,7 +306,6 @@ bool BGFXRenderer::Private::render(const QColor &col,
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale
             || view->hdrScene != view->hdrSceneWanted()
-            || view->depthSampled != view->depthSampledWanted()
             || warmupReinit) {
         view->init(!progChanged);
     }
@@ -382,11 +368,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
             || (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale
-            || view->hdrScene != view->hdrSceneWanted()
-            // The first capture on this view turns the scene depth
-            // sampleable, which is a property of the attachment and so
-            // a rebuild. Sticky, so it happens once.
-            || view->depthSampled != view->depthSampledWanted())
+            || view->hdrScene != view->hdrSceneWanted())
         view->init(!progChanged);
 
     if (!bgfx::isValid(view->bgfxFbo))
