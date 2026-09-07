@@ -888,6 +888,95 @@ bool BGFXView::ensureDebugScene()
     return bgfx::isValid(debugSceneFbo);
 }
 
+bool BGFXView::ensureCaptureTargets()
+{
+    if (!idReadbackSupported() || !bgfx::isValid(m_progDepthEnc)
+            || !bgfx::isValid(bgfxColor))
+        return false;
+    // A blit requires matching formats, so the staging texture follows
+    // whatever readbackCapture will actually copy FROM -- and that is
+    // not always the scene colour. With a colour transform selected the
+    // finished image is the present pass's RGBA8 output, even though
+    // the scene colour behind it is RGBA16F; sizing this off hdrScene
+    // alone would ask bgfx to blit RGBA8 into an RGBA16F texture.
+    const bool encoded = outputTransform != Render::OutputConfig::None
+        && bgfx::isValid(presentTex);
+    const bgfx::TextureFormat::Enum want = (!encoded && hdrScene)
+        ? bgfx::TextureFormat::RGBA16F : bgfx::TextureFormat::RGBA8;
+    if (bgfx::isValid(captureDepthFbo) && captureW == width
+            && captureH == height && captureColorFormat == want)
+        return true;
+    if (bgfx::isValid(captureDepthFbo)) {
+        bgfx::destroy(captureDepthFbo);
+        captureDepthFbo = BGFX_INVALID_HANDLE;
+    }
+    for (auto tex : {&captureDepthTex, &captureColorRead, &captureDepthRead}) {
+        if (bgfx::isValid(*tex)) {
+            bgfx::destroy(*tex);
+            *tex = BGFX_INVALID_HANDLE;
+        }
+    }
+    const bgfx::Caps *caps = bgfx::getCaps();
+    // R32F for the encoded depth: geometryPixels counts against a 0.999
+    // threshold, and eight bits of a non-linear depth buffer put far
+    // more than a thousandth of the range in the last code -- an RGBA8
+    // target would report the whole background as geometry. A backend
+    // that cannot render R32F simply has no portable capture; the
+    // caller falls back to the GL readback, which is what every such
+    // backend is anyway.
+    if (!(caps->formats[bgfx::TextureFormat::R32F]
+          & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER))
+        return false;
+    // POINT-sampled, CLAMPed: the encode reads depth texel centers 1:1
+    // and the blit that follows does too.
+    const uint64_t flags = 0
+        | BGFX_TEXTURE_RT
+        | BGFX_SAMPLER_MIN_POINT
+        | BGFX_SAMPLER_MAG_POINT
+        | BGFX_SAMPLER_MIP_POINT
+        | BGFX_SAMPLER_U_CLAMP
+        | BGFX_SAMPLER_V_CLAMP;
+    captureDepthTex = bgfx::createTexture2D(width, height, false, 1,
+        bgfx::TextureFormat::R32F, flags);
+    bgfx::TextureHandle att[1] = {captureDepthTex};
+    captureDepthFbo = bgfx::createFrameBuffer(1, att, false);
+    captureColorRead = bgfx::createTexture2D(width, height, false, 1, want,
+        BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
+    captureDepthRead = bgfx::createTexture2D(width, height, false, 1,
+        bgfx::TextureFormat::R32F,
+        BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
+    captureW = width;
+    captureH = height;
+    captureColorFormat = want;
+    return bgfx::isValid(captureDepthFbo)
+        && bgfx::isValid(captureColorRead)
+        && bgfx::isValid(captureDepthRead);
+}
+
+uint32_t BGFXView::readbackCapture(void *color, void *depth)
+{
+    if (!bgfx::isValid(captureColorRead) || !bgfx::isValid(captureDepthRead))
+        return 0;
+    // The image the frame actually finished with: the encoded present
+    // output when a colour transform is selected, the scene colour
+    // otherwise. Exactly the choice the GL composite makes, so the two
+    // capture routes cannot disagree about what the frame was.
+    const bool encoded = outputTransform != Render::OutputConfig::None
+        && bgfx::isValid(presentTex);
+    const bgfx::TextureHandle source = encoded ? presentTex : bgfxColor;
+    if (!bgfx::isValid(source))
+        return 0;
+    bgfx::blit(vid(ViewCapture), captureColorRead, 0, 0, source);
+    bgfx::blit(vid(ViewCapture), captureDepthRead, 0, 0, captureDepthTex);
+    // Two reads, one frame: bgfx returns the frame each will be ready
+    // at, and they are asked in the same frame, so the later of the two
+    // is when BOTH are filled. Taking the first would hand the caller a
+    // half-written depth buffer.
+    const uint32_t c = bgfx::readTexture(captureColorRead, color);
+    const uint32_t d = bgfx::readTexture(captureDepthRead, depth);
+    return std::max(c, d);
+}
+
 
 void BGFXView::submitDebugScene(const Render::DrawCall &draw, int mode)
 {
