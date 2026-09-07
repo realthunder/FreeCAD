@@ -409,6 +409,48 @@ Two things worth knowing about running the suite:
   `libarea.so.0` was then removed. Leaving both sonames in place is the
   two-Clippers-in-one-process hazard the library split exists to prevent
   -- `CArea`'s tolerances are static mutable state both consumers write.
+- ~~**`boolean_subtraction_2d_using_area` has not been shown to run.**~~
+  **Closed 2026-09-07: it runs.** On Windows with the fork's packaged build
+  13, a wall carrying 202 blind pockets that **overlap their neighbours**
+  gives a different, deterministic result depending on the setting:
+
+  | `boolean-attempt-2d-area` | verts / faces | time |
+  |---|---|---|
+  | `False` | 1436 / 2868 | 1.78 - 3.17 s |
+  | `True`  | 1283 / 2562 | 0.74 - 0.90 s |
+
+  Six runs, interleaved `False,True,False,True,True,False` to cancel
+  ordering and warm-up. The geometry counts are stable to the vertex and
+  the area path is consistently about twice as fast, producing the *lower*
+  count -- it merges the overlapping contours into single outlines instead
+  of subtracting operand by operand. A setting that changes deterministic
+  output is the proof; nothing else here was.
+
+  **The trigger is overlapping contours, not operand count.** 202 pockets
+  laid out as a non-overlapping grid are handled entirely by the 2D
+  *builder* -- identical geometry and time with the setting either way, in
+  1.5 s. Space the same 202 so they intersect and the area path takes over.
+  That matches `boolean_utils_2d.cpp`'s own account of the builder's
+  failure mode, which is deriving contour nesting, not volume of work.
+
+  **Do not expect a log code to announce it.** `GEO404`, `GEO405`, `GEO406`
+  and `GEO410` are trouble reports -- operands outside the 2D domain, or a
+  result rejected -- so a clean run of the area path emits none of them, and
+  their absence means nothing on its own. All that appears in both columns
+  above is `GEO157` "Processing 202 operands as 3 slabs" and `GEO140`
+  "Processed fully in 2D".
+
+  The reproduction is a loop, not a facade model: wall 22.0 x 3.0 x 0.2,
+  pockets 0.30 x 0.45 at 0.18 / 0.30 spacing so they overlap in both
+  directions, depths alternating 0.08 / 0.12 so there are three slabs and
+  `max_slabs` is not tripped, each placed at `y = -0.05` with thickness
+  `depth + 0.05` so it starts outside the face and stops short of the far
+  one. Assert the count `GEO157` reports matches what was built -- a
+  mis-seated pocket is silently dropped, and at this scale that is
+  invisible.
+
+  The original finding, kept for the record:
+
 - **`boolean_subtraction_2d_using_area` has not been shown to run.** The
   symbol contract is proven exact (the kernel's undefined
   `CurveTo/FromClipperPath` carry `Clipper2Lib::Point<long>` and
