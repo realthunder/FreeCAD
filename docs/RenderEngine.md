@@ -1091,6 +1091,66 @@ what they spend is the reader's idle GPU time and, on a laptop, their
 battery, which is a fact about their machine rather than about the model
 somebody authored.
 
+### 3.6 Cross-API conventions: clip depth and texture origin
+
+bgfx picks the backend at runtime, and two conventions differ under it.
+The engine settles both in one place each, so no pass has to think about
+which API it is on.
+
+**Clip depth.** OpenGL clips z against `[-1, 1]`; Metal, D3D and Vulkan
+clip against `[0, 1]`, and `caps->homogeneousDepth` says which. Every
+projection the engine *builds* -- the shadow crop, the bulb tiles, the
+overlays, the 2D page -- is built to the caps flag. The camera
+projection is the one it does not build: Coin hands it over in GL
+convention (`View3DInventorViewer`, `cam->getViewVolume`). `render()`
+remaps it once, at the top of the frame, `z -> (z + w) / 2` on the z row
+alone, and everything downstream -- `setViewTransform`, the predefined
+`u_proj`, `BGFXView::projMatrix`, the frustum planes, the proxy
+hierarchy, both cullers -- sees a matrix that matches the caps flag.
+Only the scene publish keeps the fed matrix, because its viewer renders
+on a backend of its own.
+
+The w row is deliberately left alone: `u_proj[2][3]` is how a dozen
+shaders tell a perspective camera from an orthographic one, and no
+shader reads the z row at all, so the remap stays confined to clipping.
+
+**Texture origin.** A render target's texture v = 0 is the bottom row
+under OpenGL and the top row everywhere else (`caps->originBottomLeft`),
+while clip y = +1 is the top of the viewport on every backend. So a UV
+derived from clip space is not the same function everywhere, and
+`fc_screen.sh` owns the pair that converts:
+
+- `fc_clipToUv(clip)` -- the UV of the pixel at a clip-space xy. The
+  fullscreen vertex stage `vs_fc_comp.sc` uses it, which puts every
+  screen-space pass in the engine on it; a screen-space walk that does
+  its own perspective divide (the water SSR) uses it too.
+- `fc_uvToNdc(uv)` -- the inverse, for unprojecting a texel back into
+  view space (`fc_prepassViewPos`, `volRay`, the env/sun/ground-shadow
+  rays) and for a splat that must land on one named texel of the target
+  it writes (`vs_fc_pimpact`).
+
+A pass that builds its UV from `gl_FragCoord.xy * u_viewTexel.xy`
+(`fs_fc_groundrefl`, `fc_glass_fs.sh`, `fc_line_sdf_fs.sh`) needs
+neither, and is not a second convention living alongside: `gl_FragCoord`
+counts from the same edge the texture v does on both APIs, which is
+exactly the agreement the helpers restore for the clip-space route.
+
+**Matrix subscripting.** GLSL indexes a matrix by column and every other
+language bgfx targets indexes it by row, which bgfx states as
+`BGFX_SHADER_MATRIX_COLUMN_MAJOR`. It makes `mul()` agree across that
+split and `mtxFromRows`/`mtxFromCols` build a matrix either way, but a
+written-out `m[i][j]` names transposed elements on the two halves -- a
+silent fault, not a compile error. `fc_matrix.sh` gives `FC_MTX(m, i, j)`,
+which names the element the CPU wrote at `float[16]` index `4*i + j`,
+and every subscript in the shader set goes through it.
+
+That one is worth knowing by its symptom. A dozen shaders tell a
+perspective camera from an orthographic one by the w row's z entry
+(`FC_MTX(u_proj, 2, 3)`, -1 or 0); read as `u_proj[2][3]` off GL it lands
+on the z row's w entry, which is never 0. So an orthographic camera was
+taken for a perspective one, and the ray fan rebuilt from the wrong
+entries turned the environment background into a starburst.
+
 ## 4. Draw model
 
 - `Render::DrawCall` = mesh reference (+ index sub-range), model

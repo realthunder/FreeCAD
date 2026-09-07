@@ -1052,8 +1052,17 @@ that tried it said so (2026-09-07, this box, Metal on `0x8086 0x1622`):
 with the camera restaged from `refs/raster` -- byte-identical Coin camera
 string, identical 858x608 viewport -- every stage diverged (depth 24.8%
 of pixels past tolerance, normal 19.0%, AO 25.3%, shadow 18.7%, beauty
-89.9%), and the two defects behind that are worth stating exactly,
-because they are the first thing a Metal blessing would have to fix.
+89.9%), and the defects behind that are worth stating exactly, because
+they are the first thing a Metal blessing would have to fix.
+
+**All of them are fixed as of 2026-09-07**, and the same restaged run
+now compares against the OpenGL golden at depth 0.0002% of pixels past
+tolerance (one pixel), normal 0.0002%, AO 0.1248% (mean 0.02), shadow
+0.0002%, beauty 0.3527% (mean 0.17), with `geometryPixels` 108191 --
+the golden's own count. Two defects were diagnosed here first and a
+third only surfaced once they were out of the way; each is recorded
+below with what it actually was, because the diagnosis is the expensive
+half and the next backend will meet the same three.
 
 *The frame is vertically mirrored.* Flip the golden and **100.00%** of
 the Metal geometry mask falls inside it, at zero shift; the depth stage
@@ -1085,24 +1094,40 @@ and what remains is the clipped half -- so fixing the origin alone still
 leaves every stage failing, and neither defect can be signed off on its
 own.
 
-That one-liner is the cause, **not the fix**, and was reverted. The file
-is misnamed by its own comment: `ensureProgram` pairs `vs_fc_comp` with
+That one-liner was the cause, not the whole fix, because the file is
+misnamed by its own comment: `ensureProgram` pairs `vs_fc_comp` with
 `fs_fc_present`, `fs_fc_depthenc`, `fs_fc_debug`, `fs_fc_comp`,
 `fs_fc_env`, `fs_fc_sun`, the bloom chain, `fs_fc_ssao`/`fs_fc_gtao` and
 their blurs, `fs_fc_cavity`, `fs_fc_shadow_blur`, the volume passes,
 `fs_fc_cycles_blit` and the user volumetrics -- it is the engine's
-fullscreen vertex shader, which is why the DEBUG stages are mirrored too
-(`m_progDebug` is `vs_fc_comp` + `fs_fc_debug`). Flipping it alone leaves
-two conventions live, because `fs_fc_groundrefl`, `fc_glass_fs.sh` and
-`fc_line_sdf_fs.sh` build their own UVs from `gl_FragCoord.xy *
-u_viewTexel.xy` and never route through it, and two chained fullscreen
-passes that both flip would cancel. The real change is a pass over every
-fullscreen consumer together.
+fullscreen vertex shader, which is why the DEBUG stages were mirrored
+too (`m_progDebug` is `vs_fc_comp` + `fs_fc_debug`).
 
-Worth knowing before writing either fix: across `*.sc` and `*.sh`,
-`BGFX_SHADER_LANGUAGE_GLSL` matches exactly one file,
-`fs_fc_groundshadow_plane.sc` at 86-91, and what it handles there is the
-[-1,1] -> [0,1] `gl_FragDepth` conversion. So the tree has one precedent
+**What shipped is `fc_screen.sh`**, which owns both directions of the
+conversion -- `fc_clipToUv` for the UV of the pixel at a clip-space xy
+(the fullscreen vertex stage, and the water SSR's own perspective
+divide) and `fc_uvToNdc` for the inverse (`fc_prepassViewPos`, `volRay`,
+`debugRay`, the env/sun/ground-shadow rays, and the impact splat that
+must land on one named texel). Both are identities on GL, so the OpenGL
+frame is unchanged by construction. See `docs/RenderEngine.md` sec 3.6.
+
+**One thing feared before the fix turned out not to be true**, and it is
+worth correcting here because it was the argument for delaying: flipping
+`vs_fc_comp` does NOT leave two conventions live beside the passes that
+build their own UV from `gl_FragCoord.xy * u_viewTexel.xy`
+(`fs_fc_groundrefl`, `fc_glass_fs.sh`, `fc_line_sdf_fs.sh`).
+`gl_FragCoord.y` counts from the same edge the texture v does on GL,
+Metal and Vulkan alike, so those passes were always right on both, and
+the flip brings the clip-space route INTO agreement with them rather
+than out of it. What did have to be swept was every open-coded
+`*0.5+0.5` and `*2-1` on a screen UV -- `fs_fc_ssao`'s sample
+projection and `fs_fc_debug`'s `debugRay` were found only after the
+first two fixes landed, by the AO and shadow stages still diverging.
+
+Worth knowing, from before the fix: across `*.sc` and `*.sh`,
+`BGFX_SHADER_LANGUAGE_GLSL` matched exactly one file,
+`fs_fc_groundshadow_plane.sc`, and what it handles there is the
+[-1,1] -> [0,1] `gl_FragDepth` conversion. So the tree had one precedent
 for the projection fix and none at all for the origin one.
 
 *And the far half of the scene is clipped away.* With the flip
@@ -1125,10 +1150,53 @@ this scene's camera the constants are unambiguous: Coin's GL ortho gives
 `P[10] = -0.023595`, `P[14] = -1.038783`, while a correct [0,1] ortho for
 the same near/far is `-0.011797` and `-0.019392` -- a factor of two on
 one and nothing like a scale on the other, so a dump of what the frame
-receives settles it in one line. The remap to copy is the shadow crop's
-`sz`/`tz` pair at 1626-1634, but note that `setViewTransform` also feeds
-the predefined `u_proj`, which the AO and environment passes reconstruct
-view positions from: the conversion is not local to clipping.
+receives settles it in one line.
+
+**What shipped**: `render()` remaps the fed matrix once, at the top of
+the frame, `z -> (z + w) / 2` on the z row alone, and everything
+downstream sees a matrix matching `caps->homogeneousDepth`. The w row is
+left alone on purpose, so the perspective test every shader makes still
+reads -1 or 0, and no shader reads the z row at all -- which is why the
+conversion turned out to be local to clipping after all, in spite of
+`setViewTransform` also feeding the predefined `u_proj`. Two consumers
+needed a say: the scene publish and dump keep the matrix as Coin gave
+it, because their viewer renders on a backend of its own, and the
+Gribb-Hartmann frustum extraction now branches on the convention for its
+near plane (`w + z` under GL, plain `z` otherwise). On GL the remap does
+not run, so the OpenGL frame is unchanged by construction.
+
+*And a third defect was hiding behind those two: an orthographic camera
+read as a perspective one.* With the mirror and the clipping fixed, the
+beauty stage was still 72.6% divergent while depth had fallen to
+0.0002%. Geometry was right and shading was not, and the picture said
+where: the environment background was a white starburst radiating from a
+vanishing point, and the whole frame ran 33 levels bright. The cause is
+that GLSL indexes a matrix by COLUMN and every other language bgfx
+targets indexes it by ROW (`BGFX_SHADER_MATRIX_COLUMN_MAJOR`,
+`bgfx_shader.sh` 25). bgfx makes `mul()` agree across that split, and
+`mtxFromRows`/`mtxFromCols` build a matrix either way, but a written-out
+`m[i][j]` names transposed elements -- silently, with no compile error.
+A dozen shaders tell a perspective camera from an orthographic one by
+`u_proj[2][3]`, the w row's z entry, -1 or 0; off GL that subscript
+lands on the z row's w entry instead, which is never 0. So every
+orthographic camera was taken for a perspective one, and the ray fan
+rebuilt from `u_proj[0][0]` -- 0.0227 for this camera, read as a
+perspective x scale -- fanned 44x too wide across the sky.
+
+**What shipped**: `fc_matrix.sh` and `FC_MTX(m, i, j)`, which names the
+element the CPU wrote at `float[16]` index `4*i + j`; the 78 subscripts
+across 14 files were substituted mechanically, index for index, so the
+GL expansion is character-for-character what was there before. Nothing
+else in the shader set indexes a matrix: every construction already went
+through `mtxFromCols`, and `mul()` was never at risk.
+
+WARNING: **Grep for the convention, not for the symptom.** This one cost
+a full diagnosis round because the first two defects masked it, and it
+is the kind that will recur: `#if BGFX_SHADER_LANGUAGE_GLSL` and
+`BGFX_SHADER_MATRIX_COLUMN_MAJOR` in `bgfx_shader.sh` are the complete
+list of what bgfx says differs per backend and does NOT paper over.
+Before blaming a new backend's driver, read that file and check the
+shader set against it.
 
 WARNING: **Test the flip before the shift.** Two wrong readings were
 published here before the right one, and both are cheap to repeat.
@@ -1144,6 +1212,15 @@ from the model-view transform, not the depth buffer and not a function
 of the projection at all. It was never evidence about clip space. A
 mask comparison that does not try `flipud` first can align two lobes of
 a symmetric silhouette and read as confirmation.
+
+A fourth reading worth naming as wrong: the sidecar's `avgColor` is not
+the PNG's mean, and it does not even track it in sign. It is measured on
+the engine's own buffer, and it sits about 10 levels under the written
+frame's mean at rest (golden: 145.15 recorded, 155.48 in the file). On
+the run where the background ran 33 levels bright it read 143.4 -- LOWER
+than the golden's 145.15 -- while the PNG's mean was 188.93 against
+155.48. It would have said the two frames nearly agreed. Diff the
+pixels; `avgColor` is a capture fingerprint, not a measurement.
 
 WARNING: **A restaging must not carry the backend across.** The sidecar records
 the whole `View/Render` group, `Type` included, and that key describes
