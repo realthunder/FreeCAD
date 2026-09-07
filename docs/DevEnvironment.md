@@ -133,6 +133,56 @@ ln -sfn share/PySide6/typesystems typesystems
 ln -sfn share/PySide6/glue glue
 ```
 
+### The Python packages the create line does not install
+
+**None of the above is what FreeCAD's own Python needs at run time**, and
+that gap is invisible to everything the C++ side measures: `FreeCADCmd`
+links no Coin and imports no workbench, the gtest suites are C++, and
+`ctest` therefore passes in full on a box where half the workbenches
+cannot be imported. It is the Python suite (`FreeCADCmd -t 0`, which
+needs a pty) and the GUI that find out.
+
+Measured on the macOS env 2026-09-07 by importing each module under
+`FreeCADCmd`; the same audit is worth running on any new box. Import
+name on the left, conda-forge package where it differs:
+
+| Module | Package | What needs it |
+|---|---|---|
+| `pivy` | **built from source** -- see below | 52 files across BIM (17), Draft (10) and CAM (8), and any script that does `from pivy import coin`. Not a conda package for this stack |
+| `typing_extensions` | `typing_extensions` | `src/Ext/freecad/deprecation.py`, reached from `DraftVecUtils`, `Arch.py` and `Path/Log.py`: **without it Draft, Arch and importDXF do not import at all** |
+| `ply` | `ply` | the OpenSCAD parser, Fem |
+| `yaml` | `pyyaml` | CAM (6 files), Material (3), Fem |
+| `requests` | `requests` | Addon Manager, BIM |
+| `defusedxml` | `defusedxml` | Addon Manager |
+| `git` | `gitpython` | Addon Manager (2 files) |
+| `shapefile` | `pyshp` | BIM site import |
+| `pysolar`, `ladybug` | `pysolar`, `ladybug-core` | BIM solar/energy tools |
+| `opencamlib` | `opencamlib` | CAM, optional -- the module degrades without it |
+| `debugpy` | `debugpy` | remote Python debugging, optional |
+| `six`, `lark`, `numpy`, `matplotlib`, `PIL`, `packaging` | -- | already present: dependencies of the create line |
+
+`requirements.txt` at the repo root is the upstream list and pins
+versions for a pip install; `conda/environment.devenv.yml` is upstream's
+conda list and includes `pivy`, `ply`, `pyyaml` and `six` -- neither is
+what this stack installs, because both bring their own Coin and OCCT.
+Take the names from them, the versions from the solver.
+
+`ifcopenshell`, `smesh` and `libarea` are three more run-time
+dependencies and each has its own section below, because none of them
+may be solved normally in this env.
+
+### pivy is built, not installed
+
+pivy is the exception in that table and the reason it is not in any
+create line: **conda-forge's `pivy` links conda-forge's `coin3d`**, and
+this stack runs the fork's Coin (`libCoinRT`). One `libCoinRT` SONAME is
+resolved per process, so a conda pivy would pull a second Coin into a
+process that already has ours. It is built from `~/works/sw/pivy`
+(`rt-0.6.10`) against the Coin install the stack uses -- the recipe is
+in [Building the dependencies](#building-the-dependencies-conda-stack),
+along with the warning about one pivy not being able to serve both the
+release and the debug stack.
+
 ### Packages from the realthunder channel
 
 `libarea` (FreeCAD's Area module and, in the same process, ifcopenshell)
@@ -2055,6 +2105,48 @@ and vtk against, and that reason does not apply here -- FEM is off on macOS
 and `BUILD_WEB`. A box on macOS 14+ can use 6.11.2 and should.
 
 `libarea` has an osx-64 build (0.3.1, `__osx >=11.0`), so `BUILD_AREA` stays on.
+
+*** **This env is missing every run-time Python package in
+[the table above](#the-python-packages-the-create-line-does-not-install),
+pivy included, and `~/works/sw/pivy` is not even cloned here.** Audited
+2026-09-07: absent are `pivy`, `typing_extensions`, `ply`, `yaml`,
+`requests`, `defusedxml`, `git`, `shapefile`, `pysolar`, `ladybug`,
+`opencamlib` and `debugpy`; present are `six`, `lark`, `numpy`,
+`matplotlib`, `PIL` and `packaging`. So on this box **Draft, Arch and
+importDXF do not import** (`typing_extensions`), and nothing that
+touches the Coin scene graph from Python runs (`pivy`) -- which is how
+the chess render scene came to fail here with a null `ActiveDocument`
+(`RenderDebug.md` 5.2c).
+
+Nothing noticed for three days because the box was brought up for stage
+5, which is headless serving and the C++ suites: `ctest` is 478 of 478
+with all of that missing, and the Python suite (`FreeCADCmd -t 0`) has
+never been run here. **Run the audit on a new box before trusting a
+green ctest**; the probe is fifteen lines and lives in `Testing.md`.
+
+The conda half is a plain install; pivy needs the fork, built against
+the Coin this stack links, with `@loader_path` where Linux uses
+`$ORIGIN` (this box installs the release Coin to
+`~/works/sw/install/coin-mac-relwithdebinfo`, out of tree -- see below):
+
+```sh
+RUN=~/works/sw/fcad/.conda/run.sh
+$RUN conda install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
+  typing_extensions ply pyyaml requests defusedxml gitpython pyshp
+
+git clone -b rt-0.6.10 https://github.com/realthunder/pivy ~/works/sw/pivy
+$RUN cmake -S ~/works/sw/pivy -B ~/works/sw/pivy/build_conda_rwdi -G Ninja \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_PREFIX_PATH=$HOME/works/sw/install/coin-mac-relwithdebinfo \
+  -DCMAKE_INSTALL_RPATH=$HOME/works/sw/install/coin-mac-relwithdebinfo/lib \
+  -DPython_EXECUTABLE=$HOME/works/sw/fcad/.conda/freecad/bin/python
+$RUN cmake --build ~/works/sw/pivy/build_conda_rwdi \
+  && $RUN cmake --install ~/works/sw/pivy/build_conda_rwdi
+```
+
+**Not yet run on this box** -- it is the Linux recipe with the macOS
+Coin prefix, and this note is the ledger entry, not a report of a build
+that happened.
 
 ### `run.sh`, and the xcrun `CPATH` trap
 

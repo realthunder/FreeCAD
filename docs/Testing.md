@@ -43,6 +43,31 @@ descriptor` and takes the rest of the run down with it.
 A single module instead of everything: `FreeCADCmd -t TestPartApp`, or from
 the Python console `import Test; Test.runTestApp()`.
 
+#### Audit the Python environment first, on a new box
+
+A green `ctest` says nothing about the Python side: `FreeCADCmd` links no
+Coin and imports no workbench, and every gtest suite is C++. A box can be
+478 of 478 with Draft, Arch and importDXF unable to import at all -- which
+is what the macOS box was for three days, missing `typing_extensions` and
+`pivy` (`DevEnvironment.md`, "The Python packages the create line does not
+install"). Run this before the suite, as `FreeCADCmd audit.py`; it writes
+to a file because a script's stdout does not reach the console there:
+
+```python
+import FreeCAD
+out = open("/tmp/deps.txt", "w")
+for m in ("pivy", "typing_extensions", "ply", "yaml", "requests",
+          "defusedxml", "git", "shapefile", "pysolar", "ladybug",
+          "opencamlib", "debugpy", "six", "lark", "numpy", "matplotlib",
+          "Draft", "Arch", "BIM", "TechDraw", "Material", "importDXF"):
+    try:
+        __import__(m)
+        out.write("ok      %s\n" % m)
+    except Exception as e:
+        out.write("MISSING %-20s (%s)\n" % (m, e))
+out.close()
+```
+
 ### C++
 
 The suites are built only when `ENABLE_DEVELOPER_TESTS` is on:
