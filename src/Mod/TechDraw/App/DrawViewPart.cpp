@@ -158,6 +158,16 @@ DrawViewPart::DrawViewPart(void)
                       App::PropertyType(App::Prop_Output | App::Prop_Hidden),
                       "Registration rect [x, y, w, h] of the underlay in view coordinates (mm)");
 
+    // The projection this view last made, kept so that reopening the
+    // document does not have to make it again.  Registered by hand because
+    // ADD_PROPERTY_TYPE assigns a default value first and a stored
+    // projection has none -- it starts empty and is filled by a projection.
+    ProjectedGeometry.setContainer(this);
+    propertyData.addProperty(static_cast<App::PropertyContainer*>(this), "ProjectedGeometry",
+                             &ProjectedGeometry, group,
+                             App::PropertyType(App::Prop_Output | App::Prop_Hidden),
+                             "The geometry the last projection produced");
+
     //initialize bbox to non-garbage
     bbox = Base::BoundBox3d(Base::Vector3d(0.0, 0.0, 0.0), 0.0);
 }
@@ -472,6 +482,66 @@ void DrawViewPart::onHlrFinished(GeometryObjectPtr geometryObject)
                 params.progress->setCanceled(true);
             }));
     }
+    else {
+        //no faces are coming, so the geometry is complete here
+        captureGeometry();
+    }
+}
+
+//! keep what the projection produced, so that reopening the document draws
+//! this view without running the projection again
+void DrawViewPart::captureGeometry()
+{
+    if (!m_geometryObject || !Preferences::storeProjectedGeometry()) {
+        ProjectedGeometry.clear();
+        return;
+    }
+    ProjectedGeometry.capture(*m_geometryObject, m_saveCentroid);
+}
+
+//! put a stored projection back where a projection would have left it
+bool DrawViewPart::restoreStoredGeometry()
+{
+    if (ProjectedGeometry.isEmpty()) {
+        return false;
+    }
+
+    TechDraw::GeometryObjectPtr go(
+        std::make_shared<TechDraw::GeometryObject>(getNameInDocument(), this));
+    go->setIsoCount(IsoCount.getValue());
+    go->isPerspective(Perspective.getValue());
+    go->setFocus(Focus.getValue());
+    go->usePolygonHLR(CoarseView.getValue());
+    go->setScrubCount(ScrubCount.getValue());
+    if (!ProjectedGeometry.restoreInto(*go)) {
+        return false;
+    }
+
+    m_geometryObject = go;
+    m_saveCentroid = ProjectedGeometry.getCentroid();
+    bbox = m_geometryObject->calcBoundingBox();
+    Base::Console().Log("DVP - %s reused a stored projection: %d edges, %d vertices, %d faces\n",
+                        getNameInDocument(), ProjectedGeometry.countEdges(),
+                        ProjectedGeometry.countVertices(), ProjectedGeometry.countFaces());
+    return true;
+}
+
+//! whether the stored projection is still the projection this view would make
+bool DrawViewPart::canReuseStoredGeometry() const
+{
+    return m_geometryFromStore && !m_restoredOutOfDate && !isTouched();
+}
+
+void DrawViewPart::onDocumentRestored()
+{
+    // Read before anything can purge it.  A view written while it was out of
+    // date has to project again whatever it stored, and Document::afterRestore
+    // purges the touched flag as it goes -- in dependency order, so a view is
+    // purged before the page that has to make that decision is reached.
+    m_restoredOutOfDate = isTouched();
+    m_geometryFromStore = restoreStoredGeometry();
+
+    DrawView::onDocumentRestored();
 }
 
 //! run any tasks that need to been done after geometry is available
@@ -783,6 +853,10 @@ void DrawViewPart::onFacesFinished(std::shared_ptr<std::vector<FacePtr>> faces)
 
     // Now we can recompute Dimensions and do other tasks possibly depending on Face extraction
     postFaceExtractionTasks();
+
+    // the geometry is complete here -- HLR, the cosmetics postHlrTasks
+    // added, the faces and the centerlines that needed them
+    captureGeometry();
 
     abortMakeGeometry();
 

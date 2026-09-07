@@ -42,6 +42,7 @@
 
 #include "CosmeticExtension.h"
 #include "DrawView.h"
+#include "PropertyProjectedGeometry.h"
 
 class Message_ProgressIndicator;
 
@@ -135,6 +136,13 @@ public:
     App::PropertyFloat UnderlayResolution;
     App::PropertyFloatList UnderlayRect;
 
+    // What the last projection produced, kept in the document so that
+    // reopening it draws the view without running HLR, face finding and (for
+    // a section) the boolean cut again.  Prop_Output for the same reason the
+    // underlay capture is: it is derived state, and writing it must not touch
+    // the view that produced it.  See docs/TechDrawStoredGeometry.md.
+    TechDraw::PropertyProjectedGeometry ProjectedGeometry;
+
     short mustExecute() const override;
     App::DocumentObjectExecReturn* execute() override;
     const char* getViewProviderName() const override { return "TechDrawGui::ViewProviderViewPart"; }
@@ -156,6 +164,10 @@ public:
     const std::vector<TechDraw::FacePtr> getFaceGeometry() const;
 
     bool hasGeometry() const;
+    //! true when the document brought a projection back for this view and it
+    //! is the projection the view would make now -- nothing has touched the
+    //! view since it was saved.  The page asks before recomputing on restore.
+    bool canReuseStoredGeometry() const;
     TechDraw::GeometryObjectPtr getGeometryObject(bool noException=false) const;
 
     TechDraw::VertexPtr getVertex(std::string vertexName) const;
@@ -262,6 +274,13 @@ public:
     void resetReferenceVerts();
 
     // routines related to multi-threading
+    //! keep what the projection produced.  Called where the geometry is
+    //! complete -- after face finding, or after HLR when no faces are found.
+    virtual void captureGeometry();
+    //! put a stored projection back into a geometry object.  False when there
+    //! was nothing stored, or when it did not read back element for element
+    virtual bool restoreStoredGeometry();
+
     virtual void postHlrTasks();
     virtual void postFaceExtractionTasks();
     bool waitingForFaces() const { return m_waitingForFaces; }
@@ -282,6 +301,7 @@ protected:
 
     void onChanged(const App::Property* prop) override;
     void unsetupObject() override;
+    void onDocumentRestored() override;
 
     void buildGeometryObject(const Part::TopoShape& shape, const gp_Ax2& viewAxis);
     void makeGeometryForShape(const Part::TopoShape& shape);//const??
@@ -313,6 +333,11 @@ protected:
 
 private:
     bool nowUnsetting = false;
+    //! whether the view was out of date when the document was written.  Read
+    //! in onDocumentRestored, because the restore purges the touched flag
+    //! before the page that has to make the decision is reached.
+    bool m_restoredOutOfDate = false;
+    bool m_geometryFromStore = false;
     bool m_waitingForFaces = false;
     bool m_waitingForHlr = false;
 
