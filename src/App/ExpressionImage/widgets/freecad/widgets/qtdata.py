@@ -133,16 +133,20 @@ Qt = _QtNamespace()
 
 
 class QColor:
-    """A color as four floats; ``name()`` is ``#rrggbb`` as Qt's."""
+    """A color as four floats; ``name()`` is ``#rrggbb`` as Qt's.  An
+    invalid one (``isValid()`` false) is what a canceled QColorDialog
+    answers; every constructed color is valid, as Qt's."""
 
-    __slots__ = ("_rgba",)
+    __slots__ = ("_rgba", "_valid")
 
     def __init__(self, *args):
         self._rgba = [0.0, 0.0, 0.0, 1.0]
+        self._valid = True
         if len(args) == 1:
             a = args[0]
             if isinstance(a, QColor):
                 self._rgba = list(a._rgba)
+                self._valid = a._valid
             elif isinstance(a, str):
                 self.setNamedColor(a)
             elif isinstance(a, int):
@@ -244,7 +248,13 @@ class QColor:
         return "#%02x%02x%02x" % self.getRgb()[:3]
 
     def isValid(self):
-        return True
+        return self._valid
+
+    @classmethod
+    def invalid(cls):
+        c = cls()
+        c._valid = False
+        return c
 
     def __eq__(self, other):
         return isinstance(other, QColor) and self.getRgb() == other.getRgb()

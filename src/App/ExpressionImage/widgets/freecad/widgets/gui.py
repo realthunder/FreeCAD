@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 """What `FreeCADGui` carries for the forms in the sandbox guest:
 `Control` (the task panel), `UiLoader` and `PySideUic` (the .ui loader
-and `createWidget`), `getMainWindow()` as a shim, `runCommand`.
+and `createWidget`), `getMainWindow()` as a shim, `runCommand`,
+`Selection` (the host's, one op per call, observers as guest proxies).
 Reached through the guest FreeCADGui module's `__getattr__` (`attr`
 below), so nothing here loads before a form is made; the models load
 on first use (docs/Sandbox.md 7.11)."""
@@ -15,6 +16,8 @@ def attr(name):
         return globals()[name]
     if name == "ActiveDocument":
         return active_document()
+    if name == "Selection":
+        return Selection
     if name == "UserInput":
         return user_input()
     raise AttributeError("FreeCADGui.%s is not in the sandbox (docs/Sandbox.md 7)" % name)
@@ -152,6 +155,9 @@ PANEL_HOOKS = ("accept", "reject", "clicked", "open", "getStandardButtons",
                "isAllowedAlterView", "isAllowedAlterSelection", "helpRequested", "shouldShow")
 WATCHER_HOOKS = ("shouldShow",)
 MAIN_WINDOW_HOOKS = ("mainWindowClosed",)
+SEL_OBSERVER_HOOKS = ("onSelectionChanged", "addSelection", "removeSelection", "setSelection",
+                      "clearSelection", "setPreselection", "removePreselection",
+                      "pickedListChanged")
 
 
 def getIcon(name):
@@ -375,6 +381,128 @@ class _MdiArea:
 
 _mdi_area = _MdiArea()
 _main_window = MainWindow()
+
+
+class SelectionObject:
+    """What `Selection.getSelectionEx()` yields in the guest: the host's
+    SelectionObject by value (docs/Sandbox.md 7.11, G3d) -- `Object`
+    and `Document` handles, the names as data, `SubObjects` resolved
+    through `Object.getSubObject` on first read."""
+
+    def __init__(self, d):
+        self.Object = d["Object"]
+        self.Document = d["Document"]
+        self.ObjectName = d["ObjectName"]
+        self.DocumentName = d["DocumentName"]
+        self.FullName = d["FullName"]
+        self.TypeName = d["TypeName"]
+        self.SubElementNames = tuple(d["SubElementNames"])
+        self._picked = tuple(tuple(p) for p in d["PickedPoints"])
+        self._subs = None
+
+    @property
+    def HasSubObjects(self):
+        return bool(self.SubElementNames)
+
+    @property
+    def SubObjects(self):
+        if self._subs is None:
+            self._subs = tuple(self.Object.getSubObject(n) for n in self.SubElementNames)
+        return self._subs
+
+    @property
+    def PickedPoints(self):
+        import FreeCAD
+
+        return tuple(FreeCAD.Vector(*p) for p in self._picked)
+
+    def isObjectTypeOf(self, type_name):
+        return self.Object.isDerivedFrom(type_name)
+
+    def remove(self):
+        for sub in self.SubElementNames or ("",):
+            Selection.removeSelection(self.Object, sub)
+
+    def __repr__(self):
+        return "<SelectionObject %s#%s%s>" % (
+            self.DocumentName, self.ObjectName,
+            "." + ",".join(self.SubElementNames) if self.SubElementNames else "")
+
+
+def _wrap(value):
+    """A SelectionObject's dict (selection_call on the host) as the
+    guest's SelectionObject, through lists (getSelectionEx,
+    getCompleteSelection, getPickedList, the stack)."""
+    if isinstance(value, list):
+        return [_wrap(v) for v in value]
+    if isinstance(value, dict) and "SubElementNames" in value and "ObjectName" in value:
+        return SelectionObject(value)
+    return value
+
+
+class _Selection:
+    """`FreeCADGui.Selection` in the guest: each call is the host's
+    (`gui.sel.call`, the arguments by value, an object as its handle);
+    an observer registers as a guest proxy with the observer hook
+    list, driven by the host's own SelectionObserverPython."""
+
+    _METHODS = ("getSelection", "getCompleteSelection", "addSelection", "removeSelection",
+                "clearSelection", "hasSelection", "isSelected", "getPreselection",
+                "setPreselection", "removePreselection", "countObjectsOfType",
+                "hasSubSelection", "updateSelection", "getSelectedObjects",
+                "getSelectionFromStack", "getPickedList", "enablePickedList", "setVisible")
+
+    @staticmethod
+    def _call(name, *args):
+        import _fcx
+
+        return _wrap(_fcx.op("gui.sel.call", 0, [name, list(args)]))
+
+    def __getattr__(self, name):
+        if name in self._METHODS:
+            return lambda *args: self._call(name, *args)
+        raise AttributeError("FreeCADGui.Selection.%s is not in the sandbox's subset" % name)
+
+    def getSelection(self, docName="", resolve=1, single=False):
+        return self._call("getSelection", str(docName), int(resolve), bool(single))
+
+    def getSelectionEx(self, docName="", resolve=1, single=False):
+        return self._call("getSelectionEx", str(docName), int(resolve), bool(single))
+
+    def getCompleteSelection(self, resolve=1):
+        return self._call("getCompleteSelection", int(resolve))
+
+    def getSelectionObject(self, docName, objName, subName="", point=None):
+        args = [str(docName), str(objName), str(subName)]
+        if point is not None:
+            args.append(tuple(point))
+        return self._call("getSelectionObject", *args)
+
+    def addObserver(self, observer, resolve=1):
+        import _fcx
+        import FreeCADGui
+
+        desc = FreeCADGui._proxy_register(observer, SEL_OBSERVER_HOOKS)
+        _fcx.op("gui.sel.observer", 0, ["add", desc, int(resolve)])
+
+    def removeObserver(self, observer):
+        import _fcx
+        import FreeCADGui
+
+        desc = FreeCADGui._proxy_register(observer, SEL_OBSERVER_HOOKS)
+        _fcx.op("gui.sel.observer", 0, ["remove", desc])
+
+    def addSelectionGate(self, *args, **kw):
+        raise AttributeError("FreeCADGui.Selection.addSelectionGate is not in the sandbox yet")
+
+    def removeSelectionGate(self):
+        pass
+
+    def __repr__(self):
+        return "<FreeCADGui.Selection (sandbox)>"
+
+
+Selection = _Selection()
 
 
 def getMainWindow():

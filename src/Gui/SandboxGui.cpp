@@ -21,6 +21,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <algorithm>
 #include <climits>
 #include <cstring>
 #include <map>
@@ -55,15 +56,20 @@
 #include "Fw/FwStore.h"
 #include "Fw/FwWidgets.h"
 #include "MainWindow.h"
+#include "Selection/SelectionObserverPython.h"
 #include "TaskView/TaskDialog.h"
 #include "TaskView/TaskDialogPython.h"
 #include "TaskView/TaskView.h"
 
 #include <QAction>
+#include <QColorDialog>
 #include <QCursor>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
+#include <QInputDialog>
 #include <QMenu>
+#include <QMessageBox>
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
@@ -203,6 +209,27 @@ def name_of(wb):
     if wb is None:
         return None
     return getattr(wb, "_fcx_name", None) or type(wb).__name__
+
+
+def _selection_value(value):
+    """A SelectionObject crosses by value (docs/Sandbox.md 7.11, G3d):
+    its objects as handles, its names and picked points as data; the
+    guest's SubObjects resolve through Object.getSubObject on read."""
+    if isinstance(value, (list, tuple)):
+        return type(value)(_selection_value(v) for v in value)
+    if type(value).__name__ == "SelectionObject":  # Gui.SelectionObject, not a module attribute
+        return {"Object": value.Object, "Document": value.Document,
+                "ObjectName": value.ObjectName, "DocumentName": value.DocumentName,
+                "FullName": value.FullName, "TypeName": value.TypeName,
+                "SubElementNames": list(value.SubElementNames),
+                "PickedPoints": [(p.x, p.y, p.z) for p in value.PickedPoints]}
+    return value
+
+
+def selection_call(name, args):
+    """FreeCADGui.Selection.<name>(*args) for the guest, the args
+    decoded (a handle is the host object)."""
+    return _selection_value(getattr(FreeCADGui.Selection, name)(*args))
 )PY";
 
 /// The wrapper namespace, built on first use (needs FreeCADGui.Workbench,
@@ -1186,6 +1213,272 @@ Reply addTaskWatchers(HandleTable& table, const json& a)
     return replyOk(true);
 }
 
+// ---- G3d (docs/Sandbox.md 7.11): the selection and the U2 dialogs.
+
+/// `gui.sel.call [name, args]`: `FreeCADGui.Selection.<name>(*args)`
+/// on the host for the guest's `Selection` -- the methods Draft and
+/// BIM call, the arguments decoded (an object handle is the host
+/// object, a name a string), the result by value with the objects as
+/// handles (a SelectionObject as a dict, see selection_call).
+Reply selectionCall(HandleTable& table, const json& a)
+{
+    if (!a.is_array() || a.size() != 2 || !a[0].is_string() || !a[1].is_array())
+        return replyErr("ProtocolError", "gui.sel.call: [name, args]");
+    const std::string& name = a[0].get_ref<const std::string&>();
+    static const std::set<std::string> subset = {
+        "getSelection",      "getSelectionEx",   "getCompleteSelection", "addSelection",
+        "removeSelection",   "clearSelection",   "hasSelection",         "isSelected",
+        "getPreselection",   "setPreselection",  "removePreselection",   "countObjectsOfType",
+        "getSelectionObject", "hasSubSelection", "updateSelection",      "getSelectedObjects",
+        "getSelectionFromStack", "getPickedList", "enablePickedList",    "setVisible",
+    };
+    if (!subset.count(name))
+        return replyErr("AttributeError", "Selection." + name + " is not in the sandbox's subset");
+    PyObject* args = PyTuple_New(Py_ssize_t(a[1].size()));
+    if (!args)
+        return replyPyError();
+    Py_ssize_t i = 0;
+    for (const auto& v : a[1]) {
+        PyObject* pv = decodeValue(table, v);
+        if (!pv) {
+            Py_DECREF(args);
+            return replyPyError();
+        }
+        PyTuple_SET_ITEM(args, i++, pv);
+    }
+    PyObject* ns = wrapperNamespace();
+    if (!ns) {
+        Py_DECREF(args);
+        return replyPyError();
+    }
+    PyObject* r = PyObject_CallFunction(PyDict_GetItemString(ns, "selection_call"), "sO",
+                                        name.c_str(), args);
+    Py_DECREF(args);
+    return r ? replyResult(table, r) : replyPyError();
+}
+
+/// The guest's selection observers: proxy id -> the stand-in the
+/// host's SelectionObserverPython holds (one owned reference each).
+std::map<uint64_t, PyObject*>& selectionObservers()
+{
+    static std::map<uint64_t, PyObject*> observers;
+    return observers;
+}
+
+/// Drop every guest observer: a guest reset left their stand-ins
+/// pointing at a guest that is gone.
+void dropSelectionObservers()
+{
+    auto& observers = selectionObservers();
+    if (observers.empty())
+        return;
+    Base::PyGILStateLocker lock;
+    for (auto& kv : observers) {
+        Gui::SelectionObserverPython::removeObserver(Py::Object(kv.second, false));
+        Py_DECREF(kv.second);
+    }
+    observers.clear();
+}
+
+/// `gui.sel.observer ["add", descriptor, resolve] | ["remove",
+/// descriptor]`: `Selection.addObserver` / `removeObserver`.  The
+/// observer is a guest stand-in with the observer hook list; the
+/// host's own SelectionObserverPython drives it exactly as it drives a
+/// native Python observer (one hop per hook it defines, the arguments
+/// by value: document and object NAMES, the sub-element, the point).
+Reply selectionObserver(HandleTable& table, const json& a)
+{
+    if (!a.is_array() || a.size() < 2 || !a[0].is_string() || !a[1].is_object()
+        || !a[1].contains("id") || !a[1]["id"].is_number_unsigned())
+        return replyErr("ProtocolError", "gui.sel.observer: [add|remove, descriptor, resolve]");
+    const std::string& what = a[0].get_ref<const std::string&>();
+    const uint64_t pid = a[1]["id"].get<uint64_t>();
+    auto& observers = selectionObservers();
+    if (what == "remove") {
+        auto it = observers.find(pid);
+        if (it == observers.end())
+            return replyOk(false);
+        Gui::SelectionObserverPython::removeObserver(Py::Object(it->second, false));
+        Py_DECREF(it->second);
+        observers.erase(it);
+        return replyOk(true);
+    }
+    if (what != "add")
+        return replyErr("ProtocolError", "gui.sel.observer: add or remove");
+    if (observers.count(pid))
+        return replyOk(false);
+    int resolve = a.size() > 2 && a[2].is_number_integer() ? a[2].get<int>() : 1;
+    if (resolve < 0 || resolve > 3)
+        return replyErr("ValueError", "gui.sel.observer: resolve mode 0..3");
+    PyObject* standin = decodeValue(table, a[1]);
+    if (!standin)
+        return replyPyError();
+    if (!isGuestProxy(standin)) {
+        Py_DECREF(standin);
+        return replyErr("TypeError", "gui.sel.observer: not a guest proxy");
+    }
+    try {
+        Gui::SelectionObserverPython::addObserver(Py::Object(standin, false),
+                                                  Gui::ResolveMode(resolve));
+    }
+    catch (Py::Exception&) {
+        Py_DECREF(standin);
+        return replyPyError();
+    }
+    observers[pid] = standin;  // the reference decodeValue made
+    return replyOk(true);
+}
+
+QString jstr(const json& a, const char* key, const char* fallback = "")
+{
+    auto it = a.find(key);
+    if (it == a.end() || !it->is_string())
+        return QString::fromUtf8(fallback);
+    return QString::fromUtf8(it->get_ref<const std::string&>().c_str());
+}
+
+template<class T>
+T jnum(const json& a, const char* key, T fallback)
+{
+    auto it = a.find(key);
+    if (it == a.end() || !it->is_number())
+        return fallback;
+    return it->get<T>();
+}
+
+/// `gui.dialog.message {icon, title, text, informative, detailed,
+/// buttons, default}`: the QMessageBox statics (question, information,
+/// warning, critical) and an instance's exec, one nested loop under
+/// the main window; the button pressed, Qt's StandardButton value.
+Reply dialogMessage(const json& a)
+{
+    if (!a.is_object())
+        return replyErr("ProtocolError", "gui.dialog.message: {icon, title, text, buttons, default}");
+    QMessageBox box(getMainWindow());
+    box.setIcon(QMessageBox::Icon(std::clamp(jnum<int>(a, "icon", 0), 0, 4)));
+    box.setWindowTitle(jstr(a, "title"));
+    box.setText(jstr(a, "text"));
+    box.setInformativeText(jstr(a, "informative"));
+    box.setDetailedText(jstr(a, "detailed"));
+    const int buttons = jnum<int>(a, "buttons", int(QMessageBox::Ok));
+    box.setStandardButtons(QMessageBox::StandardButtons(buttons ? buttons : int(QMessageBox::Ok)));
+    if (int def = jnum<int>(a, "default", 0))
+        box.setDefaultButton(QMessageBox::StandardButton(def));
+    return replyOk(int(box.exec()));
+}
+
+/// `gui.dialog.input {kind, title, label, value, items, current,
+/// editable, echo, min, max, step, decimals}`: the QInputDialog
+/// statics; `[value, ok]`.
+Reply dialogInput(const json& a)
+{
+    if (!a.is_object() || !a.contains("kind") || !a["kind"].is_string())
+        return replyErr("ProtocolError", "gui.dialog.input: {kind, title, label, ...}");
+    const std::string& kind = a["kind"].get_ref<const std::string&>();
+    QWidget* parent = getMainWindow();
+    const QString title = jstr(a, "title");
+    const QString label = jstr(a, "label");
+    bool ok = false;
+    if (kind == "text") {
+        int echo = std::clamp(jnum<int>(a, "echo", 0), 0, 3);
+        QString v = QInputDialog::getText(parent, title, label, QLineEdit::EchoMode(echo),
+                                          jstr(a, "value"), &ok);
+        return replyOk(json::array({v.toStdString(), ok}));
+    }
+    if (kind == "multiline") {
+        QString v = QInputDialog::getMultiLineText(parent, title, label, jstr(a, "value"), &ok);
+        return replyOk(json::array({v.toStdString(), ok}));
+    }
+    if (kind == "int") {
+        int v = QInputDialog::getInt(parent, title, label, jnum<int>(a, "value", 0),
+                                     jnum<int>(a, "min", -2147483647),
+                                     jnum<int>(a, "max", 2147483647), jnum<int>(a, "step", 1),
+                                     &ok);
+        return replyOk(json::array({v, ok}));
+    }
+    if (kind == "double") {
+        double v = QInputDialog::getDouble(parent, title, label, jnum<double>(a, "value", 0.0),
+                                           jnum<double>(a, "min", -2147483647.0),
+                                           jnum<double>(a, "max", 2147483647.0),
+                                           jnum<int>(a, "decimals", 1), &ok);
+        return replyOk(json::array({v, ok}));
+    }
+    if (kind == "item") {
+        QStringList items;
+        auto it = a.find("items");
+        if (it != a.end() && it->is_array()) {
+            for (const auto& s : *it)
+                items << (s.is_string() ? QString::fromUtf8(s.get_ref<const std::string&>().c_str())
+                                        : QString::fromStdString(s.dump()));
+        }
+        QString v = QInputDialog::getItem(parent, title, label, items, jnum<int>(a, "current", 0),
+                                          a.value("editable", true), &ok);
+        return replyOk(json::array({v.toStdString(), ok}));
+    }
+    return replyErr("ValueError", "gui.dialog.input: unknown kind '" + kind + "'");
+}
+
+/// `gui.dialog.file {mode, caption, dir, filter, selected, options}`:
+/// the QFileDialog statics -- open, opens, save, dir; `[path(s),
+/// selected filter]`.  The path is DATA to the guest: what it may
+/// then read or write there is the file-system grant's business, not
+/// the dialog's (docs/Sandbox.md 7.1, U2).
+Reply dialogFile(const json& a)
+{
+    if (!a.is_object() || !a.contains("mode") || !a["mode"].is_string())
+        return replyErr("ProtocolError", "gui.dialog.file: {mode, caption, dir, filter}");
+    const std::string& mode = a["mode"].get_ref<const std::string&>();
+    QWidget* parent = getMainWindow();
+    const QString caption = jstr(a, "caption");
+    const QString dir = jstr(a, "dir");
+    const QString filter = jstr(a, "filter");
+    QString selected = jstr(a, "selected");
+    QFileDialog::Options options(jnum<int>(a, "options", 0));
+    if (mode == "open") {
+        QString v = QFileDialog::getOpenFileName(parent, caption, dir, filter, &selected, options);
+        return replyOk(json::array({v.toStdString(), selected.toStdString()}));
+    }
+    if (mode == "opens") {
+        QStringList v = QFileDialog::getOpenFileNames(parent, caption, dir, filter, &selected,
+                                                      options);
+        json paths = json::array();
+        for (const QString& p : v)
+            paths.push_back(p.toStdString());
+        return replyOk(json::array({paths, selected.toStdString()}));
+    }
+    if (mode == "save") {
+        QString v = QFileDialog::getSaveFileName(parent, caption, dir, filter, &selected, options);
+        return replyOk(json::array({v.toStdString(), selected.toStdString()}));
+    }
+    if (mode == "dir") {
+        QString v = QFileDialog::getExistingDirectory(parent, caption, dir,
+                                                      options ? options : QFileDialog::ShowDirsOnly);
+        return replyOk(json::array({v.toStdString(), ""}));
+    }
+    return replyErr("ValueError", "gui.dialog.file: unknown mode '" + mode + "'");
+}
+
+/// `gui.dialog.color {initial: [r, g, b, a], title, options}`:
+/// `QColorDialog.getColor`; `[r, g, b, a]` as floats, or null when
+/// canceled.
+Reply dialogColor(const json& a)
+{
+    if (!a.is_object())
+        return replyErr("ProtocolError", "gui.dialog.color: {initial, title, options}");
+    QColor initial = Qt::white;
+    auto it = a.find("initial");
+    if (it != a.end() && it->is_array() && it->size() >= 3) {
+        const json& c = *it;
+        initial = QColor::fromRgbF(c[0].get<double>(), c[1].get<double>(), c[2].get<double>(),
+                                   c.size() > 3 ? c[3].get<double>() : 1.0);
+    }
+    QColorDialog::ColorDialogOptions options(jnum<int>(a, "options", 0));
+    QColor v = QColorDialog::getColor(initial, getMainWindow(), jstr(a, "title"), options);
+    if (!v.isValid())
+        return replyOk(nullptr);
+    return replyOk(json::array({v.redF(), v.greenF(), v.blueF(), v.alphaF()}));
+}
+
 Reply guiOp(HandleTable& table, const Reply& requestCbor)
 {
     const json req = json::from_cbor(requestCbor);
@@ -1257,6 +1550,18 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
         return controlShow(table, arg);
     if (op == "gui.dialog.exec")
         return dialogExec(table, arg);
+    if (op == "gui.sel.call")
+        return selectionCall(table, arg);
+    if (op == "gui.sel.observer")
+        return selectionObserver(table, arg);
+    if (op == "gui.dialog.message")
+        return dialogMessage(arg);
+    if (op == "gui.dialog.input")
+        return dialogInput(arg);
+    if (op == "gui.dialog.file")
+        return dialogFile(arg);
+    if (op == "gui.dialog.color")
+        return dialogColor(arg);
     if (op == "gui.control.close" || op == "gui.control.active" || op == "gui.control.query"
         || op == "gui.control.clear_watcher")
         return controlCall(table, op, arg);
@@ -1286,6 +1591,8 @@ void Gui::SandboxGui::registerOps()
     // the event loop rather than run from the listener, so it never
     // nests in the evaluation that booted the guest.
     App::ExpressionSandbox::ImageHost::instance().addBootListener([](int boot) {
+        // the previous guest's selection observers point at nothing now
+        dropSelectionObservers();
         QTimer::singleShot(0, [boot]() {
             if (!Application::Instance)
                 return;

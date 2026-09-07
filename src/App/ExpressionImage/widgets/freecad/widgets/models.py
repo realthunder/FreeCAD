@@ -3233,6 +3233,270 @@ from . import items as _items  # noqa: E402
 
 # The Qt class name -> the model class, for the .ui loader and
 # `UiLoader().createWidget`.  A `Gui::Pref*` is its base class here
+# ---- the U2 dialogs (docs/Sandbox.md 7.11, G3d): the stock Qt dialogs
+# as one synchronous op each -- the host runs the nested loop under
+# its main window and answers with the value.  A `parent` argument is
+# accepted and ignored (the host parents them itself).
+
+
+def _dialog_op(name, arg):
+    import _fcx
+
+    return _fcx.op(name, 0, arg)
+
+
+class QMessageBox:
+    """The statics (`question`, `information`, `warning`, `critical`,
+    `about`) and the instance shape (`setText`, `setStandardButtons`,
+    `exec_`); the button pressed as Qt's StandardButton value."""
+
+    NoIcon = 0
+    Information = 1
+    Warning = 2
+    Critical = 3
+    Question = 4
+
+    class Icon(qtdata._Enum):
+        _name = "QMessageBox.Icon"
+        NoIcon = 0
+        Information = 1
+        Warning = 2
+        Critical = 3
+        Question = 4
+
+    StandardButton = qtdata.QDialogButtonBoxButtons
+    NoButton = 0
+    Ok = qtdata.QDialogButtonBoxButtons.Ok
+    Save = qtdata.QDialogButtonBoxButtons.Save
+    SaveAll = qtdata.QDialogButtonBoxButtons.SaveAll
+    Open = qtdata.QDialogButtonBoxButtons.Open
+    Yes = qtdata.QDialogButtonBoxButtons.Yes
+    YesToAll = qtdata.QDialogButtonBoxButtons.YesToAll
+    No = qtdata.QDialogButtonBoxButtons.No
+    NoToAll = qtdata.QDialogButtonBoxButtons.NoToAll
+    Abort = qtdata.QDialogButtonBoxButtons.Abort
+    Retry = qtdata.QDialogButtonBoxButtons.Retry
+    Ignore = qtdata.QDialogButtonBoxButtons.Ignore
+    Close = qtdata.QDialogButtonBoxButtons.Close
+    Cancel = qtdata.QDialogButtonBoxButtons.Cancel
+    Discard = qtdata.QDialogButtonBoxButtons.Discard
+    Help = qtdata.QDialogButtonBoxButtons.Help
+    Apply = qtdata.QDialogButtonBoxButtons.Apply
+    Reset = qtdata.QDialogButtonBoxButtons.Reset
+    RestoreDefaults = qtdata.QDialogButtonBoxButtons.RestoreDefaults
+
+    @staticmethod
+    def _show(icon, title, text, buttons, default, informative="", detailed=""):
+        return int(_dialog_op("gui.dialog.message", {
+            "icon": int(icon), "title": str(title), "text": str(text),
+            "informative": str(informative), "detailed": str(detailed),
+            "buttons": int(buttons), "default": int(default)}))
+
+    @classmethod
+    def question(cls, parent, title, text, buttons=None, defaultButton=0):
+        if buttons is None:
+            buttons = cls.Yes | cls.No
+        return cls._show(cls.Question, title, text, buttons, defaultButton)
+
+    @classmethod
+    def information(cls, parent, title, text, buttons=None, defaultButton=0):
+        return cls._show(cls.Information, title, text, buttons or cls.Ok, defaultButton)
+
+    @classmethod
+    def warning(cls, parent, title, text, buttons=None, defaultButton=0):
+        return cls._show(cls.Warning, title, text, buttons or cls.Ok, defaultButton)
+
+    @classmethod
+    def critical(cls, parent, title, text, buttons=None, defaultButton=0):
+        return cls._show(cls.Critical, title, text, buttons or cls.Ok, defaultButton)
+
+    @classmethod
+    def about(cls, parent, title, text):
+        cls._show(cls.NoIcon, title, text, cls.Ok, 0)
+
+    def __init__(self, *args, **kw):
+        # QMessageBox(parent) or QMessageBox(icon, title, text, buttons, parent)
+        self._icon = self.NoIcon
+        self._title = ""
+        self._text = ""
+        self._informative = ""
+        self._detailed = ""
+        self._buttons = self.NoButton
+        self._default = 0
+        if args and isinstance(args[0], int):
+            self._icon = args[0]
+            if len(args) > 1:
+                self._title = str(args[1])
+            if len(args) > 2:
+                self._text = str(args[2])
+            if len(args) > 3:
+                self._buttons = int(args[3])
+
+    def setIcon(self, icon):
+        self._icon = int(icon)
+
+    def setWindowTitle(self, title):
+        self._title = str(title)
+
+    def setText(self, text):
+        self._text = str(text)
+
+    def setInformativeText(self, text):
+        self._informative = str(text)
+
+    def setDetailedText(self, text):
+        self._detailed = str(text)
+
+    def setStandardButtons(self, buttons):
+        self._buttons = int(buttons)
+
+    def setDefaultButton(self, button):
+        self._default = int(button)
+
+    def setEscapeButton(self, button):
+        pass
+
+    def setTextFormat(self, fmt):
+        pass
+
+    def setWindowFlags(self, flags):
+        pass
+
+    def setModal(self, modal):
+        pass
+
+    def exec_(self):
+        return self._show(self._icon, self._title, self._text, self._buttons, self._default,
+                          self._informative, self._detailed)
+
+    exec = exec_
+
+    def show(self):
+        self.exec_()
+
+    def open(self):
+        self.exec_()
+
+
+class QInputDialog:
+    """The statics: `(value, ok)` as PySide answers them."""
+
+    Normal = 0
+    NoEcho = 1
+    Password = 2
+    PasswordEchoOnEdit = 3
+    TextInput = 0
+    IntInput = 1
+    DoubleInput = 2
+
+    @staticmethod
+    def _ask(arg):
+        value, ok = _dialog_op("gui.dialog.input", arg)
+        return value, bool(ok)
+
+    @classmethod
+    def getText(cls, parent, title, label, echo=0, text="", *args, **kw):
+        return cls._ask({"kind": "text", "title": str(title), "label": str(label),
+                         "echo": int(echo), "value": str(text)})
+
+    @classmethod
+    def getMultiLineText(cls, parent, title, label, text="", *args, **kw):
+        return cls._ask({"kind": "multiline", "title": str(title), "label": str(label),
+                         "value": str(text)})
+
+    @classmethod
+    def getInt(cls, parent, title, label, value=0, minValue=-2147483647,
+               maxValue=2147483647, step=1, *args, **kw):
+        return cls._ask({"kind": "int", "title": str(title), "label": str(label),
+                         "value": int(value), "min": int(minValue), "max": int(maxValue),
+                         "step": int(step)})
+
+    getInteger = getInt
+
+    @classmethod
+    def getDouble(cls, parent, title, label, value=0.0, minValue=-2147483647.0,
+                  maxValue=2147483647.0, decimals=1, *args, **kw):
+        return cls._ask({"kind": "double", "title": str(title), "label": str(label),
+                         "value": float(value), "min": float(minValue),
+                         "max": float(maxValue), "decimals": int(decimals)})
+
+    @classmethod
+    def getItem(cls, parent, title, label, items, current=0, editable=True, *args, **kw):
+        return cls._ask({"kind": "item", "title": str(title), "label": str(label),
+                         "items": [str(i) for i in items], "current": int(current),
+                         "editable": bool(editable)})
+
+
+class QFileDialog:
+    """The statics: `(path, selected filter)` as PySide answers them.
+    The path is data; reading or writing it is the file-system
+    grant's business (docs/Sandbox.md 7.1, U2)."""
+
+    ShowDirsOnly = 0x1
+    DontResolveSymlinks = 0x2
+    DontConfirmOverwrite = 0x4
+    DontUseNativeDialog = 0x10
+    ReadOnly = 0x20
+    HideNameFilterDetails = 0x40
+    Option = int
+    Options = int
+    AnyFile = 0
+    ExistingFile = 1
+    Directory = 2
+    ExistingFiles = 3
+    AcceptOpen = 0
+    AcceptSave = 1
+
+    @staticmethod
+    def _ask(mode, caption, directory, filter, selected, options):
+        return _dialog_op("gui.dialog.file", {
+            "mode": mode, "caption": str(caption), "dir": str(directory),
+            "filter": str(filter), "selected": str(selected or ""), "options": int(options or 0)})
+
+    @classmethod
+    def getOpenFileName(cls, parent=None, caption="", dir="", filter="", selectedFilter="",
+                        options=0, **kw):
+        path, chosen = cls._ask("open", caption, dir, filter, selectedFilter, options)
+        return path, chosen
+
+    @classmethod
+    def getOpenFileNames(cls, parent=None, caption="", dir="", filter="", selectedFilter="",
+                         options=0, **kw):
+        paths, chosen = cls._ask("opens", caption, dir, filter, selectedFilter, options)
+        return list(paths), chosen
+
+    @classmethod
+    def getSaveFileName(cls, parent=None, caption="", dir="", filter="", selectedFilter="",
+                        options=0, **kw):
+        path, chosen = cls._ask("save", caption, dir, filter, selectedFilter, options)
+        return path, chosen
+
+    @classmethod
+    def getExistingDirectory(cls, parent=None, caption="", dir="", options=0, **kw):
+        path, _ = cls._ask("dir", caption, dir, "", "", options)
+        return path
+
+
+class QColorDialog:
+    """`getColor`: a QColor, invalid when canceled."""
+
+    ShowAlphaChannel = 0x1
+    NoButtons = 0x2
+    DontUseNativeDialog = 0x4
+
+    @staticmethod
+    def getColor(initial=None, parent=None, title="", options=0):
+        if initial is None:
+            initial = qtdata.QColor(255, 255, 255)
+        elif not isinstance(initial, qtdata.QColor):
+            initial = qtdata.QColor(initial)
+        rgba = _dialog_op("gui.dialog.color", {
+            "initial": list(initial.getRgbF()), "title": str(title), "options": int(options)})
+        if rgba is None:
+            return qtdata.QColor.invalid()
+        return qtdata.QColor.fromRgbF(*rgba)
+
+
 # (the host makes the real one); an unknown class is a QWidget.
 CLASSES = {
     "QDialog": QDialog,

@@ -3042,6 +3042,78 @@ The **G2b runner** followed, BUILT 2026-09-06 (7.9): Draft's and BIM's
 `InitGui.py` in the guest at startup, Draft's tool bars from the guest;
 both `Initialize()`s now stop at the GuiUp ruling (sec 13), then G3d.
 
+**G3d BUILT 2026-09-07**: the selection input and the U2 dialogs.
+
+- **`FreeCADGui.Selection` in the guest is the host's**, one op per
+  call (`gui.sel.call [name, args]`, `freecad.widgets.gui.Selection`):
+  the arguments cross by value with an object as its handle, and the
+  host calls its own `FreeCADGui.Selection.<name>` -- no second
+  implementation of the resolve modes, the sub-name grammar or the
+  stack.  The subset is the 18 methods Draft and BIM reach for
+  (`getSelection` 198 sites, `getSelectionEx` 66, `clearSelection` 55,
+  `addSelection` 45, then `hasSelection`, `getCompleteSelection`,
+  `removeSelection`, `isSelected`, `countObjectsOfType`, the
+  preselection pair, the picked list); a name outside it is an
+  AttributeError naming it (`addSelectionGate` is the one the linter
+  still lists).  **A SelectionObject crosses by value**: `Object` and
+  `Document` as handles, the names and the picked points as data, and
+  `SubObjects` resolved in the guest through `Object.getSubObject` on
+  first read -- `SelectionObjectPy.xml` needs no annotation, and the
+  facade generator's list did not grow.
+- **An observer is a guest proxy** with the eight-hook list
+  (`SEL_OBSERVER_HOOKS`), and the host's own `SelectionObserverPython`
+  holds the stand-in and drives it exactly as it drives a native Python
+  observer: one hop per hook the class defines, the arguments by value
+  (document and object NAMES, the sub-element, the point).  No new
+  transport: the task watchers' route (G3c).  `removeObserver` finds
+  the stand-in by proxy id; a guest reset drops every observer
+  (their stand-ins point at a guest that is gone) from the boot
+  listener that re-runs the InitGui's.  BIM registers ten of these,
+  Draft none.
+- **The four stock dialogs are one synchronous op each**, in
+  `freecad.widgets.models` so both `QtWidgets` and `QtGui` (BIM's
+  spelling) find them: `gui.dialog.message` for `QMessageBox`'s
+  statics and its instance shape (`setText`, `setStandardButtons`,
+  `exec_`; the button pressed as Qt's StandardButton value, the enum
+  the `QDialogButtonBox` constants already carried), `gui.dialog.input`
+  for `QInputDialog.getText/getItem/getInt/getDouble/getMultiLineText`
+  (`(value, ok)` as PySide answers), `gui.dialog.file` for
+  `QFileDialog.getOpenFileName/getOpenFileNames/getSaveFileName/
+  getExistingDirectory` (`(path, selected filter)`), `gui.dialog.color`
+  for `QColorDialog.getColor` (a QColor, invalid when canceled --
+  `QColor.isValid()` is real now).  The host runs the nested loop under
+  its main window; a `parent` argument is accepted and ignored.  **The
+  file dialog's answer is DATA**: whether the guest may then read or
+  write that path is the file-system grant's business (7.1, U2), which
+  is not built -- there is no `fs` permission in the catalog yet.
+- Not in G3d: the delegates' color editors inside the item views (the
+  static exists, the delegate's editor path is G3b's `cellTypes`
+  contract) and `addSelectionGate`.
+
+Gate `SandboxSelection` (4 cases): the guest selects by handle and by
+names, the host sees it; `getSelectionEx` with a face, `SubObjects`
+resolved through `getSubObject`; the host's changes are the guest's
+next read; an observer sees the host's add, add with a point, remove
+and clear in order, sees the guest's own add (a nested entry), and
+nothing once removed; each dialog driven from a host timer inside the
+nested loop (Yes clicked, an instance's Save, text retyped, the third
+item, an int canceled, a file picked, a save named, a color chosen and
+a color canceled); a document principal refused.
+Measured (RelWithDebInfo, Xvfb, `scripts/sandbox-gui-gate.py`,
+`SandboxSelection`): the four cases in 4.1 s; a stock dialog from the
+guest's call to its answer, the host's timer clicking it at 30 ms,
+35-60 ms each (the first QMessageBox 0.26 s, its construction); the
+observer's four host events delivered in order, the guest's own add
+seen through the nested entry.  What the build settled: a session
+guest holds an object handle for ONE evaluation (no owner document to
+re-resolve it in), so `Selection.getSelection()` is read where it is
+used, and BIM's observers get names, as natively; `FullName` is the
+host's verbatim (the Python expression that re-selects); the widget
+QFileDialog lists its directory asynchronously, so a driver selects by
+its name edit, not `selectFile`; `getCompleteSelection`,
+`getPickedList` and the preselection answer SelectionObjects, as the
+host does, wrapped on the guest side by shape.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -3164,6 +3236,12 @@ Non-ASCII object names occur in real files.  Rig:
                                                           Draft's and BIM's 41 loadUi sites
                                                           opened from the guest and
                                                           round-tripped, exec_() (7.11);
+                                                          the same gate script
+    src/Mod/Test/SandboxSelection.py                 4    G3d: FreeCADGui.Selection from
+                                                          the guest, a SelectionObject by
+                                                          value, an observer as a guest
+                                                          proxy, the four stock dialogs
+                                                          driven from a host timer (7.11);
                                                           the same gate script
     src/Mod/Test/SandboxDraftGui.py                  3    G3c: Draft's DraftGui.py in the
                                                           guest -- the tray tool bar, the
@@ -3315,8 +3393,10 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    40-file harness `SandboxPanels` is its gate); G3c BUILT 2026-09-06
    (forms built in code: layouts without a file, actions, tool bars,
    menus, the main window shim, the key event stream; DraftGui's tray
-   and panel are the gate, `SandboxDraftGui`); G3d the selection input
-   and the U2 dialogs.
+   and panel are the gate, `SandboxDraftGui`); G3d BUILT 2026-09-07
+   (the selection input over the host's own Selection, observers as
+   guest proxies, the four stock dialogs one op each; gate
+   `SandboxSelection`).
    H0 (BUILT 2026-09-06) and H1 (7.12) come before G3b so G3b's views
    are written once, in C++; H2 and H3, the native ports, interleave
    with G3b-G3d as the class set grows.
