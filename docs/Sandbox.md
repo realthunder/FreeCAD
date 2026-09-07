@@ -40,7 +40,7 @@ user decision, quoted where the wording matters.
     forms: dialogs, item views, ...  built       G3b: exec_(), the tree/list/table family as rows, containers, the file chooser; the 40-file harness (7.11)
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
-    the session document (commands) sized       S1: the session's self = the host's active document; S2 doCommand in the guest (7.13, decision pending)
+    the session document (commands) ruled       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2 doCommand in the guest (7.13)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -168,6 +168,8 @@ across the board.
     unsafe.getattr    DENY       PROMPT    ALLOW   host-side Python attribute walks
     pkg.install:<p>   PROMPT     PROMPT    PROMPT  an ACTION, never a grant (sec 5.5)
     gui.doCommand     DENY       ALLOW     PROMPT  designed (sec 7), not in the enum yet
+    app.write         DENY (np)  ALLOW     ALLOW   newDocument/closeDocument/setActiveDocument;
+                                                   ruled 2026-09-07 (7.13), not in the enum yet
     net.*             --         --        --      designed (sec 6), not in the enum yet
 
 The one deliberate compatibility break: `unsafe.getattr` (the
@@ -3115,7 +3117,7 @@ its name edit, not `selectFile`; `getCompleteSelection`,
 `getPickedList` and the preselection answer SelectionObjects, as the
 host does, wrapped on the guest side by shape.
 
-### 7.13 The session document sized: `FreeCAD.ActiveDocument` for a command **[sized 2026-09-07, decision pending]**
+### 7.13 The session document sized: `FreeCAD.ActiveDocument` for a command **[sized and RULED 2026-09-07; build next]**
 
 The question, asked after G3d ("next session size it first"): a guest
 command can read the selection now, but its `Activated()` runs as the
@@ -3125,7 +3127,8 @@ None) and BIM's command modules (490 `ActiveDocument` uses in 60 files)
 stop at their first line.  What does it take for a command body to
 read, hold and write the document the user is working in, which
 command bodies that unblocks, under which permission, and what is the
-gate.  Sized only; nothing below is built.
+gate.  Sized, then ruled the same day (below); the build starts
+the next session.
 
 **Why the gap exists.**  Reach on the wire is anchored on ONE object,
 `HandleTable::owner()`, set by `Private::Transaction` for each
@@ -3202,83 +3205,106 @@ stand in front of most of the rest, and both stand on this one:
   run a body today; a user cannot click one until G4 or a stub view.
   Not this slice.
 
-**S1, the design: the session's "self" is the host's active document,
-captured per transaction.**
+**RULED 2026-09-07 (user): "1. agree ... should also apply to
+Gui.ActiveDocument.  2. ... for a workbench, I incline to grant it
+access to all documents by default."**  The three rulings, and what
+each settles:
 
-- `HandleTable` gains an anchor document beside the owner
-  (`setAnchor(App::Document*)`, `anchor()`).  `Private::Transaction`
-  captures `App::GetApplication().getActiveDocument()` when it is
-  given NO owner (an `exec`, an ownerless proxy call) and restores the
-  previous anchor on exit, as it does `prevOwner`.  A transaction WITH
-  an owner anchors on the owner's document exactly as now: a document
-  hook running while another document is active on the host still
-  sees ITS OWN document as `FreeCAD.ActiveDocument` -- the deliberate
-  rule, unchanged (natively that hook sees the host's, the classic
-  way an Arch object writes the wrong document).  Nesting: a session
-  command's `write_prop` runs the host's `onChanged`, whose guest hook
-  is a proxy call WITH an owner -- owner-anchored, restored on exit; a
-  session call nested in a session call (`Gui.runCommand` from a
-  command) re-captures the same document.
-- One helper, `anchorDocument(table)` -- the owner's document when
-  there is an owner, else the anchor -- replaces the three
-  `documentOf(table.owner())` reads: `writeGate` (same-document
-  against it, then `doc.write.self` as now; the "owner itself" arm
-  stays for value handles), `resolveByKey` (a key naming the anchor
-  re-resolves; any other document stays a PermissionError, now naming
-  both documents), `active_doc` (no owner: the anchor's Python face
-  as a handle under `doc.read.self`; nothing open: None).  A
-  `DocumentPy` base already resolves through `documentOf` to itself,
-  so document-level calls pass the same gate.
-- Guest side: `App.activeDocument()` as a function beside the
-  `ActiveDocument` property, in the prelude (`ImageDispatch.cpp`: a
-  guest image rebuild); `FreeCADGui.ActiveDocument.Document` already
-  forwards to it.
+1. **No new permission for the session's document writes.**  They are
+   `doc.write.self` / `doc.read.self`; reach into any other open
+   document is `doc.foreign`, which the catalog already ALLOWs the
+   session and addons.  The same rule backs `FreeCADGui.ActiveDocument`
+   and `Gui.activeDocument()`.
+2. **A workbench reaches EVERY open document.**  The session and addon
+   principals' reach set is all open documents, not one anchored
+   document -- the catalog's stance made mechanism.  The captured
+   anchor and the switch rule of the first draft are DROPPED:
+   `FreeCAD.ActiveDocument` reads the host's live active document on
+   every call (BimLibrary calls `setActiveDocument` and then saves),
+   and a kept handle re-resolves by its own document's name wherever
+   the user's focus is, as natively -- which closes G3d's "one
+   evaluation" limit for session handles outright.  A DOCUMENT
+   principal keeps its own document only, always.
+3. **`setActiveDocument`, `newDocument`, `closeDocument` are the
+   workbench's** under one new enum value, `app.write` (DENY document,
+   not promptable; ALLOW session and addon); `listDocuments` and
+   `getDocument` under the existing `app.query`.  **`save()` is
+   declared** (the user's own path, the document as content: Ctrl+S).
+   **`saveAs(path)` takes a PICKER-BLESSED path only**: a path the
+   host's file dialog returned to this guest (`gui.dialog.file`) is a
+   capability the guest may hand back, for the life of the guest; any
+   other path is refused naming the fs slice (7.1, U2).  BimLibrary's
+   one `saveAs` passes: its path comes from `getSaveFileName`.
+   `mergeProject` (2 uses, a file read) waits with the fs slice.
+
+The concern weighed and how the design answers it: **reach follows
+the PRINCIPAL, never the call shape.**  The reach set is computed from
+the current principal class (`Runtime` scope stack): a document
+principal gets the owner's document only, even if some later op ever
+lands it in a transaction with no owner; session and addon get every
+open document.  Keyed on "no owner" instead, a document hook reaching
+an ownerless nested call could have written the active document under
+`doc.write.self` -- no such path exists today (`gui.*` and `doCommand`
+are DENY for a document), and the rule keeps a later op from opening
+one.  Weighed and accepted: `closeDocument` is silent data loss
+natively and stays so for a workbench (an audit line; never a
+document's); a workbench writing expressions into document B changes
+B's hash and voids B's grants, exactly as native editing does; with
+every document open to it, the sandbox's value for a third-party
+workbench is the import prompts, the network, crash isolation and the
+audit trail -- the standing ruling that document-derived code is the
+threat (1.4).
+
+**S1, the design (as ruled).**
+
+- `HandleTable::owner()` stays what it is (the object an owned
+  transaction may write, the identity check for value handles).  A new
+  helper, `reachable(table, App::Document*)`, answers the three checks
+  from the PRINCIPAL: a document principal -> the owner's document
+  only (`documentOf(table.owner())`, as now); session or addon -> any
+  document in `App::GetApplication().getDocuments()`.  `writeGate`
+  (same-document -> reachable, then `doc.write.self`, plus
+  `doc.foreign` when the target is not the owner's document),
+  `resolveByKey` (a key naming a reachable document re-resolves; a
+  closed document is a ReferenceError, an unreachable one a
+  PermissionError naming both), and `active_doc` (a document principal:
+  the owner's Document as now; session/addon: the host's LIVE
+  `getActiveDocument()` as a handle under `doc.read.self`, None with
+  nothing open).  Nesting needs no anchor bookkeeping: the principal
+  is the scope stack's.
+- Guest side (the prelude, `ImageDispatch.cpp`: a guest image
+  rebuild): `App.activeDocument()` beside the `ActiveDocument`
+  property; `listDocuments()`, `getDocument(name)`, `newDocument(name,
+  label, hidden)`, `closeDocument(name)`, `setActiveDocument(name)`
+  as module facade entries -- the guest's Application shim knows
+  every document the principal may reach, not the transaction's one.
+  `FreeCADGui`: `ActiveDocument` becomes a GuiDocument over the same
+  live document (`Document`, `getObject(name)` -> a view provider
+  handle through the view family G2b resolves, `setEdit`/`resetEdit`,
+  `Modified`), `activeDocument()` the function form; `ActiveView`
+  stays G4.
 - Facade (`DocumentPy.xml`, `call` tier, in the write family):
-  `openTransaction`, `commitTransaction`, `abortTransaction` (the undo
-  stack is a document write), `recompute` (already a write-family
-  name, for objects), `copyObject`; read: `getObjectsByLabel` (call),
-  `ActiveObject` and `RootObjects` (handle), `UndoCount`/`UndoNames`
-  (value; the gate reads them).  NOT declared: `save`/`saveAs` (a
-  file write: there is no fs permission); `undo`/`redo`/`clearUndos`
-  (unused by the corpus); `FreeCAD.setActiveDocument`, `newDocument`,
-  `getDocument`, `listDocuments`, `closeDocument` (5 BIM uses, the
-  BimWindows/BimViews preview-document dance) -- the residue, a
-  "session documents" slice later under `doc.foreign`, which the
-  catalog already ALLOWs the session; `App.ActiveDocument.Box` (4
-  draftmake uses, an object read as a Document attribute) is
+  `openTransaction`, `commitTransaction`, `abortTransaction`,
+  `recompute`, `copyObject`, `save`; `saveAs` under the blessed-path
+  check; read: `getObjectsByLabel` (call), `ActiveObject`,
+  `RootObjects` (handle), `UndoCount`/`UndoNames`/`FileName`/`Label`
+  (value).  NOT declared: `undo`/`redo`/`clearUndos` (unused);
+  `App.ActiveDocument.Box` (an object read as a Document attribute) is
   `Document.__getattr__`, not a member -- `getObject` is the answer.
-- Handles across calls: a kept `self.doc` or `self.obj` re-resolves
-  by its key into the anchor after any `clearHandles`; a kept VIEW
-  PROVIDER cannot (`handleKey` is null for one: no name to come back
-  by).  Draft and BIM re-read `.ViewObject` from the object each
-  time, so nothing in the corpus keeps one; a `[doc, name, "vo"]` key
-  is the one-line extension if something does.
-- Cost: about 60 lines across `ExpressionImageBridge.{h,cpp}` and
-  `ExpressionImageHost.cpp`, ten XML annotations, the prelude line,
-  the gate.  Half a day with the gate.
-
-**Two decisions for the user.**
-
-1. **Permission: no new class (recommended).**  A session's document
-   writes map to `doc.write.self` / `doc.read.self` with "self" for a
-   session DEFINED as the host's active document at the transaction's
-   start; the catalog's session column is already ALLOW, the panel
-   gains no row, the audit line names the principal and the document.
-   The alternative is a distinct `doc.active` (DENY document / ALLOW
-   session / PROMPT addon), whose only effect would be a prompt on a
-   third-party addon's first document write -- while addons are ALLOW
-   across the board today, `doc.foreign` included (2.2), so that
-   prompt would be the one promptable write an addon has.  Revisit
-   with the addon principal's granularity (13), not now.  A document
-   principal is untouched either way: it always has an owner.
-2. **The switch rule.**  A handle a command keeps re-resolves only into
-   the anchor AT THE TIME of re-resolution: after the user activates
-   another document mid-command, the kept `self.doc` is refused with
-   a PermissionError naming both documents.  Natively the command
-   would keep writing the old document.  The safe direction and a
-   visible one; the gate asserts it.  The alternative -- re-resolve
-   into any open document for the session -- is the "session
-   documents" slice above, not this one.
+- The blessed paths: `gui.dialog.file` records every path it returns
+  in a per-guest set on the host (cleared with the guest); `saveAs`
+  checks membership before the call.  The set is the seed of the fs
+  slice, not a substitute for it.
+- Handles across calls: a kept `self.doc`/`self.obj` re-resolves by
+  key into its own document after any `clearHandles`; a kept VIEW
+  PROVIDER cannot (`handleKey` is null for one); the corpus re-reads
+  `.ViewObject` each time; a `[doc, name, "vo"]` key is the one-line
+  extension if something does.
+- Cost: about 80 lines across `ExpressionImageBridge.{h,cpp}`,
+  `ExpressionImageHost.cpp` and `SandboxGui.cpp` (the blessed set),
+  the `app.write` enum value with its catalog row and name, a dozen
+  XML annotations, the prelude and the wheel's GuiDocument, the gate.
+  Under a day with the gate.
 
 **S2, `doCommand` in the guest** (sized here because it stands on S1
 and is the next blocker of every Draft creator; built after S1 on its
@@ -3298,26 +3324,36 @@ preselected `Draft_Upgrade` (with a selection `proceed()` runs
 inline, no view callback) and `BIM_Site`.
 
 **Gate `SandboxSessionDoc`** (a GUI gate module in the rig's default
-list, six cases):
+list, seven cases):
 
 1. A guest command's `Activated`: `FreeCAD.ActiveDocument.Name` is
-   the host's, `App.activeDocument()` the same object (by key), None
-   with nothing open.
+   the host's, `App.activeDocument()` and `Gui.ActiveDocument.Document`
+   the same object (by key), None with nothing open; after the guest's
+   own `setActiveDocument(other)` all three follow.
 2. Writes: `openTransaction`, `addObject("Part::Feature")`, `Label`
-   and `Shape`, `ViewObject.Visibility` (the view family through the
-   anchor), `removeObject`, `commitTransaction`, `recompute()` returns
-   a count; the host's `UndoNames` carries the name and one undo
-   restores the object.
+   and `Shape`, `ViewObject.Visibility` (the view family),
+   `removeObject`, `commitTransaction`, `recompute()` returns a count;
+   the host's `UndoNames` carries the name and one undo restores the
+   object.
 3. A handle kept on the command across two activations with a routed
    expression evaluation between them (`clearHandles`) re-resolves;
-   the same handle after the host activates another document:
-   PermissionError naming both.
-4. A second open document is out of reach (an object of it crossing
-   as a selection handle: reads OK, writes refused) -- the case the
-   "session documents" slice will flip.
+   the same handle still resolves and writes after the host activates
+   ANOTHER document (the ruled behaviour, native parity); after the
+   host closes its document: ReferenceError.
+4. Two documents: `listDocuments()` names both, `getDocument(b)` is
+   writable from a command while `a` is active; `newDocument` then
+   `closeDocument` round-trips (the host's document count); a
+   DOCUMENT principal's `execute()` is refused every one of the five
+   (`app.write` not promptable; `getDocument` of another document a
+   PermissionError).
 5. Regression: a DOCUMENT principal's `execute()` sees its OWN
-   document as `ActiveDocument` while another is active on the host.
-6. Corpus: `Draft_Heal` and `BIM_Trash` then `BIM_EmptyTrash` on a
+   document as `ActiveDocument` while another is active on the host,
+   and its write into the other document is refused.
+6. `save()` from a command writes the document's own file (mtime
+   moves); `saveAs` to a path the guest's `getSaveFileName` returned
+   (the gate's timer types it) writes it; `saveAs` to a path the
+   guest made up is refused.
+7. Corpus: `Draft_Heal` and `BIM_Trash` then `BIM_EmptyTrash` on a
    selected object from the guest -- direct bodies, no `doCommand`,
    no view: the object healed / in the Trash group and hidden / gone,
    and the host's undo stack holding each command's transaction.
@@ -3604,14 +3640,17 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    and panel are the gate, `SandboxDraftGui`); G3d BUILT 2026-09-07
    (the selection input over the host's own Selection, observers as
    guest proxies, the four stock dialogs one op each; gate
-   `SandboxSelection`).  **S1 SIZED 2026-09-07** (7.13): the
-   session document -- a command's `FreeCAD.ActiveDocument` is the
-   host's active document, captured per transaction as the anchor
-   the write gate, `resolveByKey` and `active_doc` use when there
-   is no owner; no new permission (recommended, decision pending);
-   gate `SandboxSessionDoc`.  **S2** follows it: `Gui.doCommand` /
-   `addModule` in the guest under the `gui.doCommand` enum value.
-   Both come before the status bar / dock widgets and G4.
+   `SandboxSelection`).  **S1 SIZED AND RULED 2026-09-07** (7.13),
+   NEXT TO BUILD: the session document -- a workbench (session or
+   addon) reaches every open document, reach computed from the
+   principal; `FreeCAD.ActiveDocument`/`Gui.ActiveDocument` are the
+   host's live one; `listDocuments`/`getDocument` under `app.query`,
+   `newDocument`/`closeDocument`/`setActiveDocument` under the new
+   `app.write`; `save` declared, `saveAs` on a picker-blessed path;
+   gate `SandboxSessionDoc` (7 cases).  **S2** follows it:
+   `Gui.doCommand` / `addModule` in the guest under the
+   `gui.doCommand` enum value.  Both come before the status bar /
+   dock widgets and G4.
    H0 (BUILT 2026-09-06) and H1 (7.12) come before G3b so G3b's views
    are written once, in C++; H2 and H3, the native ports, interleave
    with G3b-G3d as the class set grows.
@@ -3801,10 +3840,11 @@ sockets, any network for the reference image, a webview escape hatch.
   findChild`, `addStatusBarItem`, `BimStatus`, `init_draft_statusbar`,
   `QDockWidget` for BimViews): not in the widget layer; Draft's
   `Activated()` and BIM's stop there (7.9).  G3d or G7 material.
-- **The session has no document** (7.13, sized 2026-09-07): a
-  command's `Activated()` gets `FreeCAD.ActiveDocument` None, no
-  document write, and a handle for one evaluation; `Gui.doCommand`
-  is not in the guest.  S1/S2 in 7.13, decision pending.
+- **The session has no document** (7.13, sized and ruled 2026-09-07,
+  build next): a command's `Activated()` gets `FreeCAD.ActiveDocument`
+  None, no document write, and a handle for one evaluation;
+  `Gui.doCommand` is not in the guest.  Ruled: every open document
+  for a workbench, `app.write`, `save`, picker-blessed `saveAs`.
 
 - Document OPEN imports, before any expression runs.
   `PropertyPythonObject::Restore`'s `PyImport_ImportModule` on a
