@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <algorithm>
+# include <array>
 # include <list>
 #endif
 
@@ -58,6 +60,15 @@ void MainWindowPy::init_type()
     add_varargs_method("removeWindow", &MainWindowPy::removeWindow, "removeWindow(MDIView)");
     add_varargs_method("showHint", &MainWindowPy::showHint, "showHint(hint)");
     add_varargs_method("hideHint", &MainWindowPy::hideHint, "hideHint()");
+    add_keyword_method("addStatusBarItem",
+                       &MainWindowPy::addStatusBarItem,
+                       "addStatusBarItem(widget, id, title='', slot='Right', order=0, "
+                       "persistentVisibility=True, stretch=0)\n"
+                       "Registers a widget in the status bar. MainWindow owns its\n"
+                       "placement, ordering, visibility persistence and context-menu entry.");
+    add_varargs_method("removeStatusBarItem",
+                       &MainWindowPy::removeStatusBarItem,
+                       "removeStatusBarItem(id)");
 }
 
 PyObject *MainWindowPy::extension_object_new(struct _typeobject * /*type*/, PyObject * /*args*/, PyObject * /*kwds*/)
@@ -91,7 +102,8 @@ Py::Object MainWindowPy::createWrapper(MainWindow *mw)
     // copy attributes
     std::list<std::string> attr = {"getWindows", "getWindowsOfType", "setActiveWindow",
                                    "getActiveWindow", "addWindow", "removeWindow",
-                                   "showHint", "hideHint"};
+                                   "showHint", "hideHint",
+                                   "addStatusBarItem", "removeStatusBarItem"};
 
     Py::Object py = wrap.fromQWidget(mw, "QMainWindow");
     Py::ExtensionObject<MainWindowPy> inst(create(mw));
@@ -274,5 +286,75 @@ Py::Object MainWindowPy::hideHint(const Py::Tuple&)
 {
     _mw->hideHints();
 
+    return Py::None();
+}
+
+Py::Object MainWindowPy::addStatusBarItem(const Py::Tuple& args, const Py::Dict& kwds)
+{
+    PyObject* pyWidget {};
+    const char* id {};
+    const char* title = "";
+    const char* slot = "Right";
+    int order = 0;
+    int persistent = 1;
+    int stretch = 0;
+
+    static const std::array<const char*, 8> names {"widget",
+                                                   "id",
+                                                   "title",
+                                                   "slot",
+                                                   "order",
+                                                   "persistentVisibility",
+                                                   "stretch",
+                                                   nullptr};
+    std::array<char*, 8> argNames {};
+    std::transform(names.begin(), names.end(), argNames.begin(), [](const char* s) {
+        return const_cast<char*>(s);
+    });
+
+    if (!PyArg_ParseTupleAndKeywords(args.ptr(),
+                                     kwds.ptr(),
+                                     "Os|ssipi",
+                                     argNames.data(),
+                                     &pyWidget,
+                                     &id,
+                                     &title,
+                                     &slot,
+                                     &order,
+                                     &persistent,
+                                     &stretch)) {
+        throw Py::Exception();
+    }
+
+    PythonWrapper wrap;
+    wrap.loadWidgetsModule();
+    QWidget* widget = qobject_cast<QWidget*>(wrap.toQObject(Py::Object(pyWidget)));
+    if (!widget) {
+        throw Py::TypeError("addStatusBarItem: first argument must be a QWidget");
+    }
+
+    StatusBarItemSpec spec;
+    spec.id = QByteArray(id);
+    spec.title = QString::fromUtf8(title);
+    spec.slot = (QByteArray(slot).toLower() == "left") ? StatusBarSlot::Left : StatusBarSlot::Right;
+    spec.order = order;
+    spec.persistentVisibility = persistent != 0;
+    spec.stretch = stretch;
+
+    if (_mw) {
+        _mw->addStatusBarItem(widget, spec);
+    }
+    return Py::None();
+}
+
+Py::Object MainWindowPy::removeStatusBarItem(const Py::Tuple& args)
+{
+    const char* id {};
+    if (!PyArg_ParseTuple(args.ptr(), "s", &id)) {
+        throw Py::Exception();
+    }
+    if (_mw) {
+        _mw->removeStatusBarItem(QByteArray(id));
+    }
     return Py::None();
 }

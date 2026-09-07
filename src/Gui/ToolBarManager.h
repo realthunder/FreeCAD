@@ -38,6 +38,7 @@ class QAction;
 class QMenu;
 class QToolBar;
 class QMouseEvent;
+class QStyleOptionToolBar;
 
 namespace Gui {
 
@@ -115,6 +116,28 @@ private:
 
 
 /**
+ * A QToolBar that can be created by name.
+ *
+ * Two reasons it exists. It publishes QToolBar's protected
+ * initStyleOption(), which ToolBarGrip needs to draw a handle in the parent's
+ * style; and, being a QObject with a class name, it can be registered with the
+ * widget factory, which is what makes
+ * UiLoader().createWidget("Gui::ToolBar") return a widget rather than None.
+ * Draft, BIM and Tux build their status-bar widgets that way.
+ */
+class GuiExport ToolBar: public QToolBar
+{
+    Q_OBJECT
+
+public:
+    ToolBar();
+    explicit ToolBar(QWidget* parent);
+    ~ToolBar() override = default;
+
+    void initStyleOption(QStyleOptionToolBar* option) const;
+};
+
+/**
  * The ToolBarManager class is responsible for the creation of toolbars and appending them
  * to the main window.
  * @see ToolBoxManager
@@ -136,6 +159,8 @@ public:
     /// The one and only instance.
     static ToolBarManager* getInstance();
     static void destruct();
+    /// Registers Gui::ToolBar with the widget factory, once per process.
+    static void setupWidgetProducers();
     /** Sets up the toolbars of a given workbench. */
     void setup(ToolBarItem*);
     void saveState() const;
