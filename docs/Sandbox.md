@@ -42,6 +42,7 @@ user decision, quoted where the wording matters.
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
+    host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
     rungs 1-4 of the ladder          designed    sec 1.3
@@ -175,6 +176,11 @@ across the board.
     app.write         DENY (np)  ALLOW     ALLOW   newDocument/closeDocument/setActiveDocument
                                                    (FcxWire app.new_doc/close_doc/set_active_doc);
                                                    ruled and built 2026-09-07 (7.13, S1)
+    fs.read:<path>    DENY (np)  PROMPT    PROMPT  a host file read at the core's chokepoints
+    fs.write:<path>   DENY (np)  PROMPT    PROMPT  (Gui::Application::open/importFrom/exportTo,
+    host.exec:<path>  DENY (np)  PROMPT    PROMPT  openDocument, saveAs, MacroManager::run,
+                                                   Interpreter::runFile), a picker-blessed path
+                                                   passing; designed (7.14), not in the enum yet
     net.*             --         --        --      designed (sec 6), not in the enum yet
 
 The one deliberate compatibility break: `unsafe.getattr` (the
@@ -3506,6 +3512,142 @@ where it departs from the sizing above:
   loader that hooks `addCommand` around the import records nothing
   unless it `importlib.reload`s the module.
 
+### 7.14 Host commands from the guest sized: the file and code chokepoints **[sized 2026-09-07]**
+
+The question, asked after S2 ("shall we fine grain control doCommand?
+there are commands allow file access" -- then "that's the same trap as
+the deny list before sandbox work right? any better way"): a guest can
+now run command scripts, and some commands read and write files or run
+code from a file.  Where does the gate go.  Sized here; not built.
+
+**`doCommand` is not the hole.**  Its source runs in the guest's own
+interpreter under the caller's principal (S2), and reaches the host only
+through the bridge ops the caller could call directly, each under its
+own permission.  Checked over the whole declared surface (the generated
+facades, the module facades): no member takes a host path except
+`Document.save` (the document's own file) and `saveAs` (a picker-blessed
+path only, S1).  The guest's `open()` reads pyodide's empty in-memory
+file system, so `importIFC.insert("/home/x/a.ifc", doc)` in a command
+string fails to find the file rather than reading it.  Classifying the
+string's text would be evaded with `exec`, `getattr` or string building;
+the sha256 in the audit line is a trail, not a filter.  When the fs
+slice lands, each file op names its path and carries its own row, and
+`doCommand` still adds nothing on top.
+
+**The hole is `gui.cmd.run`.**  The guest's `Gui.runCommand(name,
+index)` runs ANY host command by name under the plain `gui` row, with
+no per-command check (`runCommandByName`, `SandboxGui.cpp`).  Three
+host commands act on a file with no picker, so the user never consents:
+`Std_RecentMacros` runs a macro file from the recent list, the index
+choosing which (`Action.cpp:2080` -> `MacroManager::run` ->
+`Interpreter::runFile`: arbitrary host Python); `Std_RecentFiles` opens
+a recent file (`Action.cpp:1871` -> `Gui::Application::open`);
+`Std_DlgMacroExecuteDirect` runs the macro editor's content.  A document
+principal reaches none of this (`gui` is DENY for it, not promptable);
+the session and addons get it for free today.  Addons are the case.
+
+**Why not a list of command names.**  A deny list is the pre-sandbox
+trap: every command classified by hand, the default open, and it decays
+the moment upstream or an addon adds one.  An allow list fails closed
+but is the same classification inverted, and commands are not a
+declared surface the way the XML members are -- there is nothing next to
+a command's `activated()` that says what it reaches.  The caller is the
+wrong gate either way.
+
+**The design: gate the primitive, keyed on the scope stack.**
+`Runtime::check` returns at once when the scope stack is empty (host
+code outside any evaluation is trusted, 2.4), and while a guest op runs
+the stack carries the guest's principal for the whole synchronous call
+-- that is what makes the `gui` check in `guiOp` work today.  When a
+guest runs `Std_RecentMacros`, the host runs its `activated()` with the
+guest still on the stack, so a check inside the primitive it ends up
+calling fires under the guest and stays silent for the user's own click.
+The primitives that read or write a host file or run code from one are
+few, stable and in the core; the commands are hundreds, growing, in
+every module.  The chokepoints, from the callers:
+
+    primitive                                        covers
+    -----------------------------------------------  ---------------------------------------
+    Gui::Application::open / importFrom / exportTo   every Std file command, drag-and-drop,
+      (Application.h:77-81)                          Std_RecentFiles, Gui.open/insert/export
+    App::Application::openDocument / openDocuments,  the document loaders, loadFile
+      loadFile
+    App::Document::saveAs / saveCopy                 the writers by path (save writes the
+                                                     document's own file: allowed, S1)
+    Gui::MacroManager::run (Macro.cpp:382)           Std_RecentMacros, the macro dialog
+                                                     (DlgMacroExecuteImp.cpp:393), the editor
+    Gui::PythonDebugger::runFile                     the debugger's run
+    Base::Interpreter::runFile                       the seam under all of the above; Base
+                                                     cannot see App's runtime, so a guard
+                                                     callback App installs (or the checks
+                                                     sit at the callers above)
+
+Not a chokepoint: `Interpreter::runString`.  Host C++ commands compose
+Python and run it through `runString` (Std_Delete, every `doCommand`),
+so gating it would refuse everything; caller-chosen content arrives as
+a FILE, and `runFile` is the seam.  Any command that reaches a file
+hits the gate whatever its name, present or future, Std or addon, and
+whatever it went through on the way (a recent macro that opens a file
+hits it twice).  Nothing is classified by hand.
+
+**Consent stays a capability, as S1 ruled.**  A picker-driven command
+(`Std_Open`, `Std_Import`, `Std_Export`, `Std_SaveAs`) runs its modal
+dialog INSIDE the guest's scope -- the nested loop keeps the stack --
+so a naive chokepoint would refuse the very file the user just chose.
+The blessed-path set answers it: the host's own `FileDialog::
+getOpenFileName` / `getSaveFileName` / `getOpenFileNames` bless the
+paths they return while a scope is active (today only the guest's
+`gui.dialog.file` blesses), and the primitive accepts a blessed path
+without a grant.  A command with no picker has no blessed path and is
+refused unless granted.  The blessing is per guest and cleared at boot,
+as now.
+
+**The rows** are the two the fs slice already designs (7.1, U2) and
+one new one:
+
+    permission        document   session   addon   notes
+    ----------------  --------   -------   -----   -------------------------------
+    fs.read:<path>    DENY (np)  PROMPT    PROMPT  a host file read by path, at the
+                                                   chokepoints; blessed paths pass
+    fs.write:<path>   DENY (np)  PROMPT    PROMPT  saveAs / saveCopy / exportTo
+    host.exec:<path>  DENY (np)  PROMPT    PROMPT  code run from a host file (runFile)
+
+One audit line each, the path as the target.  The session's PROMPT is
+a change from "free": the session is the user's console and the bundled
+workbenches, and natively `Gui.runCommand("Std_RecentMacros")` just
+runs; under the sandbox it prompts once (scope once/session/always),
+naming the path.  The user's own click never prompts: no scope.  `gui`
+and `gui.doCommand` stay whole-row permissions.
+
+**Two gaps, stated.**  (1) A command that defers its work through a
+timer or a posted event finishes after the guest's scope popped, and
+the check sees an empty stack.  Carrying the principal across async
+boundaries is not solved in general (the widget layer has the same
+edge); the file-running paths that defer are few and are to be checked
+at the point they are queued -- the build enumerates the
+`QTimer::singleShot` / `postEvent` sites on the paths above.  (2) Host
+Python reached by host code only (`Gui.open(path)` from the console,
+`Part.open`) is not gated and must not be: it has no scope.
+
+**Gate `SandboxHostFiles`** (a GUI gate module): a guest command's
+`Gui.runCommand("Std_RecentMacros", 0)` with a recent macro on the host
+refused, `host.exec` in the message, an audit line with the macro's
+path, the macro's side effect absent; `Std_RecentFiles` refused
+(`fs.read`); `Std_Open` from the guest with the gate's timer typing a
+path into the host picker opens it (blessed); `Std_SaveAs` the same
+writes it; a document principal refused every one, not promptable;
+`Gui.open(path)` from the test itself (no scope) unchanged; a session
+grant (`ExpressionSecurity.grant`) lets the recent macro run and the
+audit line reads allow.
+
+**Cost.**  About 120 lines: the three enum rows with names and catalog
+cells, `Interpreter::runFile` guard (a callback in Base, installed by
+App) or checks at the two Gui callers, checks at the six App/Gui entry
+points above, `FileDialog` blessing under an active scope, the gate.
+Under a day with the gate.  Order: the user's call; it shares its
+mechanism with N3's network rows and closes the one host-execution
+path a guest has, so before N2 is the natural slot.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -3812,6 +3954,13 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    lines; Draft's commit through `todo.doTasks` and BIM's `Arch_Site`
    run end to end from the guest; gate `SandboxSessionDoc` (9 cases).
    NEXT: the status bar / dock widgets, then G4 (ask first).
+   **F1 -- the file and code chokepoints** (7.14, SIZED 2026-09-07, not
+   built): `fs.read` / `fs.write` / `host.exec` checked inside the
+   core's file and `runFile` primitives under the guest's scope, the
+   host's own file dialog blessing the paths it returns; closes the one
+   host-execution path a guest has (`Gui.runCommand("Std_RecentMacros")`
+   under `gui`).  Order: the user's call; before N2 is the natural
+   slot (N3's network rows share the mechanism).
    H0 (BUILT 2026-09-06) and H1 (7.12) come before G3b so G3b's views
    are written once, in C++; H2 and H3, the native ports, interleave
    with G3b-G3d as the class set grows.
@@ -4021,6 +4170,12 @@ sockets, any network for the reference image, a webview escape hatch.
   findChild`, `addStatusBarItem`, `BimStatus`, `init_draft_statusbar`,
   `QDockWidget` for BimViews): not in the widget layer; Draft's
   `Activated()` and BIM's stop there (7.9).  G3d or G7 material.
+- **`Gui.runCommand` from a guest runs any host command under `gui`**
+  (7.14, sized): `Std_RecentMacros`, `Std_RecentFiles` and
+  `Std_DlgMacroExecuteDirect` run a file or open one with no picker,
+  so a session or an addon reaches host Python and host files by name.
+  A document principal cannot (`gui` DENY, not promptable).  The answer
+  is F1, the chokepoints at the primitives, not a list of names.
 - **A guest view provider's scene is G4's** (7.13, S2 built note):
   `Arch.makeSite()` from the guest builds `_ViewProviderSite` in the
   guest, whose `attach`/`onChanged`/`updateData` reach `Annotation`,
