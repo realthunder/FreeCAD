@@ -249,7 +249,8 @@ TaskFemConstraintFluidBoundary::TaskFemConstraintFluidBoundary(
             App::PropertyLink* pcLink = static_cast<App::PropertyLink*>(prop);
             Part::Feature* pcPart = dynamic_cast<Part::Feature*>(pcLink->getValue());
             if (pcPart) {  // deduct dimension from part_obj.Shape.ShapeType
-                const TopoDS_Shape& pShape = pcPart->Shape.getShape().getShape();
+                // getShape() returns the TopoShape by value: copy, do not bind
+                TopoDS_Shape pShape = pcPart->Shape.getShape().getShape();
                 const TopAbs_ShapeEnum shapeType = pShape.IsNull() ? TopAbs_SHAPE
                                                                    : pShape.ShapeType();
                 if (shapeType == TopAbs_SOLID

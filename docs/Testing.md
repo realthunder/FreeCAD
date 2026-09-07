@@ -13,7 +13,8 @@ as "the primary tree"; that was wrong.
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
-| C++ on Windows (`build/win-relwithdebinfo-801`) | **472 of 472 passing** (2026-09-04), 1 disabled -- see "C++ on Windows" |
+| C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
+| C++ on macOS (`build/mac-relwithdebinfo-801`) | **478 of 478 passing** (2026-09-07), 1 disabled -- see "C++ on macOS" |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -67,6 +68,41 @@ One binary directly, which is the fastest loop while working on a suite:
 
     ./tests/src/Mod/Part/TopoShapeEx_tests_run --gtest_filter='*makEBoolean*'
 
+### C++ on macOS
+
+Green: **478 of 478** on 2026-09-07, 51.6 s with `-j 4`, one entry
+disabled -- the same `FeaturePartCommonTest.testHistory` as everywhere
+else -- on macOS 12.7.6 Intel with conda clang 23.1.0. That is measured
+on the tree merged with the Windows box's work, so the three platforms
+are green on the same source.
+
+It took eleven fixes to build at all and four more to pass;
+`SceneServerPort.md` 7.7 has the whole bring-up. In short: two
+tests leaning on a fast box and a real `/tmp`, and the two vg smokes,
+which aborted inside `bgfx::init()` because bgfx builds its screenshot
+blit pipeline against a swap chain that a headless Metal context does not
+have. That last one is an engine bug, fixed in the fork, and both smokes
+now pass on Metal.
+
+The two SceneServerPort stage 5 targets, which were all that had been
+built before the tree was:
+
+- `SceneServerWire_tests_run` -- **17 of 17 passing**, `listensOnIPv6Too`
+  running rather than skipping.
+- `PublishOnly_tests_run` -- **5 of 5 passing** since the dyld port
+  (2026-09-06). It was 4 passing and 1 skipped: `noGraphicsDeviceIsCreated`
+  read `/proc/self/maps`, which macOS does not have, and the case guarded
+  itself. It now enumerates the loaded images through `<mach-o/dyld.h>`,
+  and refuses the macOS renderer plugins rather than the frameworks dyld
+  maps at launch anyway -- `SceneServerPort.md` 7.6 has the image list.
+
+The stack, and the four source fixes the two stage 5 targets needed, are in
+`DevEnvironment.md`, "macOS stack"; the eleven the rest of the tree needed
+are in `SceneServerPort.md` 7.7. The GUI tests do not register there for
+the same reason as on Windows: their guard looks for `xvfb-run`. Run by
+hand, `GuiServeSelectionEcho_tests_run` passes -- eight PASS lines and
+`DONE`, 2026-09-07; see "The GUI tests" below for the command.
+
 ### C++ on Windows
 
 Green there too as of **2026-09-04**: **472 of 472 passing** on
@@ -77,6 +113,15 @@ That is 473 against the 453 above, and the difference is the date rather than
 the platform: 444 expanded cases and 29 whole-binary entries here, against 427
 and 26 on 2026-08-28, from suites added since (`MaterialXGen_tests_run` alone
 is 48 cases). Section 2 explains why the two kinds of entry count differently.
+
+**2026-09-06: 477 of 477**, 478 registered, 27s with `-j 6`. The scene
+server's own new suite is among them and passes -- `SceneServerWire_tests_run`,
+17 cases over real sockets, the Windows half of stage 5 of
+`SceneServerPort.md` (section 7.5 there). Two vg smokes arrived with the same
+pull and both failed on this platform the first time they ran, for reasons
+that were about bgfx on Windows rather than about the code under test. Both
+are fixed, and both are worth reading before trusting a Windows render
+result: below.
 
     D:\works\sw\tools\ctest-fcad.cmd -j 6
 
@@ -234,6 +279,77 @@ chess set found on its first day (a capture taken while a material was
 still compiling), which is why a frame dump now waits for a complete
 frame.
 
+#### The vg smokes on Windows
+
+Both failed here when they first ran (2026-09-06), for two unrelated
+reasons, neither a defect in what they test. Both are fixed the same
+day; what they were is worth keeping, because each is a way for a
+Windows build to be quietly wrong rather than loudly broken.
+
+- `RenderSmokeVg_tests_run` lost **one band of five**: `gradient-fill`
+  read 0 ink where Linux reads 21600. The cause is the backend bgfx
+  picks. On Windows it auto-selects **Direct3D 11**, and vg-renderer's
+  embedded shaders have no Direct3D profile at all: they are baked by
+  `src/3rdParty/vg-renderer/src/shaders/rebake.sh` on a Linux host into
+  glsl, essl, spirv, wgsl and metal, and `src/3rdParty/CMakeLists.txt`
+  then forces `BGFX_PLATFORM_SUPPORTS_DXBC=0` and `_DXIL=0` on the
+  target with the comment that "the bgfx backend never runs on Direct3D
+  anyway". On Windows it does, by default. So
+  `bgfx::createEmbeddedShader` finds no entry for `Direct3D11`, all four
+  of vg's programs come back invalid -- and **bgfx does not refuse the
+  draw**: `submit()` substitutes program handle 0 for an invalid one
+  (`bgfx.cpp:1558`), so the frame is drawn by an unrelated program and
+  comes out looking almost right. The gradient band is where the
+  substitution shows. Run the same binary with `--renderer vk` and it
+  passes 5 of 5 on the same box, which was the proof.
+
+  **Fixed 2026-09-06** where it was wrong, in the shader pack: the
+  eight `.bin.h` files are rebaked with `dxbc` (s_5_0) and `dxil`
+  (s_6_0) added, by the same in-tree `shaderc` -- run on Windows, which
+  is where it can produce them -- and the two `SUPPORTS` overrides are
+  gone from `src/3rdParty/CMakeLists.txt`. The five existing arrays come
+  out byte for byte identical, so the change is purely additive; the
+  vg-renderer fork carries it (`134c460`). The Direct3D 11 frame is now
+  identical to the Vulkan one, band for band, 51118 ink pixels against
+  the 31277 the substituted program was drawing.
+
+  Two things worth taking from it. `submit()`'s substitution means an
+  invalid program is not a visible failure but a *different picture*, so
+  "it drew something" is not evidence that the shaders loaded. And a
+  shader pack is only as portable as the host that baked it: a Linux
+  rebake silently drops both Direct3D profiles again.
+- `RenderSmokePage2D_tests_run` **crashed**, on Direct3D 11 and on
+  Vulkan alike: an access violation in `bx::alloc` inlined into
+  `bgfx::makeRef`, inside `FreeCADRenderer.dll`, with the allocator
+  pointer null. That is bgfx's global allocator in a copy of bgfx that
+  was never initialised. Windows is the platform where
+  `src/3rdParty/CMakeLists.txt` builds bgfx **STATIC** (a bgfx DLL
+  exports only the C API, so a C++ consumer cannot link one), and
+  `fcvgsmoke` linked `FreeCADRenderer` *and* `bgfx` -- so the exe and
+  the DLL each held their own copy of bgfx's globals. `bgfx::init` ran
+  in the exe's copy; `Page2D` and `Vg2D` live in the DLL and used the
+  DLL's, where `g_allocator` was still null. The raw-vg scenario did
+  not hit it because vg-renderer is linked into the exe too. On Linux
+  bgfx is SHARED and there is one copy, which is why the same source
+  never failed there.
+
+  **Fixed 2026-09-06** by making the tool self-contained: `Page2D.cpp`
+  and `Vg2D.cpp` are compiled into `fcvgsmoke` and `${Library}` is off
+  its link line, which is what the target's own comment always claimed.
+  Both files depend on nothing but bgfx, bx, vg and the STL, and
+  `FreeCADRenderer_STATIC` is the headers' switch for being compiled
+  outside the DLL; the three `RendererFactory` device hooks `Page2D`
+  calls live in a Qt translation unit, so the tool defines them as the
+  answers an empty `RendererLib` registry gives. The test passes on
+  Direct3D 11.
+
+  The general fix -- one copy of bgfx for everybody, as on Linux --
+  would be a bgfx DLL, and it needs `WINDOWS_EXPORT_ALL_SYMBOLS` on
+  that target because bgfx's own export macro reaches only its C99 API.
+  Worth doing when a second Windows executable wants bgfx; today
+  exactly one does, and it does not need to share.
+
+
 ### The GUI tests (`tests/gui/`)
 
 Driven scripts as well, but with no pixels under test: each is a Python
@@ -250,6 +366,35 @@ being filled, all live at once.
 |---|---|---|
 | `GuiLiveImportNestedLoop_tests_run` | the live-import nested-loop crash (`docs/DocumentLoad.md` sec 15.2): a command pumps a nested event loop while the chess set is still importing, so the tree populates inside the user-edit guard | 25 s |
 | `GuiServeSelectionEcho_tests_run` | a remote pick on a headless serve source (`Gui.serveDocument`) comes back as a scene push (`docs/ThinClient.md` sec 8.9 step 0): a raw-socket client in a thread sends `'P'` rays and times the frame back; also that a no-change pick pushes nothing and a `'B'` batch pushes one frame | 10 s |
+
+**On Windows they do not register**, and cannot: `tests/gui/CMakeLists.txt`
+wants `xvfb-run` and `.conda/run.sh`, and the box has neither. Run one by
+hand instead -- nothing in these scripts needs a display of its own, only a
+running application:
+
+    powershell -File D:\works\sw\tools\run_cdb.ps1 -UserHome <dir> -StartupScript <wrap.py>
+
+where `wrap.py` is three lines that set `GT_OUT` and `GT_RESULT` in
+`os.environ` and `exec` the test file in its own globals. `-UserHome` is the
+isolated configuration `gui-test.sh` builds with XDG variables, and the cdb
+console is where a crash leaves a stack. The verdict is the result file, as
+it is on Linux: PASS lines and `DONE`. `GuiServeSelectionEcho_tests_run` was
+run this way for stage 5 of `SceneServerPort.md` (section 7.5 there).
+
+**On macOS they do not register either** -- the same `xvfb-run` guard -- but
+there the box has `.conda/run.sh` and a window server, so a hand run is the
+driver minus xvfb and `timeout`:
+
+    OUT=/tmp/gt-echo; mkdir -p "$OUT/.iso/cache" "$OUT/.iso/config"
+    XDG_CACHE_HOME=$OUT/.iso/cache XDG_CONFIG_HOME=$OUT/.iso/config \
+    GT_OUT=$OUT GT_RESULT=$OUT/result.txt \
+    .conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCAD \
+        --user-cfg "$OUT/.iso/user.cfg" tests/gui/serve-selection-echo.py
+
+`GuiServeSelectionEcho_tests_run` passes that way, 2026-09-07: eight PASS
+lines and `DONE`. Its run log used to be unreadable for a reason that had
+nothing to do with the test -- see "Toolbar paints threw on macOS 12" below,
+now fixed; the log is 16 lines.
 
 That one exists because the render goldens found the crash by accident
 under load and then had to stop finding it: a golden must not animate,
@@ -284,6 +429,55 @@ Registration needs `FreeCADMain`, `FreeCADGui`, `xvfb-run` and
 `.conda/run.sh`; the tree says so at configure time when one is missing.
 The chess asset comes from the MaterialX submodule, so without that
 checkout the test is not registered.
+
+### Toolbar paints threw on macOS 12
+
+**Found 2026-09-07 by the echo test's log, fixed the same day** --
+`src/Gui/MacSymbolIconCompat.mm`, which carries the full explanation.
+Kept here because the symptom is what a test run shows you.
+
+Every GUI run on the macOS box used to log a burst of this over the
+first second, around thirty times:
+
+    +[NSImageSymbolConfiguration configurationPreferringMonochrome]:
+        unrecognized selector sent to class 0x...
+    ===== CAUGHT ... unknown exception =====
+      event type 12, receiver QToolBarExtension 'qt_toolbar_ext_button'
+    QBackingStore::endPaint() called with active painter
+    QPaintDevice: Cannot destroy paint device that is being painted
+
+and write a `crash-*.log` under `~/Library/Application Support/FreeCAD/`
+holding nothing but those catches. It was not the test's, and not this
+tree's: a bare GUI start with a script that only closes the main window
+produced the same 28 of them. Event type 12 is `QEvent::Paint`, so what
+threw was the *paint* of a toolbar's overflow button and of a tool
+button's menu arrow -- Qt 6.7 and later resolve `QStyle::standardIcon()`
+on a Mac to an SF Symbol (`SP_ToolBarHorizontalExtensionButton` is
+`chevron.forward.2`) and render it at paint through `QAppleIconEngine`,
+whose `configuredImage()` calls a macOS 13 class method with no
+availability guard. The Objective-C exception unwound out of
+`QWidget::event`, `GUIApplication::notify` caught it as an unknown
+exception, and the painter it left open is what the two Qt warnings were
+about. The `>>` overflow chevrons never drew.
+
+The fix supplies the missing class method, at image load and only when
+the running system lacks it, as an empty symbol configuration -- which is
+a verified no-op on the merge and says what macOS 12 does anyway. After
+it: no exceptions, no crash log, the chevrons draw, and the echo test's
+run log is 16 lines instead of 263.
+
+Whether Qt itself has been fixed is a separate question, and this asks
+it -- bare PySide6 loads no FreeCAD library, so our fix is not in it:
+
+    .conda/run.sh python -c 'import sys; from PySide6 import QtWidgets; \
+        a=QtWidgets.QApplication(sys.argv); \
+        a.style().standardIcon(QtWidgets.QStyle.StandardPixmap. \
+        SP_ToolBarHorizontalExtensionButton).pixmap(16,16)'
+
+Today it aborts with the uncaught `NSInvalidArgumentException`. A Qt that
+guards the call would return silently instead, and the compat file would
+then be dead weight rather than wrong -- it keys off the OS, not off Qt,
+so it already adds nothing on macOS 13 and later.
 
 ## 4. What is deliberately not run, and why
 

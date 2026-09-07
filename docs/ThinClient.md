@@ -557,6 +557,21 @@ headless source selected and never published, because the selection root fed the
 cache only through its viewer and the source was not a selection observer at all
 (`HeadlessServe.md`, fixed the same day).
 
+**Windows, 2026-09-06** (`SceneServerPort.md` section 7.5, where the port was verified
+there): the headless shape measures **3.9 and 4.3 ms** click-to-delta over the same
+loopback, the batch's first frame at 3.8 ms -- the same shape of number as the Linux
+row, a little slower. Reading it took a clock change: `time.monotonic()` is
+`GetTickCount64()` on Windows through CPython 3.12, 15.6 ms of resolution, and reported
+every echo as 0.0 ms; `tests/gui/serve-selection-echo.py` times with `perf_counter` on
+both platforms now.
+
+**macOS, 2026-09-07** (`SceneServerPort.md` section 7.5): **4.5 and 4.1 ms**
+click-to-delta on the headless shape, the batch's first frame at 3.0 ms. Windows's
+numbers to within a fraction of a millisecond, and the same shape as the Linux row
+above. So the floor this section builds on is the same on all three platforms:
+single-digit milliseconds, dominated by the pick's hop to the GUI thread and the
+publish, with nothing platform-specific in between.
+
 ### 8.2 The shape
 
 ```

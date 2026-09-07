@@ -65,12 +65,12 @@ In order. Each item is a fact to write down, not a box to tick.
    `aChunkedPostBodyIsRead`, `anOversizeControlFrameEndsTheConnection`)
    are pure protocol and should behave identically; if one does not, the
    difference is Beast's, and worth writing down exactly.
-3. **`PublishOnly_tests_run` (macOS only, see 4.6).** It is built on every
-   UNIX and its last case reads `/proc/self/maps`, which macOS does not
-   have. Expect that one case to fail on a mac; the fix is a Darwin branch
-   using `_dyld_image_count()` / `_dyld_get_image_name()` from
-   `<mach-o/dyld.h>` to enumerate the loaded images. That is a real
-   stage 5 commit.
+3. ~~**`PublishOnly_tests_run` (macOS only, see 4.6).**~~ **Done
+   2026-09-06.** Its last case read `/proc/self/maps` and skipped on
+   macOS; it now enumerates the loaded images through
+   `_dyld_image_count()` / `_dyld_get_image_name()`, and the suite is 5
+   of 5 there. What it refuses on macOS is not what this brief guessed --
+   `SceneServerPort.md` 7.6.
 4. **The whole tree, if it builds.** The full `ctest` (Windows: 472 of 472
    as of 2026-09-04, in `Testing.md`; Linux: 485 of 485 as of 2026-09-06).
    Not required for the stage; required before calling the platform
@@ -91,6 +91,12 @@ In order. Each item is a fact to write down, not a box to tick.
    `run.cmd` line.) The `echo ms` figures are the click-to-selection-delta
    numbers of `ThinClient.md` section 8.1 on your platform; note them.
 
+   **Done on both boxes**: Windows 2026-09-06, macOS 2026-09-07, eight
+   PASS lines each. The numbers are in `SceneServerPort.md` 7.5, and the
+   exact macOS command -- there is no `xvfb-run` and no `timeout` on that
+   box -- is in `Testing.md`, "The GUI tests". **With it, stage 5 is
+   complete on all three platforms and this brief is spent.**
+
 ### 2.1 What to record
 
 Add a section **7.5 "Stage 5, as verified"** to `SceneServerPort.md` with
@@ -104,6 +110,11 @@ own `Gui:` commit with the failure it fixed in the message; the doc rows
 are a `Docs:` commit.
 
 ## 3. Windows
+
+**Done 2026-09-06.** The result is `SceneServerPort.md` section 7.5: the
+suite is 17 of 17, `listensOnIPv6Too` ran, and the only source change the
+platform asked for was `_WIN32_WINNT` before the Asio include. What
+follows is the recipe it used, kept for the next Windows session.
 
 The box is set up: `DevEnvironment.md`, "Windows stack (MSVC 2022 +
 conda)", is the reference, and `Testing.md`, "C++ on Windows", is
@@ -210,10 +221,10 @@ GL to install; Qt uses Cocoa and Metal, bgfx uses Metal). On Intel use
 ```sh
 ~/miniforge3/bin/mamba create -y -p ~/works/sw/fcad/.conda/freecad \
   clang_osx-arm64 clangxx_osx-arm64 cmake ninja make swig pkg-config \
-  qt6-main=6.11.2 pyside6=6.11.2 \
+  qt6-main=6.11.1 pyside6=6.11.1 \
   python=3.12 libboost-devel eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype \
   expat fmt pybind11 numpy matplotlib-base lark
-printf 'qt6-main ==6.11.2\npyside6 ==6.11.2\npython ==3.12.*\n' \
+printf 'qt6-main ==6.11.1\npyside6 ==6.11.1\npython ==3.12.*\n' \
   > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
 cd ~/works/sw/fcad/.conda/freecad
 ln -sfn share/PySide6/typesystems typesystems    # the pyside6 CMake-config quirk, as on Linux
@@ -255,8 +266,24 @@ chmod +x ~/works/sw/fcad/.conda/run.sh
 ```
 
 The strip of `-O2` only matters for a Debug tree; the RelWithDebInfo
-builds below set their own optimisation. conda's macOS activation also
-exports `MACOSX_DEPLOYMENT_TARGET` and `-isysroot`; leave them.
+builds below set their own optimisation.
+
+*** **Corrections, from the box that ran this (2026-09-06).** Three things
+above are wrong as written, and are right in `DevEnvironment.md`, "macOS
+stack":
+- **Qt 6.11.2 does not install on macOS 12** -- its `moltenvk` wants
+  `__osx >=14.0`. The create line and the pin now say 6.11.1. A macOS 14+
+  box can and should use 6.11.2.
+- **conda's activation exports no `MACOSX_DEPLOYMENT_TARGET`,
+  `CONDA_BUILD_SYSROOT` or `CMAKE_OSX_SYSROOT`** with these compiler
+  packages. There is nothing to leave; the SDK is found through `xcrun`.
+- **`run.sh` must `unset CPATH CPLUS_INCLUDE_PATH C_INCLUDE_PATH
+  OBJC_INCLUDE_PATH LIBRARY_PATH`.** `xcrun` exports
+  `CPATH=/usr/local/include`, and `/usr/bin/python3` is an xcrun shim, so
+  any build launched through one inherits it. `CPATH` is searched as if
+  `-I` and therefore beats every `-isystem`, which is how CMake passes Qt6
+  and Boost: Homebrew's Qt5 then shadows conda's Qt6 (loudly) and
+  Homebrew's Boost shadows conda's (silently, an ABI mismatch).
 
 ### 4.4 OCCT and Coin
 
@@ -331,7 +358,7 @@ here through `CMAKE_CXX_FLAGS`.
         "OCCT_CMAKE_FALLBACK": "OFF",
         "Coin_DIR": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/lib/cmake/Coin-4.0.6",
         "COIN3D_INCLUDE_DIRS": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/include",
-        "COIN3D_LIBRARIES": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/lib/libCoin.dylib",
+        "COIN3D_LIBRARIES": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/lib/libCoinRT.dylib",
         "CMAKE_DISABLE_FIND_PACKAGE_Spnav": "TRUE",
         "FREECAD_USE_3DCONNEXION": "OFF",
         "BUILD_BGFX": "ON",
@@ -372,6 +399,27 @@ a stage 5 answer in an hour, the full tree afterwards.
 
 ### 4.6 What is expected to break on macOS, and what is not
 
+*** **What actually happened (2026-09-06/07), against the list below. The
+list scored badly.** Item 1 skipped rather than failed -- the case already
+guards on `/proc/self/maps` -- and the dyld port that closes it does not
+refuse the names item 1 names (`SceneServerPort.md` 7.6). Item 2 did not
+happen: bgfx built SHARED and its C++ symbols resolved. **Item 3 did not
+happen either**: the in-tree `shaderc` produced the metal pack without
+complaint, 104 shaders, the same count as glsl, spirv and essl. **Nor did
+item 4**: no `.mm` file needed a change and `sysctlbyname` compiled as it
+stood. Item 5 is advice, not a prediction.
+
+So four of the five predictions were wrong, and everything that did break
+was off-list. Two of the fifteen fixes are macOS-as-such -- the GL
+entry-point typedefs Apple ships only in the Core-profile header, and the
+backtrace include guard. The rest are the tree leaning on the Linux
+toolchain: libc++ not including transitively where libstdc++ does (six
+files), clang instantiating implicit members where GCC defers (which broke
+every TU including `SoFCRenderCache.h`), a `std::less` specialisation with
+no `operator<` behind it, a CMake bug any `BUILD_FEM=OFF` build would hit,
+and a bgfx bug any headless Metal context would hit. Full account:
+`SceneServerPort.md` 7.5 and 7.7. **Result: 478 of 478.**
+
 Known, in likely order of appearance:
 
 1. **`PublishOnly_tests_run`, last case**: `/proc/self/maps` (section 2,
@@ -380,6 +428,12 @@ Known, in likely order of appearance:
    refuse are `OpenGL.framework`, `Metal.framework`, `GLEngine`, `AppleGVA`
    and `/System/Library/Extensions/`), and say in the commit which images
    a publish-only process does map, because that is the finding.
+   **Done, and the finding overruled half of that list**: dyld maps
+   `OpenGL.framework` and `Metal.framework` at launch as plain load-command
+   dependencies of the renderer, so refusing them would fail the case on
+   every mac. What is refused is the renderer plugin behind them --
+   `GLEngine`, `*GLDriver`/`*MTLDriver`, `/System/Library/Extensions/`,
+   `AppleGVA`. Image list and reasoning: `SceneServerPort.md` 7.6.
 2. **bgfx as a shared library.** `src/3rdParty/CMakeLists.txt` builds bgfx
    STATIC on Windows (a DLL exports only the C API) and SHARED everywhere
    else. Whether a Mach-O dylib built with conda's flags exports the C++

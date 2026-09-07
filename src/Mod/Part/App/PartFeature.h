@@ -24,7 +24,8 @@
 #ifndef PART_FEATURE_H
 #define PART_FEATURE_H
 
-#include <boost/container/map.hpp>
+#include <string>
+#include <vector>
 
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
@@ -162,16 +163,60 @@ public:
     static void disableElementMapping(App::PropertyContainer *container, bool disable=true);
     static bool isElementMappingDisabled(App::PropertyContainer *container);
 
+    /** Find an element of a retained generation of this feature's shape in
+     * the live shape.
+     *
+     * The feature keeps a list of generations of its shape properties in
+     * memory (see docs/TopoNamingEnhance.md section 7): the whole shape as
+     * it was before each change, newest first.  The request is answered from
+     * the newest generation that holds 'element' (a mapped name goes through
+     * that generation's own element map, an indexed name is taken by
+     * position), by searching the live shape for the same geometry.
+     *
+     * When no generation of this feature holds the element and the request
+     * names its referrer, a referrer in another document is answered from
+     * the sub-shape that document kept for the reference (ForeignBaseShapes).
+     */
     const std::vector<std::string>& searchElementCache(const std::string &element,
                                                        Data::SearchOptions options = Data::SearchOption::CheckGeometry,
                                                        double tol = 1e-7,
-                                                       double atol = 1e-10) const override;
+                                                       double atol = 1e-10,
+                                                       const App::PropertyLinkBase *referrer = nullptr,
+                                                       const App::DocumentObject *obj = nullptr,
+                                                       const char *subname = nullptr) const override;
 
     const std::vector<const char*>& getElementTypes(bool all=false) const override;
 
     void beforeSave(Base::Writer &writer) const override;
 
     bool removeDynamicProperty(const char* name) override;
+
+    /** @name Retained base shapes (docs/TopoNamingEnhance.md section 7)
+     *
+     * A generation some missing reference was last resolved against is
+     * kept on this feature as a dynamic `_BaseShape<N>` property, and the
+     * `_BaseShapeRefs` map says which referrer holds which generation: a
+     * generation lives exactly as long as some entry names it.
+     */
+    //@{
+    /// The name prefix of a retained generation property, `_BaseShape`
+    static const char *baseShapePrefix();
+    /// The name of the referrer manifest, `_BaseShapeRefs`
+    static const char *baseShapeRefsName();
+    /// Whether 'prop' is a retained generation property of its owner
+    static bool isBaseShapeVersion(const App::Property *prop);
+    /// An old generation's map never asks for a recompute
+    bool checkElementMapVersion(const App::Property *prop, const char *ver) const override;
+    /// A referrer let go: re-evaluate the generations at the end of the recompute
+    void onElementReferenceReleased(App::PropertyLinkBase *prop) override;
+    /** Let go of what released referrers were holding.
+     *
+     * Connected to App::Application::signalRecomputed by the Part module:
+     * a referrer releases while it is being re-set, so the decision waits
+     * until the recompute that re-set it is over.  Also run by beforeSave.
+     */
+    static void releasePendingShapeVersions(const App::Document &doc);
+    //@}
 
     void expandShapeContents();
     void mergeShapeContents();
@@ -216,7 +261,39 @@ protected:
     // Return true if need to apply the shape placement to the Placement property
     virtual bool shouldApplyPlacement();
 
+    /** Register a second shape property whose elements are referenced with
+     * an element-name prefix, so that its generations are retained and
+     * searched like the main Shape's (the Sketcher's InternalShape).  A
+     * null 'prop' unregisters the prefix.
+     */
     void registerElementCache(const std::string &prefix, PropertyPartShape *prop);
+
+    /** The shape property an element name belongs to, by its registered
+     * prefix; the main Shape when no prefix matches.  'prefix' receives the
+     * matched prefix, or null.
+     */
+    PropertyPartShape *shapePropertyOfElement(const char *element,
+                                              const std::string **prefix = nullptr) const;
+
+    /** Keep or let go of every retained generation.
+     *
+     * Called after the element references into this feature have been
+     * re-resolved against a new shape, and before a save.  A referrer is
+     * kept on a generation only while its reference into that generation's
+     * property is missing (a referrer in a document that is not loaded is
+     * kept, nothing can be said about it); a generation nobody is kept for
+     * is dropped, with its property, except the newest of each shape
+     * property, which stays in memory.  With 'materialize', a generation
+     * that has referrers and no property yet is given one.  The manifest
+     * is rewritten to match.
+     */
+    void reconcileShapeVersions(bool materialize);
+    /// Take the `_BaseShape<N>` properties on this feature into the list
+    void adoptShapeVersions();
+    /// Give every retained generation that has referrers its property
+    void materializeShapeVersions();
+    /// Rewrite `_BaseShapeRefs` from the materialized generations
+    void writeShapeVersionRefs();
 
     /** Helper function to obtain mapped and indexed element name from a shape
      * @params shape: source shape
@@ -230,8 +307,11 @@ protected:
     std::pair<std::string,std::string> getExportElementName(TopoShape shape, const char *name) const;
 
 private:
-    struct ElementCache;
-    boost::container::map<std::string, ElementCache> _elementCache;
+    friend class ForeignBaseShapes;
+    /// One retained generation of a shape property, see PartFeature.cpp
+    struct ShapeVersion;
+    /// The retained generations, newest first (of every registered property)
+    std::vector<ShapeVersion> _shapeVersions;
     std::vector<std::pair<std::string, PropertyPartShape*>> _elementCachePrefixMap;
 };
 

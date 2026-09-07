@@ -1428,8 +1428,17 @@ SET(FreeCADGui_SRCS
     ${FreeCADGui_SDK_MOC_HDRS}
 )
 
+if(APPLE)
+    # Qt's SF Symbol icons throw on macOS 12; the file says why and how.
+    SET(FreeCADGui_MAC_SRCS
+        MacSymbolIconCompat.mm
+    )
+    SOURCE_GROUP("Mac" FILES ${FreeCADGui_MAC_SRCS})
+endif(APPLE)
+
 SET(FreeCADGui_SRCS
     ${FreeCADGui_SDK_SRCS}
+    ${FreeCADGui_MAC_SRCS}
     ${FreeCADGui_CPP_SRCS}
     ${FreeCADGui_XML_SRCS}
     ${qsint_MOC_SRCS}

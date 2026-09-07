@@ -44,7 +44,12 @@ if(BUILD_BGFX)
     # Private: nothing outside this library calls bgfx, and example-common
     # carries bgfx's own entry point, which asks any executable that links
     # it for a _main_ it does not have.
-    list(APPEND Renderer_PRIVATE_LIBS bgfx bx bimg example-common vg-renderer)
+    # vg-renderer BEFORE example-common: both vendor fontstash (vg-renderer
+    # compiles it directly, bgfx inlines it into nanovg.cpp), and nothing here
+    # uses bgfx's nanovg. With example-common first, Apple's ld resolves the
+    # fons* symbols out of nanovg.cpp.o, then pulls vg-renderer's fontstash.cpp.o
+    # for its own symbols and fails with 32 duplicates. GNU ld happens not to.
+    list(APPEND Renderer_PRIVATE_LIBS bgfx bx bimg vg-renderer example-common)
 endif(BUILD_BGFX)
 
 if(BUILD_DILIGENT)
@@ -342,8 +347,21 @@ if(BUILD_BGFX)
     # frame buffer, pixels read back and checked). Build-tree developer
     # tool like fcscenediff -- not installed. Links vg-renderer/bgfx
     # directly, no Qt and no ${Library}.
-    add_executable(fcvgsmoke tools/vgsmoke.cpp)
-    target_link_libraries(fcvgsmoke ${Library} vg-renderer bgfx bx)
+    #
+    # Page2D and Vg2D are COMPILED IN rather than linked from ${Library},
+    # and that is not a convenience. On Windows bgfx is a static library
+    # (the export-macro reason in src/3rdParty/CMakeLists.txt), so an exe
+    # that links both bgfx and FreeCADRenderer holds two copies of bgfx's
+    # globals: bgfx::init would initialise the exe's while Page2D, living
+    # in the DLL, allocated from the DLL's -- whose g_allocator is still
+    # null. That is an access violation in bx::alloc under bgfx::makeRef,
+    # and it is what --page2d did on Windows until 2026-09-06
+    # (docs/Testing.md, "The vg smokes on Windows"). Both files depend on
+    # nothing but bgfx, bx, vg and the STL, and FreeCADRenderer_STATIC is
+    # the headers' own switch for being compiled outside the DLL.
+    add_executable(fcvgsmoke tools/vgsmoke.cpp Page2D.cpp Vg2D.cpp)
+    target_compile_definitions(fcvgsmoke PRIVATE FreeCADRenderer_STATIC=1)
+    target_link_libraries(fcvgsmoke vg-renderer bgfx bx)
     set_target_properties(fcvgsmoke PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     SET_BIN_DIR(fcvgsmoke fcvgsmoke)
 endif()

@@ -149,6 +149,7 @@ public:
     //@}
 
     friend class Feature;
+    friend class ForeignBaseShapes;
     /// Stamps _StorePos during the pre-save collect, and serves it on restore.
     friend class PropertyShapeStore;
 
@@ -260,6 +261,13 @@ private:
      * the XML, so nothing on the reading side has to know about any of it.
      */
     mutable TopLoc_Location _blobMotion;
+    /** Whether this property's file is offered for other files to borrow
+     * from (ShapeRefSet::publish). Off for a retained generation
+     * (Feature::materializeShapeVersions): it may borrow, but nothing
+     * may depend on a file that is dropped the day its last referrer is
+     * repaired.
+     */
+    bool _publishes = true;
     /// The motion a restore has to put back into the geometry, from the
     /// `motion` attribute. Identity for a file written for this shape.
     TopLoc_Location _RestoreMotion;

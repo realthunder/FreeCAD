@@ -3555,6 +3555,20 @@ public:
     /// false while none has run.
     virtual bool getRenderStats(RenderStats &stats) const
     { (void)stats; return false; }
+    /// The GPU (and driver) this backend is actually running on, as a
+    /// human-readable line; empty when the backend cannot say.
+    ///
+    /// type() is not this and cannot stand in for it: it names the
+    /// backend a viewer SELECTED, so a software rasterizer and a real
+    /// adapter both report "bgfx - OpenGL". A golden render reference
+    /// blessed on one device does not compare against another
+    /// (tests/render/CMakeLists.txt says so for the Cycles leg), and
+    /// without this a capture carries no record of which device made
+    /// it -- so the exposure is real and undetectable after the fact.
+    /// Measured: llvmpipe, Mesa d3d12 under xvfb, and d3d12 on a
+    /// desktop window produce three visibly different captures and one
+    /// identical type() string.
+    virtual std::string deviceName() const { return std::string(); }
     /// Reload the backend's shader programs from disk on the next
     /// rendered frame (docs/RenderDebug.md §3): with FC_BGFX_SHADER_DIR
     /// pointing at a development asset tree, recompiling a shader

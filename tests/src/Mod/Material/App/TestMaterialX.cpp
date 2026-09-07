@@ -136,7 +136,15 @@ TEST_F(TestMaterialX, savingToALibraryCopiesTheFilesUnderMaterialxAndRelinksThem
     EXPECT_EQ(card->getMaterialXNames(),
               (QStringList {QStringLiteral("brass.mtlx"), QStringLiteral("../Images/brass color.jpg")}));
     EXPECT_EQ(card->getMaterialXHashes(), hashes);
-    EXPECT_EQ(card->getMaterialXPaths()[1], placed.filePath(QStringLiteral("brass color.jpg")).toStdString());
+    // Canonical on both sides: the library resolves its own directory
+    // (Library::getDirectory -> canonicalPath), so what it stores is
+    // resolved. On macOS the temp dir is reached through the
+    // /var -> /private/var symlink, which makes the unresolved form a
+    // different string for the same file.
+    EXPECT_EQ(card->getMaterialXPaths()[1],
+              QFileInfo(placed.filePath(QStringLiteral("brass color.jpg")))
+                  .canonicalFilePath()
+                  .toStdString());
 
     // What was written is the relative form, and reading the card back off
     // the library hashes to the same identity

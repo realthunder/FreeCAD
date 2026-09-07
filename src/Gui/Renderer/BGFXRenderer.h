@@ -171,6 +171,7 @@ public:
     virtual uint64_t renderedFrames() const override;
     virtual uint64_t completeFrames() const override;
     virtual bool getRenderStats(RenderStats &stats) const override;
+    virtual std::string deviceName() const override;
     virtual bool reloadShaders() override;
     /// Drop this view's sized targets (BGFXView::destroyTargets, the
     /// resize path's release); the next frame rebuilds them.
