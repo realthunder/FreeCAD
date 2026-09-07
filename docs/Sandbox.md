@@ -3953,14 +3953,16 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    the `gui.doCommand` enum value, one host op for the macro and audit
    lines; Draft's commit through `todo.doTasks` and BIM's `Arch_Site`
    run end to end from the guest; gate `SandboxSessionDoc` (9 cases).
-   NEXT: the status bar / dock widgets, then G4 (ask first).
+   NEXT (ruled 2026-09-07): the status bar / dock widgets, then G4
+   (its scope put to the user first), then F1.
    **F1 -- the file and code chokepoints** (7.14, SIZED 2026-09-07, not
    built): `fs.read` / `fs.write` / `host.exec` checked inside the
    core's file and `runFile` primitives under the guest's scope, the
    host's own file dialog blessing the paths it returns; closes the one
    host-execution path a guest has (`Gui.runCommand("Std_RecentMacros")`
-   under `gui`).  Order: the user's call; before N2 is the natural
-   slot (N3's network rows share the mechanism).
+   under `gui`).  Order RULED 2026-09-07: the status bar / dock
+   widgets, then G4, then F1 (before N2: N3's network rows share the
+   mechanism).
    H0 (BUILT 2026-09-06) and H1 (7.12) come before G3b so G3b's views
    are written once, in C++; H2 and H3, the native ports, interleave
    with G3b-G3d as the class set grows.
