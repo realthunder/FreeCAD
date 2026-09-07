@@ -1062,9 +1062,48 @@ where the best-fitting shift left 92% of them past it. So this is an
 origin-convention fault, not a camera one. The capture path does ask --
 `BGFXFrame.cpp` 6494, `const bool flip = caps->originBottomLeft`, which
 reverses the rows on GL and correctly does not on Metal, where the flag
-is false -- and the frame still arrives mirrored, so what is mishandled
-is upstream of the readback, in the render-to-texture origin, not in the
-decode.
+is false -- so the fault is upstream of the readback.
+
+**The cause is `vs_fc_comp.sc`, confirmed by experiment.** It derives its
+UV straight from clip space, `v_texcoord0 = a_position.xy * 0.5 + 0.5`,
+under a comment reasoning that "the OIT targets are rendered by the same
+backend, so no cross-API Y-flip is needed". The premise is true and the
+conclusion does not follow: bgfx's V origin for a render target differs
+by API whoever wrote it, so `y*0.5+0.5 -> 1` samples the top on GL and
+the bottom on Metal. Adding `#if !BGFX_SHADER_LANGUAGE_GLSL
+v_texcoord0.y = 1.0 - v_texcoord0.y; #endif` and rebuilding **only** the
+shader assets (`ninja Renderer_assets`, no C++ rebuild) inverted the
+mirror exactly -- containment of the Metal geometry against the golden
+went from 62.05% upright / 100.00% flipped to 100.00% upright / 62.05%
+flipped -- while `geometryPixels` stayed at 75236, not one pixel moved.
+So the two defects are independent: this UV is the whole of the mirror
+and none of the clipping. What the stage diff does with the mirror
+corrected sets the expectation for a real fix: depth falls from 24.8% of
+pixels past tolerance to 8.3%, normal 19.0% to 7.1%, shadow 18.7% to
+8.7%, AO 25.3% to 20.0%, beauty 89.9% to 78.8%. Roughly a third of each,
+and what remains is the clipped half -- so fixing the origin alone still
+leaves every stage failing, and neither defect can be signed off on its
+own.
+
+That one-liner is the cause, **not the fix**, and was reverted. The file
+is misnamed by its own comment: `ensureProgram` pairs `vs_fc_comp` with
+`fs_fc_present`, `fs_fc_depthenc`, `fs_fc_debug`, `fs_fc_comp`,
+`fs_fc_env`, `fs_fc_sun`, the bloom chain, `fs_fc_ssao`/`fs_fc_gtao` and
+their blurs, `fs_fc_cavity`, `fs_fc_shadow_blur`, the volume passes,
+`fs_fc_cycles_blit` and the user volumetrics -- it is the engine's
+fullscreen vertex shader, which is why the DEBUG stages are mirrored too
+(`m_progDebug` is `vs_fc_comp` + `fs_fc_debug`). Flipping it alone leaves
+two conventions live, because `fs_fc_groundrefl`, `fc_glass_fs.sh` and
+`fc_line_sdf_fs.sh` build their own UVs from `gl_FragCoord.xy *
+u_viewTexel.xy` and never route through it, and two chained fullscreen
+passes that both flip would cancel. The real change is a pass over every
+fullscreen consumer together.
+
+Worth knowing before writing either fix: across `*.sc` and `*.sh`,
+`BGFX_SHADER_LANGUAGE_GLSL` matches exactly one file,
+`fs_fc_groundshadow_plane.sc` at 86-91, and what it handles there is the
+[-1,1] -> [0,1] `gl_FragDepth` conversion. So the tree has one precedent
+for the projection fix and none at all for the origin one.
 
 *And the far half of the scene is clipped away.* With the flip
 understood, what survives is the FAR half -- which is exactly what
