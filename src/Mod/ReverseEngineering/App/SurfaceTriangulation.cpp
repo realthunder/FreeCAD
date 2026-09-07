@@ -40,7 +40,13 @@
 #include <pcl/common/io.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/pcl_config.h>
+// pcl/point_traits.h was a deprecated forwarding header and PCL 1.12
+// deleted it; its contents have been pcl/type_traits.h since 1.11.
+#if PCL_VERSION_COMPARE(>=, 1, 11, 0)
+#include <pcl/type_traits.h>
+#else
 #include <pcl/point_traits.h>
+#endif
 #include <pcl/point_types.h>
 #include <pcl/surface/ear_clipping.h>
 #include <pcl/surface/gp3.h>
