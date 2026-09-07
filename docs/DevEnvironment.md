@@ -2096,44 +2096,131 @@ ln -sfn share/PySide6/glue glue
 ~/miniforge3/bin/conda install -p ~/works/sw/fcad/.conda/freecad -c realthunder libarea
 ```
 
+### FEM, IfcOpenShell and PCL on macOS
+
+Brought up 2026-09-08, after the box had run for two days with
+`BUILD_FEM=OFF`. Everything FEM needs exists for osx-64:
+
+```sh
+mamba install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
+  vtk=9.6.2 hdf5 libmed tbb-devel libxml2-devel pcl
+```
+
+Then pin vtk in `conda-meta/pinned` (`vtk`, `vtk-base` and
+`vtk-io-ffmpeg`, all `==9.6.2`) for the reason the Linux FEM section
+gives, and note what that install does to the compiler stack: **vtk
+takes libboost from 1.92 down to 1.90 and fmt from 12.2 to 12.1**, so
+the whole tree needs rebuilding after it. OCCT and Coin do not -- neither
+links boost.
+
+*** **`smesh` will not solve in this env, and `--no-deps` does not help.**
+`mamba install --no-deps realthunder::smesh` fails with "not installable
+because it conflicts with any installable versions previously reported"
+-- the same wall the Windows section hits. Use the explicit form, which
+skips the solver outright:
+
+```sh
+printf '@EXPLICIT\nhttps://conda.anaconda.org/realthunder/osx-64/smesh-9.9.0.0-h5c7f151_27.conda\n' \
+  > /tmp/smesh_explicit.txt
+conda install -p ~/works/sw/fcad/.conda/freecad -y --file /tmp/smesh_explicit.txt
+```
+
+`conda search --override-channels -c realthunder smesh` is what lists the
+builds (9.9.0.0 `h5c7f151_27` is the osx-64 one); trust it over
+`mamba repoquery`, as the Linux section says. After it, `conda list`
+must show **no `occt`**: smesh's own `libTK*.8.0.dylib` are then answered
+by the fork's 8.0.1 install, which is the whole point of `--no-deps`.
+
+`BUILD_FEM_NETGEN=ON` needs nothing more -- the plugin ships inside that
+smesh package (`libNETGENPlugin.dylib`) and `FindSMESH.cmake` picks it
+up. The report line "NETGEN: not enabled" refers to the *standalone*
+netgen find, and is expected with external SMESH. The netgen **python**
+package stays out here for the same reason as on Linux: it pins
+conda-forge's occt.
+
+**IfcOpenShell needs one macOS-only step the other boxes do not.** The
+package installs the Windows way -- an explicit file of the URLs a
+throwaway solve picked, minus `occt` (constrain that solve with this
+env's `hdf5=1.14.6`, `libboost=1.90` and `vtk-base=9.6.2`, or it picks a
+build against hdf5 2.2 and drags 17 packages instead of 7; the seven are
+`cgal-cpp`, `geos`, `gflags`, `mpfr`, `rocksdb`, `shapely` and
+`ifcopenshell` itself). But where Linux resolves `libTK*.so.8.0` by
+SONAME and Windows by `PATH`, **macOS resolves by install name**:
+`_ifcopenshell_wrapper` asks for `@rpath/libTKMath.8.0.dylib` with a
+single rpath of `@loader_path/../../..`, which is the env's `lib` -- and
+this env deliberately has no OCCT in it. Add the fork's:
+
+```sh
+install_name_tool -add_rpath \
+  $HOME/works/sw/occt/install/conda-relwithdebinfo-801/lib \
+  ~/works/sw/fcad/.conda/freecad/lib/python3.12/site-packages/ifcopenshell/_ifcopenshell_wrapper.cpython-312-darwin.so
+```
+
+It warns that the code signature is invalidated; the module loads
+anyway. Re-do it after any reinstall of the package. Verified
+2026-09-08: `ifcopenshell.geom` -- the half that links OCCT -- imports,
+and an `IfcCartesianPoint` round-trips, against our 8.0.1 where
+conda-forge built the package for 8.0.0. The same version skew the
+Windows section measured.
+
+*** **`BUILD_WEB` cannot be turned on here.** conda-forge ships no
+QtWebEngine for osx-64 at all (`qt6-webengine` does not exist as a
+package, and this pyside6 has no `QtWebEngineWidgets`), so the Addon
+Manager's "README data will display as text-only" warning is the
+permanent state on this box.
+
 *** **Qt is 6.11.1 here, not the 6.11.2 the Linux stack pins.** conda-forge's
 `qt6-main=6.11.2` for osx-64 depends on `moltenvk >=1.4.2`, which requires
 `__osx >=14.0`; on macOS 12 the solve fails outright. 6.11.1 is the newest pair
 that resolves. The Linux pin exists to track the stack conda-forge builds smesh
-and vtk against, and that reason does not apply here -- FEM is off on macOS
-(`BUILD_FEM=OFF`, `FREECAD_USE_EXTERNAL_SMESH=OFF`), as are `FREECAD_USE_PCL`
-and `BUILD_WEB`. A box on macOS 14+ can use 6.11.2 and should.
+and vtk against; here the smesh and vtk builds that osx-64 offers install
+against 6.11.1 without complaint (see the FEM section above). A box on
+macOS 14+ can use 6.11.2 and should.
 
 `libarea` has an osx-64 build (0.3.1, `__osx >=11.0`), so `BUILD_AREA` stays on.
 
-*** **This env is missing every run-time Python package in
-[the table above](#the-python-packages-the-create-line-does-not-install),
-pivy included, and `~/works/sw/pivy` is not even cloned here.** Audited
-2026-09-07: absent are `pivy`, `typing_extensions`, `ply`, `yaml`,
+*** **This env was brought up with none of the run-time Python packages
+in [the table above](#the-python-packages-the-create-line-does-not-install),
+pivy included, and `~/works/sw/pivy` was not even cloned.** Audited
+2026-09-07: absent were `pivy`, `typing_extensions`, `ply`, `yaml`,
 `requests`, `defusedxml`, `git`, `shapefile`, `pysolar`, `ladybug`,
-`opencamlib` and `debugpy`; present are `six`, `lark`, `numpy`,
-`matplotlib`, `PIL` and `packaging`. So on this box **Draft, Arch and
-importDXF do not import** (`typing_extensions`), and nothing that
-touches the Coin scene graph from Python runs (`pivy`) -- which is how
-the chess render scene came to fail here with a null `ActiveDocument`
+`opencamlib` and `debugpy`. **Draft, Arch and importDXF did not import
+at all** (`typing_extensions`, through
+`src/Ext/freecad/deprecation.py`), and nothing that touches the Coin
+scene graph from Python ran (`pivy`) -- which is how the chess render
+scene came to fail here with a null `ActiveDocument`
 (`RenderDebug.md` 5.2c).
 
-Nothing noticed for three days because the box was brought up for stage
-5, which is headless serving and the C++ suites: `ctest` is 478 of 478
-with all of that missing, and the Python suite (`FreeCADCmd -t 0`) has
-never been run here. **Run the audit on a new box before trusting a
-green ctest**; the probe is fifteen lines and lives in `Testing.md`.
+Nothing noticed it for three days because the box was brought up for
+stage 5, which is headless serving and the C++ suites: `ctest` was 478
+of 478 with all of that missing, and the Python suite
+(`FreeCADCmd -t 0`) has never been run here. **Run the audit on a new
+box before trusting a green ctest**; the probe is fifteen lines and
+lives in `Testing.md`.
 
-The conda half is a plain install; pivy needs the fork, built against
-the Coin this stack links, with `@loader_path` where Linux uses
-`$ORIGIN` (this box installs the release Coin to
-`~/works/sw/install/coin-mac-relwithdebinfo`, out of tree -- see below):
+All of it is installed as of 2026-09-08:
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
-$RUN conda install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
-  typing_extensions ply pyyaml requests defusedxml gitpython pyshp
+mamba install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
+  typing_extensions ply pyyaml requests defusedxml gitpython pyshp \
+  olefile markdown pygments debugpy pysolar
+$RUN python -m pip install ladybug-core   # not on conda-forge
+```
 
+`opencamlib` is deliberately left out: it can only be solved by taking
+libboost back to 1.90 -- which the FEM section below then does anyway,
+so it is worth another try when CAM's toolpath work needs it.
+
+### pivy on macOS, and the SWIG that stopped building it
+
+pivy is a source build here as everywhere (the fork, `rt-0.6.10`),
+against the Coin this stack links, with `@loader_path` where Linux uses
+`$ORIGIN`. This box installs the release Coin **out of tree**, to
+`~/works/sw/install/coin-mac-relwithdebinfo`:
+
+```sh
+RUN=~/works/sw/fcad/.conda/run.sh
 git clone -b rt-0.6.10 https://github.com/realthunder/pivy ~/works/sw/pivy
 $RUN cmake -S ~/works/sw/pivy -B ~/works/sw/pivy/build_conda_rwdi -G Ninja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -2144,9 +2231,31 @@ $RUN cmake --build ~/works/sw/pivy/build_conda_rwdi \
   && $RUN cmake --install ~/works/sw/pivy/build_conda_rwdi
 ```
 
-**Not yet run on this box** -- it is the Linux recipe with the macOS
-Coin prefix, and this note is the ledger entry, not a report of a build
-that happened.
+*** **The first build of it failed, and the cause is waiting for every
+other box: SWIG 4.3 dropped Python 2.** pivy's interfaces are written in
+the Python 2 C API (`PyInt_FromLong`, `PyString_Check`,
+`PyString_AsString`), which compiled only because SWIG supplied
+compatibility macros for those names in `Lib/python/pyhead.swg`. SWIG
+4.3 removed that block along with Python 2 support, so from that release
+the generated wrapper does not compile at all -- 20 errors in
+`coinPYTHON_wrap.cxx` before the error limit stopped it, on this env's
+swig 4.5.1. Downgrading swig is not an option: `swig=4.2.1` solves by
+**removing qt6-main and pyside6** and taking clang back three major
+versions.
+
+The fork's answer is `pivy` commit *Drop Python 2* on `rt-0.6.10`: every
+`#ifdef PY_2` branch gone in favour of the Python 3 branch already
+beside it, the bare Python 2 spellings renamed to what SWIG's macros
+meant (`PyLong_*`, and `PyBytes_Check` for the one `PyString_Check` in
+`SbImage.i`), `interfaces/coin2.i` and `soqt2.i` -- the Python 2 module
+variants -- deleted, and `setup.py` always passing `-py3`. It builds
+clean on swig 4.5.1 and is what the other boxes should take when their
+swig moves.
+
+*** **ninja does not re-run swig when an interface file changes.** The
+dependency is not tracked, so an edit to `interfaces/*.i` recompiles the
+*old* wrapper and the same errors come back. Delete
+`build_conda_rwdi/pivy/coinPYTHON_wrap.cxx` to force regeneration.
 
 ### `run.sh`, and the xcrun `CPATH` trap
 
@@ -2248,10 +2357,11 @@ Darwin branch (`_LIBCPP_DISABLE_AVAILABILITY`, `BOOST_NO_CXX98_FUNCTION_BASE`,
         "CMAKE_DISABLE_FIND_PACKAGE_Spnav": "TRUE",
         "FREECAD_USE_3DCONNEXION": "OFF",
         "BUILD_BGFX": "ON",
-        "BUILD_FEM": "OFF",
-        "FREECAD_USE_EXTERNAL_SMESH": "OFF",
+        "BUILD_FEM": "ON",
+        "FREECAD_USE_EXTERNAL_SMESH": "ON",
+        "BUILD_FEM_NETGEN": "ON",
         "BUILD_WEB": "OFF",
-        "FREECAD_USE_PCL": "OFF",
+        "FREECAD_USE_PCL": "ON",
         "ENABLE_DEVELOPER_TESTS": "ON"
       }
     }
@@ -2259,8 +2369,13 @@ Darwin branch (`_LIBCPP_DISABLE_AVAILABILITY`, `BOOST_NO_CXX98_FUNCTION_BASE`,
 }
 ```
 
+FEM and PCL were `OFF` in this preset until 2026-09-08 and `BUILD_WEB`
+still is -- there is no QtWebEngine for osx-64. Remember that a preset
+edit does not reach a tree that already exists (CLAUDE.md): force the
+four flags on the command line, or delete the tree.
+
 Configure found everything first time: OCC 8.0.1, Coin3D 4.0.6, Qt/PySide6
-6.11.1, Boost 1.92, Python 3.12.14. `Looking for GL/gl.h - not found` is
+6.11.1, Boost 1.92 (1.90 since FEM), Python 3.12.14. `Looking for GL/gl.h - not found` is
 expected and harmless -- macOS spells it `OpenGL/gl.h`.
 
 ### What macOS needed in source, and what it did not
