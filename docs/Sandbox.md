@@ -3905,6 +3905,311 @@ built, and what the run taught:
   the BuildingPart view providers' `onChanged` (G4) print through
   BimViews' updates.
 
+### 7.16 G4 sized: the mirror -- the guest's Coin scene on the host's screen **[sized 2026-09-07]**
+
+**Where the guest stops now.**  Every `Activated()` runs to its end
+(7.15), the session document is a command's (7.13), the selection and
+the stock dialogs cross (G3d).  What is left of a Draft or BIM command
+is the 3D view: `get_3d_view()` answers None because
+`getMainWindow().getActiveWindow()` answers None in the guest, so every
+Draft Creator's `IsActive()` is False and BIM's `hasattr(getActiveWindow(),
+"getSceneGraph")` polls (`InitGui.py` x11, `BimArchUtils.py` x6) keep
+its commands silent; a guest-built view provider's `attach` reaches
+`RootNode`/`Annotation`/`SwitchNode` and prints an AttributeError per
+hook (7.13, the S2 built note); the trackers and the snapper build real
+Coin graphs in the guest (7.10: the pivy wheel, `pivy.coin` 0.55 s to
+import) that nothing displays.  The decision of 7.2 stands: Coin in the
+guest, the HOST scene holding a replica through a mirror reader, and a
+node-type allowlist at the reader.  What 7.2 left open -- "generated
+Coin models, the model classes from Coin's field introspection" -- is
+moot since Probe A: the guest holds real `SoNode`s, so the wire is a
+WALK of real nodes, not a model library.
+
+Read site by site (the corpus: 600 `coin.` uses in 38 files, 49 Coin
+classes; the view members; the view provider hooks), what a guest asks
+for:
+
+- **Nodes.**  `SoSeparator` 112, `SoCoordinate3` 47, `SoTransform` 46,
+  `SoMaterial`/`SoDrawStyle` 33 each, `SoAsciiText` 32, `SoText2` 21,
+  `SoLineSet` 19, `SoSwitch` 15, `SoIndexedFaceSet` 13, `SoBaseColor` 12,
+  `SoGroup`/`SoFont` 11, `SoTexture2` 7 (Draft's hatch and BIM's
+  covering textures: the `image` field from an `SoSFImage` built in
+  the guest, never `filename`), `SoTextureCoordinatePlane` 6,
+  `SoMarkerSet`/`SoAnnotation` 5, `SoSphere`/`SoShapeHints`/`SoPickStyle`
+  4, `SoTexture2Transform`/`SoIndexedLineSet`/`SoCube`/`SoClipPlane` 3,
+  and one or two each of `SoVertexProperty`, `SoMaterialBinding`,
+  `SoFaceSet`, `SoCone`, `SoPointSet`, `SoMatrixTransform`,
+  `SoLightModel`, `SoDirectionalLight`, the cameras.  No engines, no
+  field connections (`connectFrom` 0), no `SoCallback`, no
+  `SoEventCallback` node in a guest graph.  The ghost trackers'
+  `writeInventor -> SoInput -> SoDB.readAll` (10 sites) is guest-local
+  and already works.
+- **FreeCAD's own node types, created by name** (`SoType.fromName(...).
+  createInstance()`): `SoBrepEdgeSet` x9, `SoFCSelection`, `SoDatumLabel`,
+  `SoSkipBoundingGroup`, `SoBrepPointSet`, `SoBrepFaceSet` -- one each.
+  Draft then writes their fields by name (`coordIndex`, `documentName`,
+  `objectName`, `pnts`, `lineWidth`, ...): pivy's dynamic field access
+  (`getField` behind `__getattr__`) needs no SWIG class, only a
+  REGISTERED SoType with the fields.  In the guest today
+  `fromName("SoFCSelection")` is a bad type: the six are stand-ins to
+  build (below).
+- **The host's roots a guest node is put under.**  A tracker's switch
+  goes into the active view's AUXILIARY graph (`getAuxSceneGraph()`,
+  this fork's own root for temporary geometry, `get_scene_graph()` in
+  `gui_trackers.py`) with `addChild`/`insertChild(node, 0)`/
+  `removeChild`/`findChild`; a view provider's `attach` calls
+  `vobj.addDisplayMode(node, name)` (26 Draft, 41 BIM display-mode
+  uses) and `vobj.Annotation.addChild` (ArchSite's compass), reads
+  `vobj.RootNode.getNumChildren()`, writes `vobj.SwitchNode.defaultChild`
+  (ArchComponent); BuildingPart's and SectionPlane's `CutView` insert an
+  `SoClipPlane` at index 0 of the VIEW's scene root from the view
+  provider's `onChanged`.
+- **The view** (`Gui.ActiveDocument.ActiveView`, `getActiveWindow()`):
+  `getSceneGraph`/`getAuxSceneGraph`, `getCameraNode` (11 sites:
+  WorkingPlane reads `position`/`orientation`/`height`/`heightAngle`
+  and tests `isinstance(n, coin.SoOrthographicCamera)`),
+  `getViewDirection`, `getCameraOrientation`, `viewTop`/`viewIsometric`,
+  `fitAll`, `redraw`, `getPoint` (50 sites), `getPointOnScreen`,
+  `getCursorPos`, `getObjectInfo`/`getObjectsInfo` (13: the snapper's
+  objects under the cursor -- dicts of `Document`/`Object`/`Component`
+  /`x`/`y`/`z`), `getViewer().getSoRenderManager().getViewportRegion()`
+  (3: the ghost tracker's `SoGetMatrixAction`, `gui_edit`'s
+  `SoRayPickAction` over the HOST scene with a radius, searching its
+  own edit-tracker node in the picked paths), `setAnimationEnabled`,
+  `getName`/`setName`.
+- **The event stream.**  `addEventCallback("SoEvent", cb)` 43 sites,
+  the callback reading `arg["Type"]` (68), `Position` (29), `State` (26),
+  `Key` (24), `Button` (23), `ShiftDown`/`CtrlDown` (2 each) -- the
+  dict the host already builds in `View3DInventorPy::eventCallback`;
+  `addEventCallbackPivy(SoMouseButtonEvent/SoLocation2Event.
+  getClassTypeId(), cb)` 6 sites (the snapper's click and move,
+  `gui_edit`), the callback taking an `SoEventCallback` and reading
+  `getEvent()` then `getPosition`/`getState`/`getButton`/`getKey`/
+  `wasCtrlDown`/`wasShiftDown`/`wasAltDown`, and `setHandled()` once
+  (the snapper's click, to stop navigation).  Nothing reads
+  `getAction()`, `getPickedPoint()` or `getPath()` off the callback.
+- **The view observer.**  WorkingPlane and `grid_observer` connect
+  `mw.findChild(QMdiArea).subWindowActivated` (4 sites) to re-read the
+  camera when the active view changes.
+- **View providers in the guest.**  Draft and BIM define `onChanged`
+  75, `getIcon` 66, `attach` 47, `setEdit` 35, `updateData` 34,
+  `setupContextMenu` 29, `unsetEdit` 25, `claimChildren` 21,
+  `getDisplayModes` 16, `setDisplayMode` 15, `doubleClicked` 14,
+  `getDefaultDisplayMode` 11, `onBeforeChange` 9, `onDelete` 8,
+  `isShow` 3, the six drag/drop hooks 2 each, `dumps`/`loads`.  The
+  host's table (`ViewProviderFeaturePython.h`) has 47 hooks; the ones
+  that take or return Coin objects (`getElementPicked`, `getElement`,
+  `getDetail`, `getDetailPath`, `getSelectionShape`, `setEditViewer`,
+  `unsetEditViewer`, `canAddToSceneGraph`) are defined by NO Draft or
+  BIM view provider, so they never cross and the C++ default runs.
+  Today a view provider's Proxy restores NATIVELY under routing
+  (`PropertyPythonObject::restoreObject`: "no document object as
+  container"), the last host import of a document-chosen module name
+  (sec 13, "still open"); a view provider BUILT from the guest
+  (`Arch.makeSite()` under S2) already holds a guest stand-in whose
+  hooks cross -- they fail on the nodes.
+- **What is NOT this item**, listed as losses: `FreeCADGui.createViewer()`
+  and everything offline (`ArchSectionPlane`'s image render,
+  `OfflineRenderingUtils`: `SoOffscreenRenderer`, Quarter,
+  `SoWriteAction` to a file -- GL and files, neither in the guest);
+  `SoTexture2.filename` (dropped by the reader: a host path); field
+  connections and engines (not mirrored: a report line); `SoShadowGroup`
+  (commented out in the corpus already); a `CutView` clip plane inserted
+  in the VIEW root from a DOCUMENT principal (below).
+
+**The design.**
+
+- **The wire is a walk, one op per guest turn.**  The guest keeps, per
+  host root it was handed, the list of guest nodes attached there; a
+  mirrored node has an id and the `getNodeId()` it was last sent with.
+  Coin bumps a node's unique id on every field write and, through the
+  child-list auditors, every ancestor's (`SoNode::notify`,
+  `SET_UNIQUE_NODE_ID`), so the walk from an attached root prunes any
+  subtree whose root id is unchanged: a quiet scene costs one integer
+  compare per attached root, a moved tracker costs its own path.  The
+  records: `new [id, type, fields]`, `set [id, fields]`, `children
+  [id, [ids]]`, `del [ids]` (a node no longer reachable from any
+  attached root).  Fields are TYPED on the wire -- a switch over Coin's
+  field types on both sides (the SF/MF bool, int, uint, short, float,
+  double, string, name, enum and bitmask AS NAMES, vec2/3/4 f and d,
+  color, rotation, matrix, plane, time; `SoSFImage` as `[w, h, nc,
+  bytes]`; `SoSFNode`/`SoMFNode`/`SoSFPath` as mirror ids) -- never
+  Coin's Inventor parser on host-side text, and an `SoSFNode` set by
+  text would BE that parser (7.2's rule, kept).  The flush is the last
+  op of the guest's turn, inside the hop that called it: `_drain`
+  (the todo queue) and every hook return call `scene.flush()`, so a
+  view provider's `attach` returns to the host with its nodes already
+  in place, and a mouse move that moved a tracker costs one callback
+  hop plus one `gui.scene.sync`.  Guest side: `freecad/widgets/scene.py`
+  (the wheel; pure Python over pivy).
+- **The reader** (`src/Gui/SandboxScene.cpp`, new; one `SceneMirror`
+  per guest, dropped on a boot): id -> ref'd `SoNode*`, a node made by
+  `SoType::fromName(type).createInstance()` only if `type` is in the
+  ALLOWLIST -- the Coin types the corpus uses (above) plus the common
+  shape, property, transform, group and light nodes, and the six fork
+  types -- so `SoFile`, `SoImage`, `SoWWWInline`, `SoWWWAnchor`, the
+  shader nodes, `SoCallback`, `SoEventCallback`, `SoJavaScriptEngine`,
+  the VRML script, inline and texture-by-URL nodes, and any engine
+  never exist on the host; `SoTexture2.filename` and every other
+  path- or URL-carrying field is refused by name.  Quotas per guest:
+  200 000 nodes, 64 MB of image bytes, 16 MB per sync, 64 KB per
+  string; a sync past a quota is refused whole with one report-view
+  line and the guest's scene stays as it is.  An `SoFCSelection`
+  whose `documentName` the principal cannot reach (`reachable`, 7.13)
+  is refused the same way.
+- **The fork's node types are REAL SoTypes in the guest**: a small C++
+  unit compiled into `_coin.so` beside pivy (`src/App/PyodideHost/pivy/`,
+  the wheel rebuilt outside conda), `SO_NODE_SOURCE` subclasses of
+  `SoIndexedLineSet` / `SoIndexedFaceSet` / `SoPointSet` / `SoSeparator`
+  / `SoShape` / `SoGroup` carrying the same fields as the host classes
+  (`SoBrepEdgeSet`: `highlightIndices`, `highlightColor`, `seamIndices`,
+  `elementSelectable`, `onTopPattern`, `attachedOnly`; `SoFCSelection`:
+  `documentName`, `objectName`, `subElementName`, `style`,
+  `selectionMode`, `highlightMode`, `selected`, `useNewSelection`, the
+  two colors; `SoDatumLabel`'s thirteen; ...) and no traversal
+  behaviour -- the guest never renders.  `fromName` and the dynamic
+  field access then work as they do natively, the walker sends the
+  type NAME, and the host creates the real class.
+- **Host roots as guest proxies** (`_HostNode` in the wheel): the
+  active view's `getSceneGraph()` and `getAuxSceneGraph()`, and a view
+  provider's `RootNode`/`Annotation`/`SwitchNode` (the handle plus
+  which).  They take `addChild`/`insertChild`/`removeChild`/
+  `replaceChild`/`findChild`/`getNumChildren`/`getChild` over the
+  guest's OWN attached children (`gui.scene.attach [root, id, index]`
+  / `detach`, the subtree riding the same op); a host-native child is
+  an opaque `_HostNode` with `getTypeId().getName()` and `getName()`
+  only; the one field write the corpus makes on a host node
+  (`SwitchNode.defaultChild`, `whichChild`) is a named short list.
+  `vobj.addDisplayMode(node, name)` mirrors the subtree and calls
+  `ViewProvider::addDisplayMaskMode` on the host.  **Reach**: a session
+  or addon guest reaches the active view's two roots and every view
+  provider it may write (S1's reach) under `gui`; a DOCUMENT principal
+  reaches only the three roots of its OWN view providers (the view
+  family, `doc.write.self`) and never the view's root -- so a routed
+  document's `CutView` (BuildingPart, SectionPlane) from `onChanged`
+  is refused with a report line, the same standing as `gui` DENY for a
+  document: a file must not clip the user's whole view by itself.  No
+  new permission.
+- **The camera is a snapshot node, written back at the drain.**
+  `getCameraNode()` answers a REAL guest `SoOrthographicCamera` or
+  `SoPerspectiveCamera` (so `isinstance` holds) filled from the host's
+  fields at the call (`gui.view [get_camera]`); a guest write to it is
+  seen by the next flush (its node id moved) and sent back as
+  `[set_camera, fields]`.  `getCameraOrientation`, `getViewDirection`,
+  `setCamera*`, the `view*` orientations, `fitAll`, `redraw`, `getPoint`,
+  `getPointOnScreen`/`OnViewport`/`OnFocalPlane`, `getCursorPos`,
+  `getSize`, `getObjectInfo`/`getObjectsInfo` (each hit filtered by
+  the principal's reach: a foreign document's object is dropped from
+  the list), `setAnimationEnabled`, `getName`/`setName`,
+  `hasClippingPlane`/`toggleClippingPlane`: one op family `gui.view
+  [view, member, args]`, all data, under `gui`.  `getViewer()` is a
+  shim whose `getSoRenderManager().getViewportRegion()` builds a guest
+  `SbViewportRegion` from the host's size, and whose `getSceneGraph()`
+  is the host root proxy; `gui_edit`'s `SoRayPickAction` over it
+  becomes `gui.view [pick, x, y, radius, all]` answering the picked
+  points as `(point, normal, path)` with the path's nodes as the
+  guest's own node where the id is the guest's and opaque `_HostNode`s
+  elsewhere -- `searchEditNode`'s `path.getNode(length - 2)` finds its
+  tracker.  The `SoRayPickAction` class in the guest stays real
+  (guest-local picking over guest graphs works); applied to a
+  `_HostNode` it is the op.
+- **Events cross as data, one hop each.**  `addEventCallback(type, cb)`
+  registers a native callback on the viewer (`gui.view.event [add,
+  type, proxy]`) that calls the guest proxy with the same dict the host
+  builds today; `addEventCallbackPivy(SoType, cb)` registers an
+  `SoEventCallback` hook that sends `[type, position, button, state,
+  key, printable, ctrl, shift, alt, time]`; the guest's `_EventCallback`
+  shim builds a REAL guest `SoMouseButtonEvent` / `SoLocation2Event` /
+  `SoKeyboardEvent` from it (pivy has the setters), `getEvent()` answers
+  it, and `setHandled()` sets a flag the reply carries, so the host
+  calls `n->setHandled()` after the hop and navigation stops as
+  natively.  `getAction`/`getPickedPoint`/`getPath` off the callback
+  raise (unused).  A mouse move is one hop (the wire floor of 8.1, about
+  22 us, plus the snapper's own Python) and, when a tracker
+  moved, one sync.  Callbacks are keyed by guest and dropped on a
+  boot, as the selection observers and timers are.
+- **The active window and the MDI observer.**  `getActiveWindow()`
+  answers a `_View3D` proxy (a per-guest table on the host, resolved
+  by document name and view serial; a closed view's proxy is a
+  `ReferenceError`) whenever the host's active window is a 3D view --
+  which makes `get_3d_view()` true, Draft's Creators `IsActive`, and
+  BIM's `hasattr(..., "getSceneGraph")` polls pass with no op (the
+  proxy has the attribute).  `getWindows`/`getWindowsOfType` list the
+  3D views; `setActiveWindow` crosses.  `mw.findChild(QMdiArea)` is a
+  shim whose `subWindowActivated` is driven by
+  `Application::signalActivateView` through `gui.view.observer`, one
+  hop per switch.
+- **View providers in the guest.**  `PropertyPythonObject::
+  restoreObject` routes a `Gui::ViewProvider` container's Proxy through
+  `restoreGuestProxy` keyed on the view provider's Object (the reach
+  anchor), closing sec 13's last document-chosen host import; the 47
+  hook names join `isHookName` and the prelude's HOOKS so the host's
+  probes cost no trip; the arguments already cross (`vobj` and `obj` as
+  handles, `prop`/`mode`/`subname` as data); `setupContextMenu(vobj,
+  menu)` gets a guest `QMenu` model (G3c) whose actions the host
+  appends to the real menu after the hop, `getIcon` returns a path or
+  XPM text (data), `claimChildren` handles, `setEdit` opens the G3
+  panels.  The GuiUp losses of sec 13 close here: BuildingPart's
+  `ViewObject.Proxy.onChanged` from `execute` and Layer's
+  `change_view_properties` are guest-to-guest calls once the view
+  provider's Proxy lives in the same guest.
+
+**Order, three stages, each shipping alone:**
+
+- **G4a -- the mirror and the drawing loop**: the walker, the reader,
+  the aux and scene roots, the fork types in the guest, the view op
+  family with the camera snapshot, the events, the active window and
+  the MDI observer.  What it unblocks: `Draft_Line` from the guest end
+  to end -- the snapper's `getPoint`, the line tracker following the
+  cursor, two clicks making a Wire -- and every Draft Creator's
+  `IsActive`, every BIM command's poll.
+- **G4b -- view providers in the guest**: the restore route, the hook
+  table, `addDisplayMode` and the three roots, the context menu.  What
+  it unblocks: a routed document's Draft and BIM objects DRAWN from the
+  guest (`SandboxCorpusGui` strict for BIM too: the 3 BuildingParts
+  valid), `Arch.makeSite()`'s terrain from the guest.
+- **G4c -- the residue**: the pick op for `Draft_Edit`, the field-write
+  list on host nodes, whatever the corpus commands hit next, measured
+  after G4a and G4b under the gate.
+
+**Gate** -- `SandboxScene` (new, in the rig's default list) plus one
+stage of `SandboxCorpusGui`:
+`test_mirror_roundtrip` (a session guest builds a graph of every
+allowed type with every field type and attaches it to the aux root;
+the HOST's `SoWriteAction` text of the mirrored subtree equals the
+GUEST's `SoWriteAction` text of the same subtree -- the fork types
+print the same names on both sides -- then one `whichChild` and one
+coordinate change cross in one sync and the texts match again, and
+`detach` brings the host's node count back to zero);
+`test_reader_refuses` (`SoTexture2.filename`, an `SoFile`, an
+`SoCallback`, a sync past the node quota, an `SoFCSelection` naming a
+foreign document: each refused with a report line, the rest applied);
+`test_draft_line_from_guest` (Draft active from the guest, `Draft_Line`,
+synthetic mouse moves and clicks posted to the view's GL widget under
+Xvfb: the mirrored line tracker's `SoCoordinate3` on the HOST follows
+the cursor, two clicks make a `Draft Wire` with the snapped points,
+`setHandled` kept the view from orbiting); `test_camera_and_observer`
+(WorkingPlane's `align_to_view` from the guest reads the camera, a
+`viewTop` from the host fires the guest's `subWindowActivated` path
+once, a guest camera write lands on the host); `test_events`
+(`addEventCallback("SoEvent")` sees a key and a button dict,
+`addEventCallbackPivy` gets a real guest event with the right
+position and modifiers).  In `SandboxCorpusGui`, `test_view_providers_
+routed`: the Draft and BIM corpus documents reopened with the view
+providers in the guest, each object's `RootNode` written by
+`SoWriteAction` equal to the native run's text (names normalized),
+BIM STRICT.  The roadmap's pixel compare (`saveImage` of both runs)
+is a secondary, off-by-default check: Mesa under Xvfb is slow and the
+scene text is exact.
+
+Budget: about 1400 lines of host C++ (the reader and the field switch
+500, the roots and the view op family 400, the events and the pick
+200, the view provider route and hook table 150, the camera and the
+observer 150); 250 of C++ in the guest's `_coin.so` (the six types; a
+pivy wheel rebuild); 900 in the wheel (the walker 300, the host node,
+camera, event and view shims 400, the view provider glue and the MDI
+shim 200); 600 of gate.  G4a is the larger half.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -4218,8 +4523,8 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    binding a command's real action, `QDockWidget` through the dock
    manager, host timers for delayed callbacks, the workbench
    manipulator; both `Activated()`s run to their end; gate
-   `SandboxInitGui` 7/7).  NEXT (ruled 2026-09-07): G4 (its scope put
-   to the user first), then F1.
+   `SandboxInitGui` 7/7).  NEXT (ruled 2026-09-07): G4 -- SIZED
+   2026-09-07 (7.16), its scope put to the user -- then F1.
    **F1 -- the file and code chokepoints** (7.14, SIZED 2026-09-07, not
    built): `fs.read` / `fs.write` / `host.exec` checked inside the
    core's file and `runFile` primitives under the guest's scope, the
@@ -4231,10 +4536,19 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    H0 (BUILT 2026-09-06) and H1 (7.12) come before G3b so G3b's views
    are written once, in C++; H2 and H3, the native ports, interleave
    with G3b-G3d as the class set grows.
-8. **G4** -- the mirror: generated Coin models, the reader with its
-   allowlist and quotas, host-scene query ops, stand-ins, the event
-   stream.  Gate: the Draft test documents render identically (pixel
-   compare on a converged scene).
+8. **G4** -- the mirror, SIZED 2026-09-07 (7.16, not built): the
+   walk of real guest `SoNode`s as one typed op per guest turn, the
+   host reader with its allowlist and quotas, the fork's node types as
+   real SoTypes in the guest, the host roots as guest proxies, the view
+   op family with the camera snapshot, the events one hop each, the
+   active window and the MDI observer (G4a: `Draft_Line` from the
+   guest end to end); view providers in the guest (G4b: the restore
+   route, the hook table, `addDisplayMode`); the residue (G4c).  Gate:
+   `SandboxScene` -- the host's and the guest's `SoWriteAction` text of
+   a mirrored subtree equal, the drawing loop under synthetic mouse
+   events -- and the corpus reopened with the view providers routed;
+   the pixel compare is a secondary check.  Its scope is put to the
+   user before building.
 9. **N2** -- `fetch` and the loop primitive.  **N3** -- network rows in
    the existing permissions panel, the addon manifest at install time.
    **N4** -- WebSocket (`net.ws:<origin>`), and `SOCKFS` under its own
@@ -4462,7 +4776,8 @@ sockets, any network for the reference image, a webview escape hatch.
   so a session or an addon reaches host Python and host files by name.
   A document principal cannot (`gui` DENY, not promptable).  The answer
   is F1, the chokepoints at the primitives, not a list of names.
-- **A guest view provider's scene is G4's** (7.13, S2 built note):
+- **A guest view provider's scene is G4's** (7.13, S2 built note;
+  G4 sized 2026-09-07 in 7.16):
   `Arch.makeSite()` from the guest builds `_ViewProviderSite` in the
   guest, whose `attach`/`onChanged`/`updateData` reach `Annotation`,
   `RootNode` and `SwitchNode` -- Coin nodes, the mirror -- and print
