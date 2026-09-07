@@ -204,6 +204,8 @@ SET(Geometry_SRCS
     PropertyCosmeticEdgeList.h
     PropertyCosmeticVertexList.cpp
     PropertyCosmeticVertexList.h
+    PropertyProjectedGeometry.cpp
+    PropertyProjectedGeometry.h
     CosmeticExtension.cpp
     CosmeticExtension.h
 )
