@@ -135,7 +135,16 @@ macro(InitializeFreeCADBuildOptions)
     option(BUILD_TEST "Build the FreeCAD test module" ON)
     option(BUILD_TECHDRAW "Build the FreeCAD Technical Drawing module" ON)
     option(BUILD_TUX "Build the FreeCAD Tux module" ON)
-    option(BUILD_WEB "Build the FreeCAD web module" ON)
+    # OFF: the module needs Qt WebEngine, which the conda-forge stack this
+    # project builds against does not make available the way a distro does.
+    # qt6-main ships without it, the separate qt6-webengine package exists
+    # only for some platforms (there is none for osx-64) and lags qt6-main
+    # by a release, so a matching set has to be pinned by hand; conda's
+    # pyside6 is built without QtWebEngineWidgets regardless. Leaving this
+    # ON made a fresh configure fail outright, because SetupQt.cmake asks
+    # for the WebEngineWidgets component REQUIRED. Turn it on deliberately,
+    # on a stack that has WebEngine -- see docs/DevEnvironment.md.
+    option(BUILD_WEB "Build the FreeCAD web module" OFF)
     option(BUILD_SURFACE "Build the FreeCAD surface module" ON)
     option(BUILD_VR "Build the FreeCAD Oculus Rift support (need Oculus SDK 4.x or higher)" OFF)
     option(BUILD_CLOUD "Build the FreeCAD cloud module" OFF)

@@ -376,6 +376,37 @@ Sources still carry `OCC_VERSION_HEX` guards (features that need the 8.0.1 fork
 change to a guarded path is not compile-checked here. `Mod/Part` could not build
 on 7.7.2 even before the prefixes were deleted.
 
+### `BUILD_WEB` defaults OFF (2026-09-08)
+
+`BUILD_WEB` used to default ON, which is a distro assumption: it takes Qt
+WebEngine, and no conda stack in this document has WebEngine sitting there
+ready to be found. The failure was not a missing workbench either --
+`SetupQt.cmake` appends `WebEngineWidgets` to the component list and every
+component goes through `find_package(... REQUIRED)`, so leaving the default
+alone made a **fresh configure fail outright** on any env created from the
+recipes here.
+
+What conda actually offers, on the three boxes:
+
+| | WebEngine |
+|---|---|
+| Linux (`.conda/freecad`) | not in `qt6-main`; `qt6-webengine` is a separate package, one release behind it |
+| Windows (`.conda\freecad`) | same split, and installed only by pinning `qt6-main`/`pyside6`/`qt6-webengine` to a matching 6.10.2 set and relaxing the WebEngine config packages by hand -- see "No toolbars at startup" |
+| macOS (osx-64) | **no `qt6-webengine` package at all** -- see the macOS section |
+
+`pyside6` in these envs is built without `QtWebEngineWidgets` in every case, so
+even where the C++ side links, the Python side of Web/Help/AddonManager does
+not come with it.
+
+So the option is now opt-in: `option(BUILD_WEB ... OFF)` in
+`cMake/FreeCAD_Helpers/InitializeFreeCADBuildOptions.cmake`. Turn it ON
+deliberately, on a stack that has WebEngine. Nothing else moves when it is off
+-- `BUILD_START` stopped depending on it with the Start rewrite, and the only
+other consumers are `src/Mod/CMakeLists.txt` and the macOS bundle's Qt
+deployment. The presets on all three boxes already set it OFF explicitly; that
+line is now redundant rather than load-bearing, and is kept so the value is
+visible in the preset.
+
 ### Cycles (path-traced renderer)
 
 **Cycles is OFF unless you ask for it.** `BUILD_CYCLES` defaults OFF and neither
