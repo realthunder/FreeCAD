@@ -587,7 +587,8 @@ installed with no `occt` either. The two boxes answer it differently:
 | | what supplies it | 2D booleans via libarea |
 |---|---|---|
 | Linux | the fork built from source into the conda prefix | yes |
-| Windows | conda-forge `ifcopenshell`, installed without `occt` | no |
+| Windows (`D:\Zheng.Lei\sw`) | conda-forge `ifcopenshell`, installed without `occt` | no |
+| Windows (`D:\works\sw`) | the fork's own win-64 package, off a GitHub release | yes |
 
 On Linux it is the fork (`realthunder/IfcOpenShell`, branch `LinkVibe`),
 rebuilt into the conda prefix so it links `libarea.so.2` -- see the ledger in
@@ -617,11 +618,19 @@ half that links OCCT; the bare `import ifcopenshell` does not), and an
 mismatch would show as "the specified procedure could not be found". Re-check
 it after either side moves.
 
-What Windows gives up by taking the packaged build is the fork's 2D boolean
-path -- `boolean_subtraction_2d_using_area`, the one that goes through libarea
-rather than the 3D kernel. Closing that means building the fork here, or
-rewiring `ifcopenshell-feedstock` off the upstream tarball onto the `LinkVibe`
-branch, which `docs/CAMPort.md` already lists as a separate job.
+What a box gives up by taking the packaged upstream build is the fork's 2D
+boolean path -- `boolean_subtraction_2d_using_area`, the one that goes through
+libarea rather than the 3D kernel.
+
+**That is no longer a standing gap.** `ifcopenshell-feedstock` has since been
+rewired onto the `LinkVibe` branch and now names a `libarea >=0.3.2`
+dependency, and win-64 packages exist at 0.9.0alpha0 build 13 for py311
+through py314. A box that can reach the channel installs them from it; a box
+that cannot takes the same file off a GitHub release -- see
+[IfcOpenShell](#ifcopenshell) in the Windows section, which is also where the
+checks that actually prove the path is wired are written down. What remains
+open in `docs/CAMPort.md` is narrower than it was: not whether the path is
+built and linked, but whether it is ever *taken* at runtime.
 
 ### An optimized stack, for measuring anything
 
@@ -1130,6 +1139,56 @@ Also part of the standard env, and it carries the same do-not-bring-an-occt
 rule. The recipe and what the version skew costs are in
 [IfcOpenShell, for Arch/BIM](#ifcopenshell-for-archbim) with the rest of it.
 
+**As of 2026-09-07 this box runs the fork, not conda-forge's upstream.** The
+table in that section says Windows gets conda-forge `ifcopenshell` and no 2D
+booleans via libarea; on `D:\works\sw` that is no longer true. The env carries
+`ifcopenshell 0.9.0alpha0 py312h41c9591_13`, built from
+`realthunder/IfcOpenShell` branch `LinkVibe`, which needed three fixes before
+it would build on win-64 at all: a bare `friend class iterator;` in
+`src/ifcgeom/element.h` that MSVC binds to `std::iterator` and rejects
+(C2990), six `LNK2019`s against libarea's static data members (see
+[libarea](#libarea-and-fetching-a-realthunder-package-when-anacondaorg-is-blocked)
+below), and a stream-offset bug in the mmap file reader.
+
+**It arrived over a GitHub release, because the channel is unreachable here.**
+That is the general escape hatch on a box with no anaconda.org and no relay
+host: anything the fork's channel publishes can be attached to a release on the
+repo that produced it and fetched with plain `curl`. `github.com` and
+`objects.githubusercontent.com` both answer here. Verify the download against
+the channel's own sha256 rather than trusting the transfer.
+
+Install it with a one-line `@EXPLICIT` file naming the local `.conda`, for the
+reason the [SMESH section](#smesh-install-it-without-letting-conda-resolve-occt)
+gives -- and note that a single-package `@EXPLICIT` file is *also* how the
+do-not-bring-an-occt rule is kept: conda links exactly the file named and
+resolves nothing, so the package's `occt >=8.0.1` dependency never pulls a
+kernel in. Its 22 recorded dependencies are informational in that mode, but
+they still have to be satisfied by hand or the module will not load; on this
+box twenty already were, `occt` is deliberately absent, and two were not
+available at all -- see
+[prefix.dev is a partial conda-forge](#prefixdev-is-a-partial-conda-forge-not-a-stale-one).
+
+**What to check afterwards, and what not to bother checking.** `Library\bin`
+must still hold no `TK*.dll` and `conda-meta` no `occt` record; `import
+ifcopenshell.geom` must be silent, which is the half that links OCCT and so
+proves the `.pth` `add_dll_directory` entries still resolve it to our own
+8.0.1. To confirm the fork's 2D path is actually wired, read the import table
+rather than the Python namespace:
+
+```bat
+.conda\run.cmd cmd /c "dumpbin /imports Library\bin\ifcopenshell_geometry_kernel_opencascade.dll"
+```
+
+It should list `area.dll` and import `?m_accuracy@CArea@@2NA` and its five
+siblings from it. **Do not test for `boolean_subtraction_2d_using_area` in
+Python** -- it is not exposed there, `hasattr` is False on both platforms, and
+concluding the capability is missing from that is the wrong answer. The Python
+surface of the feature is a *setting*, `boolean-attempt-2d-area` (default
+True), alongside `boolean-area-2d-fit-circles`; both are fork-only, confirmed
+by diffing `src/ifcgeom/conversion_settings.h` between `LinkVibe` and
+upstream's `v0.9.0`, where the token appears four times and zero times
+respectively.
+
 ### libarea, and fetching a realthunder package when anaconda.org is blocked
 
 **A clean Windows configure now fails without `libarea`.** `src/Mod/Area` stopped
@@ -1209,8 +1268,26 @@ before laying the package over it. Delete `Library\bin\area.dll`,
 
 `smesh` has no such fallback -- so a box in this position builds with
 `BUILD_FEM=OFF`, which is what the preset table below already has. IfcOpenShell
-does, because it comes from conda-forge rather than from this fork's channel,
-and `prefix.dev` serves that.
+has a third route: not conda-forge, which carries only upstream, but a GitHub
+release asset off the fork's own repo -- see [IfcOpenShell](#ifcopenshell)
+above.
+
+**libarea must be at 0.3.2 or newer if IfcOpenShell's 2D path is in play.**
+0.3.1 leaned entirely on `WINDOWS_EXPORT_ALL_SYMBOLS`, which carries functions
+across but **not static data**: the import library offers only the `__imp_`
+form while the consumer emits a direct reference, so a consumer that reads
+`CArea::m_accuracy`, `m_units`, `m_clipper_simple`, `m_clipper_clean_distance`,
+`m_fit_arcs`, `m_fit_circles` or `Point::tolerance` fails to link with
+`LNK2019` while every *method* of the same class resolves. ELF has no such
+split, which is why it was invisible on Linux and macOS. 0.3.2 annotates the
+seventeen static data members with `LIBAREA_DATA` and leaves the functions to
+the automatic export.
+
+FreeCAD itself is unaffected either way -- across `src/` the only mention of
+any of those names is a comment in `src/Mod/Area/App/Area.cpp`, so moving to
+0.3.2 is a **relink, not a recompile**, and rebuilding the `Area` target is
+enough to confirm it. Verified on 2026-09-07: `Area.pyd` relinks with no
+`LNK2019`, and the C++ suite stays at 477 of 477.
 
 **IfcOpenShell without a throwaway env.** The recipe in
 [IfcOpenShell, for Arch/BIM](#ifcopenshell-for-archbim) says to solve into a
@@ -1232,6 +1309,57 @@ current on conda-forge. Confirm afterwards that `Library\bin` still holds no
 `TK*.dll`, and that `import ifcopenshell.geom` works -- that is the half which
 links OCCT, and here it resolves against the fork's kernel through the
 `add_dll_directory` entries of the `.pth` below.
+
+### prefix.dev is a partial conda-forge, not a stale one
+
+Found 2026-09-07, and it is the failure mode nobody predicts. On a box with no
+anaconda.org, `https://prefix.dev/conda-forge` is the conda-forge substitute
+this document has used throughout -- but it does **not** carry everything
+conda-forge does, and the gap is not a uniform lag you can wait out. Installing
+the fork's `ifcopenshell` needed `cgal-cpp >=6.2.1` and `libxml2-16 >=2.15.4`;
+prefix.dev's win-64 ceiling was `cgal-cpp 6.2` and `libxml2-16 2.15.3`, one
+patch release short in both cases, while conda-forge proper had both.
+
+**A package built against a current conda-forge can therefore be simply
+unsatisfiable here.** The near-miss is the trap: two versions that close reads
+as "this env is behind, upgrade it", and no amount of upgrading helps because
+the mirror has no newer file to give. Before concluding an env is out of date,
+check the *mirror's* ceiling:
+
+```bat
+conda search --override-channels -c https://prefix.dev/conda-forge --subdir win-64 <pkg>
+```
+
+**Mirrors that do carry it, checked from this box:**
+
+| mirror | `/anaconda/cloud/conda-forge` |
+|---|---|
+| `mirrors.tuna.tsinghua.edu.cn` | 200, has both |
+| `mirrors.ustc.edu.cn` | 200, has both |
+| `mirror.nju.edu.cn` | 200, has both |
+| `mirrors.aliyun.com` | 404 on that path |
+
+**Verify a mirror rather than trusting it** -- it is a third party in the
+dependency chain, and "fresher" and "different" look identical from the
+outside. Two checks, both cheap:
+
+1. **Fidelity.** Download a package the mirror and prefix.dev *both* carry at
+   the same build string, from each, and compare the bytes. On 2026-09-07
+   `cgal-cpp-6.2-h29dcab7_0.conda` and `libxml2-16-2.15.3-h3cfd58e_1.conda`
+   hashed identically from TUNA and prefix.dev, which is what shows TUNA serves
+   genuine conda-forge artifacts rather than repackaged ones.
+2. **Corroboration.** For the packages you actually need -- the ones prefix.dev
+   cannot supply, so there is nothing to compare against -- fetch from two or
+   three mirrors independently and confirm they agree. That does not defend
+   against a compromised upstream, but it rules out any single mirror having
+   tampered.
+
+**One trap in the libxml2 family**, because it half-installs silently:
+`libxml2-16 2.15.4` ships two builds, `h3cfd58e_0` (with `icu >=78.3`) and
+`h692994f_0` (without), and the metapackage build has to match the one you
+pick -- `libxml2-2.15.4-he095d88_0` pins `h3cfd58e_0`, while `h661ae93_0` pins
+`h692994f_0`. This env runs the icu flavour, so it is the `he095d88_0` set,
+and `libxml2-devel` follows the same split.
 
 ### The dev shell: `.conda\run.cmd`
 
