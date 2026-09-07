@@ -1013,7 +1013,7 @@ itself. Far heavier, and a 10%-alpha line overlay does not justify it.
 Prior art agrees. Blender's viewport draw handlers solve the identical
 problem with placement tags (`PRE_VIEW` / `POST_VIEW` / `POST_PIXEL`),
 not with depth layers -- and since the facade's ambition is a
-`gpu`-module workalike (`docs/ExternalEngines.md` section 7), matching
+`gpu`-module workalike (`docs/ExternalRenderer.md` section 7), matching
 Blender's mechanism here is a point in favour, not a convenience.
 
 ### 10.2 The contract: phase-tagged passes
