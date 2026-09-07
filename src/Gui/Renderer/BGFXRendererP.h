@@ -9234,6 +9234,11 @@ public:
     void updateBBox();
 
     QOpenGLWidget *widget;
+    /// The fed camera projection remapped to this backend's clip depth
+    /// (render()). Lives here rather than on the stack because the
+    /// frame hands the pointer on -- BGFXView::projMatrix keeps it for
+    /// the pass closures and the effect submits.
+    float projClip[16] = {};
     /// This renderer will never draw (docs/HeadlessServe.md §3.1): no
     /// bgfx view, no graphics device, no display. render() refuses;
     /// publishNoDraw() is the whole of what it does.
