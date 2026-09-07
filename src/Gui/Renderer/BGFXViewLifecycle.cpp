@@ -855,14 +855,23 @@ void BGFXView::init(bool keepShared)
     // sample count from the color attachment's.
     // Sampleable, always: the ViewCaptureDepth encode reads this
     // attachment, and it must never be a REBUILD that makes it
-    // readable. accumTex is life-sized, so a rebuild destroys the
-    // temporal accumulation and zeroes accumFrames -- and building it
-    // on first capture put that rebuild AFTER the run had settled,
-    // so the first capture averaged fewer jittered samples than the
-    // frame anyone had looked at. frameComplete does not cover
-    // convergence (it means shaders compiled and shapes arrived), so
-    // nothing waited for it and the capture silently perturbed the
-    // thing it was capturing.
+    // readable. accumTex is life-sized, so a rebuild destroys the idle
+    // temporal accumulation and zeroes accumFrames -- and latching the
+    // demand on the first capture put that rebuild AFTER the run had
+    // settled, where nothing waits for the average to re-converge:
+    // frameComplete means every user shader compiled and every
+    // deferred shape arrived, and says nothing about convergence.
+    //
+    // ! That is a real hazard and NOT a measured defect. It was
+    // written to explain a 1-LSB drift on the raster/mode0 golden, and
+    // that explanation was WRONG -- the image is byte-identical with
+    // the latch, without it, and at the commit before the capture work
+    // existed, and it is bit-stable across runs. The drift predates all
+    // of this and is still unattributed. So do not reintroduce the
+    // latch on the grounds that its cost was never observed; the reason
+    // to build it up front is that a mid-run rebuild of the
+    // accumulation is not something a capture should be able to cause,
+    // whether or not a golden happens to show it.
     //
     // The cost is a write-only attachment becoming a plain sampleable
     // one, which is the same memory without MSAA -- and MSAA is off by
