@@ -49,9 +49,22 @@ class _QtNamespace(_Enum):
     ItemIsAutoTristate = 64
     ItemNeverHasChildren = 128
     ItemIsUserTristate = 256
-    # orientation
+    # orientation (and the scoped spelling, `Qt.Orientation.Horizontal`,
+    # Draft's status bar uses)
     Horizontal = 1
     Vertical = 2
+
+    class Orientation:
+        Horizontal = 1
+        Vertical = 2
+
+    class DockWidgetArea:
+        LeftDockWidgetArea = 1
+        RightDockWidgetArea = 2
+        TopDockWidgetArea = 4
+        BottomDockWidgetArea = 8
+        AllDockWidgetAreas = 15
+        NoDockWidgetArea = 0
     # alignment
     AlignLeft = 0x0001
     AlignRight = 0x0002
@@ -456,6 +469,27 @@ class QPoint:
 
     def y(self):
         return self._y
+
+    def setX(self, x):
+        self._x = x
+
+    def setY(self, y):
+        self._y = y
+
+    def __add__(self, other):
+        return type(self)(self._x + other.x(), self._y + other.y())
+
+    def __sub__(self, other):
+        return type(self)(self._x - other.x(), self._y - other.y())
+
+    def __eq__(self, other):
+        return isinstance(other, QPoint) and (self._x, self._y) == (other.x(), other.y())
+
+    def __hash__(self):
+        return hash((self._x, self._y))
+
+    def __repr__(self):
+        return "%s(%r, %r)" % (type(self).__name__, self._x, self._y)
 
 
 class QPointF(QPoint):

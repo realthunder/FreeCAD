@@ -45,6 +45,7 @@
 
 #include <QHash>
 #include <QPointer>
+#include <functional>
 #include <QSet>
 #include <QStringList>
 
@@ -116,6 +117,7 @@ public:
 
 private:
     friend class EventRelay;
+    friend class DockRelay;
     View(Fw::Widget* model, QWidget* widget, bool bound);
     void connectWidget();
     void readBack();
@@ -172,6 +174,14 @@ GuiExport QAction* actionWidgetOf(const Fw::Widget* model);
 /// Adopt `action` (a bar's toggle-view action, a widget's own) as the
 /// rendering of the model.
 GuiExport void bindAction(Fw::Widget* model, QAction* action);
+/// Who may WRITE to a host command's action bound through a model's
+/// `command` (docs/Sandbox.md 7.15): the filter answers by command
+/// name; unset, every write lands.  Reads and triggers always work.
+GuiExport void setCommandWriteFilter(std::function<bool(const QString&)> filter);
+/// A `QToolButton` model with `forAction` set, whose parent is a
+/// realized tool bar: bind it to the bar's button for that action
+/// (`QToolBar::widgetForAction`).  True when bound (or bound already).
+GuiExport bool bindActionButton(Fw::Widget* button);
 /// The model a real action renders, or nullptr.
 GuiExport Fw::Widget* modelOfAction(const QAction* action);
 

@@ -399,7 +399,10 @@ IF (BUILD_EXPR_PYODIDE_HOST)
     # runs in the guest; PartGui is a shim (bimcommands names it at
     # import), the IFC commands answer an empty tool bar (no
     # ifcopenshell in the guest).
-    SET(BIM_sandbox_wheel_files ${BIM_sandbox_wheel_files} BimStatus.py ${bimcommands_SRCS})
+    # BimSelect (7.15): Activated() imports it; its observer waits on
+    # FreeCADGui.addDocumentObserver, which the guest lacks (skipped)
+    SET(BIM_sandbox_wheel_files ${BIM_sandbox_wheel_files} BimStatus.py BimSelect.py
+                                ${bimcommands_SRCS})
     SET(_bim_wheel_dir ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
     SET(_bim_wheel ${_bim_wheel_dir}/fcx_bim-${PACKAGE_VERSION}-py3-none-any.whl)
     SET(_bim_wheel_packer ${CMAKE_SOURCE_DIR}/src/Tools/bindings/packSandboxWheel.py)

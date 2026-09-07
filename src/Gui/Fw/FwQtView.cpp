@@ -65,7 +65,9 @@
 #include <QTableWidget>
 #include <QTextEdit>
 #include <QTreeView>
+#include <QDockWidget>
 #include <QToolBar>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QWidget>
 #include <QWidgetAction>
@@ -74,7 +76,10 @@
 #include <Base/Console.h>
 #include <Base/Exception.h>
 
+#include "Action.h"
+#include "Application.h"
 #include "BitmapFactory.h"
+#include "Command.h"
 #include "FileDialog.h"
 #include "Fw/FwQtView.h"
 #include "Fw/FwWidgets.h"
@@ -214,11 +219,14 @@ struct View::Items
 QWidget* Gui::FwQt::makeQtWidget(const QString& className, QWidget* parent)
 {
     QWidget* w = nullptr;
-    if (className == QLatin1String("QToolBar")) {
+    if (className == QLatin1String("QToolBar") || className == QLatin1String("Gui::ToolBar")) {
         w = new QToolBar(parent);
     }
     else if (className == QLatin1String("QMenu")) {
         w = new QMenu(parent);
+    }
+    else if (className == QLatin1String("QDockWidget")) {
+        w = new QDockWidget(parent);
     }
     else if (className.startsWith(QLatin1String("Gui::"))) {
         GetWidgetFactorySupplier();
@@ -335,11 +343,24 @@ public:
         _model->setInitial(QStringLiteral("visible"), _action->isVisible());
         _model->setInitial(QStringLiteral("toolTip"), _action->toolTip());
     }
+    void setWritable(bool on, const QString& command)
+    {
+        _writable = on;
+        _command = command;
+    }
     void apply(const QStringList& keys)
     {
         QAction* a = _action.data();
         if (!a)
             return;
+        if (!_writable) {
+            if (!_warned) {
+                _warned = true;
+                Base::Console().Warning("FwQt: the action of command %s is not the guest's to"
+                                        " change (write dropped)\n", qPrintable(_command));
+            }
+            return;
+        }
         const bool was = _applying;
         _applying = true;
         for (const QString& key : keys) {
@@ -389,7 +410,71 @@ private:
     QPointer<QAction> _action;
     bool _owned;
     bool _applying = false;
+    bool _writable = true;
+    bool _warned = false;
+    QString _command;
 };
+
+/// The Close, Move and Resize events of a dock: a close is the `close`
+/// event (the guest's `closeEvent`), the rest write the geometry back.
+class DockRelay : public QObject
+{
+public:
+    DockRelay(View* view, QWidget* dock)
+        : QObject(dock)
+        , _view(view)
+    {}
+
+    bool eventFilter(QObject* obj, QEvent* e) override
+    {
+        if (_view) {
+            auto w = static_cast<QWidget*>(obj);
+            if (e->type() == QEvent::Close) {
+                _view->event(QStringLiteral("close"));
+            }
+            else if (e->type() == QEvent::Move || e->type() == QEvent::Resize) {
+                _view->send(QVariantMap {{QStringLiteral("x"), w->x()},
+                                         {QStringLiteral("y"), w->y()},
+                                         {QStringLiteral("width"), w->width()},
+                                         {QStringLiteral("height"), w->height()}});
+            }
+        }
+        return QObject::eventFilter(obj, e);
+    }
+
+private:
+    QPointer<View> _view;
+};
+
+std::function<bool(const QString&)>& commandWriteFilter()
+{
+    static std::function<bool(const QString&)> filter;
+    return filter;
+}
+
+/// The real action of the host command `name`: the member `index` of
+/// an action group, else the command's one action (made if the
+/// command sits in no bar yet).
+QAction* commandAction(const QString& name, int index)
+{
+    if (!Application::Instance)
+        return nullptr;
+    Command* cmd = Application::Instance->commandManager().getCommandByName(
+        name.toUtf8().constData());
+    if (!cmd)
+        return nullptr;
+    if (!cmd->getAction())
+        cmd->initAction();
+    Action* action = cmd->getAction();
+    if (!action)
+        return nullptr;
+    if (auto group = qobject_cast<ActionGroup*>(action)) {
+        const QList<QAction*> members = group->actions();
+        if (index > 0 && index <= members.size())
+            return members.at(index - 1);
+    }
+    return action->action();
+}
 
 /// Relays the QEvent types a model asked for (`watchEvents`) as the
 /// `qevent` event, and takes the `eventDone` answer given inside it.
@@ -446,10 +531,30 @@ private:
 
 QAction* Gui::FwQt::realizeAction(Fw::Widget* model, QObject* parent)
 {
-    if (!model || !qobject_cast<Fw::QAction*>(model))
+    auto am = qobject_cast<Fw::QAction*>(model);
+    if (!am)
         return nullptr;
     if (ActionView* v = ActionView::byModel().value(model))
         return v->action();
+    const QString cmdName = am->command();
+    if (!cmdName.isEmpty()) {
+        // a host command's own action (docs/Sandbox.md 7.15): shared into
+        // whatever carries the model, never a copy
+        QAction* real = commandAction(cmdName, am->commandIndex());
+        if (!real) {
+            Base::Console().Warning("FwQt: no action for command %s\n", qPrintable(cmdName));
+            return nullptr;
+        }
+        const auto& filter = commandWriteFilter();
+        if (ActionView* v = ActionView::byModel().value(model))
+            v->release();
+        auto view = new ActionView(model, real, false);
+        view->setWritable(!filter || filter(cmdName), cmdName);
+        view->readBack();
+        QStringList keys = QStringList(model->touched().begin(), model->touched().end());
+        view->apply(keys);
+        return real;
+    }
     auto a = new QAction(parent);
     auto view = new ActionView(model, a, true);
     QStringList keys = QStringList(model->touched().begin(), model->touched().end());
@@ -484,6 +589,44 @@ Fw::Widget* Gui::FwQt::modelOfAction(const QAction* action)
 {
     ActionView* v = action ? ActionView::byAction().value(action) : nullptr;
     return v ? v->model() : nullptr;
+}
+
+void Gui::FwQt::setCommandWriteFilter(std::function<bool(const QString&)> filter)
+{
+    commandWriteFilter() = std::move(filter);
+}
+
+bool Gui::FwQt::bindActionButton(Fw::Widget* model)
+{
+    auto button = qobject_cast<Fw::QToolButton*>(model);
+    if (!button)
+        return false;
+    Fw::Widget* actionModel = button->forAction();
+    if (!actionModel)
+        return false;
+    if (View::of(model))
+        return true;
+    Fw::Widget* barModel = model->parentWidget();
+    auto bar = barModel ? qobject_cast<QToolBar*>(widgetOf(barModel)) : nullptr;
+    QAction* action = actionWidgetOf(actionModel);
+    if (!bar && action) {
+        // no parent known yet: the bar that carries the real action
+        for (QObject* o : action->associatedObjects()) {
+            if (auto tb = qobject_cast<QToolBar*>(o)) {
+                bar = tb;
+                break;
+            }
+        }
+    }
+    if (!bar)
+        return false;
+    if (!action)
+        action = realizeAction(actionModel, bar);
+    QWidget* w = action ? bar->widgetForAction(action) : nullptr;
+    if (!w)
+        return false;
+    View::bind(model, w);
+    return true;
 }
 
 View* View::of(const Fw::Widget* model)
@@ -581,6 +724,8 @@ View* View::build(Fw::Widget* model, QWidget* parent)
         return existing;
     if (qobject_cast<Fw::UiForm*>(model))
         return buildForm(model, parent);
+    if (bindActionButton(model))
+        return of(model);
     QWidget* w = makeQtWidget(model->qtClass(), parent);
     auto view = new View(model, w, false);
     view->initContainers();
@@ -1211,10 +1356,51 @@ void View::applyOne(const QString& key, const QVariant& value)
         // written by the backend
     }
     else if (key == QLatin1String("toggleViewAction")) {
-        auto tb = qobject_cast<QToolBar*>(w);
         auto model = qobject_cast<Fw::Widget*>(value.value<QObject*>());
-        if (tb && model)
-            bindAction(model, tb->toggleViewAction());
+        if (auto tb = qobject_cast<QToolBar*>(w)) {
+            if (model)
+                bindAction(model, tb->toggleViewAction());
+        }
+        else if (auto dw = qobject_cast<QDockWidget*>(w)) {
+            if (model)
+                bindAction(model, dw->toggleViewAction());
+        }
+    }
+    else if (key == QLatin1String("menu")) {
+        // a button's popup menu (docs/Sandbox.md 7.15)
+        auto menu = value.isNull() ? nullptr : qobject_cast<QMenu*>(widgetOf(value, w));
+        if (auto pb = qobject_cast<QPushButton*>(w)) {
+            pb->setMenu(menu);
+        }
+        else if (auto tb = qobject_cast<QToolButton*>(w)) {
+            tb->setMenu(menu);
+            if (menu && tb->popupMode() == QToolButton::DelayedPopup)
+                tb->setPopupMode(QToolButton::InstantPopup);
+        }
+    }
+    else if (key == QLatin1String("defaultAction")) {
+        if (auto tb = qobject_cast<QToolButton*>(w))
+            if (QAction* a = actionOf(value, w))
+                tb->setDefaultAction(a);
+    }
+    else if (key == QLatin1String("forAction") || key == QLatin1String("area")
+             || key == QLatin1String("x") || key == QLatin1String("y")
+             || key == QLatin1String("command") || key == QLatin1String("commandIndex")) {
+        // structural, or written by the backend
+    }
+    else if (key == QLatin1String("widget")) {
+        if (auto dw = qobject_cast<QDockWidget*>(w)) {
+            if (value.isNull()) {
+                if (QWidget* old = dw->widget()) {
+                    dw->setWidget(nullptr);
+                    old->setParent(nullptr);
+                }
+            }
+            else if (QWidget* content = widgetOf(value, dw)) {
+                if (dw->widget() != content)
+                    dw->setWidget(content);
+            }
+        }
     }
     else if (key == QLatin1String("iconSize")) {
         int px = value.toInt();
@@ -1261,6 +1447,22 @@ void View::connectWidget()
     QWidget* w = _widget.data();
     if (!w)
         return;
+    if (auto dw = qobject_cast<QDockWidget*>(w)) {
+        connect(dw, &QDockWidget::dockLocationChanged, this, [this](Qt::DockWidgetArea area) {
+            send(QVariantMap {{QStringLiteral("area"), static_cast<int>(area)}});
+            event(QStringLiteral("dockLocationChanged"), QVariantList {static_cast<int>(area)});
+        });
+        connect(dw, &QDockWidget::visibilityChanged, this, [this](bool on) {
+            send(QVariantMap {{QStringLiteral("visible"), on}});
+            event(QStringLiteral("visibilityChanged"), QVariantList {on});
+        });
+        connect(dw, &QDockWidget::topLevelChanged, this, [this](bool on) {
+            send(QVariantMap {{QStringLiteral("floating"), on}});
+            event(QStringLiteral("topLevelChanged"), QVariantList {on});
+        });
+        dw->installEventFilter(new DockRelay(this, dw));
+        return;
+    }
     if (auto b = qobject_cast<QAbstractButton*>(w)) {
         connect(b, &QAbstractButton::toggled, this, [this](bool on) {
             send(QVariantMap {{QStringLiteral("checked"), on}});
@@ -1519,6 +1721,10 @@ void View::onRequest(const QString& name, const QVariantList& args)
     }
     else if (name == QLatin1String("resize")) {
         w->resize(args.value(0).toInt(), args.value(1).toInt());
+    }
+    else if (name == QLatin1String("setGeometry")) {
+        w->setGeometry(args.value(0).toInt(), args.value(1).toInt(), args.value(2).toInt(),
+                       args.value(3).toInt());
     }
     else if (name == QLatin1String("raise")) {
         w->raise();

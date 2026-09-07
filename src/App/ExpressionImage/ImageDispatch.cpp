@@ -367,6 +367,13 @@ int initEvalGlobals()
             "def getDocument(name):\n"
             "    import _fcx\n"
             "    return _fcx.op('app.doc', 0, str(name))\n"
+            // FreeCAD.isRestoring (BimViews' update reads it before it
+            // refills its trees): a session's code never runs inside the
+            // host's restore; a document guest's hooks can, and read
+            // False here -- a query op if that ever matters
+            // (docs/Sandbox.md 7.15)
+            "def isRestoring():\n"
+            "    return False\n"
             // by keyword: the host's newDocument takes no None for a
             // name or label it was not given
             "def newDocument(name=None, label=None, hidden=False, temp=False):\n"

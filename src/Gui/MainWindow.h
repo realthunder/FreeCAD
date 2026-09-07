@@ -263,6 +263,32 @@ public:
     void showHints(const std::list<InputHint>& hints = {});
     void hideHints();
 
+    /** @name The status bar registry (docs/Sandbox.md 7.15)
+     * Upstream's `addStatusBarItem`: a workbench registers a widget by
+     * id and the main window owns its placement -- the slot ("Left",
+     * the message band; "Right", the permanent band), the rank by
+     * `order` among the registered items of that slot (the fork's own
+     * widgets sit at 100-200 on the left and 700-900 on the right, so
+     * the workbench band 550-699 lands left of them) -- and, for an
+     * item with a title, its visibility: persisted per id under
+     * BaseApp/Preferences/MainWindow/StatusBarItems and toggled from
+     * the status bar's context menu.  The same widget registered again
+     * is moved; another widget under the same id replaces the first.
+     */
+    //@{
+    void addStatusBarItem(QWidget* widget, const QString& id, const QString& title = QString(),
+                          const QString& slot = QStringLiteral("Right"), int order = 500,
+                          int stretch = 0);
+    /// Take the item out of the bar (the widget is hidden, not deleted).
+    QWidget* removeStatusBarItem(const QString& id);
+    QWidget* statusBarItem(const QString& id) const;
+    /// Whether `widget` is a registered item (the tool bar manager leaves
+    /// such a tool bar where it is).
+    bool isStatusBarItem(const QWidget* widget) const;
+    /// The registered ids, in bar order.
+    QStringList statusBarItems() const;
+    //@}
+
     void initDockWindows(bool show);
 
     /** Whether the combo view dock carries the model tree.

@@ -55,6 +55,9 @@ public:
     Py::Object removeWindow(const Py::Tuple&);
     Py::Object showHint(const Py::Tuple&);
     Py::Object hideHint(const Py::Tuple&);
+    Py::Object addStatusBarItem(const Py::Tuple&, const Py::Dict&);
+    Py::Object removeStatusBarItem(const Py::Tuple&);
+    Py::Object statusBarItem(const Py::Tuple&);
 
 private:
     QPointer<MainWindow> _mw;

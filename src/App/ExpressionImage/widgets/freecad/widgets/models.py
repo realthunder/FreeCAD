@@ -1201,6 +1201,19 @@ class QLabel(QWidget):
 
 
 class QAbstractButton(QWidget):
+    # the button's popup menu (docs/Sandbox.md 7.15): a QMenu model the
+    # host sets on the real button
+    q_menu = Unicode("", allow_none=True).tag(sync=True)
+
+    def setMenu(self, menu):
+        if menu is not None:
+            menu._attach(self)
+        self._button_menu = menu
+        self._set(menu=_ref(menu))
+
+    def menu(self):
+        return getattr(self, "_button_menu", None)
+
     q_text = Unicode("").tag(sync=True)
     q_checkable = Bool(False).tag(sync=True)
     q_checked = Bool(False).tag(sync=True)
@@ -1296,14 +1309,22 @@ class QPushButton(QAbstractButton):
     def setAutoDefault(self, on):
         pass
 
-    def setMenu(self, menu):
-        raise TypeError("QPushButton.setMenu is not in the sandbox's subset yet (G3c)")
+    def showMenu(self):
+        pass
 
 
 class QToolButton(QAbstractButton):
     _model_name = Unicode("QToolButtonModel").tag(sync=True)
     qt_class = "QToolButton"
     q_autoRaise = Bool(False).tag(sync=True)
+    # the tool bar button made for an action (`QToolBar.widgetForAction`,
+    # docs/Sandbox.md 7.15): the host binds this model to the real one
+    q_forAction = Unicode("", allow_none=True).tag(sync=True)
+    q_defaultAction = Unicode("", allow_none=True).tag(sync=True)
+
+    DelayedPopup = 0
+    MenuButtonPopup = 1
+    InstantPopup = 2
 
     def setAutoRaise(self, on):
         self._set(autoRaise=bool(on))
@@ -1312,7 +1333,11 @@ class QToolButton(QAbstractButton):
         pass
 
     def setDefaultAction(self, action):
-        raise TypeError("QToolButton.setDefaultAction is not in the sandbox's subset yet (G3c)")
+        self._default_action = action
+        self._set(defaultAction=_ref(action))
+
+    def defaultAction(self):
+        return getattr(self, "_default_action", None)
 
     def setPopupMode(self, mode):
         pass
@@ -2227,6 +2252,11 @@ class QAction(QWidget):
     q_checked = Bool(False).tag(sync=True)
     q_shortcut = Unicode("").tag(sync=True)
     q_separator = Bool(False).tag(sync=True)
+    # a host command's own action (docs/Sandbox.md 7.15): the host binds
+    # the model to `Command::getAction()` (the group member `commandIndex`,
+    # 0 the group's own) instead of making an action
+    q_command = Unicode("").tag(sync=True)
+    q_commandIndex = Int(0).tag(sync=True)
 
     triggered = Signal(bool)
     toggled = Signal(bool)
@@ -2234,6 +2264,7 @@ class QAction(QWidget):
     changed = Signal()
 
     def _fcx_init_args(self, args, kwargs):
+        self._group = None
         for a in list(args):
             if isinstance(a, str):
                 kwargs["q_text"] = a
@@ -2241,8 +2272,37 @@ class QAction(QWidget):
             elif isinstance(a, (qtdata.QIcon, qtdata.QPixmap)):
                 kwargs["q_icon"] = _icon_path(a)
                 args.remove(a)
+            elif isinstance(a, QActionGroup):
+                # QAction(group): the group is the parent and the action
+                # joins it, as Qt has it
+                self._group = a
+                args.remove(a)
         self._data_value = None
         QWidget._fcx_init_args(self, args, kwargs)
+
+    def __init__(self, *args, **kwargs):
+        QWidget.__init__(self, *args, **kwargs)
+        if self._group is not None:
+            self._group.addAction(self)
+
+    def parent(self):
+        return self._group if self._group is not None else QWidget.parent(self)
+
+    def actionGroup(self):
+        return self._group
+
+    def setActionGroup(self, group):
+        if group is not None:
+            group.addAction(self)
+        elif self._group is not None:
+            self._group.removeAction(self)
+
+    @classmethod
+    def _fcx_host(cls, command, index=0):
+        """A host command's action, by name (`Command.getAction()`)."""
+        a = cls()
+        a._set(command=str(command), commandIndex=int(index))
+        return a
 
     def setText(self, text):
         self._set(text=str(text))
@@ -2317,6 +2377,72 @@ class QAction(QWidget):
     @observe("q_checked")
     def _fcx_checked(self, change):
         self.toggled.emit(bool(change["new"]))
+
+
+class QActionGroup(QObject):
+    """A `QActionGroup`, guest-only (docs/Sandbox.md 7.15): membership,
+    exclusivity and the aggregated `triggered(action)` -- each member
+    action crosses on its own, the group never does."""
+
+    triggered = Signal(object)
+    hovered = Signal(object)
+
+    def __init__(self, parent=None):
+        QObject.__init__(self, parent)
+        self._actions = []
+        self._exclusive = True
+
+    def addAction(self, *args):
+        action = _make_action(args, None)
+        if action not in self._actions:
+            self._actions.append(action)
+            action._group = self
+            action.triggered.connect(lambda checked=False, a=action: self._on_triggered(a))
+        return action
+
+    def removeAction(self, action):
+        if action in self._actions:
+            self._actions.remove(action)
+            action._group = None
+
+    def actions(self):
+        return list(self._actions)
+
+    def _on_triggered(self, action):
+        if self._exclusive and action.isCheckable() and action.isChecked():
+            for other in self._actions:
+                if other is not action and other.isChecked():
+                    other.setChecked(False)
+        self.triggered.emit(action)
+
+    def setExclusive(self, on):
+        self._exclusive = bool(on)
+
+    def isExclusive(self):
+        return self._exclusive
+
+    def setExclusionPolicy(self, policy):
+        self._exclusive = int(policy) != 0
+
+    def checkedAction(self):
+        for a in self._actions:
+            if a.isChecked():
+                return a
+        return None
+
+    def setEnabled(self, on):
+        for a in self._actions:
+            a.setEnabled(on)
+
+    def isEnabled(self):
+        return all(a.isEnabled() for a in self._actions)
+
+    def setVisible(self, on):
+        for a in self._actions:
+            a.setVisible(on)
+
+    def isVisible(self):
+        return any(a.isVisible() for a in self._actions)
 
 
 def _make_action(args, parent):
@@ -2435,7 +2561,31 @@ class QToolBar(QWidget):
         pass
 
     def widgetForAction(self, action):
-        return None
+        """The button the real bar made for `action` (docs/Sandbox.md
+        7.15): a QToolButton model the host binds to it, one per action."""
+        if not isinstance(action, QAction):
+            return None
+        buttons = self.__dict__.setdefault("_action_buttons", {})
+        b = buttons.get(action.model_id)
+        if b is None:
+            b = QToolButton(self)
+            # the host binds once it knows the bar (a constructor parent
+            # does not cross by itself) and the action
+            b._event("setParent", self.model_id)
+            b._set(forAction=_ref(action))
+            buttons[action.model_id] = b
+        return b
+
+    def children(self):
+        """The bar's content in order, an action as the button the bar
+        made for it (Draft reads `children()[-1]` after `addAction`)."""
+        out = []
+        for item in self._layout._items:
+            if isinstance(item, _ActionItem):
+                out.append(self.widgetForAction(item._action))
+            elif getattr(item, "_widget", None) is not None:
+                out.append(item._widget)
+        return out
 
     @observe("q_visible")
     def _fcx_visible(self, change):
@@ -2521,6 +2671,156 @@ class QMenu(QWidget):
 
     def menuAction(self):
         return None
+
+
+class _CloseEvent:
+    """What a dock's `closeEvent(event)` receives."""
+
+    def __init__(self):
+        self._accepted = True
+
+    def accept(self):
+        self._accepted = True
+
+    def ignore(self):
+        self._accepted = False
+
+    def isAccepted(self):
+        return self._accepted
+
+    def type(self):
+        return qtdata.QEvent.Close
+
+
+class QDockWidget(QWidget):
+    """A dock widget (docs/Sandbox.md 7.15): `setWidget(form)` names the
+    content, `getMainWindow().addDockWidget(area, dock)` makes the real
+    dock through the host's dock manager (a first-class panel).  The
+    host writes back `area`, `floating`, `visible` and the geometry; a
+    close reaches `closeEvent` (an instance attribute override runs, as
+    BimViews assigns one)."""
+
+    _model_name = Unicode("QDockWidgetModel").tag(sync=True)
+    qt_class = "QDockWidget"
+    q_widget = Unicode("", allow_none=True).tag(sync=True)
+    q_floating = Bool(False).tag(sync=True)
+    q_area = Int(0).tag(sync=True)
+    q_x = Int(0).tag(sync=True)
+    q_y = Int(0).tag(sync=True)
+    q_width = Int(0).tag(sync=True)
+    q_height = Int(0).tag(sync=True)
+    q_toggleViewAction = Unicode("", allow_none=True).tag(sync=True)
+
+    DockWidgetClosable = 1
+    DockWidgetMovable = 2
+    DockWidgetFloatable = 4
+    AllDockWidgetFeatures = 7
+    NoDockWidgetFeatures = 0
+
+    dockLocationChanged = Signal(int)
+    visibilityChanged = Signal(bool)
+    topLevelChanged = Signal(bool)
+    featuresChanged = Signal(int)
+
+    def _fcx_init_args(self, args, kwargs):
+        if args and isinstance(args[0], str):
+            kwargs["q_windowTitle"] = args.pop(0)
+        args[:] = [a for a in args if not isinstance(a, int)]
+        self._content = None
+        self._toggle = None
+        QWidget._fcx_init_args(self, args, kwargs)
+
+    def _handle_custom_msg(self, content, buffers):
+        if isinstance(content, dict) and content.get("event") == "close":
+            self.closeEvent(_CloseEvent())
+            return
+        QWidget._handle_custom_msg(self, content, buffers)
+
+    def closeEvent(self, event):
+        event.accept()
+
+    def setWidget(self, widget):
+        if widget is not None:
+            widget._attach(self)
+        self._content = widget
+        self._set(widget=_ref(widget))
+
+    def widget(self):
+        return self._content
+
+    def setFloating(self, on):
+        self._set(floating=bool(on))
+
+    def isFloating(self):
+        return self.q_floating
+
+    def setGeometry(self, *args):
+        if len(args) == 1:
+            r = args[0]
+            args = (r.x(), r.y(), r.width(), r.height())
+        x, y, w, h = (int(v) for v in args)
+        self._set(x=x, y=y, width=w, height=h)
+        self._event("setGeometry", x, y, w, h)
+
+    def move(self, *args):
+        pt = args[0] if len(args) == 1 else qtdata.QPoint(*args)
+        self._event("move", int(pt.x()), int(pt.y()))
+
+    def resize(self, *args):
+        sz = args[0] if len(args) == 1 else qtdata.QSize(*args)
+        self._event("resize", int(sz.width()), int(sz.height()))
+
+    def x(self):
+        return self.q_x
+
+    def y(self):
+        return self.q_y
+
+    def width(self):
+        return self.q_width
+
+    def height(self):
+        return self.q_height
+
+    def pos(self):
+        return qtdata.QPoint(self.q_x, self.q_y)
+
+    def size(self):
+        return qtdata.QSize(self.q_width, self.q_height)
+
+    def rect(self):
+        return qtdata.QRect(0, 0, self.q_width, self.q_height)
+
+    def geometry(self):
+        return qtdata.QRect(self.q_x, self.q_y, self.q_width, self.q_height)
+
+    frameGeometry = geometry
+
+    def close(self):
+        self._event("close")
+        return True
+
+    def toggleViewAction(self):
+        if self._toggle is None:
+            self._toggle = QAction(self.q_windowTitle)
+            self._toggle.setCheckable(True)
+            self._set(toggleViewAction=_ref(self._toggle))
+        return self._toggle
+
+    def setAllowedAreas(self, areas):
+        pass
+
+    def setFeatures(self, features):
+        pass
+
+    def features(self):
+        return self.AllDockWidgetFeatures
+
+    def setTitleBarWidget(self, widget):
+        pass
+
+    def raise_(self):
+        self._event("raise")
 
 
 class QDialog(QWidget):
@@ -3516,8 +3816,10 @@ CLASSES = {
     "QColumnView": _items.QColumnView,
     "QWidget": QWidget,
     "QToolBar": QToolBar,
+    "Gui::ToolBar": QToolBar,
     "QMenu": QMenu,
     "QAction": QAction,
+    "QDockWidget": QDockWidget,
     "QLabel": QLabel,
     "QPushButton": QPushButton,
     "QToolButton": QToolButton,

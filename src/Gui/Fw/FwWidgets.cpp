@@ -88,6 +88,7 @@ QAbstractButton::QAbstractButton(Widget* parent)
     declare(kChecked, false);
     declare(QStringLiteral("icon"), QString());
     declare(QStringLiteral("autoExclusive"), false);
+    declare(QStringLiteral("menu"), QVariant());
 }
 
 void QAbstractButton::setChecked(bool on)
@@ -146,6 +147,8 @@ QToolButton::QToolButton(Widget* parent)
 {
     setQtClass(QStringLiteral("QToolButton"));
     declare(QStringLiteral("autoRaise"), false);
+    declare(QStringLiteral("forAction"), QVariant());
+    declare(QStringLiteral("defaultAction"), QVariant());
 }
 
 QCheckBox::QCheckBox(Widget* parent)
@@ -1777,6 +1780,8 @@ Gui::Fw::QAction::QAction(Widget* parent)
     declare(kChecked, false);
     declare(QStringLiteral("shortcut"), QString());
     declare(QStringLiteral("separator"), false);
+    declare(QStringLiteral("command"), QString());
+    declare(QStringLiteral("commandIndex"), 0);
 }
 
 Gui::Fw::QAction::QAction(const QString& text, Widget* parent)
@@ -1949,6 +1954,43 @@ void Gui::Fw::QMenu::dispatchEvent(const QString& name, const QVariantList& args
         Q_EMIT aboutToShow();
 }
 
+Gui::Fw::QDockWidget::QDockWidget(Widget* parent)
+    : Widget(parent)
+{
+    setQtClass(QStringLiteral("QDockWidget"));
+    declare(QStringLiteral("widget"), QVariant());
+    declare(QStringLiteral("floating"), false);
+    declare(QStringLiteral("area"), 0);
+    declare(QStringLiteral("x"), 0);
+    declare(QStringLiteral("y"), 0);
+    declare(QStringLiteral("width"), 0);
+    declare(QStringLiteral("height"), 0);
+    declare(QStringLiteral("toggleViewAction"), QVariant());
+}
+
+Gui::Fw::QAction* Gui::Fw::QDockWidget::toggleViewAction()
+{
+    auto a = qobject_cast<QAction*>(property("toggleViewAction").value<QObject*>());
+    if (!a) {
+        a = new QAction(windowTitle(), this);
+        a->setCheckable(true);
+        setProperty("toggleViewAction", QVariant::fromValue<QObject*>(a));
+    }
+    return a;
+}
+
+void Gui::Fw::QDockWidget::dispatchEvent(const QString& name, const QVariantList& args)
+{
+    if (name == QLatin1String("dockLocationChanged"))
+        Q_EMIT dockLocationChanged(args.value(0).toInt());
+    else if (name == QLatin1String("visibilityChanged"))
+        Q_EMIT visibilityChanged(args.value(0).toBool());
+    else if (name == QLatin1String("topLevelChanged"))
+        Q_EMIT topLevelChanged(args.value(0).toBool());
+    else if (name == QLatin1String("close"))
+        Q_EMIT closed();
+}
+
 // ---- the factory --------------------------------------------------------------
 
 namespace
@@ -2020,6 +2062,8 @@ const std::map<QString, Maker>& classTable()
         {QStringLiteral("QAction"), maker<Gui::Fw::QAction>()},
         {QStringLiteral("QToolBar"), maker<Gui::Fw::QToolBar>()},
         {QStringLiteral("QMenu"), maker<Gui::Fw::QMenu>()},
+        {QStringLiteral("QDockWidget"), maker<Gui::Fw::QDockWidget>()},
+        {QStringLiteral("Gui::ToolBar"), maker<Gui::Fw::QToolBar>()},
     };
     return table;
 }

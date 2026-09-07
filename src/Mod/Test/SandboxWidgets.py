@@ -68,6 +68,31 @@ FreeCADGui.showWidget(box, "Sandbox widgets")
 '''
 
 
+# A guest's timers (docs/Sandbox.md 7.15): a delayed single shot, a
+# repeating timer that stops itself after three ticks, and a delayed
+# callback armed under a document principal.
+TIMER_PROBE = r'''
+from PySide import QtCore
+fired = []
+ticks = 0
+spins = 0
+QtCore.QTimer.singleShot(30, lambda: fired.append("shot"))
+timer = QtCore.QTimer()
+timer.setInterval(20)
+def tick():
+    global ticks
+    ticks += 1
+    if ticks >= 3:
+        timer.stop()
+timer.timeout.connect(tick)
+timer.start()
+def doc_shot():
+    global spins
+    spins += 1
+    QtCore.QTimer.singleShot(10, lambda: fired.append("doc"))
+'''
+
+
 class PrefGuard:
     """Set preferences for the test, put them back after (global state)."""
 
@@ -254,6 +279,46 @@ class SandboxWidgetsTest(unittest.TestCase):
         self.assertTrue(label.closed)
         S.exec("import ipywidgets\nipywidgets.Widget.close_all()\n")
         self.assertEqual(M.models, {})
+
+    def test_guest_timer(self):
+        """A delayed `QTimer` in the guest is the host's timer (docs/
+        Sandbox.md 7.15): a session's single shot fires with no other
+        traffic, a repeating timer runs until `stop()`; a document
+        principal's delayed callback -- no host timer for it -- waits
+        for the next drain rather than spinning the one it is in."""
+        from PySide import QtCore, QtWidgets
+
+        S = self.S
+        S.exec(TIMER_PROBE, "fcx_timerprobe")
+        probe = lambda expr: self.guest(expr, "fcx_timerprobe")  # noqa: E731
+        self.assertEqual(probe("fcx_timerprobe.fired"), [])
+
+        def spin(ms):
+            loop = QtCore.QEventLoop()
+            QtCore.QTimer.singleShot(ms, loop.quit)
+            loop.exec()
+            QtWidgets.QApplication.processEvents()
+
+        for _ in range(20):
+            spin(25)
+            if "shot" in probe("fcx_timerprobe.fired"):
+                break
+        self.assertIn("shot", probe("fcx_timerprobe.fired"))
+        for _ in range(40):
+            spin(25)
+            if probe("fcx_timerprobe.ticks") >= 3:
+                break
+        ticks = probe("fcx_timerprobe.ticks")
+        self.assertGreaterEqual(ticks, 3)
+        self.assertFalse(probe("fcx_timerprobe.timer.isActive()"))
+        spin(80)
+        self.assertEqual(probe("fcx_timerprobe.ticks"), ticks)
+        # a document principal: deferred to the next drain, no host timer
+        S.evaluate(self.owner, "import fcx_timerprobe; fcx_timerprobe.doc_shot(); 1", self.opts)
+        self.assertNotIn("doc", probe("fcx_timerprobe.fired"))
+        self.assertEqual(probe("fcx_timerprobe.spins"), 1)
+        S.evaluate(self.owner, "1", self.opts)
+        self.assertIn("doc", probe("fcx_timerprobe.fired"))
 
     def test_document_principal_is_refused(self):
         with self.assertRaises(Exception) as cm:

@@ -158,6 +158,16 @@ public:
     }
     /// A programmatic click: toggles a checkable button, fires `clicked`.
     void click();
+    /// The button's popup menu (a `QMenu` model; the backend sets the
+    /// real one on the real button).
+    void setMenu(Widget* menu)
+    {
+        setProperty("menu", QVariant::fromValue<QObject*>(menu));
+    }
+    Widget* menu() const
+    {
+        return qobject_cast<Widget*>(property("menu").value<QObject*>());
+    }
     void setAutoExclusive(bool on)
     {
         setProperty("autoExclusive", on);
@@ -218,6 +228,20 @@ public:
     bool autoRaise() const
     {
         return property("autoRaise").toBool();
+    }
+    /// The tool bar button made for `action` (`QToolBar::widgetForAction`):
+    /// a backend binds this model to that real button instead of making one.
+    void setForAction(Widget* action)
+    {
+        setProperty("forAction", QVariant::fromValue<QObject*>(action));
+    }
+    Widget* forAction() const
+    {
+        return qobject_cast<Widget*>(property("forAction").value<QObject*>());
+    }
+    void setDefaultAction(Widget* action)
+    {
+        setProperty("defaultAction", QVariant::fromValue<QObject*>(action));
     }
 };
 
@@ -1822,6 +1846,22 @@ public:
     {
         return property("separator").toBool();
     }
+    /// A host command's own action (docs/Sandbox.md 7.15): the backend
+    /// binds this model to `Command::getAction()` -- the member `index`
+    /// of an action group -- instead of making an action of its own.
+    void setCommand(const QString& name, int index = 0)
+    {
+        setProperty("command", name);
+        setProperty("commandIndex", index);
+    }
+    QString command() const
+    {
+        return property("command").toString();
+    }
+    int commandIndex() const
+    {
+        return property("commandIndex").toInt();
+    }
     /// A programmatic trigger: toggles a checkable, fires `triggered`.
     void trigger();
     /// Ask the backend to trigger the real action.
@@ -1962,6 +2002,77 @@ public:
 private:
     QString _uiFile;
     QMap<QString, Widget*> _named;
+};
+
+/// A dock widget (docs/Sandbox.md 7.15): `widget` is the content model.
+/// A backend makes the real dock through the main window's dock manager
+/// (a first-class panel: in the Panels menu, in the saved layout), writes
+/// back `area`, `floating`, `visible` and the geometry, and reports a
+/// close as the `closed` event.
+class GuiExport QDockWidget : public Widget
+{
+    Q_OBJECT
+public:
+    explicit QDockWidget(Widget* parent = nullptr);
+    FW_MODEL("QDockWidgetModel")
+
+    void setWidget(Widget* widget)
+    {
+        setProperty("widget", QVariant::fromValue<QObject*>(widget));
+    }
+    Widget* widget() const
+    {
+        return qobject_cast<Widget*>(property("widget").value<QObject*>());
+    }
+    void setFloating(bool on)
+    {
+        setProperty("floating", on);
+    }
+    bool isFloating() const
+    {
+        return property("floating").toBool();
+    }
+    /// The Qt::DockWidgetArea the backend reports.
+    int area() const
+    {
+        return property("area").toInt();
+    }
+    void setGeometry(int x, int y, int w, int h)
+    {
+        request(QStringLiteral("setGeometry"), QVariantList {x, y, w, h});
+    }
+    void close()
+    {
+        request(QStringLiteral("close"));
+    }
+    int x() const
+    {
+        return property("x").toInt();
+    }
+    int y() const
+    {
+        return property("y").toInt();
+    }
+    int width() const
+    {
+        return property("width").toInt();
+    }
+    int height() const
+    {
+        return property("height").toInt();
+    }
+    /// The action that shows and hides the dock (made on first use; a
+    /// backend binds it to the real dock's `toggleViewAction()`).
+    QAction* toggleViewAction();
+
+Q_SIGNALS:
+    void dockLocationChanged(int area);
+    void visibilityChanged(bool visible);
+    void topLevelChanged(bool floating);
+    void closed();
+
+protected:
+    void dispatchEvent(const QString& name, const QVariantList& args) override;
 };
 
 #undef FW_MODEL

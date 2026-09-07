@@ -28,6 +28,8 @@
 
 #include <Base/TypePy.h>
 
+#include <array>
+
 #include "DocumentPy.h"
 #include "MainWindowPy.h"
 #include "MainWindow.h"
@@ -58,6 +60,16 @@ void MainWindowPy::init_type()
     add_varargs_method("removeWindow", &MainWindowPy::removeWindow, "removeWindow(MDIView)");
     add_varargs_method("showHint", &MainWindowPy::showHint, "showHint(hint)");
     add_varargs_method("hideHint", &MainWindowPy::hideHint, "hideHint()");
+    add_keyword_method("addStatusBarItem", &MainWindowPy::addStatusBarItem,
+        "addStatusBarItem(widget, id, title='', slot='Right', order=500, stretch=0)\n\n"
+        "Register a widget in the status bar under `id` (docs/Sandbox.md 7.15): the\n"
+        "main window places it in its slot ('Left', the message band, or 'Right',\n"
+        "the permanent band) by `order` among the registered items, persists the\n"
+        "visibility of a titled item and lists it in the bar's context menu.");
+    add_varargs_method("removeStatusBarItem", &MainWindowPy::removeStatusBarItem,
+        "removeStatusBarItem(id) -> widget or None\n\nTake the item out of the bar.");
+    add_varargs_method("statusBarItem", &MainWindowPy::statusBarItem,
+        "statusBarItem(id) -> widget or None");
 }
 
 PyObject *MainWindowPy::extension_object_new(struct _typeobject * /*type*/, PyObject * /*args*/, PyObject * /*kwds*/)
@@ -91,7 +103,8 @@ Py::Object MainWindowPy::createWrapper(MainWindow *mw)
     // copy attributes
     std::list<std::string> attr = {"getWindows", "getWindowsOfType", "setActiveWindow",
                                    "getActiveWindow", "addWindow", "removeWindow",
-                                   "showHint", "hideHint"};
+                                   "showHint", "hideHint", "addStatusBarItem",
+                                   "removeStatusBarItem", "statusBarItem"};
 
     Py::Object py = wrap.fromQWidget(mw, "QMainWindow");
     Py::ExtensionObject<MainWindowPy> inst(create(mw));
@@ -275,4 +288,61 @@ Py::Object MainWindowPy::hideHint(const Py::Tuple&)
     _mw->hideHints();
 
     return Py::None();
+}
+
+Py::Object MainWindowPy::addStatusBarItem(const Py::Tuple& args, const Py::Dict& kwds)
+{
+    static const std::array<const char*, 7> kwlist {"widget", "id", "title", "slot",
+                                                    "order", "stretch", nullptr};
+    PyObject* widget = nullptr;
+    const char* id = nullptr;
+    const char* title = "";
+    const char* slot = "Right";
+    int order = 500;
+    int stretch = 0;
+    if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "Os|ssii",
+                                     const_cast<char**>(kwlist.data()), &widget, &id, &title,
+                                     &slot, &order, &stretch))
+        throw Py::Exception();
+    if (!_mw)
+        throw Py::RuntimeError("the main window is gone");
+    PythonWrapper wrap;
+    wrap.loadWidgetsModule();
+    QObject* object = wrap.toQObject(Py::Object(widget));
+    auto qwidget = qobject_cast<QWidget*>(object);
+    if (!qwidget)
+        throw Py::TypeError("addStatusBarItem: the first argument must be a QWidget");
+    _mw->addStatusBarItem(qwidget, QString::fromUtf8(id), QString::fromUtf8(title),
+                          QString::fromUtf8(slot), order, stretch);
+    return Py::None();
+}
+
+Py::Object MainWindowPy::removeStatusBarItem(const Py::Tuple& args)
+{
+    const char* id = nullptr;
+    if (!PyArg_ParseTuple(args.ptr(), "s", &id))
+        throw Py::Exception();
+    if (!_mw)
+        throw Py::RuntimeError("the main window is gone");
+    QWidget* w = _mw->removeStatusBarItem(QString::fromUtf8(id));
+    if (!w)
+        return Py::None();
+    PythonWrapper wrap;
+    wrap.loadWidgetsModule();
+    return wrap.fromQWidget(w);
+}
+
+Py::Object MainWindowPy::statusBarItem(const Py::Tuple& args)
+{
+    const char* id = nullptr;
+    if (!PyArg_ParseTuple(args.ptr(), "s", &id))
+        throw Py::Exception();
+    if (!_mw)
+        throw Py::RuntimeError("the main window is gone");
+    QWidget* w = _mw->statusBarItem(QString::fromUtf8(id));
+    if (!w)
+        return Py::None();
+    PythonWrapper wrap;
+    wrap.loadWidgetsModule();
+    return wrap.fromQWidget(w);
 }

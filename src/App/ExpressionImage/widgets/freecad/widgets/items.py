@@ -1417,6 +1417,25 @@ class QAbstractItemView(QWidget, _Container):
     PositionAtBottom = 2
     PositionAtCenter = 3
 
+    class State:
+        """`QAbstractItemView.State`: `state()` answers NoState here -- an
+        edit in progress is the host's, and a guest that asks (BimViews
+        before it refills its trees) reads "not editing"."""
+
+        NoState = 0
+        DraggingState = 1
+        DragSelectingState = 2
+        EditingState = 3
+        ExpandingState = 4
+        CollapsingState = 5
+        AnimatingState = 6
+
+    NoState = 0
+    EditingState = 3
+
+    def state(self):
+        return self.State.NoState
+
     q_columns = List(Unicode()).tag(sync=True)
     q_columnCount = Int(1).tag(sync=True)
     q_rowLabels = List(Unicode()).tag(sync=True)

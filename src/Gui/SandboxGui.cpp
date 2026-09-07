@@ -49,6 +49,7 @@
 #include <Base/Type.h>
 
 #include "Application.h"
+#include "Action.h"
 #include "Command.h"
 #include "Control.h"
 #include "Document.h"
@@ -58,6 +59,7 @@
 #include "Fw/FwStore.h"
 #include "Fw/FwWidgets.h"
 #include "Macro.h"
+#include "DockWindowManager.h"
 #include "MainWindow.h"
 #include "Selection/SelectionObserverPython.h"
 #include "TaskView/TaskDialog.h"
@@ -66,6 +68,7 @@
 
 #include <QAction>
 #include <QColorDialog>
+#include <QDockWidget>
 #include <QCursor>
 #include <QFile>
 #include <QFileDialog>
@@ -447,7 +450,18 @@ Reply workbenchCall(HandleTable& table, const json& a)
     PyObject* wb = nullptr;
     if (guestWorkbench(ns, name.c_str(), &wb) != 1) {
         Py_XDECREF(wb);
-        return replyErr("KeyError", "workbench '" + name + "' is not registered from the sandbox");
+        wb = nullptr;
+        // a HOST workbench: its name and a reload of the active one, no
+        // more (BIM's Deactivated reloads after dropping its manipulator,
+        // docs/Sandbox.md 7.15)
+        if (method == "reloadActive" || method == "name")
+            wb = callGui("getWorkbench", Py_BuildValue("(s)", name.c_str()));
+        if (!wb) {
+            if (PyErr_Occurred())
+                PyErr_Clear();
+            return replyErr("KeyError",
+                            "workbench '" + name + "' is not registered from the sandbox");
+        }
     }
     PyObject* args = PyTuple_New(static_cast<Py_ssize_t>(a[2].size()));
     if (!args) {
@@ -690,7 +704,7 @@ bool storeComm(const std::string& type, const QString& id, const json& data)
         QVariantMap state = jsonToVariant(*st).toMap();
         if (!Gui::Fw::Store::owns(state))
             return false;
-        store.commOpen(id, state);
+        Gui::FwQt::bindActionButton(store.commOpen(id, state));
         return true;
     }
     if (!store.object(id))
@@ -707,12 +721,17 @@ bool storeComm(const std::string& type, const QString& id, const json& data)
         if (st != data.end() && st->is_object()) {
             store.commUpdate(id, jsonToVariant(*st).toMap());
             showTopLevelIfAsked(store.object(id));
+            // a tool bar button model for an action (`widgetForAction`)
+            // binds to the real button once its bar is realized
+            Gui::FwQt::bindActionButton(store.object(id));
         }
     }
     else if (method == "custom") {
         auto c = data.find("content");
-        if (c != data.end() && c->is_object())
+        if (c != data.end() && c->is_object()) {
             store.commCustom(id, jsonToVariant(*c).toMap());
+            Gui::FwQt::bindActionButton(store.object(id));
+        }
     }
     else if (method != "echo_update") {
         Base::Console().Warning("SandboxGui: unknown comm method '%s'\n", method.c_str());
@@ -1197,6 +1216,127 @@ Reply mainWindowCall(HandleTable& table, const json& a)
         mw->addToolBar(tb);
         return replyOk(true);
     }
+    if (m == "addStatusBarItem") {
+        // [model id, id, title, slot, order] (docs/Sandbox.md 7.15): the
+        // model realized under the status bar, then registered as a
+        // native widget is
+        if (a.size() != 6 || !a[1].is_string() || !a[2].is_string() || !a[3].is_string()
+            || !a[4].is_string() || !a[5].is_number())
+            return replyErr("ProtocolError",
+                            "gui.mainwindow: [addStatusBarItem, model, id, title, slot, order]");
+        Gui::Fw::Widget* w = Gui::Fw::Store::instance().object(
+            QString::fromUtf8(a[1].get_ref<const std::string&>().c_str()));
+        if (!w)
+            return replyErr("KeyError", "gui.mainwindow: no such widget");
+        QWidget* qw = Gui::FwQt::widgetOf(w);
+        if (!qw) {
+            qw = Gui::FwQt::realize(w, mw->statusBar());
+            if (!qw)
+                return replyErr("RuntimeError", "gui.mainwindow.addStatusBarItem: not realized");
+            QObject::connect(w, &QObject::destroyed, qw, &QObject::deleteLater);
+        }
+        mw->addStatusBarItem(qw, QString::fromUtf8(a[2].get_ref<const std::string&>().c_str()),
+                             QString::fromUtf8(a[3].get_ref<const std::string&>().c_str()),
+                             QString::fromUtf8(a[4].get_ref<const std::string&>().c_str()),
+                             a[5].get<int>());
+        return replyOk(true);
+    }
+    if (m == "removeStatusBarItem") {
+        if (a.size() != 2 || !a[1].is_string())
+            return replyErr("ProtocolError", "gui.mainwindow: [removeStatusBarItem, id]");
+        return replyOk(mw->removeStatusBarItem(
+                           QString::fromUtf8(a[1].get_ref<const std::string&>().c_str()))
+                       != nullptr);
+    }
+    if (m == "hasToolBar") {
+        // a HOST tool bar by object name (a workbench's own, built from
+        // its appendToolbar list): an existence check, nothing more
+        if (a.size() != 2 || !a[1].is_string())
+            return replyErr("ProtocolError", "gui.mainwindow: [hasToolBar, name]");
+        // a bar with a title: the tool bar manager pre-creates every
+        // recorded name as an empty, untitled bar at startup
+        for (QToolBar* tb : mw->findChildren<QToolBar*>(
+                 QString::fromUtf8(a[1].get_ref<const std::string&>().c_str()))) {
+            if (!tb->windowTitle().isEmpty())
+                return replyOk(true);
+        }
+        return replyOk(false);
+    }
+    if (m == "geometry") {
+        QRect f = mw->frameGeometry();
+        QRect r = mw->rect();
+        return replyOk(json::array({f.x(), f.y(), f.width(), f.height(), r.width(), r.height()}));
+    }
+    if (m == "addDockWidget" || m == "removeDockWidget" || m == "tabifyDockWidget") {
+        // [addDockWidget, model, area] | [removeDockWidget, model] |
+        // [tabifyDockWidget, model, other dock's object name]
+        if (a.size() < 2 || !a[1].is_string())
+            return replyErr("ProtocolError", "gui.mainwindow: [" + m + ", model, ...]");
+        auto dock = qobject_cast<Gui::Fw::QDockWidget*>(Gui::Fw::Store::instance().object(
+            QString::fromUtf8(a[1].get_ref<const std::string&>().c_str())));
+        if (!dock)
+            return replyErr("TypeError", "gui.mainwindow." + m + ": not a dock widget model");
+        Gui::Fw::Widget* content = dock->widget();
+        if (m == "removeDockWidget") {
+            QWidget* cw = content ? Gui::FwQt::widgetOf(content) : nullptr;
+            if (cw)
+                DockWindowManager::instance()->removeDockWindow(cw);
+            return replyOk(cw != nullptr);
+        }
+        if (m == "tabifyDockWidget") {
+            if (a.size() != 3 || !a[2].is_string())
+                return replyErr("ProtocolError", "gui.mainwindow: [tabifyDockWidget, model, name]");
+            auto dw = qobject_cast<QDockWidget*>(Gui::FwQt::widgetOf(dock));
+            auto other = mw->findChild<QDockWidget*>(
+                QString::fromUtf8(a[2].get_ref<const std::string&>().c_str()));
+            if (!dw || !other || other == dw)
+                return replyOk(false);
+            mw->tabifyDockWidget(other, dw);
+            return replyOk(true);
+        }
+        if (a.size() != 3 || !a[2].is_number())
+            return replyErr("ProtocolError", "gui.mainwindow: [addDockWidget, model, area]");
+        if (!content)
+            return replyErr("ValueError", "gui.mainwindow.addDockWidget: the dock has no widget");
+        auto area = static_cast<Qt::DockWidgetArea>(a[2].get<int>());
+        if (area != Qt::LeftDockWidgetArea && area != Qt::RightDockWidgetArea
+            && area != Qt::TopDockWidgetArea && area != Qt::BottomDockWidgetArea)
+            area = Qt::RightDockWidgetArea;
+        // the dock manager makes the real QDockWidget around the content
+        // (a first-class panel: Panels menu, saved layout, overlay); the
+        // dock model is bound to it afterwards
+        QDockWidget* dw = qobject_cast<QDockWidget*>(Gui::FwQt::widgetOf(dock));
+        if (!dw) {
+            QWidget* cw = Gui::FwQt::widgetOf(content);
+            if (!cw) {
+                cw = Gui::FwQt::realize(content, nullptr);
+                if (!cw)
+                    return replyErr("RuntimeError", "gui.mainwindow.addDockWidget: no content");
+                QObject::connect(content, &QObject::destroyed, cw, &QObject::deleteLater);
+            }
+            QString name = dock->objectName();
+            if (name.isEmpty())
+                name = QStringLiteral("SandboxDock_") + Gui::Fw::Store::instance().idOf(dock);
+            if (!dock->windowTitle().isEmpty())
+                cw->setWindowTitle(dock->windowTitle());
+            dw = DockWindowManager::instance()->addDockWindow(name.toUtf8().constData(), cw, area);
+            if (!dw)
+                return replyErr("RuntimeError", "gui.mainwindow.addDockWidget: no dock made");
+            Gui::FwQt::View::bind(dock, dw);
+            QObject::connect(dock, &QObject::destroyed, dw, [dw]() {
+                DockWindowManager::instance()->removeDockWindow(dw->widget());
+            });
+        }
+        else {
+            mw->addDockWidget(area, dw);
+        }
+        // Qt shows a dock a visible main window adopts (addChildWidget);
+        // the manager's is hidden until asked -- the same here unless
+        // the guest hid it before adding
+        if (!dock->isTouched(QStringLiteral("visible")) || dock->isVisible())
+            dw->show();
+        return replyOk(true);
+    }
     if (m == "watch") {
         if (a.size() != 2 || !a[1].is_object())
             return replyErr("ProtocolError", "gui.mainwindow: [watch, descriptor]");
@@ -1254,6 +1394,224 @@ Reply mainWindowCall(HandleTable& table, const json& a)
         return replyOk(json::array({p.x(), p.y()}));
     }
     return replyErr("ValueError", "gui.mainwindow: unknown method '" + m + "'");
+}
+
+/// `gui.cmd.info [name]`: what `Command.getInfo()` answers natively, plus
+/// `active` and the count of actions `getAction()` would list (a group's
+/// members); null for no such command (docs/Sandbox.md 7.15).
+Reply commandInfo(const json& a)
+{
+    if (!a.is_array() || a.empty() || !a[0].is_string())
+        return replyErr("ProtocolError", "gui.cmd.info: [name]");
+    Command* cmd = Application::Instance->commandManager().getCommandByName(
+        a[0].get_ref<const std::string&>().c_str());
+    if (!cmd)
+        return replyOk(nullptr);
+    auto text = [](const char* t) { return std::string(t ? t : ""); };
+    int actions = 1;
+    if (auto group = qobject_cast<ActionGroup*>(cmd->getAction()))
+        actions = 1 + group->actions().size();
+    json info = json::object();
+    info["name"] = text(cmd->getName());
+    info["menuText"] = text(cmd->getMenuText());
+    info["toolTip"] = text(cmd->getToolTipText());
+    info["whatsThis"] = text(cmd->getWhatsThis());
+    info["statusTip"] = text(cmd->getStatusTip());
+    info["pixmap"] = text(cmd->getPixmap());
+    info["shortcut"] = cmd->getShortcut().toStdString();
+    info["active"] = cmd->isActive();
+    info["actions"] = actions;
+    return replyOk(info);
+}
+
+// ---- host timers (docs/Sandbox.md 7.15): a delayed callback of the
+// guest's QTimer runs when the host's timer fires, not when the drain
+// after a request reaches it -- BimViews re-arms its update every 2 s.
+
+struct GuestTimer
+{
+    QTimer* timer = nullptr;
+};
+
+std::map<int, GuestTimer>& guestTimers()
+{
+    static std::map<int, GuestTimer> timers;
+    return timers;
+}
+
+PyObject*& timerDispatcher()
+{
+    static PyObject* standin = nullptr;
+    return standin;
+}
+
+/// Stop and drop a timer -- deleteLater: `stop` may arrive from the
+/// guest inside this very timer's timeout (a repeating timer stopping
+/// itself from its callback).
+void dropTimer(QTimer* timer)
+{
+    if (!timer)
+        return;
+    timer->stop();
+    timer->deleteLater();
+}
+
+void dropTimers()
+{
+    for (auto& kv : guestTimers())
+        dropTimer(kv.second.timer);
+    guestTimers().clear();
+    PyObject*& held = timerDispatcher();
+    if (held) {
+        Base::PyGILStateLocker lock;
+        Py_CLEAR(held);
+    }
+}
+
+/// `gui.timer ["dispatcher", descriptor] | ["start", id, msec, repeat] |
+/// ["stop", id]`.  A firing is one hook call, `fire(id)` on the
+/// dispatcher stand-in; a call that fails (the guest is gone) drops the
+/// timer.
+Reply timerCall(HandleTable& table, const json& a)
+{
+    if (!a.is_array() || a.empty() || !a[0].is_string())
+        return replyErr("ProtocolError", "gui.timer: [method, ...]");
+    const std::string& m = a[0].get_ref<const std::string&>();
+    if (m == "dispatcher") {
+        if (a.size() != 2 || !a[1].is_object())
+            return replyErr("ProtocolError", "gui.timer: [dispatcher, descriptor]");
+        PyObject* standin = decodeValue(table, a[1]);
+        if (!standin)
+            return replyPyError();
+        if (!isGuestProxy(standin)) {
+            Py_DECREF(standin);
+            return replyErr("TypeError", "gui.timer.dispatcher: not a guest proxy");
+        }
+        PyObject*& held = timerDispatcher();
+        Py_XDECREF(held);
+        held = standin;
+        return replyOk(true);
+    }
+    if (m == "stop") {
+        if (a.size() != 2 || !a[1].is_number())
+            return replyErr("ProtocolError", "gui.timer: [stop, id]");
+        auto it = guestTimers().find(a[1].get<int>());
+        if (it == guestTimers().end())
+            return replyOk(false);
+        dropTimer(it->second.timer);
+        guestTimers().erase(it);
+        return replyOk(true);
+    }
+    if (m == "start") {
+        if (a.size() != 4 || !a[1].is_number() || !a[2].is_number() || !a[3].is_boolean())
+            return replyErr("ProtocolError", "gui.timer: [start, id, msec, repeat]");
+        if (!timerDispatcher())
+            return replyErr("RuntimeError", "gui.timer: no dispatcher registered");
+        const int id = a[1].get<int>();
+        const int msec = std::max(0, a[2].get<int>());
+        const bool repeat = a[3].get<bool>();
+        auto it = guestTimers().find(id);
+        if (it != guestTimers().end()) {
+            dropTimer(it->second.timer);
+            guestTimers().erase(it);
+        }
+        auto timer = new QTimer(getMainWindow());
+        timer->setSingleShot(!repeat);
+        timer->setInterval(msec);
+        QObject::connect(timer, &QTimer::timeout, timer, [id, repeat]() {
+            PyObject* standin = timerDispatcher();
+            if (!standin)
+                return;
+            Base::PyGILStateLocker lock;
+            PyObject* r = PyObject_CallMethod(standin, "fire", "i", id);
+            bool ok = r != nullptr;
+            if (!r) {
+                Base::PyException e;
+                e.ReportException();
+            }
+            Py_XDECREF(r);
+            if (!repeat || !ok) {
+                auto it = guestTimers().find(id);
+                if (it != guestTimers().end()) {
+                    dropTimer(it->second.timer);
+                    guestTimers().erase(it);
+                }
+            }
+        });
+        guestTimers()[id].timer = timer;
+        timer->start();
+        return replyOk(true);
+    }
+    return replyErr("ValueError", "gui.timer: unknown method '" + m + "'");
+}
+
+// ---- workbench manipulators (docs/Sandbox.md 7.15): BIM's Activated
+// installs one that adds its Help menu entries.  The guest object is a
+// stand-in with the manipulator hooks; the host's own Python
+// manipulator wrapper calls them by name as it calls a native one.
+
+std::map<uint64_t, PyObject*>& manipulators()
+{
+    static std::map<uint64_t, PyObject*> held;
+    return held;
+}
+
+void dropManipulators()
+{
+    if (manipulators().empty())
+        return;
+    Base::PyGILStateLocker lock;
+    for (auto& kv : manipulators()) {
+        PyObject* r = callGui("removeWorkbenchManipulator", Py_BuildValue("(O)", kv.second));
+        if (!r)
+            PyErr_Clear();
+        Py_XDECREF(r);
+        Py_DECREF(kv.second);
+    }
+    manipulators().clear();
+}
+
+/// `gui.wb.manipulator ["add" | "remove", descriptor]`.
+Reply manipulatorCall(HandleTable& table, const json& a)
+{
+    if (!a.is_array() || a.size() != 2 || !a[0].is_string() || !a[1].is_object())
+        return replyErr("ProtocolError", "gui.wb.manipulator: [add|remove, descriptor]");
+    PyObject* standin = decodeValue(table, a[1]);
+    if (!standin)
+        return replyPyError();
+    if (!isGuestProxy(standin)) {
+        Py_DECREF(standin);
+        return replyErr("TypeError", "gui.wb.manipulator: not a guest proxy");
+    }
+    const uint64_t pid = guestProxyId(standin);
+    const std::string& m = a[0].get_ref<const std::string&>();
+    auto it = manipulators().find(pid);
+    if (m == "add") {
+        if (it != manipulators().end()) {
+            Py_DECREF(standin);
+            return replyOk(false);
+        }
+        PyObject* r = callGui("addWorkbenchManipulator", Py_BuildValue("(O)", standin));
+        if (!r) {
+            Py_DECREF(standin);
+            return replyPyError();
+        }
+        Py_DECREF(r);
+        manipulators()[pid] = standin;  // the reference stays with the map
+        return replyOk(true);
+    }
+    Py_DECREF(standin);
+    if (m != "remove")
+        return replyErr("ValueError", "gui.wb.manipulator: unknown method '" + m + "'");
+    if (it == manipulators().end())
+        return replyOk(false);
+    PyObject* r = callGui("removeWorkbenchManipulator", Py_BuildValue("(O)", it->second));
+    if (!r)
+        PyErr_Clear();
+    Py_XDECREF(r);
+    Py_DECREF(it->second);
+    manipulators().erase(it);
+    return replyOk(true);
 }
 
 /// `gui.cmd.run [name, index]`: `FreeCADGui.runCommand`.
@@ -1629,6 +1987,12 @@ Reply guiOp(HandleTable& table, const Reply& requestCbor)
         return addCommand(table, arg);
     if (op == "gui.cmd.run")
         return runCommandByName(arg);
+    if (op == "gui.cmd.info")
+        return commandInfo(arg);
+    if (op == "gui.timer")
+        return timerCall(table, arg);
+    if (op == "gui.wb.manipulator")
+        return manipulatorCall(table, arg);
     if (op == "gui.mainwindow")
         return mainWindowCall(table, arg);
     if (op == "gui.menu.exec")
@@ -1711,6 +2075,12 @@ void Gui::SandboxGui::registerOps()
         return;
     done = true;
     App::ExpressionSandbox::registerBridgeOps("gui.", &guiOp);
+    // a guest may write to the action of a command it registered itself
+    // (docs/Sandbox.md 7.15); another command's action it may carry
+    // and trigger, not restyle
+    Gui::FwQt::setCommandWriteFilter([](const QString& name) {
+        return guestCommands().count(name.toStdString()) > 0;
+    });
     // A fresh guest has none of the stand-ins the previous one
     // registered: the InitGui runner (FreeCADGuiInit.py, docs/Sandbox.md
     // 7.9 G2b) re-runs the InitGui.py's it ran in the guest.  Queued on
@@ -1719,6 +2089,8 @@ void Gui::SandboxGui::registerOps()
     App::ExpressionSandbox::ImageHost::instance().addBootListener([](int boot) {
         // the previous guest's selection observers point at nothing now
         dropSelectionObservers();
+        dropTimers();
+        dropManipulators();
         QTimer::singleShot(0, [boot]() {
             if (!Application::Instance)
                 return;

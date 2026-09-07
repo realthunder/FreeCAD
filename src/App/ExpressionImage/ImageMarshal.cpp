@@ -433,8 +433,25 @@ static const char ProxyPrelude[] =
     "    if wb is None:\n"
     "        raise KeyError(\"workbench '%s' is not registered from the sandbox\" % name)\n"
     "    return wb\n"
+    // the active workbench may be a host one (inside a guest workbench's
+    // Deactivated the host has switched already): a name and a
+    // reloadActive, what BIM's Deactivated asks of it (docs/Sandbox.md
+    // 7.15)
+    "class _HostWorkbench:\n"
+    "    def __init__(self, name):\n"
+    "        self._name = name\n"
+    "    def name(self):\n"
+    "        return self._name\n"
+    "    def reloadActive(self):\n"
+    "        _fcx.op('gui.wb', 0, [self._name, 'reloadActive', []])\n"
+    "    def __repr__(self):\n"
+    "        return '<host workbench %s>' % self._name\n"
     "def _gui_active_workbench():\n"
-    "    return _gui_workbenches.get(_fcx.op('gui.wb.active', 0))\n"
+    "    name = _fcx.op('gui.wb.active', 0)\n"
+    "    wb = _gui_workbenches.get(name)\n"
+    "    if wb is None and name:\n"
+    "        return _HostWorkbench(name)\n"
+    "    return wb\n"
     "def _gui_list_workbenches():\n"
     "    return {n: _gui_workbenches.get(n) for n in _fcx.op('gui.wb.list', 0)}\n"
     "def _gui_list_commands():\n"

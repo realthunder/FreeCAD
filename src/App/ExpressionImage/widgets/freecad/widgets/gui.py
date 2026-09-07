@@ -15,7 +15,8 @@ def attr(name):
     forms' names, else the AttributeError `hasattr` expects."""
     if name in ("Control", "PySideUic", "UiLoader", "getMainWindow", "runCommand",
                 "InputHint", "HintManager", "getIcon", "_run_initgui", "activeDocument",
-                "getDocument", "doCommand", "doCommandGui", "addModule"):
+                "getDocument", "doCommand", "doCommandGui", "addModule", "Command",
+                "addWorkbenchManipulator", "removeWorkbenchManipulator"):
         return globals()[name]
     if name == "ActiveDocument":
         return active_document()
@@ -179,6 +180,69 @@ def runCommand(name, index=0):
     _fcx.op("gui.cmd.run", 0, [str(name), int(index)])
 
 
+class Command:
+    """`FreeCADGui.Command` in the guest (docs/Sandbox.md 7.15): a handle
+    on a host command by name.  `getInfo`, `isActive` and `run` cross;
+    `getAction()` answers action MODELS bound on the host to the
+    command's real actions (a group's members after its own), so a bar
+    the guest builds carries the command's own button and a `setChecked`
+    on the model lands on the real action -- a write the host takes
+    only for a command the guest registered itself."""
+
+    def __init__(self, name):
+        self._name = str(name)
+
+    @staticmethod
+    def get(name):
+        import _fcx
+
+        info = _fcx.op("gui.cmd.info", 0, [str(name)])
+        return Command(name) if info else None
+
+    @staticmethod
+    def listAll():
+        import _fcx
+
+        return list(_fcx.op("gui.cmd.list", 0))
+
+    @staticmethod
+    def update():
+        pass
+
+    def getInfo(self):
+        import _fcx
+
+        info = _fcx.op("gui.cmd.info", 0, [self._name]) or {}
+        return {k: info.get(k, "") for k in ("name", "menuText", "toolTip", "whatsThis",
+                                              "statusTip", "pixmap", "shortcut")}
+
+    def isActive(self):
+        import _fcx
+
+        info = _fcx.op("gui.cmd.info", 0, [self._name]) or {}
+        return bool(info.get("active", False))
+
+    def run(self, index=0):
+        runCommand(self._name, index)
+
+    def getShortcut(self):
+        return self.getInfo()["shortcut"]
+
+    def getAction(self):
+        import _fcx
+        from . import models
+
+        info = _fcx.op("gui.cmd.info", 0, [self._name]) or {}
+        count = max(1, int(info.get("actions", 1)))
+        actions = self.__dict__.setdefault("_actions", [])
+        while len(actions) < count:
+            actions.append(models.QAction._fcx_host(self._name, len(actions)))
+        return list(actions[:count])
+
+    def __repr__(self):
+        return "<Command %s>" % self._name
+
+
 # ---- Gui.doCommand in the guest (docs/Sandbox.md 7.13, S2) ----
 
 _MODULES = set()
@@ -269,6 +333,13 @@ class _MainWindowSignal:
 
 
 class _StatusBar:
+    """`getMainWindow().statusBar()`: messages cross; `findChild` answers
+    the items this guest registered (`addStatusBarItem`) by object name
+    (docs/Sandbox.md 7.15)."""
+
+    def __init__(self, owner):
+        self._owner = owner
+
     def showMessage(self, text, timeout=0):
         import _fcx
 
@@ -276,6 +347,97 @@ class _StatusBar:
 
     def clearMessage(self):
         self.showMessage("", 0)
+
+    def findChild(self, cls=None, name=None):
+        for w in self.findChildren(cls, name):
+            return w
+        return None
+
+    def findChildren(self, cls=None, name=None):
+        return _matching(self._owner._status_items.values(), cls, name)
+
+    def addPermanentWidget(self, widget, stretch=0):
+        self._owner.addStatusBarItem(widget, widget.objectName() or widget.model_id)
+
+    def addWidget(self, widget, stretch=0):
+        self._owner.addStatusBarItem(widget, widget.objectName() or widget.model_id,
+                                     slot="Left")
+
+    def removeWidget(self, widget):
+        for key, w in list(self._owner._status_items.items()):
+            if w is widget:
+                self._owner.removeStatusBarItem(key)
+
+
+def _matching(widgets, cls=None, name=None):
+    if cls is not None and not isinstance(cls, type):
+        cls = tuple(cls)
+    out = []
+    for w in widgets:
+        if name is not None and w.objectName() != name:
+            continue
+        if cls is not None and not isinstance(w, cls):
+            continue
+        out.append(w)
+    return out
+
+
+class _HostToolBar:
+    """A HOST tool bar `findChild(QToolBar, name)` found (a workbench's
+    own, built from its `appendToolbar` list): its name, nothing more
+    -- the corpus tests `is None` (Draft's snap widget wants the
+    "Draft Snap" bar to exist before it borrows its actions)."""
+
+    def __init__(self, name):
+        self._name = name
+
+    def objectName(self):
+        return self._name
+
+    def windowTitle(self):
+        return self._name
+
+    def isVisible(self):
+        return True
+
+    def show(self):
+        pass
+
+    def hide(self):
+        pass
+
+    def setOrientation(self, o):
+        pass
+
+    def actions(self):
+        return []
+
+    def __repr__(self):
+        return "<host tool bar %r>" % self._name
+
+
+MANIPULATOR_HOOKS = ("modifyMenuBar", "modifyToolBars", "modifyDockWindows",
+                     "modifyContextMenu")
+
+
+def addWorkbenchManipulator(manip):
+    """`FreeCADGui.addWorkbenchManipulator(obj)` (docs/Sandbox.md 7.15):
+    the object registers as a guest proxy with the manipulator hooks;
+    the host's own manipulator wrapper calls them by name, the lists of
+    dicts they answer crossing as data."""
+    import _fcx
+    import FreeCADGui
+
+    _fcx.op("gui.wb.manipulator", 0,
+            ["add", FreeCADGui._proxy_register(manip, MANIPULATOR_HOOKS)])
+
+
+def removeWorkbenchManipulator(manip):
+    import _fcx
+    import FreeCADGui
+
+    _fcx.op("gui.wb.manipulator", 0,
+            ["remove", FreeCADGui._proxy_register(manip, MANIPULATOR_HOOKS)])
 
 
 # ---- input hints (docs/Sandbox.md 7.9, G2b): data ----
@@ -344,7 +506,10 @@ class MainWindow:
 
     def __init__(self):
         self.mainWindowClosed = _MainWindowSignal(self)
-        self._status = _StatusBar()
+        self._status = _StatusBar(self)
+        self._status_items = {}
+        self._bars = []
+        self._docks = []
 
     def addToolBar(self, *args):
         import _fcx
@@ -352,11 +517,95 @@ class MainWindow:
         bar = args[-1]
         _fcx.op("gui.mainwindow", 0, ["addToolBar", bar.model_id])
         bar._attach(None)
+        if bar not in self._bars:
+            self._bars.append(bar)
 
     def removeToolBar(self, bar):
         import _fcx
 
         _fcx.op("gui.mainwindow", 0, ["removeToolBar", bar.model_id])
+        if bar in self._bars:
+            self._bars.remove(bar)
+
+    # -- the status bar registry (docs/Sandbox.md 7.15)
+
+    def addStatusBarItem(self, widget, id="", title="", slot="Right", order=500):
+        """Upstream's `addStatusBarItem`: the host realizes the widget
+        model under its status bar and registers it by id -- placement,
+        order, the context menu and the visibility of a titled item are
+        the host's."""
+        import _fcx
+
+        from . import models
+
+        if not isinstance(widget, models.QWidget):
+            raise TypeError("addStatusBarItem: the widget must be one made in the sandbox")
+        item_id = str(id) or widget.objectName() or widget.model_id
+        _fcx.op("gui.mainwindow", 0, ["addStatusBarItem", widget.model_id, item_id, str(title),
+                                      str(slot), int(order)])
+        widget._attach(None)
+        for key, w in list(self._status_items.items()):
+            if w is widget:
+                del self._status_items[key]
+        self._status_items[item_id] = widget
+
+    def removeStatusBarItem(self, id):
+        import _fcx
+
+        _fcx.op("gui.mainwindow", 0, ["removeStatusBarItem", str(id)])
+        return self._status_items.pop(str(id), None)
+
+    def statusBarItem(self, id):
+        return self._status_items.get(str(id))
+
+    # -- dock widgets (docs/Sandbox.md 7.15)
+
+    def addDockWidget(self, area, dock, orientation=None):
+        import _fcx
+
+        from . import models
+
+        if not isinstance(dock, models.QDockWidget):
+            raise TypeError("addDockWidget: the dock must be a QDockWidget made in the sandbox")
+        _fcx.op("gui.mainwindow", 0, ["addDockWidget", dock.model_id, int(area)])
+        dock._attach(None)
+        if dock not in self._docks:
+            self._docks.append(dock)
+
+    def removeDockWidget(self, dock):
+        import _fcx
+
+        _fcx.op("gui.mainwindow", 0, ["removeDockWidget", dock.model_id])
+        if dock in self._docks:
+            self._docks.remove(dock)
+
+    def tabifyDockWidget(self, first, second):
+        """`second` (the guest's dock) tabbed onto `first`: another guest
+        dock or a host dock by name."""
+        import _fcx
+
+        name = first.objectName() if hasattr(first, "objectName") else str(first)
+        return bool(_fcx.op("gui.mainwindow", 0, ["tabifyDockWidget", second.model_id, name]))
+
+    def frameGeometry(self):
+        from .qtdata import QRect
+
+        g = self._geometry()
+        return QRect(g[0], g[1], g[2], g[3])
+
+    def geometry(self):
+        return self.frameGeometry()
+
+    def rect(self):
+        from .qtdata import QRect
+
+        g = self._geometry()
+        return QRect(0, 0, g[4], g[5])
+
+    def _geometry(self):
+        import _fcx
+
+        return list(_fcx.op("gui.mainwindow", 0, ["geometry"]))
 
     def insertToolBar(self, before, bar):
         self.addToolBar(bar)
@@ -409,13 +658,23 @@ class MainWindow:
 
     def findChild(self, cls, name=None):
         """The MDI area, as a stub whose `subWindowActivated` never
-        fires (the view observers connect to it); nothing else."""
+        fires (the view observers connect to it); the guest's own tool
+        bars, status items and docks by object name; a HOST tool bar
+        by name as a stub (docs/Sandbox.md 7.15); nothing else."""
         if getattr(cls, "__name__", "") == "QMdiArea":
             return _mdi_area
+        for w in self.findChildren(cls, name):
+            return w
+        if name and getattr(cls, "__name__", "") in ("QToolBar", "Gui::ToolBar"):
+            import _fcx
+
+            if _fcx.op("gui.mainwindow", 0, ["hasToolBar", str(name)]):
+                return _HostToolBar(str(name))
         return None
 
-    def findChildren(self, *args):
-        return []
+    def findChildren(self, cls=None, name=None):
+        own = list(self._bars) + list(self._status_items.values()) + list(self._docks)
+        return _matching(own, cls, name)
 
     def __repr__(self):
         return "<sandbox main window>"

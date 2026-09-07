@@ -64,6 +64,12 @@ class SandboxInitGuiTest(unittest.TestCase):
         if not self.S.available():
             self.skipTest("the sandbox image did not boot")
         self.settle()
+        # BIM's first activation runs BIM_Welcome, a modal the guest
+        # exec's (7.15: its geometry arithmetic works now) -- a hang
+        # under Xvfb, as natively on a first run; the rig is not one
+        bim = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/BIM")
+        self.first_time = bim.GetBool("FirstTime", True)
+        bim.SetBool("FirstTime", False)
         self.previous = FreeCADGui.activeWorkbench().name()
         self.doc = FreeCAD.newDocument("SandboxInitGui")
 
@@ -76,6 +82,8 @@ class SandboxInitGuiTest(unittest.TestCase):
                 FreeCADGui.activateWorkbench(self.previous)
         finally:
             FreeCAD.closeDocument(self.doc.Name)
+            FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/BIM").SetBool(
+                "FirstTime", self.first_time)
 
     @staticmethod
     def settle():
@@ -176,6 +184,201 @@ class SandboxInitGuiTest(unittest.TestCase):
         self.assertGreater(ops.get("gui.cmd.add", 0), 0, ops)
         self.assertIn("BIM_Box", Gui.listCommands())
         self.assertTrue(Gui.Command.get("BIM_Box").getInfo()["menuText"])
+
+    def test_status_bar_registry(self):
+        """The host's own registry (docs/Sandbox.md 7.15), the fork repair:
+        `addStatusBarItem` from host Python places two items by `order`
+        in the permanent band, left of the fork's fixtures; a titled item
+        the user hid (its id under MainWindow/StatusBarItems) comes back
+        hidden; `removeStatusBarItem` takes one out."""
+        import FreeCADGui as Gui
+        from PySide import QtWidgets
+
+        mw = Gui.getMainWindow()
+        sb = mw.statusBar()
+        a = QtWidgets.QLabel("A")
+        a.setObjectName("SandboxInitGui_A")
+        b = QtWidgets.QLabel("B")
+        b.setObjectName("SandboxInitGui_B")
+        params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/MainWindow/StatusBarItems")
+        try:
+            mw.addStatusBarItem(b, id="SandboxInitGui_B", title="Sandbox item B",
+                                slot="Right", order=560)
+            mw.addStatusBarItem(a, id="SandboxInitGui_A", title="Sandbox item A",
+                                slot="Right", order=550)
+            self.spin(20, 2)
+            self.assertEqual(mw.statusBarItem("SandboxInitGui_A").objectName(), "SandboxInitGui_A")
+            self.assertTrue(a.isVisible() and b.isVisible())
+            # the order is the bar's layout order: left to right
+            perm = sb.findChild(QtWidgets.QWidget, "SB_PermissionIndicator")
+            self.assertIsNotNone(perm)
+            self.assertTrue(self.wait_until(lambda: a.x() > 0 and b.x() > a.x(), times=20),
+                            (a.x(), b.x(), perm.x()))
+            self.assertLess(b.x(), perm.x())
+            self.assertLess(sb.findChild(QtWidgets.QWidget, "SB_ActionLabel").x(), a.x())
+            # the user's choice persists per id
+            params.SetBool("SandboxInitGui_A", False)
+            mw.removeStatusBarItem("SandboxInitGui_A")
+            mw.addStatusBarItem(a, id="SandboxInitGui_A", title="Sandbox item A", order=550)
+            self.spin(20, 2)
+            self.assertFalse(a.isVisible())
+            self.assertTrue(b.isVisible())
+            self.assertIsNotNone(mw.removeStatusBarItem("SandboxInitGui_B"))
+            self.assertIsNone(mw.statusBarItem("SandboxInitGui_B"))
+            self.assertIsNone(mw.removeStatusBarItem("SandboxInitGui_B"))
+        finally:
+            params.RemBool("SandboxInitGui_A")
+            mw.removeStatusBarItem("SandboxInitGui_A")
+            mw.removeStatusBarItem("SandboxInitGui_B")
+            a.deleteLater()
+            b.deleteLater()
+
+    def wait_until(self, predicate, ms=50, times=60):
+        for _ in range(times):
+            self.spin(ms, 1)
+            if predicate():
+                return True
+        return predicate()
+
+    def test_draft_status_bar(self):
+        """Draft's `Activated()` runs to its end from the guest (docs/
+        Sandbox.md 7.15): 500 ms host timers later the HOST status bar
+        holds the guest's scale and snap widgets; the snap bar carries
+        the commands' OWN actions (`Command.get(...).getAction()` bound,
+        not copied), the lock button its popup of the other snap
+        commands and the width Draft set; the scale button's menu is an
+        action group whose choice, made on the host, runs the guest's
+        slot (the preference and the label); deactivation hides both."""
+        import FreeCADGui as Gui
+        from PySide import QtWidgets
+
+        self.assertGuestWorkbench("DraftWorkbench")
+        Gui.activateWorkbench("DraftWorkbench")
+        self.settle()
+        mw = Gui.getMainWindow()
+        sb = mw.statusBar()
+        find = lambda name: sb.findChild(QtWidgets.QToolBar, name)  # noqa: E731
+        self.assertTrue(self.wait_until(
+            lambda: find("draft_snap_widget") is not None and find("draft_scale_widget") is not None
+            and find("draft_snap_widget").isVisible() and find("draft_scale_widget").isVisible()),
+            "the status bar widgets did not appear: %s" % [w.objectName() for w in sb.children()])
+        snap = find("draft_snap_widget")
+        scale = find("draft_scale_widget")
+        self.assertEqual(mw.statusBarItem("draft_snap_widget").objectName(), "draft_snap_widget")
+        self.assertEqual(mw.statusBarItem("draft_scale_widget").objectName(), "draft_scale_widget")
+        # the snap bar's actions are the commands' own
+        actions = snap.actions()
+        for name in ("Draft_ToggleGrid", "Draft_Snap_Lock", "Draft_Snap_Dimensions",
+                     "Draft_Snap_Ortho", "Draft_Snap_WorkingPlane"):
+            own = Gui.Command.get(name).getAction()[0]
+            self.assertIn(own, actions, name)
+        grid = Gui.Command.get("Draft_ToggleGrid").getAction()[0]
+        self.assertEqual(actions[0], grid)
+        # the lock button: widened, and its popup lists the other snaps
+        lock = Gui.Command.get("Draft_Snap_Lock").getAction()[0]
+        button = snap.widgetForAction(lock)
+        self.assertIsInstance(button, QtWidgets.QToolButton)
+        self.assertEqual(button.minimumWidth(), 40)
+        endpoint = Gui.Command.get("Draft_Snap_Endpoint").getAction()[0]
+        self.assertIn(endpoint, button.actions())
+        # the scale button and its group menu
+        label = scale.findChild(QtWidgets.QPushButton, "ScaleLabel")
+        self.assertIsNotNone(label)
+        self.assertIsNotNone(label.menu())
+        texts = [a.text() for a in label.menu().actions()]
+        self.assertIn("1:50", texts, texts)
+        params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Draft")
+        before = params.GetFloat("DefaultAnnoScaleMultiplier", 1.0)
+        try:
+            [a for a in label.menu().actions() if a.text() == "1:50"][0].trigger()
+            self.settle()
+            self.spin(20, 2)
+            self.assertAlmostEqual(params.GetFloat("DefaultAnnoScaleMultiplier"), 50.0)
+            self.assertEqual(label.text(), "1:50")
+        finally:
+            params.SetFloat("DefaultAnnoScaleMultiplier", before)
+        # deactivation: hidden 500 ms later, both still registered
+        Gui.activateWorkbench("PartWorkbench")
+        self.settle()
+        self.assertTrue(self.wait_until(lambda: not snap.isVisible() and not scale.isVisible()))
+        self.assertIsNotNone(mw.statusBarItem("draft_snap_widget"))
+
+    def test_bim_status_bar_and_views(self):
+        """BIM's `Activated()` runs to its end from the guest (docs/
+        Sandbox.md 7.15): the status widget with its two action buttons
+        and the nudge button's menu; the Views Manager dock made through
+        the host's dock manager, shown, its tree listing a Building and
+        its two levels; the status bar's views button toggling the dock
+        through the guest's `BIM_Views`; deactivation hiding both."""
+        import FreeCADGui as Gui
+        from PySide import QtWidgets
+        import Arch
+
+        params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/BIM")
+        restore = params.GetBool("RestoreBimViews", True)
+        first = params.GetBool("FirstTime", True)
+        params.SetBool("RestoreBimViews", True)
+        params.SetBool("FirstTime", False)
+        doc = self.doc
+        lower = Arch.makeFloor()
+        lower.Label = "Lower"
+        upper = Arch.makeFloor()
+        upper.Label = "Upper"
+        upper.Placement.Base.z = 3000
+        building = Arch.makeBuilding([lower, upper])
+        doc.recompute()
+        self.settle()
+        mw = Gui.getMainWindow()
+        sb = mw.statusBar()
+        try:
+            self.assertGuestWorkbench("BIMWorkbench")
+            Gui.activateWorkbench("BIMWorkbench")
+            self.settle()
+            status = lambda: sb.findChild(QtWidgets.QToolBar, "BIMStatusWidget")  # noqa: E731
+            self.assertTrue(self.wait_until(lambda: status() is not None and status().isVisible()),
+                            "no BIMStatusWidget: %s" % [w.objectName() for w in sb.children()])
+            widget = status()
+            self.assertEqual(mw.statusBarItem("BIMStatusWidget").objectName(), "BIMStatusWidget")
+            actions = widget.actions()
+            views = [a for a in actions if "Views" in a.toolTip()]
+            self.assertEqual(len(views), 1, [a.toolTip() for a in actions])
+            views = views[0]
+            self.assertTrue(any("background" in a.toolTip() for a in actions))
+            nudge = widget.findChild(QtWidgets.QPushButton)
+            self.assertIsNotNone(nudge)
+            self.assertEqual(nudge.text(), "Auto")
+            self.assertIsNotNone(nudge.menu())
+            self.assertIn("1 mm", [a.text() for a in nudge.menu().actions()])
+            # the Views Manager: a dock of the host's manager, shown, filled
+            dock = mw.findChild(QtWidgets.QDockWidget, "BIM Views Manager")
+            self.assertIsNotNone(dock)
+            self.assertTrue(self.wait_until(dock.isVisible))
+            self.assertTrue(views.isChecked())
+            tree = dock.findChild(QtWidgets.QTreeWidget, "tree")
+            self.assertIsNotNone(tree)
+            self.assertTrue(self.wait_until(lambda: tree.topLevelItemCount() >= 1))
+            self.assertEqual(tree.topLevelItemCount(), 1)
+            top = tree.topLevelItem(0)
+            self.assertEqual(top.text(0), building.Label)
+            self.assertEqual(top.childCount(), 2)
+            self.assertEqual([top.child(i).text(0) for i in range(2)], ["Lower", "Upper"])
+            # the status bar's views button toggles the dock (BIM_Views in the guest)
+            views.trigger()
+            self.settle()
+            self.assertTrue(self.wait_until(lambda: not dock.isVisible(), times=20))
+            self.assertFalse(views.isChecked())
+            views.trigger()
+            self.settle()
+            self.assertTrue(self.wait_until(dock.isVisible, times=20))
+            self.assertTrue(views.isChecked())
+            # deactivation hides both and keeps the restore flag
+            Gui.activateWorkbench("PartWorkbench")
+            self.settle()
+            self.assertTrue(self.wait_until(lambda: not widget.isVisible() and not dock.isVisible()))
+            self.assertTrue(params.GetBool("RestoreBimViews"))
+        finally:
+            params.SetBool("RestoreBimViews", restore)
+            params.SetBool("FirstTime", first)
 
     def test_rerun_after_a_reset(self):
         """A reset drops every stand-in; the next boot re-runs both

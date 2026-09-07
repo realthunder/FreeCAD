@@ -1494,6 +1494,11 @@ std::map<QString, QPointer<QToolBar>> ToolBarManager::toolBars()
                 && parent != menuBarLeftArea
                 && parent != menuBarRightArea)
             continue;
+        // a status bar item a workbench registered (MainWindow::
+        // addStatusBarItem, docs/Sandbox.md 7.15) is the main window's:
+        // not adopted into the status bar area, not hidden on a switch
+        if (parent == mw->statusBar() && mw->isStatusBarItem(tb))
+            continue;
         QString name = tb->objectName();
         if (name.isEmpty() || name.startsWith(QStringLiteral("*")))
             continue;
