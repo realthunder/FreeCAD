@@ -25,32 +25,35 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_screen.sh"
+#include "fc_matrix.sh"
 #include "fc_mesh_lighting.sh"
 
 uniform vec4 u_groundPlane;
 
 void main()
 {
-	// The pixel's view-space ray. GL projection: perspective has
-	// u_proj[2][3] == -1 (w = viewZ), orthographic has 0 (w = 1) --
-	// the same test fc_prepassViewPos makes, and the two cases differ
-	// the same way: a perspective ray fans out from the eye, an
-	// orthographic one starts at the pixel and runs straight back.
-	vec2 ndc = v_texcoord0 * 2.0 - vec2_splat(1.0);
-	bool persp = u_proj[2][3] != 0.0;
+	// The pixel's view-space ray. A perspective projection has -1 in
+	// the w row's z entry (w = viewZ) and an orthographic one 0
+	// (w = 1) -- the same test fc_prepassViewPos makes, and the two
+	// cases differ the same way: a perspective ray fans out from the
+	// eye, an orthographic one starts at the pixel and runs straight
+	// back.
+	vec2 ndc = fc_uvToNdc(v_texcoord0);
+	bool persp = FC_MTX(u_proj, 2, 3) != 0.0;
 	vec3 org;
 	vec3 dir;
 	if (persp)
 	{
 		org = vec3_splat(0.0);
-		dir = vec3((ndc.x + u_proj[2][0]) / u_proj[0][0],
-		           (ndc.y + u_proj[2][1]) / u_proj[1][1],
+		dir = vec3((ndc.x + FC_MTX(u_proj, 2, 0)) / FC_MTX(u_proj, 0, 0),
+		           (ndc.y + FC_MTX(u_proj, 2, 1)) / FC_MTX(u_proj, 1, 1),
 		           -1.0);
 	}
 	else
 	{
-		org = vec3((ndc.x - u_proj[3][0]) / u_proj[0][0],
-		           (ndc.y - u_proj[3][1]) / u_proj[1][1],
+		org = vec3((ndc.x - FC_MTX(u_proj, 3, 0)) / FC_MTX(u_proj, 0, 0),
+		           (ndc.y - FC_MTX(u_proj, 3, 1)) / FC_MTX(u_proj, 1, 1),
 		           0.0);
 		dir = vec3(0.0, 0.0, -1.0);
 	}

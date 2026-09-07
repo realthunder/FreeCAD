@@ -44,6 +44,9 @@
  *               moved or tilted body.
  */
 
+#include "fc_screen.sh"
+#include "fc_matrix.sh"
+
 #define MEDIUM_SLOTS 4
 
 uniform vec4 u_volParams;
@@ -71,23 +74,24 @@ int mediumSlot(vec4 front, vec4 back)
 	return int(clamp(s, 0.0, float(MEDIUM_SLOTS - 1)) + 0.5);
 }
 
-// View-space ray of a screen pixel (uv in [0,1]). GL projection:
-// perspective has u_proj[2][3] == -1 (w = viewZ), orthographic has 0
-// (w = 1); both viewer down -z.
+// View-space ray of a screen pixel (uv in [0,1]). The w row's z entry
+// is -1 for a perspective projection (w = viewZ) and 0 for an
+// orthographic one (w = 1) -- the row the clip-depth remap leaves
+// alone; both viewer down -z.
 void volRay(vec2 uv, out vec3 origin, out vec3 dir)
 {
-	vec2 ndc = uv * 2.0 - vec2_splat(1.0);
-	if (u_proj[2][3] != 0.0)
+	vec2 ndc = fc_uvToNdc(uv);
+	if (FC_MTX(u_proj, 2, 3) != 0.0)
 	{
 		origin = vec3_splat(0.0);
-		dir = normalize(vec3((ndc.x + u_proj[2][0]) / u_proj[0][0],
-		                     (ndc.y + u_proj[2][1]) / u_proj[1][1],
+		dir = normalize(vec3((ndc.x + FC_MTX(u_proj, 2, 0)) / FC_MTX(u_proj, 0, 0),
+		                     (ndc.y + FC_MTX(u_proj, 2, 1)) / FC_MTX(u_proj, 1, 1),
 		                     -1.0));
 	}
 	else
 	{
-		origin = vec3((ndc.x - u_proj[3][0]) / u_proj[0][0],
-		              (ndc.y - u_proj[3][1]) / u_proj[1][1],
+		origin = vec3((ndc.x - FC_MTX(u_proj, 3, 0)) / FC_MTX(u_proj, 0, 0),
+		              (ndc.y - FC_MTX(u_proj, 3, 1)) / FC_MTX(u_proj, 1, 1),
 		              0.0);
 		dir = vec3(0.0, 0.0, -1.0);
 	}
@@ -97,7 +101,7 @@ void volRay(vec2 uv, out vec3 origin, out vec3 dir)
 // not parallel to the view axis).
 float volT(float viewZ, vec3 dir)
 {
-	return u_proj[2][3] != 0.0 ? viewZ / max(1.0e-6, -dir.z) : viewZ;
+	return FC_MTX(u_proj, 2, 3) != 0.0 ? viewZ / max(1.0e-6, -dir.z) : viewZ;
 }
 
 // Ray length to the opaque surface behind the pixel (prepass linear

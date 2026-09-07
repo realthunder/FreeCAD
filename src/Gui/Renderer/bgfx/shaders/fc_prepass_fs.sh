@@ -7,6 +7,8 @@
  * fs_fc_prepass.sc and fs_fc_prepass_clip.sc (CLIP_PLANES defined).
  */
 
+#include "fc_matrix.sh"
+
 #ifdef GROUND_FADE
 #include "fc_ground_fade.sh"
 #endif
@@ -38,11 +40,12 @@ void main()
 	// Face the normal toward the viewer like the two-sided lighting
 	// most CAD materials use; AO wants the geometric front either way.
 	// The view ray is the fragment position for perspective cameras but
-	// the constant view axis for orthographic ones (u_proj[2][3] is -1
+	// the constant view axis for orthographic ones (the w row's z
+	// entry is -1
 	// for perspective, 0 for orthographic) — the position's lateral
 	// offset would flip normals of surfaces near the eye plane.
 	vec3 n = normalize(v_normal);
-	vec3 viewdir = u_proj[2][3] != 0.0 ? v_vpos : vec3(0.0, 0.0, -1.0);
+	vec3 viewdir = FC_MTX(u_proj, 2, 3) != 0.0 ? v_vpos : vec3(0.0, 0.0, -1.0);
 	if (dot(n, viewdir) > 0.0)
 		n = -n;
 	gl_FragColor = vec4(octEncode(n), -v_vpos.z, 1.0);

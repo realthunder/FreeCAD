@@ -13,6 +13,7 @@
  */
 
 #include "fc_color.sh"
+#include "fc_matrix.sh"
 
 #include "fc_mesh_lighting.sh"
 #include "fc_finish.sh"
@@ -106,7 +107,7 @@ void main()
 			// Parallax-occlusion: march the tangent-space view
 			// ray until it dips below the height field, then
 			// refine linearly between the last two samples.
-			vec3 vdir = u_proj[2][3] != 0.0
+			vec3 vdir = FC_MTX(u_proj, 2, 3) != 0.0
 				? normalize(-v_vpos) : vec3(0.0, 0.0, 1.0);
 			vec3 vts = vec3(dot(vdir, normalize(T)),
 			                dot(vdir, normalize(B)),

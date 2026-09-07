@@ -16,6 +16,7 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_matrix.sh"
 #include "fc_prepass_read.sh"
 
 SAMPLER2D(s_texAO, 0);
@@ -30,7 +31,7 @@ void main()
 		gl_FragColor = vec4_splat(cao);
 		return;
 	}
-	bool persp = u_proj[2][3] != 0.0;
+	bool persp = FC_MTX(u_proj, 2, 3) != 0.0;
 	float cz = cnz.z;
 	vec3 cn = fc_octDecode(cnz.xy);
 	vec3 cpos = fc_prepassViewPos(v_texcoord0, cz, persp);
