@@ -24,6 +24,10 @@
 
 #include <fstream>
 
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
 #include <QColor>
 
 #include <Gui/Renderer/Renderer.h>
@@ -151,6 +155,38 @@ std::unique_ptr<Render::Renderer> makePublisher()
     return Render::RendererFactory::create("bgfx - OpenGL", nullptr, true);
 }
 
+/// Every image this process has mapped, as the platform reports it.
+/// An empty list means the platform does not say -- which is a skip,
+/// not a pass.
+std::vector<std::string> mappedImages()
+{
+    std::vector<std::string> images;
+#if defined(__APPLE__)
+    // dyld's own list, which is what a Mach-O process has instead of a
+    // maps file: everything the loader mapped, link-time dependency and
+    // dlopen alike, in load order.
+    const uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; ++i) {
+        if (const char* name = _dyld_get_image_name(i)) {
+            images.emplace_back(name);
+        }
+    }
+#else
+    std::ifstream maps("/proc/self/maps");
+    std::string line;
+    while (std::getline(maps, line)) {
+        // The path is the last field, and only file-backed mappings
+        // have one; anonymous mappings and [heap]/[stack] do not.
+        const auto sp = line.rfind(' ');
+        if (sp != std::string::npos && sp + 1 < line.size()
+            && line[sp + 1] == '/') {
+            images.push_back(line.substr(sp + 1));
+        }
+    }
+#endif
+    return images;
+}
+
 }  // namespace
 
 TEST(PublishOnly, constructsWithoutAWidget)
@@ -233,28 +269,47 @@ TEST(PublishOnly, noGraphicsDeviceIsCreated)
     // Runs after the publish above (gtest runs a file's tests in
     // declaration order), so the process has done the whole job by now.
     //
-    // What is checked is the *driver*, not libGL. libGL, libEGL, libGLX
-    // and libX11 are DT_NEEDED of FreeCADRenderer itself — the loader
-    // maps them whatever this process intends, and under libglvnd they
-    // are dispatch stubs that have not chosen a vendor. The vendor
-    // library and the DRI/software rasterizer behind it are dlopened
-    // when a context is created, and nowhere else. So their absence is
-    // exactly the claim of docs/HeadlessServe.md §3.1: this process
-    // published a scene without ever bringing up a graphics device.
-    std::ifstream maps("/proc/self/maps");
-    if (!maps) {
-        GTEST_SKIP() << "no /proc/self/maps on this platform";
+    // What is checked is the *driver*, not the client-side API library,
+    // because only the driver is evidence of a device. On Linux libGL,
+    // libEGL, libGLX and libX11 are DT_NEEDED of FreeCADRenderer itself
+    // -- the loader maps them whatever this process intends, and under
+    // libglvnd they are dispatch stubs that have not chosen a vendor.
+    // The vendor library and the DRI/software rasterizer behind it are
+    // dlopened when a context is created, and nowhere else.
+    //
+    // macOS draws the same line, but a great deal further in: the
+    // renderer names OpenGL.framework and libbgfx.dylib, Qt6OpenGL and
+    // QuartzCore come with them, and dyld duly maps the whole
+    // client-side stack at launch -- OpenGL and its libGL/libGLU/
+    // libGFXShared/libCoreVMClient, Metal, all of
+    // MetalPerformanceShaders, MetalTools, GPUCompiler, GPUWrangler,
+    // IOAccelerator, IOSurface, CoreImage, CoreVideo. None of that is a
+    // device; it is what a Mach-O process links against. What only a
+    // real device brings in is the renderer plugin behind those
+    // frameworks: GLEngine, the vendor's *GLDriver/*MTLDriver bundle
+    // under /System/Library/Extensions, AppleGVA.
+    //
+    // So the absence of those is exactly the claim of
+    // docs/HeadlessServe.md section 3.1: this process published a scene
+    // without ever bringing up a graphics device.
+    const std::vector<std::string> images = mappedImages();
+    if (images.empty()) {
+        GTEST_SKIP() << "this platform does not report its mapped images";
     }
     static const char* forbidden[] = {
+#if defined(__APPLE__)
+        "GLEngine", "GLDriver", "MTLDriver", "AppleGVA",
+        "/System/Library/Extensions/",
+#else
         "_dri.so", "swrast", "llvmpipe", "libvulkan", "libnvidia-gl",
         "libGLX_", "libEGL_",
+#endif
     };
-    std::string line;
     std::vector<std::string> found;
-    while (std::getline(maps, line)) {
+    for (const std::string& image : images) {
         for (const char* f : forbidden) {
-            if (line.find(f) != std::string::npos) {
-                found.push_back(line.substr(line.rfind(' ') + 1));
+            if (image.find(f) != std::string::npos) {
+                found.push_back(image);
             }
         }
     }

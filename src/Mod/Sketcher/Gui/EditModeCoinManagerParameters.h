@@ -197,6 +197,17 @@ public:
         return this->fieldIndex != obj.fieldIndex || this->layerId != obj.layerId;
     }
 
+    /** @brief strict weak ordering, by layerId and then by fieldIndex
+     *
+     * The ordered containers this class is used in reach it through the
+     * unspecialised std::less.
+     */
+    inline bool operator<(const MultiFieldId& obj) const
+    {
+        return (this->layerId != obj.layerId) ? (this->layerId < obj.layerId)
+                                              : (this->fieldIndex < obj.fieldIndex);
+    }
+
     int fieldIndex = -1;
     int layerId = 0;
 
@@ -205,21 +216,6 @@ public:
 
 
 }  // namespace SketcherGui
-
-namespace std
-{
-template<>
-struct less<SketcherGui::MultiFieldId>
-{
-    bool operator()(const SketcherGui::MultiFieldId& lhs,
-                    const SketcherGui::MultiFieldId& rhs) const
-    {
-        return (lhs.layerId != rhs.layerId)
-            ? (lhs.layerId < rhs.layerId)
-            : (static_cast<int>(lhs.fieldIndex) < static_cast<int>(rhs.fieldIndex));
-    }
-};
-}  // namespace std
 
 
 namespace SketcherGui

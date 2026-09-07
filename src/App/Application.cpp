@@ -1961,11 +1961,6 @@ static void freecadNewHandler ()
 }
 #endif
 
-#if defined(FC_OS_LINUX)
-#include <execinfo.h>
-#include <dlfcn.h>
-#include <cxxabi.h>
-#endif
 #if !defined(_MSC_VER)
 #include <unistd.h>
 #endif
@@ -1981,6 +1976,18 @@ static void freecadNewHandler ()
 #if HAVE_CONFIG_H
 #include <config.h>
 #endif // HAVE_CONFIG_H
+
+// Guarded by the same macro as the body of printBacktrace() rather
+// than by the OS, and placed after config.h because that is where
+// the macro comes from: the configure check
+// (cMake/ConfigureChecks.cmake) compiles a real backtrace() call,
+// and it succeeds on macOS too, where <execinfo.h> exists but the
+// FC_OS_LINUX guard this replaces never let the include through.
+#if defined(HAVE_BACKTRACE_SYMBOLS)
+#include <execinfo.h>
+#include <dlfcn.h>
+#include <cxxabi.h>
+#endif
 
 #include <Base/CrashLog.h>
 #if defined(_MSC_VER)

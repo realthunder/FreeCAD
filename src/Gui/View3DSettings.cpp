@@ -296,16 +296,33 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     }
     else if (strcmp(Reason,"RenderCache") == 0) {
         if (!ignoreRenderCache) {
-            // Through ViewParams rather than the raw key: the default
-            // is 3 there and every other reader goes through it, so a
-            // literal default here is a second answer to the same
-            // question -- and it was 0, which is not what a
-            // configuration without the key means. A profile that never
-            // wrote the key (the usual one, since
-            // RenderParams::selectRenderPath() only writes when the
-            // value is not already 3) then had the engine warmed up at
-            // startup and every 3D view told to use nothing.
-            int mode = int(ViewParams::getRenderCache());
+            // The raw key, with ViewParams' own default.
+            //
+            // NOT ViewParams::getRenderCache(): that returns a CACHED
+            // value which a second observer on this same parameter
+            // group keeps up to date (ViewParamsP::updateRenderCache),
+            // and nothing orders the two. Reached first, this handler
+            // read the value the parameter had BEFORE the change --
+            // so the toggle a scene uses to re-arm the backend behaved
+            // exactly backwards. Measured: setting RenderCache to 0
+            // LEFT the renderer alive (this read the stale 3) and
+            // setting it to 3 DESTROYED it (this read the stale 0),
+            // after which no further change came and the view had no
+            // backend for the rest of the session. That is what kept
+            // the golden render tests from running on any backend
+            // whose scene re-arms the cache.
+            //
+            // The default still comes from ViewParams, which is what
+            // the previous version of this line was written for: a
+            // literal here would be a second answer to the same
+            // question, and it was 0 -- not what a configuration
+            // without the key means. A profile that never wrote the key
+            // (the usual one, since RenderParams::selectRenderPath()
+            // only writes when the value is not already 3) then had the
+            // engine warmed up at startup and every 3D view told to use
+            // nothing.
+            int mode = int(rGrp.GetInt("RenderCache",
+                                       ViewParams::defaultRenderCache()));
             // The renderer backend is only used in render cache mode 3;
             // any other mode keeps the plain GL pipeline. Changes of the
             // renderer type itself are applied by

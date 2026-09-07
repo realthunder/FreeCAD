@@ -9,6 +9,10 @@ together with its companion forks.
 - **Windows 10 + MSVC 2022** — [Windows stack](#windows-stack-msvc-2022--conda).
   Same conda approach, but the debug/release CRT split forces every component to be
   a non-Debug configuration, and a dozen Windows-only source fixes are required.
+- **macOS 12 (Intel) + conda** -- [macOS stack](#macos-stack-intel-macos-12--conda).
+  Same conda approach again. Qt stops at 6.11.1 there, `xcrun` leaks
+  `/usr/local/include` onto the compiler's search path, and libc++ finds missing
+  includes that libstdc++ hid.
 
 ## Repositories
 
@@ -28,8 +32,10 @@ Qt6 / toolchain / mcp_console work.
 
 Paths above are the Linux box; the Windows box mirrors the same set of repos and
 branches under a different root — see [Layout](#layout-1) in the Windows section.
-A macOS box has never built this fork; the bring-up, written for a session
-starting from a blank machine, is `PlatformVerification.md` section 4.
+The macOS box builds the whole fork and is green as of 2026-09-07 (`ctest`
+478 of 478); the bring-up, written for a session starting from a blank
+machine, is `PlatformVerification.md` section 4, and what the tree itself
+needed is `SceneServerPort.md` 7.7.
 
 Fork-local patches, now committed on their `LinkVibe` branches (don't discard):
 - `pivy/interfaces/CMakeLists.txt` — `INSTALL_RPATH` extended with `${CMAKE_INSTALL_RPATH}`
@@ -37,6 +43,19 @@ Fork-local patches, now committed on their `LinkVibe` branches (don't discard):
   (pivy commit on `rt-0.6.10`; also shipped as a pivy-feedstock patch).
 - `occt/src/StdPrs/StdPrs_BRepFont.cxx` — `auto` for `FT_Outline::tags` (type changed
   from `char*` to `unsigned char*` in newer freetype).
+- `occt` `NCollection_IncAllocator.cxx` and `Aspect_VKeySet.cxx` -- `#include <mutex>`
+  for `std::lock_guard`. Only libc++ needs it, so only macOS found it; harmless and
+  correct everywhere (`LinkVibe-801`).
+- `OndselSolver` `PiecewiseFunction.cpp`, `Polynomial.cpp`, `Sum.cpp` -- `#include
+  <iterator>` for `std::back_inserter`, the same libc++ gap. The submodule now points
+  at `realthunder/OndselSolver` branch `LinkVibe` (the fork was made for this), with
+  the fix rebased onto upstream `main` at 458510d. Upstream still has it wrong in
+  three of the four files that call `back_inserter`; only `Product.cpp` includes
+  `<iterator>`, and by accident rather than by fix.
+- `bgfx` `renderer_mtl.cpp` -- do not build the screenshot blit pipeline when there
+  is no swap chain (`realthunder/bgfx` `master`). Headless Metal otherwise aborts
+  inside `bgfx::init()`, which is any offscreen Metal user's problem and not
+  specific to this tree.
 
 ## Primary stack: conda (Qt 6.10 + PySide6)
 
@@ -2092,6 +2111,221 @@ RelWithDebInfo. Neither has been tried here yet.
 `AutoSaveEnabled`, with FreeCAD closed). A session that is killed or closed with an
 open document leaves recovery data behind, and the *next* launch puts a modal Document
 Recovery dialog over the window — which is exactly what you were trying to look at.
+
+## macOS stack (Intel, macOS 12 + conda)
+
+Brought up 2026-09-06 to answer stage 5 of `SceneServerPort.md`, on macOS
+12.7.6 (Monterey) on Intel. `PlatformVerification.md` section 4 is the brief that
+was written for that session, from a blank machine; this section is what the box
+actually turned out to need, and where the two disagree this one is what was built.
+
+Same shape as the Linux conda stack: forks built against a conda-forge Qt6, one
+ABI in the process, our components RelWithDebInfo. The differences are below.
+
+### Prerequisites
+
+- **Xcode**, for the SDK and `ld` only -- the compiler is conda's clang. This box
+  has Xcode 12.5 with **SDK 11.3**, and that is enough: conda supplies clang 23.1.0
+  *and its own libc++*, so the SDK's ancient libc++ never enters the build. C++20,
+  Boost.Beast, a dual-stack `v6_only(false)` socket and Qt6 were all verified
+  against it. Do not update Xcode on speculation; if bgfx's Objective-C++ Metal
+  backend ever needs a newer SDK, macOS 12.7 can take Xcode 14.2 (SDK 13.1).
+- **Miniforge** at `~/miniforge3`, installed with `-b` so it does not touch the
+  shell -- as on Linux, it is deliberately not activated in `.bash_profile`.
+  Not Miniconda: same channel reason as the Windows section. If a Miniconda is
+  already installed, remove it (`conda init --reverse bash`, then delete the
+  tree) and drop `defaults` from `~/.condarc`, or its Anaconda-hosted channel
+  gets into every solve.
+
+### The env
+
+The Linux create line with `clang_osx-64 clangxx_osx-64` in place of the gcc
+packages, and the X11/GL packages dropped (macOS has neither; Qt uses Cocoa,
+bgfx uses Metal). On Apple silicon use `clang_osx-arm64 clangxx_osx-arm64`.
+
+```sh
+~/miniforge3/bin/mamba create -y -p ~/works/sw/fcad/.conda/freecad \
+  clang_osx-64 clangxx_osx-64 cmake ninja make swig pkg-config \
+  qt6-main=6.11.1 pyside6=6.11.1 \
+  python=3.12 libboost-devel eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype \
+  expat fmt pybind11 numpy matplotlib-base lark
+printf 'qt6-main ==6.11.1\npyside6 ==6.11.1\npython ==3.12.*\n' \
+  > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
+cd ~/works/sw/fcad/.conda/freecad
+ln -sfn share/PySide6/typesystems typesystems
+ln -sfn share/PySide6/glue glue
+~/miniforge3/bin/conda install -p ~/works/sw/fcad/.conda/freecad -c realthunder libarea
+```
+
+*** **Qt is 6.11.1 here, not the 6.11.2 the Linux stack pins.** conda-forge's
+`qt6-main=6.11.2` for osx-64 depends on `moltenvk >=1.4.2`, which requires
+`__osx >=14.0`; on macOS 12 the solve fails outright. 6.11.1 is the newest pair
+that resolves. The Linux pin exists to track the stack conda-forge builds smesh
+and vtk against, and that reason does not apply here -- FEM is off on macOS
+(`BUILD_FEM=OFF`, `FREECAD_USE_EXTERNAL_SMESH=OFF`), as are `FREECAD_USE_PCL`
+and `BUILD_WEB`. A box on macOS 14+ can use 6.11.2 and should.
+
+`libarea` has an osx-64 build (0.3.1, `__osx >=11.0`), so `BUILD_AREA` stays on.
+
+### `run.sh`, and the xcrun `CPATH` trap
+
+`run.sh` is the Linux one plus one line, and that line is not optional:
+
+```sh
+unset CPATH CPLUS_INCLUDE_PATH C_INCLUDE_PATH OBJC_INCLUDE_PATH LIBRARY_PATH
+```
+
+**`xcrun` exports `CPATH=/usr/local/include` and `LIBRARY_PATH=/usr/local/lib`,
+and `/usr/bin/python3` is an xcrun shim** -- so is anything else that goes
+through `xcrun`. A build launched from one inherits both. `CPATH` is searched
+*as if `-I`*, which puts it ahead of every `-isystem` path, and `-isystem` is
+exactly how CMake hands over Qt6 and Boost. On a box with Homebrew in
+`/usr/local` the results are:
+
+- Homebrew **Qt 5.15.2** shadows conda's Qt 6.11.1. This one is loud: moc files
+  generated by Qt6's moc meet Qt5 headers and the compile dies with "Qt major
+  version not 6 or 7".
+- Homebrew **Boost 1.78** shadows conda's Boost 1.92. This one is silent. It
+  builds clean and links against conda's libraries, and the mismatch only shows
+  up at runtime. It reached 392 Coin translation units and 44 FreeCAD ones
+  before it was noticed.
+
+OCCT is immune because it takes its dependencies through explicit `-I`, which
+outranks `CPATH`. To audit a tree after the fact, ask ninja rather than looking
+for `.d` files (it folds them into a binary database):
+
+```sh
+~/works/sw/fcad/.conda/run.sh ninja -C <build dir> -t deps | grep -c /usr/local/include
+```
+
+Zero is the only acceptable answer. Anything else means the objects were built
+against the wrong headers and the tree needs deleting, not rebuilding.
+
+### OCCT and Coin
+
+The Linux recipes with `RelWithDebInfo` and `@loader_path` where Linux has
+`$ORIGIN` (OCCT installs its libraries with no rpath otherwise, and rpath is not
+transitive). **Coin must install out of tree**: the filesystem is
+case-insensitive by default and the Coin source tree has a file named `INSTALL`,
+so `<coin repo>/install` collides. OCCT has no such collision and installs in
+tree as on Linux.
+
+```sh
+RUN=~/works/sw/fcad/.conda/run.sh
+$RUN cmake -S ~/works/sw/occt -B ~/works/sw/occt/build_conda_rwdi_801 -G Ninja \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DINSTALL_DIR=$HOME/works/sw/occt/install/conda-relwithdebinfo-801 \
+  -DCMAKE_INSTALL_RPATH='@loader_path' \
+  -DBUILD_LIBRARY_TYPE=Shared -DBUILD_MODULE_Draw=OFF \
+  -DUSE_TBB=OFF -DUSE_VTK=OFF -DUSE_DRACO=OFF \
+  -DUSE_FREETYPE=ON -DUSE_FREEIMAGE=ON -DUSE_RAPIDJSON=ON \
+  -DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF
+
+$RUN cmake -S ~/works/sw/coin -B ~/works/sw/coin/build_conda_rwdi -G Ninja \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_INSTALL_PREFIX=$HOME/works/sw/install/coin-mac-relwithdebinfo \
+  -DUSE_EXTERNAL_EXPAT=ON -DSIMAGE_RUNTIME_LINKING=ON \
+  -DCOIN_BUILD_TESTS=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
+```
+
+Both built with no configure work beyond the above. The fork installs
+**`libCoinRT.dylib`**, not `libCoin.dylib` -- the preset below must name the
+real file.
+
+### FreeCAD
+
+A local preset in the gitignored `CMakeUserPresets.json`, inheriting the repo's
+`conda-macos-release`. It overrides `cmakeExecutable` because that preset points
+at `conda/cmake.sh`, which runs `mamba run -n freecad cmake` -- a *named* env,
+which this stack is not. `OCCT_CMAKE_FALLBACK=OFF` is the Windows lesson: our
+OCCT ships `OpenCASCADEConfig.cmake`, and the fallback's hand-rolled search does
+not know local layouts. The three `CMAKE_CXX_FLAGS` entries are the feedstock's
+Darwin branch (`_LIBCPP_DISABLE_AVAILABILITY`, `BOOST_NO_CXX98_FUNCTION_BASE`,
+`-Wno-enum-constexpr-conversion`).
+
+```json
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "mac-relwithdebinfo-801",
+      "inherits": "conda-macos-release",
+      "cmakeExecutable": "${sourceDir}/.conda/freecad/bin/cmake",
+      "binaryDir": "${sourceDir}/build/mac-relwithdebinfo-801",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "FREECAD_QT_VERSION": "6",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5",
+        "CMAKE_CXX_FLAGS": "-D_LIBCPP_DISABLE_AVAILABILITY -DBOOST_NO_CXX98_FUNCTION_BASE -Wno-enum-constexpr-conversion",
+        "CMAKE_PREFIX_PATH": "$env{HOME}/works/sw/occt/install/conda-relwithdebinfo-801;$env{HOME}/works/sw/install/coin-mac-relwithdebinfo;${sourceDir}/.conda/freecad",
+        "CMAKE_LIBRARY_PATH": "$env{HOME}/works/sw/occt/install/conda-relwithdebinfo-801/lib;${sourceDir}/.conda/freecad/lib",
+        "OCC_INCLUDE_DIR": "$env{HOME}/works/sw/occt/install/conda-relwithdebinfo-801/include/opencascade",
+        "OCCT_CMAKE_FALLBACK": "OFF",
+        "Coin_DIR": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/lib/cmake/Coin-4.0.6",
+        "COIN3D_INCLUDE_DIRS": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/include",
+        "COIN3D_LIBRARIES": "$env{HOME}/works/sw/install/coin-mac-relwithdebinfo/lib/libCoinRT.dylib",
+        "CMAKE_DISABLE_FIND_PACKAGE_Spnav": "TRUE",
+        "FREECAD_USE_3DCONNEXION": "OFF",
+        "BUILD_BGFX": "ON",
+        "BUILD_FEM": "OFF",
+        "FREECAD_USE_EXTERNAL_SMESH": "OFF",
+        "BUILD_WEB": "OFF",
+        "FREECAD_USE_PCL": "OFF",
+        "ENABLE_DEVELOPER_TESTS": "ON"
+      }
+    }
+  ]
+}
+```
+
+Configure found everything first time: OCC 8.0.1, Coin3D 4.0.6, Qt/PySide6
+6.11.1, Boost 1.92, Python 3.12.14. `Looking for GL/gl.h - not found` is
+expected and harmless -- macOS spells it `OpenGL/gl.h`.
+
+### What macOS needed in source, and what it did not
+
+Four fixes, all committed, and three of them one defect wearing three hats:
+**libc++ does not include transitively where libstdc++ does**, so headers the
+Linux build never had to name are missing. That class of bug cannot be found on
+Linux at all.
+
+| Fix | What |
+|---|---|
+| `occt` `NCollection_IncAllocator.cxx`, `Aspect_VKeySet.cxx` | `<mutex>` for `std::lock_guard`; the headers include `<shared_mutex>`, which declares `shared_mutex` and `shared_lock` but not `lock_guard` |
+| `imgui-node-editor` `crude_json.cpp` | `<exception>` for `std::terminate` |
+| `src/Gui/Renderer/BGFXRendererP.h` | the `BX_PLATFORM_OSX` branch called `get_nswindow_from_nsview()`, **defined nowhere** -- it had never been compiled. bgfx's Metal backend sorts out NSView/NSWindow/CAMetalLayer itself, and Qt's `winId()` is an NSView*, so it is passed straight through |
+| `src/Gui/Renderer/CMakeLists.txt` | link `vg-renderer` before `example-common`: both vendor fontstash, and Apple's `ld` errors on the 32 duplicate symbols where GNU ld silently takes the first |
+
+The OCCT patch joins the fork-local list at the top of this document.
+
+A fifth arrived on 2026-09-07, from running the GUI rather than from building
+it: `src/Gui/MacSymbolIconCompat.mm`. Qt 6.7 and later draw
+`QStyle::standardIcon()` on a Mac as an SF Symbol, and the engine applies
+`+[NSImageSymbolConfiguration configurationPreferringMonochrome]` -- macOS 13
+API -- with no availability guard, so on macOS 12 every paint of a toolbar's
+overflow button threw an Objective-C exception. The file adds the method at
+image load when the OS lacks it. Symptom and verification: `Testing.md`,
+"Toolbar paints threw on macOS 12".
+
+**What did not need touching**: the Beast/Asio transport, exactly as predicted.
+macOS is a BSD socket platform, `v6_only(false)` is honoured and `::1` is
+present, and `SceneServerWire_tests_run` passes 17 of 17 with `listensOnIPv6Too`
+running rather than skipping. See `SceneServerPort.md` section 7.5.
+
+### Build
+
+Everything at `-j 4` on this box (4 cores, 8 GB; heavier parallelism swaps).
+
+```sh
+RUN=~/works/sw/fcad/.conda/run.sh
+$RUN cmake --preset mac-relwithdebinfo-801
+$RUN cmake --build build/mac-relwithdebinfo-801 -j 4 \
+    --target SceneServerWire_tests_run PublishOnly_tests_run
+```
+
+Use `-- -k 0` on a first build after a change of toolchain: ninja then collects
+every error in one pass instead of stopping at the first, which on a
+2500-target dependency is the difference between one cycle and ten.
 
 ## Regenerating the bundled material icons
 

@@ -116,6 +116,24 @@ typedef Gui::CoinPtr<SoFCVertexCache> VertexCachePtr;
 
 #define PRIVATE(obj) ((obj)->pimpl)
 
+/** Signatures for the entry points resolved through Coin's glue.
+ *
+ * Apple ships the PFNGL* names only in the Core-profile <OpenGL/gl3.h>,
+ * which cannot be included beside the compatibility <OpenGL/gl.h> that
+ * Coin's glue pulls in -- its own <OpenGL/glext.h> spells the same thing
+ * glBlendColorEXTProcPtr. cc_glglue_getprocaddress() hands back an
+ * untyped pointer either way, so name the signatures here rather than
+ * depend on which GL header a platform happens to carry.
+ */
+#if defined(__APPLE__)
+typedef void (*FCGLBlendColorProc)(GLfloat, GLfloat, GLfloat, GLfloat);
+typedef void (*FCGLActiveTextureProc)(GLenum);
+#else
+typedef PFNGLBLENDCOLORPROC FCGLBlendColorProc;
+typedef PFNGLACTIVETEXTUREPROC FCGLActiveTextureProc;
+#endif
+
+
 #define FC_GLERROR_CHECK _check_glerror(__LINE__)
   
 static inline void
@@ -147,7 +165,7 @@ _check_glerror(int line) {
  * every driver as broken.
  */
 static bool
-_constantAlphaBlendWorks(const cc_glglue * glue, PFNGLBLENDCOLORPROC blendColor)
+_constantAlphaBlendWorks(const cc_glglue * glue, FCGLBlendColorProc blendColor)
 {
   if (!glue || !blendColor || !cc_glglue_has_framebuffer_objects(glue))
     return true;
@@ -857,10 +875,10 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
     if (hasBlendColor && next.pervertexcolor
         && overrideflags.test(Material::FLAG_TRANSPARENCY)) {
 #ifdef FC_OS_WIN32
-      static PFNGLBLENDCOLORPROC glBlendColor;
+      static FCGLBlendColorProc glBlendColor;
       if (hasBlendColor && !glBlendColor) {
         const cc_glglue * glue = cc_glglue_instance(action->getCacheContext());
-        glBlendColor = (PFNGLBLENDCOLORPROC)cc_glglue_getprocaddress(glue, "glBlendColor");
+        glBlendColor = (FCGLBlendColorProc)cc_glglue_getprocaddress(glue, "glBlendColor");
         hasBlendColor = (glBlendColor != nullptr);
       }
 #endif
@@ -2334,10 +2352,10 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
   if (hatch) {
     pauseShadowRender(action->getState(), true);
 #ifdef FC_OS_WIN32
-    static PFNGLACTIVETEXTUREPROC glActiveTexture;
+    static FCGLActiveTextureProc glActiveTexture;
     if (!glActiveTexture) {
       const cc_glglue * glue = cc_glglue_instance(action->getCacheContext());
-      glActiveTexture = (PFNGLACTIVETEXTUREPROC)cc_glglue_getprocaddress(glue, "glActiveTexture");
+      glActiveTexture = (FCGLActiveTextureProc)cc_glglue_getprocaddress(glue, "glActiveTexture");
     }
     if(glActiveTexture)
 #endif

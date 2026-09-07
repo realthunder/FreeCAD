@@ -62,6 +62,7 @@ GuiExport std::uint64_t cacheSerialOfNode(const void *node);
 }
 
 class SoFCVertexCache;
+class SoFCRenderCache;
 class SoFCRenderCacheP;
 class SoState;
 class SoTexture;
@@ -73,6 +74,25 @@ class SoDepthBuffer;
 class SbBox3f;
 class SoClipPlane;
 class SoMFColor;
+
+/// Coin declares intrusive_ptr_add_ref/release for SoBase* only, so a
+/// CoinPtr<T> reaches them through a derived-to-base conversion -- which
+/// needs T complete. Both types are still incomplete where the entries
+/// further down construct their CoinPtr members inline: SoFCVertexCache
+/// because SoFCVertexCache.h includes this header before defining it,
+/// SoFCRenderCache because the use is inside its own definition. GCC
+/// defers those member instantiations to the end of the translation
+/// unit, by which point both are complete; clang does them right there,
+/// and every TU that includes this header fails to compile.
+///
+/// Declaring the exact match early settles the overload without needing
+/// the definition. The definitions are the inline ones that already sit
+/// below each class -- at the foot of this header, and at the foot of
+/// SoFCVertexCache.h.
+void intrusive_ptr_add_ref(SoFCVertexCache * obj);
+void intrusive_ptr_release(SoFCVertexCache * obj);
+void intrusive_ptr_add_ref(SoFCRenderCache * obj);
+void intrusive_ptr_release(SoFCRenderCache * obj);
 
 class GuiExport SoFCRenderCache : public SoCache {
   typedef SoCache inherited;

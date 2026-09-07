@@ -26,6 +26,7 @@ pixels to a capture and the counter changes every frame), autosave (it
 fires mid-capture), and any effect with stateful or temporal content.
 """
 import os
+import sys
 import traceback
 
 import FreeCAD
@@ -67,7 +68,16 @@ try:
         .SetInt("AutoSaveTimeout", 0)
 
     render = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render")
-    render.SetString("Type", "bgfx - OpenGL")
+    # The backend to gate. Not hardcoded to OpenGL any more: macOS caps
+    # the compatibility profile Coin needs at GL 2.1 and this renderer's
+    # shaders need 3.1, so there IS no GL leg there -- Metal is the only
+    # backend the golden set can be taken on. FC_RENDER_BACKEND names
+    # one explicitly; otherwise the platform's own is the default.
+    backend = os.environ.get("FC_RENDER_BACKEND")
+    if not backend:
+        backend = "bgfx - Metal" if sys.platform == "darwin" \
+            else "bgfx - OpenGL"
+    render.SetString("Type", backend)
     render.SetFloat("LightIntensity", 0.55)
     render.SetBool("PBR", True)
     # The environment is what actually fills the background here: the PBR
