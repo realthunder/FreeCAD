@@ -27,12 +27,18 @@ set(MeshPart_LIBS
     Mesh
 )
 
+# BUILD_SMESH first, in both branches: it is what builds the bundled
+# SMESH and what gates HAVE_SMESH above, so without it Mesher.cpp
+# compiles to nothing that needs these and nothing has produced them.
+# Keying the NETGEN branch on BUILD_FEM_NETGEN alone asked for
+# libStdMeshers on any build with FEM off and NETGEN left on -- the
+# macOS preset, where the link failed with "library not found".
 if (FREECAD_USE_EXTERNAL_SMESH)
    list(APPEND MeshPart_LIBS ${EXTERNAL_SMESH_LIBS})
-else()
+elseif (BUILD_SMESH)
    if (BUILD_FEM_NETGEN)
        list(APPEND MeshPart_LIBS StdMeshers NETGENPlugin SMESH SMDS)
-   elseif (BUILD_SMESH)
+   else()
        list(APPEND MeshPart_LIBS StdMeshers SMESH SMDS)
    endif()
 endif()

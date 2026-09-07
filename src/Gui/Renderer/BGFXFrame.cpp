@@ -3048,6 +3048,26 @@ bool BGFXRenderer::Private::render(const QColor &col,
             idReadbackWanted = true;
     }
 
+    // A frame capture wants two passes of its own: the depth encode
+    // and the blit-only copy view. Decided here, where the pass table
+    // is built, while whether the capture is HELD (a user shader still
+    // compiling, the host still feeding shapes) is only known at the
+    // end of the frame -- so the passes are declared and then simply
+    // not submitted into if the hold turns out to apply. A declared
+    // pass nobody draws into costs a view-state assignment.
+    //
+    // One readback in flight at a time, as with the audit: a second
+    // would overwrite the buffers the first is still being written
+    // into.
+#ifdef FC_RENDERER_STANDALONE
+    const bool captureWanted = false;
+#else
+    static const bool debugReadback =
+        getenv("FC_BGFX_DEBUG_READBACK") != nullptr;
+    const bool captureWanted = (dumpPending || debugReadback)
+        && !captureReadyFrame && view->ensureCaptureTargets();
+#endif
+
     // Ground reflection: mirror the world about the shadow ground
     // plane (z = scene bbox bottom, the plane the ground quad sits
     // on) and re-render the opaque scene with the original camera —
@@ -3680,6 +3700,29 @@ bool BGFXRenderer::Private::render(const QColor &col,
             bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
         configTail(i, id);
     };
+    auto configCaptureDepth = [&](int, uint16_t id) {
+        // The depth encode writes a full-viewport colour target of its
+        // own; nothing samples it but the blit that follows, so no
+        // clear is needed -- the fullscreen triangle covers every
+        // texel.
+        bgfx::setViewFrameBuffer(id, view->captureDepthFbo);
+        bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                           clearColor, 1.0f, 0);
+        bgfx::setViewRect(id, 0, 0, width, height);
+        bgfx::setViewTransform(id, nullptr, nullptr);
+        bgfx::setViewMode(id, bgfx::ViewMode::Default);
+    };
+    auto configCapture = [&](int, uint16_t id) {
+        // Blit-only, exactly like configIdReadback: no framebuffer,
+        // nothing drawn. It is last so the copies see the finished
+        // frame.
+        bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
+        bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                           clearColor, 1.0f, 0);
+        bgfx::setViewRect(id, 0, 0, width, height);
+        bgfx::setViewTransform(id, nullptr, nullptr);
+        bgfx::touch(id);
+    };
     auto configIdReadback = [&](int, uint16_t id) {
         // Blit-only view: no framebuffer of its own, nothing drawn
         // into it. It exists to place the copy after the pass it
@@ -3968,6 +4011,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     declPass(V::ViewDebugScene, debugSceneRender || idPassRender,
              configDebugScene);
     declPass(V::ViewIdReadback, idReadbackWanted, configIdReadback);
+    declPass(V::ViewCaptureDepth, captureWanted, configCaptureDepth);
+    declPass(V::ViewCapture, captureWanted, configCapture);
     // Shared by the measurement and the culling that acts on it: both
     // rasterize boxes against the finished opaque depth, and it is the
     // view id that places them there. The software oracle rasterizes no
@@ -6315,6 +6360,58 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (view->outputTransform != Render::OutputConfig::None
             && bgfx::isValid(view->presentFbo))
         view->present();
+    // The capture rides on ViewCapture, the last view id, so it has to
+    // be QUEUED before the frame boundary that executes it -- the
+    // opposite of the GL composite below, which reads a framebuffer
+    // bgfx has already filled. Everything the frame draws is submitted
+    // by now, present included, so what gets copied is the finished
+    // image.
+    //
+    // The completeness verdict is needed here rather than after the
+    // boundary because the hold decides whether to copy at all; its
+    // inputs are all settled by submission, and the assignments that
+    // publish it stay where they were.
+    const bool frameWasComplete = !_BGFXLib.userProgramStoodIn
+        && !hostHold && !frameOwes;
+    const bool holdDump = dumpPending && !frameWasComplete
+        && pendingDump.waitComplete;
+    if (captureWanted && !holdDump) {
+        // Encode the scene depth into a colour target this pass owns,
+        // then ask for both it and the finished colour back. Depth is
+        // what no backend blits, and geometryPixels is measured from
+        // it, so this pass is the whole reason a capture is portable.
+        bgfx::setTexture(0, view->s_texSceneDepth, view->bgfxDepth);
+        view->fullscreen(BGFXView::ViewCaptureDepth, view->m_progDepthEnc,
+                         BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        // Sized off the staging texture's own format, which
+        // ensureCaptureTargets picked to match the blit source -- the
+        // RGBA8 present output when a colour transform is on, the
+        // scene colour otherwise.
+        captureHdr = view->captureColorFormat
+            == bgfx::TextureFormat::RGBA16F;
+        captureColor.assign(size_t(view->width) * view->height
+                            * (captureHdr ? 8 : 4), 0);
+        captureDepth.assign(size_t(view->width) * view->height * 4, 0);
+        capturePixW = view->width;
+        capturePixH = view->height;
+        captureIsDump = dumpPending;
+        captureRequest = pendingDump;
+        captureReadyFrame = view->readbackCapture(captureColor.data(),
+                                                  captureDepth.data());
+        if (!captureReadyFrame) {
+            captureColor.clear();
+            captureDepth.clear();
+            captureIsDump = false;
+        }
+        // dumpPending deliberately STAYS set until the readback
+        // lands. It is what frameDumpPending() reports and what
+        // pumpFrameDump loops on, and the request is not served until
+        // the pixels are actually here -- clearing it at the queue
+        // would hand the caller the PREVIOUS capture's statistics,
+        // which is a wrong answer rather than a slow one. A second
+        // request cannot start a second readback meanwhile:
+        // captureWanted requires captureReadyFrame to be clear.
+    }
     // The finished frame belongs in whatever framebuffer the caller had
     // bound when it asked for it: the widget's own for an on-screen
     // frame, a capture target for a screenshot (renderOffscreen).
@@ -6358,36 +6455,128 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // Renderer::frameComplete reports and what the counters below
     // let a waiter wait for. Two flags and two increments; nothing
     // here waits.
-    const bool complete = !_BGFXLib.userProgramStoodIn && !hostHold
-        && !frameOwes;
+    // Both were decided before the frame boundary, where the capture
+    // had to read them (the copy is queued, not read back, so it
+    // cannot wait until here).
     hostHold = false;
-    lastFrameComplete = complete;
+    lastFrameComplete = frameWasComplete;
     ++renderedFrameCount;
-    if (complete)
+    if (frameWasComplete)
         ++completeFrameCount;
-    const bool holdDump = dumpPending && !complete
-        && pendingDump.waitComplete;
     dumpHeld = holdDump;
-    view->blit(dumpPending && !holdDump ? &pendingDump : nullptr,
-               &lastStats,
+    // The composite only. The frame readback that used to live inside
+    // this call is now the portable capture queued above -- which is
+    // what lets a golden render test gate a backend that has no GL
+    // framebuffer to read.
+    view->blit(&lastStats,
                subCtx.active ? subCtx.x : 0,
                subCtx.active ? subCtx.y : 0,
                subCtx.active
                    ? int(widget->height() * widget->devicePixelRatioF() + 0.5)
                    : 0);
     cpuMark(CpuBlit);
-    if (dumpPending && !holdDump) {
-        dumpHeld = false;
-        if (!pendingDump.overlays) {
-            // That frame went to the screen as well as to the capture,
-            // and it is missing the chrome the capture asked to leave
-            // out. It would stay on screen until something else
-            // happened to dirty the scene, so redraw it whole.
-            sceneDirty = true;
-        }
-        dumpPending = false;
-    }
 #endif
+
+    // The capture lands a frame or two after the copy was queued, the
+    // same arrangement and for the same reason as the cull audit
+    // below: bgfx says which frame will have filled the buffers, and
+    // they must not be touched before it. pumpFrameDump is a loop over
+    // frames, so the wait costs the caller nothing but the frames it
+    // was already driving.
+    if (captureReadyFrame && frameNum >= captureReadyFrame) {
+        const size_t n = size_t(capturePixW) * capturePixH;
+        // Decode to the tight RGBA8, top-down image writeDumpImage and
+        // the stats both want. Two things vary by backend and this is
+        // where both are answered: the colour may be RGBA16F (linear
+        // light, while colour managed) and the origin may be bottom
+        // left. The old path hard-coded "glReadPixels rows are
+        // bottom-up", which is true of GL and of nothing else.
+        const bool flip = bgfx::getCaps()->originBottomLeft;
+        std::vector<unsigned char> rgba(n * 4);
+        for (uint16_t y = 0; y < capturePixH; ++y) {
+            const size_t sy = flip ? size_t(capturePixH - 1 - y) : y;
+            unsigned char *dst = &rgba[size_t(y) * capturePixW * 4];
+            if (captureHdr) {
+                const uint16_t *src = reinterpret_cast<const uint16_t *>(
+                        captureColor.data()) + sy * capturePixW * 4;
+                for (uint16_t x = 0; x < capturePixW; ++x)
+                    for (int c = 0; c < 4; ++c) {
+                        const float v = bx::halfToFloat(src[x * 4 + c]);
+                        dst[x * 4 + c] = (unsigned char)
+                            std::lround(std::min(std::max(v, 0.0f), 1.0f)
+                                        * 255.0f);
+                    }
+            }
+            else {
+                std::memcpy(dst,
+                            captureColor.data() + sy * capturePixW * 4,
+                            size_t(capturePixW) * 4);
+            }
+        }
+        // geometryPixels against the same 0.999 threshold the GL
+        // readback used, so the number means what it always meant --
+        // and now means it on every backend, which is the point of
+        // encoding depth into a colour target at all.
+        const float *depth = reinterpret_cast<const float *>(
+                captureDepth.data());
+        long ng = 0, r = 0, g = 0, b = 0;
+        for (uint16_t y = 0; y < capturePixH; ++y) {
+            const size_t sy = flip ? size_t(capturePixH - 1 - y) : y;
+            const float *drow = depth + sy * capturePixW;
+            const unsigned char *crow = &rgba[size_t(y) * capturePixW * 4];
+            for (uint16_t x = 0; x < capturePixW; ++x) {
+                if (drow[x] < 0.999f) {
+                    ++ng;
+                    r += crow[x * 4];
+                    g += crow[x * 4 + 1];
+                    b += crow[x * 4 + 2];
+                }
+            }
+        }
+        lastStats.width = capturePixW;
+        lastStats.height = capturePixH;
+        lastStats.temporalSamples = view->accumFrames;
+        lastStats.geometryPixels = ng;
+        lastStats.avgColor[0] = ng ? float(r) / float(ng) : -1.0f;
+        lastStats.avgColor[1] = ng ? float(g) / float(ng) : -1.0f;
+        lastStats.avgColor[2] = ng ? float(b) / float(ng) : -1.0f;
+        lastStats.valid = true;
+        static const char *const envDump =
+            getenv("FC_BGFX_DEBUG_DUMP_FRAME");
+        if (getenv("FC_BGFX_DEBUG_READBACK")) {
+            fprintf(stderr,
+                    "bgfx capture %dx%d: %ld geometry pixels,"
+                    " avg color %ld,%ld,%ld\n",
+                    int(capturePixW), int(capturePixH), ng,
+                    ng ? r/ng : -1, ng ? g/ng : -1, ng ? b/ng : -1);
+            if (envDump && *envDump)
+                BGFXView::writeDumpImage(envDump, rgba.data(),
+                                         capturePixW, capturePixH);
+        }
+        if (captureIsDump && !captureRequest.path.empty()
+                && !BGFXView::writeDumpImage(captureRequest.path,
+                                             rgba.data(),
+                                             capturePixW, capturePixH))
+            fprintf(stderr, "bgfx: frame dump write failed: %s\n",
+                    captureRequest.path.c_str());
+        captureReadyFrame = 0;
+        dumpHeld = false;
+        if (captureIsDump) {
+            // Served: the pixels are here and lastStats describes them,
+            // so this is where the request the caller is pumping on
+            // ends.
+            dumpPending = false;
+            if (!captureRequest.overlays) {
+                // That frame went to the screen as well as to the
+                // capture, and it is missing the chrome the capture
+                // asked to leave out. It would stay on screen until
+                // something else happened to dirty the scene, so
+                // redraw it whole.
+                sceneDirty = true;
+            }
+        }
+        captureIsDump = false;
+    }
 
     // The cull audit's id image lands a frame or two after the copy
     // was queued — bgfx says which frame, and the buffer must not be

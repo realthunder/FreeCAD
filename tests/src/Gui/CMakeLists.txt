@@ -170,10 +170,10 @@ if(TARGET FreeCADRenderer)
     # reasoning as above, and then some: the whole claim of the mode is
     # that the process needs no GPU and no display, which only a test
     # that links nothing graphical can make.
-    # UNIX only: it speaks to the server over BSD sockets and reads
-    # /proc/self/maps to prove no driver got mapped, neither of which
-    # Windows has -- porting it needs Winsock and another way to
-    # enumerate the loaded modules.
+    # UNIX only: it speaks to the server over BSD sockets, and proves no
+    # driver got mapped by enumerating the loaded images -- through
+    # /proc/self/maps on Linux and dyld on macOS. Windows has neither;
+    # porting it needs Winsock and EnumProcessModules.
     if(UNIX)
         add_executable(PublishOnly_tests_run
                        ${CMAKE_CURRENT_SOURCE_DIR}/PublishOnly.cpp)

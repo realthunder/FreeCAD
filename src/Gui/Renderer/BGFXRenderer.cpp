@@ -1287,6 +1287,15 @@ const std::string &BGFXRenderer::type() const
     return pimpl->typeName;
 }
 
+std::string BGFXRenderer::deviceName() const
+{
+    // Resolved once at bgfx::init and process-wide, so it is the
+    // library's rather than this renderer's -- and it is empty until a
+    // device exists, which is the honest answer for a publish-only
+    // renderer that never creates one.
+    return _BGFXLib.deviceName;
+}
+
 #ifdef FC_RENDERER_STANDALONE
 void BGFXRenderer::setWindowHandle(void *handle)
 {

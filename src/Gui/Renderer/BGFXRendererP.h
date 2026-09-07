@@ -1734,6 +1734,24 @@ assembleMediumVariant(const char *body,
 class BGFXRendererLibP {
 public:
     BGFXRendererLibP() {
+#if defined(FC_OS_MACOSX) && !defined(FC_RENDERER_STANDALONE)
+        // Metal is the only backend that can run this renderer on
+        // macOS: Apple caps the compatibility profile Coin needs at
+        // GL 2.1, the stock shader pack is GLSL 1.40 (GL 3.1), and the
+        // two cannot be reconciled in one shared context -- a 4.1 core
+        // context has no fixed-function pipeline for Coin, and macOS
+        // will not share across profiles.
+        //
+        // Opt-in until the desktop composite follows: BGFXView::blit
+        // stands aside on Metal (its GL framebuffer cannot wrap an
+        // id<MTLTexture>), so a Metal session renders and captures but
+        // does not yet put its frame on screen -- Coin draws that.
+        // Offering it in the backend list would read as a broken
+        // renderer rather than an unfinished one. Frame CAPTURE is
+        // portable now, which is what the golden render tests gate on.
+        if (getenv("FC_BGFX_METAL"))
+            typeMap["bgfx - Metal"] = RendererType::Metal;
+#endif
         for (auto &v : typeMap)
             types.push_back(v.first);
     }
@@ -1793,6 +1811,7 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            resolveDeviceName();
         }
         return true;
     }
@@ -1914,11 +1933,11 @@ public:
                 // d->offscreenWindow->setFormat(d->requestedFormat);
                 window->setGeometry(0, 0, widget->width(), widget->height());
                 window->create();
-#if BX_PLATFORM_OSX
-                init.platformData.nwh = get_nswindow_from_nsview(reinterpret_cast<void*>(window->winId()));
-#else
+                // winId() is an NSView* on macOS, an HWND on Windows and an X11
+                // Window elsewhere. bgfx takes all three: its Metal backend does its
+                // own isKindOfClass: dispatch over NSView/NSWindow/CAMetalLayer
+                // (renderer_mtl.cpp), so no Objective-C++ unwrapping is needed here.
                 init.platformData.nwh = reinterpret_cast<void*>(window->winId());
-#endif
             }
             // bgfx treats an all-null PlatformData as a request for a headless device, and
             // then rejects a non-zero resolution ("resolution of non-existing backbuffer
@@ -1943,6 +1962,7 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            resolveDeviceName();
             msDevice = _warmClock.nsecsElapsed() / 1.0e6;
         }
         return true;
@@ -2358,6 +2378,43 @@ public:
 #endif
     };
     std::vector<std::string> types;
+    /// The GPU and driver bgfx actually came up on, resolved once after
+    /// bgfx::init and handed to a capture's sidecar. Process-wide,
+    /// because the device is: bgfx::init happens once.
+    std::string deviceName;
+
+    /// Resolve deviceName. The bgfx renderer name says which BACKEND
+    /// runs, which is not which DEVICE runs it -- llvmpipe and a real
+    /// adapter are both "OpenGL" -- so on GL the driver's own
+    /// GL_RENDERER/GL_VERSION strings carry the answer, and the caps'
+    /// vendor/device ids carry it everywhere else.
+    void resolveDeviceName()
+    {
+        if (!deviceName.empty())
+            return;
+        std::string s = bgfx::getRendererName(bgfx::getRendererType());
+        // Only where a context is current -- this runs at the tail of
+        // prepare(), where the GL path has one and the others never do.
+        if (auto *cur = QOpenGLContext::currentContext()) {
+            if (auto *f = cur->functions()) {
+                for (GLenum e : {GL_RENDERER, GL_VERSION}) {
+                    const auto *str = f->glGetString(e);
+                    if (str)
+                        s += " / " + std::string(
+                                reinterpret_cast<const char *>(str));
+                }
+            }
+        }
+        if (const bgfx::Caps *caps = bgfx::getCaps()) {
+            char ids[64];
+            std::snprintf(ids, sizeof(ids),
+                          " / vendor 0x%04x device 0x%04x",
+                          caps->vendorId, caps->deviceId);
+            s += ids;
+        }
+        deviceName = s;
+    }
+
     /// Set once when the GL device turns out to be older than the stock
     /// shader pack needs: there is nothing to retry, and a frame asks
     /// every time.
@@ -4573,6 +4630,25 @@ public:
                             // the scene color onto the default backbuffer
                             // (the desktop build GL-blits into the Qt
                             // framebuffer instead)
+        ViewCaptureDepth,   // fullscreen depth encode for a frame
+                            // capture: the scene depth attachment
+                            // sampled into a colour target, because
+                            // colour is what bgfx blits and reads back
+                            // on every backend (fs_fc_depthenc).
+        ViewCapture,        // blit-only view of a frame capture: copies
+                            // the finished scene colour and the encoded
+                            // depth into their readback textures.
+                            //
+                            // ! LAST, and that is the whole point.
+                            // bgfx runs views in id order, so a capture
+                            // asked anywhere earlier would copy the
+                            // scene colour before cavity, bloom, the
+                            // temporal accumulation and the output
+                            // transform had written to it -- a picture
+                            // of a half-finished frame. Its own id
+                            // rather than ViewPresent's for the reason
+                            // ViewIdReadback has one: a view's blits
+                            // run BEFORE its draws.
         NUM_VIEWS
     };
     // ! Counted to the first pass AFTER the overlay block, not to
@@ -4718,6 +4794,7 @@ public:
         // SSAO/debug-scene resources: framebuffers before the textures
         // they reference.
         fn(debugSceneFbo, LifeSized);
+        fn(captureDepthFbo, LifeSized);
         fn(aoPrepassFbo, LifeSized);
         fn(aoGenFbo, LifeSized);
         fn(aoBlurFbo, LifeSized);
@@ -4726,6 +4803,9 @@ public:
         fn(debugSceneTex, LifeSized);
         fn(debugSceneDepth, LifeSized);
         fn(idReadTex, LifeSized);
+        fn(captureDepthTex, LifeSized);
+        fn(captureColorRead, LifeSized);
+        fn(captureDepthRead, LifeSized);
         fn(aoNormalZ, LifeSized);
         fn(aoDepth, LifeSized);
         fn(aoTex, LifeSized);
@@ -4872,6 +4952,7 @@ public:
         fn(s_texAOScreen, LifeProgram);
         fn(u_debugParams, LifeProgram);
         fn(s_texDebugScene, LifeProgram);
+        fn(s_texSceneDepth, LifeProgram);
         fn(u_shadowParams, LifeProgram);
         fn(u_lightDir, LifeProgram);
         fn(u_lightPos, LifeProgram);
@@ -4958,6 +5039,7 @@ public:
         fn(m_progDebug, LifeProgram);
         fn(m_progDebugScene, LifeProgram);
         fn(m_progDebugSceneClip, LifeProgram);
+        fn(m_progDepthEnc, LifeProgram);
         fn(m_progCap, LifeProgram);
         fn(m_progCapClip, LifeProgram);
         fn(s_texHatch, LifeProgram);
@@ -5945,6 +6027,29 @@ public:
         return bgfx::readTexture(idReadTex, dst);
     }
 
+    /// Targets for a portable frame capture, created on first use at
+    /// viewport size.
+    ///
+    /// Two staging textures, because a render target cannot be read
+    /// back directly on any backend, and one colour target to carry the
+    /// depth: bgfx blits and reads back colour textures everywhere and
+    /// depth textures nowhere. What used to be two glReadPixels calls
+    /// against the scene framebuffer is this, and it is the difference
+    /// between a capture that only exists on OpenGL and one the golden
+    /// render tests can gate Metal and Vulkan with.
+    bool ensureCaptureTargets();
+
+    /// Copy this frame's finished colour and its encoded depth and ask
+    /// for both back. Returns the frame number at which \a color and
+    /// \a depth are filled -- the caller must keep both alive until
+    /// bgfx has reached it, exactly as readbackId requires. 0 = the
+    /// copy could not be made.
+    ///
+    /// Must be called with every pass of the frame already submitted
+    /// and before the frame boundary: the blit rides on ViewCapture,
+    /// the last view id, so it copies the finished image.
+    uint32_t readbackCapture(void *color, void *depth);
+
     /// Rasterize one scene triangle draw into the debug scene target
     /// (docs/RenderDebug.md): mode 6 accumulates a fragment count with
     /// the depth test off (additive blend — the overdraw heatmap
@@ -6452,9 +6557,15 @@ public:
     /// ViewPresent used to force on its own.
     void present();
 #ifndef FC_RENDERER_STANDALONE
-    /// Write \a color (tightly packed RGBA8, glReadPixels bottom-up
-    /// rows) to \a path: raw PPM for a .ppm extension, else through
-    /// Qt's image writers (PNG etc.).
+    /// Write \a color (tightly packed RGBA8, TOP-DOWN rows) to \a
+    /// path: raw PPM for a .ppm extension, else through Qt's image
+    /// writers (PNG etc.).
+    ///
+    /// Top-down because the caller now decides the orientation: the
+    /// capture readback flips by bgfx::getCaps()->originBottomLeft,
+    /// which is the portable answer. This used to flip unconditionally
+    /// on the grounds that "glReadPixels rows are bottom-up" -- true of
+    /// OpenGL, and of no other backend.
     static bool writeDumpImage(const std::string &path,
                                const unsigned char *color,
                                int width, int height);
@@ -6464,8 +6575,14 @@ public:
     /// for a sub-view blit -- the rect (dstX, dstY) is top-left
     /// widget coords, flipped against it into GL's bottom-left; 0
     /// keeps the full-surface transfer every plain frame does.
-    void blit(const Render::FrameDumpRequest *dump,
-              Render::RenderStats *stats,
+    ///
+    /// OpenGL only, and it is the one part of a frame that cannot be
+    /// anything else: the destination is the QOpenGLWidget's own
+    /// framebuffer, and what bgfx hands over is a GL texture name only
+    /// while bgfx is running on GL. On any other backend this is a
+    /// no-op and Coin composites the view by itself -- which is why
+    /// capturing a frame no longer goes through here.
+    void blit(Render::RenderStats *stats,
               int dstX = 0, int dstY = 0, int dstH = 0);
 #endif // !FC_RENDERER_STANDALONE
 
@@ -6592,6 +6709,8 @@ public:
             case ViewSectionCap: return "sectioncap";
             case ViewDebugScene: return "debugscene";
             case ViewIdReadback: return "idreadback";
+            case ViewCaptureDepth: return "capturedepth";
+            case ViewCapture: return "capture";
             case ViewWaterSurface: return "watersurface";
             case ViewGlassLineSdf: return "glasslinesdf";
             case ViewGlassSurface: return "glasssurface";
@@ -6714,6 +6833,21 @@ public:
     bgfx::TextureHandle idReadTex = BGFX_INVALID_HANDLE;
     uint16_t idReadW = 0;
     uint16_t idReadH = 0;
+    /// Portable frame capture (readbackCapture). captureDepthTex is the
+    /// colour target the depth encode writes; the two *Read textures
+    /// are the CPU-readable copies the blit lands in.
+    bgfx::ProgramHandle m_progDepthEnc = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texSceneDepth = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle captureDepthTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle captureDepthFbo = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle captureColorRead = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle captureDepthRead = BGFX_INVALID_HANDLE;
+    /// Format of captureColorRead: the scene colour's own, since a blit
+    /// requires source and destination formats to match and the scene
+    /// colour is RGBA16F while colour managed (hdrScene).
+    bgfx::TextureFormat::Enum captureColorFormat = bgfx::TextureFormat::Count;
+    uint16_t captureW = 0;
+    uint16_t captureH = 0;
     bgfx::UniformHandle s_texAccum = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texReveal = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCap = BGFX_INVALID_HANDLE;
@@ -7516,6 +7650,9 @@ public:
     X(bgfxFbo) X(bgfxColor) X(bgfxDepth) \
     X(oitFbo) X(oitAccum) X(oitReveal) \
     X(debugSceneFbo) X(debugSceneTex) X(debugSceneDepth) X(idReadTex) \
+    X(captureDepthFbo) X(captureDepthTex) X(captureColorRead) \
+    X(captureDepthRead) X(captureColorFormat) \
+    X(captureW) X(captureH) \
     X(aoPrepassFbo) X(aoGenFbo) X(aoBlurFbo) X(aoMipFbo) \
     X(aoNormalZ) X(aoDepth) X(aoTex) X(aoBlurTex) X(aoNoiseTex) \
     X(aoMipTex) X(aoMipCount) X(aoMapHash) \
@@ -9543,6 +9680,28 @@ public:
     uint16_t idPixW = 0;
     uint16_t idPixH = 0;
     bool idAuditWarned = false;
+    /// In-flight portable frame capture (BGFXView::readbackCapture).
+    ///
+    /// The colour arrives in the scene target's own format, which is
+    /// RGBA16F while colour managed, so it is held as bytes and decoded
+    /// once it lands. bgfx writes into these from the render thread
+    /// long after the request, so they must not be resized or freed
+    /// while captureReadyFrame is non-zero.
+    std::vector<uint8_t> captureColor;
+    std::vector<uint8_t> captureDepth;  ///< R32F, one float per pixel
+    /// Frame at which both are filled; 0 = no capture in flight.
+    uint32_t captureReadyFrame = 0;
+    uint16_t capturePixW = 0;
+    uint16_t capturePixH = 0;
+    /// Whether the in-flight capture's colour is RGBA16F rather than
+    /// RGBA8 -- decoded when it lands, not guessed from the config,
+    /// which may have changed by then.
+    bool captureHdr = false;
+    /// The request the in-flight capture is serving. Copied rather
+    /// than referenced: a capture spans frames, and pendingDump is
+    /// overwritten by whatever asks next.
+    Render::FrameDumpRequest captureRequest;
+    bool captureIsDump = false;
     /// What cross-object instancing collapsed on the last frame
     /// (docs/DrawSubmission.md phase 0.5). Every submission decision is
     /// scoped against the draw count, and until this existed nothing

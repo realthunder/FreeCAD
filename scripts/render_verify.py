@@ -200,7 +200,8 @@ def golden_stagings():
         prefix = re.sub(r"--mode0\.png\.json$", "", base)
         stagings.append((prefix, data.get("camera", ""),
                          data.get("properties", {}),
-                         data.get("preferences", {})))
+                         data.get("preferences", {}),
+                         data.get("viewportSize")))
     return stagings
 
 
@@ -345,9 +346,75 @@ def stage_named(cam):
     return fn
 
 
-def stage_golden(prefix, camera, props, prefs):
+def restage_viewport(size):
+    """Resize the 3D view to the golden's viewportSize.
+
+    The sidecar has always recorded viewportSize and nothing read it, so
+    --golden faithfully restaged the camera, the properties and the
+    preferences and then compared images that need not be the same
+    size. A capture that inherits whatever the desktop or the window
+    manager happened to give it is not reproducible, and the --gpu leg
+    (a real window rather than xvfb's fixed screen) could not be diffed
+    against the goldens at all.
+
+    Resize the MDI SUBWINDOW, not the top-level window. Two reasons.
+    While the subwindow is maximized the QMdiArea owns its geometry and
+    resize() on it is simply overridden, so showNormal() comes first.
+    And driving the top-level window instead makes the size a REQUEST to
+    the window manager -- which a Wayland compositor may clamp or refuse
+    -- where this is pure Qt widget layout with nothing outside the
+    process in the loop. Measured equal on one box; only this one stays
+    equal on the next.
+
+    Best-effort: a view that will not reach the size is reported and the
+    capture still runs, because a size mismatch is something the diff
+    can see and say, and aborting here would hide it.
+    """
+    v = view()
+    if not size or len(size) != 2:
+        return
+    want = (int(size[0]), int(size[1]))
+    if tuple(v.getSize()) == want:
+        return
+    from PySide import QtWidgets
+    sub = None
+    w = FreeCADGui.getMainWindow().findChild(QtWidgets.QMdiArea)
+    if w:
+        for c in w.subWindowList():
+            if c.isAncestorOf(w.focusWidget() or c) or c is w.activeSubWindow():
+                sub = c
+                break
+    if sub is None:
+        note("viewport %s wanted, no MDI subwindow found" % (want,))
+        return
+    if sub.isMaximized():
+        sub.showNormal()
+    # Converge: the subwindow carries frame and decoration the view does
+    # not, so the delta is applied rather than the size assigned, and
+    # re-measured. A handful of rounds is plenty; it is a fixed offset.
+    for _ in range(8):
+        got = tuple(v.getSize())
+        if got == want:
+            break
+        sub.resize(sub.width() + (want[0] - got[0]),
+                   sub.height() + (want[1] - got[1]))
+        FreeCADGui.updateGui()
+    got = tuple(v.getSize())
+    if got == want:
+        note("viewport restaged to %dx%d" % want)
+    else:
+        note("viewport %s wanted, got %s -- the diff will show it" %
+             (want, got))
+
+
+def stage_golden(prefix, camera, props, prefs, size=None):
     def fn():
         v = view()
+        # Size first: the camera's aspect and everything screen-space
+        # (the AO radius in pixels, the line feather) are resolved
+        # against the viewport, so restaging them into a different one
+        # would stage the wrong picture.
+        restage_viewport(size)
         # Preferences first, properties second: a Render_* view property
         # outranks the parameter it was seeded from, so applying them
         # the other way round would let a stale property win.
@@ -444,8 +511,8 @@ def build_steps():
             note("ABORT no *--mode0.png.json sidecars in golden dir " + GOLDEN)
             os._exit(1)
         note("restaging %d cameras from golden %s" % (len(stagings), GOLDEN))
-        for prefix, camera, props, prefs in stagings:
-            add_step(300, stage_golden(prefix, camera, props, prefs))
+        for prefix, camera, props, prefs, size in stagings:
+            add_step(300, stage_golden(prefix, camera, props, prefs, size))
             for m in MODES:
                 add_step(700 if m == MODES[0] else 200, capture(prefix, m))
             if CYCLES:

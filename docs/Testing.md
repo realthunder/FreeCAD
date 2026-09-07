@@ -14,6 +14,7 @@ as "the primary tree"; that was wrong.
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
+| C++ on macOS (`build/mac-relwithdebinfo-801`) | **478 of 478 passing** (2026-09-07), 1 disabled -- see "C++ on macOS" |
 | Python on Windows | **2590 tests** (2026-09-07), 7 failures + 2 errors, 49 skipped, 6 expected failures -- three Windows-only defects, see "Python on Windows" |
 
 **Read the python total as a checksum on the build, not just on the code.**
@@ -67,6 +68,41 @@ builds. It costs build time and nothing else.
 One binary directly, which is the fastest loop while working on a suite:
 
     ./tests/src/Mod/Part/TopoShapeEx_tests_run --gtest_filter='*makEBoolean*'
+
+### C++ on macOS
+
+Green: **478 of 478** on 2026-09-07, 51.6 s with `-j 4`, one entry
+disabled -- the same `FeaturePartCommonTest.testHistory` as everywhere
+else -- on macOS 12.7.6 Intel with conda clang 23.1.0. That is measured
+on the tree merged with the Windows box's work, so the three platforms
+are green on the same source.
+
+It took eleven fixes to build at all and four more to pass;
+`SceneServerPort.md` 7.7 has the whole bring-up. In short: two
+tests leaning on a fast box and a real `/tmp`, and the two vg smokes,
+which aborted inside `bgfx::init()` because bgfx builds its screenshot
+blit pipeline against a swap chain that a headless Metal context does not
+have. That last one is an engine bug, fixed in the fork, and both smokes
+now pass on Metal.
+
+The two SceneServerPort stage 5 targets, which were all that had been
+built before the tree was:
+
+- `SceneServerWire_tests_run` -- **17 of 17 passing**, `listensOnIPv6Too`
+  running rather than skipping.
+- `PublishOnly_tests_run` -- **5 of 5 passing** since the dyld port
+  (2026-09-06). It was 4 passing and 1 skipped: `noGraphicsDeviceIsCreated`
+  read `/proc/self/maps`, which macOS does not have, and the case guarded
+  itself. It now enumerates the loaded images through `<mach-o/dyld.h>`,
+  and refuses the macOS renderer plugins rather than the frameworks dyld
+  maps at launch anyway -- `SceneServerPort.md` 7.6 has the image list.
+
+The stack, and the four source fixes the two stage 5 targets needed, are in
+`DevEnvironment.md`, "macOS stack"; the eleven the rest of the tree needed
+are in `SceneServerPort.md` 7.7. The GUI tests do not register there for
+the same reason as on Windows: their guard looks for `xvfb-run`. Run by
+hand, `GuiServeSelectionEcho_tests_run` passes -- eight PASS lines and
+`DONE`, 2026-09-07; see "The GUI tests" below for the command.
 
 ### C++ on Windows
 
@@ -403,6 +439,21 @@ console is where a crash leaves a stack. The verdict is the result file, as
 it is on Linux: PASS lines and `DONE`. `GuiServeSelectionEcho_tests_run` was
 run this way for stage 5 of `SceneServerPort.md` (section 7.5 there).
 
+**On macOS they do not register either** -- the same `xvfb-run` guard -- but
+there the box has `.conda/run.sh` and a window server, so a hand run is the
+driver minus xvfb and `timeout`:
+
+    OUT=/tmp/gt-echo; mkdir -p "$OUT/.iso/cache" "$OUT/.iso/config"
+    XDG_CACHE_HOME=$OUT/.iso/cache XDG_CONFIG_HOME=$OUT/.iso/config \
+    GT_OUT=$OUT GT_RESULT=$OUT/result.txt \
+    .conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCAD \
+        --user-cfg "$OUT/.iso/user.cfg" tests/gui/serve-selection-echo.py
+
+`GuiServeSelectionEcho_tests_run` passes that way, 2026-09-07: eight PASS
+lines and `DONE`. Its run log used to be unreadable for a reason that had
+nothing to do with the test -- see "Toolbar paints threw on macOS 12" below,
+now fixed; the log is 16 lines.
+
 That one exists because the render goldens found the crash by accident
 under load and then had to stop finding it: a golden must not animate,
 and the ten-frame animated fit was the window. The test opens the same
@@ -436,6 +487,55 @@ Registration needs `FreeCADMain`, `FreeCADGui`, `xvfb-run` and
 `.conda/run.sh`; the tree says so at configure time when one is missing.
 The chess asset comes from the MaterialX submodule, so without that
 checkout the test is not registered.
+
+### Toolbar paints threw on macOS 12
+
+**Found 2026-09-07 by the echo test's log, fixed the same day** --
+`src/Gui/MacSymbolIconCompat.mm`, which carries the full explanation.
+Kept here because the symptom is what a test run shows you.
+
+Every GUI run on the macOS box used to log a burst of this over the
+first second, around thirty times:
+
+    +[NSImageSymbolConfiguration configurationPreferringMonochrome]:
+        unrecognized selector sent to class 0x...
+    ===== CAUGHT ... unknown exception =====
+      event type 12, receiver QToolBarExtension 'qt_toolbar_ext_button'
+    QBackingStore::endPaint() called with active painter
+    QPaintDevice: Cannot destroy paint device that is being painted
+
+and write a `crash-*.log` under `~/Library/Application Support/FreeCAD/`
+holding nothing but those catches. It was not the test's, and not this
+tree's: a bare GUI start with a script that only closes the main window
+produced the same 28 of them. Event type 12 is `QEvent::Paint`, so what
+threw was the *paint* of a toolbar's overflow button and of a tool
+button's menu arrow -- Qt 6.7 and later resolve `QStyle::standardIcon()`
+on a Mac to an SF Symbol (`SP_ToolBarHorizontalExtensionButton` is
+`chevron.forward.2`) and render it at paint through `QAppleIconEngine`,
+whose `configuredImage()` calls a macOS 13 class method with no
+availability guard. The Objective-C exception unwound out of
+`QWidget::event`, `GUIApplication::notify` caught it as an unknown
+exception, and the painter it left open is what the two Qt warnings were
+about. The `>>` overflow chevrons never drew.
+
+The fix supplies the missing class method, at image load and only when
+the running system lacks it, as an empty symbol configuration -- which is
+a verified no-op on the merge and says what macOS 12 does anyway. After
+it: no exceptions, no crash log, the chevrons draw, and the echo test's
+run log is 16 lines instead of 263.
+
+Whether Qt itself has been fixed is a separate question, and this asks
+it -- bare PySide6 loads no FreeCAD library, so our fix is not in it:
+
+    .conda/run.sh python -c 'import sys; from PySide6 import QtWidgets; \
+        a=QtWidgets.QApplication(sys.argv); \
+        a.style().standardIcon(QtWidgets.QStyle.StandardPixmap. \
+        SP_ToolBarHorizontalExtensionButton).pixmap(16,16)'
+
+Today it aborts with the uncaught `NSInvalidArgumentException`. A Qt that
+guards the call would return silently instead, and the compat file would
+then be dead weight rather than wrong -- it keys off the OS, not off Qt,
+so it already adds nothing on macOS 13 and later.
 
 ## 4. What is deliberately not run, and why
 

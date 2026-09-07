@@ -115,6 +115,13 @@ public:
      */
     bool operator!=(const GeoElementId& obj) const;
 
+    /** @brief strict weak ordering, by GeoId and then by Pos
+     *
+     * The ordered containers this class exists for reach it through the
+     * unspecialised std::less.
+     */
+    bool operator<(const GeoElementId& obj) const;
+
     /** @brief Underlying GeoId (see GeoEnum for definition)
      */
     int GeoId;
@@ -160,18 +167,5 @@ constexpr const GeoElementId GeoElementId::VAxis = GeoElementId(GeoEnum::VAxis, 
 #endif
 
 }  // namespace Sketcher
-
-namespace std
-{
-template<>
-struct less<Sketcher::GeoElementId>
-{
-    bool operator()(const Sketcher::GeoElementId& lhs, const Sketcher::GeoElementId& rhs) const
-    {
-        return (lhs.GeoId != rhs.GeoId) ? (lhs.GeoId < rhs.GeoId)
-                                        : (static_cast<int>(lhs.Pos) < static_cast<int>(rhs.Pos));
-    }
-};
-}  // namespace std
 
 #endif  // SKETCHER_GeoEnum_H
