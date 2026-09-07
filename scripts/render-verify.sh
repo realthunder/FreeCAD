@@ -243,8 +243,16 @@ EOF
     echo "viewer leg: $URL (hold log: $OUT/hold.log)"
 fi
 
+# -E, not the default BRE: a `$` in mid-pattern is an ANCHOR only in
+# ERE. POSIX BRE reads it as a literal dollar and only GNU grep bends
+# that rule before a `\|`, so `^DONE$\|^ABORT` asked BSD grep -- which
+# is what /usr/bin/grep is on macOS -- for a line beginning "DONE$".
+# It never matched, this loop never broke early, and every capture on
+# that leg sat here for the whole --timeout after its work was done:
+# 426.5s of a 420s budget under ctest, where the capture itself takes
+# about 20.
 for _ in $(seq "$TIMEOUT"); do
-    grep -q "^DONE$\|^ABORT" "$RESULT" 2>/dev/null && break
+    grep -qE "^DONE$|^ABORT" "$RESULT" 2>/dev/null && break
     sleep 1
 done
 
@@ -255,7 +263,7 @@ cleanup; trap - EXIT
 if ! grep -q "^DONE$" "$RESULT"; then
     echo "CAPTURE FAILED (no DONE within ${TIMEOUT}s)"; exit 1
 fi
-grep -q "^FAIL\|^ABORT" "$RESULT" && { echo "CAPTURE HAD FAILURES"; exit 1; }
+grep -qE "^FAIL|^ABORT" "$RESULT" && { echo "CAPTURE HAD FAILURES"; exit 1; }
 
 if [ -n "$GOLDEN" ]; then
     echo "---- diff vs golden"

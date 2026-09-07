@@ -97,7 +97,7 @@ judge() { # <result-file> <name>
     cat "$1" 2>/dev/null
     if ! grep -q "^DONE$" "$1" 2>/dev/null; then
         echo "== $2 FAILED (no DONE)"; FAILED=1
-    elif grep -q "FAIL\|^ABORT\|EXCEPTION" "$1"; then
+    elif grep -qE "FAIL|^ABORT|EXCEPTION" "$1"; then
         echo "== $2 HAD FAILURES"; FAILED=1
     else
         echo "== $2 OK"
@@ -166,7 +166,9 @@ EOF
     echo "viewer holder on $url"
 
     for _ in $(seq "$TIMEOUT"); do
-        grep -q "^DONE$\|^ABORT" "$sub/result.txt" 2>/dev/null && break
+        # -E: see render-verify.sh -- a mid-pattern `$` is a literal in BRE,
+        # so this poll never broke early wherever grep is not GNU.
+        grep -qE "^DONE$|^ABORT" "$sub/result.txt" 2>/dev/null && break
         sleep 1
     done
     cleanup

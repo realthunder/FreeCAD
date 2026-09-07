@@ -992,7 +992,7 @@ driver is even mapped. That is the gap this set closes.
 |---|---|---|
 | `RenderSmokeVg_tests_run` | `fcvgsmoke`: bgfx up headless in its own process, vg paths/gradients/strokes/text drawn offscreen, pixels read back, ink checked per primitive | 0.3 s |
 | `RenderSmokePage2D_tests_run` | the same binary's retained-`Page2D` scenario: pan, in-band zoom, band crossing, rotation, damage, removal | 0.3 s |
-| `RenderGoldenRaster_tests_run` | `scripts/render-test-scene.py` staged in a real FreeCAD on the platform's own display leg (xvfb on Linux -- see 5.2b), one camera, the five pipeline stages, compared against blessed references | 28 s |
+| `RenderGoldenRaster_tests_run` | `scripts/render-test-scene.py` staged in a real FreeCAD on the platform's own display leg (xvfb on Linux -- see 5.2b), one camera, the five pipeline stages, compared against blessed references | 28 s Linux, 21 s macOS |
 | `RenderGoldenRasterFlat_tests_run` | the same scene and stages with `FC_RENDER_TEST_BG=0`: the environment still lights the model but is not drawn, so the frame is the model | 20 s |
 | `RenderGoldenCycles_tests_run` | the same scene path traced on the CPU (64 spp, 240x180) | 29 s |
 | `RenderGoldenChess_tests_run` | the MaterialX chess set: a real asset with a real material library, raster and path traced | 65 s, see below |
@@ -1221,6 +1221,22 @@ the run where the background ran 33 levels bright it read 143.4 -- LOWER
 than the golden's 145.15 -- while the PNG's mean was 188.93 against
 155.48. It would have said the two frames nearly agreed. Diff the
 pixels; `avgColor` is a capture fingerprint, not a measurement.
+
+WARNING: **A poll pattern that works under GNU grep can hang the whole
+leg elsewhere.** `render-verify.sh` waited for the capture with
+`grep -q "^DONE$\|^ABORT"`, and a `$` in MID-pattern is an anchor only
+in ERE: POSIX BRE reads it as a literal dollar, and only GNU grep bends
+that rule before a `\|`. So on macOS, where `/usr/bin/grep` is BSD grep,
+the poll asked for a line beginning "DONE$", never matched, and every
+capture sat out its whole `--timeout` after the work was finished --
+426.5 s of a 420 s budget under ctest for a capture that takes about 20.
+It looked exactly like a hang, and was mistaken for one. Both polls
+(here and in `user-shader-verify.sh`) now use `grep -qE`. The two golden
+tests run in 21.4 s each on the macOS leg, not 426.6.
+
+The same idiom without a mid-pattern `$` is fine, and is left alone in
+`gui-test.sh` and `file-blob-verify.sh`: BSD grep does support `\|`, and
+`^FAIL\|^ABORT` matches on both. It is only the anchor that differs.
 
 WARNING: **A restaging must not carry the backend across.** The sidecar records
 the whole `View/Render` group, `Type` included, and that key describes
