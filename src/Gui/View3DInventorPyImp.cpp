@@ -722,9 +722,19 @@ static void writeRenderDumpSidecar(View3DInventor *view,
         root[QStringLiteral("devicePixelRatio")] =
             glWidget->devicePixelRatioF();
     }
-    if (auto renderer = viewer->getExternalRenderer())
+    if (auto renderer = viewer->getExternalRenderer()) {
         root[QStringLiteral("backend")] =
             QString::fromUtf8(renderer->type().c_str());
+        // Which DEVICE drew it, not just which backend was selected.
+        // "bgfx - OpenGL" is what a software rasterizer and a real
+        // adapter both report, and a reference image blessed on one
+        // device does not compare against another -- so without this a
+        // capture carries no way to tell afterwards which it was.
+        const std::string device = renderer->deviceName();
+        if (!device.empty())
+            root[QStringLiteral("device")] =
+                QString::fromUtf8(device.c_str());
+    }
     root[QStringLiteral("msaa")] = View3DInventorViewer::getNumSamples();
 
     const auto &config = App::Application::Config();

@@ -1811,6 +1811,7 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            resolveDeviceName();
         }
         return true;
     }
@@ -1961,6 +1962,7 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            resolveDeviceName();
             msDevice = _warmClock.nsecsElapsed() / 1.0e6;
         }
         return true;
@@ -2376,6 +2378,43 @@ public:
 #endif
     };
     std::vector<std::string> types;
+    /// The GPU and driver bgfx actually came up on, resolved once after
+    /// bgfx::init and handed to a capture's sidecar. Process-wide,
+    /// because the device is: bgfx::init happens once.
+    std::string deviceName;
+
+    /// Resolve deviceName. The bgfx renderer name says which BACKEND
+    /// runs, which is not which DEVICE runs it -- llvmpipe and a real
+    /// adapter are both "OpenGL" -- so on GL the driver's own
+    /// GL_RENDERER/GL_VERSION strings carry the answer, and the caps'
+    /// vendor/device ids carry it everywhere else.
+    void resolveDeviceName()
+    {
+        if (!deviceName.empty())
+            return;
+        std::string s = bgfx::getRendererName(bgfx::getRendererType());
+        // Only where a context is current -- this runs at the tail of
+        // prepare(), where the GL path has one and the others never do.
+        if (auto *cur = QOpenGLContext::currentContext()) {
+            if (auto *f = cur->functions()) {
+                for (GLenum e : {GL_RENDERER, GL_VERSION}) {
+                    const auto *str = f->glGetString(e);
+                    if (str)
+                        s += " / " + std::string(
+                                reinterpret_cast<const char *>(str));
+                }
+            }
+        }
+        if (const bgfx::Caps *caps = bgfx::getCaps()) {
+            char ids[64];
+            std::snprintf(ids, sizeof(ids),
+                          " / vendor 0x%04x device 0x%04x",
+                          caps->vendorId, caps->deviceId);
+            s += ids;
+        }
+        deviceName = s;
+    }
+
     /// Set once when the GL device turns out to be older than the stock
     /// shader pack needs: there is nothing to retry, and a frame asks
     /// every time.
