@@ -2503,4 +2503,11 @@ void BGFXRendererLibP::shutdown()
     offscreen.reset();
 #endif
     currentType = RendererType::Noop;
+    // The device identity dies with the device. resolveDeviceName()
+    // answers once and caches, so a name left standing here is handed
+    // to every capture taken after a backend switch -- the sidecar then
+    // records the PREVIOUS device under a golden drawn by the new one,
+    // which is exactly the confusion that field exists to prevent.
+    deviceName.clear();
+    typeLockWarned = RendererType::Count;
 }

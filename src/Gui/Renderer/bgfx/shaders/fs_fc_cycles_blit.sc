@@ -25,7 +25,11 @@ vec3 fcCyclesEncode(vec3 c)
 vec3 fcCyclesDecode(vec3 c)
 {
 	vec3 lo = c / 12.92;
-	vec3 hi = pow((c + 0.055) / 1.055, vec3_splat(2.4));
+	// Guarded like fcCyclesEncode above, and for the same reason: both
+	// branches evaluate, and pow() of a negative is a NaN the step
+	// cannot weight away.
+	vec3 hi = pow(max((c + 0.055) / 1.055, vec3_splat(0.0)),
+	              vec3_splat(2.4));
 	return mix(lo, hi, step(vec3_splat(0.04045), c));
 }
 

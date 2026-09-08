@@ -298,8 +298,10 @@ DrawDimHelper::minMax3d(DrawViewPart* dvp, ReferenceVector references, int direc
         builder.Add(comp, ref.getGeometry());
     }
     Base::Vector3d centroid = dvp->getOriginalCentroid();
-    TopoDS_Shape centeredShape =//this result is a throw away. We will work with comp.
-        DrawViewPart::centerScaleRotate(dvp, comp, centroid);
+    //the references are bare geometry, so there is no element map to carry here
+    Part::TopoShape refShape(comp);
+    //this result is a throw away. We will work with refShape.
+    DrawViewPart::centerScaleRotate(dvp, refShape, centroid);
 
     //project the selected 3d shapes in the dvp's coord system
     TechDraw::GeometryObjectPtr go(
@@ -307,7 +309,7 @@ DrawDimHelper::minMax3d(DrawViewPart* dvp, ReferenceVector references, int direc
     go->setIsoCount(0);
     go->isPerspective(false);
     go->usePolygonHLR(false);
-    go->projectShape(comp, dvp->getProjectionCS());
+    go->projectShape(refShape, dvp->getProjectionCS());
     auto edges = go->getEdgeGeometry();
 
     if (edges.empty()) {

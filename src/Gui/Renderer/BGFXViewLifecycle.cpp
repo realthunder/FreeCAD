@@ -1549,8 +1549,10 @@ bgfx::VertexBufferHandle BGFXView::whiteColors(int numVertices)
 /// Stream 2 (a_texcoord0) for a draw paired with a textured vertex
 /// stage outside the texture path: the mesh's own coordinates when it
 /// has any, under the identity texture matrix. A mesh with none leaves
-/// the stream unbound and the attribute reads its constant, which is
-/// the (0, 0) a generated material saw before too.
+/// the stream unbound, and only GL then reads the (0, 0) constant a
+/// generated material saw before: on Vulkan an unbound attribute reads
+/// the vertex position instead (see MatVertex in BGFXRendererP.h), so
+/// treat what it carries as arbitrary rather than as zero.
 void BGFXView::bindMeshTexCoord(GpuMesh *gpu, const Render::MeshData &mesh)
 {
     gpu->geom->ensureTexCoord(mesh);
@@ -1569,7 +1571,11 @@ void BGFXView::setMeshVertexBuffers(GpuMesh *gpu, const Render::MeshData &mesh)
                                  : whiteColors(mesh.numVertices));
     // Per-face material stream, bound only when the mesh carries one:
     // draws without it leave a_color1/a_color2 unbound, and the shader
-    // only reads them when u_matEmissive.w flags the stream in.
+    // only reads them when u_matEmissive.w flags the stream in -- which
+    // BGFXViewSubmit gates on this same handle being valid. It has to
+    // stay that way: an unbound attribute is a constant on GL but the
+    // vertex position on Vulkan, so the flag is the only thing keeping
+    // geometry out of the material slots.
     if (bgfx::isValid(gpu->mats))
         bgfx::setVertexBuffer(3, gpu->mats);
 }

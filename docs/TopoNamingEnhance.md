@@ -30,11 +30,12 @@ scratchpad, following the `DrawBrokenView` convention of not committing
 them.  **Section 6.3 restates the three models so every number here can
 be reproduced without them.**
 
-**Resuming?  Start at section 7.**  It re-plans the pre-task around
-versioned base shapes held as dynamic properties on the referenced
-feature, closes three of section 6's five open decisions, and names the
-first thing to build.  Section 6 is kept for its state of play and the
-measurement recipes.
+**Resuming?  Start at section 8**, the state of the main task: T0 is
+built and T1 is next.  Section 7 is the pre-task, complete for the
+`Shape` property -- it re-plans that work around versioned base shapes
+held as dynamic properties on the referenced feature, closes section
+6's open decisions, and 7.11 to 7.18 record what was built.  Section 6
+is kept for its state of play and the measurement recipes.
 
 
 ## 1. The short answers
@@ -2038,3 +2039,748 @@ With these, items 1 to 3 of 7.15 are closed and item 4 waits for the
 upstream Sketcher merge.  The pre-task is complete for the `Shape`
 property; the main task, section 3 (TechDraw adopts element names), is
 next.
+
+
+## 8. The main task, built
+
+Section 3 is the plan; this section is the state, one subsection per
+step of the build order in 3.6.  Each step is gated the way section 7's
+were: the TechDraw suites, `ctest`, the Python suite against the known
+Windows set, and evidence that the step did what it claims.
+
+### 8.0 The gate harness, first (2026-09-06)
+
+TechDraw's meaningful tests do not run under `FreeCADCmd`.
+`TestTechDrawApp` is six cases -- hatch, annotation, balloon, image,
+symbol, projection group -- and the four suites that actually project
+geometry (`DrawViewPartTest`, `DrawViewSectionTest`, `DrawViewDetailTest`,
+`DrawViewDimensionTest`) are imported by `TestTechDrawGui` instead,
+because each waits for the HLR threads on a `QEventLoop` driven by a
+`QTimer`.  Console mode dispatches neither, so `FreeCADCmd -t
+TestTechDrawGui` **hangs** rather than failing -- it was killed at two
+minutes with no output.
+
+They need only a running application, not a display of its own, so on
+this box they run the way `docs/Testing.md` describes for the two
+registered GUI tests: a startup script under
+
+    run_cdb.ps1 -UserHome <isolated dir> -StartupScript <script>
+
+that loads both module lists into one `unittest` suite from a
+`QTimer.singleShot(0, ...)`, writes PASS/FAIL and `DONE` to a result
+file, and quits.  **11 tests, 28 s**, and that is the number every
+subsection below quotes.  The script is a scratchpad file, not
+committed, in keeping with the probe convention.
+
+### 8.1 T0, built: the element map reaches the view (2026-09-06)
+
+Probed first, and the probe is why the step was an afternoon rather than
+a week.  Every form a TechDraw source takes already carries an element
+map out of `Part::Feature::getTopoShape`, and every assembly step the
+extractor performs has a name-propagating equivalent that keeps it:
+
+| source | `ElementMapSize` | a face name |
+| --- | --- | --- |
+| `Part::Cut` feature | 32 | `Face1;:H961,F` |
+| the same through an `App::Link` | 32 | `Face1;:H961,F;:H963,F` |
+| an `App::Part` holding a box | 26 | `Face1;:H964,F` |
+| `makECompound` of two of them | 64 | both, unchanged |
+| `makEFuse` of two of them | 64 | `...;:M;CUT;...;:H965,F` |
+| `transformed()` (move, scale, mirror), `Placement =` | unchanged | unchanged |
+
+So nothing had to be invented: `ShapeExtractor` was throwing the map
+away by asking for `TopoDS_Shape` and rebuilding compounds with a bare
+`BRep_Builder`.
+
+**What changed.**  `ShapeExtractor::getShapes`, `getShapes2d`,
+`getShapesFromObject`, `getShapesFused`, `getLocatedShape` and
+`stripInfiniteShapes` return `Part::TopoShape` (or a vector of them);
+the compounds are built with `makECompound` and the fuse with
+`makEFuse` in place of a pairwise `BRepAlgoAPI_Fuse` loop;
+`getLocatedShape` asks `getTopoShape` instead of `getShape`.
+`DrawViewPart::getSourceShape` returns `Part::TopoShape` with it.  The
+callers that still want the raw shape -- `DrawBrokenView` (ten
+`getLocatedShape` sites and the source), `DrawViewMulti`,
+`DrawViewSection::getShapeToCut`, `ShadedUnderlay`,
+`DimensionValidators`, and `DrawViewPart::execute` itself -- take
+`.getShape()`.  Nothing downstream of `partExec` changed: the names
+reach the projection input and stop there, which is T2's job.
+
+**The one trap, and it is a real one.**  `makECompound`'s `force`
+parameter reads the opposite way from its doc comment.  The header says
+"if true and there is only one input shape, then return that shape
+instead"; the code (`TopoShapeEx.cpp:1586`) returns the lone shape when
+force is **false**, and the default `true` always wraps.  Passing
+`false` on the strength of the comment made a single-source view return
+a `Solid` where every caller since 2019 has had a `Compound` --
+`DrawViewMulti` casts the result with `TopoDS::Compound` -- and the
+TechDraw suites still passed, because none of them has a
+`DrawViewMulti`.  The probe caught it: the evidence script prints
+`ShapeType`, and it read `Solid`.  Print the type in any probe that
+replaces a compound builder.
+
+**Evidence** (`view.getSourceShape()`, the accessor added below):
+
+    one source           Compound  elementMapSize=32
+        Face1 -> Face1;:H8d8,F;:H8da,F;:H:8,F
+        Face3 -> Face6;:M;CUT;:H8d8:7,F;:H8da,F;:H:8,F
+    two sources          Compound  elementMapSize=58
+    two, fuse=True       Compound  elementMapSize=90
+        Face3 -> ...;:M;CUT;...;:M;FUS;:H8da:7,F
+    through an App::Link Compound  elementMapSize=32
+        Face1 -> Face1;:H8d8,F;:H8da,F;:H8df,F;:H:8,F
+
+and the geometry is untouched: the two-source compound is V=18 E=27
+F=13, two solids, 1874.3363 mm3, and the fused one V=26 E=45 F=19, one
+solid, 1594.0167 mm3, before and after.
+
+**A Python accessor came with it**, because there was no way to see a
+view's source shape from a test: `DrawViewPart.getSourceShape(fuse=False)`
+returns the compound as a `Part.Shape`, element map and all.  It is what
+the evidence above is read from, and T2's tests will read the projected
+names against it.
+
+The composite path was probed too, since `stripInfiniteShapes` no longer
+walks the compound with a `TopoDS_Iterator` but with
+`getSubTopoShapes()`: an `App::Part` holding a box and a
+`PartDesign::Plane` (an infinite `Face`) projects a compound of the box
+alone -- 6 faces, bound box `(0,0,0,10,10,10)`, `Face1 ->
+Face1;:Hbc8,F;:Hbc6,F;:H:8,F` -- so the infinite child is dropped and
+the finite one keeps its name.
+
+**Gates.**  TechDraw 11 of 11 (28.0 s); `ctest` 477 of 477 (26 s, `-j 6`);
+the Python suite unchanged against this box's known set -- 1338 tests,
+6 failures and 8 errors, the same ones, every one environment rather
+than geometry (no `yaml` for CAM, CRLF fixtures in the MaterialX graph
+tests, two over-long temp paths, and four FEM cases).
+
+**Not done here, deliberately**: `ShapeUtils::rotateShape` /
+`mirrorShape` / `scaleShape` and `DrawUtil::shapeVectorToCompound` still
+take and return `TopoDS_Shape`.  They sit between the source shape and
+HLR, so T2 has to make them name-preserving (`makETransform` /
+`makEGTransform` do it, as the probe table shows); doing it now would
+have been churn with no consumer.
+
+### 8.2 T1, built: the section cut is named from its tool (2026-09-06)
+
+Section 3.4 called the anonymous cut the load-bearing weakness of the
+section views, and 3.6 called T1 the highest-value change for section
+stability.  It is built for `DrawViewSection`; the complex section's
+tool is a different construction and is deliberately left for T1b
+(below).
+
+**Probed first, four questions, and two of the answers changed the
+design.**
+
+1. *Does an unnamed tool really leave the section face anonymous?*  No
+   -- worse than anonymous, it leaves it named after the intersection
+   that made it.  Cutting a named box with an unnamed prism gives the
+   cut face
+
+       Face1;:G;CUT;:H9d7:7,E;:L(Face2;:G;CUT;:H9d7:7,E|Face3;...|Face4;...);CUT;:H9d7:4d,F
+
+   a combo name built from the edges the cut created.  Every edge in
+   that list is a place where the tool met the model, so any edit that
+   changes which faces the plane crosses rewrites the name.  That is
+   the instability, spelled out.
+
+2. *Can the tool's faces be named by hand?*  Yes:
+   `setElementName("Face5", "SectionTool5")` on a `TopoShape` with no
+   hasher stores exactly that name, and the cut then reports the
+   section face as `SectionTool5;:M;CUT` -- one step, no combo.
+
+3. *Is the name stable when `SectionOrigin` moves?*  Yes.  The same
+   tool named and moved to z=10, 12 and 8 gives `SectionTool5;:M;CUT`
+   every time.
+
+4. *What does the shape handed to the cut carry?*  **A document's
+   `App::StringHasher`.**  `cut.Shape.Hasher` and
+   `Part.getShape(cut).Hasher` are the document's own hasher object,
+   and `App/StringHasher.{h,cpp}` contain no mutex, no lock, no atomic
+   -- only `Base::Handled`'s refcount is atomic.  The section cut runs
+   in a `QtConcurrent` worker, and mapping element names *writes* to
+   the hasher (`mapSubElement` adopts the source's hasher outright:
+   `Hasher = other.Hasher`).  So the obvious implementation -- call
+   `makEBoolean` in the worker -- would have had a background thread
+   hashing into a document-owned table while the main thread finished
+   the recompute.
+
+**The shape of the fix that question forced.**  The geometry stays in
+the worker and the naming happens on the main thread:
+
+- `doSectionCut` runs the same `BRepAlgoAPI_Cut` calls as before -- and
+  keeps them, in a `CutHistory` (the source solid and the maker per
+  piece, plus the trim pass).  Nothing about the boolean changed, so
+  the progress indicator and the cancel path are exactly as they were.
+  That is also why the cut is not simply `makEBoolean`: that API takes
+  no `Message_ProgressRange`, and a section cut of a real model is
+  where a progress bar earns its keep.
+- `onSectionCutFinished`, which already runs on the main thread when
+  the future lands, calls `nameCutPieces`: `makEShape(*maker, {source,
+  tool}, OpCodes::Cut)` per piece, `makECompound` over them, then the
+  trim pass the same way.  `makEShape` on a maker is what `makEBoolean`
+  does internally after `Build()`, so the names are identical to the
+  ones a plain `makEBoolean` would have produced.
+- Any failure -- no history, an aborted cut, a derived class that cuts
+  its own way -- falls back to the unnamed compound.  The names are an
+  addition; nothing depends on them yet.
+
+**The tool's names are decided by geometry, not by face order.**
+`makeCuttingTool` builds the same prism it always did, then
+`nameToolFaces` walks its planar faces and names each one from the
+section plane's own coordinate system: the face lying in the plane is
+**`SectionPlane`**, the parallel one behind it `SectionBack`, and the
+four sides `SectionSideXMin/XMax/YMin/YMax` by the axis they face
+along.  Nothing in that depends on `shapeSize`, on where the plane
+sits, or on the order `BRepPrimAPI_MakePrism` happened to build the
+faces in -- which is what makes the resulting name survive a move.
+
+**Evidence**, from a section through a box with a hole, driven in a
+running application because the cut is asynchronous:
+
+    tool faces      : 6, elementMapSize=6
+    tool names      : [SectionBack, SectionPlane, SectionSideXMax,
+                       SectionSideXMin, SectionSideYMax, SectionSideYMin]
+    cut pieces      : Compound, faces=7, elementMapSize=32
+    section face at z=10: SectionPlane;:M;CUT;:H,F
+    SectionOrigin 10 -> 14, same name
+    the hole's radius 3 -> 5, same name
+
+Three PASS lines: the name survives moving `SectionOrigin`, survives a
+model edit, and is derived from the tool's `SectionPlane` face.
+
+**A Python type for the section came with it.**  `DrawViewSection` had
+none -- it answered to `DrawViewPartPy` -- so there was no way to look
+at a cut result at all.  `DrawViewSectionPy` now carries
+`getCutPieces()` (the cut result, named, in the global frame) and
+`getCuttingTool()` (the tool of the last cut, with its six names).  T3
+has a home for the section-face API when it needs one.
+
+**Types that moved with it**, all mechanical: `getShapeToCut`,
+`makeCuttingTool`, `getShapeToPrepare`, `m_cutPieces`, `m_cutShapeRaw`,
+`m_saveShape` (on `DrawViewPart`) and the `sectionExec`/`makeSectionCut`/
+`prepareShape` signatures take or return `Part::TopoShape`.  The copy
+of the cut input is `makECopy` rather than `BRepBuilderAPI_Copy`, which
+is the same copy plus the element map.
+
+**Gates.**  TechDraw 11 of 11 (27.5 s); `ctest` 477 of 477 (26 s);
+the Python suite unchanged against this box's known set.
+
+**Left for T1b**: `DrawComplexSection::makeCuttingTool` returns its
+tool unnamed.  Its tool is extruded from the user's own profile object,
+so the right names for its faces are not a fixed scheme like the six
+above -- they are the profile's own element names, carried through the
+extrusion.  That is a better identity than this one (it says *which
+segment of the profile* made the face) and a different piece of work.
+
+**Left for T2**: `prepareShape` still centers, scales and rotates
+through `ShapeUtils`, which is `TopoDS_Shape` in and out, so the names
+stop at `m_cutPieces` / `m_cutShapeRaw`.  And the 2D section faces are
+rebuilt from projected wires in `mapToPage`, so they can never inherit
+a name through the shape: they need the name carried beside them, in
+the `ref3D` slot `BaseGeom` reserves.  That is what T2 is for.
+
+### 8.3 Schedule for the next session (written 2026-09-06)
+
+The user's instruction, given at the end of the T1 session: **the next
+session does T1b and T2.**  In that order, each its own commit, each
+gated as 8.0 to 8.2 were -- the TechDraw 11, `ctest`, the Python suite
+against this box's known set, and evidence that the step did what it
+claims.
+
+**T1b, the complex section's tool.**  `DrawComplexSection::makeCuttingTool`
+returns three different shapes depending on the profile: a prism from a
+face when the profile wire is closed, a prism from `m_toolFaceShape`
+(the wire extruded sideways) when it is open, and a compound of the
+solid pieces of that prism when the extrusion produces empty ones.  A
+fixed six-name scheme does not fit any of them.  The names should come
+from the **profile object's own elements** instead, which is a better
+identity than `SectionPlane`: it says which segment of the profile made
+the face, so a section whose profile gains a segment keeps the names of
+the segments it already had.
+
+The route: fetch the profile with `Part::Feature::getTopoShape` rather
+than as a bare `TopoDS_Wire` (`makeProfileWire`), and build the tool
+with the name-propagating makers -- `makEFace` for the closed case,
+`makEPrism` (`TopoShape.h:1598`, op code `PSM`) for both extrusions.
+The compound-of-solids filter is already a loop over the prism's
+solids, so it becomes `makECompound` over the kept ones.  Probe first,
+as ever: check that a profile sketch's edges arrive named through
+`getTopoShape`, and that `makEPrism` puts those names on the side faces
+of the extrusion.  Then the same evidence as 8.2 -- move the profile,
+change the model, the names hold -- with the section-face name reading
+back through `getCuttingTool()` / `getCutPieces()`.
+
+**T2, carry names through HLR.**  The hard one, and the one 3.5 already
+did the research for: `HLRBRep_Data::EDataArray()` is indexed like
+`EdgeMap()`, so an in-tree reimplementation of
+`HLRBRep_HLRToShape::InternalCompound` (about 60 lines) emits the same
+edges in the same order **and reports the source edge index with each**.
+The polygon path (`HLRBRep_PolyAlgo`, `projectShapeWithPolygonAlgo`,
+`GeometryObject.cpp:306`) hands the source shape back directly through
+`Hide`/`Show`.  Both entry points are in `GeometryObject.cpp`
+(`projectShape` at 143, the poly one at 306), each currently calling the
+stock `HLRToShape`/`PolyHLRToShape`.
+
+Two things have to be in place before the traversal is worth writing:
+
+1. The projection input has to still be named when it reaches HLR.
+   Today it is not: `DrawViewPart::partExec` takes a `TopoDS_Shape`, and
+   `ShapeUtils::rotateShape` / `mirrorShape` / `scaleShape` /
+   `centerShapeXY` and `DrawUtil::shapeVectorToCompound` are all
+   `TopoDS_Shape` in and out.  They need `Part::TopoShape` overloads
+   built on `makETransform` / `makEGTransform`, which the 8.1 probe
+   already showed preserve the map (move, scale and mirror all keep
+   every name).  That is the first commit of T2 and it is mechanical.
+2. `BaseGeom` has to carry the name.  The `int ref3D` slot it reserves
+   and never fills (3.3) is where the source element goes -- as a
+   mapped name, not an int -- and the projected edge's own name is
+   `<sourceElementName>;HLR:<class>:<ordinal>` per 3.6.
+
+Watch for the trap 3.7 records: `DrawViewDimension::execute()` runs
+while the document is still restoring, against a view that has not
+projected yet, so anything keyed on "have I run once" spends its one
+chance there.  And keep T2's own scope honest -- the 2D faces are
+rebuilt from projected wires in `mapToPage`, so they take their name
+from the wires that bound them rather than from any shape identity,
+which is the change that kills the area-sort fragility.
+
+### 8.4 T1b, built: the complex tool is named from its profile (2026-09-06)
+
+8.2 left `DrawComplexSection::makeCuttingTool` returning its tool
+unnamed, and 8.3 named the reason: that tool is three different
+constructions, and no fixed six-name scheme fits any of them.  It is
+built now, from the profile object's own elements.
+
+**Probed first, two questions, and both answers were yes.**
+
+1. *Do the profile's edges arrive named?*  Yes.  A three segment sketch
+   used as a profile gives `Part.getShape` a wire whose edges are
+   `g1;SKT`, `g2;SKT`, `g3;SKT` -- and `noElementMap=True` does not
+   strip them, the same as every other whole-feature shape (8.1).  The
+   old code lost them anyway: `makeProfileWire` assigned
+   `Part::Feature::getShape` (a `TopoDS_Shape`) into a `Part::TopoShape`,
+   which is a conversion, not a copy of the map.
+2. *Does `makEPrism` put those names on the extrusion?*  Yes, on both
+   sweeps.  Extruding the wire sideways gives a shell whose three faces
+   are `#9;:G;XTR;...`, `#a;...`, `#b;...` -- one per profile edge --
+   and extruding that shell along the section normal keeps those three
+   names on the faces that lie on the cut surface, which are exactly the
+   faces the section face is cut from.  The `#` forms are hashed because
+   a profile from a document carries that document's hasher; they
+   resolve back to the sketch geometry, as the evidence below shows.
+
+**What changed.**  Four new members beside the raw ones they shadow, so
+nothing that wanted a bare `TopoDS_Wire` had to change:
+
+- `makeProfileShape` -- the profile as a named `Part::TopoShape`, via
+  `getTopoShape` rather than `getShape`.  `makeProfileWire` is now this
+  plus `.getShape()`, so there is one implementation of what the profile
+  *is*.
+- `makeNoseToTailShape` -- `makeNoseToTailWire`'s reordering with the
+  names put back.  Nothing is rebuilt but the wire itself, so
+  `mapSubElement` finds every edge by identity; a one-edge profile comes
+  back untouched.
+- `extrudeWireToFace(Part::TopoShape&, ...)` -- the same sweep through
+  `makEPrism`, leaving the wire moved the way the raw version leaves it.
+- `makeProfileFace` -- `makEFace` for the closed profile, falling back
+  to the plain `BRepBuilderAPI_MakeFace` when the name propagating face
+  maker will not take the wire.  A profile that used to build a tool
+  still builds one.
+
+`m_toolFaceShape` is a `Part::TopoShape` now, so the names survive into
+the second extrusion, and the empty-solid filter is a `makECompound`
+over the solids it keeps (`force` left at its default, which always
+wraps -- the trap 8.1 records).  The aligned worker still receives a
+bare `BRepBuilderAPI_Copy` of the tool face: mapping names writes to the
+document's `App::StringHasher` and that has no locking (8.2), while
+`makeCuttingTool` itself runs on the main thread, from
+`DrawViewSection::makeSectionCut` before the future is launched.
+
+The one behaviour change is that the second `BRepPrimAPI_MakePrism` the
+old code built and threw away is gone; the prism is computed once.
+
+**Evidence**, driven in a running application, on an Offset complex
+section of a 70x40x20 box with a hole, stepped profile
+`(-30,0) -> (-5,0) -> (-5,10) -> (30,10)`:
+
+    tool            : Compound, faces=12, elementMapSize=52
+    section faces   : #75;:G;XTR;:H6ea:7,F;:H,F;:M;CUT;:H6ea:7,F;:H,F
+                      #77;:G;XTR;:H6ea:7,F;:M;CUT;:H6ea:7,F;:H,F
+    resolved        : {{g1;SKT};:H6ea,E};:G;XTR;...;:M;CUT;...
+                      {{g3;SKT};:H6ea,E};:G;XTR;...;:M;CUT;...
+
+Seven PASS lines: the tool is named; the section face is named; the name
+is one step off the tool rather than a combo of the edges the cut
+created (`;:L(` -- the instability 8.2 measured); the name resolves
+through the document hasher back to a segment of the profile sketch; it
+survives `SectionOrigin` moving and the model changing; and when the
+profile gains a fourth and fifth segment the two existing section faces
+keep their names while the new segment brings a third of its own.
+
+Two things the probe had to get right, both of which made an earlier run
+say nothing:
+
+- **A profile segment parallel to the extrude direction makes no tool
+  solid**, by design -- that is what the empty-solid filter is for.  A
+  three segment stepped profile therefore gives a tool of two solids and
+  twelve faces, not three and eighteen, and a "new segment" added along
+  the section normal changes the tool not at all.  The added segment has
+  to be one that sweeps a volume.
+- **The section faces have to be told apart from the model's own faces
+  that happen to face the same way.**  Filtering only on the surface
+  normal picked up the box's front and back, which arrive named
+  `Face2;:H,F` from the source and have nothing to do with the tool.
+
+**Gates.**  TechDraw 11 of 11 (28.5 s); `ctest` 477 of 477 (26 s); the
+Python suite 1338 tests, 6 failures and 8 errors, exactly this box's
+known environment set.
+
+**Still left for T2**, unchanged from 8.2: `prepareShape` centers,
+scales and rotates through `ShapeUtils`, which is `TopoDS_Shape` in and
+out, so the names stop at `m_cutPieces` / `m_cutShapeRaw`; and the 2D
+section faces are rebuilt from projected wires in `mapToPage`, so they
+need the name carried beside them in `BaseGeom`'s `ref3D` slot.
+
+### 8.5 T2, built: names through HLR (2026-09-06)
+
+Two commits, as 8.3 planned them.  The first is the mechanical one that
+keeps the names alive as far as the projection; the second is the
+traversal that hands them to the projected geometry.
+
+#### 8.5.1 The projection input keeps its names
+
+`1f78bbd54d`.  Every name stopped at the door of the projection:
+`DrawViewPart::partExec` took a `TopoDS_Shape`, and the centering,
+scaling and rotating between the source and HLR went through
+`ShapeUtils`, which is `TopoDS_Shape` in and out.
+
+`ShapeUtils` has `Part::TopoShape` overloads now -- `mirrorShapeVec`,
+`mirrorShape`, `invertGeometry`, `scaleShape`, `rotateShape`,
+`moveShape`, `centerShapeXY` -- each composing the same `gp_Trsf` as
+before and handing it to `makETransform`, which copies the shape when
+the transformation scales or mirrors and only moves it when it does not.
+The map survives all four, the Y mirror into Qt's coordinate system
+included.  The pipeline is typed to match: `partExec`,
+`makeGeometryForShape`, `centerScaleRotate`, `buildGeometryObject`,
+`DrawViewSection::prepareShape` and its complex-section override, and
+`GeometryObject::projectShape` / `projectShapeWithPolygonAlgo`.  The
+copy `makeGeometryForShape` takes so it does not transform the source in
+place is `makECopy`.  `GeometryObject` keeps what it projected in
+`m_projectionShape`, and `DrawViewPart.getProjectionShape()` reads it
+back.
+
+Evidence, on a plain view at Scale 2 and Rotation 30, a section and a
+complex section: the shape HLR is given has an element map of the same
+size as the source (32 of 32), every one of its faces is named, the
+section face is still `SectionPlane;:M;CUT`, and the complex section
+face still resolves to `{g1;SKT}`.
+
+Two notes for whoever reads the diff.  `DrawUtil::shapeVectorToCompound`,
+which 8.3 named, has **no caller anywhere in the tree** and was left
+alone.  And the detail, multi and broken views, `DrawProjectSplit` and
+`DrawDimHelper` convert to `Part::TopoShape` at the call rather than
+through their own pipelines: their inputs are bare `TopoDS_Shape`
+already, so a map would stop there in any case -- the explicit
+conversion is there to make that visible instead of letting an implicit
+one hide it.
+
+#### 8.5.2 Every projected edge knows the element it came from
+
+`1ffb61df60`.  The reimplementation 3.5 argued for, of both entry
+points.
+
+`hlrInternalCompound` with `hlrDrawFace` and `hlrDrawEdge` is
+`HLRBRep_HLRToShape::InternalCompound` and its two helpers, minus the
+branches TechDraw never reaches (there is no shape filter and no `In3d`
+output), emitting the same edges in the same order and reporting the
+`ie` of each.  `polySegments` and `polyInternalCompound` are the same
+for `HLRBRep_PolyHLRToShape`: its `Update` pass keeps the shape each
+segment came from, which `HLRBRep_PolyAlgo::Hide` fills in, and
+`InternalCompound` then filters that list by type and visibility.  The
+polygon algorithm's type codes are its own and differ from the exact
+one's -- 1 outline, 2 smooth, 3 seam, 4 hard, against 1 iso, 2 outline,
+3 smooth, 4 seam, 5 hard -- which is the one thing to get wrong here.
+
+A side effect worth having: the old code called each accessor twice,
+once to test for null and once to keep the result, so it ran every one
+of the ten traversals twice.  Each runs once now.
+
+**The mirror is the join that had to be got right.**  Between the
+traversal and the geometry sits `invertGeometry`, whose transformation
+is negative and therefore copies every edge.  `invertAndTrack` composes
+exactly the transformation `mirrorShape` composes -- so the geometry is
+unchanged -- and carries the association across with
+`BRepBuilderAPI_Transform::ModifiedShape`, rather than assuming the copy
+preserves the order of a compound's children.
+
+`BaseGeom` carries the result.  `ref3D`, the slot 3.3 found reserved and
+never filled, is the index of the source element in the projection
+shape's own `Edge<n>` numbering, and the projected edge gets a name of
+its own,
+
+    <sourceElementName>;HLR:<class>:<ordinal>
+
+with `class` = visibility (`V`/`H`) plus edge class (`H` hard, `O`
+outline, `S` smooth, `E` seam, `I` iso) and `ordinal` telling apart the
+fragments one source edge is broken into by hiding.
+`DrawViewPart.getEdgeNames()` reads all three back.
+
+**The thread split is T1's.**  The projection runs in a worker and
+records nothing but indices and shapes; `DrawViewPart::onHlrFinished`
+turns them into names on the main thread, because reading an element map
+adopts the document's `App::StringHasher` and that has no locking (8.2).
+The bridge between the two is `TopExp::MapShapes(shape, TopAbs_EDGE,
+map)`, which is exactly what `TopoShape`'s own cache uses, so index *n*
+in the worker's map is `Edge<n>` in the element map -- no `TopoShape`
+API is touched off the main thread.
+
+**Evidence.**
+
+    plain box            : 12 projected edges, 12 distinct sources
+    box + slot (planar)  : 25 projected edges over all 24 edges, 0 unnamed
+    box + cylindrical    : 5 unnamed, all of them the hole's silhouettes
+    length agreement     : 9 agree, 0 differ
+    bar behind a block   : Edge9;...;HLR:VH:0, HLR:VH:1, HLR:HH:0
+    section              : SectionPlane;:G6;CUT;:H,E;HLR:VH:0
+    after a model edit   : 9 of 9 names unchanged
+
+The all-planar case is the one that settles what "unnamed" means: a
+solid with no curved face leaves *nothing* without a source, so the
+projected edges that have none appear only where a curved face does.
+A silhouette is an edge HLR invents; it has no source edge, and a
+cylinder's is a straight generatrix, not a curve -- which is why an
+earlier probe that expected the unnamed ones to be curved reported a
+false failure.
+
+The length check is the one that shows the reported source is the right
+one and not merely a plausible one: for every named edge of a view, the
+projected length times the scale equals the source edge's, 9 of 9.
+
+**Gates.**  TechDraw 11 of 11 (28.0 s); `ctest` 477 of 477; the Python
+suite 1338 tests, 6 failures and 8 errors, this box's known set.
+
+**What T2 does not do**, and does not claim to.  Vertices and 2D faces
+still take no name: 3.6 has vertices naming from the edges that meet at
+them and faces from the wires that bound them, and the second is the
+change that kills the area-sort fragility.  Nothing persists the name
+yet either -- `BaseGeom::Save` writes `ref3D` and not the strings, so
+old files still restore unchanged.  Both belong with T3, which migrates
+the consumers (`References2D`, `DrawHatch::Source`,
+`GeomFormat::m_geomIndex`, `CenterLine`, `CosmeticVertex::linkGeom`) and
+is where a stored name first has to survive a reload.
+
+### 8.6 T3, built: the consumers keep their references by name (2026-09-07)
+
+Four commits and one repair, in the order 3.6 gives.  The first finishes
+the naming T2 left half done; the other three migrate the consumers, and
+the repair is a crash the first probe to read a cosmetic from Python fell
+into.
+
+#### 8.6.1 Projected vertices and faces are named too
+
+`ccef54d5f8`.  T2 named the projected edges and stopped there.  3.6 says
+where the other two kinds get theirs: a vertex from the edges that meet
+at it, a face from the wires that bound it.
+
+`GeometryObject::nameVertexGeometry` runs beside `nameEdgeGeometry`, on
+the main thread and for the same reason -- it reads names the edges
+already carry.  A vertex takes the sources of every visible named edge
+that starts or ends there, sorted and without duplicates:
+
+    <sourceName>|<sourceName>|...;HLRV:<ordinal>
+
+A centre mark meets no edge; it belongs to the circle whose centre it
+is, so it takes that one source and `;HLRC:` instead.
+
+`nameFaceGeometry` runs from `onFacesFinished`, because face finding is
+a worker of its own.  A face's bounding fragments are **not** the
+projected edges: `DrawProjectSplit::scrubEdges` fuses copies of them and
+splits them where they cross, so each fragment is matched back to the
+edge it lies on by its midpoint, against the same edge list the finder
+was given, with a bounding box test to keep that to a few candidates.
+The face name is the sorted distinct sources of those edges plus
+`;HLRF:<ordinal>`.  `DrawViewPart.getVertexNames()` and `.getFaceNames()`
+read both back.
+
+Evidence, on a stepped block, a drilled plate and two disjoint blocks in
+one view:
+
+    vertices, stepped block : 6 of 6 named, all distinct
+    vertices, drilled plate : 7 of 7 named, one of them ;HLRC:
+    all-planar solid        : no vertex left without a source
+    faces                   : every face named, and every source a face
+                              names is one its own edges report
+    the area sort           : growing the small block past the big one
+                              swaps both face numbers; both faces keep
+                              their names
+
+That last line is the one 3.6 asked for.  A face's number is its rank in
+the sort by area, which is the most fragile identity in the module; the
+name does not move with it.
+
+#### 8.6.2 A dimension's 2D reference
+
+`6bbf82d4fc`.  The ladder 3.6 wants is *name -> exact geometry ->
+similar geometry -> ask the user*.  Only the middle rung existed:
+`SavedGeometry` kept a copy of each reference's geometry and, when it
+stopped matching, the reference was repointed by searching the
+projection for a shape that looked the same.
+
+`DrawViewPart` gained the two directions of the bridge.
+`getGeometryName()` turns a reference into the view -- `Edge3`,
+`Vertex2`, `Face1` -- into the name that element carries, and
+`getGeometryReference()` turns a name back into whatever number the
+element has now.  The tag the name ends with says which pile to search,
+so a name never resolves to an element of the wrong kind.  Both are on
+`DrawViewPartPy`.
+
+`DrawViewDimension` records those names in a new `SavedNames` property,
+one entry per entry of `References2D`, and consults them first:
+`fixByName()` repoints any reference whose name belongs to a different
+element now, and `execute()` then runs the geometry ladder over what is
+left -- which is the demotion 3.6 asks for.  Nothing here remembers
+whether it has run, so the trap of 3.7, a migration spending its one
+chance on the restoring pass, does not apply: while the view has not
+projected there is no name to find and the answer is simply no.
+`execute()` records the names of references it believes in, which is
+what gives a document written before this change something to recover
+with.
+
+Evidence, with the geometry fallback switched off
+(`Dimensions/AutoCorrectRefs`) so the name is the only rung that can
+move anything.  Two blocks in one view, a dimension on the right-hand
+block's 25 mm edge, and the edit slots the left-hand block, which comes
+first in the projection:
+
+    before        : Edge4, 25.000, name Edge1;:H926,E;HLR:VH:0
+    after         : 12 projected edges where there were 8
+    with the name : Edge8, 25.000 -- the element carrying that name
+    without it    : Edge4, 3.000  -- an edge of the new slot
+    saved, closed and reopened: the name comes back, still 25.000
+
+#### 8.6.3 A hatch's face reference
+
+`572035ebf0`.  `DrawHatch` and `DrawGeomHatch` point at a face by its
+number, which 8.6.1 has just shown to be the least durable identity
+there is.  Both gained a `SavedNames` property, recorded when `Source`
+changes and consulted when the faces are next found.
+
+The consulting is driven from the view, in `postFaceExtractionTasks`:
+face finding runs in a worker of its own, so before it lands there is no
+face to name and none to look up, and a hatch's own `execute()` runs too
+early to see either.  The loop both of them run is
+`DrawViewPart::geometryNamesOf` and `::repointByName`, the whole-link
+form of the pair 8.6.2 added.
+
+Evidence, two disjoint blocks in one view and hatches on the smaller
+one's face, the edit growing it past the larger:
+
+    before      : Face0 and Face1, all three hatches on Face0
+    after       : the two faces have swapped numbers
+    with a name : Face1, for the svg hatch and the geometric hatch alike
+    without one : Face0, which is the other block now
+
+#### 8.6.4 The cosmetic references
+
+`432e9e4d0b`.  `GeomFormat` gained `m_geomName` beside `m_geomIndex`;
+`CenterLine` gained `m_faceNames`, `m_edgeNames` and `m_vertNames`
+beside its three reference vectors.  Both write the name **as an
+attribute of the element that carries the reference** --
+`<GeomIndex value="4" name="..."/>`, `<Face value="Face0" name="..."/>`
+-- which is what keeps a document written before names existed reading
+back unchanged: `reader.hasAttribute("name")` is false and the vectors
+stay empty.  Appending a new element instead would have collided with
+the lookahead `GeomFormat::Restore` already does for `LineNumber`.
+
+`CosmeticExtension::syncGeomFormatNames` runs from `postHlrTasks`, where
+the projected edges first exist; `CenterLineBuilder` records names when
+the line is made and `addCenterLinesToGeom` repoints and re-records
+before the line is rebuilt, which is after face finding.
+`GeomFormatPy` gained `GeomIndex` and `GeomName`, `CenterLinePy` gained
+`EdgeNames`, `FaceNames` and `PointNames`.
+
+**`CosmeticVertex::linkGeom` is left alone**, and the header now says
+why.  3.6 lists it with the others, but it is derived, not a reference:
+`addCosmeticVertexesToGeom` rewrites it on every projection and nothing
+reads the stored value back.  The cosmetic vertex is identified by its
+tag, which does not move.
+
+Evidence, in two documents -- one where the edges renumber under a
+format, one where the faces swap under a centre line:
+
+    format, before : Edge4, name Edge1;:H1072,E;HLR:VH:0
+    format, after  : 12 edges where there were 8; the format is on
+                     Edge8, which carries that name, and Edge4 is a
+                     slot edge now
+    centre, before : Face0
+    centre, after  : the faces have swapped; the centre line is on Face1
+    both survive a save, a close and a reopen
+
+#### 8.6.5 The crash that reading a cosmetic from Python walks into
+
+`3fc9fc9fba`, and it is not part of T3 -- it is what T3's probe found.
+
+Reading a view's cosmetic list from Python and then closing the document
+hangs the application, allocating without bound until it stops
+responding.  `CosmeticVertex`, `CosmeticEdge`, `CenterLine` and
+`GeomFormat` all cache the Python wrapper they hand out inside
+themselves,
+
+    if (PythonObject.is(Py::_None())) {
+        PythonObject = Py::Object(new XPy(this), true);
+    }
+
+so the wrapper is kept alive by the object it wraps.  All four declared
+`Delete="true"`, which makes the generated wrapper destructor delete its
+twin (`templates/templateClassPyExport.py`).  Destroying the cosmetic
+destroys the wrapper, which deletes the cosmetic that is already being
+destroyed.  The list property owns these objects; the wrapper borrows
+one.  `Delete="false"` on all four, and none of the types is registered
+in a module, so there is nothing for it to leak.
+
+    reading the list, then closing        : hangs at 1 GB, not responding
+    closing without reading it            : closes
+    with the fix, reading then closing    : closes
+
+**This one cost most of the session's debugging time, twice over,** so
+both traps are written down in 8.6.6.
+
+#### 8.6.6 Traps this step paid for
+
+- **A changed class layout needs a full build, not `--target TechDraw`.**
+  Adding `std::string m_geomName` to `GeomFormat` moved `m_format`.
+  `TechDrawGui` was not rebuilt, kept the old offsets, and wrote through
+  them: `GeomIndex` read back as 875777200, OCCT threw "Illegal storage
+  access" and then "Not enough memory available" from unrelated calls,
+  and one probe hung.  None of it was a real defect.  On this box the
+  rule is: **any header change under `src/Mod/TechDraw/App` means
+  `cmake --build build/win-relwithdebinfo-801` with no target.**
+- **A hang is not evidence until the baseline has been run.**  The
+  wrapper-ownership hang looked like a pre-existing TechDraw bug, and
+  the check that settled it was a probe using no new API at all
+  (`fmt_cycle.py`: build, format, edit, save, close, reopen), run on the
+  stashed tree.  The baseline passed, which is what turned "probably not
+  mine" into "mine, and worth fixing".
+- **Two `DrawViewPart`s on one page do not both finish finding faces**
+  in a scripted run here -- the second view reports 8 edges and 0 faces
+  indefinitely.  Probes that need faces on two views use two documents.
+- **A restored `CenterLine` gets a new tag**, so `getCenterLine(tag)`
+  does not find it after a reload; read it out of the `CenterLines`
+  property instead.
+- `makeCenterLine` with two parallel edges was seen to fail with
+  `Illegal storage access` and `Not enough memory available` -- but only
+  on the mixed-layout build above, and it was not retried afterwards.
+  Treat it as unmeasured, not as a known defect.
+
+#### 8.6.7 What T3 does not do
+
+The recovery ladder's last rung, "ask the user", is still not built:
+that is the repair dialog of 2.8, and 7.18 settled that it waits for the
+upstream PartDesign and Sketcher merges.  `handleNoExactMatch` still
+declares the references correct and moves on.
+
+`BaseGeom::Save` still writes `ref3D` and not the names.  It does not
+need to: the projected geometry is rebuilt on every recompute, and what
+had to persist -- the name a *reference* was made against -- persists on
+the referring object instead, which is where a reader will look for it.

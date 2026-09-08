@@ -10,7 +10,7 @@
       FatherInclude="Base/PyObjectBase.h"
       FatherNamespace="Base"
       Constructor="true"
-      Delete="true">
+      Delete="false">
     <Documentation>
       <Author Licence="LGPL" Name="WandererFan" EMail="wandererfan@gmail.com" />
       <UserDocu>CenterLine specifies additional mark up edges in a View</UserDocu>
@@ -96,6 +96,28 @@
         <UserDocu>The names of source Points for this CenterLine.</UserDocu>
       </Documentation>
       <Parameter Name="Points" Type="List"/>
+    </Attribute>
+    <Attribute Name="EdgeNames" ReadOnly="true">
+      <Documentation>
+        <UserDocu>The names the source edges carried when the CenterLine was made, in
+the order of Edges.  Empty entries where an element had no name, and empty
+throughout in a document written before names existed.</UserDocu>
+      </Documentation>
+      <Parameter Name="EdgeNames" Type="List"/>
+    </Attribute>
+    <Attribute Name="FaceNames" ReadOnly="true">
+      <Documentation>
+        <UserDocu>The names the source faces carried when the CenterLine was made, in the
+order of Faces.</UserDocu>
+      </Documentation>
+      <Parameter Name="FaceNames" Type="List"/>
+    </Attribute>
+    <Attribute Name="PointNames" ReadOnly="true">
+      <Documentation>
+        <UserDocu>The names the source points carried when the CenterLine was made, in the
+order of Points.</UserDocu>
+      </Documentation>
+      <Parameter Name="PointNames" Type="List"/>
     </Attribute>
   </PythonExport>
 </GenerateModel>

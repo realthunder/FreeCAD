@@ -95,7 +95,15 @@ public:
 
     int getNextBalloonIndex();
 
-    void updateAllViews();
+    //! recompute every view on the page.  reuseStored leaves alone the
+    //! views that brought their projection back from the document and have
+    //! not been touched since -- there is nothing for them to recompute.
+    void updateAllViews(bool reuseStored = false);
+    //! the dimensions, balloons, hatches and leaders, which are derived
+    //! from the part views rather than from the model
+    void updateDerivedViews();
+    //! whether any view on the page brought a projection back with it
+    bool hasStoredGeometry();
     static bool GlobalUpdateDrawings();
     static bool AllowPageOverride();
     void forceRedraw(bool b) { m_forceRedraw = b; }

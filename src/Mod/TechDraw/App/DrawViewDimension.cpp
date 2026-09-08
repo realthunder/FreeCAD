@@ -23,6 +23,7 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <algorithm>
 # include <cstdlib>
 # include <sstream>
 
@@ -149,6 +150,9 @@ DrawViewDimension::DrawViewDimension()
 
     ADD_PROPERTY_TYPE(SavedGeometry, ()  ,"References",(App::PropertyType)(App::Prop_None),"Reference Geometry");
     SavedGeometry.setOrderRelevant(true);
+    ADD_PROPERTY_TYPE(SavedNames, () ,"References",(App::PropertyType)(App::Prop_None),
+                      "Names of the projected elements the 2D references point at");
+    SavedNames.setStatus(App::Property::Hidden, true);
 
     // hide the DrawView properties that don't apply to Dimensions
     ScaleType.setStatus(App::Property::ReadOnly, true);
@@ -227,6 +231,7 @@ void DrawViewDimension::onChanged(const App::Property* prop)
 
     if (prop == &References2D) {
         updateSavedGeometry();
+        updateSavedNames();
     } else if (prop == &References3D) {
         // remove the old measurement object
         clear3DMeasurements();
@@ -408,6 +413,12 @@ App::DocumentObjectExecReturn* DrawViewDimension::execute()
         m_savedGeometryFrameChecked = migrateSavedGeometryFrame();
     }
 
+    // the first rung of the recovery ladder: an element that still carries the
+    // name the reference was made against is the element the reference means,
+    // whatever number the projection gives it now.  the geometry comparison
+    // below is the fallback for a reference this cannot place.
+    fixByName();
+
     const std::vector<TopoShape> savedGeometry = SavedGeometry.getValues();
     if (!savedGeometry.empty()) {
         // we can only correct references if we have saved geometry for comparison
@@ -418,6 +429,13 @@ App::DocumentObjectExecReturn* DrawViewDimension::execute()
                 handleNoExactMatch();
             }
         }
+    }
+
+    // record the names of the references we believe in.  that is what gives a
+    // document written before names existed something to recover with, and
+    // what keeps a reference the ladder just repointed current.
+    if (!isRestoring() && m_referencesCorrect) {
+        updateSavedNames();
     }
 
     if (References3D.getValues().empty() && !checkReferences2D()) {
@@ -1440,6 +1458,82 @@ void DrawViewDimension::updateSavedGeometry()
     if (!newGeometry.empty()) {
         SavedGeometry.setValues(newGeometry);
     }
+}
+
+//! record the name each 2D reference's projected element carries.  One entry
+//! per entry of References2D, empty where the element has no name -- a
+//! reference into something that is not a projected view, or a projection with
+//! no element map behind it.
+void DrawViewDimension::updateSavedNames()
+{
+    std::vector<std::string> names;
+    for (auto& entry : getReferences2d()) {
+        auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(entry.getObject());
+        if (!dvp || entry.getSubName().empty()) {
+            names.emplace_back();
+            continue;
+        }
+        names.push_back(dvp->getGeometryName(entry.getSubName()));
+    }
+
+    // while the view has not projected there is nothing to record, and
+    // recording nothing would throw away what the document brought with it
+    bool anyNamed = std::any_of(names.begin(), names.end(),
+                                [](const std::string& name) { return !name.empty(); });
+    if (!anyNamed && !SavedNames.getValues().empty()) {
+        return;
+    }
+
+    if (names != SavedNames.getValues()) {
+        SavedNames.setValues(names);
+    }
+}
+
+//! Repoint any 2D reference whose stored name belongs to a different element
+//! now.  Nothing here remembers whether it has run: while the view has not
+//! projected there is no name to find and the answer is simply no, and the
+//! next execute asks again (sec 3.7).
+bool DrawViewDimension::fixByName()
+{
+    const std::vector<std::string> savedNames = SavedNames.getValues();
+    if (savedNames.empty()) {
+        return false;
+    }
+
+    ReferenceVector references = getReferences2d();
+    if (references.size() != savedNames.size()) {
+        // out of step with the references, so we can not tell which name
+        // belongs to which.  updateSavedNames puts them back in step.
+        return false;
+    }
+
+    std::vector<std::pair<int, std::string>> fixes;
+    for (size_t iRef = 0; iRef < references.size(); iRef++) {
+        if (savedNames.at(iRef).empty()) {
+            continue;
+        }
+        auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(references.at(iRef).getObject());
+        if (!dvp) {
+            continue;
+        }
+        std::string subName = dvp->getGeometryReference(savedNames.at(iRef));
+        if (subName.empty() || subName == references.at(iRef).getSubName()) {
+            // nothing carries that name -- leave it to the geometry rungs --
+            // or the reference already points where it should
+            continue;
+        }
+        fixes.emplace_back(int(iRef), subName);
+    }
+
+    for (auto& fix : fixes) {
+        replaceReferenceSubElement2d(fix.first, fix.second);
+    }
+    if (!fixes.empty()) {
+        Base::Console().Log("%s - %d 2d reference(s) found again by name\n",
+                            getNameInDocument(), int(fixes.size()));
+    }
+
+    return !fixes.empty();
 }
 
 // routines related to detecting that references no longer point to the same geometry as

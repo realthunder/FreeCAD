@@ -68,7 +68,7 @@ TechDraw::DrawViewPart* TechDraw::getReferencesFromSelection(ReferenceVector& re
             //this is not a TechDraw object, so we check to see if it has 3d geometry
             std::vector<App::DocumentObject*> links;
             links.push_back(selItem.getObject());
-            if (!ShapeExtractor::getShapes(links).IsNull()) {
+            if (!ShapeExtractor::getShapes(links).isNull()) {
                 //this item has 3d geometry so we are interested
                 App::DocumentObject* obj3d = selItem.getObject();
                 if (selItem.getSubNames().empty()) {
@@ -527,7 +527,7 @@ DimensionGeometryType TechDraw::isValidMultiEdge3d(DrawViewPart* dvp, ReferenceV
 
     std::vector<TopoDS_Edge> edges;
     for (auto& ref : refs) {
-        std::vector<TopoDS_Shape> shapesAll = ShapeExtractor::getShapesFromObject(ref.getObject());
+        std::vector<Part::TopoShape> shapesAll = ShapeExtractor::getShapesFromObject(ref.getObject());
         if (shapesAll.empty()) {
             //reference has no geometry
             return isInvalid;

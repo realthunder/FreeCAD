@@ -27,6 +27,7 @@ $output v_color0
 
 #include <bgfx_shader.sh>
 #include <fc_particle.sh>
+#include "fc_screen.sh"
 
 SAMPLER2D(s_pimpsrc, 12);
 
@@ -68,5 +69,5 @@ void main()
 	float res = max(u_impactFrame.w, 1.0);
 	vec2 cell = floor((wp.xy - u_impactFrame.xy) * u_impactFrame.z * res);
 	vec2 corner = (cell + a_position.yz) / res;
-	gl_Position = vec4(corner * 2.0 - 1.0, 0.0, 1.0);
+	gl_Position = vec4(fc_uvToNdc(corner), 0.0, 1.0);
 }

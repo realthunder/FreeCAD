@@ -26,6 +26,7 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_matrix.sh"
 #include "fc_prepass_read.sh"
 
 
@@ -62,7 +63,7 @@ void main()
 		return;
 	}
 
-	bool persp = u_proj[2][3] != 0.0;
+	bool persp = FC_MTX(u_proj, 2, 3) != 0.0;
 	float viewZ = nz.z;
 	vec3 pos = fc_prepassViewPos(v_texcoord0, viewZ, persp);
 	vec3 n = fc_octDecode(nz.xy);
@@ -80,7 +81,7 @@ void main()
 
 	// Screen-space (UV) extent of the world-space radius at this depth,
 	// per axis (the projection is anisotropic in x/y).
-	vec2 uvRadius = 0.5 * radius * vec2(u_proj[0][0], u_proj[1][1]);
+	vec2 uvRadius = 0.5 * radius * vec2(FC_MTX(u_proj, 0, 0), FC_MTX(u_proj, 1, 1));
 	if (persp)
 		uvRadius /= viewZ;
 	// Cap the marched extent in PIXELS. With the depth pyramid the far

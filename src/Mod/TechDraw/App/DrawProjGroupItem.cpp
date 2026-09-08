@@ -181,7 +181,12 @@ void DrawProjGroupItem::autoPosition()
 void DrawProjGroupItem::onDocumentRestored()
 {
 //    Base::Console().Message("DPGI::onDocumentRestored() - %s\n", getNameInDocument());
-    DrawView::onDocumentRestored();
+    DrawViewPart::onDocumentRestored();
+    if (canReuseStoredGeometry()) {
+        // the projection came back with the document, so there is nothing
+        // to make (docs/TechDrawStoredGeometry.md)
+        return;
+    }
     App::DocumentObjectExecReturn* rc = DrawProjGroupItem::execute();
     if (rc) {
         delete rc;

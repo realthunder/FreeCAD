@@ -37,10 +37,12 @@
 #include <App/PropertyFile.h>
 #include <App/PropertyLinks.h>
 #include <Base/BoundBox.h>
+#include <Mod/Part/App/TopoShape.h>
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
 #include "CosmeticExtension.h"
 #include "DrawView.h"
+#include "PropertyProjectedGeometry.h"
 
 class Message_ProgressIndicator;
 
@@ -134,12 +136,19 @@ public:
     App::PropertyFloat UnderlayResolution;
     App::PropertyFloatList UnderlayRect;
 
+    // What the last projection produced, kept in the document so that
+    // reopening it draws the view without running HLR, face finding and (for
+    // a section) the boolean cut again.  Prop_Output for the same reason the
+    // underlay capture is: it is derived state, and writing it must not touch
+    // the view that produced it.  See docs/TechDrawStoredGeometry.md.
+    TechDraw::PropertyProjectedGeometry ProjectedGeometry;
+
     short mustExecute() const override;
     App::DocumentObjectExecReturn* execute() override;
     const char* getViewProviderName() const override { return "TechDrawGui::ViewProviderViewPart"; }
     PyObject* getPyObject() override;
 
-    static TopoDS_Shape centerScaleRotate(DrawViewPart* dvp, TopoDS_Shape& inOutShape,
+    static Part::TopoShape centerScaleRotate(DrawViewPart* dvp, Part::TopoShape& inOutShape,
                                           Base::Vector3d centroid);
 
     std::vector<TechDraw::DrawHatch*> getHatches() const;
@@ -155,11 +164,36 @@ public:
     const std::vector<TechDraw::FacePtr> getFaceGeometry() const;
 
     bool hasGeometry() const;
+    //! true when the document brought a projection back for this view and it
+    //! is the projection the view would make now -- nothing has touched the
+    //! view since it was saved.  The page asks before recomputing on restore.
+    bool canReuseStoredGeometry() const;
     TechDraw::GeometryObjectPtr getGeometryObject(bool noException=false) const;
 
     TechDraw::VertexPtr getVertex(std::string vertexName) const;
     TechDraw::BaseGeomPtr getEdge(std::string edgeName) const;
     TechDraw::FacePtr getFace(std::string faceName) const;
+
+    //! The two directions of the bridge between a reference into this view --
+    //! "Edge3", "Vertex2", "Face1" -- and the name the projected element
+    //! carries, which the numbering does not survive but the name does.
+    //! Both return an empty string when there is nothing to report: no such
+    //! element, or one the projection could not name.  Storing the name a
+    //! reference resolved to and asking for it back later is the first rung of
+    //! the recovery ladder (docs/TopoNamingEnhance.md sec 3.6).
+    std::string getGeometryName(const std::string& subName) const;
+    std::string getGeometryReference(const std::string& geometryName) const;
+
+    //! the same pair over a whole link's worth of references into one view.
+    //! geometryNamesOf returns one name per subName, empty where there is
+    //! none; repointByName rewrites subNames in place for every stored name
+    //! that belongs to a different element now, leaving the rest alone, and
+    //! says whether it moved anything.
+    static std::vector<std::string> geometryNamesOf(const App::DocumentObject* obj,
+                                                    const std::vector<std::string>& subNames);
+    static bool repointByName(const App::DocumentObject* obj,
+                              const std::vector<std::string>& geometryNames,
+                              std::vector<std::string>& subNames);
 
     //get existing geom for edge idx in projection
     TechDraw::BaseGeomPtr getGeomByIndex(int idx) const;
@@ -210,7 +244,12 @@ public:
 
     bool isUnsetting() { return nowUnsetting; }
 
-    virtual TopoDS_Shape getSourceShape(bool fuse = false) const;
+    //! the compound of the source shapes, carrying their element maps
+    //! (docs/TopoNamingEnhance.md section 3)
+    virtual Part::TopoShape getSourceShape(bool fuse = false) const;
+    //! the shape the last projection was run on -- centered, scaled, rotated,
+    //! and still carrying the element map.  Null until HLR has run.
+    Part::TopoShape getProjectionShape() const;
     virtual TopoDS_Shape getShapeForDetail() const;
     //! The exact transform mapping getShapeForDetail()'s result frame
     //! back to the global (source) frame -- the inverse of whatever
@@ -235,6 +274,13 @@ public:
     void resetReferenceVerts();
 
     // routines related to multi-threading
+    //! keep what the projection produced.  Called where the geometry is
+    //! complete -- after face finding, or after HLR when no faces are found.
+    virtual void captureGeometry();
+    //! put a stored projection back into a geometry object.  False when there
+    //! was nothing stored, or when it did not read back element for element
+    virtual bool restoreStoredGeometry();
+
     virtual void postHlrTasks();
     virtual void postFaceExtractionTasks();
     bool waitingForFaces() const { return m_waitingForFaces; }
@@ -255,10 +301,11 @@ protected:
 
     void onChanged(const App::Property* prop) override;
     void unsetupObject() override;
+    void onDocumentRestored() override;
 
-    void buildGeometryObject(TopoDS_Shape& shape, const gp_Ax2& viewAxis);
-    void makeGeometryForShape(TopoDS_Shape& shape);//const??
-    void partExec(TopoDS_Shape& shape);
+    void buildGeometryObject(const Part::TopoShape& shape, const gp_Ax2& viewAxis);
+    void makeGeometryForShape(const Part::TopoShape& shape);//const??
+    void partExec(const Part::TopoShape& shape);
 
     struct ExtractFaceParams {
         std::string featureName;
@@ -279,13 +326,18 @@ protected:
 
     bool m_handleFaces;
 
-    TopoDS_Shape m_saveShape;     //TODO: make this a Property.  Part::TopoShapeProperty??
+    Part::TopoShape m_saveShape;  //TODO: make this a Property.  Part::TopoShapeProperty??
     Base::Vector3d m_saveCentroid;//centroid before centering shape in origin
 
     std::vector<TechDraw::VertexPtr> m_referenceVerts;
 
 private:
     bool nowUnsetting = false;
+    //! whether the view was out of date when the document was written.  Read
+    //! in onDocumentRestored, because the restore purges the touched flag
+    //! before the page that has to make the decision is reached.
+    bool m_restoredOutOfDate = false;
+    bool m_geometryFromStore = false;
     bool m_waitingForFaces = false;
     bool m_waitingForHlr = false;
 

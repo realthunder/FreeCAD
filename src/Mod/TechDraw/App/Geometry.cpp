@@ -200,6 +200,8 @@ BaseGeomPtr BaseGeom::copy()
     result->setHlrVisible( hlrVisible);
     result->reversed = reversed;
     result->ref3D = ref3D;
+    result->source3D = source3D;
+    result->hlrName = hlrName;
     result->cosmetic = cosmetic;
     result->source(m_source);
     result->sourceIndex(m_sourceIndex);
@@ -1243,6 +1245,8 @@ Vertex::Vertex(const Vertex* v)
     extractType = v->extractType;       //obs?
     hlrVisible = v->hlrVisible;
     ref3D = v->ref3D;                  //obs. never used.
+    sources3D = v->sources3D;
+    hlrName = v->hlrName;
     m_center = v->m_center;
     occVertex = v->occVertex;
     cosmetic = v->cosmetic;

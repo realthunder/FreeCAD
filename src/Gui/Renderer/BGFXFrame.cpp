@@ -87,6 +87,38 @@ bool BGFXRenderer::Private::render(const QColor &col,
     sceneDirty = false;
     renderOk = false;
 
+    // Coin hands us a GL projection: it clips depth against [-1,1].
+    // Every other bgfx backend clips against [0,1], and the rest of
+    // the engine already assumes the matrix it is given matches
+    // caps->homogeneousDepth -- the shadow crop below, the proxy
+    // hierarchy, the masked and query cullers all branch on it. The
+    // camera projection was the one matrix that reached bgfx
+    // unconverted, so off GL the far half of every scene fell outside
+    // the clipper and simply vanished.
+    //
+    // The remap is z -> (z + w) / 2, i.e. only the z row (indices
+    // 2/6/10/14 of the column-major matrix) changes. The w row is left
+    // alone on purpose: its z entry is how every shader tells a
+    // perspective camera from an orthographic one, and no shader reads
+    // the z row at all, so this stays confined to the clip depth.
+    //
+    // projMatrixFed keeps the matrix as Coin gave it, for the one
+    // consumer that must not see the local backend's convention: the
+    // scene publish/dump, whose viewer renders on a backend of its own
+    // and builds its camera to suit.
+    const void *projMatrixFed = projMatrix;
+    if (projMatrix) {
+        const bgfx::Caps *caps = bgfx::getCaps();
+        if (caps && !caps->homogeneousDepth) {
+            const float *fed = reinterpret_cast<const float *>(projMatrix);
+            std::memcpy(projClip, fed, sizeof(projClip));
+            for (int c = 0; c < 4; ++c)
+                projClip[4 * c + 2] = 0.5f * (fed[4 * c + 2]
+                                              + fed[4 * c + 3]);
+            projMatrix = projClip;
+        }
+    }
+
     // The camera the shadow ground sizes itself to
     // (LightConfig::groundFollowCamera). Taken here, at the top, for
     // two reasons: the ground is laid out well before the frame stores
@@ -400,7 +432,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (getenv("FC_BGFX_DEBUG_CLEAR"))
         clearColor = 0xff0000ff;
 
-    maybeDumpScene(viewMatrix, projMatrix, width, height, clearColor,
+    maybeDumpScene(viewMatrix, projMatrixFed, width, height, clearColor,
                    dirtyChanged);
 
 #ifndef FC_RENDERER_STANDALONE
@@ -1053,7 +1085,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         }
     }
 
-    publishScene(viewMatrix, projMatrix, width, height, clearColor,
+    publishScene(viewMatrix, projMatrixFed, width, height, clearColor,
                  dirtyChanged);
 #endif
 
@@ -4225,8 +4257,9 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->projMatrix = reinterpret_cast<const float *>(projMatrix);
 
     // Frustum culling: world-space clip planes extracted from the
-    // camera view-projection (Gribb-Hartmann; the fed matrices follow
-    // Coin's GL clip conventions). A scene draw whose world bounds
+    // camera view-projection (Gribb-Hartmann, against this backend's
+    // clip volume -- the projection was remapped to it at the top of
+    // the frame). A scene draw whose world bounds
     // lie fully outside any plane skips its color/water/prepass
     // submits below. Shadow casters are exempt — off-screen geometry
     // still casts into the view — as are autozoom draws (their model
@@ -4250,13 +4283,21 @@ bool BGFXRenderer::Private::render(const QColor &col,
                    reinterpret_cast<const float *>(projMatrix));
         // Row-vector convention (v' = v * M): clip component i is
         // dot(v, column i); plane k folds column 3 with the column
-        // of its axis. GL clip volume, so the near plane is w + z.
+        // of its axis. That holds for five of the six planes on both
+        // conventions -- only the near one differs, being w + z under
+        // GL's [-1,1] clip volume and plain z under the [0,1] volume
+        // every other backend uses.
+        const bgfx::Caps *clipCaps = bgfx::getCaps();
+        const bool glClip = !clipCaps || clipCaps->homogeneousDepth;
         float planes[6][4];
         for (int k = 0; k < 6; ++k) {
             int axis = k >> 1;
             float sign = (k & 1) ? -1.0f : 1.0f;
+            const bool nearPlane = axis == 2 && !(k & 1);
             for (int r = 0; r < 4; ++r)
-                planes[k][r] = vp[r * 4 + 3] + sign * vp[r * 4 + axis];
+                planes[k][r] = (nearPlane && !glClip ? 0.0f
+                                                     : vp[r * 4 + 3])
+                    + sign * vp[r * 4 + axis];
         }
         sceneCulled.assign(scene.size(), 0);
         size_t nculled = 0;
@@ -6493,6 +6534,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // bottom-up", which is true of GL and of nothing else.
         const bool flip = bgfx::getCaps()->originBottomLeft;
         std::vector<unsigned char> rgba(n * 4);
+        long long nonFinite = 0;
         for (uint16_t y = 0; y < capturePixH; ++y) {
             const size_t sy = flip ? size_t(capturePixH - 1 - y) : y;
             unsigned char *dst = &rgba[size_t(y) * capturePixW * 4];
@@ -6502,9 +6544,24 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 for (uint16_t x = 0; x < capturePixW; ++x)
                     for (int c = 0; c < 4; ++c) {
                         const float v = bx::halfToFloat(src[x * 4 + c]);
+                        // NaN walks straight through min/max -- every
+                        // comparison against it is false, so both return
+                        // it -- and std::lround(NaN) is undefined, which
+                        // turned a NaN channel into an arbitrary byte.
+                        // Measured: a shader NaN reached a golden as a
+                        // saturated primary and read as a shading
+                        // difference rather than as the NaN it was. Zero
+                        // is what the clamp was already asking for.
+                        float f;
+                        if (v == v && v - v == 0.0f) {
+                            f = std::min(std::max(v, 0.0f), 1.0f);
+                        }
+                        else {
+                            f = 0.0f;
+                            ++nonFinite;
+                        }
                         dst[x * 4 + c] = (unsigned char)
-                            std::lround(std::min(std::max(v, 0.0f), 1.0f)
-                                        * 255.0f);
+                            std::lround(f * 255.0f);
                     }
             }
             else {
@@ -6537,6 +6594,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
         lastStats.height = capturePixH;
         lastStats.temporalSamples = view->accumFrames;
         lastStats.geometryPixels = ng;
+        lastStats.nonFiniteChannels = captureHdr ? nonFinite : -1;
+        // Said out loud as well as recorded: this is a broken frame,
+        // and the capture that carries it should not become a golden.
+        if (nonFinite)
+            RENDER_ERR("capture read back " << nonFinite
+                       << " non-finite channels (forced to 0) -- the"
+                          " shading produced NaN or infinity, so this"
+                          " frame is not fit to bless");
         lastStats.avgColor[0] = ng ? float(r) / float(ng) : -1.0f;
         lastStats.avgColor[1] = ng ? float(g) / float(ng) : -1.0f;
         lastStats.avgColor[2] = ng ? float(b) / float(ng) : -1.0f;

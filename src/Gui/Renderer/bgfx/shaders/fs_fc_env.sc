@@ -34,6 +34,8 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_screen.sh"
+#include "fc_matrix.sh"
 
 uniform vec4 u_pbrParams;
 SAMPLERCUBE(s_texEnv, 1);
@@ -50,11 +52,11 @@ SAMPLERCUBE(s_texEnv, 1);
 
 void main()
 {
-	vec2 ndc = v_texcoord0 * 2.0 - vec2_splat(1.0);
+	vec2 ndc = fc_uvToNdc(v_texcoord0);
 	vec3 dir;
-	if (u_proj[2][3] != 0.0)
-		dir = vec3((ndc.x + u_proj[2][0]) / u_proj[0][0],
-		           (ndc.y + u_proj[2][1]) / u_proj[1][1],
+	if (FC_MTX(u_proj, 2, 3) != 0.0)
+		dir = vec3((ndc.x + FC_MTX(u_proj, 2, 0)) / FC_MTX(u_proj, 0, 0),
+		           (ndc.y + FC_MTX(u_proj, 2, 1)) / FC_MTX(u_proj, 1, 1),
 		           -1.0);
 	else
 		dir = vec3(ndc.x * 0.41421356, ndc.y * 0.41421356, -1.0);

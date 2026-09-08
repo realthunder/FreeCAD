@@ -12,6 +12,7 @@
  */
 
 #include "fc_line_sdf.sh"
+#include "fc_matrix.sh"
 #include "fc_openpbr.sh"
 
 #ifdef FC_USER_MATERIAL
@@ -125,7 +126,7 @@ void main()
 {
 	vec3 n = normalize(v_normal);
 	// Two-sided like the CAD materials: flip toward the viewer.
-	vec3 V = u_proj[2][3] != 0.0 ? normalize(-v_vpos)
+	vec3 V = FC_MTX(u_proj, 2, 3) != 0.0 ? normalize(-v_vpos)
 	                             : vec3(0.0, 0.0, 1.0);
 	if (dot(n, V) < 0.0)
 		n = -n;
@@ -182,9 +183,9 @@ void main()
 	if (dot(T, T) < 1.0e-6)
 		T = d;  // total internal reflection: sample straight through
 	vec2 disp = (T.xy - d.xy) * thick;
-	float persp = u_proj[2][3] != 0.0
+	float persp = FC_MTX(u_proj, 2, 3) != 0.0
 		? 1.0 / max(-v_vpos.z, 1.0e-3) : 1.0;
-	vec2 ruv = uv + disp * vec2(u_proj[0][0], u_proj[1][1]) * 0.5
+	vec2 ruv = uv + disp * vec2(FC_MTX(u_proj, 0, 0), FC_MTX(u_proj, 1, 1)) * 0.5
 		* persp;
 
 	// The Jacobian of the refraction mapping in field pixels per
@@ -235,7 +236,8 @@ void main()
 	if (rough > 0.001)
 	{
 		vec2 rad = rough * thick * 0.35
-			* vec2(u_proj[0][0], u_proj[1][1]) * 0.5 * persp;
+			* vec2(FC_MTX(u_proj, 0, 0), FC_MTX(u_proj, 1, 1))
+			* 0.5 * persp;
 		rad = max(rad, u_viewTexel.xy * rough * 4.0);
 		rad = min(rad, vec2_splat(0.02));
 		float ang = 6.2831853 * fract(52.9829189

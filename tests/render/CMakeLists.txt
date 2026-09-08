@@ -88,14 +88,29 @@ endif()
 # and the harness' own conda wrapper. Anything missing means the test
 # cannot run here -- report that once, at configure time, rather than
 # failing a build that is simply not set up for it.
-find_program(FC_XVFB_RUN xvfb-run)
 set(_fc_golden_ready TRUE)
 foreach(_req FreeCADMain FreeCADGui)
     if(NOT TARGET ${_req})
         set(_fc_golden_ready FALSE)
     endif()
 endforeach()
-if(NOT BUILD_BGFX OR NOT FC_XVFB_RUN OR NOT EXISTS "${CMAKE_SOURCE_DIR}/.conda/run.sh")
+if(NOT BUILD_BGFX OR NOT EXISTS "${CMAKE_SOURCE_DIR}/.conda/run.sh")
+    set(_fc_golden_ready FALSE)
+endif()
+
+# The display is per-platform, and only render-verify.sh knows how to
+# raise one -- this end just asks whether it could. Linux needs xvfb;
+# macOS draws on the window server of the logged-in session, so there is
+# nothing to find (and no xvfb-run to find: requiring it unconditionally
+# is why these tests did not merely skip on macOS, they were never
+# registered at all). Everything else has no leg in that script, which
+# is bash and Unix-shaped throughout.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_program(FC_XVFB_RUN xvfb-run)
+    if(NOT FC_XVFB_RUN)
+        set(_fc_golden_ready FALSE)
+    endif()
+elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(_fc_golden_ready FALSE)
 endif()
 
@@ -107,14 +122,45 @@ endif()
 # frame is the model and the diff is about what is under test. The
 # background is drawn by the engine too, so neither case replaces the
 # other.
+# A golden is a picture of ONE backend, so a backend that is not the
+# blessed one looks for its own set beside it (refs/<set>-metal) and
+# registers nothing at all until that set is blessed. Handing the
+# OpenGL set to another backend is not a stricter test, it is a
+# different one -- and while the first such run did find three real
+# defects (a mirrored frame, a clipped far half, and every orthographic
+# camera read as perspective, all fixed 2026-09-07, RenderDebug.md
+# 5.2b), a diff against the wrong reference is not what describes them.
+# Even fixed, the Metal frame differs from the OpenGL golden on 0.35% of
+# the beauty pixels and 0.12% of the AO -- small, real, and the
+# residual a per-backend set exists to hold.
+set(_fc_refs_variant "")
+if(APPLE)
+    set(_fc_refs_variant "-metal")
+endif()
+
 function(fc_add_golden_test name scene refs bg)
-    if(NOT IS_DIRECTORY "${FC_RENDER_REFS_DIR}/${refs}")
+    set(_refs_dir "${FC_RENDER_REFS_DIR}/${refs}${_fc_refs_variant}")
+    if(NOT IS_DIRECTORY "${_refs_dir}")
+        return()
+    endif()
+    # A build that cannot path trace must not be handed a golden that
+    # holds a traced frame. render_diff.py reads the missing group as a
+    # divergence -- MISSING is a failure, and rightly so -- and the test
+    # would then fail over a leg this build was never asked to capture.
+    # Not hypothetical: the OpenGL chess sets carry their traced frame,
+    # the Metal ones are blessed raster-only on a box with BUILD_CYCLES
+    # off, and the raster leg of the chess scene is worth registering on
+    # its own either way.
+    set(_args ${ARGN})
+    file(GLOB _refs_traced "${_refs_dir}/*--cycles--mode0.png")
+    list(FIND _args "--cycles" _asks_traced)
+    if(_refs_traced AND _asks_traced EQUAL -1)
         return()
     endif()
     add_test(NAME ${name}
              COMMAND "${_fc_verify}" capture "${_fc_render_work}/${refs}"
                      --scene "${scene}"
-                     --golden "${FC_RENDER_REFS_DIR}/${refs}"
+                     --golden "${_refs_dir}"
                      ${ARGN})
     set_tests_properties(${name} PROPERTIES
         ENVIRONMENT "FC_BUILD=${CMAKE_BINARY_DIR};FC_RENDER_TEST_BG=${bg}")
@@ -142,24 +188,31 @@ if(_fc_golden_ready AND IS_DIRECTORY "${FC_RENDER_REFS_DIR}")
     # Same scene, path traced. CPU on purpose: it is the only device
     # every box has, and a golden blessed on one device does not compare
     # against another.
-    if(FC_RENDER_HEAVY_TESTS AND BUILD_CYCLES)
-        fc_add_golden_test(RenderGoldenCycles_tests_run "${_fc_scene}" cycles 1
-                           --modes 0 --cycles --cycles-device CPU
-                           --cycles-samples 64 --cycles-size 240x180
-                           --timeout 600)
+    if(FC_RENDER_HEAVY_TESTS)
+        # The traced leg is what needs Cycles; the chess scene's raster
+        # leg does not, and it is the only test that exercises MaterialX,
+        # map binding and the texture path -- so it registers on a build
+        # without Cycles too, against a golden that holds no traced frame
+        # (the guard in fc_add_golden_test pairs the two up).
+        set(_fc_cycles_args "")
+        if(BUILD_CYCLES)
+            set(_fc_cycles_args --cycles --cycles-device CPU
+                                --cycles-samples 64 --cycles-size 240x180)
+            fc_add_golden_test(RenderGoldenCycles_tests_run "${_fc_scene}"
+                               cycles 1 --modes 0 ${_fc_cycles_args}
+                               --timeout 600)
+        endif()
         # The real-document leg: a real asset with a real material
         # library, which is the case a synthetic scene cannot fail the
         # way an import does. Both assets ship in the MaterialX
         # submodule; without it the scene has nothing to import.
         if(EXISTS "${_fc_chess_glb}")
             fc_add_golden_test(RenderGoldenChess_tests_run "${_fc_chess}"
-                               chess 1 --modes 0 --cycles --cycles-device CPU
-                               --cycles-samples 64 --cycles-size 240x180
+                               chess 1 --modes 0 ${_fc_cycles_args}
                                --timeout 900)
             fc_add_golden_test(RenderGoldenChessFlat_tests_run "${_fc_chess}"
-                               chess-flat 0 --modes 0 --cycles
-                               --cycles-device CPU --cycles-samples 64
-                               --cycles-size 240x180 --timeout 900)
+                               chess-flat 0 --modes 0 ${_fc_cycles_args}
+                               --timeout 900)
         endif()
         foreach(t RenderGoldenCycles_tests_run RenderGoldenChess_tests_run
                   RenderGoldenChessFlat_tests_run)

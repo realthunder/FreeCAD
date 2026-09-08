@@ -44,6 +44,31 @@ descriptor` and takes the rest of the run down with it.
 A single module instead of everything: `FreeCADCmd -t TestPartApp`, or from
 the Python console `import Test; Test.runTestApp()`.
 
+#### Audit the Python environment first, on a new box
+
+A green `ctest` says nothing about the Python side: `FreeCADCmd` links no
+Coin and imports no workbench, and every gtest suite is C++. A box can be
+478 of 478 with Draft, Arch and importDXF unable to import at all -- which
+is what the macOS box was for three days, missing `typing_extensions` and
+`pivy` (`DevEnvironment.md`, "The Python packages the create line does not
+install"). Run this before the suite, as `FreeCADCmd audit.py`; it writes
+to a file because a script's stdout does not reach the console there:
+
+```python
+import FreeCAD
+out = open("/tmp/deps.txt", "w")
+for m in ("pivy", "typing_extensions", "ply", "yaml", "requests",
+          "defusedxml", "git", "shapefile", "pysolar", "ladybug",
+          "opencamlib", "debugpy", "six", "lark", "numpy", "matplotlib",
+          "Draft", "Arch", "BIM", "TechDraw", "Material", "importDXF"):
+    try:
+        __import__(m)
+        out.write("ok      %s\n" % m)
+    except Exception as e:
+        out.write("MISSING %-20s (%s)\n" % (m, e))
+out.close()
+```
+
 ### C++
 
 The suites are built only when `ENABLE_DEVELOPER_TESTS` is on:
@@ -315,27 +340,42 @@ Everything else called "render" here tests the cache, the view properties
 or the generated shader source with no GL context at all -- and
 `PublishOnly_tests_run` asserts outright that no driver is mapped.
 
-Three run in a default `ctest`:
+Four run in a default `ctest`:
 
 | Test | What | Cost |
 |---|---|---|
 | `RenderSmokeVg_tests_run` | `fcvgsmoke`, bgfx headless offscreen, ink checked per primitive | 0.3 s |
 | `RenderSmokePage2D_tests_run` | the retained `Page2D` scenario in the same binary | 0.3 s |
-| `RenderGoldenRaster_tests_run` | a staged scene under xvfb vs blessed reference images, per pipeline stage | 28 s |
+| `RenderGoldenRaster_tests_run` | a staged scene under xvfb vs blessed reference images, per pipeline stage | 28 s (macOS 20 s) |
+| `RenderGoldenRasterFlat_tests_run` | the same scene and stages with the environment lighting the model but not drawn | 28 s (macOS 19 s) |
+
+A golden belongs to one backend, so the macOS leg runs against the
+`-metal` sets (`RenderDebug.md` 5.2b) and registers nothing where one
+has not been blessed.
 
 The path-traced and real-document ones are opt-in, because they are
 slower and because a label alone cannot hold them back:
 
     cmake -DFC_RENDER_HEAVY_TESTS=ON <build> && ctest -L render-heavy
 
+The chess pair no longer needs Cycles: it registers with the traced leg
+where `BUILD_CYCLES` is on and without it where the golden set holds no
+traced frame, which is what makes the raster chess leg -- the only test
+that exercises MaterialX, map binding and the texture path -- gate on a
+box that cannot path trace. Verified on macOS 12 / Metal 2026-09-07:
+`RenderGoldenChess_tests_run` 37.5 s, `RenderGoldenChessFlat_tests_run`
+35.4 s, both against the freshly blessed `chess-metal` sets.
+
 The reference images live in a separate repository
 (`realthunder/fcad-render-refs`), the submodule at `tests/render/refs`
 (`git submodule update --init tests/render/refs`); when it is not
 checked out the golden tests are **skipped, not failed**. Full design, the reblessing procedure and the
-traps: `docs/RenderDebug.md` section 5.2 -- and 5.2a for the defect the
+traps: `docs/RenderDebug.md` section 5.2 -- 5.2a for the defect the
 chess set found on its first day (a capture taken while a material was
 still compiling), which is why a frame dump now waits for a complete
-frame.
+frame, and 5.2c for the three portability faults its first Metal run
+found, one of which put a scene with no environment in it through the
+harness without a word.
 
 #### The vg smokes on Windows
 
@@ -487,6 +527,26 @@ Registration needs `FreeCADMain`, `FreeCADGui`, `xvfb-run` and
 `.conda/run.sh`; the tree says so at configure time when one is missing.
 The chess asset comes from the MaterialX submodule, so without that
 checkout the test is not registered.
+
+#### TechDraw's real tests are in the Gui module list
+
+`FreeCADCmd -t TestTechDrawApp` is six cases and none of them projects
+geometry.  The five suites that do -- `DrawViewPartTest`,
+`DrawViewSectionTest`, `DrawViewDetailTest`, `DrawViewDimensionTest`
+and `DrawStoredGeometryTest` -- are imported by `TestTechDrawGui`,
+because each waits for the HLR threads on a `QEventLoop` driven by a
+`QTimer`.  Console mode dispatches neither, so `FreeCADCmd -t TestTechDrawGui` **hangs** instead of
+failing: no output, and it has to be killed.
+
+They need a running application, not a display of their own, so on
+Windows they run the same way as the two registered GUI tests above: a
+startup script under `run_cdb.ps1 -UserHome <dir> -StartupScript <file>`
+that loads both module lists into one `unittest` suite from a
+`QTimer.singleShot(0, ...)`, writes PASS/FAIL and `DONE` to a result
+file, and quits.  14 tests, 30 s (11 until
+`docs/TechDrawStoredGeometry.md` added three).  That is the gate every
+TechDraw change in `docs/TopoNamingEnhance.md` section 8 is measured
+against.
 
 ### Toolbar paints threw on macOS 12
 

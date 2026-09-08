@@ -695,7 +695,18 @@ static void writeRenderDumpSidecar(View3DInventor *view,
     QJsonObject root;
 
     QJsonObject capture;
-    capture[QStringLiteral("file")] = QString::fromUtf8(imagePath.c_str());
+    // The BASENAME, not the path it was written to. A golden's
+    // sidecar is a shared artefact in a public repository, and the
+    // blessing box's own absolute path is both meaningless there and
+    // a trap of a shape this tree has already paid for once:
+    // Render_PBREnvImage carried a blessing box's absolute path into
+    // a golden, and render_verify's relocate() exists to defend the
+    // properties against exactly that. Nothing reads this field back
+    // -- the verifier derives the image name from the sidecar's own
+    // -- so it is descriptive, and a description should not name a
+    // directory that exists on one machine.
+    capture[QStringLiteral("file")] =
+        QFileInfo(QString::fromUtf8(imagePath.c_str())).fileName();
     capture[QStringLiteral("source")] = QString::fromUtf8(source);
     if (mode >= 0)
         capture[QStringLiteral("mode")] = mode;
@@ -755,6 +766,12 @@ static void writeRenderDumpSidecar(View3DInventor *view,
         st[QStringLiteral("height")] = stats->height;
         st[QStringLiteral("geometryPixels")] =
             double(stats->geometryPixels);
+        // Recorded in the sidecar so a blessing can be refused
+        // rather than merely regretted: a non-zero count means the
+        // shading produced NaN or infinity, and the capture holds
+        // arbitrary pixels wherever it did.
+        st[QStringLiteral("nonFiniteChannels")] =
+            double(stats->nonFiniteChannels);
         QJsonArray avg;
         avg.append(stats->avgColor[0]);
         avg.append(stats->avgColor[1]);
@@ -1156,8 +1173,10 @@ PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)
                             root = doc.object();
                     }
                     QJsonObject capture;
+                    // The basename, as above.
                     capture[QStringLiteral("file")] =
-                        QString::fromUtf8(file.c_str());
+                        QFileInfo(QString::fromUtf8(file.c_str()))
+                            .fileName();
                     capture[QStringLiteral("source")] =
                         QStringLiteral("viewer");
                     if (mode >= 0)
@@ -1226,6 +1245,8 @@ PyObject* View3DInventorPy::getRenderStats(PyObject *args, PyObject *kwds)
         dict.setItem("height", Py::Long(stats.height));
         dict.setItem("geometryPixels",
                      Py::Long(long(stats.geometryPixels)));
+        dict.setItem("nonFiniteChannels",
+                     Py::Long(long(stats.nonFiniteChannels)));
         Py::Tuple avg(3);
         avg.setItem(0, Py::Float(stats.avgColor[0]));
         avg.setItem(1, Py::Float(stats.avgColor[1]));

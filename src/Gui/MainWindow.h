@@ -69,6 +69,33 @@ public:
 };
 
 /**
+ * Identifies which side of the status bar an item belongs to.
+ * Left items are non-permanent (a status message may temporarily cover them);
+ * Right items are permanent and never obscured.
+ */
+enum class StatusBarSlot
+{
+    Left,
+    Right,
+};
+
+/**
+ * Metadata describing a status-bar item registered through
+ * MainWindow::addStatusBarItem(). The caller states intent -- slot, order, a
+ * stable id and a human title -- and MainWindow owns the layout, the ordering,
+ * the persistence of the user's show/hide choice and the context-menu entry.
+ */
+struct StatusBarItemSpec
+{
+    QByteArray id;    ///< Stable identifier, used for removal and persistence.
+    QString title;    ///< Label shown in the status bar's context menu.
+    StatusBarSlot slot = StatusBarSlot::Right;
+    int order = 0;    ///< Sort key within the slot; lower sits closer to the centre.
+    bool persistentVisibility = true;  ///< Remember the show/hide choice across sessions.
+    int stretch = 0;  ///< Layout stretch factor.
+};
+
+/**
  * The MainWindow class provides a main window with menu bar, toolbars, dockable windows,
  * a status bar and mainly a workspace for the MDI windows.
  * @author Werner Mayer
@@ -263,6 +290,26 @@ public:
     void showHints(const std::list<InputHint>& hints = {});
     void hideHints();
 
+    /** @name Status bar items
+     *
+     * A workbench does not touch the QStatusBar layout: it registers a widget
+     * here, and this window decides where the widget sits, in what order,
+     * whether the user's show/hide choice survives a restart, and how it
+     * appears in the status bar's context menu. Draft, BIM and Tux are written
+     * against this API and create their widgets through
+     * UiLoader().createWidget("Gui::ToolBar").
+     */
+    //@{
+    /// Registers and places \a widget in the status bar according to \a spec.
+    void addStatusBarItem(QWidget* widget, const StatusBarItemSpec& spec);
+    /// Removes a registered item by id. Does not delete the widget.
+    void removeStatusBarItem(const QByteArray& id);
+    /// Shows or hides a registered item, persisting it when the item asked for that.
+    void setStatusBarItemEnabled(const QByteArray& id, bool enabled);
+    /// Appends a checkable toggle action for every registered item to \a menu.
+    void buildStatusBarContextMenu(QMenu& menu);
+    //@}
+
     void initDockWindows(bool show);
 
     /** Whether the combo view dock carries the model tree.
@@ -368,6 +415,9 @@ private:
      * the kit installs its own inline integration each time.
      */
     void setupTitleBarMenu();
+
+    /// Re-place every registered status-bar item in slot and order.
+    void relayoutStatusBar();
 
     void setupDockWindows();
     bool setupSelectionView();

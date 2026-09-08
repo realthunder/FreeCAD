@@ -144,6 +144,11 @@
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #   include <QtGui/qopenglcontext_platform.h>
+// The display a non-GL backend's surface is created against, reached
+// through the application rather than the context. Forward declarations
+// only -- it does not drag X11's or Wayland's headers (and their macros)
+// into this one.
+#   include <QtGui/qguiapplication_platform.h>
 #elif defined FC_OS_LINUX
 #   include <QtPlatformHeaders/QGLXNativeContext>
 typedef QGLXNativeContext OpenGLContext;
@@ -1734,6 +1739,21 @@ assembleMediumVariant(const char *body,
 class BGFXRendererLibP {
 public:
     BGFXRendererLibP() {
+#ifndef FC_RENDERER_STANDALONE
+        // Vulkan, opt-in for the same reason Metal is below: it renders
+        // and it CAPTURES, but it does not yet reach the screen.
+        // BGFXView::blit composites by wrapping bgfx's attachments in a
+        // GL framebuffer, so it stands aside on any non-GL backend and
+        // Coin draws the viewport -- a Vulkan session looks like a
+        // renderer that draws nothing. Frame capture is portable
+        // (bgfx::readTexture), which is what the golden render tests
+        // gate on, so the backend is verifiable without a viewport;
+        // offering it in the UI's backend list before the composite
+        // follows would read as a broken renderer rather than an
+        // unfinished one.
+        if (getenv("FC_BGFX_VULKAN"))
+            typeMap["bgfx - Vulkan"] = RendererType::Vulkan;
+#endif
 #if defined(FC_OS_MACOSX) && !defined(FC_RENDERER_STANDALONE)
         // Metal is the only backend that can run this renderer on
         // macOS: Apple caps the compatibility profile Coin needs at
@@ -1785,12 +1805,54 @@ public:
         return currentType != RendererType::Noop;
     }
 
+    /// bgfx::init does NOT fail when the backend it was asked for is
+    /// unavailable: it comes up on another one and says nothing. Every
+    /// report downstream then names the backend that was REQUESTED --
+    /// the capture sidecar's "backend" field among them -- while the
+    /// frames come from a different device, which is a golden blessed
+    /// on a device nobody can identify afterwards. Say it once, and
+    /// carry the real one from here on.
+    void adoptActualRenderer()
+    {
+        const RendererType::Enum actual = bgfx::getRendererType();
+        if (actual == currentType)
+            return;
+        RENDER_ERR("asked bgfx for " << bgfx::getRendererName(currentType)
+                   << ", it came up on " << bgfx::getRendererName(actual)
+                   << " -- that is what every frame is drawn on");
+        currentType = actual;
+    }
+
+    /// bgfx::init happens once per process, so the FIRST backend asked
+    /// for is the one the session gets and a later view asking for
+    /// another silently runs on the first. Worth saying out loud: the
+    /// startup warm-up brings a backend up before any 3D view exists
+    /// (Application.cpp), so a session that selects a different one
+    /// afterwards is not on the backend it believes it is.
+    void warnTypeLocked(RendererType::Enum want)
+    {
+        // Nothing is locked until a device is actually up: Noop means
+        // the next prepare() is free to bring bgfx up on whatever it is
+        // asked for, and a switch tears the old one down first
+        // (BGFXRendererLib::create -> shutdown).
+        if (!deviceUp() || want == currentType || want == typeLockWarned)
+            return;
+        typeLockWarned = want;
+        RENDER_ERR("bgfx is already running on "
+                   << bgfx::getRendererName(currentType) << " in this process; "
+                   << bgfx::getRendererName(want)
+                   << " needs a restart to select (bgfx::init is once per"
+                      " process)");
+    }
+    RendererType::Enum typeLockWarned = RendererType::Count;
+
 #ifdef FC_RENDERER_STANDALONE
     /// Standalone (no Qt): bgfx owns the native window/canvas handed in
     /// through setWindowHandle() — under Emscripten the "#canvas" CSS
     /// selector — and creates its own GL context on it.
     bool prepare(QOpenGLWidget *, RendererType::Enum type)
     {
+        warnTypeLocked(type);
         if (currentType == RendererType::Noop) {
             currentType = type;
             bgfx::Init init;
@@ -1811,6 +1873,7 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            adoptActualRenderer();
             resolveDeviceName();
         }
         return true;
@@ -1837,6 +1900,7 @@ public:
         // A device this build's shaders cannot run on, already reported.
         if (glUnsupported)
             return false;
+        warnTypeLocked(type);
         QElapsedTimer _warmClock;
         _warmClock.start();
         msContext = msDevice = 0;
@@ -1938,6 +2002,35 @@ public:
                 // own isKindOfClass: dispatch over NSView/NSWindow/CAMetalLayer
                 // (renderer_mtl.cpp), so no Objective-C++ unwrapping is needed here.
                 init.platformData.nwh = reinterpret_cast<void*>(window->winId());
+#if defined(FC_OS_LINUX) && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+                // A window alone is not a surface here. bgfx builds the
+                // Vulkan surface itself and hands ndt straight to
+                // vkCreateXlibSurfaceKHR as the Display* -- a null one
+                // fails instantly -- while the Wayland path needs the
+                // wl_display AND to be told the handle is a wl_surface,
+                // which no pointer says about itself. Qt's winId() is
+                // already the right handle on both (an X11 Window, a
+                // wl_surface), so only the display side is missing.
+                // The GL path above needs none of this: bgfx is handed
+                // a context that already owns its surface.
+#   if QT_CONFIG(wayland)
+                if (auto *wl = qGuiApp->nativeInterface<
+                        QNativeInterface::QWaylandApplication>()) {
+                    init.platformData.ndt = wl->display();
+                    init.platformData.type =
+                        bgfx::NativeWindowHandleType::Wayland;
+                }
+                else
+#   endif
+#   if QT_CONFIG(xcb)
+                if (auto *x11 = qGuiApp->nativeInterface<
+                        QNativeInterface::QX11Application>())
+                    init.platformData.ndt = x11->display();
+                else
+#   endif
+                    RENDER_ERR("no native display handle; a non-GL backend"
+                               " cannot create its surface");
+#endif
             }
             // bgfx treats an all-null PlatformData as a request for a headless device, and
             // then rejects a non-zero resolution ("resolution of non-existing backbuffer
@@ -1962,6 +2055,7 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            adoptActualRenderer();
             resolveDeviceName();
             msDevice = _warmClock.nsecsElapsed() / 1.0e6;
         }
@@ -2564,9 +2658,16 @@ struct ColorVertex
 // vertex attribute", and EVERY draw carrying the stream is dropped.
 // Desktop GL takes the other branch, so it never showed there.
 // Bound only for meshes that carry the stream; every other mesh-program
-// draw leaves the attributes unbound, which bgfx resolves to the GL
-// default attribute — finite values the shader multiplies out, since
-// it selects the stream over the material scalars by u_matEmissive.w.
+// draw leaves the attributes unbound, and what that reads is NOT the
+// same on every backend. GL substitutes the constant default attribute.
+// Vulkan has no such thing, so bgfx points the attribute at binding 0,
+// offset 0 (renderer_vk.cpp, the unsettedAttr loop) -- which for these
+// programs is the vertex POSITION, arriving as a colour. The shader
+// multiplies it out either way, because u_matEmissive.w selects the
+// stream over the material scalars only when the stream is really
+// bound; what it must never do is put such a value through a transform
+// that is undefined outside 0..1, which is exactly how the position's
+// negative coordinates once reached the frame as NaN (fc_color.sh).
 struct MatVertex
 {
     uint32_t emissive;
@@ -9234,6 +9335,11 @@ public:
     void updateBBox();
 
     QOpenGLWidget *widget;
+    /// The fed camera projection remapped to this backend's clip depth
+    /// (render()). Lives here rather than on the stack because the
+    /// frame hands the pointer on -- BGFXView::projMatrix keeps it for
+    /// the pass closures and the effect submits.
+    float projClip[16] = {};
     /// This renderer will never draw (docs/HeadlessServe.md §3.1): no
     /// bgfx view, no graphics device, no display. render() refuses;
     /// publishNoDraw() is the whole of what it does.

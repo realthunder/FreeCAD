@@ -16,6 +16,9 @@
 #ifndef FC_PREPASS_READ_SH
 #define FC_PREPASS_READ_SH
 
+#include "fc_screen.sh"
+#include "fc_matrix.sh"
+
 // Inverse of the prepass octEncode: the octahedral map folded back onto
 // the unit sphere.
 vec3 fc_octDecode(vec2 e)
@@ -30,18 +33,22 @@ vec3 fc_octDecode(vec2 e)
 	return normalize(n);
 }
 
-// View-space position of a prepass texel. GL projection: perspective
-// has u_proj[2][3] == -1 (w = viewZ), orthographic has 0 (w = 1); both
-// look down -z, so pass persp = u_proj[2][3] != 0.0.
+// View-space position of a prepass texel. The camera projection is
+// remapped to the backend's clip depth before it is bound, but only in
+// its z row, so the handedness test is the same everywhere: the w row's
+// z entry is -1 for a perspective projection (w = viewZ) and 0 for an
+// orthographic one (w = 1); both look down -z, so pass
+// persp = FC_MTX(u_proj, 2, 3) != 0.0. Nothing here reads the z row, so
+// the remap does not reach this unproject.
 vec3 fc_prepassViewPos(vec2 uv, float viewZ, bool persp)
 {
-	vec2 ndc = uv * 2.0 - vec2_splat(1.0);
+	vec2 ndc = fc_uvToNdc(uv);
 	if (persp)
-		return vec3(viewZ * (ndc.x + u_proj[2][0]) / u_proj[0][0],
-		            viewZ * (ndc.y + u_proj[2][1]) / u_proj[1][1],
+		return vec3(viewZ * (ndc.x + FC_MTX(u_proj, 2, 0)) / FC_MTX(u_proj, 0, 0),
+		            viewZ * (ndc.y + FC_MTX(u_proj, 2, 1)) / FC_MTX(u_proj, 1, 1),
 		            -viewZ);
-	return vec3((ndc.x - u_proj[3][0]) / u_proj[0][0],
-	            (ndc.y - u_proj[3][1]) / u_proj[1][1],
+	return vec3((ndc.x - FC_MTX(u_proj, 3, 0)) / FC_MTX(u_proj, 0, 0),
+	            (ndc.y - FC_MTX(u_proj, 3, 1)) / FC_MTX(u_proj, 1, 1),
 	            -viewZ);
 }
 

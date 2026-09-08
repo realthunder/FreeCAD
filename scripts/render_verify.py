@@ -81,6 +81,8 @@ CYCLES_SAMPLES = int(os.environ.get("RV_CYCLES_SAMPLES", "32"))
 CYCLES_DEVICE = os.environ.get("RV_CYCLES_DEVICE", "CPU")
 CYCLES_W, _, CYCLES_H = os.environ.get("RV_CYCLES_SIZE", "320x240").partition("x")
 
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # Named standard views the manifest may use (View3DInventorPy methods).
 VIEW_METHODS = {
     "iso": "viewIsometric",
@@ -108,6 +110,39 @@ def view():
     return FreeCADGui.ActiveDocument.ActiveView
 
 
+def relocate(value):
+    """Map an absolute path recorded by another checkout onto this one.
+
+    An asset path in a sidecar -- Render_PBREnvImage is the one that
+    matters -- is the blessing box's own absolute path, and no other box
+    has that path. Replayed verbatim it does not merely fail to load,
+    it fails SILENTLY: the setting takes the string, the renderer says
+    "cannot embed environment image ... does not exist" into the report
+    view and carries on with the built-in environment, so the capture is
+    a picture of a scene with its HDR environment missing. Measured on
+    the chess set restaged from a Linux-blessed golden: 99.98% of the
+    beauty pixels differed, mean 71 -- read at first as a Metal defect,
+    when the frame simply had no environment in it.
+
+    So: keep a path that exists, and otherwise look for the longest tail
+    of it that exists under this repository (which finds
+    .../src/3rdParty/... wherever the checkout lives). None means the
+    value names nothing here and must not be written at all -- the
+    scene script's own setting is a better answer than a dead path.
+    Values that are not absolute paths pass through untouched.
+    """
+    if not isinstance(value, str) or not value or not os.path.isabs(value):
+        return value
+    if os.path.exists(value):
+        return value
+    parts = [p for p in value.replace("\\", "/").split("/") if p]
+    for i in range(len(parts)):
+        cand = os.path.join(REPO, *parts[i:])
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
 def apply_properties(v, props):
     """Re-apply a sidecar's properties dict onto the view, best-effort.
 
@@ -123,6 +158,10 @@ def apply_properties(v, props):
     for name, value in sorted(props.items()):
         if not hasattr(v, name):
             failed.append(name + ":missing")
+            continue
+        value = relocate(value)
+        if value is None:
+            failed.append(name + ":path")
             continue
         candidates = [value]
         if isinstance(value, float):
@@ -154,6 +193,20 @@ PREF_SETTERS = {
 }
 
 
+# One key a restaging must NOT carry across: the renderer selection.
+# The sidecar records the whole View/Render group, "Type" included, and
+# that key describes the machine that blessed the golden rather than the
+# picture it blessed. Replaying it puts a macOS run on "bgfx - OpenGL",
+# where Apple's 2.1 compatibility profile cannot run these shaders at
+# all -- the renderer stands aside for the render cache and every
+# capture then times out waiting for a frame that is not coming
+# (measured: 5 of 5 stages, restaged from the GL-blessed raster set).
+# The platform picks its own backend in the scene script, and the
+# sidecar's own "backend" and "device" fields are where the blessing's
+# identity is recorded.
+RESTAGE_SKIP = {("View/Render", "Type")}
+
+
 def apply_preferences(prefs):
     """Re-apply a sidecar's preference groups, best-effort.
 
@@ -180,6 +233,12 @@ def apply_preferences(prefs):
                 continue
             setter, cast = entry
             for name, value in sorted(values.items()):
+                if (group, name) in RESTAGE_SKIP:
+                    continue
+                value = relocate(value)
+                if value is None:
+                    failed.append("%s/%s:path" % (group, name))
+                    continue
                 try:
                     getattr(grp, setter)(name, cast(value))
                     applied += 1

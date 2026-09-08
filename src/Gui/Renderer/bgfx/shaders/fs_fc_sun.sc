@@ -18,6 +18,8 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_screen.sh"
+#include "fc_matrix.sh"
 
 uniform vec4 u_lightDir;
 uniform vec4 u_lightColor;
@@ -25,14 +27,14 @@ uniform vec4 u_sunParams;
 
 void main()
 {
-	if (u_proj[2][3] == 0.0)
+	if (FC_MTX(u_proj, 2, 3) == 0.0)
 	{
 		gl_FragColor = vec4_splat(0.0);
 		return;
 	}
-	vec2 ndc = v_texcoord0 * 2.0 - vec2_splat(1.0);
-	vec3 dir = normalize(vec3((ndc.x + u_proj[2][0]) / u_proj[0][0],
-	                          (ndc.y + u_proj[2][1]) / u_proj[1][1],
+	vec2 ndc = fc_uvToNdc(v_texcoord0);
+	vec3 dir = normalize(vec3((ndc.x + FC_MTX(u_proj, 2, 0)) / FC_MTX(u_proj, 0, 0),
+	                          (ndc.y + FC_MTX(u_proj, 2, 1)) / FC_MTX(u_proj, 1, 1),
 	                          -1.0));
 	float mu = dot(dir, -normalize(u_lightDir.xyz));
 	float disc = smoothstep(u_sunParams.x, u_sunParams.y, mu);

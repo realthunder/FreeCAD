@@ -105,6 +105,21 @@ PyObject* GeomFormatPy::copy(PyObject *args) const
     return cpy;
 }
 
+Py::Long GeomFormatPy::getGeomIndex(void) const
+{
+    return Py::Long(getGeomFormatPtr()->m_geomIndex);
+}
+
+void GeomFormatPy::setGeomIndex(Py::Long arg)
+{
+    getGeomFormatPtr()->m_geomIndex = static_cast<int>(arg);
+}
+
+Py::String GeomFormatPy::getGeomName(void) const
+{
+    return Py::String(getGeomFormatPtr()->m_geomName);
+}
+
 Py::String GeomFormatPy::getTag(void) const
 {
     std::string tmp = boost::uuids::to_string(getGeomFormatPtr()->getTag());

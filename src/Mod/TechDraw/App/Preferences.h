@@ -110,6 +110,8 @@ public:
     static double svgHatchFactor();
     static bool SectionUsePreviousCut();
 
+    static bool storeProjectedGeometry();
+
     static int lineStandard();
     static void setLineStandard(int index);
     static std::string lineDefinitionLocation();

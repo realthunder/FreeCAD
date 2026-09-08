@@ -52,6 +52,7 @@
 #include "Command.h"
 #include "MainWindow.h"
 #include "OverlayWidgets.h"
+#include "WidgetFactory.h"
 
 FC_LOG_LEVEL_INIT("ToolBar", true, 2)
 
@@ -334,16 +335,31 @@ private:
     fastsignals::advanced_scoped_connection &_conn;
 };
 
-class ToolBar: public QToolBar
-{
-public:
-    void initStyleOption(QStyleOptionToolBar *option) const
-    {
-        QToolBar::initStyleOption(option);
-    }
-};
-
 } // namespace Gui
+
+ToolBar::ToolBar()
+    : ToolBar(nullptr)
+{}
+
+ToolBar::ToolBar(QWidget* parent)
+    : QToolBar(parent)
+{}
+
+void ToolBar::initStyleOption(QStyleOptionToolBar* option) const
+{
+    QToolBar::initStyleOption(option);
+}
+
+void ToolBarManager::setupWidgetProducers()
+{
+    // What lets a workbench ask for one by name. Registered here rather than
+    // in resource.cpp because this is the file that owns the class.
+    static bool registered = false;
+    if (!registered) {
+        registered = true;
+        new WidgetProducer<Gui::ToolBar>;
+    }
+}
 
 
 //////////////////////////////////////////////////////////////////////
@@ -463,6 +479,8 @@ void ToolBarGrip::mouseReleaseEvent(QMouseEvent *)
 
 ToolBarManager::ToolBarManager()
 {
+    setupWidgetProducers();
+
     hGeneral = App::GetApplication().GetUserParameter().GetGroup(
             "BaseApp/Preferences/General");
 
@@ -1774,6 +1792,12 @@ bool ToolBarManager::showContextMenu(QObject *source)
     QHBoxLayout *layout = nullptr;
     ToolBarArea *area;
     if (getMainWindow()->statusBar() == source) {
+        // The status bar carries two kinds of thing: toolbars parked in its
+        // area, which the rest of this function lists, and the widgets
+        // registered through MainWindow::addStatusBarItem(). Both belong in
+        // the one menu the user gets from a right-click.
+        getMainWindow()->buildStatusBarContextMenu(menu);
+        menu.addSeparator();
         area = statusBarArea;
         for (auto l : source->findChildren<QHBoxLayout*>()) {
             if(l->indexOf(area) >= 0) {
