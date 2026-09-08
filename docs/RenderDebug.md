@@ -1044,6 +1044,35 @@ Requiring it everywhere is why the golden tests on macOS did not merely
 skip: they were never registered, so a `ctest` run there was short two
 tests and said nothing about it.
 
+*** **What the Linux gate actually witnesses: llvmpipe, on both sides of
+the comparison.** `fc_add_golden_test` calls `render-verify.sh` with no
+`--gpu`, and it cannot: that leg needs a real Wayland socket and opens a
+window on the desktop, which is not something a `ctest` run can do. So
+the registered Linux legs -- the ones that blessed the references and
+the ones that check them -- are the default headless `xvfb` leg, and
+that is `bgfx - OpenGL` on **llvmpipe**, a software rasterizer. Measured
+on the Linux box 2026-09-08 through the device field `640ed8a4d5` added:
+`OpenGL 2.1 / llvmpipe (LLVM 20.1.2, 256 bits) / 4.5 (Compatibility
+Profile) / Mesa 25.2.8 / vendor 0x0000 device 0x0000`.
+
+That is not a defect, and it is the right default -- a change that is a
+no-op by construction is exactly what a software rasterizer can prove,
+deterministically and without a GPU in the room. But read the two tiers
+for what they are: **Linux gates the logic, macOS gates the device.**
+Every macOS run is on the real window server and the real Metal device
+(`--gpu` is a no-op there), so the Metal sets are the only blessed
+references on this project taken on hardware. A green Linux golden run
+is not evidence about driver-shaped behaviour, and the open
+`raster/mode0` residual below is exactly the kind of thing it cannot
+settle.
+
+*** **The four OpenGL reference sets record no device at all.** They
+predate `640ed8a4d5`, so `refs/raster`, `refs/raster-flat`, `refs/chess`
+and `refs/chess-flat` have no `device` field in their sidecars and what
+hardware blessed them is written down nowhere. Only `refs/*-metal`
+carries it. Re-blessing is the only way that gets fixed, so if a set is
+re-blessed for any other reason, that is the moment.
+
 **`refs/raster-metal` and `refs/raster-flat-metal` are blessed** (2026-09-07,
 macOS 12 / Metal, Intel iGPU `0x8086 0x1622`), so
 `RenderGoldenRaster_tests_run` and `RenderGoldenRasterFlat_tests_run`
@@ -1321,6 +1350,36 @@ of the beauty pixels (max 121) with depth, normal, AO and shadow
 byte-identical -- the same geometry, a different background, which is
 exactly the shape the pair should have. If a *-flat set ever compares
 near-identical to its sibling, this is the first thing to check.
+
+*** **OPEN: the `raster` beauty stage does not compare byte-exact, and
+it is 1 LSB.** A fresh Linux capture restaged from `refs/raster` matches
+depth, normal, AO and shadow byte-for-byte and diverges on the beauty
+stage alone: **7.9421% of pixels past `--tol 0`, max channel delta 1,
+mean 0.08** (measured on the Linux box 2026-09-08, against the 18-commit
+cross-API set; two hypotheses for it have been raised and both
+falsified). Do NOT re-bless over it -- a re-blessing would freeze
+whatever causes it into the reference and destroy the only handle
+anyone has.
+
+Two properties of it are worth more than the number:
+
+- **It is bit-stable.** The same run repeated on a quiet box gives
+  7.9421% both times, to four decimals. So it is a deterministic
+  difference between what the tree renders now and what was blessed,
+  not run-to-run noise, and it will not wash out by re-running.
+- **The same signature -- ~7.9% of pixels, max delta 1 -- appears
+  above**, in the mis-blessed `refs/raster-flat` of 2026-09-05, where
+  the two frames compared were *the same scene rendered twice*. That
+  makes "7.9% at max 1" look like the beauty stage's characteristic
+  1-LSB population on this llvmpipe leg rather than anything specific
+  to the lit raster set. It is a lead, not a conclusion: the two
+  comparisons are different, and nobody has yet shown they share a
+  cause.
+
+Worth knowing before chasing it: the Linux leg is a software rasterizer
+on both sides (see 5.2b), so this residual has never been seen on real
+hardware, and a driver explanation cannot be either confirmed or
+dismissed from that box.
 
 **The Cycles leg is reproducible as it stands, and must be kept that
 way.** The offline path sets no seed, so the integrator default applies,
