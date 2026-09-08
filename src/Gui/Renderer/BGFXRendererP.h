@@ -2658,9 +2658,16 @@ struct ColorVertex
 // vertex attribute", and EVERY draw carrying the stream is dropped.
 // Desktop GL takes the other branch, so it never showed there.
 // Bound only for meshes that carry the stream; every other mesh-program
-// draw leaves the attributes unbound, which bgfx resolves to the GL
-// default attribute — finite values the shader multiplies out, since
-// it selects the stream over the material scalars by u_matEmissive.w.
+// draw leaves the attributes unbound, and what that reads is NOT the
+// same on every backend. GL substitutes the constant default attribute.
+// Vulkan has no such thing, so bgfx points the attribute at binding 0,
+// offset 0 (renderer_vk.cpp, the unsettedAttr loop) -- which for these
+// programs is the vertex POSITION, arriving as a colour. The shader
+// multiplies it out either way, because u_matEmissive.w selects the
+// stream over the material scalars only when the stream is really
+// bound; what it must never do is put such a value through a transform
+// that is undefined outside 0..1, which is exactly how the position's
+// negative coordinates once reached the frame as NaN (fc_color.sh).
 struct MatVertex
 {
     uint32_t emissive;
