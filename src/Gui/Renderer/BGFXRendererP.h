@@ -5218,6 +5218,12 @@ public:
     void destroySceneCaches();
     /// Everything sized by the viewport; the one set a plain resize drops.
     void destroyTargets();
+    /// Just the desktop composite's cached GL framebuffers, so the next
+    /// blit builds them again. What a blit that cannot wrap bgfx's
+    /// attachments gives up: it used to call destroy() there, which
+    /// took the targets, the uploaded scene and the programs with it
+    /// -- a whole-view reset per frame for a two-framebuffer cache.
+    void dropBlitCache();
     /// Programs, uniforms and stand-in textures: expensive to relink, so
     /// a resize keeps them.
     void destroyPrograms();

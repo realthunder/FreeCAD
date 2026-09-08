@@ -394,14 +394,49 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // As above: the scene colour's format is part of what the sized
     // targets ARE, so changing it is a rebuild like a resize.
     view->hdrWanted = outconf.transform != Render::OutputConfig::None;
-    if (progChanged
-            || _BGFXLib.viewWidth(widget) != int(view->width)
-            || _BGFXLib.viewHeight(widget) != int(view->height)
-            || (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
-            || _BGFXLib.effectResolution != view->effectScale
-            || _BGFXLib.ssaoResolution != view->ssaoScale
-            || view->hdrScene != view->hdrSceneWanted())
+    // WHICH of the seven asked for the rebuild, said once per rebuild
+    // under the timing switch. A rebuild is a destroy and re-create of
+    // every sized target, and one condition that never settles turns
+    // that into a per-frame cost -- measured at ~430ms of a 450ms
+    // frame on Windows/GL, where it read as "the renderer is slow on
+    // this scene" because nothing said an init had happened at all.
+    // The condition is the whole answer and none of them is derivable
+    // from the outside, so the reason is reported rather than left to
+    // be guessed from a `pre` that ate the frame.
+    const char *initWhy = nullptr;
+    if (progChanged)
+        initWhy = "programs (shader generation or MSAA)";
+    else if (_BGFXLib.viewWidth(widget) != int(view->width)
+             || _BGFXLib.viewHeight(widget) != int(view->height))
+        initWhy = "viewport size";
+    else if (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
+        initWhy = "no scene framebuffer";
+    else if (_BGFXLib.effectResolution != view->effectScale)
+        initWhy = "effect resolution";
+    else if (_BGFXLib.ssaoResolution != view->ssaoScale)
+        initWhy = "ssao resolution";
+    else if (view->hdrScene != view->hdrSceneWanted())
+        initWhy = "scene colour format (hdr)";
+    if (initWhy) {
+        if (debugconf.frameTiming)
+            FC_RENDER_MSG("render targets: rebuilt -- %s (%dx%d ->"
+                          " %dx%d, hdr %d -> %d)\n",
+                          initWhy, int(view->width), int(view->height),
+                          _BGFXLib.viewWidth(widget),
+                          _BGFXLib.viewHeight(widget),
+                          int(view->hdrScene),
+                          int(view->hdrSceneWanted()));
         view->init(!progChanged);
+        // Whether the rebuild answered. A rebuild that does not is
+        // what turns "rebuilt once" into "rebuilds forever", and the
+        // condition above cannot tell the two apart.
+        if (debugconf.frameTiming)
+            FC_RENDER_MSG("render targets: after rebuild fbo %s, "
+                          "targetsFailed %d\n",
+                          bgfx::isValid(view->bgfxFbo) ? "valid"
+                                                       : "INVALID",
+                          int(view->targetsFailed));
+    }
 
     if (!bgfx::isValid(view->bgfxFbo))
         return bailToHost();

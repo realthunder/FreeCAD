@@ -123,6 +123,17 @@ void BGFXView::destroySceneCaches()
 /// resize drops exactly this set and nothing else.
 void BGFXView::destroyTargets()
 {
+    // Who gave the targets back, when the question is why they keep
+    // going. FC_BGFX_TARGET_DEBUG=1, because a rebuild reported at the
+    // top of the frame says only that they were gone by then, and the
+    // destroy that made them gone can be anywhere between two frames.
+    static const bool targetDebug =
+        std::getenv("FC_BGFX_TARGET_DEBUG") != nullptr;
+    if (targetDebug)
+        std::printf("bgfx: destroyTargets view %p widget %p sub %d fbo %d %ux%u\n",
+                    (void *)this, (void *)widget,
+                    int(activeSub), int(bgfxFbo.idx),
+                    unsigned(width), unsigned(height));
     // The recreated moments texture starts empty, so the cached-map
     // hash resets with it (same for the AO/prepass cache and the
     // bulb shadow tiles).
@@ -157,13 +168,20 @@ void BGFXView::destroyTargets()
     // glass body sets it again.
     glassSeen = false;
 #ifndef FC_RENDERER_STANDALONE
-    if (hasFBO) {
-        _BGFXLib.freeFBO(fbo);
-        if (fboDepth)
-            _BGFXLib.freeFBO(fboDepth);
-        fboDepth = 0;
-        hasFBO = false;
-    }
+    dropBlitCache();
+#endif
+}
+
+void BGFXView::dropBlitCache()
+{
+#ifndef FC_RENDERER_STANDALONE
+    if (!hasFBO)
+        return;
+    _BGFXLib.freeFBO(fbo);
+    if (fboDepth)
+        _BGFXLib.freeFBO(fboDepth);
+    fboDepth = 0;
+    hasFBO = false;
 #endif
 }
 
@@ -1716,8 +1734,9 @@ void BGFXView::blit(Render::RenderStats *stats,
         GLuint depthBuffer = bgfx::getInternal(bgfxDepth);
         blitColorId = colorBuffer;
         std::printf("bgfx: blit cache create msaa %d color %u (isTex %d) "
-                    "depth %u\n", msaaSamples, colorBuffer,
-                    int(glIsTexture(colorBuffer)), depthBuffer);
+                    "depth %u (isTex %d)\n", msaaSamples, colorBuffer,
+                    int(glIsTexture(colorBuffer)), depthBuffer,
+                    int(glIsTexture(depthBuffer)));
         // The sampleable scene color is a texture (with MSAA it is
         // bgfx's single-sample resolve texture, resolved by the
         // frame-end framebuffer restore), while the write-only depth
@@ -1734,22 +1753,38 @@ void BGFXView::blit(Render::RenderStats *stats,
                                          GL_RENDERBUFFER, colorBuffer);
         if (!checkFramebufferStatus()) {
             f->glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
-            destroy();
+            dropBlitCache();
             return;
         }
         f->glGenFramebuffers(1, &fboDepth);
         f->glBindFramebuffer(GL_FRAMEBUFFER, fboDepth);
-        f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                                    GL_RENDERBUFFER, depthBuffer);
-        f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
-                                    GL_RENDERBUFFER, depthBuffer);
+        // Asked, not assumed -- the same question the colour attachment
+        // above already asks. bgfx backs a write-only D24S8 target with
+        // a renderbuffer on some drivers and a TEXTURE on others, and
+        // `glFramebufferRenderbuffer` handed a texture name attaches
+        // nothing: the framebuffer comes out "incomplete, missing
+        // attachment" and every frame took the failure path below.
+        // Measured on Windows/GL (RTX 2000 Ada, 2026-09-09), where
+        // that cost ~430ms of a 450ms frame and, on a 17k-object
+        // assembly, meant the scene never survived to be drawn at all.
+        if (glIsTexture(depthBuffer)) {
+            f->glFramebufferTexture2D(GL_FRAMEBUFFER,
+                                      GL_DEPTH_STENCIL_ATTACHMENT,
+                                      GL_TEXTURE_2D, depthBuffer, 0);
+        }
+        else {
+            f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                        GL_RENDERBUFFER, depthBuffer);
+            f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+                                        GL_RENDERBUFFER, depthBuffer);
+        }
         // No color attachment: complete only with the draw/read
         // buffers off.
         glDrawBuffer(GL_NONE);
         glReadBuffer(GL_NONE);
         if (!checkFramebufferStatus()) {
             f->glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
-            destroy();
+            dropBlitCache();
             return;
         }
     }

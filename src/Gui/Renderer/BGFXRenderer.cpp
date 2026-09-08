@@ -123,6 +123,8 @@ static void releaseBankZero(BGFXView *view,
         return;
     const int park = subs[0].id;
     view->selectSubView(0);
+    if (std::getenv("FC_BGFX_TARGET_DEBUG"))
+        std::printf("bgfx: targets given back by the sub-view drain\n");
     view->destroyTargets();
     _BGFXLib.releaseIds(view->viewId, view->viewSpan);
     view->selectSubView(park);
@@ -270,6 +272,8 @@ void BGFXRenderer::dropSubView(int id)
     // Load the bank, take its targets and id block, and drop it. The
     // queued destroys execute at the next frame boundary.
     view->selectSubView(id);
+    if (std::getenv("FC_BGFX_TARGET_DEBUG"))
+        std::printf("bgfx: targets given back by dropSubView\n");
     view->destroyTargets();
     _BGFXLib.releaseIds(view->viewId, view->viewSpan);
     view->selectSubView(0);
@@ -708,6 +712,8 @@ bool BGFXRenderer::releaseTargets()
     // again would only queue a second round of destroys.
     if (!bgfx::isValid(view->bgfxFbo))
         return false;
+    if (std::getenv("FC_BGFX_TARGET_DEBUG"))
+        std::printf("bgfx: targets given back by the background-view release\n");
     view->destroyTargets();
 
     // Execute the destroys rather than leaving them queued. bgfx::destroy
