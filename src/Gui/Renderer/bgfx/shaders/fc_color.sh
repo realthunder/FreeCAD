@@ -42,7 +42,15 @@ uniform vec4 u_colorSpace;
 vec3 fcDecodeSRGB(vec3 c)
 {
 	vec3 lo = c / 12.92;
-	vec3 hi = pow((c + 0.055) / 1.055, vec3_splat(2.4));
+	// The max() is not slack in the curve: BOTH branches of the mix are
+	// evaluated, pow() of a negative is undefined, and a NaN survives
+	// being multiplied by the step's zero weight -- so without it a
+	// colour below -0.055 does not take the linear segment, it poisons
+	// the fragment. The clamp cannot move an in-range colour, whose
+	// argument here is already >= 0.05, and the encode side has always
+	// guarded its own pow this way.
+	vec3 hi = pow(max((c + 0.055) / 1.055, vec3_splat(0.0)),
+	              vec3_splat(2.4));
 	return mix(hi, lo, step(c, vec3_splat(0.04045)));
 }
 
