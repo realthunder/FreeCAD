@@ -144,6 +144,11 @@
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #   include <QtGui/qopenglcontext_platform.h>
+// The display a non-GL backend's surface is created against, reached
+// through the application rather than the context. Forward declarations
+// only -- it does not drag X11's or Wayland's headers (and their macros)
+// into this one.
+#   include <QtGui/qguiapplication_platform.h>
 #elif defined FC_OS_LINUX
 #   include <QtPlatformHeaders/QGLXNativeContext>
 typedef QGLXNativeContext OpenGLContext;
@@ -1938,6 +1943,35 @@ public:
                 // own isKindOfClass: dispatch over NSView/NSWindow/CAMetalLayer
                 // (renderer_mtl.cpp), so no Objective-C++ unwrapping is needed here.
                 init.platformData.nwh = reinterpret_cast<void*>(window->winId());
+#if defined(FC_OS_LINUX) && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+                // A window alone is not a surface here. bgfx builds the
+                // Vulkan surface itself and hands ndt straight to
+                // vkCreateXlibSurfaceKHR as the Display* -- a null one
+                // fails instantly -- while the Wayland path needs the
+                // wl_display AND to be told the handle is a wl_surface,
+                // which no pointer says about itself. Qt's winId() is
+                // already the right handle on both (an X11 Window, a
+                // wl_surface), so only the display side is missing.
+                // The GL path above needs none of this: bgfx is handed
+                // a context that already owns its surface.
+#   if QT_CONFIG(wayland)
+                if (auto *wl = qGuiApp->nativeInterface<
+                        QNativeInterface::QWaylandApplication>()) {
+                    init.platformData.ndt = wl->display();
+                    init.platformData.type =
+                        bgfx::NativeWindowHandleType::Wayland;
+                }
+                else
+#   endif
+#   if QT_CONFIG(xcb)
+                if (auto *x11 = qGuiApp->nativeInterface<
+                        QNativeInterface::QX11Application>())
+                    init.platformData.ndt = x11->display();
+                else
+#   endif
+                    RENDER_ERR("no native display handle; a non-GL backend"
+                               " cannot create its surface");
+#endif
             }
             // bgfx treats an all-null PlatformData as a request for a headless device, and
             // then rejects a non-zero resolution ("resolution of non-existing backbuffer
