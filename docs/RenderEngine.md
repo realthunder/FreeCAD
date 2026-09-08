@@ -2543,12 +2543,20 @@ Two constraints, cheap to state and expensive to discover late:
   (`View3DInventorViewer.cpp` 615-624) and `canSkipInternal()` already
   skips the fixed-function scene pass; whether those cover everything
   still on screen is an audit nobody has run, and it gates the viewport.
-- **Ordering.** `bgfx::init` happens once per process, which is why
-  `maxViews` is a startup option. The QRhi device must therefore exist
-  before the FIRST 3D view: if any view comes up first, bgfx creates its
-  own device and every later view is stuck with it. That is a FreeCAD
-  startup requirement, and the kind that works in a prototype and fails
-  on the second document.
+- **Ordering, and it is already solved.** `bgfx::init` happens once per
+  process -- first backend asked for wins, the hazard named at
+  `BGFXRendererP.h` 1826-1832 -- so the device must exist before the
+  FIRST 3D view, or every later view is stuck with whatever bgfx made
+  for itself. That requirement is already met architecturally:
+  `Application.cpp` around 3008 brings the backend up under the splash
+  screen when render cache is 3, before any view exists, using the
+  hidden 1x1 `GLSurfaceWarmup` widget `MainWindow` constructs and keeps
+  for the window's lifetime (`MainWindow.cpp` 464-469), and it seeds
+  `setMaxViewIds` there for the same startup-option reason. So Route D
+  does not need a new startup ordering; it needs the warm-up to hand
+  over a different thing -- an RHI analogue of that widget, and a
+  `warmup()`/`prepare()` that accepts a QRhi device rather than a
+  `QOpenGLWidget`. One more warm-up surface, not a startup redesign.
 
 ## 8. Known limitations / future work
 
