@@ -2122,7 +2122,7 @@ void Location::onViewPositionButton()
 void Location::pickCallback(void * ud, SoEventCallback * n)
 {
     const SoMouseButtonEvent * mbe = static_cast<const SoMouseButtonEvent*>(n->getEvent());
-    Gui::View3DInventorViewer* view  = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    Gui::View3DInventorViewer* view  = Gui::View3DInventorViewer::fromEventCallback(n);
 
     // Mark all incoming mouse button events as handled, especially, to deactivate the selection node
     n->getAction()->setHandled();

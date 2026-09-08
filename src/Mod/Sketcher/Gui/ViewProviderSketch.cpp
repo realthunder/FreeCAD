@@ -400,7 +400,7 @@ struct EditData {
     int           cursorDragging = -1;
     std::string   lastPreselection;
     std::vector<int> lastCstrPreselections;
-    Gui::View3DInventorViewer * viewer = nullptr;
+    Gui::ViewerContext * viewer = nullptr;
 
     bool enableExternalPick = false;
 
@@ -695,7 +695,7 @@ void ViewProviderSketch::activateHandler(DrawSketchHandler *newHandler)
     // ViewProviderSketch::keyPressed() and dismiss the active handler, and not the entire
     // sketcher editor
     if (edit->viewer)
-        edit->viewer->setFocus();
+        edit->viewer->setFocusToView();
 }
 
 void ViewProviderSketch::deactivateHandler()
@@ -866,7 +866,7 @@ void ViewProviderSketch::setAngleSnapping(bool enable, Base::Vector2d referenceP
     snapManager->setAngleSnapping(enable, referencePoint);
 }
 
-void ViewProviderSketch::getProjectingLine(const SbVec2s& pnt, const Gui::View3DInventorViewer *viewer, SbLine& line) const
+void ViewProviderSketch::getProjectingLine(const SbVec2s& pnt, const Gui::ViewerContext *viewer, SbLine& line) const
 {
     const SbViewportRegion& vp = viewer->getSoRenderManager()->getViewportRegion();
 
@@ -934,7 +934,7 @@ void ViewProviderSketch::getCoordsOnSketchPlane(const SbVec3f& point, const SbVe
 }
 
 bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVec2s &cursorPos,
-                                            const Gui::View3DInventorViewer *viewer)
+                                            const Gui::ViewerContext *viewer)
 {
     if (!edit)
         return inherited::mouseButtonPressed(
@@ -994,7 +994,7 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
 
     // Both Mouse button is down, cancel current mode to avoid conflict with
     // some navigation method.
-    auto btns = QApplication::mouseButtons();
+    auto btns = viewer->mouseButtons();
     if ((btns & Qt::RightButton) && (btns & Qt::LeftButton)) {
         switch(_Mode) {
         case STATUS_SKETCH_UseHandler:
@@ -1003,9 +1003,9 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
         case STATUS_SKETCH_UseRubberBand:
             rubberband->setWorking(false);
 
-            const_cast<Gui::View3DInventorViewer *>(viewer)->setRenderType(Gui::View3DInventorViewer::Native);
+            const_cast<Gui::ViewerContext *>(viewer)->setRenderType(Gui::ViewerContext::Native);
             draw(true,false);
-            const_cast<Gui::View3DInventorViewer*>(viewer)->redraw();
+            const_cast<Gui::ViewerContext*>(viewer)->redraw();
             setSketchMode(STATUS_NONE);
             break;
         default:
@@ -1281,7 +1281,7 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
 
                     // a redraw is required in order to clear the rubberband
                     draw(true,false);
-                    const_cast<Gui::View3DInventorViewer*>(viewer)->redraw();
+                    const_cast<Gui::ViewerContext*>(viewer)->redraw();
                     setSketchMode(STATUS_NONE);
                     return true;
                 case STATUS_SKETCH_UseHandler: {
@@ -1431,7 +1431,7 @@ bool ViewProviderSketch::getDetailPath(
     return inherited::getDetailPath(subname, pPath, append, det);
 }
 
-bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::View3DInventorViewer *viewer)
+bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext *viewer)
 {
     if (!edit)
         return inherited::mouseMove(cursorPos, viewer);
@@ -1960,7 +1960,7 @@ Base::Vector3d ViewProviderSketch::seekConstraintPosition(const Base::Vector3d &
                                                           const SoNode *constraint)
 {
     assert(edit);
-    Gui::View3DInventorViewer *viewer = edit->viewer;
+    Gui::ViewerContext *viewer = edit->viewer;
     if (!viewer)
         return Base::Vector3d();
 
@@ -2236,7 +2236,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
 }
 
 std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *Point,
-                                                           const Gui::View3DInventorViewer *viewer,
+                                                           const Gui::ViewerContext *viewer,
                                                            const SbVec2s &cursorPos,
                                                            bool preselect)
 {
@@ -2248,7 +2248,9 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
 
     SoPath *path = Point->getPath();
     SoNode *tail = path->getTail();
-    int r = static_cast<int>(Gui::ViewParams::getPickRadius());
+    // The radius this view picks with, which is the client's on a mirror:
+    // a finger wants a wider one than a mouse.
+    int r = static_cast<int>(viewer->getPickRadius());
 
     for (int i=1; i<path->getLength(); ++i) {
         SoNode * tailFather = path->getNodeFromTail(i);
@@ -2394,7 +2396,7 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
 }
 
 bool ViewProviderSketch::detectPreselection(const SoPickedPoint *Point,
-                                            const Gui::View3DInventorViewer *viewer,
+                                            const Gui::ViewerContext *viewer,
                                             const SbVec2s &cursorPos,
                                             bool preselect)
 {
@@ -2637,7 +2639,7 @@ void ViewProviderSketch::centerSelection()
         }
     }
 
-    Gui::View3DInventorViewer* viewer = edit->viewer;
+    Gui::ViewerContext* viewer = edit->viewer;
     SoGetBoundingBoxAction action(viewer->getSoRenderManager()->getViewportRegion());
     action.apply(group);
     group->unref();
@@ -2654,7 +2656,7 @@ void ViewProviderSketch::centerSelection()
 }
 
 void ViewProviderSketch::doBoxSelection(const SbVec2s &startPos, const SbVec2s &endPos,
-                                        const Gui::View3DInventorViewer *viewer)
+                                        const Gui::ViewerContext *viewer)
 {
     std::vector<SbVec2s> corners0;
     corners0.push_back(startPos);
@@ -4040,7 +4042,7 @@ void ViewProviderSketch::drawConstraintIcons()
             SbVec3f pos0(startingpoint.x,startingpoint.y,startingpoint.z);
             SbVec3f pos1(endpoint.x,endpoint.y,endpoint.z);
 
-            Gui::View3DInventorViewer *viewer = edit->viewer;
+            Gui::ViewerContext *viewer = edit->viewer;
             if (!viewer)
                 return;
             SoCamera* pCam = viewer->getSoRenderManager()->getCamera();
@@ -4418,7 +4420,7 @@ void ViewProviderSketch::drawTypicalConstraintIcon(const constrIconQueueItem &i)
 float ViewProviderSketch::getScaleFactor()
 {
     if (edit && edit->viewer) {
-        Gui::View3DInventorViewer *viewer = edit->viewer;
+        Gui::ViewerContext *viewer = edit->viewer;
         SoCamera* camera = viewer->getSoRenderManager()->getCamera();
         float aspectRatio = camera->aspectRatio.getValue();
         float scale = camera->getViewVolume(aspectRatio).getWorldToScreenScale(SbVec3f(0.f, 0.f, 0.f), 0.1f) / (5*aspectRatio);
@@ -4556,7 +4558,7 @@ void ViewProviderSketch::initParams()
         dpi = QApplication::desktop()->logicalDpiX();
 #else
         if (edit->viewer)
-            dpi = edit->viewer->screen()->logicalDotsPerInchX();
+            dpi = edit->viewer->logicalDotsPerInchX();
         else
             dpi = Gui::getMainWindow()->screen()->logicalDotsPerInchX();
 #endif
@@ -7959,7 +7961,7 @@ void ViewProviderSketch::unsetEdit(int ModNum)
     inherited::unsetEdit(ModNum); // notify grid that edit mode is being left
 }
 
-void ViewProviderSketch::setEditViewer(Gui::View3DInventorViewer* viewer, int ModNum)
+void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
 {
     if (ModNum == Transform || ModNum == TransformAt)
         return inherited::setEditViewer(viewer, ModNum);
@@ -8073,7 +8075,7 @@ void ViewProviderSketch::setEditViewer(Gui::View3DInventorViewer* viewer, int Mo
     inherited::setEditViewer(viewer, ModNum);
 }
 
-void ViewProviderSketch::unsetEditViewer(Gui::View3DInventorViewer* viewer)
+void ViewProviderSketch::unsetEditViewer(Gui::ViewerContext* viewer)
 {
     if (edit) {
         viewer->removeGraphicsItem(rubberband.get());

@@ -177,7 +177,7 @@ bool ViewProviderPart::setEdit(int ModNum)
     return inherited::setEdit(ModNum);
 }
 
-void ViewProviderPart::setEditViewer(Gui::View3DInventorViewer* viewer, int ModNum)
+void ViewProviderPart::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
 {
     if (ModNum == ViewProvider::Color) {
         Gui::Control().showDialog(new TaskElementColors(this));

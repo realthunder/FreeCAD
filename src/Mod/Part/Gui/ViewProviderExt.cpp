@@ -3920,7 +3920,7 @@ void ViewProviderPartExt::setupContextMenu(QMenu* menu, QObject* receiver, const
     act->setData(QVariant((int)ViewProvider::Color));
 }
 
-void ViewProviderPartExt::setEditViewer(Gui::View3DInventorViewer *viewer, int ModNum) {
+void ViewProviderPartExt::setEditViewer(Gui::ViewerContext *viewer, int ModNum) {
     if (ModNum == ViewProvider::Color)
         Gui::Control().showDialog(new Gui::TaskElementColors(this,true));
     else

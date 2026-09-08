@@ -170,11 +170,9 @@ public:
     /** @name Render mode
       */
     //@{
-    enum RenderType {
-        Native,
-        Framebuffer,
-        Image
-    };
+    /// RenderType and its enumerators are ViewerContext's now, and reached
+    /// through this class as before.
+    using ViewerContext::RenderType;
     //@}
 
     /** @name Background
@@ -213,8 +211,9 @@ public:
     /// Non-const overloads Quarter offers, kept reachable past the redeclaration above.
     QWidget* getWidget();
     QWidget* getGLWidget();
-    /// Whether a mouse button is down, from this view's own event handling.
-    bool isMouseButtonDown() const override;
+    /// Which mouse buttons are down, from this view's own event handling.
+    Qt::MouseButtons mouseButtons() const override;
+    double logicalDotsPerInchX() const override;
     void setFocusToView() override;
     static View3DInventorViewer* fromEventCallback(const SoEventCallback* node);
     //@}
@@ -277,7 +276,7 @@ public:
     /// AntiAliasing default does. A negative value gives the preference
     /// back.
     void setNumSamples(int samples);
-    void setRenderType(RenderType type);
+    void setRenderType(RenderType type) override;
     RenderType getRenderType() const;
     void renderToFramebuffer(QtGLFramebufferObject*);
     QImage grabFramebuffer();
@@ -473,7 +472,7 @@ public:
     void stopSelection();
     bool isSelecting() const;
     std::vector<SbVec2f> getGLPolygon(SelectionRole* role=nullptr) const;
-    std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>&) const;
+    std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>&) const override;
     const std::vector<SbVec2s>& getPolygon(SelectionRole* role=nullptr) const;
     void setSelectionEnabled(bool enable);
     bool isSelectionEnabled() const;
@@ -814,7 +813,7 @@ public:
     void setDocument(Gui::Document *pcDocument);
     Gui::Document* getDocument();
 
-    virtual PyObject *getPyObject();
+    PyObject *getPyObject() override;
 
     const SoPath *getGroupOnTopPath();
 

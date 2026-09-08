@@ -342,8 +342,8 @@ protected:
             const View3DInventorViewer *view=0, int depth=0) const override;
 
     bool setEdit(int ModNum) override;
-    void setEditViewer(View3DInventorViewer*, int ModNum) override;
-    void unsetEditViewer(View3DInventorViewer*) override;
+    void setEditViewer(ViewerContext*, int ModNum) override;
+    void unsetEditViewer(ViewerContext*) override;
     bool linkEdit(const App::LinkBaseExtension *ext=nullptr) const;
     void _setupContextMenu(App::LinkBaseExtension *ext, QMenu*, QObject*, const char*);
 

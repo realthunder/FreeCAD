@@ -25,6 +25,10 @@
 
 #include <FCGlobal.h>
 
+#include <vector>
+
+#include <QtCore/qnamespace.h>
+
 #include <Inventor/SbBox3f.h>
 #include <Inventor/SbRotation.h>
 #include <Inventor/SbVec2f.h>
@@ -109,8 +113,15 @@ public:
     //@{
     virtual float getPickRadius() const = 0;
     virtual double devicePixelRatio() const = 0;
-    /// Whether any mouse button is down, as this view last saw it.
-    virtual bool isMouseButtonDown() const = 0;
+    /// The mouse buttons this view last saw held down.
+    virtual Qt::MouseButtons mouseButtons() const = 0;
+    /// Screen density, for the edit modes that size things in millimetres.
+    virtual double logicalDotsPerInchX() const = 0;
+    /// Whether any of them is.
+    bool isMouseButtonDown() const
+    {
+        return mouseButtons() != Qt::NoButton;
+    }
     //@}
 
     /** @name Camera math -- all of it view-less */
@@ -129,6 +140,12 @@ public:
     virtual bool getSceneBoundBox(SbBox3f& box) const = 0;
     virtual void setCameraOrientation(const SbRotation& orientation,
                                       bool moveToCenter = false) = 0;
+    /** Viewport points as dimensionless [0 1] screen coordinates.
+     *
+     * Named for GL by history only -- it is the viewport region and an aspect
+     * ratio, and no context of any kind is needed to compute it.
+     */
+    virtual std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>& pnts) const = 0;
     //@}
 
     /** @name Picking */
@@ -191,6 +208,24 @@ public:
     {}
     virtual void setFocusToView()
     {}
+    /** How the view gets its pixels onto the screen.
+     *
+     * Lives here rather than on the viewer only so that the edit modes that
+     * switch it while dragging keep naming one type. Without a framebuffer it
+     * means nothing, so the default does nothing.
+     */
+    enum RenderType
+    {
+        Native,
+        Framebuffer,
+        Image
+    };
+    virtual void setRenderType(RenderType type)
+    {
+        (void)type;
+    }
+    /// The Python face of this view. None where there is not one.
+    virtual PyObject* getPyObject();
     //@}
 
     /** The context an event callback node was installed by.

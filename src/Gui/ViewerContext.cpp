@@ -22,6 +22,8 @@
 
 #include "PreCompiled.h"
 
+#include <Base/PyObjectBase.h>
+
 #include "ViewerContext.h"
 
 using namespace Gui;
@@ -30,3 +32,9 @@ using namespace Gui;
 // one typeinfo, rather than a copy in every translation unit that sees the
 // header.
 ViewerContext::~ViewerContext() = default;
+
+PyObject* ViewerContext::getPyObject()
+{
+    Py_INCREF(Py_None);
+    return Py_None;
+}

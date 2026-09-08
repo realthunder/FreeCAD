@@ -60,6 +60,7 @@ class SoIndexedFaceSet;
 
 namespace Gui {
 class View3DInventorViewer;
+class ViewerContext;
 class GuiExport GLPainter
 {
 public:
@@ -117,19 +118,19 @@ public:
 
 class GuiExport Rubberband : public Gui::GLGraphicsItem
 {
-    View3DInventorViewer* viewer;
+    ViewerContext* viewer;
     int x_old, y_old, x_new, y_new;
     float rgb_r, rgb_g, rgb_b, rgb_a;
     bool working, stipple;
 
 public:
-    explicit Rubberband(View3DInventorViewer* v);
+    explicit Rubberband(ViewerContext* v);
     Rubberband();
     ~Rubberband() override;
     void setWorking(bool on);
     void setLineStipple(bool on);
     bool isWorking();
-    void setViewer(View3DInventorViewer* v);
+    void setViewer(ViewerContext* v);
     void setCoords(int x1, int y1, int x2, int y2);
     void setColor(float r, float g, float b, float a);
     void paintGL() override;
@@ -144,7 +145,7 @@ private:
 
 class GuiExport Polyline : public Gui::GLGraphicsItem
 {
-    View3DInventorViewer* viewer;
+    ViewerContext* viewer;
     std::vector<QPoint> _cNodeVector;
     int x_new, y_new;
     float rgb_r, rgb_g, rgb_b, rgb_a, line;
@@ -152,12 +153,12 @@ class GuiExport Polyline : public Gui::GLGraphicsItem
     GLPainter p;
 
 public:
-    explicit Polyline(View3DInventorViewer* v);
+    explicit Polyline(ViewerContext* v);
     Polyline();
     ~Polyline() override;
     void setWorking(bool on);
     bool isWorking() const;
-    void setViewer(View3DInventorViewer* v);
+    void setViewer(ViewerContext* v);
     void setCoords(int x, int y);
     void setColor(int r, int g, int b, int a=0);
     void setLineWidth(float l);

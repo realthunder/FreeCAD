@@ -218,12 +218,12 @@ void ViewProvider::unsetEdit(int ModNum)
     Q_UNUSED(ModNum);
 }
 
-void ViewProvider::setEditViewer(View3DInventorViewer*, int ModNum)
+void ViewProvider::setEditViewer(ViewerContext*, int ModNum)
 {
     Q_UNUSED(ModNum);
 }
 
-void ViewProvider::unsetEditViewer(View3DInventorViewer*)
+void ViewProvider::unsetEditViewer(ViewerContext*)
 {
 }
 
@@ -245,7 +245,7 @@ void highlight(const HighlightMode& high)
 void ViewProvider::eventCallback(void * ud, SoEventCallback * node)
 {
     const SoEvent * ev = node->getEvent();
-    auto viewer = static_cast<Gui::View3DInventorViewer*>(node->getUserData());
+    auto viewer = ViewerContext::fromEventCallback(node);
     auto self = static_cast<ViewProvider*>(ud);
     assert(self);
 
@@ -259,7 +259,7 @@ void ViewProvider::eventCallback(void * ud, SoEventCallback * node)
                 if (self->keyPressed (press, ke->getKey())) {
                     node->setHandled();
                 }
-                else if(QApplication::mouseButtons()==Qt::NoButton) {
+                else if(viewer && !viewer->isMouseButtonDown()) {
                     // Because of a Coin bug (https://bitbucket.org/Coin3D/coin/pull-requests/119),
                     // FC may crash if user hits ESC to cancel while still
                     // holding the mouse button while using some SoDragger.
@@ -267,24 +267,24 @@ void ViewProvider::eventCallback(void * ud, SoEventCallback * node)
                     // pressed, until this Coin bug is fixed.
                     if (!press) {
                         // react only on key release
-                        // Let first selection mode terminate
-                        Gui::Document* doc = Gui::Application::Instance->activeDocument();
-                        auto view = static_cast<Gui::View3DInventor*>(doc->getActiveView());
-                        if (view)
-                        {
-                            Gui::View3DInventorViewer* viewer = view->getViewer();
-                            if (viewer->isSelecting())
-                            {
-                                return;
-                            }
+                        // Let first selection mode terminate. The view the
+                        // event arrived through, not the application's active
+                        // one: they are the same view on a desktop with one
+                        // window, and where they are not, the active one was
+                        // never the right thing to ask.
+                        if (viewer->isSelecting()) {
+                            return;
                         }
 
-                        auto func = new Gui::TimerFunction();
-                        func->setAutoDelete(true);
-                        func->setFunction([doc]() {
-                            doc->resetEdit();
-                        });
-                        func->singleShot(0);
+                        Gui::Document* doc = viewer->getDocument();
+                        if (doc) {
+                            auto func = new Gui::TimerFunction();
+                            func->setAutoDelete(true);
+                            func->setFunction([doc]() {
+                                doc->resetEdit();
+                            });
+                            func->singleShot(0);
+                        }
                     }
                 }
                 else if (press) {
@@ -678,12 +678,12 @@ bool ViewProvider::checkRecursion(SoNode* node)
     return true;
 }
 
-SoPickedPoint* ViewProvider::getPointOnRay(const SbVec2s& pos, const View3DInventorViewer* viewer) const
+SoPickedPoint* ViewProvider::getPointOnRay(const SbVec2s& pos, const ViewerContext* viewer) const
 {
     return viewer->getPointOnRay(pos, this);
 }
 
-SoPickedPoint* ViewProvider::getPointOnRay(const SbVec3f& pos,const SbVec3f& dir, const View3DInventorViewer* viewer) const
+SoPickedPoint* ViewProvider::getPointOnRay(const SbVec3f& pos,const SbVec3f& dir, const ViewerContext* viewer) const
 {
     return viewer->getPointOnRay(pos, dir, this);
 }
@@ -705,7 +705,7 @@ bool ViewProvider::keyPressed(bool pressed, int key)
 }
 
 bool ViewProvider::mouseMove(const SbVec2s &cursorPos,
-                             View3DInventorViewer* viewer)
+                             ViewerContext* viewer)
 {
     (void)cursorPos;
     (void)viewer;
@@ -714,7 +714,7 @@ bool ViewProvider::mouseMove(const SbVec2s &cursorPos,
 
 bool ViewProvider::mouseButtonPressed(int button, bool pressed,
                                       const SbVec2s &cursorPos,
-                                      const View3DInventorViewer* viewer)
+                                      const ViewerContext* viewer)
 {
     (void)button;
     (void)pressed;
@@ -723,7 +723,7 @@ bool ViewProvider::mouseButtonPressed(int button, bool pressed,
     return false;
 }
 
-bool ViewProvider::mouseWheelEvent(int delta, const SbVec2s &cursorPos, const View3DInventorViewer* viewer)
+bool ViewProvider::mouseWheelEvent(int delta, const SbVec2s &cursorPos, const ViewerContext* viewer)
 {
     (void) delta;
     (void) cursorPos;

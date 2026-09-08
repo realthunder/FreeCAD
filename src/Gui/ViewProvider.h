@@ -79,6 +79,7 @@ namespace Gui {
         class TaskContent;
     }
 class View3DInventorViewer;
+class ViewerContext;
 class ViewProviderPy;
 class ObjectItem;
 class MDIView;
@@ -539,9 +540,9 @@ public:
     bool isEditing() const;
     void finishEditing();
     /// adjust viewer settings when editing a view provider
-    virtual void setEditViewer(View3DInventorViewer*, int ModNum);
+    virtual void setEditViewer(ViewerContext*, int ModNum);
     /// restores viewer settings when leaving editing mode
-    virtual void unsetEditViewer(View3DInventorViewer*);
+    virtual void unsetEditViewer(ViewerContext*);
     //@}
 
     /** @name Task panel
@@ -562,12 +563,12 @@ public:
     /// is called by the tree if the user double clicks on the object
     virtual bool doubleClicked() { return false; }
     /// is called when the provider is in edit and the mouse is moved
-    virtual bool mouseMove(const SbVec2s &cursorPos, View3DInventorViewer* viewer);
+    virtual bool mouseMove(const SbVec2s &cursorPos, ViewerContext* viewer);
     /// is called when the Provider is in edit and the mouse is clicked
     virtual bool mouseButtonPressed(int button, bool pressed, const SbVec2s &cursorPos,
-                                    const View3DInventorViewer* viewer);
+                                    const ViewerContext* viewer);
 
-    virtual bool mouseWheelEvent(int delta, const SbVec2s &cursorPos, const View3DInventorViewer* viewer);
+    virtual bool mouseWheelEvent(int delta, const SbVec2s &cursorPos, const ViewerContext* viewer);
     /// set up the context-menu with the supported edit modes
     virtual void setupContextMenu(QMenu*, QObject*, const char*);
     /** Called by tree on mouse event in a specific icon
@@ -649,12 +650,12 @@ protected:
      * It's in the responsibility of the caller to delete the returned instance.
      */
     SoPickedPoint* getPointOnRay(const SbVec2s& pos,
-                                 const View3DInventorViewer* viewer) const;
+                                 const ViewerContext* viewer) const;
     /** Helper method to get picked entities while editing.
      * It's in the responsibility of the caller to delete the returned instance.
      */
     SoPickedPoint* getPointOnRay(const SbVec3f& pos, const SbVec3f& dir,
-                                 const View3DInventorViewer* viewer) const;
+                                 const ViewerContext* viewer) const;
     /// Reimplemented from subclass
     void onBeforeChange(const App::Property* prop) override;
     /// Reimplemented from subclass

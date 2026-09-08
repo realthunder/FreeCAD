@@ -84,7 +84,7 @@ public:
 
     void setGridOrientation(Base::Vector3d origin, Base::Rotation rotation);
 
-    void attachViewer(Gui::View3DInventorViewer *viewer);
+    void attachViewer(Gui::ViewerContext *viewer);
     void detachViewer();
 
 
@@ -235,12 +235,12 @@ void GridExtensionP::computeGridSize(const Gui::View3DInventorViewer* viewer)
     capGridSize(computedGridValue);
 }
 
-void ViewProviderGridExtension::attachViewer(Gui::View3DInventorViewer *viewer)
+void ViewProviderGridExtension::attachViewer(Gui::ViewerContext *viewer)
 {
     pImpl->attachViewer(viewer);
 }
 
-void GridExtensionP::attachViewer(Gui::View3DInventorViewer *viewer)
+void GridExtensionP::attachViewer(Gui::ViewerContext *viewer)
 {
     if (!CameraSensor) {
         CameraSensor = std::make_unique<SoNodeSensor>();

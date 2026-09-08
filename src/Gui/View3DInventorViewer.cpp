@@ -88,6 +88,7 @@
 # include <QDir>
 # include <QElapsedTimer>
 # include <QPointer>
+# include <QScreen>
 # include <QEventLoop>
 # include <QKeyEvent>
 # include <QMessageBox>
@@ -1529,12 +1530,20 @@ QWidget* View3DInventorViewer::getGLWidget()
     return inherited::getGLWidget();
 }
 
-bool View3DInventorViewer::isMouseButtonDown() const
+Qt::MouseButtons View3DInventorViewer::mouseButtons() const
 {
     // One pointer on a desktop, so the application's answer is this view's
     // answer. A mirror answers from the button bits its client sent instead,
     // which is the whole reason the question is asked of a context.
-    return QApplication::mouseButtons() != Qt::NoButton;
+    return QApplication::mouseButtons();
+}
+
+double View3DInventorViewer::logicalDotsPerInchX() const
+{
+    if (auto* scr = screen()) {
+        return scr->logicalDotsPerInchX();
+    }
+    return 96.0;
 }
 
 void View3DInventorViewer::setFocusToView()
@@ -1694,7 +1703,12 @@ void View3DInventorViewer::init()
     setSceneGraph(pcViewProviderRoot);
     // Event callback node
     pEventCallback = new SoEventCallback();
-    pEventCallback->setUserData(this);
+    // The base subobject, deliberately: a pointer to this object and a pointer
+    // to its ViewerContext base are different addresses, so storing one and
+    // reading back the other through void* would read the wrong bytes. Readers
+    // go through ViewerContext::fromEventCallback, or the checked
+    // View3DInventorViewer::fromEventCallback for the desktop viewer.
+    pEventCallback->setUserData(static_cast<ViewerContext*>(this));
     pEventCallback->ref();
     pcViewProviderRoot->addChild(pEventCallback);
     pEventCallback->addEventCallback(SoEvent::getClassTypeId(), handleEventCB, this);

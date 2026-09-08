@@ -73,8 +73,8 @@ public:
     void attach(App::DocumentObject *) override;
     void updateData(const App::Property*) override;
 
-    virtual void setEditViewer(Gui::View3DInventorViewer*, int ModNum);
-    virtual void unsetEditViewer(Gui::View3DInventorViewer*);
+    virtual void setEditViewer(Gui::ViewerContext*, int ModNum);
+    virtual void unsetEditViewer(Gui::ViewerContext*);
 
     /// creates the grid
     SoSeparator* createGrid();
@@ -94,7 +94,7 @@ protected:
     static const char* GridStyleEnums[];
     static App::PropertyQuantityConstraint::Constraints GridSizeRange;
 
-    void updateGridScale(Gui::View3DInventorViewer *);
+    void updateGridScale(Gui::ViewerContext *);
 
 private:
     float MinX;

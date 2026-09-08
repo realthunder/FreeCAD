@@ -35,6 +35,7 @@ namespace Base { class Placement;}
 namespace Gui {
 
 class View3DInventorViewer;
+class ViewerContext;
 class SoFCCSysDragger;
 
 /**
@@ -69,8 +70,8 @@ public:
 protected:
     bool setEdit(int ModNum) override;
     void unsetEdit(int ModNum) override;
-    void setEditViewer(View3DInventorViewer*, int ModNum) override;
-    void unsetEditViewer(View3DInventorViewer*) override;
+    void setEditViewer(ViewerContext*, int ModNum) override;
+    void unsetEditViewer(ViewerContext*) override;
     //@}
 
     virtual void onDragStart(SoDragger *d);

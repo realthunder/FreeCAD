@@ -533,7 +533,7 @@ ViewProviderFeaturePythonImp::unsetEdit(int ModNum)
 }
 
 ViewProviderFeaturePythonImp::ValueT
-ViewProviderFeaturePythonImp::setEditViewer(View3DInventorViewer *viewer, int ModNum)
+ViewProviderFeaturePythonImp::setEditViewer(ViewerContext *viewer, int ModNum)
 {
     FC_PY_CALL_CHECK(setEditViewer)
 
@@ -558,7 +558,7 @@ ViewProviderFeaturePythonImp::setEditViewer(View3DInventorViewer *viewer, int Mo
 }
 
 ViewProviderFeaturePythonImp::ValueT
-ViewProviderFeaturePythonImp::unsetEditViewer(View3DInventorViewer *viewer)
+ViewProviderFeaturePythonImp::unsetEditViewer(ViewerContext *viewer)
 {
     FC_PY_CALL_CHECK(unsetEditViewer)
 

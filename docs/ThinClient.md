@@ -671,10 +671,26 @@ sketcher's on-view widgets. The mirror answers them with null and the DOM layer 
 those surfaces (8.7); an edit mode that cannot run without a widget is discovered by
 exactly that null, not by a crash in a headless process.
 
-Two smaller leaks of desktop state to fix on the way: `eventCallback` consults
-`QApplication::mouseButtons()` to decide whether Escape is safe, and the sketcher reads the
-pick radius from a global `ViewParams`. Both become fields of the context, fed by the
-client.
+Smaller leaks of desktop state to fix on the way. The count was two when this was written
+and is four as built (stage 1, 2026-09-08):
+
+- `eventCallback` consults `QApplication::mouseButtons()` to decide whether Escape is safe,
+  and the sketcher's click path reads the same global to cancel a rubber band. Both become
+  `ViewerContext::mouseButtons()`, which the desktop answers from the application -- one
+  pointer, so the same answer -- and a mirror answers from its client's button bits.
+- The sketcher reads the pick radius from a global `ViewParams`. It becomes
+  `getPickRadius()` on the context, which the desktop viewer already tracks from the same
+  preference, so the desktop answer does not move.
+- `eventCallback`'s Escape branch asks the **application's active view** whether it is
+  selecting, and resets edit on the **active document**, rather than asking the view the
+  event arrived through. On one window those are the same view; where they are not, the
+  active one was never the right thing to ask.
+
+A fifth is structural and is left to stage 4 rather than papered over here:
+`DrawSketchHandler::getViewer()` fetches the viewer from `getMainWindow()->activeWindow()`,
+so the sketcher's tool state machine reaches around its own view provider to the desktop's
+active window. It compiles unchanged because it never sees the new type, which is exactly
+why it needs naming: a mirror cannot serve a handler that asks the main window where it is.
 
 ### 8.4 The selection stack: `SelectionSingleton` stops being single
 
