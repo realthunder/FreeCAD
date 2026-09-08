@@ -2529,40 +2529,45 @@ queue adopted by design, no handle comparison and no lock ambiguity --
 and it would first mean enabling it in the Windows `typeMap`, where
 D3D9/11/12 are all commented out today.
 
-**Measured, that argument does not survive.** `fcvgsmoke --bench 20000`
-headless on the Ada part, three runs per backend, mean of the replay
-frames in ms (`--renderer` learned `d3d11`/`d3d12` for this; auto never
-picks D3D12):
+**Measured, that argument does not survive.** `fcvgsmoke --bench 20000
+--bench-frames 200` headless on the Ada part, three runs per backend,
+mean ms per replay frame (`--renderer` learned `d3d11`/`d3d12` for this;
+auto never picks D3D12):
 
-| Backend | unchanged | pan | zoom | observed range |
-| --- | --- | --- | --- | --- |
-| Direct3D 11 | 10.0 | 6.0 | 12.6 | 5.8 - 16.1 |
-| Direct3D 12 | 10.3 | 13.0 | 8.9 | 6.3 - 15.5 |
-| Vulkan | 3.8 | 3.5 | 3.3 | 2.4 - 4.2 |
+| Backend | unchanged | pan | zoom | post-crossing | overall |
+| --- | --- | --- | --- | --- | --- |
+| Direct3D 11 | 4.99 | 4.70 | 4.14 | 4.37 | 4.55 (1.74x) |
+| Direct3D 12 | 8.86 | 9.57 | 8.49 | 8.51 | 8.86 (3.38x) |
+| Vulkan | 2.49 | 2.53 | 2.70 | 2.75 | **2.62** |
 
-**Do not read that table as a throughput result, and do not conclude
-Vulkan is three times faster.** Two flaws make it a measurement of
-DEFERRAL rather than of work done. Each figure is a SINGLE frame --
-`runBench`'s inner helper renders one frame and times it, so three runs
-give three samples, not an average. And nothing forces GPU completion:
-the tool is deliberately headless with no swapchain and no
-`platformData`, so `bgfx::frame()` returns after submission and each
-backend postpones a different amount past that point.
+Vulkan is 1.7x faster than Direct3D 11 and 3.4x faster than Direct3D 12,
+consistently and across every case. **Direct3D 12 is the slowest of the
+three**, which is the opposite of what its external-queue property would
+lead one to hope. So the queue is a real convenience and it is not worth
+choosing a backend for on its own: if Route D is built here, D3D12's
+simpler synchronisation is being bought at roughly 3.4x, and the runtime
+handle comparison Vulkan needs is a bounded cost against that.
 
-The contradiction is in this document's own numbers. The readback probe
-above DOES force completion -- it pumps frames until the read lands --
-and measured Vulkan at 2.51 ms against Direct3D 11 at 2.42 ms on the
-same part, parity within 4%. A backend three times faster end to end
-would have shown it there. So the honest reading is that the backends
-are much closer than the bench suggests, and that this harness cannot
-separate them.
+**How this table was earned, because the first attempt at it was
+wrong.** The bench originally timed ONE frame per case and did not force
+GPU completion. `bgfx::frame()` returns after submission, and how much a
+backend defers past that point is its own business -- so wall clock
+around it ranks how much each driver POSTPONES, not how much it
+finishes, and single samples on top of that swung 2x run to run (D3D11
+read 6.96 ms and 13.13 ms for the same case). It is now 200 frames per
+case behind `Offscreen::grab()`, which blits, reads back and pumps
+frames until the read lands, so everything submitted has completed
+before the clock stops.
 
-What the table does support is narrower and still useful: D3D12 halves
-the FIRST frame against D3D11 (48 ms against 93), which is pipeline and
-state creation rather than steady-state draw, and no backend shows a
-steady-state collapse that would rule it out. The queue property
-therefore remains D3D12's real argument for Route D, neither confirmed
-nor overturned by anything measured here.
+Fixing it changed every magnitude and no ordering: D3D11 went from about
+10 ms to 4.55, D3D12 from 10.3 to 8.86, Vulkan from 3.8 to 2.62. Two
+lessons, and the second cost a retraction. A harness that does not force
+completion measures deferral. And the readback parity in the table above
+-- Vulkan 2.51 ms against D3D11 2.42 -- does NOT contradict this gap, as
+was briefly argued here: a readback is a bandwidth-bound memory
+transfer, largely backend-independent, while these frames are
+submission-bound. Parity in one says nothing about the other, and
+reasoning across the two was an error.
 
 Three limits on that table, none of them small. It exercises the
 **vg 2D path, not the 3D engine**, because the renderer's own shader
