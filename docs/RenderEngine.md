@@ -2494,6 +2494,59 @@ readback ships at ordinary resolutions and is marginal at 4K, where it
 spends two thirds of the budget before anything is drawn. That is what
 makes it a correctness path rather than the destination.
 
+### Benchmarking a backend: measure `ours`, not wall clock
+
+Three attempts at ranking backends went wrong here on 2026-09-08, each
+in a way worth not repeating.
+
+**Wall clock around `redraw()` measures the harness.** The chess scene
+(`scripts/render-test-chess.py`'s asset, camera orbiting, one
+`waitFrameComplete()` per frame) returned 20.33 ms on OpenGL, 20.09 on
+Vulkan and 20.38 on Direct3D 11 -- three APIs inside 1.4%. The engine's
+own accounting for the same steady-state frame says why:
+
+    traverse=0 delta=0 flatten=0 flattensub=0 entries=0
+    translate=0 backend=0                         other=1011/1012ms
+
+    pre 0.15 | cull 0.01 | submitloop 0.86 | post 5.76
+             | bgfx::frame 0.73 | ours 7.50
+
+The renderer spends **7.5 ms**, of which the backend's own share --
+`submitloop` plus `bgfx::frame` -- is about **1.6 ms**. The other ~12 ms
+of that 20 is outside the renderer entirely: the Qt event loop, paint
+scheduling and the benchmark's own polling. A backend difference of even
+2x moves under a millisecond of a frame the harness dominates, which is
+why three backends tied. `RenderParams::DebugTiming` and the `ours`
+line are the instruments; wall clock is not.
+
+**A camera-only orbit exercises none of the CPU pipeline.** Every
+`RenderTiming` stage above reads zero because the scene never changes
+and the render cache is reused. That is fine for isolating the backend
+and useless for measuring traversal, flatten or publish -- a benchmark
+wanting those has to change the scene, not just the view.
+
+**Two earlier traps, both of the same family -- the harness reporting
+its own limit.** `bgfx::frame()` returns after SUBMISSION, so timing
+around it ranks how much a driver postpones rather than what it
+finishes; forcing completion changed every magnitude in the vg table
+above. And vsync pins every leg to the refresh interval whatever the
+scene costs, which is what `FC_BGFX_NO_VSYNC` exists for
+(`BGFXRendererP.h`, `bgfxResetFlags`).
+
+Practical notes for the next attempt. The 3D engine needs a real view,
+so run it in the GUI binary: `FreeCADCmd` with `showMainWindow()` lands
+on the 1x1 `GLSurfaceWarmup` surface and every frame is "Framebuffer
+incomplete, missing attachment". And a script passed as an argument runs
+BEFORE the event loop, so `redraw()`/`waitFrameComplete()` there waits on
+frames nothing is pumping -- defer the work with
+`QtCore.QTimer.singleShot`, as `render-test-chess.py` does.
+
+**So the vg table above ranks backends and the chess numbers do not.**
+The vg workload submits 20000 stroke items and is submission-bound,
+which is exactly where a backend's per-draw cost shows; the chess scene
+draws 15 shapes, where that cost disappears into the noise. Neither says
+anything about the other.
+
 ### Route D -- Qt owns the device -- is the destination
 
 bgfx accepts an externally created device, so Qt can own it through
