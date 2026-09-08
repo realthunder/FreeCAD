@@ -2574,7 +2574,27 @@ up headless on Windows at all, so the incumbent is exactly the backend
 this cannot measure. And a windowed harness is what closing both gaps
 would need.
 
-Two constraints, cheap to state and expensive to discover late:
+**Route D takes a Qt PRIVATE dependency, on every platform.**
+`QRhiWidget` is public QtWidgets, but the types its `rhi()` and
+`colorTexture()` hand back are not: `QRhi`, `QRhiTexture` and the
+native-handle structs live under the versioned private path
+(`include/qt6/QtGui/<ver>/QtGui/rhi/`) and need `Qt6::GuiPrivate` to
+link. `qrhi.h` states the terms itself -- "part of the RHI API, with
+limited compatibility guarantees ... may make your code source and
+binary incompatible with future versions of Qt". It is not a macOS
+detail: `QRhiVulkanNativeHandles` and `QRhiD3D12NativeHandles` sit in
+the same `qrhi_platform.h` as the Metal one, so every backend takes it.
+
+**This tree links no Qt private module today** -- no `GuiPrivate`,
+`CorePrivate` or `WidgetsPrivate` anywhere in `src/Gui/CMakeLists.txt`
+or `cMake/`. Route D would be the first, in a tree that deliberately
+tracks upstream's Qt and already spans two minors across boxes (6.11.1
+and 6.11.2). The mitigation worth planning for, which bounds the damage
+rather than removing it: confine the private includes to a single
+translation unit behind an abstraction, so a Qt minor breaks one file
+rather than the renderer.
+
+Two further constraints, cheap to state and expensive to discover late:
 
 - **Coin.** A `QRhiWidget` viewport has no GL context at all, so Coin
   cannot traverse anywhere -- there is nothing to composite over the
