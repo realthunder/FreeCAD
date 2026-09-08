@@ -17,6 +17,13 @@ user decision, quoted where the wording matters.
 
 ## 0. At a glance
 
+**Re-aimed 2026-09-08 (1.2): the sandbox boxes CODE CARRIED IN THE
+DOCUMENT -- expressions and expression-language programs generating
+parametric shapes through a curated geometry surface.  Installed
+workbench code is not a target; the GUI stays native; the widget
+layer built under sec 7 is the browser's toolkit.  The guest-only GUI
+pieces are frozen, not extended.**
+
     area                            status      where
     ------------------------------  ----------  ------------------------------------------
     principals, permissions, grants  built       src/App/ExpressionSecurity*.{h,cpp}
@@ -42,6 +49,10 @@ user decision, quoted where the wording matters.
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
+    Proxy import restriction (native) next        item 1 of sec 11: PropertyPythonObject restore
+                                                 confined to the Mod roots, both containers
+    the document program             to size     sec 11 item 2: the carrier, the surface audit,
+                                                 per-document guests, the gate
     host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -67,14 +78,66 @@ Python before the spreadsheet ships to the browser; define the security
 model (who is asking, what can be asked, how the user grants) BEFORE
 the mechanism, with grant as first-class as deny (2026-08-30).
 
-### 1.2 The end state **[decided 2026-09-03]**
+### 1.2 The end state **[decided 2026-09-03; RE-AIMED 2026-09-08]**
 
-"Our final goal is to run everything Python in pyodide."  One
-preference, `Python/Runtime = native | pyodide`, moves every rung that
-is ready into the sandbox; a rung that is not ready falls back to
-native with an audit line, never silently.  Pyodide is THE runtime
-FreeCAD ships and develops; the WASI image is the reference
-implementation, built only on request.
+The 2026-09-03 goal was "run everything Python in pyodide": one
+preference, `Python/Runtime = native | pyodide`, moving every rung
+that is ready into the sandbox.  Pyodide is THE runtime FreeCAD ships
+and develops; the WASI image is the reference implementation, built
+only on request.  That much stands.
+
+**Re-aimed 2026-09-08, user ruling, after G4 was sized (7.16) and the
+question "is it worth it, or restrict to expressions and code in the
+document?" was put.**  The reasoning, kept because it decides the
+list:
+
+- What runs when a document OPENS in the GUI is the VIEW PROVIDER's
+  code: `loads`, `attach`, `startRestoring`/`finishRestoring`, then
+  `onChanged` and `updateData` per property, `getIcon` and
+  `claimChildren` from the tree.  The App side runs `loads` and
+  `onDocumentRestored`; `execute` runs on a recompute, not on open.
+  So the App-side sandbox (G1) isolated the half that mostly does not
+  run at open, and the half that does is native -- and boxing it means
+  the mirror (G4), the residue that never ends: every sizing found the
+  next ten APIs, and each is a surface tracking upstream Draft and BIM
+  forever.
+- In this fork NONE of a Proxy is document code: the state is JSON
+  (no pickle; the regex in the restore path only scans legacy pickle
+  text for a module and class name), and the class is chosen by
+  module name.  A file supplies CODE only by naming a module outside
+  the installed tree, or through an expression.  The native fix is the
+  rule `Type::importModule` already has, applied to
+  `PropertyPythonObject`'s restore for BOTH containers (sec 11 item 1).
+  After it a document can only pick installed classes and feed them
+  data; Draft and BIM have zero `eval`/`exec` on document data.
+- The reason the GUI work went this far was two questions, both
+  answered without the GUI in the box.  "How do the workbench half and
+  the document half coexist, which side recomputes?": the HOST,
+  always -- the document, its graph and every TopoShape are C++ on the
+  host; a Proxy hook is one hop into the guest.  "I want the task panel
+  in the browser": the browser tier is a THIN CLIENT (RoadMap.md sec
+  3: no OCCT, no Python in the browser, DOM for the UI chrome), so a
+  panel's logic runs on the host and the browser needs only a DOM view
+  of the panel model -- which is what H0 and G3 built.  The widget
+  layer is the browser's toolkit; the sandbox is not what puts a panel
+  in the browser.
+- **The target, stated by the user**: the expression engine as a
+  language a DOCUMENT carries -- a user-defined, document-carried
+  addon that generates parametric shapes -- which the native engine
+  could already do before this branch (lambdas, assignments,
+  callables, `Part` reachable) and which was exactly the hole of 1.1.
+  A document-carried program produces SHAPES; shapes are App data
+  shown by the standard native view providers; document code never
+  needs a GUI half.  That is the one thing the sandbox boxes.
+
+The end state, re-aimed: **a document's programs -- expressions and
+expression-language libraries -- evaluate in the document's guest over
+a curated, versioned geometry surface, with routing ON by default;
+installed workbench code runs native, attributed, not enforced; the
+GUI is native, and the widget layer serves the browser.**  The ladder's
+rungs 3 and 4 (session scripting, Python workbenches in the guest) are
+RETIRED as goals; what was built under them is frozen in place (sec 7
+header, sec 11).
 
 ### 1.3 The ladder
 
@@ -83,29 +146,45 @@ Each rung ships alone; each is strictly more Python in the sandbox.
 - **Rung 0, expressions** **[built]**: both spreadsheet modes route,
   the corpus gate passes, the budget works.  Routing is preference-gated
   OFF by default (sec 3.5).
-- **Rung 1, native dispatch for `call` members** **[designed]**: the
-  annotated method set retargeted from Python C API calls to generated
-  C++ dispatch, so document principals never touch native CPython even
-  indirectly.
-- **Rung 2, document-embedded Python** **[designed]**: scripted-object
-  `Proxy` code lives in the document's guest; `execute()` is a bridge
-  call.  Needs instance-per-principal with a fast spawn, the
-  asynchronous loop primitive, and `PropertyPythonObject` restore that
-  never instantiates host objects.  `FeaturePython::execute()` calls the
-  host Proxy today (`src/App/FeaturePython.h:201`); nothing routes a
-  Proxy that lives in a guest.
-- **Rung 3, session scripting** **[designed]**: console and macros in a
-  session-principal guest with wide grants; needs the bindings pack to
-  cover the App-level API, user packages (sec 5), session network (sec
-  6).
-- **Rung 4, Python workbenches** **[designed]**: App-side logic is rung
-  3 work; the GUI residue is sec 7.
+- **Rung 1, native dispatch for `call` members** **[designed; DROPPED
+  2026-09-08]**: the annotated method set retargeted from Python C API
+  calls to generated C++ dispatch.  Dropped because it has no
+  customer: the corpus (8.3) shows expressions make 302 member reads
+  and two method calls in 7628 expressions, and a shape program's
+  calls are OCCT-bound at hundreds of microseconds against a 5 us
+  hop.  What expressions pay for is the fixed cost per evaluation
+  (about 22 us of wire plus 23 us of bindings pack, 8.1) and property
+  reads that materialize a Python object on the host (`Shape.BoundBox`
+  builds a `TopoShapePy` first): the two performance items of sec 11
+  are the pack cache and typed reads, not dispatch.
+- **Rung 2, document-embedded Python** **[built as G1 for Draft and
+  BIM; hardened mode, not the target, 2026-09-08]**: scripted-object
+  `Proxy` code in the document's guest, `execute()` a bridge call --
+  70/70 Draft Proxies and the BIM corpus recompute byte-identical
+  (7.6).  With the import restriction (sec 11 item 1) it buys defense
+  in depth and crash isolation for INSTALLED code against hostile
+  data; kept and maintained, since expressions ride the same bridge.
+  Per-document guests return to the list on a different ground: one
+  file's runaway program must not stall another's recompute.
+- **Rung 3, session scripting** **[RETIRED 2026-09-08]**: console and
+  macros in a session guest.  What was built for it (S1, S2, G3d, the
+  `gui.*` op family) is frozen.
+- **Rung 4, Python workbenches** **[RETIRED 2026-09-08]**: the GUI
+  residue of sec 7.  G2, G3 and the InitGui runner are frozen in place
+  with the switch off; G4 (7.16) was sized and not built.
 
 The App-core severance (`FREECAD_NO_NATIVE_PYTHON`, an App that does not
-link libpython) is the argument-by-compiler for rung 1: chasing link
-errors IS the chokepoint audit.  Not started; `ExpressionCore` exists
-only as an OBJECT library folded into `FreeCADApp`
-(`src/App/CMakeLists.txt:580-601`), explicitly a stepping stone.
+link libpython) is **DROPPED 2026-09-08**: Python is woven through the
+core, not layered on it -- 105 of 197 files in `src/App` and 50 of 153
+in `src/Base` touch the C API, 33 generated binding XMLs, every
+expression value a CPython object -- so the split is months of
+re-layering once and a permanent divergence in the most-merged files
+(`Document.cpp`, the `Property` family, `Expression`) paid at every
+upstream sync.  Its audit value is had by a grep over the generated
+facades; its engineering value, a Python-free OCCT worker, is not
+needed by ComputeBoundaries.md, whose boundary is around OCCT, not
+around App.  `ExpressionCore` stays an OBJECT library folded into
+`FreeCADApp` (`src/App/CMakeLists.txt:580-601`).
 
 ### 1.4 Standing rulings
 
@@ -123,6 +202,67 @@ only as an OBJECT library folded into `FreeCADApp`
   principal, never escalates, gated by `gui.doCommand` (2026-09-03).
 - The GUI island (native PySide/pivy code) is attributed, not enforced:
   the threat model is document-derived code, which never runs there.
+- The target is CODE CARRIED IN THE DOCUMENT (2026-09-08, 1.2):
+  expressions and expression-language programs.  Installed workbench
+  code, App or GUI side, is not a sandboxing target; the widget layer
+  is the browser's toolkit, not a sandbox artifact.  No prompt ever
+  hands a document the user's authority (the VBA lesson, 1.5): a
+  document-side permission is ALLOW by the catalog or DENY
+  non-promptable.
+
+### 1.5 Prior art for code carried in a file **[recorded 2026-09-08]**
+
+What a document-carried language looks like elsewhere, and what each
+case teaches this design:
+
+- **Onshape FeatureScript** -- the closest thing.  A purpose-built
+  language for parametric features, stored in the document itself,
+  run on the server, over a curated standard library on the Parasolid
+  kernel: no I/O, value semantics, deterministic, and the standard
+  library is VERSION-PINNED so a feature written a year ago evaluates
+  the same.  Ours is the same shape over OCCT: a program in the file,
+  the `geom.call` surface, a budget instead of a trust prompt.  Taken
+  from it: version the surface -- a file records which facade version
+  it was written against, so growing or tightening the annotated set
+  never silently changes an old file.
+- **Spreadsheets, where this engine came from.**  Excel's `LET` and
+  `LAMBDA` made the formula language a functional language, and a
+  `LAMBDA` bound to a defined name is a document-carried function
+  library callable from any cell -- the carrier of sec 11 item 2,
+  shipped and familiar.  Office Scripts and Google Apps Script are the
+  other layer: real scripts, sandboxed, a curated API, scoped
+  permissions.  What Microsoft did NOT do is make VBA safe; they built
+  a second, restricted language beside it.
+- **Whole-file programs.**  OpenSCAD: the model IS the program, the
+  language small and functional, nothing to escape into because it has
+  no I/O beyond including files.  Houdini's VEX inside the node
+  network: compiled, side-effect-free, a curated library, kept apart
+  from the unsandboxed Python layer by design.
+- **Sandboxed scripting in hostile content.**  World of Warcraft addons
+  and Roblox's Luau run user Lua under an allowlisted API with no file
+  system or network; WoW's taint system -- code is secure or insecure
+  by origin, protected calls refuse insecure callers -- is the analog
+  of our principal attribution.  PDF JavaScript is the warning on this
+  row: the sandbox held, the curated API surface is where the exploits
+  lived.  Our surface is the annotated set plus the value codecs; that
+  is what deserves the fuzzing.
+- **The failure mode: code with the user's authority plus a prompt.**
+  VBA, Excel 4.0 macros, Blender's auto-run scripts in `.blend` files,
+  Emacs file-local `eval`.  Each ended the same way: the prompt trained
+  users to click yes, then the vendor blocked the feature by default
+  (Microsoft in 2022 via Mark of the Web, Blender by turning auto-run
+  off).  Dynamo and Grasshopper carry unsandboxed Python and C# nodes
+  in their files today.  1.4's non-promptable document rows are this
+  lesson applied.
+- **Formulas without programs.**  SolidWorks equations, Fusion
+  parameters, upstream FreeCAD's expressions: safe because weak, which
+  this fork's engine already outgrew (lambdas, assignments, callables
+  in `ExpressionParser.y`).
+
+The shape the prior art supports: FeatureScript's model, `LAMBDA`'s
+carrier, OpenSCAD's discipline of no I/O, a versioned surface, and no
+prompt that hands a document the user's authority.  Nothing on the
+list needed the GUI in the box.
 
 ## 2. The security model **[built]**
 
@@ -967,7 +1107,27 @@ The same policy runs in the page's shim as defense in depth; the
 browser's CORS decides what connects; whether the served-document
 server should proxy allowed origins is a separate design.
 
-## 7. GUI for sandboxed Python **[designed 2026-09-03; the linter built]**
+## 7. GUI for sandboxed Python **[designed 2026-09-03; the linter built; FROZEN 2026-09-08]**
+
+**Frozen 2026-09-08 (1.2, the re-aim).**  What this section built
+splits two ways.  The WIDGET LAYER -- `src/Gui/Fw/` (H0), the Qt
+subset as models, the `PySide` shim and `freecad.widgets` that let
+DraftGui run unmodified on the models, `loadUi` both sides, the
+panel dialog -- is the BROWSER'S TOOLKIT and stays maintained: the
+next step is G7's DOM view and the shim's op call bound natively so
+Draft's panels run on the host without pyodide.  The `gui.*` op
+dispatcher in `SandboxGui.cpp` is that shim's native backend and stays
+alive through it, frozen in REACH (no new guest-only ops).  The
+guest-only pieces -- the InitGui runner (`InitGuiInGuest`, off by
+default), the Draft and BIM wheels, the session document from the
+guest (S1, S2), the selection and the stock dialogs from the guest
+(G3d), the status bar and docks from the guest (7.15) -- are frozen in
+place with their gates: kept while green, a gate RETIRED rather than
+the guest extended when an upstream Draft or BIM sync breaks it;
+revisited after G7 lands, when the native shim path shows what it made
+redundant.  G4 (7.16) is sized and NOT built.  The sizings below are
+kept as the record and as the door back.
+
 
 The user's framing: "since our final goal is to run everything Python in
 pyodide, eventually we'll need to find a way to expose GUI function ...
@@ -4419,7 +4579,61 @@ Command line: `--grant <permission>[:<target>]`, `--policy <file>`.
 
 ## 11. Roadmap, one list
 
-In order; each step ships alone.  Done: Phase 0 audit (2026-08-30),
+**Re-aimed 2026-09-08 (1.2).**  In order; each step ships alone.
+
+1. **The Proxy import restriction, native.**  `PropertyPythonObject::
+   restoreObject` imports only a module already in `sys.modules` or
+   one `importlib.util.find_spec` resolves inside a registered module
+   root (`Type::addModuleRoot`, the rule `Type::importModule` has had
+   since 2026-09-05), for BOTH containers -- `App::DocumentObject` and
+   `Gui::ViewProvider`; anything else throws before importing and the
+   object is left without a Proxy, logged.  The legacy pickle-name
+   scan feeds the same check.  Closes sec 13's last file-chosen host
+   import.  Gate: `ProxyImport.*` beside `TypeImport.*` in Tests_run
+   (under a root, outside every root, stdlib, loaded, missing; both
+   containers) and one GUI case opening a document whose view provider
+   names a module outside the roots.  About an afternoon.
+2. **The document program** -- to be SIZED as 7.17 before building:
+   (a) the example set: two or three document-carried programs (a
+   parametric bracket, a stair) written in the engine's language,
+   generating shapes, run routed and native; (b) the geometry surface
+   audit against them -- the constructive set (`make*`, extrude,
+   revolve, the booleans, fillet and chamfer, placement, the shape
+   queries) added by annotation where missing, and the surface
+   VERSIONED (1.5, FeatureScript): a file records the facade version
+   it was written against; (c) the carrier: a document-level library
+   of named functions, defined once, callable from any expression in
+   that document, evaluated in the document's guest (1.5, `LAMBDA`);
+   (d) per-document guests, decided by the 1.5 s boot measurement;
+   (e) the gate: such a file opens with routing ON and recomputes
+   byte-identical to native, and the corpus gate stays green.
+3. **Routing ON by default** (`Expression/Sandbox:Evaluate`) when the
+   corpus gate says so, as ruled 2026-08-31 -- not judgement.
+4. **Expression performance, two bounded items** (1.3, rung 1's
+   replacement): the bindings pack cached per cell across evaluations
+   and invalidated on document change (the 23 us per eval of 8.1);
+   typed reads for the handful of property types whose `getPyObject`
+   materializes a wrapper (`Shape.BoundBox`: the King IFC model's 5808
+   cells, 8.3).  Measured by the existing bench and the 10k-cell sheet
+   projection.  A bench of one shape program routed against native
+   decides whether anything more is needed.
+5. **The browser's task panel** -- G7, the DOM walker over the widget
+   layer (7.12), and the `freecad.widgets` shim's op call bound
+   natively so Draft's panels run on the host without pyodide; the
+   toolkit gates (`SandboxForms`, `SandboxPanels`, `SandboxWidgets`,
+   `SandboxNative`) gain a native-mode twin.  Not a sandbox item; listed
+   because the code is shared.
+6. **An authoring panel for the document library** (item 2's carrier),
+   on the widget layer -- after 5.
+
+DROPPED 2026-09-08: G4 (7.16, sized), F1 (7.14: it closed a hole only
+a SESSION guest has), N1-N5 (network is a session need), G5, G6, rung
+1 and the App-core severance (1.3), the `Python/Runtime = pyodide`
+switch as a goal.  FROZEN: G2, G3, S1, S2, the InitGui runner (sec 7
+header).  The numbered list below is the HISTORY of what was built,
+kept as the record; its forward items are superseded by the six above.
+
+The history.  Done: Phase 0 audit (2026-08-30),
 Phase 1 image and router (2026-08-31), the pyodide runtime and budget
 (2026-09-02), N0 demotion, P1 bootstrap and offer, G0 linter
 (2026-09-03).
