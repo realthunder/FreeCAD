@@ -7,7 +7,10 @@ boundary, and a much better fit for this fork than the fluid half of the
 simulator work.
 
 Status: findings, a library survey with licenses verified against primary
-sources, a recommendation, and staging. Discussion of 2026-09-08. No code,
+sources, a recommendation, and staging. Discussion of 2026-09-08, revised
+the same day after the first draft's scoping was challenged and found
+wrong -- section 1 records the correction rather than hiding it, because
+the wrong axis it used is an easy one to reach for again. No code,
 no build work, no dependency added. Related: `docs/Simulator.md` (Boundary
 C, the two-fidelity ruling, the units question this shares),
 `docs/RenderEngine.md` (the engine most of this would be built on),
@@ -16,42 +19,158 @@ C, the two-fidelity ruling, the units question this shares),
 `docs/RoadMap.md`.
 
 
-## 1. "Optics" is four products, and only one of them wants CAD
+## 1. Correction: "wants CAD" is not the same axis as "has a library"
 
-The word covers four disciplines that use different mathematics, different
-software, and are wanted by different people. Conflating them is how these
-projects fail.
+The first draft of this document sorted optics into four domains and
+concluded that only non-sequential illumination wanted CAD. **That
+conclusion was reached on the wrong axis and it is wrong.**
 
-| | What it is | State of open source |
-| --- | --- | --- |
-| **A. Sequential imaging design** | Rays through an *ordered* list of analytic surfaces. Paraxial layout, aberrations, spot diagrams, MTF, merit-function optimisation, tolerancing. Zemax OpticStudio, CODE V. | **Well served, free.** Optiland (MIT) and rayoptics (BSD-3) are both real. |
-| **B. Non-sequential illumination and stray light** | Rays through *whatever they hit*, in a real 3D assembly. Photometric sources, scattering, absolute irradiance on detectors, ghost and stray-light path analysis. TracePro, LightTools, Speos. | **Not served at all.** Every option is commercial or a physics-lab special case. |
-| **C. Physical / wave optics** | Diffraction, PSF, coherence, polarization, Gaussian beams. | **Well served, free, permissive.** POPPY, prysm, HCIPy, LightPipes, diffractio. |
-| **D. Nanophotonics / EM** | Sub-wavelength structures, FDTD, mode solvers. | **Served, but GPL.** Meep, openEMS. |
+The error is precise and worth recording. The survey's right-hand column
+asked *"does an open-source library exist"*, and the conclusion silently
+treated that as *"is the workflow served"*. Those are different questions.
+Optiland and rayoptics are excellent **libraries** for computing a lens
+prescription. Neither is a workflow for laying out an experiment, and
+neither can answer what happens to the beam when a mount drifts -- because
+neither has ever heard of the mount.
 
-The asymmetry in the right-hand column is the whole argument.
+The axis that actually matters is:
 
-**Domain A does not want CAD.** A lens prescription is an ordered list of
-analytic surfaces with a stop and an image plane. There is no assembly, no
-mechanical context, no solid. Wrapping a free Python lens designer in a
-FreeCAD workbench adds convenience and no capability, and nobody changes
-tools for convenience.
+> **Does the answer depend on where the parts physically are, in three
+> dimensions, in an assembly that someone also has to build?**
 
-**Domain B is a solid-modelling problem that happens to be about light.**
-It is rays inside a barrel, past a baffle, off an anodised mount, through
-a lens that is a real solid with a ground edge, onto a sensor that is a
-real part. The commercial tools import STEP badly because they are optics
-programs that grew a geometry kernel. FreeCAD *is* the geometry kernel.
-That inversion is the opportunity, and it is the only place in this survey
-where a CAD program can offer something that does not already exist.
+On that axis, sequential-versus-non-sequential is not the dividing line at
+all. Sequential optics *in isolation* does not want CAD; sequential optics
+*on a bench* wants it more than anything else in this document.
 
-So the question in the title has a sharper form: **can this fork build a
-serious non-sequential illumination and stray-light tool?** Sections 2
-through 4 say what stands in the way; sections 6 through 8 say what to
-adopt for the other three domains rather than write.
+### Domain A splits three ways, and two of them are CAD-native
+
+- **A1 -- prescription design.** "Give me a triplet that images at f/2.8
+  over this field." The subject is an ordered list of analytic surfaces
+  with a stop and an image plane. No assembly, no mechanical context, no
+  solid. **Does not want CAD.** Optiland and rayoptics do this well and
+  the original conclusion holds here, and only here.
+- **A2 -- optical layout and experiment setup.** A laser, an AOM, a
+  telescope, a waveplate, a fibre coupler, on a breadboard, in mounts, on
+  posts. The beam path *is* an assembly, the components *are* parts with
+  real geometry, and the thing being designed is simultaneously an optical
+  system and a mechanical one. **Wants CAD.** This is what the user
+  community around FreeCAD optics is actually doing, and PyOpticL
+  (section 6) exists because of it, with published physics behind it.
+- **A3 -- optomechanical tolerancing.** "What does 100 um of mount drift,
+  or 0.5 degrees of post tilt, or a 20 K thermal excursion, do to my
+  beam?" The perturbation lives in the **mechanical** model; its
+  consequence is **optical**. **This wants CAD more than any other job in
+  this document**, and it is the one nothing free can do.
+
+A3 deserves its own paragraph because it is the strongest case and the
+first draft missed it entirely.
+
+A mirror whose mount tilts by delta deviates the reflected beam by 2*delta.
+A half-milliradian of thermal drift in a kinematic mount -- unremarkable,
+and roughly what a good mount actually does -- puts the beam a millimetre
+off at one metre. Coupling that beam into single-mode fibre needs
+micrometre-scale lateral accuracy. So a perturbation nobody would think to
+model decides whether the system works at all, and the number that decides
+it is determined by the **mechanical design**: where the pivot is, how
+long the post is, what the mount is made of.
+
+That this is a real and unmet need is not a guess. It is what Ansys built
+NEST and the Speos optomechanical tolerancing tools for, and their own
+documentation names the pain: mechanical pivot points sit away from the
+optical axis and are determined by the mount, misalignments in one
+assembly propagate through others, and setting this up in Zemax
+historically meant hand-writing complex operand structures, error-prone
+and slow. The commercial market has validated this job, at commercial
+prices. Nothing free addresses it.
+
+And it is a *parametric* question, which is what this program is. The
+mount tilt is a property, the post length is a property, the expression
+engine already relates them, and a tolerance study is a Monte Carlo over
+those properties. A parametric modeller is the natural host for
+optomechanical tolerancing in a way that an optics program with a STEP
+importer structurally is not.
+
+### Domain C splits four ways, and "waveguide" spans three of them
+
+"Waveguide design and simulation" is three different stacks depending on
+which waveguide is meant, so the word has to be disambiguated before it
+can be scoped.
+
+- **C1 -- integrated photonics (PIC).** Silicon photonics, GDSII layout,
+  mode solvers, eigenmode expansion, FDTD. **The layout is a 2D + PDK
+  problem and FreeCAD is not the natural host** -- `gdsfactory` (MIT) owns
+  this and does it well. But the *cross-section* is three-dimensional, and
+  **packaging is entirely ours**: fibre attach, submount, lid, thermal
+  path, stress. That is a real role, and a narrow one. Do not try to
+  become a layout tool.
+- **C2 -- Gaussian beams and mode matching on a bench.** Beam waists, ABCD
+  matrices, mode-matching into a cavity or a fibre, coupling efficiency.
+  **Wants CAD**, because where the waist lands is decided by where the
+  lenses sit on the breadboard. This is A2's inseparable companion --
+  PyOpticL added Gaussian beam simulation for exactly this reason -- and
+  it is the part of C that matters most here.
+- **C3 -- hollow RF and millimetre-wave waveguide.** Metal solids, FDTD or
+  FEM. **Wants CAD, and is already served**: EMStudioFree, the openEMS
+  export plugins and the EM workbench already occupy this niche in
+  FreeCAD (section 6). Do not duplicate it.
+- **C4 -- aperture diffraction and PSF.** POPPY, prysm, HCIPy: the
+  astronomy-flavoured wave optics. The pupil is a mask, not a solid.
+  **Does not want CAD.** Adopt as a library; the original conclusion holds
+  here.
+
+### The corrected table
+
+Sorted on the axis that matters.
+
+| | Job | Wants CAD | Free option today |
+| --- | --- | --- | --- |
+| **A1** | Lens prescription design | no | **Optiland (MIT), rayoptics (BSD-3)** -- adopt |
+| **A2** | Optical layout / experiment setup | **yes** | PyOpticL -- but **unlicensed** (section 6) |
+| **A3** | Optomechanical tolerancing | **yes, most of all** | **nothing** |
+| **B** | Non-sequential illumination, stray light | **yes** | **nothing** |
+| **C1** | PIC layout and device sim | layout no, **packaging yes** | gdsfactory (MIT); solvers are GPL |
+| **C2** | Gaussian beams, mode matching | **yes** | fragments only |
+| **C3** | RF / mm-wave waveguide | yes | **already served in FreeCAD** -- don't duplicate |
+| **C4** | Aperture diffraction, PSF | no | POPPY, prysm, HCIPy -- adopt |
+| **D** | Nanophotonics FDTD | no (2D/3D grid) | Meep, MPB -- GPL, out of process |
+
+Four rows are CAD-native and unserved or barely served: **A2, A3, B, C2**.
+That is the subject of this document, and it is a good deal larger and
+better-founded than the first draft's single row.
 
 
-## 2. Finding: most of a non-sequential engine is already vendored here
+## 2. The finding that reorganises everything: four jobs, one engine
+
+A2, A3, B and C2 look like four products. They are not. **All four consume
+the same primitive**, and it is a primitive nothing in the open-source
+world provides:
+
+> a ray or beam traced through the *actual document geometry*, at the
+> *actual placements*, against *exact surfaces*.
+
+- **A2** needs it to route a beam path and place the next component where
+  the beam actually goes.
+- **A3** needs the same trace re-run under a perturbation of the
+  mechanical parameters, thousands of times.
+- **C2** needs it carrying a Gaussian q-parameter rather than a bare
+  direction -- the same trace with a richer payload.
+- **B** needs millions of them with wavelength, radiometry and scatter
+  attached.
+
+So this is **one core with four consumers**, not four workbenches. That
+changes the shape of the work and improves it: the expensive, risky part
+-- exact intersection against document geometry, section 4 -- is built
+once and paid for four times, and the cheapest consumer (A2 routing) can
+validate it long before the most expensive one (B) exists.
+
+It also reorders the staging. The first draft put the exact-surface work
+at stage 3, behind an adopt-a-lens-designer stage that was framed as a
+warm-up. It is not a warm-up; it is the foundation, and A2 gives it a
+payoff two stages earlier than B does. Section 12 is reordered
+accordingly.
+
+
+## 3. Finding: most of a non-sequential engine is already vendored here
 
 This fork is closer to a domain-B engine than it looks, because the
 renderer workstream has already paid for the expensive parts.
@@ -104,7 +223,7 @@ What is genuinely missing, stated precisely so it is not underestimated:
 - **Exact surfaces.** Section 3. This is the hard one.
 
 
-## 3. Finding: tessellation is the line between a toy and an instrument
+## 4. Finding: tessellation is the line between a toy and an instrument
 
 Every open-source optics tool that traces against CAD geometry traces
 against triangles, and that is why none of them is used for engineering.
@@ -152,6 +271,15 @@ The remedy is not a finer mesh, it is a different intersection:
   converge onto the true surface. Costs a projection per hit, works for
   every surface OCCT can carry.
 
+**And tolerancing is where this bites hardest.** Section 1 put a
+half-milliradian mount drift at the centre of the A3 case. A 2.6 degree
+facet normal error is 45 milliradians -- **ninety times larger than the
+signal a tolerance study is trying to measure**. That is not "less
+accurate", it is numerical noise swamping the answer, and it means
+tessellated tracing cannot do optomechanical tolerancing at all, at any
+mesh density that a sqrt law will reach. The most valuable job in section
+1 is the one most tightly bound to the hardest finding here.
+
 And a split that makes the whole thing tractable: **the exactness
 requirement is specific to specular and refractive optical surfaces.** The
 mechanical surroundings -- barrels, baffles, black anodised interiors --
@@ -162,7 +290,7 @@ keeps it fast, and it is the reason the two-kinds-of-geometry design is a
 feature rather than a compromise.
 
 
-## 4. Finding: the data problem is already solved, which is unusual
+## 5. Finding: the data problem is already solved, which is unusual
 
 Optical simulation is normally blocked on data before it is blocked on
 physics: you cannot trace a glass whose dispersion you may not ship.
@@ -194,10 +322,15 @@ Saying so up front is better than implying a coating library that cannot
 exist.
 
 
-## 5. Prior art inside FreeCAD, and where it stops
+## 6. Prior art inside FreeCAD, and where it stops
 
-Two addons already exist, and both are worth reading before writing
-anything.
+There is more of it than the first draft found, and the additions are the
+ones that matter for A2, A3 and C3. FreeCAD is already, quietly, the host
+of several optics and EM efforts. That is evidence for the corrected
+thesis, not against it: people keep reaching for a CAD program for these
+jobs because these jobs need one.
+
+### Ray tracing on FreeCAD geometry
 
 - **`chbergmann/OpticsWorkbench`** (LGPL-3, pure Python). Geometrical
   optics on FreeCAD objects: mirrors, absorbers, lenses, 2D from
@@ -209,6 +342,10 @@ anything.
   for Jupyter analysis, and **parameter optimisation driving FreeCAD model
   parameters** -- the example tunes a lens radius to minimise detector
   spot size.
+- **`cihologramas/freecad-pyoptools`** (**GPL-3**) brings the pyOpTools
+  ray tracer into FreeCAD. So a compiled-kernel tracer inside FreeCAD does
+  exist -- but GPL-3 means it can never be core here (section 8), only an
+  optional addon.
 
 Where they stop:
 
@@ -219,7 +356,7 @@ Where they stop:
   survive Link and assembly structure.
 - No absolute radiometry, no coatings, no scatter models, no path tagging,
   and triangle-or-analytic intersection is not addressed as the issue
-  section 3 says it is.
+  section 4 says it is.
 
 What to take from them: the **optimisation-over-CAD-parameters** idea is
 right and is exactly what a CAD-hosted optics tool can do that Zemax
@@ -228,8 +365,72 @@ cannot -- the parameter space is the model, not a surface list.
 (FreeCAD's own legacy `Raytracing` workbench was a POV-Ray / LuxRender
 exporter, not optics, and is not in this tree.)
 
+### PyOpticL -- the closest prior art for A2, and a licensing problem
 
-## 6. Library survey, licenses verified
+**`UMassIonTrappers/PyOpticL`** is a code-to-CAD optical layout tool built
+on FreeCAD, from the Niffenegger group at UMass. It places optics along
+simulated beam paths with automatic and dynamic routing including branched
+paths, generates modular baseplates meant to be machined or 3D printed and
+bolted to an optical table, and as of v2.0 does Gaussian beam simulation.
+It is published work -- Quantum, 2026-06-15 -- reporting over 99% fidelity
+single-qubit gates in a trapped-ion system built from it, with a companion
+repository laying out a complete Rb-87 neutral-atom platform. 147 stars,
+last pushed 2026-08-04.
+
+This is domain A2, working, in FreeCAD, with physics behind it. It is the
+single strongest piece of evidence that the first draft's scoping was
+wrong.
+
+**It also has no LICENSE file.** The GitHub API reports no license for the
+repository, and there is none at any conventional path. Under the default
+that means **all rights reserved**: it cannot be forked, vendored, adapted
+or shipped, regardless of how open the intent obviously is. This is almost
+certainly an oversight by a physics group rather than a position -- but
+until it is fixed, PyOpticL is **prior art to read and learn from, and
+code to keep at arm's length**.
+
+Concrete action, and cheap: ask them to add one. An MIT or BSD-3 grant on
+a tool this useful would matter to more than this fork.
+
+What to take from it regardless: **beam-path-driven placement**. The user
+does not position a mirror and then ask where the beam goes; the user
+declares the beam path and the components land on it. That is the right
+interaction model for A2, and it inverts the one every optics addon here
+uses.
+
+### The RF and EM niche is already occupied -- do not duplicate C3
+
+- **`king-aj3/EMStudioFree`** (**LGPL-2.1**) -- a FreeCAD workbench for RF
+  and EM simulation (antennas, S-parameters, far fields, magnetics, cable
+  design) driving openEMS, NEC2, Elmer and Palace.
+- **`LubomirJagos/FreeCAD-OpenEMS-Export`** (GPL-3) -- GUI plugin
+  exporting a FreeCAD model to openEMS; last pushed 2023, but 109 stars.
+- **`snhobbs/FreeCAD-FDTD-Workbench`** -- an HFSS-shaped workflow over
+  openEMS: assign materials, ports, lumped parts and excitation to model
+  objects.
+- **`ediloren/EM-Workbench-for-FreeCAD`** -- FreeCAD as pre-processor to
+  FastHenry and FasterCap.
+
+Every one of these is the same pattern: **FreeCAD as the geometry and
+property front end, a GPL solver behind a process boundary.** That is
+exactly the architecture section 8 arrives at independently, already
+working in this program, four times over. It is also why C3 is off the
+list -- the niche is filled by people who care about it more.
+
+### Commercial validation of A3
+
+Ansys sells NEST (Nested Elements and Systems Tolerancing) and
+optomechanical tolerancing inside Speos, and their own documentation names
+the problem in the terms section 1 uses: mechanical pivot points sit away
+from the optical axis and are determined by the mount design;
+misalignments in one assembly propagate through the next; and doing this
+in Zemax historically meant hand-writing complex tolerance operand
+structures, which was error-prone and slow. A3 is a job people pay
+commercial prices to have done, in a CAD-based environment, and there is
+no free answer at all.
+
+
+## 7. Library survey, licenses verified
 
 Licenses below were read from the projects' own repositories or license
 files, not inferred.
@@ -255,6 +456,14 @@ files, not inferred.
 | **pyoptools** | **GPL-3** | Python/Cython | A + B | PyPI | Active. |
 | **Meep** | **GPL-2.0-or-later** | C++/Python | D | conda | FDTD, MPI, mature. |
 | **Geant4** | custom permissive | C++ | B transport | source | Full optical-photon physics, but a particle-physics idiom and a heavy toolkit. |
+| **PyOpticL** | **NONE** | Python (FreeCAD) | **A2** | addon | Beam-path-driven layout and baseplates, Gaussian beams. Published, active -- and **legally unusable**, section 6. |
+| **freecad-pyoptools** | GPL-3 | Python (FreeCAD) | A | addon | pyOpTools tracing inside FreeCAD. Addon only, never core. |
+| **gdsfactory** | **MIT** | Python | **C1 layout** | PyPI | The PIC layout tool. Owns C1; do not compete. Emits GDS/OASIS/STL. |
+| **MEOW** | **Apache-2.0** | Python | C1 EME | PyPI | Eigenmode expansion for tapers and mode converters. Leans on the tidy3d FDE solver. |
+| **femwell** | **GPL-3** | Python | C1 modes | PyPI | FEM waveguide modes, thermal, electro-optic. Copyleft. |
+| **MPB** | **GPL-2.0** | C | C1 bands | conda | MIT Photonic Bands. Copyleft. |
+| **tidy3d** | LGPL-2.1 client | Python | C1/D | PyPI | Client is LGPL; **the engine is a paid cloud service**. Not a local solver. |
+| **EMStudioFree** | **LGPL-2.1** | Python (FreeCAD) | **C3** | addon | Already serves the RF niche, over openEMS/NEC2/Elmer/Palace. |
 
 Two observations from the table.
 
@@ -270,8 +479,20 @@ says as much: surveying non-sequential tracers for telescope work, the
 field notes that a standard open-source program that can be widely
 disseminated is lacking. That is the gap.
 
+**In photonics, the layout is permissive and the physics is copyleft.**
+gdsfactory is MIT and MEOW is Apache-2.0; femwell is GPL-3, MPB is GPL-2,
+Meep is GPL-2-or-later, and tidy3d's local client wraps a paid cloud
+engine. So for C1 the licence line falls exactly where the process
+boundary would go anyway -- adopt the permissive layout side, keep every
+solver behind a boundary. That is not a constraint to work around, it is
+the architecture arriving for free.
 
-## 7. License compatibility with this fork
+**And the A2 row is the worst case of all: a working tool that cannot be
+used.** PyOpticL is the only entry in this table that does the job, is
+active, is published, and cannot legally be touched. Section 6.
+
+
+## 8. License compatibility with this fork
 
 The root `LICENSE` is the GNU Library GPL v2, and source headers say
 "version 2 of the License, or (at your option) any later version" --
@@ -291,7 +512,16 @@ The root `LICENSE` is the GNU Library GPL v2, and source headers say
   fatal. It does mean such an engine can only ever be an optional external
   tool, never core, and never a hard dependency.
 - **Data.** CC0 refractiveindex.info can be shipped. Vendor `.agf`
-  catalogs cannot; read them from the user's copy (section 4).
+  catalogs cannot; read them from the user's copy (section 5).
+
+**"No license" is worse than GPL, not better.** GPL code can at least be
+used across a process boundary and read freely. Code with no licence grant
+-- PyOpticL today -- carries the default of all rights reserved: no fork,
+no vendoring, no adaptation, no redistribution. When surveying a field
+where much of the good work comes from physics groups rather than software
+projects, **check for a LICENSE file before reading the code**, because
+having read it is itself a complication if the intent is later to write
+something similar.
 
 One trap worth naming because it is easy to wave away: **Python is not a
 loophole.** A GPL-3 Python library imported by a workbench raises the same
@@ -301,10 +531,24 @@ pyoptools or a Goptical binding safe to depend on. If a GPL engine is
 wanted, it goes behind a process boundary like CalculiX, deliberately.
 
 
-## 8. Recommendation
+## 9. Recommendation
 
-**Yes, a serious optics workbench is possible here, and its subject is
-domain B.** Four parts:
+**Yes, a serious optics workbench is possible here, and its subject is the
+four CAD-native jobs of section 1: A2 layout, A3 tolerancing, B
+illumination, C2 Gaussian beams -- built on the one shared trace core of
+section 2.**
+
+The ordering principle is not difficulty and not ambition; it is **how
+much of the answer depends on geometry this program already owns**. By
+that measure A3 is first in value and B is first in effort, which is why
+the staging in section 12 delivers A2 and A3 before B rather than treating
+them as warm-ups.
+
+Six parts:
+
+0. **Build the shared trace core**: rays and beams against exact document
+   geometry at real placements (section 4). It is the foundation for all
+   four CAD-native jobs and the thing no free tool has.
 
 1. **Do not write a lens designer.** Adopt **Optiland** (MIT) as the
    sequential engine -- it is differentiable, GPU-capable and actively
@@ -316,7 +560,7 @@ domain B.** Four parts:
    catalog.
 2. **Build the non-sequential engine**, because nobody has one, on the
    Monte Carlo kernel already in the tree, with the exact optical-surface
-   layer of section 3 that no renderer has.
+   layer of section 4 that no renderer has.
 3. **Take physical optics from the permissive Python set** -- POPPY,
    prysm, HCIPy, LightPipes -- rather than writing propagation. And
    consider feeding **Poke** our ray data: it does polarization ray
@@ -324,6 +568,15 @@ domain B.** Four parts:
    V, so an open ray source would be a contribution worth making upstream.
 4. **Keep FDTD out.** Meep is GPL and a different discipline. If it ever
    lands it lands as an external process, like CalculiX.
+5. **Do not compete in PIC layout or in RF.** `gdsfactory` (MIT) owns C1
+   layout and is good; EMStudioFree and the openEMS plugins already serve
+   C3. The defensible C1 role here is **packaging and thermo-mechanical**
+   -- fibre attach, submount, lid, stress -- which is solid modelling and
+   therefore ours. Interop with gdsfactory (it already emits STL) beats
+   reimplementation.
+6. **Ask the PyOpticL authors to license their work** (section 6). It
+   costs one issue, and it is the difference between the best prior art
+   for A2 being a reference and being a foundation.
 
 ### The one engine choice to settle: Cycles or Mitsuba 3
 
@@ -350,7 +603,7 @@ relaxed one reading as a cheaper version of the accurate one. If that
 holds, the two workstreams share not only a boundary but a posture.
 
 
-## 9. Where the boundary goes: optics is Boundary C too
+## 10. Where the boundary goes: optics is Boundary C too
 
 `docs/Simulator.md` section 7 opened **Boundary C** for a solver that is
 configured once from document state, runs long, and emits a derived
@@ -397,7 +650,7 @@ accuracy as the product, a silent unit mismatch is not a bug found later,
 it is the whole result being wrong in a plausible-looking way.
 
 
-## 10. What it looks like in this fork's idiom
+## 11. What it looks like in this fork's idiom
 
 The reuse inventory. This is where the renderer and material investment
 pays, and it is most of the argument that this fork specifically can do
@@ -431,15 +684,19 @@ this.
   Zemax structurally cannot do.
 
 
-## 11. Staging
+## 12. Staging
 
 Ordered so each stage is useful even if the next never happens -- the same
-discipline `docs/Simulator.md` section 8 uses.
+discipline `docs/Simulator.md` section 8 uses. **Reordered from the first
+draft**: section 2 found that the exact-surface core is not a prerequisite
+to be got through but the shared foundation of four jobs, and that the
+cheapest consumer can validate it long before the most expensive one
+exists. So it moves early, and A2/A3 land before B.
 
 - **Stage 0 -- the unit and radiometry contract.** Length, wavelength,
   flux, irradiance, the V(lambda) weighting, and how each crosses Boundary
   C. Written down, shared with the simulator, before any code. Costs
-  nothing; deferring it is the failure mode section 9 describes.
+  nothing; deferring it is the failure mode section 10 describes.
 - **Stage 1 -- glass and coating data.** Ship the CC0
   refractiveindex.info catalog; read user-supplied `.agf`; implement the
   dispersion formula families (Sellmeier 1-3, Schott, Conrady,
@@ -452,12 +709,35 @@ discipline `docs/Simulator.md` section 8 uses.
   Gauss spot diagram in both and against each other. Delivers a real lens
   designer early and cheaply, and establishes the cross-check habit before
   it is needed for something harder.
-- **Stage 3 -- the exact optical surface.** The piece nothing else has:
-  analytic intersection for sphere, conic, even-asphere, toroid and
-  cylinder, plus Newton refinement onto a general OCCT surface. Benchmark
-  against the tessellated answer so section 3's estimate becomes a
-  measured number. **This stage decides whether the whole thing is an
-  instrument**, so it comes before the engine choice depends on it.
+- **Stage 3 -- the exact optical surface: the shared core.** The piece
+  nothing else has: analytic intersection for sphere, conic, even-asphere,
+  toroid and cylinder, plus Newton refinement onto a general OCCT surface,
+  traced against real placements in a real assembly. Benchmark against the
+  tessellated answer so section 4's estimate becomes a measured number.
+  **This stage decides whether the whole thing is an instrument**, and
+  section 2 says it is the foundation of A2, A3, C2 and B alike -- so it
+  is the centre of the plan, not a gate before the interesting part.
+- **Stage 3b -- A2, optical layout.** Beam-path-driven placement (the
+  PyOpticL interaction model, section 6): declare the path, let components
+  land on it, re-route when something moves. This is the **cheapest
+  consumer of stage 3 and its first validation** -- a beam that lands
+  where a protractor says it should is a test anyone can check. Delivers a
+  real workflow to a real user community with no new dependency and no
+  engine decision.
+- **Stage 3c -- A3, optomechanical tolerancing.** Perturb the mechanical
+  parameters, re-run the trace, report the beam statistics. Monte Carlo
+  over document properties, which the expression engine and property
+  system already provide as a parameter space. **This is the highest-value
+  stage in the document** (section 1): nothing free does it, Ansys charges
+  for it, and it needs stage 3's exactness and nothing else. It is also a
+  Boundary C job in its own right -- a long run over document state
+  emitting a derived dataset -- so it exercises section 10's protocol
+  cheaply, before fluids or full illumination do.
+- **Stage 3d -- C2, Gaussian beams.** The same trace carrying a
+  q-parameter instead of a bare direction: waists, mode matching, fibre
+  and cavity coupling efficiency. Small once stage 3 exists, and it is
+  what makes stage 3b useful to the lab community rather than merely
+  pretty.
 - **Stage 4 -- the non-sequential spike: Cycles versus Mitsuba.** One
   honest problem -- a lens assembly in a barrel with a baffle, an extended
   source, a detector, and a ghost to find. Answers what spectral transport
@@ -478,8 +758,14 @@ discipline `docs/Simulator.md` section 8 uses.
   MTF, false-colour maps, ghost path inventory, ray display in the
   renderer.
 - **Stage 8 -- physical optics.** Bridge to POPPY / prysm / HCIPy for PSF
-  and diffraction; consider the Poke contribution from section 8.
-- **Stage 9 -- optimisation over the CAD parameter space.**
+  and diffraction; consider the Poke contribution from section 9.
+- **Stage 9 -- optimisation over the CAD parameter space.** Stage 3c
+  computes what a perturbation costs; this searches for the parameters
+  that minimise it. Same machinery, inverted, and it is what zaphB's
+  workbench pointed at.
+- **Stage 10 -- PIC packaging interop (optional, narrow).** Import a
+  `gdsfactory` cross-section or STL and do the thermo-mechanical and
+  fibre-attach work in the document. Explicitly *not* a layout tool.
 
 A small item that sits outside this order and is worth doing whenever
 convenient: **a prescription-to-solid feature** -- a parametric lens
@@ -489,7 +775,7 @@ document, and would earn its place even if nothing else on this list
 happens.
 
 
-## 12. What "physically accurate" has to survive
+## 13. What "physically accurate" has to survive
 
 A validation corpus, in the tradition of the FEM port and
 `docs/Simulator.md` stage 1b -- and needed more here, because in optics
@@ -513,7 +799,7 @@ the claim gets audited by people who own a Zemax licence and will check.
   every simulation, not only in the test suite.
 
 
-## 13. The honest case against
+## 14. The honest case against
 
 Stated plainly, because the case for is easy to over-sell.
 
@@ -521,8 +807,9 @@ Stated plainly, because the case for is easy to over-sell.
   fork.** The FEM port had CalculiX to lean on; here we would *be* the
   reference implementation for domain B. In this field being confidently
   wrong is worse than being absent, and the users can tell.
-- **Domain A is already free and already good.** A FreeCAD wrapper around
-  Optiland is a nicety. It wins nobody.
+- **A1 is already free and already good.** A FreeCAD wrapper around
+  Optiland is a nicety and wins nobody. This much of the first draft's
+  scepticism survives -- it was only ever wrong about A2 and A3.
 - **Domain B is the valuable one and it is the hardest.** Exact surfaces,
   spectral transport, absolute radiometry, scatter models, path tagging,
   convergence estimates -- each is a subsystem, not a feature.
@@ -537,16 +824,27 @@ Stated plainly, because the case for is easy to over-sell.
 - **It does not ride the simulator's dependency decision.** Chrono has no
   optics. This is a second engine choice, not a second use of the first --
   the sharing is the boundary and the posture, not the library.
+- **The A2/A3 audience is small and specialised.** Optics labs and
+  optomechanical engineers are not the median FreeCAD user, and building
+  for them is a bet on depth rather than reach. The counterweight is that
+  it is a bet on people who currently have no option at all, and who
+  publish -- PyOpticL's paper is what put A2 on this document's map.
+- **Scope now spans four jobs rather than one**, which is honest but is
+  also more surface to get wrong. The mitigation is section 2: they share
+  a core, so the risk concentrates in stage 3 rather than spreading. If
+  stage 3 fails, all four fail together and early, which is the good kind
+  of coupling.
 
-And the case for, in one sentence: **there is no serious open-source
-non-sequential illumination and stray-light tool, and this fork is closer
-to having one than any other project is** -- because it already owns a
+And the case for, in one sentence: **there is no free tool for optical
+layout, optomechanical tolerancing, non-sequential illumination or
+mode-matching on a real bench, all four need the same thing, and this fork
+is closer to having that thing than any other project is** -- because it already owns a
 geometry kernel, a Monte Carlo transport engine with Embree under it, a
 material and per-face system, a shader graph, and a streaming display
 tier. That is not a small distance already covered.
 
 
-## 14. Open questions
+## 15. Open questions
 
 - **Cycles or Mitsuba 3** for the domain-B kernel. Settle by the stage-4
   spike, not by argument.
@@ -565,7 +863,24 @@ tier. That is not a small distance already covered.
 - **Does the workbench own document objects, or is it an extension plus a
   solver?** The extension answer is cleaner, but sources and detectors are
   genuinely new objects with no host to annotate.
-- **Who is the first user?** A lighting designer, a lens designer, a
-  stray-light analyst and a photonics researcher want four different
-  programs. The staging above quietly answers "the illumination and
-  stray-light analyst". That should be a decision, not a drift.
+- **Who is the first user?** The revised staging answers "the optics-lab
+  builder" (A2/A3) rather than the first draft's "stray-light analyst",
+  because that user is reachable two stages earlier and needs no engine
+  decision. A lighting designer, a lens designer and a photonics
+  researcher still want three further programs. That should stay a
+  decision, not a drift.
+- **Which "waveguide" is in scope?** Section 1 splits it three ways -- PIC
+  (C1, packaging only), Gaussian beams on a bench (C2, in scope and
+  cheap), RF and mm-wave (C3, already served). The staging assumes C2 and
+  a narrow C1 packaging role. If integrated photonics is actually wanted
+  as a first-class target, that is a different document with gdsfactory at
+  its centre.
+- **Does A3 need a mechanics solver?** Thermal drift and stress
+  birefringence are FEM questions, and this fork now has FEM. Coupling a
+  thermal or structural solve into a tolerance study is the natural next
+  step and would be genuinely novel; it is also a much larger claim than
+  perturbing placements, and should not be assumed into scope.
+- **Should PyOpticL be approached as collaborators rather than prior art?**
+  They have the A2 interaction model, the published validation and the
+  user community; this fork has the kernel, the exact surfaces and the
+  renderer. The licence issue has to be settled either way.
