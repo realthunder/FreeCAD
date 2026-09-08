@@ -86,12 +86,12 @@ DlgInspectAppearance::DlgInspectAppearance(QWidget* parent)
     std::vector<Gui::ViewProvider*> views = getSelection();
     update(views);
 
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 }
 
 DlgInspectAppearance::~DlgInspectAppearance()
 {
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
 
 bool DlgInspectAppearance::accept()

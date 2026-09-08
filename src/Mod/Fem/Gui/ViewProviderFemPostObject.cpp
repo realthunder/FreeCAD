@@ -120,7 +120,7 @@ private:
     FemPostObjectSelectionObserver()
     {
         // NOLINTBEGIN
-        this->connectSelection = Gui::Selection().signalSelectionChanged.connect(
+        this->connectSelection = Gui::SelectionRoom().signalSelectionChanged.connect(
             std::bind(&FemPostObjectSelectionObserver::selectionChanged, this, sp::_1)
         );
         // NOLINTEND

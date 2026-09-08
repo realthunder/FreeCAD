@@ -135,18 +135,22 @@ bool SelectionObserver::isSelectionAttached() const
 void SelectionObserver::attachSelection()
 {
     if (!connectSelection.connected()) {
+        // The room, not the current instance: an observer outlives any scope
+        // that happens to be open while it is built, and what a mirror picks
+        // must not drive the room's panels. docs/ThinClient.md section 8.4.
+        auto &room = SelectionRoom();
         bool newStyle = (resolve >= ResolveMode::NewStyleElement);
         bool oldStyle = (resolve == ResolveMode::OldStyleElement);
-        auto &signal = newStyle ? Selection().signalSelectionChanged3 :
-                       oldStyle ? Selection().signalSelectionChanged2 :
-                                  Selection().signalSelectionChanged  ;
+        auto &signal = newStyle ? room.signalSelectionChanged3 :
+                       oldStyle ? room.signalSelectionChanged2 :
+                                  room.signalSelectionChanged  ;
         //NOLINTBEGIN
         connectSelection = signal.connect(std::bind
             (&SelectionObserver::_onSelectionChanged, this, sp::_1));
         //NOLINTEND
 
         if (!filterDocName.empty()) {
-            Selection().addSelectionGate(
+            room.addSelectionGate(
                     new SelectionGateFilterExternal(filterDocName.c_str(),filterObjName.c_str()));
         }
     }
@@ -177,7 +181,7 @@ void SelectionObserver::detachSelection()
     if (connectSelection.connected()) {
         connectSelection.disconnect();
         if (!filterDocName.empty())
-            Selection().rmvSelectionGate();
+            SelectionRoom().rmvSelectionGate();
     }
 }
 
@@ -2048,7 +2052,7 @@ SelectionSingleton::SelectionSingleton() :
     ActiveGate = nullptr;
     gateResolve = ResolveMode::OldStyleElement;
     //NOLINTBEGIN
-    App::GetApplication().signalDeletedObject.connect(std::bind(&Gui::SelectionSingleton::slotDeletedObject, this, sp::_1));
+    connectDeletedObject = App::GetApplication().signalDeletedObject.connect(std::bind(&Gui::SelectionSingleton::slotDeletedObject, this, sp::_1));
     signalSelectionChanged.connect(std::bind(&Gui::SelectionSingleton::slotSelectionChanged, this, sp::_1));
     //NOLINTEND
 
@@ -2064,19 +2068,69 @@ SelectionSingleton::SelectionSingleton() :
 SelectionSingleton::~SelectionSingleton() = default;
 
 SelectionSingleton* SelectionSingleton::_pcSingleton = nullptr;
+SelectionSingleton* SelectionSingleton::_pcRoom = nullptr;
+std::vector<SelectionSingleton*> SelectionSingleton::_InstanceStack;
 
 SelectionSingleton& SelectionSingleton::instance()
 {
     if (!_pcSingleton)
-        _pcSingleton = new SelectionSingleton;
+        roomInstance();
     return *_pcSingleton;
+}
+
+SelectionSingleton& SelectionSingleton::roomInstance()
+{
+    if (!_pcRoom) {
+        _pcRoom = new SelectionSingleton;
+        // Only becomes current if nothing is standing on top of it, which
+        // pushInstance() guarantees by building the room before it pushes.
+        if (_InstanceStack.empty())
+            _pcSingleton = _pcRoom;
+    }
+    return *_pcRoom;
+}
+
+void SelectionSingleton::pushInstance(SelectionSingleton &sel)
+{
+    roomInstance();
+    _InstanceStack.push_back(_pcSingleton);
+    _pcSingleton = &sel;
+}
+
+void SelectionSingleton::popInstance(SelectionSingleton &sel)
+{
+    if (_InstanceStack.empty()) {
+        FC_ERR("Selection scope closed without a matching open");
+        return;
+    }
+    if (_pcSingleton != &sel)
+        FC_WARN("Selection scopes closed out of order");
+    _pcSingleton = _InstanceStack.back();
+    _InstanceStack.pop_back();
 }
 
 void SelectionSingleton::destruct ()
 {
-    if (_pcSingleton)
-        delete _pcSingleton;
+    // Only the room is ours to delete; an instance a scope pushed belongs to
+    // whoever built it, and one still standing here is that owner's bug.
+    if (!_InstanceStack.empty()) {
+        FC_WARN("Selection scope still open at shutdown");
+        _InstanceStack.clear();
+    }
+    delete _pcRoom;
+    _pcRoom = nullptr;
     _pcSingleton = nullptr;
+}
+
+SelectionScope::SelectionScope(SelectionSingleton &sel)
+    : pushed(&sel)
+{
+    SelectionSingleton::pushInstance(sel);
+}
+
+SelectionScope::~SelectionScope()
+{
+    SelectionSingleton::popInstance(*pushed);
 }
 
 //**************************************************************************

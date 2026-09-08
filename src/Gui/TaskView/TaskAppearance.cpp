@@ -53,7 +53,7 @@ TaskAppearance::TaskAppearance(QWidget *parent)
     QMetaObject::connectSlotsByName(this);
 
     this->groupLayout()->addWidget(proxy);
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 
     //NOLINTBEGIN
     this->connectChangedObject =
@@ -66,7 +66,7 @@ TaskAppearance::~TaskAppearance()
 {
     delete ui;
     this->connectChangedObject.disconnect();
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
 
 void TaskAppearance::setupConnections()

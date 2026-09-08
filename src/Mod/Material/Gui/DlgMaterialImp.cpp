@@ -109,7 +109,7 @@ DlgMaterialImp::DlgMaterialImp(bool floating, QWidget* parent, Qt::WindowFlags f
         dw->show();
     }
 
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 
     // NOLINTBEGIN
     d->connectChangedObject = Gui::Application::Instance->signalChangedObject.connect(
@@ -124,7 +124,7 @@ DlgMaterialImp::~DlgMaterialImp()
 {
     // no need to delete child widgets, Qt does it all for us
     d->connectChangedObject.disconnect();
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
 
 void DlgMaterialImp::setupConnections()

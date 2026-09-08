@@ -64,12 +64,12 @@ DlgInspectMaterial::DlgInspectMaterial(QWidget* parent)
 
     connect(ui->buttonClipboard, &QPushButton::clicked, this, &DlgInspectMaterial::onClipboard);
 
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 }
 
 DlgInspectMaterial::~DlgInspectMaterial()
 {
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
 
 bool DlgInspectMaterial::accept()

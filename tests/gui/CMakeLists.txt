@@ -53,3 +53,10 @@ endif()
 # without a viewer, and the source was no selection observer.
 fc_add_gui_test(GuiServeSelectionEcho_tests_run serve-selection-echo.py
                 --timeout 180)
+
+# A desktop selection still reaches the panels that observe it
+# (docs/ThinClient.md sec 8.4). Gui::Selection() resolves to the current
+# instance now, and observers were pinned to the room; on the desktop no
+# scope is ever opened, so this must read exactly as it did before.
+fc_add_gui_test(GuiSelectionRoomPanels_tests_run selection-room-panels.py
+                --timeout 180)

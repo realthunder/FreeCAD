@@ -47,7 +47,7 @@ TaskSelectLinkProperty::TaskSelectLinkProperty(const char *sFilter,App::Property
     setupConnections();
 
     this->groupLayout()->addWidget(proxy);
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 
     ui->Remove->setIcon(Gui::BitmapFactory().iconFromTheme("delete"));
     ui->Add->setIcon(Gui::BitmapFactory().iconFromTheme("list-add"));
@@ -80,7 +80,7 @@ TaskSelectLinkProperty::TaskSelectLinkProperty(const char *sFilter,App::Property
 TaskSelectLinkProperty::~TaskSelectLinkProperty()
 {
     delete ui;
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
 
 void TaskSelectLinkProperty::setupConnections()

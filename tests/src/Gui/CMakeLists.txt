@@ -88,6 +88,26 @@ if(TARGET FreeCADGui)
                           gtest_main FreeCADGui FreeCADApp FreeCADBase)
     add_test(NAME RenderProperties_tests_run
              COMMAND RenderProperties_tests_run)
+
+    # The selection instance stack (docs/ThinClient.md section 8.4). What
+    # it asserts -- which instance Gui::Selection() resolves to, and that
+    # an observer stays pinned to the room -- is settled entirely inside
+    # SelectionSingleton, so the test needs no document, no main window
+    # and no QApplication, and links FreeCADGui only to reach the class.
+    add_executable(SelectionStack_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/SelectionStack.cpp)
+    target_include_directories(SelectionStack_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(SelectionStack_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME SelectionStack_tests_run
+             COMMAND SelectionStack_tests_run)
 endif()
 
 if(TARGET FreeCADRenderer)
