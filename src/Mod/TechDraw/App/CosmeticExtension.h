@@ -77,6 +77,11 @@ public:
 
     virtual void refreshCLGeoms();
     virtual void addCenterLinesToGeom();
+    //! keep the format overrides on the projected edges they were applied to.
+    //! An edge's number moves whenever the projection gains or loses one, so
+    //! the override is carried by the edge's name instead.  Driven from
+    //! DrawViewPart::postHlrTasks, where the edges first exist.
+    virtual void syncGeomFormatNames();
     virtual int add1CLToGE(const std::string &tag);
     virtual std::string     addCenterLine(Base::Vector3d start, Base::Vector3d end);
     virtual std::string     addCenterLine(TechDraw::CenterLine* cl);

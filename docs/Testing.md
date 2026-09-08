@@ -470,6 +470,26 @@ Registration needs `FreeCADMain`, `FreeCADGui`, `xvfb-run` and
 The chess asset comes from the MaterialX submodule, so without that
 checkout the test is not registered.
 
+#### TechDraw's real tests are in the Gui module list
+
+`FreeCADCmd -t TestTechDrawApp` is six cases and none of them projects
+geometry.  The five suites that do -- `DrawViewPartTest`,
+`DrawViewSectionTest`, `DrawViewDetailTest`, `DrawViewDimensionTest`
+and `DrawStoredGeometryTest` -- are imported by `TestTechDrawGui`,
+because each waits for the HLR threads on a `QEventLoop` driven by a
+`QTimer`.  Console mode dispatches neither, so `FreeCADCmd -t TestTechDrawGui` **hangs** instead of
+failing: no output, and it has to be killed.
+
+They need a running application, not a display of their own, so on
+Windows they run the same way as the two registered GUI tests above: a
+startup script under `run_cdb.ps1 -UserHome <dir> -StartupScript <file>`
+that loads both module lists into one `unittest` suite from a
+`QTimer.singleShot(0, ...)`, writes PASS/FAIL and `DONE` to a result
+file, and quits.  14 tests, 30 s (11 until
+`docs/TechDrawStoredGeometry.md` added three).  That is the gate every
+TechDraw change in `docs/TopoNamingEnhance.md` section 8 is measured
+against.
+
 ### Toolbar paints threw on macOS 12
 
 **Found 2026-09-07 by the echo test's log, fixed the same day** --

@@ -1044,6 +1044,35 @@ Requiring it everywhere is why the golden tests on macOS did not merely
 skip: they were never registered, so a `ctest` run there was short two
 tests and said nothing about it.
 
+*** **What the Linux gate actually witnesses: llvmpipe, on both sides of
+the comparison.** `fc_add_golden_test` calls `render-verify.sh` with no
+`--gpu`, and it cannot: that leg needs a real Wayland socket and opens a
+window on the desktop, which is not something a `ctest` run can do. So
+the registered Linux legs -- the ones that blessed the references and
+the ones that check them -- are the default headless `xvfb` leg, and
+that is `bgfx - OpenGL` on **llvmpipe**, a software rasterizer. Measured
+on the Linux box 2026-09-08 through the device field `640ed8a4d5` added:
+`OpenGL 2.1 / llvmpipe (LLVM 20.1.2, 256 bits) / 4.5 (Compatibility
+Profile) / Mesa 25.2.8 / vendor 0x0000 device 0x0000`.
+
+That is not a defect, and it is the right default -- a change that is a
+no-op by construction is exactly what a software rasterizer can prove,
+deterministically and without a GPU in the room. But read the two tiers
+for what they are: **Linux gates the logic, macOS gates the device.**
+Every macOS run is on the real window server and the real Metal device
+(`--gpu` is a no-op there), so the Metal sets are the only blessed
+references on this project taken on hardware. A green Linux golden run
+is not evidence about driver-shaped behaviour, and the open
+`raster/mode0` residual below is exactly the kind of thing it cannot
+settle.
+
+*** **The four OpenGL reference sets record no device at all.** They
+predate `640ed8a4d5`, so `refs/raster`, `refs/raster-flat`, `refs/chess`
+and `refs/chess-flat` have no `device` field in their sidecars and what
+hardware blessed them is written down nowhere. Only `refs/*-metal`
+carries it. Re-blessing is the only way that gets fixed, so if a set is
+re-blessed for any other reason, that is the moment.
+
 **`refs/raster-metal` and `refs/raster-flat-metal` are blessed** (2026-09-07,
 macOS 12 / Metal, Intel iGPU `0x8086 0x1622`), so
 `RenderGoldenRaster_tests_run` and `RenderGoldenRasterFlat_tests_run`
@@ -1321,6 +1350,104 @@ of the beauty pixels (max 121) with depth, normal, AO and shadow
 byte-identical -- the same geometry, a different background, which is
 exactly the shape the pair should have. If a *-flat set ever compares
 near-identical to its sibling, this is the first thing to check.
+
+*** **CLOSED 2026-09-08: the `raster` beauty stage did not compare
+byte-exact, and the cause was a stale reference.** A fresh Linux capture
+restaged from `refs/raster` matched depth, normal, AO and shadow
+byte-for-byte and diverged on the beauty stage alone: **7.9421% of
+pixels past `--tol 0`, max channel delta 1, mean 0.08**. Every one of
+those pixels was on the environment background and none on geometry;
+`refs/raster` needs re-blessing and nothing needs fixing. The diagnosis
+is kept in full because it took two sessions and three hypotheses, two
+of which were wrong, and the wrong ones are the reusable part.
+
+Three properties of the number mattered, in the order they were found:
+
+- **It is bit-stable.** The same run repeated on a quiet box gives
+  7.9421% both times, to four decimals. So it is a deterministic
+  difference between what the tree renders now and what was blessed,
+  not run-to-run noise, and it will not wash out by re-running.
+- **The llvmpipe leg itself is bit-deterministic, so this is not
+  render noise.** Tested 2026-09-08: a capture saved, the golden test
+  re-run, and capture diffed against capture at `--tol 0 --frac 0` --
+  all five stages OK, and the two beauty PNGs share an md5
+  (`09ac9269585855cb0986d0848aba941e`). Two renders that ought to be
+  identical *are* identical, to the byte. An earlier guess that ~7.9%
+  at max 1 was the beauty stage's characteristic 1-LSB population under
+  software rasterization is therefore **wrong**, and is recorded here
+  only so nobody re-derives it.
+
+So the difference is between **what the tree renders now** and **what
+was blessed**, and it is carrying information rather than noise.
+
+**The chronology narrows it to a four-hour window, and `refs/raster` is
+the only set inside it.** Blessing times against the commits of the same
+day:
+
+| | |
+|---|---|
+| `6e8b01e` 09-05 **08:40** | `refs/raster` blessed |
+| `bbb144e104` 09-05 11:48 | a frame dump waits for a complete frame |
+| `01470cc` 09-05 **11:51** | `refs/chess`, `refs/chess-flat` blessed |
+| `638d3ab1c7` 09-05 13:06 | every capture waits on the complete-frame signal |
+| `0a79dec` 09-05 **16:15** | `refs/raster-flat` re-blessed |
+
+Every set blessed after 11:48 compares byte-exact today; the one set
+blessed before it does not. That is a correlation and not yet a cause --
+and note the mechanism does not obviously fit, since an incomplete frame
+means a stand-in shader or a missing shape, which would diverge by far
+more than one level.
+
+**RESOLVED 2026-09-08: it is the environment background, and
+`refs/raster` is a stale blessing rather than a defect.** The test was
+to intersect the divergent-pixel mask with the mode 1 geometry mask,
+and the answer was not close:
+
+```
+frame            858 x 608 = 521664
+geometry px      106114
+divergent px     41431
+  on geometry    0
+  on background  41431      9.97% of the background area
+max channel delta 1
+```
+
+**Zero divergent pixels on geometry.** Not few -- none. What was
+predicted from the areas alone was 10.02% of the background (geometry
+108191 of 521664, so background 79.26% of the frame, and 7.9421% of the
+frame is 10.02% of that); what was measured was 9.97%, the 0.05 point
+being the quantize-to-black gap between the sidecar's `geometryPixels`
+and the mode 1 mask. About one background pixel in ten sits across a
+quantization boundary and rounds the other way than it did when the set
+was blessed.
+
+The reasoning that got there, since it generalizes: `refs/raster` draws
+the environment background and `refs/raster-flat` does not, they are the
+same scene on the same box, and it is the flat set that is byte-exact.
+The environment was very nearly the only difference between the set that
+diverged and the set that did not.
+
+**Two consequences.** First, both halves of the cross-API work are
+cleared by this: a change to clip depth, UV origin or matrix indexing
+cannot produce a difference that is zero on every geometric pixel. That
+was an inference from `max 1`; it is now a measurement. Second, the
+"do not re-bless" instruction above is **withdrawn for this set**. It
+was right while the difference might have carried information about a
+defect. It does not -- the only thing it was protecting was the age of
+the artefact -- so the action is to re-bless `refs/raster`, on a box
+that records its device. It is an OpenGL set, so that box is the Linux
+one; macOS cannot produce a GL capture here at all (Apple caps the
+compatibility profile at 2.1).
+
+And the point that costs nothing to state: **the `device` field would
+have answered this in one step instead of two sessions.** The four
+OpenGL sets predate it. Whatever else a re-blessing is worth, it is
+worth that.
+
+Worth knowing before chasing it: the Linux leg is a software rasterizer
+on both sides (see 5.2b), so this residual has never been seen on real
+hardware, and a driver explanation cannot be either confirmed or
+dismissed from that box.
 
 **The Cycles leg is reproducible as it stands, and must be kept that
 way.** The offline path sets no seed, so the integrator default applies,

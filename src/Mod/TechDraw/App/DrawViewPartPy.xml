@@ -13,6 +13,60 @@
       <Author Licence="LGPL" Name="WandererFan" EMail="wandererfan@gmail.com" />
       <UserDocu>Feature for creating and manipulating Technical Drawing Part Views</UserDocu>
     </Documentation>
+    <Methode Name="getSourceShape" Keyword="true">
+      <Documentation>
+        <UserDocu>getSourceShape(fuse=False) - the compound of the 3D shapes this View projects,
+in the global frame and carrying the element map of the source features.
+With fuse=True the 3D shapes are fused first, as FuseBeforeCut does.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getProjectionShape">
+      <Documentation>
+        <UserDocu>getProjectionShape() - the 3D shape this View was projected from, as it
+reached the hidden line removal: centered on the origin, scaled and rotated, and
+carrying the element map that came with the source features.  Null until the
+projection has run.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getEdgeNames">
+      <Documentation>
+        <UserDocu>getEdgeNames() - one tuple (name, sourceName, sourceIndex) per projected
+edge of the View, in the order of getEdgeByIndex: the name this projected edge carries,
+the mapped name of the 3D element it was projected from, and that element's Edge index in
+getProjectionShape().  Empty strings and 0 where an edge has no source in the model -- a
+silhouette is an edge the projection invented.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getVertexNames">
+      <Documentation>
+        <UserDocu>getVertexNames() - one tuple (name, sourceNames) per projected vertex of the
+View, in the order of getVertexByIndex: the name this projected vertex carries, and the
+mapped names of the 3D elements the edges meeting at it were projected from.  Empty where
+nothing named meets there.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getFaceNames">
+      <Documentation>
+        <UserDocu>getFaceNames() - one tuple (name, sourceNames) per face of the View, in the
+order faces are numbered: the name this face carries, and the mapped names of the 3D
+elements its bounding wires were projected from.  The name does not depend on the sort by
+area that gives the face its number.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getGeometryName">
+      <Documentation>
+        <UserDocu>getGeometryName(subName) - the name the projected element subName ("Edge3",
+"Vertex2", "Face1") carries, or an empty string if there is no such element or the
+projection could not name it.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getGeometryReference">
+      <Documentation>
+        <UserDocu>getGeometryReference(name) - the element of this View that carries name now,
+as "Edge3" / "Vertex2" / "Face1", or an empty string if nothing does.  This is how a
+reference stored by name finds its element again after the numbering has moved.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getVisibleEdges">
       <Documentation>
         <UserDocu>getVisibleEdges() - get the visible edges in the View as Part::TopoShapeEdges</UserDocu>

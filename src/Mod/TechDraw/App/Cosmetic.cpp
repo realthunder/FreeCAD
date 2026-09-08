@@ -406,6 +406,7 @@ GeomFormat::GeomFormat() :
 GeomFormat::GeomFormat(const GeomFormat* gf)
 {
     m_geomIndex  = gf->m_geomIndex;
+    m_geomName = gf->m_geomName;
     m_format.m_style = gf->m_format.m_style;
     m_format.m_weight = gf->m_format.m_weight;
     m_format.m_color = gf->m_format.m_color;
@@ -455,7 +456,10 @@ unsigned int GeomFormat::getMemSize () const
 void GeomFormat::Save(Base::Writer &writer) const
 {
     const char v = m_format.m_visible?'1':'0';
-    writer.Stream() << writer.ind() << "<GeomIndex value=\"" <<  m_geomIndex << "\"/>" << endl;
+    // the name rides along as an attribute of the index it stands for, so a
+    // document written before names existed reads back unchanged
+    writer.Stream() << writer.ind() << "<GeomIndex value=\"" <<  m_geomIndex
+                    << "\" name=\"" << m_geomName << "\"/>" << endl;
     // style is deprecated in favour of line number, but we still save and restore it
     // to avoid problems with old documents.
     writer.Stream() << writer.ind() << "<Style value=\"" <<  m_format.m_style << "\"/>" << endl;
@@ -474,6 +478,7 @@ void GeomFormat::Restore(Base::XMLReader &reader)
     reader.readElement("GeomIndex");
     // get the value of my Attribute
     m_geomIndex = reader.getAttributeAsInteger("value");
+    m_geomName = reader.hasAttribute("name") ? reader.getAttribute("name") : std::string();
 
     // style is deprecated in favour of line number, but we still save and restore it
     // to avoid problems with old documents.
@@ -548,6 +553,7 @@ GeomFormat* GeomFormat::copy() const
 {
     GeomFormat* newFmt = new GeomFormat();
     newFmt->m_geomIndex = m_geomIndex;
+    newFmt->m_geomName = m_geomName;
     newFmt->m_format.m_style = m_format.m_style;
     newFmt->m_format.m_weight = m_format.m_weight;
     newFmt->m_format.m_color = m_format.m_color;

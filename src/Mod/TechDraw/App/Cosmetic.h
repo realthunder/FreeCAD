@@ -159,6 +159,12 @@ public:
 
     //std::string linkTag;
     int m_geomIndex;            //connection to edgeGeom
+    //! the name the edge m_geomIndex points at carried when the format was
+    //! applied.  The index moves whenever the projection gains or loses an
+    //! edge; the name does not.  Empty in a document written before names
+    //! existed, and kept up to date by
+    //! CosmeticExtension::syncGeomFormatNames.
+    std::string m_geomName;
     LineFormat m_format;
 
     //Uniqueness

@@ -130,6 +130,14 @@ public:
                                           const double m_vShift,
                                           const double rotate,
                                           const bool flip);
+    //! put the references back on the elements that carry the stored names,
+    //! and record the names of the elements they point at.  Both are driven
+    //! from CosmeticExtension::addCenterLinesToGeom, where the geometry the
+    //! centre line is built from finally exists.  Each says whether it changed
+    //! anything.
+    bool fixByName(const TechDraw::DrawViewPart* partFeat);
+    bool updateSavedNames(const TechDraw::DrawViewPart* partFeat);
+
     void dump(const char* title);
     void setShifts(const double h, const double v);
     double getHShift() const;
@@ -150,6 +158,13 @@ public:
     std::vector<std::string> m_faces;
     std::vector<std::string> m_edges;
     std::vector<std::string> m_verts;
+    //! the name each of those elements carried when the centre line was made,
+    //! in the same order and always the same length.  The numbers move under a
+    //! model edit; the names do not.  Empty entries throughout in a document
+    //! written before names existed.
+    std::vector<std::string> m_faceNames;
+    std::vector<std::string> m_edgeNames;
+    std::vector<std::string> m_vertNames;
     int m_type;  // CLTYPE enum
     int m_mode;  // CLMODE enum
     double m_hShift;

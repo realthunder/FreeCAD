@@ -565,12 +565,25 @@ vtk-base ==9.6.2
 vtk-io-ffmpeg ==9.6.2
 ```
 
-*** **The lever, when we publish our own occt 8.0.1:** FreeCAD uses none of
-OCCT's VTK bridge -- no `IVtk*` anywhere in `src/`, and `FindOCC.cmake` never
-links `TKIVtk` -- and our local OCCT builds already pass `-DUSE_VTK=OFF`.
-Publishing a **novtk** occt variant to the `realthunder` channel therefore cuts
-the vtk 9.6.2 constraint out of our stack entirely and lets smesh track whatever
-VTK is current.
+*** **The lever, half pulled.** FreeCAD uses none of OCCT's VTK bridge -- no
+`IVtk*` anywhere in `src/`, and `FindOCC.cmake` never links `TKIVtk` -- and our
+local OCCT builds already pass `-DUSE_VTK=OFF`, so a **novtk** occt on the
+`realthunder` channel should cut the vtk constraint out of our stack.
+
+Both halves now exist: `occt 8.0.1` is published for linux-64, linux-aarch64,
+osx-64, osx-arm64 and win-64 in an `all_` and a `novtk_` variant, and `smesh`
+build 27 is built against the novtk one. **The vtk 9.6.2 pin still stands
+anyway**, because smesh links VTK itself: its record names `vtk-base
+>=9.6.2,<9.6.3` and `vtk-io-ffmpeg >=9.6.2,<9.6.3` directly, not through occt.
+What the novtk variant removed is occt's *contribution* to that pin, not the
+pin. Keep `conda-meta/pinned` as it is until smesh itself moves.
+
+*** **And it did not make the env solvable again.** With `occt >=8.0.1,<8.0.2`
+now satisfiable from the channel, a plain `conda install` into this env no
+longer fails to solve -- it succeeds, and quietly installs a **second** OCCT
+beside the fork's local build, which is the exact hazard the `@EXPLICIT` rule
+was written to avoid. The rule survives; only its reason changed, from "the
+solve cannot succeed" to "the solve now succeeds and does the wrong thing".
 
 `gmsh` and CalculiX are found through **preferences, not `PATH`**
 (`Mod/Fem/Gmsh:gmshBinaryPath`, `Mod/Fem/Ccx:ccxBinaryPath`); set them with
@@ -670,6 +683,10 @@ installed with no `occt` either. The two boxes answer it differently:
 | Linux | the fork built from source into the conda prefix | yes |
 | Windows | conda-forge `ifcopenshell`, installed without `occt` | no |
 
+That Windows row is what the env still carries; the fork now builds there too,
+see [The fork on Windows](#the-fork-on-windows-2026-09-07-it-builds-and-what-it-took)
+below for what it took and what is left before the package can replace it.
+
 On Linux it is the fork (`realthunder/IfcOpenShell`, branch `LinkVibe`),
 rebuilt into the conda prefix so it links `libarea.so.2` -- see the ledger in
 `docs/CAMPort.md`, which is also where the one open question about that path
@@ -703,6 +720,42 @@ path -- `boolean_subtraction_2d_using_area`, the one that goes through libarea
 rather than the 3D kernel. Closing that means building the fork here, or
 rewiring `ifcopenshell-feedstock` off the upstream tarball onto the `LinkVibe`
 branch, which `docs/CAMPort.md` already lists as a separate job.
+
+#### The fork on Windows (2026-09-07): it builds, and what it took
+
+The feedstock rewiring above is done -- `ifcopenshell-feedstock` builds the
+fork (`0.9.0alpha0`, `fork_rev` on `LinkVibe`) and depends on `libarea`, so
+the 2D path is in the package. A win-64 build now completes 546/546 with no
+compiler error, the SWIG wrapper links, and `ifcopenshell.geom` tessellates an
+`IfcExtrudedAreaSolid` to 8 verts. Three things were in the way, and only the
+first was in the fork's own source:
+
+- **`src/ifcgeom/element.h`** had a bare `friend class iterator;` with no prior
+  declaration of `ifcopenshell::geom::iterator` in the header, so MSVC bound
+  the name to `std::iterator` (reached through `<algorithm>`/`<memory>`) and
+  refused to redeclare a class template as a plain class -- C2990. gcc and
+  clang invent a new `geom::iterator` instead, which is why a fork only ever
+  compiled on Linux carried it. `tree.h:40` already had the forward
+  declaration. Fixed in `dc04c32b2`; it was the ONLY source change MSVC needed
+  across all 501 objects.
+- **The MSVC toolset**, see the Prerequisites note below.
+- **libarea's Windows DLL not exporting its static data members**, see the
+  libarea section below.
+
+*** **The GitHub tarball cannot be extracted on Windows without elevation.**
+`src/bonsai/.../templates/projects/*.ifc` are git symlinks, and creating those
+needs Developer Mode or an elevated session -- CI's runner has it, a desktop
+session does not, and rattler-build fails with a bare "failed to unpack". For a
+local `rattler-build debug setup`, point the recipe's first source at a clone
+next door (`path: ../../ifcopenshell`) instead; git's own fallback writes those
+symlinks as ordinary files. Revert before committing.
+
+*** **`rattler-build debug` is the way to iterate here, not CI.** `debug setup`
+builds the host/build envs and the work tree, then `conda_build.bat` in the
+work dir re-runs the script; make the recipe script's `mkdir build` idempotent
+and raise its `ninja install -j 1` (CI's runner has 7 GB; this box has 64) and
+add `-k 0` so one pass collects every error instead of stopping at the first.
+That turns a 7-minute-per-error CI loop into a local one.
 
 ### An optimized stack, for measuring anything
 
@@ -1012,19 +1065,24 @@ practical cost is the usual optimized-build debugging experience: inlined frames
 ### Layout
 
 Everything lives on the fast/large drive; keep the near-full system drive out of it.
-Paths below are from the first Windows box — adjust the root, keep the structure.
+**Paths in this section are relative to the repo**, so nothing here names the
+directory the forks are kept under: `.conda\freecad` is inside the repo,
+`..\occt` is the sibling clone, `..\tools` the sibling scripts directory.
+Commands are written to be run from the repo root. `.conda\run.cmd` resolves
+the same layout for itself through its `SW_ROOT`, which is the one place an
+absolute root is written down.
 
 | What | Path |
 |---|---|
-| miniforge | `D:\Zheng.Lei\sw\miniforge3` |
-| conda env | `D:\Zheng.Lei\sw\fcad\.conda\freecad` |
-| FreeCAD fork | `D:\Zheng.Lei\sw\fcad` (branch `LinkVibe`) |
-| OCCT fork | `D:\Zheng.Lei\sw\occt` (branch `LinkVibe-801`) |
-| Coin fork | `D:\Zheng.Lei\sw\coin` (branch `LinkVibe`) |
-| OCCT install | `D:\Zheng.Lei\sw\occt\install\win-relwithdebinfo-801` |
-| Coin install | `D:\Zheng.Lei\sw\install\coin-win-relwithdebinfo` |
-| FreeCAD build | `D:\Zheng.Lei\sw\fcad\build\win-relwithdebinfo-801` |
-| dev shell | `D:\Zheng.Lei\sw\fcad\.conda\run.cmd` |
+| miniforge | `..\miniforge3` |
+| conda env | `.conda\freecad` |
+| FreeCAD fork | `.` (branch `LinkVibe`) |
+| OCCT fork | `..\occt` (branch `LinkVibe-801`) |
+| Coin fork | `..\coin` (branch `LinkVibe`) |
+| OCCT install | `..\occt\install\win-relwithdebinfo-801` |
+| Coin install | `..\install\coin-win-relwithdebinfo` |
+| FreeCAD build | `build\win-relwithdebinfo-801` |
+| dev shell | `.conda\run.cmd` |
 
 The env prefix is **not** arbitrary: the repo's `conda-windows` preset hardcodes
 `${sourceDir}/.conda/freecad`. `.conda/` is already covered by the repo's `.*`
@@ -1043,6 +1101,30 @@ and keeps the Linux-style in-repo layout.
   two — do not conclude from that that MSVC is missing. Check
   `<VS>\VC\Tools\MSVC\<ver>\bin\Hostx64\x64\cl.exe`, and look under
   `D:\Program Files (x86)\` too, not just `Program Files`.
+
+  *** **The toolset must be 14.44 or newer (VS 17.14).** conda-forge's
+  `vs2022_win-64` activation asks vswhere for
+  `Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64` and, not finding it,
+  falls back to `Microsoft.VCToolsVersion.default.txt` **without saying so**. On
+  an older toolset a conda-forge **static** library fails to link with unresolved
+  externals for MSVC's vectorized STL helpers -- `__std_search_1`,
+  `__std_find_end_1`, `__std_remove_8`, `__std_find_first_of_trivial_pos_1`,
+  `__std_find_last_of_trivial_pos_1`. Those live in the separately-compiled STL,
+  so an older `msvcprt.lib` cannot answer calls a 14.44 compile emitted, and no
+  compiler flag works around it. FreeCAD, OCCT and Coin built fine on 14.42 for
+  months because they link everything through import libraries, which keeps the
+  newer STL calls inside the vendor's DLL; `rocksdb`, shipped as a static lib and
+  pulled in by IfcOpenShell, is what surfaced it. Reaching for a shared variant
+  is not an escape -- conda-forge's `rocksdb-shared.dll` exports only the C API.
+
+  *** **Updating VS deletes the old toolset**, so every build tree configured
+  before the update holds a `CMAKE_CXX_COMPILER` path that no longer exists and
+  dies with "is not a full path to an existing compiler tool". Clear
+  `CMakeCache.txt` and `CMakeFiles/` in each (`build\...`, `..\occt\build\...`,
+  `..\coin\build\...`, `..\pivy\build\...`); the build scripts re-specify their
+  full configure, so nothing is lost. Everything rebuilds regardless -- ninja puts
+  the compiler path in every command line -- so deleting the tree outright costs
+  the same and also clears stale artefacts from renamed targets.
 - **Miniforge** (not Miniconda — see the channel note below). Installs unattended with
   `Miniforge3-Windows-x86_64.exe /InstallationType=JustMe /RegisterPython=0 /AddToPath=0
   /S /D=<prefix>` (`/D` last, unquoted).
@@ -1082,7 +1164,7 @@ resolved to `conda.anaconda.org` — so give the channel URL directly.
 ::   channels: [https://prefix.dev/conda-forge]
 ::   channel_priority: strict
 ::   pkgs_dirs / envs_dirs pointed at the big drive
-conda create -y -p D:\Zheng.Lei\sw\fcad\.conda\freecad ^
+conda create -y -p .conda\freecad ^
   --override-channels -c https://prefix.dev/conda-forge ^
   python=3.12 qt6-main=6.11.2 pyside6=6.11.2 qt6-webengine=6.11.2 ^
   cmake ninja swig pkg-config ^
@@ -1149,7 +1231,7 @@ exactly the listed URLs, additively, and writes a normal `conda-meta` record.
 ```bat
 :: smesh_explicit.txt
 ::   @EXPLICIT
-::   https://conda.anaconda.org/realthunder/win-64/smesh-9.9.0.0-hfd32127_26.conda
+::   https://conda.anaconda.org/realthunder/win-64/smesh-9.9.0.0-hc741a3d_27.conda
 conda install -p <env> -y --file smesh_explicit.txt
 ```
 
@@ -1217,11 +1299,37 @@ this is not a module you quietly skip. The failure is a plain CMake error at
 It is **not** in the `conda create` line above because it does not come from
 conda-forge: like `smesh`, it lives only on the **realthunder** channel.
 
+*** **Install the package into the env; do not build it locally.** That is what
+the Linux box does, and this box moved onto it on 2026-09-07 -- `@EXPLICIT` into
+`.conda\freecad`, the local prefix dropped from `CMakeUserPresets.json`'s
+`CMAKE_PREFIX_PATH`, `LIBAREA_BIN` dropped from `.conda\run.cmd`, and
+`..\tools\build-fcad.cmd` staging `area.dll` out of the env. Two copies of
+libarea in one process means two `ClipperLib`s, which is the thing splitting it
+out was meant to prevent.
+
+*** **Take 0.3.2 or newer.** Up to 0.3.1 the Windows DLL exported no static
+**data** members: `WINDOWS_EXPORT_ALL_SYMBOLS`, which libarea leans on because
+nothing in its headers was annotated, does not carry data across on its own --
+the consumer has to say `dllimport`, or the compiler emits a direct reference
+where the import library offers only the `__imp_` form. A consumer linked every
+method of `CArea` and none of `m_accuracy`, `m_units`, `m_fit_arcs`,
+`m_fit_circles`, `m_clipper_simple`, `m_clipper_clean_distance` or
+`Point::tolerance`. Invisible on Linux (ELF exports data and functions alike) and
+invisible to FreeCAD, which references none of them; IfcOpenShell's 2D boolean
+path was the first consumer to hit it. Fixed in libarea 0.3.2 with
+`AreaExport.h` / `LIBAREA_DATA`.
+
 *** **On a network that cannot reach anaconda.org, that channel is unreachable and
 `conda` has no way to it.** Both A records for `conda.anaconda.org` (Cloudflare)
 refuse TCP 443 here, while DNS resolves fine -- so it presents as a hang and then a
 connect error, not as a name error. `prefix.dev` mirrors conda-forge only; it does
 not carry this fork's packages.
+
+**Measured reachable again on 2026-09-07** from this box: repodata and a package
+both answered HTTP 200 in well under a second, and `conda search --override-channels
+-c realthunder` resolved normally. So try the channel directly before reaching for
+the workaround below -- but check rather than assume, in either direction: whether
+it works is a property of the network you are on, not of the box.
 
 The route that works is to fetch the file somewhere with reachability and install it
 locally. Any host will do; this one uses the Linode in `~/.ssh/config`. Note that
@@ -1233,7 +1341,8 @@ cannot read it -- go through `wsl.exe -e sh -c '...'`:
 ssh linode "curl -sSk https://conda.anaconda.org/realthunder/win-64/repodata.json -o /tmp/rt.json"
 # fetch it, and read its sha256 out of that repodata to check against
 ssh linode "cd /tmp && curl -sSk -O https://conda.anaconda.org/realthunder/win-64/<pkg>.conda && sha256sum <pkg>.conda"
-scp linode:/tmp/<pkg>.conda /mnt/d/Zheng.Lei/sw/dl/
+# into the sibling dl/ directory, named the way WSL sees it
+scp linode:/tmp/<pkg>.conda "$(wslpath -a ../dl)/"
 ```
 
 `-k` is needed only because that host is an old Ubuntu with a stale CA bundle.
@@ -1249,7 +1358,8 @@ ends up owned by conda rather than being the untracked hand-install the Linux
 ```bat
 :: libarea_explicit.txt
 ::   @EXPLICIT
-::   file:///D:/Zheng.Lei/sw/dl/libarea-0.3.1-h50a38c3_0.conda#<sha256>
+::   file:///<abs>/dl/libarea-0.3.1-h50a38c3_0.conda#<sha256>
+::   -- a file:// URL cannot be relative; <abs> is the sibling dl/ spelled out
 conda install -p <env> -y --file libarea_explicit.txt
 ```
 
@@ -1297,7 +1407,7 @@ PowerShell 5.1 splits an unquoted native-command argument at the first `.` after
 "-DA=3.5"    ->  '-DA=3.5'          (quoted, survives)
 ```
 
-Every path here has a dot in it (`Zheng.Lei`, `.conda`), as do version-valued
+Every path here has a dot in it (`.conda`, and whatever the root is called), as do version-valued
 variables, so this hits constantly — and it is nasty because CMake usually accepts
 the truncated value and only complains about the orphaned `.5` as an *"Ignoring extra
 path from command line"* warning, tens of lines above whatever eventually fails. The
@@ -1443,7 +1553,7 @@ Note also that `BGFX_BUILD_TOOLS_SHADER=ON` drags in **tint/Dawn** from bgfx's
 to compile shaders (`ninja Renderer_assets`), but it is the single largest
 contributor to a cold Windows build.
 
-### The wrapper scripts in `D:\works\sw\tools`
+### The wrapper scripts in `..\tools`
 
 Everything above is the underlying command. Day to day these wrap it, and they carry
 the flags that are easy to forget; `build-fcad-cycles.cmd` is the Cycles variant
@@ -1493,7 +1603,7 @@ tooltip, so read the port there rather than assuming it.
 
 ```bat
 set FCAD_MCP_URL=http://127.0.0.1:8791/mcp
-.conda\run.cmd python D:\works\sw\tools\mcp_run.py probe.py
+.conda\run.cmd python ..\tools\mcp_run.py probe.py
 ```
 
 Pass a **script file**, not `-c "code"`: nested through `cmd /c ".conda\run.cmd ..."`
@@ -1513,13 +1623,13 @@ it. Sec 4.2 says as much: testing AMD "needs a native Windows build (the
 Adrenalin driver carries the HIP runtime)". This is that build.
 
 `BUILD_CYCLES` defaults OFF here too and no preset sets it. The flags live in
-`D:\works\sw\tools\build-fcad-cycles.cmd`; drive it from a `.cmd` rather than
+`..\tools\build-fcad-cycles.cmd`; drive it from a `.cmd` rather than
 the shell, because PowerShell mangles a dotted `-D` value.
 
 **Dependencies go into `.conda\freecad`**, same as Linux:
 
 ```cmd
-conda install -p D:\works\sw\fcad\.conda\freecad -c conda-forge ^
+conda install -p .conda\freecad -c conda-forge ^
     openimageio embree openimagedenoise
 ```
 
@@ -1532,16 +1642,16 @@ already running against OCCT.
 **nvcc, in its own prefix** -- and note the path, which is not the Linux one:
 
 ```cmd
-conda create -p D:\works\sw\fcad\.conda\cuda-129 -c conda-forge ^
+conda create -p .conda\cuda-129 -c conda-forge ^
     cuda-nvcc=12.9 cuda-cudart-dev=12.9
 ```
 
 conda puts nvcc in **`Library\bin`**, not `bin`, so `CUDA_BIN_PATH` is
-`D:\works\sw\fcad\.conda\cuda-129\Library\bin`. Everything sec 4.1 says about
+`.conda\cuda-129\Library\bin`. Everything sec 4.1 says about
 that variable applies unchanged: get it wrong and CUDA does not fail, it just
 vanishes from the device list.
 
-**OptiX** headers to `D:\works\sw\optix-dev` (`NVIDIA/optix-dev`, 9.1.0), the
+**OptiX** headers to `..\optix-dev` (`NVIDIA/optix-dev`, 9.1.0), the
 same clone as Linux. The runtime differs and this is the good news: `nvoptix.dll`
 here is the real **62MB** library in the driver store
 (`System32\DriverStore\FileRepository\nvam.inf_amd64_*\`), not a shim. It does
@@ -1564,7 +1674,7 @@ both halves of what Cycles needs go through `PATH`:
   `HIP_ROCCLR_HOME` instead does **not** work: it `stat()`s `<root>/bin/hipcc`,
   and ROCm 6.4 ships only `hipcc.bat`, `hipcc.exe` and `hipcc.pl`.
 
-`D:\works\sw\tools\run-cycles.cmd` sets `CUDA_BIN_PATH` and prepends the ROCm
+`..\tools\run-cycles.cmd` sets `CUDA_BIN_PATH` and prepends the ROCm
 bin, then calls `run.cmd`. Neither belongs in `run.cmd` itself, for the reason
 the Linux section gives for `CUDA_BIN_PATH`.
 
@@ -1694,7 +1804,7 @@ tests. The recipe:
 ```cmd
 .conda\run.cmd cmake --preset win-relwithdebinfo-local -DENABLE_DEVELOPER_TESTS=ON
 .conda\run.cmd cmake --build build\win-relwithdebinfo-801 -- -j 6
-D:\works\sw\tools\ctest-fcad.cmd -j 6
+..\tools\ctest-fcad.cmd -j 6
 ```
 
 472 of 472 pass as of 2026-09-04, in 22s. googletest is vendored
@@ -1716,7 +1826,7 @@ fail to register. There is no pivy source checkout in the layout table by defaul
 clone one beside the others:
 
 ```bat
-git clone --depth 1 --branch 0.6.10 https://github.com/coin3d/pivy.git D:\Zheng.Lei\sw\pivy
+git clone --depth 1 --branch 0.6.10 https://github.com/coin3d/pivy.git ..\pivy
 ```
 
 0.6.10 is the version `pivy-feedstock` packages. The feedstock's two patches do not
@@ -1727,14 +1837,14 @@ comes back with backslashes and the `install(DESTINATION)` that consumes it is n
 path-normalised. Apply it to the checkout.
 
 ```bat
-.conda\run.cmd cmake -G Ninja -B D:\Zheng.Lei\sw\pivy\build\win-relwithdebinfo ^
-    -S D:\Zheng.Lei\sw\pivy ^
+.conda\run.cmd cmake -G Ninja -B ..\pivy\build\win-relwithdebinfo ^
+    -S ..\pivy ^
     -D CMAKE_BUILD_TYPE=RelWithDebInfo ^
-    -D CMAKE_PREFIX_PATH=D:/Zheng.Lei/sw/install/coin-win-relwithdebinfo ^
-    -D CMAKE_MODULE_LINKER_FLAGS=/LIBPATH:D:/Zheng.Lei/sw/fcad/.conda/freecad/libs ^
+    -D CMAKE_PREFIX_PATH=../install/coin-win-relwithdebinfo ^
+    -D CMAKE_MODULE_LINKER_FLAGS=/LIBPATH:.conda/freecad/libs ^
     -D DISABLE_SWIG_WARNINGS=ON
-.conda\run.cmd cmake --build   D:\Zheng.Lei\sw\pivy\build\win-relwithdebinfo
-.conda\run.cmd cmake --install D:\Zheng.Lei\sw\pivy\build\win-relwithdebinfo
+.conda\run.cmd cmake --build   ..\pivy\build\win-relwithdebinfo
+.conda\run.cmd cmake --install ..\pivy\build\win-relwithdebinfo
 ```
 
 Install destinations are absolute (`PIVY_Python_SITEARCH`), so `CMAKE_INSTALL_PREFIX`
@@ -1966,13 +2076,13 @@ The GUI is then `WinDbgX.exe`, on `PATH` through the WindowsApps alias. The cons
 debugger `cdb.exe` ships in the same package but **cannot be executed where it is
 installed** — WindowsApps ACLs deny execution with "Access is denied" even though the
 path reads fine. Copy the package's `amd64\` directory somewhere ordinary
-(`D:\Zheng.Lei\sw\tools\dbg\`) and run it from there. Worth doing regardless of the
+(`..\tools\dbg\`) and run it from there. Worth doing regardless of the
 GUI: `cdb` takes a command file, which is what makes debugging scriptable from a
 non-interactive shell.
 
 ```bat
 :: dbg.txt:  sxe ld:FreeCADApp / g / .reload /f FreeCADApp.dll / lm vm FreeCADApp / k / q
-.conda\run.cmd D:\Zheng.Lei\sw\tools\dbg\cdb.exe -cf dbg.txt ^
+.conda\run.cmd ..\tools\dbg\cdb.exe -cf dbg.txt ^
     build\win-relwithdebinfo-801\bin\FreeCADCmd.exe script.py
 ```
 
@@ -1982,14 +2092,15 @@ this matters — the same problem the two sections above describe, arriving thro
 new door.
 
 **Arming crash dumps: two traps that make the arming silently do nothing.** The
-GUI run keeps a standing arm file (`D:\Zheng.Lei\sw\tools\dbg\arm_freecad.cmd`,
+GUI run keeps a standing arm file (`..\tools\dbg\arm_freecad.cmd`,
 passed as `-cf`, ending in `g`) that dumps on the usual exception filters. Both
 of these were live defects, found 2026-08-12 when an access violation left no
 dump and no stack:
 
 - **cdb strips backslashes inside a quoted `-c`/`-c2` command string.** A dump
-  path written `D:\Zheng.Lei\sw\tools\dbg\dumps\fcad.dmp` is stored as
-  `D:Zheng.Leisw\toolsdbgdumpsfcad.dmp`, and no dump is ever written. Doubling
+  path written `..\tools\dbg\dumps\fcad.dmp` is stored with each backslash
+  eaten or read as an escape -- `..<TAB>oolsdbgdumpsfcad.dmp`, since `\t` is a
+  tab -- and no dump is ever written. Doubling
   the backslashes does not help. **Use forward slashes**, and read the setting
   back with `sx` afterwards — printing the stored command is the only way to
   see the mangling.
@@ -2002,7 +2113,7 @@ dump and no stack:
   unwound the faulting frames. Trap it on **first** chance instead, passing it
   on afterwards so behaviour is unchanged:
 
-      sxe -c ".exr -1;r;kv 100;.dump /ma /u D:/Zheng.Lei/sw/tools/dbg/dumps/fcad_av.dmp;gn" av
+      sxe -c ".exr -1;r;kv 100;.dump /ma /u ../tools/dbg/dumps/fcad_av.dmp;gn" av
 
 Verify the command path end to end before trusting it: `sxn -c ".echo TEST" eh`,
 resume, confirm the echo lands, then `sxn -c "" eh` to clear. To arm a process
