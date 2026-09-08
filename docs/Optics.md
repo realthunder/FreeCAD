@@ -725,7 +725,9 @@ exists. So it moves early, and A2/A3 land before B.
   real workflow to a real user community with no new dependency and no
   engine decision.
 - **Stage 3c -- A3, optomechanical tolerancing.** Perturb the mechanical
-  parameters, re-run the trace, report the beam statistics. Monte Carlo
+  parameters, re-run the trace, report the beam statistics. Its thermal
+  extension is reachable (section 12a) once one generic piece of plumbing
+  exists: a bridge from an FEM displacement result to a `Placement`. Monte Carlo
   over document properties, which the expression engine and property
   system already provide as a parameter space. **This is the highest-value
   stage in the document** (section 1): nothing free does it, Ansys charges
@@ -773,6 +775,116 @@ element from radii, thickness, glass, conic and asphere terms. It is
 small, obviously useful on its own, bridges domain A output into the
 document, and would earn its place even if nothing else on this list
 happens.
+
+
+## 12a. Does this fork have a thermal solver good enough for A3?
+
+Section 15 of the first revision left this open, on the assumption that
+coupling thermal analysis into a tolerance study was "a much larger claim
+than perturbing placements". **Checked against the tree, that assumption
+was too pessimistic. The solver side is done; the gap is a bridge, and it
+is small and generic.**
+
+### What is actually wired
+
+**CalculiX** (`femsolver/calculix/`), all verified in this tree:
+
+- `*HEAT TRANSFER`, steady state and transient
+  (`write_step_equation.py:73-88`).
+- `*COUPLED TEMPERATURE-DISPLACEMENT` and
+  `*UNCOUPLED TEMPERATURE-DISPLACEMENT` -- real thermomechanical coupling,
+  not a two-step hand-off.
+- `*FILM` convection, `*RADIATE` radiation, and
+  `*RADIATE, CAVITY=` cavity radiation with open and closed cavities
+  (`write_constraint_heatflux.py:50-68`).
+- `*DFLUX` body heat source (`write_constraint_bodyheatsource.py`).
+- `*GAP CONDUCTANCE` -- thermal contact resistance across an interface,
+  from a `ThermalContactConductance` property
+  (`write_constraint_contact.py:124`). This one matters for optomechanics:
+  a bolted mount's thermal path is dominated by contact conductance.
+
+The constraints are first-class C++ objects -- `FemConstraintTemperature`,
+`FemConstraintInitialTemperature`, and `FemConstraintHeatflux` with
+`Flux` / `Convection` / `Radiation` types plus `FilmCoef`, `AmbientTemp`,
+`Emissivity`, `CavityRadiation` and `ClosedCavity`
+(`App/FemConstraintHeatflux.cpp:33-56`).
+
+**Elmer** (`femsolver/elmer/equations/heat*.py`) carries an independent
+heat equation: temperature and heat-flux boundaries, convection, radiation
+as `Diffuse Gray` with open or closed cavity, and a phase-change model.
+Its elasticity writer reads `ThermalExpansionCoefficient` against a
+`Reference Temperature` taken from the initial-temperature constraint, so
+thermoelastic coupling exists on that path too. **Two independent thermal
+solvers that can be cross-checked** is the same cheap-correctness argument
+section 9 makes for Optiland versus rayoptics.
+
+Regression and example coverage exists rather than being aspirational:
+`thermomech_bimetal` is both an example and a test case
+(`femtest/app/test_ccxtools.py:333`), alongside `ccx_cavity_radiation`,
+`ccx_radiation_benchmark` (added upstream in 2026) and
+`inductive_heating_axisymmetric`.
+
+**A correction worth recording**, because the wrong version is repeated
+widely: **CalculiX computes cavity view factors itself.** It triangulates
+the interacting surfaces and uses Lambert's analytical reduction of the
+four-fold view-factor integral to a two-fold one, with one-point
+integration at the base triangle's centroid and an accuracy knob in
+`radmatrix`. A search summary told this document that view factors had to
+be supplied externally; the CalculiX documentation says otherwise. Cavity
+radiation here is a real capability, not a stub.
+
+### The four gaps, in the order they would hurt
+
+1. **There is no FEM-result-to-`Placement` bridge, and this is the one
+   that has to be built.** `femresult/resulttools.py:147` calls
+   `Mesh.ViewObject.applyDisplacement()`, which scales the *mesh
+   visualisation*. Nothing writes a computed displacement back onto a
+   document object's `Placement`. So today the fork can compute that a
+   mount face moves 12 um and tilts 40 urad, and has no way to hand that
+   to an optical trace. That is precisely the A3 coupling, and it is
+   **small, generic, and useful beyond optics** -- any deformed-assembly
+   workflow wants it.
+2. **No temperature-dependent material properties.**
+   `write_femelement_material.py:128-135` writes `*CONDUCTIVITY`,
+   `*EXPANSION` and `*SPECIFIC HEAT` as a single constant line each.
+   CalculiX accepts temperature tables; FreeCAD does not write them. **A
+   writer gap, not a solver gap**, and cheap to close. For optomechanics
+   near room temperature it barely matters -- CTE moves a few percent over
+   plus or minus 20 K -- but it is disqualifying for cryogenic or furnace
+   work.
+3. **Convection coefficients are the user's problem.** There is no
+   conjugate heat transfer in core: you supply a film coefficient and an
+   ambient temperature. CfdOF (OpenFOAM, GPL, external addon) is the CFD
+   path and is not in this tree. For a bench in still air a handbook
+   coefficient is fine; for a forced-air enclosure it is a guess with the
+   answer's accuracy riding on it.
+4. **Optical thermal data is absent on both sides.** The material library
+   has three glass cards and all three are *structural* fibreglass
+   (`Material/Resources/Materials/Standard/Glass/`). More importantly
+   **nothing anywhere carries dn/dT**, the thermo-optic coefficient -- and
+   in a transmitting element the index change with temperature is often
+   comparable to the mechanical motion, so a thermal drift study that
+   models only expansion is answering half the question. This is an
+   optics-side data job, not a FEM defect, and section 5's CC0 catalog
+   plus vendor CTE and dn/dT tables is where it comes from.
+
+### Verdict
+
+**Good enough, and better than the open question assumed.** For the A3 job
+-- a slow thermal excursion over a bench or an instrument, producing
+placement perturbations of optical components -- CalculiX's coupled
+temperature-displacement analysis with contact conductance and cavity
+radiation is the right tool, it is already wired, and it is already
+tested. Constant material properties are adequate at the temperatures
+optomechanics cares about.
+
+What is missing is not physics. It is (a) the result-to-placement bridge,
+(b) dn/dT on optical materials, and (c) temperature tables in the material
+writer, which is a small fix. None of the three is a research problem.
+
+So thermal A3 moves from "a much larger claim, do not assume into scope"
+to **a reachable stage 3c extension**, gated on one generic piece of
+plumbing that the fork would benefit from having anyway.
 
 
 ## 13. What "physically accurate" has to survive
@@ -875,11 +987,12 @@ tier. That is not a small distance already covered.
   a narrow C1 packaging role. If integrated photonics is actually wanted
   as a first-class target, that is a different document with gdsfactory at
   its centre.
-- **Does A3 need a mechanics solver?** Thermal drift and stress
-  birefringence are FEM questions, and this fork now has FEM. Coupling a
-  thermal or structural solve into a tolerance study is the natural next
-  step and would be genuinely novel; it is also a much larger claim than
-  perturbing placements, and should not be assumed into scope.
+- **Does A3 need a mechanics solver?** Partly answered in section 12a: the
+  thermal solver is there and is good, and the missing piece is a small
+  generic bridge rather than a physics gap. What stays open is whether
+  stress birefringence (a tensor field on a transmitting element, not a
+  placement perturbation) is in scope, which is a much larger claim than
+  thermal drift and should not be assumed in.
 - **Should PyOpticL be approached as collaborators rather than prior art?**
   They have the A2 interaction model, the published validation and the
   user community; this fork has the kernel, the exact surfaces and the
