@@ -1367,14 +1367,54 @@ Two properties of it are worth more than the number:
   7.9421% both times, to four decimals. So it is a deterministic
   difference between what the tree renders now and what was blessed,
   not run-to-run noise, and it will not wash out by re-running.
-- **The same signature -- ~7.9% of pixels, max delta 1 -- appears
-  above**, in the mis-blessed `refs/raster-flat` of 2026-09-05, where
-  the two frames compared were *the same scene rendered twice*. That
-  makes "7.9% at max 1" look like the beauty stage's characteristic
-  1-LSB population on this llvmpipe leg rather than anything specific
-  to the lit raster set. It is a lead, not a conclusion: the two
-  comparisons are different, and nobody has yet shown they share a
-  cause.
+- **The llvmpipe leg itself is bit-deterministic, so this is not
+  render noise.** Tested 2026-09-08: a capture saved, the golden test
+  re-run, and capture diffed against capture at `--tol 0 --frac 0` --
+  all five stages OK, and the two beauty PNGs share an md5
+  (`09ac9269585855cb0986d0848aba941e`). Two renders that ought to be
+  identical *are* identical, to the byte. An earlier guess that ~7.9%
+  at max 1 was the beauty stage's characteristic 1-LSB population under
+  software rasterization is therefore **wrong**, and is recorded here
+  only so nobody re-derives it.
+
+So the difference is between **what the tree renders now** and **what
+was blessed**, and it is carrying information rather than noise.
+
+**The chronology narrows it to a four-hour window, and `refs/raster` is
+the only set inside it.** Blessing times against the commits of the same
+day:
+
+| | |
+|---|---|
+| `6e8b01e` 09-05 **08:40** | `refs/raster` blessed |
+| `bbb144e104` 09-05 11:48 | a frame dump waits for a complete frame |
+| `01470cc` 09-05 **11:51** | `refs/chess`, `refs/chess-flat` blessed |
+| `638d3ab1c7` 09-05 13:06 | every capture waits on the complete-frame signal |
+| `0a79dec` 09-05 **16:15** | `refs/raster-flat` re-blessed |
+
+Every set blessed after 11:48 compares byte-exact today; the one set
+blessed before it does not. That is a correlation and not yet a cause --
+and note the mechanism does not obviously fit, since an incomplete frame
+means a stand-in shader or a missing shape, which would diverge by far
+more than one level.
+
+**A sharper lead: the environment background.** `refs/raster` draws it
+and `refs/raster-flat` does not, and it is the flat set that is exact.
+The arithmetic is suggestive too -- geometry is 108191 px of 521664, so
+the background is 79.26% of the frame, and the divergent 7.9421% is
+**10.02% of exactly that area**. A hair's difference in the environment
+would put about one background pixel in ten across a quantization
+boundary and leave every geometric stage untouched, which is the shape
+observed.
+
+**The decisive test is cheap and nobody has run it**: intersect the
+divergent-pixel mask with the mode 1 geometry mask. If the divergence
+lies entirely *outside* the geometry, the environment background is the
+cause and this is a stale blessing rather than a defect. If it lies on
+the geometry, the environment lead is dead. Either answer costs seconds,
+and it is worth having before anyone spends an hour on a base build --
+which can only say "not the recent commits", a question the max delta of
+1 has largely answered already.
 
 Worth knowing before chasing it: the Linux leg is a software rasterizer
 on both sides (see 5.2b), so this residual has never been seen on real
