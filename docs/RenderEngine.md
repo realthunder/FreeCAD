@@ -2540,15 +2540,29 @@ picks D3D12):
 | Direct3D 12 | 10.3 | 13.0 | 8.9 | 6.3 - 15.5 |
 | Vulkan | 3.8 | 3.5 | 3.3 | 2.4 - 4.2 |
 
-Vulkan is 2.6x to 3.7x faster than either Direct3D backend on every
-replay frame and far steadier, which matters twice over for
-interaction. D3D12 is not even reliably better than D3D11: it halves
-the first frame (48 ms against 93) and wins on zoom, but loses on pan
-and ties on an unchanged frame. So the queue property is a real
-convenience and it is not worth choosing a backend for on its own --
-if Route D is built here, Vulkan's runtime margin has to be weighed
-against D3D12's simpler synchronisation, and the handle comparison
-Vulkan needs is a bounded cost against a 3x one.
+**Do not read that table as a throughput result, and do not conclude
+Vulkan is three times faster.** Two flaws make it a measurement of
+DEFERRAL rather than of work done. Each figure is a SINGLE frame --
+`runBench`'s inner helper renders one frame and times it, so three runs
+give three samples, not an average. And nothing forces GPU completion:
+the tool is deliberately headless with no swapchain and no
+`platformData`, so `bgfx::frame()` returns after submission and each
+backend postpones a different amount past that point.
+
+The contradiction is in this document's own numbers. The readback probe
+above DOES force completion -- it pumps frames until the read lands --
+and measured Vulkan at 2.51 ms against Direct3D 11 at 2.42 ms on the
+same part, parity within 4%. A backend three times faster end to end
+would have shown it there. So the honest reading is that the backends
+are much closer than the bench suggests, and that this harness cannot
+separate them.
+
+What the table does support is narrower and still useful: D3D12 halves
+the FIRST frame against D3D11 (48 ms against 93), which is pipeline and
+state creation rather than steady-state draw, and no backend shows a
+steady-state collapse that would rule it out. The queue property
+therefore remains D3D12's real argument for Route D, neither confirmed
+nor overturned by anything measured here.
 
 Three limits on that table, none of them small. It exercises the
 **vg 2D path, not the 3D engine**, because the renderer's own shader
