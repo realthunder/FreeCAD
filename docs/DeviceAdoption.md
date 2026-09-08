@@ -79,6 +79,31 @@ Verified against the vendored bgfx and Qt 6.11.1 on this box.
   device and queue, renders a frame, and -- the point -- a child QLabel stays
   non-native and composites above it.
 
+### The price: a Qt private-API dependency
+
+`QRhiWidget` itself is a public QtWidgets header. `QRhi`, `QRhiTexture` and
+`QRhiMetalNativeHandles` are not: they live under the versioned private path
+(`include/qt6/QtGui/6.11.1/QtGui/rhi/`) and need `Qt6::GuiPrivate` to link. The
+public `QRhiWidget` returns those types from `rhi()` and `colorTexture()`, so
+there is no way to use the widget for this route without taking the private
+dependency. `qrhi.h` says so in its own words:
+
+    // This file is part of the RHI API, with limited compatibility guarantees.
+    // Usage of this API may make your code source and binary incompatible with
+    // future versions of Qt.
+
+**This codebase currently links no Qt private module at all** -- Route D would be
+the first. `Qt6GuiPrivate` is present in the conda env here, so it builds; the
+cost is version fragility, in a tree that deliberately tracks upstream's Qt
+closely and has already moved 6.11.1 -> 6.11.2 between boxes. It applies to
+every platform, not just this one: the Vulkan and D3D12 forms of this route need
+the same headers for their own native-handle structs.
+
+That is a decision to take deliberately rather than discover at link time. The
+alternative is driving QRhi's device out of a bgfx-side abstraction and keeping
+the private includes in one translation unit, which does not remove the
+dependency but does bound what a Qt minor release can break.
+
 ### The queue is backend-specific
 
 `PlatformData` has a `queue` field (`bgfx.h:644`) but its comment says D3D12 and
