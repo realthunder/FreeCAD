@@ -246,3 +246,61 @@ cross, NaviCube, dimensions -- which the nine overlay feeds exist to absorb.
 
 Incidental, and a separate defect: two of the four runs segfaulted at exit,
 after the data was collected and the frames were done. Not chased.
+
+## 8. The Coin audit, part two: does the traversal EMIT?
+
+Section 7 measured what the residual traversal costs and said plainly that cost
+is the wrong question -- a QRhiWidget viewport has no GL context, so what gates
+step 4 is whether anything still *emits* GL. This is that measurement.
+
+**Method.** A `DYLD_INSERT_LIBRARIES` shim interposing the GL drawing entry
+points (`glDrawArrays`, `glDrawElements`, `glBegin`, `glCallList(s)`,
+`glDrawPixels`, `glBitmap`, `glRectf`, `glClear`) and counting them. This works
+here for a reason peculiar to this box: on a Metal session the backend draws
+through Metal, so **every GL call left in the process comes from Coin or Qt**,
+not from the renderer. That separation does not exist on a GL backend, which is
+why this number is easier to get here than on the Linux box.
+
+Note SIP strips `DYLD_*` across `/bin/bash`, so the variable has to be re-added
+with `env` after the conda wrapper, not exported before it.
+
+Same harness as section 7: ~870 frames per run, camera rotating, 1400x900.
+
+| config              | objects | drawarrays | drawelements | glBegin | drawpixels | bitmap | clear |
+|---------------------|---------|------------|--------------|---------|------------|--------|-------|
+| skip active         | 0       | 2674       | 0            | 0       | 0          | 0      | 1779  |
+| skip active         | 192     | 2824       | 576          | 0       | 0          | 0      | 1870  |
+| skip active         | 768     | 2792       | 2304         | 0       | 0          | 0      | 1838  |
+| `PARALLEL_GL` (ctl) | 192     | 2732       | 525572       | 38456   | 2622       | 2622   | 2683  |
+
+**Per-frame geometry emission with the skip active is ZERO.** The
+`glDrawElements` totals are 576 at 192 objects and 2304 at 768 -- exactly 3 per
+object, and *independent of the 870 frames*. They are a one-time cost at scene
+construction, not per-frame drawing. Nothing else geometry-shaped fires at all:
+`glBegin`, `glCallList`, `glDrawPixels` and `glBitmap` are flat zero.
+
+**The control proves the counter sees emission when there is any.** Forcing the
+internal pass back on takes `glDrawElements` to 611/frame and `glBegin` to
+45/frame, and lights up the `drawpixels`/`bitmap` paths that are zero otherwise.
+
+**What is left per frame is small, flat, and probably not Coin.** About 3.2
+`glDrawArrays` and 2.1 `glClear` per frame, and the telling detail is that
+`glDrawArrays` is ~3.2/frame in *every* configuration -- including the control
+where Coin draws all 192 solids, and including the run with an empty document.
+A count invariant to both scene content and whether Coin is drawing is not
+Coin's scene drawing. `QOpenGLWidget` compositing its FBO into the window is the
+obvious candidate, and that work does not survive into a QRhiWidget viewport at
+all: Qt does the same job through QRhi instead.
+
+**Verdict for step 4: the gate is open enough to proceed, with one caveat.** The
+fear was that a QRhiWidget viewport would silently lose drawing Coin still does.
+It does not do any, per frame, at least for this scene class. What has NOT been
+established is attribution of the residual ~3.2 draws: "invariant across every
+configuration" is strong evidence they are Qt's compositing, but it is inference,
+not a bracket-scoped count. Confirming that needs counters scoped to the
+`FrameOutside::Coin` span rather than process-wide totals.
+
+Scope carries over from section 7 unchanged -- one scene class, no selection
+highlight, section planes, shadows or hidden-line, no workbench-specific graph.
+Those are exactly the cases that would introduce chrome the nine feeds must
+absorb, and they remain unmeasured.
