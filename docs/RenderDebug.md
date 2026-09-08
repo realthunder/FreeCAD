@@ -1351,17 +1351,17 @@ byte-identical -- the same geometry, a different background, which is
 exactly the shape the pair should have. If a *-flat set ever compares
 near-identical to its sibling, this is the first thing to check.
 
-*** **OPEN: the `raster` beauty stage does not compare byte-exact, and
-it is 1 LSB.** A fresh Linux capture restaged from `refs/raster` matches
-depth, normal, AO and shadow byte-for-byte and diverges on the beauty
-stage alone: **7.9421% of pixels past `--tol 0`, max channel delta 1,
-mean 0.08** (measured on the Linux box 2026-09-08, against the 18-commit
-cross-API set; two hypotheses for it have been raised and both
-falsified). Do NOT re-bless over it -- a re-blessing would freeze
-whatever causes it into the reference and destroy the only handle
-anyone has.
+*** **CLOSED 2026-09-08: the `raster` beauty stage did not compare
+byte-exact, and the cause was a stale reference.** A fresh Linux capture
+restaged from `refs/raster` matched depth, normal, AO and shadow
+byte-for-byte and diverged on the beauty stage alone: **7.9421% of
+pixels past `--tol 0`, max channel delta 1, mean 0.08**. Every one of
+those pixels was on the environment background and none on geometry;
+`refs/raster` needs re-blessing and nothing needs fixing. The diagnosis
+is kept in full because it took two sessions and three hypotheses, two
+of which were wrong, and the wrong ones are the reusable part.
 
-Two properties of it are worth more than the number:
+Three properties of the number mattered, in the order they were found:
 
 - **It is bit-stable.** The same run repeated on a quiet box gives
   7.9421% both times, to four decimals. So it is a deterministic
@@ -1398,23 +1398,51 @@ and note the mechanism does not obviously fit, since an incomplete frame
 means a stand-in shader or a missing shape, which would diverge by far
 more than one level.
 
-**A sharper lead: the environment background.** `refs/raster` draws it
-and `refs/raster-flat` does not, and it is the flat set that is exact.
-The arithmetic is suggestive too -- geometry is 108191 px of 521664, so
-the background is 79.26% of the frame, and the divergent 7.9421% is
-**10.02% of exactly that area**. A hair's difference in the environment
-would put about one background pixel in ten across a quantization
-boundary and leave every geometric stage untouched, which is the shape
-observed.
+**RESOLVED 2026-09-08: it is the environment background, and
+`refs/raster` is a stale blessing rather than a defect.** The test was
+to intersect the divergent-pixel mask with the mode 1 geometry mask,
+and the answer was not close:
 
-**The decisive test is cheap and nobody has run it**: intersect the
-divergent-pixel mask with the mode 1 geometry mask. If the divergence
-lies entirely *outside* the geometry, the environment background is the
-cause and this is a stale blessing rather than a defect. If it lies on
-the geometry, the environment lead is dead. Either answer costs seconds,
-and it is worth having before anyone spends an hour on a base build --
-which can only say "not the recent commits", a question the max delta of
-1 has largely answered already.
+```
+frame            858 x 608 = 521664
+geometry px      106114
+divergent px     41431
+  on geometry    0
+  on background  41431      9.97% of the background area
+max channel delta 1
+```
+
+**Zero divergent pixels on geometry.** Not few -- none. What was
+predicted from the areas alone was 10.02% of the background (geometry
+108191 of 521664, so background 79.26% of the frame, and 7.9421% of the
+frame is 10.02% of that); what was measured was 9.97%, the 0.05 point
+being the quantize-to-black gap between the sidecar's `geometryPixels`
+and the mode 1 mask. About one background pixel in ten sits across a
+quantization boundary and rounds the other way than it did when the set
+was blessed.
+
+The reasoning that got there, since it generalizes: `refs/raster` draws
+the environment background and `refs/raster-flat` does not, they are the
+same scene on the same box, and it is the flat set that is byte-exact.
+The environment was very nearly the only difference between the set that
+diverged and the set that did not.
+
+**Two consequences.** First, both halves of the cross-API work are
+cleared by this: a change to clip depth, UV origin or matrix indexing
+cannot produce a difference that is zero on every geometric pixel. That
+was an inference from `max 1`; it is now a measurement. Second, the
+"do not re-bless" instruction above is **withdrawn for this set**. It
+was right while the difference might have carried information about a
+defect. It does not -- the only thing it was protecting was the age of
+the artefact -- so the action is to re-bless `refs/raster`, on a box
+that records its device. It is an OpenGL set, so that box is the Linux
+one; macOS cannot produce a GL capture here at all (Apple caps the
+compatibility profile at 2.1).
+
+And the point that costs nothing to state: **the `device` field would
+have answered this in one step instead of two sessions.** The four
+OpenGL sets predate it. Whatever else a re-blessing is worth, it is
+worth that.
 
 Worth knowing before chasing it: the Linux leg is a software rasterizer
 on both sides (see 5.2b), so this residual has never been seen on real
