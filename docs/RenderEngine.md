@@ -2594,6 +2594,18 @@ rather than removing it: confine the private includes to a single
 translation unit behind an abstraction, so a Qt minor breaks one file
 rather than the renderer.
 
+The macOS side accepted this dependency, and the reasoning turned on
+DISTRIBUTION SHAPE rather than on the API: we own the feedstocks and
+ship a bundle image, and an image carries the Qt it was built against,
+which makes the ABI break structurally impossible for the shipped
+artifact rather than merely mitigated. That reasoning does not cover
+every artifact we publish. A conda package installed into somebody
+else's environment inherits `qt6-main`'s loose `>=6.11.1,<7.0a0`
+unless the feedstock says otherwise -- so if Route D lands, the
+`freecad-rt-feedstock` recipe needs a Qt pin tight enough to match the
+RHI headers it was built against. Recorded rather than done: the
+feedstock clones are not on the Windows box.
+
 Two further constraints, cheap to state and expensive to discover late:
 
 - **Coin.** A `QRhiWidget` viewport has no GL context at all, so Coin
@@ -2626,9 +2638,38 @@ Two further constraints, cheap to state and expensive to discover late:
   residual traversal EMITS GL, not what it spends: a traversal costing
   nothing that makes one GL call is fatal, one costing 0.55 ms that
   draws nothing is harmless, and milliseconds cannot separate them. The
-  open work is COUNTING GL emission inside that bracket. Scope of what
-  is measured: one scene type, no workbench graph, no selection
-  highlight, no section planes, shadows or hidden-line, dpr 1.
+  open work is COUNTING GL emission inside that bracket.
+
+  **That count has now been run, and for the scene class measured the
+  gate is open: the residual traversal emits ZERO per-frame geometry.**
+  Method (macOS box, ~870 frames, camera rotating, 1400x900): a
+  `DYLD_INSERT_LIBRARIES` shim interposing the GL drawing entry points
+  and counting them. It works there for a reason that does NOT transfer
+  to a GL backend -- on a Metal session every GL call left in the
+  process belongs to Coin or Qt, so process-wide totals are already
+  attributed. On a GL backend bgfx's own draws are in the totals, so the
+  equivalent here needs counters scoped to the bracket instead.
+
+  With the skip active, `glDrawElements` totals exactly 3 per object and
+  does not grow with frame count -- scene construction, not drawing --
+  and `glBegin`, `glCallList`, `glDrawPixels` and `glBitmap` are flat
+  zero. The positive control (`FC_RENDERER_PARALLEL_GL`, 192 solids)
+  takes `glDrawElements` to 611/frame and `glBegin` to 45/frame and
+  lights up the `glDrawPixels`/`glBitmap` paths, so the counter does see
+  emission when there is any. What remains is ~3.2 `glDrawArrays` and
+  ~2.1 `glClear` per frame, invariant across an empty document, 768
+  solids, and the control -- a count independent of scene content AND of
+  whether Coin draws at all is not Coin's scene drawing, and
+  `QOpenGLWidget` compositing its FBO is the candidate, work that does
+  not survive into a `QRhiWidget` viewport anyway. That attribution is
+  INFERENCE, not proof; the stronger version needs counters inside the
+  `FrameOutside::Coin` span rather than process-wide totals.
+
+  Scope, and it is the real limit: one scene class (`Part::Box` solids),
+  no workbench-specific graph, no selection highlight, no section
+  planes, shadows or hidden-line, dpr 1. Those are exactly the cases
+  that would introduce chrome the nine feeds must absorb. "The gate is
+  open" means open for this scene class, not proven in general.
 - **Ordering, and it is already solved.** `bgfx::init` happens once per
   process -- first backend asked for wins, the hazard named at
   `BGFXRendererP.h` 1826-1832 -- so the device must exist before the
