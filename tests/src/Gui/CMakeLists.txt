@@ -5,6 +5,20 @@ target_sources(
             ${CMAKE_CURRENT_SOURCE_DIR}/Assistant.cpp
 )
 
+# The GL -> [0,1] clip-depth conversion (docs/RenderDebug.md sec 5.2b).
+# Arithmetic that only a non-GL backend executes, so an OpenGL build
+# would otherwise never check it -- and the header is inline over a
+# float[16] including only <cstring>, so this links neither the renderer
+# nor Gui and needs no GPU, window or bgfx.
+add_executable(ClipConvention_tests_run
+               ${CMAKE_CURRENT_SOURCE_DIR}/ClipConvention.cpp)
+target_include_directories(ClipConvention_tests_run PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src)
+target_link_libraries(ClipConvention_tests_run gtest_main)
+add_test(NAME ClipConvention_tests_run COMMAND ClipConvention_tests_run)
+
 # Qt tests
 setup_qt_test(QuantitySpinBox)
 

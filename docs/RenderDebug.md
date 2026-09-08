@@ -1039,6 +1039,28 @@ leg does need a logged-in window server, so it cannot run over a bare ssh
 session. `--gpu` is a no-op there -- every macOS run is already on the
 device.
 
+WARNING: **On macOS the golden tests need somebody logged in, and the
+failure says nothing about it.** The registration gate runs
+`find_program(xvfb-run)` on Linux and lets **Darwin through
+unconditionally** -- there is no xvfb to find on macOS, because the
+capture draws on the window server of the logged-in session. So the
+gate asks whether a display *could* be raised and takes yes for an
+answer on Darwin. Run `ctest` on a Mac sitting at the login window and
+both golden legs register and then fail with
+
+```
+Cannot create window: no screens available
+Abort trap: 6
+CAPTURE FAILED (no DONE within 420s)
+```
+
+which looks exactly like real golden divergence. The three-way
+confirmation, since the error text is useless on its own: `who` prints
+nothing, `/dev/console` is owned by `root` rather than a user, and
+`launchctl managername` says **Background** rather than **Aqua**. Log in
+at the console and re-run; an ssh or background session cannot do it at
+all. This is the first thing a macOS CI runner would hit.
+
 `tests/render/CMakeLists.txt` requires `xvfb-run` **on Linux only**.
 Requiring it everywhere is why the golden tests on macOS did not merely
 skip: they were never registered, so a `ctest` run there was short two
@@ -1255,6 +1277,30 @@ from the model-view transform, not the depth buffer and not a function
 of the projection at all. It was never evidence about clip space. A
 mask comparison that does not try `flipud` first can align two lobes of
 a symmetric silhouette and read as confirmation.
+
+WARNING: **Identical divergent-pixel counts across probes of unrelated
+quantities mean the probe is not reaching the quantity -- you are
+measuring the frame, not the value.** From the Vulkan NaN hunt
+(2026-09-08): three probes aimed at three different quantities returned
+4827/16513/4456, 4818/16493/4457 and 4826/16512/4456. Counts that close
+across unrelated subjects are not corroboration, they are the
+instrument describing itself, and four "eliminations" built on them
+were void -- two could not have produced a positive result even against
+a guilty subject, because the defect was a NaN and `0 * NaN = NaN`
+survives every gate that multiplies a suspect term out. Same species as
+the flip-before-shift warning above: a measurement that confirms
+whatever you point it at.
+
+The discipline that follows: **self-test the instrument before trusting
+a negative.** Light the classifier deliberately -- a `sqrt` of a
+negative from a uniform lit 85k pixels and made the negatives
+trustworthy -- and note that `(x-x)/(x-x)` does NOT work, the compiler
+folds it. A classifier that has not been shown to fire is not evidence.
+The same rule applies to a unit test: `ClipConvention_tests_run` was
+checked by injecting the regression it exists to catch (folding the w
+row alongside the z row), which failed 4 of its 7 cases -- and notably
+NOT the case that asserts the measured pair, which passed throughout.
+A test suite nobody has watched fail is a suite of unknown strength.
 
 **The containment check is `scripts/render_contain.py`** (added 2026-09-08;
 the diagnosis above was done with an ad-hoc script that was never committed).

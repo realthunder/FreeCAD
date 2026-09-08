@@ -21,6 +21,7 @@
  ****************************************************************************/
 
 #include "BGFXRendererP.h"
+#include "ClipConvention.h"
 
 /// Radical inverse of \a index in \a base -- the Halton sequence, used
 /// for the idle accumulation's subpixel offsets. Two coprime bases give
@@ -110,11 +111,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (projMatrix) {
         const bgfx::Caps *caps = bgfx::getCaps();
         if (caps && !caps->homogeneousDepth) {
-            const float *fed = reinterpret_cast<const float *>(projMatrix);
-            std::memcpy(projClip, fed, sizeof(projClip));
-            for (int c = 0; c < 4; ++c)
-                projClip[4 * c + 2] = 0.5f * (fed[4 * c + 2]
-                                              + fed[4 * c + 3]);
+            Render::projToZeroToOneDepth(
+                    reinterpret_cast<const float *>(projMatrix), projClip);
             projMatrix = projClip;
         }
     }
