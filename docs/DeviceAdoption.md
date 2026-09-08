@@ -99,10 +99,41 @@ closely and has already moved 6.11.1 -> 6.11.2 between boxes. It applies to
 every platform, not just this one: the Vulkan and D3D12 forms of this route need
 the same headers for their own native-handle structs.
 
-That is a decision to take deliberately rather than discover at link time. The
-alternative is driving QRhi's device out of a bgfx-side abstraction and keeping
-the private includes in one translation unit, which does not remove the
-dependency but does bound what a Qt minor release can break.
+That is a decision to take deliberately rather than discover at link time.
+
+**Pinning Qt in the dev env does not settle it.** `.conda/freecad/conda-meta/pinned`
+already carries `qt6-main ==6.11.1`, which fixes THIS box. What governs a
+released package is the run-export the Qt package declares, and qt6-main's is
+
+    "weak": ["qt6-main >=6.11.1,<7.0a0"]
+
+-- effectively unpinned across all of Qt 6. So a build made against 6.11.1
+installs and runs against 6.12, 6.13, anything short of Qt 7. For public Qt API
+that is correct by design and is why the range is so wide. For RHI it is exactly
+the case Qt refuses to guarantee, and the failure is not a link error at install
+time but a struct layout that moved under code already compiled.
+
+Making it actually safe means the feedstock carrying an explicit tight run
+constraint (`qt6-main ==6.11.1`) for our package rather than inheriting the
+run-export. That works, and it costs: the package becomes uninstallable beside
+anything wanting a different Qt patch release, and every conda-forge Qt
+migration forces a coordinated rebuild before users can update. That is a
+distribution decision, not a renderer one.
+
+The mitigation is real and cheaper than it sounds. `qrhiwidget.h` includes only
+`qwidget.h` and forward-declares `QRhi`, `QRhiTexture` and the rest, so
+subclassing QRhiWidget needs no private include at all -- only the code that
+CALLS into QRhi does. The surface that route needs is about six symbols:
+`QRhi::nativeHandles()`, the `dev`/`cmdQueue` fields of the Metal handle struct,
+`QRhiTexture::nativeTexture()` and `createFrom()`, and
+`QRhiCommandBuffer::beginPass`/`endPass`. Confining those to one translation
+unit does not remove the dependency; it bounds what a Qt release can break and
+makes the blast radius reviewable.
+
+**Not yet measured:** how much `qrhi.h` actually churns between Qt releases.
+Only 6.11.1 is on this box. That is checkable -- the other box has 6.11.2, and
+Qt's history is public -- and it is the number that would turn this from a
+stated risk into a sized one.
 
 ### The queue is backend-specific
 
