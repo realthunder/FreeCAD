@@ -2380,6 +2380,176 @@ the view-space shading normal -- is the one picture in which the two
 engines can be compared exactly, which is what the finish and map
 probes assert on.
 
+## 7.10 Why a non-GL backend does not reach the screen
+
+Vulkan, Metal and Direct3D all render correctly and CAPTURE correctly,
+and none of them puts a pixel in the viewport. That is not a defect in
+any of them; it is one property of the desktop composite, and the ways
+out have very different costs. Investigated 2026-09-08 across the
+Windows box (RTX 2000 Ada, Vulkan 1.3.289) and the macOS box (Intel Iris
+Pro 6200, GL 2.1, Metal), with numbers measured on both rather than
+estimated.
+
+**What Windows runs today is unaffected by all of this.** The default
+`typeMap` (`BGFXRendererP.h` around 2457) holds exactly one entry,
+`bgfx - OpenGL`; the Direct3D 9/11/12 lines beside it are commented out,
+and Vulkan and Metal are added at runtime only under `FC_BGFX_VULKAN` /
+`FC_BGFX_METAL`. So the desktop viewport runs bgfx on GL inside Qt's own
+GL context and composites with a GL-to-GL framebuffer copy, which costs
+nothing like the transfers below. Everything here is about the backends
+that are NOT that.
+
+### The actual constraint
+
+`BGFXView::blit` (`BGFXViewLifecycle.cpp:1680`) wraps bgfx's colour and
+depth attachments in a GL framebuffer through `bgfx::getInternal()` and
+`glBlitFramebuffer`s them into the widget's. It returns at the top on
+any backend that is not OpenGL or OpenGLES, and Coin draws the viewport
+instead. The gates at `BGFXRendererP.h:1754` and the Metal one below it
+say why: "it renders and it CAPTURES, but it does not yet reach the
+screen".
+
+Two things are worth stating precisely, because both have been misread.
+
+**It is not simply that `getInternal` returns the wrong kind of handle.**
+On Metal it returns a real `id<MTLTexture>` (`renderer_mtl.cpp:1472`),
+which the FBO then rejects as an incomplete attachment. On Vulkan it is
+a stub returning 0, and `overrideInternal` is an empty no-op
+(`renderer_vk.cpp:2679`) -- there is no handle to misinterpret. And
+`VK_KHR_external_memory` / `GL_EXT_memory_object` appear nowhere in the
+engine, so sharing memory with GL would be a from-scratch allocator
+feature in the fork, not a fix.
+
+**The real requirement is that the frame must arrive as something QT
+composites.** `QuarterWidget` is a `QGraphicsView` whose viewport is a
+`QOpenGLWidget`-derived `CustomGLWidget` (`QuarterWidget.cpp:283`), and a
+`QOpenGLWidget` is deliberately NOT a native window: it renders to an
+FBO that Qt composites into the backing store. That is the only reason
+Qt widgets can float above the 3D view at all.
+
+### Route C -- native child window -- is disqualified
+
+The tempting route is to skip the transfer entirely. The non-GL branch
+of `prepare()` (`BGFXRendererP.h` 1994-2032) ALREADY creates a `QWindow`
+and hands `winId()` to bgfx as `platformData.nwh`, filling `ndt` and the
+handle type from `QWaylandApplication`/`QX11Application` on Linux; bgfx
+builds its own surface and swapchain from that. So presentation was
+never the blocker -- embed that window with
+`QWidget::createWindowContainer` and bgfx presents straight to it, with
+no blit, no readback and no engine patch.
+
+It cannot be done. A native child surface composites ABOVE its parent's
+painting on Win32, X11, Wayland and Cocoa alike, so everything Qt draws
+over the viewport goes dark: `Flag` widgets, parented to the viewer
+under a `FlagLayout` (`Flag.cpp:364-368`), and the whole transparent
+overlay dock system in `OverlayWidgets.cpp`, which is a signature
+feature of this fork that upstream has never had
+(`ThemePorting.md:236`). Those are interactive, styled, animated Qt
+widgets; they are not an overlay feed and cannot be moved into bgfx.
+Confirmed on macOS too: a child `QLabel` over an embedded foreign window
+stays non-native (`internalWinId` 0) and Cocoa composites it under the
+subview, with no way round it.
+
+Recorded here so it is not proposed again. The cost is not a cosmetic
+regression, it is the overlay docks.
+
+### Route A -- readback -- works, and is the only route on macOS
+
+GPU to CPU with `bgfx::readTexture`, then `glTexSubImage2D` and a
+textured quad. It needs no `glBlitFramebuffer` and no profile sharing,
+so it runs on GL 2.1 -- which matters because nothing in
+`Application.cpp` requests a version or profile, and while Coin draws,
+its fixed-function pipeline caps macOS at 2.1 by construction. That
+makes readback the ONLY route that can put Metal on screen there.
+
+Readback, GPU to CPU, fully serialized (the wait IS the cost):
+
+| Resolution | Bytes | Box | Time | Throughput |
+| --- | --- | --- | --- | --- |
+| 1920x1080 | 7.9 MB | Ada, Vulkan | 2.51 ms | 3.08 GB/s |
+| 1920x1080 | 7.9 MB | Ada, D3D11 | 2.42 ms | 3.19 GB/s |
+| 2560x1440 | 14.1 MB | Ada, Vulkan | 3.94 ms | 3.49 GB/s |
+| 3840x2160 | 31.6 MB | Ada, Vulkan | 8.13 ms | 3.80 GB/s |
+| 1920x1080 | 7.9 MB | Iris Pro, Metal | 1.71 ms | -- |
+
+Discrete is only about 1.5x integrated at 1080p, not the PCIe cliff both
+boxes expected: neither measurement pipelined, so both timed the same
+stall rather than the same bandwidth. Reading frame N-1 while rendering
+N would hide most of it, at the price of a frame of latency.
+
+**Upload format is not a detail.** `GL_RGBA`/`UNSIGNED_BYTE` beats
+`GL_BGRA`/`UNSIGNED_INT_8_8_8_8_REV` by 3.5x on NVIDIA (0.57 ms against
+1.97, 13.62 GB/s against 3.92) and by 2.9x on Intel/macOS. That inverts
+the usual "BGRA is the fast path" advice on BOTH vendors, and it matters
+because bgfx's Metal backbuffer is BGRA8, so the naive pairing lands on
+the slow one. Render into an RGBA8 target instead; we read our own
+render target, not the drawable, so nothing forces BGRA. Qt's own
+`grabFramebuffer` on the RHI Metal path returns `Format_RGBA8888`, which
+points the same way.
+
+Totals with the fast format plus a ~0.3 ms quad: **~3.4 ms at 1080p (20%
+of a 60Hz frame), ~5.2 ms at 1440p (31%), ~10.7 ms at 4K (64%)** -- the
+4K upload extrapolated from the measured rate rather than measured. So
+readback ships at ordinary resolutions and is marginal at 4K, where it
+spends two thirds of the budget before anything is drawn. That is what
+makes it a correctness path rather than the destination.
+
+### Route D -- Qt owns the device -- is the destination
+
+bgfx accepts an externally created device, so Qt can own it through
+`QRhi` and bgfx can adopt it. bgfx's render target is then already a
+texture on the compositor's own device: import it as a `QRhiTexture`,
+and `QRhiWidget` composites it into the widget tree the way
+`QOpenGLWidget` does -- so the Qt overlays that killed Route C survive.
+Zero copy, and **no bgfx patch at all**. `QRhiWidget` exists in this Qt
+(6.11.2), and the macOS box has it running on Metal with the device, a
+command queue and a real `MTLTexture` handle in hand, and a child
+`QLabel` still non-native and composited above.
+
+Device adoption is `platformData.context`, one line per backend:
+`renderer_vk.cpp` 2008-2011 and `renderer_mtl.cpp:874`. It needs no
+window: `bgfx.h` documents a null `nwh` as a headless device request and
+`renderer_mtl.cpp:1127` takes that path explicitly, so the `QWindow` and
+swapchain of the Route C branch are not wanted at all.
+
+The QUEUE is where the backends diverge, and only one lets us choose:
+
+| Backend | Queue under an adopted device | Synchronisation |
+| --- | --- | --- |
+| Direct3D 12 | external queue accepted, `platformData.queue` (`bgfx.h:644`, used at `renderer_d3d12.cpp:1305`) | ours by construction: one queue |
+| Vulkan | `vkGetDeviceQueue(family, 0)` at `renderer_vk.cpp:2131` -- RETRIEVES, so it may be Qt's own | host-side mutual exclusion if it is the same `VkQueue`, semaphores if not; compare handles at runtime, it is not contractual |
+| Metal | `newCommandQueue()` at `renderer_mtl.cpp:4740`, unconditional | always two queues: `MTLEvent` or a completion handler |
+
+`queue` is referenced zero times in `renderer_vk.cpp` and
+`renderer_mtl.cpp`. So a sync layer has to cover same-queue-lock and
+cross-queue-signal both, and the backend picks: Metal can never take the
+lock path, D3D12 never needs the signal path. **That is the argument for
+Windows going Direct3D 12** if Route D is built -- device and queue
+adopted by design, no handle comparison and no lock ambiguity -- which
+first means enabling it in the Windows `typeMap`, where D3D9/11/12 are
+all commented out today.
+
+Two constraints, cheap to state and expensive to discover late:
+
+- **Coin.** A `QRhiWidget` viewport has no GL context at all, so Coin
+  cannot traverse anywhere -- there is nothing to composite over the
+  backend frame with. Note this is not a matter of inverting the
+  composite: on-screen is ALREADY backend-first, `renderScene()` asks
+  the backend for the frame and Coin traverses over it, and
+  `CoinRetirement.md` 88-110 records `renderToFramebuffer()` being
+  changed to match. Everything Coin still draws must therefore be gone
+  or moved to a feed BEFORE the viewport can change, which is strictly
+  harder than reordering. Nine overlay feeds already exist
+  (`View3DInventorViewer.cpp` 615-624) and `canSkipInternal()` already
+  skips the fixed-function scene pass; whether those cover everything
+  still on screen is an audit nobody has run, and it gates the viewport.
+- **Ordering.** `bgfx::init` happens once per process, which is why
+  `maxViews` is a startup option. The QRhi device must therefore exist
+  before the FIRST 3D view: if any view comes up first, bgfx creates its
+  own device and every later view is stuck with it. That is a FreeCAD
+  startup requirement, and the kind that works in a prototype and fails
+  on the second document.
+
 ## 8. Known limitations / future work
 
 - Stock passes keep stock programs: a material-stage override does not
