@@ -276,6 +276,15 @@ if(BUILD_BGFX)
     if(APPLE)
         list(APPEND FC_SHADER_PROFILES metal)
     endif()
+    # Windows adds the Direct3D packs. Without them shaderBinDir() sends
+    # a D3D session to a directory that does not exist, and bgfx does not
+    # refuse a missing program -- submit() substitutes handle 0, so the
+    # frame comes out a DIFFERENT PICTURE rather than an error (the vg
+    # incident in docs/Testing.md). Only a Windows host can bake them:
+    # dxbc needs D3DCompile and dxil needs dxc.
+    if(WIN32)
+        list(APPEND FC_SHADER_PROFILES dxbc dxil)
+    endif()
     fc_bgfx_compile_shaders(Renderer_ShaderBins
         SHADERC   $<TARGET_FILE:shaderc>
         SHADERDIR ${CMAKE_CURRENT_SOURCE_DIR}/bgfx/shaders

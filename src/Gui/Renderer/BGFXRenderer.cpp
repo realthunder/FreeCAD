@@ -1731,6 +1731,14 @@ bool shadercTarget(std::string &platform, std::string &profile,
         platform = "android"; profile = "300_es"; apiDir = "essl"; return true;
     case bgfx::RendererType::Metal:
         platform = "osx"; profile = "metal"; apiDir = "metal"; return true;
+    // The apiDir here must agree with shaderBinDir() below, which has
+    // always named dxbc and dxil: without these two a Direct3D session
+    // had a stock pack it could load and no way to compile a USER
+    // shader, so user shaders silently did not exist there.
+    case bgfx::RendererType::Direct3D11:
+        platform = "windows"; profile = "s_5_0"; apiDir = "dxbc"; return true;
+    case bgfx::RendererType::Direct3D12:
+        platform = "windows"; profile = "s_6_0"; apiDir = "dxil"; return true;
     default:
         return false;
     }

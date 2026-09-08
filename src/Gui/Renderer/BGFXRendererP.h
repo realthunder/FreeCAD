@@ -1754,6 +1754,20 @@ public:
         if (getenv("FC_BGFX_VULKAN"))
             typeMap["bgfx - Vulkan"] = RendererType::Vulkan;
 #endif
+#if defined(FC_OS_WIN32) && !defined(FC_RENDERER_STANDALONE)
+        // Direct3D, opt-in for the same reason as Vulkan above: blit
+        // stands aside on any non-GL backend, so these render and
+        // capture without reaching the screen. They exist to be
+        // measured -- auto-selection would take D3D11 and never D3D12,
+        // so a backend comparison cannot be made without naming them.
+        // The stock pack now carries dxbc and dxil, so both have
+        // shaders to load; before that they would have drawn a
+        // substituted program rather than failing.
+        if (getenv("FC_BGFX_D3D11"))
+            typeMap["bgfx - Direct3D11"] = RendererType::Direct3D11;
+        if (getenv("FC_BGFX_D3D12"))
+            typeMap["bgfx - Direct3D12"] = RendererType::Direct3D12;
+#endif
 #if defined(FC_OS_MACOSX) && !defined(FC_RENDERER_STANDALONE)
         // Metal is the only backend that can run this renderer on
         // macOS: Apple caps the compatibility profile Coin needs at
