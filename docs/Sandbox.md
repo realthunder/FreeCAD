@@ -53,6 +53,8 @@ pieces are frozen, not extended.**
                                                  confined to the Mod roots, both containers
     the document program             to size     sec 11 item 2: the carrier, the surface audit,
                                                  per-document guests, the gate
+    the abandoned rungs' code        audited     1.6: form path kept, workbench path to drop
+                                                 (~4.2k lines); NOT executed, awaiting the ruling
     host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -263,6 +265,146 @@ The shape the prior art supports: FeatureScript's model, `LAMBDA`'s
 carrier, OpenSCAD's discipline of no I/O, a versioned surface, and no
 prompt that hands a document the user's authority.  Nothing on the
 list needed the GUI in the box.
+
+### 1.6 Audit of the abandoned rungs: what they touched, and the cut line **[recorded 2026-09-08; NOT executed]**
+
+Asked 2026-09-08, before item 1 of sec 11: "do an audit for potential
+reverting of touched code of abandoned rungs; count the frozen files;
+the aim is trackable maintenance; decide whether to drop them" -- then
+"I may later consider GUI access in expression, take that into
+consideration" -- then "stop here, just document everything".  So this
+section is the audit and the cut line; nothing was deleted.  Counts
+are lines the branch ADDED since it forked from `origin/LinkVibe`
+(merge base `2dd54590d8`, 120 commits).
+
+**What the branch added, by fate:**
+
+    bucket                                       files   lines   fate
+    -------------------------------------------  -----  ------   ------------------------------
+    expression sandbox core, gtests, corpus rig     68   24.8k   keep: the target's machinery
+    permissions panel, padlock                       2    0.7k   keep
+    host widget layer src/Gui/Fw/, fwuic,           16   11.1k   keep: the browser toolkit, in
+      host freecad.widgets                                         native use (Pad, Pocket,
+                                                                   TaskOrientation)
+    guest widget models and shims                   28    8.9k   keep, dormant: the toolkit's
+      (models.py 3.9k, items.py 2.9k, qtdata,                      Python half, item 5's premise
+      uic, PySide/*, comm, IPython stand-in)                       and the FORM PATH below
+    native fixes that fell out                       8    0.5k   keep: status bar registry,
+                                                                   ToolBarManager, UiLoader,
+                                                                   refreshLiveLoad, MeshLevelSource
+                                                                   shutdown, Type::importModule,
+                                                                   TechDraw crazy-edge, an Action
+                                                                   use-after-free guard
+    docs                                            11   11.6k   keep
+    SandboxGui.cpp/.h, the gui.* op dispatcher       2    2.2k   SPLIT (below)
+    guest FreeCADGui module (widgets/gui.py)         1    1.0k   SPLIT (below)
+    GUI gates and probes                            14    5.9k   SPLIT (below)
+    pivy and Coin in the guest                       1    0.1k   drop candidate (+ one option
+                                                                   commit in the coin fork,
+                                                                   COIN_BUILD_GL_STUB)
+
+Everything in the last four rows is NEW files: deleting them is a
+clean revert with no merge exposure.  `ExpressionDocumentOps.cpp` is
+Kvedalen's expression code split out, not S1 work; the `Action.cpp`
+hunk is a real use-after-free guard (a group's action of a deleted
+command): both stay.
+
+**The entanglement -- shared files edited by abandoned commits.**  21
+files.  Eleven are the native fixes or the padlock and stay.  The
+rest, the whole revert list outside the new files:
+
+- `src/Gui/FreeCADGuiInit.py`: the InitGui runner, +124, one hunk.
+- `src/Gui/Application.cpp`: the guest boot listener and the workbench
+  wrapper wiring, part of +24.
+- `src/Gui/CMakeLists.txt`, `src/Mod/Test/CMakeLists.txt`,
+  `src/Mod/Test/InitGui.py`: file and gate lists.
+- `src/Mod/Draft/CMakeLists.txt`, `src/Mod/BIM/CMakeLists.txt`: the
+  GUI modules in the wheel file lists (the App-side packing is G1's
+  and stays; the panel modules serve the form gates and stay).
+- `src/Ext/freecad/CMakeLists.txt`, `InitializeFreeCADBuildOptions.
+  cmake`, `src/App/CMakeLists.txt`: the ipywidgets/traitlets bundling
+  of Probe B -- STAYS, it is the comm base of the form path.
+- `src/Base/Type.cpp`/`.h`: a G3a hunk beside the kept import
+  restriction (the form path's class lookup) -- stays.
+
+Inside the kept core the guest GUI leaves a grep-able residue, about
+400 lines in six files, each removable as a hunk: ~100 lines of guest
+`FreeCADGui` prelude in `ImageMarshal.cpp`; the command, workbench,
+comm and panel hook names in `ExpressionGuestProxy.cpp`; the catalog
+rows `gui`, `gui.doCommand`, `app.write`, `prefs.write` in
+`ExpressionSecurity.cpp`; the S1 `app.*` document ops in the bridge
+(`reachable` itself is G1's and stays); the compiled-wheel loading for
+pivy in `ExpressionPyodide*.cpp`.
+
+**The cut line: the FORM PATH is kept, the WORKBENCH PATH is dropped.**
+Ruled into consideration 2026-09-08: GUI access from an expression may
+come later.  A document program with GUI access needs the form path --
+a panel or dialog built from the guest as models, shown by the host,
+its inputs returned, a selection read, a preference -- and never the
+workbench path: commands, workbenches, the main window, the status bar,
+docks, timers, the session document, `doCommand`, InitGui in the
+guest, the 3D view.  Measured:
+
+    piece                          form path, KEEP                 workbench path, DROP
+    -----------------------------  ------------------------------  ------------------------------
+    SandboxGui.cpp (2.1k)          comm, control, dialog, ui, sel, cmd, wb, mainwindow, docommand,
+                                   menu, widget ops ~930 lines,    timer, doc ops ~900 lines
+                                   plus ~290 shared
+    guest gui.py (1.0k)            Control, Selection,             MainWindow shim, Command,
+                                   SelectionObject, UiLoader, uic, GuiDocument, ActiveView, the
+                                   user input, hints ~400          tool bar and status bar shims,
+                                                                   the InitGui runner, MDI ~600
+    guest models and shims (8.9k)  all                             none
+    ipywidgets bundling (Probe B)  keep, the comm base             none
+    gates                          SandboxWidgets, SandboxForms,   SandboxGui, SandboxInitGui,
+                                   SandboxPanels, SandboxSelection, SandboxDraftGui,
+                                   SandboxNative: 1.9k             SandboxSessionDoc,
+                                                                   SandboxCorpusGui: 2.3k
+    catalog rows                   gui, prefs.write stay, DENY     gui.doCommand, app.write go
+                                   non-promptable for documents
+                                   until ruled
+    core residue                   comm and panel hook names, the  command and workbench hook
+                                   guest module's form names       names, the S1 app.* ops, pivy
+                                                                   wheel loading
+    shared hunks                   Type.cpp's G3a hunk, the        FreeCADGuiInit.py runner, the
+                                   Draft/BIM wheel lists           boot listener and workbench
+                                                                   wrapper in Gui/Application.cpp,
+                                                                   the gate lists in the Test
+                                                                   CMake and InitGui.py
+    pivy and Coin in the guest     none                            drop; a preview drawn by a
+                                                                   document program would be the
+                                                                   mirror, and 7.16 stays as
+                                                                   its sizing
+
+Net: about 4.2k lines dropped; about 5k lines of form path kept alive
+with the 8.9k of models, exercised by the five form gates.  Draft's
+and BIM's panels in `SandboxForms` and `SandboxPanels` become TOOLKIT
+COVERAGE rather than a workbench goal, with the retire-on-break rule
+per case.  The recommendation was DROP along this line rather than
+freeze: freezing keeps 9.2k lines, 14 gates and the shared hunks alive
+with no consumer, and every upstream Draft or BIM sync would still have
+to decide what to do with them; dropping costs one commit and leaves
+the door in git history and in the sec 7 sizings.  The execution, when
+ruled: one commit that deletes the workbench path, trims the two files
+and the residue, rebuilds, runs the expression gtests, the corpus gate
+and the five form gates, and updates sections 0, 7 and 11.  **Status:
+NOT executed ("stop here"); the guest-GUI code is FROZEN as sec 7's
+header says until the cut is ruled.**
+
+**Two notes for the day GUI access from expressions is ruled**, so the
+kept form path has a stated purpose:
+
+- **Authority is the line, not the widget.**  A document-shown form
+  grants nothing -- it collects inputs -- so it can be a document row
+  without repeating the VBA mistake (1.5).  The risk is SPOOFING: a
+  document dialog imitating FreeCAD's own prompts.  The host frames
+  document-owned panels visibly (title and border); the form models
+  already carry their principal.  The row would be narrower than
+  `gui`: a `gui.form`-shaped permission for showing a panel and
+  reading its inputs, nothing that reaches commands or documents.
+- **Selection is document data.**  A document program's selection read
+  is reach-checked like everything else -- its own document's objects
+  only -- which the existing `reachable` rule (7.13) gives for free.
 
 ## 2. The security model **[built]**
 
@@ -1126,7 +1268,13 @@ place with their gates: kept while green, a gate RETIRED rather than
 the guest extended when an upstream Draft or BIM sync breaks it;
 revisited after G7 lands, when the native shim path shows what it made
 redundant.  G4 (7.16) is sized and NOT built.  The sizings below are
-kept as the record and as the door back.
+kept as the record and as the door back.  **Audited 2026-09-08 (1.6):
+the cut line is the FORM PATH (kept: comm, control, dialogs, ui,
+selection, the models, the five form gates -- a document program with
+GUI access may need it later) against the WORKBENCH PATH (to drop:
+commands, workbenches, main window, status bar, docks, timers, the
+session document, doCommand, the InitGui runner, pivy); the drop is
+NOT executed, awaiting the ruling.**
 
 
 The user's framing: "since our final goal is to run everything Python in
@@ -4581,6 +4729,10 @@ Command line: `--grant <permission>[:<target>]`, `--policy <file>`.
 
 **Re-aimed 2026-09-08 (1.2).**  In order; each step ships alone.
 
+0. **The cut** (1.6, audited, NOT executed -- awaiting the ruling):
+   drop the workbench path of the guest GUI along the form/workbench
+   line, one commit, the form gates and the expression gtests green
+   after it.
 1. **The Proxy import restriction, native.**  `PropertyPythonObject::
    restoreObject` imports only a module already in `sys.modules` or
    one `importlib.util.find_spec` resolves inside a registered module
