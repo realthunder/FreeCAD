@@ -1227,6 +1227,28 @@ of the projection at all. It was never evidence about clip space. A
 mask comparison that does not try `flipud` first can align two lobes of
 a symmetric silhouette and read as confirmation.
 
+**The containment check is `scripts/render_contain.py`** (added 2026-09-08;
+the diagnosis above was done with an ad-hoc script that was never committed).
+It builds the geometry mask from the depth stage -- mode 1 is the normalized
+prepass depth on black, so "not background" is the mask -- and reports
+containment, `|current AND golden| / |current|`, under identity, `flipud`
+and, with `--shift N`, the best integer offset. The asymmetry is the point:
+a frame missing its far half is 100% contained and a mirrored one is not,
+so `--both` separates a clipped frame from a moved one. The mask is close
+to but not the sidecar's `geometryPixels` -- 106114 against 108191 on
+`refs/raster`, the difference being geometry that quantizes to black in the
+PNG -- so read it for placement, not as a pixel budget.
+
+```sh
+# the two blessed sets agree: identity 100.00%, flip 43.66%
+.conda/run.sh python scripts/render_contain.py \
+    tests/render/refs/raster tests/render/refs/raster-metal --both
+# what the mirror looked like: identity 43.66%, flip 100.00%
+```
+
+It prints the transforms in the order the warning above insists on, and
+exits non-zero when anything but identity fits better.
+
 A fourth reading worth naming as wrong: the sidecar's `avgColor` is not
 the PNG's mean, and it does not even track it in sign. It is measured on
 the engine's own buffer, and it sits about 10 levels under the written
