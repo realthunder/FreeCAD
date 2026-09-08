@@ -2547,6 +2547,85 @@ which is exactly where a backend's per-draw cost shows; the chess scene
 draws 15 shapes, where that cost disappears into the noise. Neither says
 anything about the other.
 
+### The 3D backend table, measured (2026-09-09)
+
+`scripts/render-bench.py` now reads the engine's own report instead of
+the clock: it attaches a Python console observer
+(`FreeCAD.Console.AttachObserver`) and frame-weights the `render frame`,
+`render cpu phases` and `RenderTiming` lines over the timed window. That
+is what made a 3D table possible on Windows, where a GUI-subsystem
+binary sends none of that to a pipe.
+
+Windows box (RTX 2000 Ada, GL 4.6 / Vulkan 1.3, driver as of
+2026-09-09), 17000 `Part::Box` objects built in session -- **33.7k
+draws, 877k primitives**, 1280x720, vsync off, one completion barrier
+per frame, camera orbiting. ms per frame:
+
+| Backend | submit | gpu | submitloop | pre | ours | frame |
+| --- | --- | --- | --- | --- | --- | --- |
+| OpenGL | **106.47** | 106.44 | 24.29 | 33.12 | 172.45 | **176.02** |
+| Vulkan | 10.56 | 2.47 | 23.06 | 31.83 | 74.78 | **77.42** |
+| Direct3D 11 | 11.05 | 77.41 | 23.63 | 31.84 | 75.70 | **78.68** |
+| Direct3D 12 | 12.53 | 12.11 | 25.93 | 35.50 | 84.41 | **87.25** |
+
+`submit` is bgfx's render thread issuing draw calls; `submitloop` and
+`pre` are our own C++ and are backend-independent, as the table shows
+(23-26 and 32-36 across all four).
+
+**The finding is the submission cost: OpenGL spends 10x what the other
+three do to issue the same 33.7k draws**, and that one term is the whole
+of its 2.3x slower frame. The ordering matches the vg table above --
+Vulkan first, D3D11 alongside it, D3D12 behind, GL last -- on a workload
+with nothing in common with it, which is worth more than either result
+alone.
+
+**The `gpu` column is not comparable across backends and should not be
+read as one.** Each is that backend's own timer-query semantics: GL's
+reads 106.44 against a 106.47 submit, i.e. it is timing the serialized
+driver thread rather than the GPU, and D3D11's 77.41 has the same smell.
+Only the CPU terms are like for like here.
+
+Two things this does NOT say. It is a **draw-count** workload (26
+primitives a draw, 1% of the viewport covered), so it prices submission
+and says nothing about fill or vertex throughput. And every backend but
+GL renders without reaching the screen (`BGFXView::blit` stands aside),
+so the composite is not in any of these numbers.
+
+### Two defects the harness found, one fixed
+
+**The blit's depth attachment, fixed 2026-09-09.**
+`BGFXView::blit()` wrapped bgfx's depth attachment with
+`glFramebufferRenderbuffer`, but bgfx backs a write-only D24S8 target
+with a **texture** on this driver -- and a texture name attached as a
+renderbuffer attaches nothing, so the framebuffer came out "incomplete,
+missing attachment" on every frame. The failure path then called
+`destroy()`, which drops the view's targets, its uploaded scene AND its
+programs. So every frame rebuilt the entire view: **~430 ms of a 450 ms
+frame**, and on a large model the scene never survived long enough to be
+drawn at all. It read as "the renderer is slow on this scene", which is
+why the instrument matters more than the fix: `render targets: rebuilt
+-- <reason>` now says which of the seven conditions asked for a rebuild
+(under `Render_DebugTiming`), and `FC_BGFX_TARGET_DEBUG=1` says who gave
+the targets back. Fixed by asking `glIsTexture` the same way the colour
+attachment already did, and by giving the failure path
+`dropBlitCache()` instead of `destroy()` -- a two-framebuffer cache is
+not a reason to throw away the scene.
+
+**A large RESTORED document publishes nothing, still open.** After that
+fix, a document of 17058 `Part::Feature` shapes opened from a `.FCStd`
+draws **14 draws / 2 primitives / 0 geometry pixels**, while the same
+17000 shapes built in session draw 33.7k. `RenderTiming` on the restored
+document reads `traverse=28ms delta=10ms flatten=2ms` with
+`entries=0 translate=0`: the Coin traversal runs and the render cache
+produces no entries, so nothing reaches the backend and Coin draws the
+view alone at 1-2 s a frame. Small restored documents are fine (200
+shapes, 399 draws), so it is not the restore path as such. Reproductions
+live beside the model: `MiSTerFlat.FCStd` (17058 flat features, empty),
+`Boxes.FCStd` (200 flat features, draws), `GroupOnly.FCStd` (200 shapes
+inside one `App::Part`, empty at 200 -- so a container has a threshold
+of its own). Not diagnosed further; it is the next thing to look at, and
+it is why the MiSTer Express assembly has no row in the table above.
+
 ### Route D -- Qt owns the device -- is the destination
 
 bgfx accepts an externally created device, so Qt can own it through
