@@ -1805,12 +1805,54 @@ public:
         return currentType != RendererType::Noop;
     }
 
+    /// bgfx::init does NOT fail when the backend it was asked for is
+    /// unavailable: it comes up on another one and says nothing. Every
+    /// report downstream then names the backend that was REQUESTED --
+    /// the capture sidecar's "backend" field among them -- while the
+    /// frames come from a different device, which is a golden blessed
+    /// on a device nobody can identify afterwards. Say it once, and
+    /// carry the real one from here on.
+    void adoptActualRenderer()
+    {
+        const RendererType::Enum actual = bgfx::getRendererType();
+        if (actual == currentType)
+            return;
+        RENDER_ERR("asked bgfx for " << bgfx::getRendererName(currentType)
+                   << ", it came up on " << bgfx::getRendererName(actual)
+                   << " -- that is what every frame is drawn on");
+        currentType = actual;
+    }
+
+    /// bgfx::init happens once per process, so the FIRST backend asked
+    /// for is the one the session gets and a later view asking for
+    /// another silently runs on the first. Worth saying out loud: the
+    /// startup warm-up brings a backend up before any 3D view exists
+    /// (Application.cpp), so a session that selects a different one
+    /// afterwards is not on the backend it believes it is.
+    void warnTypeLocked(RendererType::Enum want)
+    {
+        // Nothing is locked until a device is actually up: Noop means
+        // the next prepare() is free to bring bgfx up on whatever it is
+        // asked for, and a switch tears the old one down first
+        // (BGFXRendererLib::create -> shutdown).
+        if (!deviceUp() || want == currentType || want == typeLockWarned)
+            return;
+        typeLockWarned = want;
+        RENDER_ERR("bgfx is already running on "
+                   << bgfx::getRendererName(currentType) << " in this process; "
+                   << bgfx::getRendererName(want)
+                   << " needs a restart to select (bgfx::init is once per"
+                      " process)");
+    }
+    RendererType::Enum typeLockWarned = RendererType::Count;
+
 #ifdef FC_RENDERER_STANDALONE
     /// Standalone (no Qt): bgfx owns the native window/canvas handed in
     /// through setWindowHandle() — under Emscripten the "#canvas" CSS
     /// selector — and creates its own GL context on it.
     bool prepare(QOpenGLWidget *, RendererType::Enum type)
     {
+        warnTypeLocked(type);
         if (currentType == RendererType::Noop) {
             currentType = type;
             bgfx::Init init;
@@ -1831,6 +1873,7 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            adoptActualRenderer();
             resolveDeviceName();
         }
         return true;
@@ -1857,6 +1900,7 @@ public:
         // A device this build's shaders cannot run on, already reported.
         if (glUnsupported)
             return false;
+        warnTypeLocked(type);
         QElapsedTimer _warmClock;
         _warmClock.start();
         msContext = msDevice = 0;
@@ -2011,6 +2055,7 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            adoptActualRenderer();
             resolveDeviceName();
             msDevice = _warmClock.nsecsElapsed() / 1.0e6;
         }

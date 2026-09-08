@@ -2503,4 +2503,5 @@ void BGFXRendererLibP::shutdown()
     offscreen.reset();
 #endif
     currentType = RendererType::Noop;
+    typeLockWarned = RendererType::Count;
 }
