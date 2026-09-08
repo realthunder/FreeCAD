@@ -220,7 +220,7 @@ void DrawViewDetail::detailExec(const TopoDS_Shape& shape, DrawViewPart* dvp, Dr
         DetailParams params;
         params.progress = progress;
         params.output = output;
-        params.shape = m_saveShape;
+        params.shape = m_saveShape.getShape();
         params.viewAxis = m_viewAxis;
         params.dirDetail = dvp->Direction.getValue();
         gp_Pnt gpCenter = ShapeUtils::findCentroid(params.shape, params.dirDetail);
@@ -412,7 +412,7 @@ void DrawViewDetail::postHlrTasks()
         double newScale = autoScale();
         Scale.setValue(newScale);
         Scale.purgeTouched();
-        detailExec(m_saveShape, m_saveDvp, m_saveDvs);
+        detailExec(m_saveShape.getShape(), m_saveDvp, m_saveDvs);
     }
     overrideKeepUpdated(false);
 }

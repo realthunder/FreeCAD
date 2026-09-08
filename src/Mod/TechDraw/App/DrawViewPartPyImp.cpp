@@ -31,9 +31,11 @@
 #endif
 
 #include <Base/Console.h>
+#include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Base/Vector3D.h>
 #include <Base/VectorPy.h>
 
+#include <Mod/Part/App/PartPyCXX.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/TopoShapeEdgePy.h>
 #include <Mod/Part/App/TopoShapeVertexPy.h>
@@ -59,6 +61,123 @@ std::string DrawViewPartPy::representation() const
     return std::string("<DrawViewPart object>");
 }
 //TODO: gets & sets for geometry
+
+PyObject* DrawViewPartPy::getSourceShape(PyObject *args, PyObject *kwds)
+{
+    PyObject* fuse = Py_False;
+    static const std::array<const char *, 2> kwlist{"fuse", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|O!", kwlist, &PyBool_Type, &fuse)) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    return Py::new_reference_to(
+        Part::shape2pyshape(dvp->getSourceShape(Base::asBoolean(fuse))));
+}
+
+PyObject* DrawViewPartPy::getProjectionShape(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    return Py::new_reference_to(Part::shape2pyshape(dvp->getProjectionShape()));
+}
+
+PyObject* DrawViewPartPy::getEdgeNames(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    Py::List result;
+    for (auto& geom : dvp->getEdgeGeometry()) {
+        Py::Tuple entry(3);
+        entry.setItem(0, Py::String(geom ? geom->getHlrName() : std::string()));
+        entry.setItem(1, Py::String(geom ? geom->getSource3d() : std::string()));
+        entry.setItem(2, Py::Long(geom && geom->getRef3d() > 0 ? geom->getRef3d() : 0));
+        result.append(entry);
+    }
+
+    return Py::new_reference_to(result);
+}
+
+//! the (name, sourceNames) pair both of the name readbacks return
+static Py::Tuple namePair(const std::string& name, const std::vector<std::string>& sources)
+{
+    Py::List sourceList;
+    for (auto& source : sources) {
+        sourceList.append(Py::String(source));
+    }
+    Py::Tuple entry(2);
+    entry.setItem(0, Py::String(name));
+    entry.setItem(1, sourceList);
+    return entry;
+}
+
+PyObject* DrawViewPartPy::getVertexNames(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    Py::List result;
+    for (auto& vert : dvp->getVertexGeometry()) {
+        if (vert) {
+            result.append(namePair(vert->getHlrName(), vert->getSources3d()));
+        }
+        else {
+            result.append(namePair(std::string(), std::vector<std::string>()));
+        }
+    }
+
+    return Py::new_reference_to(result);
+}
+
+PyObject* DrawViewPartPy::getFaceNames(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    Py::List result;
+    for (auto& face : dvp->getFaceGeometry()) {
+        if (face) {
+            result.append(namePair(face->getHlrName(), face->getSources3d()));
+        }
+        else {
+            result.append(namePair(std::string(), std::vector<std::string>()));
+        }
+    }
+
+    return Py::new_reference_to(result);
+}
+
+PyObject* DrawViewPartPy::getGeometryName(PyObject *args)
+{
+    char* subName{nullptr};
+    if (!PyArg_ParseTuple(args, "s", &subName)) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    return Py::new_reference_to(Py::String(dvp->getGeometryName(std::string(subName))));
+}
+
+PyObject* DrawViewPartPy::getGeometryReference(PyObject *args)
+{
+    char* geometryName{nullptr};
+    if (!PyArg_ParseTuple(args, "s", &geometryName)) {
+        return nullptr;
+    }
+
+    DrawViewPart* dvp = getDrawViewPartPtr();
+    return Py::new_reference_to(Py::String(dvp->getGeometryReference(std::string(geometryName))));
+}
 
 PyObject* DrawViewPartPy::getVisibleEdges(PyObject *args)
 {

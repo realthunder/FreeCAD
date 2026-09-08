@@ -1066,7 +1066,7 @@ bool ShadedUnderlay::capture(DrawViewPart* dvp, QImage& image, QRectF& rect)
         derived = true;
     }
     else {
-        shape = dvp->getSourceShape();
+        shape = dvp->getSourceShape().getShape();
         if (shape.IsNull())
             return false;
         // The frame the projected geometry is computed in: the

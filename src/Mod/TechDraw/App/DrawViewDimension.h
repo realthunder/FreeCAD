@@ -91,6 +91,10 @@ enum DimensionType {
     App::PropertyAngle              ExtensionAngle;
 
     Part::PropertyTopoShapeList     SavedGeometry;
+    //! the name each reference's projected element carried when the reference
+    //! was last known good, one entry per entry of SavedGeometry.  Empty for a
+    //! 3D reference, and empty in a document written before names existed.
+    App::PropertyStringList         SavedNames;
 
     enum RefType{
             invalidRef,
@@ -196,6 +200,14 @@ protected:
 
     bool okToProceed();
     void updateSavedGeometry();
+    //! record the name each 2D reference's element carries now, so the
+    //! reference can be found again by name after the numbering moves
+    void updateSavedNames();
+    //! the first rung of the ladder: repoint any 2D reference whose stored
+    //! name is carried by a different element now.  Returns true if it
+    //! repointed anything.  Stateless -- it does nothing while the view has
+    //! not projected, and is simply asked again next time (sec 3.7).
+    bool fixByName();
     bool migrateSavedGeometryFrame();
     bool compareSavedGeometry();
     bool fixExactMatch();

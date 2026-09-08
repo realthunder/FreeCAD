@@ -441,12 +441,47 @@ void CosmeticExtension::refreshCLGeoms()
     addCenterLinesToGeom();
 }
 
+//! keep each format override on the edge it was applied to
+void CosmeticExtension::syncGeomFormatNames()
+{
+    auto dvp = dynamic_cast<TechDraw::DrawViewPart*>(getExtendedObject());
+    if (!dvp) {
+        return;
+    }
+
+    for (auto& gf : GeomFormats.getValues()) {
+        if (!gf) {
+            continue;
+        }
+        std::string subName = DrawUtil::makeGeomName("Edge", gf->m_geomIndex);
+        if (!gf->m_geomName.empty()) {
+            std::string found = dvp->getGeometryReference(gf->m_geomName);
+            if (!found.empty() && found != subName) {
+                //the edge carrying that name is numbered differently now
+                gf->m_geomIndex = DrawUtil::getIndexFromName(found);
+                subName = found;
+            }
+        }
+        //and record the name of whatever it points at, which is what gives a
+        //document written before names existed something to follow
+        std::string name = dvp->getGeometryName(subName);
+        if (!name.empty()) {
+            gf->m_geomName = name;
+        }
+    }
+}
+
 //add the center lines to geometry Edges list
 void CosmeticExtension::addCenterLinesToGeom()
 {
     //   Base::Console().Message("CE::addCenterLinesToGeom()\n");
     const std::vector<TechDraw::CenterLine*> lines = CenterLines.getValues();
     for (auto& cl : lines) {
+        //a centre line is built from faces, edges and vertices of the
+        //projection, all of them numbered; put the references back on the
+        //elements that carry their names before the line is rebuilt
+        cl->fixByName(getOwner());
+        cl->updateSavedNames(getOwner());
 //        TechDraw::BaseGeomPtr scaledGeom = cl->scaledGeometry(getOwner());
         TechDraw::BaseGeomPtr scaledGeom = cl->scaledAndRotatedGeometry(getOwner());
         if (!scaledGeom) {

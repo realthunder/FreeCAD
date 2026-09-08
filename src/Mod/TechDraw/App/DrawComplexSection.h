@@ -46,18 +46,21 @@ public:
     App::PropertyLink CuttingToolWireObject;
     App::PropertyEnumeration ProjectionStrategy;//Offset or Aligned
 
-    TopoDS_Shape makeCuttingTool(double dMax) override;
+    //! The complex tool is extruded from the user's profile object, so its
+    //! faces are named from that profile's own elements rather than by the
+    //! fixed scheme of a simple section (docs/TopoNamingEnhance.md sec 8.3).
+    Part::TopoShape makeCuttingTool(double dMax) override;
     gp_Ax2 getCSFromBase(const std::string sectionName) const override;
     bool isBaseValid() const override;
     TopoDS_Compound findSectionPlaneIntersections(const TopoDS_Shape& cutShape) override;
-    TopoDS_Shape prepareShape(const TopoDS_Shape& cutShape, double shapeSize) override;
-    TopoDS_Shape getShapeToPrepare() const override;
+    Part::TopoShape prepareShape(const Part::TopoShape& cutShape, double shapeSize) override;
+    Part::TopoShape getShapeToPrepare() const override;
     TopoDS_Shape getShapeToIntersect() override;
     gp_Pln getSectionPlane() const override;
     TopoDS_Compound alignSectionFaces(TopoDS_Shape faceIntersections) override;
     std::pair<Base::Vector3d, Base::Vector3d> sectionLineEnds() override;
 
-    void makeSectionCut(const TopoDS_Shape& baseShape) override;
+    void makeSectionCut(const Part::TopoShape& baseShape) override;
 
     void waitingForAlign(bool s) { m_waitingForAlign = s; }
     bool waitingForAlign(void) const { return m_waitingForAlign; }
@@ -71,6 +74,10 @@ public:
     bool boxesIntersect(TopoDS_Face& face, TopoDS_Shape& shape);
     std::vector<TopoDS_Face> faceShapeIntersect(const TopoDS_Face& face, const TopoDS_Shape& shape);
     TopoDS_Shape extrudeWireToFace(TopoDS_Wire& wire, gp_Dir extrudeDir, double extrudeDist);
+    //! The same extrusion, keeping the element names of the wire it sweeps.
+    //! The wire is moved to the start of the sweep, as the raw version does.
+    static Part::TopoShape extrudeWireToFace(Part::TopoShape& wire, gp_Dir extrudeDir,
+                                             double extrudeDist);
 
     struct ComplexParams {
         std::string featureName;
@@ -106,7 +113,12 @@ public:
 
     TopoDS_Wire makeProfileWire() const;
     static TopoDS_Wire makeProfileWire(App::DocumentObject* toolObj);
+    //! The profile wire with the profile object's own element names on it.
+    //! makeProfileWire is this without the names.
+    Part::TopoShape makeProfileShape() const;
+    static Part::TopoShape makeProfileShape(App::DocumentObject* toolObj);
     static TopoDS_Wire makeNoseToTailWire(TopoDS_Wire inWire);
+    static Part::TopoShape makeNoseToTailShape(const Part::TopoShape& inWire);
     static gp_Vec makeProfileVector(TopoDS_Wire profileWire);
     static bool isProfileObject(App::DocumentObject* obj);
     static bool isMultiSegmentProfile(App::DocumentObject* obj);
@@ -116,12 +128,13 @@ public:
 
 private:
     static gp_Dir getFaceNormal(TopoDS_Face& face);
+    static Part::TopoShape makeProfileFace(const Part::TopoShape& profileShape);
     bool validateOffsetProfile(TopoDS_Wire profile, Base::Vector3d direction, double angleThresholdDeg) const;
     std::pair<Base::Vector3d, Base::Vector3d> getSegmentEnds(TopoDS_Edge segment) const;
 
-    TopoDS_Shape m_toolFaceShape;
+    Part::TopoShape m_toolFaceShape;
     TopoDS_Shape m_alignResult;
-    TopoDS_Shape m_preparedShape;//saved for detail views
+    Part::TopoShape m_preparedShape;//saved for detail views
 
     static const char* ProjectionStrategyEnums[];
 

@@ -158,6 +158,16 @@ DrawViewPart::DrawViewPart(void)
                       App::PropertyType(App::Prop_Output | App::Prop_Hidden),
                       "Registration rect [x, y, w, h] of the underlay in view coordinates (mm)");
 
+    // The projection this view last made, kept so that reopening the
+    // document does not have to make it again.  Registered by hand because
+    // ADD_PROPERTY_TYPE assigns a default value first and a stored
+    // projection has none -- it starts empty and is filled by a projection.
+    ProjectedGeometry.setContainer(this);
+    propertyData.addProperty(static_cast<App::PropertyContainer*>(this), "ProjectedGeometry",
+                             &ProjectedGeometry, group,
+                             App::PropertyType(App::Prop_Output | App::Prop_Hidden),
+                             "The geometry the last projection produced");
+
     //initialize bbox to non-garbage
     bbox = Base::BoundBox3d(Base::Vector3d(0.0, 0.0, 0.0), 0.0);
 }
@@ -182,12 +192,12 @@ void DrawViewPart::abortMakeGeometry()
 
 //! returns a compound of all the shapes from the DocumentObjects in the Source &
 //!  XSource property lists
-TopoDS_Shape DrawViewPart::getSourceShape(bool fuse) const
+Part::TopoShape DrawViewPart::getSourceShape(bool fuse) const
 {
 //    Base::Console().Message("DVP::getSourceShape()\n");
     const std::vector<App::DocumentObject*>& links = getAllSources();
     if (links.empty()) {
-        return TopoDS_Shape();
+        return Part::TopoShape();
     }
     if (fuse) {
         return ShapeExtractor::getShapesFused(links);
@@ -200,7 +210,8 @@ TopoDS_Shape DrawViewPart::getSourceShape(bool fuse) const
 //! version of the shape?  Should we have a getShapeForSection?
 TopoDS_Shape DrawViewPart::getShapeForDetail() const
 {
-    return ShapeUtils::rotateShape(getSourceShape(true), getProjectionCS(), Rotation.getValue());
+    return ShapeUtils::rotateShape(getSourceShape(true), getProjectionCS(), Rotation.getValue())
+        .getShape();
 }
 
 bool DrawViewPart::getShapeForDetailFrame(gp_Trsf& frame) const
@@ -238,8 +249,9 @@ void DrawViewPart::addPoints()
 
 //    Base::Console().Message("DVP::addPoints()\n");
     // get all the 2d shapes in the sources, then pick through them for vertices.
-    std::vector<TopoDS_Shape> shapes = ShapeExtractor::getShapes2d(getAllSources());
-    for (auto& s : shapes) {
+    std::vector<Part::TopoShape> shapes = ShapeExtractor::getShapes2d(getAllSources());
+    for (auto& ts : shapes) {
+        const TopoDS_Shape& s = ts.getShape();
         if (s.ShapeType() == TopAbs_VERTEX) {
             gp_Pnt gp = BRep_Tool::Pnt(TopoDS::Vertex(s));
             Base::Vector3d vp(gp.X(), gp.Y(), gp.Z());
@@ -258,12 +270,11 @@ App::DocumentObjectExecReturn* DrawViewPart::execute(void)
     if (!keepUpdated()) {
         return DrawView::execute();
     }
-    TopoDS_Shape shape = getSourceShape();
-    if (shape.IsNull()) {
+    Part::TopoShape sourceShape = getSourceShape();
+    if (sourceShape.isNull()) {
         Base::Console().Message("DVP::execute - %s - Source shape is Null.\n", getNameInDocument());
         return DrawView::execute();
     }
-
     //make sure the XDirection property is valid. Mostly for older models.
     if (!checkXDirection()) {
         Base::Vector3d newX = getXDirection();
@@ -271,7 +282,7 @@ App::DocumentObjectExecReturn* DrawViewPart::execute(void)
         XDirection.purgeTouched();//don't trigger updates!
     }
 
-    partExec(shape);
+    partExec(sourceShape);
 
     return DrawView::execute();
 }
@@ -306,25 +317,30 @@ void DrawViewPart::onChanged(const App::Property* prop)
     DrawView::onChanged(prop);
 }
 
-void DrawViewPart::partExec(TopoDS_Shape& shape)
+//! the shape handed to HLR by the last projection, element map and all
+Part::TopoShape DrawViewPart::getProjectionShape() const
+{
+    if (!m_geometryObject) {
+        return Part::TopoShape();
+    }
+    return m_geometryObject->getProjectionShape();
+}
+
+void DrawViewPart::partExec(const Part::TopoShape& shape)
 {
     makeGeometryForShape(shape);
 }
 
 //! prepare the shape for HLR processing by centering, scaling and rotating it
-void DrawViewPart::makeGeometryForShape(TopoDS_Shape& shape)
+void DrawViewPart::makeGeometryForShape(const Part::TopoShape& shape)
 {
 //    Base::Console().Message("DVP::makeGeometryForShape() - %s\n", getNameInDocument());
 
-    // if we use the passed reference directly, the centering doesn't work.  Maybe the underlying OCC TShape
-    // isn't modified?  using a copy works and the referenced shape (from getSourceShape in execute())
-    // isn't used for anything anyway.
-    bool copyGeometry = true;
-    bool copyMesh = false;
-    BRepBuilderAPI_Copy copier(shape, copyGeometry, copyMesh);
-    TopoDS_Shape localShape = copier.Shape();
+    // the source shape must not be transformed in place, so the pipeline works
+    // on a copy.  makECopy is BRepBuilderAPI_Copy plus the element map.
+    Part::TopoShape localShape = shape.makECopy();
 
-    gp_Pnt gCentroid = ShapeUtils::findCentroid(localShape, getProjectionCS());
+    gp_Pnt gCentroid = ShapeUtils::findCentroid(localShape.getShape(), getProjectionCS());
     m_saveCentroid = DU::toVector3d(gCentroid);
     m_saveShape = centerScaleRotate(this, localShape, m_saveCentroid);
 
@@ -332,26 +348,26 @@ void DrawViewPart::makeGeometryForShape(TopoDS_Shape& shape)
 }
 
 //! Modify a shape by centering, scaling and rotating and return the centered (but not rotated) shape
-TopoDS_Shape DrawViewPart::centerScaleRotate(DrawViewPart* dvp, TopoDS_Shape& inOutShape,
-                                             Base::Vector3d centroid)
+Part::TopoShape DrawViewPart::centerScaleRotate(DrawViewPart* dvp, Part::TopoShape& inOutShape,
+                                                Base::Vector3d centroid)
 {
 //    Base::Console().Message("DVP::centerScaleRotate() - %s\n", dvp->getNameInDocument());
     gp_Ax2 viewAxis = dvp->getProjectionCS();
 
     //center shape on origin
-    TopoDS_Shape centeredShape = ShapeUtils::moveShape(inOutShape, centroid * -1.0);
+    Part::TopoShape centeredShape = ShapeUtils::moveShape(inOutShape, centroid * -1.0);
 
     inOutShape = ShapeUtils::scaleShape(centeredShape, dvp->getScale());
     if (!DrawUtil::fpCompare(dvp->Rotation.getValue(), 0.0)) {
         inOutShape = ShapeUtils::rotateShape(inOutShape, viewAxis,
                                            dvp->Rotation.getValue());//conventional rotation
     }
-    //    BRepTools::Write(inOutShape, "DVPScaled.brep");            //debug
+    //    BRepTools::Write(inOutShape.getShape(), "DVPScaled.brep");            //debug
     return centeredShape;
 }
 
 //! create a geometry object and trigger the HLR process in another thread
-void DrawViewPart::buildGeometryObject(TopoDS_Shape& shape, const gp_Ax2& viewAxis)
+void DrawViewPart::buildGeometryObject(const Part::TopoShape& shape, const gp_Ax2& viewAxis)
 {
     abortMakeGeometry();
 
@@ -410,6 +426,12 @@ void DrawViewPart::onHlrFinished(GeometryObjectPtr geometryObject)
 {
     m_geometryObject = geometryObject;
 
+    //the projection ran in a worker and could only record indices; turning
+    //them into element names reads the map, so it happens here, on the main
+    //thread (docs/TopoNamingEnhance.md sec 8.2)
+    m_geometryObject->nameEdgeGeometry();
+    m_geometryObject->nameVertexGeometry();
+
     //the last hlr related task is to make a bbox of the results
     bbox = geometryObject->calcBoundingBox();
 
@@ -460,6 +482,66 @@ void DrawViewPart::onHlrFinished(GeometryObjectPtr geometryObject)
                 params.progress->setCanceled(true);
             }));
     }
+    else {
+        //no faces are coming, so the geometry is complete here
+        captureGeometry();
+    }
+}
+
+//! keep what the projection produced, so that reopening the document draws
+//! this view without running the projection again
+void DrawViewPart::captureGeometry()
+{
+    if (!m_geometryObject || !Preferences::storeProjectedGeometry()) {
+        ProjectedGeometry.clear();
+        return;
+    }
+    ProjectedGeometry.capture(*m_geometryObject, m_saveCentroid);
+}
+
+//! put a stored projection back where a projection would have left it
+bool DrawViewPart::restoreStoredGeometry()
+{
+    if (ProjectedGeometry.isEmpty()) {
+        return false;
+    }
+
+    TechDraw::GeometryObjectPtr go(
+        std::make_shared<TechDraw::GeometryObject>(getNameInDocument(), this));
+    go->setIsoCount(IsoCount.getValue());
+    go->isPerspective(Perspective.getValue());
+    go->setFocus(Focus.getValue());
+    go->usePolygonHLR(CoarseView.getValue());
+    go->setScrubCount(ScrubCount.getValue());
+    if (!ProjectedGeometry.restoreInto(*go)) {
+        return false;
+    }
+
+    m_geometryObject = go;
+    m_saveCentroid = ProjectedGeometry.getCentroid();
+    bbox = m_geometryObject->calcBoundingBox();
+    Base::Console().Log("DVP - %s reused a stored projection: %d edges, %d vertices, %d faces\n",
+                        getNameInDocument(), ProjectedGeometry.countEdges(),
+                        ProjectedGeometry.countVertices(), ProjectedGeometry.countFaces());
+    return true;
+}
+
+//! whether the stored projection is still the projection this view would make
+bool DrawViewPart::canReuseStoredGeometry() const
+{
+    return m_geometryFromStore && !m_restoredOutOfDate && !isTouched();
+}
+
+void DrawViewPart::onDocumentRestored()
+{
+    // Read before anything can purge it.  A view written while it was out of
+    // date has to project again whatever it stored, and Document::afterRestore
+    // purges the touched flag as it goes -- in dependency order, so a view is
+    // purged before the page that has to make that decision is reached.
+    m_restoredOutOfDate = isTouched();
+    m_geometryFromStore = restoreStoredGeometry();
+
+    DrawView::onDocumentRestored();
 }
 
 //! run any tasks that need to been done after geometry is available
@@ -469,6 +551,11 @@ void DrawViewPart::postHlrTasks()
         return;
 
     //    Base::Console().Message("DVP::postHlrTasks() - %s\n", getNameInDocument());
+    //an edge's number moves whenever the projection gains or loses one, so a
+    //format override is carried by the edge's name and put back here, where
+    //the projected edges first exist
+    syncGeomFormatNames();
+
     //add geometry that doesn't come from HLR
     addCosmeticVertexesToGeom();
     addCosmeticEdgesToGeom();
@@ -511,6 +598,18 @@ void DrawViewPart::postFaceExtractionTasks()
 {
     // Some centerlines depend on faces so we could not add CL geometry before now
     addCenterLinesToGeom();
+
+    // A face is numbered by its area, so a hatch's reference into this view can
+    // only be checked now that the faces exist -- and it is checked by name,
+    // which the numbering does not disturb.
+    for (auto& hatch : getHatches()) {
+        hatch->fixByName();
+        hatch->updateSavedNames();
+    }
+    for (auto& hatch : getGeomHatches()) {
+        hatch->fixByName();
+        hatch->updateSavedNames();
+    }
 
     // Dimensions need to be recomputed because their references will be invalid
     //  until all the geometry (including centerlines dependent on faces) exists.
@@ -743,11 +842,21 @@ void DrawViewPart::onFacesFinished(std::shared_ptr<std::vector<FacePtr>> faces)
     waitingForFaces(false);
     m_progress.reset();
 
-    if (m_geometryObject)
+    if (m_geometryObject) {
         m_geometryObject->setFaces(std::move(*faces));
+        //the faces were found in a worker; naming them reads the edges, so it
+        //happens here on the main thread, against the same edges the face
+        //finder was given
+        m_geometryObject->nameFaceGeometry(m_geometryObject->getVisibleFaceEdges(
+            SmoothVisible.getValue(), SeamVisible.getValue()));
+    }
 
     // Now we can recompute Dimensions and do other tasks possibly depending on Face extraction
     postFaceExtractionTasks();
+
+    // the geometry is complete here -- HLR, the cosmetics postHlrTasks
+    // added, the faces and the centerlines that needed them
+    captureGeometry();
 
     abortMakeGeometry();
 
@@ -877,6 +986,116 @@ TechDraw::FacePtr DrawViewPart::getFace(std::string faceName) const
     return faces.at(iFace);
 }
 
+
+//! the name the element subName refers to carries, or nothing
+std::string DrawViewPart::getGeometryName(const std::string& subName) const
+{
+    int idx = DrawUtil::getIndexFromName(subName);
+    if (idx < 0) {
+        return {};
+    }
+    std::string geomType = DrawUtil::getGeomTypeFromName(subName);
+
+    if (geomType == "Edge") {
+        const BaseGeomPtrVector edges = getEdgeGeometry();
+        if (idx < int(edges.size()) && edges.at(idx)) {
+            return edges.at(idx)->getHlrName();
+        }
+    }
+    else if (geomType == "Vertex") {
+        const std::vector<TechDraw::VertexPtr> verts = getVertexGeometry();
+        if (idx < int(verts.size()) && verts.at(idx)) {
+            return verts.at(idx)->getHlrName();
+        }
+    }
+    else if (geomType == "Face") {
+        const std::vector<TechDraw::FacePtr> faces = getFaceGeometry();
+        if (idx < int(faces.size()) && faces.at(idx)) {
+            return faces.at(idx)->getHlrName();
+        }
+    }
+
+    return {};
+}
+
+//! the element that carries geometryName now, as a reference into this view
+std::string DrawViewPart::getGeometryReference(const std::string& geometryName) const
+{
+    if (geometryName.empty()) {
+        return {};
+    }
+
+    //the tag the name ends with says which pile to look in, so a name never
+    //matches an element of the wrong kind
+    if (geometryName.find(";HLRF:") != std::string::npos) {
+        const std::vector<TechDraw::FacePtr> faces = getFaceGeometry();
+        for (size_t i = 0; i < faces.size(); i++) {
+            if (faces.at(i) && faces.at(i)->getHlrName() == geometryName) {
+                return DrawUtil::makeGeomName("Face", int(i));
+            }
+        }
+    }
+    else if (geometryName.find(";HLRV:") != std::string::npos
+             || geometryName.find(";HLRC:") != std::string::npos) {
+        const std::vector<TechDraw::VertexPtr> verts = getVertexGeometry();
+        for (size_t i = 0; i < verts.size(); i++) {
+            if (verts.at(i) && verts.at(i)->getHlrName() == geometryName) {
+                return DrawUtil::makeGeomName("Vertex", int(i));
+            }
+        }
+    }
+    else if (geometryName.find(";HLR:") != std::string::npos) {
+        const BaseGeomPtrVector edges = getEdgeGeometry();
+        for (size_t i = 0; i < edges.size(); i++) {
+            if (edges.at(i) && edges.at(i)->getHlrName() == geometryName) {
+                return DrawUtil::makeGeomName("Edge", int(i));
+            }
+        }
+    }
+
+    return {};
+}
+
+//! one name per subName, empty where the element has none
+std::vector<std::string> DrawViewPart::geometryNamesOf(const App::DocumentObject* obj,
+                                                       const std::vector<std::string>& subNames)
+{
+    std::vector<std::string> names;
+    auto dvp = dynamic_cast<const DrawViewPart*>(obj);
+    for (auto& subName : subNames) {
+        names.push_back(dvp ? dvp->getGeometryName(subName) : std::string());
+    }
+    return names;
+}
+
+//! move every reference whose stored name belongs to another element now
+bool DrawViewPart::repointByName(const App::DocumentObject* obj,
+                                 const std::vector<std::string>& geometryNames,
+                                 std::vector<std::string>& subNames)
+{
+    auto dvp = dynamic_cast<const DrawViewPart*>(obj);
+    if (!dvp || geometryNames.size() != subNames.size()) {
+        //out of step with the references, so we can not tell which name
+        //belongs to which
+        return false;
+    }
+
+    bool moved{false};
+    for (size_t i = 0; i < subNames.size(); i++) {
+        if (geometryNames.at(i).empty()) {
+            continue;
+        }
+        std::string subName = dvp->getGeometryReference(geometryNames.at(i));
+        if (subName.empty() || subName == subNames.at(i)) {
+            //nothing carries that name now, or the reference already points at it
+            continue;
+        }
+        subNames.at(i) = subName;
+        moved = true;
+    }
+
+    return moved;
+}
 
 const std::vector<TechDraw::FacePtr> DrawViewPart::getFaceGeometry() const
 {
@@ -1201,12 +1420,12 @@ Base::Vector3d DrawViewPart::getOriginalCentroid() const { return m_saveCentroid
 
 Base::Vector3d DrawViewPart::getCurrentCentroid() const
 {
-    TopoDS_Shape shape = getSourceShape();
-    if (shape.IsNull()) {
+    Part::TopoShape shape = getSourceShape();
+    if (shape.isNull()) {
         return Base::Vector3d(0.0, 0.0, 0.0);
     }
     gp_Ax2 cs = getProjectionCS();
-    gp_Pnt gCenter = ShapeUtils::findCentroid(shape, cs);
+    gp_Pnt gCenter = ShapeUtils::findCentroid(shape.getShape(), cs);
     return DU::toVector3d(gCenter);
 }
 

@@ -35,6 +35,7 @@
 #include <gp_Pnt.hxx>
 
 #include <Base/Vector3D.h>
+#include <Mod/Part/App/TopoShape.h>
 
 //! a class to contain useful shape manipulations. these methods were originally
 //  in GeometryObject.
@@ -110,6 +111,25 @@ public:
     static bool edgesAreParallel(TopoDS_Edge edge0, TopoDS_Edge edge1);
 
     static bool isShapeReallyNull(TopoDS_Shape shape);
+
+    //! The same transformations, carrying the element map.  Each is the raw
+    //! version's transformation handed to makETransform, which copies the
+    //! shape when the transformation scales or mirrors and moves it when it
+    //! does not -- so the names survive centering, scaling, rotating and the
+    //! Y mirror that puts a shape into Qt's coordinate system.
+    static Part::TopoShape mirrorShapeVec(const Part::TopoShape& input,
+                                          const Base::Vector3d& inputCenter
+                                              = Base::Vector3d(0.0, 0.0, 0.0),
+                                          double scale = 1.0);
+    static Part::TopoShape mirrorShape(const Part::TopoShape& input,
+                                       const gp_Pnt& inputCenter = gp_Pnt(0.0, 0.0, 0.0),
+                                       double scale = 1.0);
+    static Part::TopoShape invertGeometry(const Part::TopoShape& input);
+    static Part::TopoShape scaleShape(const Part::TopoShape& input, double scale);
+    static Part::TopoShape rotateShape(const Part::TopoShape& input, const gp_Ax2& coordSys,
+                                       double rotAngle);
+    static Part::TopoShape moveShape(const Part::TopoShape& input, const Base::Vector3d& motion);
+    static Part::TopoShape centerShapeXY(const Part::TopoShape& input, const gp_Ax2& coordSys);
 };
 
 }
