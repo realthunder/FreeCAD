@@ -123,16 +123,8 @@ the backend picks. Metal can never take the lock path.
 2. **Startup ordering.** An RHI warm-up surface beside `GLSurfaceWarmup`, and a
    `warmup()`/`prepare()` path that can take a QRhi device instead of a
    QOpenGLWidget. Independent of the viewport, safe to land early.
-3. **The Coin on-screen audit. OPEN, and it gates step 4.** What does Coin still
-   draw once `canSkipInternal()` is true? Nine overlay feeds exist
-   (`View3DInventorViewer.cpp:615-624`, Foreground through DebugLabel); the
-   question is whether they cover everything. Neither session has instrumented a
-   running frame -- do not mistake the code reading for a measurement. The
-   instrument is already in the tree: `Render::FrameOutside::Coin` brackets the
-   traversal at `View3DInventorViewer.cpp:6591`, and the comment above it states
-   the thesis -- at cache mode 3 that traversal "should be compositing overlays
-   and nothing else. If it is a large share of the frame it is walking the whole
-   scene graph for no pixels -- a bug, not a cost."
+3. **The Coin on-screen audit. Cost measured (below); the pixel question is
+   still open, and that is what gates step 4.**
 4. **The QRhiWidget viewport.** Blocked on step 3.
 5. **Device adoption.** Last, because it is the part already proven by probe.
 
@@ -150,3 +142,51 @@ So the comment at `BGFXRendererP.h:1765` -- which attributes Metal showing
 nothing to `BGFXView::blit` standing aside -- is incomplete. That is true, and
 there is a second independent cause. Under this route bgfx needs no `nwh` at
 all, so the honest change is deleting the surface path rather than repairing it.
+
+## 7. The Coin audit, part one: what the residual traversal costs
+
+Run here 2026-09-08, `FC_BGFX_METAL=1` with render cache 3 and
+`RenderDebug_Timing` on, 1400x900 viewport, camera rotating every tick so no
+frame is a no-op, ~900 frames per run. The instrument is the tree's own:
+`Render::FrameOutside::Coin` brackets `inherited::actualRedraw()` at
+`View3DInventorViewer.cpp:6591`, and `FC_RENDERER_PARALLEL_GL=1` forces the
+internal pass back on, which is the control -- it is the one switch that makes
+`SoFCRenderer::render()` NOT return early on `canSkipInternal()`
+(`SoFCRenderer.cpp:2866-2873`).
+
+| Part::Box solids | coin, skip active | coin, internal pass forced on |
+|------------------|-------------------|-------------------------------|
+| 192              | 0.54 ms/frame     | 2.24 ms/frame                 |
+| 768              | 0.56 ms/frame     | 5.74 ms/frame                 |
+
+Two things follow, and the second is the one worth having.
+
+- **The skip is real and effective.** 4.1x at 192 solids, 10.2x at 768.
+- **The residual is FIXED, not proportional to the graph.** Four times the
+  geometry moves it by 0.02 ms. The forced-on column over the same step goes
+  2.24 -> 5.74, which is the positive control: the instrument does see
+  scene-dependent cost when there is any, so the flat column is a measurement
+  and not a broken probe.
+
+So the thesis in the comment above that bracket -- "if it is a large share of the
+frame it is walking the whole scene graph for no pixels -- a bug, not a cost" --
+does **not** hold here. At cache mode 3 the traversal is not walking the scene
+for pixels. That is the good outcome, and it means step 4 is not blocked on a
+performance bug.
+
+**What this does NOT establish, and why step 4 is still gated.** A fixed 0.55 ms
+is not zero, and cost is not the question Route D asks. Route D asks whether the
+residual traversal *draws*, because a QRhiWidget viewport has no GL context for
+it to draw into -- a traversal that costs nothing but emits one GL call is still
+fatal, and a traversal that costs 0.55 ms doing no drawing is harmless. Nothing
+here separates those. The remaining work is to count GL emission inside that
+bracket, not milliseconds.
+
+Scope of the run, so it is not read as broader than it is: one scene type
+(Part boxes), no workbench-specific scene graph, no selection highlight, no
+section planes, shadows or hidden-line, dpr 1. The `chrome` bucket (0.27-0.40
+ms) is separate from `coin` and is known GL work outside the traversal -- axis
+cross, NaviCube, dimensions -- which the nine overlay feeds exist to absorb.
+
+Incidental, and a separate defect: two of the four runs segfaulted at exit,
+after the data was collected and the frames were done. Not chased.
