@@ -1477,6 +1477,78 @@ View3DInventorViewer::View3DInventorViewer(const QtGLFormat& format, QWidget* pa
     init();
 }
 
+// The ViewerContext rows Quarter already answers. Forwarding only: the
+// qualified calls bind non-virtually, so none of these re-enters itself.
+SoNode* View3DInventorViewer::getSceneGraph() const
+{
+    return inherited::getSceneGraph();
+}
+
+SoRenderManager* View3DInventorViewer::getSoRenderManager() const
+{
+    return inherited::getSoRenderManager();
+}
+
+SoEventManager* View3DInventorViewer::getSoEventManager() const
+{
+    return inherited::getSoEventManager();
+}
+
+const SbViewportRegion& View3DInventorViewer::getViewportRegion() const
+{
+    return inherited::getViewportRegion();
+}
+
+float View3DInventorViewer::getPickRadius() const
+{
+    return inherited::getPickRadius();
+}
+
+double View3DInventorViewer::devicePixelRatio() const
+{
+    return inherited::devicePixelRatio();
+}
+
+QWidget* View3DInventorViewer::getWidget() const
+{
+    return inherited::getWidget();
+}
+
+QWidget* View3DInventorViewer::getGLWidget() const
+{
+    return inherited::getGLWidget();
+}
+
+QWidget* View3DInventorViewer::getWidget()
+{
+    return inherited::getWidget();
+}
+
+QWidget* View3DInventorViewer::getGLWidget()
+{
+    return inherited::getGLWidget();
+}
+
+bool View3DInventorViewer::isMouseButtonDown() const
+{
+    // One pointer on a desktop, so the application's answer is this view's
+    // answer. A mirror answers from the button bits its client sent instead,
+    // which is the whole reason the question is asked of a context.
+    return QApplication::mouseButtons() != Qt::NoButton;
+}
+
+void View3DInventorViewer::setFocusToView()
+{
+    setFocus();
+}
+
+View3DInventorViewer* View3DInventorViewer::fromEventCallback(const SoEventCallback* node)
+{
+    // Checked, because the user data is a ViewerContext and the other
+    // implementation of that is not a widget at all.
+    return dynamic_cast<View3DInventorViewer*>(ViewerContext::fromEventCallback(node));
+}
+
 void View3DInventorViewer::init()
 {
     pcEditingRoot = nullptr;

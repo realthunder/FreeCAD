@@ -1,0 +1,213 @@
+/***************************************************************************
+ *   Copyright (c) 2026 FreeCAD contributors                               *
+ *                                                                         *
+ *   This file is part of the FreeCAD CAx development system.              *
+ *                                                                         *
+ *   This library is free software; you can redistribute it and/or         *
+ *   modify it under the terms of the GNU Library General Public           *
+ *   License as published by the Free Software Foundation; either          *
+ *   version 2 of the License, or (at your option) any later version.      *
+ *                                                                         *
+ *   This library  is distributed in the hope that it will be useful,      *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU Library General Public License for more details.                  *
+ *                                                                         *
+ *   You should have received a copy of the GNU Library General Public     *
+ *   License along with this library; see the file COPYING.LIB. If not,    *
+ *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
+ *   Suite 330, Boston, MA  02111-1307, USA                                *
+ *                                                                         *
+ ***************************************************************************/
+
+#ifndef GUI_VIEWERCONTEXT_H
+#define GUI_VIEWERCONTEXT_H
+
+#include <FCGlobal.h>
+
+#include <Inventor/SbBox3f.h>
+#include <Inventor/SbRotation.h>
+#include <Inventor/SbVec2f.h>
+#include <Inventor/SbVec2s.h>
+#include <Inventor/SbVec3f.h>
+#include <Inventor/SbViewportRegion.h>
+#include <Inventor/SoType.h>
+#include <Inventor/nodes/SoEventCallback.h>
+
+class SoNode;
+class SoPath;
+class SoPickedPoint;
+class SoRenderManager;
+class SoEventManager;
+class SoEventCallback;  // NOLINT
+class SoFCRenderCacheManager;
+
+class QWidget;
+class QCursor;
+
+namespace Base {
+class Matrix4D;
+class Placement;
+}  // namespace Base
+
+namespace Render {
+class Renderer;
+}
+
+namespace Gui {
+
+class Document;
+class ViewProvider;
+class GLGraphicsItem;
+
+/** What an edit mode is allowed to ask of the view it is running in.
+ *
+ * The interaction code -- the sketcher's tools, the draggers, every
+ * ViewProvider edit mode -- was written against View3DInventorViewer, which
+ * is a QuarterWidget: a Qt widget owning a GL context. Nothing an edit mode
+ * actually needs from it requires either. It needs a camera, a viewport, a
+ * scene graph to pick against, the editing root to hang its geometry on, and
+ * a few numbers the input device supplies. Coin already separates those from
+ * drawing: SoRenderManager holds the camera and the viewport region and
+ * touches GL only inside render(), and SoEventManager runs
+ * SoHandleEventAction with no framebuffer anywhere.
+ *
+ * So this is that subset, named, with View3DInventorViewer as its desktop
+ * implementation and a per-client offscreen mirror as the other one
+ * (docs/ThinClient.md section 8.3). The edit entry points take this type,
+ * which is the whole point: an edit mode that runs here runs in a server
+ * process with no display.
+ *
+ * The last group is the residue -- the widget and GL calls the edit path
+ * still makes. They are declared here rather than left out so that call sites
+ * compile unchanged, and they answer null or do nothing by default. An edit
+ * mode that cannot work without a widget is then found by that null, in a
+ * place that can say so, rather than by a crash in a headless process.
+ */
+class GuiExport ViewerContext
+{
+public:
+    virtual ~ViewerContext();
+
+    /** @name Scene, camera and viewport */
+    //@{
+    virtual SoNode* getSceneGraph() const = 0;
+    virtual SoRenderManager* getSoRenderManager() const = 0;
+    virtual SoEventManager* getSoEventManager() const = 0;
+    virtual const SbViewportRegion& getViewportRegion() const = 0;
+    virtual Gui::Document* getDocument() = 0;
+    virtual SoFCRenderCacheManager* getRenderCacheManager() const = 0;
+    virtual Render::Renderer* getExternalRenderer() const = 0;
+    //@}
+
+    /** @name Values the input device supplies
+     *
+     * Not global state: a touch client wants a larger pick radius than a
+     * mouse, and the device pixel ratio is the client's, so both are asked of
+     * the context the event arrived through.
+     */
+    //@{
+    virtual float getPickRadius() const = 0;
+    virtual double devicePixelRatio() const = 0;
+    /// Whether any mouse button is down, as this view last saw it.
+    virtual bool isMouseButtonDown() const = 0;
+    //@}
+
+    /** @name Camera math -- all of it view-less */
+    //@{
+    virtual SbVec3f getViewDirection() const = 0;
+    virtual SbVec3f getCenterPointOnFocalPlane() const = 0;
+    virtual SbVec3f getPointOnFocalPlane(const SbVec2s& pnt) const = 0;
+    virtual SbVec3f getPointOnXYPlaneOfPlacement(const SbVec2s& pnt,
+                                                 const Base::Placement& plc) const = 0;
+    virtual SbVec3f getPointOnLine(const SbVec2s& pnt, const SbVec3f& axisCenter,
+                                   const SbVec3f& axis) const = 0;
+    virtual SbVec2s getPointOnViewport(const SbVec3f& pnt) const = 0;
+    virtual SbVec2f screenCoordsOfPath(SoPath* path) const = 0;
+    virtual void getNearPlane(SbVec3f& rcPt, SbVec3f& rcNormal) const = 0;
+    virtual float getMaxDimension() const = 0;
+    virtual bool getSceneBoundBox(SbBox3f& box) const = 0;
+    virtual void setCameraOrientation(const SbRotation& orientation,
+                                      bool moveToCenter = false) = 0;
+    //@}
+
+    /** @name Picking */
+    //@{
+    virtual SoPickedPoint* getPointOnRay(const SbVec2s& pos, const ViewProvider* vp) const = 0;
+    virtual SoPickedPoint* getPointOnRay(const SbVec3f& pos, const SbVec3f& dir,
+                                         const ViewProvider* vp) const = 0;
+    virtual void appendDetailPath(SoPath* path, ViewProvider* vp) = 0;
+    //@}
+
+    /** @name Edit mode */
+    //@{
+    virtual void setEditing(bool edit) = 0;
+    virtual bool isEditing() const = 0;
+    virtual void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum) = 0;
+    virtual bool isEditingViewProvider() const = 0;
+    virtual void resetEditingViewProvider() = 0;
+    virtual void setupEditingRoot(SoNode* node = nullptr,
+                                  const Base::Matrix4D* mat = nullptr) = 0;
+    virtual void resetEditingRoot(bool updateLinks = true) = 0;
+    virtual void setEditingTransform(const Base::Matrix4D& mat) = 0;
+    //@}
+
+    /** @name Event delivery and selection mode */
+    //@{
+    virtual void addEventCallback(SoType eventtype, SoEventCallbackCB* cb,
+                                  void* userdata = nullptr) = 0;
+    virtual void removeEventCallback(SoType eventtype, SoEventCallbackCB* cb,
+                                     void* userdata = nullptr) = 0;
+    virtual void setRedirectToSceneGraph(bool redirect) = 0;
+    virtual void setSelectionEnabled(bool enable) = 0;
+    virtual bool isSelectionEnabled() const = 0;
+    virtual bool isSelecting() const = 0;
+    //@}
+
+    /** @name The widget residue
+     *
+     * No answer without a widget, and none needed: these draw or focus, and a
+     * mirror does neither. The DOM layer takes over these surfaces
+     * (docs/ThinClient.md section 8.7).
+     */
+    //@{
+    virtual QWidget* getWidget() const
+    {
+        return nullptr;
+    }
+    virtual QWidget* getGLWidget() const
+    {
+        return nullptr;
+    }
+    virtual void redraw(bool force = false)
+    {
+        (void)force;
+    }
+    virtual void addGraphicsItem(GLGraphicsItem*)
+    {}
+    virtual void removeGraphicsItem(GLGraphicsItem*)
+    {}
+    virtual void setEditingCursor(const QCursor&)
+    {}
+    virtual void setFocusToView()
+    {}
+    //@}
+
+    /** The context an event callback node was installed by.
+     *
+     * The node's user data is always a ViewerContext, never a derived
+     * pointer: a pointer to a multiply-inherited object is not the same
+     * address as a pointer to its base, so storing one and casting to the
+     * other through void* reads the wrong bytes. Everything that wants the
+     * desktop viewer back asks View3DInventorViewer::fromEventCallback,
+     * which is a checked cast from this one.
+     */
+    static ViewerContext* fromEventCallback(const SoEventCallback* node)
+    {
+        return node ? static_cast<ViewerContext*>(node->getUserData()) : nullptr;
+    }
+};
+
+}  // namespace Gui
+
+#endif  // GUI_VIEWERCONTEXT_H

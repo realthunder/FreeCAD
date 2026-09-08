@@ -48,6 +48,7 @@
 #include "InventorBase.h"
 #include "Inventor/SoFCDisplayModeElement.h"
 #include "View3DInventorSelection.h"
+#include "ViewerContext.h"
 #include "Quarter/SoQTQuarterAdaptor.h"
 
 class SoTranslation;
@@ -120,7 +121,9 @@ class AbstractMouseSelection;
 /** GUI view into a 3D scene provided by View3DInventor
  *
  */
-class GuiExport View3DInventorViewer : public Quarter::SoQTQuarterAdaptor, public SelectionObserver
+class GuiExport View3DInventorViewer : public Quarter::SoQTQuarterAdaptor,
+                                      public SelectionObserver,
+                                      public ViewerContext
 {
     using inherited = Quarter::SoQTQuarterAdaptor;
     Q_OBJECT
@@ -189,6 +192,32 @@ public:
     ~View3DInventorViewer() override;
 
     void init();
+
+    /** @name ViewerContext rows that Quarter already answers
+     *
+     * These exist on QuarterWidget and SoQTQuarterAdaptor as plain members.
+     * Redeclaring them here is what makes them overrides of the ViewerContext
+     * virtuals -- and what keeps the name unambiguous, since it is now
+     * reachable through two bases. The bodies forward; there is no behaviour
+     * here.
+     */
+    //@{
+    SoNode* getSceneGraph() const override;
+    SoRenderManager* getSoRenderManager() const override;
+    SoEventManager* getSoEventManager() const override;
+    const SbViewportRegion& getViewportRegion() const override;
+    float getPickRadius() const override;
+    double devicePixelRatio() const override;
+    QWidget* getWidget() const override;
+    QWidget* getGLWidget() const override;
+    /// Non-const overloads Quarter offers, kept reachable past the redeclaration above.
+    QWidget* getWidget();
+    QWidget* getGLWidget();
+    /// Whether a mouse button is down, from this view's own event handling.
+    bool isMouseButtonDown() const override;
+    void setFocusToView() override;
+    static View3DInventorViewer* fromEventCallback(const SoEventCallback* node);
+    //@}
 
     /// Observer message from the Selection
     void onSelectionChanged(const SelectionChanges &Reason) override;
