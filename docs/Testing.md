@@ -13,9 +13,9 @@ as "the primary tree"; that was wrong.
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
-| C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
+| C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06, re-verified 2026-09-08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **478 of 478 passing** (2026-09-07), 1 disabled -- see "C++ on macOS" |
-| Python on Windows | **2590 tests** (2026-09-07), 7 failures + 2 errors, 49 skipped, 6 expected failures -- three Windows-only defects, see "Python on Windows" |
+| Python on Windows | **2590 tests** (2026-09-07, re-verified 2026-09-08), 7 failures + 2 errors, 49 skipped, 6 expected failures -- three Windows-only defects, see "Python on Windows" |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -248,6 +248,23 @@ First run there is 2026-09-07, on `build/win-relwithdebinfo-801` with
 `BUILD_FEM=OFF`: **2590 tests, 7 failures and 2 errors**, 49 skipped, 6
 expected failures. Three things had to be true first.
 
+Re-run 2026-09-08 after a pull: **2590 tests in 384 s, the same 7 failures
+and 2 errors**, same 49 skipped and 6 expected failures. The nine are the
+same nine listed below, so that count is a stable baseline to diff against.
+
+**One run in two hung and never finished**, in
+`CAMTests.TestUpdateDocumentTools.test_both_presets_and_geometry_differing_is_one_row`
+-- 38 threads all in `Wait`, cumulative CPU flat, no output for nine
+minutes. It is *not* the endpoint-security stall of `DevEnvironment.md`
+(that is one thread and a process that never started; this one had been
+running for minutes and had 38). The module passes alone in 10.8 s
+(`FreeCADCmd -t CAMTests.TestUpdateDocumentTools`, 17 tests OK) and the
+immediate re-run of the whole suite completed, so it is an ordering
+interaction or a flake and not a defect in that test. `AssetManager.add`
+goes through `asyncio.run` on a ProactorEventLoop, which is where to look
+if it recurs. Recorded so the next person sees a known flake rather than a
+new hang; if it becomes reproducible it deserves its own entry.
+
 **A pseudo-console, which is what `script -qec` provides on Linux.** The same
 `CAMTests.TestCAMSanity` case named in section 1 leaves stdout closed here
 too; with a file or a pipe on the far end, the unittest runner's next
@@ -447,6 +464,35 @@ Windows build to be quietly wrong rather than loudly broken.
   Worth doing when a second Windows executable wants bgfx; today
   exactly one does, and it does not need to share.
 
+
+#### Which backends the Windows smokes can actually use
+
+Re-verified 2026-09-08 on the second Windows box (NVIDIA RTX 2000 Ada,
+driver 566.24, Intel RaptorLake-S iGPU). Both smokes pass on **Vulkan**
+and on **Direct3D 11**, band for band, at 51119 ink pixels -- one more
+than the 51118 recorded above, and the same on both backends, so it is
+a change in the scene and not a backend divergence.
+
+**`--renderer gl` is not usable headless on Windows.** It does not fail
+with a clean message: bgfx emits one `Failed to create OpenGL context.
+wglGetProcAddress(...)` fatal *per entry point* and keeps going, so the
+tool floods the console and looks like a hang. It is not one -- the
+process burns a full core throughout, which is how to tell it apart
+from this box's endpoint-security stall, where CPU stays at zero (see
+`DevEnvironment.md`). WGL needs a window and a pixel format, and there
+is no offscreen path to one the way Linux has with EGL. Use `vk`, or
+leave it on auto and get Direct3D 11. This is only about the *headless*
+tool: the interactive compositor takes its GL context from Qt, and that
+is a real window.
+
+Cycles on this box enumerates all three devices and renders on each --
+`CUDA` and `OPTIX` on the RTX 2000 Ada, `CPU` on the i7-13850HX -- via
+`Gui.cyclesDevices()` and `Gui.cyclesRenderTest(path, w, h, samples,
+device)`. Both need the **real** `FreeCADGui`: under `FreeCADCmd` the
+imported `FreeCADGui` is the console stub and carries neither method,
+and `setupWithoutGUI()` does not add them -- `Gui.showMainWindow()`
+does. Run it through `..\tools\run-cycles.cmd`, or `CUDA_BIN_PATH` is
+unset and the CUDA device silently does not appear at all.
 
 ### The GUI tests (`tests/gui/`)
 

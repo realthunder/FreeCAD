@@ -1780,6 +1780,15 @@ launch, poll the log's mtime, and if it has not moved for 150 s (configure) or
 to descendants of the attempt: killing every `cmake.exe` and `ninja.exe` on
 the box takes out whatever else it is building.
 
+**Stamp the log at the start of every attempt.** The age of the log is the
+only stall signal these have, and the log is reused across runs -- so a log
+left over from yesterday is already past the threshold before the new attempt
+has written its first line, and the very first poll kills a perfectly healthy
+process. That is not theoretical: it cost three configure attempts here on
+2026-09-08, each reported as `stalled 127,349s` -- a 35-hour-old log, not a
+stall. Both scripts now set `(Get-Item $Log).LastWriteTime = Get-Date` before
+launching. Neither script is in version control, so this is the record of it.
+
 Do not reach for these on a box without the problem; a stall watchdog will
 eventually misfire on a genuinely slow link.
 
