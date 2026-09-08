@@ -599,6 +599,43 @@ Three rules make it fast, and each one is a lesson from 8.1:
    traverses on change, the writer is woken on push. A single 200 ms tick or debounce costs
    more than the entire budget below.
 
+### 8.2a Ruling (2026-09-08): preselection stays local, selection round-trips
+
+The split above left it open which of hover and click cross the wire. The ruling is that
+they are not the same kind of event and must not get the same treatment:
+
+- **Preselection never leaves the client.** Hover resolves and draws in the browser, as it
+  already does -- the WASM viewer picks per face locally and tints on its own frame. No
+  uplink frame, no mirror work, no echo, and nothing to reconcile.
+- **Selection round-trips.** A click goes up as the `'P'` pick the wire already carries, the
+  server makes the authoritative selection, and the result comes back as the delta that
+  8.1 measured at 2.9 ms headless.
+
+The reason is frequency against authority. Hover is the high-rate event -- a pointer moves
+at the client's frame rate, so mirroring it means an uplink frame and a delta per frame,
+and every one of them is in front of a highlight the client could have drawn itself in
+microseconds. Selection is at human click rate and is the one that has to be *right*: it
+feeds the tree view, the property panel, the task panels and the roughly 1500 call sites
+behind `Gui::Selection()`, none of which the browser can reproduce. So the cheap frequent
+thing stays local and the rare authoritative thing goes to the server, which is the
+opposite assignment from VNC and the reason this loop can beat it.
+
+This tightens rule 1 of 8.2: **navigation and preselection never leave the client.** It
+also removes work from three places below -- 8.4's per-client instance is no longer needed
+to keep two clients' hovers apart, 8.5's client-tagged hilite delta has no preselect to
+carry in the first cut, and stage 3 of 8.9 is no longer a hover milestone.
+
+**Where the ruling stops, and it is worth being honest about it.** In view mode a
+preselect is only a highlight, so computing it locally costs nothing. Inside an edit mode
+it is not: the sketcher's preselection is part of the tool state machine -- it decides what
+a drag grabs, what snapping and autoconstraints offer, and what the cursor readout says --
+and the browser has none of that logic. So in edit mode the pointer does ride the `'E'`
+stream and the mirror does preselect, as 8.2 describes. The ruling is therefore about the
+view-mode hover, which is where the traffic is; the edit-mode case is bounded because edit
+mode is one object with small deltas, and confirming that bound is part of stage 4, not an
+assumption to build on.
+
+
 ### 8.3 The mirror viewer: pure offscreen Coin, no widget, no GL
 
 The claim to verify by building it: a client's viewer can be mirrored with Coin alone --
@@ -647,7 +684,9 @@ returns one static object, reached through the `Gui::Selection()` accessor from 
 and everything the sketcher does with picks. `MultiDocServe.md` section 7 took that as a
 fact and defined a room around it: one viewer's pick changes what every viewer sees. With a
 mirror per client, two clients hovering would fight over one preselection, and a sketcher
-drag in one browser would drive the other's highlights.
+drag in one browser would drive the other's highlights. (8.2a removes the first half of that:
+hover no longer reaches the mirror. The second half stands -- an in-edit pick is still the
+mirror's, and that is what the stack is for now.)
 
 The simple start is to keep the accessor and make the instance **current** rather than
 unique. `_pcSingleton` becomes the top of a stack of instances; a scoped guard pushes a
@@ -695,7 +734,9 @@ exposed to the tunnel or the gateway.
   change-driven traversal instead. Whether the overlay feed already deltas that finely is
   the one open measurement in this section.
 - Hilite deltas need a **client tag**: a mirror's preselection goes to its own client only;
-  the room selection goes to everyone, as today.
+  the room selection goes to everyone, as today. Under 8.2a the first cut has no preselect
+  delta to tag at all -- view-mode hover never reaches the server -- so the tag is only
+  wanted once edit-mode preselection starts riding the `'E'` stream.
 
 ### 8.6 Reconciliation: prediction, then an idempotent echo
 
@@ -749,10 +790,12 @@ Each step is a standalone landing with the desktop as its regression oracle.
 2. **The selection stack.** Current-instance accessor, the scoped guard, observers pinned
    to the room instance. Again no behavior change on the desktop, where the stack has one
    entry.
-3. **The mirror, hover only.** A `MirrorViewer` per connection in the headless source; `'C'`
-   and `'E'` frames; the mirror's preselect published back as a client-tagged hilite delta
-   and compared on screen against the local hover. This is the first user-visible latency
-   number for the full loop.
+3. **The mirror, selection only** (was "hover only", changed by 8.2a). A `MirrorViewer` per
+   connection in the headless source and the `'C'` camera frame; a click arrives as the
+   `'P'` pick the wire already carries, is resolved against the mirror's camera rather than
+   the source's, and commits into the room selection. Hover is not in this stage and never
+   becomes a wire event in view mode. This is the first user-visible latency number for the
+   full loop, and 8.1's 2.9 ms is its floor.
 4. **Edit mode.** `setEdit` under the mirror, the editing root captured by the change-driven
    traversal, keys streamed; a sketch drawn and dragged from a phone.
 5. **On-view parameters in the DOM** and whatever the widget residue of 8.3 turned up.
