@@ -724,6 +724,33 @@ today), while preselection and in-edit picks stay in the mirror's own instance. 
 options, per-client observers or a merged view for collaboration, are open, and this
 layering does not close them.
 
+**Landed 2026-09-09 (stage 2 of 8.9).** `Gui::Selection()` is unchanged as an
+expression and now resolves to the current instance; `Gui::SelectionRoom()` is the new
+accessor for the room, and `Gui::SelectionScope` is the guard that makes an instance
+current for its own dynamic extent. Scopes nest and unwind innermost first; the room is
+built on demand and is the only instance `destruct()` owns, an instance a scope pushed
+belonging to whoever built it. Nothing on the desktop opens a scope, so there the
+current instance is the room and selection behaves exactly as before.
+
+Pinning the observers cost twenty lines and no design: `SelectionObserver::
+attachSelection`/`detachSelection` name the room instead of the current instance, and so
+do the eighteen `Attach`/`Detach` sites that use `Base::Subject` directly (nine task
+panels and dialogs) plus the two places that reach a selection signal without an
+observer at all -- the FEM post-object observer, and the tree view's refresh poke at the
+property editor. Every one of them is room chrome, so every one of them was a
+one-word change.
+
+The one thing the extraction turned up that was not in the design: the constructor
+subscribes to `App`'s `signalDeletedObject` and threw the connection away. That is
+harmless for an instance that lives as long as the process and a use-after-free for a
+mirror's, which dies with its connection, so the connection is now held as a
+`scoped_connection`. `tests/src/Gui/SelectionStack.cpp` is the unit regression set --
+accessor, nesting, per-instance state, observer pinning (including an observer built
+inside a scope, which is the case that would otherwise go deaf when the scope closed),
+and that deleted-object slot. `tests/gui/selection-room-panels.py` is the desktop
+oracle: a real selection reaching a real tree view and property editor, which is what
+stage 3 will re-read to say that a mirror's picks do **not** land there.
+
 ### 8.5 The wire
 
 Both directions ride the existing `/scene` socket, so ordering is free and nothing new is
@@ -803,9 +830,10 @@ Each step is a standalone landing with the desktop as its regression oracle.
 1. **The viewer context.** Extract the view-less base from `View3DInventorViewer`, retype
    the view-provider entry points, kill the two desktop-state leaks in 8.3. No behavior
    change; the whole test set and a desktop sketch session are the check.
-2. **The selection stack.** Current-instance accessor, the scoped guard, observers pinned
+2. ~~**The selection stack.** Current-instance accessor, the scoped guard, observers pinned
    to the room instance. Again no behavior change on the desktop, where the stack has one
-   entry.
+   entry.~~ Done 2026-09-09: the API and what pinning the observers actually cost are at
+   the end of 8.4.
 3. **The mirror, selection only** (was "hover only", changed by 8.2a). A `MirrorViewer` per
    connection in the headless source and the `'C'` camera frame; a click arrives as the
    `'P'` pick the wire already carries, is resolved against the mirror's camera rather than
