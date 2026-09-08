@@ -766,6 +766,12 @@ static void writeRenderDumpSidecar(View3DInventor *view,
         st[QStringLiteral("height")] = stats->height;
         st[QStringLiteral("geometryPixels")] =
             double(stats->geometryPixels);
+        // Recorded in the sidecar so a blessing can be refused
+        // rather than merely regretted: a non-zero count means the
+        // shading produced NaN or infinity, and the capture holds
+        // arbitrary pixels wherever it did.
+        st[QStringLiteral("nonFiniteChannels")] =
+            double(stats->nonFiniteChannels);
         QJsonArray avg;
         avg.append(stats->avgColor[0]);
         avg.append(stats->avgColor[1]);
@@ -1239,6 +1245,8 @@ PyObject* View3DInventorPy::getRenderStats(PyObject *args, PyObject *kwds)
         dict.setItem("height", Py::Long(stats.height));
         dict.setItem("geometryPixels",
                      Py::Long(long(stats.geometryPixels)));
+        dict.setItem("nonFiniteChannels",
+                     Py::Long(long(stats.nonFiniteChannels)));
         Py::Tuple avg(3);
         avg.setItem(0, Py::Float(stats.avgColor[0]));
         avg.setItem(1, Py::Float(stats.avgColor[1]));

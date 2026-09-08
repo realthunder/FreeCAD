@@ -1095,6 +1095,15 @@ struct RenderStats {
     /// Average color of the geometry pixels, 0-255 per channel;
     /// -1 when no geometry pixel exists.
     float avgColor[3] = {-1.0f, -1.0f, -1.0f};
+    /// Channels the capture read back as NaN or infinity, forced to 0
+    /// so the image is deterministic. NOT a curiosity: a frame that
+    /// carries one is a frame whose shading blew up, and the pixel it
+    /// lands on is arbitrary -- so a capture with a non-zero count is
+    /// not fit to bless, and a diff against one is measuring the wrong
+    /// thing. Zero on every backend that is behaving; -1 when the
+    /// capture was not the float path (an RGBA8 readback cannot carry
+    /// a NaN).
+    long long nonFiniteChannels = -1;
 
     /// Backend handle-pool occupancy at the last completed frame, each
     /// beside the pool it is measured against (-1 where the backend

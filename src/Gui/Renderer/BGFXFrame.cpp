@@ -6534,6 +6534,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // bottom-up", which is true of GL and of nothing else.
         const bool flip = bgfx::getCaps()->originBottomLeft;
         std::vector<unsigned char> rgba(n * 4);
+        long long nonFinite = 0;
         for (uint16_t y = 0; y < capturePixH; ++y) {
             const size_t sy = flip ? size_t(capturePixH - 1 - y) : y;
             unsigned char *dst = &rgba[size_t(y) * capturePixW * 4];
@@ -6543,9 +6544,24 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 for (uint16_t x = 0; x < capturePixW; ++x)
                     for (int c = 0; c < 4; ++c) {
                         const float v = bx::halfToFloat(src[x * 4 + c]);
+                        // NaN walks straight through min/max -- every
+                        // comparison against it is false, so both return
+                        // it -- and std::lround(NaN) is undefined, which
+                        // turned a NaN channel into an arbitrary byte.
+                        // Measured: a shader NaN reached a golden as a
+                        // saturated primary and read as a shading
+                        // difference rather than as the NaN it was. Zero
+                        // is what the clamp was already asking for.
+                        float f;
+                        if (v == v && v - v == 0.0f) {
+                            f = std::min(std::max(v, 0.0f), 1.0f);
+                        }
+                        else {
+                            f = 0.0f;
+                            ++nonFinite;
+                        }
                         dst[x * 4 + c] = (unsigned char)
-                            std::lround(std::min(std::max(v, 0.0f), 1.0f)
-                                        * 255.0f);
+                            std::lround(f * 255.0f);
                     }
             }
             else {
@@ -6578,6 +6594,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
         lastStats.height = capturePixH;
         lastStats.temporalSamples = view->accumFrames;
         lastStats.geometryPixels = ng;
+        lastStats.nonFiniteChannels = captureHdr ? nonFinite : -1;
+        // Said out loud as well as recorded: this is a broken frame,
+        // and the capture that carries it should not become a golden.
+        if (nonFinite)
+            RENDER_ERR("capture read back " << nonFinite
+                       << " non-finite channels (forced to 0) -- the"
+                          " shading produced NaN or infinity, so this"
+                          " frame is not fit to bless");
         lastStats.avgColor[0] = ng ? float(r) / float(ng) : -1.0f;
         lastStats.avgColor[1] = ng ? float(g) / float(ng) : -1.0f;
         lastStats.avgColor[2] = ng ? float(b) / float(ng) : -1.0f;
