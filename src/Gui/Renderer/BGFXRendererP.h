@@ -1739,6 +1739,21 @@ assembleMediumVariant(const char *body,
 class BGFXRendererLibP {
 public:
     BGFXRendererLibP() {
+#ifndef FC_RENDERER_STANDALONE
+        // Vulkan, opt-in for the same reason Metal is below: it renders
+        // and it CAPTURES, but it does not yet reach the screen.
+        // BGFXView::blit composites by wrapping bgfx's attachments in a
+        // GL framebuffer, so it stands aside on any non-GL backend and
+        // Coin draws the viewport -- a Vulkan session looks like a
+        // renderer that draws nothing. Frame capture is portable
+        // (bgfx::readTexture), which is what the golden render tests
+        // gate on, so the backend is verifiable without a viewport;
+        // offering it in the UI's backend list before the composite
+        // follows would read as a broken renderer rather than an
+        // unfinished one.
+        if (getenv("FC_BGFX_VULKAN"))
+            typeMap["bgfx - Vulkan"] = RendererType::Vulkan;
+#endif
 #if defined(FC_OS_MACOSX) && !defined(FC_RENDERER_STANDALONE)
         // Metal is the only backend that can run this renderer on
         // macOS: Apple caps the compatibility profile Coin needs at

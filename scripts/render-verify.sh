@@ -172,6 +172,15 @@ COMMON_ENV=(
     ${SETTLE:+RV_SETTLE="$SETTLE"}
 )
 [ "$VIEWER" = 1 ] && COMMON_ENV+=(RV_VIEWER=1 FC_BGFX_SERVE_SCENE=$PORT)
+# Vulkan is a runtime opt-in like Metal (BGFXRendererLibP): it renders
+# and captures, but BGFXView::blit cannot composite a non-GL texture, so
+# it is kept out of the backend list until the desktop composite follows.
+# Naming it in FC_RENDER_BACKEND is what asks for it -- the registration
+# and the selection cannot then get out of step, which on macOS they can
+# (FC_BGFX_METAL registers, the scene script selects).
+case "${FC_RENDER_BACKEND:-}" in
+    *Vulkan*) COMMON_ENV+=(FC_BGFX_VULKAN=1 FC_RENDER_BACKEND="$FC_RENDER_BACKEND");;
+esac
 if [ "$CYCLES" = 1 ]; then
     COMMON_ENV+=(RV_CYCLES=1
         ${CYCLES_SAMPLES:+RV_CYCLES_SAMPLES="$CYCLES_SAMPLES"}
