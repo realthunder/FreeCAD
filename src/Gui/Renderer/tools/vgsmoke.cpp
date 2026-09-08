@@ -24,7 +24,7 @@
 // vg-renderer into an offscreen frame buffer, reads the pixels back and
 // checks that every drawing primitive actually produced ink.
 //
-//   fcvgsmoke [--renderer gl|vk|auto] [--font /path/to/font.ttf]
+//   fcvgsmoke [--renderer gl|vk|d3d11|d3d12|auto] [--font /path/to/font.ttf]
 //             [--out /path/to/dump.ppm] [--size WxH] [--page2d]
 //
 // Default mode is the M0 raw-vg scenario (paths + text, band ink checks).
@@ -624,6 +624,16 @@ int main(int argc, char** argv)
                 type = bgfx::RendererType::OpenGL;
             else if (!strcmp(r, "vk"))
                 type = bgfx::RendererType::Vulkan;
+            // The vg shader pack carries dxbc and dxil (docs/Testing.md,
+            // "The vg smokes on Windows"), so both Direct3D backends can
+            // be asked for by name. Auto-selection already picks D3D11
+            // on Windows; naming them is what makes a backend-against-
+            // backend comparison possible, D3D12 especially, which auto
+            // never chooses.
+            else if (!strcmp(r, "d3d11"))
+                type = bgfx::RendererType::Direct3D11;
+            else if (!strcmp(r, "d3d12"))
+                type = bgfx::RendererType::Direct3D12;
             else if (strcmp(r, "auto")) {
                 fprintf(stderr, "unknown renderer '%s'\n", r);
                 return 2;

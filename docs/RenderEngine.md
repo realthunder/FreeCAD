@@ -2523,11 +2523,42 @@ The QUEUE is where the backends diverge, and only one lets us choose:
 `queue` is referenced zero times in `renderer_vk.cpp` and
 `renderer_mtl.cpp`. So a sync layer has to cover same-queue-lock and
 cross-queue-signal both, and the backend picks: Metal can never take the
-lock path, D3D12 never needs the signal path. **That is the argument for
-Windows going Direct3D 12** if Route D is built -- device and queue
-adopted by design, no handle comparison and no lock ambiguity -- which
-first means enabling it in the Windows `typeMap`, where D3D9/11/12 are
-all commented out today.
+lock path, D3D12 never needs the signal path. That is an argument on
+paper for Windows going Direct3D 12 if Route D is built -- device and
+queue adopted by design, no handle comparison and no lock ambiguity --
+and it would first mean enabling it in the Windows `typeMap`, where
+D3D9/11/12 are all commented out today.
+
+**Measured, that argument does not survive.** `fcvgsmoke --bench 20000`
+headless on the Ada part, three runs per backend, mean of the replay
+frames in ms (`--renderer` learned `d3d11`/`d3d12` for this; auto never
+picks D3D12):
+
+| Backend | unchanged | pan | zoom | observed range |
+| --- | --- | --- | --- | --- |
+| Direct3D 11 | 10.0 | 6.0 | 12.6 | 5.8 - 16.1 |
+| Direct3D 12 | 10.3 | 13.0 | 8.9 | 6.3 - 15.5 |
+| Vulkan | 3.8 | 3.5 | 3.3 | 2.4 - 4.2 |
+
+Vulkan is 2.6x to 3.7x faster than either Direct3D backend on every
+replay frame and far steadier, which matters twice over for
+interaction. D3D12 is not even reliably better than D3D11: it halves
+the first frame (48 ms against 93) and wins on zoom, but loses on pan
+and ties on an unchanged frame. So the queue property is a real
+convenience and it is not worth choosing a backend for on its own --
+if Route D is built here, Vulkan's runtime margin has to be weighed
+against D3D12's simpler synchronisation, and the handle comparison
+Vulkan needs is a bounded cost against a 3x one.
+
+Three limits on that table, none of them small. It exercises the
+**vg 2D path, not the 3D engine**, because the renderer's own shader
+pack has no `dxbc`/`dxil` (`FC_SHADER_PROFILES` is glsl/spirv/essl plus
+metal on Apple) and so cannot run on Direct3D at all -- and per the
+`submit()` substitution recorded in `Testing.md`, it would draw a wrong
+picture rather than fail. **OpenGL is absent**, because it cannot come
+up headless on Windows at all, so the incumbent is exactly the backend
+this cannot measure. And a windowed harness is what closing both gaps
+would need.
 
 Two constraints, cheap to state and expensive to discover late:
 
@@ -2542,7 +2573,28 @@ Two constraints, cheap to state and expensive to discover late:
   harder than reordering. Nine overlay feeds already exist
   (`View3DInventorViewer.cpp` 615-624) and `canSkipInternal()` already
   skips the fixed-function scene pass; whether those cover everything
-  still on screen is an audit nobody has run, and it gates the viewport.
+  still on screen is what gates the viewport.
+
+  Half of that is now measured (macOS box, `FC_BGFX_METAL=1`, cache 3,
+  1400x900, ~900 frames, control `FC_RENDERER_PARALLEL_GL=1`, which
+  disables the early return at `SoFCRenderer.cpp` 2866-2873). The skip
+  works, and the residual traversal is FIXED overhead rather than a walk
+  of the scene graph: 0.54 ms/frame at 192 `Part::Box` solids and 0.56
+  at 768, against 2.24 and 5.74 with the internal pass forced on. Four
+  times the geometry moves the residual 0.02 ms while the control column
+  nearly triples, which is what makes the flat column a measurement and
+  not a dead probe. So the warning above that bracket -- that a large
+  share of the frame would mean it is walking the scene graph for no
+  pixels -- does not describe cache mode 3.
+
+  **That does not answer the gating question, and `FrameOutside::Coin`
+  cannot.** Under a `QRhiWidget` viewport what matters is whether the
+  residual traversal EMITS GL, not what it spends: a traversal costing
+  nothing that makes one GL call is fatal, one costing 0.55 ms that
+  draws nothing is harmless, and milliseconds cannot separate them. The
+  open work is COUNTING GL emission inside that bracket. Scope of what
+  is measured: one scene type, no workbench graph, no selection
+  highlight, no section planes, shadows or hidden-line, dpr 1.
 - **Ordering, and it is already solved.** `bgfx::init` happens once per
   process -- first backend asked for wins, the hazard named at
   `BGFXRendererP.h` 1826-1832 -- so the device must exist before the
