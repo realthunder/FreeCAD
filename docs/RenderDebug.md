@@ -1450,7 +1450,7 @@ to intersect the divergent-pixel mask with the mode 1 geometry mask,
 and the answer was not close:
 
 ```
-frame            858 x 608 = 521664
+frame            858 x 608 = 521664   (Linux/OpenGL capture)
 geometry px      106114
 divergent px     41431
   on geometry    0
@@ -1484,6 +1484,43 @@ the artefact -- so the action is to re-bless `refs/raster`, on a box
 that records its device. It is an OpenGL set, so that box is the Linux
 one; macOS cannot produce a GL capture here at all (Apple caps the
 compatibility profile at 2.1).
+
+**And the 0.3527% Metal-vs-OpenGL beauty figure is NOT this defect**, which
+is worth stating because it was the obvious next thread and it is a dead
+one. Re-measured 2026-09-08, a fresh Metal capture against the
+**re-blessed** `refs/raster`: at the default tolerance it reproduces
+0.3527% of beauty pixels and 0.1248% of AO pixels **exactly**, the same
+figures recorded on 2026-09-07 against the stale reference -- because the
+stale background differed by at most 1 and tolerance 3 never saw it. The
+split settles it:
+
+```
+vs re-blessed refs/raster
+tol 0:  10673 px (2.0460%)   on geometry 6216   on background  4457
+tol 3:   1840 px (0.3527%)   on geometry 1840   on background     0
+vs the stale refs/raster (219a02e), same Metal capture
+tol 0:  46540 px (8.9215%)   on geometry 6216   on background 40324
+tol 3:   1840 px (0.3527%)   on geometry 1840   on background     0
+max channel delta 108
+```
+
+Every pixel of the 0.3527% is on geometry and none on background, so it is
+a genuine backend difference and always was. What the re-blessing did fix
+is visible at tolerance zero: for the same Metal capture, background
+divergence against the stale reference was 40324 px and against the
+re-blessed one is 4457. What remains is 1-LSB noise between two different
+backends, expected, and why `refs/*-metal` exists as a separate set.
+Geometry divergence is 6216 px against either reference, which is the
+consistency check -- re-blessing touched only background pixels, so the
+geometry figure must not move, and it does not.
+
+CAUTION: **the 41431 px above is the Linux/OpenGL capture, not this
+one.** Both are the same frame's background population sitting on the
+same rounding boundary against the same stale reference, so they land
+within a per-cent of each other -- 41431 on GL, 40324 on Metal -- and
+that closeness is exactly what makes them easy to quote
+interchangeably. An earlier draft of this section did precisely that.
+They are different measurements on different backends.
 
 And the point that costs nothing to state: **the `device` field would
 have answered this in one step instead of two sessions.** The four
