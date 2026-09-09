@@ -811,6 +811,12 @@ void BGFXView::init(bool keepShared)
 #endif
     std::printf("bgfx: view init %ux%u msaa %d\n",
                 unsigned(width), unsigned(height), msaaSamples);
+    // TEMPORARY (dots investigation).
+    if (getenv("FC_DOTS_DUMP"))
+        Base::Console().Message("DOTS view init %ux%u msaa %d capture %ux%u\n",
+                                unsigned(width), unsigned(height), msaaSamples,
+                                unsigned(_BGFXLib.captureWidth),
+                                unsigned(_BGFXLib.captureHeight));
     shaderGen = _BGFXLib.shaderGeneration;
     // Re-judged at the bottom, against the pack this generation loads.
     shaderFailed = false;

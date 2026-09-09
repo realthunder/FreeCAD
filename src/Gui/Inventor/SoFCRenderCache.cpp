@@ -58,6 +58,7 @@
 #include <Inventor/details/SoPointDetail.h>
 #include <Inventor/SbBox3f.h>
 
+#include <cstdlib>
 #include <Base/Console.h>
 #include "../InventorBase.h"
 #include "../RenderTiming.h"
@@ -2375,6 +2376,12 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
   PRIVATE(this)->spliceprev.reset();
   PRIVATE(this)->splicematch.clear();
 
+  // TEMPORARY (dots investigation): a spliced publish reuses the
+  // previous map wholesale and never runs the emission loop below, so
+  // an entry missing from that map stays missing.
+  if (getenv("FC_DOTS_DUMP") && spliced)
+    Base::Console().Message("DOTS emit spliced (loop skipped)\n");
+
   if (!spliced)
   for (auto & entry : PRIVATE(this)->caches) {
     if (entry.vcache) {
@@ -2395,6 +2402,15 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
       entry.material.pervertexcolor = entry.vcache->colorPerVertex();
 
       auto vcache = entry.vcache;
+
+      // TEMPORARY (dots investigation): which entries the loop sees.
+      if (getenv("FC_DOTS_DUMP") && entry.vcache->getNumLineIndices())
+        Base::Console().Message(
+            "DOTS emit entry tri=%d line=%d point=%d shouldTri=%d\n",
+            entry.vcache->getNumTriangleIndices(),
+            entry.vcache->getNumLineIndices(),
+            entry.vcache->getNumPointIndices(),
+            int(entry.vcache->shouldRenderTriangles()));
 
       if (entry.vcache->shouldRenderTriangles()) {
         Material material = entry.material;
@@ -2434,7 +2450,13 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
       if (entry.vcache->getNumLineIndices()) {
         Material material = entry.material;
         material.type = Material::Line;
-        if (!checkSelectionContext(material, ctx, vcache))
+        const bool dotsCtxOk = checkSelectionContext(material, ctx, vcache);
+        // TEMPORARY (dots investigation).
+        if (getenv("FC_DOTS_DUMP"))
+          Base::Console().Message(
+              "DOTS emit LINE idx=%d ctxok=%d depth=%d\n",
+              entry.vcache->getNumLineIndices(), int(dotsCtxOk), depth);
+        if (!dotsCtxOk)
           continue;
         if (depth == 0) {
           PRIVATE(this)->finalizeMaterial(material);
@@ -2565,6 +2587,22 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
   for (auto &v : vcachemap)
     PRIVATE(this)->cachecount += (int)v.second.size();
   CacheEntryCount += PRIVATE(this)->cachecount;
+
+  // TEMPORARY (dots investigation): what the finished map holds, by
+  // material type, at every depth. The depth-0 map is what the renderer
+  // is handed, so a Line entry emitted at depth 1 that is absent here
+  // was lost on the way up.
+  if (getenv("FC_DOTS_DUMP")) {
+    int nt = 0, nl = 0, np = 0;
+    for (auto &v : vcachemap) {
+      if (v.first.type == Material::Triangle) nt += (int)v.second.size();
+      else if (v.first.type == Material::Line) nl += (int)v.second.size();
+      else if (v.first.type == Material::Point) np += (int)v.second.size();
+    }
+    Base::Console().Message(
+        "DOTS map depth=%d tri=%d line=%d point=%d node=%s\n",
+        depth, nt, nl, np, PRIVATE(this)->nodename.getString());
+  }
 
   return vcachemap;
 }

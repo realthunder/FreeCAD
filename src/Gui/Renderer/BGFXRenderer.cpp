@@ -389,6 +389,10 @@ bool BGFXRenderer::renderOffscreen(const QColor &col,
         ok = render(col, viewMatrix, projMatrix);
     _BGFXLib.captureWidth = 0;
     _BGFXLib.captureHeight = 0;
+    // TEMPORARY (dots investigation).
+    if (getenv("FC_DOTS_DUMP"))
+        Base::Console().Message("DOTS renderOffscreen %dx%d ok=%d\n",
+                                width, height, int(ok));
     return ok;
 #endif
 }
