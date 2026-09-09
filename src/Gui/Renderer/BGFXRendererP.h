@@ -2354,6 +2354,20 @@ public:
     /// and losing MSAA is always better than losing the scene.
     bool msaaTargetsUnavailable = false;
 
+    /// The sample count a view's targets will actually be built at:
+    /// what was asked for, unless this backend has already proved it
+    /// cannot build multisampled scene targets.
+    ///
+    /// Both the build and the "do the targets still match what was
+    /// asked for" test must go through this, or they disagree by
+    /// exactly the fallback and the view rebuilds itself every frame --
+    /// which is what happened, and cost a hundredfold in frame rate
+    /// while still drawing the right picture.
+    int effectiveSamples(int requested) const
+    {
+        return msaaTargetsUnavailable && requested > 1 ? 1 : requested;
+    }
+
 #ifdef FC_RENDERER_STANDALONE
     /// Native window handle bgfx initializes on (Emscripten: the canvas
     /// CSS selector) and the current output size, fed by the host app
@@ -2362,8 +2376,12 @@ public:
     uint16_t standaloneWidth = 1024;
     uint16_t standaloneHeight = 768;
     // Scene render-target sample count (BGFXRenderer::setMSAASamples);
-    // a change re-creates the view targets on the next render().
-    int standaloneSamples = 4;
+    // a change re-creates the view targets on the next render(). Off by
+    // default, like the desktop's (View3DInventorViewer::getNumSamples):
+    // analytic line coverage is what removed the reason it used to be
+    // mandatory, and on WebGL2 a multisampled float scene target cannot
+    // be built at all.
+    int standaloneSamples = 0;
     /// Sub-view target size override (renderSubViews,
     /// docs/SplitViews.md sec 9.2): while non-zero the view's targets
     /// size to the sub-view rect instead of the canvas -- the

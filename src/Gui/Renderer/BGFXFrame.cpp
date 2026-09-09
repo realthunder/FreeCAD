@@ -310,7 +310,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // re-upload. Relinking on WebGL2 is just as slow as it is on a
     // native driver, and re-streaming the scene there is worse.
     const bool progChanged =
-        _BGFXLib.standaloneSamples != view->msaaSamples
+        _BGFXLib.effectiveSamples(_BGFXLib.standaloneSamples)
+            != view->msaaSamples
         || _BGFXLib.shaderGeneration != view->shaderGen;
     // What the scene colour's format follows. Off the frame's config
     // rather than view->outputTransform, which a debug view mode zeroes
@@ -386,7 +387,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     const bool progChanged =
         _BGFXLib.shaderGeneration != view->shaderGen
         || (_BGFXLib.desktopSamples >= 0
-            && _BGFXLib.desktopSamples != view->msaaSamples);
+            && _BGFXLib.effectiveSamples(_BGFXLib.desktopSamples)
+                != view->msaaSamples);
     // The lost-framebuffer case rebuilds once, not every frame:
     // view->targetsFailed says the last attempt found the handle pool
     // full, and a bailed frame never reaches bgfx::frame(), which is

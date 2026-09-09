@@ -786,7 +786,7 @@ void BGFXView::init(bool keepShared)
     // renderbuffer plus a resolve texture; the present pass samples
     // the resolve (WebGL2 backs both via renderbufferStorageMultisample
     // + blitFramebuffer).
-    int samples = _BGFXLib.standaloneSamples;
+    int samples = _BGFXLib.effectiveSamples(_BGFXLib.standaloneSamples);
     msaaSamples = samples;
 #else
     width = uint16_t(_BGFXLib.viewWidth(widget));
@@ -795,20 +795,17 @@ void BGFXView::init(bool keepShared)
     // bgfx owns MSAA in its own offscreen target: prefer the preference
     // override (BGFXRenderer::setMSAASamples) over the host widget's GL
     // format, so an AntiAliasing change need not recreate the Qt view.
-    int samples = _BGFXLib.desktopSamples >= 0
-        ? _BGFXLib.desktopSamples
-        : widget->format().samples();
+    int samples = _BGFXLib.effectiveSamples(
+        _BGFXLib.desktopSamples >= 0 ? _BGFXLib.desktopSamples
+                                     : widget->format().samples());
     msaaSamples = samples;
 #endif
-    // A backend that has already failed to build multisampled scene
-    // targets is not asked to again (docs/ThinClient.md sec 8.10c).
-    // Latched below, off the attempt: bgfx::getCaps() is not usable for
-    // this -- WebGL2 claims BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER_MSAA
-    // for RGBA16F and then fails every create.
-    if (samples > 1 && _BGFXLib.msaaTargetsUnavailable) {
-        samples = 1;
-        msaaSamples = 1;
-    }
+    // \a samples came through _BGFXLib.effectiveSamples above, which is
+    // where a backend that has already failed to build multisampled
+    // scene targets is held to one sample (docs/ThinClient.md sec
+    // 8.10c). It is applied there, and not with a clamp here, so that
+    // the frame path's "do the targets still match what was asked for"
+    // test can ask the same question and get the same answer.
     std::printf("bgfx: view init %ux%u msaa %d\n",
                 unsigned(width), unsigned(height), msaaSamples);
     shaderGen = _BGFXLib.shaderGeneration;
