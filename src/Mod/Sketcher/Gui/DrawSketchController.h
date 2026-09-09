@@ -598,12 +598,19 @@ protected:
     /** @brief Initialises on-screen parameters */
     void initNOnViewParameters(int n)
     {
-        Gui::View3DInventorViewer* viewer = handler->getViewer();
+        // On-view parameters are Qt widgets placed next to the cursor,
+        // so they need a desktop view. A client's mirror has none, and
+        // the DOM layer takes this surface over there
+        // (docs/ThinClient.md sec 8.7, stage 5): no labels are built,
+        // and the set stays legitimately empty.
+        Gui::View3DInventorViewer* viewer = handler->getDesktopViewer();
+        onViewParameters.clear();
+        if (!viewer) {
+            return;
+        }
 
         auto doc = Gui::Application::Instance->editDocument();
         auto placement = Base::Placement(doc->getEditingTransform());
-
-        onViewParameters.clear();
 
         for (int i = 0; i < n; i++) {
 
@@ -747,7 +754,12 @@ protected:
 
     bool isOnViewParameterVisible(unsigned int onviewparameterindex)
     {
-        return ovpVisibilityManager.isVisible(onViewParameters[onviewparameterindex].get());
+        // Guarded rather than assumed, like the two above: the set is
+        // empty in a view that cannot host the widgets at all
+        // (initNOnViewParameters), and every caller reaches this before
+        // it indexes.
+        return onviewparameterindex < onViewParameters.size()
+            && ovpVisibilityManager.isVisible(onViewParameters[onviewparameterindex].get());
     }
 
     /** Resets the on-view parameter controls */

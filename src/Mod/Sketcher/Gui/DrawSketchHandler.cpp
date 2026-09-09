@@ -318,12 +318,19 @@ void DrawSketchHandler::activate(ViewProviderSketch* vp)
 {
     sketchgui = vp;
 
-    // save the cursor at the time the DSH is activated
-    auto* view = dynamic_cast<Gui::View3DInventor*>(Gui::getMainWindow()->activeWindow());
-
-    if (view) {
-        Gui::View3DInventorViewer* viewer = dynamic_cast<Gui::View3DInventor*>(view)->getViewer();
-        oldCursor = viewer->getWidget()->cursor();
+    // The view this sketch is being edited in, which is the one the tool
+    // will run in. It used to be whatever window was active, which is the
+    // same thing on a desktop with one window open and nothing like it in
+    // a process serving several browsers.
+    Gui::ViewerContext* viewer = getViewer();
+    if (viewer) {
+        // Save the cursor at the time the DSH is activated. A view with
+        // no widget has none, and that is not a reason to refuse the
+        // tool -- the cursor is chrome, and the DOM layer's
+        // (docs/ThinClient.md sec 8.7).
+        if (QWidget* widget = viewer->getWidget()) {
+            oldCursor = widget->cursor();
+        }
 
         updateCursor();
 
@@ -467,7 +474,9 @@ void DrawSketchHandler::setSvgCursor(const QString& cursorName,
 
 void DrawSketchHandler::setCursor(const QPixmap& p, int x, int y, bool autoScale)
 {
-    Gui::View3DInventorViewer* viewer = getViewer();
+    // A desktop view: this ends in QWidget::setCursor, and a mirror has
+    // no widget to set one on.
+    Gui::View3DInventorViewer* viewer = getDesktopViewer();
     if (viewer) {
         QCursor cursor;
         QPixmap p1(p);
@@ -571,7 +580,7 @@ void DrawSketchHandler::applyCursor()
 
 void DrawSketchHandler::applyCursor(QCursor& newCursor)
 {
-    Gui::View3DInventorViewer* viewer = getViewer();
+    Gui::View3DInventorViewer* viewer = getDesktopViewer();
     if (viewer) {
         viewer->getWidget()->setCursor(newCursor);
     }
@@ -579,7 +588,7 @@ void DrawSketchHandler::applyCursor(QCursor& newCursor)
 
 void DrawSketchHandler::unsetCursor()
 {
-    Gui::View3DInventorViewer* viewer = getViewer();
+    Gui::View3DInventorViewer* viewer = getDesktopViewer();
     if (viewer) {
         viewer->getWidget()->setCursor(oldCursor);
     }
@@ -587,8 +596,10 @@ void DrawSketchHandler::unsetCursor()
 
 qreal DrawSketchHandler::devicePixelRatio()
 {
+    // The client's, not a screen's: a mirror answers this from what the
+    // browser stated over the wire.
     qreal pixelRatio = 1;
-    Gui::View3DInventorViewer* viewer = getViewer();
+    Gui::ViewerContext* viewer = getViewer();
     if (viewer) {
         pixelRatio = viewer->devicePixelRatio();
     }
@@ -625,7 +636,7 @@ DrawSketchHandler::suggestedConstraintsPixmaps(std::vector<AutoConstraint>& sugg
         }
         if (!iconType.isEmpty()) {
             qreal pixelRatio = 1;
-            Gui::View3DInventorViewer* viewer = getViewer();
+            Gui::ViewerContext* viewer = getViewer();
             if (viewer) {
                 pixelRatio = viewer->devicePixelRatio();
             }
@@ -1270,13 +1281,14 @@ void DrawSketchHandler::signalToolChanged() const
     ViewProviderSketchDrawSketchHandlerAttorney::signalToolChanged(*sketchgui, this->getToolName());
 }
 
-Gui::View3DInventorViewer* DrawSketchHandler::getViewer()
+Gui::ViewerContext* DrawSketchHandler::getViewer()
 {
-    Gui::MDIView* view = Gui::getMainWindow()->activeWindow();
-    if (view && view->isDerivedFrom(Gui::View3DInventor::getClassTypeId())) {
-        return static_cast<Gui::View3DInventor*>(view)->getViewer();
-    }
-    return nullptr;
+    return sketchgui ? sketchgui->getEditViewer() : nullptr;
+}
+
+Gui::View3DInventorViewer* DrawSketchHandler::getDesktopViewer()
+{
+    return dynamic_cast<Gui::View3DInventorViewer*>(getViewer());
 }
 
 //////////////////////////////////////////////////////////////////////////////////

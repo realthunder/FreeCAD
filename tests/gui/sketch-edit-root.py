@@ -63,6 +63,19 @@ def pump(turns=30):
         time.sleep(0.01)
 
 
+def view_cursor():
+    """The shape of the cursor the 3D view is wearing. A sketch tool
+    sets a bitmap cursor of its own, so this changing is a direct read
+    of the tool having activated rather than purged itself."""
+    mw = FreeCADGui.getMainWindow()
+    shapes = []
+    for w in mw.findChildren(QtWidgets.QWidget):
+        name = w.metaObject().className()
+        if "Quarter" in name or "View3DInventorViewer" in name:
+            shapes.append(str(w.cursor().shape()))
+    return tuple(shapes)
+
+
 def finish():
     if state["done"]:
         return
@@ -132,6 +145,20 @@ def run():
         check("a second edit session opens", opened)
         check("and empties the root again", root.getNumChildren() == 0,
               root.getNumChildren())
+
+        # A drawing tool, inside this second session. This is the part
+        # that reaches for a view of its own: DrawSketchHandler used to
+        # find one by asking the main window what was active, and asks
+        # the sketch's view provider now. A handler that cannot find a
+        # view purges itself and sets no cursor, so the view wearing the
+        # tool's own cursor is the reading that the lookup answered.
+        before_cursor = view_cursor()
+        FreeCADGui.runCommand("Sketcher_CreateLine")
+        pump()
+        check("the line tool activated and put its cursor on the view",
+              view_cursor() != before_cursor,
+              (before_cursor, view_cursor()))
+
         FreeCADGui.ActiveDocument.resetEdit()
         pump()
         check("and gives the children back again",

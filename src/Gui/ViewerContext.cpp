@@ -82,6 +82,10 @@ void ViewerContext::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum)
     if (!editViewProvider) {
         return;
     }
+    // Recorded here rather than inside setEditViewer below, which is
+    // virtual and which ViewProviderDragger overrides without chaining
+    // to the base -- so every geometry object would have answered null.
+    editViewProvider->_editViewer = this;
     editViewProvider->setEditViewer(this, ModNum);
     addEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,
                      editViewProvider);
@@ -106,6 +110,7 @@ void ViewerContext::resetEditingViewProvider()
     resetEditingRoot();
 
     editViewProvider->unsetEditViewer(this);
+    editViewProvider->_editViewer = nullptr;
     removeEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,
                         editViewProvider);
     editViewProvider = nullptr;

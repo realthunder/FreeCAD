@@ -543,6 +543,22 @@ public:
     virtual void setEditViewer(ViewerContext*, int ModNum);
     /// restores viewer settings when leaving editing mode
     virtual void unsetEditViewer(ViewerContext*);
+    /** The view this view provider's edit mode is running in, or null.
+     *
+     * Recorded so that an edit mode's own machinery can find its view
+     * without asking the application which window is active, which is a
+     * different question and in a serving process names either nothing
+     * or somebody else's (docs/ThinClient.md sec 8.3).
+     *
+     * Set by the VIEW, in ViewerContext::setEditingViewProvider,
+     * deliberately: setEditViewer below is virtual and overridden all
+     * over the tree, and at least one override -- ViewProviderDragger's,
+     * which every geometry object inherits -- does not chain to the
+     * base. Recording it there would have been null for exactly the
+     * view providers that need it, and null in a way nothing says out
+     * loud.
+     */
+    ViewerContext *getEditViewer() const { return _editViewer; }
     //@}
 
     /** @name Task panel
@@ -696,6 +712,10 @@ protected:
     CoinPtr<SoGroup> pcChildGroup;
 
 private:
+    /// The view an edit mode is running in; see getEditViewer. Written
+    /// only by ViewerContext, which is the one place that knows.
+    friend class ViewerContext;
+    ViewerContext *_editViewer{nullptr};
     const App::SharedDefaults *_saveDefaults{nullptr};
     int _iActualMode{-1};
     int _iEditMode{-1};
