@@ -21,6 +21,14 @@ What is asserted:
     zero and coming back, the same reading the desktop probe takes;
   - an 'E' input event is replayed in that view: a pointer move over the
     sketch reaches the edit path and the server pushes the result;
+  - and what that client selects while it is editing is its own. A 'P'
+    pick sent in view mode commits into the room, as sec 8.2a rules it
+    should -- the room is what the tree, the property panel and every
+    other viewer agree on. The same pick sent while this client is
+    editing does not: it lands in the mirror's own instance, and the
+    room is left as entering the edit left it, which is empty. Read on
+    the GUI thread through FreeCADGui.Selection, which with no scope
+    open IS the room;
   - the `resetEdit` op ends the session and gives the graph back;
   - and a client that drops mid-edit does not leave the document holding
     a pointer to a mirror that no longer exists. That is the case the
@@ -80,6 +88,16 @@ def camera_frame():
     return wsclient.camera_frame(EYE, QUAT, HEIGHT_ANGLE, NEAR, FAR, VW, VH)
 
 
+def ray_to(x, y):
+    """The world ray the stated eye casts through the pixel showing
+    world (x, y) on the sketch plane -- built the way the browser viewer
+    builds it, from the camera's frame rather than from a matrix."""
+    depth = EYE[2]
+    direction = ((x - EYE[0]) / depth, (y - EYE[1]) / depth, -1.0)
+    length = math.sqrt(sum(c * c for c in direction))
+    return EYE, tuple(c / length for c in direction)
+
+
 def reply_of(raw):
     if raw is None:
         return None
@@ -100,6 +118,7 @@ class Client(threading.Thread):
         self.edit_without_camera = None
         self.edit_with_camera = None
         self.input_pushed = None
+        self.view_pick_pushed = None
         self.reset = None
 
     def run(self):
@@ -122,11 +141,30 @@ class Client(threading.Thread):
 
         # 2. With a camera, the connection has a mirror.
         ws.send(2, camera_frame())
+
+        # 3. A click, while this client is only looking. It belongs in
+        # the room, and the pauses on either side of it are so that the
+        # GUI thread's sampler cannot miss the window in which it is the
+        # only thing selected.
+        ws.drain(0.3)
+        ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0)))
+        self.view_pick_pushed = ws.next_binary(5.0) is not None
+        ws.drain(0.7)
+
+        # 4. Now into edit, which is where the mirror's own selection
+        # starts being the one that counts.
         self.edit_with_camera = reply_of(ws.op(
             '{"id":2,"op":"edit","obj":"%s","mode":0}' % OBJ))
         ws.drain(0.5)
 
-        # 3. A pointer move over the middle of the canvas, replayed in
+        # 5. The same click, now that this client is editing. It is this
+        # client's own, so the room must not move -- and it was left empty
+        # by entering the edit, which is what makes "did not move" a
+        # reading rather than a coincidence.
+        ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0)))
+        ws.drain(0.7)
+
+        # 6. A pointer move over the middle of the canvas, replayed in
         # that view. The edit path is what reads it; the publish that
         # follows is what says the server did something with it.
         ws.send(2, wsclient.input_frame(wsclient.MOVE, VW // 2, VH // 2,
@@ -134,10 +172,13 @@ class Client(threading.Thread):
         self.input_pushed = ws.next_binary(5.0) is not None
         ws.drain(0.5)
 
-        # 4. Out of edit, on the client's word.
+        # 7. Out of edit, on the client's word. What the sketcher does to
+        # selection on its way out is this client's too, so the room is
+        # still empty afterwards.
         self.reset = reply_of(ws.op('{"id":3,"op":"resetEdit"}'))
+        ws.drain(0.5)
 
-        # 5. Back in, and then the socket simply goes away. The document
+        # 8. Back in, and then the socket simply goes away. The document
         # is left in edit with its viewer about to be destroyed, which
         # is the case that used to leave a dangling pointer behind.
         reply_of(ws.op('{"id":4,"op":"edit","obj":"%s","mode":0}' % OBJ))
@@ -152,6 +193,14 @@ def in_edit():
 def root_children():
     doc = state["doc"]
     return doc.getObject(OBJ).ViewObject.RootNode.getNumChildren()
+
+
+def room_selection():
+    """What the room has selected. FreeCADGui.Selection resolves to the
+    current instance, and on the GUI thread outside any replayed event
+    that is the room -- which is the whole point of the reading."""
+    return sorted((s.ObjectName, tuple(s.SubElementNames))
+                  for s in FreeCADGui.Selection.getSelectionEx(DOC))
 
 
 def views_3d():
@@ -199,7 +248,8 @@ def poll():
     client = state["client"]
     # Sampled as the conversation runs: the end state alone would show
     # only the last step, and every claim here is about a transition.
-    state["seen"].append((in_edit(), root_children(), views_3d()))
+    state["seen"].append((in_edit(), root_children(), views_3d(),
+                          room_selection()))
     if client.is_alive():
         if clock() - state["t0"] > CLIENT_WAIT_S:
             check("the client finished", False,
@@ -242,6 +292,19 @@ def verify():
         check("a replayed input event was answered with a push",
               client.input_pushed is True, "pushed: %s" % client.input_pushed)
 
+        # Selection: the room's, sampled throughout. A click in view mode
+        # is the room's business (sec 8.2a); a click from the client that
+        # is editing is that client's own (sec 8.4).
+        check("a view-mode pick was answered with a push",
+              client.view_pick_pushed is True,
+              "pushed: %s" % client.view_pick_pushed)
+        check("a view-mode pick commits into the room",
+              any(not s[0] and s[3] for s in seen),
+              [s[3] for s in seen[:60]])
+        check("entering edit leaves the room selecting nothing",
+              all(not s[3] for s in seen if s[0]),
+              [s[3] for s in seen if s[0]][:20])
+
         reset = client.reset or {}
         check("resetEdit is accepted", reset.get("ok") is True, reset)
         check("leaving edit gave the children back",
@@ -254,6 +317,13 @@ def verify():
               "still in edit")
         check("and the view provider has its graph", root_children() >= before,
               (root_children(), before))
+        # The sketcher selects the sketch it just left, as a convenience
+        # to a desktop user. That happens in the instance the session ran
+        # in, and the session is over -- so no client's selection outlives
+        # it, whether the session ended on the client's word or with the
+        # socket.
+        check("no client's selection outlived its edit session",
+              not room_selection(), room_selection())
     except Exception:
         note("ABORT verify:\n" + traceback.format_exc())
     finish()

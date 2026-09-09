@@ -43,6 +43,7 @@
 #include "Document.h"
 #include "SceneControl.h"
 #include "SceneServeSource.h"
+#include "Selection.h"
 #include "View3DInventor.h"
 #include "ViewProvider.h"
 #include "ViewerContext.h"
@@ -620,8 +621,22 @@ QJsonObject setEditOp(const QJsonObject &req, const std::string &boundDoc,
     const QString subname = req.value(QLatin1String("subname")).toString();
     const QByteArray sub = subname.toUtf8();
 
+    // The desktop's edit modes clear the selection as they start, as a
+    // convenience -- and that convenience belongs to the room, not to the
+    // client: what stops being highlighted is the object every viewer can
+    // see, while everything the edit mode does with selection afterwards
+    // is this client's own (docs/ThinClient.md sec 8.4). Inside the scope
+    // below it would have cleared an instance that was empty anyway, and
+    // left the sketch green in everybody's scene for the whole session.
+    Gui::SelectionRoom().rmvPreselect();
+    Gui::SelectionRoom().clearSelection();
+
     bool ok = false;
     try {
+        // In the client's view, and so in the client's selection: an edit
+        // mode's own observers attach while this is open, and an observer
+        // that attached to the room here would hear nothing this browser
+        // picked (SelectionObserver::attachSelectionToCurrent).
         ViewerScope scope(viewer);
         ok = gdoc->setEdit(vp, mode, subname.isEmpty() ? nullptr : sub.constData());
     }
@@ -664,7 +679,15 @@ QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
         return errorReply(id, "UnknownDocument",
                           QString::fromUtf8(doc->getName()));
 
-    gdoc->resetEdit();
+    // Left through the view it was running in, for the same reason it was
+    // entered through one: what an edit mode does with selection on its
+    // way out is that client's, and the mirror drops it with the session
+    // (docs/ThinClient.md sec 8.4). The document knows which view that
+    // was, so nothing here needs the connection id.
+    {
+        ViewerScope scope(gdoc->editingViewer());
+        gdoc->resetEdit();
+    }
 
     QJsonObject reply;
     reply[QLatin1String("id")] = id;

@@ -64,6 +64,7 @@
 #include "Renderer/SceneServer.h"
 #include "RenderParams.h"
 #include "MirrorViewer.h"
+#include "ViewerContext.h"
 #include "ObjectMetaFeed.h"
 #include "SceneControl.h"
 #include "Selection.h"
@@ -1025,7 +1026,20 @@ void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
     // ray a radius of essentially zero whatever setRadius says, which
     // is why only geometry hit dead-on came back that way.
     std::unique_ptr<SoPickedPoint> picked;
-    if (MirrorViewer *mirror = pimpl->mirrorFor(client))
+    MirrorViewer *mirror = pimpl->mirrorFor(client);
+
+    // And it commits in that mirror's own selection when the mirror is
+    // the view the document's edit session is running in -- which is what
+    // "an in-edit pick is the mirror's own" comes to in code (sec 8.4).
+    // A click from a client that is merely looking commits into the room,
+    // as 8.2a rules: the room is what the tree, the property panel and
+    // every other viewer agree on. Held open past the pick, because it is
+    // the addSelection below that has to land in the right instance.
+    std::unique_ptr<ViewerScope> inEdit;
+    if (mirror && mirror->isEditingViewProvider())
+        inEdit = std::make_unique<ViewerScope>(mirror);
+
+    if (mirror)
         picked.reset(mirror->pickRay(origin, dir));
     else {
         SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};

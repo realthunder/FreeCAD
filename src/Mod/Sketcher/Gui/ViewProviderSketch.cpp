@@ -7372,7 +7372,11 @@ bool ViewProviderSketch::setEdit(int ModNum)
     Gui::Selection().clearSelection();
     Gui::Selection().rmvPreselect();
 
-    this->attachSelection();
+    // The selection of the view this edit is starting in, which on the
+    // desktop is the room and from a browser is that client's own: this
+    // observer is what colours the edit geometry, so it has to hear the
+    // instance the picks are going into (docs/ThinClient.md sec 8.4).
+    this->attachSelectionToCurrent();
 
     auto gridnode = getGridNode();
     Base::Placement plm = getEditingPlacement();
