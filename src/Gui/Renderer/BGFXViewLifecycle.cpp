@@ -1925,6 +1925,29 @@ int readbackVerifyPeriod()
     return period;
 }
 
+/// FC_BGFX_READBACK_DELAY: refuse to upload for the first N composite
+/// frames, holding the view in the state it has before any copy has
+/// landed. That state lasts about two frames in normal running, which
+/// is too short to photograph from outside the process -- and it is
+/// where a real defect lived: the composite returned without drawing
+/// AND without clearing, so the viewport kept whatever uninitialized
+/// content the widget's framebuffer happened to hold (black with a
+/// stale block, on Windows) until the first copy arrived.
+///
+/// Every other instrument here looks past that window by construction:
+/// the verify probes frames that LANDED, the timings average over a
+/// second, and the picture legs take their shot after 40 warm-up
+/// redraws. The defect was found by a person watching the window open.
+/// This knob is what makes it reproducible without one.
+int readbackDelayFrames()
+{
+    static const int n = [] {
+        const char *v = getenv("FC_BGFX_READBACK_DELAY");
+        return (v && *v) ? std::atoi(v) : 0;
+    }();
+    return n;
+}
+
 /// One texel of the probe pattern: a field keyed on (nonce, x, y), so
 /// that finding it in the destination cannot be explained by anything
 /// else having drawn there -- no scene, no clear, no stale frame.
@@ -2222,6 +2245,11 @@ void BGFXView::blitReadback(uint32_t frameNum, int dstX, int dstY,
                 || slot.readyFrame > readbackSlots[size_t(fresh)].readyFrame)
             fresh = i;
     }
+    // The hold (FC_BGFX_READBACK_DELAY) pretends nothing has landed, so
+    // the not-yet-filled path below runs for as long as asked.
+    if (fresh >= 0 && readbackDelayFrames() > 0
+            && int(readbackStats.frames) <= readbackDelayFrames())
+        fresh = -1;
     if (fresh >= 0) {
         ++readbackStats.landed;
         ReadbackSlot &slot = readbackSlots[size_t(fresh)];
@@ -2327,8 +2355,56 @@ void BGFXView::blitReadback(uint32_t frameNum, int dstX, int dstY,
         }
     }
 
-    if (!readbackGLFilled)
+    if (!readbackGLFilled) {
+        // Nothing has landed YET -- the first frames of a pipelined
+        // route legitimately have no image to show. Returning here is
+        // what left the viewport holding uninitialized garbage until
+        // the first copy arrived: black with a stale block of whatever
+        // the framebuffer last contained, seen on Windows as a pink
+        // rectangle, and persisting until the user did something that
+        // forced a redraw.
+        //
+        // Nothing else was going to paint it. The viewer keys its own
+        // clear on whether the backend rendered
+        // (View3DInventorViewer::renderScene, `externalRendered`), and
+        // the backend DID render -- the frame simply has not reached
+        // the widget yet -- so the viewer skipped its clear; and at
+        // render cache mode 3 Coin emits no per-frame geometry to
+        // cover it either.
+        //
+        // So this route clears when it cannot draw. Exactly the
+        // argument the mandatory depth clear below already makes: this
+        // composite suppresses the viewer's clear, so this composite
+        // owns it. That reasoning covers colour just as much as depth,
+        // and the first version applied it to depth alone.
+        //
+        // Scissored to the destination rect, or a sub-view would clear
+        // its neighbours (docs/SplitViews.md) -- the same care the
+        // viewer's own canvas-residue fallback takes.
+        const int cx0 = dstX;
+        const int cy0 = dstH > 0 ? dstH - dstY - height : 0;
+        GLboolean hadScissor = glIsEnabled(GL_SCISSOR_TEST);
+        GLint oldBox[4];
+        glGetIntegerv(GL_SCISSOR_BOX, oldBox);
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(cx0, cy0, width, height);
+        // The frame's own background colour, so the view comes up in
+        // the colour it is about to be drawn in rather than flashing
+        // black. Alpha 0 matches the clear the viewer would have done
+        // itself had it not been told to stand aside.
+        const uint32_t c = bgFillColor;
+        glClearColor(float((c >> 24) & 0xff) / 255.0f,
+                     float((c >> 16) & 0xff) / 255.0f,
+                     float((c >> 8) & 0xff) / 255.0f,
+                     0.0f);
+        glDepthMask(GL_TRUE);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glScissor(oldBox[0], oldBox[1], oldBox[2], oldBox[3]);
+        if (!hadScissor)
+            glDisable(GL_SCISSOR_TEST);
+        checkGLError("readback composite first-frame clear");
         return;
+    }
 
     // ---- the quad ----
     //

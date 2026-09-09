@@ -43,6 +43,13 @@ READY = os.environ.get("FC_PROBE_READY", "")
 HOLD = os.environ.get("FC_PROBE_HOLD", "") not in ("", "0")
 SECONDS = float(os.environ.get("FC_PROBE_SECONDS", "12"))
 SIZE = os.environ.get("FC_PROBE_SIZE", "900x640")
+# Photograph the view as it FIRST comes up, before the fit and before
+# the warm-up redraws. The composite is pipelined, so its first frames
+# have nothing landed, and everything else in this script deliberately
+# waits past that -- which is exactly why the "viewport comes up holding
+# garbage" defect survived every instrument here and was caught by a
+# person watching the window open.
+EARLY = os.environ.get("FC_PROBE_EARLY", "") not in ("", "0")
 RENDER = "User parameter:BaseApp/Preferences/View/Render"
 
 
@@ -149,6 +156,28 @@ def stage():
                        sub.height() + (want[1] - got[1]))
             FreeCADGui.updateGui()
 
+    if EARLY:
+        # One redraw only: enough that the backend has rendered a frame
+        # and told the viewer so -- which is what makes the viewer skip
+        # its own clear -- and not enough for any copy to have landed.
+        # That is the window the defect lived in.
+        v.redraw()
+        v.waitFrameComplete()
+        say("EARLY capture: one frame drawn, nothing landed yet")
+        if READY:
+            rect = ""
+            if sub is not None:
+                tl = sub.mapToGlobal(QtCore.QPoint(0, 0))
+                dpr = sub.devicePixelRatioF()
+                rect = "%d %d %d %d" % (round(tl.x() * dpr),
+                                        round(tl.y() * dpr),
+                                        round(sub.width() * dpr),
+                                        round(sub.height() * dpr))
+            with open(READY, "w") as fh:
+                fh.write((rect or "ready") + "\n")
+        QtCore.QTimer.singleShot(int(SECONDS * 1000), finish_early)
+        return
+
     say("size before fit  %dx%d" % tuple(v.getSize()))
     v.setCameraOrientation((0.4247, 0.1759, 0.3389, 0.8226))
     v.fitAll()
@@ -219,6 +248,16 @@ def stage():
         QtCore.QTimer.singleShot(0, QtCore.QCoreApplication.quit)
 
     QtCore.QTimer.singleShot(int(SECONDS * 1000), finish)
+
+
+def finish_early():
+    from PySide import QtCore
+    try:
+        for d in list(FreeCAD.listDocuments()):
+            FreeCAD.closeDocument(d)
+    except Exception:
+        pass
+    QtCore.QTimer.singleShot(0, QtCore.QCoreApplication.quit)
 
 
 def deferred():
