@@ -2606,6 +2606,11 @@ bool View3DInventorViewer::feedCanvasCyclesViewport(const QColor &col, const SbM
     return true;
 }
 
+SoNode* View3DInventorViewer::getEditRootNode() const
+{
+    return pcEditingRoot;
+}
+
 void View3DInventorViewer::setEditingTransform(const Base::Matrix4D &mat)
 {
     // NOLINTBEGIN

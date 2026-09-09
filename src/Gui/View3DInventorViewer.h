@@ -348,7 +348,12 @@ public:
     void setupEditingRoot(SoNode *node=nullptr, const Base::Matrix4D *mat=nullptr);
     void resetEditingRoot(bool updateLinks=true);
     void setEditingTransform(const Base::Matrix4D &mat);
-    SoSeparator * getEditRootNode() const { return pcEditingRoot; }
+    /// Where this view hangs the geometry of the mode editing in it.
+    /// SoNode rather than SoSeparator because it overrides
+    /// ViewerContext::getEditRootNode, and a covariant return would need
+    /// SoSeparator complete in this header for the sake of one caller that
+    /// wants a node anyway.
+    SoNode * getEditRootNode() const override;
     /** Helper method to get picked entities while editing.
      * It's in the responsibility of the caller to delete the returned instance.
      */

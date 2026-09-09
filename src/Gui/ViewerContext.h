@@ -167,6 +167,16 @@ public:
                                   const Base::Matrix4D* mat = nullptr) = 0;
     virtual void resetEditingRoot(bool updateLinks = true) = 0;
     virtual void setEditingTransform(const Base::Matrix4D& mat) = 0;
+    /** Where this view hangs the geometry of the mode editing in it.
+     *
+     * Gui::Document remembers it so that a traversal arriving at that node
+     * knows it is looking at the edit, not at the document. Null where a
+     * view keeps no such root.
+     */
+    virtual SoNode* getEditRootNode() const
+    {
+        return nullptr;
+    }
     //@}
 
     /** @name Event delivery and selection mode */
@@ -241,6 +251,40 @@ public:
     {
         return node ? static_cast<ViewerContext*>(node->getUserData()) : nullptr;
     }
+
+    /** The view whose input is being handled right now, if one said so.
+     *
+     * An edit mode is entered from wherever the click that entered it
+     * landed, and the code that starts one is nowhere near the code that
+     * knows which view that was: Gui::Document::setEdit reaches
+     * MainWindow::activeWindow() for it, which in a serving process names
+     * either nothing or somebody else's window. So a replayed client event
+     * says which view it is (ViewerScope), and setEdit asks here first.
+     *
+     * Null on the desktop, where nothing opens a scope, so every caller
+     * falls back to the active window exactly as it did before. This is the
+     * same shape as Gui::SelectionScope (docs/ThinClient.md sec 8.4): one
+     * replayed event, one dynamic extent, and no call site retyped.
+     */
+    static ViewerContext* current();
+};
+
+/** Make \a context the current view for this scope's dynamic extent.
+ *
+ * Scopes nest and unwind innermost first. The scope does not own the
+ * context and must not outlive it -- it is opened around the handling of
+ * one event by the view that received it.
+ */
+class GuiExport ViewerScope
+{
+public:
+    explicit ViewerScope(ViewerContext* context);
+    ~ViewerScope();
+    ViewerScope(const ViewerScope&) = delete;
+    ViewerScope& operator=(const ViewerScope&) = delete;
+
+private:
+    ViewerContext* previous;
 };
 
 }  // namespace Gui

@@ -80,6 +80,7 @@
 #include "ViewArea.h"
 #include "ViewPlacement.h"
 #include "View3DInventorViewer.h"
+#include "ViewerContext.h"
 #include "RenderParams.h"
 #include "ViewParams.h"
 #include "ViewProviderDocumentObject.h"
@@ -133,7 +134,7 @@ struct DocumentP
     std::string                 _editSubname;
     std::string                 _editSubElement;
     Base::Matrix4D              _editingTransform;
-    View3DInventorViewer*       _editingViewer;
+    ViewerContext*              _editingViewer;
     std::set<const App::DocumentObject*> _editObjs;
 
     std::vector<CameraInfo>     _savedViews;
@@ -637,12 +638,26 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         }
     }
 
-    auto view3d = dynamic_cast<View3DInventor *>(getActiveView());
-    // if the currently active view is not the 3d view search for it and activate it
-    if (view3d)
-        getMainWindow()->setActiveWindow(view3d);
-    else
-        view3d = dynamic_cast<View3DInventor *>(setActiveView(vp));
+    // The view this edit session belongs to. A replayed client event names
+    // its own before it is handled, and there is no other way to know which
+    // it was: reaching for the active window in a process serving several
+    // browsers names either nothing or somebody else's (docs/ThinClient.md
+    // sec 8.9). Nothing on the desktop opens such a scope, so there the
+    // active 3D view is found and activated exactly as before -- and one is
+    // created for the document if it has none, which is a thing only a
+    // desktop may do.
+    ViewerContext *editViewer = ViewerContext::current();
+    View3DInventor *view3d = nullptr;
+    if (!editViewer) {
+        view3d = dynamic_cast<View3DInventor *>(getActiveView());
+        // if the currently active view is not the 3d view search for it and activate it
+        if (view3d)
+            getMainWindow()->setActiveWindow(view3d);
+        else
+            view3d = dynamic_cast<View3DInventor *>(setActiveView(vp));
+        if (view3d)
+            editViewer = view3d->getViewer();
+    }
 
     EditDocumentGuard guard;
     Application::Instance->setEditDocument(this);
@@ -681,10 +696,10 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         return false;
     }
 
-    if(view3d) {
-        view3d->getViewer()->setEditingViewProvider(d->_editViewProvider,ModNum);
-        d->_editingViewer = view3d->getViewer();
-        d->_editRootNode = view3d->getViewer()->getEditRootNode();
+    if(editViewer) {
+        editViewer->setEditingViewProvider(d->_editViewProvider,ModNum);
+        d->_editingViewer = editViewer;
+        d->_editRootNode = editViewer->getEditRootNode();
     }
     Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
     if (dlg)
@@ -707,8 +722,14 @@ const Base::Matrix4D &Document::getEditingTransform() const {
 void Document::setEditingTransform(const Base::Matrix4D &mat) {
     d->_editObjs.clear();
     d->_editingTransform = mat;
-    auto activeView = dynamic_cast<View3DInventor *>(getActiveView());
-    if (activeView)
+    // The view the session is bound to, not the one that happens to be
+    // active -- with two 3D views open those are the same view only until
+    // someone clicks the other, and the editing transform belongs to the
+    // one doing the editing. Outside a session there is nothing bound and
+    // the active view is still the only candidate.
+    if (d->_editingViewer)
+        d->_editingViewer->setEditingTransform(mat);
+    else if (auto activeView = dynamic_cast<View3DInventor *>(getActiveView()))
         activeView->getViewer()->setEditingTransform(mat);
 }
 
@@ -743,6 +764,12 @@ void Document::_resetEdit()
             if (activeView)
                 activeView->getViewer()->resetEditingViewProvider();
         }
+        // A view that is not one of this document's -- a client's mirror,
+        // which belongs to the serving source rather than to the document
+        // -- is not in that list. Idempotent, so a desktop viewer the loop
+        // above already reset is unharmed by being named twice.
+        if (d->_editingViewer)
+            d->_editingViewer->resetEditingViewProvider();
 
         if (d->_editingObject)
             d->_editingObject->setStatus(App::ObjEditing, false);
@@ -801,7 +828,14 @@ ViewProvider *Document::getInEdit(ViewProviderDocumentObject **parentVp,
     if (d->_editViewProvider) {
         // there is only one 3d view which is in edit mode
         auto activeView = dynamic_cast<View3DInventor *>(getActiveView());
-        if (activeView && activeView->getViewer()->isEditingViewProvider())
+        if (activeView)
+            return activeView->getViewer()->isEditingViewProvider()
+                ? d->_editViewProvider : nullptr;
+        // No 3D view of this document to ask. A served document has none --
+        // its edit session is bound to a client's mirror instead
+        // (docs/ThinClient.md sec 8.9) -- so ask the view the session was
+        // actually bound to.
+        if (d->_editingViewer && d->_editingViewer->isEditingViewProvider())
             return d->_editViewProvider;
     }
 

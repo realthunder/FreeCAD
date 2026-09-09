@@ -38,3 +38,30 @@ PyObject* ViewerContext::getPyObject()
     Py_INCREF(Py_None);
     return Py_None;
 }
+
+namespace
+{
+/// The innermost open ViewerScope's context, or null.
+///
+/// Thread-local because a scope is opened around the handling of one
+/// event and events are handled on whatever thread the view lives on --
+/// the GUI thread for every view there is today, but a global would make
+/// that an assumption rather than an observation.
+thread_local ViewerContext* s_current = nullptr;
+}  // namespace
+
+ViewerContext* ViewerContext::current()
+{
+    return s_current;
+}
+
+ViewerScope::ViewerScope(ViewerContext* context)
+    : previous(s_current)
+{
+    s_current = context;
+}
+
+ViewerScope::~ViewerScope()
+{
+    s_current = previous;
+}
