@@ -692,6 +692,16 @@ so the sketcher's tool state machine reaches around its own view provider to the
 active window. It compiles unchanged because it never sees the new type, which is exactly
 why it needs naming: a mirror cannot serve a handler that asks the main window where it is.
 
+**Closed at stage 4 (2026-09-09).** It asks the sketch's own view provider now, through
+`ViewProvider::getEditViewer()`. Two things came with it. `DrawSketchHandler::activate`
+read the active window's cursor and *purged the handler* if there was no window, so every
+sketch tool would have refused to start in a served session -- a cursor is chrome, and not
+having one is no reason to refuse to draw. And the recording of the edit viewer cannot live
+in `ViewProvider::setEditViewer`: that hook is virtual, and `ViewProviderDragger`'s
+override -- inherited by every geometry object, so by every sketch -- does not chain to its
+base, which made the first version silently null for exactly the view providers that need
+it. The view records it instead, in `ViewerContext::setEditingViewProvider`.
+
 **Landed 2026-09-09 (stage 3 of 8.9).** `Gui::MirrorViewer` (`src/Gui/MirrorViewer.h`) is
 that other implementation of `ViewerContext`: a camera, a viewport region, and the served
 scene graph, built when a client first states a camera over the wire and dropped when its
@@ -850,6 +860,36 @@ exposed to the tunnel or the gateway.
   them. Each frame carries the client's timestamp so the replayed `SoEvent` has a real
   time.
 
+  **As built (stage 4).** Fifteen bytes: `'E'`, a kind byte (0 move, 1 press, 2 release,
+  3 wheel, 4 key down, 5 key up), a modifiers byte (shift, ctrl, alt), a little-endian
+  `u16` code -- the button number for the button kinds, the Coin key code for the key kinds
+  -- three little-endian `i16` (x, y, wheel delta) and a little-endian `u32` client
+  timestamp in milliseconds. A size distinct from the camera's fifty-eight and the pick's
+  twenty-six, which is what tells the three apart.
+
+  **Nothing in it is converted on the way up.** The position is the client's canvas pixels
+  with the origin at the *top* left, exactly as a canvas reports it; the flip into Coin's
+  bottom-up viewport happens in that client's mirror, against the canvas height the mirror
+  already resolves its picks against, so a resize in flight cannot leave the event path and
+  the pick path disagreeing about where a pixel is. A key event carries no position and
+  keeps the pointer where the last move left it, because Coin's handlers read a position
+  off every event.
+
+  Two gates, and they differ from the camera's. An unrecognised kind is refused at the
+  parser rather than passed on, because the mirror turns the kind into a Coin event type
+  and an unknown one would become whichever event the default branch built -- a wrong event
+  is worse than none. And the frame sits **behind** the view-only gate, where the camera
+  sits in front of it: a camera says where somebody is looking, an input event moves
+  geometry. Counted apart from the picks (`inputMsgs`/`inputWire`), because the rate of
+  this channel is the one worth knowing on its own when 8.10b's question comes round again
+  for edit mode.
+
+  **Entering an edit** is not on this channel: it is the `edit` and `resetEdit` ops on the
+  control channel (section 4.2), which carry the connection id so the session binds to that
+  client's mirror. An `edit` from a connection that has stated no camera is refused --
+  there is no mirror before the first `'C'` frame, and setEdit's own fallback would create
+  a 3D view.
+
 **Downlink: the deltas that exist.** Two demands on them that are new:
 
 - The **editing overlay feed** (`OverlayEditing`, captured from `pcEditingRoot`) must delta
@@ -985,8 +1025,67 @@ Each step is a standalone landing with the desktop as its regression oracle.
    that would catch a regression here: the round trip is exact at the centre of the canvas
    whatever the view volume is, so a centre-only check proves nothing, and the corners are
    the test.
-4. **Edit mode.** `setEdit` under the mirror, the editing root captured by the change-driven
-   traversal, keys streamed; a sketch drawn and dragged from a phone.
+4. ~~**Edit mode.** `setEdit` under the mirror, the editing root captured by the change-driven
+   traversal, keys streamed; a sketch drawn and dragged from a phone.~~ The server side is
+   done 2026-09-09. The browser half -- a viewer that sends the `'E'` frame, and an
+   interface to ask for an edit -- is what remains of this step.
+
+   **The binding is the whole of it.** Everything the desktop reaches for when it starts an
+   edit names the wrong thing in a serving process: `Gui::Document::setEdit` finds its view
+   by asking `MainWindow::activeWindow()`, `setEditingTransform` and `getInEdit` go on
+   asking it afterwards, and `DrawSketchHandler::getViewer()` -- the fifth leak 8.3 named
+   and left -- asks it again from inside the tool state machine. With several browsers
+   connected that question has no useful answer, and with none connected it has a worse
+   one: **setEdit given no view does not refuse, it creates one**, so a served document
+   entering edit would have opened a 3D window and a GL context in a process whose premise
+   is having neither.
+
+   So an edit session is bound to a `Gui::ViewerContext`. `Gui::ViewerScope` names the view
+   whose input is being handled -- the same shape as `SelectionScope`, one replayed event,
+   one dynamic extent, no call site retyped -- and setEdit asks it before it goes looking
+   for a window. Nothing on the desktop opens a scope, so the desktop answer does not move.
+   A sketch tool asks its own view provider (`ViewProvider::getEditViewer()`) instead of the
+   window, and the two surfaces that genuinely need a Qt widget -- the cursor and the
+   on-view parameters -- get a checked downcast that is null for a mirror. That null is what
+   8.3 asked for: an edit mode that cannot run without a widget found by the null, in a
+   place that can say so.
+
+   **The editing root moved to `ViewerContext`**, where both implementations share it: the
+   separator, the transform, and the rule that an edit mode's geometry is moved out of the
+   view provider's root and put back. None of that was ever view work. What each view keeps
+   is where the root hangs -- under the aux root on the desktop, and inside the *served*
+   graph for a mirror, because the change-driven traversal is the only thing in a serving
+   process that plays the part a redraw plays on the desktop, and it sees nothing that is
+   not in that graph. In and out with the edit, so an idle client leaves no empty separator
+   in everybody else's scene.
+
+   **The `'E'` frame** (8.5) is the uplink an edit mode runs on, and the mirror grew an
+   event root of its own -- this client's camera, this client's `SoEventCallback`, then the
+   shared scene. Per client rather than in the shared graph, and that is the point: the
+   served root is traversed once per client, so a callback node living in it would fire for
+   every other client's events too.
+
+   Three things that were not in the design and are worth carrying:
+
+   - **`ViewProviderDragger::setEditViewer` does not chain to its base**, and every geometry
+     object -- so every sketch -- inherits it. Recording the edit viewer inside that virtual
+     hook therefore compiled, ran, and was null for exactly the view providers that need it.
+     It is recorded by the *view* instead, in `ViewerContext::setEditingViewProvider`, which
+     is one call site and cannot be bypassed.
+   - **A mirror's `getPointOnRay` has to pick against the editing root**, not the view
+     provider's, because `setupEditingRoot` has emptied the latter. This is the desktop's
+     own rule, and it is what lets a drag grab what it drew.
+   - **A connection can drop mid-edit**, and the mirror dies with it while `Gui::Document`
+     still points at it. `~MirrorViewer` ends the whole session -- the whole session, not
+     just this view's half, because a served document has no other view to carry it on in.
+
+   Oracles: `tests/gui/serve-mirror-edit.py` end to end over a real socket (the `edit` op
+   refused before a camera and accepted after, the sketch's graph moved and given back, an
+   `'E'` event replayed and answered with a push, a client dropping mid-edit), and
+   `tests/gui/sketch-edit-root.py` for the desktop, which reads the same rule through the
+   view provider's child count and runs a drawing tool to watch the view's cursor change.
+   The reading that discriminates the binding is that the served document has **zero** 3D
+   views throughout: without the scope there would be one.
 5. **On-view parameters in the DOM** and whatever the widget residue of 8.3 turned up.
 
 ### 8.10 Open questions
@@ -1008,6 +1107,18 @@ Each step is a standalone landing with the desktop as its regression oracle.
 - The mirror answers `logicalDotsPerInchX()` with 96, the CSS reference, because it has no
   screen to ask and its client is a browser. Whether the edit modes that size things in
   millimetres want that or the client's real density is a stage 4 question.
+- Stage 4 left the mirror still committing its picks into the room, because nothing yet
+  opens a `SelectionScope` for it. 8.4 says an in-edit pick is the mirror's own, and the
+  guard has been ready since stage 2; what is missing is the instance, and the decision
+  about which picks count as in-edit. That is the first thing to do on top of what landed.
+- `SoFCUnifiedSelection::handleEvent` reads `QApplication::mouseButtons()` twice, and the
+  served root is shared by every client. It is reached only from a mirror's replayed
+  events, so it is a leak of the same class as the four 8.3 closed rather than a live
+  defect, and `ViewerContext::mouseButtons()` is the answer it wants.
+- `MirrorViewer::setSelectionEnabled` records a flag; the desktop's toggles `selectionRole`
+  on its own selection root. A mirror's root is the shared served one, so the honest version
+  of that toggle is per document rather than per client -- consistent with one editor per
+  document, and worth stating rather than discovering.
 
 ### 8.10a The camera uplink is speculative work (experiment, next)
 
