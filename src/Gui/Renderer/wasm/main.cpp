@@ -442,6 +442,19 @@ EM_JS(void, fcviewer_viewonly_event, (int viewOnly), {
                                          { detail: !!viewOnly }));
 });
 
+// This client's edit session, as the server last said it stands
+// (docs/ThinClient.md sec 8.9 step 4). The chrome reads it to offer
+// "finish editing" instead of "edit", and to keep a panel from asking
+// for a second session; the viewer's own input routing does not go
+// through here.
+EM_JS(void, fcviewer_edit_event, (int editing, const char *obj), {
+    var name = obj ? UTF8ToString(obj) : '';
+    window.fcviewerEditing = editing ? name : null;
+    window.dispatchEvent(new CustomEvent('fc:edit',
+                                         { detail: { editing: !!editing,
+                                                     obj: name } }));
+});
+
 // The DOM layer's uplink, installed once at startup:
 // window.fcviewerControlSend(jsonString) -> bool (false = socket down,
 // caller shows its offline state rather than queueing).
@@ -477,6 +490,25 @@ EM_JS(void, fcviewer_install_control, (), {
         stringToUTF8(spec, buf, len);
         _fcviewer_set_layout(buf);
         _free(buf);
+    };
+    // Enter and leave an edit mode (docs/ThinClient.md sec 8.9 step 4).
+    // Both are asks: the answer arrives as an 'fc:edit' event, and
+    // window.fcviewerEditing names the object while one is running. A
+    // panel that greyed itself out on the call rather than on the event
+    // would be showing a session the server may have refused.
+    window.fcviewerEdit = function(obj, mode, subname) {
+        var o = obj || '', sn = subname || '';
+        var ol = lengthBytesUTF8(o) + 1, sl = lengthBytesUTF8(sn) + 1;
+        var ob = _malloc(ol), sb = _malloc(sl);
+        stringToUTF8(o, ob, ol);
+        stringToUTF8(sn, sb, sl);
+        var ok = _fcviewer_edit(ob, (mode | 0), sb);
+        _free(ob);
+        _free(sb);
+        return !!ok;
+    };
+    window.fcviewerResetEdit = function() {
+        return !!_fcviewer_reset_edit();
     };
     // The menu's document switch (docs/MultiDocServe.md §6).
     window.fcviewerSwitchDoc = function(name) {
@@ -3385,6 +3417,246 @@ static void sendPick(float px, float py, bool ctrl)
     emscripten_websocket_send_binary(s_ws, pick, sizeof(pick));
 }
 
+// ---- Uplink: this client's pointer and keys, while it is editing ------
+//
+// docs/ThinClient.md sec 8.5 (the 'E' frame) and sec 8.9 step 4. In view
+// mode a click is the only thing this viewer says about the pointer: the
+// ruling of sec 8.2a is that hover resolves locally and never becomes a
+// wire event. An edit mode is the stated exception -- the sketcher's
+// preselect is part of its tool state machine, deciding what a drag grabs
+// and what snapping offers -- so while a session is running the pointer
+// and the keyboard ride up as 'E' frames and the server's edit mode is
+// what answers them.
+//
+// What stays local is the camera. Orbit and pan are this client's own
+// question about where it is looking, and an edit mode has no opinion
+// about them, so the split while editing is: left button and keys to the
+// server, middle and right buttons and the wheel to the camera here.
+
+/// Whether this client is inside an edit mode on the server. Set by the
+/// answer to its own `edit` op, cleared by the server's push when the
+/// session ends -- including when it ends by something this client never
+/// asked for (an Escape the sketcher handled, a host resetting it, the
+/// document closing). A client that guessed instead would go on routing
+/// every left click into a session that is not there.
+static bool s_editing = false;
+static std::string s_editObj;
+/// The pointer button this client is holding while editing, if any: what
+/// makes a drag a drag rather than a hover, and what says the release
+/// belongs to the edit mode and not to the camera.
+static bool s_editButtonDown = false;
+
+/// Ids for the viewer's own control ops, kept clear of the DOM layer's
+/// (which counts up from small numbers): the answer has to be recognised
+/// here, because the input routing above is C++ state and cannot wait for
+/// a round trip through the chrome.
+static long s_editReqId = 0;
+static long s_nextViewerReqId = 900000001;
+
+/// bit 0 shift, bit 1 ctrl, bit 2 alt -- SceneInputFrame::modifiers.
+static uint8_t inputMods(bool shift, bool ctrl, bool alt)
+{
+    return uint8_t((shift ? 1 : 0) | (ctrl ? 2 : 0) | (alt ? 4 : 0));
+}
+
+static int16_t clampToI16(double v)
+{
+    return int16_t(bx::clamp(v, -32768.0, 32767.0));
+}
+
+/// A DOM button number (0 left, 1 middle, 2 right) as the wire's code
+/// (1 left, 2 middle, 3 right -- SoMouseButtonEvent's numbering).
+static uint16_t buttonCode(int domButton)
+{
+    switch (domButton) {
+    case 1: return 2;
+    case 2: return 3;
+    default: return 1;
+    }
+}
+
+/// A DOM KeyboardEvent.key as a Coin SoKeyboardEvent::Key.
+///
+/// Coin's key codes are X11 keysyms, so every printable ASCII key is its
+/// own code point once the case is folded away -- the shift state travels
+/// in the modifier byte, and a sketcher shortcut asks for the key, not the
+/// character it typed. The named keys are the ones an edit mode actually
+/// reads: Escape and Return end a tool, Delete removes what is selected,
+/// Backspace steps a polyline back, and the arrows nudge.
+static uint16_t coinKeyFor(const char *key)
+{
+    if (!key || !key[0])
+        return 0;
+    static const struct { const char *name; uint16_t code; } kNamed[] = {
+        {"Escape", 0xff1b}, {"Enter", 0xff0d}, {"Tab", 0xff09},
+        {"Backspace", 0xff08}, {"Delete", 0xffff}, {"Insert", 0xff63},
+        {"Home", 0xff50}, {"End", 0xff57},
+        {"PageUp", 0xff55}, {"PageDown", 0xff56},
+        {"ArrowLeft", 0xff51}, {"ArrowUp", 0xff52},
+        {"ArrowRight", 0xff53}, {"ArrowDown", 0xff54},
+        {"Shift", 0xffe1}, {"Control", 0xffe3}, {"Alt", 0xffe9},
+        {"CapsLock", 0xffe5},
+        {"F1", 0xffbe}, {"F2", 0xffbf}, {"F3", 0xffc0}, {"F4", 0xffc1},
+        {"F5", 0xffc2}, {"F6", 0xffc3}, {"F7", 0xffc4}, {"F8", 0xffc5},
+        {"F9", 0xffc6}, {"F10", 0xffc7}, {"F11", 0xffc8}, {"F12", 0xffc9},
+    };
+    for (const auto &n : kNamed) {
+        if (std::strcmp(key, n.name) == 0)
+            return n.code;
+    }
+    // One printable ASCII character: its own keysym, lower-cased.
+    if (key[1] == '\0') {
+        unsigned char c = (unsigned char)key[0];
+        if (c >= 'A' && c <= 'Z')
+            c = (unsigned char)(c - 'A' + 'a');
+        if (c >= 0x20 && c < 0x7f)
+            return c;
+    }
+    return 0;   // nothing this server has a key for; not sent
+}
+
+/// Send one 'E' frame: 'E', kind, modifiers, a u16 code, three i16
+/// (x, y, wheel delta) and a u32 client timestamp, little-endian.
+///
+/// The camera goes first when it is news, for the same reason a pick
+/// carries one (sec 8.10a): the mirror places this event with the camera
+/// it was last told about, and an event replayed in a framing the client
+/// has since left lands somewhere plausible and wrong. That is the whole
+/// of what an edit mode needs from the uplink policy -- not a per-frame
+/// send, but a camera that is never behind the event it is placing.
+static void sendInputFrame(uint8_t kind, uint8_t mods, uint16_t code,
+                           float x, float y, int delta)
+{
+    if (!s_wsOpen || s_ws <= 0)
+        return;
+    sendCameraFrame(/*force*/ false);
+    uint8_t frame[15];
+    frame[0] = 'E';
+    frame[1] = kind;
+    frame[2] = mods;
+    const int16_t px = clampToI16(x);
+    const int16_t py = clampToI16(y);
+    const int16_t d = clampToI16(delta);
+    const uint32_t t = uint32_t(emscripten_get_now());
+    std::memcpy(frame + 3, &code, 2);
+    std::memcpy(frame + 5, &px, 2);
+    std::memcpy(frame + 7, &py, 2);
+    std::memcpy(frame + 9, &d, 2);
+    std::memcpy(frame + 11, &t, 4);
+    emscripten_websocket_send_binary(s_ws, frame, sizeof(frame));
+}
+
+// A pointer move is the one kind that arrives faster than it can matter:
+// a browser reports every one the OS gives it, and the desktop's edit
+// modes see whatever the widget's move events were coalesced to. So the
+// latest position is held and sent once a frame -- the same coalescing
+// the camera does, and for the same reason.
+static bool s_editMovePending = false;
+static float s_editMoveX = 0.0f, s_editMoveY = 0.0f;
+static uint8_t s_editMoveMods = 0;
+
+/// Send the held move, if there is one. Called once a frame, and before
+/// any other 'E' frame: a press that overtook the move it followed would
+/// reach the tool state machine at the previous position.
+static void flushEditMove()
+{
+    if (!s_editMovePending)
+        return;
+    s_editMovePending = false;
+    sendInputFrame(0, s_editMoveMods, 0, s_editMoveX, s_editMoveY, 0);
+}
+
+/// Hold a move for this frame. Client coordinates, device pixels, origin
+/// top left -- the mirror flips them into Coin's viewport itself.
+static void queueEditMove(float px, float py, uint8_t mods)
+{
+    s_editMoveX = px;
+    s_editMoveY = py;
+    s_editMoveMods = mods;
+    s_editMovePending = true;
+}
+
+/// Enter or leave the edit session this viewer believes it is in, and
+/// tell the chrome. Only ever called from an answer or a push -- the
+/// server owns whether a session exists, and this is the client's copy.
+static void setEditing(bool on, const char *obj)
+{
+    if (s_editing == on && (!on || s_editObj == (obj ? obj : "")))
+        return;
+    s_editing = on;
+    s_editObj = on && obj ? obj : "";
+    // A session that ends with the pointer down leaves no release to
+    // send, and a session that starts with it down never saw the press.
+    s_editButtonDown = false;
+    s_editMovePending = false;
+    std::printf("fcviewer: %s edit mode%s%s\n", on ? "entered" : "left",
+                s_editObj.empty() ? "" : " on ", s_editObj.c_str());
+    fcviewer_edit_event(on ? 1 : 0, s_editObj.c_str());
+    fcviewer_status(on ? "Editing \xe2\x80\x94 Escape to finish" : nullptr,
+                    0.0, on ? -1.0 : 0.0);
+}
+
+/// Ask the server to enter an edit mode on \a obj (docs/ThinClient.md
+/// sec 8.9 step 4). Answered asynchronously; s_editing follows the
+/// answer, never this call.
+extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_edit(const char *obj, int mode,
+                                                 const char *subname)
+{
+    if (!obj || !obj[0] || s_ws <= 0 || !s_wsOpen)
+        return 0;
+    // The op is refused for a connection whose view the server does not
+    // know, and under the default uplink policy (sec 8.10b) a client that
+    // has not clicked yet has never stated a camera. Forced rather than
+    // news-only: the refusal it prevents is silent to the user, and one
+    // camera frame is the cheapest possible way not to earn it.
+    sendCameraFrame(/*force*/ true);
+    s_editReqId = s_nextViewerReqId++;
+    std::string msg = "{\"op\":\"edit\",\"id\":";
+    msg += std::to_string(s_editReqId);
+    if (!s_docName.empty()) {
+        msg += ",\"doc\":\"";
+        jsonEscapeTo(msg, s_docName);
+        msg += "\"";
+    }
+    msg += ",\"obj\":\"";
+    jsonEscapeTo(msg, obj);
+    msg += "\",\"mode\":";
+    msg += std::to_string(mode);
+    if (subname && subname[0]) {
+        msg += ",\"subname\":\"";
+        jsonEscapeTo(msg, subname);
+        msg += "\"";
+    }
+    msg += "}";
+    return emscripten_websocket_send_utf8_text(
+                   s_ws, const_cast<char *>(msg.c_str())) >= 0 ? 1 : 0;
+}
+
+/// Leave the edit session. The state follows the server's push, not this
+/// call -- the same rule as entering.
+extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_reset_edit()
+{
+    if (s_ws <= 0 || !s_wsOpen)
+        return 0;
+    std::string msg = "{\"op\":\"resetEdit\",\"id\":";
+    msg += std::to_string(s_nextViewerReqId++);
+    if (!s_docName.empty()) {
+        msg += ",\"doc\":\"";
+        jsonEscapeTo(msg, s_docName);
+        msg += "\"";
+    }
+    msg += "}";
+    return emscripten_websocket_send_utf8_text(
+                   s_ws, const_cast<char *>(msg.c_str())) >= 0 ? 1 : 0;
+}
+
+/// What the chrome (and a test) reads to know which mode the viewer's
+/// input is in.
+extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_editing()
+{
+    return s_editing ? 1 : 0;
+}
+
 static void mainLoop()
 {
     const double frameNow = emscripten_get_now();
@@ -3448,6 +3720,10 @@ static void mainLoop()
     // under the lazy policies, which say nothing until a click
     // (docs/ThinClient.md sec 8.10a).
     tickCameraUplink();
+
+    // And the pointer move this frame held, after the camera above so
+    // that a move and the camera it was made in go up in that order.
+    flushEditMove();
 
     // One-shot dumpFrame capture: the mode override applies to just
     // this frame's debug pass, then the staged config is restored
@@ -3718,6 +3994,21 @@ static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
         canvasPos(e, px, py);
         setActiveSubAt(px, py);
     }
+    // While a session is running the left button is the edit mode's:
+    // it draws, drags and constrains, and none of that has a local
+    // answer. The other two stay with the camera, which is this
+    // client's own (docs/ThinClient.md sec 8.9 step 4).
+    if (s_editing && e->button == 0) {
+        float px, py;
+        canvasPos(e, px, py);
+        flushEditMove();
+        sendInputFrame(1, inputMods(e->shiftKey, e->ctrlKey, e->altKey),
+                       buttonCode(e->button), px, py, 0);
+        s_editButtonDown = true;
+        clearCubeHover();
+        clearButtonHover();
+        return EM_TRUE;
+    }
     s_coarsePointer = false;
     s_dragging = true;
     s_panning = e->button == 2 || e->shiftKey;
@@ -3736,6 +4027,18 @@ static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
 
 static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
 {
+    // The release of a press the edit mode was given goes with it, even
+    // if the session ended in between -- a tool that saw a press and no
+    // release is left holding a drag nothing will ever finish.
+    if (s_editButtonDown && e->button == 0) {
+        float px, py;
+        canvasPos(e, px, py);
+        flushEditMove();
+        sendInputFrame(2, inputMods(e->shiftKey, e->ctrlKey, e->altKey),
+                       buttonCode(e->button), px, py, 0);
+        s_editButtonDown = false;
+        return EM_TRUE;
+    }
     s_dragging = false;
     if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 6
             && std::abs(int(e->clientY) - s_downY) <= 6) {
@@ -3761,6 +4064,20 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
 
 static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
 {
+    // In an edit mode the pointer is part of the tool's state machine --
+    // what a drag grabs, what snapping offers, what the rubber band is
+    // drawn to -- so it rides up rather than resolving here (sec 8.2a
+    // states this as the boundary of the local-preselect ruling). Not
+    // while a camera drag is in flight: that pointer is orbiting, and
+    // the edit mode has no business being told about it. Held for the
+    // frame rather than sent per DOM event.
+    if (s_editing && !s_dragging) {
+        float px, py;
+        canvasPos(e, px, py);
+        queueEditMove(px, py,
+                      inputMods(e->shiftKey, e->ctrlKey, e->altKey));
+        return EM_TRUE;
+    }
     if (!s_dragging) {
         updateHover(e);
         return EM_FALSE;
@@ -3845,10 +4162,34 @@ EM_JS(int, fcviewer_dom_has_keyboard, (), {
             || el.isContentEditable) ? 1 : 0;
 });
 
+/// Send one key up as an 'E' frame while editing. False when the key is
+/// not one the server has a code for, so the caller can fall through to
+/// whatever the viewer itself does with it.
+static bool sendEditKey(const EmscriptenKeyboardEvent *e, bool down)
+{
+    const uint16_t code = coinKeyFor(e->key);
+    if (!code)
+        return false;
+    flushEditMove();
+    // The last pointer position travels with it: SoKeyboardEvent carries
+    // a position like every other Coin event, and an edit mode reading it
+    // (the sketcher's Escape does, to decide what it is cancelling) must
+    // not be given the origin.
+    sendInputFrame(down ? 4 : 5,
+                   inputMods(e->shiftKey, e->ctrlKey, e->altKey), code,
+                   s_editMoveX, s_editMoveY, 0);
+    return true;
+}
+
 static EM_BOOL onKeyDown(int, const EmscriptenKeyboardEvent *e, void *)
 {
     if (fcviewer_dom_has_keyboard())
         return EM_FALSE;
+    // An edit mode owns the keyboard: Escape ends a tool, Delete removes
+    // what is selected, and the letters are its shortcuts. The viewer's
+    // own [v] and [d] would otherwise shadow two of them.
+    if (s_editing && sendEditKey(e, true))
+        return EM_TRUE;
     const char k = e->key[0];
     if (k == 'v' || k == 'V') {
         char buf[256];
@@ -3869,6 +4210,16 @@ static EM_BOOL onKeyDown(int, const EmscriptenKeyboardEvent *e, void *)
         return EM_TRUE;
     }
     return EM_FALSE;
+}
+
+/// The release half of the pair. Only ever interesting while editing --
+/// nothing the viewer does itself is keyed to a release -- but a tool
+/// that reads a held modifier needs to be told when it stops being held.
+static EM_BOOL onKeyUp(int, const EmscriptenKeyboardEvent *e, void *)
+{
+    if (fcviewer_dom_has_keyboard() || !s_editing)
+        return EM_FALSE;
+    return sendEditKey(e, false) ? EM_TRUE : EM_FALSE;
 }
 
 // Touch: one finger orbits, two fingers pan (centroid) and pinch-zoom
@@ -7782,7 +8133,58 @@ static void handleControlMessage(const char *json)
         }
         std::printf("fcviewer: server error %s\n", json);
     }
+    else if (std::strstr(json, "\"cmd\":\"edit\"")) {
+        // The server saying whether this connection is in an edit
+        // session (docs/ThinClient.md sec 8.9 step 4). Pushed on both
+        // edges, and the leaving edge is the one that matters: a
+        // session can end without this client asking -- an Escape the
+        // sketcher handled itself, a host resetting it, the document
+        // closing -- and a viewer still routing its left button into
+        // that session would be sending events nothing answers.
+        const bool on = std::strstr(json, "\"editing\":true") != nullptr;
+        char obj[128] = "";
+        if (const char *p = std::strstr(json, "\"obj\"")) {
+            const char *open = std::strchr(p + 5, '"');
+            const char *close = open ? std::strchr(open + 1, '"') : nullptr;
+            if (close && close - open - 1 < long(sizeof(obj))) {
+                std::memcpy(obj, open + 1, size_t(close - open - 1));
+                obj[close - open - 1] = '\0';
+            }
+        }
+        setEditing(on, obj);
+    }
     else if (std::strstr(json, "\"id\":") || std::strstr(json, "\"op\":")) {
+        // This viewer's own edit request, answered (sec 8.9 step 4). Read
+        // here rather than in the chrome because the input routing is
+        // this file's state: a viewer that let the DOM layer tell it
+        // would route a click into a session that had been refused.
+        // Forwarded to the chrome underneath either way -- a refusal is
+        // something a panel wants to say out loud.
+        if (s_editReqId) {
+            char want[32];
+            std::snprintf(want, sizeof(want), "\"id\":%ld", s_editReqId);
+            if (std::strstr(json, want)) {
+                const bool ok = std::strstr(json, "\"ok\":true") != nullptr;
+                s_editReqId = 0;
+                if (ok) {
+                    char obj[128] = "";
+                    if (const char *p = std::strstr(json, "\"obj\"")) {
+                        const char *open = std::strchr(p + 5, '"');
+                        const char *close =
+                            open ? std::strchr(open + 1, '"') : nullptr;
+                        if (close && close - open - 1 < long(sizeof(obj))) {
+                            std::memcpy(obj, open + 1,
+                                        size_t(close - open - 1));
+                            obj[close - open - 1] = '\0';
+                        }
+                    }
+                    setEditing(true, obj);
+                }
+                else {
+                    std::printf("fcviewer: edit refused %s\n", json);
+                }
+            }
+        }
         // A semantic-channel answer (docs/ThinClient.md §4.2) — not for
         // the viewer, for the DOM layer riding on it.
         fcviewer_control_event(json);
@@ -8708,6 +9110,11 @@ int main()
 
     emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT,
                                     nullptr, EM_TRUE, onKeyDown);
+    // The release half, for the edit-mode key stream (sec 8.5): on the
+    // document like the press, so a key released after the pointer has
+    // left the canvas is still reported.
+    emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT,
+                                  nullptr, EM_TRUE, onKeyUp);
     emscripten_set_mousedown_callback("#canvas", nullptr, EM_TRUE,
                                       onMouseDown);
     emscripten_set_mouseup_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT,
