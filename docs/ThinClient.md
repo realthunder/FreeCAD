@@ -1105,25 +1105,33 @@ document and the built viewer, drives Chrome through an orbit and four clicks un
 `?camup=`, and reads the same server-side counters. What it found, per policy, through a
 ten-second orbit:
 
-| policy | camera frames through the orbit | orbit bytes | clicks | camera frames with the clicks | selection after |
+`CAMUP_REAL=1` puts it on the real GPU -- a headful window on the WSLg desktop, WebGL2
+through ANGLE over D3D12, at the compositor's 60 Hz. That is the tier the numbers come
+from; headless swiftshader can only show the shape. Through a ten-second orbit there, with
+the page confirmed drawing at **60.0 rAF/s and 601 dispatched moves**:
+
+| policy | camera frames through the orbit | orbit bytes/s | clicks | camera frames with the clicks | selection after |
 |---|---|---|---|---|---|
-| `frame` | 7 | 448 B | 4 | 4 | `Box.Face4` |
-| `rate` | 7 | 446 B | 4 | 4 | `Box.Face4` |
-| `lazy` | **0** | **0 B** | 4 | **1** | `Box.Face4` |
-| `lazy1` | **0** | **0 B** | 4 | **0** | `Box.Face4` |
+| `frame` | 596 (56.8/s) | **3633 B/s** | 4 | 4 | `Box.Face4` |
+| `rate` | 93 (8.9/s) | 567 B/s | 4 | 4 | `Box.Face4` |
+| `lazy` | **0** | **0 B/s** | 4 | **1** | `Box.Face4` |
+| `lazy1` | **0** | **0 B/s** | 4 | **0** | `Box.Face4` |
 
-Every policy picks, and picks the same thing: the correctness witness holds in the real
-client and not only in the bench. `lazy` states its camera once across four clicks -- the
-coalescing working, the three clicks from an unmoved camera saying nothing -- and `lazy1`
-sends no camera frame at all, ever, because it rides inside the pick.
+**The real browser reproduces the bench**: 3633 B/s against the bench's 3888, and 567
+against 614. So the synthetic client was not standing in for the browser's code after all --
+the two agree, which is the strongest form the answer could take. Every policy picks, and
+picks the same thing. `lazy` states its camera once across four clicks -- the coalescing
+working, the three clicks from an unmoved camera saying nothing -- and `lazy1` sends no
+camera frame at all, ever, because it rides inside the pick.
 
-What that table cannot show is the magnitude. The page draws at **0.6 frames a second**
-under headless swiftshader, so A's seven frames are seven draws and not a per-frame cost
-worth measuring, and B's 10 Hz throttle never binds -- B and A are the same policy at that
-frame rate, which is why the harness skips that comparison rather than failing it. The
-shape is what the browser leg is for; the bench is what the numbers are for.
+Two things to know about running it. The page's frame rate is the measurement, so the
+harness reports the gesture's own `moves` and `rAF/s`: too few camera frames could be the
+policy coalescing, a slow page, or a gesture that never reached the camera, and those are
+three different things. And **an earlier version of this table read 0.6 frames a second and
+was written up as a limit of the tier** -- it was not, it was a defect of the fix in 8.10c
+below, caught only because 0.6 fps on a GPU that probes at 61 is not a believable number.
 
-Getting that table at all took finding and fixing something much larger, below.
+Getting the table at all took finding and fixing something much larger, below.
 
 **The default is now `lazy1`.** The measurement says C' by a wide margin, the correctness
 witness holds in both legs, and nothing on the server reads a mirror's camera except the
@@ -1177,7 +1185,33 @@ MSAA change re-decides `m_oit` and so which program set exists at all. Verified 
 `4x MSAA scene targets could not be created on this backend -- rebuilding without
 multisampling`, then `view init 1100x900 msaa 1`, then `scene consumed: 6 draws, 2 meshes`.
 
-Three things worth keeping. **`?msaa=0` is the first thing to try when the browser viewer
-shows nothing.** A bail-to-host path is only a fallback where there is a host to bail to.
-And a capability bit is a promise, not a result: where the cost of believing it is the whole
-scene, try the thing and react to what happens.
+**And the default was wrong, which is the actual repair.** The desktop turned MSAA off when
+lines and points started resolving their own coverage analytically -- the measurement is in
+`View3DInventorViewer::getNumSamples`, and the same comment in `BGFXViewLifecycle.cpp` says
+"MSAA is off by default". The browser viewer had simply never been brought in line: it still
+asked for four samples. So the default asked a backend for something it does not have, and
+the fallback above is now what catches an explicit `?msaa=4` rather than what every browser
+runs into. Both defaults are off now, the viewer's and the standalone lib's.
+
+**The fallback had a second-order bug, and it is the more instructive half.** With it in
+place the viewer drew -- correctly -- and ran at **0.6 frames a second** instead of 60. The
+frame path decides whether to rebuild a view with
+
+```
+progChanged = _BGFXLib.standaloneSamples != view->msaaSamples || ...
+```
+
+which compares what was ASKED for against what the targets were BUILT with. The fallback
+lowered the second and not the first, so every frame saw a program change, rebuilt every
+target the view owns, and did it again. The picture was right the whole time, which is why
+it read as "this tier is just slow" and got written into this document as a property of
+swiftshader. Both sides go through one `_BGFXLib::effectiveSamples()` now, so the build and
+the did-it-change test cannot disagree.
+
+Four things worth keeping. **`?msaa=0` is the first thing to try when the browser viewer
+shows nothing.** A bail-to-host path is only a fallback where there is a host to bail to. A
+capability bit is a promise, not a result: where the cost of believing it is the whole
+scene, try the thing and react to what happens. And **a fallback that changes what was
+built must change what the rebuild test compares against, or it re-fires for ever** -- the
+symptom is a correct picture at a fraction of the frame rate, which is far easier to
+rationalise than a wrong one.

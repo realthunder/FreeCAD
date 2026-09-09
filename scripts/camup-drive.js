@@ -47,22 +47,36 @@ function phase(name) {
     process.exit(2);
   }
 
-  // A page that cannot draw must not hold the run open for ever: every
-  // CDP call gets a bound, and a stuck one fails the run with a reason
-  // rather than as a timeout with none.
-  const browser = await puppeteer.launch({
-    executablePath: process.env.CHROME,
-    headless: true,
-    // A starved page answers slowly; the in-page gesture below runs as
-    // one protocol call and must be allowed to take the orbit's length
-    // plus whatever the page's frame rate really is.
-    protocolTimeout: 180000,
-    args: ['--no-sandbox', '--enable-unsafe-swiftshader',
-           '--use-angle=swiftshader', '--window-size=1100,900',
-           '--disable-background-timer-throttling',
-           '--disable-backgrounding-occluded-windows',
-           '--disable-renderer-backgrounding'],
-  });
+  // CAMUP_REAL=1 puts this on the real GPU -- a headful window on the
+  // WSLg desktop, WebGL2 through ANGLE over D3D12, at the compositor's
+  // 60 Hz. That is the only tier where the per-frame policy actually
+  // costs sixty frames a second, so it is the only tier where the
+  // magnitudes mean anything; headless swiftshader draws at well under
+  // two frames a second and can only show the shape. Its launch is
+  // scripts/wasm-chrome.js's, which is where the flags and the d3d12
+  // steering are documented and kept.
+  const real = !!process.env.CAMUP_REAL;
+  const browser = real
+    ? await require('./wasm-chrome').launch({
+        headless: false,
+        args: ['--window-size=1100,900'],
+      })
+    // A page that cannot draw must not hold the run open for ever: every
+    // CDP call gets a bound, and a stuck one fails the run with a reason
+    // rather than as a timeout with none.
+    : await puppeteer.launch({
+        executablePath: process.env.CHROME,
+        headless: true,
+        // A starved page answers slowly; the in-page gesture below runs
+        // as one protocol call and must be allowed to take the orbit's
+        // length plus whatever the page's frame rate really is.
+        protocolTimeout: 180000,
+        args: ['--no-sandbox', '--enable-unsafe-swiftshader',
+               '--use-angle=swiftshader', '--window-size=1100,900',
+               '--disable-background-timer-throttling',
+               '--disable-backgrounding-occluded-windows',
+               '--disable-renderer-backgrounding'],
+      });
   try {
     const page = await browser.newPage();
     page.setDefaultTimeout(60000);
@@ -105,7 +119,7 @@ function phase(name) {
     // dispatched MouseEvent reaches exactly the code a real one would,
     // and pacing the moves on requestAnimationFrame gives the one move
     // per client frame that the camera policies key off.
-    await page.evaluate(async (ms) => {
+    const gesture = await page.evaluate(async (ms) => {
       const c = document.getElementById('canvas');
       const r = c.getBoundingClientRect();
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
@@ -115,16 +129,27 @@ function phase(name) {
                                 clientX: x, clientY: y, buttons, button: 0}));
       send('mousedown', c, cx + rad, cy, 1);
       const t0 = performance.now();
+      let moves = 0;
       for (;;) {
         const t = performance.now() - t0;
         if (t >= ms) break;
         const a = (t / ms) * Math.PI * 2;
         send('mousemove', document, cx + rad * Math.cos(a),
              cy + rad * 0.35 * Math.sin(a), 1);
+        ++moves;
         await new Promise(res => requestAnimationFrame(res));
       }
       send('mouseup', document, cx + rad, cy, 0);
+      const s = performance.now() - t0;
+      return {moves, fps: moves / (s / 1000)};
     }, orbitMs);
+    // How many moves the page actually dispatched, and at what rate the
+    // frames they were paced on came. Without this the server's camera
+    // count is unreadable: too few camera frames could be the policy
+    // coalescing, a slow page, or a gesture that never reached the
+    // camera, and those are three different things.
+    console.log('GESTURE moves=%d rAF=%s/s', gesture.moves,
+                gesture.fps.toFixed(1));
     await sleep(500);
     phase('orbited');
 

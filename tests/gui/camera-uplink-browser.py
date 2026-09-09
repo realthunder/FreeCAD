@@ -126,6 +126,14 @@ class Run(threading.Thread):
             env["LD_LIBRARY_PATH"] = (
                 libs + os.pathsep + env.get("LD_LIBRARY_PATH", ""))
             env["CAMUP_PHASES"] = self.phase_path
+            if os.environ.get("CAMUP_REAL"):
+                # The real-GPU tier draws on the WSLg desktop, and this
+                # harness runs under xvfb-run -- which set DISPLAY to its
+                # own headless server and unset WAYLAND_DISPLAY. Chrome
+                # would land there, on no GPU at all, and the run would
+                # look like a slow real one rather than a headless one.
+                env["DISPLAY"] = os.environ.get("CAMUP_DISPLAY", ":0")
+                env.pop("WAYLAND_DISPLAY", None)
             with open(self.log_path, "w") as log:
                 proc = subprocess.Popen(
                     ["node", DRIVER, self.url, str(SETTLE_MS), str(ORBIT_MS),
