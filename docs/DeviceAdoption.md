@@ -618,6 +618,8 @@ mean latency exactly 2.0 frames, so the screen trails the scene by about 180
 ms on a model this size.
 
 **! The binaries carried no `NDEBUG`** (`src/3rdParty/cycles` FORCEs the
-global MSVC flag variables and its strings omit it), so absolute frame times
-are inflated -- mostly in our own C++. Every leg is the same binary, so the
-deltas above hold; see 7.10 for the detail.
+global MSVC flag variables and its strings omitted it). That was fixed and
+re-measured afterwards, and it moved nothing: `pre` came back identical to a
+hundredth of a millisecond on two backends. So these are absolute frame times
+as well as deltas. `docs/RenderEngine.md` 7.10 carries the numbers and
+withdraws the earlier guess that asserts were inflating them.

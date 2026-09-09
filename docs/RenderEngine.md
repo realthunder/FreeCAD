@@ -2768,21 +2768,11 @@ Every live leg: 0 stale of 197-208 landed frames, mean latency exactly
 frames -- about 180 ms at these frame times -- and that lag, not the
 milliseconds, is the honest cost of Route A on a model this size.
 
-**! These are RelWithDebInfo binaries WITHOUT `NDEBUG`.** `/O2 /Ob1
-/MD /Zi`, release CRT, bgfx's own asserts off (`BX_CONFIG_DEBUG=0`) --
-but plain `assert()` is live in our translation units and in the OCCT
-and Coin headers that inline into them, because
-`src/3rdParty/cycles/src/cmake/configure_build.cmake` FORCEs the global
-MSVC flag cache variables (Blender build code assuming it is the
-top-level project) and its strings carry no `/DNDEBUG`. No
-configuration escapes it: `Release` there is `/O2 /Ob2 /MD`. Every leg
-is the same binary, so the comparisons hold; but the absolute
-milliseconds are inflated, most of all in `submitloop` and `pre` --
-our own C++, and about 52 of a 90 ms frame -- so do not quote these as
-what a shipped build costs a frame. `docs/DevEnvironment.md` warns
-against exactly this state ("Leave `/DNDEBUG` alone: OCCT and Coin were
-compiled with it, and their headers inline into our translation
-units"), so the tree is on the wrong side of its own policy.
+**! The binaries carried no `NDEBUG`.** `/O2 /Ob1 /MD /Zi`, release
+CRT, bgfx's own asserts off (`BX_CONFIG_DEBUG=0`), but `assert()` live
+in our own translation units. That was fixed after these legs ran, and
+measuring it again changed nothing -- see the next section, which also
+withdraws the guess that it mattered.
 
 **A teardown hang worth knowing about when driving legs.** One leg
 finished measuring, wrote its complete result, and then sat 21 minutes
@@ -2791,6 +2781,64 @@ wedged after `quit()`, not slow. Six other legs exited cleanly and it
 has not reproduced. A driver that waits for the process to exit hangs
 with it, so wait for the output file's closing `run` line instead and
 kill the process after that.
+
+### Restoring NDEBUG changed nothing measurable (2026-09-09)
+
+The tables above were measured on binaries that defined **no `NDEBUG`**
+in any configuration, because
+`src/3rdParty/cycles/src/cmake/configure_build.cmake` `CACHE ... FORCE`s
+the global MSVC flag variables -- Blender build code assuming it is the
+top-level project -- and none of its Release, RelWithDebInfo or
+MinSizeRel strings carried `/DNDEBUG`. So `assert()` was live in every
+translation unit of FreeCAD, and `/J` (unsigned `char`) was imposed on
+all of it by a vendored path tracer.
+
+That is an ODR mismatch and not merely a preference: OCCT is built
+`/MD /Zi /O2 /Ob1 /DNDEBUG` and Coin `/O2 /Ob1 /DNDEBUG` on this box
+(verified in their caches, not assumed), and their headers inline into
+our translation units, so the same inline function was compiled both
+ways and the linker kept whichever it saw first.
+`docs/DevEnvironment.md` warns against exactly this.
+
+Fixed in the cycles fork, rebuilt whole (4628 targets, 43 minutes, and
+`FreeCADRenderer.dll` shrank by 161 KB, which is what compiling asserts
+out should look like), and measured again: five legs, composite live,
+same model, same size, same settings.
+
+**The frame did not move.** Vulkan's two uncontaminated legs read 96.23
+and 96.25 -- agreeing to 0.02 ms -- against 94.32 and 95.88 with
+asserts live. Position-matched:
+
+| | `submitloop` | `pre` | frame |
+| --- | --- | --- | --- |
+| Vulkan, asserts live | 24.82 | **25.27** | 95.10 |
+| Vulkan, `NDEBUG` | 25.67 | **25.26** | 96.24 |
+| Direct3D 12, asserts live | 26.40 | **27.45** | 96.22 |
+| Direct3D 12, `NDEBUG` | 26.80 | **27.45** | 94.63 |
+
+`pre` is identical to a hundredth of a millisecond on both backends,
+and everything else moves less than the run-to-run noise, in the wrong
+direction as often as the right one.
+
+**So the caveat this section previously carried is withdrawn.** It said
+the absolute milliseconds were "inflated, most of all in `submitloop`
+and `pre`". That was an inference from "asserts are live", it was
+never measured, and when measured it was false. The tables above stand
+as absolute numbers as well as comparisons -- subject to `/Ob1`, which
+is still short of Release inlining and was not tested. **Keep the fix
+for the ODR mismatch, which is a correctness argument; it buys no frame
+time on this workload.**
+
+**And the fifth trap needs restating.** It says a session's FIRST leg
+reads high. Across the two sessions here the first leg was clean both
+times and the **SECOND** leg read about 5% high both times -- Vulkan
+100.06 after 94.32, then 100.99 after 96.23, with `submitloop`, `pre`
+and `post` rising together each time, which is the tell that it is the
+box rather than the backend. Whatever the mechanism (both sessions had
+heavy disk activity behind them -- a document open, and a full rebuild
+six minutes earlier), position is not the rule. The rule is the one
+that survives: **read the shared columns first, repeat every backend,
+and discard any leg whose backend-independent terms moved.**
 
 ### Route D -- Qt owns the device -- is the destination
 
