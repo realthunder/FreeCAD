@@ -2225,13 +2225,13 @@ static std::vector<OnViewParam> s_onView;
 static void parseOnViewAnchors(const char *json)
 {
     s_onView.clear();
-    const char *p = std::strstr(json, ""params"");
+    const char *p = std::strstr(json, "\"params\"");
     if (!p)
         return;
-    while ((p = std::strstr(p, "{"i":")) != nullptr) {
-        const char *px = std::strstr(p, ""x":");
-        const char *py = std::strstr(p, ""y":");
-        const char *pz = std::strstr(p, ""z":");
+    while ((p = std::strstr(p, "{\"i\":")) != nullptr) {
+        const char *px = std::strstr(p, "\"x\":");
+        const char *py = std::strstr(p, "\"y\":");
+        const char *pz = std::strstr(p, "\"z\":");
         if (!px || !py || !pz)
             break;
         OnViewParam param;
@@ -3754,7 +3754,7 @@ static void setEditing(bool on, const char *obj)
     // keystrokes to a tool that has finished (sec 8.7).
     if (!on && !s_onView.empty()) {
         s_onView.clear();
-        fcviewer_onview_event("{"params":[]}");
+        fcviewer_onview_event("{\"params\":[]}");
     }
     std::printf("fcviewer: %s edit mode%s%s\n", on ? "entered" : "left",
                 s_editObj.empty() ? "" : " on ", s_editObj.c_str());
@@ -8405,7 +8405,7 @@ static void handleControlMessage(const char *json)
         }
         setEditing(on, obj);
     }
-    else if (std::strstr(json, ""cmd":"onview"")) {
+    else if (std::strstr(json, "\"cmd\":\"onview\"")) {
         // The entry boxes this client's edit session has open (sec 8.7).
         // The anchors are kept here to be projected each frame; the rest
         // goes to the DOM layer, which draws it and knows no more about

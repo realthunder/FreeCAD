@@ -3,8 +3,8 @@
 //
 // These are the small entry boxes the sketcher puts next to the cursor
 // while a tool is running -- the width of a rectangle, the radius of a
-// circle -- and they are the last piece of an edit mode that a browser
-// could not show, because on the desktop each one is a Qt widget the tool
+// circle -- and they are the last piece of an edit mode a browser could
+// not show, because on the desktop each one is a Qt widget the tool
 // parents to the 3D view.
 //
 // **Nothing about editing lives here.** What each box says, what is
@@ -12,28 +12,28 @@
 // to it are all decided on the server, by the same QuantitySpinBox and
 // the same DrawSketchKeyboardManager rule the desktop uses. This layer
 // draws the text it is given and forwards keystrokes back. That is the
-// whole contract, and it is why the two tiers cannot drift: there is only
-// one implementation of the behaviour, and it is not this one.
+// whole contract, and it is why the two tiers cannot drift: there is one
+// implementation of the behaviour, and it is not this one.
 //
-// Two things are the client's, both because they run at frame rate rather
-// than at human rate: WHERE a box sits, projected from the world anchor
-// the server sent with the camera of the frame being drawn (sec 8.7 --
-// under the default uplink policy the server is not told where this
-// client is looking between clicks at all), and which box has the DOM
-// focus, so that a phone raises its keyboard.
-import { For, Show, createEffect, createSignal } from 'solid-js';
+// Two things are the client's, both because they run at frame rate
+// rather than at human rate: WHERE a box sits, projected by the viewer
+// from the world anchor the server sent with the camera of the frame
+// being drawn (under the default uplink policy the server is not told
+// where this client is looking between clicks at all), and which box has
+// the DOM focus, so that a phone raises its keyboard.
+import { Index, Show, createEffect, createSignal } from 'solid-js';
 import { sendOp } from './control';
 
 /// One entry box as the server states it ('fc:onview').
 export interface OnViewParam {
   i: number;
-  /// The world anchor. Kept by the viewer, not used here -- the pixel
-  /// position arrives separately, every frame it moves.
+  /// The world anchor. Kept by the viewer, which projects it; the pixel
+  /// position arrives separately, on every frame it moves.
   x: number;
   y: number;
   z: number;
-  /// The box's text, exactly as a desktop user would read it, units and
-  /// locale decimal separator included.
+  /// The box's text, exactly as a desktop user would read it -- units
+  /// and locale decimal separator included.
   text: string;
   /// What selectNumber() selected over there: [start, length].
   sel: [number, number];
@@ -61,26 +61,32 @@ export function OnViewParams(props: {
   params: () => OnViewParam[];
   places: () => OnViewPlace[];
 }) {
-  const placeOf = (i: number) => props.places().find((p) => p.i === i);
-
   return (
-    <div class="fc-onview" aria-hidden={props.params().length === 0}>
-      <For each={props.params()}>
+    <div class="fc-onview">
+      {/* Index, not For: For is keyed by item REFERENCE, and every push
+          from the server is a fresh array of fresh objects, so it would
+          tear down and rebuild every input each time -- taking the DOM
+          focus with it, mid-word, several times a second while a tool is
+          being driven. The set is positional (the server's `i` is the
+          box's place in the tool's own set), which is exactly what Index
+          keys on. */}
+      <Index each={props.params()}>
         {(param) => {
-          const place = () => placeOf(param.i);
+          const place = () =>
+              props.places().find((p) => p.i === param().i);
           return (
             <Show when={place()?.visible !== false}>
               <OnViewBox param={param} place={place} />
             </Show>
           );
         }}
-      </For>
+      </Index>
     </div>
   );
 }
 
 function OnViewBox(props: {
-  param: OnViewParam;
+  param: () => OnViewParam;
   place: () => OnViewPlace | undefined;
 }) {
   const [el, setEl] = createSignal<HTMLInputElement>();
@@ -91,16 +97,18 @@ function OnViewBox(props: {
   // in that gap would go to the wrong tool parameter.
   createEffect(() => {
     const input = el();
+    const param = props.param();
     if (!input) return;
-    if (props.param.focus && document.activeElement !== input) {
+    if (param.focus && document.activeElement !== input) {
       input.focus({ preventScroll: true });
     }
     // Both the text and the selection are the server's: this is a
     // display of a value being edited elsewhere, not an editor.
-    if (input.value !== props.param.text) input.value = props.param.text;
-    if (props.param.focus) {
-      const [start, length] = props.param.sel;
-      input.setSelectionRange(start, start + length);
+    if (input.value !== param.text) input.value = param.text;
+    if (param.focus && Array.isArray(param.sel)) {
+      const [start, length] = param.sel;
+      try { input.setSelectionRange(start, start + length); }
+      catch (e) { /* a value shorter than the range the server sent */ }
     }
   });
 
@@ -109,12 +117,12 @@ function OnViewBox(props: {
     // box keeps and which fall through to the sketch is the server's
     // decision (DrawSketchKeyboardManager), so a client that filtered
     // would be a second copy of that rule, drifting.
-    const sent = window.fcviewerSendKey?.(down, e.key, e.key.length === 1 ? e.key : '',
-                                          mods(e));
+    const sent = window.fcviewerSendKey?.(
+        down, e.key, e.key.length === 1 ? e.key : '', mods(e));
     // Default-prevented whether or not it was sent: the box must not
-    // edit its own text, because the text it shows is the server's and
-    // a local edit would be overwritten by the next push anyway --
-    // visibly, as a flicker.
+    // edit its own text, because the text it shows is the server's and a
+    // local edit would be overwritten by the next push -- visibly, as a
+    // flicker, and wrongly in between.
     e.preventDefault();
     if (!sent && down) console.warn('fcviewer-ui: key not forwarded', e.key);
   };
@@ -123,7 +131,7 @@ function OnViewBox(props: {
     <input
       ref={setEl}
       class="fc-onview-box"
-      classList={{ 'fc-onview-set': props.param.set }}
+      classList={{ 'fc-onview-set': props.param().set }}
       type="text"
       inputmode="decimal"
       autocomplete="off"
@@ -139,7 +147,7 @@ function OnViewBox(props: {
         // the client decides, and it still goes through the server so
         // that the tool's own focus tracking stays the authority.
         e.stopPropagation();
-        sendOp('onViewFocus', { index: props.param.i }).catch(() => {});
+        sendOp('onViewFocus', { index: props.param().i }).catch(() => {});
       }}
     />
   );
