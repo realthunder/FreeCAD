@@ -27,7 +27,9 @@
 /// two agree on a landscape canvas and disagree on a phone held upright.
 ///
 /// No document, no main window, no QApplication, no GL: a mirror is a
-/// camera, a viewport and a scene graph.
+/// camera, a viewport and a scene graph. It does need an App, because it
+/// owns a selection instance of its own (sec 8.4) and a selection knows
+/// about documents being deleted.
 
 #include <gtest/gtest.h>
 
@@ -52,9 +54,11 @@
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoTransform.h>
 
+#include <App/Application.h>
 #include <Base/Matrix.h>
 
 #include <Gui/MirrorViewer.h>
+#include <Gui/Selection/Selection.h>
 
 namespace
 {
@@ -150,6 +154,11 @@ protected:
             SoDB::init();
             SoInteraction::init();
         }
+        App::Application::Config()["ExeName"] = "MirrorViewer_tests_run";
+        int argc = 1;
+        char exename[] = "MirrorViewer_tests_run";
+        char* argv[] = {exename, nullptr};
+        App::Application::init(argc, argv);
     }
 
     void SetUp() override
@@ -720,6 +729,67 @@ TEST_F(MirrorViewerTest, theCurrentViewIsTheInnermostScope)
         EXPECT_EQ(Gui::ViewerContext::current(), mirror.get());
     }
     EXPECT_EQ(Gui::ViewerContext::current(), nullptr);
+}
+
+TEST_F(MirrorViewerTest, theSelectionIsThisClientsOwn)
+{
+    // What a browser picks while it is editing is that browser's, not the
+    // room's -- the room being what the tree, the property panel and every
+    // other viewer agree on (docs/ThinClient.md sec 8.4). So a mirror owns
+    // an instance, and it is not the room's.
+    Gui::SelectionSingleton* mine = mirror->selectionInstance();
+    ASSERT_NE(mine, nullptr);
+    EXPECT_NE(mine, &Gui::SelectionRoom());
+
+    Gui::MirrorViewer other(nullptr, scene, nullptr, nullptr);
+    EXPECT_NE(other.selectionInstance(), mine);
+}
+
+TEST_F(MirrorViewerTest, aViewerScopeCarriesThatSelectionWithIt)
+{
+    // The two stacks move together or not at all: an event handled in one
+    // client's view and selecting in another's is the defect this shape
+    // exists to make impossible. Opening the view scope is the only thing
+    // any caller does.
+    EXPECT_EQ(&Gui::Selection(), &Gui::SelectionRoom());
+    {
+        Gui::ViewerScope scope(mirror.get());
+        EXPECT_EQ(&Gui::Selection(), mirror->selectionInstance());
+
+        Gui::MirrorViewer other(nullptr, scene, nullptr, nullptr);
+        {
+            Gui::ViewerScope inner(&other);
+            EXPECT_EQ(&Gui::Selection(), other.selectionInstance());
+        }
+        EXPECT_EQ(&Gui::Selection(), mirror->selectionInstance());
+
+        // A scope opened on nothing names no view, and so selects in the
+        // room: that is the desktop's answer, and it must survive nesting.
+        {
+            Gui::ViewerScope none(nullptr);
+            EXPECT_EQ(&Gui::Selection(), &Gui::SelectionRoom());
+        }
+        EXPECT_EQ(&Gui::Selection(), mirror->selectionInstance());
+    }
+    EXPECT_EQ(&Gui::Selection(), &Gui::SelectionRoom());
+}
+
+TEST_F(MirrorViewerTest, whatOneClientSelectsIsNotWhatAnotherSees)
+{
+    Gui::MirrorViewer other(nullptr, scene, nullptr, nullptr);
+    {
+        Gui::ViewerScope scope(mirror.get());
+        Gui::Selection().setPreselectionText("mine");
+    }
+    {
+        Gui::ViewerScope scope(&other);
+        EXPECT_EQ(Gui::Selection().getPreselectionText(), std::string());
+    }
+    EXPECT_EQ(Gui::SelectionRoom().getPreselectionText(), std::string());
+    {
+        Gui::ViewerScope scope(mirror.get());
+        EXPECT_EQ(Gui::Selection().getPreselectionText(), std::string("mine"));
+    }
 }
 
 }  // namespace

@@ -37,6 +37,7 @@
 
 #include "Document.h"
 #include "InventorBase.h"
+#include "Selection.h"
 #include "ViewProvider.h"
 #include "ViewProviderLink.h"
 #include "ViewerContext.h"
@@ -247,9 +248,21 @@ ViewerScope::ViewerScope(ViewerContext* context)
     : previous(s_current)
 {
     s_current = context;
+    // And the view's selection with it, ALWAYS -- the room when this view
+    // has none of its own, and the room again when the scope names no
+    // view at all. Pushing nothing in those cases would leave whatever
+    // was current underneath standing, so a scope that says "no view is
+    // being handled here" would still be selecting in the last client's
+    // instance: the two stacks out of step, which is the one thing this
+    // shape exists to make impossible.
+    SelectionSingleton* sel = context ? context->selectionInstance() : nullptr;
+    selection = std::make_unique<SelectionScope>(sel ? *sel : SelectionRoom());
 }
 
 ViewerScope::~ViewerScope()
 {
+    // The selection first, so the two stacks unwind in the order they
+    // were pushed.
+    selection.reset();
     s_current = previous;
 }

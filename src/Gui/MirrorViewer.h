@@ -33,6 +33,8 @@ class SoEvent;
 namespace Gui
 {
 
+class SelectionSingleton;
+
 /** One connected client's view, mirrored in a process with no display.
  *
  * A serving process publishes a scene and every viewer navigates it with a
@@ -239,6 +241,16 @@ public:
     void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum) override;
     void resetEditingViewProvider() override;
     //@}
+
+    /** This client's own selection instance.
+     *
+     * Not the room's: what a browser picks while it is editing is that
+     * browser's, and the room is what every viewer and every panel agrees
+     * on (docs/ThinClient.md section 8.4). Made current by ViewerScope,
+     * so everything replayed through this view selects here without a
+     * single one of the call sites behind Gui::Selection() being touched.
+     */
+    SelectionSingleton* selectionInstance() const override;
 
     /** @name ViewerContext -- event delivery and selection mode */
     //@{

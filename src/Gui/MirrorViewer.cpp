@@ -56,6 +56,7 @@
 #include "Document.h"
 #include "InventorBase.h"
 #include "MirrorViewer.h"
+#include "Selection.h"
 #include "SoMouseWheelEvent.h"
 #include "Utilities.h"
 #include "ViewProvider.h"
@@ -155,6 +156,17 @@ public:
 
     bool editing = false;
     bool selectionEnabled = true;
+    /** This client's own selection (docs/ThinClient.md section 8.4).
+     *
+     * Current for the extent of anything replayed through this view, so
+     * the sketcher's picks, the preselect the unified selection root
+     * resolves and the selection undo stack are all this client's and not
+     * the room's. Held by value: it dies with the connection, which is
+     * what the scoped connection inside it is for.
+     */
+    SelectionSingleton selection;
+    /// Ends this view's half of an edit session when the document ends it.
+    fastsignals::scoped_connection resetEditConn;
     /// Whether the editing root is currently a child of the served graph.
     bool editRootAttached = false;
 
@@ -309,6 +321,22 @@ MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
     pimpl->eventManager = new SoEventManager;
     pimpl->eventManager->setSceneGraph(pimpl->eventRoot);
     pimpl->eventManager->setViewportRegion(pimpl->viewport);
+
+    // An edit mode leaves selection behind it -- the sketcher clears and
+    // then selects the sketch it just left, "convenience" on a desktop --
+    // and in this instance that would be one client's selection surviving
+    // the session it belonged to. Dropped when the document says the
+    // session is over, which is after the edit mode has finished touching
+    // it (Gui::Document::_resetEdit signals after finishEditing).
+    if (doc) {
+        pimpl->resetEditConn = doc->signalResetEdit.connect(
+            [this](const ViewProviderDocumentObject&) {
+                if (pimpl->doc && pimpl->doc->editingViewer() == this) {
+                    pimpl->selection.rmvPreselect();
+                    pimpl->selection.clearSelection();
+                }
+            });
+    }
 }
 
 MirrorViewer::~MirrorViewer()
@@ -320,6 +348,11 @@ MirrorViewer::~MirrorViewer()
     // that has to end, not just this view's half, because a served
     // document has no other view to carry it on in.
     if (pimpl->doc && pimpl->doc->editingViewer() == this) {
+        // In this view, so that what the edit mode does to selection on
+        // its way out is done to this client's instance and not to the
+        // room's -- a client dropping mid-edit must not leave the sketch
+        // it was editing selected for everybody else.
+        ViewerScope scope(this);
         pimpl->doc->resetEdit();
     }
     // And whatever is left: give the view provider its children back now,
@@ -892,6 +925,11 @@ void MirrorViewer::appendDetailPath(SoPath* path, ViewProvider* vp)
     // and is not the desktop's.
     (void)path;
     (void)vp;
+}
+
+SelectionSingleton* MirrorViewer::selectionInstance() const
+{
+    return &pimpl->selection;
 }
 
 void MirrorViewer::setEditing(bool edit)

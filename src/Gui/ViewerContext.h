@@ -25,6 +25,7 @@
 
 #include <FCGlobal.h>
 
+#include <memory>
 #include <vector>
 
 #include <QtCore/qnamespace.h>
@@ -65,6 +66,8 @@ namespace Gui {
 class Document;
 class ViewProvider;
 class GLGraphicsItem;
+class SelectionScope;
+class SelectionSingleton;
 
 /** What an edit mode is allowed to ask of the view it is running in.
  *
@@ -293,6 +296,23 @@ public:
      */
     static ViewerContext* current();
 
+    /** This view's own selection, or null when it selects into the room.
+     *
+     * The desktop's views share the room instance and answer null. A
+     * client's mirror answers its own, because what a browser picks while
+     * it is editing is that browser's: the room is what every viewer and
+     * every panel agrees on, and one client's sketch elements are not
+     * that (docs/ThinClient.md section 8.4).
+     *
+     * Opening a ViewerScope on a view makes this instance current, so
+     * every one of the call sites behind Gui::Selection() lands in the
+     * right one without being touched.
+     */
+    virtual SelectionSingleton* selectionInstance() const
+    {
+        return nullptr;
+    }
+
 protected:
     ViewerContext();
 
@@ -317,6 +337,16 @@ protected:
  * Scopes nest and unwind innermost first. The scope does not own the
  * context and must not outlive it -- it is opened around the handling of
  * one event by the view that received it.
+ *
+ * It carries the view's selection with it: for the same extent
+ * Gui::Selection() is that view's instance (ViewerContext::
+ * selectionInstance), or the room when the view has none of its own and
+ * when the scope names no view at all. So the two are never out of step
+ * -- a replayed event cannot be handled in one client's view while
+ * selecting in another's, and a scope that says "no view here" selects in
+ * the room rather than in whoever was current outside it. On the desktop
+ * this scope is never opened, so Gui::Selection() is the room as it has
+ * always been.
  */
 class GuiExport ViewerScope
 {
@@ -328,6 +358,8 @@ public:
 
 private:
     ViewerContext* previous;
+    /// The selection this scope pushed, if the context had one to push.
+    std::unique_ptr<SelectionScope> selection;
 };
 
 }  // namespace Gui
