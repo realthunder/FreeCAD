@@ -3189,29 +3189,44 @@ static void cameraQuaternion(const CamFrame &f, float q[4])
     }
 }
 
+/// How this viewer states its camera to the server
+/// (docs/ThinClient.md sec 8.10a), chosen with `?camup=`. The uplink is
+/// the scarce direction on the links this tier exists for, and in view
+/// mode the only reader of a mirror's camera is a click -- so how often
+/// the camera is worth sending is a question with an answer, not a
+/// given.
+enum class CamUplink {
+    Frame,     ///< `frame` (A): once per client frame when it changed
+    Rate,      ///< `rate` (B): the same, throttled to s_camRateMs
+    Lazy,      ///< `lazy` (C): only with a click, and only when it moved
+    LazyOne,   ///< `lazy1` (C'): the same, carried inside the click
+};
+static CamUplink s_camUplink = CamUplink::Frame;
+static double s_camRateMs = 100.0;
+
 static uint8_t s_camFrame[6 + 13 * sizeof(float)];
 static bool s_camFrameSent = false;
+static double s_camSentAt = 0.0;
 
-/// State this viewer's camera, if it moved since the last time.
-///
-/// Coalesced by comparing the packed bytes: a camera that did not change
-/// costs the pack and a memcmp, and an idle viewer sends nothing at all.
-/// Called once per frame, so at most one frame per client frame goes up --
-/// which is what keeps a drag from flooding the uplink.
-///
-/// \a force sends it whether or not it moved, which is what a pick does.
-/// The coalescing assumes the server still remembers the last one, and it
-/// may not: a reconnect, or a document served again, leaves a server with
-/// no mirror for this client and a still-matching cache here, and then the
-/// pick that follows is resolved in the synthetic framing instead. Fifty
-/// eight bytes on a click is not worth reasoning about.
-static void sendCameraFrame(bool force = false)
+/// Forget what the server was told. The coalescing above assumes the
+/// server still holds the last camera as this connection's mirror, and
+/// there are two moments it does not: a reconnect, and a switch to
+/// another document (whose serving source keeps its own mirrors, keyed
+/// by connection). Under `frame` that self-corrects within a frame;
+/// under `lazy` nothing would ever resend it, and the next click would
+/// resolve in the synthetic framing -- so the cache is dropped at both.
+static void invalidateCameraFrame()
 {
-    if (!s_wsOpen || s_ws <= 0)
-        return;
+    s_camFrameSent = false;
+}
+
+/// Pack this viewer's camera and canvas into the 'C' frame. False when
+/// there is nothing sensible to say yet (no canvas).
+static bool packCameraFrame(uint8_t *packed)
+{
     const float vw = vpW(), vh = vpH();
     if (vw < 1.0f || vh < 1.0f)
-        return;
+        return false;
 
     const CamFrame f = camFrame();
     float q[4];
@@ -3229,7 +3244,6 @@ static void sendCameraFrame(bool force = false)
         s_dpr, pickRadiusPx(),
     };
 
-    uint8_t packed[sizeof(s_camFrame)];
     packed[0] = 'C';
     packed[1] = 1;    // always perspective: the browser viewer has no
                       // orthographic mode
@@ -3238,12 +3252,72 @@ static void sendCameraFrame(bool force = false)
     std::memcpy(packed + 2, &pw, 2);
     std::memcpy(packed + 4, &ph, 2);
     std::memcpy(packed + 6, v, sizeof(v));
-    if (!force && s_camFrameSent
-            && std::memcmp(packed, s_camFrame, sizeof(packed)) == 0)
-        return;
-    std::memcpy(s_camFrame, packed, sizeof(packed));
+    return true;
+}
+
+/// Would \a packed tell the server something it does not already hold?
+/// The packed bytes ARE the version number of sec 8.10a, and a better
+/// one than a counter: a counter says the camera was touched, these say
+/// the framing the server would resolve a ray in is not the framing the
+/// ray was computed in.
+static bool cameraFrameIsNews(const uint8_t *packed)
+{
+    return !s_camFrameSent
+        || std::memcmp(packed, s_camFrame, sizeof(s_camFrame)) != 0;
+}
+
+static void markCameraFrameSent(const uint8_t *packed)
+{
+    std::memcpy(s_camFrame, packed, sizeof(s_camFrame));
     s_camFrameSent = true;
-    emscripten_websocket_send_binary(s_ws, s_camFrame, sizeof(s_camFrame));
+    s_camSentAt = emscripten_get_now();
+}
+
+/// State this viewer's camera, if it moved since the last time.
+///
+/// Coalesced by comparing the packed bytes: a camera that did not change
+/// costs the pack and a memcmp, and an idle viewer sends nothing at all.
+/// Under `frame` this is called once per client frame, so at most one
+/// frame per client frame goes up -- which is what keeps a drag from
+/// flooding the uplink; under `rate` a moving camera is throttled
+/// further; under `lazy` it is called only from a pick.
+///
+/// \a force sends it whether or not it moved. Nothing forces it under
+/// `lazy` -- that is the whole of what `lazy` is -- so the safety net
+/// that made forcing right there (a server that has forgotten this
+/// client's mirror) is invalidateCameraFrame() instead.
+static bool sendCameraFrame(bool force = false)
+{
+    if (!s_wsOpen || s_ws <= 0)
+        return false;
+    uint8_t packed[sizeof(s_camFrame)];
+    if (!packCameraFrame(packed))
+        return false;   // no canvas yet
+    if (!force && !cameraFrameIsNews(packed))
+        return false;
+    emscripten_websocket_send_binary(s_ws, packed, sizeof(packed));
+    markCameraFrameSent(packed);
+    return true;
+}
+
+/// The per-frame camera send, under whichever policy is in force.
+static void tickCameraUplink()
+{
+    switch (s_camUplink) {
+    case CamUplink::Frame:
+        sendCameraFrame();
+        break;
+    case CamUplink::Rate:
+        // Throttled, not dropped: the cache is left alone when a send is
+        // skipped, so the camera still goes up at the next slot and a
+        // camera that stops moving is always stated in the end.
+        if (emscripten_get_now() - s_camSentAt >= s_camRateMs)
+            sendCameraFrame();
+        break;
+    case CamUplink::Lazy:
+    case CamUplink::LazyOne:
+        break;   // only a click states the camera
+    }
 }
 
 /// Send a click up as the 'P' pick the wire already carries: 'P', a flags
@@ -3259,20 +3333,48 @@ static void sendPick(float px, float py, bool ctrl)
 {
     if (!s_wsOpen || s_ws <= 0)
         return;
-    // The camera first, always: the server resolves the ray against the
-    // camera it last heard about, and a pick made in a framing it has not
-    // been told about would be resolved in the previous one -- or, after a
-    // reconnect, in none at all.
-    sendCameraFrame(/*force*/ true);
 
     bx::Vec3 orig(bx::InitZero), rdir(bx::InitZero);
     screenRay(px, py, orig, rdir);
-    uint8_t packed[2 + 6 * sizeof(float)];
-    packed[0] = 'P';
-    packed[1] = ctrl ? 1 : 0;
+    uint8_t pick[2 + 6 * sizeof(float)];
+    pick[0] = 'P';
+    pick[1] = ctrl ? 1 : 0;
     const float v[6] = {orig.x, orig.y, orig.z, rdir.x, rdir.y, rdir.z};
-    std::memcpy(packed + 2, v, sizeof(v));
-    emscripten_websocket_send_binary(s_ws, packed, sizeof(packed));
+    std::memcpy(pick + 2, v, sizeof(v));
+
+    // The camera goes with the click, and the policy decides how. The
+    // server resolves the ray against the camera it last heard about, so
+    // a pick made in a framing it has not been told about would be
+    // resolved in the previous one -- which is a wrong answer, not a
+    // missing one.
+    //
+    //  frame/rate  force it: cheap next to what those policies already
+    //              send, and it needs no assumption about what the
+    //              server still holds.
+    //  lazy        send it only when it is news (sec 8.10a), the
+    //              coalescing that pays for the policy.
+    //  lazy1       the same test, but the camera rides inside the pick
+    //              as one 'Q' message: one frame instead of two, and the
+    //              pairing is atomic rather than merely ordered.
+    if (s_camUplink == CamUplink::LazyOne) {
+        uint8_t cam[sizeof(s_camFrame)];
+        if (packCameraFrame(cam) && cameraFrameIsNews(cam)) {
+            uint8_t both[1 + sizeof(cam) + sizeof(pick)];
+            both[0] = 'Q';
+            std::memcpy(both + 1, cam, sizeof(cam));
+            std::memcpy(both + 1 + sizeof(cam), pick, sizeof(pick));
+            emscripten_websocket_send_binary(s_ws, both, sizeof(both));
+            markCameraFrameSent(cam);
+            return;
+        }
+    }
+    else if (s_camUplink == CamUplink::Lazy) {
+        sendCameraFrame(/*force*/ false);
+    }
+    else {
+        sendCameraFrame(/*force*/ true);
+    }
+    emscripten_websocket_send_binary(s_ws, pick, sizeof(pick));
 }
 
 static void mainLoop()
@@ -3334,8 +3436,10 @@ static void mainLoop()
     // Before the idle skip below, because a camera that just stopped
     // moving is exactly the one the server has not been told about yet.
     // Free when nothing moved -- sendCameraFrame compares the packed
-    // bytes and an unchanged camera sends nothing.
-    sendCameraFrame();
+    // bytes and an unchanged camera sends nothing -- and free outright
+    // under the lazy policies, which say nothing until a click
+    // (docs/ThinClient.md sec 8.10a).
+    tickCameraUplink();
 
     // One-shot dumpFrame capture: the mode override applies to just
     // this frame's debug pass, then the staged config is restored
@@ -7737,6 +7841,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_switch_doc(const char *name)
     s_docName = name ? name : "";
     std::printf("fcviewer: switching to document '%s'\n",
                 s_docName.c_str());
+    // Each served document keeps its own mirrors, so the camera this
+    // connection stated to the old one says nothing about the new one
+    // (docs/ThinClient.md sec 8.10a).
+    invalidateCameraFrame();
     fcviewer_status("Switching document\xe2\x80\xa6", 0.0, 0.0);
     if (s_wsOpen) {
         std::string msg = "{\"cmd\":\"switch\",\"doc\":\"";
@@ -7909,6 +8017,9 @@ static void sendHello()
 static EM_BOOL onWsOpen(int, const EmscriptenWebSocketOpenEvent *, void *)
 {
     s_wsOpen = true;
+    // A new connection has no mirror on the server, whatever this page
+    // told the old one (docs/ThinClient.md sec 8.10a).
+    invalidateCameraFrame();
     if (s_reconnectAttempts > 0) {
         std::printf("fcviewer: reconnected after %ld attempt(s)\n",
                     s_reconnectAttempts);
@@ -8434,6 +8545,43 @@ int main()
                         Render::MemoryBudget::systemMemory() >> 20,
                         Render::MemoryBudget::deviceHint() >> 20,
                         s_budget.ceiling() >> 20);
+    }
+    // ?camup=frame|rate|lazy|lazy1 -- the camera uplink policy
+    // (docs/ThinClient.md sec 8.10a). A URL parameter and not a build
+    // switch because the three are meant to be measured against each
+    // other on the same bundle, and because which one is right depends
+    // on the link and on whether anyone is editing.
+    //   frame  once per frame when it changed (what stage 3 shipped)
+    //   rate   the same, throttled (?camuphz=<n>, default 10)
+    //   lazy   only with a click, and only when it moved
+    //   lazy1  the same, carried inside the click as one 'Q' message
+    {
+        const int mode = EM_ASM_INT({
+            const v = new URLSearchParams(window.location.search)
+                .get('camup');
+            if (v === null)
+                return -1;
+            return v === 'rate' ? 1
+                 : v === 'lazy' ? 2
+                 : v === 'lazy1' ? 3 : 0;
+        });
+        const int hz = EM_ASM_INT({
+            const v = new URLSearchParams(window.location.search)
+                .get('camuphz');
+            return v === null ? 0 : (parseInt(v, 10) | 0);
+        });
+        if (hz > 0)
+            s_camRateMs = 1000.0 / double(hz);
+        if (mode >= 0) {
+            static const char *const kNames[] = {"frame", "rate", "lazy",
+                                                 "lazy1"};
+            s_camUplink = CamUplink(mode);
+            if (s_camUplink == CamUplink::Rate)
+                std::printf("fcviewer: camera uplink rate, %.0f ms\n",
+                            s_camRateMs);
+            else
+                std::printf("fcviewer: camera uplink %s\n", kNames[mode]);
+        }
     }
     // ?fetchweight= / ?keepweight= — how much payload size discounts a
     // chunk's value when deciding what to ask for next and what to
