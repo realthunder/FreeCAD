@@ -580,6 +580,14 @@ def deferred():
     # its GPU memory while the next one measures. Close the documents
     # first so no save prompt can appear, then the window, and quit
     # from the next turn of the loop.
+    #
+    # Even this is not a guarantee. On 2026-09-09 one leg of eleven ran
+    # all of the below and then sat 21 MINUTES at idle CPU with its
+    # result already written -- wedged after the quit, not slow, and not
+    # reproduced since. So a driver script must not treat "the process
+    # exited" as "the leg finished": wait for the closing `run` line in
+    # FC_BENCH_OUT, which is written before any of this, and kill the
+    # process once it is there.
     from PySide import QtCore
     for name in list(FreeCAD.listDocuments()):
         try:
