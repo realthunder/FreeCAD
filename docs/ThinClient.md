@@ -692,6 +692,72 @@ so the sketcher's tool state machine reaches around its own view provider to the
 active window. It compiles unchanged because it never sees the new type, which is exactly
 why it needs naming: a mirror cannot serve a handler that asks the main window where it is.
 
+**Landed 2026-09-09 (stage 3 of 8.9).** `Gui::MirrorViewer` (`src/Gui/MirrorViewer.h`) is
+that other implementation of `ViewerContext`: a camera, a viewport region, and the served
+scene graph, built when a client first states a camera over the wire and dropped when its
+connection closes. `SceneServeSource` keeps one per connection and resolves that
+connection's picks through it. There is no Qt widget and no GL context anywhere in it, as
+8.3 claimed there need not be.
+
+The claim that paid for the stage is one this design had not made, and it is worth stating
+plainly because it had been wrong in the serving process since the `'P'` pick existed:
+**Coin gives a ray set with `SoRayPickAction::setRay` a radius of essentially zero and
+ignores `setRadius()` entirely** (`computeWorldSpaceRay`, the `WS_RAY_SET` branch). So the
+`setRadius(PickRadius)` the headless source called was a no-op, and a served click had to
+hit geometry dead-on -- which for an edge or a vertex means it never hit at all. Resolved
+through a mirror the ray is projected back to the viewport point the client made it from
+and picked from there, so the pick radius applies as pixels of that client's canvas, and
+the perspective cone widens with depth the way the desktop's does. Measured on a box:
+with a five-pixel radius the edge holds out to four pixels clear of the silhouette and is
+gone by six.
+
+Four traps found in the doing. Every one of them is silent, and three of the four are
+correct at the centre of the canvas -- which is the first place anyone checks:
+
+- **The height angle does not mean the same thing on both sides.** Coin's default
+  `ADJUST_CAMERA` viewport mapping applies the camera's height angle to the *smaller*
+  viewport dimension -- below unit aspect it scales the view volume by `1/aspect` -- which
+  is the Inventor convention a resizable window wants. A browser canvas applies it
+  vertically at every aspect. The two agree on a landscape canvas and disagree on a phone
+  held upright, which is most of what this tier is for. The mirror's camera therefore uses
+  `LEAVE_ALONE` and the aspect ratio the client stated: the client's convention, taken as
+  given. This is the one place where a mirror must deliberately not copy the desktop.
+- **`SoCamera::getViewVolume(vp, resultvp, mm)` reads the aspect ratio off `resultvp`
+  before assigning it from `vp`.** The out parameter has to go *in* carrying the viewport,
+  which is what `SoCamera::getView` does and what nothing about the signature suggests.
+  A default-constructed one hands it 100x100, and then every off-centre ray comes back
+  projected through a square frustum -- a pick that lands somewhere else, and lands
+  perfectly at the very centre where one would check it. Moot here once the mapping became
+  `LEAVE_ALONE`, but it is a live trap for any other caller.
+- **An `SbViewportRegion` carries two sizes, and setting one does not set the other.**
+  `setViewportPixels` derives the region's *normalized* size from the pixel size against
+  the *window* size, so stating only the pixels on a default-constructed region -- whose
+  window is 100x100 -- leaves an 800x600 canvas describing itself as 8.0 x 6.0 of its
+  window. Picking never noticed, because it reads the pixel size. Every row that answers
+  where a pixel is in the world reads the normalized one, and those came back hundreds of
+  times out.
+- **The mirror does not aspect-correct a pixel, and the desktop does.** Nothing sets a
+  desktop viewer's `SoCamera::aspectRatio`, so it stays 1 and `getViewVolume()` hands back
+  a square frustum; `getNormalizedPosition` is what maps a pixel into that square. A
+  mirror's camera states the client's real aspect -- that is what a mirror is -- so its
+  frustum already carries it, and correcting again multiplies it in twice. Measured: every
+  off-centre x landed exactly `aspect` times too far out. The mirror therefore has one
+  convention rather than two, shared by the camera-math rows and the pick path.
+
+The last two were found by asking a question the stage did not strictly have to ask: does
+the view's camera math put a pixel where its pick path puts it? Nothing in stage 3 calls
+those rows -- the edit modes that do arrive at stage 4 -- so both defects would have
+shipped, and would have surfaced as a sketcher that snapped to the wrong place on a wide
+canvas and to nowhere at all on a portrait one. That is the case for the unit oracle
+having a row the feature does not yet use.
+
+One deliberate omission: the mirror's `SoRenderManager` is never given a scene graph.
+`setSceneGraph` refs the root and attaches a node sensor that fires on every change, and
+one of those per connected client buys nothing -- this manager never renders, and
+`getSceneGraph()` answers from the mirror's own member. What it is there for is the
+eighteen `getSoRenderManager()` calls in the edit path, every one of which wants the camera
+or the viewport region.
+
 ### 8.4 The selection stack: `SelectionSingleton` stops being single
 
 `Gui::Selection` is process-global by construction: `SelectionSingleton::instance()`
@@ -762,6 +828,22 @@ exposed to the tunnel or the gateway.
   near, far, aspect) plus viewport pixel size and device pixel ratio. Sent as fields, not as
   matrices, so the mirror's pick radius and the sketcher's pixel tolerances match the
   client's exactly. Coalesced: at most one per client frame, only when changed.
+
+  **As built (stage 3).** Fifty-eight bytes: `'C'`, a type byte (0 orthographic, 1
+  perspective), viewport width and height as little-endian `u16`, then thirteen
+  little-endian floats -- position, orientation quaternion, height or height angle in
+  radians, near, far, aspect, device pixel ratio, pick radius. Sizes and the pick radius
+  are in *device* pixels, which is what the client renders at and what the desktop
+  viewer's own pick radius is measured against. The frame is the trust boundary: a
+  non-finite field, a zero canvas or an empty frustum is refused rather than adopted,
+  because a NaN here would poison a mirror's view volume and every pick made through it.
+  It is not an edit -- it says where one client is looking from, and nothing but that
+  client's own mirror reads it -- so a view-only connection may send one, and does.
+
+  The browser viewer packs it once per frame and compares the packed bytes, so an idle
+  viewer sends nothing and a drag sends at most one frame per client frame. It is also
+  sent immediately ahead of a pick, because the server resolves a ray against the camera
+  it last heard about.
 - `'E'` input: pointer move, press, release with button and modifier bits; wheel; key press
   and release with the Coin key code. Moves are coalesced so the latest position wins;
   presses and releases are never dropped and keep their order relative to the moves around
@@ -780,6 +862,15 @@ exposed to the tunnel or the gateway.
   the room selection goes to everyone, as today. Under 8.2a the first cut has no preselect
   delta to tag at all -- view-mode hover never reaches the server -- so the tag is only
   wanted once edit-mode preselection starts riding the `'E'` stream.
+
+**What the uplink does not yet carry (stage 3).** The `'P'` pick's flags byte says one
+thing, "extend rather than replace", and the browser sets it for a sticky-multi or Shift
+click. The client's own selection grammar is richer than that -- Shift promotes to the
+whole object, the pick filter restricts what a pick may land on, and a plain click on an
+already-selected sub-element cycles up to its object -- and none of that has a wire form,
+so for those clicks the room selection ends up on the picked sub-element where the client
+shows the whole object. The flags byte has seven spare bits and the grammar is the DOM
+layer's anyway (section 5), so this belongs with stage 5 rather than with the mirror.
 
 ### 8.6 Reconciliation: prediction, then an idempotent echo
 
@@ -834,12 +925,38 @@ Each step is a standalone landing with the desktop as its regression oracle.
    to the room instance. Again no behavior change on the desktop, where the stack has one
    entry.~~ Done 2026-09-09: the API and what pinning the observers actually cost are at
    the end of 8.4.
-3. **The mirror, selection only** (was "hover only", changed by 8.2a). A `MirrorViewer` per
+3. ~~**The mirror, selection only** (was "hover only", changed by 8.2a). A `MirrorViewer` per
    connection in the headless source and the `'C'` camera frame; a click arrives as the
    `'P'` pick the wire already carries, is resolved against the mirror's camera rather than
    the source's, and commits into the room selection. Hover is not in this stage and never
    becomes a wire event in view mode. This is the first user-visible latency number for the
-   full loop, and 8.1's 2.9 ms is its floor.
+   full loop, and 8.1's 2.9 ms is its floor.~~ Done 2026-09-09; what the mirror is and the
+   two conventions it had to get right are at the end of 8.3, the frame as built is in 8.5.
+
+   **The number: 7 to 10 ms**, click to scene push, over a real socket on loopback, against
+   8.1's 2.9 ms floor -- so the mirror, the pick and the republish together cost a few
+   milliseconds on top of what the server side already cost. That is the server half; a
+   browser's own frame boundaries add the ~16 ms each way of 8.8's budget, and the wire adds
+   the round trip.
+
+   The pick commits through `Gui::Selection()` unchanged, which with no scope open *is* the
+   room (8.4) -- so the policy of "a click commits into the room selection" is expressed by
+   opening no scope, and the same line will land in the mirror's own instance the moment an
+   in-edit pick opens one. The mirror therefore does not own a `SelectionSingleton` yet;
+   stage 4 is where one is needed and where it should appear.
+
+   Also re-enabled here, as 8.9 step 0 said it would be: the browser viewer's own send. It
+   had been switched off because an eager sync made the backend re-pick and republish the
+   whole scene, whose echo stalled right after the instant local highlight -- and the client
+   still drops the streamed selection and re-applies its own on every snapshot, which is
+   8.6's merge rule holding.
+
+   Two oracles: `tests/src/Gui/MirrorViewer.cpp` (the ray-to-pixel round trip, the portrait
+   case, the pick radius reaching an edge the ray misses) and `tests/gui/serve-mirror-pick.py`
+   (the same thing over a real socket, with the latency number). The unit set is the one
+   that would catch a regression here: the round trip is exact at the centre of the canvas
+   whatever the view volume is, so a centre-only check proves nothing, and the corners are
+   the test.
 4. **Edit mode.** `setEdit` under the mirror, the editing root captured by the change-driven
    traversal, keys streamed; a sketch drawn and dragged from a phone.
 5. **On-view parameters in the DOM** and whatever the widget residue of 8.3 turned up.
@@ -856,3 +973,10 @@ Each step is a standalone landing with the desktop as its regression oracle.
   larger radius than a mouse, so the value is per client, not per document.
 - The mirror has no frame; anything a view provider does "on the next redraw" needs the
   change-driven traversal to be that redraw.
+- The client's selection grammar has no wire form (8.5): Shift-to-whole-object, the pick
+  filter and the plain-click cycle all resolve to "extend or replace" on the way up. The
+  flags byte has the room; the question is whether the grammar belongs on the pick or in
+  the DOM layer's own selection op (section 5).
+- The mirror answers `logicalDotsPerInchX()` with 96, the CSS reference, because it has no
+  screen to ask and its client is a browser. Whether the edit modes that size things in
+  millimetres want that or the client's real density is a stage 4 question.
