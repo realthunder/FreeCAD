@@ -4618,6 +4618,18 @@ Non-ASCII object names occur in real files.  Rig:
                                                           durable-handle gate),
                                                           host 9, routing 9
     tests/src/App/ExpressionPyodide.cpp             10    layout, verify, scoping, offer
+    tests/src/App/TypeImport.cpp                    10    the type-string import rule
+                                                          (sec 13): roots, dotted names,
+                                                          a finder's home, stdlib,
+                                                          loaded, missing
+    tests/src/App/ProxyImport.cpp                    7    the Proxy import rule (sec 11
+                                                          item 1) on both containers, the
+                                                          pickle header
+    src/Mod/Test/SandboxProxyImport.py               2    a view provider's Proxy from
+                                                          outside every root refused on
+                                                          reopen, one under the user's
+                                                          Mod restored; the GUI gate
+                                                          script, no guest needed
     src/Mod/Test/SandboxPyodide.py                   2    the offer end to end
     src/Mod/Test/SandboxGui.py                       2    G2a: commands and a workbench
                                                           registered from the guest (7.9);
@@ -4733,18 +4745,38 @@ Command line: `--grant <permission>[:<target>]`, `--policy <file>`.
    drop the workbench path of the guest GUI along the form/workbench
    line, one commit, the form gates and the expression gtests green
    after it.
-1. **The Proxy import restriction, native.**  `PropertyPythonObject::
-   restoreObject` imports only a module already in `sys.modules` or
-   one `importlib.util.find_spec` resolves inside a registered module
-   root (`Type::addModuleRoot`, the rule `Type::importModule` has had
-   since 2026-09-05), for BOTH containers -- `App::DocumentObject` and
-   `Gui::ViewProvider`; anything else throws before importing and the
-   object is left without a Proxy, logged.  The legacy pickle-name
-   scan feeds the same check.  Closes sec 13's last file-chosen host
-   import.  Gate: `ProxyImport.*` beside `TypeImport.*` in Tests_run
-   (under a root, outside every root, stdlib, loaded, missing; both
-   containers) and one GUI case opening a document whose view provider
-   names a module outside the roots.  About an afternoon.
+1. **The Proxy import restriction, native.**  **BUILT 2026-09-09.**
+   `PropertyPythonObject::Restore` imports only a module already in
+   `sys.modules` or one `importlib.util.find_spec` resolves inside a
+   registered module root (`Type::addModuleRoot`, the rule
+   `Type::importModule` has had since 2026-09-05), for BOTH containers
+   -- `App::DocumentObject` and `Gui::ViewProvider`; anything else is
+   refused before importing and the object is left without a Proxy,
+   logged.  The legacy pickle-name scan feeds the same check.  Closes
+   sec 13's last file-chosen host import.  Built as sized, with one
+   addition the sizing missed: a Proxy's module is DOTTED
+   (`draftobjects.wire`), and `find_spec` on a dotted name imports the
+   parent, so `Type::moduleAllowed` now walks the name one level at a
+   time -- a level is looked up only once the levels above it are
+   loaded or under a root, and a loaded stdlib package (`xml`) does not
+   admit an unloaded submodule of its own.  And a second, found by the
+   FEM suite's old test documents: a saved LEGACY name no file answers
+   for (`femsolver.elmer.solver`) is served by a meta-path finder --
+   FEM's `femtools.migrate_app` maps it onto today's module -- with a
+   spec that has no location at all, which the rule read as "not under
+   a root".  A spec without a location is now judged by the FINDER'S
+   home: the file of the module its loader's class is defined in, under
+   a root or not (a finder installed by an addon's `Init.py` from
+   `Mod` passes; the same class imported from outside is refused;
+   "built-in" and "frozen" are origins, so they still match no root).
+   Gate: `ProxyImport.*` in Tests_run (7 cases: under a root, dotted
+   under a root, outside every root, stdlib, loaded, missing, the
+   pickle header; both containers), four cases added to `TypeImport.*`
+   (dotted under a root, dotted under a loaded stdlib parent, a finder
+   under a root, the same finder outside), and `SandboxProxyImport`
+   in the GUI gate (a saved document whose view provider names a module
+   outside every root reopens without that Proxy and without the
+   import; one under the user's `Mod` restores).
 2. **The document program** -- to be SIZED as 7.17 before building:
    (a) the example set: two or three document-carried programs (a
    parametric bracket, a stair) written in the engine's language,
@@ -5159,10 +5191,17 @@ sockets, any network for the reference image, a webview escape hatch.
   document-chosen module name is CLOSED for document objects with
   routing on (G1c step (f), 2026-09-04): the module is imported in the
   guest, the instance allocated there, the property holds the stand-in,
-  and a module the guest cannot serve fails closed (3.5, 7.6).  Still
-  open: the same import for a VIEW PROVIDER's Proxy (`Gui::ViewProvider`
-  container, no document object -- native until the Gui side is in the
-  guest, G2).  CLOSED 2026-09-05, natively: `Base::Type::importModule`'s
+  and a module the guest cannot serve fails closed (3.5, 7.6).  CLOSED
+  2026-09-09, natively, for BOTH containers (sec 11 item 1): the native
+  import in `PropertyPythonObject::Restore` -- a document object's Proxy
+  with routing off, a VIEW PROVIDER's Proxy always -- and the legacy
+  pickle header's module name go through `Base::Type::moduleAllowed`
+  first; a refused name is logged with the container's full name and
+  the object is left without a Proxy.  A consequence worth knowing: a
+  Proxy class from a module in site-packages (a pip-installed addon
+  that is not under any `Mod`) restores only if its module is already
+  loaded when the document opens; `__main__` (a macro's classes) is
+  always loaded.  CLOSED 2026-09-05, natively: `Base::Type::importModule`'s
   type-string import (a saved property type `Foo::Bar`, a
   PropertyPersistentObject) was a plain `PyImport_ImportModule` of
   whatever name stood before the `::` -- stdlib and site-packages
@@ -5176,8 +5215,10 @@ sockets, any network for the reference image, a webview escape hatch.
   `sys.path`); anything else throws `Base::RuntimeError` without
   importing, and a module that exists nowhere fails with the
   interpreter's own error as before (the callers log it).  Gate:
-  `TypeImport.*` in Tests_run (six cases: under a root, on `sys.path`
-  outside every root, stdlib, already loaded, missing, core prefixes).
+  `TypeImport.*` in Tests_run (ten cases: under a root, dotted under
+  a root, on `sys.path` outside every root, stdlib, a dotted name under
+  a loaded stdlib parent, a meta-path finder under a root and the same
+  one outside, already loaded, missing, core prefixes).
 - What BIM's App side cannot do in the guest (the corpus gates' list):
   `ArchSchedule`'s IFC branch imports `nativeifc` (ifcopenshell) --
   nothing of it is in the guest.  CLOSED 2026-09-05: the four writers

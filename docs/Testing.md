@@ -11,8 +11,19 @@ as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
-| Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
+| Python (`FreeCADCmd -t 0`) | **2630 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-09) |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **522 of 522 passing**, 0 failures, 7 ctest entries disabled |
+
+Two traps when running the suites (2026-09-09): give the Python suite and
+`Tests_run` **separate `FREECAD_USER_HOME`s** if they run at the same time
+-- the expression routing suites in `Tests_run` flip
+`Expression/Sandbox:Evaluate` in the shared `user.cfg` while they run, and
+the Python suite then restores every Proxy through the sandbox guest (46
+failures that vanish alone); and the home directory must **exist** before
+the run, or FreeCAD falls back to the real one.  `Tests_run` gained
+`ProxyImport.*` (7) and four `TypeImport.*` cases on 2026-09-09 (the
+Proxy import rule, docs/Sandbox.md sec 11 item 1); the per-binary counts
+below predate that.
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the

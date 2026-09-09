@@ -107,9 +107,12 @@ public:
     static void addModuleRoot(const std::string& dir);
     /// The registered module roots, in registration order.
     static const std::vector<std::string>& getModuleRoots();
-    /// Whether importModule would import `module`: already loaded, or found
-    /// under a registered root (None from the finder counts as allowed:
-    /// the import fails on its own with the usual error).
+    /// Whether a document-chosen module name may be imported natively:
+    /// already loaded, or found under a registered root -- for a dotted
+    /// name ("draftobjects.wire") every level not yet loaded must be
+    /// (None from the finder counts as allowed: the import fails on its
+    /// own with the usual error).  importModule's rule, shared with
+    /// PropertyPythonObject::Restore for a Proxy's module.
     static bool moduleAllowed(const std::string& module);
 
     using instantiationMethod = void* (*)();

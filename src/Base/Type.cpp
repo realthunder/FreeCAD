@@ -152,43 +152,19 @@ bool underRoot(const std::string& file, const std::string& root)
 }
 }  // namespace
 
-bool Type::moduleAllowed(const std::string& module)
+namespace
 {
-    if (!Py_IsInitialized()) {
-        return false;
-    }
-    PyGILStateLocker lock;
-    // already loaded: nothing new runs
-    PyObject* mods = PyImport_GetModuleDict();
-    if (mods && PyDict_GetItemString(mods, module.c_str())) {
-        return true;
-    }
-    // where would the import come from?  importlib.util.find_spec on a
-    // top-level name imports nothing itself
-    PyObject* util = PyImport_ImportModule("importlib.util");
-    if (!util) {
-        PyErr_Clear();
-        return false;
-    }
-    PyObject* spec = PyObject_CallMethod(util, "find_spec", "s", module.c_str());
-    Py_DECREF(util);
-    if (!spec) {
-        // an invalid name, a broken finder: let the import report it
-        PyErr_Clear();
-        return true;
-    }
-    if (spec == Py_None) {
-        // no such module anywhere: the import fails with its own error
-        Py_DECREF(spec);
-        return true;
-    }
+/// The locations a spec would import from: its origin (a file) and, for
+/// a package, its search directories (a namespace package has only
+/// those).  "built-in" and "frozen" are not paths and match no root.
+std::vector<std::string> specLocations(PyObject* spec)
+{
     std::vector<std::string> locations;
     PyObject* origin = PyObject_GetAttrString(spec, "origin");
     if (origin && PyUnicode_Check(origin)) {
         locations.emplace_back(PyUnicode_AsUTF8(origin));
     }
     Py_XDECREF(origin);
-    // a namespace package has no origin, only its directories
     PyObject* dirs = PyObject_GetAttrString(spec, "submodule_search_locations");
     if (dirs && PySequence_Check(dirs)) {
         PyObject* seq = PySequence_Fast(dirs, "locations");
@@ -203,17 +179,113 @@ bool Type::moduleAllowed(const std::string& module)
         }
     }
     Py_XDECREF(dirs);
-    Py_DECREF(spec);
     PyErr_Clear();
-    // "built-in" and "frozen" are not paths and match no root
-    for (const auto& loc : locations) {
-        for (const auto& root : moduleRoots) {
-            if (underRoot(loc, root)) {
-                return true;
+    return locations;
+}
+
+/// Where the code that produced a spec lives: the file of the module the
+/// loader's class is defined in.  A spec with no location at all comes
+/// from a meta-path finder -- FEM's femtools.migrate_app maps a saved
+/// legacy name onto today's module -- and such a finder is admitted by
+/// where it was defined, as the module it stands for would be.
+std::string loaderHome(PyObject* spec)
+{
+    std::string home;
+    PyObject* loader = PyObject_GetAttrString(spec, "loader");
+    if (loader && loader != Py_None) {
+        PyObject* modName = PyObject_GetAttrString((PyObject*)Py_TYPE(loader), "__module__");
+        if (modName && PyUnicode_Check(modName)) {
+            PyObject* mods = PyImport_GetModuleDict();
+            PyObject* mod = mods ? PyDict_GetItem(mods, modName) : nullptr;
+            if (mod) {
+                PyObject* file = PyObject_GetAttrString(mod, "__file__");
+                if (file && PyUnicode_Check(file)) {
+                    home = PyUnicode_AsUTF8(file);
+                }
+                Py_XDECREF(file);
             }
         }
+        Py_XDECREF(modName);
     }
-    return false;
+    Py_XDECREF(loader);
+    PyErr_Clear();
+    return home;
+}
+}  // namespace
+
+bool Type::moduleAllowed(const std::string& module)
+{
+    if (!Py_IsInitialized()) {
+        return false;
+    }
+    PyGILStateLocker lock;
+    // already loaded: nothing new runs
+    PyObject* mods = PyImport_GetModuleDict();
+    if (mods && PyDict_GetItemString(mods, module.c_str())) {
+        return true;
+    }
+    PyObject* util = PyImport_ImportModule("importlib.util");
+    if (!util) {
+        PyErr_Clear();
+        return false;
+    }
+    // Where would the import come from?  importlib.util.find_spec on a
+    // top-level name imports nothing itself; on a dotted name it imports
+    // the PARENT, so the name is walked one level at a time and a level
+    // is looked up only once the levels above it are loaded or found
+    // under a root -- a loaded stdlib package ("xml") does not admit an
+    // unloaded submodule of its own ("xml.etree.ElementTree"), and the
+    // parent an inner find_spec imports is one this check has admitted.
+    bool allowed = true;
+    std::string::size_type pos = 0;
+    while (allowed && pos <= module.size()) {
+        std::string::size_type dot = module.find('.', pos);
+        if (dot == std::string::npos) {
+            dot = module.size();
+        }
+        const std::string prefix = module.substr(0, dot);
+        pos = dot + 1;
+        if (mods && PyDict_GetItemString(mods, prefix.c_str())) {
+            continue;
+        }
+        PyObject* spec = PyObject_CallMethod(util, "find_spec", "s", prefix.c_str());
+        if (!spec) {
+            // an invalid name, a broken finder: let the import report it
+            PyErr_Clear();
+            break;
+        }
+        if (spec == Py_None) {
+            // no such module anywhere: the import fails with its own error
+            Py_DECREF(spec);
+            break;
+        }
+        std::vector<std::string> locations = specLocations(spec);
+        if (locations.empty()) {
+            // no file: a finder's answer -- judged by the finder's home
+            // ("built-in" and "frozen" origins are locations, and match
+            // no root)
+            const std::string home = loaderHome(spec);
+            if (!home.empty()) {
+                locations.push_back(home);
+            }
+        }
+        Py_DECREF(spec);
+        bool under = false;
+        for (const auto& loc : locations) {
+            for (const auto& root : moduleRoots) {
+                if (underRoot(loc, root)) {
+                    under = true;
+                    break;
+                }
+            }
+            if (under) {
+                break;
+            }
+        }
+        allowed = under;
+    }
+    Py_DECREF(util);
+    return allowed;
 }
 
 string Type::getModuleName(const char* ClassName)

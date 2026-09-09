@@ -35,6 +35,7 @@
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Base/Reader.h>
+#include <Base/Type.h>
 #include <Base/Writer.h>
 
 #include "DocumentObjectPy.h"
@@ -349,6 +350,29 @@ void PropertyPythonObject::Save (Base::Writer &writer) const
     }
 }
 
+namespace {
+// A Proxy's module name comes from the document, so its native import
+// is RESTRICTED the way Base::Type::importModule's is (docs/Sandbox.md
+// sec 11 item 1, sec 13): a module already loaded, or one that resolves
+// into a registered Mod root, for BOTH containers -- a document
+// object's Proxy and a view provider's.  Anything else is refused
+// before importing and the object is left without a Proxy, logged.
+bool proxyModuleAllowed(const App::Property& prop, const char* module, const char* cls)
+{
+    if (Base::Type::moduleAllowed(module))
+        return true;
+    const App::PropertyContainer* owner = prop.getContainer();
+    std::string who = owner ? owner->getFullName() : std::string("?");
+    if (prop.getName())
+        who += std::string(".") + prop.getName();
+    Base::Console().Error("PropertyPythonObject::Restore: %s names Proxy %s.%s, and '%s' is"
+                          " not a FreeCAD module (not loaded and not under a Mod directory);"
+                          " not imported, the object is left without a Proxy\n",
+                          who.c_str(), module, cls, module);
+    return false;
+}
+}
+
 void PropertyPythonObject::Restore(Base::XMLReader &reader)
 {
     reader.readElement("Python");
@@ -356,6 +380,10 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
     bool load_json=false;
     bool load_pickle=false;
     bool load_failed=false;
+    // a refused Proxy module: no import, and no payload either -- with
+    // no object to take it, fromString would make the state itself the
+    // value (a plain object's __dict__ as the Proxy)
+    bool refused=false;
 
     std::string buffer;
     if(reader.hasAttribute("value")) {
@@ -407,8 +435,12 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
             }
             else
 #endif
-            {
+            if (!proxyModuleAllowed(*this, module, cls)) {
                 (void)owner;
+                this->object = Py::None();
+                refused = true;
+            }
+            else {
                 Py::Module mod(PyImport_ImportModule(module), true);
                 if (mod.isNull())
                     throw Py::Exception();
@@ -430,12 +462,19 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
         else if (boost::regex_search(start, end, what, pickle)) {
             std::string nam = std::string(what[1].first, what[1].second);
             std::string cls = std::string(what[2].first, what[2].second);
-            Py::Module mod(PyImport_ImportModule(nam.c_str()),true);
-            if (mod.isNull())
-                throw Py::Exception();
-            this->object = PyObject_CallObject(mod.getAttr(cls).ptr(), NULL);
-            load_pickle = true;
-            buffer = std::string(what[2].second, end);
+            if (!proxyModuleAllowed(*this, nam.c_str(), cls.c_str())) {
+                // the legacy pickle name feeds the same check
+                this->object = Py::None();
+                refused = true;
+            }
+            else {
+                Py::Module mod(PyImport_ImportModule(nam.c_str()),true);
+                if (mod.isNull())
+                    throw Py::Exception();
+                this->object = PyObject_CallObject(mod.getAttr(cls).ptr(), NULL);
+                load_pickle = true;
+                buffer = std::string(what[2].second, end);
+            }
         }
         else if (reader.hasAttribute("json")) {
             load_json = true;
@@ -454,11 +493,14 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
     if(reader.getAttributeAsInteger("cdata","")) {
         buffer = reader.readCharacters();
         reader.readEndElement("Python");
-    } else if (reader.hasAttribute("file")) {
+    } else if (reader.hasAttribute("file") && !refused) {
+        // an archive entry nobody registers is skipped by the reader
         std::string file(reader.getAttribute("file"));
         reader.addFile(file.c_str(),this);
     } 
     
+    if(refused)
+        buffer.clear();
     if(!buffer.empty()) {
         if (load_json)
             this->fromString(buffer);
