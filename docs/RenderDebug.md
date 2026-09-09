@@ -2084,3 +2084,104 @@ now compare name-level identity.
 
 Phases 1+2 are the minimum end-to-end slice: set a mode from Python, capture
 a real-GPU frame with metadata, diff it.
+
+## 8. The "dotted far edges" investigation, closed to two causes
+
+Symptom as reported: eight `Part::Box` in a row, bgfx Metal, render cache 3 --
+the boxes draw their faces, but each box shows its two far-side edges DOTTED
+while the near three look solid.
+
+**It is two unrelated things stacked, and neither is a depth or shader bug.**
+
+### 8.1 `CoarseTessellation` withholds the real edge draws for ~0.5s
+
+For roughly half a second after the geometry appears, the per-object LINE and
+POINT draws are not submitted at all. The per-frame draw tally by material
+type goes
+
+    tri=41 line=4  point=0     held for ~15 frames
+    tri=41 line=12 point=8     from the frame the exact rung lands
+
+The eight new line draws are `w=2.000 segs=12` -- one per box, 12 segments for
+a box's 12 edges, and the width matches the objects' `ViewObject.LineWidth`
+of 2.0. Confirmed by varying the scene: one box gives `line=5`, eight give
+`line=12`.
+
+`CoarseTessellation` (RenderParams, default **2**) is the trigger, isolated by
+flipping one knob at a time and measuring black-edge pixels at t=0.0 and t=1.0:
+
+    CoarseTessellation = -1     2793 / 2793   <-- the only one that matters
+    CoarseDeferFaces   = -1       66 / 2793
+    LevelTolerance     = 0        66 / 2793
+    LevelScale         = 1        66 / 2793
+    GpuMemoryBudgetMB  = 1<<20    66 / 2793
+    BackgroundReleaseDelay = 0    66 / 2793
+    ProgressiveLoad    = false    66 / 2793
+
+Exact-up-front removes the WINDOW, not the end state -- both reach
+`line=12 point=8` eventually.
+
+**Still open.** The coarse rung's vertex caches DO carry the edge data:
+`line=24 point=8` captured per box, emitted with `ctxok=1`, and present in the
+depth-0 map handed over (`tri=8 line=8 point=8`). So this is not "the coarse
+mesh has no edges" -- it is edge data that exists in the published map and does
+not reach the DrawCall list. For a box, coarse and exact tessellation are
+identical anyway (planar faces, twelve straight edges), so suppressing its
+edges buys nothing. The next instrument belongs on the renderer's INGESTION,
+where a vcachemap becomes DrawCalls.
+
+### 8.2 The cavity effect supplies a convincing substitute
+
+`Cavity` (RenderParams, default **true**, CavityValley 1.0 / CavityRidge 0.5)
+is a screen-space crease detector. Diffed on against off inside the broken
+window it changes 1501 px, pulling the face from (160,160,181) to
+(124,124,140) -- a GREY mark sitting exactly on the box edges.
+
+    cavity ON,  real edges missing -> grey interior edges, silhouette bare
+                                      except a scatter of black pixels
+    cavity OFF, real edges missing -> a FLAT FEATURELESS HEXAGON
+    real edges present             -> all nine edges black
+
+**That asymmetry is the whole reported symptom.** Cavity darkens where two
+surfaces fold together (the interior "Y" edges) and produces NOTHING at a
+silhouette, where the surface folds against the background and there is no
+adjacent surface to crease against. So with the line draws missing, interior
+edges read SOLID and outer ones read DOTTED -- exactly "two far-side edges
+dotted, near three solid".
+
+### 8.3 What this retired
+
+- **The camera was never a variable.** `setCameraOrientation()` and `fitAll()`
+  ANIMATE; a script taking one redraw per shot photographs the animation in
+  flight. That is the whole of "edges draw at one camera and not another" and
+  of "the first capture in a process is always the worst". A settled
+  axonometric capture is correct: nine crisp black edges on all eight cubes.
+- **An earlier identification of the edge draw was the wrong draw.** A
+  `segs=144 w=1.500` line draw was taken for the box edges; it is scene
+  furniture, present from frame 2 and UNCHANGED by box count. A discard-shader
+  experiment therefore killed something that was never drawing the edges,
+  which is why the picture did not change.
+- Ruled out and not to be re-derived: temporal accumulation (`accumSamples=0`
+  in this configuration), the capture budget (`CaptureBudgetMS=0`, which
+  disables the deferral outright, changes nothing), `DisplayMode` (already
+  `Flat Lines` at t=0), `spliceFrom` (instrumented, never fires here),
+  `ProgressiveLoad`, `VisualFillOnPool`, `WorkerVertexCache`.
+
+### 8.4 Two instrument lessons, which cost more than the bug
+
+- **A threshold chosen for one feature silently answers a different
+  question.** A `dark = r,g,b < 60` pixel count is BLIND to the cavity edge,
+  which is grey at 124-145. Every "no edges at all" measured that way means
+  "no BLACK edges", not "nothing visible". Diff two RENDERS (effect on vs off)
+  rather than thresholding one.
+- **Identify a draw by VARYING THE SCENE, not by assuming.** Changing the box
+  count is what separated the per-object edge draws from the furniture. The
+  earlier session assumed the one dark line draw in the dump was the one it
+  was looking for, and reasoned from it for an afternoon.
+
+Repro: eight boxes at `Placement.Base = (i*10,0,0)`, resize 1200x900,
+`viewAxonometric()`, `updateGui()`, `fitAll()`, then shoot at real-time marks
+with `v.saveImage(p)` and NO size argument (a size sends the capture through
+`imageFromRenderer`'s scale step -- see section 4). Metric: pixels differing
+from the background column by more than 24, of which those under 60 in all
+channels are black edges. 66 = broken, ~2793 = correct.
