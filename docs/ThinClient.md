@@ -1008,3 +1008,43 @@ Each step is a standalone landing with the desktop as its regression oracle.
 - The mirror answers `logicalDotsPerInchX()` with 96, the CSS reference, because it has no
   screen to ask and its client is a browser. Whether the edit modes that size things in
   millimetres want that or the client's real density is a stage 4 question.
+
+### 8.10a The camera uplink is speculative work (experiment, next)
+
+Stage 3 sends the `'C'` frame once per client frame whenever it changed, and again before
+every pick. In view mode that is **entirely speculative**: `SceneServeSource::mirrorFor`
+has exactly one reader, `pickAndSelect`, so the only moment a mirror's camera is read is a
+click. An orbit therefore pushes a frame up the socket sixty times a second so that a
+click which may never come can be answered -- and it does it on the uplink, competing with
+nothing but costing on exactly the mobile links this tier exists for.
+
+Three designs to measure against each other:
+
+- **A, as built.** Per-frame coalesced send (pack, `memcmp`, send if changed) plus a forced
+  send before each pick.
+- **B, rate limited.** The same, throttled to a low rate while no selection is happening,
+  still forced before a pick.
+- **C, lazy and versioned.** No periodic send at all. The client keeps a camera **version**,
+  bumped whenever the camera moves, and states the camera **with the click** only when that
+  version differs from the last one it sent. Most of C is deleting the per-frame call: the
+  forced send already there is C's send, and what is added is the version counter that lets
+  it be skipped when nothing moved.
+
+C has a variant worth measuring separately: carrying the camera *inside* the pick message
+rather than as a `'C'` frame ahead of it. That is one WebSocket frame instead of two, saves
+a header, and makes the pairing atomic rather than merely ordered.
+
+What to measure: **uplink bytes per second through an orbit**, which is the case A is worst
+at and the whole point; **click-to-scene-push**, against stage 3's 7 to 10 ms, since under C
+the camera is on the click's critical path; and the edge-pick discrimination of
+`tests/gui/serve-mirror-pick.py`, which is what says the lazy camera is still the right
+camera. Count the bytes **on the server**, per connection -- the client counting its own
+sends is the client marking its own work, and 8.6's rule applies to this as much as to
+selection.
+
+The counter-argument, to be priced rather than assumed away: stage 4 streams events, and a
+sketcher tool computes its tolerances in the mirror on every move, so an edit session needs
+the camera fresh continuously and C is a view-mode optimisation that stage 4 partly
+reverses. Any later server-side view-dependent work -- prioritising the level ladder by
+where a client is actually looking -- would want it too. So the question the experiment
+should answer is not only what C saves, but what it costs to turn back on.
