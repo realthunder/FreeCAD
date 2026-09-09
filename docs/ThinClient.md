@@ -1653,12 +1653,24 @@ thrown away, and the two seams where it would fork are named below.
   fits: it assumes one producer and one Control, which is now true. The widget layer
   mirrors *models*, not native widgets, so a panel travels once it is ported onto them; the
   toolbars do not need the port, because their state -- name, icon, text, enabled, checked,
-  visible -- is the command manager's already.
+  visible -- is the command manager's already. Two facts from that layer's author fix the
+  shape: a `Backend` is the *renderer* of one model and the desktop's Qt view already
+  occupies that slot, so a streaming consumer for N clients is not a `Backend` but a
+  subscriber on the store's sink (`Gui::Fw::Store::setSink`, one today; a multi-subscriber
+  signal is the change there); and a client's edit comes back as a `Source::Backend` write,
+  which by the layer's rule does not echo to its writer -- so the fan-out skips the
+  originating client. The desktop's native toolbars are not models yet; a producer that
+  mirrors the live `QAction` set into `QAction`/`QToolBar` models is the small new piece.
 - **Modal dialogs stop being a gate.** `EditDatumDialog`'s `exec()` shows on the desktop
   and on every client once the dialog is a streamed model, and whoever answers it answers
-  it. A nested `exec()` loop still delivers queued events, so replay should keep flowing
-  under it; that is to be verified, not assumed. Once dialogs mirror, the `command`
-  allowlist of 8.7 retires.
+  it. A nested `exec()` loop keeps delivering posted events, and queued cross-thread calls
+  are posted events, so replay keeps flowing under it -- the widget layer relies on exactly
+  that (its stock dialogs are one synchronous op each, driven in tests from a timer that
+  fires inside the nested loop). Three caveats from the same experience: a `DeferredDelete`
+  posted inside the nested loop is not processed until that loop ends; state in the outer
+  call frame is frozen while it runs; and a second `exec()` request arriving during the
+  first nests a second loop, which Qt allows and the session should serialize. Once dialogs
+  mirror, the `command` allowlist of 8.7 retires.
 - **Two mice, one state machine.** Desktop sharing has the same problem and solves it
   socially. Here it gets one rule in one place: while a gesture is in progress from view
   A -- a button held, a handler mid-sequence -- input from view B is dropped. That
