@@ -2628,13 +2628,59 @@ drain whatever the preference says (`ViewProviderPartExt::updateVisual`,
 NOT sufficient: the plain addFile branch marks nothing, which is why a
 first fix worked at 200 shapes and did nothing at 17000.
 
-**So the assembly has a row now.** `MiSTerFlat.FCStd`, 17058 solids,
-1280x720, OpenGL: **41259 draws, 6.70M primitives, 8.1% covered, 252 ms
-a frame** -- of which submit 171.6, our submit loop 30.8, our pre 30.6.
-The draw count matches the 41670 `docs/FarFieldProxies.md` records for
-the same model on the Linux box, which is the cross-check that the
-scene is the scene. The other three backends were not run on it before
-this was paused; the boxes table above stands as the ordering.
+### The assembly table, all four backends (2026-09-09)
+
+`MiSTerFlat.FCStd`, 17058 solids, 1280x720, vsync off, one completion
+barrier per frame, camera orbiting -- **41259 draws, 6.70M primitives,
+8.1% covered**. The draw count matches the 41670
+`docs/FarFieldProxies.md` records for the same model on the Linux box,
+and every backend reports the same 41259 here, which is the cross-check
+that the scene is the scene and that no leg is drawing a differently
+culled version of it. ms per frame:
+
+| Backend | submit | gpu | submitloop | pre | ours | frame |
+| --- | --- | --- | --- | --- | --- | --- |
+| OpenGL | **171.60** | 171.92 | 30.75 | 30.64 | 247.25 | **252.25** |
+| Vulkan | **18.53** | 5.98 | 26.01 | 25.59 | 84.79 | **87.54** |
+| Direct3D 11 | 19.86 | 85.99 | 26.61 | 26.62 | 85.54 | **88.06** |
+| Direct3D 12 | 20.27 | 19.96 | 27.49 | 27.82 | 89.72 | **92.52** |
+
+**The submission finding survives the move to a real assembly.** GL
+spends 171.60 ms issuing the same 41259 draws the other three issue in
+18.5-20.3 -- about 8x, against 10x on the synthetic boxes -- and that
+one term is essentially the whole of its 2.9x slower frame. The
+ordering (Vulkan, Direct3D 11, Direct3D 12, GL last) reproduces both
+the boxes table above and the older vg table, on a third workload with
+nothing in common with either. Three independent scenes agreeing is
+worth more than any one of the rows.
+
+`gpu` is again not comparable across backends, and this table shows why
+in one line: GL's 171.92 equals its own 171.60 submit, i.e. it times
+the serialized driver thread, and D3D11's 85.99 has the same smell,
+while Vulkan reads 5.98 and D3D12 19.96. The actual GPU work on 6.7M
+primitives at this resolution is under 7 ms; the frame is CPU-bound end
+to end, which is what makes submission the whole story.
+
+**And a fifth trap, this one paid for here: the first leg of a session
+reads high.** The first Vulkan run of the session returned submit
+22.77, submitloop 33.09, pre 33.62, post 16.98, frame 113.32 -- which
+would have put Vulkan BEHIND both Direct3D legs and inverted the
+ordering every other table on this box agrees on. But `submitloop`,
+`pre` and `post` are our own C++ and do not know which backend they are
+talking to, and all three sat ~25% above every other leg. That is the
+tell: a backend cannot move those, so a leg that moves them is
+measuring the box rather than the backend. Re-run last, unchanged, the
+same leg gave 18.53 / 26.01 / 25.59 / 12.97 / 87.54 -- in line with
+both Direct3D legs on every shared term. **So read the shared columns
+before the backend one, and do not rank off a session's first leg**:
+run it again at the end, or discard it. The same discipline as the four
+traps above -- the instrument is guilty until the numbers that cannot
+have moved are shown not to have moved.
+
+None of this includes the composite. Every backend but GL renders
+without reaching the screen in these runs (`BGFXView::blit` stands
+aside), so these are submission costs rather than frames on screen; the
+readback composite adds an upload plus a quad to each non-GL row.
 
 ### Route D -- Qt owns the device -- is the destination
 
