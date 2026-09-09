@@ -143,7 +143,16 @@ bool readNativeHandles(QRhi *rhi, AdoptedDevice &out)
         break;
     }
 #endif
-#if QT_CONFIG(vulkan)
+// Qt's own guard on the declaration, mirrored EXACTLY rather than
+// approximated. QT_CONFIG(vulkan) alone is not it: qrhi_platform.h
+// declares QRhiVulkanNativeHandles under
+// `QT_CONFIG(vulkan) && __has_include(<vulkan/vulkan.h>)`, and the two
+// halves come apart on a real box -- this conda Qt 6.11.2 on Windows
+// reports QT_CONFIG(vulkan) true while shipping no vulkan/vulkan.h, so
+// the struct does not exist and this branch failed to compile. A guard
+// on a declaration has to be the declaration's guard; anything else is
+// a guess that holds only where it was written.
+#if QT_CONFIG(vulkan) && __has_include(<vulkan/vulkan.h>)
     case QRhi::Vulkan: {
         const auto *h = static_cast<const QRhiVulkanNativeHandles *>(
                 rhi->nativeHandles());

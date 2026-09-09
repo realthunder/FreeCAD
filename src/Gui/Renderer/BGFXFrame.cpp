@@ -6836,20 +6836,53 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     rb.frames, rb.landed, rb.stale,
                     rb.landed ? double(rb.latencySum) / double(rb.landed)
                               : 0.0);
-            // Only the BEFORE/AFTER pair is evidence. after high with
-            // before low says this quad drew the image; both high says
-            // the check agreed with itself and saw nothing.
-            if (rb.verifyTotal)
+            // The verify states a VERDICT rather than leaving four
+            // percentages for a reader to combine, because the failure
+            // this instrument exists to catch is precisely the one that
+            // looks like a pass. Each branch names a different fault,
+            // and "blind" is a branch of its own: an instrument that
+            // cannot see must SAY so, not return a low number that
+            // reads as a broken composite.
+            if (rb.verifyProbes && rb.verifySamples) {
+                const double before = 100.0 * double(rb.verifyBeforeHits)
+                    / double(rb.verifySamples);
+                const double after = 100.0 * double(rb.verifyAfterHits)
+                    / double(rb.verifySamples);
+                const double flipped = 100.0 * double(rb.verifyFlipHits)
+                    / double(rb.verifySamples);
+                const double lit = 100.0 * double(rb.verifyAfterNonZero)
+                    / double(rb.verifySamples);
+                const char *verdict;
+                if (rb.verifyGLError)
+                    verdict = "INSTRUMENT BLIND -- glReadPixels failed";
+                else if (before > 5.0)
+                    verdict = "INSTRUMENT BLIND -- a nonce minted this"
+                              " frame was already on screen BEFORE the"
+                              " quad, so this is not reading the"
+                              " destination";
+                else if (after > 95.0)
+                    verdict = "COMPOSITE DRAWS";
+                else if (flipped > 95.0)
+                    verdict = "COMPOSITE DRAWS BUT THE ROWS ARE INVERTED"
+                              " -- the frame reaches the screen upside"
+                              " down; the flip belongs in the texture"
+                              " coordinates";
+                else if (lit < 1.0)
+                    verdict = "INSTRUMENT BLIND -- the destination read"
+                              " back black, which is not the same as the"
+                              " quad having drawn nothing";
+                else
+                    verdict = "COMPOSITE DID NOT DRAW";
                 FC_RENDER_MSG(
-                        "render readback composite verify: destination"
-                        " matched the uploaded image on %.2f%% of sampled"
-                        " pixels BEFORE the quad and %.2f%% AFTER"
-                        " (%lld sampled, worst channel delta %lld)\n",
-                        100.0 * double(rb.verifyBeforeSame)
-                            / double(rb.verifyTotal),
-                        100.0 * double(rb.verifyAfterSame)
-                            / double(rb.verifyTotal),
-                        rb.verifyTotal, rb.verifyMaxDelta);
+                        "render readback composite verify: %s"
+                        " (%u probes, %lld texels: pattern on %.2f%%"
+                        " before the quad, %.2f%% after, %.2f%% after"
+                        " under the opposite row mapping, %.2f%% of the"
+                        " destination not black, glReadPixels err"
+                        " 0x%x)\n",
+                        verdict, rb.verifyProbes, rb.verifySamples,
+                        before, after, flipped, lit, rb.verifyGLError);
+            }
         }
 #endif
         // * The other side of the same frame: what the *rest* of the

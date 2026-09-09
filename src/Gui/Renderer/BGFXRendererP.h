@@ -6316,11 +6316,15 @@ public:
     /// Has the texture ever been filled? Until it has there is nothing
     /// to draw and the quad is skipped rather than showing garbage.
     bool readbackGLFilled = false;
-    /// What the last upload handed glTexSubImage2D, for the verify pass
-    /// to compare the destination against. Points into a slot buffer or
-    /// the decode scratch, both of which outlive the draw; null until
-    /// something has landed.
-    const unsigned char *readbackLastUploaded = nullptr;
+    /// FC_BGFX_READBACK_VERIFY: the nonce of the pattern uploaded THIS
+    /// frame, or 0 when this is not a probe frame. The verify derives
+    /// its expected texels from this number rather than from the buffer
+    /// that was uploaded, which is what makes the two sides of the
+    /// comparison independent.
+    uint32_t readbackProbeNonce = 0;
+    /// Scratch the probe pattern is generated into, uploaded in place
+    /// of the scene on a probe frame.
+    std::vector<unsigned char> readbackProbePixels;
 
     /// Per-step cost of the composite, accumulated over the reporting
     /// window and drained by the frame report. This exists to be
@@ -6337,20 +6341,37 @@ public:
         uint32_t landed = 0;   ///< frames a new image arrived in
         uint32_t stale = 0;    ///< frames that redrew the previous one
         uint32_t latencySum = 0; ///< sum of (ready - queued), in frames
-        /// FC_BGFX_READBACK_VERIFY: sampled destination pixels that
-        /// match what was uploaded, out of those compared, and the
-        /// worst channel difference seen. This is the only instrument
-        /// on this platform that can say the composite DREW -- see
-        /// readbackVerify() for why the obvious ones cannot.
-        /// Sampled destination pixels matching the uploaded image
-        /// BEFORE this quad drew and AFTER it. Only the pair means
-        /// anything: `after` high on its own is a check that may have
-        /// agreed with itself, and `before` high says something other
-        /// than this quad already put the image there.
-        long long verifyBeforeSame = 0;
-        long long verifyAfterSame = 0;
-        long long verifyTotal = 0;
-        long long verifyMaxDelta = 0;
+        /// FC_BGFX_READBACK_VERIFY, the synthetic-pattern probe. This
+        /// is the only instrument that can say the composite DREW --
+        /// readbackVerifyPeriod() records why every instrument outside
+        /// the process is blind to it, and why comparing the
+        /// destination against the uploaded IMAGE, which is what this
+        /// used to do, cannot answer it either.
+        ///
+        /// Every counter here is one a wrong answer can trip, which is
+        /// the property the previous version lacked:
+        ///   before  -- the pattern found BEFORE this frame's quad. A
+        ///              nonce minted this frame cannot already be on
+        ///              screen, so anything but ~0 means the sampler is
+        ///              not reading the destination at all.
+        ///   after   -- found AFTER it, in the row mapping we drew.
+        ///   flip    -- found AFTER it under the OPPOSITE row mapping.
+        ///              High here with `after` low is a composite that
+        ///              draws the frame upside down -- which a plain
+        ///              percentage-of-match reports as plain failure,
+        ///              naming neither the cause nor the fix.
+        ///   nonZero -- sampled texels that were not black. Separates
+        ///              "the quad drew nothing" from "the read came
+        ///              back empty", which otherwise look identical.
+        uint32_t verifyProbes = 0;
+        long long verifySamples = 0;
+        long long verifyBeforeHits = 0;
+        long long verifyAfterHits = 0;
+        long long verifyFlipHits = 0;
+        long long verifyAfterNonZero = 0;
+        /// Last glReadPixels error, 0 = none. A read that FAILED is not
+        /// a miss and must never be counted as one.
+        uint32_t verifyGLError = 0;
         void clear() { *this = ReadbackStats(); }
     } readbackStats;
 
@@ -6386,13 +6407,14 @@ public:
     /// framebuffer. Same destination rect convention as blit().
     void blitReadback(uint32_t frameNum, int dstX, int dstY, int dstH);
     /// Read the destination framebuffer rect back and count how many
-    /// sampled pixels match \a want. Used twice per frame under
-    /// FC_BGFX_READBACK_VERIFY -- before the quad and after it -- since
-    /// only the difference between the two says the quad drew.
-    void readbackVerifySample(const unsigned char *want, bool flip,
-                              int dx0, int dy0,
-                              long long &same, long long &total,
-                              long long &maxDelta);
+    /// sampled texels carry the probe pattern of \a nonce -- in the
+    /// row mapping \a flip says we drew, and in the opposite one.
+    /// Called twice on a probe frame, before the quad and after it:
+    /// only the pair is evidence, because a check that reads the
+    /// destination only afterwards can agree with itself.
+    void readbackProbeSample(uint32_t nonce, bool flip, int dx0, int dy0,
+                             long long &hits, long long &flipHits,
+                             long long &nonZero, long long &samples);
     /// Release the GL texture (deferred into the bgfx context, like
     /// freeFBO) and the staging texture.
     void freeReadbackTargets();
