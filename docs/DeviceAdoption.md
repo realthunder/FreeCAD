@@ -524,6 +524,27 @@ because those three MUST disagree:
 and OpenGL under `FC_BGFX_READBACK=2`.** Every non-GL backend on this box now
 reaches the screen.
 
+**And on Metal, 2026-09-10, macOS box (Intel Iris Pro 6200, Qt 6.11.1).** That
+was the one backend the Windows box could not run, and it is the one that
+matters most, because Metal is the ONLY backend that can run this renderer on
+macOS at all -- the GL path is capped at 2.1 there against shaders that need
+3.1, so if the readback composite did not work on Metal, nothing would put a
+bgfx frame on a Mac screen:
+
+    render readback composite verify: COMPOSITE DRAWS (70 probes, 2590560
+    texels: pattern on 0.00% before the quad, 100.00% after, 0.00% after
+    under the opposite row mapping, 100.00% of the destination not black,
+    glReadPixels err 0x0)
+
+Five report cycles, ~347 probes, the same verdict every time, and the triple
+disagrees the way it must. The composite had been confirmed here by eye on
+2026-09-09; this is the same conclusion from an instrument that can fail.
+
+The warning above about measuring with the verify on holds here too, and more
+strongly: `quad` went from 0.07 ms to 5.51 ms with `FC_BGFX_READBACK_VERIFY=1`.
+Those are the instrument's two full-viewport `glReadPixels`, not the route's.
+The composite's real cost on this box is section 12's 0.33 ms.
+
 **! Do not measure the composite with the verify on.** Each probe frame costs
 two full-viewport `glReadPixels` inside the timed quad section, which took
 `quad` from 0.08 ms to 1.8-3.2 ms. Those are the instrument's milliseconds, not
