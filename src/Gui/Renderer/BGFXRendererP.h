@@ -2489,6 +2489,9 @@ public:
         std::string s = bgfx::getRendererName(bgfx::getRendererType());
         // Only where a context is current -- this runs at the tail of
         // prepare(), where the GL path has one and the others never do.
+        // Qt-side only: the standalone and browser builds have no
+        // QOpenGLContext at all, and the caps below answer them.
+#ifndef FC_RENDERER_STANDALONE
         if (auto *cur = QOpenGLContext::currentContext()) {
             if (auto *f = cur->functions()) {
                 for (GLenum e : {GL_RENDERER, GL_VERSION}) {
@@ -2499,6 +2502,7 @@ public:
                 }
             }
         }
+#endif  // !FC_RENDERER_STANDALONE
         if (const bgfx::Caps *caps = bgfx::getCaps()) {
             char ids[64];
             std::snprintf(ids, sizeof(ids),

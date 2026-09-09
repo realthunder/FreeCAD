@@ -6614,16 +6614,24 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     " avg color %ld,%ld,%ld\n",
                     int(capturePixW), int(capturePixH), ng,
                     ng ? r/ng : -1, ng ? g/ng : -1, ng ? b/ng : -1);
+#ifndef FC_RENDERER_STANDALONE
             if (envDump && *envDump)
                 BGFXView::writeDumpImage(envDump, rgba.data(),
                                          capturePixW, capturePixH);
+#endif
         }
+        // Writing the frame to a path is a desktop errand. The browser
+        // tier has no filesystem anybody could fetch from and answers a
+        // dump request by sending the pixels back over the wire, which
+        // the caller below is already pumping on.
+#ifndef FC_RENDERER_STANDALONE
         if (captureIsDump && !captureRequest.path.empty()
                 && !BGFXView::writeDumpImage(captureRequest.path,
                                              rgba.data(),
                                              capturePixW, capturePixH))
             fprintf(stderr, "bgfx: frame dump write failed: %s\n",
                     captureRequest.path.c_str());
+#endif
         captureReadyFrame = 0;
         dumpHeld = false;
         if (captureIsDump) {
