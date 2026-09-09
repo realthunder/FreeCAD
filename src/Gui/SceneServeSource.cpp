@@ -291,6 +291,16 @@ public:
     }
 
     /// The mirror of \a client, or null when it has stated no camera.
+    ///
+    /// **How fresh this camera is depends on the client's uplink policy**
+    /// (docs/ThinClient.md sec 8.10b). Under the default one a viewer
+    /// states its camera with the click it computed the ray for and at no
+    /// other time, so between clicks the camera here is as old as the last
+    /// click -- which is exactly right for the one reader this has, and
+    /// wrong for a reader that wants to know where a client is looking
+    /// NOW (prioritising the level ladder by view, say). A second reader
+    /// of that kind is a reason to revisit the policy, not to assume this
+    /// is current: it will not look stale, it will look plausible.
     MirrorViewer *mirrorFor(uint64_t client) const
     {
         auto it = mirrors.find(client);

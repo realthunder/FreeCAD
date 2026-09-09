@@ -1048,3 +1048,136 @@ the camera fresh continuously and C is a view-mode optimisation that stage 4 par
 reverses. Any later server-side view-dependent work -- prioritising the level ladder by
 where a client is actually looking -- would want it too. So the question the experiment
 should answer is not only what C saves, but what it costs to turn back on.
+
+### 8.10b What it costs, measured (2026-09-09)
+
+The experiment of 8.10a, run. Four policies against one served document, over a real
+socket: an idle camera, then ten seconds of a camera in continuous motion, clicked through
+every 1.5 s. The bytes are counted **on the server**, per connection --
+`SceneClientInfo`'s uplink counters, read through `Gui.serveClients()` -- and the bench
+cross-checks its own count against the server's, which is what says the counters count the
+right thing. `tests/gui/camera-uplink-bench.py`; wire bytes, so the RFC 6455 header a
+client masks each frame under is included.
+
+| policy | idle | through the motion | camera frames/s | click-to-push, median / worst |
+|---|---|---|---|---|
+| `frame` (A) | 0 B/s | **3888 B/s** | 60.5 | 7.5 / 9.1 ms |
+| `rate` (B, 10 Hz) | 0 B/s | 614 B/s | 9.3 | 8.1 / 8.8 ms |
+| `lazy` (C) | 0 B/s | 57 B/s | 0.6 | 5.3 / 8.3 ms |
+| `lazy1` (C', camera inside the pick) | 0 B/s | **55 B/s** | 0 | 7.6 / 8.9 ms |
+
+Through the ten seconds of motion, in messages and bytes: A sent 612 messages (606 camera,
+6 picks) and 38 976 bytes; B 99 and 6144; C 12 and 576; C' **6 messages and 546 bytes** --
+one per click, nothing else at all. **A to C' is 71x fewer bytes and 100x fewer messages.**
+
+Four things the numbers say that the argument in 8.10a did not.
+
+**A is expensive while moving, not always.** Every policy costs zero through the idle
+phase, A included: it coalesces on the packed bytes, so a still camera sends nothing. The
+waste is real but it is bounded by how much the user orbits, which is a smaller fraction of
+a session than "sixty times a second" suggests.
+
+**C does not cost latency.** That was the concern that made the experiment worth running --
+C puts the camera on the click's critical path -- and it is not visible: every policy lands
+in the same 5 to 8 ms median, inside stage 3's 7-10 ms. The camera and the pick are queued
+to the GUI thread in order and the pick's own work dwarfs a 58-byte parse.
+
+**The message count matters as much as the byte count, and scales worse.** 612 messages a
+second per client is 612 wakeups a second on the connection's read path, and that is per
+viewer: ten viewers orbiting is six thousand. The bytes are 39 kB/s and survivable; the
+wakeups are what a serving box would feel first.
+
+**C in its two-message form has a transport hazard C' does not.** The first bench run
+measured C at **50.6 ms** a click against everyone else's 7.5 -- because C writes a camera
+and then a pick, two small segments back to back, on a socket that has been silent since
+the last click. Nagle holds the second until the first is acknowledged and the peer delays
+that acknowledgement: a textbook ~40 ms of nothing. Setting `TCP_NODELAY` on the bench
+client, one variable, took it to 7.8 ms. The server already sets `tcp::no_delay` on
+accepted sockets and a browser sets it on its own, so this is not a defect of the wire --
+but C' never has two frames to hold, which makes it the form that is right on a client
+whose transport we do not control.
+
+**The browser leg.** The bench is a synthetic client implementing the same policy over the
+same frames, and it is not `src/Gui/Renderer/wasm/main.cpp`. Section 8.6's rule cuts both
+ways: a browser cannot be trusted to judge its own selection, and a bench cannot be trusted
+to stand in for the browser's code. So `tests/gui/camera-uplink-browser.py` serves the
+document and the built viewer, drives Chrome through an orbit and four clicks under each
+`?camup=`, and reads the same server-side counters. What it found, per policy, through a
+ten-second orbit:
+
+| policy | camera frames through the orbit | orbit bytes | clicks | camera frames with the clicks | selection after |
+|---|---|---|---|---|---|
+| `frame` | 7 | 448 B | 4 | 4 | `Box.Face4` |
+| `rate` | 7 | 446 B | 4 | 4 | `Box.Face4` |
+| `lazy` | **0** | **0 B** | 4 | **1** | `Box.Face4` |
+| `lazy1` | **0** | **0 B** | 4 | **0** | `Box.Face4` |
+
+Every policy picks, and picks the same thing: the correctness witness holds in the real
+client and not only in the bench. `lazy` states its camera once across four clicks -- the
+coalescing working, the three clicks from an unmoved camera saying nothing -- and `lazy1`
+sends no camera frame at all, ever, because it rides inside the pick.
+
+What that table cannot show is the magnitude. The page draws at **0.6 frames a second**
+under headless swiftshader, so A's seven frames are seven draws and not a per-frame cost
+worth measuring, and B's 10 Hz throttle never binds -- B and A are the same policy at that
+frame rate, which is why the harness skips that comparison rather than failing it. The
+shape is what the browser leg is for; the bench is what the numbers are for.
+
+Getting that table at all took finding and fixing something much larger, below.
+
+**The default is now `lazy1`.** The measurement says C' by a wide margin, the correctness
+witness holds in both legs, and nothing on the server reads a mirror's camera except the
+click that carries it. `?camup=frame` remains, and it is one enum value away for the edit
+mode that will want it back.
+
+**What it costs to turn back on**, which 8.10a asked to price rather than assume away: one
+enum value. The per-frame send is not deleted, it is a policy; stage 4 turns it back on for
+edit mode, where a sketcher tool recomputes its tolerances in the mirror on every move and
+the camera must be continuously fresh. The policy is per client and per moment, so entering
+edit mode is where it flips, and nothing about C' makes that harder.
+
+**The condition attached to it.** `SceneServeSource::mirrorFor` has exactly one reader
+today, and that is the whole justification. A second reader that wants to know where a
+client is looking *now* -- prioritising the level ladder by view is the obvious one -- makes
+a lazy camera wrong, and wrong quietly: the camera it reads will not look stale, it will
+look plausible. That is written at `mirrorFor` itself, where someone adding such a reader
+will be standing.
+
+### 8.10c The browser tier could not draw at all, and nothing said so
+
+Found by the browser leg above, and much the larger of the two findings.
+
+The WASM viewer defaults to four-sample MSAA. Its scene colour target is RGBA16F while
+colour management is on, and **a multisampled RGBA16F colour buffer is not available on
+every WebGL2 backend**. Where it is not, every `createTexture` for the scene targets
+returned an invalid handle, `createFrameBuffer` could not be built from invalid
+attachments, and the frame path did what it is supposed to do with a missing scene
+framebuffer: bail to the host and let Coin draw. In a browser there is no Coin. The viewer
+drew nothing, retried the whole target build on the next frame, and bailed again -- for
+ever, at a cost heavy enough that the page stopped answering synthetic input, which is how
+it was found rather than by looking at it.
+
+Two things made it invisible. The message is a bgfx error line, and no one reads a browser
+console unless something else already went wrong; and the fallback it takes is a real,
+correct fallback on the desktop, so nothing about the code path reads as broken. The
+handoff had recorded that nobody had built `build/wasm` in a while, and stage 3 built it
+without ever running it in a browser. This is what was waiting.
+
+The obvious fix is the check the OIT targets a few hundred lines below already make of
+their own formats -- ask `BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER_MSAA` of the scene colour
+format and of D24S8, and drop to no MSAA when the backend says no. **It does not work.**
+Written and measured: WebGL2 answers that bit for RGBA16F and then fails every create, so
+the capability is a claim and the create is the fact. The check passed and the viewer stayed
+black.
+
+So the fallback is empirical instead. When the scene framebuffer fails to build and more
+than one sample was asked for, that is latched for the process, said once, and the view
+rebuilt immediately without multisampling -- `init(false)` and not `init(true)`, because an
+MSAA change re-decides `m_oit` and so which program set exists at all. Verified end to end:
+`4x MSAA scene targets could not be created on this backend -- rebuilding without
+multisampling`, then `view init 1100x900 msaa 1`, then `scene consumed: 6 draws, 2 meshes`.
+
+Three things worth keeping. **`?msaa=0` is the first thing to try when the browser viewer
+shows nothing.** A bail-to-host path is only a fallback where there is a host to bail to.
+And a capability bit is a promise, not a result: where the cost of believing it is the whole
+scene, try the thing and react to what happens.

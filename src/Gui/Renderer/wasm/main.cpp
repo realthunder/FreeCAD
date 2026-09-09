@@ -3201,7 +3201,15 @@ enum class CamUplink {
     Lazy,      ///< `lazy` (C): only with a click, and only when it moved
     LazyOne,   ///< `lazy1` (C'): the same, carried inside the click
 };
-static CamUplink s_camUplink = CamUplink::Frame;
+/// The default is the lazy, camera-inside-the-pick one, on the
+/// measurement of docs/ThinClient.md sec 8.10b: through an orbit it is
+/// 71x fewer bytes and 100x fewer messages than stating the camera every
+/// frame, with no click-to-push cost and the same pick. It is right
+/// because in view mode the server reads a mirror's camera at exactly
+/// one moment -- the click -- so the camera has no reader between
+/// clicks. An edit mode does read it continuously, and turning the
+/// per-frame send back on for one is this one value.
+static CamUplink s_camUplink = CamUplink::LazyOne;
 static double s_camRateMs = 100.0;
 
 static uint8_t s_camFrame[6 + 13 * sizeof(float)];
@@ -8555,6 +8563,7 @@ int main()
     //   rate   the same, throttled (?camuphz=<n>, default 10)
     //   lazy   only with a click, and only when it moved
     //   lazy1  the same, carried inside the click as one 'Q' message
+    //          -- the default, see sec 8.10b
     {
         const int mode = EM_ASM_INT({
             const v = new URLSearchParams(window.location.search)
