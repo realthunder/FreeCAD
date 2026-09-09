@@ -2611,20 +2611,30 @@ attachment already did, and by giving the failure path
 `dropBlitCache()` instead of `destroy()` -- a two-framebuffer cache is
 not a reason to throw away the scene.
 
-**A large RESTORED document publishes nothing, still open.** After that
-fix, a document of 17058 `Part::Feature` shapes opened from a `.FCStd`
-draws **14 draws / 2 primitives / 0 geometry pixels**, while the same
-17000 shapes built in session draw 33.7k. `RenderTiming` on the restored
-document reads `traverse=28ms delta=10ms flatten=2ms` with
-`entries=0 translate=0`: the Coin traversal runs and the render cache
-produces no entries, so nothing reaches the backend and Coin draws the
-view alone at 1-2 s a frame. Small restored documents are fine (200
-shapes, 399 draws), so it is not the restore path as such. Reproductions
-live beside the model: `MiSTerFlat.FCStd` (17058 flat features, empty),
-`Boxes.FCStd` (200 flat features, draws), `GroupOnly.FCStd` (200 shapes
-inside one `App::Part`, empty at 200 -- so a container has a threshold
-of its own). Not diagnosed further; it is the next thing to look at, and
-it is why the MiSTer Express assembly has no row in the table above.
+**A restored document drew nothing, fixed 2026-09-09.** A `.FCStd`
+opened with `Render_ProgressiveLoad` off came up with an empty 3D view
+-- 200 shapes or 17058, on the bgfx renderer and on plain Coin alike,
+while the same objects built in session drew. A restore parks its shape
+content (a deferred entry, a store position, a blob, a plain `file=`
+entry) and serves it in the archive's FILE phase, which runs after the
+objects are signalled -- and that signal is what builds the visuals. So
+the build read a null shape, wrote empty display nodes and marked
+itself done, and nothing replays a notification when the content lands.
+`restoreDeferredFile` states the assumption it rests on -- "the serve
+runs before the visual fill" -- which is true of the progressive drain
+and of nothing else. A null shape during a restore now parks on that
+drain whatever the preference says (`ViewProviderPartExt::updateVisual`,
+`shapeMayStillArrive`). Note the property's own `isRestorePending` is
+NOT sufficient: the plain addFile branch marks nothing, which is why a
+first fix worked at 200 shapes and did nothing at 17000.
+
+**So the assembly has a row now.** `MiSTerFlat.FCStd`, 17058 solids,
+1280x720, OpenGL: **41259 draws, 6.70M primitives, 8.1% covered, 252 ms
+a frame** -- of which submit 171.6, our submit loop 30.8, our pre 30.6.
+The draw count matches the 41670 `docs/FarFieldProxies.md` records for
+the same model on the Linux box, which is the cross-check that the
+scene is the scene. The other three backends were not run on it before
+this was paused; the boxes table above stands as the ordering.
 
 ### Route D -- Qt owns the device -- is the destination
 
