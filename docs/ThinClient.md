@@ -1148,6 +1148,79 @@ Each step is a standalone landing with the desktop as its regression oracle.
    follow the session rather than the room -- are at the end of 8.4. The probe grew the
    reading that discriminates it: the same click, sent in view mode and again while
    editing, reaching the room and then not reaching it.
+
+   **The browser half landed 2026-09-09**, and with it the step is done: a real Chrome
+   enters a sketch edit on a served document, drives it with pointer and keys, and leaves
+   it. `tests/gui/serve-edit-browser.py` + `scripts/edit-drive.js` are the leg, and every
+   reading but two is taken in the serving process; the two that are not are what the
+   *viewer* believed, which is the half under test.
+
+   What the viewer does, in `src/Gui/Renderer/wasm/main.cpp`:
+
+   - **`window.fcviewerEdit(obj, mode, subname)` asks**, `fcviewerResetEdit()` leaves, and
+     an `fc:edit` event says what the answer was. The viewer believes nothing until the
+     answer arrives -- the state that routes its input follows the server, never the call.
+     It also **forces a camera frame before the op**: under the default uplink policy
+     (8.10b) a client that has not clicked has stated no camera, and the op is refused
+     without one. That is the first thing the browser half had to get right, and it is
+     invisible until you try it from a page nobody has clicked in.
+   - **The pointer and the keyboard become `'E'` frames while a session is running**, and
+     only then. The split is by button: the left one and the keys are the edit mode's, the
+     middle and right ones and the wheel stay with the camera, which is this client's own
+     question and one an edit mode has no opinion about. Moves are held and sent once a
+     frame -- the same coalescing the camera does, for the same reason.
+   - **The camera goes first whenever it is news**, before every `'E'` frame. 8.10b left
+     this as "turn the per-frame policy back on for an edit", and the form the pick already
+     uses turns out to be the better one: the mirror places the event with the camera it
+     was last told about, so what an edit mode needs is not a camera sent often but a
+     camera that is never behind the event it is placing. Same worst case, no staleness.
+
+   And what the server does, which the client cannot do without: **it pushes both edges of
+   the session to the connection whose view it is**. The leaving edge is the one that has
+   to exist -- a session can end without the client asking (an Escape the sketcher handled
+   itself, a host resetting it, the object deleted), and a browser still routing its left
+   button into it would be talking to nothing. The client cannot infer it either: the scene
+   delta that comes back from leaving looks like any other.
+
+   **Three defects, and the first two were crashes that only a real browser reached.**
+
+   - **`SoFCUnifiedSelection`'s pick path is desktop-only, and a replayed pointer move
+     walks into it.** `getPickedList` dereferences its viewer four times -- the on-top
+     path's root path, the late-pick paths, the graph the ray is applied to -- and the
+     served root has no viewer. The preselect a move triggers goes straight there
+     (`handleEvent` -> `onPreselectTimer`), so hovering a served document from a browser
+     segfaulted the server. It answers "nothing picked" now, which is what `setHighlight`
+     and `setSelection` beneath it already answered when they found no viewer: a client's
+     click is resolved against its own mirror (8.3), the only place a per-client camera and
+     pick radius exist, and a highlight in a graph every client shares is not expressible
+     anyway. **The synthetic probe sent one move and never saw it** -- one move schedules
+     the timer, and it takes a stream of them to reach the inline call.
+   - **The sketcher asks for a Qt widget in three places**, and a browser drag across empty
+     space reaches one of them: the rubber band took `getGLWidget()->height()` times the
+     device pixel ratio, which is exactly the viewport's height in pixels wherever there is
+     a widget and a null dereference where there is not. It reads the viewport now, and so
+     does the constraint-icon projection -- whose pixels are compared against a Coin cursor
+     position, so the widget's *logical* size was already the wrong unit on any hi-DPI
+     desktop. The third, warping the pointer to a sketch point, returns instead: it moves
+     the physical cursor of whoever is at the machine, and a sketch dragged from a browser
+     must not reach across and do that.
+   - **Escape leaves an edit through a deferred call**, which is the hazard 8.10 names and
+     the first path known to walk into it: `ViewProvider::eventCallback` does not call
+     `resetEdit`, it posts a zero-timer that calls it, and a timer runs with no scope open
+     at all. The sketcher's parting selection would have landed in the room and left the
+     sketch highlighted in every viewer's scene. `Gui::Document::resetEdit` opens the scope
+     over the view itself now, for every caller -- which is why the control op no longer
+     opens one of its own.
+
+   A fourth, smaller: `Show`'s camera detail indexed `mdiViewsOfType(...)[0]` for the
+   camera TempoVis restores, which is an IndexError in a process with no 3D view -- one
+   traceback per served sketch session, and the restore lost with it.
+
+   **The reading that discriminates the pointer stream** is that the server counts 68
+   `'E'` frames for the 62 moves the page says it dispatched, and **zero before the session
+   started**: in view mode the pointer never travels, which is 8.2a holding, and the same
+   click that puts `Sketch.Edge1` in the room before the edit leaves the room empty during
+   it.
 5. **On-view parameters in the DOM** and whatever the widget residue of 8.3 turned up.
 
 ### 8.10 Open questions
@@ -1172,11 +1245,28 @@ Each step is a standalone landing with the desktop as its regression oracle.
 - ~~Stage 4 left the mirror still committing its picks into the room~~ Done 2026-09-09;
   the instance, the rule for which picks are in-edit, and the one place the design had not
   seen -- an edit mode's own observer -- are at the end of 8.4.
-- **A scope is a dynamic extent, and an edit mode does not do everything inside one.**
-  Anything an edit mode defers -- a queued call, a timer, a task panel answering later --
-  runs with no scope open and so reaches the room. Nothing in a served sketch session is
-  known to do it, and an edit mode's own observer is already excepted (8.4), but the
-  boundary is real and is where the next surprise of this kind will come from.
+- ~~**A scope is a dynamic extent, and an edit mode does not do everything inside one.**~~
+  One path did do it, and it was found the day this was written: Escape does not call
+  `resetEdit`, it posts a zero-timer that calls it (`ViewProvider::eventCallback`), and a
+  timer runs with no scope open. `Gui::Document::resetEdit` opens the scope itself now, so
+  leaving is covered however it is asked for. **The boundary is still real** -- anything
+  else an edit mode defers, a queued call or a task panel answering later, still reaches
+  the room -- and the lesson of the one instance is that the fix belongs in the operation
+  rather than at the call site, because the call site is exactly what a deferred call has
+  left behind.
+- **A served document has no preselect, deliberately** (8.9 step 4): the shared root's
+  `SoFCUnifiedSelection` answers "nothing picked" for want of a viewer. A per-client
+  highlight in a graph every client shares is not expressible, and in view mode the client
+  resolves hover locally anyway (8.2a). What it costs is the in-edit case: a click the edit
+  mode itself does not handle selects nothing, where on a desktop it would have selected
+  whatever was under it. Making that work means giving the pick path the view whose event
+  is being replayed -- `ViewerContext::current()` is already the right answer -- but the
+  four things it asks a viewer for (the root path, the late-pick paths, the hidden-line
+  config, `appendDetailPath`) are genuinely `View3DInventorViewer`-shaped, so it is a stage
+  of its own rather than a guard.
+- `ViewProviderSketch` reads `QApplication::queryKeyboardModifiers()` when it turns a
+  preselection into a selection -- the same class as the `mouseButtons()` leak below, and
+  the same answer: a replayed event carries its own modifiers.
 - `SoFCUnifiedSelection::handleEvent` reads `QApplication::mouseButtons()` twice, and the
   served root is shared by every client. It is reached only from a mirror's replayed
   events, so it is a leak of the same class as the four 8.3 closed rather than a live

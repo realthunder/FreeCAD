@@ -407,6 +407,30 @@ being filled, all live at once.
 | `GuiLiveImportNestedLoop_tests_run` | the live-import nested-loop crash (`docs/DocumentLoad.md` sec 15.2): a command pumps a nested event loop while the chess set is still importing, so the tree populates inside the user-edit guard | 25 s |
 | `GuiServeSelectionEcho_tests_run` | a remote pick on a headless serve source (`Gui.serveDocument`) comes back as a scene push (`docs/ThinClient.md` sec 8.9 step 0): a raw-socket client in a thread sends `'P'` rays and times the frame back; also that a no-change pick pushes nothing and a `'B'` batch pushes one frame | 10 s |
 
+The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
+current.
+
+**Two of them are not registered, and are meant not to be**:
+`camera-uplink-browser.py` and `serve-edit-browser.py` drive a real Chrome
+through the built WASM viewer, so they need three things this repository does
+not carry -- `build/wasm`, a `puppeteer-core` install, and a Chrome binary --
+and they skip rather than fail when any is missing. Registering them would
+put a test in the ctest count that says SKIP on every box but this one, which
+is a worse lie than an unregistered test. Run them by hand:
+
+    PUPPETEER_PATH=~/works/sw/fcad-probes/node_modules/puppeteer-core \
+    CHROME=~/.cache/puppeteer/chrome/*/chrome-linux64/chrome \
+    scripts/gui-test.sh tests/gui/serve-edit-browser.py /tmp/edit-web \
+        --timeout 600
+
+`EDIT_REAL=1` (`CAMUP_REAL=1` for the other) moves it off headless
+swiftshader onto the WSLg desktop's real GPU; neither is judged by pixels, so
+either tier answers. `serve-edit-browser.py` is worth the trouble: it found
+three crashes on its first run that the synthetic socket client next to it
+could not reach, because a browser sends a *stream* of pointer moves and the
+paths that break are the ones a single event never gets to
+(`docs/ThinClient.md` sec 8.9 step 4).
+
 **On Windows they do not register**, and cannot: `tests/gui/CMakeLists.txt`
 wants `xvfb-run` and `.conda/run.sh`, and the box has neither. Run one by
 hand instead -- nothing in these scripts needs a display of its own, only a
