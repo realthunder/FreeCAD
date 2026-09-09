@@ -53,6 +53,8 @@ namespace Render {
 class RenderLib;
 class DrawDevice;
 class DrawSurface;
+/// A graphics device the renderer did not create (DeviceAdopt.h).
+struct AdoptedDevice;
 
 /// CPU-side snapshot of one geometry cache (SoFCVertexCache on the Gui side).
 /// All array pointers stay valid for as long as `owner` is held. Backends key
@@ -3668,6 +3670,24 @@ public:
     virtual bool warmup(QOpenGLWidget *, const std::string &,
                         WarmupTiming * = nullptr) { return false; }
 
+    /// The same warm-up, on a device this process did not create
+    /// (docs/DeviceAdoption.md -- Route D, Qt owns the device through
+    /// QRhi and the backend adopts it).
+    ///
+    /// It answers the same startup-ordering requirement as the overload
+    /// above and answers it for a backend that has no GL context to be
+    /// built from: bgfx::init is once per process, so whichever device
+    /// is up first is the session's, and it must not be the first 3D
+    /// view that decides. What changes here is not WHEN the device
+    /// comes up but WHOSE device it is.
+    ///
+    /// False when the backend cannot adopt \a device -- an unusable
+    /// API, a device already up, or a backend that does not implement
+    /// this at all -- in which case nothing is broken and the caller
+    /// falls back to the widget form.
+    virtual bool warmup(const AdoptedDevice &, const std::string &,
+                        WarmupTiming * = nullptr) { return false; }
+
     /// Whether this backend's device is up on OpenGL through a context
     /// in Qt's global share group -- the precondition for a host to
     /// composite a backend-rendered texture into its own Qt GL widget
@@ -3793,6 +3813,10 @@ public:
     /// the first 3D view of a session does not pay for it. See
     /// RendererLib::warmup.
     static bool warmup(const std::string &type, QOpenGLWidget *widget,
+                       RendererLib::WarmupTiming *timing = nullptr);
+    /// Bring \a type's backend up on a device somebody else owns. See
+    /// RendererLib::warmup(const AdoptedDevice &, ...).
+    static bool warmup(const std::string &type, const AdoptedDevice &device,
                        RendererLib::WarmupTiming *timing = nullptr);
     /// The first registered backend's draw facade (DrawDevice.h), or
     /// null while none has its device up. DrawDevice::instance() is

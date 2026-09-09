@@ -41,6 +41,16 @@ in section 6.
 needs a pty; without one a CAM sanity test dies on `[Errno 9] Bad file
 descriptor` and takes the rest of the run down with it.
 
+**That form is GNU `script`, and it fails on macOS.** BSD `script` has no `-c`
+and rejects it outright (`script: illegal option -- e`), so on the mac box the
+same run is:
+
+    cd build/mac-relwithdebinfo-801
+    script -q /dev/null ~/works/sw/fcad/.conda/run.sh ./bin/FreeCADCmd -t 0 > pytest.log
+
+Note the shape differs as well as the flags: BSD takes the output file first and
+then the command as plain arguments, not as one quoted string.
+
 A single module instead of everything: `FreeCADCmd -t TestPartApp`, or from
 the Python console `import Test; Test.runTestApp()`.
 

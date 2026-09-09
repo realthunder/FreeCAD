@@ -68,6 +68,40 @@ are built inside the env with conda's compilers so there is exactly one ABI in t
 process — no mixed-toolchain loader mysteries. Our components are still full `-g`
 Debug builds; only the prebuilt deps (Qt, Python, boost, …) are release.
 
+### Python is pinned to 3.13 for this dev cycle
+
+The three feedstocks that produce python-linked packages -- `freecad-rt`,
+`pivy-rt` and `ifcopenshell` -- all render **python 3.13 only**, one variant per
+platform. Before this they each rendered whatever conda-forge's global pinning
+said on the day they were last re-rendered, which is how they drifted apart:
+freecad-rt was rendered against 3.10-3.13 and pivy against 3.11-3.14, leaving
+freecad-rt's 3.10 with no pivy to resolve at all.
+
+**The mechanism is a `skip` in the recipe, not a python list in
+`conda_build_config.yaml`.** conda-smithy takes `python` from the global pinning
+and ignores the recipe's, so a `python:` entry there re-renders to no change
+whatsoever; what smithy does honour is a variant the recipe skips, which it then
+omits from `.ci_support` entirely. Verified both ways: the config pin changed
+nothing, the skip took pivy from 20 variants to 5.
+
+*** **A selector is evaluated on the RAW recipe text, before jinja removes a
+branch.** This is not a curiosity. `freecad-rt-feedstock` carried a
+`skip: true  # [py>311]` inside the `{% else %}` arm of its Qt switch, and it
+applied to the qt6 build as well even though that arm is never emitted at qt 6.
+It had been capping every build at python 3.11 -- which is why the checked-in
+`.ci_support` claimed 3.10-3.13 while a fresh re-render of the unmodified recipe
+produced 3.11 alone, and why py311 was the only `freecad-rt` ever published.
+Never put a selector inside a jinja branch.
+
+Re-rendering needs `conda-smithy`, which is not in any env this document
+creates; use a throwaway one (`conda create -n smithy -c conda-forge
+conda-smithy`, then `conda-smithy rerender` -- note the `conda smithy`
+subcommand form is not registered and only the `conda-smithy` executable works).
+
+**The dev envs on this box are still python 3.12**, and the create lines below
+say so deliberately rather than being rewritten ahead of the boxes. The pin
+above is what we PUBLISH; moving the dev envs to 3.13 is a separate rebuild.
+
 ### Layout
 
 - **miniforge**: `~/miniforge3` (deliberately NOT activated in `.bashrc`).

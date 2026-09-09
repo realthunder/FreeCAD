@@ -1039,6 +1039,28 @@ leg does need a logged-in window server, so it cannot run over a bare ssh
 session. `--gpu` is a no-op there -- every macOS run is already on the
 device.
 
+WARNING: **On macOS the golden tests need somebody logged in, and the
+failure says nothing about it.** The registration gate runs
+`find_program(xvfb-run)` on Linux and lets **Darwin through
+unconditionally** -- there is no xvfb to find on macOS, because the
+capture draws on the window server of the logged-in session. So the
+gate asks whether a display *could* be raised and takes yes for an
+answer on Darwin. Run `ctest` on a Mac sitting at the login window and
+both golden legs register and then fail with
+
+```
+Cannot create window: no screens available
+Abort trap: 6
+CAPTURE FAILED (no DONE within 420s)
+```
+
+which looks exactly like real golden divergence. The three-way
+confirmation, since the error text is useless on its own: `who` prints
+nothing, `/dev/console` is owned by `root` rather than a user, and
+`launchctl managername` says **Background** rather than **Aqua**. Log in
+at the console and re-run; an ssh or background session cannot do it at
+all. This is the first thing a macOS CI runner would hit.
+
 `tests/render/CMakeLists.txt` requires `xvfb-run` **on Linux only**.
 Requiring it everywhere is why the golden tests on macOS did not merely
 skip: they were never registered, so a `ctest` run there was short two
@@ -1256,6 +1278,30 @@ of the projection at all. It was never evidence about clip space. A
 mask comparison that does not try `flipud` first can align two lobes of
 a symmetric silhouette and read as confirmation.
 
+WARNING: **Identical divergent-pixel counts across probes of unrelated
+quantities mean the probe is not reaching the quantity -- you are
+measuring the frame, not the value.** From the Vulkan NaN hunt
+(2026-09-08): three probes aimed at three different quantities returned
+4827/16513/4456, 4818/16493/4457 and 4826/16512/4456. Counts that close
+across unrelated subjects are not corroboration, they are the
+instrument describing itself, and four "eliminations" built on them
+were void -- two could not have produced a positive result even against
+a guilty subject, because the defect was a NaN and `0 * NaN = NaN`
+survives every gate that multiplies a suspect term out. Same species as
+the flip-before-shift warning above: a measurement that confirms
+whatever you point it at.
+
+The discipline that follows: **self-test the instrument before trusting
+a negative.** Light the classifier deliberately -- a `sqrt` of a
+negative from a uniform lit 85k pixels and made the negatives
+trustworthy -- and note that `(x-x)/(x-x)` does NOT work, the compiler
+folds it. A classifier that has not been shown to fire is not evidence.
+The same rule applies to a unit test: `ClipConvention_tests_run` was
+checked by injecting the regression it exists to catch (folding the w
+row alongside the z row), which failed 4 of its 7 cases -- and notably
+NOT the case that asserts the measured pair, which passed throughout.
+A test suite nobody has watched fail is a suite of unknown strength.
+
 **The containment check is `scripts/render_contain.py`** (added 2026-09-08;
 the diagnosis above was done with an ad-hoc script that was never committed).
 It builds the geometry mask from the depth stage -- mode 1 is the normalized
@@ -1404,7 +1450,7 @@ to intersect the divergent-pixel mask with the mode 1 geometry mask,
 and the answer was not close:
 
 ```
-frame            858 x 608 = 521664
+frame            858 x 608 = 521664   (Linux/OpenGL capture)
 geometry px      106114
 divergent px     41431
   on geometry    0
@@ -1438,6 +1484,43 @@ the artefact -- so the action is to re-bless `refs/raster`, on a box
 that records its device. It is an OpenGL set, so that box is the Linux
 one; macOS cannot produce a GL capture here at all (Apple caps the
 compatibility profile at 2.1).
+
+**And the 0.3527% Metal-vs-OpenGL beauty figure is NOT this defect**, which
+is worth stating because it was the obvious next thread and it is a dead
+one. Re-measured 2026-09-08, a fresh Metal capture against the
+**re-blessed** `refs/raster`: at the default tolerance it reproduces
+0.3527% of beauty pixels and 0.1248% of AO pixels **exactly**, the same
+figures recorded on 2026-09-07 against the stale reference -- because the
+stale background differed by at most 1 and tolerance 3 never saw it. The
+split settles it:
+
+```
+vs re-blessed refs/raster
+tol 0:  10673 px (2.0460%)   on geometry 6216   on background  4457
+tol 3:   1840 px (0.3527%)   on geometry 1840   on background     0
+vs the stale refs/raster (219a02e), same Metal capture
+tol 0:  46540 px (8.9215%)   on geometry 6216   on background 40324
+tol 3:   1840 px (0.3527%)   on geometry 1840   on background     0
+max channel delta 108
+```
+
+Every pixel of the 0.3527% is on geometry and none on background, so it is
+a genuine backend difference and always was. What the re-blessing did fix
+is visible at tolerance zero: for the same Metal capture, background
+divergence against the stale reference was 40324 px and against the
+re-blessed one is 4457. What remains is 1-LSB noise between two different
+backends, expected, and why `refs/*-metal` exists as a separate set.
+Geometry divergence is 6216 px against either reference, which is the
+consistency check -- re-blessing touched only background pixels, so the
+geometry figure must not move, and it does not.
+
+CAUTION: **the 41431 px above is the Linux/OpenGL capture, not this
+one.** Both are the same frame's background population sitting on the
+same rounding boundary against the same stale reference, so they land
+within a per-cent of each other -- 41431 on GL, 40324 on Metal -- and
+that closeness is exactly what makes them easy to quote
+interchangeably. An earlier draft of this section did precisely that.
+They are different measurements on different backends.
 
 And the point that costs nothing to state: **the `device` field would
 have answered this in one step instead of two sessions.** The four

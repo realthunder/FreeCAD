@@ -10,7 +10,8 @@ workstreams this slots into), `docs/ComputeBoundaries.md` (the process
 boundaries this adds a third one to), `docs/RenderEngine.md` (the bgfx
 engine and its particle system), `docs/ExternalRenderer.md` (the same
 "adopt a mature engine rather than write one" posture, applied to
-renderers).
+renderers), `docs/Optics.md` (the second tenant of Boundary C, which
+expands on this document).
 
 
 ## 1. Two questions that turned out to be one
@@ -286,6 +287,24 @@ Consequences worth stating before anything is built:
   not an exception to the streaming path.
 - Crash isolation comes along with it, which matters for a contact
   solver being fed CAD-quality geometry.
+
+**Boundary C has a second tenant, and it should be designed once.**
+`docs/Optics.md` finds that an optics run has exactly this shape --
+configured from document state, outside the recompute DAG, long-running,
+emitting a large derived dataset that is stored, replayed and streamed
+rather than recomputed. Only the payload differs: a trajectory here, an
+irradiance-map and ray-set result there. If this workstream invents a
+protocol for trajectories and optics invents another for optical results,
+the fork ends up with two long-running-solver boundaries that differ for
+no reason. The abstraction to aim at is *a solver session configured from
+document state that emits a versioned derived dataset*, with trajectory
+and optics result as two payload types over one protocol.
+
+The units question in section 9 is shared for the same reason, and optics
+makes it harder: it adds wavelength (nm or um, both live conventions) and
+flux (W or lm), and the radiometric-to-photometric conversion is a
+V(lambda) weighting inside a spectral integral rather than a scale factor.
+One unit contract, written down once, for both solvers.
 
 
 ## 8. Staging

@@ -1435,6 +1435,66 @@ const std::vector<std::string> &BGFXRendererLib::types() const
     return _BGFXLib.types;
 }
 
+bool BGFXRendererLib::warmup(const AdoptedDevice &device,
+                             const std::string &type,
+                             WarmupTiming *timing)
+{
+#ifdef FC_RENDERER_STANDALONE
+    // The standalone viewer owns its own canvas and its own device;
+    // there is no Qt here to adopt one from.
+    (void)device;
+    (void)type;
+    (void)timing;
+    return false;
+#else
+    auto it = _BGFXLib.typeMap.find(type);
+    if (it == _BGFXLib.typeMap.end() || !device.valid())
+        return false;
+    // The backend the session asked for and the API Qt's device
+    // actually is have to be the same thing. They are configured
+    // independently -- Render_Type is a preference, the RHI backend is
+    // a platform default -- so this is a real mismatch to catch and not
+    // a tautology. Adopting across it would hand bgfx's Metal backend a
+    // VkDevice.
+    static const struct { AdoptedDevice::Api api; RendererType::Enum bgfx; }
+    kPairs[] = {
+        { AdoptedDevice::Metal,  RendererType::Metal },
+        { AdoptedDevice::Vulkan, RendererType::Vulkan },
+        { AdoptedDevice::D3D11,  RendererType::Direct3D11 },
+        { AdoptedDevice::D3D12,  RendererType::Direct3D12 },
+    };
+    bool paired = false;
+    for (const auto &p : kPairs)
+        if (p.api == device.api && p.bgfx == it->second)
+            paired = true;
+    if (!paired) {
+        RENDER_ERR("cannot adopt a " << device.apiName()
+                   << " device for '" << type
+                   << "'; the backend and the device must be the same API");
+        return false;
+    }
+    QElapsedTimer clock;
+    clock.start();
+    // The device only. The Qt GL context, the anchor view and the
+    // shader programs are NOT built here and are not skipped either --
+    // the widget warm-up runs straight after this one, finds the device
+    // already up, and does exactly its remaining half. Splitting it
+    // this way is what lets Route D change WHOSE device the session
+    // runs on without touching the startup ordering that was already
+    // right (docs/DeviceAdoption.md section 4, constraint 2).
+    if (!_BGFXLib.prepareAdopted(device, it->second))
+        return false;
+    if (timing) {
+        timing->context = 0;
+        timing->device = _BGFXLib.msDevice;
+        timing->programs = 0;
+        timing->flush = 0;
+        timing->total = timing->device;
+    }
+    return true;
+#endif
+}
+
 bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type,
                              WarmupTiming *timing)
 {

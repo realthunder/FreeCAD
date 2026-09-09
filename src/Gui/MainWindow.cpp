@@ -121,6 +121,7 @@
 #include "MergeDocuments.h"
 #include "ViewProviderExtern.h"
 #include "ViewParams.h"
+#include "Renderer/DeviceAdopt.h"
 
 #include "SpaceballEvent.h"
 #include "View3DInventor.h"
@@ -467,6 +468,23 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
         warmSurface->resize(1, 1);
         warmSurface->hide();
     }
+
+    // The same trick, for Route D (docs/DeviceAdoption.md): a hidden
+    // 1x1 QRhiWidget so that Qt builds this window's QRhi HERE, before
+    // any 3D view exists. bgfx::init happens once per process, so
+    // whichever device comes up first is the session's -- and if that
+    // is a device bgfx made for itself, no later view can adopt Qt's.
+    //
+    // Beside the GL surface rather than instead of it: the two are not
+    // alternatives. Adoption settles WHOSE device bgfx runs on; the GL
+    // context is still what the frame is composited through until the
+    // viewport itself becomes a QRhiWidget (stage 4).
+    //
+    // Opt-in (FC_RENDER_RHI=1), because creating this widget is not
+    // free of consequence: it brings a QRhi up for the whole window,
+    // and the code behind it links Qt private API.
+    if (Render::QtRhi::available() && Render::QtRhi::warmupEnabled())
+        Render::QtRhi::createWarmupSurface(this);
 
     d = new MainWindowP;
     d->splashscreen = nullptr;

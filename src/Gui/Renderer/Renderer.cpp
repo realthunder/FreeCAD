@@ -21,6 +21,7 @@
  ****************************************************************************/
 
 #include "Renderer.h"
+#include "DeviceAdopt.h"
 
 #include <chrono>
 #include <mutex>
@@ -235,6 +236,18 @@ bool RendererFactory::warmup(const std::string &type, QOpenGLWidget *widget,
     if (it == rendererTypes().end())
         return false;
     return it->second->warmup(widget, type, timing);
+}
+
+bool RendererFactory::warmup(const std::string &type,
+                             const AdoptedDevice &device,
+                             RendererLib::WarmupTiming *timing)
+{
+    if (type.empty() || type == "Default" || !device.valid())
+        return false;
+    auto it = rendererTypes().find(type);
+    if (it == rendererTypes().end())
+        return false;
+    return it->second->warmup(device, type, timing);
 }
 
 std::unique_ptr<Renderer> RendererFactory::create(

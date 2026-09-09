@@ -24,6 +24,43 @@ if(WIN32)
     list(APPEND Renderer_LIBS opengl32)
 endif()
 
+# Route D (docs/DeviceAdoption.md): Qt owns the graphics device through
+# QRhi and the backend adopts it, so the frame can be handed over as a
+# texture instead of copied through system memory every frame.
+#
+# QRhiWidget is public QtWidgets and forward-declares everything it
+# returns -- but QRhi, QRhiTexture and the per-backend native-handle
+# structs are Qt PRIVATE API, under the versioned private include path,
+# and qrhi.h says in its own words that using them may make code source
+# and binary incompatible with future Qt releases. This is the first Qt
+# private module this tree links, and the dependency was taken
+# deliberately rather than discovered at link time.
+#
+# It is confined to ONE translation unit (QtRhiDevice.cpp), which is
+# what bounds the damage a Qt release can do; DeviceAdopt.h, the seam
+# everything else sees, includes no Qt header at all. Without
+# Qt6::GuiPrivate the file still compiles, as a set of functions that
+# answer "no", and the host falls back to the GL warm-up.
+list(APPEND Renderer_CPP_SRCS QtRhiDevice.cpp)
+list(APPEND Renderer_HPP_SRCS DeviceAdopt.h)
+set(Renderer_QtRhi_DEFS "")
+if(FREECAD_QT_MAJOR_VERSION EQUAL 6
+        AND NOT Qt6Core_VERSION VERSION_LESS 6.7.0)
+    find_package(Qt6 QUIET COMPONENTS GuiPrivate)
+    if(TARGET Qt6::GuiPrivate)
+        set(Renderer_QtRhi_DEFS FC_RENDERER_QT_RHI)
+        list(APPEND Renderer_LIBS Qt6::GuiPrivate)
+        message(STATUS "Renderer: Qt RHI device adoption enabled"
+                       " (links the Qt6 private Gui module)")
+    else()
+        message(STATUS "Renderer: no Qt6::GuiPrivate; RHI device"
+                       " adoption disabled")
+    endif()
+else()
+    message(STATUS "Renderer: Qt is older than 6.7; RHI device adoption"
+                   " disabled")
+endif()
+
 if(BUILD_BGFX)
     add_definitions(-DHAVE_BGFX)
     list(APPEND Renderer_CPP_SRCS
@@ -40,7 +77,8 @@ if(BUILD_BGFX)
         BGFXFrame.cpp
         Vg2D.cpp
     )
-    list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h Vg2D.h)
+    list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h
+                                  ClipConvention.h Vg2D.h)
     # Private: nothing outside this library calls bgfx, and example-common
     # carries bgfx's own entry point, which asks any executable that links
     # it for a _main_ it does not have.
@@ -243,6 +281,14 @@ ENDIF(Renderer_BUILD_STATIC_LIBRARY)
 if(BUILD_BGFX)
     # bx (bgfx base library) requires C++20 since bgfx 1.150
     set_target_properties(${Library} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+endif()
+
+if(Renderer_QtRhi_DEFS)
+    # Scoped to the one file, not the directory: the switch is what says
+    # where the Qt private headers are allowed to be included, and a
+    # directory-wide definition would quietly stop saying it.
+    set_source_files_properties(QtRhiDevice.cpp PROPERTIES
+        COMPILE_DEFINITIONS "${Renderer_QtRhi_DEFS}")
 endif()
 
 source_group("source" FILES ${Renderer_CPP_SRCS})

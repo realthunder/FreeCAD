@@ -166,6 +166,30 @@ def apply_properties(v, props):
         candidates = [value]
         if isinstance(value, float):
             candidates.append(int(value))
+        elif isinstance(value, str) and value.startswith("Placement ["):
+            # App::PropertyPlacement dumps as its repr,
+            # "Placement [Pos=(x,y,z), Yaw-Pitch-Roll=(y,p,r)]", which no
+            # amount of literal_eval will parse -- the text after the first
+            # "(" is not a Python expression. Rebuild the object instead.
+            #
+            # This was silent for months because the one property that hits
+            # it, Render_GroundPlacement, is recorded as identity in every
+            # blessed set, so failing to restore it restored nothing that
+            # was not already the default. That holds only while the value
+            # stays identity: give a scene a tilted or offset shadow ground
+            # and the golden would be captured against the wrong one, with
+            # no warning but a "failed:" line everybody had learned to read
+            # as harmless.
+            m = re.search(r"Pos=\(([^)]*)\).*?"
+                          r"Yaw-Pitch-Roll=\(([^)]*)\)", value)
+            if m:
+                try:
+                    pos = [float(x) for x in m.group(1).split(",")]
+                    ypr = [float(x) for x in m.group(2).split(",")]
+                    candidates.insert(0, FreeCAD.Placement(
+                        FreeCAD.Vector(*pos), FreeCAD.Rotation(*ypr)))
+                except Exception:
+                    pass
         elif isinstance(value, str) and "(" in value:
             # "(r, g, b, a)" colors, "Vector (x, y, z)" vectors, ...
             try:

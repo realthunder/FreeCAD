@@ -21,6 +21,7 @@
  ****************************************************************************/
 
 #include "BGFXRendererP.h"
+#include "ClipConvention.h"
 
 /// Radical inverse of \a index in \a base -- the Halton sequence, used
 /// for the idle accumulation's subpixel offsets. Two coprime bases give
@@ -110,11 +111,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (projMatrix) {
         const bgfx::Caps *caps = bgfx::getCaps();
         if (caps && !caps->homogeneousDepth) {
-            const float *fed = reinterpret_cast<const float *>(projMatrix);
-            std::memcpy(projClip, fed, sizeof(projClip));
-            for (int c = 0; c < 4; ++c)
-                projClip[4 * c + 2] = 0.5f * (fed[4 * c + 2]
-                                              + fed[4 * c + 3]);
+            Render::projToZeroToOneDepth(
+                    reinterpret_cast<const float *>(projMatrix), projClip);
             projMatrix = projClip;
         }
     }
@@ -6488,6 +6486,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // request cannot start a second readback meanwhile:
         // captureWanted requires captureReadyFrame to be clear.
     }
+    // The readback composite's copy (docs/DeviceAdoption.md section 2),
+    // queued for the same reason and in the same place as the capture
+    // above: it rides on ViewCapture, the last view id, so the frame
+    // boundary below is what executes it and what it copies is the
+    // finished image. This is the route to the screen for every backend
+    // whose frame is not a GL texture -- and, at FC_BGFX_READBACK=2, the
+    // measured alternative to the GL blit on a backend that has one.
+    const bool readbackComposite = view->readbackCompositeActive();
+    if (readbackComposite)
+        view->queueReadbackComposite();
     // The finished frame belongs in whatever framebuffer the caller had
     // bound when it asked for it: the widget's own for an on-screen
     // frame, a capture target for a screenshot (renderOffscreen).
@@ -6501,6 +6509,21 @@ bool BGFXRenderer::Private::render(const QColor &col,
     cpuMark(CpuCtxOut);
     frameNum = timedBgfxFrame();
     _BGFXLib.sweepUserCaches();
+    if (readbackComposite) {
+        // The blit queued above executes in the frame the boundary just
+        // returned, so that is what its latency is measured from.
+        view->noteReadbackFrame(frameNum);
+        // Benchmark only (FC_BGFX_READBACK_SYNC): spin until the copy
+        // has landed, which is the fully serialized route section 2
+        // costed. Off by default -- the pipelined form shows a frame
+        // that is one or two old and pays nothing for the wait.
+        //
+        // Above the phase clock's restart on purpose: those frames are
+        // bgfx's, not the context hand-off's, and charging them to
+        // CpuCtxIn would put a benchmark switch's cost inside a number
+        // that is supposed to be flat.
+        frameNum = view->syncReadback(frameNum);
+    }
     // bgfx::frame() has its own timer; restart the chain past it so
     // it is not counted twice.
     if (debugconf.frameTiming)
@@ -6544,12 +6567,20 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // this call is now the portable capture queued above -- which is
     // what lets a golden render test gate a backend that has no GL
     // framebuffer to read.
-    view->blit(&lastStats,
-               subCtx.active ? subCtx.x : 0,
-               subCtx.active ? subCtx.y : 0,
-               subCtx.active
-                   ? int(widget->height() * widget->devicePixelRatioF() + 0.5)
-                   : 0);
+    {
+        const int subX = subCtx.active ? subCtx.x : 0;
+        const int subY = subCtx.active ? subCtx.y : 0;
+        const int subH = subCtx.active
+            ? int(widget->height() * widget->devicePixelRatioF() + 0.5)
+            : 0;
+        // One composite or the other, never both: at
+        // FC_BGFX_READBACK=2 the GL blit is still available and would
+        // overwrite the very thing being measured.
+        if (readbackComposite)
+            view->blitReadback(frameNum, subX, subY, subH);
+        else
+            view->blit(&lastStats, subX, subY, subH);
+    }
     cpuMark(CpuBlit);
 #endif
 
@@ -6779,6 +6810,48 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     phaseMs[CpuBlit] / f, unattr / f, bgfxMs / f,
                     ourMs / f);
         }
+#ifndef FC_RENDERER_STANDALONE
+        // * What the readback composite costs, step by step
+        // (docs/DeviceAdoption.md section 2). Printed only when that
+        // route is the one reaching the screen, and drained here so the
+        // numbers are per frame of the same window as the lines above.
+        //
+        // `stale` is as much the answer as the milliseconds are: the
+        // pipelined form does not wait for the copy, so a stale frame
+        // is one where the screen showed an image older than the scene.
+        // FC_BGFX_READBACK_SYNC trades those away for `wait`.
+        if (due && view->readbackStats.frames) {
+            const BGFXView::ReadbackStats rb = view->readbackStats;
+            view->readbackStats.clear();
+            const double f = double(rb.frames);
+            FC_RENDER_MSG(
+                    "render readback composite (ms/frame): queue %.2f | "
+                    "wait %.2f | convert %.2f | upload %.2f | quad %.2f | "
+                    "total %.2f -- %u frames, %u landed, %u stale, "
+                    "mean latency %.1f frames\n",
+                    rb.queueMs / f, rb.waitMs / f, rb.convertMs / f,
+                    rb.uploadMs / f, rb.drawMs / f,
+                    (rb.queueMs + rb.waitMs + rb.convertMs + rb.uploadMs
+                     + rb.drawMs) / f,
+                    rb.frames, rb.landed, rb.stale,
+                    rb.landed ? double(rb.latencySum) / double(rb.landed)
+                              : 0.0);
+            // Only the BEFORE/AFTER pair is evidence. after high with
+            // before low says this quad drew the image; both high says
+            // the check agreed with itself and saw nothing.
+            if (rb.verifyTotal)
+                FC_RENDER_MSG(
+                        "render readback composite verify: destination"
+                        " matched the uploaded image on %.2f%% of sampled"
+                        " pixels BEFORE the quad and %.2f%% AFTER"
+                        " (%lld sampled, worst channel delta %lld)\n",
+                        100.0 * double(rb.verifyBeforeSame)
+                            / double(rb.verifyTotal),
+                        100.0 * double(rb.verifyAfterSame)
+                            / double(rb.verifyTotal),
+                        rb.verifyTotal, rb.verifyMaxDelta);
+        }
+#endif
         // * The other side of the same frame: what the *rest* of the
         // process spends between one backend frame and the next.
         // Natively this is the largest of the three terms and had no
