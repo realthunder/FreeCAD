@@ -167,20 +167,20 @@ public:
 
     /** @name ViewerContext -- edit mode
      *
-     * Recorded, not acted on: driving an edit mode through a mirror is stage
-     * 4 of docs/ThinClient.md section 8.9, which brings the event stream that
-     * would use these. What a caller can already rely on is that asking is
-     * harmless and that the answers are this client's, not the desktop's.
+     * The editing root and what is done to it are ViewerContext's. What is
+     * this mirror's is where that root hangs: in the graph the server
+     * publishes, because the change-driven traversal is the only thing here
+     * that plays the part a redraw plays on the desktop, and it only sees
+     * what is in that graph (docs/ThinClient.md section 8.5). It is hung
+     * there for the duration of an edit and taken out again after, so a
+     * connected client that is not editing does not put an empty separator
+     * in everybody's scene.
      */
     //@{
     void setEditing(bool edit) override;
     bool isEditing() const override;
     void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum) override;
-    bool isEditingViewProvider() const override;
     void resetEditingViewProvider() override;
-    void setupEditingRoot(SoNode* node = nullptr, const Base::Matrix4D* mat = nullptr) override;
-    void resetEditingRoot(bool updateLinks = true) override;
-    void setEditingTransform(const Base::Matrix4D& mat) override;
     //@}
 
     /** @name ViewerContext -- event delivery and selection mode */

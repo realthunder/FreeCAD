@@ -339,21 +339,11 @@ public:
     ViewProvider* getViewProviderByPathFromTail(SoPath*) const;
     /// get all view providers of given type
     std::vector<ViewProvider*> getViewProvidersOfType(const Base::Type& typeId) const;
-    /// set the ViewProvider in special edit mode
-    void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum);
-    /// return whether a view provider is edited
-    bool isEditingViewProvider() const;
-    /// reset from edit mode
-    void resetEditingViewProvider();
-    void setupEditingRoot(SoNode *node=nullptr, const Base::Matrix4D *mat=nullptr);
-    void resetEditingRoot(bool updateLinks=true);
-    void setEditingTransform(const Base::Matrix4D &mat);
-    /// Where this view hangs the geometry of the mode editing in it.
-    /// SoNode rather than SoSeparator because it overrides
-    /// ViewerContext::getEditRootNode, and a covariant return would need
-    /// SoSeparator complete in this header for the sake of one caller that
-    /// wants a node anyway.
-    SoNode * getEditRootNode() const override;
+    // The edit-mode rows -- setEditingViewProvider, resetEditingViewProvider,
+    // setupEditingRoot, resetEditingRoot, setEditingTransform,
+    // getEditRootNode -- are ViewerContext's now: none of them was view work.
+    // What this view still does for itself is hang pcEditingRoot under the
+    // aux root, which it does once at construction.
     /** Helper method to get picked entities while editing.
      * It's in the responsibility of the caller to delete the returned instance.
      */
@@ -1009,7 +999,6 @@ private:
     NaviCube* naviCube;
     std::set<ViewProvider*> _ViewProviderSet;
     std::list<GLGraphicsItem*> graphicsItems;
-    ViewProvider* editViewProvider;
     SoFCBackgroundGradient *pcBackGround;
     SoSwitch               *pcBackGroundSwitch;
     SoSeparator * backgroundroot;
@@ -1035,9 +1024,6 @@ private:
     std::unique_ptr<SoFCSelectionAction> selectionAction;
     std::unique_ptr<SoFCHighlightAction> highlightAction;
 
-    SoSeparator * pcEditingRoot;
-    SoTransform * pcEditingTransform;
-    bool restoreEditingRoot;
     SoEventCallback* pEventCallback;
     NavigationStyle* navigation;
     SoFCUnifiedSelection* selectionRoot;

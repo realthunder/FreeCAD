@@ -67,3 +67,11 @@ fc_add_gui_test(GuiSelectionRoomPanels_tests_run selection-room-panels.py
 # ray went back to the viewport point it came from.
 fc_add_gui_test(GuiServeMirrorPick_tests_run serve-mirror-pick.py
                 --timeout 180)
+
+# A desktop sketch enters and leaves edit with its scene graph intact
+# (docs/ThinClient.md sec 8.9 step 4). The editing root belongs to
+# Gui::ViewerContext now rather than to the desktop viewer, and the rule
+# that an edit mode's geometry is moved out of the view provider's root
+# and put back is what this reads, through the provider's child count.
+fc_add_gui_test(GuiSketchEditRoot_tests_run sketch-edit-root.py
+                --timeout 180)

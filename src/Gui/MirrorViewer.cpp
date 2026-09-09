@@ -28,6 +28,7 @@
 #include <Inventor/SbLine.h>
 #include <Inventor/SbPlane.h>
 #include <Inventor/SbViewVolume.h>
+#include <Inventor/SoPath.h>
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
@@ -36,6 +37,7 @@
 #include <Inventor/actions/SoSearchAction.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
+#include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoTransform.h>
 #endif
@@ -121,8 +123,36 @@ public:
     SbViewportRegion viewport {short(1), short(1)};
 
     bool editing = false;
-    ViewProvider* editViewProvider = nullptr;
     bool selectionEnabled = true;
+    /// Whether the editing root is currently a child of the served graph.
+    bool editRootAttached = false;
+
+    /// Put the editing root where the publish traversal will find it.
+    void attachEditingRoot(SoNode* editRoot)
+    {
+        if (editRootAttached || !editRoot || !scene
+            || !scene->isOfType(SoGroup::getClassTypeId())) {
+            return;
+        }
+        static_cast<SoGroup*>(scene)->insertChild(editRoot, 0);
+        editRootAttached = true;
+    }
+
+    void detachEditingRoot(SoNode* editRoot)
+    {
+        if (!editRootAttached) {
+            return;
+        }
+        editRootAttached = false;
+        if (!editRoot || !scene || !scene->isOfType(SoGroup::getClassTypeId())) {
+            return;
+        }
+        auto* group = static_cast<SoGroup*>(scene);
+        const int index = group->findChild(editRoot);
+        if (index >= 0) {
+            group->removeChild(index);
+        }
+    }
 
     ~Private()
     {
@@ -201,7 +231,14 @@ MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
     pimpl->renderManager = new SoRenderManager;
 }
 
-MirrorViewer::~MirrorViewer() = default;
+MirrorViewer::~MirrorViewer()
+{
+    // A connection can drop in the middle of an edit. Give the view provider
+    // its children back now, while this is still a MirrorViewer: the base
+    // destructor cannot, because resetEditingRoot reaches getDocument() and
+    // by then there is no override left to reach.
+    resetEditingViewProvider();
+}
 
 void MirrorViewer::setCamera(const Camera& camera)
 {
@@ -584,11 +621,28 @@ SoPickedPoint* MirrorViewer::getPointOnRay(const SbVec2s& pos, const ViewProvide
     if (!hasCamera() || !pimpl->scene || !vp) {
         return nullptr;
     }
+    // While a mode is editing this view provider its children are not under
+    // its own root any more -- setupEditingRoot moved them under the editing
+    // root -- so searching for that root would find an empty node and pick
+    // nothing. This is the desktop's rule, and it is the one that makes a
+    // sketcher drag able to grab what it drew.
+    // Both of these outlive the branch on purpose: an SoSearchAction owns
+    // the path it hands back, so a path read from one that has gone out of
+    // scope is a dangling pointer.
     SoSearchAction search;
-    search.setNode(vp->getRoot());
-    search.setSearchingAll(true);
-    search.apply(pimpl->scene);
-    SoPath* path = search.getPath();
+    CoinPtr<SoPath> editPath;
+    SoPath* path = nullptr;
+    if (vp == editViewProvider && pcEditingRoot->getNumChildren() > 1) {
+        editPath = CoinPtr<SoPath>(new SoPath, true);
+        editPath->append(pcEditingRoot);
+        path = editPath;
+    }
+    else {
+        search.setNode(vp->getRoot());
+        search.setSearchingAll(true);
+        search.apply(pimpl->scene);
+        path = search.getPath();
+    }
     if (!path) {
         return nullptr;
     }
@@ -653,36 +707,23 @@ bool MirrorViewer::isEditing() const
 
 void MirrorViewer::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum)
 {
-    (void)ModNum;
-    pimpl->editViewProvider = vp;
-    pimpl->editing = vp != nullptr;
-}
-
-bool MirrorViewer::isEditingViewProvider() const
-{
-    return pimpl->editViewProvider != nullptr;
+    // Into the published graph before the base fills it, because filling it
+    // is what the change-driven traversal has to notice. First child, which
+    // is where the desktop's sits: the aux root is added to the selection
+    // root at construction, ahead of every view provider.
+    if (vp) {
+        pimpl->attachEditingRoot(pcEditingRoot);
+    }
+    ViewerContext::setEditingViewProvider(vp, ModNum);
 }
 
 void MirrorViewer::resetEditingViewProvider()
 {
-    pimpl->editViewProvider = nullptr;
-    pimpl->editing = false;
-}
-
-void MirrorViewer::setupEditingRoot(SoNode* node, const Base::Matrix4D* mat)
-{
-    (void)node;
-    (void)mat;
-}
-
-void MirrorViewer::resetEditingRoot(bool updateLinks)
-{
-    (void)updateLinks;
-}
-
-void MirrorViewer::setEditingTransform(const Base::Matrix4D& mat)
-{
-    (void)mat;
+    ViewerContext::resetEditingViewProvider();
+    // After, not before: the base gives the view provider its children back
+    // out of this root, and it has to still be somewhere the traversal can
+    // see for that to be published.
+    pimpl->detachEditingRoot(pcEditingRoot);
 }
 
 void MirrorViewer::addEventCallback(SoType eventtype, SoEventCallbackCB* cb, void* userdata)

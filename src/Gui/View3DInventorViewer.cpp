@@ -1441,7 +1441,6 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
 View3DInventorViewer::View3DInventorViewer(QWidget* parent, const QtGLWidget* sharewidget)
     : Quarter::SoQTQuarterAdaptor(parent, sharewidget)
     , SelectionObserver(false, ResolveMode::NoResolve)
-    , editViewProvider(nullptr)
     , nonObjectGroup(nullptr)
     , navigation(nullptr)
     , renderType(Native)
@@ -1461,7 +1460,6 @@ View3DInventorViewer::View3DInventorViewer(QWidget* parent, const QtGLWidget* sh
 View3DInventorViewer::View3DInventorViewer(const QtGLFormat& format, QWidget* parent, const QtGLWidget* sharewidget)
     : Quarter::SoQTQuarterAdaptor(format, parent, sharewidget)
     , SelectionObserver(false, ResolveMode::NoResolve)
-    , editViewProvider(nullptr)
     , nonObjectGroup(nullptr)
     , navigation(nullptr)
     , renderType(Native)
@@ -1560,8 +1558,6 @@ View3DInventorViewer* View3DInventorViewer::fromEventCallback(const SoEventCallb
 
 void View3DInventorViewer::init()
 {
-    pcEditingRoot = nullptr;
-
     _pimpl.reset(new Private(this));
 
     // A redraw held back by the throttle comes back through this timer, so a
@@ -1736,15 +1732,9 @@ void View3DInventorViewer::init()
 
     pcClipPlane = nullptr;
 
-    pcEditingRoot = new SoSeparator;
-    pcEditingRoot->ref();
-    pcEditingRoot->setName("EditingRoot");
-    pcEditingTransform = new SoTransform;
-    pcEditingTransform->ref();
-    pcEditingTransform->setName("EditingTransform");
-    restoreEditingRoot = false;
-    pcEditingRoot->addChild(pcEditingTransform);
-
+    // The editing root itself is ViewerContext's; where it hangs is this
+    // view's. A sibling of the render-cache-captured selectionRoot, so an
+    // edit never reaches the main scene feed and is captured separately.
     inventorSelection->getAuxRoot()->addChild(pcEditingRoot);
 
     // Create group for the non physical object
@@ -1880,9 +1870,6 @@ View3DInventorViewer::~View3DInventorViewer()
     this->environment = nullptr;
 
     inventorSelection.reset(nullptr);
-
-    this->pcEditingRoot->unref();
-    this->pcEditingTransform->unref();
 
     if (this->pcClipPlane) {
         this->pcClipPlane->unref();
@@ -2606,110 +2593,6 @@ bool View3DInventorViewer::feedCanvasCyclesViewport(const QColor &col, const SbM
     return true;
 }
 
-SoNode* View3DInventorViewer::getEditRootNode() const
-{
-    return pcEditingRoot;
-}
-
-void View3DInventorViewer::setEditingTransform(const Base::Matrix4D &mat)
-{
-    // NOLINTBEGIN
-    if (pcEditingTransform) {
-        double dMtrx[16];
-        mat.getGLMatrix(dMtrx);
-        pcEditingTransform->setMatrix(SbMatrix(
-                    dMtrx[0], dMtrx[1], dMtrx[2],  dMtrx[3],
-                    dMtrx[4], dMtrx[5], dMtrx[6],  dMtrx[7],
-                    dMtrx[8], dMtrx[9], dMtrx[10], dMtrx[11],
-                    dMtrx[12],dMtrx[13],dMtrx[14], dMtrx[15]));
-    }
-    // NOLINTEND
-}
-
-void View3DInventorViewer::setupEditingRoot(SoNode *node, const Base::Matrix4D *mat) {
-    if(!editViewProvider) {
-        return;
-    }
-
-    resetEditingRoot(false);
-    if(mat) {
-        setEditingTransform(*mat);
-    }
-    else {
-        setEditingTransform(getDocument()->getEditingTransform());
-    }
-    if(node) {
-        restoreEditingRoot = false;
-        pcEditingRoot->addChild(node);
-        return;
-    }
-
-    restoreEditingRoot = true;
-    auto root = editViewProvider->getRoot();
-    for(int i=0,count=root->getNumChildren();i<count;++i) {
-        SoNode *node = root->getChild(i);
-        if(node != editViewProvider->getTransformNode()) {
-            pcEditingRoot->addChild(node);
-        }
-    }
-    coinRemoveAllChildren(root);
-    ViewProviderLink::updateLinks(editViewProvider);
-}
-
-void View3DInventorViewer::resetEditingRoot(bool updateLinks)
-{
-    if(!editViewProvider || pcEditingRoot->getNumChildren()<=1) {
-        return;
-    }
-    if(!restoreEditingRoot) {
-        pcEditingRoot->getChildren()->truncate(1);
-        return;
-    }
-    restoreEditingRoot = false;
-    auto root = editViewProvider->getRoot();
-    if (root->getNumChildren()) {
-        FC_ERR("WARNING!!! Editing view provider root node is tampered");
-    }
-    root->addChild(editViewProvider->getTransformNode());
-    for (int i=1,count=pcEditingRoot->getNumChildren();i<count;++i) {
-        root->addChild(pcEditingRoot->getChild(i));
-    }
-    pcEditingRoot->getChildren()->truncate(1);
-
-    // handle exceptions eventually raised by ViewProviderLink
-    try {
-        if (updateLinks) {
-            ViewProviderLink::updateLinks(editViewProvider);
-        }
-    }
-    catch (const Py::Exception& e) {
-        /* coverity[UNCAUGHT_EXCEPT] Uncaught exception */
-        // Coverity created several reports when removeViewProvider()
-        // is used somewhere in a destructor which indirectly invokes
-        // resetEditingRoot().
-        // Now theoretically Py::type can throw an exception which nowhere
-        // will be handled and thus terminates the application. So, add an
-        // extra try/catch block here.
-        try {
-            Py::Object py = Py::type(e);
-            if (py.isString()) {
-                Py::String str(py);
-                Base::Console().Warning("%s\n", str.as_std_string("utf-8").c_str());
-            }
-            else {
-                Py::String str(py.repr());
-                Base::Console().Warning("%s\n", str.as_std_string("utf-8").c_str());
-            }
-            // Prints message to console window if we are in interactive mode
-            PyErr_Print();
-        }
-        catch (Py::Exception& e) {
-            e.clear();
-            Base::Console().Error("Unexpected exception raised in View3DInventorViewer::resetEditingRoot\n");
-        }
-    }
-}
-
 SoPickedPoint* View3DInventorViewer::getPointOnRay(const SbVec2s& pos, const ViewProvider* vp) const
 {
     return _pimpl->getPointOnRay(pos, vp);
@@ -2818,40 +2701,6 @@ SoPickedPoint* View3DInventorViewer::getPointOnRay(const SbVec3f& pos, const SbV
     SoPickedPoint* pick = rp.getPickedPoint();
     //return (pick ? pick->copy() : 0); // needs the same instance of CRT under MS Windows
     return (pick ? new SoPickedPoint(*pick) : nullptr);
-}
-
-void View3DInventorViewer::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum)
-{
-    this->editViewProvider = vp;
-    this->editViewProvider->setEditViewer(this, ModNum);
-    addEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,this->editViewProvider);
-}
-
-/// reset from edit mode
-void View3DInventorViewer::resetEditingViewProvider()
-{
-    if (this->editViewProvider) {
-
-        // In case the event action still has grabbed a node when leaving edit mode
-        // force to release it now
-        SoEventManager* mgr = getSoEventManager();
-        SoHandleEventAction* heaction = mgr->getHandleEventAction();
-        if (heaction && heaction->getGrabber()) {
-            heaction->releaseGrabber();
-        }
-
-        resetEditingRoot();
-
-        this->editViewProvider->unsetEditViewer(this);
-        removeEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,this->editViewProvider);
-        this->editViewProvider = nullptr;
-    }
-}
-
-/// reset from edit mode
-bool View3DInventorViewer::isEditingViewProvider() const
-{
-    return this->editViewProvider != nullptr;
 }
 
 /// display override mode

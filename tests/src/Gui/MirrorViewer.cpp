@@ -46,6 +46,9 @@
 #include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <Inventor/nodes/SoIndexedLineSet.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoTransform.h>
+
+#include <Base/Matrix.h>
 
 #include <Gui/MirrorViewer.h>
 
@@ -423,6 +426,89 @@ TEST_F(MirrorViewerTest, aDegenerateRayIsRefusedRatherThanResolved)
     EXPECT_FALSE(
         mirror->rayToNormPoint(SbVec3f(0, 0, kEye), SbVec3f(0, 0, 0), normPoint));
     EXPECT_EQ(mirror->pickRay(SbVec3f(0, 0, kEye), SbVec3f(0, 0, 0)), nullptr);
+}
+
+/// The editing root and what is done to it are ViewerContext's, shared by
+/// the desktop viewer and the mirror (docs/ThinClient.md sec 8.9 stage 4).
+/// A mirror is the only one of the two that can be built without a
+/// QApplication, a GL context and a document, so it is where the shared
+/// rows get their oracle.
+
+TEST_F(MirrorViewerTest, theEditingRootIsBuiltEmptyAndOwned)
+{
+    // "Empty" is one child, always: the editing transform. Every test in
+    // the edit path for "is anything being edited" reads getNumChildren()
+    // > 1, so the count of an idle root is part of the contract.
+    auto* editRoot = mirror->getEditRootNode();
+    ASSERT_NE(editRoot, nullptr);
+    ASSERT_TRUE(editRoot->isOfType(SoSeparator::getClassTypeId()));
+    EXPECT_EQ(static_cast<SoSeparator*>(editRoot)->getNumChildren(), 1);
+    EXPECT_FALSE(mirror->isEditingViewProvider());
+    EXPECT_EQ(mirror->getEditingViewProvider(), nullptr);
+
+    // Owned by the context, not by whatever graph it is hung in: it must
+    // survive being taken out of one, which is what a mirror does at the
+    // end of every edit.
+    EXPECT_GE(editRoot->getRefCount(), 1);
+}
+
+TEST_F(MirrorViewerTest, anIdleEditingRootIsNotInTheServedGraph)
+{
+    // A connected client that is not editing must not put a separator in
+    // everybody else's scene -- the graph is shared, and the publish
+    // traverses it for every client.
+    EXPECT_EQ(scene->findChild(mirror->getEditRootNode()), -1);
+}
+
+TEST_F(MirrorViewerTest, theEditingTransformIsTheMatrixItWasGiven)
+{
+    Base::Matrix4D mat;
+    mat.move(Base::Vector3d(3, -4, 5));
+    mirror->setEditingTransform(mat);
+
+    auto* editRoot = static_cast<SoSeparator*>(mirror->getEditRootNode());
+    ASSERT_GE(editRoot->getNumChildren(), 1);
+    auto* node = editRoot->getChild(0);
+    ASSERT_TRUE(node->isOfType(SoTransform::getClassTypeId()));
+
+    const SbVec3f translation = static_cast<SoTransform*>(node)->translation.getValue();
+    EXPECT_NEAR(translation[0], 3.0F, 1e-5F);
+    EXPECT_NEAR(translation[1], -4.0F, 1e-5F);
+    EXPECT_NEAR(translation[2], 5.0F, 1e-5F);
+}
+
+TEST_F(MirrorViewerTest, editingTheRootDoesNothingWithNobodyEditing)
+{
+    // setupEditingRoot with no editing view provider has nothing to hang
+    // geometry for, and resetEditingRoot on an untouched root has nothing
+    // to give back. Both are reached on teardown paths where the view
+    // provider is already gone, so neither may act and neither may crash.
+    auto* editRoot = static_cast<SoSeparator*>(mirror->getEditRootNode());
+    auto* extra = new SoSeparator;
+    mirror->setupEditingRoot(extra);
+    EXPECT_EQ(editRoot->getNumChildren(), 1);
+
+    mirror->resetEditingRoot();
+    EXPECT_EQ(editRoot->getNumChildren(), 1);
+}
+
+TEST_F(MirrorViewerTest, theCurrentViewIsTheInnermostScope)
+{
+    // Gui::Document::setEdit asks which view an event is being handled in
+    // before it goes looking for an active window. With nothing said, the
+    // answer must be "nobody said", so that the desktop falls back to what
+    // it always did rather than to some view left over from last time.
+    EXPECT_EQ(Gui::ViewerContext::current(), nullptr);
+    {
+        Gui::ViewerScope outer(mirror.get());
+        EXPECT_EQ(Gui::ViewerContext::current(), mirror.get());
+        {
+            Gui::ViewerScope inner(nullptr);
+            EXPECT_EQ(Gui::ViewerContext::current(), nullptr);
+        }
+        EXPECT_EQ(Gui::ViewerContext::current(), mirror.get());
+    }
+    EXPECT_EQ(Gui::ViewerContext::current(), nullptr);
 }
 
 }  // namespace

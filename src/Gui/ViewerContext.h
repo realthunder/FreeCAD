@@ -45,6 +45,8 @@ class SoRenderManager;
 class SoEventManager;
 class SoEventCallback;  // NOLINT
 class SoFCRenderCacheManager;
+class SoSeparator;
+class SoTransform;
 
 class QWidget;
 class QCursor;
@@ -156,26 +158,49 @@ public:
     virtual void appendDetailPath(SoPath* path, ViewProvider* vp) = 0;
     //@}
 
-    /** @name Edit mode */
+    /** @name Edit mode
+     *
+     * The editing root and everything done to it is implemented once, here,
+     * because it is not view work: it is a separator, a transform, and the
+     * rule that an edit mode's geometry is moved out of the document's graph
+     * and back again. What a view supplies is *where* that root hangs, which
+     * is the one line each implementation writes for itself -- under the aux
+     * root on the desktop, under the served graph for a mirror.
+     */
     //@{
+    /// Whether an edit mode is running here. What it means is the view's:
+    /// the desktop stops its navigation from claiming events.
     virtual void setEditing(bool edit) = 0;
     virtual bool isEditing() const = 0;
-    virtual void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum) = 0;
-    virtual bool isEditingViewProvider() const = 0;
-    virtual void resetEditingViewProvider() = 0;
-    virtual void setupEditingRoot(SoNode* node = nullptr,
-                                  const Base::Matrix4D* mat = nullptr) = 0;
-    virtual void resetEditingRoot(bool updateLinks = true) = 0;
-    virtual void setEditingTransform(const Base::Matrix4D& mat) = 0;
+    /// Take \a vp into edit here: bind the view to it, and route this
+    /// view's events to ViewProvider::eventCallback.
+    virtual void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum);
+    virtual void resetEditingViewProvider();
+    bool isEditingViewProvider() const
+    {
+        return editViewProvider != nullptr;
+    }
+    /** Hang an edit mode's geometry under the editing root.
+     *
+     * With \a node, that node. Without, the editing view provider's own
+     * children are *moved* out of its root and under this one, so that the
+     * edit renders through the editing transform and picks as one thing;
+     * resetEditingRoot puts them back. \a mat overrides the document's
+     * editing transform.
+     */
+    void setupEditingRoot(SoNode* node = nullptr, const Base::Matrix4D* mat = nullptr);
+    void resetEditingRoot(bool updateLinks = true);
+    void setEditingTransform(const Base::Matrix4D& mat);
     /** Where this view hangs the geometry of the mode editing in it.
      *
      * Gui::Document remembers it so that a traversal arriving at that node
-     * knows it is looking at the edit, not at the document. Null where a
-     * view keeps no such root.
+     * knows it is looking at the edit, not at the document.
      */
-    virtual SoNode* getEditRootNode() const
+    virtual SoNode* getEditRootNode() const;
+    /// The view provider being edited here, or null.
+    Gui::ViewProvider* getEditingViewProvider() const
     {
-        return nullptr;
+        return editViewProvider;
     }
     //@}
 
@@ -267,6 +292,24 @@ public:
      * replayed event, one dynamic extent, and no call site retyped.
      */
     static ViewerContext* current();
+
+protected:
+    ViewerContext();
+
+    /** The editing root, built here and placed by the implementation.
+     *
+     * Ref'd for this object's lifetime, and never unref'd by a view: a
+     * view adds it to its own graph and removes it, and this owns it. Its
+     * first child is always pcEditingTransform, which is why every test
+     * for "is anything being edited" reads getNumChildren() > 1.
+     */
+    SoSeparator* pcEditingRoot {nullptr};
+    SoTransform* pcEditingTransform {nullptr};
+    /// Whether resetEditingRoot has children to give back to a view
+    /// provider, as opposed to a node someone handed setupEditingRoot.
+    bool restoreEditingRoot {false};
+    /// The view provider in edit here.
+    Gui::ViewProvider* editViewProvider {nullptr};
 };
 
 /** Make \a context the current view for this scope's dynamic extent.
