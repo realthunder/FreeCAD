@@ -44,6 +44,11 @@ Env:   COMP_COST_SECS     seconds of spinning frames (default 12)
        COMP_COST_SIZE     viewport as WxH (default 1400x900)
        COMP_COST_TYPE     renderer type (default: per platform)
        COMP_COST_EXIT     "1" = quit when done (default 1)
+       COMP_COST_GRADIENT "1" = keep the viewer's gradient background
+                          (default: flat, so the frame can be judged by
+                          eye as well as by the counters)
+       COMP_COST_STEP     radians of camera turn per frame (default
+                          0.01); a large value is a diagnostic
        COMP_COST_SHOT     path to save a grab of the window, so the run
                           can show the frame REACHED the screen and not
                           only that the composite cost something
@@ -64,6 +69,10 @@ EXIT = os.environ.get("COMP_COST_EXIT", "1") == "1"
 SIZE = os.environ.get("COMP_COST_SIZE", "1400x900")
 # Where to save a grab of the finished window; empty = none.
 SHOT = os.environ.get("COMP_COST_SHOT", "")
+# Radians of camera turn per frame. Large values are a diagnostic:
+# if consecutive frames still come back identical, the scene is not
+# what is failing to change.
+STEP = float(os.environ.get("COMP_COST_STEP", "0.01"))
 
 
 def say(text):
@@ -100,6 +109,18 @@ _doc.SetInt("AutoSaveTimeout", 0)
 _doc.SetBool("AutoSaveEnabled", False)
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/NaviCube").SetBool(
     "ShowNaviCube", False)
+# A FLAT background by default, the same settings the golden tests' flat
+# leg uses. The viewer's gradient is three colours and a radial flag,
+# and none of it is the thing under test -- worse, it makes the frame
+# hard to JUDGE BY EYE, which is how this composite was finally
+# confirmed after four instruments could not see it. A uniform ground
+# makes both the geometry and any composite artifact obvious at a
+# glance. COMP_COST_GRADIENT=1 restores the gradient.
+if os.environ.get("COMP_COST_GRADIENT", "0") == "0":
+    _view.SetBool("Gradient", False)
+    _view.SetBool("RadialGradient", False)
+    _view.SetBool("UseBackgroundColorMid", False)
+    _view.SetUnsigned("BackgroundColor", 858993663)
 
 
 def build_scene():
@@ -194,7 +215,7 @@ class Spinner:
                 os._exit(0)
             return
         self.ticks += 1
-        a = self.ticks * 0.01
+        a = self.ticks * STEP
         # A quaternion around a tilted axis: the scene turns in both
         # screen axes, so no cached frame is reusable.
         ax, ay, az = 0.4, 0.3, 0.866

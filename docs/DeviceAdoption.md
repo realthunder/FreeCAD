@@ -431,6 +431,40 @@ fixed duration. `scripts/composite-cost.sh` drives the legs and reduces the
 report lines, because the route is read from the environment once at startup
 and a leg therefore has to be a process.
 
+**Confirmed on screen 2026-09-09 -- by a person looking at the window.**
+The composite does put the frame there: eight `Part::Box` solids, correct
+geometry, on a Metal session where the viewport had previously shown nothing.
+That is worth recording as the ONLY confirmation, because four instruments
+failed to produce it first:
+
+- `QWidget::grab()` does not capture the 3D view's GL content here (a
+  plain-Coin control grabbed blank too, which is what proved it).
+- `View3DInventorViewer::saveImage` is served by the backend's own portable
+  frame dump, so it renders the scene whether the composite runs or not -- the
+  composite-off control returned the same picture.
+- `screencapture` returns a desktop with no windows without macOS Screen
+  Recording permission, and does it with a byte-identical file each time.
+- The in-composite verify (`FC_BGFX_READBACK_VERIFY`) is DEGENERATE and should
+  not be trusted as it stands: it reports `before` and `after` both at 100.00%
+  with a worst channel delta of 0, unchanged at 34 degrees of camera rotation
+  per frame, which no real measurement of a destination framebuffer can do.
+  Adding the `before` sample did not rescue it, because both samples share one
+  read path and one comparison source; making the two sides independent needs a
+  SYNTHETIC pattern uploaded on a designated frame, which nothing else could
+  have produced. Until then the flag reports a number that cannot fail.
+
+Two of those four returned a plausible picture rather than nothing, which is
+the more dangerous half: a blank result invites suspicion and a correct-looking
+one does not.
+
+**A separate defect the confirmation surfaced**, pre-existing and not the
+composite's: each box draws its two far-side edges DOTTED while the three near
+intersecting edges are solid. It is present in the backend's own frame dump, so
+the composite is faithfully carrying it. Far edges should be fully occluded;
+punching through intermittently is the signature of a depth-bias fight on the
+line pass, and the renderer has an explicit NDC depth bias for line draws
+(`u_params.w`) as the place to start.
+
 **Consequence for the backend list.** The stated reason Metal and Vulkan are
 opt-in was that they render and capture but cannot reach the screen. That hole
 is now closed and the gates stay anyway, with the reason rewritten in the code:
