@@ -82,6 +82,7 @@
 #include <Language/Translator.h>
 #include "Renderer/CyclesRenderer.h"
 #include "Renderer/Renderer.h"
+#include "Renderer/DeviceAdopt.h"
 #include <Quarter/Quarter.h>
 
 #include "Application.h"
@@ -3017,6 +3018,38 @@ void postMainWindowSetup(MainWindow &mw)
         // that has one, so a value pushed later would never be read.
         Render::RendererFactory::setMaxViewIds(
                 int(RenderParams::getMaxViewIds()));
+        // Route D, first (docs/DeviceAdoption.md stage 2): if Qt has a
+        // graphics device of its own, the backend adopts THAT rather
+        // than creating a second one. It has to happen before the
+        // widget warm-up below, not instead of it -- bgfx::init is once
+        // per process, so this is the only moment the choice of device
+        // is still open, and everything else the warm-up does (the Qt
+        // GL context, the anchor view, the shader programs) still needs
+        // doing afterwards.
+        //
+        // A failure here is not an error: the session simply gets the
+        // device bgfx makes for itself, which is what every session got
+        // before this existed.
+        if (Render::QtRhi::available() && Render::QtRhi::warmupEnabled()) {
+            if (auto *rhiw = mw.findChild<QWidget*>(
+                        QStringLiteral("RhiSurfaceWarmup"))) {
+                Render::AdoptedDevice device;
+                Render::RendererLib::WarmupTiming dt;
+                if (Render::QtRhi::warmupDevice(rhiw, device)
+                        && Render::RendererFactory::warmup(rtype, device,
+                                                           &dt)) {
+                    Base::Console().Log(
+                        "Init: render backend '%s' adopted a %s device"
+                        " in %.0f ms\n",
+                        rtype.c_str(), device.apiName(), dt.total);
+                }
+                else {
+                    Base::Console().Log(
+                        "Init: no device to adopt for '%s'; the backend"
+                        " will create its own\n", rtype.c_str());
+                }
+            }
+        }
         Render::RendererLib::WarmupTiming t;
         if (glw && Render::RendererFactory::warmup(rtype, glw, &t)) {
             Base::Console().Log(
