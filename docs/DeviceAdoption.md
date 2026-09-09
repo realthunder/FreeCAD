@@ -176,13 +176,18 @@ the backend picks. Metal can never take the lock path.
 ## 5. Staging
 
 1. **Design agreed.** This file plus `RenderEngine.md` 7.10. Done.
-2. **Startup ordering.** An RHI warm-up surface beside `GLSurfaceWarmup`, and a
-   `warmup()`/`prepare()` path that can take a QRhi device instead of a
-   QOpenGLWidget. Independent of the viewport, safe to land early.
-3. **The Coin on-screen audit. Cost measured (below); the pixel question is
-   still open, and that is what gates step 4.**
-4. **The QRhiWidget viewport.** Blocked on step 3.
+2. **Startup ordering. DONE** -- section 9.
+3. **The Coin on-screen audit. DONE** -- sections 7 and 8. Cost is fixed and
+   small, per-frame geometry emission is zero, with the scope limits both
+   sections state.
+4. **The QRhiWidget viewport.** Unblocked by step 3 for the scene class it
+   measured. Not started.
 5. **Device adoption.** Last, because it is the part already proven by probe.
+
+Beside the staging, and not on it: **the readback composite is implemented**
+(section 10). It is the route this one is weighed against, it is what makes a
+Metal or Vulkan session put a frame on the screen at all, and until stage 4 it
+is what those sessions use.
 
 ## 6. Dead code this retires
 
@@ -304,3 +309,130 @@ Scope carries over from section 7 unchanged -- one scene class, no selection
 highlight, section planes, shadows or hidden-line, no workbench-specific graph.
 Those are exactly the cases that would introduce chrome the nine feeds must
 absorb, and they remain unmeasured.
+
+## 9. Stage 2: the startup ordering, as built
+
+Constraint 2 of section 4 says the device must exist before the first 3D view,
+because `bgfx::init` is once per process. Section 4 also says the hook for that
+already exists and the change is not WHEN the device comes up but WHOSE it is.
+That is exactly what landed, and it is smaller than the design made it sound.
+
+**The seam.** `src/Gui/Renderer/DeviceAdopt.h` declares `Render::AdoptedDevice`
+-- api, device, queue, and for Vulkan the instance, physical device and queue
+family -- and four functions in `Render::QtRhi`. The header includes no Qt RHI
+header at all, and nothing else in the tree does either.
+
+**The one translation unit.** `QtRhiDevice.cpp` is the only file that includes
+`<rhi/qrhi.h>` and `<rhi/qrhi_platform.h>`. It holds a `QRhiWidget` subclass
+(`WarmupSurface`), the four functions, and the switch that turns a live `QRhi`
+into an `AdoptedDevice`. Its Qt-private surface is what section 3 predicted:
+`QRhi::nativeHandles()`, `QRhi::backend()`, `QRhi::create()`, the `dev` /
+`cmdQueue` / `physDev` / `gfxQueue` fields, and `backendName()`. CMake scopes
+`FC_RENDERER_QT_RHI` to that file alone with `set_source_files_properties`, so
+the switch keeps saying where the private headers are allowed; without
+`Qt6::GuiPrivate` the file still compiles as a set of functions that answer
+"no".
+
+**The surface.** `MainWindow`'s constructor creates a hidden 1x1
+`RhiSurfaceWarmup` beside `GLSurfaceWarmup`, under `FC_RENDER_RHI=1`. Beside,
+not instead: adoption settles whose device bgfx runs on, and the Qt GL context
+is still what the frame is composited through until stage 4.
+
+**The warm-up.** `Application.cpp` runs the adoption first and the existing
+widget warm-up straight after. `RendererLib::warmup(const AdoptedDevice &, ...)`
+is a new overload beside the QOpenGLWidget one; `BGFXRendererLib` implements it
+by checking that the backend the session asked for and the API Qt's device
+actually is are the same thing -- they are configured independently, so that is
+a real mismatch to catch -- and then calling `BGFXRendererLibP::prepareAdopted`.
+
+**`prepareAdopted` is `prepare()`'s device half and nothing else.** It sets
+`platformData.context` to the adopted device, sets `platformData.queue` only on
+D3D12 (section 3's table), passes NO window handle, and asks for a 0x0
+resolution. It deliberately does not build the Qt GL context or the offscreen
+surface: there is no widget yet to take a pixel format from. The widget warm-up
+that follows finds `currentType != Noop`, skips `bgfx::init`, and does exactly
+its remaining half -- the GL context, the anchor view, the shader programs.
+That split is what lets Route D change the device without touching startup
+ordering that was already right.
+
+Two things worth stating because they are easy to get wrong from the docs
+alone:
+
+- **`m_headless` is not what the Metal backend's "Headless." trace means.**
+  bgfx's `Context::init` sets `m_headless` only when the WHOLE `PlatformData`
+  is null, and refuses a non-zero resolution in that case. Setting
+  `platformData.context` clears `m_headless`, so the resolution rule does not
+  apply -- while `renderer_mtl.cpp` still takes its no-swapchain path, because
+  that one is keyed on `nwh` alone. Both are wanted, and they are different
+  tests.
+- **The anchor view still matters.** `removeView()` of the last view calls
+  `shutdown()`, so a session whose only warm-up was the adopted one would tear
+  the device down when the first 3D view closed. Running the widget warm-up
+  after the adoption keeps the anchor view that has held the device since it
+  was introduced.
+
+**What stage 2 does NOT establish.** Whether Qt's own `QRhi` is up at the
+moment the warm-up runs. A `QRhiWidget` draws through the top-level's backing
+store and the warm-up is deliberately early, under the splash screen. When
+Qt's is not up, `warmupDevice()` falls back to a `QRhi` it creates itself and
+says so in the log, because that satisfies the ORDERING constraint (bgfx has a
+device, and not one it chose) without satisfying stage 4 (a QRhiWidget viewport
+must share the WINDOW's device to hand its texture over without a copy). The
+fallback covers Metal and D3D only: `QRhiVulkanInitParams` wants a
+`QVulkanInstance`, and one made here would be a second instance beside Qt's,
+which is the opposite of what adopting a device is for.
+
+## 10. The readback composite, as built
+
+Section 2 costs this route from a standalone probe. It is now in the frame.
+
+`BGFXView::blitReadback` (`BGFXViewLifecycle.cpp`) is the composite that
+`BGFXView::blit` could never be: `blit` wraps bgfx's own attachments in a GL
+framebuffer, which requires the attachment to BE a GL texture, which is true
+only while bgfx runs on GL. The readback route copies the finished frame to
+system memory, uploads it into a GL texture and draws a quad, and it does that
+on any backend.
+
+- **The copy is queued where the capture is queued**, before the frame
+  boundary, riding on `ViewCapture` -- the last view id -- so what it copies is
+  the finished image, present pass included.
+- **RGBA8 / `GL_UNSIGNED_BYTE`, never BGRA.** Section 2 measured RGBA 2.9x
+  faster here and 3.5x on the discrete box; BGRA falls off the fast DMA route
+  rather than merely costing a swizzle, and bgfx hands back RGBA anyway.
+- **The flip is in the texture coordinates, not in the buffer.** `originBottomLeft`
+  says whether the backend's rows came back top-down; inverting `v` costs
+  nothing, and flipping the CPU image would be a full copy per frame.
+- **The quad is fixed-function.** The destination is the QOpenGLWidget's
+  framebuffer, and that context is a compatibility one in every build of this
+  application -- Coin needs it, which on macOS is also what caps it at GL 2.1.
+  GL 1.1 is the one thing guaranteed to be there. `glPushAttrib` carries the
+  whole state block back for Coin, which traverses next.
+- **Pipelined by default.** A frame that arrives before its copy has landed
+  redraws the previous image rather than waiting, so the screen trails the scene
+  by a frame or two. That lag is as much this route's cost as the milliseconds
+  are, which is why the report counts stale frames beside the times.
+  `FC_BGFX_READBACK_SYNC=1` spins frames until the copy lands, which is the
+  fully serialized form section 2 costed.
+- **Colour only.** `blit` also transfers depth; this does not. At render cache 3
+  Coin emits no per-frame geometry (section 8), so nothing is currently depth
+  testing against the frame -- but that is a measured fact about one scene
+  class, not a guarantee, and it is the first thing to check if chrome ever
+  looks wrong over a readback composite.
+
+**Controls.** `FC_BGFX_READBACK`: 0 off, 1 (default) wherever the GL blit
+cannot run, 2 always -- including on GL, which is the only way to compare the
+two routes on one box, one scene and one camera. Per-step costs are drained
+into a `render readback composite (ms/frame)` line beside the existing frame
+lines, under `RenderDebug_Timing`.
+
+**Measuring it.** `scripts/composite_cost_probe.py` is one leg -- a fixed grid
+of `Part::Box` solids, a camera that turns every tick so no frame is a no-op, a
+fixed duration. `scripts/composite-cost.sh` drives the legs and reduces the
+report lines, because the route is read from the environment once at startup
+and a leg therefore has to be a process.
+
+**Consequence for the backend list.** The stated reason Metal and Vulkan are
+opt-in was that they render and capture but cannot reach the screen. That hole
+is now closed and the gates stay anyway, with the reason rewritten in the code:
+what remains is a cost, and a default nobody has run and looked at is a worse
+answer than an opt-in.
