@@ -339,7 +339,16 @@ def restage_viewport(v):
     sub = None
     area = FreeCADGui.getMainWindow().findChild(QtWidgets.QMdiArea)
     if area:
+        # activeSubWindow() alone is not enough: it answers for the
+        # window that has focus, and a run whose main window never came
+        # to the front (or that the user clicked away from) gets None
+        # from it while the subwindow is right there. Measured -- one
+        # leg of a backend comparison silently ran at the default size.
+        # The list is the fallback, most recently added first.
         sub = area.activeSubWindow()
+        if sub is None:
+            subs = area.subWindowList()
+            sub = subs[-1] if subs else None
     if sub is None:
         say("  !! viewport %dx%d wanted, no MDI subwindow found" % want)
         return tuple(v.getSize())
