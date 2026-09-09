@@ -63,6 +63,7 @@
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "RenderParams.h"
+#include "MirrorViewer.h"
 #include "ObjectMetaFeed.h"
 #include "SceneControl.h"
 #include "Selection.h"
@@ -252,6 +253,50 @@ public:
     /// its definition below.
     std::unique_ptr<SelectionMirror> selectionMirror;
 
+    /*!
+     * One mirror viewer per connected client (docs/ThinClient.md sec 8.3).
+     *
+     * Built when a client first states a camera, updated on every later
+     * statement, and dropped when the connection closes. Until a client
+     * has one, its picks fall back to the synthetic camera, which is
+     * what every client did before the 'C' frame existed. GUI thread
+     * only -- both the camera handler and the pick handler marshal.
+     */
+    std::map<uint64_t, std::unique_ptr<MirrorViewer>> mirrors;
+
+    /// Adopt what a client stated, building its mirror on first sight.
+    void setClientCamera(const Render::SceneCameraFrame &frame)
+    {
+        if (!root || !frame.client)
+            return;
+        auto &mirror = mirrors[frame.client];
+        if (!mirror) {
+            mirror = std::make_unique<MirrorViewer>(
+                doc, root, root->getRenderManager(), renderer.get());
+        }
+        MirrorViewer::Camera camera;
+        camera.perspective = frame.type != 0;
+        camera.position.setValue(frame.position[0], frame.position[1],
+                                 frame.position[2]);
+        camera.orientation.setValue(frame.orientation[0], frame.orientation[1],
+                                    frame.orientation[2], frame.orientation[3]);
+        camera.heightOrAngle = frame.heightOrAngle;
+        camera.nearDistance = frame.nearDistance;
+        camera.farDistance = frame.farDistance;
+        camera.aspectRatio = frame.aspectRatio;
+        camera.sizePixels.setValue(short(frame.width), short(frame.height));
+        camera.devicePixelRatio = frame.devicePixelRatio;
+        camera.pickRadius = frame.pickRadius;
+        mirror->setCamera(camera);
+    }
+
+    /// The mirror of \a client, or null when it has stated no camera.
+    MirrorViewer *mirrorFor(uint64_t client) const
+    {
+        auto it = mirrors.find(client);
+        return it == mirrors.end() ? nullptr : it->second.get();
+    }
+
     /// The served Cycles viewports (sec 7.1) and what they were last
     /// fed: the scene as translated for them, kept so a stream that
     /// starts between publishes gets it without another translation,
@@ -270,7 +315,12 @@ public:
 
     ~Private()
     {
-        // The path tracers first: each joins its encoder thread and
+        // The mirrors first: each borrows the scene root, which this
+        // body unrefs below -- and a destructor body runs before any
+        // member is destroyed, so leaving them to their own turn would
+        // leave every one of them holding a freed graph in between.
+        mirrors.clear();
+        // The path tracers next: each joins its encoder thread and
         // tears its session down, and nothing below feeds them again.
         {
             std::lock_guard<std::mutex> lock(streams->mutex);
@@ -786,14 +836,28 @@ void SceneServeSource::installHandlers()
     QPointer<SceneServeSource> self(this);
 
     // Remote-viewer click selection: a viewer's click arrives as a world
-    // ray, picked against this source's graph and synthetic camera.
+    // ray, picked against this source's graph and -- once that viewer
+    // has stated one -- through its own mirror's camera.
     server.setPickHandler([self](const Render::ScenePickRequest &req) {
         Render::ScenePickRequest r = req;
         QMetaObject::invokeMethod(qApp, [self, r]() {
             if (self)
                 self->pickAndSelect(SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
                                     SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
-                                    r.modifiers & 1);
+                                    r.modifiers & 1, r.client);
+        }, Qt::QueuedConnection);
+    }, pimpl->groupName);
+
+    // A viewer's camera and canvas (docs/ThinClient.md sec 8.5). It
+    // mutates no document -- it says where one client is looking from --
+    // and nothing but that client's own mirror ever reads it. Ordered
+    // with the picks behind it because one connection's uplink keeps
+    // its order and a queued invocation preserves it.
+    server.setCameraHandler([self](const Render::SceneCameraFrame &frame) {
+        Render::SceneCameraFrame f = frame;
+        QMetaObject::invokeMethod(qApp, [self, f]() {
+            if (self)
+                self->pimpl->setClientCamera(f);
         }, Qt::QueuedConnection);
     }, pimpl->groupName);
 
@@ -846,12 +910,14 @@ void SceneServeSource::installHandlers()
             }, Qt::QueuedConnection);
         }, docName);
 
-    // A viewer that leaves takes its served viewport with it -- the
-    // session is the expensive part, and nobody is looking.
-    server.setClientClosedHandler([streams](uint64_t client) {
-        QMetaObject::invokeMethod(qApp, [streams, client]() {
+    // A viewer that leaves takes its served viewport and its mirror with
+    // it -- the session is the expensive part, and nobody is looking.
+    server.setClientClosedHandler([self, streams](uint64_t client) {
+        QMetaObject::invokeMethod(qApp, [self, streams, client]() {
             auto gone = streams->take(client, -1);
             gone.clear();
+            if (self)
+                self->pimpl->mirrors.erase(client);
         }, Qt::QueuedConnection);
     }, docName);
 
@@ -875,22 +941,33 @@ void SceneServeSource::installHandlers()
 }
 
 void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
-                                     bool ctrl)
+                                     bool ctrl, uint64_t client)
 {
     if (!isValid())
         return;
 
-    auto hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/View");
-    SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
+    // Through this client's mirror when it has stated a camera: the ray
+    // goes back to the viewport point it was made from, so the client's
+    // pick radius in pixels applies and an edge or a vertex is as
+    // pickable from a browser as from the desktop (docs/ThinClient.md
+    // sec 8.3). Without one there is nothing to resolve against, so the
+    // ray is picked as it arrives -- and Coin gives an explicitly set
+    // ray a radius of essentially zero whatever setRadius says, which
+    // is why only geometry hit dead-on came back that way.
+    std::unique_ptr<SoPickedPoint> picked;
+    if (MirrorViewer *mirror = pimpl->mirrorFor(client))
+        picked.reset(mirror->pickRay(origin, dir));
+    else {
+        SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
+        SoRayPickAction rp(viewport);
+        rp.setRay(origin, dir);
+        auto pickroot = pimpl->pickRoot();
+        rp.apply(pickroot);
+        if (SoPickedPoint *hit = rp.getPickedPoint())
+            picked = std::make_unique<SoPickedPoint>(*hit);
+    }
 
-    SoRayPickAction rp(viewport);
-    rp.setRay(origin, dir);
-    rp.setRadius(hGrp->GetFloat("PickRadius", 5.0f));
-    auto pickroot = pimpl->pickRoot();
-    rp.apply(pickroot);
-
-    SoPickedPoint *pp = rp.getPickedPoint();
+    SoPickedPoint *pp = picked.get();
     ViewProviderDocumentObject *vpd = nullptr;
     std::string subname;
     if (pp && pimpl->doc) {

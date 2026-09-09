@@ -23,6 +23,7 @@
 #ifndef GUI_SCENESERVESOURCE_H
 #define GUI_SCENESERVESOURCE_H
 
+#include <cstdint>
 #include <memory>
 
 #include <QObject>
@@ -146,11 +147,16 @@ public:
 
     /*!
      * Select what a world ray hits, as a remote viewer's click asks
-     * (docs/ThinClient.md). Picked against this source's graph and its
-     * synthetic camera, since there is no view to pick against. \a ctrl
-     * toggles rather than replaces the selection. GUI thread only.
+     * (docs/ThinClient.md sec 8.3). Resolved through \a client's mirror
+     * viewer -- its own camera and canvas, so its pick radius in pixels
+     * means what it means on the desktop -- and against this source's
+     * synthetic camera when that client has stated no camera, or is not
+     * named at all. \a ctrl toggles rather than replaces the selection.
+     * The pick commits into the room selection, which is what every
+     * viewer and every panel already reads. GUI thread only.
      */
-    void pickAndSelect(const SbVec3f &origin, const SbVec3f &dir, bool ctrl);
+    void pickAndSelect(const SbVec3f &origin, const SbVec3f &dir, bool ctrl,
+                       uint64_t client = 0);
 
 private Q_SLOTS:
     void onPublishTimeout();

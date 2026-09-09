@@ -108,6 +108,26 @@ if(TARGET FreeCADGui)
                           gtest_main FreeCADGui FreeCADApp FreeCADBase)
     add_test(NAME SelectionStack_tests_run
              COMMAND SelectionStack_tests_run)
+
+    # The per-client mirror viewer (docs/ThinClient.md sec 8.3): the
+    # ray-to-pixel round trip and the pick radius that Coin refuses to
+    # apply to an explicitly set ray. A mirror is a camera, a viewport and
+    # a scene graph, so this needs Coin but no document, no main window and
+    # no QApplication -- FreeCADGui only to reach the class.
+    add_executable(MirrorViewer_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/MirrorViewer.cpp)
+    target_include_directories(MirrorViewer_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(MirrorViewer_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME MirrorViewer_tests_run
+             COMMAND MirrorViewer_tests_run)
 endif()
 
 if(TARGET FreeCADRenderer)

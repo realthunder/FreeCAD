@@ -60,3 +60,10 @@ fc_add_gui_test(GuiServeSelectionEcho_tests_run serve-selection-echo.py
 # scope is ever opened, so this must read exactly as it did before.
 fc_add_gui_test(GuiSelectionRoomPanels_tests_run selection-room-panels.py
                 --timeout 180)
+
+# A served click is resolved through the mirror of the client that sent
+# it (docs/ThinClient.md sec 8.9 step 3): Coin ignores setRadius() on an
+# explicitly set ray, so an edge was unpickable from a browser until the
+# ray went back to the viewport point it came from.
+fc_add_gui_test(GuiServeMirrorPick_tests_run serve-mirror-pick.py
+                --timeout 180)

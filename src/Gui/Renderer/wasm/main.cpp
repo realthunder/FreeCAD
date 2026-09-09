@@ -1980,14 +1980,29 @@ static void emitSelectionEvent()
 /// already-selected sub-element promotes to the whole object; picking any
 /// sub-element of a whole-selected object narrows back to that sub-element.
 ///
-/// The selection is NOT synced to the backend here: an eager sync makes the
-/// backend re-pick and republish the whole scene, whose echo stalls right
-/// after the (instant) local highlight. Selection stays entirely client-side;
-/// when a modeling operation is added it will submit the accumulated selection
-/// batched together with the operation, so the backend only re-picks once, per
-/// client, at commit time (no per-tap sync delay, no cross-client interference).
+/// The pick DOES go up to the backend (sendPick below), and everything drawn
+/// here is a prediction of what it will answer (docs/ThinClient.md sec 8.6).
+/// This used to be client-side only: an eager sync made the backend re-pick
+/// and republish the whole scene, and that echo stalled right after the
+/// instant local highlight. What changed is the server side -- deltas, a
+/// woken writer, and a source that publishes on a selection instead of on a
+/// clock -- so the round trip is now single-digit milliseconds and the echo
+/// is merged rather than applied: applySnapshot drops the streamed selection
+/// and re-applies this one. The ruling is sec 8.2a's: a click round-trips
+/// because selection feeds the tree, the property panel and everything
+/// behind Gui::Selection(); a hover never does.
+static void sendPick(float px, float py, bool ctrl);
+
 static void selectAt(float px, float py, bool ctrl, bool shift = false)
 {
+    // Up it goes, whether or not anything was hit: a plain click on
+    // nothing clears the selection, and the server has to hear that too.
+    // The bit the wire carries is "extend rather than replace", which is
+    // what sticky-multi and Shift both are; the finer grammar this client
+    // applies below -- promoting to the whole object, the pick filter --
+    // has no wire form yet (docs/ThinClient.md sec 8.5).
+    sendPick(px, py, ctrl || s_selMode == 1 || shift);
+
     PickHit hit = pickScene(px, py);
     if (hit.draw < 0) {
         if (!ctrl && !shift && !s_sel.empty()) {
@@ -3116,6 +3131,150 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_layout(const char *spec)
     markDirty();
 }
 
+// ---- Uplink: the camera this viewer is looking through ----------------
+//
+// docs/ThinClient.md sec 8.5. The server keeps a mirror viewer per
+// connection (docs/ThinClient.md sec 8.3) and resolves this client's picks
+// through it, so what it needs is not a matrix but the camera fields: the
+// pick radius it applies is in pixels of THIS canvas, and the tolerances an
+// edit mode computes there are this client's. Sent as the 'C' frame -- 'C',
+// type byte, viewport width and height as little-endian u16, then thirteen
+// little-endian floats.
+
+/// The camera's world orientation as a quaternion in Coin's convention: the
+/// camera looks down its own -Z with +Y up, so the rotation's columns are
+/// the world right, up and backward axes.
+static void cameraQuaternion(const CamFrame &f, float q[4])
+{
+    const bx::Vec3 fwd = bx::normalize(bx::sub(f.at, f.eye));
+    // CamFrame::right is the negation of the camera's right axis (the orbit
+    // frame kept the historical pan convention) -- the same correction
+    // screenRay makes, and it must be the same one or the mirror would
+    // resolve every pick mirrored about the vertical.
+    const bx::Vec3 x = bx::neg(f.right);
+    const bx::Vec3 y = f.up;
+    const bx::Vec3 z = bx::neg(fwd);
+
+    // Shepperd: take the branch whose divisor is largest, so the square root
+    // is never near zero.
+    const float m[3][3] = {{x.x, y.x, z.x}, {x.y, y.y, z.y}, {x.z, y.z, z.z}};
+    const float trace = m[0][0] + m[1][1] + m[2][2];
+    if (trace > 0.0f) {
+        const float s2 = std::sqrt(trace + 1.0f) * 2.0f;
+        q[0] = (m[2][1] - m[1][2]) / s2;
+        q[1] = (m[0][2] - m[2][0]) / s2;
+        q[2] = (m[1][0] - m[0][1]) / s2;
+        q[3] = 0.25f * s2;
+    }
+    else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+        const float s2 = std::sqrt(1.0f + m[0][0] - m[1][1] - m[2][2]) * 2.0f;
+        q[0] = 0.25f * s2;
+        q[1] = (m[0][1] + m[1][0]) / s2;
+        q[2] = (m[0][2] + m[2][0]) / s2;
+        q[3] = (m[2][1] - m[1][2]) / s2;
+    }
+    else if (m[1][1] > m[2][2]) {
+        const float s2 = std::sqrt(1.0f + m[1][1] - m[0][0] - m[2][2]) * 2.0f;
+        q[0] = (m[0][1] + m[1][0]) / s2;
+        q[1] = 0.25f * s2;
+        q[2] = (m[1][2] + m[2][1]) / s2;
+        q[3] = (m[0][2] - m[2][0]) / s2;
+    }
+    else {
+        const float s2 = std::sqrt(1.0f + m[2][2] - m[0][0] - m[1][1]) * 2.0f;
+        q[0] = (m[0][2] + m[2][0]) / s2;
+        q[1] = (m[1][2] + m[2][1]) / s2;
+        q[2] = 0.25f * s2;
+        q[3] = (m[1][0] - m[0][1]) / s2;
+    }
+}
+
+static uint8_t s_camFrame[6 + 13 * sizeof(float)];
+static bool s_camFrameSent = false;
+
+/// State this viewer's camera, if it moved since the last time.
+///
+/// Coalesced by comparing the packed bytes: a camera that did not change
+/// costs the pack and a memcmp, and an idle viewer sends nothing at all.
+/// Called once per frame, so at most one frame per client frame goes up --
+/// which is what keeps a drag from flooding the uplink.
+///
+/// \a force sends it whether or not it moved, which is what a pick does.
+/// The coalescing assumes the server still remembers the last one, and it
+/// may not: a reconnect, or a document served again, leaves a server with
+/// no mirror for this client and a still-matching cache here, and then the
+/// pick that follows is resolved in the synthetic framing instead. Fifty
+/// eight bytes on a click is not worth reasoning about.
+static void sendCameraFrame(bool force = false)
+{
+    if (!s_wsOpen || s_ws <= 0)
+        return;
+    const float vw = vpW(), vh = vpH();
+    if (vw < 1.0f || vh < 1.0f)
+        return;
+
+    const CamFrame f = camFrame();
+    float q[4];
+    cameraQuaternion(f, q);
+    // The depth range buildCamera draws with, so the mirror's frustum is
+    // the one this client's ray was computed in.
+    const float neard = bx::max(0.002f * s_dist, s_dist - 0.75f * s_diag);
+    const float fard = s_dist + 0.75f * s_diag;
+    const float v[13] = {
+        f.eye.x, f.eye.y, f.eye.z,
+        q[0], q[1], q[2], q[3],
+        kFovY * float(bx::kPi) / 180.0f,   // Coin's heightAngle: the full
+                                           // vertical angle, in radians
+        neard, fard, vw / vh,
+        s_dpr, pickRadiusPx(),
+    };
+
+    uint8_t packed[sizeof(s_camFrame)];
+    packed[0] = 'C';
+    packed[1] = 1;    // always perspective: the browser viewer has no
+                      // orthographic mode
+    const uint16_t pw = uint16_t(bx::min(vw, 65535.0f));
+    const uint16_t ph = uint16_t(bx::min(vh, 65535.0f));
+    std::memcpy(packed + 2, &pw, 2);
+    std::memcpy(packed + 4, &ph, 2);
+    std::memcpy(packed + 6, v, sizeof(v));
+    if (!force && s_camFrameSent
+            && std::memcmp(packed, s_camFrame, sizeof(packed)) == 0)
+        return;
+    std::memcpy(s_camFrame, packed, sizeof(packed));
+    s_camFrameSent = true;
+    emscripten_websocket_send_binary(s_ws, s_camFrame, sizeof(s_camFrame));
+}
+
+/// Send a click up as the 'P' pick the wire already carries: 'P', a flags
+/// byte, then the world ray as six little-endian floats.
+///
+/// The local selection has already been drawn by the time this runs -- that
+/// is the prediction of docs/ThinClient.md sec 8.6 -- and this is what makes
+/// the server's selection authoritative: the tree, the property panel and
+/// the ~1500 call sites behind Gui::Selection() are all on that side, and
+/// the ruling of sec 8.2a is that a click round-trips while a hover does
+/// not. The echo is merged, never applied over the local state.
+static void sendPick(float px, float py, bool ctrl)
+{
+    if (!s_wsOpen || s_ws <= 0)
+        return;
+    // The camera first, always: the server resolves the ray against the
+    // camera it last heard about, and a pick made in a framing it has not
+    // been told about would be resolved in the previous one -- or, after a
+    // reconnect, in none at all.
+    sendCameraFrame(/*force*/ true);
+
+    bx::Vec3 orig(bx::InitZero), rdir(bx::InitZero);
+    screenRay(px, py, orig, rdir);
+    uint8_t packed[2 + 6 * sizeof(float)];
+    packed[0] = 'P';
+    packed[1] = ctrl ? 1 : 0;
+    const float v[6] = {orig.x, orig.y, orig.z, rdir.x, rdir.y, rdir.z};
+    std::memcpy(packed + 2, v, sizeof(v));
+    emscripten_websocket_send_binary(s_ws, packed, sizeof(packed));
+}
+
 static void mainLoop()
 {
     const double frameNow = emscripten_get_now();
@@ -3171,6 +3330,12 @@ static void mainLoop()
     }
 
     updateQuality();
+
+    // Before the idle skip below, because a camera that just stopped
+    // moving is exactly the one the server has not been told about yet.
+    // Free when nothing moved -- sendCameraFrame compares the packed
+    // bytes and an unchanged camera sends nothing.
+    sendCameraFrame();
 
     // One-shot dumpFrame capture: the mode override applies to just
     // this frame's debug pass, then the staged config is restored
@@ -3327,8 +3492,9 @@ static void doTapPick(float px, float py, bool ctrl, bool shift = false)
         interact();
     }
     else {
-        // Client-side select (instant); the backend is synced in the
-        // background from the queued pick.
+        // Draws instantly here and states the same click to the backend,
+        // which owns the authoritative selection (docs/ThinClient.md
+        // sec 8.2a).
         selectAt(px, py, ctrl, shift);
     }
 }

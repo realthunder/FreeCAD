@@ -45,6 +45,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <deque>
 #include <cstdio>
@@ -532,6 +533,7 @@ public:
         /// marshaling code and must not be looked up under the payload
         /// lock.
         std::function<void(const ScenePickRequest &)> pickHandler;
+        std::function<void(const SceneCameraFrame &)> cameraHandler;
         std::function<void(SceneControlRequest &&)> controlHandler;
         std::function<void()> workNotifier;
         std::function<void(uint64_t)> clientClosedHandler;
@@ -1737,6 +1739,17 @@ public:
         }
         if (handler)
             handler(req);
+    }
+
+    void dispatchCamera(DocGroup &g, const SceneCameraFrame &frame)
+    {
+        std::function<void(const SceneCameraFrame &)> handler;
+        {
+            std::lock_guard<std::mutex> guard(handlerMutex);
+            handler = g.cameraHandler;
+        }
+        if (handler)
+            handler(frame);
     }
 
     /// Queue \a json for the connection identified by \a connId, if it
@@ -3345,8 +3358,67 @@ public:
         }
     }
 
+    /// Camera frame: 'C', type byte, viewport width and height as
+    /// little-endian u16, then thirteen little-endian floats --
+    /// position, orientation, height-or-angle, near, far, aspect,
+    /// device pixel ratio, pick radius (docs/ThinClient.md sec 8.5).
+    /// Fifty-eight bytes. Returns false when the frame is not one, or
+    /// is not usable: this is the trust boundary, and a NaN here would
+    /// poison a mirror's view volume and every pick made through it.
+    static bool parseCamera(const std::vector<uint8_t> &data,
+                            SceneCameraFrame &frame)
+    {
+        constexpr size_t kSize = 6 + 13 * sizeof(float);
+        if (data.size() != kSize || data[0] != 'C')
+            return false;
+        uint16_t w, h;
+        std::memcpy(&w, data.data() + 2, 2);
+        std::memcpy(&h, data.data() + 4, 2);
+        float v[13];
+        std::memcpy(v, data.data() + 6, sizeof(v));
+        for (float f : v) {
+            if (!std::isfinite(f))
+                return false;
+        }
+        if (!w || !h)
+            return false;
+        frame.type = data[1] ? 1 : 0;
+        frame.width = w;
+        frame.height = h;
+        for (int i = 0; i < 3; ++i)
+            frame.position[i] = v[i];
+        for (int i = 0; i < 4; ++i)
+            frame.orientation[i] = v[3 + i];
+        frame.heightOrAngle = v[7];
+        frame.nearDistance = v[8];
+        frame.farDistance = v[9];
+        frame.aspectRatio = v[10];
+        // The last two ride the same frame but describe the input
+        // device, not the camera, so they are clamped rather than
+        // refused -- a client that states a silly pick radius should
+        // still be able to look at the model.
+        frame.devicePixelRatio = std::min(std::max(v[11], 0.25f), 8.0f);
+        frame.pickRadius = std::min(std::max(v[12], 0.0f), 64.0f);
+        // A camera with no extent picks nothing and projects nothing;
+        // refusing it here keeps a degenerate frame from ever becoming
+        // a mirror's state.
+        return frame.heightOrAngle > 0 && frame.aspectRatio > 0
+            && frame.farDistance > frame.nearDistance;
+    }
+
     void handleEvent(Conn &conn, const std::vector<uint8_t> &data)
     {
+        // The camera is not an edit: it says where this viewer is
+        // looking from, which a view-only connection is entitled to do
+        // and which nothing but that connection's own mirror reads.
+        // Parsed before the gate for exactly that reason.
+        SceneCameraFrame frame;
+        if (parseCamera(data, frame)) {
+            frame.client = conn.id;
+            if (conn.group)
+                dispatchCamera(*conn.group, frame);
+            return;
+        }
         // A view-only connection's picks are dropped: selection is
         // shared room state, so changing it IS an edit
         // (docs/MultiDocServe.md §8).
@@ -3359,6 +3431,7 @@ public:
         // (world ray origin + direction).
         if (data.size() == 2 + 6 * sizeof(float) && data[0] == 'P') {
             ScenePickRequest req;
+            req.client = conn.id;
             req.modifiers = data[1];
             float v[6];
             std::memcpy(v, data.data() + 2, sizeof(v));
@@ -3381,6 +3454,7 @@ public:
                 size_t off = 2;
                 for (uint8_t i = 0; i < n; ++i) {
                     ScenePickRequest req;
+                    req.client = conn.id;
                     req.modifiers = data[off];
                     float v[6];
                     std::memcpy(v, data.data() + off + 1, sizeof(v));
@@ -3726,6 +3800,20 @@ void SceneStreamServer::setPickHandler(
     g->pickHandler = std::move(handler);
 }
 
+void SceneStreamServer::setCameraHandler(
+        std::function<void(const SceneCameraFrame &)> handler,
+        const std::string &doc)
+{
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->group(doc);
+    }
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    g->cameraHandler = std::move(handler);
+}
+
 void SceneStreamServer::setControlHandler(
         std::function<void(SceneControlRequest &&)> handler,
         const std::string &doc)
@@ -3851,6 +3939,7 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
     {
         std::lock_guard<std::mutex> guard(pimpl->handlerMutex);
         g->pickHandler = nullptr;
+        g->cameraHandler = nullptr;
         g->controlHandler = nullptr;
         g->workNotifier = nullptr;
         g->clientClosedHandler = nullptr;

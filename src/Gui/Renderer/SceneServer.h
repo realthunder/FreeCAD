@@ -33,7 +33,9 @@
 /// version + SceneDump payload immediately and on every publish().
 /// Client frames carry viewer events back — currently the pick request
 /// ('P', flags byte, six little-endian floats: world ray origin +
-/// direction) dispatched to the installed pick handler.
+/// direction) dispatched to the installed pick handler, and the camera
+/// frame ('C', see SceneCameraFrame) that says which viewer's framing
+/// that ray was computed in.
 ///
 /// Fallback transport: plain HTTP polling. GET /scene?v=<last-seen>
 /// answers 204 while unchanged, else 200 with the same version-prefixed
@@ -56,6 +58,41 @@ struct ScenePickRequest {
     float origin[3];
     float dir[3];
     uint32_t modifiers = 0;   ///< bit 0 = ctrl (toggle selection)
+    /// The connection it arrived on (SceneClientInfo::id), so the
+    /// publisher can resolve it against that client's own camera --
+    /// its mirror viewer (docs/ThinClient.md sec 8.3) -- rather than
+    /// against a framing no viewer is actually looking through.
+    uint64_t client = 0;
+};
+
+/// A viewer's camera, as it last stated it (docs/ThinClient.md sec 8.5,
+/// the `'C'` uplink frame). Sent as SoCamera fields rather than as
+/// matrices, so that the pick radius and the pixel tolerances a mirror
+/// computes are the client's exactly.
+struct SceneCameraFrame {
+    /// The connection it arrived on (SceneClientInfo::id).
+    uint64_t client = 0;
+    /// 0 = orthographic, 1 = perspective.
+    uint8_t type = 0;
+    /// Viewport size in DEVICE pixels -- what the client renders at,
+    /// and the units \a pickRadius is in.
+    uint16_t width = 0;
+    uint16_t height = 0;
+    float position[3] = {0, 0, 0};
+    float orientation[4] = {0, 0, 0, 1};   ///< quaternion x, y, z, w
+    /// Orthographic height, or perspective height angle in radians.
+    float heightOrAngle = 0;
+    float nearDistance = 0;
+    float farDistance = 0;
+    float aspectRatio = 1;
+    /// The last two describe the input device rather than the camera,
+    /// and are the client's own rather than a preference of this
+    /// process: a fingertip wants a bigger pick radius than a mouse,
+    /// and only the client knows which it has (docs/ThinClient.md sec
+    /// 8.10). Clamped rather than refused -- a silly radius should
+    /// still leave the model visible.
+    float devicePixelRatio = 1;
+    float pickRadius = 5;   ///< in device pixels, like \a width
 };
 
 /// One semantic control request from a viewer (docs/ThinClient.md
@@ -364,6 +401,15 @@ public:
     /// thread itself before touching any scene graph.
     void setPickHandler(std::function<void(const ScenePickRequest &)> handler,
                         const std::string &doc = {});
+
+    /// Install the consumer of viewer camera frames (docs/ThinClient.md
+    /// sec 8.5). Same contract as setPickHandler: called on a server
+    /// connection thread, so the handler marshals itself. A frame
+    /// arrives whenever a client's camera or canvas changed, at most
+    /// once per client frame, and always before the picks computed in
+    /// it -- one connection's uplink keeps its order.
+    void setCameraHandler(std::function<void(const SceneCameraFrame &)> handler,
+                          const std::string &doc = {});
 
     /// Install the consumer of semantic control requests — the `"op"`
     /// JSON vocabulary of the property/operation channel
