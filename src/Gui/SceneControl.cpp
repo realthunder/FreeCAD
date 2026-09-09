@@ -679,15 +679,12 @@ QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
         return errorReply(id, "UnknownDocument",
                           QString::fromUtf8(doc->getName()));
 
-    // Left through the view it was running in, for the same reason it was
-    // entered through one: what an edit mode does with selection on its
-    // way out is that client's, and the mirror drops it with the session
-    // (docs/ThinClient.md sec 8.4). The document knows which view that
-    // was, so nothing here needs the connection id.
-    {
-        ViewerScope scope(gdoc->editingViewer());
-        gdoc->resetEdit();
-    }
+    // No scope opened here: Gui::Document::resetEdit opens one over the
+    // view it was running in, for every caller. It has to, because the
+    // path that matters most does not come through this op at all --
+    // Escape defers resetEdit through a timer, with no scope open
+    // (docs/ThinClient.md sec 8.4 and sec 8.10).
+    gdoc->resetEdit();
 
     QJsonObject reply;
     reply[QLatin1String("id")] = id;

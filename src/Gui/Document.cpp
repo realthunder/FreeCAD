@@ -744,6 +744,20 @@ void Document::resetEdit() {
     Gui::ViewProvider* vpToRestore = d->_editViewProviderPrevious;
     bool shouldRestorePrevious = d->_editWantsRestorePrevious;
 
+    // In the view the session was running in, for as long as leaving it
+    // takes. What an edit mode does to selection on its way out -- the
+    // sketcher selects the sketch it just left, as a convenience -- is
+    // that view's business, and for a client's mirror it must land in
+    // that client's own instance rather than in the room every other
+    // viewer shares (docs/ThinClient.md sec 8.4).
+    //
+    // Here rather than at the call sites, because leaving is not always
+    // asked for. Escape does not call this directly: it defers it through
+    // a timer (ViewProvider::eventCallback), and a deferred call runs with
+    // no scope open at all -- which is the hazard sec 8.10 names, and this
+    // is the one path known to walk into it.
+    ViewerScope scope(d->_editingViewer);
+
     Application::Instance->setEditDocument(nullptr);
 
     // Re-enter the edit session that was interrupted by the one that just
