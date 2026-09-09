@@ -567,3 +567,107 @@ Two things about capturing it that cost time:
   scene. An instrument that discriminates between the two cases is seeing what
   differs between them. It needs no foreground, so it does not steal focus from
   someone using the machine.
+
+## 12. Stage 2, RUN -- and the one composition API per window
+
+Stage 2 had never been executed. Run 2026-09-09 on this box (Intel Iris Pro
+6200, macOS 12, Qt 6.11.1), `FC_RENDER_RHI=1` with render cache 3 and type
+`bgfx - Metal`, driving `scripts/composite_cost_probe.py`.
+
+**Note on getting there.** A default session on this box has an EMPTY
+`View/Render` parameter group, so `ViewParams::getRenderCache() == 3` is false
+and the whole warm-up block in `Application.cpp` is skipped. The probe sets
+those parameters from inside the script, which runs after the warm-up. That is
+why stage 2 had never run: not a failure, a configuration that never reached
+it. The run below passes a prepared parameter file with `-u`.
+
+### The ordering works
+
+    Log: Init: Qt RHI is up on Metal; device 0x7f9a1fb27000, queue 0x7f9a202a38c0
+    Log: Init: render backend 'bgfx - Metal' adopted a Metal device in 40 ms
+    Log: Init: render backend 'bgfx - Metal' warmed up in 571 ms
+         (context 1, device 0, programs 39, flush 531)
+
+Adoption first at 40 ms; the widget warm-up after it reports `device 0`,
+because `bgfx::init` was already done and it did only its remaining half. The
+split section 9 describes holds exactly. The `SEPARATE QRhi` fallback never
+fired.
+
+### But `fromQt` does not mean what it was written to mean
+
+One line earlier, Qt says:
+
+    Wrn: The top-level window is already using another graphics API for
+         composition, 'OpenGL' is not compatible with this widget
+
+So Qt DID build a QRhi and it is NOT the window's. `WarmupSurface::fromQt`
+was written to distinguish "the window's device" from "a device we made"; it
+actually distinguishes "Qt made it" from "we made it", and there is a third
+state -- Qt made it, for this widget alone, because the window was already
+spoken for. Stage 2's ordering constraint is met either way. Stage 4's
+shared-device requirement is NOT met, and not for the reason section 9
+predicted: Qt's QRhi is up this early, it is simply the wrong one.
+
+### The cause is ours, and the fix is not available
+
+Control run, same everything, with a temporary gate skipping the
+`GLSurfaceWarmup` `QOpenGLWidget` that `MainWindow`'s constructor creates
+immediately BEFORE the RHI surface:
+
+| run | composition | adoption | frames drawn | GL context failures |
+| --- | --- | --- | --- | --- |
+| with `GLSurfaceWarmup` | OpenGL | Metal, a widget-local QRhi | 6 reports, scene renders | 0 |
+| without it | **Metal** | Metal, no complaint | **0** | **2497** |
+
+Removing the GL widget does let the `QRhiWidget` take the window, and the
+warning disappears. Then the real viewport arrives and Qt refuses IT:
+
+    Wrn: The top-level window is not using OpenGL for composition,
+         'Metal' is not compatible with QOpenGLWidget
+    Wrn: No valid GL context found!            (x2497)
+
+Nothing rendered at all.
+
+**A Qt top-level window has exactly ONE composition API, and every RHI-backed
+widget in it must agree.** The two configurations are the only two available:
+
+- Window on OpenGL. `QuarterWidget`'s `CustomGLWidget` works, Coin draws, the
+  readback composite puts bgfx's frame on screen -- and a Metal `QRhiWidget`
+  gets a device of its own, so there is no shared device to hand a texture
+  through. This is what ships today.
+- Window on Metal. The `QRhiWidget` has the window's device -- and every
+  `QOpenGLWidget` in the window is dead, starting with the viewport Coin draws
+  through.
+
+### What that does to stage 4
+
+Stage 4 was listed as "unblocked for that scene class" after the Coin audit.
+It is not independent work: **the viewport must stop being a `QOpenGLWidget`
+before the window can be Metal, and Coin draws through that widget.** So stage
+4 cannot land incrementally beside Coin the way the readback composite did. It
+needs the scene class in section 8's audit to be drawn entirely by the backend
+in a `QRhiWidget` viewport, with Coin's contribution to that window gone --
+which couples stage 4 to the Coin retirement, and is why section 5 put it after
+the audit rather than beside it.
+
+The audit's scope limits are therefore stage 4's scope limits, restated as a
+gate rather than a caveat: one scene class, no selection highlight, no section
+planes, no shadows, no hidden-line.
+
+### The readback composite, in a real session
+
+From the same run, steady state at 1026x576:
+
+    render readback composite (ms/frame): queue 0.00 | wait 0.00 | convert 0.00
+        | upload 0.26 | quad 0.07 | total 0.33
+        -- 160 frames, 160 landed, 0 stale, mean latency 2.0 frames
+    render frame: 1026x576 frame 6.28ms gpu 2.96ms
+        | cpu ours 5.11ms (bgfx::frame 4.16ms)
+
+**0.33 ms**, against the 2.96 ms section 2 costed. Both numbers are right and
+they measure different things: section 2 serialized deliberately, and this
+viewport has 3.5x fewer pixels than the 1920x1080 in that table. `queue`,
+`wait` and `convert` are all 0.00 with a mean latency of 2.0 frames and 0 stale
+-- the ring is absorbing the copy exactly as designed, so the composite costs
+about 5% of this frame rather than 18%. The readback cost that motivates Route
+D is a 4K-and-serialized cost, not one visible at this size.

@@ -216,7 +216,17 @@ public:
     {}
 
     AdoptedDevice device;
-    /// Qt's QRhi reached initialize(); the device above is Qt's own.
+    /// Qt reached initialize() and built the QRhi above.
+    ///
+    /// ! This is NOT the same as "the device belongs to the window",
+    /// and stage 4 needs the second thing. A top level has exactly one
+    /// composition API; when it is already spoken for -- and it is,
+    /// because MainWindow's GLSurfaceWarmup is a QOpenGLWidget created
+    /// just before this surface -- Qt warns "already using another
+    /// graphics API for composition" and builds this widget a QRhi of
+    /// its own instead. Measured 2026-09-09, docs/DeviceAdoption.md
+    /// section 12. So there are three states, not two: the window's,
+    /// Qt's but widget-local, and ours below.
     bool fromQt = false;
     /// A QRhi we created because Qt's was not up. It is a device, and
     /// it is NOT the window's -- enough for stage 2 (bgfx has a device
