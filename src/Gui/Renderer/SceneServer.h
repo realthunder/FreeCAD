@@ -35,7 +35,11 @@
 /// ('P', flags byte, six little-endian floats: world ray origin +
 /// direction) dispatched to the installed pick handler, and the camera
 /// frame ('C', see SceneCameraFrame) that says which viewer's framing
-/// that ray was computed in.
+/// that ray was computed in. 'Q' carries the two together in one
+/// message -- a 'C' frame verbatim followed by a 'P' frame verbatim --
+/// for a client that states its camera only when it clicks
+/// (docs/ThinClient.md sec 8.10a): one frame instead of two, and the
+/// pairing is atomic rather than merely ordered.
 ///
 /// Fallback transport: plain HTTP polling. GET /scene?v=<last-seen>
 /// answers 204 while unchanged, else 200 with the same version-prefixed
@@ -172,6 +176,29 @@ struct SceneClientInfo {
     /// The grant that admitted this connection (SceneGrant::id), 0
     /// under the legacy single-token door or while unauthorized.
     uint64_t grant = 0;
+
+    /// Uplink accounting (docs/ThinClient.md sec 8.10a): what this
+    /// connection has sent us, counted here rather than by the client.
+    /// A client counting its own sends is the client marking its own
+    /// work -- the same rule sec 8.6 applies to selection -- and only
+    /// this side can see what a coalescing or throttling policy
+    /// actually put on the link.
+    ///
+    /// \a uplinkBytes is message payload; \a uplinkWire adds the RFC
+    /// 6455 header a client sends it under (two bytes, a four-byte
+    /// mask, and the extended length when it does not fit in seven
+    /// bits), which is what the link carries and is exact for the one
+    /// unfragmented frame per message every viewer message is.
+    uint64_t uplinkMsgs = 0;
+    uint64_t uplinkBytes = 0;
+    uint64_t uplinkWire = 0;
+    /// The camera frames ('C') of that total, and the picks ('P', 'B'
+    /// and the combined 'Q'), in wire bytes -- so the speculative half
+    /// can be told from the half a user asked for.
+    uint64_t cameraMsgs = 0;
+    uint64_t cameraWire = 0;
+    uint64_t pickMsgs = 0;
+    uint64_t pickWire = 0;
 };
 
 /// One viewer's answer to a dumpFrame control request

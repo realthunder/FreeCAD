@@ -26,6 +26,7 @@
 #include <cstring>
 #include <memory>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -331,6 +332,56 @@ bool findClient(const std::string& label, Render::SceneClientInfo& info)
         }
     }
     return false;
+}
+
+/// The 'C' camera frame a viewer sends (docs/ThinClient.md sec 8.5):
+/// 'C', a type byte, the canvas as two little-endian u16, then thirteen
+/// little-endian floats. Fifty-eight bytes.
+std::vector<uint8_t> cameraFrame(float eyeZ = 60.0f, float heightAngle = 0.785398f)
+{
+    std::vector<uint8_t> out(6 + 13 * sizeof(float));
+    out[0] = 'C';
+    out[1] = 1;
+    const uint16_t w = 800, h = 600;
+    std::memcpy(out.data() + 2, &w, 2);
+    std::memcpy(out.data() + 4, &h, 2);
+    const float v[13] = {0.0f, 0.0f, eyeZ, 0.0f, 0.0f, 0.0f, 1.0f,
+                         heightAngle, 10.0f, 200.0f, 800.0f / 600.0f,
+                         1.0f, 5.0f};
+    std::memcpy(out.data() + 6, v, sizeof(v));
+    return out;
+}
+
+/// The 'P' pick a viewer sends: 'P', a flags byte, six little-endian
+/// floats (world ray origin then direction). Twenty-six bytes.
+std::vector<uint8_t> pickFrame(float originX = 0.0f, uint8_t flags = 0)
+{
+    std::vector<uint8_t> out(2 + 6 * sizeof(float));
+    out[0] = 'P';
+    out[1] = flags;
+    const float v[6] = {originX, 0.0f, 60.0f, 0.0f, 0.0f, -1.0f};
+    std::memcpy(out.data() + 2, v, sizeof(v));
+    return out;
+}
+
+/// The 'Q' of sec 8.10a: a camera frame and a pick in one message, each
+/// verbatim, so both halves are the frames the two paths already parse.
+std::vector<uint8_t> cameraAndPick(const std::vector<uint8_t>& cam,
+                                   const std::vector<uint8_t>& pick)
+{
+    std::vector<uint8_t> out;
+    out.push_back('Q');
+    out.insert(out.end(), cam.begin(), cam.end());
+    out.insert(out.end(), pick.begin(), pick.end());
+    return out;
+}
+
+/// What a client message of \a payload bytes costs on the link: the
+/// payload plus the RFC 6455 header a client masks it under.
+uint64_t wireBytes(size_t payload)
+{
+    return uint64_t(payload) + 2 + 4
+        + (payload < 126 ? 0 : (payload < 65536 ? 2 : 8));
 }
 
 class SceneServerWire: public ::testing::Test
@@ -1050,6 +1101,222 @@ TEST_F(SceneServerWire, theCapCountsUsersNotAddresses)
     // uses -- is counted nowhere: with three users in, it still gets in.
     WsClient local(port, "/scene");
     EXPECT_TRUE(served(local, "cap-local"));
+}
+
+/// The uplink is counted on this side (docs/ThinClient.md sec 8.10a).
+///
+/// Which is the point of counting it here at all: the three camera
+/// policies of sec 8.10a are client policies, and a client reporting
+/// how much it sent is the client marking its own work -- the same
+/// objection sec 8.6 makes to letting the browser judge its own
+/// selection. What the server counts is what the link carried.
+TEST_F(SceneServerWire, theUplinkIsCountedPerConnectionOnThisSide)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    server.setCameraHandler(nullptr);
+    server.setPickHandler(nullptr);
+
+    WsClient c(port, "/scene");
+    const std::string helloText =
+        "{\"cmd\":\"hello\",\"client\":\"wire-uplink\",\"snapshot\":"
+        + std::to_string(Render::sceneDumpVersion()) + "}";
+    c.sendText(helloText);
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-uplink", info) && info.uplinkMsgs >= 1;
+    }));
+    EXPECT_EQ(info.uplinkMsgs, 1u);
+    EXPECT_EQ(info.uplinkBytes, uint64_t(helloText.size()));
+    EXPECT_EQ(info.uplinkWire, wireBytes(helloText.size()));
+    EXPECT_EQ(info.cameraMsgs, 0u) << "a hello is neither a camera nor a pick";
+    EXPECT_EQ(info.pickMsgs, 0u);
+
+    const std::vector<uint8_t> cam = cameraFrame();
+    const std::vector<uint8_t> pick = pickFrame();
+    ASSERT_EQ(cam.size(), 58u) << "the 'C' frame is what sec 8.5 states";
+    ASSERT_EQ(pick.size(), 26u);
+    c.sendBinary(cam);
+    c.sendBinary(cam);
+    c.sendBinary(pick);
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-uplink", info) && info.uplinkMsgs >= 4;
+    }));
+    EXPECT_EQ(info.uplinkMsgs, 4u);
+    EXPECT_EQ(info.cameraMsgs, 2u);
+    EXPECT_EQ(info.cameraWire, 2 * wireBytes(cam.size()));
+    EXPECT_EQ(info.pickMsgs, 1u);
+    EXPECT_EQ(info.pickWire, wireBytes(pick.size()));
+    EXPECT_EQ(info.uplinkBytes,
+              uint64_t(helloText.size() + 2 * cam.size() + pick.size()));
+    EXPECT_EQ(info.uplinkWire,
+              wireBytes(helloText.size()) + 2 * wireBytes(cam.size())
+                  + wireBytes(pick.size()))
+        << "the header a client masks its frames under is part of what "
+           "the link carried";
+
+    // A second connection is counted apart: the question sec 8.10a asks
+    // is what one viewer's policy costs, and two viewers on one number
+    // would answer it wrong.
+    WsClient other(port, "/scene");
+    other.hello("wire-uplink-2");
+    m = other.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    other.sendBinary(cam);
+    Render::SceneClientInfo second;
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-uplink-2", second) && second.cameraMsgs >= 1;
+    }));
+    EXPECT_EQ(second.cameraMsgs, 1u);
+    ASSERT_TRUE(findClient("wire-uplink", info));
+    EXPECT_EQ(info.cameraMsgs, 2u) << "the first connection's count did not move";
+}
+
+/// The dropped frames of a refused connection still crossed the link,
+/// so they are still counted: the counter answers what the uplink
+/// carried, not what we agreed to act on.
+TEST_F(SceneServerWire, aDroppedPickIsStillCountedAsUplink)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    std::mutex mutex;
+    int picks = 0;
+    server.setPickHandler([&](const Render::ScenePickRequest&) {
+        std::lock_guard<std::mutex> guard(mutex);
+        ++picks;
+    });
+
+    WsClient c(port, "/scene");
+    c.hello("wire-uplink-viewonly");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] { return findClient("wire-uplink-viewonly", info); }));
+    ASSERT_TRUE(server.setClientViewOnly(info.id, true));
+    m = c.read();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+
+    const std::vector<uint8_t> pick = pickFrame();
+    c.sendBinary(pick);
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-uplink-viewonly", info) && info.pickMsgs >= 1;
+    }));
+    EXPECT_EQ(info.pickWire, wireBytes(pick.size()));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        EXPECT_EQ(picks, 0) << "a view-only connection's pick is still dropped";
+    }
+    server.setPickHandler(nullptr);
+}
+
+/// 'Q' is a camera and a pick in one message (docs/ThinClient.md sec
+/// 8.10a): both halves arrive, the camera first, and the pick is the
+/// one the message carried rather than the camera's bytes read as a
+/// ray. One frame instead of two is the saving; the pairing being
+/// atomic rather than merely ordered is the reason it is worth having.
+TEST_F(SceneServerWire, aCombinedFrameIsBothItsHalvesInOrder)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    std::mutex mutex;
+    std::vector<std::string> order;
+    Render::SceneCameraFrame gotCamera;
+    Render::ScenePickRequest gotPick;
+    server.setCameraHandler([&](const Render::SceneCameraFrame& f) {
+        std::lock_guard<std::mutex> guard(mutex);
+        gotCamera = f;
+        order.push_back("camera");
+    });
+    server.setPickHandler([&](const Render::ScenePickRequest& r) {
+        std::lock_guard<std::mutex> guard(mutex);
+        gotPick = r;
+        order.push_back("pick");
+    });
+
+    WsClient c(port, "/scene");
+    c.hello("wire-combined");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] { return findClient("wire-combined", info); }));
+
+    const std::vector<uint8_t> cam = cameraFrame(/*eyeZ*/ 42.0f);
+    const std::vector<uint8_t> pick = pickFrame(/*originX*/ 3.5f, /*flags*/ 1);
+    c.sendBinary(cameraAndPick(cam, pick));
+    ASSERT_TRUE(waitFor([&] {
+        std::lock_guard<std::mutex> guard(mutex);
+        return order.size() >= 2;
+    }));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        ASSERT_EQ(order.size(), 2u);
+        EXPECT_EQ(order[0], "camera") << "the ray is resolved in the framing "
+                                         "the same message stated";
+        EXPECT_EQ(order[1], "pick");
+        EXPECT_EQ(gotCamera.client, info.id);
+        EXPECT_FLOAT_EQ(gotCamera.position[2], 42.0f);
+        EXPECT_EQ(gotCamera.width, 800);
+        EXPECT_EQ(gotPick.client, info.id);
+        EXPECT_FLOAT_EQ(gotPick.origin[0], 3.5f);
+        EXPECT_FLOAT_EQ(gotPick.dir[2], -1.0f);
+        EXPECT_EQ(gotPick.modifiers, 1u);
+    }
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-combined", info) && info.pickMsgs >= 1;
+    }));
+    EXPECT_EQ(info.pickMsgs, 1u);
+    EXPECT_EQ(info.cameraMsgs, 0u)
+        << "a 'Q' is one message and counts as one, under the pick it was "
+           "sent for";
+    EXPECT_LT(info.pickWire, wireBytes(cam.size()) + wireBytes(pick.size()))
+        << "one frame costs less than two";
+
+    // A 'Q' whose camera half is refused still resolves its pick: the
+    // mirror keeps the camera it had, exactly as a refused 'C' leaves
+    // it. A NaN is the refusal that matters -- it would poison a view
+    // volume.
+    std::vector<uint8_t> bad = cameraFrame();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    std::memcpy(bad.data() + 6 + 7 * sizeof(float), &nan, sizeof(nan));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        order.clear();
+    }
+    c.sendBinary(cameraAndPick(bad, pick));
+    ASSERT_TRUE(waitFor([&] {
+        std::lock_guard<std::mutex> guard(mutex);
+        return !order.empty();
+    }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        ASSERT_EQ(order.size(), 1u);
+        EXPECT_EQ(order[0], "pick") << "the unusable camera was refused, not "
+                                       "adopted, and the pick still ran";
+    }
+
+    // A 'Q' of the wrong length is not a pick at all -- neither half is
+    // taken from a message whose halves cannot be found.
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        order.clear();
+    }
+    std::vector<uint8_t> truncated = cameraAndPick(cam, pick);
+    truncated.pop_back();
+    c.sendBinary(truncated);
+    c.sendBinary(pickFrame());   // a fence: this one must arrive
+    ASSERT_TRUE(waitFor([&] {
+        std::lock_guard<std::mutex> guard(mutex);
+        return !order.empty();
+    }));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        ASSERT_EQ(order.size(), 1u);
+        EXPECT_EQ(order[0], "pick");
+    }
+
+    server.setCameraHandler(nullptr);
+    server.setPickHandler(nullptr);
 }
 
 TEST_F(SceneServerWire, stopClosesEveryConnectionAndARestartServesAgain)

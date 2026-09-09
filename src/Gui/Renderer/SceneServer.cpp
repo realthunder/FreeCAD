@@ -1178,6 +1178,18 @@ public:
         /// when it is not counted. Owner-thread-only: written at each
         /// admission and cleared at the close.
         std::string userKey;
+        /// Uplink accounting (docs/ThinClient.md sec 8.10a), guarded
+        /// by connMutex: messages, payload bytes and wire bytes this
+        /// connection has sent, with the camera frames and the picks
+        /// counted apart so the speculative half of the uplink can be
+        /// told from the asked-for half.
+        uint64_t uplinkMsgs = 0;
+        uint64_t uplinkBytes = 0;
+        uint64_t uplinkWire = 0;
+        uint64_t cameraMsgs = 0;
+        uint64_t cameraWire = 0;
+        uint64_t pickMsgs = 0;
+        uint64_t pickWire = 0;
         /// A wake is posted and has not run yet (guarded by connMutex):
         /// the next nudge is free. Cleared by the transport on the
         /// strand before it acts, so anything queued after that clear
@@ -1425,6 +1437,13 @@ public:
             info.connectedMs = uint64_t(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - conn->since).count());
+            info.uplinkMsgs = conn->uplinkMsgs;
+            info.uplinkBytes = conn->uplinkBytes;
+            info.uplinkWire = conn->uplinkWire;
+            info.cameraMsgs = conn->cameraMsgs;
+            info.cameraWire = conn->cameraWire;
+            info.pickMsgs = conn->pickMsgs;
+            info.pickWire = conn->pickWire;
             out.push_back(std::move(info));
         }
         return int(out.size());
@@ -3069,12 +3088,50 @@ public:
         done.get_future().wait();
     }
 
+    /// What one client message costs on the link: its payload plus the
+    /// RFC 6455 header a client sends it under -- two bytes, a
+    /// four-byte mask (a client always masks), and the extended length
+    /// when the payload does not fit in seven bits. Exact for one
+    /// unfragmented frame per message, which is what every viewer
+    /// message is; a fragmented one is undercounted by the headers of
+    /// the continuations, and Beast has already reassembled it by the
+    /// time we see it.
+    static uint64_t clientFrameBytes(size_t payload)
+    {
+        return uint64_t(payload) + 2 + 4
+            + (payload < 126 ? 0 : (payload < 65536 ? 2 : 8));
+    }
+
+    /// Uplink accounting (docs/ThinClient.md sec 8.10a). Counted at the
+    /// one point every client message passes and *before* any gate: a
+    /// frame the door drops still crossed the link, and what this
+    /// answers is what the link carried, not what we agreed to act on.
+    void countUplink(Conn &conn, bool text, const uint8_t *bytes,
+                     size_t size)
+    {
+        const uint64_t wire = clientFrameBytes(size);
+        const uint8_t tag = (!text && size) ? bytes[0] : 0;
+        std::lock_guard<std::mutex> guard(connMutex);
+        ++conn.uplinkMsgs;
+        conn.uplinkBytes += uint64_t(size);
+        conn.uplinkWire += wire;
+        if (tag == 'C') {
+            ++conn.cameraMsgs;
+            conn.cameraWire += wire;
+        }
+        else if (tag == 'P' || tag == 'B' || tag == 'Q') {
+            ++conn.pickMsgs;
+            conn.pickWire += wire;
+        }
+    }
+
     /// A complete client message: JSON control text (hello, and the
     /// dumpFrame answers' metadata rides binary), or one of the binary
     /// viewer events.
     void handleMessage(Conn &conn, bool text,
                        const uint8_t *bytes, size_t size)
     {
+        countUplink(conn, text, bytes, size);
         if (text) {
             std::string json(reinterpret_cast<const char *>(bytes), size);
             // The door, at the moment the name arrives (docs/
@@ -3358,6 +3415,13 @@ public:
         }
     }
 
+    /// The two viewer event frames, in bytes: the camera ('C', a type
+    /// byte, the canvas as two u16, thirteen floats) and the pick
+    /// ('P', a flags byte, six floats). Named because 'Q' carries one
+    /// of each and has to find the boundary between them.
+    static constexpr size_t kCameraFrameSize = 6 + 13 * sizeof(float);
+    static constexpr size_t kPickFrameSize = 2 + 6 * sizeof(float);
+
     /// Camera frame: 'C', type byte, viewport width and height as
     /// little-endian u16, then thirteen little-endian floats --
     /// position, orientation, height-or-angle, near, far, aspect,
@@ -3368,8 +3432,7 @@ public:
     static bool parseCamera(const std::vector<uint8_t> &data,
                             SceneCameraFrame &frame)
     {
-        constexpr size_t kSize = 6 + 13 * sizeof(float);
-        if (data.size() != kSize || data[0] != 'C')
+        if (data.size() != kCameraFrameSize || data[0] != 'C')
             return false;
         uint16_t w, h;
         std::memcpy(&w, data.data() + 2, 2);
@@ -3419,6 +3482,30 @@ public:
                 dispatchCamera(*conn.group, frame);
             return;
         }
+        // Combined camera + pick: 'Q', then a 'C' frame verbatim, then
+        // a 'P' frame verbatim (docs/ThinClient.md sec 8.10a). A client
+        // that states its camera only when it clicks sends one message
+        // instead of two, and the pairing is atomic rather than merely
+        // ordered. Split here into the two subframes and given to the
+        // two paths that already exist -- the camera before the
+        // view-only gate, the pick after it -- so neither is
+        // reimplemented, and a camera the parser refuses leaves the
+        // pick to resolve through the mirror the client had, exactly as
+        // a refused 'C' does.
+        std::vector<uint8_t> embedded;
+        if (data.size() == 1 + kCameraFrameSize + kPickFrameSize
+                && data[0] == 'Q') {
+            const std::vector<uint8_t> cam(
+                    data.begin() + 1, data.begin() + 1 + kCameraFrameSize);
+            SceneCameraFrame carried;
+            if (parseCamera(cam, carried)) {
+                carried.client = conn.id;
+                if (conn.group)
+                    dispatchCamera(*conn.group, carried);
+            }
+            embedded.assign(data.begin() + 1 + kCameraFrameSize, data.end());
+        }
+        const std::vector<uint8_t> &event = embedded.empty() ? data : embedded;
         // A view-only connection's picks are dropped: selection is
         // shared room state, so changing it IS an edit
         // (docs/MultiDocServe.md §8).
@@ -3429,12 +3516,12 @@ public:
         }
         // Pick request: 'P', flags byte, six little-endian floats
         // (world ray origin + direction).
-        if (data.size() == 2 + 6 * sizeof(float) && data[0] == 'P') {
+        if (event.size() == kPickFrameSize && event[0] == 'P') {
             ScenePickRequest req;
             req.client = conn.id;
-            req.modifiers = data[1];
+            req.modifiers = event[1];
             float v[6];
-            std::memcpy(v, data.data() + 2, sizeof(v));
+            std::memcpy(v, event.data() + 2, sizeof(v));
             for (int i = 0; i < 3; ++i) {
                 req.origin[i] = v[i];
                 req.dir[i] = v[3 + i];
@@ -3447,17 +3534,17 @@ public:
         // selections into one message; each ray is dispatched in order so the
         // backend Gui::Selection ends up matching the client, and the queued
         // GUI-thread picks coalesce into a single scene republish.
-        else if (data.size() >= 2 && data[0] == 'B') {
+        else if (event.size() >= 2 && event[0] == 'B') {
             const size_t stride = 1 + 6 * sizeof(float);
-            const uint8_t n = data[1];
-            if (data.size() == 2 + size_t(n) * stride) {
+            const uint8_t n = event[1];
+            if (event.size() == 2 + size_t(n) * stride) {
                 size_t off = 2;
                 for (uint8_t i = 0; i < n; ++i) {
                     ScenePickRequest req;
                     req.client = conn.id;
-                    req.modifiers = data[off];
+                    req.modifiers = event[off];
                     float v[6];
-                    std::memcpy(v, data.data() + off + 1, sizeof(v));
+                    std::memcpy(v, event.data() + off + 1, sizeof(v));
                     for (int k = 0; k < 3; ++k) {
                         req.origin[k] = v[k];
                         req.dir[k] = v[3 + k];

@@ -245,7 +245,10 @@ PyMethodDef Application::Methods[] = {
    "\n"
    "The scene stream server's connected clients, one dict each: id,\n"
    "client (label), identity (verified by the front door, may be\n"
-   "empty), doc, address, viewer, viewOnly, connectedMs."},
+   "empty), doc, address, viewer, viewOnly, connectedMs, and the\n"
+   "uplink counters uplinkMsgs/uplinkBytes/uplinkWire with the camera\n"
+   "frames (cameraMsgs/cameraWire) and picks (pickMsgs/pickWire) of\n"
+   "that total counted apart."},
   {"serveSetClientMode",      (PyCFunction) Application::sServeSetClientMode, METH_VARARGS,
    "serveSetClientMode(id, viewOnly) -> bool\n"
    "\n"
@@ -1156,6 +1159,20 @@ PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
         entry.setItem("viewOnly", Py::Boolean(c.viewOnly));
         entry.setItem("connectedMs", Py::Long(
             static_cast<unsigned long long>(c.connectedMs)));
+        // Uplink accounting (docs/ThinClient.md sec 8.10a): counted on
+        // this side, so a client's sending policy is measured rather
+        // than self-reported.
+        auto count = [&entry](const char *name, uint64_t v) {
+            entry.setItem(name,
+                          Py::Long(static_cast<unsigned long long>(v)));
+        };
+        count("uplinkMsgs", c.uplinkMsgs);
+        count("uplinkBytes", c.uplinkBytes);
+        count("uplinkWire", c.uplinkWire);
+        count("cameraMsgs", c.cameraMsgs);
+        count("cameraWire", c.cameraWire);
+        count("pickMsgs", c.pickMsgs);
+        count("pickWire", c.pickWire);
         list.append(entry);
     }
     return Py::new_reference_to(list);
