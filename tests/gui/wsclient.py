@@ -11,7 +11,9 @@ our own parser is the point -- the independent implementation the wire is
 checked against is Boost.Beast, in tests/src/Gui/SceneServerWire.cpp.
 """
 import base64
+import json
 import os
+import re
 import socket
 import struct
 import time
@@ -211,10 +213,38 @@ class WS:
                 raise RuntimeError("server closed the socket")
 
     def op(self, payload, timeout=10.0):
-        """Send one control op and read its answer, skipping the scene
-        pushes that may be interleaved with it."""
-        self.send(1, payload if isinstance(payload, bytes) else payload.encode())
-        return self.next_text(timeout)
+        """Send one control op and read ITS answer.
+
+        Correlated by the request id rather than taken as the next thing
+        that arrives. The control channel is not a request/response
+        channel: the server pushes on it too -- the document listing, a
+        view-only flip, the edges of this connection's edit session
+        (docs/ThinClient.md sec 8.9 step 4) -- and one of those landing
+        between the send and the reply is the channel working, not an
+        error. Taking the first text frame read the push and called it
+        the answer. Binary scene pushes are skipped as they always were.
+
+        An op with no id gets the first text frame, which is all the
+        correlation there is to do for it.
+        """
+        raw = payload if isinstance(payload, bytes) else payload.encode()
+        self.send(1, raw)
+        found = re.search(rb'"id"\s*:\s*(\d+)', raw)
+        want = found.group(1).decode() if found else None
+        deadline = clock() + timeout
+        while True:
+            left = deadline - clock()
+            if left <= 0:
+                return None
+            text = self.next_text(left)
+            if text is None or want is None:
+                return text
+            try:
+                answer = json.loads(text.decode("utf-8"))
+            except Exception:
+                continue
+            if str(answer.get("id")) == want:
+                return text
 
     def drain(self, timeout=0.0):
         """Read and discard whatever is already waiting."""

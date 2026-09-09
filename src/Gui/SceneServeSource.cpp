@@ -343,6 +343,50 @@ public:
         return it == mirrors.end() ? nullptr : it->second.get();
     }
 
+    /// Which connection's mirror \a viewer is, or 0 for none of them --
+    /// a desktop view, or a mirror already erased.
+    uint64_t clientOf(const ViewerContext *viewer) const
+    {
+        if (!viewer)
+            return 0;
+        for (const auto &entry : mirrors) {
+            if (entry.second.get() == viewer)
+                return entry.first;
+        }
+        return 0;
+    }
+
+    /** Tell the client whose view it is that its edit session started or
+     * ended (docs/ThinClient.md sec 8.9 step 4).
+     *
+     * The leaving edge is the one that has to exist. A session can end
+     * without the client asking -- an Escape the sketcher handled itself,
+     * a host resetting the edit, the object being deleted -- and a
+     * browser that only ever heard about the sessions it requested would
+     * go on sending its left button up the 'E' channel to an edit mode
+     * that is no longer there. The client cannot infer it either: the
+     * scene delta that comes back from leaving looks like any other.
+     *
+     * Sent to that one connection, because that is who is in the session:
+     * one editor per document is the first cut (sec 8.10), and everyone
+     * else is looking at the same graph as a spectator.
+     */
+    void announceEdit(bool editing, const ViewProviderDocumentObject &vp)
+    {
+        const uint64_t client = clientOf(doc ? doc->editingViewer() : nullptr);
+        if (!client)
+            return;   // a desktop edit, or nobody's
+        std::string json = "{\"cmd\":\"edit\",\"editing\":";
+        json += editing ? "true" : "false";
+        if (const App::DocumentObject *obj = vp.getObject()) {
+            json += ",\"obj\":\"";
+            json += obj->getNameInDocument() ? obj->getNameInDocument() : "";
+            json += "\"";
+        }
+        json += ",\"doc\":\"" + groupName + "\"}";
+        Render::SceneStreamServer::instance().sendControl(client, json);
+    }
+
     /// The served Cycles viewports (sec 7.1) and what they were last
     /// fed: the scene as translated for them, kept so a stream that
     /// starts between publishes gets it without another translation,
@@ -840,6 +884,20 @@ SceneServeSource::SceneServeSource(Document *doc)
         // through the call -- and it runs before the Gui::Document
         // itself is destroyed. Nothing may follow the unserve() call:
         // this source is gone when it returns.
+        // Both edges of an edit session, for the client running it. On
+        // the way out this fires while the document still names the view
+        // it was running in (Gui::Document::_resetEdit signals after
+        // finishEditing and before it forgets), which is what makes the
+        // connection findable -- so this must stay a signalResetEdit
+        // handler rather than anything that runs later.
+        pimpl->connections.emplace_back(doc->signalInEdit.connect(
+            [this](const ViewProviderDocumentObject &vp) {
+                pimpl->announceEdit(true, vp);
+            }));
+        pimpl->connections.emplace_back(doc->signalResetEdit.connect(
+            [this](const ViewProviderDocumentObject &vp) {
+                pimpl->announceEdit(false, vp);
+            }));
         pimpl->connections.emplace_back(doc->signalDeleteDocument.connect(
             [this](const Document &) { unserve(pimpl->doc); }));
     }
