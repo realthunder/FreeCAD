@@ -240,6 +240,7 @@ template class GuiExport Base::Subject<const Gui::SelectionChanges&>;
 namespace Gui
 {
     class ViewProviderDocumentObject;
+    class SelectionSingleton;
 
 /**
  * The SelectionObserver class simplifies the step to write classes that listen
@@ -275,16 +276,34 @@ public:
 
     /** Attaches to the selection. */
     void attachSelection();
+    /** Attaches to whichever instance is current right now.
+     *
+     * That is the room on the desktop and everywhere else no
+     * Gui::SelectionScope is open, so this is attachSelection() unless a
+     * client's view is handling an event or entering an edit. Inside one
+     * it is that client's instance, and the observer stays with it: an
+     * edit mode's own observer belongs to the edit session it was built
+     * in rather than to the room, or a browser's in-edit picks would
+     * colour nothing and the room's would colour somebody else's sketch.
+     * docs/ThinClient.md section 8.4.
+     *
+     * The instance is remembered, so an observer that outlives the scope
+     * goes on hearing the one it attached to, and detaches from that one.
+     */
+    void attachSelectionToCurrent();
     /** Detaches from the selection. */
     void detachSelection();
 
 private:
     virtual void onSelectionChanged(const SelectionChanges& msg) = 0;
     void _onSelectionChanged(const SelectionChanges& msg);
+    void attachTo(SelectionSingleton& sel);
 
 private:
     using Connection = fastsignals::connection;
     Connection connectSelection;
+    /// The instance this observer is attached to; null means the room.
+    SelectionSingleton* observed = nullptr;
     std::string filterDocName;
     std::string filterObjName;
     ResolveMode resolve;

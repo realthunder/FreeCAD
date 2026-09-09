@@ -44,6 +44,25 @@ protected:
     }
 };
 
+/// The same, but attached to whichever instance was current when it was
+/// built -- what an edit mode's own observer does.
+class CurrentObserver: public Gui::SelectionObserver
+{
+public:
+    CurrentObserver()
+        : Gui::SelectionObserver(false)
+    {
+        attachSelectionToCurrent();
+    }
+    int count = 0;
+
+protected:
+    void onSelectionChanged(const Gui::SelectionChanges&) override
+    {
+        ++count;
+    }
+};
+
 }  // namespace
 
 class SelectionStackTest: public ::testing::Test
@@ -182,6 +201,70 @@ TEST_F(SelectionStackTest, anObserverBuiltInsideAScopeStillHearsTheRoom)
 
     room.signalSelectionChanged(Gui::SelectionChanges());
     EXPECT_EQ(observer.count, 1);
+}
+
+TEST_F(SelectionStackTest, anObserverOfTheCurrentInstanceFollowsTheScopeItWasBuiltIn)
+{
+    // The exception to the rule above, and the whole reason there is a
+    // choice: an edit mode's own observer is what colours the geometry it
+    // is editing, so it has to hear the instance that edit's picks go
+    // into. It attaches to the current one deliberately, and -- this is
+    // the part worth pinning -- it keeps hearing that instance after the
+    // scope closes, because the session outlives any single replayed
+    // event. docs/ThinClient.md section 8.4.
+    Gui::SelectionSingleton& room = Gui::SelectionRoom();
+    Gui::SelectionSingleton mirror;
+
+    CurrentObserver observer;
+    {
+        Gui::SelectionScope scope(mirror);
+        CurrentObserver inEdit;
+        ASSERT_TRUE(inEdit.isSelectionAttached());
+
+        mirror.signalSelectionChanged(Gui::SelectionChanges());
+        EXPECT_EQ(inEdit.count, 1);
+        // The one built outside is still the room's.
+        EXPECT_EQ(observer.count, 0);
+
+        room.signalSelectionChanged(Gui::SelectionChanges());
+        EXPECT_EQ(inEdit.count, 1);
+        EXPECT_EQ(observer.count, 1);
+
+        // Out of the scope's extent but still in the session: this is
+        // what a queued call or a second event looks like.
+        {
+            Gui::SelectionScope reopened(mirror);
+            mirror.signalSelectionChanged(Gui::SelectionChanges());
+        }
+        EXPECT_EQ(inEdit.count, 2);
+    }
+    // And after the scope has gone for good, still that instance -- the
+    // observer must not fall back to the room when its session ends,
+    // because ending the session is what detaches it.
+    CurrentObserver survivor;
+    {
+        Gui::SelectionScope scope(mirror);
+        CurrentObserver bound;
+        mirror.signalSelectionChanged(Gui::SelectionChanges());
+        EXPECT_EQ(bound.count, 1);
+    }
+    room.signalSelectionChanged(Gui::SelectionChanges());
+    EXPECT_EQ(survivor.count, 1);
+}
+
+TEST_F(SelectionStackTest, aDetachedObserverHearsNeither)
+{
+    Gui::SelectionSingleton& room = Gui::SelectionRoom();
+    Gui::SelectionSingleton mirror;
+
+    Gui::SelectionScope scope(mirror);
+    CurrentObserver observer;
+    observer.detachSelection();
+    EXPECT_FALSE(observer.isSelectionAttached());
+
+    mirror.signalSelectionChanged(Gui::SelectionChanges());
+    room.signalSelectionChanged(Gui::SelectionChanges());
+    EXPECT_EQ(observer.count, 0);
 }
 
 TEST_F(SelectionStackTest, aDestroyedInstanceLeavesNoSlotBehind)

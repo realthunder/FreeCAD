@@ -134,23 +134,35 @@ bool SelectionObserver::isSelectionAttached() const
 
 void SelectionObserver::attachSelection()
 {
+    // The room, not the current instance: an observer outlives any scope
+    // that happens to be open while it is built, and what a mirror picks
+    // must not drive the room's panels. docs/ThinClient.md section 8.4.
+    // An observer that belongs to one client's edit session says so with
+    // attachSelectionToCurrent() instead.
+    attachTo(SelectionRoom());
+}
+
+void SelectionObserver::attachSelectionToCurrent()
+{
+    attachTo(Selection());
+}
+
+void SelectionObserver::attachTo(SelectionSingleton& sel)
+{
     if (!connectSelection.connected()) {
-        // The room, not the current instance: an observer outlives any scope
-        // that happens to be open while it is built, and what a mirror picks
-        // must not drive the room's panels. docs/ThinClient.md section 8.4.
-        auto &room = SelectionRoom();
+        observed = &sel;
         bool newStyle = (resolve >= ResolveMode::NewStyleElement);
         bool oldStyle = (resolve == ResolveMode::OldStyleElement);
-        auto &signal = newStyle ? room.signalSelectionChanged3 :
-                       oldStyle ? room.signalSelectionChanged2 :
-                                  room.signalSelectionChanged  ;
+        auto &signal = newStyle ? sel.signalSelectionChanged3 :
+                       oldStyle ? sel.signalSelectionChanged2 :
+                                  sel.signalSelectionChanged  ;
         //NOLINTBEGIN
         connectSelection = signal.connect(std::bind
             (&SelectionObserver::_onSelectionChanged, this, sp::_1));
         //NOLINTEND
 
         if (!filterDocName.empty()) {
-            room.addSelectionGate(
+            sel.addSelectionGate(
                     new SelectionGateFilterExternal(filterDocName.c_str(),filterObjName.c_str()));
         }
     }
@@ -181,8 +193,9 @@ void SelectionObserver::detachSelection()
     if (connectSelection.connected()) {
         connectSelection.disconnect();
         if (!filterDocName.empty())
-            SelectionRoom().rmvSelectionGate();
+            (observed ? *observed : SelectionRoom()).rmvSelectionGate();
     }
+    observed = nullptr;
 }
 
 // -------------------------------------------
