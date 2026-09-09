@@ -32,11 +32,8 @@ straight down, so the arithmetic below is legible.
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout); registered in ctest by tests/gui/CMakeLists.txt.
 """
-import base64
 import math
 import os
-import socket
-import struct
 import threading
 import time
 import traceback
@@ -44,6 +41,9 @@ import traceback
 import FreeCAD
 import FreeCADGui
 from PySide import QtCore
+
+import wsclient
+from wsclient import WS, free_port
 
 clock = time.perf_counter
 
@@ -69,9 +69,25 @@ PICK_RADIUS = 5.0
 TOP_Z = 10.0
 DEPTH = EYE[2] - TOP_Z
 TH = math.tan(0.5 * HEIGHT_ANGLE)
-# World units per pixel where the geometry is: the half-width of the
-# frustum there, over half the canvas.
-UNITS_PER_PX = (DEPTH * TH * ASPECT) / (0.5 * VW)
+
+
+def units_per_px(eye=None):
+    """World units per pixel where the geometry is: the half-width of the
+    frustum there, over half the canvas."""
+    depth = (eye or EYE)[2] - TOP_Z
+    return (depth * TH * ASPECT) / (0.5 * VW)
+
+
+UNITS_PER_PX = units_per_px()
+
+# A second, much more distant camera, for the combined 'Q' frame of sec
+# 8.10a. Five times as far, so a pixel there is five times as much world
+# -- which is what makes the case discriminating: a ray built three of
+# THESE pixels clear of the silhouette is fifteen of the near camera's,
+# and its origin sits behind the near camera entirely. If the camera half
+# of the 'Q' were dropped, the pick could not land on the edge by luck.
+FAR_EYE = (5.0, 5.0, 260.0)
+FAR_NEAR, FAR_FAR = 10.0, 400.0
 
 state = {"doc": None, "port": 0, "client": None, "done": False, "t0": clock()}
 
@@ -87,135 +103,24 @@ def check(name, cond, detail=""):
     return cond
 
 
-def free_port():
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
-
-
-class WS:
-    """Just enough of RFC 6455 for one client: the upgrade, masked frames
-    out, unmasked frames in."""
-
-    def __init__(self, port):
-        last = None
-        for _ in range(200):
-            try:
-                self.sock = socket.create_connection(("127.0.0.1", port), timeout=10)
-                break
-            except OSError as e:
-                last = e
-                time.sleep(0.05)
-        else:
-            raise RuntimeError("no listener on %d: %s" % (port, last))
-        key = base64.b64encode(os.urandom(16)).decode()
-        self.sock.sendall((
-            "GET /scene HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\n"
-            "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\n"
-            "Sec-WebSocket-Version: 13\r\n\r\n" % (port, key)).encode())
-        self.buf = b""
-        while b"\r\n\r\n" not in self.buf:
-            chunk = self.sock.recv(4096)
-            if not chunk:
-                raise RuntimeError("handshake closed")
-            self.buf += chunk
-        head, self.buf = self.buf.split(b"\r\n\r\n", 1)
-        if b" 101 " not in head.split(b"\r\n")[0]:
-            raise RuntimeError("no upgrade: %r" % head[:120])
-
-    def send(self, opcode, payload):
-        n = len(payload)
-        frame = bytearray([0x80 | opcode])
-        if n < 126:
-            frame.append(0x80 | n)
-        elif n < 65536:
-            frame.append(0x80 | 126)
-            frame += struct.pack(">H", n)
-        else:
-            frame.append(0x80 | 127)
-            frame += struct.pack(">Q", n)
-        mask = os.urandom(4)
-        frame += mask
-        frame += bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
-        self.sock.sendall(bytes(frame))
-
-    def _need(self, n, deadline):
-        while len(self.buf) < n:
-            left = deadline - clock()
-            if left <= 0:
-                return False
-            self.sock.settimeout(left)
-            try:
-                chunk = self.sock.recv(65536)
-            except socket.timeout:
-                return False
-            if not chunk:
-                raise RuntimeError("closed")
-            self.buf += chunk
-        return True
-
-    def recv(self, timeout):
-        deadline = clock() + timeout
-        if not self._need(2, deadline):
-            return None
-        b0, b1 = self.buf[0], self.buf[1]
-        n = b1 & 0x7F
-        off = 2
-        if n == 126:
-            if not self._need(4, deadline):
-                return None
-            n = struct.unpack(">H", self.buf[2:4])[0]
-            off = 4
-        elif n == 127:
-            if not self._need(10, deadline):
-                return None
-            n = struct.unpack(">Q", self.buf[2:10])[0]
-            off = 10
-        if not self._need(off + n, deadline):
-            return None
-        data = bytes(self.buf[off:off + n])
-        self.buf = self.buf[off + n:]
-        return b0 & 0x0F, data
-
-    def next_binary(self, timeout):
-        deadline = clock() + timeout
-        while True:
-            left = deadline - clock()
-            if left <= 0:
-                return None
-            m = self.recv(left)
-            if m is None:
-                return None
-            if m[0] == 2:
-                return m[1]
-            if m[0] == 8:
-                raise RuntimeError("server closed the socket")
-
-
-def camera_frame(height_angle=HEIGHT_ANGLE, near=NEAR, far=FAR):
-    """'C', type byte, viewport w/h as u16, then thirteen floats."""
-    return (b"C" + bytes([1]) + struct.pack("<HH", VW, VH)
-            + struct.pack("<13f", EYE[0], EYE[1], EYE[2],
-                          QUAT[0], QUAT[1], QUAT[2], QUAT[3],
-                          height_angle, near, far, ASPECT,
-                          1.0, PICK_RADIUS))
+def camera_frame(height_angle=HEIGHT_ANGLE, near=NEAR, far=FAR, eye=EYE):
+    """This client's camera, as the 'C' frame of sec 8.5."""
+    return wsclient.camera_frame(eye, QUAT, height_angle, near, far, VW, VH,
+                                 pick_radius=PICK_RADIUS)
 
 
 def pick(origin, direction, modifiers=0):
-    return b"P" + bytes([modifiers]) + struct.pack("<6f", *origin, *direction)
+    return wsclient.pick_frame(origin, direction, modifiers)
 
 
-def ray_to(x, y):
-    """The world ray this camera casts through the pixel that shows world
+def ray_to(x, y, eye=EYE):
+    """The world ray \a eye casts through the pixel that shows world
     (x, y) on the top face -- built the way the browser viewer builds it,
     from the camera's own frame rather than from a matrix."""
-    nx = (x - EYE[0]) / (DEPTH * TH * ASPECT)
-    ny = (y - EYE[1]) / (DEPTH * TH)
-    direction = (nx * TH * ASPECT, ny * TH, -1.0)
+    depth = eye[2] - TOP_Z
+    direction = ((x - eye[0]) / depth, (y - eye[1]) / depth, -1.0)
     length = math.sqrt(sum(c * c for c in direction))
-    return EYE, tuple(c / length for c in direction)
+    return eye, tuple(c / length for c in direction)
 
 
 class Client(threading.Thread):
@@ -229,6 +134,8 @@ class Client(threading.Thread):
         self.no_camera_pushed = None
         self.mirror_pushed = None
         self.mirror_ms = None
+        self.restated_pushed = None
+        self.combined_pushed = None
         self.face_pushed = None
         self.bad_frame_pushed = None
 
@@ -263,11 +170,36 @@ class Client(threading.Thread):
             self.mirror_ms = (clock() - t0) * 1000.0
         ws.next_binary(0.3)
 
+        # 2b. The premise the lazy camera uplink rests on (sec 8.10a):
+        # the mirror is per connection and OUTLIVES the click that built
+        # it, so a client whose camera has not moved need not restate it.
+        # No camera frame here at all -- if the mirror were gone the
+        # fallback would be the zero-radius ray of case 1, which case 1
+        # showed picks nothing. Another edge, so the selection changes
+        # and the push is a push.
+        upp = units_per_px()
+        ws.send(2, pick(*ray_to(0.0 - 3.0 * upp, 5.0)))
+        self.restated_pushed = ws.next_binary(5.0) is not None
+        ws.next_binary(0.3)
+
+        # 2c. The combined frame of sec 8.10a: a camera and a pick in one
+        # message. The camera is the distant one and the ray is built
+        # three of ITS pixels clear of the +y silhouette, so the pick can
+        # only land if the camera half of this very message was adopted
+        # before the pick half ran.
+        far_upp = units_per_px(FAR_EYE)
+        ws.send(2, wsclient.camera_and_pick(
+            camera_frame(near=FAR_NEAR, far=FAR_FAR, eye=FAR_EYE),
+            pick(*ray_to(5.0, 10.0 + 3.0 * far_upp, FAR_EYE))))
+        self.combined_pushed = ws.next_binary(5.0) is not None
+        ws.next_binary(0.3)
+
         # 3. A camera frame that is not usable must be refused, not
         # adopted: the mirror keeps the one it had, so the middle of the
         # top face still picks that face.
-        ws.send(2, camera_frame(height_angle=float("nan")))
-        ws.send(2, pick(*ray_to(5.0, 5.0)))
+        ws.send(2, camera_frame(height_angle=float("nan"), near=FAR_NEAR,
+                                far=FAR_FAR, eye=FAR_EYE))
+        ws.send(2, pick(*ray_to(5.0, 5.0, FAR_EYE)))
         self.face_pushed = ws.next_binary(5.0) is not None
         ws.sock.close()
 
@@ -347,6 +279,23 @@ def verify():
             distinct.append(sel)
     check("the mirrored pick landed on an edge", bool(edges),
           "selections seen: %s" % distinct)
+
+    check("a pick with no camera restated still goes through the mirror",
+          client.restated_pushed is True,
+          "pushed: %s" % client.restated_pushed)
+    check("a camera and a pick in one 'Q' message both land",
+          client.combined_pushed is True,
+          "pushed: %s" % client.combined_pushed)
+    # Three edges, from three different clicks: the mirrored one, the one
+    # that restated no camera, and the one whose camera rode inside it.
+    # Distinct, because a repeat of the same edge would prove only that
+    # something was still selected.
+    picked_edges = sorted({s[0][1][0] for s in seen
+                           if s and s[0][0] == "Box" and s[0][1]
+                           and s[0][1][0].startswith("Edge")})
+    check("each of the three mirrored clicks landed on its own edge",
+          len(picked_edges) >= 3,
+          "edges seen: %s" % (picked_edges,))
 
     check("a face pick still works after a refused camera frame",
           client.face_pushed is True, "pushed: %s" % client.face_pushed)
