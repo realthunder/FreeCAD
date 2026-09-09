@@ -113,6 +113,12 @@ class WS:
             "GET %s HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\n"
             "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\n"
             "Sec-WebSocket-Version: 13\r\n\r\n" % (path, port, key)).encode())
+        # Text frames the server sent that were nobody's answer: the
+        # document listing, a view-only flip, the edges of an edit
+        # session, the on-view parameters. op() used to drop them on the
+        # floor while it looked for its id; a probe that wants to assert
+        # on a push needs them kept.
+        self.pushes = []
         self.buf = b""
         while b"\r\n\r\n" not in self.buf:
             chunk = self.sock.recv(4096)
@@ -182,6 +188,14 @@ class WS:
         return b0 & 0x0F, data
 
     def next_binary(self, timeout):
+        """The next scene push, setting any text frame aside.
+
+        Text frames used to be dropped here, which made drain() -- called
+        between every step of a probe -- quietly throw away whatever the
+        server had pushed in the meantime. A probe would then assert on a
+        push that had arrived and been discarded, and read exactly like
+        one that was never sent.
+        """
         deadline = clock() + timeout
         while True:
             left = deadline - clock()
@@ -192,6 +206,8 @@ class WS:
                 return None
             if m[0] == 2:
                 return m[1]
+            if m[0] == 1:
+                self.pushes.append(m[1])
             if m[0] == 8:
                 raise RuntimeError("server closed the socket")
 
@@ -244,6 +260,30 @@ class WS:
             except Exception:
                 continue
             if str(answer.get("id")) == want:
+                return text
+            self.pushes.append(text)
+
+    def next_push(self, cmd, timeout, since=0):
+        """The next unsolicited text frame with this "cmd", or None.
+
+        Looks first at what op() has already set aside, so a push that
+        raced ahead of an answer is not missed -- which is exactly what
+        the ordering guarantees of this wire make likely rather than
+        rare.
+        """
+        for text in self.pushes[since:]:
+            if b'"cmd":"' + cmd.encode() + b'"' in text:
+                return text
+        deadline = clock() + timeout
+        while True:
+            left = deadline - clock()
+            if left <= 0:
+                return None
+            text = self.next_text(left)
+            if text is None:
+                return None
+            self.pushes.append(text)
+            if b'"cmd":"' + cmd.encode() + b'"' in text:
                 return text
 
     def drain(self, timeout=0.0):

@@ -297,7 +297,12 @@ JSON text frames. Request/response correlated by `id`. Minimal v0:
 
 **Beyond v0.** `{"op":"cycles",...}` and `{"op":"cycles.camera",...}` are the
 served viewport's ops -- the backend path traces this connection's view and
-streams the frame; docs/CyclesIntegration.md sec 7.1 spells them.
+streams the frame; docs/CyclesIntegration.md sec 7.1 spells them. `{"op":"edit"}`
+and `{"op":"resetEdit"}` are an edit session's two edges (sec 8.9 step 4);
+`{"op":"command","name":"Sketcher_CreateLine"}` starts a sketch tool, allowlisted
+for the reason sec 8.7 gives; `{"op":"onViewFocus","index":1}` moves the keys
+between that tool's on-view entry boxes, which the server states back on the
+`{"cmd":"onview"}` push (sec 8.7).
 
 **Subjects.** `getProperties` takes an optional `subject`: `object` (the default, and what
 every v0 client asks for by saying nothing), `view3d` — the session's 3D view, where the
@@ -956,14 +961,44 @@ exposed to the tunnel or the gateway.
   delta to tag at all -- view-mode hover never reaches the server -- so the tag is only
   wanted once edit-mode preselection starts riding the `'E'` stream.
 
-**What the uplink does not yet carry (stage 3).** The `'P'` pick's flags byte says one
-thing, "extend rather than replace", and the browser sets it for a sticky-multi or Shift
-click. The client's own selection grammar is richer than that -- Shift promotes to the
-whole object, the pick filter restricts what a pick may land on, and a plain click on an
-already-selected sub-element cycles up to its object -- and none of that has a wire form,
-so for those clicks the room selection ends up on the picked sub-element where the client
-shows the whole object. The flags byte has seven spare bits and the grammar is the DOM
-layer's anyway (section 5), so this belongs with stage 5 rather than with the mirror.
+**The selection grammar, as built (stage 5).** Through stage 3 the `'P'` pick's flags byte
+said one thing, "extend rather than replace", while the client's own grammar was richer --
+Shift promotes to the whole object, the pick filter restricts what a pick may land on, and
+a plain click on an already-selected sub-element cycles up to its object. So a Shift-click
+showed the whole object in the browser and put the sub-element in the room, and a desktop
+watching the same document saw something different.
+
+The answer to 8.10's question -- on the pick, or in a selection op of the DOM layer's own
+-- is: **on the pick, carrying the resolved intent rather than the modifiers.** The grammar
+depends on what is already selected in the client, so the client is the only side that can
+apply it, and section 5 puts it in the DOM layer anyway. What travels is the conclusion, in
+the spare bits the byte already had:
+
+    bits 0-1   the set operation: 0 replace, 1 toggle, 2 extend
+    bit 2      the scope: the whole object rather than the element the ray hit
+    bits 3-5   the element kind the pick filter admits: 0 any, 1 face, 2 edge, 3 vertex
+
+Bit 0 alone still reads as "extend rather than replace", which is what it meant before
+there was anything else in the byte. The server goes on naming the thing -- the ray is what
+reaches `getElementPicked`, the element map and a link's sub-object path, none of which the
+client's part index can -- and then does what it is told with it, which leaves it a
+vocabulary of four primitives instead of a second copy of the policy.
+
+Two details are worth keeping. **The scope bit says what the click acts on, never what the
+selection ended up as**: reading it off the outcome works for every combination but one, a
+Ctrl-click that toggles a whole-object item back OFF, which leaves nothing in the set to
+read it from -- and the server would then be told to toggle the element under the ray,
+which is not selected, so it would add it. And **the element-kind filter made the server
+look past the nearest hit**: a filter that admits edges wants the edge behind the face, and
+a filtered click that found nothing in the client still arrives, the served geometry being
+the real one and the client's a tessellation of it. `MirrorViewer::pickRay` takes an
+optional predicate and offers every hit front to back, which is also the honest place for
+it -- only the source can turn a hit into an element name and say whether it is of the kind
+asked for.
+
+One invariant is stated on the server rather than left to the client: an object is selected
+either entire or by its parts, never both. It has to be there, because the room's selection
+is what the tree, the property panel and every other viewer read.
 
 ### 8.6 Reconciliation: prediction, then an idempotent echo
 
@@ -1009,10 +1044,70 @@ somewhere else entirely.
 
 Two surfaces of the sketcher are Qt widgets outside the scene and so outside the feed: the
 task panel, which is already the DOM layer's job (section 4), and the on-view parameters,
-the small entry widgets the sketcher places next to the cursor while a tool is active. The
-latter need either a DOM counterpart driven by a small "widget" feed (position, label,
-value, focus) or a rendered stand-in through the existing text ports. Keys must stream for
-the same reason: Escape, Tab and numeric entry are how those tools are driven.
+the small entry widgets the sketcher places next to the cursor while a tool is active.
+
+**As built (stage 5).** The choice the first draft of this section offered -- a DOM
+counterpart driven by a widget feed, or a rendered stand-in -- was the wrong pair, because
+both put the *behaviour* of an entry box somewhere new. What a key does to one of these
+boxes is not obvious: `DrawSketchKeyboardManager` opens a two-second window on a digit, a
+minus, a period, Tab or Enter during which the box keeps the keystrokes, and outside it
+hands them back to the sketch so that a single-letter tool shortcut still works while a box
+holds the focus. Reimplementing that in the client is a second copy of a rule, and a second
+copy drifts.
+
+So the box is not reimplemented. `EditableDatumLabel` splits along the seam it already had
+-- a Coin half (an `SoDatumLabel` under an `SoAnnotation`, which the render cache already
+captures, so the dimension line reaches a browser by the route every other piece of edit
+geometry takes) and a Qt half -- and the Qt half stays a `QuantitySpinBox` on both tiers. A
+mirror's is simply never given a parent and never shown: a text model driven by replayed
+key events, exactly as the sketcher's geometry is driven by replayed pointer events, with
+its text streamed to the client instead of painted. A widget with no window still parses,
+validates, formats and selects, which was verified before anything was designed around it.
+The client is told what to display and forwards keystrokes, and implements none of it.
+
+Two things ARE the client's, and the line between them and the server is frequency -- the
+same line 8.2a draws for hover:
+
+- **Where a box sits.** The server sends the anchor in WORLD coordinates and the browser
+  projects it every frame with the camera it is drawing. That camera is the only one that
+  cannot be behind the picture -- under the default uplink policy the server is not told
+  where a client is looking between clicks at all (8.10b) -- so a position computed on the
+  server would swim behind every orbit. Clamping to the canvas and dodging the cursor are
+  the client's for the same reason. This is also the ordinary way DOM is anchored over a 3D
+  canvas on the web.
+- **Which box holds the DOM focus**, so that a phone raises its keyboard. The server still
+  decides which box *takes the keys*; the DOM follows that, never the other way round. A
+  client that focused on tap and told the server afterwards would leave the two disagreeing
+  for a round trip, and a keystroke landing in that gap would reach the wrong parameter.
+
+**The feed.** `{"cmd":"onview","doc":...,"params":[{i, x, y, z, text, sel, focus, set}]}`,
+pushed to the connection whose view the boxes are in, whole rather than as a delta -- there
+are a handful at most, the set turns over completely whenever a tool changes mode, and a
+client that has just reconnected must be able to draw them from one message. Coalesced onto
+the publish timer, because one replayed pointer move restates the points of every box in
+the set. The uplink is one op, `onViewFocus`, plus the ordinary `'E'` key frames.
+
+**Keys stream, and the frame already had room for the character.** A key frame carries an
+X11 keysym with the case folded out of it, which is right for a shortcut (the sketcher asks
+for the key, not the character) and useless for an entry box. Which character a shifted key
+produces is a keyboard-layout question, and the client is the only side with a layout -- so
+the character travels beside the keysym, in the slot a wheel delta occupies and a key has
+no use for.
+
+**One thing had to be added for any of this to be reachable.** A browser could not start a
+sketch tool at all: the sketcher's shortcuts are Qt shortcuts on a main window, and its
+`ShortcutListener` answers to Delete alone. The `command` op runs one by name, allowlisted
+to `Sketcher_Create*` -- exactly the family that drives a `DrawSketchHandler`, and so
+exactly the family this section is about. The narrowness is not taste: many commands open a
+modal dialog, and a modal dialog on the GUI thread of a process serving several browsers
+stops serving all of them, with nobody at the machine to dismiss it. Widening the list is
+gated on an answer to modality, not on appetite.
+
+**What is not solved.** A soft keyboard is not a keyboard: Android's in particular reports
+`keydown` for very few keys and expresses the rest through `beforeinput`, so a phone may
+need those synthesized into key frames before this surface is usable by thumb. Nothing here
+prevents it -- the client is already the side that decides what counts as a keystroke -- but
+it is untested, and it is the first thing to look at when this reaches a real phone.
 
 ### 8.8 Budget
 
@@ -1221,7 +1316,19 @@ Each step is a standalone landing with the desktop as its regression oracle.
    started**: in view mode the pointer never travels, which is 8.2a holding, and the same
    click that puts `Sketch.Edge1` in the room before the edit leaves the room empty during
    it.
-5. **On-view parameters in the DOM** and whatever the widget residue of 8.3 turned up.
+5. ~~**On-view parameters in the DOM** and whatever the widget residue of 8.3 turned up.~~
+   Done 2026-09-09, along with the selection grammar's wire form that stage 3 left (8.5).
+   What each is and why is at 8.7 and 8.5; what is worth carrying out of the stage is that
+   **the widget residue was not residue.** The entry boxes looked like the one surface that
+   would have to be reimplemented in the browser, and the reason they are not is that the
+   *behaviour* of one is not obvious -- which keys it keeps and which it hands back to the
+   sketch is a rule with a timer in it -- so the box stays a QuantitySpinBox on both tiers
+   and a mirror's is simply never shown. The same move as the mirror itself, one level down.
+
+   It also turned up the thing that made the stage reachable at all: a browser had no way
+   to start a sketch tool, because the sketcher's shortcuts are Qt shortcuts on a main
+   window. The `command` op is that, allowlisted narrowly for the modal-dialog reason 8.7
+   gives.
 
 ### 8.10 Open questions
 
@@ -1235,13 +1342,24 @@ Each step is a standalone landing with the desktop as its regression oracle.
   larger radius than a mouse, so the value is per client, not per document.
 - The mirror has no frame; anything a view provider does "on the next redraw" needs the
   change-driven traversal to be that redraw.
-- The client's selection grammar has no wire form (8.5): Shift-to-whole-object, the pick
-  filter and the plain-click cycle all resolve to "extend or replace" on the way up. The
-  flags byte has the room; the question is whether the grammar belongs on the pick or in
-  the DOM layer's own selection op (section 5).
+- ~~The client's selection grammar has no wire form (8.5)~~ Done 2026-09-09: on the pick,
+  carrying the intent the client resolved rather than the modifiers. The encoding, the one
+  combination that cannot be read off the outcome, and why the element-kind filter made the
+  server look past its nearest hit are in 8.5.
 - The mirror answers `logicalDotsPerInchX()` with 96, the CSS reference, because it has no
   screen to ask and its client is a browser. Whether the edit modes that size things in
   millimetres want that or the client's real density is a stage 4 question.
+- **The `command` op admits `Sketcher_Create*` and nothing else** (8.7). The gate is
+  modality, not authority: the connection may already set properties and enter edit modes,
+  so it is not that a wider list would grant more power, it is that a command opening a
+  modal dialog would stop the GUI thread of a process serving several browsers with nobody
+  at the machine to dismiss it. Widening the list needs an answer to that -- either a way
+  to refuse modality in a served process, or a list of commands known not to raise one.
+- **A soft keyboard is not a keyboard** (8.7). Android's reports `keydown` for very few
+  keys and expresses the rest through `beforeinput`. The client is already the side that
+  decides what counts as a keystroke, so nothing prevents synthesizing them, but the
+  on-view boxes have not been driven by thumb and that is the first thing to check when
+  they are.
 - ~~Stage 4 left the mirror still committing its picks into the room~~ Done 2026-09-09;
   the instance, the rule for which picks are in-edit, and the one place the design had not
   seen -- an edit mode's own observer -- are at the end of 8.4.

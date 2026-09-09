@@ -83,3 +83,12 @@ fc_add_gui_test(GuiSketchEditRoot_tests_run sketch-edit-root.py
 # and a client that drops mid-edit leaving no dangling binding behind.
 fc_add_gui_test(GuiServeMirrorEdit_tests_run serve-mirror-edit.py
                 --timeout 200)
+
+# A sketch tool's on-view parameters reach a client and are typed into
+# (docs/ThinClient.md sec 8.7, stage 5): the allowlisted `command` op
+# that starts a tool at all, the entry boxes stated with a world anchor,
+# and a key frame off the wire typed into the box that has the keys --
+# which is the claim the design rests on, the box being the same
+# QuantitySpinBox the desktop uses with nothing to paint it on.
+fc_add_gui_test(GuiServeOnViewParams_tests_run serve-onview-params.py
+                --timeout 200)

@@ -355,6 +355,54 @@ TEST_F(MirrorViewerTest, thePickRadiusReachesAnEdgeTheRayMisses)
     EXPECT_NE(coarseHit, nullptr);
 }
 
+TEST_F(MirrorViewerTest, aFilteredPickLooksPastTheNearestHit)
+{
+    // The client's pick filter admits one element kind, and the nearest
+    // hit is usually the wrong one -- a face standing in front of the edge
+    // the filter is after (docs/ThinClient.md sec 8.5). So pickRay offers
+    // every hit along the ray front to back and the caller, which is the
+    // only side that can turn a hit into an element NAME, chooses.
+    auto* nearer = new SoSeparator;
+    auto* lift = new SoTransform;
+    lift->translation.setValue(0, 0, 20);
+    nearer->addChild(lift);
+    static const SbVec3f square[4] = {
+        {-5, -5, 0}, {5, -5, 0}, {5, 5, 0}, {-5, 5, 0}};
+    static const int32_t face[5] = {0, 1, 2, 3, -1};
+    auto* coords = new SoCoordinate3;
+    coords->point.setValues(0, 4, square);
+    auto* faces = new SoIndexedFaceSet;
+    faces->coordIndex.setValues(0, 5, face);
+    nearer->addChild(coords);
+    nearer->addChild(faces);
+    scene->addChild(nearer);
+
+    const auto camera = perspectiveCamera(800, 600);
+    mirror->setCamera(camera);
+    SbVec3f origin;
+    SbVec3f direction;
+    clientRay(camera, 400, 300, origin, direction);
+
+    std::unique_ptr<SoPickedPoint> nearest(mirror->pickRay(origin, direction));
+    ASSERT_NE(nearest, nullptr);
+    EXPECT_NEAR(nearest->getPoint()[2], 20.0F, 1e-2F)
+        << "the unfiltered pick is the nearest hit";
+
+    // Refuse the near quad and the far one comes back, which is the whole
+    // of what the filter needs.
+    std::unique_ptr<SoPickedPoint> behind(mirror->pickRay(
+        origin, direction,
+        [](const SoPickedPoint& hit) { return hit.getPoint()[2] < 10.0F; }));
+    ASSERT_NE(behind, nullptr);
+    EXPECT_NEAR(behind->getPoint()[2], 0.0F, 1e-2F);
+
+    // And a filter nothing satisfies answers nothing, rather than falling
+    // back to a hit it was told not to take.
+    std::unique_ptr<SoPickedPoint> none(mirror->pickRay(
+        origin, direction, [](const SoPickedPoint&) { return false; }));
+    EXPECT_EQ(none, nullptr);
+}
+
 TEST_F(MirrorViewerTest, switchingProjectionRebuildsTheCamera)
 {
     mirror->setCamera(perspectiveCamera(800, 600));

@@ -128,6 +128,29 @@ if(TARGET FreeCADGui)
                           gtest_main FreeCADGui FreeCADApp FreeCADBase)
     add_test(NAME MirrorViewer_tests_run
              COMMAND MirrorViewer_tests_run)
+
+    # The on-view parameters an edit mode opens in a view with no widget
+    # (docs/ThinClient.md sec 8.7). Unlike the mirror set above this one
+    # DOES need a QApplication, because the claim being tested is that the
+    # entry box is a real QuantitySpinBox that simply is never shown -- it
+    # builds widgets, types into them with replayed key frames and reads
+    # them back, all under the offscreen platform the test asks for
+    # itself.
+    add_executable(OnViewParameter_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/OnViewParameter.cpp)
+    target_include_directories(OnViewParameter_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(OnViewParameter_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase
+                          ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
+    add_test(NAME OnViewParameter_tests_run
+             COMMAND OnViewParameter_tests_run)
 endif()
 
 if(TARGET FreeCADRenderer)
