@@ -49,12 +49,13 @@ pieces are frozen, not extended.**
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
-    Proxy import restriction (native) next        item 1 of sec 11: PropertyPythonObject restore
+    Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
                                                  confined to the Mod roots, both containers
     the document program             to size     sec 11 item 2: the carrier, the surface audit,
                                                  per-document guests, the gate
-    the abandoned rungs' code        audited     1.6: form path kept, workbench path to drop
-                                                 (~4.2k lines); NOT executed, awaiting the ruling
+    the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
+                                                 cut line kept as the record; 1.7 evaluates what
+                                                 the workbench path would still take
     host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -388,8 +389,12 @@ the door in git history and in the sec 7 sizings.  The execution, when
 ruled: one commit that deletes the workbench path, trims the two files
 and the residue, rebuilds, runs the expression gtests, the corpus gate
 and the five form gates, and updates sections 0, 7 and 11.  **Status:
-NOT executed ("stop here"); the guest-GUI code is FROZEN as sec 7's
-header says until the cut is ruled.**
+RULED 2026-09-09: "freeze everything" -- neither path is dropped; the
+guest-GUI code stays FROZEN in place as sec 7's header says, gates
+retired per case when an upstream sync breaks one.  The cut line above
+is kept as the record for the day the ruling changes.  What the frozen
+workbench path would still need to be fully working is evaluated in
+1.7.**
 
 **Two notes for the day GUI access from expressions is ruled**, so the
 kept form path has a stated purpose:
@@ -405,6 +410,105 @@ kept form path has a stated purpose:
 - **Selection is document data.**  A document program's selection read
   is reach-checked like everything else -- its own document's objects
   only -- which the existing `reachable` rule (7.13) gives for free.
+
+### 1.7 The workbench path: what fully working would still take **[evaluated 2026-09-09]**
+
+Asked 2026-09-09, with the freeze ruling: "do an evaluation on what
+else need to be done to actually make the workbench path fully
+working".  "Fully working" is read as the retired rung 4: Draft and
+BIM installed as workbenches whose Python runs in the guest, every
+command usable from the tool bar, objects drawn, the workbenches'
+own test suites green with the InitGui runner ON -- the switch the
+2026-09-08 re-aim dropped.  What is built gets a workbench as far as
+`Activated()` returning (7.9, 7.13, 7.15) with every Creator's
+`IsActive` False and nothing drawn from the guest.  The remainder,
+in dependency order; sizes are the sizings' where one exists.
+
+    item                                  sized   size                 what it unblocks
+    ------------------------------------  ------  -------------------  -------------------------------------
+    G4a the mirror and the drawing loop   7.16    the larger half of   Draft_Line end to end; every Draft
+                                                  G4: ~1400 host C++,  Creator's IsActive (get_3d_view);
+                                                  250 guest C++ (a     every BIM command's poll; the
+                                                  pivy rebuild), 900   camera, the view events, the MDI
+                                                  wheel, 600 gate      observer, getActiveWindow (94 sites)
+    G4b view providers in the guest       7.16    the smaller half     BIM STRICT in the corpus gate (the 3
+                                                                       BuildingParts, Layer); the Views
+                                                                       tree's icons; Arch.makeSite's terrain;
+                                                                       closes the GuiUp cost list of sec 13
+    G4c the residue                       7.16    measured after a, b  Draft_Edit's pick, host-node field
+                                                                       writes, whatever the corpus hits next
+    F1 the file and code chokepoints      7.14    an afternoon to a    a SESSION or ADDON guest stops
+                                                  day                  reaching host files and host Python
+                                                                       through Gui.runCommand (Std_Recent*,
+                                                                       Std_DlgMacroExecuteDirect);
+                                                                       mergeProject, importIFC.insert(path)
+    the addon principal for guest         sec 13  unsized; a design    every registration from the guest runs
+      workbench code                              question first       as `session` today -- a workbench's
+                                                                       own grants, and a stand-in carrying
+                                                                       them into the hooks the host calls
+                                                                       later; without it "sandboxed
+                                                                       workbench" grants nothing narrower
+                                                                       than the session
+    the stub list                         sec 13  many small items     preference-change notifications to
+                                                                       the guest (Draft's tray and grid do
+                                                                       not refresh); FreeCADGui.
+                                                                       addDocumentObserver (BimSelect);
+                                                                       FreeCAD.isRestoring(); the property
+                                                                       editor's corner buttons; the host
+                                                                       Model dock for tabifyDockWidget;
+                                                                       sizeHint/QFontMetrics estimates;
+                                                                       QTimer semantics; a qrc from the guest
+    nativeifc / ifcopenshell in the guest 7.6     UNBOUNDED: a wasm    BIM's IFC half -- ArchSchedule's IFC
+                                                  build of an OCCT-    branch, the IFC status widgets,
+                                                  bound library, its   ifc_viewproviders, every native-IFC
+                                                  own OCCT inside the  command; today a shim answers and
+                                                  guest; unmeasured    the IFC workflow is host-only
+    G5 the snapper in C++                 sec 11  when measured        every mouse move crosses once under
+                                                                       G4a; the snapper's cost per move is
+                                                                       the number to measure first
+    P2 in-place install                   sec 11  a probe              a wheel with compiled extensions into
+                                                                       a running guest (pivy today rides
+                                                                       the image)
+    G6 the suites                         sec 11  driven by failures,  Draft's and BIM's OWN test suites
+                                                  unknown count        green with InitGui in the guest --
+                                                                       the only gate that means "fully
+                                                                       working"; the corpus gates cover
+                                                                       recompute, not the commands
+
+Beyond Draft and BIM, "everything Python in pyodide" is not one more
+step but the same ladder again per workbench, each a G1 (App side,
+7.6) plus a G2/G3 (GUI side) with its own losses: FEM's solvers run
+external processes (host.exec, F1's row), CAM's post processors write
+files (fs.write) and its tool library reads them, Spreadsheet's and
+TechDraw's Python, PartDesign's and Sketcher's Python helpers, the
+Addon Manager (network, N1-N4).  None is sized.
+
+Two structural notes that no item above removes:
+
+- **The mirror is Coin-shaped and desktop-shaped.**  7.16 walks guest
+  `SoNode`s into the host's Coin scene.  The browser tier has no Coin:
+  the workbench path in the browser would need a second reader over
+  the renderer's scene (SceneServer, `docs/SceneStreaming.md`) and G7's
+  DOM walker for the panels.  Fully working on the desktop is not
+  fully working across the tiers the project is aimed at (CLAUDE.md).
+- **Every upstream Draft or BIM sync re-runs the port.**  The wheels
+  carry Draft's and BIM's code unmodified, so a sync costs nothing in
+  the wheels, but the corpus and command gates re-measure what the
+  sync's new imports and new `FreeCADGui` uses broke -- the
+  retire-on-break rule is the freeze's standing cost, and it grows
+  with every item above that is built.
+
+Rough scale at the pace of sec 7 (7.15 was a day for a sized item,
+G3 four stages in two days): G4 two to four sessions, F1 one, the
+addon principal a sizing plus one, the stub list spread over the gates
+that need each stub, G6 unknown until run, ifcopenshell not
+estimable.  A fully working workbench path for Draft alone is the
+first four rows plus G6; for BIM the same plus the IFC row, which is
+the one that may not be reachable.  Verdict: the path is about half
+built by line count and less than half by capability; the largest
+unbuilt piece (G4) is fully sized and the largest unknown
+(ifcopenshell) is outside this project's code.  None of it is started
+under the freeze.
 
 ## 2. The security model **[built]**
 
@@ -1273,8 +1377,9 @@ the cut line is the FORM PATH (kept: comm, control, dialogs, ui,
 selection, the models, the five form gates -- a document program with
 GUI access may need it later) against the WORKBENCH PATH (to drop:
 commands, workbenches, main window, status bar, docks, timers, the
-session document, doCommand, the InitGui runner, pivy); the drop is
-NOT executed, awaiting the ruling.**
+session document, doCommand, the InitGui runner, pivy); RULED
+2026-09-09 "freeze everything": nothing dropped, this header stands;
+1.7 evaluates what the workbench path would still take.**
 
 
 The user's framing: "since our final goal is to run everything Python in
@@ -4741,10 +4846,10 @@ Command line: `--grant <permission>[:<target>]`, `--policy <file>`.
 
 **Re-aimed 2026-09-08 (1.2).**  In order; each step ships alone.
 
-0. **The cut** (1.6, audited, NOT executed -- awaiting the ruling):
-   drop the workbench path of the guest GUI along the form/workbench
-   line, one commit, the form gates and the expression gtests green
-   after it.
+0. **The cut** (1.6, audited): RULED 2026-09-09 "freeze everything"
+   -- not executed, not scheduled; the guest-GUI code stays frozen in
+   place under the sec 7 header's retire-on-break rule, and 1.7
+   records what the workbench path would still need.
 1. **The Proxy import restriction, native.**  **BUILT 2026-09-09.**
    `PropertyPythonObject::Restore` imports only a module already in
    `sys.modules` or one `importlib.util.find_spec` resolves inside a
