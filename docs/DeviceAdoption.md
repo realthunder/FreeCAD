@@ -444,14 +444,13 @@ failed to produce it first:
   composite-off control returned the same picture.
 - `screencapture` returns a desktop with no windows without macOS Screen
   Recording permission, and does it with a byte-identical file each time.
-- The in-composite verify (`FC_BGFX_READBACK_VERIFY`) is DEGENERATE and should
-  not be trusted as it stands: it reports `before` and `after` both at 100.00%
-  with a worst channel delta of 0, unchanged at 34 degrees of camera rotation
-  per frame, which no real measurement of a destination framebuffer can do.
-  Adding the `before` sample did not rescue it, because both samples share one
-  read path and one comparison source; making the two sides independent needs a
-  SYNTHETIC pattern uploaded on a designated frame, which nothing else could
-  have produced. Until then the flag reports a number that cannot fail.
+- The in-composite verify (`FC_BGFX_READBACK_VERIFY`) was DEGENERATE in its
+  first form: it reported `before` and `after` both at 100.00% with a worst
+  channel delta of 0, unchanged at 34 degrees of camera rotation per frame,
+  which no real measurement of a destination framebuffer can do. Adding the
+  `before` sample did not rescue it, because both samples shared one read path
+  and one comparison source. Rebuilt on the Windows box 2026-09-09; see
+  section 11.
 
 Two of those four returned a plausible picture rather than nothing, which is
 the more dangerous half: a blank result invites suspicion and a correct-looking
@@ -470,3 +469,101 @@ opt-in was that they render and capture but cannot reach the screen. That hole
 is now closed and the gates stay anyway, with the reason rewritten in the code:
 what remains is a cost, and a default nobody has run and looked at is a worse
 answer than an opt-in.
+
+
+## 11. The verify, rebuilt -- and the composite confirmed on four backends
+
+Section 10 closed with the in-composite verify reporting a number that could
+not fail. This is what replaced it, and what it then established on Windows
+(RTX 2000 Ada, 2026-09-09).
+
+**Why the first form could not work.** It compared the destination framebuffer
+against the buffer that had just been UPLOADED. Two independent defects, and a
+fix has to answer both:
+
+- The two samples shared one read path and one comparison source, so they could
+  not disagree. `before` and `after` were the same measurement taken twice.
+- An image compared against itself matches wherever BOTH sides are zero -- and
+  a `glReadPixels` that fails leaves the destination buffer as the zeros it was
+  allocated with. So the failure mode of the instrument scored as a perfect
+  pass.
+
+**What it does now.** On every Nth landed frame (the value of
+`FC_BGFX_READBACK_VERIFY` is the period; 1 probes every frame) a SYNTHETIC
+pattern is uploaded in place of the scene, through the same texture, the same
+`glTexSubImage2D` and the same quad the real frame uses. The expected texels
+are then DERIVED from the frame's nonce at compare time, never read back out of
+the uploaded buffer -- that is what makes the two sides independent. Four
+properties earn their place:
+
+- **Nothing else can produce the pattern.** It is keyed on (nonce, x, y), and
+  the nonce is minted that frame.
+- **No channel is ever zero** (biased to 40..216). Black is what a failed read
+  leaves behind and what an untouched framebuffer holds, so neither can match.
+- **Both row mappings are scored.** An upside-down composite is the single most
+  likely defect on this route -- the flip lives in the texture coordinates and
+  the derivation has been got wrong once already -- and scoring the opposite
+  mapping turns it from an unexplained low number into a named fault.
+- **Non-black texels are counted**, which separates "the quad drew nothing"
+  from "the read came back empty".
+
+The report states a VERDICT, and `INSTRUMENT BLIND` is one of the verdicts:
+`glReadPixels` failed, or a nonce minted this frame was somehow already on
+screen, or the destination read back black. An instrument that cannot see must
+say so rather than return a low number that reads as a broken composite.
+
+**Measured.** The `before / after / opposite-mapping` triple is the evidence,
+because those three MUST disagree:
+
+    render readback composite verify: COMPOSITE DRAWS (14 probes, 504000
+    texels: pattern on 0.00% before the quad, 100.00% after, 0.00% after
+    under the opposite row mapping, 100.00% of the destination not black,
+    glReadPixels err 0x0)
+
+`COMPOSITE DRAWS` on all four backends: **Vulkan, Direct3D 11, Direct3D 12,
+and OpenGL under `FC_BGFX_READBACK=2`.** Every non-GL backend on this box now
+reaches the screen.
+
+**! Do not measure the composite with the verify on.** Each probe frame costs
+two full-viewport `glReadPixels` inside the timed quad section, which took
+`quad` from 0.08 ms to 1.8-3.2 ms. Those are the instrument's milliseconds, not
+the route's.
+
+### The composite is exact, not merely present
+
+The verify says pixels ARRIVED; it says nothing about whether they arrived in
+the right place. `FC_BGFX_READBACK=2` answers that, and it is the reason that
+mode is worth having: it forces the readback composite onto OpenGL, where the
+native GL blit also works, so both routes can be run on one backend, one scene
+and one camera and compared.
+
+Captured through each and compared pixel for pixel: **621964 texels, 0
+differing, worst channel delta 0 -- bit identical.** No scale, no offset, no
+flip, no colour shift. That is a stronger statement than any verify percentage,
+and it is only obtainable on a backend where both composites work.
+
+### Confirmed by eye on Windows too, and how the capture was made honest
+
+Our user looked at the window and saw the nine boxes, as on macOS. The control
+matters more than the picture: with `FC_BGFX_READBACK=0` the same scene on
+Vulkan comes up BLACK -- no boxes and no background, because at render cache
+mode 3 Coin emits no per-frame geometry and `blit()` stands aside, so nothing
+paints that widget at all and what shows is the widget's uninitialized FBO.
+Losing the background as well as the geometry is the stronger control.
+
+Two things about capturing it that cost time:
+
+- **A screen capture photographs a screen RECTANGLE**, so anything on top of
+  the window lands in the file. `SetForegroundWindow` from a background process
+  is refused by Windows' foreground lock, and a bare capture then produced a
+  sharp screenshot of an unrelated terminal saved under the name of a render
+  capture. The capture now PROVES the window is foreground and refuses
+  otherwise.
+- **`PrintWindow` with `PW_RENDERFULLCONTENT` DOES capture the 3D view's GL
+  content on Windows.** This is the same class of call as `QWidget::grab`,
+  which section 10 records returning blank on macOS -- so it is not trusted on
+  the strength of the API, it is trusted because the composite-OFF control
+  comes back black through that same path while the ON run comes back with the
+  scene. An instrument that discriminates between the two cases is seeing what
+  differs between them. It needs no foreground, so it does not steal focus from
+  someone using the machine.

@@ -392,14 +392,49 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // As above: the scene colour's format is part of what the sized
     // targets ARE, so changing it is a rebuild like a resize.
     view->hdrWanted = outconf.transform != Render::OutputConfig::None;
-    if (progChanged
-            || _BGFXLib.viewWidth(widget) != int(view->width)
-            || _BGFXLib.viewHeight(widget) != int(view->height)
-            || (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
-            || _BGFXLib.effectResolution != view->effectScale
-            || _BGFXLib.ssaoResolution != view->ssaoScale
-            || view->hdrScene != view->hdrSceneWanted())
+    // WHICH of the seven asked for the rebuild, said once per rebuild
+    // under the timing switch. A rebuild is a destroy and re-create of
+    // every sized target, and one condition that never settles turns
+    // that into a per-frame cost -- measured at ~430ms of a 450ms
+    // frame on Windows/GL, where it read as "the renderer is slow on
+    // this scene" because nothing said an init had happened at all.
+    // The condition is the whole answer and none of them is derivable
+    // from the outside, so the reason is reported rather than left to
+    // be guessed from a `pre` that ate the frame.
+    const char *initWhy = nullptr;
+    if (progChanged)
+        initWhy = "programs (shader generation or MSAA)";
+    else if (_BGFXLib.viewWidth(widget) != int(view->width)
+             || _BGFXLib.viewHeight(widget) != int(view->height))
+        initWhy = "viewport size";
+    else if (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
+        initWhy = "no scene framebuffer";
+    else if (_BGFXLib.effectResolution != view->effectScale)
+        initWhy = "effect resolution";
+    else if (_BGFXLib.ssaoResolution != view->ssaoScale)
+        initWhy = "ssao resolution";
+    else if (view->hdrScene != view->hdrSceneWanted())
+        initWhy = "scene colour format (hdr)";
+    if (initWhy) {
+        if (debugconf.frameTiming)
+            FC_RENDER_MSG("render targets: rebuilt -- %s (%dx%d ->"
+                          " %dx%d, hdr %d -> %d)\n",
+                          initWhy, int(view->width), int(view->height),
+                          _BGFXLib.viewWidth(widget),
+                          _BGFXLib.viewHeight(widget),
+                          int(view->hdrScene),
+                          int(view->hdrSceneWanted()));
         view->init(!progChanged);
+        // Whether the rebuild answered. A rebuild that does not is
+        // what turns "rebuilt once" into "rebuilds forever", and the
+        // condition above cannot tell the two apart.
+        if (debugconf.frameTiming)
+            FC_RENDER_MSG("render targets: after rebuild fbo %s, "
+                          "targetsFailed %d\n",
+                          bgfx::isValid(view->bgfxFbo) ? "valid"
+                                                       : "INVALID",
+                          int(view->targetsFailed));
+    }
 
     if (!bgfx::isValid(view->bgfxFbo))
         return bailToHost();
@@ -6801,20 +6836,53 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     rb.frames, rb.landed, rb.stale,
                     rb.landed ? double(rb.latencySum) / double(rb.landed)
                               : 0.0);
-            // Only the BEFORE/AFTER pair is evidence. after high with
-            // before low says this quad drew the image; both high says
-            // the check agreed with itself and saw nothing.
-            if (rb.verifyTotal)
+            // The verify states a VERDICT rather than leaving four
+            // percentages for a reader to combine, because the failure
+            // this instrument exists to catch is precisely the one that
+            // looks like a pass. Each branch names a different fault,
+            // and "blind" is a branch of its own: an instrument that
+            // cannot see must SAY so, not return a low number that
+            // reads as a broken composite.
+            if (rb.verifyProbes && rb.verifySamples) {
+                const double before = 100.0 * double(rb.verifyBeforeHits)
+                    / double(rb.verifySamples);
+                const double after = 100.0 * double(rb.verifyAfterHits)
+                    / double(rb.verifySamples);
+                const double flipped = 100.0 * double(rb.verifyFlipHits)
+                    / double(rb.verifySamples);
+                const double lit = 100.0 * double(rb.verifyAfterNonZero)
+                    / double(rb.verifySamples);
+                const char *verdict;
+                if (rb.verifyGLError)
+                    verdict = "INSTRUMENT BLIND -- glReadPixels failed";
+                else if (before > 5.0)
+                    verdict = "INSTRUMENT BLIND -- a nonce minted this"
+                              " frame was already on screen BEFORE the"
+                              " quad, so this is not reading the"
+                              " destination";
+                else if (after > 95.0)
+                    verdict = "COMPOSITE DRAWS";
+                else if (flipped > 95.0)
+                    verdict = "COMPOSITE DRAWS BUT THE ROWS ARE INVERTED"
+                              " -- the frame reaches the screen upside"
+                              " down; the flip belongs in the texture"
+                              " coordinates";
+                else if (lit < 1.0)
+                    verdict = "INSTRUMENT BLIND -- the destination read"
+                              " back black, which is not the same as the"
+                              " quad having drawn nothing";
+                else
+                    verdict = "COMPOSITE DID NOT DRAW";
                 FC_RENDER_MSG(
-                        "render readback composite verify: destination"
-                        " matched the uploaded image on %.2f%% of sampled"
-                        " pixels BEFORE the quad and %.2f%% AFTER"
-                        " (%lld sampled, worst channel delta %lld)\n",
-                        100.0 * double(rb.verifyBeforeSame)
-                            / double(rb.verifyTotal),
-                        100.0 * double(rb.verifyAfterSame)
-                            / double(rb.verifyTotal),
-                        rb.verifyTotal, rb.verifyMaxDelta);
+                        "render readback composite verify: %s"
+                        " (%u probes, %lld texels: pattern on %.2f%%"
+                        " before the quad, %.2f%% after, %.2f%% after"
+                        " under the opposite row mapping, %.2f%% of the"
+                        " destination not black, glReadPixels err"
+                        " 0x%x)\n",
+                        verdict, rb.verifyProbes, rb.verifySamples,
+                        before, after, flipped, lit, rb.verifyGLError);
+            }
         }
 #endif
         // * The other side of the same frame: what the *rest* of the

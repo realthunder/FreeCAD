@@ -133,6 +133,13 @@ if(BUILD_BGFX)
     if(APPLE)
         list(APPEND CAMSIM_SHADER_PROFILES metal)
     endif()
+    # Must track the engine list, because these land in the SAME pack
+    # directory and a backend reads one directory: a pack complete for
+    # fc_ and short for camsim_ is not a partial feature, it is a
+    # simulator drawing with substituted programs.
+    if(WIN32)
+        list(APPEND CAMSIM_SHADER_PROFILES dxbc dxil)
+    endif()
     fc_bgfx_compile_shaders(CAMSimulator_ShaderBins
         SHADERC   $<TARGET_FILE:shaderc>
         SHADERDIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders

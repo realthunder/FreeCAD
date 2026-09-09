@@ -11,7 +11,7 @@
 #     SHADERDIR <directory with vs_*.sc / fs_*.sc / *.sh / varying.def.sc>
 #     BGFXINC   <bgfx shader include dir (bgfx/src, for bgfx_shader.sh)>
 #     OUTDIR    <output root; bins land in OUTDIR/<profile>/<name>.bin>
-#     PROFILES  <any of: glsl spirv essl metal>
+#     PROFILES  <any of: glsl spirv essl metal dxbc dxil>
 #     [DEPENDS  <extra dependencies, e.g. the shaderc target>])
 #
 # Sets <out-var> to the list of generated .bin paths. Every *.sh include
@@ -55,6 +55,14 @@ function(fc_bgfx_compile_shaders outvar)
                 set(_flags --platform asm.js -p 300_es)
             elseif(_profile STREQUAL "metal")
                 set(_flags --platform osx -p metal)
+            elseif(_profile STREQUAL "dxbc")
+                # Direct3D 11. Only a Windows host can produce these:
+                # shaderc reaches D3DCompile for dxbc and dxc for dxil,
+                # which is why a Linux rebake silently drops both (the
+                # same trap docs/Testing.md records for the vg pack).
+                set(_flags --platform windows -p s_5_0 -O 3)
+            elseif(_profile STREQUAL "dxil")
+                set(_flags --platform windows -p s_6_0 -O 3)
             else()
                 message(FATAL_ERROR "unknown shader profile: ${_profile}")
             endif()
@@ -168,6 +176,14 @@ function(fc_bgfx_check_shaders outvar)
                 set(_flags --platform asm.js -p 300_es)
             elseif(_profile STREQUAL "metal")
                 set(_flags --platform osx -p metal)
+            elseif(_profile STREQUAL "dxbc")
+                # Direct3D 11. Only a Windows host can produce these:
+                # shaderc reaches D3DCompile for dxbc and dxc for dxil,
+                # which is why a Linux rebake silently drops both (the
+                # same trap docs/Testing.md records for the vg pack).
+                set(_flags --platform windows -p s_5_0 -O 3)
+            elseif(_profile STREQUAL "dxil")
+                set(_flags --platform windows -p s_6_0 -O 3)
             else()
                 message(FATAL_ERROR "unknown shader profile: ${_profile}")
             endif()

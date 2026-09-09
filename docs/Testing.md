@@ -13,8 +13,9 @@ as "the primary tree"; that was wrong.
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
-| C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
+| C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06, re-verified 2026-09-08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **478 of 478 passing** (2026-09-07), 1 disabled -- see "C++ on macOS" |
+| Python on Windows | **2590 tests** (2026-09-07, re-verified 2026-09-08), 7 failures + 2 errors, 49 skipped, 6 expected failures -- three Windows-only defects, see "Python on Windows" |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -229,6 +230,80 @@ as though they were directories and leaves the real ones out -- and the tests
 that happen to need only their first directory still pass, so it looks like it
 works.
 
+**Reproduced on a second Windows box, 2026-09-07: 477 of 477 in 127 s with
+`-j 8`** -- but only after redirecting `TMP`. First run there, one entry timed
+out:
+
+    453 - DeferredLoad_tests_run (Timeout)
+
+Nothing was wrong with it. Every case *passed*; each merely took **85 to 106
+seconds** instead of milliseconds, and fifteen of those overrun ctest's 1500 s
+default. The cost is in the fixture's teardown, not in the code under test:
+`removeArchiveAndBackups()` has to find whatever a save left beside the
+archive, so it walks `getDirectoryContent()` of the archive's directory and
+stats every entry. The archive is a `getTempFileName()` path, so that
+directory is `%TEMP%` -- and that profile's `%TEMP%` held **63,167 files**. The
+suite is O(files in the temp directory), once per test.
+
+Pointing `TMP`/`TEMP` at an empty directory takes the same binary from a
+1500 s timeout to **3.11 s**. `ctest-fcad-cleantmp.cmd` is `ctest-fcad.cmd`
+with those two variables set; a temp sweep does just as well. Worth knowing
+generally: any suite that saves into `%TEMP%` and then looks for its backups
+inherits this, and it degrades gradually rather than failing, so it presents
+as "that test got slow".
+
+### Python on Windows
+
+First run there is 2026-09-07, on `build/win-relwithdebinfo-801` with
+`BUILD_FEM=OFF`: **2590 tests, 7 failures and 2 errors**, 49 skipped, 6
+expected failures. Three things had to be true first.
+
+Re-run 2026-09-08 after a pull: **2590 tests in 384 s, the same 7 failures
+and 2 errors**, same 49 skipped and 6 expected failures. The nine are the
+same nine listed below, so that count is a stable baseline to diff against.
+
+**One run in two hung and never finished**, in
+`CAMTests.TestUpdateDocumentTools.test_both_presets_and_geometry_differing_is_one_row`
+-- 38 threads all in `Wait`, cumulative CPU flat, no output for nine
+minutes. It is *not* the endpoint-security stall of `DevEnvironment.md`
+(that is one thread and a process that never started; this one had been
+running for minutes and had 38). The module passes alone in 10.8 s
+(`FreeCADCmd -t CAMTests.TestUpdateDocumentTools`, 17 tests OK) and the
+immediate re-run of the whole suite completed, so it is an ordering
+interaction or a flake and not a defect in that test. `AssetManager.add`
+goes through `asyncio.run` on a ProactorEventLoop, which is where to look
+if it recurs. Recorded so the next person sees a known flake rather than a
+new hang; if it becomes reproducible it deserves its own entry.
+
+**A pseudo-console, which is what `script -qec` provides on Linux.** The same
+`CAMTests.TestCAMSanity` case named in section 1 leaves stdout closed here
+too; with a file or a pipe on the far end, the unittest runner's next
+`stream.flush()` raises `[Errno 9] Bad file descriptor` and the process dies
+with `0xC0000409` partway through. The Windows counterpart is a ConPTY:
+`tools\pty_run.py` spawns the command under one via `pywinpty` and tees it to
+a file, and `pytest-fcad-pty.cmd` is that wrapper around `FreeCADCmd -t 0`.
+Without it the run ends at 969 tests and still says `FAILED` rather than
+saying it stopped.
+
+**`pyyaml` and `ifcopenshell` in the env**, or `TestCAMApp` (1343 tests) and
+`TestArch` do not import at all -- see the two notes in
+`docs/DevEnvironment.md`. This is the checksum the top of this page describes,
+in its Windows form.
+
+**`TMP` redirected**, for the reason the C++ section above gives.
+
+The nine that remain are genuine and are Windows-only. None is a setup
+problem; all three groups are about text and paths rather than about geometry:
+
+| Group | Cases | What it is |
+|---|---|---|
+| `materialtests.TestMaterialClipboard`, `TestShaderGraph` | 6 | a `.mtlx` payload comes back with `\r\n` where it went in with `\n`, so the round trip through the material card's file blobs is going through a text-mode handle somewhere. The stored bytes carry the CRLF, so it is the write side |
+| `FileBlobs.BlobNamingCases` long names | 2 | a 250-character blob name under a temp path exceeds `MAX_PATH`, and `open()` fails with `FileNotFoundError`. Either the path needs the `\?\` prefix or the box needs long paths enabled |
+| `FileBlobs.BlobNamingCases.testANonAsciiNameIsKeptAsItIs` | 1 | a UTF-8 blob name (the test uses katakana) comes back from the directory listing as mojibake -- the name is written as UTF-8 bytes and read through a narrow/ANSI path |
+
+The Linux run has none of these, which is the point: they are the first thing
+this suite has ever said about the Windows file layer.
+
 ## 2. Why ctest says 453 and the binaries add up to 1305
 
 Both numbers are right; they count different things.
@@ -399,6 +474,35 @@ Windows build to be quietly wrong rather than loudly broken.
   Worth doing when a second Windows executable wants bgfx; today
   exactly one does, and it does not need to share.
 
+
+#### Which backends the Windows smokes can actually use
+
+Re-verified 2026-09-08 on the second Windows box (NVIDIA RTX 2000 Ada,
+driver 566.24, Intel RaptorLake-S iGPU). Both smokes pass on **Vulkan**
+and on **Direct3D 11**, band for band, at 51119 ink pixels -- one more
+than the 51118 recorded above, and the same on both backends, so it is
+a change in the scene and not a backend divergence.
+
+**`--renderer gl` is not usable headless on Windows.** It does not fail
+with a clean message: bgfx emits one `Failed to create OpenGL context.
+wglGetProcAddress(...)` fatal *per entry point* and keeps going, so the
+tool floods the console and looks like a hang. It is not one -- the
+process burns a full core throughout, which is how to tell it apart
+from this box's endpoint-security stall, where CPU stays at zero (see
+`DevEnvironment.md`). WGL needs a window and a pixel format, and there
+is no offscreen path to one the way Linux has with EGL. Use `vk`, or
+leave it on auto and get Direct3D 11. This is only about the *headless*
+tool: the interactive compositor takes its GL context from Qt, and that
+is a real window.
+
+Cycles on this box enumerates all three devices and renders on each --
+`CUDA` and `OPTIX` on the RTX 2000 Ada, `CPU` on the i7-13850HX -- via
+`Gui.cyclesDevices()` and `Gui.cyclesRenderTest(path, w, h, samples,
+device)`. Both need the **real** `FreeCADGui`: under `FreeCADCmd` the
+imported `FreeCADGui` is the console stub and carries neither method,
+and `setupWithoutGUI()` does not add them -- `Gui.showMainWindow()`
+does. Run it through `..\tools\run-cycles.cmd`, or `CUDA_BIN_PATH` is
+unset and the CUDA device silently does not appear at all.
 
 ### The GUI tests (`tests/gui/`)
 

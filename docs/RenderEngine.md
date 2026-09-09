@@ -2380,6 +2380,504 @@ the view-space shading normal -- is the one picture in which the two
 engines can be compared exactly, which is what the finish and map
 probes assert on.
 
+## 7.10 Why a non-GL backend does not reach the screen
+
+Vulkan, Metal and Direct3D all render correctly and CAPTURE correctly,
+and none of them puts a pixel in the viewport. That is not a defect in
+any of them; it is one property of the desktop composite, and the ways
+out have very different costs. Investigated 2026-09-08 across the
+Windows box (RTX 2000 Ada, Vulkan 1.3.289) and the macOS box (Intel Iris
+Pro 6200, GL 2.1, Metal), with numbers measured on both rather than
+estimated.
+
+**What Windows runs today is unaffected by all of this.** The default
+`typeMap` (`BGFXRendererP.h` around 2457) holds exactly one entry,
+`bgfx - OpenGL`; the Direct3D 9/11/12 lines beside it are commented out,
+and Vulkan and Metal are added at runtime only under `FC_BGFX_VULKAN` /
+`FC_BGFX_METAL`. So the desktop viewport runs bgfx on GL inside Qt's own
+GL context and composites with a GL-to-GL framebuffer copy, which costs
+nothing like the transfers below. Everything here is about the backends
+that are NOT that.
+
+### The actual constraint
+
+`BGFXView::blit` (`BGFXViewLifecycle.cpp:1680`) wraps bgfx's colour and
+depth attachments in a GL framebuffer through `bgfx::getInternal()` and
+`glBlitFramebuffer`s them into the widget's. It returns at the top on
+any backend that is not OpenGL or OpenGLES, and Coin draws the viewport
+instead. The gates at `BGFXRendererP.h:1754` and the Metal one below it
+say why: "it renders and it CAPTURES, but it does not yet reach the
+screen".
+
+Two things are worth stating precisely, because both have been misread.
+
+**It is not simply that `getInternal` returns the wrong kind of handle.**
+On Metal it returns a real `id<MTLTexture>` (`renderer_mtl.cpp:1472`),
+which the FBO then rejects as an incomplete attachment. On Vulkan it is
+a stub returning 0, and `overrideInternal` is an empty no-op
+(`renderer_vk.cpp:2679`) -- there is no handle to misinterpret. And
+`VK_KHR_external_memory` / `GL_EXT_memory_object` appear nowhere in the
+engine, so sharing memory with GL would be a from-scratch allocator
+feature in the fork, not a fix.
+
+**The real requirement is that the frame must arrive as something QT
+composites.** `QuarterWidget` is a `QGraphicsView` whose viewport is a
+`QOpenGLWidget`-derived `CustomGLWidget` (`QuarterWidget.cpp:283`), and a
+`QOpenGLWidget` is deliberately NOT a native window: it renders to an
+FBO that Qt composites into the backing store. That is the only reason
+Qt widgets can float above the 3D view at all.
+
+### Route C -- native child window -- is disqualified
+
+The tempting route is to skip the transfer entirely. The non-GL branch
+of `prepare()` (`BGFXRendererP.h` 1994-2032) ALREADY creates a `QWindow`
+and hands `winId()` to bgfx as `platformData.nwh`, filling `ndt` and the
+handle type from `QWaylandApplication`/`QX11Application` on Linux; bgfx
+builds its own surface and swapchain from that. So presentation was
+never the blocker -- embed that window with
+`QWidget::createWindowContainer` and bgfx presents straight to it, with
+no blit, no readback and no engine patch.
+
+It cannot be done. A native child surface composites ABOVE its parent's
+painting on Win32, X11, Wayland and Cocoa alike, so everything Qt draws
+over the viewport goes dark: `Flag` widgets, parented to the viewer
+under a `FlagLayout` (`Flag.cpp:364-368`), and the whole transparent
+overlay dock system in `OverlayWidgets.cpp`, which is a signature
+feature of this fork that upstream has never had
+(`ThemePorting.md:236`). Those are interactive, styled, animated Qt
+widgets; they are not an overlay feed and cannot be moved into bgfx.
+Confirmed on macOS too: a child `QLabel` over an embedded foreign window
+stays non-native (`internalWinId` 0) and Cocoa composites it under the
+subview, with no way round it.
+
+Recorded here so it is not proposed again. The cost is not a cosmetic
+regression, it is the overlay docks.
+
+### Route A -- readback -- works, and is the only route on macOS
+
+GPU to CPU with `bgfx::readTexture`, then `glTexSubImage2D` and a
+textured quad. It needs no `glBlitFramebuffer` and no profile sharing,
+so it runs on GL 2.1 -- which matters because nothing in
+`Application.cpp` requests a version or profile, and while Coin draws,
+its fixed-function pipeline caps macOS at 2.1 by construction. That
+makes readback the ONLY route that can put Metal on screen there.
+
+Readback, GPU to CPU, fully serialized (the wait IS the cost):
+
+| Resolution | Bytes | Box | Time | Throughput |
+| --- | --- | --- | --- | --- |
+| 1920x1080 | 7.9 MB | Ada, Vulkan | 2.51 ms | 3.08 GB/s |
+| 1920x1080 | 7.9 MB | Ada, D3D11 | 2.42 ms | 3.19 GB/s |
+| 2560x1440 | 14.1 MB | Ada, Vulkan | 3.94 ms | 3.49 GB/s |
+| 3840x2160 | 31.6 MB | Ada, Vulkan | 8.13 ms | 3.80 GB/s |
+| 1920x1080 | 7.9 MB | Iris Pro, Metal | 1.71 ms | -- |
+
+Discrete is only about 1.5x integrated at 1080p, not the PCIe cliff both
+boxes expected: neither measurement pipelined, so both timed the same
+stall rather than the same bandwidth. Reading frame N-1 while rendering
+N would hide most of it, at the price of a frame of latency.
+
+**Upload format is not a detail.** `GL_RGBA`/`UNSIGNED_BYTE` beats
+`GL_BGRA`/`UNSIGNED_INT_8_8_8_8_REV` by 3.5x on NVIDIA (0.57 ms against
+1.97, 13.62 GB/s against 3.92) and by 2.9x on Intel/macOS. That inverts
+the usual "BGRA is the fast path" advice on BOTH vendors, and it matters
+because bgfx's Metal backbuffer is BGRA8, so the naive pairing lands on
+the slow one. Render into an RGBA8 target instead; we read our own
+render target, not the drawable, so nothing forces BGRA. Qt's own
+`grabFramebuffer` on the RHI Metal path returns `Format_RGBA8888`, which
+points the same way.
+
+Totals with the fast format plus a ~0.3 ms quad: **~3.4 ms at 1080p (20%
+of a 60Hz frame), ~5.2 ms at 1440p (31%), ~10.7 ms at 4K (64%)** -- the
+4K upload extrapolated from the measured rate rather than measured. So
+readback ships at ordinary resolutions and is marginal at 4K, where it
+spends two thirds of the budget before anything is drawn. That is what
+makes it a correctness path rather than the destination.
+
+### Benchmarking a backend: measure `ours`, not wall clock
+
+Three attempts at ranking backends went wrong here on 2026-09-08, each
+in a way worth not repeating.
+
+**Wall clock around `redraw()` measures the harness.** The chess scene
+(`scripts/render-test-chess.py`'s asset, camera orbiting, one
+`waitFrameComplete()` per frame) returned 20.33 ms on OpenGL, 20.09 on
+Vulkan and 20.38 on Direct3D 11 -- three APIs inside 1.4%. The engine's
+own accounting for the same steady-state frame says why:
+
+    traverse=0 delta=0 flatten=0 flattensub=0 entries=0
+    translate=0 backend=0                         other=1011/1012ms
+
+    pre 0.15 | cull 0.01 | submitloop 0.86 | post 5.76
+             | bgfx::frame 0.73 | ours 7.50
+
+The renderer spends **7.5 ms**, of which the backend's own share --
+`submitloop` plus `bgfx::frame` -- is about **1.6 ms**. The other ~12 ms
+of that 20 is outside the renderer entirely: the Qt event loop, paint
+scheduling and the benchmark's own polling. A backend difference of even
+2x moves under a millisecond of a frame the harness dominates, which is
+why three backends tied. `RenderParams::DebugTiming` and the `ours`
+line are the instruments; wall clock is not.
+
+**A camera-only orbit exercises none of the CPU pipeline.** Every
+`RenderTiming` stage above reads zero because the scene never changes
+and the render cache is reused. That is fine for isolating the backend
+and useless for measuring traversal, flatten or publish -- a benchmark
+wanting those has to change the scene, not just the view.
+
+**Two earlier traps, both of the same family -- the harness reporting
+its own limit.** `bgfx::frame()` returns after SUBMISSION, so timing
+around it ranks how much a driver postpones rather than what it
+finishes; forcing completion changed every magnitude in the vg table
+above. And vsync pins every leg to the refresh interval whatever the
+scene costs, which is what `FC_BGFX_NO_VSYNC` exists for
+(`BGFXRendererP.h`, `bgfxResetFlags`).
+
+Practical notes for the next attempt. The 3D engine needs a real view,
+so run it in the GUI binary: `FreeCADCmd` with `showMainWindow()` lands
+on the 1x1 `GLSurfaceWarmup` surface and every frame is "Framebuffer
+incomplete, missing attachment". And a script passed as an argument runs
+BEFORE the event loop, so `redraw()`/`waitFrameComplete()` there waits on
+frames nothing is pumping -- defer the work with
+`QtCore.QTimer.singleShot`, as `render-test-chess.py` does.
+
+**So the vg table above ranks backends and the chess numbers do not.**
+The vg workload submits 20000 stroke items and is submission-bound,
+which is exactly where a backend's per-draw cost shows; the chess scene
+draws 15 shapes, where that cost disappears into the noise. Neither says
+anything about the other.
+
+### The 3D backend table, measured (2026-09-09)
+
+`scripts/render-bench.py` now reads the engine's own report instead of
+the clock: it attaches a Python console observer
+(`FreeCAD.Console.AttachObserver`) and frame-weights the `render frame`,
+`render cpu phases` and `RenderTiming` lines over the timed window. That
+is what made a 3D table possible on Windows, where a GUI-subsystem
+binary sends none of that to a pipe.
+
+Windows box (RTX 2000 Ada, GL 4.6 / Vulkan 1.3, driver as of
+2026-09-09), 17000 `Part::Box` objects built in session -- **33.7k
+draws, 877k primitives**, 1280x720, vsync off, one completion barrier
+per frame, camera orbiting. ms per frame:
+
+| Backend | submit | gpu | submitloop | pre | ours | frame |
+| --- | --- | --- | --- | --- | --- | --- |
+| OpenGL | **106.47** | 106.44 | 24.29 | 33.12 | 172.45 | **176.02** |
+| Vulkan | 10.56 | 2.47 | 23.06 | 31.83 | 74.78 | **77.42** |
+| Direct3D 11 | 11.05 | 77.41 | 23.63 | 31.84 | 75.70 | **78.68** |
+| Direct3D 12 | 12.53 | 12.11 | 25.93 | 35.50 | 84.41 | **87.25** |
+
+`submit` is bgfx's render thread issuing draw calls; `submitloop` and
+`pre` are our own C++ and are backend-independent, as the table shows
+(23-26 and 32-36 across all four).
+
+**The finding is the submission cost: OpenGL spends 10x what the other
+three do to issue the same 33.7k draws**, and that one term is the whole
+of its 2.3x slower frame. The ordering matches the vg table above --
+Vulkan first, D3D11 alongside it, D3D12 behind, GL last -- on a workload
+with nothing in common with it, which is worth more than either result
+alone.
+
+**The `gpu` column is not comparable across backends and should not be
+read as one.** Each is that backend's own timer-query semantics: GL's
+reads 106.44 against a 106.47 submit, i.e. it is timing the serialized
+driver thread rather than the GPU, and D3D11's 77.41 has the same smell.
+Only the CPU terms are like for like here.
+
+Two things this does NOT say. It is a **draw-count** workload (26
+primitives a draw, 1% of the viewport covered), so it prices submission
+and says nothing about fill or vertex throughput. And every backend but
+GL renders without reaching the screen (`BGFXView::blit` stands aside),
+so the composite is not in any of these numbers.
+
+### Two defects the harness found, one fixed
+
+**The blit's depth attachment, fixed 2026-09-09.**
+`BGFXView::blit()` wrapped bgfx's depth attachment with
+`glFramebufferRenderbuffer`, but bgfx backs a write-only D24S8 target
+with a **texture** on this driver -- and a texture name attached as a
+renderbuffer attaches nothing, so the framebuffer came out "incomplete,
+missing attachment" on every frame. The failure path then called
+`destroy()`, which drops the view's targets, its uploaded scene AND its
+programs. So every frame rebuilt the entire view: **~430 ms of a 450 ms
+frame**, and on a large model the scene never survived long enough to be
+drawn at all. It read as "the renderer is slow on this scene", which is
+why the instrument matters more than the fix: `render targets: rebuilt
+-- <reason>` now says which of the seven conditions asked for a rebuild
+(under `Render_DebugTiming`), and `FC_BGFX_TARGET_DEBUG=1` says who gave
+the targets back. Fixed by asking `glIsTexture` the same way the colour
+attachment already did, and by giving the failure path
+`dropBlitCache()` instead of `destroy()` -- a two-framebuffer cache is
+not a reason to throw away the scene.
+
+**A restored document drew nothing, fixed 2026-09-09.** A `.FCStd`
+opened with `Render_ProgressiveLoad` off came up with an empty 3D view
+-- 200 shapes or 17058, on the bgfx renderer and on plain Coin alike,
+while the same objects built in session drew. A restore parks its shape
+content (a deferred entry, a store position, a blob, a plain `file=`
+entry) and serves it in the archive's FILE phase, which runs after the
+objects are signalled -- and that signal is what builds the visuals. So
+the build read a null shape, wrote empty display nodes and marked
+itself done, and nothing replays a notification when the content lands.
+`restoreDeferredFile` states the assumption it rests on -- "the serve
+runs before the visual fill" -- which is true of the progressive drain
+and of nothing else. A null shape during a restore now parks on that
+drain whatever the preference says (`ViewProviderPartExt::updateVisual`,
+`shapeMayStillArrive`). Note the property's own `isRestorePending` is
+NOT sufficient: the plain addFile branch marks nothing, which is why a
+first fix worked at 200 shapes and did nothing at 17000.
+
+### The assembly table, all four backends (2026-09-09)
+
+`MiSTerFlat.FCStd`, 17058 solids, 1280x720, vsync off, one completion
+barrier per frame, camera orbiting -- **41259 draws, 6.70M primitives,
+8.1% covered**. The draw count matches the 41670
+`docs/FarFieldProxies.md` records for the same model on the Linux box,
+and every backend reports the same 41259 here, which is the cross-check
+that the scene is the scene and that no leg is drawing a differently
+culled version of it. ms per frame:
+
+| Backend | submit | gpu | submitloop | pre | ours | frame |
+| --- | --- | --- | --- | --- | --- | --- |
+| OpenGL | **171.60** | 171.92 | 30.75 | 30.64 | 247.25 | **252.25** |
+| Vulkan | **18.53** | 5.98 | 26.01 | 25.59 | 84.79 | **87.54** |
+| Direct3D 11 | 19.86 | 85.99 | 26.61 | 26.62 | 85.54 | **88.06** |
+| Direct3D 12 | 20.27 | 19.96 | 27.49 | 27.82 | 89.72 | **92.52** |
+
+**The submission finding survives the move to a real assembly.** GL
+spends 171.60 ms issuing the same 41259 draws the other three issue in
+18.5-20.3 -- about 8x, against 10x on the synthetic boxes -- and that
+one term is essentially the whole of its 2.9x slower frame. The
+ordering (Vulkan, Direct3D 11, Direct3D 12, GL last) reproduces both
+the boxes table above and the older vg table, on a third workload with
+nothing in common with either. Three independent scenes agreeing is
+worth more than any one of the rows.
+
+`gpu` is again not comparable across backends, and this table shows why
+in one line: GL's 171.92 equals its own 171.60 submit, i.e. it times
+the serialized driver thread, and D3D11's 85.99 has the same smell,
+while Vulkan reads 5.98 and D3D12 19.96. The actual GPU work on 6.7M
+primitives at this resolution is under 7 ms; the frame is CPU-bound end
+to end, which is what makes submission the whole story.
+
+**And a fifth trap, this one paid for here: the first leg of a session
+reads high.** The first Vulkan run of the session returned submit
+22.77, submitloop 33.09, pre 33.62, post 16.98, frame 113.32 -- which
+would have put Vulkan BEHIND both Direct3D legs and inverted the
+ordering every other table on this box agrees on. But `submitloop`,
+`pre` and `post` are our own C++ and do not know which backend they are
+talking to, and all three sat ~25% above every other leg. That is the
+tell: a backend cannot move those, so a leg that moves them is
+measuring the box rather than the backend. Re-run last, unchanged, the
+same leg gave 18.53 / 26.01 / 25.59 / 12.97 / 87.54 -- in line with
+both Direct3D legs on every shared term. **So read the shared columns
+before the backend one, and do not rank off a session's first leg**:
+run it again at the end, or discard it. The same discipline as the four
+traps above -- the instrument is guilty until the numbers that cannot
+have moved are shown not to have moved.
+
+None of this includes the composite. Every backend but GL renders
+without reaching the screen in these runs (`BGFXView::blit` stands
+aside), so these are submission costs rather than frames on screen; the
+readback composite adds an upload plus a quad to each non-GL row.
+
+### Route D -- Qt owns the device -- is the destination
+
+bgfx accepts an externally created device, so Qt can own it through
+`QRhi` and bgfx can adopt it. bgfx's render target is then already a
+texture on the compositor's own device: import it as a `QRhiTexture`,
+and `QRhiWidget` composites it into the widget tree the way
+`QOpenGLWidget` does -- so the Qt overlays that killed Route C survive.
+Zero copy, and **no bgfx patch at all**. `QRhiWidget` exists in this Qt
+(6.11.2), and the macOS box has it running on Metal with the device, a
+command queue and a real `MTLTexture` handle in hand, and a child
+`QLabel` still non-native and composited above.
+
+Device adoption is `platformData.context`, one line per backend:
+`renderer_vk.cpp` 2008-2011 and `renderer_mtl.cpp:874`. It needs no
+window: `bgfx.h` documents a null `nwh` as a headless device request and
+`renderer_mtl.cpp:1127` takes that path explicitly, so the `QWindow` and
+swapchain of the Route C branch are not wanted at all.
+
+The QUEUE is where the backends diverge, and only one lets us choose:
+
+| Backend | Queue under an adopted device | Synchronisation |
+| --- | --- | --- |
+| Direct3D 12 | external queue accepted, `platformData.queue` (`bgfx.h:644`, used at `renderer_d3d12.cpp:1305`) | ours by construction: one queue |
+| Vulkan | `vkGetDeviceQueue(family, 0)` at `renderer_vk.cpp:2131` -- RETRIEVES, so it may be Qt's own | host-side mutual exclusion if it is the same `VkQueue`, semaphores if not; compare handles at runtime, it is not contractual |
+| Metal | `newCommandQueue()` at `renderer_mtl.cpp:4740`, unconditional | always two queues: `MTLEvent` or a completion handler |
+
+`queue` is referenced zero times in `renderer_vk.cpp` and
+`renderer_mtl.cpp`. So a sync layer has to cover same-queue-lock and
+cross-queue-signal both, and the backend picks: Metal can never take the
+lock path, D3D12 never needs the signal path. That is an argument on
+paper for Windows going Direct3D 12 if Route D is built -- device and
+queue adopted by design, no handle comparison and no lock ambiguity --
+and it would first mean enabling it in the Windows `typeMap`, where
+D3D9/11/12 are all commented out today.
+
+**Measured, that argument does not survive.** `fcvgsmoke --bench 20000
+--bench-frames 200` headless on the Ada part, three runs per backend,
+mean ms per replay frame (`--renderer` learned `d3d11`/`d3d12` for this;
+auto never picks D3D12):
+
+| Backend | unchanged | pan | zoom | post-crossing | overall |
+| --- | --- | --- | --- | --- | --- |
+| Direct3D 11 | 4.99 | 4.70 | 4.14 | 4.37 | 4.55 (1.74x) |
+| Direct3D 12 | 8.86 | 9.57 | 8.49 | 8.51 | 8.86 (3.38x) |
+| Vulkan | 2.49 | 2.53 | 2.70 | 2.75 | **2.62** |
+
+Vulkan is 1.7x faster than Direct3D 11 and 3.4x faster than Direct3D 12,
+consistently and across every case. **Direct3D 12 is the slowest of the
+three**, which is the opposite of what its external-queue property would
+lead one to hope. So the queue is a real convenience and it is not worth
+choosing a backend for on its own: if Route D is built here, D3D12's
+simpler synchronisation is being bought at roughly 3.4x, and the runtime
+handle comparison Vulkan needs is a bounded cost against that.
+
+**How this table was earned, because the first attempt at it was
+wrong.** The bench originally timed ONE frame per case and did not force
+GPU completion. `bgfx::frame()` returns after submission, and how much a
+backend defers past that point is its own business -- so wall clock
+around it ranks how much each driver POSTPONES, not how much it
+finishes, and single samples on top of that swung 2x run to run (D3D11
+read 6.96 ms and 13.13 ms for the same case). It is now 200 frames per
+case behind `Offscreen::grab()`, which blits, reads back and pumps
+frames until the read lands, so everything submitted has completed
+before the clock stops.
+
+Fixing it changed every magnitude and no ordering: D3D11 went from about
+10 ms to 4.55, D3D12 from 10.3 to 8.86, Vulkan from 3.8 to 2.62. Two
+lessons, and the second cost a retraction. A harness that does not force
+completion measures deferral. And the readback parity in the table above
+-- Vulkan 2.51 ms against D3D11 2.42 -- does NOT contradict this gap, as
+was briefly argued here: a readback is a bandwidth-bound memory
+transfer, largely backend-independent, while these frames are
+submission-bound. Parity in one says nothing about the other, and
+reasoning across the two was an error.
+
+Three limits on that table, none of them small. It exercises the
+**vg 2D path, not the 3D engine**, because the renderer's own shader
+pack has no `dxbc`/`dxil` (`FC_SHADER_PROFILES` is glsl/spirv/essl plus
+metal on Apple) and so cannot run on Direct3D at all -- and per the
+`submit()` substitution recorded in `Testing.md`, it would draw a wrong
+picture rather than fail. **OpenGL is absent**, because it cannot come
+up headless on Windows at all, so the incumbent is exactly the backend
+this cannot measure. And a windowed harness is what closing both gaps
+would need.
+
+**Route D takes a Qt PRIVATE dependency, on every platform.**
+`QRhiWidget` is public QtWidgets, but the types its `rhi()` and
+`colorTexture()` hand back are not: `QRhi`, `QRhiTexture` and the
+native-handle structs live under the versioned private path
+(`include/qt6/QtGui/<ver>/QtGui/rhi/`) and need `Qt6::GuiPrivate` to
+link. `qrhi.h` states the terms itself -- "part of the RHI API, with
+limited compatibility guarantees ... may make your code source and
+binary incompatible with future versions of Qt". It is not a macOS
+detail: `QRhiVulkanNativeHandles` and `QRhiD3D12NativeHandles` sit in
+the same `qrhi_platform.h` as the Metal one, so every backend takes it.
+
+**This tree links no Qt private module today** -- no `GuiPrivate`,
+`CorePrivate` or `WidgetsPrivate` anywhere in `src/Gui/CMakeLists.txt`
+or `cMake/`. Route D would be the first, in a tree that deliberately
+tracks upstream's Qt and already spans two minors across boxes (6.11.1
+and 6.11.2). The mitigation worth planning for, which bounds the damage
+rather than removing it: confine the private includes to a single
+translation unit behind an abstraction, so a Qt minor breaks one file
+rather than the renderer.
+
+The macOS side accepted this dependency, and the reasoning turned on
+DISTRIBUTION SHAPE rather than on the API: we own the feedstocks and
+ship a bundle image, and an image carries the Qt it was built against,
+which makes the ABI break structurally impossible for the shipped
+artifact rather than merely mitigated. That reasoning does not cover
+every artifact we publish. A conda package installed into somebody
+else's environment inherits `qt6-main`'s loose `>=6.11.1,<7.0a0`
+unless the feedstock says otherwise -- so if Route D lands, the
+`freecad-rt-feedstock` recipe needs a Qt pin tight enough to match the
+RHI headers it was built against. Recorded rather than done: the
+feedstock clones are not on the Windows box.
+
+Two further constraints, cheap to state and expensive to discover late:
+
+- **Coin.** A `QRhiWidget` viewport has no GL context at all, so Coin
+  cannot traverse anywhere -- there is nothing to composite over the
+  backend frame with. Note this is not a matter of inverting the
+  composite: on-screen is ALREADY backend-first, `renderScene()` asks
+  the backend for the frame and Coin traverses over it, and
+  `CoinRetirement.md` 88-110 records `renderToFramebuffer()` being
+  changed to match. Everything Coin still draws must therefore be gone
+  or moved to a feed BEFORE the viewport can change, which is strictly
+  harder than reordering. Nine overlay feeds already exist
+  (`View3DInventorViewer.cpp` 615-624) and `canSkipInternal()` already
+  skips the fixed-function scene pass; whether those cover everything
+  still on screen is what gates the viewport.
+
+  Half of that is now measured (macOS box, `FC_BGFX_METAL=1`, cache 3,
+  1400x900, ~900 frames, control `FC_RENDERER_PARALLEL_GL=1`, which
+  disables the early return at `SoFCRenderer.cpp` 2866-2873). The skip
+  works, and the residual traversal is FIXED overhead rather than a walk
+  of the scene graph: 0.54 ms/frame at 192 `Part::Box` solids and 0.56
+  at 768, against 2.24 and 5.74 with the internal pass forced on. Four
+  times the geometry moves the residual 0.02 ms while the control column
+  nearly triples, which is what makes the flat column a measurement and
+  not a dead probe. So the warning above that bracket -- that a large
+  share of the frame would mean it is walking the scene graph for no
+  pixels -- does not describe cache mode 3.
+
+  **That does not answer the gating question, and `FrameOutside::Coin`
+  cannot.** Under a `QRhiWidget` viewport what matters is whether the
+  residual traversal EMITS GL, not what it spends: a traversal costing
+  nothing that makes one GL call is fatal, one costing 0.55 ms that
+  draws nothing is harmless, and milliseconds cannot separate them. The
+  open work is COUNTING GL emission inside that bracket.
+
+  **That count has now been run, and for the scene class measured the
+  gate is open: the residual traversal emits ZERO per-frame geometry.**
+  Method (macOS box, ~870 frames, camera rotating, 1400x900): a
+  `DYLD_INSERT_LIBRARIES` shim interposing the GL drawing entry points
+  and counting them. It works there for a reason that does NOT transfer
+  to a GL backend -- on a Metal session every GL call left in the
+  process belongs to Coin or Qt, so process-wide totals are already
+  attributed. On a GL backend bgfx's own draws are in the totals, so the
+  equivalent here needs counters scoped to the bracket instead.
+
+  With the skip active, `glDrawElements` totals exactly 3 per object and
+  does not grow with frame count -- scene construction, not drawing --
+  and `glBegin`, `glCallList`, `glDrawPixels` and `glBitmap` are flat
+  zero. The positive control (`FC_RENDERER_PARALLEL_GL`, 192 solids)
+  takes `glDrawElements` to 611/frame and `glBegin` to 45/frame and
+  lights up the `glDrawPixels`/`glBitmap` paths, so the counter does see
+  emission when there is any. What remains is ~3.2 `glDrawArrays` and
+  ~2.1 `glClear` per frame, invariant across an empty document, 768
+  solids, and the control -- a count independent of scene content AND of
+  whether Coin draws at all is not Coin's scene drawing, and
+  `QOpenGLWidget` compositing its FBO is the candidate, work that does
+  not survive into a `QRhiWidget` viewport anyway. That attribution is
+  INFERENCE, not proof; the stronger version needs counters inside the
+  `FrameOutside::Coin` span rather than process-wide totals.
+
+  Scope, and it is the real limit: one scene class (`Part::Box` solids),
+  no workbench-specific graph, no selection highlight, no section
+  planes, shadows or hidden-line, dpr 1. Those are exactly the cases
+  that would introduce chrome the nine feeds must absorb. "The gate is
+  open" means open for this scene class, not proven in general.
+- **Ordering, and it is already solved.** `bgfx::init` happens once per
+  process -- first backend asked for wins, the hazard named at
+  `BGFXRendererP.h` 1826-1832 -- so the device must exist before the
+  FIRST 3D view, or every later view is stuck with whatever bgfx made
+  for itself. That requirement is already met architecturally:
+  `Application.cpp` around 3008 brings the backend up under the splash
+  screen when render cache is 3, before any view exists, using the
+  hidden 1x1 `GLSurfaceWarmup` widget `MainWindow` constructs and keeps
+  for the window's lifetime (`MainWindow.cpp` 464-469), and it seeds
+  `setMaxViewIds` there for the same startup-option reason. So Route D
+  does not need a new startup ordering; it needs the warm-up to hand
+  over a different thing -- an RHI analogue of that widget, and a
+  `warmup()`/`prepare()` that accepts a QRhi device rather than a
+  `QOpenGLWidget`. One more warm-up surface, not a startup redesign.
+
 ## 8. Known limitations / future work
 
 - Stock passes keep stock programs: a material-stage override does not
