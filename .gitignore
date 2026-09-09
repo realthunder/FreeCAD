@@ -4,6 +4,12 @@
 !/.clang-format
 !/.git-blame-ignore-revs
 !/.gitattributes
+# The blanket `.*` above hides .claude/ too. Keep the Claude Code
+# project config tracked: .claude/hooks/ninja-guard.sh refuses a second
+# ninja in a build directory that already has one, which has cost this
+# project a from-scratch rebuild once and a corrupted .ninja_log again.
+# It is only useful if it travels with the repo to the other boxes.
+!/.claude/
 *.DS_Store
 *.pyc
 *.obj

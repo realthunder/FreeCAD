@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(*ninja*)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/ninja-guard.sh\"",
+            "timeout": 20,
+            "statusMessage": "Checking for a running ninja build"
+          }
+        ]
+      }
+    ]
+  }
+}
