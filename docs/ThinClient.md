@@ -827,6 +827,59 @@ and that deleted-object slot. `tests/gui/selection-room-panels.py` is the deskto
 oracle: a real selection reaching a real tree view and property editor, which is what
 stage 3 will re-read to say that a mirror's picks do **not** land there.
 
+**The mirror's own instance landed 2026-09-09**, which is what stage 4 had left. A
+`Gui::MirrorViewer` owns a `SelectionSingleton` and answers it from
+`ViewerContext::selectionInstance()`; a desktop view answers null, meaning the room. The
+guard is not opened by hand anywhere: **`Gui::ViewerScope` carries the selection with the
+view**, so the two stacks can never be out of step -- an event handled in one client's
+view and selecting in another's is the defect this shape exists to make impossible -- and
+every existing call site inherits it. On the desktop no scope is ever opened, so nothing
+about selection moves there.
+
+**Which picks are the mirror's, as built.** An `'E'` event replayed through a mirror is
+always handled in that mirror's selection: that covers the preselect the unified
+selection root resolves, which 8.2a says is the client's business and not the room's, and
+every pick an edit mode makes out of a replayed drag. A `'P'`/`'Q'` pick is the room's,
+*unless* that mirror is the view the document's edit session is running in -- which is
+"an in-edit pick is the mirror's own" written as a condition. So a click from a client
+that is merely looking still commits into the room, as 8.2a rules, and a click from the
+client that is editing does not reach the tree, the property panel, or any other viewer.
+
+Entering and leaving an edit are the two transitions where that line had to be drawn
+deliberately, and the answer is not the same on both sides of it:
+
+- An edit mode clears the selection as it starts, as a convenience to a desktop user.
+  That convenience belongs to the **room** -- what stops being highlighted is an object
+  every viewer can see -- so `setEditOp` clears the room itself, and then enters the edit
+  inside the scope. Left to the edit mode inside the scope it would have cleared an
+  instance that was empty anyway, and left the sketch green in everybody's scene for the
+  whole session.
+- Leaving is inside the scope on both paths (the `resetEdit` op, and `~MirrorViewer` for
+  a client that drops mid-edit), so the sketcher's parting "select the sketch I just
+  left" is done to that client's instance. The mirror then **drops it**: it clears its own
+  selection when the document says the session is over, which `Gui::Document::_resetEdit`
+  signals after `finishEditing`. No client's selection outlives the session it belonged
+  to.
+
+**The exception the design had not seen: an edit mode's own observer.**
+`ViewProviderSketch` is a `SelectionObserver`, and that observer is what colours the edit
+geometry. Pinned to the room it would have heard nothing the browser picked, so the
+picks would land correctly and nothing would turn green -- silently, since the desktop
+never exercises it. So `SelectionObserver::attachSelectionToCurrent()` is the explicit
+opt-out: it attaches to whichever instance is current at that moment, which is the room
+on the desktop and the client's inside a served `setEdit`, and it *remembers* that
+instance rather than following later scopes, because the session outlives any one
+replayed event. `attachSelection()` is unchanged and still means the room, so every
+other observer in the tree is untouched and the stage-2 rule stands where it was right.
+
+**What a mirror's selection does not do is repaint the served graph.** The graph is one,
+shared by every client, so a per-client highlight is not expressible in it: the room's
+observer feeds it and the mirror's instance has none. That is the honest reading of "a
+mirror's instance notifies only its own client" while the scene is shared -- in an edit
+the client sees the edit mode's own geometry, which the sketcher colours itself through
+the observer above, and a view-mode click still highlights through the room exactly as
+it did at stage 3.
+
 ### 8.5 The wire
 
 Both directions ride the existing `/scene` socket, so ordering is free and nothing new is
@@ -1086,6 +1139,15 @@ Each step is a standalone landing with the desktop as its regression oracle.
    view provider's child count and runs a drawing tool to watch the view's cursor change.
    The reading that discriminates the binding is that the served document has **zero** 3D
    views throughout: without the scope there would be one.
+
+   **The mirror's own selection landed on top of this, 2026-09-09**, which is what the
+   step had left over. A mirror owns a `SelectionSingleton`, `ViewerScope` carries it with
+   the view, an `'E'` event and an in-edit pick select in it, and no client's selection
+   outlives its session. The rule, and the two things it turned up -- the clear on
+   entering an edit belonging to the room, and an edit mode's own observer having to
+   follow the session rather than the room -- are at the end of 8.4. The probe grew the
+   reading that discriminates it: the same click, sent in view mode and again while
+   editing, reaching the room and then not reaching it.
 5. **On-view parameters in the DOM** and whatever the widget residue of 8.3 turned up.
 
 ### 8.10 Open questions
@@ -1107,14 +1169,19 @@ Each step is a standalone landing with the desktop as its regression oracle.
 - The mirror answers `logicalDotsPerInchX()` with 96, the CSS reference, because it has no
   screen to ask and its client is a browser. Whether the edit modes that size things in
   millimetres want that or the client's real density is a stage 4 question.
-- Stage 4 left the mirror still committing its picks into the room, because nothing yet
-  opens a `SelectionScope` for it. 8.4 says an in-edit pick is the mirror's own, and the
-  guard has been ready since stage 2; what is missing is the instance, and the decision
-  about which picks count as in-edit. That is the first thing to do on top of what landed.
+- ~~Stage 4 left the mirror still committing its picks into the room~~ Done 2026-09-09;
+  the instance, the rule for which picks are in-edit, and the one place the design had not
+  seen -- an edit mode's own observer -- are at the end of 8.4.
+- **A scope is a dynamic extent, and an edit mode does not do everything inside one.**
+  Anything an edit mode defers -- a queued call, a timer, a task panel answering later --
+  runs with no scope open and so reaches the room. Nothing in a served sketch session is
+  known to do it, and an edit mode's own observer is already excepted (8.4), but the
+  boundary is real and is where the next surprise of this kind will come from.
 - `SoFCUnifiedSelection::handleEvent` reads `QApplication::mouseButtons()` twice, and the
   served root is shared by every client. It is reached only from a mirror's replayed
   events, so it is a leak of the same class as the four 8.3 closed rather than a live
-  defect, and `ViewerContext::mouseButtons()` is the answer it wants.
+  defect, and `ViewerContext::mouseButtons()` is the answer it wants. (Its selection half
+  is no longer a leak: a replayed event selects in the mirror's instance.)
 - `MirrorViewer::setSelectionEnabled` records a flag; the desktop's toggles `selectionRole`
   on its own selection root. A mirror's root is the shared served one, so the honest version
   of that toggle is per document rather than per client -- consistent with one editor per
