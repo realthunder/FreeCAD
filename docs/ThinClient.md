@@ -884,6 +884,25 @@ therefore absolute: **a server echo may never trigger `setScene` or a warmup.** 
 edit mode there is no prediction at first -- the solver is on the server -- and the mirror's
 deltas are simply applied.
 
+**What the prediction costs, and it is not a rendering cost: the browser cannot witness its
+own round trip.** As built, the client draws its highlight from its own raycast and
+`applySnapshot` then *drops* the streamed selection feed and re-applies the local one; the
+DOM layer's `fc:selection` event is fed from the same local list. So every surface a person
+looking at the browser can see -- the highlight, the inspector panel -- shows what the
+client decided, not what the server did. A round trip that resolved to the wrong element,
+or to nothing at all, looks exactly like one that worked.
+
+That makes the browser the one instrument that cannot fail here, and a plausible picture is
+worse than a blank one: a blank result invites suspicion and a correct-looking one does
+not. Anything verifying this loop must read the **server's** selection --
+`Gui::Selection().getSelectionEx()` in the serving process, which is what
+`tests/gui/serve-mirror-pick.py` asserts -- and never the browser's display. The concrete
+thing still riding on that: the viewer's own `cameraQuaternion`, which turns its eye/at/up
+frame into the orientation the `'C'` frame carries, has no test. The mirror's half of that
+contract does (a rotated camera round-trips in `tests/src/Gui/MirrorViewer.cpp`), but a
+transposed or conjugated quaternion on the client would leave the browser looking perfect
+while the server picked somewhere else entirely.
+
 ### 8.7 The Qt-only chrome
 
 Two surfaces of the sketcher are Qt widgets outside the scene and so outside the feed: the
