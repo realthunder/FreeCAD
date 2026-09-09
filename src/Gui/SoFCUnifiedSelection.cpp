@@ -691,6 +691,26 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
     std::vector<PickedInfo> ret;
     Filter filter;
 
+    // Everything below picks through a view: the on-top path starts at
+    // the viewer's root path, the late-pick paths come off its render
+    // action, and the fallback applies the ray to the graph the viewer
+    // holds. A view-less root -- the headless serve source's, whose one
+    // graph is shared by every connected client (SceneServeSource.cpp) --
+    // has none of those, and its clients do not pick here anyway: a
+    // browser's click arrives as a ray and is resolved against that
+    // client's own mirror (docs/ThinClient.md sec 8.3), which is the only
+    // place a per-client camera and pick radius exist.
+    //
+    // So this answers "nothing picked", which is what setHighlight and
+    // setSelection below already answer when they find no viewer. It has
+    // to be said HERE rather than left to them, because the way it used
+    // to be said was a null dereference: the preselect that a replayed
+    // pointer move triggers (handleEvent -> onPreselectTimer) walks
+    // straight into pcViewer->getRootPath(), and a browser hovering over
+    // a served document was all it took to reach it.
+    if (!pcViewer)
+        return ret;
+
     FC_TIME_INIT(t);
 
     if (pickBackFace && pcViewer->hasOnTopObject())
