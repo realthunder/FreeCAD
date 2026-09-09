@@ -1601,3 +1601,180 @@ scene, try the thing and react to what happens. And **a fallback that changes wh
 built must change what the rebuild test compares against, or it re-fires for ever** -- the
 symptom is a correct picture at a fraction of the frame rate, which is far easier to
 rationalise than a wrong one.
+
+### 8.11 The shared session (ruled 2026-09-09)
+
+Stages 1-5 built toward a model this section retires, so it is stated first as a
+ruling and then as what it changes. **A served document is one session with N views**,
+the object-based form of desktop sharing: whatever shows on the server shows on every
+client, a client can start a sketch edit and the desktop user sees it and draws in it,
+and the reverse. Everything that is *state* is shared and streamed -- the document, the
+selection, the edit session and its tool state, the task panel, the toolbars, undo.
+Everything that is *a view* stays the client's -- camera, viewport, pick radius, hover in
+view mode, and whether to draw the chrome at all. That is the frequency-against-authority
+line of 8.2a applied to chrome, and it is also, exactly, what the data model already is:
+one document, one undo stack, one edit slot per document, one `Gui::Control`. Every
+"limitation" the per-client design was working around becomes the definition of the
+session.
+
+The reason is not that true multi-user editing is undesirable. It is that only one CAD
+system ships it (Onshape), because the parts that make it hard are not view plumbing but
+the document: per-user undo over one history, and merging two sessions' writes into one
+sketch whose geometry is written back as whole arrays. 8.12 lists every place that would
+have to become per client, so the scope-down leaves the road visible; none of it is
+thrown away, and the two seams where it would fork are named below.
+
+**What it changes in what was built.**
+
+- **The mirror's own selection (8.4, end) reverses.** A browser's in-edit picks and hover
+  drive the desktop's panels and colour the sketch for everyone; that is the sharing.
+  `MirrorViewer::selectionInstance()` answers null, which is the room. The selection
+  stack, `ViewerScope`'s push and `attachSelectionToCurrent()` stay as they are -- dormant
+  infrastructure, the first expansion seam.
+- **The edit binds to the document, not to a view.** As built, a desktop sketch edit is
+  invisible to browsers and a browser's is invisible to the desktop: `setupEditingRoot`
+  *moves* the sketch's children into one view's editing root, which the desktop hangs
+  under its aux root (deliberately outside the render-cache feed) and a mirror hangs
+  inside the served graph. There is one editing root now, referenced by every view of the
+  document -- a Coin node takes several parents -- and every view, desktop windows and
+  mirrors alike, gets `setEditingViewProvider`, so events from any of them reach the one
+  tool state machine. The two parents have opposite capture policies today, which is the
+  piece to spike before the rest.
+- **`ViewerContext`, `MirrorViewer` and `ViewerScope` stay.** An event still needs its
+  own camera for `getPointOnRay`, so the scope still names the view per replayed event.
+  `ViewProviderSketch`'s single `edit->viewer` becomes "the current view, or the one that
+  started the edit" at the sites that use it for camera math.
+- **Every client is told about a session, and every client's left button and keys are
+  `'E'` frames while the document is in edit**, not only the initiator's. TempoVis hides
+  stay document state, which under sharing is right. Undo and redo are two control ops on
+  `Gui::Document`.
+- **`Gui::Control`'s exclusivity is a feature.** One task dialog, the desktop's real one,
+  mirrored -- which is where the widget layer of `docs/Sandbox.md` (branch SecurePython)
+  fits: it assumes one producer and one Control, which is now true. The widget layer
+  mirrors *models*, not native widgets, so a panel travels once it is ported onto them; the
+  toolbars do not need the port, because their state -- name, icon, text, enabled, checked,
+  visible -- is the command manager's already.
+- **Modal dialogs stop being a gate.** `EditDatumDialog`'s `exec()` shows on the desktop
+  and on every client once the dialog is a streamed model, and whoever answers it answers
+  it. A nested `exec()` loop still delivers queued events, so replay should keep flowing
+  under it; that is to be verified, not assumed. Once dialogs mirror, the `command`
+  allowlist of 8.7 retires.
+- **Two mice, one state machine.** Desktop sharing has the same problem and solves it
+  socially. Here it gets one rule in one place: while a gesture is in progress from view
+  A -- a button held, a handler mid-sequence -- input from view B is dropped. That
+  arbitration point is the second expansion seam: per-client sessions would fork there.
+  Each mirror already holds its client's pointer, so presence cursors are cheap if the
+  sharing wants to be legible.
+
+**What the client chooses.** The streamed toolbars and panel are rendered as DOM or not
+at all, per client; a phone's default is off. The tool rail of section 5 is the client's
+*own* chrome over the same commands, and the two coexist.
+
+**Order.** (1) The shared edit visible in every view -- the root, `setEditingViewProvider`
+for all views, `'E'` from every client, mirror selection = room; the oracle is the desktop
+entering a sketch and a browser drawing in it, then the browser entering and the desktop's
+panel appearing and the desktop drawing in it. (2) Gesture arbitration; undo/redo ops.
+(3) The External/CarbonCopy pick from a browser (the "in-edit click" of 8.10, simpler now:
+it commits to the room and may paint the shared graph). (4) SecurePython merged; toolbars
+streamed; client show/hide. (5) Modal dialogs mirrored; the allowlist retired. (6) The task
+panel ported to models, tool widget first -- it is the only edit logic in the panel and a
+plain form -- and the constraint and element lists last, as `docs/Sandbox.md` 7.12
+already schedules them.
+
+### 8.12 What per client would cost -- the multi-user roadmap
+
+Everything below is what 8.11 shares, listed from the view outward to the data, with what
+stands and what "per client" would need. Counts are from the tree on 2026-09-09.
+
+**A. The view -- per client already (stages 1-5).** Camera, viewport, pixel ratio, pick
+radius; the event root and callback per mirror; the `ViewerContext` rows; `ViewerScope`
+per replayed event; `mouseButtons()`; the editing root's placement; the on-view parameter
+widgets and their focus. The seam everything else hangs on.
+
+**B. Input and tool state -- one state machine.** `ViewProviderSketch::edit`
+(`EditData`: modes, preselect indices, drag state, snap manager, rubber band, handler,
+solver, on-view parameters, double-click memory) and its 24 `edit->viewer` sites. Per
+client: an `EditData` per session keyed by view, the handler and `DrawSketchKeyboardManager`
+per session, forking at the arbitration point of 8.11. Still read as desktop globals inside
+the state machine: `QApplication::doubleClickInterval()`, `queryKeyboardModifiers()`
+(`ViewProviderSketch.cpp`, `generateContextMenu`), `QApplication::mouseButtons()` in
+`SoFCUnifiedSelection::handleEvent` -- 30 `QApplication::` uses across the sketcher and the
+selection node; per client the event carries them. Twelve `activeDocument()` /
+`activeWindow()` reaches remain in Sketcher Gui, `DrawSketchHandler::addCursorTail` among
+them.
+
+**C. Selection -- the room, with the per-client infrastructure built.** The
+`SelectionSingleton` stack, `ViewerScope`'s push, `attachSelectionToCurrent()`, gates per
+instance: dormant. The 2123 `Selection()` sites never need touching. Not per client: the
+`SoFCUnifiedSelection` node's own state on the shared served root (`preselTimer`,
+`preselPos`, `pickBackFace`, `currentHighlight`) and the render cache manager's highlight
+and on-top paths -- one shared graph cannot carry N highlights. Per client: selection
+streamed per client and painted by the client, as view-mode hover already is, with the
+server painting nothing for a mirror. `SelectionMirror` feeds the served root from the
+room; the observers pinned to the room (the tree, the property editor, 18 `Attach` sites)
+would need a session-following class, which `attachSelectionToCurrent` already is.
+
+**D. The edit session -- one per document.** `Gui::Document::_editViewProvider` (47
+sites), `getInEdit()` (27 caller files), `_editingTransform`, `signalInEdit` /
+`signalResetEdit`, `ViewProvider::setEditViewer` (one viewer), the editing root's node.
+Per client: a view -> session map, an object-level lock, `getInEdit()` answering the
+current view's, one editing root per session. `ViewerContext::editViewProvider` is the
+seam. `Gui::Document::resetEdit` opening its own scope is the rule every other deferred
+path -- timers, queued calls, panels answering later -- would have to follow.
+
+**E. Chrome -- process-global.** `Gui::Control()`: one `ActiveDialog`, 171 `showDialog`
+sites, task dialogs owning selection observers, gates and Coin callbacks, and `showDialog`
+disabling `App::AutoTransaction` globally; per client, a Control per view, which neither
+fork has. `ToolBarManager::setState` and `tv.activateWorkbench`: one active workbench, and
+`Command::isActive()` reading `activeDocument()`, `Control().activeDialog()` and
+`Selection()`; per client, `isActive` evaluated under the client's scope. The widget
+layer's singleton store, one producer, no focus arbitration between producers, modal
+dialogs as nested `exec()`; per client, a store keyed per client, `open()` plus a callback
+carrying a client tag, a focus owner per client. TempoVis and `Visibility`: document
+state, `ViewProvider::isShow()` global; per client, per-view visibility overrides, which
+exist today only as the browser's local hide. The main window's status bar and dock
+registry, `WaitCursor`, `Base::Console` reports; per client, routed to the session that
+caused them.
+
+**F. Application context and scripting.** `Gui::Application::activeDocument()` (scoped
+through `ViewerContext::current()` already), `MainWindow::activeWindow()`, and the Python
+side's `Gui.ActiveDocument` / `App.ActiveDocument` inside command strings -- the
+sketcher's own TempoVis script says `App.ActiveDocument`. `Gui::Command::doCommand`
+records into one Python console and one macro recorder. Per client: "active" scoped per
+session, or commands that never say active; a transcript per session.
+
+**G. Transactions and undo -- one linear stack per document.** `App::AutoTransaction`
+(136 sites) is global nesting state. Per client: per-session undo, Onshape's model, which
+means transactions tagged by session and *selective* undo -- an operational-transform
+problem on the document, not bookkeeping. With H, one of the two items that are hard
+rather than wide.
+
+**H. The data -- whole-value write-back.** `SketchObject::Geometry` and `Constraints` are
+written as whole arrays, so two solvers on one sketch lose updates; GeoIds are positional,
+so one session's insert renumbers the other's references. Per client: element-level merge
+with stable identities -- the element map is the precedent for shapes, and sketches have
+nothing like it. Same class: `Placement`, expressions, every `PropertyLists` two sessions
+can edit. Recompute is serialized on the GUI thread, correctly, but one long recompute
+stalls every client -- the out-of-process OCCT goal of `ComputeBoundaries.md` becomes a
+multi-user requirement rather than a performance nicety.
+
+**I. Per-user presentation and preferences.** `ParameterGrp` reads inside the edit mode
+(41 in `ViewProviderSketch.cpp`, 2 in `DrawSketchHandler.cpp`: auto-constraints, grid,
+colours, `SketchAutoTransparentPick`) and the `ViewParams` globals (`PreSelectionDelay`,
+`PickBackFaceDelay`, `highlightPick`); per client, a preference context per session.
+Units schema (`Base::UnitsApi`, global; 18 Sketcher Gui files format through it or
+`QuantitySpinBox`), locale and decimal separator, language (the widget layer writes
+translated strings into the bag at bind time, one language per bind); per client, units,
+locale and language at the formatting boundary. A client in inches beside one in
+millimetres is the everyday case.
+
+**J. The serving tier.** `mirrorFor` has one reader and the lazy camera policy of 8.10b
+assumes it; `SceneServeSource` publishes one delta stream for all. Per client: deltas per
+client for per-client state (highlight, hides, a session's edit geometry). Connection
+identity and grants are per connection already, and `announceEdit` targets one.
+
+**Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
+wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a
+context read under a scope; G and H are why only Onshape does this. The shared session
+needs none of B-I to change, which is what makes it the right first product, and building
+it with the seams named means none of it is thrown away.
