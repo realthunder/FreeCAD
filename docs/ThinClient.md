@@ -892,16 +892,25 @@ looking at the browser can see -- the highlight, the inspector panel -- shows wh
 client decided, not what the server did. A round trip that resolved to the wrong element,
 or to nothing at all, looks exactly like one that worked.
 
-That makes the browser the one instrument that cannot fail here, and a plausible picture is
-worse than a blank one: a blank result invites suspicion and a correct-looking one does
-not. Anything verifying this loop must read the **server's** selection --
+And it is worth being exact about how that fails, because the client is not merely failing
+to show the server's answer -- it **receives that answer and overwrites it** with its own.
+So the browser is not a weak signal to be weighed against others. It is a confident wrong
+one, and the more carefully someone looks at it the more sure they will be.
+
+Verify this loop by reading the **server's** selection --
 `Gui::Selection().getSelectionEx()` in the serving process, which is what
-`tests/gui/serve-mirror-pick.py` asserts -- and never the browser's display. The concrete
-thing still riding on that: the viewer's own `cameraQuaternion`, which turns its eye/at/up
-frame into the orientation the `'C'` frame carries, has no test. The mirror's half of that
-contract does (a rotated camera round-trips in `tests/src/Gui/MirrorViewer.cpp`), but a
-transposed or conjugated quaternion on the client would leave the browser looking perfect
-while the server picked somewhere else entirely.
+`tests/gui/serve-mirror-pick.py` asserts -- because that is the only place the round trip's
+answer survives; never the browser's display, which is the client's answer wearing the
+server's clothes.
+
+The concrete thing riding on that is the viewer's own `cameraQuaternion`, which turns its
+eye/at/up frame into the orientation the `'C'` frame carries, and which has no test. Note
+what does *not* cover it: a rotated camera round-trips in
+`tests/src/Gui/MirrorViewer.cpp`, but that is the mirror's half, from a rotation the test
+states rather than one the client computed. Marking the client's conversion by the picture
+the client then draws from it is marking it by the thing it feeds. A transposed or
+conjugated quaternion would leave the browser looking perfect while the server picked
+somewhere else entirely.
 
 ### 8.7 The Qt-only chrome
 
