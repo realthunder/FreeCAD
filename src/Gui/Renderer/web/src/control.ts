@@ -21,6 +21,17 @@ declare global {
     /// Switch to another served document (main.cpp fcviewer_switch_doc,
     /// docs/MultiDocServe.md §6).
     fcviewerSwitchDoc?: (name: string) => void;
+    /// Forward one keystroke to the edit session on the same wire the
+    /// canvas uses (main.cpp fcviewer_send_key, docs/ThinClient.md sec
+    /// 8.7). An on-view entry box holds the DOM focus while it is being
+    /// typed into, so the canvas sees none of its keys; what each key
+    /// MEANS is decided on the server, which is why this is a pipe and
+    /// not a handler. Returns false when there is no session to send to.
+    fcviewerSendKey?: (down: boolean, key: string, text: string,
+                       mods: number) => boolean;
+    /// The on-view parameters the server last stated, mirrored for a
+    /// panel that mounts after the push ('fc:onview' carries the same).
+    fcviewerOnView?: unknown[];
     /// Name this connection for the host's sharing roster (main.cpp
     /// fcviewer_set_client, docs/MultiDocServe.md §6); persisted in
     /// localStorage by the viewer side.

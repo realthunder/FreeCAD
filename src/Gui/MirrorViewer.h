@@ -23,7 +23,10 @@
 #ifndef GUI_MIRRORVIEWER_H
 #define GUI_MIRRORVIEWER_H
 
+#include <functional>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "ViewerContext.h"
 
@@ -95,8 +98,6 @@ public:
 
     /// Adopt what the client last stated.
     void setCamera(const Camera& camera);
-    /// This mirror's camera node, null until a client has stated one.
-    SoCamera* getCamera() const;
     /** Whether a client has stated a camera yet.
      *
      * Until it has, the mirror has no framing and nothing may be resolved
@@ -152,6 +153,10 @@ public:
         /// (SoKeyboardEvent::Key) for the key kinds; unused otherwise.
         int code = 0;
         /// Wheel movement; 120 units is one notch, as everywhere else.
+        /// For the key kinds this slot carries the printable character the
+        /// key produced instead (a Unicode code point, 0 for none) -- a
+        /// wheel has no meaning there, and the case a keysym folds away is
+        /// exactly what an entry box needs to insert.
         int delta = 0;
         bool shift = false;
         bool ctrl = false;
@@ -178,6 +183,48 @@ public:
      * wrong.
      */
     bool handleInput(const Input& input);
+
+    /** @name On-view parameters (docs/ThinClient.md section 8.7)
+     *
+     * The entry boxes an edit mode has open here. Built unshown, driven by
+     * replayed keys, and streamed to the client to be drawn -- so this is
+     * the whole of what a client is told, and every decision about the text
+     * inside one is taken on this side.
+     */
+    //@{
+    struct OnViewParam
+    {
+        /// Where the box belongs, in world coordinates: the client projects
+        /// it with the camera of the frame it is drawing, which is the only
+        /// camera that is never behind the picture (section 8.7).
+        SbVec3f anchor {0, 0, 0};
+        /// The text a desktop user would read in the box, units included.
+        std::string text;
+        /// What is selected in it, so a client shows the same highlight.
+        int selStart = 0;
+        int selLength = 0;
+        /// Whether this is the box taking the keys.
+        bool focus = false;
+        /// Whether the value has been fixed by the user rather than driven
+        /// by the pointer -- the desktop says it in the label colour.
+        bool set = false;
+    };
+    std::vector<OnViewParam> onViewParameters() const;
+    /// Told when any of that changes, so the connection can restate it.
+    void setOnViewParametersCallback(std::function<void()> callback);
+    /** Give one box the keys, at the client's asking.
+     *
+     * The client asks by index into the set above; a stale index from a
+     * client whose set has since changed is refused rather than applied to
+     * whichever box now sits there.
+     */
+    bool focusOnViewParameter(int index);
+    void addOnViewParameter(EditableDatumLabel* label) override;
+    void removeOnViewParameter(EditableDatumLabel* label) override;
+    void onViewParameterFocused(EditableDatumLabel* label) override;
+    void onViewParametersChanged() override;
+    bool sendKeyEvent(QKeyEvent* event) override;
+    //@}
 
     /** @name ViewerContext -- scene, camera and viewport */
     //@{
@@ -268,6 +315,10 @@ private:
     /// Deliver one built event through this mirror's event manager, with
     /// this view current for the extent of the call.
     bool replay(SoEvent& event);
+    /// The same, for a key frame: built into the Coin event it describes.
+    bool replayKey(const Input& input);
+    /// Hand a key frame to the focused entry box as the Qt event it is.
+    bool routeKeyToParameter(const Input& input);
 
     class Private;
     std::unique_ptr<Private> pimpl;

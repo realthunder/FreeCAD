@@ -39,6 +39,10 @@
 #include <QPointer>
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <set>
+#include <locale>
+#include <sstream>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -76,6 +80,51 @@ using namespace Gui;
 
 namespace
 {
+/// A float as JSON, with a finite value guaranteed.
+///
+/// A NaN or an infinity prints as a bare token no JSON parser accepts, so
+/// the message a client is about to be sent would not parse at all -- one
+/// bad number costing the whole frame. Zero instead, which is wrong in a
+/// way the client can draw.
+std::string floatJson(float value)
+{
+    if (!std::isfinite(value))
+        return "0";
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out << std::setprecision(7) << value;
+    return out.str();
+}
+
+/// Append the text to the JSON buffer as a quoted JSON string.
+///
+/// The text here is whatever a user typed into an entry box, so it is not
+/// assumed to be free of quotes, backslashes or control characters.
+void jsonQuoted(std::string &json, const std::string &text)
+{
+    json += '"';
+    for (unsigned char ch : text) {
+        switch (ch) {
+            case '"': json += "\\\""; break;
+            case '\\': json += "\\\\"; break;
+            case '\n': json += "\\n"; break;
+            case '\r': json += "\\r"; break;
+            case '\t': json += "\\t"; break;
+            default:
+                if (ch < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", ch);
+                    json += buf;
+                }
+                else {
+                    json += char(ch);
+                }
+                break;
+        }
+    }
+    json += '"';
+}
+
 /// The viewport a synthesized camera is built for. Only the framing a
 /// joining viewer adopts before it frames the scene itself, so this has
 /// to be sane rather than right.
@@ -274,6 +323,21 @@ public:
         if (!mirror) {
             mirror = std::make_unique<MirrorViewer>(
                 doc, root, root->getRenderManager(), renderer.get());
+            // The entry boxes an edit mode opens in this view have no
+            // widget to draw themselves on, so they are restated to the
+            // client that owns the view whenever they change
+            // (docs/ThinClient.md sec 8.7).
+            const uint64_t client = frame.client;
+            mirror->setOnViewParametersCallback([this, client]() {
+                // Coalesced onto the publish timer rather than sent here:
+                // one replayed pointer move restates the points of every
+                // box in the set, and a tool changing mode rebuilds the
+                // set entirely. The zero-timer is already the point at
+                // which the scene those numbers describe goes out.
+                onViewDirty.insert(client);
+                if (owner)
+                    owner->schedulePublish();
+            });
         }
         MirrorViewer::Camera camera;
         camera.perspective = frame.type != 0;
@@ -384,6 +448,62 @@ public:
             json += "\"";
         }
         json += ",\"doc\":\"" + groupName + "\"}";
+        Render::SceneStreamServer::instance().sendControl(client, json);
+    }
+
+    /** Restate one client's on-view parameters to it (sec 8.7).
+     *
+     * Sent whole rather than as a delta: there are a handful of boxes at
+     * most, the set turns over completely whenever a tool changes mode,
+     * and a client that has just reconnected must be able to draw them
+     * from one message.
+     *
+     * The anchor goes up in WORLD coordinates and the client projects it
+     * with the camera of the frame it is drawing. That is the only camera
+     * that cannot be behind the picture: under the default uplink policy
+     * the server is not told where a client is looking between clicks
+     * (sec 8.10b), so a position computed here would lag every orbit.
+     */
+    /// The clients whose on-view set has moved since the last publish.
+    std::set<uint64_t> onViewDirty;
+    /// The source that owns this, for the coalescing above.
+    SceneServeSource *owner = nullptr;
+
+    void flushOnViewParameters()
+    {
+        if (onViewDirty.empty())
+            return;
+        std::set<uint64_t> dirty;
+        dirty.swap(onViewDirty);
+        for (uint64_t client : dirty)
+            announceOnViewParameters(client);
+    }
+
+    void announceOnViewParameters(uint64_t client)
+    {
+        MirrorViewer *mirror = mirrorFor(client);
+        if (!mirror)
+            return;
+        std::string json = "{\"cmd\":\"onview\",\"doc\":\"" + groupName
+            + "\",\"params\":[";
+        bool first = true;
+        int index = 0;
+        for (const auto &param : mirror->onViewParameters()) {
+            if (!first)
+                json += ',';
+            first = false;
+            json += "{\"i\":" + std::to_string(index++);
+            json += ",\"x\":" + floatJson(param.anchor[0]);
+            json += ",\"y\":" + floatJson(param.anchor[1]);
+            json += ",\"z\":" + floatJson(param.anchor[2]);
+            json += ",\"text\":";
+            jsonQuoted(json, param.text);
+            json += ",\"sel\":[" + std::to_string(param.selStart) + ','
+                + std::to_string(param.selLength) + ']';
+            json += param.focus ? ",\"focus\":true" : ",\"focus\":false";
+            json += param.set ? ",\"set\":true}" : ",\"set\":false}";
+        }
+        json += "]}";
         Render::SceneStreamServer::instance().sendControl(client, json);
     }
 
@@ -805,6 +925,7 @@ SceneServeSource::SceneServeSource(Document *doc)
     : pimpl(new Private)
 {
     pimpl->doc = doc;
+    pimpl->owner = this;
 
     const std::string &type = RenderParams::getType();
     if (type.empty() || type == "Default") {
@@ -1064,6 +1185,11 @@ void SceneServeSource::installHandlers()
     server.setDocumentInfo(pimpl->groupName, label ? label : "");
 }
 
+MirrorViewer *SceneServeSource::mirrorViewerFor(uint64_t client) const
+{
+    return pimpl->mirrorFor(client);
+}
+
 ViewerContext *SceneServeSource::viewerFor(uint64_t client) const
 {
     return pimpl->mirrorFor(client);
@@ -1280,6 +1406,9 @@ void SceneServeSource::schedulePublish()
 void SceneServeSource::onPublishTimeout()
 {
     publishNow();
+    // After the publish, so a client has the geometry these numbers
+    // describe before it is told the numbers (docs/ThinClient.md sec 8.7).
+    pimpl->flushOnViewParameters();
 }
 
 bool SceneServeSource::publishNow()

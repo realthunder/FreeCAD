@@ -7,6 +7,8 @@ import { Inspector } from './inspector';
 import { HudCard } from './hud';
 import { LauncherMenu } from './menu';
 import { LoupeOverlay } from './loupe';
+import { OnViewParams } from './onview';
+import type { OnViewParam, OnViewPlace } from './onview';
 import { SplitOverlay } from './splitview';
 import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
@@ -44,6 +46,22 @@ const [hud, setHud] = createSignal<string | null>(null);
 window.addEventListener('fc:hud', (e: Event) => {
   const d = (e as CustomEvent).detail;
   setHud(typeof d === 'string' ? d : null);
+});
+
+// The entry boxes an edit mode has open (docs/ThinClient.md sec 8.7).
+// Two feeds because they change at different rates: what the boxes SAY
+// arrives when the tool changes it, and where they SIT arrives from the
+// viewer every frame it moves -- projected there, from the world anchor,
+// with the camera of the frame being drawn.
+const [onView, setOnView] = createSignal<OnViewParam[]>([]);
+const [onViewPlaces, setOnViewPlaces] = createSignal<OnViewPlace[]>([]);
+window.addEventListener('fc:onview', (e: Event) => {
+  const d = (e as CustomEvent).detail;
+  setOnView(Array.isArray(d) ? d as OnViewParam[] : []);
+});
+window.addEventListener('fc:onviewlayout', (e: Event) => {
+  const d = (e as CustomEvent).detail;
+  setOnViewPlaces(Array.isArray(d) ? d as OnViewPlace[] : []);
 });
 
 // Where the touch loupe is picking, for the mark drawn over the canvas.
@@ -232,6 +250,7 @@ render(() => (
     <Inspector selection={selection} request={request}
                onCardOpen={setCardOpen} viewOnly={viewOnly} />
     <LoupeOverlay mark={loupe} />
+    <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
     <LauncherMenu
       hidden={() => cardOpen() && window.innerWidth <= NARROW}

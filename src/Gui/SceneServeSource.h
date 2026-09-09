@@ -52,6 +52,7 @@ namespace Gui
 class Document;
 class SoFCUnifiedSelection;
 class ViewerContext;
+class MirrorViewer;
 
 /*!
  * Publishes a document to streaming viewers with no 3D view behind it
@@ -168,6 +169,13 @@ public:
      * thread only.
      */
     ViewerContext *viewerFor(uint64_t client) const;
+
+    /*!
+     * The same view as the mirror it is, for the few things that are the
+     * mirror's own rather than any view's -- its on-view parameter set
+     * (docs/ThinClient.md sec 8.7). GUI thread only.
+     */
+    MirrorViewer *mirrorViewerFor(uint64_t client) const;
 
 private Q_SLOTS:
     void onPublishTimeout();

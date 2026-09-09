@@ -1518,6 +1518,20 @@ QWidget* View3DInventorViewer::getGLWidget() const
     return inherited::getGLWidget();
 }
 
+QWidget* View3DInventorViewer::datumEditorParent() const
+{
+    // The MDI window rather than this widget: an entry box floats over the
+    // canvas, and a child of the canvas would be clipped by it.
+    return parentWidget();
+}
+
+bool View3DInventorViewer::sendKeyEvent(QKeyEvent* event)
+{
+    // Posted to this widget, which is where it would have gone had the
+    // entry box not held the keyboard focus.
+    return QApplication::sendEvent(this, event);
+}
+
 QWidget* View3DInventorViewer::getWidget()
 {
     return inherited::getWidget();
@@ -6701,39 +6715,6 @@ float View3DInventorViewer::getMaxDimension() const {
     return std::max(fHeight, fWidth);
 }
 
-void View3DInventorViewer::getDimensions(float& fHeight, float& fWidth) const
-{
-    SoCamera* camera = getSoRenderManager()->getCamera();
-    if (!camera) {
-        // no camera there
-        return;
-    }
-
-    float aspectRatio = getViewportRegion().getViewportAspectRatio();
-
-    SoType type = camera->getTypeId();
-    if (type.isDerivedFrom(SoOrthographicCamera::getClassTypeId())) {
-        // NOLINTBEGIN
-        fHeight = static_cast<SoOrthographicCamera*>(camera)->height.getValue();
-        fWidth = fHeight;
-        // NOLINTEND
-    }
-    else if (type.isDerivedFrom(SoPerspectiveCamera::getClassTypeId())) {
-        // NOLINTBEGIN
-        float fHeightAngle = static_cast<SoPerspectiveCamera*>(camera)->heightAngle.getValue();
-        fHeight = std::tan(fHeightAngle / 2.0) * 2.0 * camera->focalDistance.getValue();
-        fWidth = fHeight;
-        // NOLINTEND
-    }
-
-    if (aspectRatio > 1.0) {
-        fWidth *= aspectRatio;
-    }
-    else {
-        fHeight *= aspectRatio;
-    }
-}
-
 void View3DInventorViewer::printDimension() const
 {
     float fHeight = -1.0;
@@ -7056,19 +7037,6 @@ SbVec2s View3DInventorViewer::getPointOnViewport(const SbVec3f& pnt) const
     return {xpos, ypos};
 }
 
-QPoint View3DInventorViewer::toQPoint(const SbVec2s& pnt) const
-{
-    const SbViewportRegion& vp = this->getSoRenderManager()->getViewportRegion();
-    const SbVec2s& vps = vp.getViewportSizePixels();
-    int xpos = pnt[0];
-    int ypos = vps[1] - pnt[1] - 1;
-
-    qreal dev_pix_ratio = devicePixelRatio();
-    xpos = int(std::roundf(xpos / dev_pix_ratio));
-    ypos = int(std::roundf(ypos / dev_pix_ratio));
-
-    return {xpos, ypos};
-}
 
 SbVec2s View3DInventorViewer::fromQPoint(const QPoint& pnt) const
 {

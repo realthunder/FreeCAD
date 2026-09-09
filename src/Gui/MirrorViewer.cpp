@@ -23,7 +23,12 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <algorithm>
 #include <cmath>
+
+#include <QEvent>
+#include <QKeyEvent>
+#include <QString>
 
 #include <Inventor/SbLine.h>
 #include <Inventor/SbPlane.h>
@@ -54,6 +59,7 @@
 #include <Base/Placement.h>
 
 #include "Document.h"
+#include "EditableDatumLabel.h"
 #include "InventorBase.h"
 #include "MirrorViewer.h"
 #include "Selection.h"
@@ -156,6 +162,32 @@ public:
 
     bool editing = false;
     bool selectionEnabled = true;
+
+    /** The entry boxes an edit mode has open here, in the order built.
+     *
+     * That order is the controller's own: it builds its set in one loop,
+     * so the index a client names is the index the tool means. The boxes
+     * are owned by the controller and merely registered here, which is why
+     * this is a vector of raw pointers and why removal is by identity.
+     */
+    std::vector<EditableDatumLabel*> onViewParams;
+    /** Which of them takes the keys.
+     *
+     * Focus on the desktop is Qt's, and a widget that is never shown is
+     * never focused, so for a mirror it is recorded here instead -- set
+     * through the same setFocusToSpinbox() the controller already calls.
+     */
+    EditableDatumLabel* focusedParam = nullptr;
+    std::function<void()> onViewParamsChanged;
+    /** The key frame being routed into an entry box, if any.
+     *
+     * The box may hand the key back (DrawSketchKeyboardManager decides
+     * which keys it claims), and what goes to the scene then is this --
+     * the event as it arrived, rather than a Qt event translated back into
+     * a Coin one and rounded twice.
+     */
+    Input pendingKey;
+    bool hasPendingKey = false;
     /** This client's own selection (docs/ThinClient.md section 8.4).
      *
      * Current for the extent of anything replayed through this view, so
@@ -427,11 +459,6 @@ void MirrorViewer::setCamera(const Camera& camera)
     pimpl->stated = true;
 }
 
-SoCamera* MirrorViewer::getCamera() const
-{
-    return pimpl->camera;
-}
-
 bool MirrorViewer::hasCamera() const
 {
     return pimpl->stated && pimpl->camera;
@@ -556,15 +583,203 @@ bool MirrorViewer::handleInput(const Input& input)
         }
         case Input::KeyDown:
         case Input::KeyUp: {
-            SoKeyboardEvent event;
-            stamp(event);
-            event.setKey(SoKeyboardEvent::Key(input.code));
-            event.setState(input.kind == Input::KeyDown ? SoButtonEvent::DOWN
-                                                        : SoButtonEvent::UP);
-            return replay(event);
+            // An entry box that has the keys takes them first, which is
+            // the desktop's order and not a new rule: there the box holds
+            // the Qt focus for as long as a tool with on-view parameters
+            // is running, and every key reaches it before the view. What
+            // it does not claim it hands back through sendKeyEvent below
+            // (docs/ThinClient.md section 8.7).
+            if (pimpl->focusedParam) {
+                return routeKeyToParameter(input);
+            }
+            return replayKey(input);
         }
     }
     return false;
+}
+
+namespace
+{
+
+/// A Coin key code as the Qt key an entry box expects.
+///
+/// The client sends X11 keysyms with the case folded away (section 8.5), and
+/// for every printable one the keysym IS the character -- so the mapping is
+/// the identity for punctuation and digits, an upcase for letters, and a
+/// table only for the named keys. The character the key actually produced
+/// travels beside it and is not derived here: shift over a keysym is a
+/// keyboard layout question, and the client is the only side that knows the
+/// layout.
+int qtKeyForCoinKey(int code)
+{
+    switch (code) {
+        case 0xff1b: return Qt::Key_Escape;
+        case 0xff0d: return Qt::Key_Return;
+        case 0xff8d: return Qt::Key_Enter;
+        case 0xff09: return Qt::Key_Tab;
+        case 0xff08: return Qt::Key_Backspace;
+        case 0xffff: return Qt::Key_Delete;
+        case 0xff63: return Qt::Key_Insert;
+        case 0xff50: return Qt::Key_Home;
+        case 0xff57: return Qt::Key_End;
+        case 0xff55: return Qt::Key_PageUp;
+        case 0xff56: return Qt::Key_PageDown;
+        case 0xff51: return Qt::Key_Left;
+        case 0xff52: return Qt::Key_Up;
+        case 0xff53: return Qt::Key_Right;
+        case 0xff54: return Qt::Key_Down;
+        default: break;
+    }
+    if (code >= 0xffbe && code <= 0xffc9) {
+        return Qt::Key_F1 + (code - 0xffbe);
+    }
+    if (code >= 0x61 && code <= 0x7a) {
+        return code - 0x61 + Qt::Key_A;
+    }
+    if (code >= 0x20 && code < 0x7f) {
+        return code;
+    }
+    return Qt::Key_unknown;
+}
+
+}  // namespace
+
+bool MirrorViewer::replayKey(const Input& input)
+{
+    SoKeyboardEvent event;
+    event.setTime(SbTime(input.time));
+    event.setPosition(pimpl->pointer);
+    event.setShiftDown(input.shift);
+    event.setCtrlDown(input.ctrl);
+    event.setAltDown(input.alt);
+    event.setKey(SoKeyboardEvent::Key(input.code));
+    event.setState(input.kind == Input::KeyDown ? SoButtonEvent::DOWN
+                                                : SoButtonEvent::UP);
+    return replay(event);
+}
+
+bool MirrorViewer::routeKeyToParameter(const Input& input)
+{
+    EditableDatumLabel* param = pimpl->focusedParam;
+    if (!param) {
+        return false;
+    }
+
+    Qt::KeyboardModifiers mods = Qt::NoModifier;
+    if (input.shift) {
+        mods |= Qt::ShiftModifier;
+    }
+    if (input.ctrl) {
+        mods |= Qt::ControlModifier;
+    }
+    if (input.alt) {
+        mods |= Qt::AltModifier;
+    }
+
+    QString text;
+    if (input.delta > 0) {
+        text = QString(QChar(char16_t(input.delta)));
+    }
+    QKeyEvent event(input.kind == Input::KeyDown ? QEvent::KeyPress
+                                                : QEvent::KeyRelease,
+                    qtKeyForCoinKey(input.code), mods, text);
+
+    // This view current for the extent of it, exactly as replay() does:
+    // what the box does with the key runs the tool's own code, and that
+    // code asks which view it is in.
+    ViewerScope scope(this);
+    // Kept so that a key the box hands back reaches the scene as the event
+    // it arrived as, rather than as this Qt translation of it.
+    pimpl->pendingKey = input;
+    pimpl->hasPendingKey = true;
+    const bool handled = param->sendKeyEvent(&event);
+    pimpl->hasPendingKey = false;
+    return handled;
+}
+
+bool MirrorViewer::sendKeyEvent(QKeyEvent* event)
+{
+    (void)event;
+    if (!pimpl->hasPendingKey) {
+        // Nothing arrived over the wire to hand back. A Qt key event
+        // manufactured by something else has no Coin event behind it, and
+        // guessing one would put a key in the scene that no client pressed.
+        return false;
+    }
+    return replayKey(pimpl->pendingKey);
+}
+
+std::vector<MirrorViewer::OnViewParam> MirrorViewer::onViewParameters() const
+{
+    std::vector<OnViewParam> params;
+    params.reserve(pimpl->onViewParams.size());
+    for (EditableDatumLabel* label : pimpl->onViewParams) {
+        // A box that is not in edit is not on screen: the controller
+        // deactivates the ones that do not belong to the current mode, and
+        // the client should stop showing them at the same moment.
+        if (!label->isActive() || !label->isInEdit()) {
+            continue;
+        }
+        OnViewParam param;
+        param.anchor = label->getAnchorPoint();
+        param.text = label->getText().toStdString();
+        label->getSelection(param.selStart, param.selLength);
+        param.focus = label == pimpl->focusedParam;
+        param.set = label->isSet;
+        params.push_back(param);
+    }
+    return params;
+}
+
+void MirrorViewer::setOnViewParametersCallback(std::function<void()> callback)
+{
+    pimpl->onViewParamsChanged = std::move(callback);
+}
+
+bool MirrorViewer::focusOnViewParameter(int index)
+{
+    if (index < 0 || size_t(index) >= pimpl->onViewParams.size()) {
+        return false;
+    }
+    EditableDatumLabel* label = pimpl->onViewParams[size_t(index)];
+    if (!label->isActive() || !label->isInEdit()) {
+        return false;
+    }
+    ViewerScope scope(this);
+    label->setFocusToSpinbox();
+    return true;
+}
+
+void MirrorViewer::addOnViewParameter(EditableDatumLabel* label)
+{
+    if (label) {
+        pimpl->onViewParams.push_back(label);
+    }
+}
+
+void MirrorViewer::removeOnViewParameter(EditableDatumLabel* label)
+{
+    auto it = std::find(pimpl->onViewParams.begin(), pimpl->onViewParams.end(),
+                        label);
+    if (it != pimpl->onViewParams.end()) {
+        pimpl->onViewParams.erase(it);
+    }
+    if (pimpl->focusedParam == label) {
+        pimpl->focusedParam = nullptr;
+    }
+    onViewParametersChanged();
+}
+
+void MirrorViewer::onViewParameterFocused(EditableDatumLabel* label)
+{
+    pimpl->focusedParam = label;
+}
+
+void MirrorViewer::onViewParametersChanged()
+{
+    if (pimpl->onViewParamsChanged) {
+        pimpl->onViewParamsChanged();
+    }
 }
 
 bool MirrorViewer::replay(SoEvent& event)

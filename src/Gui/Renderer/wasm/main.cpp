@@ -455,6 +455,43 @@ EM_JS(void, fcviewer_edit_event, (int editing, const char *obj), {
                                                      obj: name } }));
 });
 
+// The on-view parameters an edit mode has open (docs/ThinClient.md sec
+// 8.7), passed through as the server stated them. The DOM layer draws an
+// entry box per element and does nothing else with them: the text is the
+// server's, the selection inside it is the server's, and which box takes
+// the keys is the server's. A box is a display, not an editor.
+EM_JS(void, fcviewer_onview_event, (const char *json), {
+    var params = [];
+    try {
+        params = JSON.parse(UTF8ToString(json)).params || [];
+    } catch (e) {
+        params = [];
+    }
+    window.fcviewerOnView = params;
+    window.dispatchEvent(new CustomEvent('fc:onview', { detail: params }));
+});
+
+// Where those boxes belong on the canvas, this frame. Sent as "i,x,y;..."
+// in CSS pixels, and only when something moved.
+//
+// Projected here, per frame, from the world anchor the server sent -- the
+// camera of the frame being drawn is the only one that cannot be behind
+// the picture, and under the default uplink policy the server is not told
+// where this client is looking between clicks at all (sec 8.10b). An entry
+// box positioned by the server would swim behind every orbit.
+EM_JS(void, fcviewer_onview_layout, (const char *spec), {
+    var s = UTF8ToString(spec);
+    var out = [];
+    if (s.length) {
+        var parts = s.split(';');
+        for (var i = 0; i < parts.length; ++i) {
+            var f = parts[i].split(',');
+            out.push({ i: +f[0], x: +f[1], y: +f[2], visible: +f[3] !== 0 });
+        }
+    }
+    window.dispatchEvent(new CustomEvent('fc:onviewlayout', { detail: out }));
+});
+
 // The DOM layer's uplink, installed once at startup:
 // window.fcviewerControlSend(jsonString) -> bool (false = socket down,
 // caller shows its offline state rather than queueing).
@@ -509,6 +546,26 @@ EM_JS(void, fcviewer_install_control, (), {
     };
     window.fcviewerResetEdit = function() {
         return !!_fcviewer_reset_edit();
+    };
+    // A keystroke from outside the canvas (docs/ThinClient.md sec 8.7).
+    // An on-view entry box holds the DOM focus while it is being typed
+    // into -- it has to, or a phone shows no keyboard -- and the canvas
+    // then sees no keys at all. This puts them back on the same wire the
+    // canvas uses, unchanged: what a key MEANS is decided on the server,
+    // by the box's own event filter, which is why the box can hand one
+    // back to the sketch and this side need not know which ones it will.
+    // 'key' is a DOM KeyboardEvent.key; 'text' is the character it
+    // produced, if any.
+    window.fcviewerSendKey = function(down, key, text, mods) {
+        var k = key || '', t = text || '';
+        var kl = lengthBytesUTF8(k) + 1, tl = lengthBytesUTF8(t) + 1;
+        var kb = _malloc(kl), tb = _malloc(tl);
+        stringToUTF8(k, kb, kl);
+        stringToUTF8(t, tb, tl);
+        var ok = _fcviewer_send_key(down ? 1 : 0, kb, tb, (mods | 0));
+        _free(kb);
+        _free(tb);
+        return !!ok;
     };
     // The menu's document switch (docs/MultiDocServe.md §6).
     window.fcviewerSwitchDoc = function(name) {
@@ -2097,6 +2154,51 @@ static void selectAt(float px, float py, bool ctrl, bool shift = false)
     emitSelectionEvent();
 }
 
+/// One on-view parameter, as far as this viewer is concerned
+/// (docs/ThinClient.md sec 8.7).
+///
+/// Which is: a point in the world and an index. Everything ELSE about an
+/// entry box -- what it says, what is selected in it, whether it takes the
+/// keys, what a keystroke does to it -- is decided on the server by the
+/// same QuantitySpinBox and the same DrawSketchKeyboardManager the desktop
+/// uses, and passed through to the DOM layer to draw. This viewer knows
+/// nothing about editing; it projects a point and forwards a keystroke.
+struct OnViewParam {
+    int index = 0;
+    bx::Vec3 anchor {bx::InitZero};
+    float lastX = -1e9f;
+    float lastY = -1e9f;
+    bool lastVisible = false;
+};
+static std::vector<OnViewParam> s_onView;
+
+/// Take the anchors out of an 'onview' push. The rest of the message goes
+/// to the DOM layer verbatim, which parses JSON natively.
+static void parseOnViewAnchors(const char *json)
+{
+    s_onView.clear();
+    const char *p = std::strstr(json, ""params"");
+    if (!p)
+        return;
+    while ((p = std::strstr(p, "{"i":")) != nullptr) {
+        const char *px = std::strstr(p, ""x":");
+        const char *py = std::strstr(p, ""y":");
+        const char *pz = std::strstr(p, ""z":");
+        if (!px || !py || !pz)
+            break;
+        OnViewParam param;
+        param.index = int(std::strtol(p + 5, nullptr, 10));
+        // The three coordinates are written before the text field, so
+        // scanning forward from the entry cannot walk into a value the
+        // user typed.
+        param.anchor = bx::Vec3(float(std::atof(px + 4)),
+                                float(std::atof(py + 4)),
+                                float(std::atof(pz + 4)));
+        s_onView.push_back(param);
+        p += 5;
+    }
+}
+
 static bool fitCamera();
 
 // Browser-measured frame timing for the HUD: the wall-clock period between
@@ -3589,6 +3691,16 @@ static void setEditing(bool on, const char *obj)
     // send, and a session that starts with it down never saw the press.
     s_editButtonDown = false;
     s_editMovePending = false;
+    // No session, no entry boxes. A tool that ends normally does push an
+    // empty set, but that push is coalesced onto the next publish and a
+    // session can end with the source going away underneath it. The end
+    // of the session is the simpler signal and it always arrives, so it
+    // is the one acted on -- a box left on screen would be sending
+    // keystrokes to a tool that has finished (sec 8.7).
+    if (!on && !s_onView.empty()) {
+        s_onView.clear();
+        fcviewer_onview_event("{"params":[]}");
+    }
     std::printf("fcviewer: %s edit mode%s%s\n", on ? "entered" : "left",
                 s_editObj.empty() ? "" : " on ", s_editObj.c_str());
     fcviewer_edit_event(on ? 1 : 0, s_editObj.c_str());
@@ -3655,6 +3767,51 @@ extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_reset_edit()
 extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_editing()
 {
     return s_editing ? 1 : 0;
+}
+
+/// Place this frame's on-view entry boxes (docs/ThinClient.md sec 8.7).
+///
+/// The anchors are world points; the camera is this frame's. Sent to the
+/// DOM layer only when one of them moved by half a pixel or more, so a
+/// still view costs nothing and an orbit costs one small string a frame.
+static void updateOnViewLayout()
+{
+    if (s_onView.empty())
+        return;
+    const CamFrame f = camFrame();
+    const bx::Vec3 fwd = bx::normalize(bx::sub(f.at, f.eye));
+    const float aspect = vpH() > 0.0f ? vpW() / vpH() : 1.0f;
+    const float th = std::tan(0.5f * kFovY * bx::kPi / 180.0f);
+
+    std::string spec;
+    bool moved = false;
+    for (auto &param : s_onView) {
+        float sx = 0.0f, sy = 0.0f, depth = 0.0f;
+        const bool visible =
+            projectToScreen(param.anchor, f, fwd, th, aspect, sx, sy, depth);
+        // Canvas pixels are device pixels; the DOM places in CSS ones.
+        const float cx = visible ? sx / s_dpr : param.lastX;
+        const float cy = visible ? sy / s_dpr : param.lastY;
+        if (visible != param.lastVisible
+                || (visible && (std::fabs(cx - param.lastX) >= 0.5f
+                                || std::fabs(cy - param.lastY) >= 0.5f))) {
+            // A box behind the camera keeps its last position and is
+            // reported hidden: zeroing it would move every one of them to
+            // the corner and back as the view swung past.
+            moved = true;
+        }
+        param.lastX = cx;
+        param.lastY = cy;
+        param.lastVisible = visible;
+        if (!spec.empty())
+            spec += ';';
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%d,%.1f,%.1f,%d", param.index,
+                      double(cx), double(cy), visible ? 1 : 0);
+        spec += buf;
+    }
+    if (moved)
+        fcviewer_onview_layout(spec.c_str());
 }
 
 static void mainLoop()
@@ -3821,6 +3978,7 @@ static void mainLoop()
             s_renderer->setRenderDebugConfig(s_snap.debugconf);
     }
 
+    updateOnViewLayout();
     updateHud(false);
 }
 
@@ -4162,6 +4320,22 @@ EM_JS(int, fcviewer_dom_has_keyboard, (), {
             || el.isContentEditable) ? 1 : 0;
 });
 
+/// The character a DOM key produced, when it produced exactly one ASCII
+/// one. Zero otherwise, which is what every named key answers.
+///
+/// It travels beside the keysym because the keysym has the case folded out
+/// of it (a sketch shortcut asks for the key, not the character) -- and an
+/// entry box needs the character, which on any layout but the coder's own
+/// is not derivable from the key and the shift bit. So the client, the only
+/// side that has a layout at all, reports both.
+static int printableCharFor(const char *key)
+{
+    if (!key || !key[0] || key[1] != '\0')
+        return 0;
+    const unsigned char c = (unsigned char)key[0];
+    return (c >= 0x20 && c < 0x7f) ? int(c) : 0;
+}
+
 /// Send one key up as an 'E' frame while editing. False when the key is
 /// not one the server has a code for, so the caller can fall through to
 /// whatever the viewer itself does with it.
@@ -4177,8 +4351,31 @@ static bool sendEditKey(const EmscriptenKeyboardEvent *e, bool down)
     // not be given the origin.
     sendInputFrame(down ? 4 : 5,
                    inputMods(e->shiftKey, e->ctrlKey, e->altKey), code,
-                   s_editMoveX, s_editMoveY, 0);
+                   s_editMoveX, s_editMoveY, printableCharFor(e->key));
     return true;
+}
+
+/// A keystroke from the DOM layer, on the same wire as the canvas's own
+/// (docs/ThinClient.md sec 8.7).
+///
+/// An on-view entry box holds the DOM focus while it is typed into, so the
+/// canvas sees none of these keys. Which of them the box keeps and which
+/// go on to the sketch is decided on the server, by the box's own event
+/// filter -- so nothing here inspects the key, and this stays a pipe.
+extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_send_key(int down,
+                                                     const char *key,
+                                                     const char *text,
+                                                     int mods)
+{
+    if (!s_editing || s_ws <= 0 || !s_wsOpen)
+        return 0;
+    const uint16_t code = coinKeyFor(key);
+    if (!code)
+        return 0;
+    flushEditMove();
+    sendInputFrame(down ? 4 : 5, uint8_t(mods), code, s_editMoveX,
+                   s_editMoveY, printableCharFor(text));
+    return 1;
 }
 
 static EM_BOOL onKeyDown(int, const EmscriptenKeyboardEvent *e, void *)
@@ -8152,6 +8349,14 @@ static void handleControlMessage(const char *json)
             }
         }
         setEditing(on, obj);
+    }
+    else if (std::strstr(json, ""cmd":"onview"")) {
+        // The entry boxes this client's edit session has open (sec 8.7).
+        // The anchors are kept here to be projected each frame; the rest
+        // goes to the DOM layer, which draws it and knows no more about
+        // it than that.
+        parseOnViewAnchors(json);
+        fcviewer_onview_event(json);
     }
     else if (std::strstr(json, "\"id\":") || std::strstr(json, "\"op\":")) {
         // This viewer's own edit request, answered (sec 8.9 step 4). Read

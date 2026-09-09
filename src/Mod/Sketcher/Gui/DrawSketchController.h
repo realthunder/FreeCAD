@@ -598,12 +598,12 @@ protected:
     /** @brief Initialises on-screen parameters */
     void initNOnViewParameters(int n)
     {
-        // On-view parameters are Qt widgets placed next to the cursor,
-        // so they need a desktop view. A client's mirror has none, and
-        // the DOM layer takes this surface over there
-        // (docs/ThinClient.md sec 8.7, stage 5): no labels are built,
-        // and the set stays legitimately empty.
-        Gui::View3DInventorViewer* viewer = handler->getDesktopViewer();
+        // The view the tool is running in, desktop or mirror. An on-view
+        // parameter is an entry box shown next to the cursor, and where
+        // there is no widget to show one the same box is built unshown
+        // and streamed to the client instead -- which is the view's
+        // business, not this controller's (docs/ThinClient.md sec 8.7).
+        Gui::ViewerContext* viewer = handler->getViewer();
         onViewParameters.clear();
         if (!viewer) {
             return;

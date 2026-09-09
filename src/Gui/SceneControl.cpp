@@ -40,7 +40,9 @@
 #include <Base/Vector3D.h>
 
 #include "Application.h"
+#include "Command.h"
 #include "Document.h"
+#include "MirrorViewer.h"
 #include "SceneControl.h"
 #include "SceneServeSource.h"
 #include "Selection.h"
@@ -693,6 +695,104 @@ QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
     return reply;
 }
 
+/// Run a sketch tool in this client's view (docs/ThinClient.md sec 8.7).
+///
+/// A tool is what puts on-view parameters on the screen, and a browser has
+/// no other way to start one: the sketcher's own shortcuts are Qt shortcuts
+/// on a main window, and its ShortcutListener answers to Delete alone.
+///
+/// **The name is allowlisted, and narrowly.** A command in a serving process
+/// is not the same authority as a command on a desktop: many of them open a
+/// MODAL dialog, and a modal dialog on the GUI thread of a process serving
+/// several browsers stops serving all of them, with nobody at the machine to
+/// dismiss it. So this admits the Sketcher_Create* family and nothing else --
+/// which is exactly the family that drives a DrawSketchHandler, and so
+/// exactly the family this section is about. Widening it is gated on an
+/// answer to modality, not on taste.
+QJsonObject runCommandOp(const QJsonObject &req, const std::string &boundDoc,
+                         uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    const QString name = req.value(QLatin1String("name")).toString();
+    if (!name.startsWith(QLatin1String("Sketcher_Create")))
+        return errorReply(id, "CommandRefused", name);
+
+    App::Document *doc = nullptr;
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    if (!docName.isEmpty())
+        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    else if (!boundDoc.empty())
+        doc = App::GetApplication().getDocument(boundDoc.c_str());
+    else
+        doc = App::GetApplication().getActiveDocument();
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+
+    ViewerContext *viewer = nullptr;
+    if (SceneServeSource *source = SceneServeSource::sourceFor(doc)) {
+        viewer = source->viewerFor(client);
+        if (!viewer)
+            return errorReply(id, "NoView",
+                              QStringLiteral("state a camera before editing"));
+    }
+    // The tool asks its view for a cursor, for the on-view parameters and
+    // for the editing root, and every one of those questions has a wrong
+    // answer in a process with several browsers connected.
+    ViewerScope scope(viewer);
+    const QByteArray cmd = name.toUtf8();
+    try {
+        Application::Instance->commandManager().runCommandByName(cmd.constData());
+    }
+    catch (Base::Exception &e) {
+        return errorReply(id, "CommandFailed", QString::fromUtf8(e.what()));
+    }
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("name")] = name;
+    return reply;
+}
+
+/// Give one on-view entry box the keys, at the client's asking.
+///
+/// The only thing about those boxes a client decides. What is typed into
+/// one is decided here -- the key goes up as an ordinary input frame and
+/// reaches the box through DrawSketchKeyboardManager, the same rule and the
+/// same widget the desktop uses (sec 8.7).
+QJsonObject onViewFocusOp(const QJsonObject &req, const std::string &boundDoc,
+                          uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+
+    App::Document *doc = nullptr;
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    if (!docName.isEmpty())
+        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    else if (!boundDoc.empty())
+        doc = App::GetApplication().getDocument(boundDoc.c_str());
+    else
+        doc = App::GetApplication().getActiveDocument();
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+
+    SceneServeSource *source = SceneServeSource::sourceFor(doc);
+    MirrorViewer *mirror = source ? source->mirrorViewerFor(client) : nullptr;
+    if (!mirror)
+        return errorReply(id, "NoView",
+                          QStringLiteral("state a camera before editing"));
+
+    const int index = req.value(QLatin1String("index")).toInt(-1);
+    if (!mirror->focusOnViewParameter(index))
+        return errorReply(id, "NoSuchParameter", QString::number(index));
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("index")] = index;
+    return reply;
+}
+
 } // namespace
 
 std::string Gui::handleSceneControlRequest(const std::string &json,
@@ -716,7 +816,9 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
         // a view-only client's property inspector keeps working.
         const bool mutating = op == QLatin1String("setProperty")
             || op == QLatin1String("edit")
-            || op == QLatin1String("resetEdit");
+            || op == QLatin1String("resetEdit")
+            || op == QLatin1String("command")
+            || op == QLatin1String("onViewFocus");
         if (viewOnly && mutating)
             reply = errorReply(req.value(QLatin1String("id")), "ViewOnly",
                                QStringLiteral("this connection may not edit"));
@@ -728,6 +830,10 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             reply = setEditOp(req, boundDoc, client);
         else if (op == QLatin1String("resetEdit"))
             reply = resetEditOp(req, boundDoc);
+        else if (op == QLatin1String("command"))
+            reply = runCommandOp(req, boundDoc, client);
+        else if (op == QLatin1String("onViewFocus"))
+            reply = onViewFocusOp(req, boundDoc, client);
         else
             reply = errorReply(req.value(QLatin1String("id")), "UnknownOp", op);
     }

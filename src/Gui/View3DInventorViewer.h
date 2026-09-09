@@ -215,6 +215,18 @@ public:
     Qt::MouseButtons mouseButtons() const override;
     double logicalDotsPerInchX() const override;
     void setFocusToView() override;
+    /** Quarter's camera accessor, named the same as ViewerContext's.
+     *
+     * Both walk to the same node -- the render manager's -- and a view that
+     * inherits two of them makes the name ambiguous at every call site, so
+     * one is chosen here. Quarter's, because it is the one this class's own
+     * code has always called.
+     */
+    using Quarter::SoQTQuarterAdaptor::getCamera;
+    /// An on-view entry box is a child of the MDI window, over the canvas.
+    QWidget* datumEditorParent() const override;
+    /// A key an entry box did not claim goes back to this widget.
+    bool sendKeyEvent(QKeyEvent* event) override;
     static View3DInventorViewer* fromEventCallback(const SoEventCallback* node);
     //@}
 
@@ -550,7 +562,6 @@ public:
     /** Converts Inventor coordinates into Qt coordinates.
      * The conversion takes the device pixel ratio into account.
      */
-    QPoint toQPoint(const SbVec2s&) const;
 
     /** Converts Qt coordinates into Inventor coordinates.
      * The conversion takes the device pixel ratio into account.
@@ -799,7 +810,6 @@ public:
     void updateHatchTexture();
     void refreshRenderCache();
 
-    void getDimensions(float& fHeight, float& fWidth) const;
     float getMaxDimension() const;
     SbVec3f getCenterPointOnFocalPlane() const;
 

@@ -23,8 +23,12 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <QApplication>
+# include <QKeyEvent>
+# include <QLineEdit>
 # include <Inventor/sensors/SoNodeSensor.h>
 # include <Inventor/nodes/SoAnnotation.h>
+# include <Inventor/nodes/SoGroup.h>
 # include <Inventor/nodes/SoOrthographicCamera.h>
 # include <Inventor/nodes/SoTransform.h>
 #endif // _PreComp_
@@ -32,6 +36,7 @@
 #include <Gui/Application.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
+#include <Gui/ViewerContext.h>
 
 #include "EditableDatumLabel.h"
 
@@ -44,7 +49,7 @@ struct NodeData {
     EditableDatumLabel* label;
 };
 
-EditableDatumLabel::EditableDatumLabel(View3DInventorViewer* view,
+EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
                                        const Base::Placement& plc,
                                        SbColor color,
                                        bool autoDistance,
@@ -59,6 +64,9 @@ EditableDatumLabel::EditableDatumLabel(View3DInventorViewer* view,
     , cameraSensor(nullptr)
     , function(Function::Positioning)
 {
+    if (viewer) {
+        viewer->addOnViewParameter(this);
+    }
     // NOLINTBEGIN
     root = new SoAnnotation;
     root->ref();
@@ -91,6 +99,9 @@ EditableDatumLabel::EditableDatumLabel(View3DInventorViewer* view,
 EditableDatumLabel::~EditableDatumLabel()
 {
     deactivate();
+    if (viewer) {
+        viewer->removeOnViewParameter(this);
+    }
     transform->unref();
     root->unref();
     label->unref();
@@ -102,7 +113,14 @@ void EditableDatumLabel::activate()
         return;
     }
 
-    static_cast<SoSeparator*>(viewer->getSceneGraph())->addChild(root); // NOLINT
+    // The served root a mirror answers with is a group but not always a
+    // separator, and this is the node the publish traversal walks -- which
+    // is how the dimension line reaches a browser at all.
+    if (SoNode* scene = viewer->getSceneGraph()) {
+        if (scene->isOfType(SoGroup::getClassTypeId())) {
+            static_cast<SoGroup*>(scene)->addChild(root);
+        }
+    }
 
     //track camera movements to update spinbox position.
     auto info = new NodeData{ this };
@@ -114,7 +132,10 @@ void EditableDatumLabel::activate()
             info->label->setLabelRecommendedDistance();
         }
     }, info);
-    cameraSensor->attach(viewer->getCamera());
+    if (SoCamera* camera = viewer->getCamera()) {
+        cameraSensor->attach(camera);
+    }
+    notifyChanged();
 }
 
 void EditableDatumLabel::deactivate()
@@ -130,7 +151,12 @@ void EditableDatumLabel::deactivate()
     }
 
     if (viewer) {
-        static_cast<SoSeparator*>(viewer->getSceneGraph())->removeChild(root); // NOLINT
+        if (SoNode* scene = viewer->getSceneGraph()) {
+            if (scene->isOfType(SoGroup::getClassTypeId())) {
+                static_cast<SoGroup*>(scene)->removeChild(root);
+            }
+        }
+        notifyChanged();
     }
 }
 
@@ -140,7 +166,11 @@ void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool 
         return;
     }
 
-    QWidget* mdi = viewer->parentWidget();
+    // Null on a mirror, and that is the whole of the difference between
+    // the two tiers: the box below is built, validated, typed into and
+    // read back identically, it is simply never shown and its text is
+    // streamed to the client instead (docs/ThinClient.md section 8.7).
+    QWidget* mdi = viewer->datumEditorParent();
 
     label->string = " ";
 
@@ -159,7 +189,9 @@ void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool 
         setSpinboxVisibleToMouse(visibleToMouse);
     }
 
-    spinBox->show();
+    if (mdi) {
+        spinBox->show();
+    }
     setSpinboxValue(val);
     //Note: adjustSize apparently uses the Min/Max values to set the size. So if we don't set them to INT_MAX, the spinbox are much too big.
     spinBox->adjustSize();
@@ -187,6 +219,7 @@ void EditableDatumLabel::stopEdit()
 
         spinBox->deleteLater();
         spinBox = nullptr;
+        notifyChanged();
     }
 }
 
@@ -222,6 +255,7 @@ void EditableDatumLabel::setSpinboxValue(double val, const Base::Unit& unit)
     if (spinBox->hasFocus()) {
         spinBox->selectNumber();
     }
+    notifyChanged();
 }
 
 void EditableDatumLabel::setFocusToSpinbox()
@@ -230,15 +264,30 @@ void EditableDatumLabel::setFocusToSpinbox()
         Base::Console().DeveloperWarning("EditableDatumLabel::setFocusToSpinbox", "Spinbox doesn't exist in");
         return;
     }
+    // Told to the view either way. Where the box is shown Qt's own focus is
+    // the answer and this is ignored; where it is not, Qt would never focus
+    // an unshown widget and the view keeps the record instead.
+    if (viewer) {
+        viewer->onViewParameterFocused(this);
+    }
     if (!spinBox->hasFocus()) {
         spinBox->setFocus();
         spinBox->selectNumber();
     }
+    notifyChanged();
 }
 
 void EditableDatumLabel::positionSpinbox()
 {
     if (!spinBox) {
+        return;
+    }
+    if (!viewer || !viewer->datumEditorParent()) {
+        // Nowhere to move it to. Where the box belongs is streamed as the
+        // world point below and placed by the client, which is the only
+        // side that knows where its camera is between two of its own
+        // frames (docs/ThinClient.md section 8.7).
+        notifyChanged();
         return;
     }
 
@@ -247,14 +296,15 @@ void EditableDatumLabel::positionSpinbox()
     }
 
     QSize wSize = spinBox->size();
-    QSize vSize = viewer->size();
+    QWidget* canvas = viewer->getWidget();
+    QSize vSize = canvas ? canvas->size() : viewer->datumEditorParent()->size();
     QPoint pxCoord = viewer->toQPoint(viewer->getPointOnViewport(getTextCenterPoint()));
 
     int posX = std::min(std::max(pxCoord.x() - wSize.width() / 2, 0), vSize.width() - wSize.width());
     int posY = std::min(std::max(pxCoord.y() - wSize.height() / 2, 0), vSize.height() - wSize.height());
 
     if (avoidMouseCursor) {
-        QPoint cursorPos = viewer->mapFromGlobal(QCursor::pos());
+        QPoint cursorPos = viewer->datumEditorParent()->mapFromGlobal(QCursor::pos());
         int margin = static_cast<int>(wSize.height() * 0.7); // NOLINT
         if ((cursorPos.x() > posX - margin && cursorPos.x() < posX + wSize.width() + margin)
             && (cursorPos.y() > posY - margin && cursorPos.y() < posY + wSize.height() + margin)) {
@@ -319,6 +369,7 @@ void EditableDatumLabel::setPlacement(const Base::Placement& plc)
 void EditableDatumLabel::setColor(SbColor color)
 {
     label->textColor = color;
+    notifyChanged();
 }
 
 void EditableDatumLabel::setFocus()
@@ -398,6 +449,47 @@ void EditableDatumLabel::setSpinboxVisibleToMouse(bool val)
 EditableDatumLabel::Function EditableDatumLabel::getFunction()
 {
     return function;
+}
+
+SbVec3f EditableDatumLabel::getAnchorPoint() const
+{
+    return getTextCenterPoint();
+}
+
+QString EditableDatumLabel::getText() const
+{
+    return spinBox ? spinBox->text() : QString();
+}
+
+void EditableDatumLabel::getSelection(int& start, int& length) const
+{
+    start = 0;
+    length = 0;
+    if (spinBox) {
+        spinBox->getSelection(start, length);
+    }
+}
+
+bool EditableDatumLabel::sendKeyEvent(QKeyEvent* event)
+{
+    if (!spinBox) {
+        return false;
+    }
+    // Straight at the box, because on a mirror nothing else would take it
+    // there -- Qt delivers keys to the focused widget and an unshown one is
+    // never focused. The event filter the controller installed still runs
+    // (sendEvent applies the receiver's filters), so which keys the box
+    // claims is decided by DrawSketchKeyboardManager, once, for both tiers.
+    const bool handled = QApplication::sendEvent(spinBox, event);
+    notifyChanged();
+    return handled;
+}
+
+void EditableDatumLabel::notifyChanged()
+{
+    if (viewer) {
+        viewer->onViewParametersChanged();
+    }
 }
 
 #include "moc_EditableDatumLabel.cpp" // NOLINT

@@ -23,10 +23,16 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <cmath>
+
+#include <Inventor/SbViewportRegion.h>
 #include <Inventor/SoEventManager.h>
+#include <Inventor/SoRenderManager.h>
 #include <Inventor/actions/SoHandleEventAction.h>
 #include <Inventor/events/SoEvent.h>
 #include <Inventor/misc/SoChildList.h>
+#include <Inventor/nodes/SoOrthographicCamera.h>
+#include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoTransform.h>
 #endif
@@ -75,6 +81,59 @@ ViewerContext::~ViewerContext()
     if (pcEditingRoot) {
         pcEditingRoot->unref();
     }
+}
+
+SoCamera* ViewerContext::getCamera() const
+{
+    SoRenderManager* manager = getSoRenderManager();
+    return manager ? manager->getCamera() : nullptr;
+}
+
+void ViewerContext::getDimensions(float& fHeight, float& fWidth) const
+{
+    SoCamera* camera = getCamera();
+    if (!camera) {
+        // A mirror before its client has stated a camera. The caller's
+        // -1 sentinels stand, which is what the desktop answers with no
+        // camera either.
+        return;
+    }
+
+    const float aspectRatio = getViewportRegion().getViewportAspectRatio();
+
+    SoType type = camera->getTypeId();
+    if (type.isDerivedFrom(SoOrthographicCamera::getClassTypeId())) {
+        fHeight = static_cast<SoOrthographicCamera*>(camera)->height.getValue();
+        fWidth = fHeight;
+    }
+    else if (type.isDerivedFrom(SoPerspectiveCamera::getClassTypeId())) {
+        const float heightAngle =
+            static_cast<SoPerspectiveCamera*>(camera)->heightAngle.getValue();
+        fHeight = std::tan(heightAngle / 2.0F) * 2.0F * camera->focalDistance.getValue();
+        fWidth = fHeight;
+    }
+
+    if (aspectRatio > 1.0) {
+        fWidth *= aspectRatio;
+    }
+    else {
+        fHeight *= aspectRatio;
+    }
+}
+
+QPoint ViewerContext::toQPoint(const SbVec2s& pnt) const
+{
+    const SbVec2s& vps = getViewportRegion().getViewportSizePixels();
+    int xpos = pnt[0];
+    int ypos = vps[1] - pnt[1] - 1;
+
+    const qreal ratio = devicePixelRatio();
+    if (ratio > 0.0) {
+        xpos = int(std::roundf(float(xpos / ratio)));
+        ypos = int(std::roundf(float(ypos / ratio)));
+    }
+
+    return {xpos, ypos};
 }
 
 void ViewerContext::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum)

@@ -29,6 +29,7 @@
 #include <vector>
 
 #include <QtCore/qnamespace.h>
+#include <QtCore/QPoint>
 
 #include <Inventor/SbBox3f.h>
 #include <Inventor/SbRotation.h>
@@ -51,6 +52,8 @@ class SoTransform;
 
 class QWidget;
 class QCursor;
+class QKeyEvent;
+class SoCamera;
 
 namespace Base {
 class Matrix4D;
@@ -68,6 +71,7 @@ class ViewProvider;
 class GLGraphicsItem;
 class SelectionScope;
 class SelectionSingleton;
+class EditableDatumLabel;
 
 /** What an edit mode is allowed to ask of the view it is running in.
  *
@@ -151,6 +155,24 @@ public:
      * ratio, and no context of any kind is needed to compute it.
      */
     virtual std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>& pnts) const = 0;
+    /// The camera this view looks through, or null before one is stated.
+    SoCamera* getCamera() const;
+    /** The world-space size of what the viewport shows.
+     *
+     * Camera arithmetic and an aspect ratio, so it is the same answer with
+     * or without a widget -- which matters because the on-view parameters
+     * size their dimension lines by it and would otherwise pin themselves
+     * to the desktop.
+     */
+    void getDimensions(float& fHeight, float& fWidth) const;
+    /** A Coin viewport point as a widget point.
+     *
+     * Flips the origin to the top left and divides the device pixels out,
+     * because a widget is placed in logical ones. Arithmetic over the
+     * viewport region and the client's pixel ratio, so a mirror answers it
+     * as meaningfully as a desktop view does.
+     */
+    QPoint toQPoint(const SbVec2s& pnt) const;
     //@}
 
     /** @name Picking */
@@ -264,6 +286,61 @@ public:
     }
     /// The Python face of this view. None where there is not one.
     virtual PyObject* getPyObject();
+    //@}
+
+    /** @name On-view parameters (docs/ThinClient.md section 8.7)
+     *
+     * The small entry boxes an edit mode places next to the cursor. Both
+     * halves of one are here because both halves are the view's: where the
+     * box is shown, and how a keystroke reaches it.
+     *
+     * The editor itself stays a QuantitySpinBox on either tier. A mirror's
+     * is simply never given a parent and never shown -- it is a text model
+     * driven by replayed key events, exactly as the sketcher's geometry is
+     * driven by replayed pointer events, and its text is streamed to the
+     * client instead of painted. That is what keeps the parsing, the units
+     * and DrawSketchKeyboardManager's rule for which keys an entry box
+     * claims in one place: the client is told what to display and forwards
+     * keystrokes, and knows none of it.
+     */
+    //@{
+    /// Where a new entry box is parented, and null where it is not shown.
+    virtual QWidget* datumEditorParent() const
+    {
+        return nullptr;
+    }
+    /** Hand a key back to the scene when the entry box does not claim it.
+     *
+     * The desktop posts it to the viewer widget; a mirror replays it as the
+     * Coin event it arrived as. Answers whether it was handled.
+     */
+    virtual bool sendKeyEvent(QKeyEvent* event)
+    {
+        (void)event;
+        return false;
+    }
+    /// Track the set this view is showing, in the order it was built.
+    virtual void addOnViewParameter(EditableDatumLabel*)
+    {}
+    virtual void removeOnViewParameter(EditableDatumLabel*)
+    {}
+    /** Which box takes the keys.
+     *
+     * Focus is the view's state, not the box's -- on the desktop it is Qt's
+     * and this is ignored, and a widget that is never shown is never focused
+     * by Qt at all, so a mirror keeps the record here.
+     */
+    virtual void onViewParameterFocused(EditableDatumLabel*)
+    {}
+    /** Something about that set changed: a value, the focus, a position.
+     *
+     * Deliberately one undifferentiated notice rather than a signal per
+     * field. What the desktop does with it is nothing -- the widgets have
+     * already moved themselves -- and what a mirror does is re-serialize
+     * the set, which is cheap and cannot go out of step with itself.
+     */
+    virtual void onViewParametersChanged()
+    {}
     //@}
 
     /** The context an event callback node was installed by.
