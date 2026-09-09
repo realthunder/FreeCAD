@@ -2344,6 +2344,16 @@ public:
     void shipUserShader(Render::UserShader &shader);
 #endif
 
+    /// This backend could not build multisampled scene targets, so
+    /// nothing asks it to again (docs/ThinClient.md sec 8.10c).
+    /// Latched by BGFXView::init the one time it happens, off the
+    /// attempt rather than off bgfx::getCaps(): WebGL2 answers
+    /// BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER_MSAA for RGBA16F and then
+    /// fails every create, so the capability is a claim and the create
+    /// is the fact. Both tiers: a desktop driver may lie the same way,
+    /// and losing MSAA is always better than losing the scene.
+    bool msaaTargetsUnavailable = false;
+
 #ifdef FC_RENDERER_STANDALONE
     /// Native window handle bgfx initializes on (Emscripten: the canvas
     /// CSS selector) and the current output size, fed by the host app
