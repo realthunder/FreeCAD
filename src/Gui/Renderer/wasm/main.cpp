@@ -8386,12 +8386,20 @@ int main()
     Render::BGFXRenderer::setWindowHandle(
         const_cast<char *>("#canvas"));
     Render::BGFXRenderer::setWindowSize(s_width, s_height);
-    // ?msaa=N overrides the scene multisample count (default 4). Lets us test
-    // whether the WebGL2-only overlay artifact ("box in the corner") is driven
-    // by MSAA on the real driver: ?msaa=0 turns it off.
+    // ?msaa=N overrides the scene multisample count. OFF by default,
+    // as on the desktop (View3DInventorViewer::getNumSamples, which
+    // explains the measurement): lines and points resolve their own
+    // coverage analytically now, so multisampling stopped being what
+    // made an edge-dominated CAD view look drawn rather than aliased.
+    // This tier had simply never been brought in line, and the cost of
+    // that was not a little extra work -- on WebGL2 a multisampled
+    // RGBA16F scene target cannot be created at all, so the default
+    // asked for something the backend does not have and the viewer drew
+    // nothing (docs/ThinClient.md sec 8.10c). The fallback that catches
+    // it stays, for anyone who asks for MSAA explicitly.
     int msaaSamples = EM_ASM_INT({
         var m = new URLSearchParams(window.location.search).get('msaa');
-        return m === null ? 4 : (parseInt(m) | 0);
+        return m === null ? 0 : (parseInt(m) | 0);
     });
     std::printf("fcviewer: MSAA=%d\n", msaaSamples);
 
