@@ -11,17 +11,32 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1
 GUARD=".claude/hooks/ninja-guard.sh"
-DIR="build/mac-relwithdebinfo-801"
+DIR="${FC_GUARD_TEST_DIR:-build/mac-relwithdebinfo-801}"
 ABS="$PWD/$DIR"
+# The payloads are built with Python too, so the self-test has the same
+# interpreter problem the guard had -- resolve it the same proved way
+# rather than trusting the name.
+PY=$(sh .claude/hooks/pyfind.sh 2>/dev/null) || PY=""
+if [ -z "$PY" ]; then
+    echo "no working Python found; set FC_HOOK_PYTHON. Cannot self-test." >&2
+    exit 2
+fi
 
-if /usr/bin/pgrep -x ninja >/dev/null 2>&1; then
-    for p in $(/usr/bin/pgrep -x ninja); do
-        echo "a build IS running: pid $p  $(/bin/ps -o args= -p "$p")"
+if command -v pgrep >/dev/null 2>&1 && pgrep -x ninja >/dev/null 2>&1; then
+    for p in $(pgrep -x ninja); do
+        echo "a build IS running: pid $p  $(ps -o args= -p "$p" 2>/dev/null)"
     done
     LIVE=1
-else
+elif command -v pgrep >/dev/null 2>&1; then
     echo "NO build is running -- every case below must come back 'allow',"
     echo "which tests the parser but not the blocking. Re-run during a build."
+    LIVE=0
+else
+    # Windows, or any box without pgrep. The PARSER cases are the ones
+    # that matter most anyway -- they are what stops the guard blocking
+    # a grep -- and they do not need a live process.
+    echo "no pgrep here; testing the parser only. The blocking path needs"
+    echo "a live build and a platform this can enumerate."
     LIVE=0
 fi
 echo
@@ -29,17 +44,19 @@ echo
 pass=0; fail=0
 check() {   # check <expected> <command>
     local want="$1" cmd="$2" got
-    got=$(python3 -c '
+    got=$($PY -c '
 import json, sys
 print(json.dumps({"tool_name": "Bash",
                   "tool_input": {"command": sys.argv[1]},
                   "cwd": sys.argv[2]}))' "$cmd" "$3" \
         | bash "$GUARD" \
-        | python3 -c '
+        | $PY -c '
 import json, sys
 s = sys.stdin.read().strip()
-print(json.loads(s)["hookSpecificOutput"]["permissionDecision"] if s
-      else "allow")')
+# A systemMessage-only reply means the guard ran but could not look --
+# it allows, and says so. Not a decision, so it reads as "allow".
+d = json.loads(s) if s else {}
+print(d.get("hookSpecificOutput", {}).get("permissionDecision", "allow"))')
     if [ "$got" = "$want" ]; then
         pass=$((pass + 1)); printf "  ok    %-6s %s\n" "$got" "$cmd"
     else
