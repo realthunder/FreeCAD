@@ -5398,6 +5398,13 @@ bool ViewProviderPartExt::deferVisualForLoad()
             return false;
     }
 
+    parkVisualForLoad(doc, obj);
+    return true;
+}
+
+void ViewProviderPartExt::parkVisualForLoad(App::Document *doc,
+                                            App::DocumentObject *obj)
+{
     VisualTouched = true;
     if (!VisualDeferred) {
         VisualDeferred = true;
@@ -5408,7 +5415,31 @@ bool ViewProviderPartExt::deferVisualForLoad()
     // can be posted now; it will find the document still restoring and put
     // itself off until the load has let go.
     scheduleDeferredVisualSlice();
-    return true;
+}
+
+bool ViewProviderPartExt::shapeMayStillArrive() const
+{
+    auto obj = getObject();
+    if (!isAttachedToDocument() || !obj)
+        return false;
+    auto doc = obj->getDocument();
+    if (!doc)
+        return false;
+    // Where the property can say so, it does: a deferred archive entry,
+    // a shared-store position and a blob that has not landed all leave
+    // it restore-pending.
+    auto prop = obj->getPropertyByName(getShapePropertyName());
+    if (prop && prop->isRestorePending())
+        return true;
+    // Where it CANNOT, the document does. A plain `file=` shape entry
+    // (PropertyPartShape::Restore's addFile branch) marks nothing at
+    // all: the property is simply empty until the archive's file phase
+    // reads it, and that phase runs after the objects have been
+    // signalled -- which is when the visual is built. Asking only the
+    // property is what let a 17000-shape document come up with 17000
+    // empty visuals and no marker on any of them.
+    return doc->testStatus(App::Document::Restoring)
+        || doc->hasDeferredFiles();
 }
 
 void ViewProviderPartExt::scheduleDeferredVisualSlice(int delayMs)
@@ -5839,6 +5870,36 @@ void ViewProviderPartExt::updateVisual()
     ++meshLadder.visualFillSeq;
     pendingVCache.reset();
     if (cachedShape.isNull()) {
+        // A shape that has not ARRIVED is not a shape that is empty, and
+        // the difference is the whole of the picture. A restore parks its
+        // shape content -- a deferred archive entry, a shared-store
+        // position, a blob -- and serves it with the archive's files,
+        // AFTER the XML pass that created the object. The visual built
+        // from that window reads the null shape, and marking it done
+        // below is what makes the emptiness permanent: nothing replays a
+        // change notification when the content lands (Document.cpp's
+        // restoreDeferredFile says so in as many words, on the ground
+        // that the serve runs before the visual fill -- which is true of
+        // the progressive drain and of nothing else).
+        //
+        // MEASURED: with Render_ProgressiveLoad off, every 200-shape
+        // document restored this way came up with an empty 3D view, on
+        // the bgfx renderer and on plain Coin alike, while the same
+        // objects built in session drew. So park it on the drain that
+        // serves the content first, whatever the progressive-load
+        // preference says -- that queue exists for exactly this
+        // ordering. Bounded to one attempt (VisualShapePending), so
+        // content that never arrives costs one extra slice and not a
+        // loop.
+        if (!VisualShapePending && shapeMayStillArrive()) {
+            if (auto obj = getObject()) {
+                if (auto doc = obj->getDocument()) {
+                    VisualShapePending = true;
+                    parkVisualForLoad(doc, obj);
+                    return;
+                }
+            }
+        }
         coords  ->point      .setNum(0);
         pcoords ->point      .setNum(0);
         norm    ->vector     .setNum(0);
@@ -5851,6 +5912,9 @@ void ViewProviderPartExt::updateVisual()
         VisualTouched = false;
         return;
     }
+    // The shape is here; a later null is a different story from this
+    // one and gets its own park.
+    VisualShapePending = false;
 
     // Progressive import of an oversized part (sec 13): even the coarse
     // build of a many-face shape (or many-leaf compound) stalls the
