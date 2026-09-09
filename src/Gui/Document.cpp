@@ -733,6 +733,10 @@ void Document::setEditingTransform(const Base::Matrix4D &mat) {
         activeView->getViewer()->setEditingTransform(mat);
 }
 
+ViewerContext *Document::editingViewer() const {
+    return d->_editingViewer;
+}
+
 void Document::resetEdit() {
     bool vpIsNotNull = d->_editViewProvider != nullptr;
     bool vpHasChanged = d->_editViewProvider != d->_editViewProviderPrevious;

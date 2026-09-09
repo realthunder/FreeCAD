@@ -22,6 +22,7 @@
 #ifndef GUI_SCENECONTROL_H
 #define GUI_SCENECONTROL_H
 
+#include <cstdint>
 #include <string>
 
 namespace Gui {
@@ -39,9 +40,13 @@ namespace Gui {
 /// unnamed document (docs/MultiDocServe.md §5). \a viewOnly refuses
 /// every mutating op with a ViewOnly error — the per-client mode the
 /// sharing host sets (docs/MultiDocServe.md §8); reads stay answered.
+/// \a client is the connection the request arrived on, which the ops
+/// that need a view -- entering an edit mode -- resolve to that
+/// client's mirror viewer (docs/ThinClient.md sec 8.9 step 4).
 std::string handleSceneControlRequest(const std::string &json,
                                       const std::string &boundDoc = {},
-                                      bool viewOnly = false);
+                                      bool viewOnly = false,
+                                      uint64_t client = 0);
 
 /// Route the scene stream server's control requests ("op" JSON text
 /// frames) through handleSceneControlRequest on the GUI thread.

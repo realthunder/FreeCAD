@@ -49,6 +49,25 @@ def pick_frame(origin, direction, modifiers=0):
             + struct.pack("<6f", *origin, *direction))
 
 
+# The 'E' input frame of sec 8.5, and the kinds it names.
+INPUT_SIZE = 15
+MOVE, PRESS, RELEASE, WHEEL, KEY_DOWN, KEY_UP = range(6)
+
+
+def input_frame(kind, x, y, code=0, modifiers=0, delta=0, time_ms=0):
+    """'E', a kind byte, a modifiers byte, a u16 code, three i16
+    (x, y, wheel delta) and a u32 client timestamp. Fifteen bytes.
+
+    The position is the CLIENT's: device pixels with the origin at the
+    top left, exactly as a canvas reports it. Nothing converts it on the
+    way up -- that is the mirror's job, against the canvas height it
+    resolves its picks against."""
+    return (b"E" + bytes([kind, modifiers])
+            + struct.pack("<H", code)
+            + struct.pack("<hhh", x, y, delta)
+            + struct.pack("<I", time_ms))
+
+
 def camera_and_pick(camera, pick):
     """'Q' (sec 8.10a): a camera frame and a pick in one message, each
     verbatim -- one frame instead of two, and the pairing atomic rather
@@ -173,6 +192,29 @@ class WS:
                 return m[1]
             if m[0] == 8:
                 raise RuntimeError("server closed the socket")
+
+    def next_text(self, timeout):
+        """The next text frame, as bytes. The control channel answers
+        the id-correlated ops on this one (docs/ThinClient.md sec 4.2),
+        interleaved with the binary scene pushes."""
+        deadline = clock() + timeout
+        while True:
+            left = deadline - clock()
+            if left <= 0:
+                return None
+            m = self.recv(left)
+            if m is None:
+                return None
+            if m[0] == 1:
+                return m[1]
+            if m[0] == 8:
+                raise RuntimeError("server closed the socket")
+
+    def op(self, payload, timeout=10.0):
+        """Send one control op and read its answer, skipping the scene
+        pushes that may be interleaved with it."""
+        self.send(1, payload if isinstance(payload, bytes) else payload.encode())
+        return self.next_text(timeout)
 
     def drain(self, timeout=0.0):
         """Read and discard whatever is already waiting."""

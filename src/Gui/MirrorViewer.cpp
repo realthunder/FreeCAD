@@ -53,6 +53,7 @@
 #include <Base/Matrix.h>
 #include <Base/Placement.h>
 
+#include "Document.h"
 #include "InventorBase.h"
 #include "MirrorViewer.h"
 #include "SoMouseWheelEvent.h"
@@ -312,10 +313,19 @@ MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
 
 MirrorViewer::~MirrorViewer()
 {
-    // A connection can drop in the middle of an edit. Give the view provider
-    // its children back now, while this is still a MirrorViewer: the base
-    // destructor cannot, because resetEditingRoot reaches getDocument() and
-    // by then there is no override left to reach.
+    // A connection can drop in the middle of an edit, and this view is
+    // what the document's edit session was bound to. Ending the session
+    // first is what keeps Gui::Document from being left holding a pointer
+    // to a mirror that no longer exists -- and it is the whole session
+    // that has to end, not just this view's half, because a served
+    // document has no other view to carry it on in.
+    if (pimpl->doc && pimpl->doc->editingViewer() == this) {
+        pimpl->doc->resetEdit();
+    }
+    // And whatever is left: give the view provider its children back now,
+    // while this is still a MirrorViewer. The base destructor cannot,
+    // because resetEditingRoot reaches getDocument() and by then there is
+    // no override left to reach.
     resetEditingViewProvider();
 }
 

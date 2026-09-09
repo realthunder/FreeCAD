@@ -970,7 +970,8 @@ void SceneServeSource::installHandlers()
                     return;
                 }
                 shared->reply(handleSceneControlRequest(shared->json, docName,
-                                                        shared->viewOnly));
+                                                        shared->viewOnly,
+                                                        shared->client));
             }, Qt::QueuedConnection);
         }, docName);
 
@@ -1002,6 +1003,11 @@ void SceneServeSource::installHandlers()
     const char *label = pimpl->doc && pimpl->doc->getDocument()
         ? pimpl->doc->getDocument()->Label.getValue() : "";
     server.setDocumentInfo(pimpl->groupName, label ? label : "");
+}
+
+ViewerContext *SceneServeSource::viewerFor(uint64_t client) const
+{
+    return pimpl->mirrorFor(client);
 }
 
 void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,

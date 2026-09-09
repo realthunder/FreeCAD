@@ -75,3 +75,11 @@ fc_add_gui_test(GuiServeMirrorPick_tests_run serve-mirror-pick.py
 # and put back is what this reads, through the provider's child count.
 fc_add_gui_test(GuiSketchEditRoot_tests_run sketch-edit-root.py
                 --timeout 180)
+
+# An edit mode entered from a browser runs in that client's own view
+# (docs/ThinClient.md sec 8.9 step 4), end to end over a real socket:
+# the `edit` op refused until a camera is stated, the sketch's graph
+# moved under the editing root and back, an 'E' input event replayed,
+# and a client that drops mid-edit leaving no dangling binding behind.
+fc_add_gui_test(GuiServeMirrorEdit_tests_run serve-mirror-edit.py
+                --timeout 200)

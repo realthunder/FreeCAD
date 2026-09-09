@@ -51,6 +51,7 @@ namespace Gui
 
 class Document;
 class SoFCUnifiedSelection;
+class ViewerContext;
 
 /*!
  * Publishes a document to streaming viewers with no 3D view behind it
@@ -157,6 +158,16 @@ public:
      */
     void pickAndSelect(const SbVec3f &origin, const SbVec3f &dir, bool ctrl,
                        uint64_t client = 0);
+
+    /*!
+     * The view  client is looking through -- its mirror viewer
+     * (docs/ThinClient.md sec 8.3) -- or null when it has stated no
+     * camera. This is the type an edit mode is given, and it is what an
+     * edit entered from a browser has to be bound to: a served document
+     * has no 3D view, so there is nothing else for setEdit to find. GUI
+     * thread only.
+     */
+    ViewerContext *viewerFor(uint64_t client) const;
 
 private Q_SLOTS:
     void onPublishTimeout();

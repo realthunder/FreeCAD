@@ -44,6 +44,8 @@
 #include "SceneControl.h"
 #include "SceneServeSource.h"
 #include "View3DInventor.h"
+#include "ViewProvider.h"
+#include "ViewerContext.h"
 #include "ViewProviderDocumentObject.h"
 #include "Renderer/SceneServer.h"
 
@@ -564,11 +566,119 @@ QJsonObject setProperty(const QJsonObject &req,
     return reply;
 }
 
+/// Enter an edit mode from a client (docs/ThinClient.md sec 8.9 step 4).
+///
+/// The one thing this has to get right that a desktop command does not
+/// is WHICH view the session belongs to. Gui::Document::setEdit finds
+/// one by asking the main window what is active, which in a process
+/// serving several browsers names either nothing or somebody else's --
+/// so the connection's own mirror is made current for the call
+/// (Gui::ViewerScope) and setEdit binds to that.
+///
+/// A served document with no mirror for this connection is refused
+/// rather than let through: setEdit's fallback would CREATE a 3D view
+/// for the document, which is a thing only a desktop may do and which
+/// in a serving process would open a GL context nobody asked for.
+QJsonObject setEditOp(const QJsonObject &req, const std::string &boundDoc,
+                      uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+
+    App::Document *doc = nullptr;
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    if (!docName.isEmpty())
+        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    else if (!boundDoc.empty())
+        doc = App::GetApplication().getDocument(boundDoc.c_str());
+    else
+        doc = App::GetApplication().getActiveDocument();
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+
+    Gui::Document *gdoc = Application::Instance->getDocument(doc);
+    if (!gdoc)
+        return errorReply(id, "UnknownDocument",
+                          QString::fromUtf8(doc->getName()));
+
+    const QString objName = req.value(QLatin1String("obj")).toString();
+    App::DocumentObject *obj = doc->getObject(objName.toUtf8().constData());
+    if (!obj)
+        return errorReply(id, "UnknownObject", objName);
+    ViewProvider *vp = Application::Instance->getViewProvider(obj);
+    if (!vp)
+        return errorReply(id, "NoViewProvider", objName);
+
+    ViewerContext *viewer = nullptr;
+    if (SceneServeSource *source = SceneServeSource::sourceFor(doc)) {
+        viewer = source->viewerFor(client);
+        if (!viewer)
+            return errorReply(id, "NoView",
+                              QStringLiteral("state a camera before editing"));
+    }
+
+    const int mode = req.value(QLatin1String("mode")).toInt(0);
+    const QString subname = req.value(QLatin1String("subname")).toString();
+    const QByteArray sub = subname.toUtf8();
+
+    bool ok = false;
+    try {
+        ViewerScope scope(viewer);
+        ok = gdoc->setEdit(vp, mode, subname.isEmpty() ? nullptr : sub.constData());
+    }
+    catch (Base::Exception &e) {
+        return errorReply(id, "EditFailed",
+                          QString::fromUtf8(e.what()));
+    }
+    if (!ok)
+        return errorReply(id, "EditRefused", objName);
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("doc")] = QString::fromUtf8(doc->getName());
+    reply[QLatin1String("obj")] = objName;
+    reply[QLatin1String("mode")] = mode;
+    return reply;
+}
+
+/// Leave the edit mode this document is in, whoever started it. One
+/// editing view provider per document is the first cut (sec 8.10), so
+/// there is only ever one to leave.
+QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+
+    App::Document *doc = nullptr;
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    if (!docName.isEmpty())
+        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    else if (!boundDoc.empty())
+        doc = App::GetApplication().getDocument(boundDoc.c_str());
+    else
+        doc = App::GetApplication().getActiveDocument();
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+
+    Gui::Document *gdoc = Application::Instance->getDocument(doc);
+    if (!gdoc)
+        return errorReply(id, "UnknownDocument",
+                          QString::fromUtf8(doc->getName()));
+
+    gdoc->resetEdit();
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("doc")] = QString::fromUtf8(doc->getName());
+    return reply;
+}
+
 } // namespace
 
 std::string Gui::handleSceneControlRequest(const std::string &json,
                                            const std::string &boundDoc,
-                                           bool viewOnly)
+                                           bool viewOnly,
+                                           uint64_t client)
 {
     QJsonParseError err;
     QJsonDocument parsed = QJsonDocument::fromJson(
@@ -584,7 +694,9 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
         // the mode rides the request rather than being enforced by the
         // transport (docs/MultiDocServe.md §8). Reads stay answered —
         // a view-only client's property inspector keeps working.
-        const bool mutating = op == QLatin1String("setProperty");
+        const bool mutating = op == QLatin1String("setProperty")
+            || op == QLatin1String("edit")
+            || op == QLatin1String("resetEdit");
         if (viewOnly && mutating)
             reply = errorReply(req.value(QLatin1String("id")), "ViewOnly",
                                QStringLiteral("this connection may not edit"));
@@ -592,6 +704,10 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             reply = getProperties(req, boundDoc);
         else if (op == QLatin1String("setProperty"))
             reply = setProperty(req, boundDoc);
+        else if (op == QLatin1String("edit"))
+            reply = setEditOp(req, boundDoc, client);
+        else if (op == QLatin1String("resetEdit"))
+            reply = resetEditOp(req, boundDoc);
         else
             reply = errorReply(req.value(QLatin1String("id")), "UnknownOp", op);
     }
@@ -618,7 +734,8 @@ void Gui::installSceneControlHandler(const std::string &docName)
                     shared->reply(
                             handleSceneControlRequest(shared->json,
                                                       docName,
-                                                      shared->viewOnly));
+                                                      shared->viewOnly,
+                                                      shared->client));
                 }, Qt::QueuedConnection);
             }, docName);
 }
