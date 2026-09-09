@@ -114,10 +114,6 @@
 #include <QWindow>
 #include <QDebug>
 #include <Base/Console.h>
-// TEMPORARY (dots investigation): per-frame draw tally by material type.
-inline unsigned g_dotsTri = 0;
-inline unsigned g_dotsLine = 0;
-inline unsigned g_dotsPoint = 0;
 #endif
 
 // #if !defined(FC_OS_MACOSX)

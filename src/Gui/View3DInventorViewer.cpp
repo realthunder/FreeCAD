@@ -4655,11 +4655,6 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         externalRendered = _pimpl->renderer->renderOffscreen(
                 col, &viewMat.getValue(), &projMat.getValue(), width, height);
-        // TEMPORARY (dots investigation).
-        if (getenv("FC_DOTS_DUMP"))
-            Base::Console().Message(
-                    "DOTS renderToFramebuffer %dx%d external=%d\n",
-                    width, height, int(externalRendered));
     }
     if (!externalRendered) {
         glClearColor(float(col.redF()), float(col.greenF()), float(col.blueF()),

@@ -405,17 +405,6 @@ bool BGFXRenderer::Private::render(const QColor &col,
         return bailToHost();
 #endif
 
-    // TEMPORARY (dots investigation): one line per rendered frame, so
-    // the per-draw dump can be grouped by frame.
-    if (getenv("FC_DOTS_DUMP")) {
-        static unsigned dotsFrame = 0;
-        Base::Console().Message(
-            "DOTS frame %u  view %ux%u accumFrames=%u  prev tri=%u line=%u"
-            " point=%u\n",
-            ++dotsFrame, unsigned(view->width), unsigned(view->height),
-            unsigned(view->accumFrames), g_dotsTri, g_dotsLine, g_dotsPoint);
-        g_dotsTri = g_dotsLine = g_dotsPoint = 0;
-    }
     uint16_t width = view->width;
     uint16_t height = view->height;
     // The background's own alpha, not a forced opaque: a screenshot
@@ -6445,15 +6434,6 @@ bool BGFXRenderer::Private::render(const QColor &col,
         capturePixW = view->width;
         capturePixH = view->height;
         captureIsDump = dumpPending;
-        // TEMPORARY (dots investigation): which frame's pixels become
-        // the dump, and what state that frame was drawn in.
-        if (getenv("FC_DOTS_DUMP"))
-            Base::Console().Message(
-                "DOTS capture queued: isDump=%d overlays=%d accumFrames=%u "
-                "accumSamples=%d %ux%u\n",
-                int(captureIsDump), int(pendingDump.overlays),
-                unsigned(view->accumFrames), int(accumSamples),
-                unsigned(view->width), unsigned(view->height));
         captureRequest = pendingDump;
         captureReadyFrame = view->readbackCapture(captureColor.data(),
                                                   captureDepth.data());

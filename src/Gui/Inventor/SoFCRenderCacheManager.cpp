@@ -2611,23 +2611,6 @@ SoFCRenderCacheManagerP::postShape(void *userdata,
   self->vcache->close(state);
   self->stack.back()->endChildCaching(state, self->vcache);
 
-  // TEMPORARY (dots investigation): what a finished capture actually
-  // holds. The renderer emits a line draw only when getNumLineIndices()
-  // is non-zero (SoFCRenderCache.cpp ~2434), so this is the number that
-  // decides whether an object's edges reach the frame at all.
-  if (getenv("FC_DOTS_DUMP")) {
-    static const auto dotsT0 = std::chrono::steady_clock::now();
-    Base::Console().Message(
-        "DOTS capture %8.1fms %-16s %p tri=%d line=%d point=%d\n",
-        std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - dotsT0).count(),
-        node->getTypeId().getName().getString(),
-        static_cast<const void *>(node),
-        self->vcache->getNumTriangleIndices(),
-        self->vcache->getNumLineIndices(),
-        self->vcache->getNumPointIndices());
-  }
-
   if (self->capturebudgeting) {
     self->capturespentms += std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - self->capturestart).count();

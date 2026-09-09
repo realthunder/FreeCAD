@@ -912,11 +912,6 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
             int pass, bool noseam)
 {
     const Render::Material &mat = draw.material;
-    if (getenv("FC_DOTS_DUMP")) {
-        if (mat.type == Render::Material::Triangle) ++g_dotsTri;
-        else if (mat.type == Render::Material::Line) ++g_dotsLine;
-        else if (mat.type == Render::Material::Point) ++g_dotsPoint;
-    }
     if (!draw.mesh || draw.mesh->numVertices == 0)
         return;
     // The per-object per-view display style resolution
@@ -1318,24 +1313,6 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     } else {
         params[3] = dimalpha;
     }
-    // TEMPORARY (dots investigation): dump what a line draw asks for.
-    if (mat.type == Render::Material::Line) {
-        static const bool dotsDump = getenv("FC_DOTS_DUMP") != nullptr;
-        if (dotsDump)
-            Base::Console().Message(
-                "DOTS line pass=%d thick=%d w=%.3f params=%.5f/%.5f/%.6f/%.5f "
-                "view=%dx%d vid=%d segs=%d inst=%d depthtest=%d blend=%d "
-                "pattern=%04x\n",
-                pass, int(thickline), mat.linewidth,
-                params[0], params[1], params[2], params[3],
-                int(width), int(height), int(vid(passView)),
-                int((noseam ? draw.mesh->numNoSeamLineIndices
-                            : draw.mesh->numLineIndices) / 2),
-                int(bgfx::isValid(noseam ? mesh->lineNoSeamInst
-                                         : mesh->lineInst)),
-                int(depthtest), int(blend),
-                unsigned(linepattern & 0xffff));
-    }
     bgfx::setUniform(u_matColor, color);
     bgfx::setUniform(u_matEmissive, emissive);
     bgfx::setUniform(u_matSpecular, specular);
@@ -1530,41 +1507,6 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
         }
     }
 
-    // TEMPORARY (dots investigation): name the programs once, so a
-    // prog=N in the dump below can be read.
-    if (getenv("FC_DOTS_DUMP")) {
-        static bool named = false;
-        if (!named) {
-            named = true;
-            Base::Console().Message(
-                "DOTS progs mesh=%d meshInst=%d flat=%d flatClip=%d "
-                "line=%d lineClip=%d linePat=%d linePatClip=%d point=%d "
-                "meshClip=%d meshTex=%d meshOit=%d debug=%d cap=%d\n",
-                int(m_progMesh.idx), int(m_progMeshInst.idx),
-                int(m_progFlat.idx), int(m_progFlatClip.idx),
-                int(m_progLine.idx), int(m_progLineClip.idx),
-                int(m_progLinePat.idx), int(m_progLinePatClip.idx),
-                int(m_progPoint.idx), int(m_progMeshClip.idx),
-                int(m_progMeshTex.idx), int(m_progMeshOit.idx),
-                int(m_progDebug.idx), int(m_progCap.idx));
-        }
-    }
-    // TEMPORARY (dots investigation): the DARK draws -- whatever paints
-    // the box edges is one of these, and the red-mesh control says it
-    // comes out of the mesh program rather than the line program.
-    if (getenv("FC_DOTS_DUMP") && color[0] < 0.25f && color[1] < 0.25f
-            && color[2] < 0.25f)
-        Base::Console().Message(
-            "DOTS dark draw type=%d pass=%d ptLines=%d ptPoints=%d "
-            "prog=%d rgba=%.2f/%.2f/%.2f/%.2f part=%d faceoutline=%d "
-            "outlineonly=%d lighting=%d verts=%u\n",
-            int(mat.type), pass,
-            int((state & BGFX_STATE_PT_MASK) == BGFX_STATE_PT_LINES),
-            int((state & BGFX_STATE_PT_MASK) == BGFX_STATE_PT_POINTS),
-            int(prog.idx), color[0], color[1], color[2], color[3],
-            int(draw.partIndex), int(mat.faceoutline),
-            int(mat.outlineonly), int(mat.lighting),
-            unsigned(draw.mesh->numVertices));
     bgfx::submit(vid(passView), prog, depth);
     ++drawcount;
 }
