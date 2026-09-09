@@ -153,12 +153,19 @@ public:
      * viewer -- its own camera and canvas, so its pick radius in pixels
      * means what it means on the desktop -- and against this source's
      * synthetic camera when that client has stated no camera, or is not
-     * named at all. \a ctrl toggles rather than replaces the selection.
+     * named at all.
+     *
+     * \a flags is what the click MEANT, as the client resolved it against
+     * its own selection: a set operation, a scope and the element kind its
+     * pick filter admits (Render::ScenePickRequest::modifiers, and
+     * docs/ThinClient.md sec 8.5). The grammar stays on the client, where
+     * the state it depends on is; this side supplies the vocabulary.
+     *
      * The pick commits into the room selection, which is what every
      * viewer and every panel already reads. GUI thread only.
      */
-    void pickAndSelect(const SbVec3f &origin, const SbVec3f &dir, bool ctrl,
-                       uint64_t client = 0);
+    void pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
+                       uint32_t flags, uint64_t client = 0);
 
     /*!
      * The view  client is looking through -- its mirror viewer

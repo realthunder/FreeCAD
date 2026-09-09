@@ -122,7 +122,16 @@ public:
      * returned point; null when nothing was hit, or when there is no camera
      * to resolve against.
      */
-    SoPickedPoint* pickRay(const SbVec3f& origin, const SbVec3f& dir) const;
+    /** Resolve a world ray against this client's framing.
+     *
+     * With  accept given, every hit along the ray is offered to it front
+     * to back and the first it takes is returned -- which is how a pick
+     * filter that admits one element kind reaches the edge behind a face.
+     * Without it, the nearest hit, as before.
+     */
+    SoPickedPoint* pickRay(
+        const SbVec3f& origin, const SbVec3f& dir,
+        const std::function<bool(const SoPickedPoint&)>& accept = {}) const;
 
     /** One input event as the client sent it (docs/ThinClient.md sec 8.5,
      * the `'E'` frame).

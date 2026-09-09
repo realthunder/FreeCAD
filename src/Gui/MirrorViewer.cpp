@@ -486,7 +486,9 @@ bool MirrorViewer::rayToNormPoint(const SbVec3f& origin, const SbVec3f& dir,
     return true;
 }
 
-SoPickedPoint* MirrorViewer::pickRay(const SbVec3f& origin, const SbVec3f& dir) const
+SoPickedPoint* MirrorViewer::pickRay(
+    const SbVec3f& origin, const SbVec3f& dir,
+    const std::function<bool(const SoPickedPoint&)>& accept) const
 {
     SbVec2f normPoint;
     if (!pimpl->scene || !rayToNormPoint(origin, dir, normPoint)) {
@@ -495,9 +497,26 @@ SoPickedPoint* MirrorViewer::pickRay(const SbVec3f& origin, const SbVec3f& dir) 
     SoRayPickAction action(pimpl->viewport);
     action.setNormalizedPoint(normPoint);
     action.setRadius(pimpl->state.pickRadius);
+    if (accept) {
+        // Every hit along the ray rather than the nearest, because the
+        // caller is filtering by what each one turns out to BE -- the
+        // client's pick filter admits one element kind, and the nearest
+        // hit is usually a face standing in front of the edge it wants.
+        action.setPickAll(true);
+    }
     action.apply(pimpl->pickRoot());
-    SoPickedPoint* picked = action.getPickedPoint();
-    return picked ? new SoPickedPoint(*picked) : nullptr;
+    if (!accept) {
+        SoPickedPoint* picked = action.getPickedPoint();
+        return picked ? new SoPickedPoint(*picked) : nullptr;
+    }
+    const SoPickedPointList& hits = action.getPickedPointList();
+    for (int i = 0; i < hits.getLength(); ++i) {
+        // Front to back, so the first acceptable one is the nearest.
+        if (accept(*hits[i])) {
+            return new SoPickedPoint(*hits[i]);
+        }
+    }
+    return nullptr;
 }
 
 bool MirrorViewer::handleInput(const Input& input)

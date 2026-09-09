@@ -2080,20 +2080,49 @@ static void emitSelectionEvent()
 /// and re-applies this one. The ruling is sec 8.2a's: a click round-trips
 /// because selection feeds the tree, the property panel and everything
 /// behind Gui::Selection(); a hover never does.
-static void sendPick(float px, float py, bool ctrl);
+static void sendPick(float px, float py, uint8_t flags);
+
+/// What a click MEANS, which is what goes up the wire (sec 8.5).
+///
+/// Not the modifiers that produced it: the grammar below is this client's,
+/// the server has no idea what is already selected here, and Shift, the
+/// sticky-multi mode, the pick filter and the plain-click cycle all resolve
+/// to one of these three set operations over one of two scopes. Sending the
+/// conclusion rather than the keystroke is what lets the grammar stay in the
+/// DOM layer where section 5 puts it, and leaves the server a vocabulary
+/// instead of a second copy of the policy.
+enum PickMode {
+    PickReplace = 0,   ///< this alone is selected
+    PickToggle  = 1,   ///< in if it was out, out if it was in
+    PickExtend  = 2,   ///< added, and left alone if already there
+};
+static const uint8_t kPickWholeObject = 1u << 2;   ///< scope: the object
+
+/// The element kind the filter admits, in bits 3-5. Zero is "any", and the
+/// rest are the client's FilterFace/Edge/Vertex: the server has to know,
+/// because a filtered click that misses locally still reaches its ray pick.
+static uint8_t pickKindBits()
+{
+    switch (s_pickFilter) {
+    case FilterFace:   return 1u << 3;
+    case FilterEdge:   return 2u << 3;
+    case FilterVertex: return 3u << 3;
+    default:           return 0;
+    }
+}
 
 static void selectAt(float px, float py, bool ctrl, bool shift = false)
 {
-    // Up it goes, whether or not anything was hit: a plain click on
-    // nothing clears the selection, and the server has to hear that too.
-    // The bit the wire carries is "extend rather than replace", which is
-    // what sticky-multi and Shift both are; the finer grammar this client
-    // applies below -- promoting to the whole object, the pick filter --
-    // has no wire form yet (docs/ThinClient.md sec 8.5).
-    sendPick(px, py, ctrl || s_selMode == 1 || shift);
-
     PickHit hit = pickScene(px, py);
+    // The intent goes up whether or not anything was hit here: a plain
+    // click on nothing clears the selection, and the server has to hear
+    // that -- and its own pick may land where this one missed, the served
+    // geometry being the real one and this a tessellation of it.
+    const bool multi = ctrl || s_selMode == 1;
     if (hit.draw < 0) {
+        sendPick(px, py,
+                 uint8_t((multi || shift ? PickToggle : PickReplace)
+                         | pickKindBits()));
         if (!ctrl && !shift && !s_sel.empty()) {
             s_sel.clear();
             rebuildSelection();
@@ -2107,8 +2136,14 @@ static void selectAt(float px, float py, bool ctrl, bool shift = false)
     SelItem item{dc.objectKey, hit.kind, part};
     if (s_pickFilter == FilterObject)
         item = SelItem{dc.objectKey, PickNone, -1};
-    // Multi mode is a sticky Ctrl: every plain click extends/toggles.
-    const bool multi = ctrl || s_selMode == 1;
+    // Whether the thing this click acts on is the object as a whole. Read
+    // off the item and the branch taken, never off the resulting set: a
+    // Ctrl-click that toggles a whole-object item back OFF leaves nothing
+    // in the set to read it from, and the server would then be told to
+    // toggle the sub-element under the ray instead -- which is not
+    // selected, so it would add it. Divergence, silently, and only in
+    // that one combination.
+    bool wholeScope = item.kind == PickNone;
     auto same = [&](const SelItem &s) {
         return s.key == item.key && s.kind == item.kind
             && s.part == item.part;
@@ -2121,6 +2156,7 @@ static void selectAt(float px, float py, bool ctrl, bool shift = false)
         s_sel.erase(std::remove_if(s_sel.begin(), s_sel.end(), ofObject),
                     s_sel.end());
         s_sel.push_back(SelItem{dc.objectKey, PickNone, -1});
+        wholeScope = true;
     }
     else if (multi) {
         auto it = std::find_if(s_sel.begin(), s_sel.end(), same);
@@ -2145,13 +2181,25 @@ static void selectAt(float px, float py, bool ctrl, bool shift = false)
         const bool hadWhole = std::any_of(s_sel.begin(), s_sel.end(),
                                           wholeOfObject);
         s_sel.clear();
-        if (hadSub && !hadWhole)
+        if (hadSub && !hadWhole) {
             s_sel.push_back(SelItem{dc.objectKey, PickNone, -1});
+            wholeScope = true;
+        }
         else
             s_sel.push_back(item);
     }
     rebuildSelection();
     emitSelectionEvent();
+
+    // Now say what it meant, rather than which keys were held: one set
+    // operation over one scope, which is what Shift, the sticky-multi
+    // mode, the object pick filter and the plain-click cycle all come to
+    // once this client has resolved them against its own selection.
+    uint8_t flags = pickKindBits();
+    flags |= shift ? PickExtend : (multi ? PickToggle : PickReplace);
+    if (wholeScope)
+        flags |= kPickWholeObject;
+    sendPick(px, py, flags);
 }
 
 /// One on-view parameter, as far as this viewer is concerned
@@ -3465,13 +3513,20 @@ static void tickCameraUplink()
 /// Send a click up as the 'P' pick the wire already carries: 'P', a flags
 /// byte, then the world ray as six little-endian floats.
 ///
+/// The flags byte is the click's MEANING, resolved by selectAt above: a set
+/// operation in bits 0-1, "the whole object rather than what the ray hit"
+/// in bit 2, and the element kind the pick filter admits in bits 3-5. The
+/// server names the thing -- the ray is what reaches the element map and a
+/// link's sub-object path, which this client's part index cannot -- and then
+/// does what it is told with it (docs/ThinClient.md sec 8.5).
+///
 /// The local selection has already been drawn by the time this runs -- that
 /// is the prediction of docs/ThinClient.md sec 8.6 -- and this is what makes
 /// the server's selection authoritative: the tree, the property panel and
 /// the ~1500 call sites behind Gui::Selection() are all on that side, and
 /// the ruling of sec 8.2a is that a click round-trips while a hover does
 /// not. The echo is merged, never applied over the local state.
-static void sendPick(float px, float py, bool ctrl)
+static void sendPick(float px, float py, uint8_t flags)
 {
     if (!s_wsOpen || s_ws <= 0)
         return;
@@ -3480,7 +3535,7 @@ static void sendPick(float px, float py, bool ctrl)
     screenRay(px, py, orig, rdir);
     uint8_t pick[2 + 6 * sizeof(float)];
     pick[0] = 'P';
-    pick[1] = ctrl ? 1 : 0;
+    pick[1] = flags;
     const float v[6] = {orig.x, orig.y, orig.z, rdir.x, rdir.y, rdir.z};
     std::memcpy(pick + 2, v, sizeof(v));
 

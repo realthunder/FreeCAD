@@ -1069,7 +1069,7 @@ void SceneServeSource::installHandlers()
             if (self)
                 self->pickAndSelect(SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
                                     SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
-                                    r.modifiers & 1, r.client);
+                                    r.modifiers, r.client);
         }, Qt::QueuedConnection);
     }, pimpl->groupName);
 
@@ -1195,11 +1195,65 @@ ViewerContext *SceneServeSource::viewerFor(uint64_t client) const
     return pimpl->mirrorFor(client);
 }
 
+namespace
+{
+
+/// The set operation a client's pick asks for (docs/ThinClient.md sec 8.5).
+enum PickMode
+{
+    PickReplace = 0,
+    PickToggle = 1,
+    PickExtend = 2,
+};
+/// Scope: the object as a whole rather than the element the ray hit.
+constexpr uint32_t kPickWholeObject = 1u << 2;
+
+/// Whether the element a subname ends in is of the kind the client's pick
+/// filter admits. Kind 0 admits everything, and is what a client with no
+/// filter set sends.
+bool elementKindMatches(const std::string &subname, unsigned kind)
+{
+    if (kind == 0)
+        return true;
+    const size_t dot = subname.rfind('.');
+    const char *element =
+        subname.c_str() + (dot == std::string::npos ? 0 : dot + 1);
+    switch (kind) {
+        case 1: return std::strncmp(element, "Face", 4) == 0;
+        case 2: return std::strncmp(element, "Edge", 4) == 0;
+        case 3: return std::strncmp(element, "Vertex", 6) == 0;
+        default: return true;
+    }
+}
+
+/// A subname with its element name taken off: the object as a whole.
+///
+/// Empty for a plain object, and for a pick inside a link the sub-object
+/// path that names it -- trailing dot kept, which is what tells FreeCAD's
+/// subname convention an object from an element of one.
+std::string wholeObjectSubname(const std::string &subname)
+{
+    const size_t dot = subname.rfind('.');
+    return dot == std::string::npos ? std::string() : subname.substr(0, dot + 1);
+}
+
+}  // namespace
+
 void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
-                                     bool ctrl, uint64_t client)
+                                     uint32_t flags, uint64_t client)
 {
     if (!isValid())
         return;
+
+    // What the click meant, as the client resolved it against its own
+    // selection (docs/ThinClient.md sec 8.5). The grammar -- Shift
+    // promoting to the whole object, the sticky-multi mode, the pick
+    // filter, the plain-click cycle -- stays over there, where the state
+    // it depends on is; what arrives is the conclusion, and this side
+    // supplies a vocabulary rather than a second copy of the policy.
+    const unsigned mode = flags & 3u;
+    const bool wholeObject = (flags & kPickWholeObject) != 0;
+    const unsigned kind = (flags >> 3) & 7u;
 
     // Through this client's mirror when it has stated a camera: the ray
     // goes back to the viewport point it was made from, so the client's
@@ -1223,8 +1277,29 @@ void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
     if (mirror && mirror->isEditingViewProvider())
         inEdit = std::make_unique<ViewerScope>(mirror);
 
-    if (mirror)
-        picked.reset(mirror->pickRay(origin, dir));
+    if (mirror) {
+        // With an element kind asked for, the hits are offered front to
+        // back until one resolves to that kind: the nearest is usually the
+        // face standing in front of the edge the client's filter is after.
+        // A filtered click that found nothing locally still arrives here,
+        // the served geometry being the real one and the client's a
+        // tessellation of it.
+        std::function<bool(const SoPickedPoint &)> accept;
+        if (kind != 0) {
+            accept = [this, kind](const SoPickedPoint &hit) {
+                std::string name;
+                ViewProviderDocumentObject *vp =
+                    pimpl->doc ? pimpl->doc->getViewProviderByPathFromHead(
+                                     static_cast<SoFullPath *>(hit.getPath()))
+                               : nullptr;
+                return vp && vp->getObject()
+                    && vp->getObject()->isAttachedToDocument()
+                    && vp->getElementPicked(&hit, name)
+                    && elementKindMatches(name, kind);
+            };
+        }
+        picked.reset(mirror->pickRay(origin, dir, accept));
+    }
     else {
         SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
         SoRayPickAction rp(viewport);
@@ -1246,27 +1321,67 @@ void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
             vpd = nullptr;
     }
     if (!vpd) {
-        if (!ctrl)
+        // A miss still clears, because a plain click on nothing is how a
+        // selection is dropped -- and only a replace does: a toggle or an
+        // extend that hit nothing changes nothing.
+        if (mode == PickReplace)
             Gui::Selection().clearSelection();
         return;
     }
 
     const char *docname = vpd->getObject()->getDocument()->getName();
     const char *objname = vpd->getObject()->getNameInDocument();
+    if (wholeObject)
+        subname = wholeObjectSubname(subname);
     const auto &pt = pp->getPoint();
     SelectionNoTopParentCheck guard;
-    if (ctrl) {
-        if (Gui::Selection().isSelected(docname, objname, subname.c_str(),
-                                        ResolveMode::NoResolve))
-            Gui::Selection().rmvSelection(docname, objname, subname.c_str());
-        else
+
+    // A whole-object selection and that object's element selections are
+    // mutually exclusive, whichever way round the add goes -- an object is
+    // either selected entire or by its parts. Stated here rather than left
+    // to the client because the room's selection is what the tree, the
+    // property panel and every other viewer read.
+    auto dropConflicting = [&]() {
+        const bool addingWhole = subname.empty() || subname.back() == '.';
+        for (const auto &sel : Gui::Selection().getSelection(
+                 docname, ResolveMode::NoResolve)) {
+            if (sel.FeatName != std::string(objname))
+                continue;
+            const std::string other = sel.SubName ? sel.SubName : "";
+            if (other == subname)
+                continue;
+            const bool otherWhole = other.empty() || other.back() == '.';
+            if (addingWhole || otherWhole)
+                Gui::Selection().rmvSelection(docname, objname, other.c_str());
+        }
+    };
+
+    switch (mode) {
+        case PickToggle:
+            if (Gui::Selection().isSelected(docname, objname, subname.c_str(),
+                                            ResolveMode::NoResolve)) {
+                Gui::Selection().rmvSelection(docname, objname,
+                                              subname.c_str());
+                break;
+            }
+            dropConflicting();
             Gui::Selection().addSelection(docname, objname, subname.c_str(),
                                           pt[0], pt[1], pt[2]);
-    }
-    else {
-        Gui::Selection().clearSelection();
-        Gui::Selection().addSelection(docname, objname, subname.c_str(),
-                                      pt[0], pt[1], pt[2]);
+            break;
+        case PickExtend:
+            if (Gui::Selection().isSelected(docname, objname, subname.c_str(),
+                                            ResolveMode::NoResolve))
+                break;
+            dropConflicting();
+            Gui::Selection().addSelection(docname, objname, subname.c_str(),
+                                          pt[0], pt[1], pt[2]);
+            break;
+        case PickReplace:
+        default:
+            Gui::Selection().clearSelection();
+            Gui::Selection().addSelection(docname, objname, subname.c_str(),
+                                          pt[0], pt[1], pt[2]);
+            break;
     }
     // A selection changes the feeds, and nothing else will ask.
     schedulePublish();

@@ -61,7 +61,23 @@ namespace Render {
 struct ScenePickRequest {
     float origin[3];
     float dir[3];
-    uint32_t modifiers = 0;   ///< bit 0 = ctrl (toggle selection)
+    /** What the click MEANT, as the client resolved it.
+     *
+     * Not the modifiers that produced it (docs/ThinClient.md sec 8.5). The
+     * client's selection grammar -- Shift promoting to the whole object,
+     * the sticky-multi mode, the pick filter, the plain-click cycle -- is
+     * the DOM layer's and depends on what is already selected THERE, so
+     * what travels is the conclusion:
+     *
+     *  bits 0-1  the set operation: 0 replace, 1 toggle, 2 extend
+     *  bit 2     the scope: the whole object rather than the element hit
+     *  bits 3-5  the element kind the pick filter admits, 0 for any,
+     *            then 1 face, 2 edge, 3 vertex
+     *
+     * Bit 0 alone still reads as "extend rather than replace", which is
+     * what it meant before there was anything else in the byte.
+     */
+    uint32_t modifiers = 0;
     /// The connection it arrived on (SceneClientInfo::id), so the
     /// publisher can resolve it against that client's own camera --
     /// its mirror viewer (docs/ThinClient.md sec 8.3) -- rather than
