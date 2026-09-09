@@ -1343,17 +1343,25 @@ void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
     // property panel and every other viewer read.
     auto dropConflicting = [&]() {
         const bool addingWhole = subname.empty() || subname.back() == '.';
+        // Collected before anything is removed. A SelObj holds BORROWED
+        // char pointers into the selection's own storage, and removing an
+        // entry while walking them is only safe because of what that
+        // storage happens to be several layers down. Copying first costs
+        // nothing here and does not depend on that.
+        std::vector<std::string> conflicting;
         for (const auto &sel : Gui::Selection().getSelection(
                  docname, ResolveMode::NoResolve)) {
-            if (sel.FeatName != std::string(objname))
+            if (!sel.FeatName || std::strcmp(sel.FeatName, objname) != 0)
                 continue;
-            const std::string other = sel.SubName ? sel.SubName : "";
+            std::string other = sel.SubName ? sel.SubName : "";
             if (other == subname)
                 continue;
             const bool otherWhole = other.empty() || other.back() == '.';
             if (addingWhole || otherWhole)
-                Gui::Selection().rmvSelection(docname, objname, other.c_str());
+                conflicting.push_back(std::move(other));
         }
+        for (const std::string &other : conflicting)
+            Gui::Selection().rmvSelection(docname, objname, other.c_str());
     };
 
     switch (mode) {

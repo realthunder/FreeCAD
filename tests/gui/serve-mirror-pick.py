@@ -109,6 +109,16 @@ def camera_frame(height_angle=HEIGHT_ANGLE, near=NEAR, far=FAR, eye=EYE):
                                  pick_radius=PICK_RADIUS)
 
 
+# The flags byte of the 'P' pick (docs/ThinClient.md sec 8.5): what the
+# click MEANT, resolved by the client against its own selection, rather
+# than the modifiers that produced it.
+REPLACE, TOGGLE, EXTEND = 0, 1, 2
+WHOLE = 1 << 2                 # the object rather than the element hit
+FACE_ONLY = 1 << 3             # the element kind the pick filter admits
+EDGE_ONLY = 2 << 3
+VERTEX_ONLY = 3 << 3
+
+
 def pick(origin, direction, modifiers=0):
     return wsclient.pick_frame(origin, direction, modifiers)
 
@@ -137,6 +147,7 @@ class Client(threading.Thread):
         self.restated_pushed = None
         self.combined_pushed = None
         self.face_pushed = None
+        self.toggle_on_pushed = None
         self.bad_frame_pushed = None
 
     def run(self):
@@ -193,6 +204,40 @@ class Client(threading.Thread):
             pick(*ray_to(5.0, 10.0 + 3.0 * far_upp, FAR_EYE))))
         self.combined_pushed = ws.next_binary(5.0) is not None
         ws.next_binary(0.3)
+
+        # 2d. The selection grammar (sec 8.5). The flags byte carries what
+        # the click MEANT, as the client resolved it against its own
+        # selection -- a set operation, a scope, and the element kind its
+        # pick filter admits. Each step below lands on a selection the
+        # others cannot produce, so the sequence is readable from the
+        # samples the GUI thread takes.
+        face = ray_to(5.0, 5.0, FAR_EYE)
+        edge = ray_to(10.0 + 3.0 * far_upp, 5.0, FAR_EYE)
+
+        ws.send(2, pick(*face, modifiers=REPLACE))
+        ws.next_binary(5.0)
+        ws.drain(0.3)
+
+        ws.send(2, pick(*edge, modifiers=TOGGLE))
+        self.toggle_on_pushed = ws.next_binary(5.0) is not None
+        ws.drain(0.3)
+
+        ws.send(2, pick(*edge, modifiers=TOGGLE))
+        ws.next_binary(5.0)
+        ws.drain(0.3)
+
+        # An object is selected either entire or by its parts, never both,
+        # so this must REPLACE the face rather than join it.
+        ws.send(2, pick(*face, modifiers=EXTEND | WHOLE))
+        ws.next_binary(5.0)
+        ws.drain(0.3)
+
+        # And the element kind is honoured: there is no edge within the
+        # pick radius of the middle of a face, so an edge-only click there
+        # finds nothing -- and a replace that finds nothing clears.
+        ws.send(2, pick(*face, modifiers=REPLACE | EDGE_ONLY))
+        ws.next_binary(5.0)
+        ws.drain(0.3)
 
         # 3. A camera frame that is not usable must be refused, not
         # adopted: the mirror keeps the one it had, so the middle of the
@@ -296,6 +341,26 @@ def verify():
     check("each of the three mirrored clicks landed on its own edge",
           len(picked_edges) >= 3,
           "edges seen: %s" % (picked_edges,))
+
+    # The grammar, read off the sequence of room selections.
+    def sel_of(subnames):
+        want = frozenset(subnames)
+        return any(s and s[0][0] == "Box" and frozenset(s[0][1]) == want
+                   for s in seen)
+
+    check("a plain click replaces with the element under the ray",
+          sel_of(["Face6"]), distinct)
+    check("a toggle adds a second element without dropping the first",
+          client.toggle_on_pushed is True
+          and any(s and s[0][0] == "Box" and len(s[0][1]) == 2
+                  and "Face6" in s[0][1] for s in seen),
+          distinct)
+    check("and toggling the same element again takes it away",
+          sel_of(["Face6"]), distinct)
+    check("selecting the whole object drops that object's elements",
+          sel_of([]), distinct)
+    check("an element kind the ray cannot satisfy selects nothing",
+          any(not s for s in seen), distinct)
 
     check("a face pick still works after a refused camera frame",
           client.face_pushed is True, "pushed: %s" % client.face_pushed)
