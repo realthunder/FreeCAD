@@ -743,13 +743,22 @@ void ViewProviderSketch::moveCursorToSketchPoint(Base::Vector2d point) {
 
     auto viewer = edit->viewer;
 
+    // Warping the pointer is the one thing here that genuinely needs a
+    // window: it moves the physical cursor of whoever is at this machine.
+    // A client's mirror has no widget (docs/ThinClient.md sec 8.3), and a
+    // sketch being dragged from a browser must not reach across and move
+    // the cursor of the person sitting at the server.
+    QWidget *glWidget = viewer->getGLWidget();
+    if (!glWidget)
+        return;
+
     SbVec2s screencoords = viewer->getPointOnViewport(sbpoint);
 
     short x,y; screencoords.getValue(x,y);
 
-    short height = viewer->getGLWidget()->height(); // Coin3D origin bottom left, QT origin top left
+    short height = glWidget->height(); // Coin3D origin bottom left, QT origin top left
 
-    QPoint newPos = viewer->getGLWidget()->mapToGlobal(QPoint(x,height-y));
+    QPoint newPos = glWidget->mapToGlobal(QPoint(x,height-y));
 
 
     // QScreen *screen = view->windowHandle()->screen();
@@ -1705,13 +1714,20 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
             return true;
         }
         case STATUS_SKETCH_UseRubberBand: {
-            // Here we must use the device-pixel-ratio to compute the correct y coordinate (#0003130)
-            qreal dpr = viewer->getGLWidget()->devicePixelRatioF();
+            // In the pixels the cursor is reported in: device pixels of
+            // the viewport, Coin's origin at the bottom. This used to take
+            // the GL widget's height and correct it by the device pixel
+            // ratio (#0003130) -- the same number wherever there is a
+            // widget, and a null dereference where there is not. A
+            // client's mirror has none (docs/ThinClient.md sec 8.3), and a
+            // browser dragging across empty space starts a rubber band
+            // like any other client.
+            const int height = viewer->getViewportRegion().getViewportSizePixels()[1];
             newCursorPos = cursorPos;
             rubberband->setCoords(prvCursorPos.getValue()[0],
-                       viewer->getGLWidget()->height()*dpr - prvCursorPos.getValue()[1],
+                       height - prvCursorPos.getValue()[1],
                        newCursorPos.getValue()[0],
-                       viewer->getGLWidget()->height()*dpr - newCursorPos.getValue()[1]);
+                       height - newCursorPos.getValue()[1]);
             viewer->redraw();
             return true;
         }
@@ -2323,8 +2339,16 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
                         Gui::ViewVolumeProjection proj(pCam->getViewVolume());
                         Base::Vector3d screencoords = proj(pos);
 
-                        int width = viewer->getGLWidget()->width(),
-                            height = viewer->getGLWidget()->height();
+                        // The viewport, not the widget: these pixels
+                        // are compared against a Coin cursor position,
+                        // which is in device pixels of the viewport -- so
+                        // the widget's LOGICAL size was already the wrong
+                        // unit wherever the ratio is not 1, and it is no
+                        // unit at all for a client's mirror, which has no
+                        // widget (docs/ThinClient.md sec 8.3).
+                        const SbVec2s viewportPx =
+                            viewer->getViewportRegion().getViewportSizePixels();
+                        int width = viewportPx[0], height = viewportPx[1];
 
                         if (width >= height) {
                             // "Landscape" orientation, to square
