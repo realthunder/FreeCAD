@@ -41,6 +41,10 @@
 #include <Inventor/SoInteraction.h>
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/SoRenderManager.h>
+#include <Inventor/events/SoKeyboardEvent.h>
+#include <Inventor/events/SoLocation2Event.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
+#include <Inventor/nodes/SoEventCallback.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoIndexedFaceSet.h>
@@ -490,6 +494,213 @@ TEST_F(MirrorViewerTest, editingTheRootDoesNothingWithNobodyEditing)
 
     mirror->resetEditingRoot();
     EXPECT_EQ(editRoot->getNumChildren(), 1);
+}
+
+/// The event path (docs/ThinClient.md sec 8.5, the `'E'` frame). A
+/// mirror's events are handled over a graph of its own -- this client's
+/// camera, this client's event callback, then the shared scene -- so one
+/// client's callbacks never see another's events, and a pointer position
+/// is resolved through the camera that client stated.
+
+namespace
+{
+/// What a replayed event looked like by the time it reached a callback
+/// installed through ViewerContext::addEventCallback.
+struct Seen
+{
+    int count = 0;
+    SbVec2s position {0, 0};
+    bool shift = false;
+    bool ctrl = false;
+    bool alt = false;
+    SbTime time;
+    bool hit = false;      ///< the callback's own pick found geometry
+    SbVec3f point {0, 0, 0};
+    SoType type = SoType::badType();
+    int key = 0;
+};
+
+void record(void* userdata, SoEventCallback* node)
+{
+    auto* seen = static_cast<Seen*>(userdata);
+    const SoEvent* event = node->getEvent();
+    ++seen->count;
+    seen->position = event->getPosition();
+    seen->shift = event->wasShiftDown();
+    seen->ctrl = event->wasCtrlDown();
+    seen->alt = event->wasAltDown();
+    seen->time = event->getTime();
+    seen->type = event->getTypeId();
+    if (event->isOfType(SoKeyboardEvent::getClassTypeId())) {
+        seen->key = int(static_cast<const SoKeyboardEvent*>(event)->getKey());
+    }
+    // The picked point the handler would use. This is the whole path in
+    // one read: the camera has to be in the event root for there to be a
+    // view volume at all, and the position has to have been flipped into
+    // Coin's bottom-up viewport for it to land on the geometry.
+    if (const SoPickedPoint* picked = node->getPickedPoint()) {
+        seen->hit = true;
+        seen->point = picked->getPoint();
+    }
+}
+
+Gui::MirrorViewer::Input moveTo(int x, int y)
+{
+    Gui::MirrorViewer::Input input;
+    input.kind = Gui::MirrorViewer::Input::Move;
+    input.x = x;
+    input.y = y;
+    input.time = 1.5;
+    return input;
+}
+}  // namespace
+
+TEST_F(MirrorViewerTest, aReplayedMoveReachesTheCallbackAtThatPixel)
+{
+    mirror->setCamera(perspectiveCamera(800, 600));
+    Seen seen;
+    mirror->addEventCallback(SoEvent::getClassTypeId(), record, &seen);
+
+    // Two thirds across, one quarter down the canvas.
+    Gui::MirrorViewer::Input input = moveTo(533, 150);
+    input.shift = true;
+    input.alt = true;
+    mirror->handleInput(input);
+
+    EXPECT_EQ(seen.count, 1);
+    EXPECT_EQ(seen.type, SoLocation2Event::getClassTypeId());
+    // Coin's viewport origin is bottom left and the client's is top left.
+    EXPECT_EQ(seen.position[0], 533);
+    EXPECT_EQ(seen.position[1], 600 - 1 - 150);
+    EXPECT_TRUE(seen.shift);
+    EXPECT_FALSE(seen.ctrl);
+    EXPECT_TRUE(seen.alt);
+    EXPECT_NEAR(seen.time.getValue(), 1.5, 1e-6);
+
+    mirror->removeEventCallback(SoEvent::getClassTypeId(), record, &seen);
+}
+
+TEST_F(MirrorViewerTest, aReplayedMoveCanPickWhatIsUnderIt)
+{
+    // The centre of the canvas looks straight down at the quad, and a
+    // corner of the canvas looks past it. Both readings are needed: a
+    // camera missing from the event root fails the first, and a position
+    // that was never flipped passes the first and fails the second --
+    // which is the same "correct at the centre" trap the round-trip
+    // cases are built around.
+    const Gui::MirrorViewer::Camera camera = perspectiveCamera(800, 600);
+    mirror->setCamera(camera);
+    Seen seen;
+    mirror->addEventCallback(SoEvent::getClassTypeId(), record, &seen);
+
+    mirror->handleInput(moveTo(400, 300));
+    EXPECT_TRUE(seen.hit);
+    EXPECT_NEAR(seen.point[0], 0.0F, 0.2F);
+    EXPECT_NEAR(seen.point[1], 0.0F, 0.2F);
+
+    // A pixel showing world y near +4, well inside the quad's +5 edge,
+    // is ABOVE the centre on the client's canvas -- a smaller y, because
+    // the client counts down. Read the world point back to say so.
+    const float py = 300.0F - (pixelAtPlaneX(camera, 4.0F) - 400.0F);
+    seen = Seen();
+    mirror->handleInput(moveTo(400, int(py)));
+    EXPECT_TRUE(seen.hit);
+    EXPECT_NEAR(seen.point[1], 4.0F, 0.3F) << "pixel y " << py;
+
+    // Off the quad entirely.
+    seen = Seen();
+    mirror->handleInput(moveTo(20, 20));
+    EXPECT_FALSE(seen.hit);
+
+    mirror->removeEventCallback(SoEvent::getClassTypeId(), record, &seen);
+}
+
+TEST_F(MirrorViewerTest, theButtonsAreThisClientsOwn)
+{
+    mirror->setCamera(perspectiveCamera(800, 600));
+    EXPECT_EQ(mirror->mouseButtons(), Qt::NoButton);
+    EXPECT_FALSE(mirror->isMouseButtonDown());
+
+    Gui::MirrorViewer::Input press = moveTo(400, 300);
+    press.kind = Gui::MirrorViewer::Input::Press;
+    press.code = 1;
+    mirror->handleInput(press);
+    EXPECT_EQ(mirror->mouseButtons(), Qt::MouseButtons(Qt::LeftButton));
+    EXPECT_TRUE(mirror->isMouseButtonDown());
+
+    Gui::MirrorViewer::Input second = press;
+    second.code = 3;
+    mirror->handleInput(second);
+    EXPECT_TRUE(mirror->mouseButtons().testFlag(Qt::LeftButton));
+    EXPECT_TRUE(mirror->mouseButtons().testFlag(Qt::RightButton));
+
+    Gui::MirrorViewer::Input release = press;
+    release.kind = Gui::MirrorViewer::Input::Release;
+    mirror->handleInput(release);
+    EXPECT_FALSE(mirror->mouseButtons().testFlag(Qt::LeftButton));
+    EXPECT_TRUE(mirror->mouseButtons().testFlag(Qt::RightButton));
+}
+
+TEST_F(MirrorViewerTest, aKeyKeepsThePointerWhereItWas)
+{
+    // A key event carries no position, and Coin's handlers read one off
+    // every event -- so it has to be the last one the pointer was at,
+    // not the zero the frame left in the field.
+    mirror->setCamera(perspectiveCamera(800, 600));
+    Seen seen;
+    mirror->addEventCallback(SoEvent::getClassTypeId(), record, &seen);
+
+    mirror->handleInput(moveTo(533, 150));
+    Gui::MirrorViewer::Input key;
+    key.kind = Gui::MirrorViewer::Input::KeyDown;
+    key.code = int(SoKeyboardEvent::ESCAPE);
+    key.time = 2.0;
+    mirror->handleInput(key);
+
+    EXPECT_EQ(seen.count, 2);
+    EXPECT_EQ(seen.type, SoKeyboardEvent::getClassTypeId());
+    EXPECT_EQ(seen.key, int(SoKeyboardEvent::ESCAPE));
+    EXPECT_EQ(seen.position[0], 533);
+    EXPECT_EQ(seen.position[1], 600 - 1 - 150);
+
+    mirror->removeEventCallback(SoEvent::getClassTypeId(), record, &seen);
+}
+
+TEST_F(MirrorViewerTest, nothingIsReplayedBeforeTheClientStatesACamera)
+{
+    // Without a camera a pointer position is not a place in the world.
+    // Resolving it through a default frustum would put every pick
+    // somewhere plausible and wrong, so the event is refused instead.
+    Seen seen;
+    mirror->addEventCallback(SoEvent::getClassTypeId(), record, &seen);
+    EXPECT_FALSE(mirror->handleInput(moveTo(400, 300)));
+    EXPECT_EQ(seen.count, 0);
+    mirror->removeEventCallback(SoEvent::getClassTypeId(), record, &seen);
+}
+
+TEST_F(MirrorViewerTest, oneClientsCallbackDoesNotSeeAnothersEvents)
+{
+    // The reason the event root is per client rather than in the shared
+    // graph. Two mirrors on one served scene, one callback each.
+    mirror->setCamera(perspectiveCamera(800, 600));
+    Gui::MirrorViewer other(nullptr, scene, nullptr, nullptr);
+    other.setCamera(perspectiveCamera(800, 600));
+
+    Seen mine;
+    Seen theirs;
+    mirror->addEventCallback(SoEvent::getClassTypeId(), record, &mine);
+    other.addEventCallback(SoEvent::getClassTypeId(), record, &theirs);
+
+    mirror->handleInput(moveTo(400, 300));
+    EXPECT_EQ(mine.count, 1);
+    EXPECT_EQ(theirs.count, 0);
+
+    other.handleInput(moveTo(100, 100));
+    EXPECT_EQ(mine.count, 1);
+    EXPECT_EQ(theirs.count, 1);
+
+    mirror->removeEventCallback(SoEvent::getClassTypeId(), record, &mine);
+    other.removeEventCallback(SoEvent::getClassTypeId(), record, &theirs);
 }
 
 TEST_F(MirrorViewerTest, theCurrentViewIsTheInnermostScope)

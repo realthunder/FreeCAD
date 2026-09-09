@@ -28,6 +28,7 @@
 #include "ViewerContext.h"
 
 class SoCamera;
+class SoEvent;
 
 namespace Gui
 {
@@ -120,6 +121,62 @@ public:
      */
     SoPickedPoint* pickRay(const SbVec3f& origin, const SbVec3f& dir) const;
 
+    /** One input event as the client sent it (docs/ThinClient.md sec 8.5,
+     * the `'E'` frame).
+     *
+     * Client coordinates throughout: device pixels with the origin at the
+     * TOP left, which is what a canvas reports and what a browser has. The
+     * flip to Coin's bottom-up convention happens here, where the canvas
+     * height is the one the mirror is resolving everything else against --
+     * so a client that resized between frames cannot make the two
+     * disagree.
+     */
+    struct Input
+    {
+        enum Kind
+        {
+            Move,
+            Press,
+            Release,
+            Wheel,
+            KeyDown,
+            KeyUp
+        };
+        Kind kind = Move;
+        /// Canvas position in device pixels, origin top left.
+        int x = 0;
+        int y = 0;
+        /// 1 left, 2 middle, 3 right for the button kinds; a Coin key code
+        /// (SoKeyboardEvent::Key) for the key kinds; unused otherwise.
+        int code = 0;
+        /// Wheel movement; 120 units is one notch, as everywhere else.
+        int delta = 0;
+        bool shift = false;
+        bool ctrl = false;
+        bool alt = false;
+        /// The client's own clock, in seconds. A replayed event with no
+        /// time would make every gesture instantaneous, which is what the
+        /// double-click and drag thresholds read.
+        double time = 0;
+    };
+
+    /** Replay \a input against this mirror's scene.
+     *
+     * The event is built with this client's camera and canvas, this
+     * client's modifier and button state, and delivered through an
+     * SoHandleEventAction over the mirror's own event root -- which is the
+     * served graph with this client's camera and event callback in front of
+     * it, so one client's events reach nobody else's callbacks. The view
+     * is made current for the extent of the call (Gui::ViewerScope), which
+     * is how Gui::Document::setEdit learns which view an edit started in.
+     *
+     * Returns whether anything claimed the event. False when the client has
+     * stated no camera yet: there is nothing to resolve a pointer position
+     * against, and guessing one would put the pick somewhere plausible and
+     * wrong.
+     */
+    bool handleInput(const Input& input);
+
     /** @name ViewerContext -- scene, camera and viewport */
     //@{
     SoNode* getSceneGraph() const override;
@@ -196,6 +253,10 @@ public:
     //@}
 
 private:
+    /// Deliver one built event through this mirror's event manager, with
+    /// this view current for the extent of the call.
+    bool replay(SoEvent& event);
+
     class Private;
     std::unique_ptr<Private> pimpl;
 };

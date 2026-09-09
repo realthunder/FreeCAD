@@ -28,9 +28,15 @@
 #include <Inventor/SbLine.h>
 #include <Inventor/SbPlane.h>
 #include <Inventor/SbViewVolume.h>
+#include <Inventor/SoEventManager.h>
 #include <Inventor/SoPath.h>
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/SoRenderManager.h>
+#include <Inventor/actions/SoHandleEventAction.h>
+#include <Inventor/events/SoKeyboardEvent.h>
+#include <Inventor/events/SoLocation2Event.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
+#include <Inventor/nodes/SoEventCallback.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
 #include <Inventor/actions/SoGetMatrixAction.h>
 #include <Inventor/actions/SoRayPickAction.h>
@@ -49,6 +55,7 @@
 
 #include "InventorBase.h"
 #include "MirrorViewer.h"
+#include "SoMouseWheelEvent.h"
 #include "Utilities.h"
 #include "ViewProvider.h"
 
@@ -122,6 +129,29 @@ public:
 
     SbViewportRegion viewport {short(1), short(1)};
 
+    /** The graph one client's events are handled over.
+     *
+     * The camera first, because SoHandleEventAction has to traverse one to
+     * have a view volume at all; then this client's event callback node,
+     * which is what ViewProvider::eventCallback is hung on; then the served
+     * scene, shared with every other client. Per client and not in the
+     * shared graph precisely so that a callback installed for one client
+     * does not fire for another's events -- the served root has one
+     * traversal per client, and each sees only its own callback.
+     */
+    SoSeparator* eventRoot = nullptr;
+    SoEventCallback* eventCallback = nullptr;
+    SoEventManager* eventManager = nullptr;
+
+    /// What the client's pointer and keyboard last said. Coin's events
+    /// carry the modifier state on every event, and the button state is
+    /// what ViewerContext::mouseButtons answers from.
+    SbVec2s pointer {0, 0};
+    Qt::MouseButtons buttons {Qt::NoButton};
+    bool shift = false;
+    bool ctrl = false;
+    bool alt = false;
+
     bool editing = false;
     bool selectionEnabled = true;
     /// Whether the editing root is currently a child of the served graph.
@@ -156,10 +186,39 @@ public:
 
     ~Private()
     {
+        delete eventManager;
+        if (eventRoot) {
+            eventRoot->unref();
+        }
+        if (eventCallback) {
+            eventCallback->unref();
+        }
         if (camera) {
             camera->unref();
         }
         delete renderManager;
+    }
+
+    /// Keep the event root's camera the one the client last stated: a
+    /// change of projection replaces the node, not just its fields.
+    void seatCamera()
+    {
+        if (!eventRoot || !camera) {
+            return;
+        }
+        if (eventRoot->getNumChildren() && eventRoot->getChild(0) == camera) {
+            return;
+        }
+        if (eventRoot->getNumChildren()
+            && eventRoot->getChild(0)->isOfType(SoCamera::getClassTypeId())) {
+            eventRoot->replaceChild(0, camera);
+        }
+        else {
+            eventRoot->insertChild(camera, 0);
+        }
+        if (eventManager) {
+            eventManager->setCamera(camera);
+        }
     }
 
     /// The scene as a pickable graph: the camera has to be traversed for
@@ -229,6 +288,26 @@ MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
     pimpl->cacheManager = cacheManager;
     pimpl->renderer = renderer;
     pimpl->renderManager = new SoRenderManager;
+
+    // The event path. The callback node's user data is the ViewerContext
+    // base subobject deliberately: a pointer to this object and a pointer
+    // to its base are different addresses, and the thirty-two readers of
+    // that field cast it back through void*.
+    pimpl->eventCallback = new SoEventCallback;
+    pimpl->eventCallback->ref();
+    pimpl->eventCallback->setUserData(static_cast<ViewerContext*>(this));
+
+    pimpl->eventRoot = new SoSeparator;
+    pimpl->eventRoot->ref();
+    pimpl->eventRoot->setName("MirrorEventRoot");
+    pimpl->eventRoot->addChild(pimpl->eventCallback);
+    if (scene) {
+        pimpl->eventRoot->addChild(scene);
+    }
+
+    pimpl->eventManager = new SoEventManager;
+    pimpl->eventManager->setSceneGraph(pimpl->eventRoot);
+    pimpl->eventManager->setViewportRegion(pimpl->viewport);
 }
 
 MirrorViewer::~MirrorViewer()
@@ -297,6 +376,10 @@ void MirrorViewer::setCamera(const Camera& camera)
     pimpl->viewport.setViewportPixels(SbVec2s(0, 0), camera.sizePixels);
     pimpl->renderManager->setCamera(pimpl->camera);
     pimpl->renderManager->setViewportRegion(pimpl->viewport);
+    pimpl->seatCamera();
+    if (pimpl->eventManager) {
+        pimpl->eventManager->setViewportRegion(pimpl->viewport);
+    }
     pimpl->state = camera;
     pimpl->stated = true;
 }
@@ -347,6 +430,113 @@ SoPickedPoint* MirrorViewer::pickRay(const SbVec3f& origin, const SbVec3f& dir) 
     return picked ? new SoPickedPoint(*picked) : nullptr;
 }
 
+bool MirrorViewer::handleInput(const Input& input)
+{
+    // Without a camera there is no view volume, so a pointer position is
+    // not a place in the world and every pick made from it would be
+    // resolved through a default frustum -- plausible, and wrong.
+    if (!hasCamera() || !pimpl->eventManager) {
+        return false;
+    }
+
+    pimpl->shift = input.shift;
+    pimpl->ctrl = input.ctrl;
+    pimpl->alt = input.alt;
+
+    // Coin's viewport origin is bottom left; a canvas reports top left.
+    // Flipped here against the height the mirror resolves everything else
+    // against, so a client that resized between frames cannot make the
+    // pick path and the event path disagree about where a pixel is.
+    const SbVec2s& size = pimpl->viewport.getViewportSizePixels();
+    if (input.kind != Input::KeyDown && input.kind != Input::KeyUp) {
+        pimpl->pointer.setValue(short(input.x), short(size[1] - 1 - input.y));
+    }
+
+    auto stamp = [&](SoEvent& event) {
+        event.setTime(SbTime(input.time));
+        event.setPosition(pimpl->pointer);
+        event.setShiftDown(input.shift);
+        event.setCtrlDown(input.ctrl);
+        event.setAltDown(input.alt);
+    };
+    auto button = [](int code) {
+        switch (code) {
+            case 2:
+                return SoMouseButtonEvent::BUTTON2;
+            case 3:
+                return SoMouseButtonEvent::BUTTON3;
+            default:
+                return SoMouseButtonEvent::BUTTON1;
+        }
+    };
+    auto qtButton = [](int code) {
+        switch (code) {
+            case 2:
+                return Qt::MiddleButton;
+            case 3:
+                return Qt::RightButton;
+            default:
+                return Qt::LeftButton;
+        }
+    };
+
+    // Built on the stack: SoHandleEventAction does not keep the event, and
+    // a mirror replays one at a time on the thread that owns the document.
+    switch (input.kind) {
+        case Input::Move: {
+            SoLocation2Event event;
+            stamp(event);
+            return replay(event);
+        }
+        case Input::Press:
+        case Input::Release: {
+            const bool press = input.kind == Input::Press;
+            // The button state before the event is delivered, because that
+            // is what the desktop's QApplication::mouseButtons() would
+            // report to a handler running inside the press.
+            if (press) {
+                pimpl->buttons |= qtButton(input.code);
+            }
+            else {
+                pimpl->buttons &= ~Qt::MouseButtons(qtButton(input.code));
+            }
+            SoMouseButtonEvent event;
+            stamp(event);
+            event.setButton(button(input.code));
+            event.setState(press ? SoButtonEvent::DOWN : SoButtonEvent::UP);
+            return replay(event);
+        }
+        case Input::Wheel: {
+            SoMouseWheelEvent event(input.delta);
+            stamp(event);
+            return replay(event);
+        }
+        case Input::KeyDown:
+        case Input::KeyUp: {
+            SoKeyboardEvent event;
+            stamp(event);
+            event.setKey(SoKeyboardEvent::Key(input.code));
+            event.setState(input.kind == Input::KeyDown ? SoButtonEvent::DOWN
+                                                        : SoButtonEvent::UP);
+            return replay(event);
+        }
+    }
+    return false;
+}
+
+bool MirrorViewer::replay(SoEvent& event)
+{
+    // The view this event is being handled in, for the extent of handling
+    // it. Gui::Document::setEdit asks for it rather than for the active
+    // window, which in a process serving several browsers names either
+    // nothing or somebody else's (docs/ThinClient.md sec 8.9).
+    ViewerScope scope(this);
+    pimpl->eventManager->setViewportRegion(pimpl->viewport);
+    pimpl->eventManager->processEvent(&event);
+    SoHandleEventAction* action = pimpl->eventManager->getHandleEventAction();
+    return action && action->isHandled();
+}
+
 SoNode* MirrorViewer::getSceneGraph() const
 {
     return pimpl->scene;
@@ -359,9 +549,7 @@ SoRenderManager* MirrorViewer::getSoRenderManager() const
 
 SoEventManager* MirrorViewer::getSoEventManager() const
 {
-    // Stage 4: the event stream is what an event manager would run, and
-    // nothing streams events yet (docs/ThinClient.md section 8.9).
-    return nullptr;
+    return pimpl->eventManager;
 }
 
 const SbViewportRegion& MirrorViewer::getViewportRegion() const
@@ -396,10 +584,11 @@ double MirrorViewer::devicePixelRatio() const
 
 Qt::MouseButtons MirrorViewer::mouseButtons() const
 {
-    // Stage 4 again: this answers from the client's button bits once they
-    // ride the event stream. Until then no button is down, which is the
-    // truth for a mirror driven by picks alone.
-    return Qt::NoButton;
+    // This client's, tracked across its own event stream. The desktop
+    // answers the same question from QApplication, which is one pointer
+    // and so the same answer; a mirror has one pointer per connection and
+    // the application's is somebody else's entirely.
+    return pimpl->buttons;
 }
 
 double MirrorViewer::logicalDotsPerInchX() const
@@ -728,16 +917,12 @@ void MirrorViewer::resetEditingViewProvider()
 
 void MirrorViewer::addEventCallback(SoType eventtype, SoEventCallbackCB* cb, void* userdata)
 {
-    (void)eventtype;
-    (void)cb;
-    (void)userdata;
+    pimpl->eventCallback->addEventCallback(eventtype, cb, userdata);
 }
 
 void MirrorViewer::removeEventCallback(SoType eventtype, SoEventCallbackCB* cb, void* userdata)
 {
-    (void)eventtype;
-    (void)cb;
-    (void)userdata;
+    pimpl->eventCallback->removeEventCallback(eventtype, cb, userdata);
 }
 
 void MirrorViewer::setRedirectToSceneGraph(bool redirect)
