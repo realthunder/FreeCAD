@@ -136,6 +136,7 @@
 #include "UiLoader.h"
 #include "View3DViewerPy.h"
 #include "View3DInventor.h"
+#include "ViewerContext.h"
 #include "ViewProviderAnnotation.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderDocumentObjectGroup.h"
@@ -1343,6 +1344,24 @@ void Application::activateView(const Base::Type& type, bool create)
 /// Getter for the active view
 Gui::Document* Application::activeDocument() const
 {
+    // The document of the view whose input is being handled, when one is
+    // being handled at all (docs/ThinClient.md sec 8.7). "Active" is
+    // desktop state -- it is whichever document the main window last put
+    // in front -- and in a process serving several browsers it names
+    // nothing, or somebody else's. The same answer setEdit was given for
+    // the active WINDOW, one level up: ask the view the event arrived
+    // through first.
+    //
+    // Nothing on the desktop opens a ViewerScope, so the desktop answer
+    // does not move. What this reaches is the code a served event runs
+    // through that was never given a view to ask -- a Command's
+    // getActiveGuiDocument() above all, which is how a sketch tool finds
+    // the view provider to hand its handler to.
+    if (ViewerContext* viewer = ViewerContext::current()) {
+        if (Gui::Document* doc = viewer->getDocument()) {
+            return doc;
+        }
+    }
     return d->activeDocument;
 }
 
