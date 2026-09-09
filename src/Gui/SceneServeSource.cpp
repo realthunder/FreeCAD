@@ -290,6 +290,41 @@ public:
         mirror->setCamera(camera);
     }
 
+    /** Replay one client's input event in that client's own view.
+     *
+     * Nothing happens for a client with no mirror: an event is a place
+     * in a view, and without a stated camera there is no view to place
+     * it in. The publish afterwards is what carries the result back --
+     * an edit mode's geometry lives under the mirror's editing root,
+     * which is in the served graph exactly so that the change-driven
+     * traversal sees it. Coalesced, so a drag's worth of moves costs
+     * one traversal rather than one each. GUI thread only.
+     */
+    void replayInput(const Render::SceneInputFrame &frame)
+    {
+        MirrorViewer *mirror = mirrorFor(frame.client);
+        if (!mirror)
+            return;
+        MirrorViewer::Input input;
+        switch (frame.kind) {
+            case 1: input.kind = MirrorViewer::Input::Press; break;
+            case 2: input.kind = MirrorViewer::Input::Release; break;
+            case 3: input.kind = MirrorViewer::Input::Wheel; break;
+            case 4: input.kind = MirrorViewer::Input::KeyDown; break;
+            case 5: input.kind = MirrorViewer::Input::KeyUp; break;
+            default: input.kind = MirrorViewer::Input::Move; break;
+        }
+        input.x = frame.x;
+        input.y = frame.y;
+        input.code = frame.code;
+        input.delta = frame.delta;
+        input.shift = (frame.modifiers & 1) != 0;
+        input.ctrl = (frame.modifiers & 2) != 0;
+        input.alt = (frame.modifiers & 4) != 0;
+        input.time = double(frame.timeMs) / 1000.0;
+        mirror->handleInput(input);
+    }
+
     /// The mirror of \a client, or null when it has stated no camera.
     ///
     /// **How fresh this camera is depends on the client's uplink policy**
@@ -868,6 +903,25 @@ void SceneServeSource::installHandlers()
         QMetaObject::invokeMethod(qApp, [self, f]() {
             if (self)
                 self->pimpl->setClientCamera(f);
+        }, Qt::QueuedConnection);
+    }, pimpl->groupName);
+
+    // A viewer's pointer and keyboard, replayed against its own mirror
+    // (docs/ThinClient.md sec 8.5, the 'E' frame). This is the channel
+    // an edit mode runs on: unlike the camera it can move geometry, so
+    // the server has already dropped it for a view-only connection by
+    // the time it gets here.
+    server.setInputHandler([self](const Render::SceneInputFrame &frame) {
+        Render::SceneInputFrame f = frame;
+        QMetaObject::invokeMethod(qApp, [self, f]() {
+            if (!self)
+                return;
+            self->pimpl->replayInput(f);
+            // Unconditionally, not only when something claimed the
+            // event: a preselect highlight changes the scene without
+            // the event being handled, and a publish with nothing to
+            // say costs one traversal and sends nothing.
+            self->schedulePublish();
         }, Qt::QueuedConnection);
     }, pimpl->groupName);
 

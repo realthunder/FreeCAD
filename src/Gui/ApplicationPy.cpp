@@ -247,8 +247,8 @@ PyMethodDef Application::Methods[] = {
    "client (label), identity (verified by the front door, may be\n"
    "empty), doc, address, viewer, viewOnly, connectedMs, and the\n"
    "uplink counters uplinkMsgs/uplinkBytes/uplinkWire with the camera\n"
-   "frames (cameraMsgs/cameraWire) and picks (pickMsgs/pickWire) of\n"
-   "that total counted apart."},
+   "frames (cameraMsgs/cameraWire), picks (pickMsgs/pickWire) and\n"
+   "input events (inputMsgs/inputWire) of that total counted apart."},
   {"serveSetClientMode",      (PyCFunction) Application::sServeSetClientMode, METH_VARARGS,
    "serveSetClientMode(id, viewOnly) -> bool\n"
    "\n"
@@ -1173,6 +1173,8 @@ PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
         count("cameraWire", c.cameraWire);
         count("pickMsgs", c.pickMsgs);
         count("pickWire", c.pickWire);
+        count("inputMsgs", c.inputMsgs);
+        count("inputWire", c.inputWire);
         list.append(entry);
     }
     return Py::new_reference_to(list);

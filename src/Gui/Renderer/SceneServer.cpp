@@ -534,6 +534,7 @@ public:
         /// lock.
         std::function<void(const ScenePickRequest &)> pickHandler;
         std::function<void(const SceneCameraFrame &)> cameraHandler;
+        std::function<void(const SceneInputFrame &)> inputHandler;
         std::function<void(SceneControlRequest &&)> controlHandler;
         std::function<void()> workNotifier;
         std::function<void(uint64_t)> clientClosedHandler;
@@ -1190,6 +1191,8 @@ public:
         uint64_t cameraWire = 0;
         uint64_t pickMsgs = 0;
         uint64_t pickWire = 0;
+        uint64_t inputMsgs = 0;
+        uint64_t inputWire = 0;
         /// A wake is posted and has not run yet (guarded by connMutex):
         /// the next nudge is free. Cleared by the transport on the
         /// strand before it acts, so anything queued after that clear
@@ -1444,6 +1447,8 @@ public:
             info.cameraWire = conn->cameraWire;
             info.pickMsgs = conn->pickMsgs;
             info.pickWire = conn->pickWire;
+            info.inputMsgs = conn->inputMsgs;
+            info.inputWire = conn->inputWire;
             out.push_back(std::move(info));
         }
         return int(out.size());
@@ -1766,6 +1771,17 @@ public:
         {
             std::lock_guard<std::mutex> guard(handlerMutex);
             handler = g.cameraHandler;
+        }
+        if (handler)
+            handler(frame);
+    }
+
+    void dispatchInput(DocGroup &g, const SceneInputFrame &frame)
+    {
+        std::function<void(const SceneInputFrame &)> handler;
+        {
+            std::lock_guard<std::mutex> guard(handlerMutex);
+            handler = g.inputHandler;
         }
         if (handler)
             handler(frame);
@@ -3123,6 +3139,10 @@ public:
             ++conn.pickMsgs;
             conn.pickWire += wire;
         }
+        else if (tag == 'E') {
+            ++conn.inputMsgs;
+            conn.inputWire += wire;
+        }
     }
 
     /// A complete client message: JSON control text (hello, and the
@@ -3421,6 +3441,10 @@ public:
     /// of each and has to find the boundary between them.
     static constexpr size_t kCameraFrameSize = 6 + 13 * sizeof(float);
     static constexpr size_t kPickFrameSize = 2 + 6 * sizeof(float);
+    /// The input frame ('E', kind, modifiers, code u16, x/y/delta i16,
+    /// time u32) -- fifteen bytes, distinct in size from both of those,
+    /// which is what tells the three apart on the wire.
+    static constexpr size_t kInputFrameSize = 15;
 
     /// Camera frame: 'C', type byte, viewport width and height as
     /// little-endian u16, then thirteen little-endian floats --
@@ -3469,6 +3493,38 @@ public:
             && frame.farDistance > frame.nearDistance;
     }
 
+    /// Input frame: 'E', a kind byte, a modifiers byte, a little-endian
+    /// u16 code, three little-endian i16 (x, y, wheel delta) and a
+    /// little-endian u32 client timestamp in milliseconds
+    /// (docs/ThinClient.md sec 8.5). Returns false when the frame is not
+    /// one, or names a kind this server does not have -- a mirror turns
+    /// the kind into a Coin event type, and an unknown one would become
+    /// whichever event the default branch happened to build.
+    static bool parseInput(const std::vector<uint8_t> &data,
+                           SceneInputFrame &frame)
+    {
+        if (data.size() != kInputFrameSize || data[0] != 'E')
+            return false;
+        if (data[1] > 5)
+            return false;
+        uint16_t code;
+        int16_t x, y, delta;
+        uint32_t timeMs;
+        std::memcpy(&code, data.data() + 3, 2);
+        std::memcpy(&x, data.data() + 5, 2);
+        std::memcpy(&y, data.data() + 7, 2);
+        std::memcpy(&delta, data.data() + 9, 2);
+        std::memcpy(&timeMs, data.data() + 11, 4);
+        frame.kind = data[1];
+        frame.modifiers = data[2];
+        frame.code = code;
+        frame.x = x;
+        frame.y = y;
+        frame.delta = delta;
+        frame.timeMs = timeMs;
+        return true;
+    }
+
     void handleEvent(Conn &conn, const std::vector<uint8_t> &data)
     {
         // The camera is not an edit: it says where this viewer is
@@ -3513,6 +3569,16 @@ public:
             std::lock_guard<std::mutex> guard(connMutex);
             if (conn.viewOnly)
                 return;
+        }
+        // Input event: an edit mode's pointer and keyboard stream
+        // (docs/ThinClient.md sec 8.5). Behind the view-only gate with
+        // the picks, and for a stronger reason -- these move geometry.
+        SceneInputFrame input;
+        if (parseInput(event, input)) {
+            input.client = conn.id;
+            if (conn.group)
+                dispatchInput(*conn.group, input);
+            return;
         }
         // Pick request: 'P', flags byte, six little-endian floats
         // (world ray origin + direction).
@@ -3901,6 +3967,20 @@ void SceneStreamServer::setCameraHandler(
     g->cameraHandler = std::move(handler);
 }
 
+void SceneStreamServer::setInputHandler(
+        std::function<void(const SceneInputFrame &)> handler,
+        const std::string &doc)
+{
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->group(doc);
+    }
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    g->inputHandler = std::move(handler);
+}
+
 void SceneStreamServer::setControlHandler(
         std::function<void(SceneControlRequest &&)> handler,
         const std::string &doc)
@@ -4027,6 +4107,7 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
         std::lock_guard<std::mutex> guard(pimpl->handlerMutex);
         g->pickHandler = nullptr;
         g->cameraHandler = nullptr;
+        g->inputHandler = nullptr;
         g->controlHandler = nullptr;
         g->workNotifier = nullptr;
         g->clientClosedHandler = nullptr;

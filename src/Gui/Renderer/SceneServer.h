@@ -99,6 +99,40 @@ struct SceneCameraFrame {
     float pickRadius = 5;   ///< in device pixels, like \a width
 };
 
+/// One viewer input event, as it was made in that client's own canvas
+/// (docs/ThinClient.md sec 8.5, the `'E'` uplink frame).
+///
+/// Client coordinates throughout: device pixels with the origin at the
+/// TOP left, which is what a canvas reports. Nothing here is converted
+/// on the way up -- the flip into Coin's bottom-up viewport happens in
+/// that client's mirror, against the canvas height the mirror is
+/// resolving its picks against, so a resize in flight cannot leave the
+/// two disagreeing.
+///
+/// Unlike the camera, an input event IS an edit: it can move geometry,
+/// so a view-only connection's is dropped at the same gate its picks
+/// are (docs/MultiDocServe.md sec 8).
+struct SceneInputFrame {
+    /// The connection it arrived on (SceneClientInfo::id).
+    uint64_t client = 0;
+    /// 0 move, 1 press, 2 release, 3 wheel, 4 key down, 5 key up.
+    uint8_t kind = 0;
+    /// bit 0 shift, bit 1 ctrl, bit 2 alt.
+    uint8_t modifiers = 0;
+    /// 1 left, 2 middle, 3 right for the button kinds; a Coin key code
+    /// (SoKeyboardEvent::Key) for the key kinds.
+    uint16_t code = 0;
+    /// Pointer position in DEVICE pixels, origin top left.
+    int16_t x = 0;
+    int16_t y = 0;
+    /// Wheel movement; 120 units is one notch.
+    int16_t delta = 0;
+    /// The client's own clock, in milliseconds. A replayed event with
+    /// no time makes every gesture instantaneous, which is what the
+    /// double-click and drag thresholds read.
+    uint32_t timeMs = 0;
+};
+
 /// One semantic control request from a viewer (docs/ThinClient.md
 /// §4.2): the raw JSON text of an `"op"` message, and a thread-safe way
 /// to answer the connection it arrived on. `reply` may be called from
@@ -199,6 +233,11 @@ struct SceneClientInfo {
     uint64_t cameraWire = 0;
     uint64_t pickMsgs = 0;
     uint64_t pickWire = 0;
+    /// Input events ('E'), counted apart from the picks because they
+    /// are the channel an edit mode runs on and the one whose rate is
+    /// worth knowing on its own.
+    uint64_t inputMsgs = 0;
+    uint64_t inputWire = 0;
 };
 
 /// One viewer's answer to a dumpFrame control request
@@ -437,6 +476,15 @@ public:
     /// it -- one connection's uplink keeps its order.
     void setCameraHandler(std::function<void(const SceneCameraFrame &)> handler,
                           const std::string &doc = {});
+
+    /// Install the consumer of viewer input events (docs/ThinClient.md
+    /// sec 8.5, the `'E'` frame). Same contract as setPickHandler:
+    /// called on a server connection thread, so the handler marshals
+    /// itself. Moves are coalesced by the client, presses and releases
+    /// never are, and the order within one connection is the order they
+    /// were made in.
+    void setInputHandler(std::function<void(const SceneInputFrame &)> handler,
+                         const std::string &doc = {});
 
     /// Install the consumer of semantic control requests — the `"op"`
     /// JSON vocabulary of the property/operation channel
