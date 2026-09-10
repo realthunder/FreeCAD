@@ -47,7 +47,7 @@ pieces are frozen, not extended.**
     forms: dialogs, item views, ...  built       G3b: exec_(), the tree/list/table family as rows, containers, the file chooser; the 40-file harness (7.11)
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
-    the task panel mirror            sized       7.19: the desktop's task panel walked into models, streamed; RULED 2026-09-10 over the shim route
+    the task panel mirror            M1 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2-M4 sized
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -5430,7 +5430,7 @@ of hidden bars is the declared order (3).
   returns maps; under `FreeCADCmd` `sys.executable` is FreeCAD, so the
   dump test finds a plain interpreter under `sys.base_prefix`.
 
-### 7.19 The panel mirror sized: the desktop's task panel as models, streamed **[sized 2026-09-10]**
+### 7.19 The panel mirror sized: the desktop's task panel as models, streamed **[sized 2026-09-10; M1 BUILT 2026-09-10]**
 
 Asked 2026-09-10, after the question "do we need to modify external
 Python workbench code to hook their task panels to our widget
@@ -5752,6 +5752,124 @@ nothing.  Every upstream change to a panel is picked up by the walk
 for free -- the retire-on-break cost of the frozen guest path (1.7)
 does not exist here, which is the second reason the route won.
 
+**M1 built 2026-09-10** (`src/Gui/Fw/FwPanelMirror.*`, 1.0k lines;
+`Gui::Fw::PanelMirror`, one per process, started by the first
+`panels` subscriber and stopped by the last, `Preferences/Fw/
+PanelMirror` the gate).  What the build settled beyond the sizing,
+most of it asked by the ThinClient session's twelve requirements the
+same day:
+
+- **The tree and its ids.**  `panel` (the list, a VBox of the dialogs
+  up), `panel:<n>` (a `QDialog` model whose `qtClass` is the
+  TaskDialog's class -- `PartDesignGui::TaskDlgPadParameters`,
+  `Gui::TaskView::TaskDialog` for a Python panel here -- and whose
+  `windowTitle` is the first box's header), `pw:<n>` per widget; both
+  counters per process, never reused.  Every open carries `parent`,
+  which needed the store to learn a quiet adopt (`adopt(id, w,
+  false)` + `announceOpen(id)`): the whole tree is registered first,
+  then announced in post-order, the root last, so a parent ref never
+  dangles and a subscriber mounts once.  The root's close is the only
+  close: the children are released without a message
+  (`Store::release(id, false)`); a widget that goes MID-LIFE (a page
+  the panel deleted) is closed explicitly after its container's
+  layout update stopped naming it.
+- **The class chain.**  `tableClassOf` walks the real meta-object
+  chain until `Fw::createWidget`'s table answers, and `qtClass` keeps
+  the REAL name (`Gui::PrefQuantitySpinBox` on the `QuantitySpinBox`
+  model) -- except a `TaskBox` subclass, which is
+  `Gui::TaskView::TaskBox` to a client whatever the workbench derived
+  (Pad's content is a `TaskBox`-derived panel, and a client keys the
+  box chrome on that name).  A `QToolBox` lands on the `QTabWidget`
+  model (`tabs` = its item texts, pages walked).  A container is
+  walked; a leaf is not, and a plain `QWidget`/`QFrame` with neither
+  a layout nor content children is a leaf (M2's picture).  Qt's own
+  machinery (`qt_*`-named children, windows, menus, grips, focus
+  frames) is skipped.  The pages of a tab widget, a stack, a tool box,
+  a splitter, a scroll area's content and a button box's buttons are
+  walked as a VBox/HBox of pages; a hand-built container's stray
+  children join its layout after the placed ones.
+- **The layout spec** grew what the DOM asked: per-item `stretch` and
+  `align` on box items (`Layout::setItemStretch/setItemAlignment`),
+  a grid's `columnStretch`/`rowStretch`/`columnMinimumWidth` and
+  split spacings as layout-level extras (`Layout::setExtra`), a form
+  row's `pos` as `[row, role]`, a spacer as `[w, h, hPolicy,
+  vPolicy]` (already), margins and spacing always (what the real
+  layout has).  `QFrame` gained `frameShape`/`frameShadow`/
+  `lineWidth` (a .ui "Line" is a frame with shape 4 or 5).
+- **The read.**  `FwQt::View::readProperties(widget, keys)` is the
+  binder's meta-object read made public; the mirror adds `visible`
+  (`!isHidden()`, so a stack's other pages are sent hidden), `font`
+  as `{bold, italic}`, a combo's `items`, a tab widget's `tabs`, a
+  TaskBox's `title`/`checkable`/`checked`/`flat`.  The watch marks
+  dirty on Paint, Show, Hide, EnabledChange, ToolTipChange,
+  FontChange, StyleChange, LanguageChange, WindowTitleChange,
+  ReadOnlyChange, PaletteChange; the 0 ms flush writes the diff with
+  the backend detached (the tool bar mirror's `writeDiff`).  A
+  label's `setText` from code arrives as exactly one update, on the
+  label's repaint.  `ChildAdded`/`ChildRemoved` of a widget child and
+  `LayoutRequest` schedule a full re-walk, signatures per container
+  deciding which layouts are re-sent (one `layoutSpec` update for a
+  widget added by code, after its open).
+- **A client's write** was NOT reaching real widgets before this:
+  `Store::applyUpdate` wrote as `Source::Backend`, which a bound
+  view by design does not apply (a backend reports what the widget
+  already shows).  7.18's gates never caught it because the tool bar
+  gate's writes went through `trigger` customs and the gtest's models
+  were unbound.  `Source::Client` (3) is the fix: applied by the view
+  like a native write, touching nothing, echoed to the guest sink.
+  On such a write the mirror relays what the setters do not fire --
+  `textEdited` on a line edit, `activated` on a combo -- once (the
+  bound view hears the relayed signal as the user's edit and would
+  write again; a guard stops the loop that took the first run down
+  by stack overflow), and marks the widget dirty so the widget's own
+  formatting (`10` written, `10.00` read) reaches the writer under
+  origin 0.  Requests: `click`/`toggle` on a button, `editingFinished`
+  and `returnPressed` replay Return, `escape` Escape; on the root
+  `accept`/`reject` click the button box's Accept/Reject-role button
+  (else `Control().accept()/reject()`), `clicked [flag]` that button,
+  `helpRequested` the Help button -- all through the real button, so
+  `TaskView::accept` and the dialog's own `accept()` run as for a
+  desktop click.  A close the client's own request caused is
+  announced under origin 0 (the first gate run lost the writer's
+  close to the origin skip), and so are the opens of a dialog a
+  client's click put up.
+- **The subscription.**  `widgets.subscribe {"panels": true}`; the
+  reply carries `panel` (the root id up, or null) so a client tells
+  "none" from "pending"; `wants()` answers a `panels` subscriber for
+  the mirror's ids.  The `Control` hook is `signalShowDialog` (the
+  walk deferred one tick, after `modifyStandardButtons` and `open()`
+  ran) and `signalRemoveDialog` (synchronous, before the widgets
+  die); `start()` mirrors a dialog already up at once.
+- **Gates**: `FormWidgets.cpp` `test_panelMirror` (20 cases now: the
+  OrthoArray .ui through the host's `UiLoader` under a real
+  `TaskBox`, a hand-built box, a real button box; every named child
+  its model with the real class, the nested `grid_X` positions as
+  the real grid has them, the stretch and alignment, the stack's
+  hidden page, the opens in reference order with parents, a
+  `setText` as one update, a client's text write firing `textEdited`
+  and `editingFinished` on replay, a combo write firing `activated`,
+  the stack's page shown under origin 0, reject and OK through the
+  root, a widget added by code as one open plus one layout update,
+  hide as one close).  `SandboxPanelMirror` (3, the GUI gate's
+  default list, last, no guest): Pad's C++ panel (`lengthEdit` as a
+  `QuantitySpinBox` model bound to `Length`, `q_rawValue` 25 written
+  through the stream lands in `Pad.Length` through the panel's slot,
+  the formatted text comes back to the writer, accept through the
+  root, one close), Draft's OrthoArray natively (the form, the grid,
+  a spin box written), a CAM Profile op (`Path.Op.Gui.Base.Create`
+  with `res.job` set as the command's `Activated` would: one box
+  holding the `IconTabWidget`, its pages walked, `startDepth` and
+  `finalDepth` as quantity models) -- three workbenches, no edit to
+  any.  Hooks on `FreeCADGui.FormWidgets`: `mirrorPanels`,
+  `panelFlush`, `panelId`.
+- **Not in M1** (as sized): item rows (M2: a mirrored list is its
+  columns and headers today, the rows come with reflect mode), the
+  picture fallback and `widgets.image` (a leaf with no model is a
+  bare `Widget` with the real class and no pixmap), icons on buttons
+  and labels (a `QIcon` has no name to send; M2's picture or a
+  command's pixmap), nested modals (M3), the measurement (M4).  A
+  TaskBox's header icon is likewise nameless and not sent.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -5910,7 +6028,7 @@ Non-ASCII object names occur in real files.  Rig:
                                                           typed on the host, the key
                                                           stream, a menu, the main window
                                                           shim (7.11); the same gate script
-    tests/src/Gui/FormWidgets.cpp                   19    H0-H1, G3b, G3c: the host widget
+    tests/src/Gui/FormWidgets.cpp                   20    H0-H1, G3b, G3c: the host widget
                                                           layer's property core, class set,
                                                           layout ops, code-built layouts,
                                                           bars, actions, the key relay,
@@ -5920,7 +6038,8 @@ Non-ASCII object names occur in real files.  Rig:
                                                           ports, the item views, dialogs and
                                                           containers (7.12, 7.11); the
                                                           store's fan-out and the widget
-                                                          stream (7.18);
+                                                          stream (7.18); the panel mirror
+                                                          over a real TaskBox (7.19);
                                                           FormWidgets_Tests_run, offscreen
     src/Mod/Test/SandboxToolBarMirror.py             5    7.18: the tool bar mirror under
                                                           Draft (structure, a group's
@@ -5930,6 +6049,10 @@ Non-ASCII object names occur in real files.  Rig:
                                                           script, no guest needed
     src/Mod/Test/SandboxModelDump.py                 6    7.18 (c): the widget model dump
                                                           run on the tree; the Python suite
+    src/Mod/Test/SandboxPanelMirror.py               3    7.19 M1: Pad's C++ panel, Draft's
+                                                          OrthoArray, a CAM op mirrored,
+                                                          written, closed through the root;
+                                                          the GUI gate script, no guest
     src/Mod/Spreadsheet/TestSpreadsheet*.py          --   run with routing ON for parity
 
 The acceptance harness opens a real saved-and-reopened `.FCStd` under a
@@ -5958,6 +6081,12 @@ Preferences under `User parameter:BaseApp/Preferences/Expression/`:
     Sandbox:PyodideDir       Sandbox:PyodideWheel        Sandbox:PyodideUserDir
     Sandbox:PyodidePackages  Sandbox:PyodideUnpinned
     Security:Enforce         default true
+
+Under `User parameter:BaseApp/Preferences/Fw/`:
+
+    PanelMirror              "all" (default) | "none" | a comma list of
+                             TaskDialog class names: which task dialogs
+                             the panel mirror streams (7.19)
 
 Environment: `FCX_RUNTIME`, `FCX_IMAGE`, `FCX_STDLIB`, `FCX_PYODIDE`,
 `FCX_PYODIDE_WHEEL`, `FCX_PYODIDE_USER`, `FCX_PYODIDE_PACKAGES`,
@@ -6603,6 +6732,14 @@ sockets, any network for the reference image, a webview escape hatch.
   `command` op's `index` is behind that op's `Sketcher_Create*`
   allowlist until dialogs mirror (docs/ThinClient.md 8.11), the model
   path is the live one.
+- The panel mirror (7.19, M1): a mirrored item view sends its columns
+  and headers but not its rows (M2's reflect mode); a custom-painted
+  leaf is a bare widget with no picture (M2); button and label icons
+  and a box's header icon have no name to send; a nested `exec()`
+  dialog is invisible to the client (M3); the re-read cost per
+  repaint burst is unmeasured (M4).  The watch has no `Resize`: the
+  bag carries no geometry.  A `QToolBox` is a `QTabWidget` to a
+  client.
 
 ## 14. Sources and what the audit found
 
