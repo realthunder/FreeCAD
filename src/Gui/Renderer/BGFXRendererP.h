@@ -1801,17 +1801,41 @@ public:
         // context has no fixed-function pipeline for Coin, and macOS
         // will not share across profiles.
         //
-        // Opt-in, and the reason is now narrower than it was. It used
-        // to be that Metal could not put a frame on screen at all:
-        // BGFXView::blit's GL framebuffer cannot wrap an
-        // id<MTLTexture>, so it stood aside and Coin drew the viewport.
-        // BGFXView::blitReadback composites through system memory
-        // instead and works on any backend, so that hole is closed and
-        // what remains is a cost: a readback per frame until Route D
-        // hands the frame over as a texture (docs/DeviceAdoption.md).
-        // Still opt-in until a session on this path has been measured
-        // and looked at, rather than merely made possible.
-        if (getenv("FC_BGFX_METAL") || getenv("FC_RENDER_RHI"))
+        // DEFAULT here since 2026-09-10, where every other backend is
+        // opt-in, and the asymmetry is the point: on macOS the
+        // alternative is not another backend, it is no renderer at all.
+        //
+        // The gate this replaces asked for a session on this path to be
+        // "measured and looked at, rather than merely made possible".
+        // Both happened: the composite was confirmed on screen by eye
+        // 2026-09-09, then by the in-composite verify 2026-09-10 --
+        // COMPOSITE DRAWS, ~347 probes, 100% after the quad against 0%
+        // before and 0% under the opposite row mapping
+        // (docs/DeviceAdoption.md section 11) -- and it costs 0.33
+        // ms/frame at 1026x576 with the readback ring pipelining the
+        // copy (section 12).
+        //
+        // Registering it is the WHOLE change, because
+        // RenderParams::selectRenderPath() already decides the session's
+        // render path at startup (Application.cpp) and its
+        // preferredType() names "bgfx - Metal" first on macOS, skipping
+        // any name that did not register -- so Metal wins here the
+        // moment it exists. (Until 2026-09-10 preferredType() took the
+        // first registered "bgfx*" name and Metal won by sorting before
+        // "bgfx - OpenGL" in the map. Same outcome, but an alphabetical
+        // accident rather than a choice, which is why it is now stated.)
+        // That also means macOS was never a different POLICY from the
+        // other platforms -- they have defaulted to bgfx all along; this
+        // box was simply the one whose only registered backend could not
+        // run, falling back to Coin every session.
+        //
+        // ! Measured on ONE Mac: Intel Iris Pro 6200, macOS 12, Qt
+        // 6.11.1. Apple Silicon is untested here. The fallback that
+        // covers a device this does not suit is the same one every
+        // backend failure has always used -- prepare() fails, the
+        // renderer is null and Coin draws -- and FC_BGFX_METAL=0 turns
+        // it off outright, which restores exactly the old behaviour.
+        if (!getenv("FC_BGFX_METAL") || getenv("FC_BGFX_METAL")[0] != '0')
             typeMap["bgfx - Metal"] = RendererType::Metal;
 #endif
         for (auto &v : typeMap)

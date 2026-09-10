@@ -14,7 +14,8 @@ as "the primary tree"; that was wrong.
 | Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06, re-verified 2026-09-08), 1 disabled -- see "C++ on Windows" |
-| C++ on macOS (`build/mac-relwithdebinfo-801`) | **478 of 478 passing** (2026-09-07), 1 disabled -- see "C++ on macOS" |
+| C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
+| Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
 | Python on Windows | **2590 tests** (2026-09-07, re-verified 2026-09-08), 7 failures + 2 errors, 49 skipped, 6 expected failures -- three Windows-only defects, see "Python on Windows" |
 
 **Read the python total as a checksum on the build, not just on the code.**
@@ -106,11 +107,13 @@ One binary directly, which is the fastest loop while working on a suite:
 
 ### C++ on macOS
 
-Green: **478 of 478** on 2026-09-07, 51.6 s with `-j 4`, one entry
+Green: **490 of 490** on 2026-09-10, 112 s with `-j 4`, one entry
 disabled -- the same `FeaturePartCommonTest.testHistory` as everywhere
 else -- on macOS 12.7.6 Intel with conda clang 23.1.0. That is measured
 on the tree merged with the Windows box's work, so the three platforms
-are green on the same source.
+are green on the same source. It was 478 of 478 on 2026-09-07; of the
+twelve added since, three arrived with the merges and nine are
+`TestLibraryPaths`.
 
 It took eleven fixes to build at all and four more to pass;
 `SceneServerPort.md` 7.7 has the whole bring-up. In short: two
@@ -138,6 +141,45 @@ are in `SceneServerPort.md` 7.7. The GUI tests do not register there for
 the same reason as on Windows: their guard looks for `xvfb-run`. Run by
 hand, `GuiServeSelectionEcho_tests_run` passes -- eight PASS lines and
 `DONE`, 2026-09-07; see "The GUI tests" below for the command.
+
+### Python on macOS
+
+**Run in full for the first time on 2026-09-10**, on
+`build/mac-relwithdebinfo-801`: **2680 tests in 126 s**, 2 failures and 1
+error, 49 skipped, 6 expected failures. Only `TestFemApp` had ever been run
+on this box before.
+
+The three that do not pass are the box, not the code, and all three are the
+same gap -- there is no mesher installed:
+
+- `test_GMSHTransfiniteAutomation` and `test_GMSHTransfiniteManual` fail with
+  "0 != 91" and "0 != 31" nodes. `/usr/local/bin/gmsh` is a **171-byte stub
+  from January 2022** whose shebang names a `FreeCAD.app` that no longer
+  exists, so FreeCAD finds a gmsh on PATH, runs it, and gets nothing back.
+  There is no real gmsh and no python `gmsh` module here.
+- `test_GMSHAdaptiv` errors with `FileNotFoundError: CalculiX binary not
+  found`. Not installed either.
+
+Installing either means adding to `.conda/freecad`, which is where the vtk
+pin lives -- ask before doing it.
+
+**The first run also found a real defect, and it is worth how it looked.**
+It came back with 18 errors, 17 of them `LookupError: Material not found`
+out of `TestMaterialCanonical`, `TestMaterialClipboard` and
+`TestShaderGraph` -- which reads exactly like a missing or unwritable user
+material library, an environment gap of the kind the other three are. It was
+not. A library strips a leading "/<its own name>" off any path it is given,
+with a plain `startsWith()`, so the library named **User** took the "/User"
+off the front of every absolute path under a macOS home and keyed each card
+at "s/someone/...". A card saved into the User library could not be read
+back at all: the file was on disk in the right place and the lookup said
+Material not found. Fixed in `af6f58a0d0` with `TestLibraryPaths` beside it;
+"/home/someone" and "C:/Users/someone" do not start with "/User", which is
+why only this platform ever saw it.
+
+Read that as the general lesson for this page: a failure in a suite that has
+never run on a platform is not evidence of an environment gap, however much
+it looks like one. Two of the three above are; the seventeen were not.
 
 ### C++ on Windows
 

@@ -524,6 +524,27 @@ because those three MUST disagree:
 and OpenGL under `FC_BGFX_READBACK=2`.** Every non-GL backend on this box now
 reaches the screen.
 
+**And on Metal, 2026-09-10, macOS box (Intel Iris Pro 6200, Qt 6.11.1).** That
+was the one backend the Windows box could not run, and it is the one that
+matters most, because Metal is the ONLY backend that can run this renderer on
+macOS at all -- the GL path is capped at 2.1 there against shaders that need
+3.1, so if the readback composite did not work on Metal, nothing would put a
+bgfx frame on a Mac screen:
+
+    render readback composite verify: COMPOSITE DRAWS (70 probes, 2590560
+    texels: pattern on 0.00% before the quad, 100.00% after, 0.00% after
+    under the opposite row mapping, 100.00% of the destination not black,
+    glReadPixels err 0x0)
+
+Five report cycles, ~347 probes, the same verdict every time, and the triple
+disagrees the way it must. The composite had been confirmed here by eye on
+2026-09-09; this is the same conclusion from an instrument that can fail.
+
+The warning above about measuring with the verify on holds here too, and more
+strongly: `quad` went from 0.07 ms to 5.51 ms with `FC_BGFX_READBACK_VERIFY=1`.
+Those are the instrument's two full-viewport `glReadPixels`, not the route's.
+The composite's real cost on this box is section 12's 0.33 ms.
+
 **! Do not measure the composite with the verify on.** Each probe frame costs
 two full-viewport `glReadPixels` inside the timed quad section, which took
 `quad` from 0.08 ms to 1.8-3.2 ms. Those are the instrument's milliseconds, not
@@ -568,7 +589,173 @@ Two things about capturing it that cost time:
   differs between them. It needs no foreground, so it does not steal focus from
   someone using the machine.
 
-## 12. What the composite costs, measured (2026-09-09)
+## 12. Stage 2, RUN -- and the one composition API per window
+
+Stage 2 had never been executed. Run 2026-09-09 on this box (Intel Iris Pro
+6200, macOS 12, Qt 6.11.1), `FC_RENDER_RHI=1` with render cache 3 and type
+`bgfx - Metal`, driving `scripts/composite_cost_probe.py`.
+
+**Note on getting there.** Neither parameter is read from the configuration
+at all. `RenderParams::selectRenderPath()`, called unconditionally from
+`Application.cpp:2379` before anything reads them, forces render cache 3 and
+sets the type to `preferredType()` -- the first registered backend whose name
+starts with `bgfx`. So a session's render path is DECIDED at startup, not
+configured, and the `Type` value in a `user.cfg` is an output of that decision
+rather than an input to it.
+
+What stopped stage 2 was therefore not configuration but two gates in the code.
+`FC_RENDER_RHI=1` is required for the adoption block to run at all
+(`QtRhi::warmupEnabled`). And before section 13, `bgfx - Metal` was registered
+only under `FC_BGFX_METAL`, so on macOS `preferredType()` could only reach
+`bgfx - OpenGL` -- which cannot run here, because `prepare()` finds GL 2.1
+against a shader pack needing 3.1, sets `glUnsupported` and returns false. The
+run below sets `FC_RENDER_RHI=1`, which happens to register Metal too.
+
+### The ordering works
+
+    Log: Init: Qt RHI is up on Metal; device 0x7f9a1fb27000, queue 0x7f9a202a38c0
+    Log: Init: render backend 'bgfx - Metal' adopted a Metal device in 40 ms
+    Log: Init: render backend 'bgfx - Metal' warmed up in 571 ms
+         (context 1, device 0, programs 39, flush 531)
+
+Adoption first at 40 ms; the widget warm-up after it reports `device 0`,
+because `bgfx::init` was already done and it did only its remaining half. The
+split section 9 describes holds exactly. The `SEPARATE QRhi` fallback never
+fired.
+
+### But `fromQt` does not mean what it was written to mean
+
+One line earlier, Qt says:
+
+    Wrn: The top-level window is already using another graphics API for
+         composition, 'OpenGL' is not compatible with this widget
+
+So Qt DID build a QRhi and it is NOT the window's. `WarmupSurface::fromQt`
+was written to distinguish "the window's device" from "a device we made"; it
+actually distinguishes "Qt made it" from "we made it", and there is a third
+state -- Qt made it, for this widget alone, because the window was already
+spoken for. Stage 2's ordering constraint is met either way. Stage 4's
+shared-device requirement is NOT met, and not for the reason section 9
+predicted: Qt's QRhi is up this early, it is simply the wrong one.
+
+### The cause is ours, and the fix is not available
+
+Control run, same everything, with a temporary gate skipping the
+`GLSurfaceWarmup` `QOpenGLWidget` that `MainWindow`'s constructor creates
+immediately BEFORE the RHI surface:
+
+| run | composition | adoption | frames drawn | GL context failures |
+| --- | --- | --- | --- | --- |
+| with `GLSurfaceWarmup` | OpenGL | Metal, a widget-local QRhi | 6 reports, scene renders | 0 |
+| without it | **Metal** | Metal, no complaint | **0** | **2497** |
+
+Removing the GL widget does let the `QRhiWidget` take the window, and the
+warning disappears. Then the real viewport arrives and Qt refuses IT:
+
+    Wrn: The top-level window is not using OpenGL for composition,
+         'Metal' is not compatible with QOpenGLWidget
+    Wrn: No valid GL context found!            (x2497)
+
+Nothing rendered at all.
+
+**A Qt top-level window has exactly ONE composition API, and every RHI-backed
+widget in it must agree.** The two configurations are the only two available:
+
+- Window on OpenGL. `QuarterWidget`'s `CustomGLWidget` works, Coin draws, the
+  readback composite puts bgfx's frame on screen -- and a Metal `QRhiWidget`
+  gets a device of its own, so there is no shared device to hand a texture
+  through. This is what ships today.
+- Window on Metal. The `QRhiWidget` has the window's device -- and every
+  `QOpenGLWidget` in the window is dead, starting with the viewport Coin draws
+  through.
+
+### What that does to stage 4
+
+Stage 4 was listed as "unblocked for that scene class" after the Coin audit.
+It is not independent work: **the viewport must stop being a `QOpenGLWidget`
+before the window can be Metal, and Coin draws through that widget.** So stage
+4 cannot land incrementally beside Coin the way the readback composite did. It
+needs the scene class in section 8's audit to be drawn entirely by the backend
+in a `QRhiWidget` viewport, with Coin's contribution to that window gone --
+which couples stage 4 to the Coin retirement, and is why section 5 put it after
+the audit rather than beside it.
+
+The audit's scope limits are therefore stage 4's scope limits, restated as a
+gate rather than a caveat: one scene class, no selection highlight, no section
+planes, no shadows, no hidden-line.
+
+### The readback composite, in a real session
+
+From the same run, steady state at 1026x576:
+
+    render readback composite (ms/frame): queue 0.00 | wait 0.00 | convert 0.00
+        | upload 0.26 | quad 0.07 | total 0.33
+        -- 160 frames, 160 landed, 0 stale, mean latency 2.0 frames
+    render frame: 1026x576 frame 6.28ms gpu 2.96ms
+        | cpu ours 5.11ms (bgfx::frame 4.16ms)
+
+**0.33 ms**, against the 2.96 ms section 2 costed. Both numbers are right and
+they measure different things: section 2 serialized deliberately, and this
+viewport has 3.5x fewer pixels than the 1920x1080 in that table. `queue`,
+`wait` and `convert` are all 0.00 with a mean latency of 2.0 frames and 0 stale
+-- the ring is absorbing the copy exactly as designed, so the composite costs
+about 5% of this frame rather than 18%. The readback cost that motivates Route
+D is a 4K-and-serialized cost, not one visible at this size.
+
+
+## 13. Metal is the default on macOS
+
+Changed 2026-09-10, and it is one line: `bgfx - Metal` is registered in
+`BGFXRendererLibP`'s constructor unconditionally, where it used to sit behind
+`FC_BGFX_METAL`.
+
+**Nothing else was needed, and the reason is worth stating because it inverts
+the framing.** `RenderParams::selectRenderPath()` runs unconditionally from
+`Application.cpp:2379`, before anything reads the parameters. It forces render
+cache 3 and sets the type to `preferredType()` -- the first REGISTERED backend
+whose name starts with `bgfx`. `typeMap` is a sorted map and `bgfx - Metal`
+sorts before `bgfx - OpenGL`, so Metal wins here the moment it exists.
+
+So macOS was never a different POLICY from the other platforms. They have
+defaulted to bgfx all along; this box was the one whose only registered backend
+could not run -- `prepare()` finds GL 2.1 against a shader pack needing 3.1,
+sets `glUnsupported`, returns false, and the session falls back to the render
+cache's own GL renderer. Every macOS session has been doing that silently. This
+change does not promote macOS ahead of anyone; it stops macOS being the one
+platform whose default is unreachable.
+
+A first attempt added a `RendererFactory::resolveType()` that mapped
+`"Default"` to a per-platform backend, threaded through both `warmup()`
+overloads, `create()`, `setRendererType()`, `SceneServeSource` and
+`ViewAreaCanvas::wanted()`. It was reverted unused: `selectRenderPath()`
+already decides this, and two mechanisms settling the same question is a defect
+waiting for a maintainer.
+
+### Measured, both directions
+
+Neutral probe -- a copy of `composite_cost_probe.py` with the two lines that
+set `RenderCache` and `Type` removed, so the run observes what the
+application chose rather than dictating it -- against a `user.cfg` holding
+nothing but autosave, and with `FC_BGFX_METAL` and `FC_RENDER_RHI` unset:
+
+| leg | warm-up | bgfx frames | verify |
+| --- | --- | --- | --- |
+| default | `bgfx - Metal` in 77 ms | 6 reports | `COMPOSITE DRAWS` x6 |
+| `FC_BGFX_METAL=0` | none | 0 | GL 2.1 refusal, Coin draws |
+
+The opt-out leg is the control that gives the first one its meaning: with Metal
+unregistered, `preferredType()` can only reach `bgfx - OpenGL`, which logs
+"is below the 3.1 this renderer's shaders need; drawing through the render cache
+instead" -- exactly the behaviour every macOS session had before this change.
+So `FC_BGFX_METAL=0` is a true restore, not merely a different failure.
+
+### The caveat
+
+Measured on ONE Mac: Intel Iris Pro 6200, macOS 12, Qt 6.11.1. Apple Silicon is
+untested here. The failure mode on a machine this does not suit is the one above
+-- `prepare()` fails, the renderer is null, Coin draws -- so the cost of being
+wrong is a slower 3D view, not a broken one.
+## 14. What the composite costs, measured (2026-09-09)
 
 Section 2 priced a readback as a serialized transfer -- 2.42-2.51 ms at
 1080p on this box -- and section 10 built the pipelined route on top of it.
