@@ -5966,6 +5966,19 @@ about 650 lines plus 450 of tests).  What the build settled:
   segfault in `ConstraintItem::data` when the next panel repainted
   the task view); the gate's `spin` now flushes deferred deletes
   explicitly, as the desktop's loop would.
+- **The client's side of the rule** (asked by the ThinClient session
+  the same day): a client's own write -- an item op or a `q_` key --
+  is NEVER echoed back to it; the fan-out skips the writer and the
+  real widget's answer is dropped when it equals what the model holds.
+  A client applies its own write locally first and then whatever
+  arrives under origin 0 on top, which is only what the panel changed
+  beyond the write (a reformat, a slot's follow-up).  A write the
+  real model refuses (`setData` false on a non-checkable item, a
+  read-only cell) gets no reply either: a client gates its editors on
+  the row and cell `flags`.  `UnknownImage` means keep the bytes you
+  have: eviction is by count (the newest 512), so only a closed
+  panel's ids fall out in practice, and the store re-files the bytes
+  on that widget's next grab or icon read.
 - **Not in M2**: mouse replay into a picture (M3), a box's header
   icon, coalescing per-row ops (M4 measures Sketcher's list first),
   nested modals (M3).
