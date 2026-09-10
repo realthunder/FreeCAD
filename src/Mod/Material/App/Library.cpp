@@ -35,6 +35,26 @@ using namespace Materials;
 
 TYPESYSTEM_SOURCE(Materials::Library, Base::BaseClass)
 
+namespace
+{
+
+/// Does `clean` carry `prefix` as a whole leading path component? A raw
+/// startsWith() does not ask that, and the library named "User" then takes
+/// the "/User" out of "/Users/someone/..." -- which is what every absolute
+/// path under a macOS home looks like to it, leaving a relative path of
+/// "s/someone/...". Keys stored that way never match the relative path a
+/// caller looks a card up by, so a card saved into the User library could
+/// not be read back on this platform at all.
+bool hasLeadingComponent(const QString& clean, const QString& prefix)
+{
+    return clean.startsWith(prefix)
+        && (clean.length() == prefix.length()
+            || clean.at(prefix.length()) == QLatin1Char('/'));
+}
+
+}  // namespace
+
+
 Library::Library(const QString& libraryName, const QString& iconPath, bool readOnly)
     : _name(libraryName)
     , _readOnly(readOnly)
@@ -162,7 +182,7 @@ QString Library::getLocalPath(const QString& path) const
 
     QString clean = QDir::cleanPath(path);
     QString prefix = QStringLiteral("/") + getName();
-    if (clean.startsWith(prefix)) {
+    if (hasLeadingComponent(clean, prefix)) {
         // Remove the library name from the path
         filePath += clean.right(clean.length() - prefix.length());
     }
@@ -185,7 +205,7 @@ QString Library::getRelativePath(const QString& path) const
     QString filePath;
     QString clean = QDir::cleanPath(path);
     QString prefix = QStringLiteral("/") + getName();
-    if (clean.startsWith(prefix)) {
+    if (hasLeadingComponent(clean, prefix)) {
         // Remove the library name from the path
         filePath = clean.right(clean.length() - prefix.length());
     }
