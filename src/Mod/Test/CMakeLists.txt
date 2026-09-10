@@ -28,6 +28,7 @@ SET(Test_SRCS
     SandboxSelection.py
     SandboxSessionDoc.py
     SandboxProxyImport.py
+    SandboxModelDump.py
     SandboxInitGui.py
     SandboxCorpusGui.py
 )

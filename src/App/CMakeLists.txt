@@ -287,6 +287,24 @@ if(BUILD_EXPR_IMAGE_HOST)
         add_custom_target(WidgetsSandboxWheel ALL DEPENDS ${_fcx_widgets_wheel})
         install(FILES ${_fcx_widgets_wheel} DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide/wheels)
 
+        # The same models as one JSON table (docs/Sandbox.md 7.18 (c)):
+        # the classes, their q_ traits with types and defaults, the
+        # signals and the Qt-class map, for a backend that renders the
+        # models outside the guest (the DOM tier of docs/ThinClient.md).
+        # Read with `ast`, so no ipywidgets is needed on this Python.
+        set(_fcx_models_json ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Pyodide/widget-models.json)
+        add_custom_command(
+            OUTPUT ${_fcx_models_json}
+            COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/src/Tools/bindings/dumpWidgetModels.py
+                    --root ${_fcx_widgets_src}/freecad/widgets
+                    --out ${_fcx_models_json}
+            DEPENDS ${CMAKE_SOURCE_DIR}/src/Tools/bindings/dumpWidgetModels.py
+                    ${_fcx_widgets_src}/freecad/widgets/models.py
+                    ${_fcx_widgets_src}/freecad/widgets/items.py
+            COMMENT "Dumping the guest widget models as widget-models.json")
+        add_custom_target(WidgetModelsJson ALL DEPENDS ${_fcx_models_json})
+        install(FILES ${_fcx_models_json} DESTINATION ${CMAKE_INSTALL_DATADIR}/Pyodide)
+
         # A whole pyodide distribution (pyodide.js, pyodide.asm.*,
         # python_stdlib.zip, pyodide-lock.json, wheels) bundled as
         # <datadir>/Pyodide: what a dev tree does with the npm directory

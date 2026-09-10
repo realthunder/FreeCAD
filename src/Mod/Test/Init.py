@@ -36,4 +36,5 @@ FreeCAD.__unit_test__ += [
     "UnicodeTests",
     "TestPythonSyntax",
     "SandboxPyodide",
+    "SandboxModelDump",
 ]
