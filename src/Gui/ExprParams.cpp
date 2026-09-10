@@ -38,20 +38,20 @@ ExprParams.define()
 #   define FC_EXPR_PARAM_EDIT_BG_ALPHA 1
 #endif
 
-// Auto generated code (Tools/params_utils.py:162)
+// Auto generated code (Tools/params_utils.py:198)
 #include <unordered_map>
 #include <App/Application.h>
 #include <App/DynamicProperty.h>
+#include <App/ParamRegistry.h>
 #include "ExprParams.h"
 using namespace Gui;
 
-// Auto generated code (Tools/params_utils.py:171)
+// Auto generated code (Tools/params_utils.py:210)
 namespace {
 class ExprParamsP: public ParameterGrp::ObserverType {
 public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(ExprParamsP*),App::CStringHasher,App::CStringHasher> funcs;
-
     bool CompleterCaseSensitive;
     bool CompleterMatchExact;
     bool CompleterUnfiltered;
@@ -65,104 +65,102 @@ public:
     long EditDialogTextHeight;
     long EditDialogBGAlpha;
 
-    // Auto generated code (Tools/params_utils.py:199)
+    // Auto generated code (Tools/params_utils.py:254)
     ExprParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Expression");
         handle->Attach(this);
 
-        CompleterCaseSensitive = handle->GetBool("CompleterCaseSensitive", false);
+        CompleterCaseSensitive = this->handle->GetBool("CompleterCaseSensitive", false);
         funcs["CompleterCaseSensitive"] = &ExprParamsP::updateCompleterCaseSensitive;
-        CompleterMatchExact = handle->GetBool("CompleterMatchExact", false);
+        CompleterMatchExact = this->handle->GetBool("CompleterMatchExact", false);
         funcs["CompleterMatchExact"] = &ExprParamsP::updateCompleterMatchExact;
-        CompleterUnfiltered = handle->GetBool("CompleterUnfiltered", false);
+        CompleterUnfiltered = this->handle->GetBool("CompleterUnfiltered", false);
         funcs["CompleterUnfiltered"] = &ExprParamsP::updateCompleterUnfiltered;
-        NoSystemBackground = handle->GetBool("NoSystemBackground", false);
+        NoSystemBackground = this->handle->GetBool("NoSystemBackground", false);
         funcs["NoSystemBackground"] = &ExprParamsP::updateNoSystemBackground;
-        EditorTrigger = handle->GetASCII("EditorTrigger", "=");
+        EditorTrigger = this->handle->GetASCII("EditorTrigger", "=");
         funcs["EditorTrigger"] = &ExprParamsP::updateEditorTrigger;
-        AutoHideEditorIcon = handle->GetBool("AutoHideEditorIcon", true);
+        AutoHideEditorIcon = this->handle->GetBool("AutoHideEditorIcon", true);
         funcs["AutoHideEditorIcon"] = &ExprParamsP::updateAutoHideEditorIcon;
-        AllowReturn = handle->GetBool("AllowReturn", false);
+        AllowReturn = this->handle->GetBool("AllowReturn", false);
         funcs["AllowReturn"] = &ExprParamsP::updateAllowReturn;
-        EvalFuncOnEdit = handle->GetBool("EvalFuncOnEdit", false);
+        EvalFuncOnEdit = this->handle->GetBool("EvalFuncOnEdit", false);
         funcs["EvalFuncOnEdit"] = &ExprParamsP::updateEvalFuncOnEdit;
-        EditDialogWidth = handle->GetInt("EditDialogWidth", 0);
+        EditDialogWidth = this->handle->GetInt("EditDialogWidth", 0);
         funcs["EditDialogWidth"] = &ExprParamsP::updateEditDialogWidth;
-        EditDialogHeight = handle->GetInt("EditDialogHeight", 0);
+        EditDialogHeight = this->handle->GetInt("EditDialogHeight", 0);
         funcs["EditDialogHeight"] = &ExprParamsP::updateEditDialogHeight;
-        EditDialogTextHeight = handle->GetInt("EditDialogTextHeight", 0);
+        EditDialogTextHeight = this->handle->GetInt("EditDialogTextHeight", 0);
         funcs["EditDialogTextHeight"] = &ExprParamsP::updateEditDialogTextHeight;
-        EditDialogBGAlpha = handle->GetInt("EditDialogBGAlpha", FC_EXPR_PARAM_EDIT_BG_ALPHA);
+        EditDialogBGAlpha = this->handle->GetInt("EditDialogBGAlpha", FC_EXPR_PARAM_EDIT_BG_ALPHA);
         funcs["EditDialogBGAlpha"] = &ExprParamsP::updateEditDialogBGAlpha;
     }
 
-    // Auto generated code (Tools/params_utils.py:213)
-    ~ExprParamsP() {
-    }
+    // Auto generated code (Tools/params_utils.py:284)
+    ~ExprParamsP() override = default;
 
-    // Auto generated code (Tools/params_utils.py:218)
-    void OnChange(Base::Subject<const char*> &, const char* sReason) {
+    // Auto generated code (Tools/params_utils.py:297)
+    void OnChange(Base::Subject<const char*> &, const char* sReason) override {
         if(!sReason)
             return;
         auto it = funcs.find(sReason);
         if(it == funcs.end())
             return;
         it->second(this);
-        
     }
 
 
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateCompleterCaseSensitive(ExprParamsP *self) {
         self->CompleterCaseSensitive = self->handle->GetBool("CompleterCaseSensitive", false);
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateCompleterMatchExact(ExprParamsP *self) {
         self->CompleterMatchExact = self->handle->GetBool("CompleterMatchExact", false);
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateCompleterUnfiltered(ExprParamsP *self) {
         self->CompleterUnfiltered = self->handle->GetBool("CompleterUnfiltered", false);
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateNoSystemBackground(ExprParamsP *self) {
         self->NoSystemBackground = self->handle->GetBool("NoSystemBackground", false);
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateEditorTrigger(ExprParamsP *self) {
         self->EditorTrigger = self->handle->GetASCII("EditorTrigger", "=");
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateAutoHideEditorIcon(ExprParamsP *self) {
         self->AutoHideEditorIcon = self->handle->GetBool("AutoHideEditorIcon", true);
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateAllowReturn(ExprParamsP *self) {
         self->AllowReturn = self->handle->GetBool("AllowReturn", false);
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateEvalFuncOnEdit(ExprParamsP *self) {
         self->EvalFuncOnEdit = self->handle->GetBool("EvalFuncOnEdit", false);
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateEditDialogWidth(ExprParamsP *self) {
         self->EditDialogWidth = self->handle->GetInt("EditDialogWidth", 0);
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateEditDialogHeight(ExprParamsP *self) {
         self->EditDialogHeight = self->handle->GetInt("EditDialogHeight", 0);
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateEditDialogTextHeight(ExprParamsP *self) {
         self->EditDialogTextHeight = self->handle->GetInt("EditDialogTextHeight", 0);
     }
-    // Auto generated code (Tools/params_utils.py:234)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateEditDialogBGAlpha(ExprParamsP *self) {
         self->EditDialogBGAlpha = self->handle->GetInt("EditDialogBGAlpha", FC_EXPR_PARAM_EDIT_BG_ALPHA);
     }
 };
 
-// Auto generated code (Tools/params_utils.py:252)
+// Auto generated code (Tools/params_utils.py:336)
 ExprParamsP *instance() {
     static ExprParamsP *inst = new ExprParamsP;
     return inst;
@@ -170,340 +168,380 @@ ExprParamsP *instance() {
 
 } // Anonymous namespace
 
-// Auto generated code (Tools/params_utils.py:261)
+// Auto generated code (Tools/params_utils.py:352)
+static const App::ParamRegistry::Registrar _ExprParamsRegistrar({
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "CompleterCaseSensitive", "CompleterCaseSensitive", App::ParamInfo::Bool, false)
+        .setTitle("Expression completer with case sensitive")
+        .setDoc("Expression completer with case sensitive"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "CompleterMatchExact", "CompleterMatchExact", App::ParamInfo::Bool, false)
+        .setTitle("Expression completer match exact")
+        .setDoc("Expression completer match exact"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "CompleterUnfiltered", "CompleterUnfiltered", App::ParamInfo::Bool, false)
+        .setTitle("Expression completer unfiltered completion mode")
+        .setDoc("Expression completer unfiltered completion mode"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "NoSystemBackground", "NoSystemBackground", App::ParamInfo::Bool, false)
+        .setTitle("In place editing")
+        .setDoc("Enable in place expression editing"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "EditorTrigger", "EditorTrigger", App::ParamInfo::String, "=")
+        .setTitle("Editor trigger shortcut")
+        .setDoc("Expression editor trigger character")
+        .setProxy("ShortcutEdit"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "AutoHideEditorIcon", "AutoHideEditorIcon", App::ParamInfo::Bool, true)
+        .setTitle("Auto hide editor icon")
+        .setDoc("Only show editor icon on mouse over"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "AllowReturn", "AllowReturn", App::ParamInfo::Bool, false)
+        .setTitle("Allow return key in expression edit box")
+        .setDoc("Allow return key in expression edit box"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "EvalFuncOnEdit", "EvalFuncOnEdit", App::ParamInfo::Bool, false)
+        .setTitle("Auto evaluate function call when editing expression")
+        .setDoc("Auto evaluate function call when editing expression"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "EditDialogWidth", "EditDialogWidth", App::ParamInfo::Int, 0)
+        .setTitle("Edit Dialog Width"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "EditDialogHeight", "EditDialogHeight", App::ParamInfo::Int, 0)
+        .setTitle("Edit Dialog Height"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "EditDialogTextHeight", "EditDialogTextHeight", App::ParamInfo::Int, 0)
+        .setTitle("Edit Dialog Text Height"),
+    App::ParamInfo("Gui", "ExprParams", "User parameter:BaseApp/Preferences/Expression", "EditDialogBGAlpha", "EditDialogBGAlpha", App::ParamInfo::Int, FC_EXPR_PARAM_EDIT_BG_ALPHA)
+        .setTitle("Background opacity")
+        .setDoc("Expression editor background opacity value when using in place editing")
+        .setProxy("SpinBox")
+        .setRange(0, 255, 1, 0),
+});
+
+// Auto generated code (Tools/params_utils.py:368)
 ParameterGrp::handle ExprParams::getHandle() {
     return instance()->handle;
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docCompleterCaseSensitive() {
     return QT_TRANSLATE_NOOP("ExprParams",
 "Expression completer with case sensitive");
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & ExprParams::getCompleterCaseSensitive() {
     return instance()->CompleterCaseSensitive;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & ExprParams::defaultCompleterCaseSensitive() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setCompleterCaseSensitive(const bool &v) {
     instance()->handle->SetBool("CompleterCaseSensitive",v);
     instance()->CompleterCaseSensitive = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeCompleterCaseSensitive() {
     instance()->handle->RemoveBool("CompleterCaseSensitive");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docCompleterMatchExact() {
     return QT_TRANSLATE_NOOP("ExprParams",
 "Expression completer match exact");
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & ExprParams::getCompleterMatchExact() {
     return instance()->CompleterMatchExact;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & ExprParams::defaultCompleterMatchExact() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setCompleterMatchExact(const bool &v) {
     instance()->handle->SetBool("CompleterMatchExact",v);
     instance()->CompleterMatchExact = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeCompleterMatchExact() {
     instance()->handle->RemoveBool("CompleterMatchExact");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docCompleterUnfiltered() {
     return QT_TRANSLATE_NOOP("ExprParams",
 "Expression completer unfiltered completion mode");
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & ExprParams::getCompleterUnfiltered() {
     return instance()->CompleterUnfiltered;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & ExprParams::defaultCompleterUnfiltered() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setCompleterUnfiltered(const bool &v) {
     instance()->handle->SetBool("CompleterUnfiltered",v);
     instance()->CompleterUnfiltered = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeCompleterUnfiltered() {
     instance()->handle->RemoveBool("CompleterUnfiltered");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docNoSystemBackground() {
     return QT_TRANSLATE_NOOP("ExprParams",
 "Enable in place expression editing");
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & ExprParams::getNoSystemBackground() {
     return instance()->NoSystemBackground;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & ExprParams::defaultNoSystemBackground() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setNoSystemBackground(const bool &v) {
     instance()->handle->SetBool("NoSystemBackground",v);
     instance()->NoSystemBackground = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeNoSystemBackground() {
     instance()->handle->RemoveBool("NoSystemBackground");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docEditorTrigger() {
     return QT_TRANSLATE_NOOP("ExprParams",
 "Expression editor trigger character");
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & ExprParams::getEditorTrigger() {
     return instance()->EditorTrigger;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & ExprParams::defaultEditorTrigger() {
     const static std::string def = "=";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setEditorTrigger(const std::string &v) {
     instance()->handle->SetASCII("EditorTrigger",v);
     instance()->EditorTrigger = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeEditorTrigger() {
     instance()->handle->RemoveASCII("EditorTrigger");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docAutoHideEditorIcon() {
     return QT_TRANSLATE_NOOP("ExprParams",
 "Only show editor icon on mouse over");
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & ExprParams::getAutoHideEditorIcon() {
     return instance()->AutoHideEditorIcon;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & ExprParams::defaultAutoHideEditorIcon() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setAutoHideEditorIcon(const bool &v) {
     instance()->handle->SetBool("AutoHideEditorIcon",v);
     instance()->AutoHideEditorIcon = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeAutoHideEditorIcon() {
     instance()->handle->RemoveBool("AutoHideEditorIcon");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docAllowReturn() {
     return QT_TRANSLATE_NOOP("ExprParams",
 "Allow return key in expression edit box");
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & ExprParams::getAllowReturn() {
     return instance()->AllowReturn;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & ExprParams::defaultAllowReturn() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setAllowReturn(const bool &v) {
     instance()->handle->SetBool("AllowReturn",v);
     instance()->AllowReturn = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeAllowReturn() {
     instance()->handle->RemoveBool("AllowReturn");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docEvalFuncOnEdit() {
     return QT_TRANSLATE_NOOP("ExprParams",
 "Auto evaluate function call when editing expression");
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & ExprParams::getEvalFuncOnEdit() {
     return instance()->EvalFuncOnEdit;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & ExprParams::defaultEvalFuncOnEdit() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setEvalFuncOnEdit(const bool &v) {
     instance()->handle->SetBool("EvalFuncOnEdit",v);
     instance()->EvalFuncOnEdit = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeEvalFuncOnEdit() {
     instance()->handle->RemoveBool("EvalFuncOnEdit");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docEditDialogWidth() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const long & ExprParams::getEditDialogWidth() {
     return instance()->EditDialogWidth;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const long & ExprParams::defaultEditDialogWidth() {
     const static long def = 0;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setEditDialogWidth(const long &v) {
     instance()->handle->SetInt("EditDialogWidth",v);
     instance()->EditDialogWidth = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeEditDialogWidth() {
     instance()->handle->RemoveInt("EditDialogWidth");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docEditDialogHeight() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const long & ExprParams::getEditDialogHeight() {
     return instance()->EditDialogHeight;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const long & ExprParams::defaultEditDialogHeight() {
     const static long def = 0;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setEditDialogHeight(const long &v) {
     instance()->handle->SetInt("EditDialogHeight",v);
     instance()->EditDialogHeight = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeEditDialogHeight() {
     instance()->handle->RemoveInt("EditDialogHeight");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docEditDialogTextHeight() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const long & ExprParams::getEditDialogTextHeight() {
     return instance()->EditDialogTextHeight;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const long & ExprParams::defaultEditDialogTextHeight() {
     const static long def = 0;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setEditDialogTextHeight(const long &v) {
     instance()->handle->SetInt("EditDialogTextHeight",v);
     instance()->EditDialogTextHeight = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeEditDialogTextHeight() {
     instance()->handle->RemoveInt("EditDialogTextHeight");
 }
 
-// Auto generated code (Tools/params_utils.py:284)
+// Auto generated code (Tools/params_utils.py:397)
 const char *ExprParams::docEditDialogBGAlpha() {
     return QT_TRANSLATE_NOOP("ExprParams",
 "Expression editor background opacity value when using in place editing");
 }
 
-// Auto generated code (Tools/params_utils.py:290)
+// Auto generated code (Tools/params_utils.py:405)
 const long & ExprParams::getEditDialogBGAlpha() {
     return instance()->EditDialogBGAlpha;
 }
 
-// Auto generated code (Tools/params_utils.py:296)
+// Auto generated code (Tools/params_utils.py:413)
 const long & ExprParams::defaultEditDialogBGAlpha() {
     const static long def = FC_EXPR_PARAM_EDIT_BG_ALPHA;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:303)
+// Auto generated code (Tools/params_utils.py:422)
 void ExprParams::setEditDialogBGAlpha(const long &v) {
     instance()->handle->SetInt("EditDialogBGAlpha",v);
     instance()->EditDialogBGAlpha = v;
 }
 
-// Auto generated code (Tools/params_utils.py:310)
+// Auto generated code (Tools/params_utils.py:431)
 void ExprParams::removeEditDialogBGAlpha() {
     instance()->handle->RemoveInt("EditDialogBGAlpha");
 }

@@ -31,10 +31,11 @@ SheetParams.define()
 #include <unordered_map>
 #include <App/Application.h>
 #include <App/DynamicProperty.h>
+#include <App/ParamRegistry.h>
 #include "SheetParams.h"
 using namespace Spreadsheet;
 
-// Auto generated code (Tools/params_utils.py:209)
+// Auto generated code (Tools/params_utils.py:210)
 namespace {
 class SheetParamsP: public ParameterGrp::ObserverType {
 public:
@@ -51,7 +52,7 @@ public:
     bool VerticalConfTable;
     bool DoubleBindConfTable;
 
-    // Auto generated code (Tools/params_utils.py:253)
+    // Auto generated code (Tools/params_utils.py:254)
     SheetParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Spreadsheet");
         handle->Attach(this);
@@ -78,67 +79,63 @@ public:
         funcs["DoubleBindConfTable"] = &SheetParamsP::updateDoubleBindConfTable;
     }
 
-    // Auto generated code (Tools/params_utils.py:283)
-    ~SheetParamsP() {
-    }
+    // Auto generated code (Tools/params_utils.py:284)
+    ~SheetParamsP() override = default;
 
-    // Auto generated code (Tools/params_utils.py:290)
-    void OnChange(Base::Subject<const char*> &param, const char* sReason) {
-        (void)param;
+    // Auto generated code (Tools/params_utils.py:297)
+    void OnChange(Base::Subject<const char*> &, const char* sReason) override {
         if(!sReason)
             return;
         auto it = funcs.find(sReason);
         if(it == funcs.end())
             return;
         it->second(this);
-        
-        
     }
 
 
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateshowAliasName(SheetParamsP *self) {
         self->showAliasName = self->handle->GetBool("showAliasName", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateDisplayAliasFormatString(SheetParamsP *self) {
         self->DisplayAliasFormatString = self->handle->GetASCII("DisplayAliasFormatString", "%V = %A");
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateAliasedCellBackgroundColor(SheetParamsP *self) {
         self->AliasedCellBackgroundColor = self->handle->GetASCII("AliasedCellBackgroundColor", "#feff9e");
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateAliasedCellForegroundColor(SheetParamsP *self) {
         self->AliasedCellForegroundColor = self->handle->GetASCII("AliasedCellForegroundColor", "#242424");
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateLockedAliasedCellColor(SheetParamsP *self) {
         self->LockedAliasedCellColor = self->handle->GetASCII("LockedAliasedCellColor", "#9effff");
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateTextColor(SheetParamsP *self) {
         self->TextColor = self->handle->GetASCII("TextColor", "#000000");
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updatePositiveNumberColor(SheetParamsP *self) {
         self->PositiveNumberColor = self->handle->GetASCII("PositiveNumberColor", "");
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateNegativeNumberColor(SheetParamsP *self) {
         self->NegativeNumberColor = self->handle->GetASCII("NegativeNumberColor", "");
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateVerticalConfTable(SheetParamsP *self) {
         self->VerticalConfTable = self->handle->GetBool("VerticalConfTable", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateDoubleBindConfTable(SheetParamsP *self) {
         self->DoubleBindConfTable = self->handle->GetBool("DoubleBindConfTable", false);
     }
 };
 
-// Auto generated code (Tools/params_utils.py:332)
+// Auto generated code (Tools/params_utils.py:336)
 SheetParamsP *instance() {
     static SheetParamsP *inst = new SheetParamsP;
     return inst;
@@ -146,277 +143,301 @@ SheetParamsP *instance() {
 
 } // Anonymous namespace
 
-// Auto generated code (Tools/params_utils.py:343)
+// Auto generated code (Tools/params_utils.py:352)
+static const App::ParamRegistry::Registrar _SheetParamsRegistrar({
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "showAliasName", "showAliasName", App::ParamInfo::Bool, false)
+        .setTitle("show Alias Name"),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "DisplayAliasFormatString", "DisplayAliasFormatString", App::ParamInfo::String, "%V = %A")
+        .setTitle("Display Alias Format String"),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "AliasedCellBackgroundColor", "AliasedCellBackgroundColor", App::ParamInfo::String, "#feff9e")
+        .setTitle("Aliased Cell Background Color"),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "AliasedCellForegroundColor", "AliasedCellForegroundColor", App::ParamInfo::String, "#242424")
+        .setTitle("Aliased Cell Foreground Color"),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "LockedAliasedCellColor", "LockedAliasedCellColor", App::ParamInfo::String, "#9effff")
+        .setTitle("Locked Aliased Cell Color"),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "TextColor", "TextColor", App::ParamInfo::String, "#000000")
+        .setTitle("Text Color"),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "PositiveNumberColor", "PositiveNumberColor", App::ParamInfo::String, "")
+        .setTitle("Positive Number Color"),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "NegativeNumberColor", "NegativeNumberColor", App::ParamInfo::String, "")
+        .setTitle("Negative Number Color"),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "VerticalConfTable", "VerticalConfTable", App::ParamInfo::Bool, false)
+        .setTitle("Vertical Conf Table"),
+    App::ParamInfo("Spreadsheet", "SheetParams", "User parameter:BaseApp/Preferences/Mod/Spreadsheet", "DoubleBindConfTable", "DoubleBindConfTable", App::ParamInfo::Bool, false)
+        .setTitle("Double Bind Conf Table"),
+});
+
+// Auto generated code (Tools/params_utils.py:368)
 ParameterGrp::handle SheetParams::getHandle() {
     return instance()->handle;
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *SheetParams::docshowAliasName() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & SheetParams::getshowAliasName() {
     return instance()->showAliasName;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & SheetParams::defaultshowAliasName() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void SheetParams::setshowAliasName(const bool &v) {
     instance()->handle->SetBool("showAliasName",v);
     instance()->showAliasName = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removeshowAliasName() {
     instance()->handle->RemoveBool("showAliasName");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *SheetParams::docDisplayAliasFormatString() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & SheetParams::getDisplayAliasFormatString() {
     return instance()->DisplayAliasFormatString;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & SheetParams::defaultDisplayAliasFormatString() {
     const static std::string def = "%V = %A";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void SheetParams::setDisplayAliasFormatString(const std::string &v) {
     instance()->handle->SetASCII("DisplayAliasFormatString",v);
     instance()->DisplayAliasFormatString = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removeDisplayAliasFormatString() {
     instance()->handle->RemoveASCII("DisplayAliasFormatString");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *SheetParams::docAliasedCellBackgroundColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & SheetParams::getAliasedCellBackgroundColor() {
     return instance()->AliasedCellBackgroundColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & SheetParams::defaultAliasedCellBackgroundColor() {
     const static std::string def = "#feff9e";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void SheetParams::setAliasedCellBackgroundColor(const std::string &v) {
     instance()->handle->SetASCII("AliasedCellBackgroundColor",v);
     instance()->AliasedCellBackgroundColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removeAliasedCellBackgroundColor() {
     instance()->handle->RemoveASCII("AliasedCellBackgroundColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *SheetParams::docAliasedCellForegroundColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & SheetParams::getAliasedCellForegroundColor() {
     return instance()->AliasedCellForegroundColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & SheetParams::defaultAliasedCellForegroundColor() {
     const static std::string def = "#242424";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void SheetParams::setAliasedCellForegroundColor(const std::string &v) {
     instance()->handle->SetASCII("AliasedCellForegroundColor",v);
     instance()->AliasedCellForegroundColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removeAliasedCellForegroundColor() {
     instance()->handle->RemoveASCII("AliasedCellForegroundColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *SheetParams::docLockedAliasedCellColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & SheetParams::getLockedAliasedCellColor() {
     return instance()->LockedAliasedCellColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & SheetParams::defaultLockedAliasedCellColor() {
     const static std::string def = "#9effff";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void SheetParams::setLockedAliasedCellColor(const std::string &v) {
     instance()->handle->SetASCII("LockedAliasedCellColor",v);
     instance()->LockedAliasedCellColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removeLockedAliasedCellColor() {
     instance()->handle->RemoveASCII("LockedAliasedCellColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *SheetParams::docTextColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & SheetParams::getTextColor() {
     return instance()->TextColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & SheetParams::defaultTextColor() {
     const static std::string def = "#000000";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void SheetParams::setTextColor(const std::string &v) {
     instance()->handle->SetASCII("TextColor",v);
     instance()->TextColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removeTextColor() {
     instance()->handle->RemoveASCII("TextColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *SheetParams::docPositiveNumberColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & SheetParams::getPositiveNumberColor() {
     return instance()->PositiveNumberColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & SheetParams::defaultPositiveNumberColor() {
     const static std::string def = "";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void SheetParams::setPositiveNumberColor(const std::string &v) {
     instance()->handle->SetASCII("PositiveNumberColor",v);
     instance()->PositiveNumberColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removePositiveNumberColor() {
     instance()->handle->RemoveASCII("PositiveNumberColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *SheetParams::docNegativeNumberColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & SheetParams::getNegativeNumberColor() {
     return instance()->NegativeNumberColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & SheetParams::defaultNegativeNumberColor() {
     const static std::string def = "";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void SheetParams::setNegativeNumberColor(const std::string &v) {
     instance()->handle->SetASCII("NegativeNumberColor",v);
     instance()->NegativeNumberColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removeNegativeNumberColor() {
     instance()->handle->RemoveASCII("NegativeNumberColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *SheetParams::docVerticalConfTable() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & SheetParams::getVerticalConfTable() {
     return instance()->VerticalConfTable;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & SheetParams::defaultVerticalConfTable() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void SheetParams::setVerticalConfTable(const bool &v) {
     instance()->handle->SetBool("VerticalConfTable",v);
     instance()->VerticalConfTable = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removeVerticalConfTable() {
     instance()->handle->RemoveBool("VerticalConfTable");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *SheetParams::docDoubleBindConfTable() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & SheetParams::getDoubleBindConfTable() {
     return instance()->DoubleBindConfTable;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & SheetParams::defaultDoubleBindConfTable() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void SheetParams::setDoubleBindConfTable(const bool &v) {
     instance()->handle->SetBool("DoubleBindConfTable",v);
     instance()->DoubleBindConfTable = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void SheetParams::removeDoubleBindConfTable() {
     instance()->handle->RemoveBool("DoubleBindConfTable");
 }

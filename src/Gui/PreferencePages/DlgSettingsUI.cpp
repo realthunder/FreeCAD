@@ -31,7 +31,7 @@ import DlgSettingsUI
 DlgSettingsUI.define()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:605)
+// Auto generated code (Tools/params_utils.py:630)
 #ifndef _PreComp_
 #   include <QApplication>
 #   include <QLabel>
@@ -45,12 +45,12 @@ DlgSettingsUI.define()
 #include <Gui/TreeParams.h>
 #include <Gui/ExprParams.h>
 #include <Gui/OverlayParams.h>
-// Auto generated code (Tools/params_utils.py:627)
+// Auto generated code (Tools/params_utils.py:652)
 #include "Gui/PreferencePages/DlgSettingsUI.h"
 using namespace Gui::Dialog;
 /* TRANSLATOR Gui::Dialog::DlgSettingsUI */
 
-// Auto generated code (Tools/params_utils.py:636)
+// Auto generated code (Tools/params_utils.py:661)
 DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     : PreferencePage( parent )
 {
@@ -59,7 +59,7 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     auto layout = new QVBoxLayout(this);
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupGeneral = new QGroupBox(this);
     layout->addWidget(groupGeneral);
     auto layoutHorizGeneral = new QHBoxLayout(groupGeneral);
@@ -67,10 +67,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     layoutHorizGeneral->addLayout(layoutGeneral);
     layoutHorizGeneral->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutGeneral->addLayout(layoutRow);
     labelTextCursorWidth = new QLabel(this);
     layoutRow->addWidget(labelTextCursorWidth);
@@ -79,13 +79,13 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     TextCursorWidth->setValue(Gui::ViewParams::defaultTextCursorWidth());
     TextCursorWidth->setEntryName("TextCursorWidth");
     TextCursorWidth->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     TextCursorWidth->setMinimum(1);
     TextCursorWidth->setMaximum(100);
     TextCursorWidth->setSingleStep(1);
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupViews = new QGroupBox(this);
     layout->addWidget(groupViews);
     auto layoutHorizViews = new QHBoxLayout(groupViews);
@@ -93,10 +93,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     layoutHorizViews->addLayout(layoutViews);
     layoutHorizViews->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutViews->addLayout(layoutRow);
     UseViewArea = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(UseViewArea);
@@ -104,10 +104,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     UseViewArea->setEntryName("UseViewArea");
     UseViewArea->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutViews->addLayout(layoutRow);
     labelDocumentTarget = new QLabel(this);
     layoutRow->addWidget(labelDocumentTarget);
@@ -124,10 +124,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DocumentTarget->setCurrentIndex(DocumentTarget->findData(QByteArray(
                 Gui::OpenViewParams::defaultDocumentTarget().c_str())));
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutViews->addLayout(layoutRow);
     labelDocViewTarget = new QLabel(this);
     layoutRow->addWidget(labelDocViewTarget);
@@ -145,10 +145,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DocViewTarget->setCurrentIndex(DocViewTarget->findData(QByteArray(
                 Gui::OpenViewParams::defaultDocViewTarget().c_str())));
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutViews->addLayout(layoutRow);
     labelUtilityTarget = new QLabel(this);
     layoutRow->addWidget(labelUtilityTarget);
@@ -165,10 +165,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     UtilityTarget->setCurrentIndex(UtilityTarget->findData(QByteArray(
                 Gui::OpenViewParams::defaultUtilityTarget().c_str())));
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutViews->addLayout(layoutRow);
     labelSplitDirection = new QLabel(this);
     layoutRow->addWidget(labelSplitDirection);
@@ -189,7 +189,7 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     layoutViews->addWidget(hintSplitDirection);
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupTreeview = new QGroupBox(this);
     layout->addWidget(groupTreeview);
     auto layoutHorizTreeview = new QHBoxLayout(groupTreeview);
@@ -197,10 +197,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     layoutHorizTreeview->addLayout(layoutTreeview);
     layoutHorizTreeview->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutTreeview->addLayout(layoutRow);
     labelItemBackground = new QLabel(this);
     layoutRow->addWidget(labelItemBackground);
@@ -211,10 +211,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     ItemBackground->setParamGrpPath("TreeView");
     ItemBackground->setAllowTransparency(true);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutTreeview->addLayout(layoutRow);
     labelItemBackgroundPadding = new QLabel(this);
     layoutRow->addWidget(labelItemBackgroundPadding);
@@ -223,15 +223,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     ItemBackgroundPadding->setValue(Gui::TreeParams::defaultItemBackgroundPadding());
     ItemBackgroundPadding->setEntryName("ItemBackgroundPadding");
     ItemBackgroundPadding->setParamGrpPath("TreeView");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     ItemBackgroundPadding->setMinimum(0);
     ItemBackgroundPadding->setMaximum(100);
     ItemBackgroundPadding->setSingleStep(1);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutTreeview->addLayout(layoutRow);
     ResizableColumn = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(ResizableColumn);
@@ -239,10 +239,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     ResizableColumn->setEntryName("ResizableColumn");
     ResizableColumn->setParamGrpPath("TreeView");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutTreeview->addLayout(layoutRow);
     CheckBoxesSelection = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(CheckBoxesSelection);
@@ -250,10 +250,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     CheckBoxesSelection->setEntryName("CheckBoxesSelection");
     CheckBoxesSelection->setParamGrpPath("TreeView");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutTreeview->addLayout(layoutRow);
     HideColumn = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(HideColumn);
@@ -261,10 +261,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     HideColumn->setEntryName("HideColumn");
     HideColumn->setParamGrpPath("TreeView");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutTreeview->addLayout(layoutRow);
     HideScrollBar = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(HideScrollBar);
@@ -272,10 +272,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     HideScrollBar->setEntryName("HideScrollBar");
     HideScrollBar->setParamGrpPath("TreeView");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutTreeview->addLayout(layoutRow);
     HideHeaderView = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(HideHeaderView);
@@ -283,10 +283,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     HideHeaderView->setEntryName("HideHeaderView");
     HideHeaderView->setParamGrpPath("TreeView");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutTreeview->addLayout(layoutRow);
     TreeToolTipIcon = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(TreeToolTipIcon);
@@ -295,7 +295,7 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     TreeToolTipIcon->setParamGrpPath("TreeView");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupExpression = new QGroupBox(this);
     layout->addWidget(groupExpression);
     auto layoutHorizExpression = new QHBoxLayout(groupExpression);
@@ -303,10 +303,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     layoutHorizExpression->addLayout(layoutExpression);
     layoutHorizExpression->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutExpression->addLayout(layoutRow);
     AutoHideEditorIcon = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(AutoHideEditorIcon);
@@ -314,10 +314,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     AutoHideEditorIcon->setEntryName("AutoHideEditorIcon");
     AutoHideEditorIcon->setParamGrpPath("Expression");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutExpression->addLayout(layoutRow);
     labelEditorTrigger = new QLabel(this);
     layoutRow->addWidget(labelEditorTrigger);
@@ -327,10 +327,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     EditorTrigger->setEntryName("EditorTrigger");
     EditorTrigger->setParamGrpPath("Expression");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutExpression->addLayout(layoutRow);
     NoSystemBackground = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(NoSystemBackground);
@@ -338,10 +338,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     NoSystemBackground->setEntryName("NoSystemBackground");
     NoSystemBackground->setParamGrpPath("Expression");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutExpression->addLayout(layoutRow);
     labelEditDialogBGAlpha = new QLabel(this);
     layoutRow->addWidget(labelEditDialogBGAlpha);
@@ -350,13 +350,13 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     EditDialogBGAlpha->setValue(Gui::ExprParams::defaultEditDialogBGAlpha());
     EditDialogBGAlpha->setEntryName("EditDialogBGAlpha");
     EditDialogBGAlpha->setParamGrpPath("Expression");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     EditDialogBGAlpha->setMinimum(0);
     EditDialogBGAlpha->setMaximum(255);
     EditDialogBGAlpha->setSingleStep(1);
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupPiemenu = new QGroupBox(this);
     layout->addWidget(groupPiemenu);
     auto layoutHorizPiemenu = new QHBoxLayout(groupPiemenu);
@@ -364,10 +364,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     layoutHorizPiemenu->addLayout(layoutPiemenu);
     layoutHorizPiemenu->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPiemenu->addLayout(layoutRow);
     labelPieMenuIconSize = new QLabel(this);
     layoutRow->addWidget(labelPieMenuIconSize);
@@ -376,15 +376,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     PieMenuIconSize->setValue(Gui::ViewParams::defaultPieMenuIconSize());
     PieMenuIconSize->setEntryName("PieMenuIconSize");
     PieMenuIconSize->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     PieMenuIconSize->setMinimum(0);
     PieMenuIconSize->setMaximum(64);
     PieMenuIconSize->setSingleStep(1);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPiemenu->addLayout(layoutRow);
     labelPieMenuRadius = new QLabel(this);
     layoutRow->addWidget(labelPieMenuRadius);
@@ -393,15 +393,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     PieMenuRadius->setValue(Gui::ViewParams::defaultPieMenuRadius());
     PieMenuRadius->setEntryName("PieMenuRadius");
     PieMenuRadius->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     PieMenuRadius->setMinimum(10);
     PieMenuRadius->setMaximum(500);
     PieMenuRadius->setSingleStep(10);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPiemenu->addLayout(layoutRow);
     labelPieMenuTriggerRadius = new QLabel(this);
     layoutRow->addWidget(labelPieMenuTriggerRadius);
@@ -410,15 +410,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     PieMenuTriggerRadius->setValue(Gui::ViewParams::defaultPieMenuTriggerRadius());
     PieMenuTriggerRadius->setEntryName("PieMenuTriggerRadius");
     PieMenuTriggerRadius->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     PieMenuTriggerRadius->setMinimum(10);
     PieMenuTriggerRadius->setMaximum(500);
     PieMenuTriggerRadius->setSingleStep(10);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPiemenu->addLayout(layoutRow);
     labelPieMenuCenterRadius = new QLabel(this);
     layoutRow->addWidget(labelPieMenuCenterRadius);
@@ -427,15 +427,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     PieMenuCenterRadius->setValue(Gui::ViewParams::defaultPieMenuCenterRadius());
     PieMenuCenterRadius->setEntryName("PieMenuCenterRadius");
     PieMenuCenterRadius->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     PieMenuCenterRadius->setMinimum(0);
     PieMenuCenterRadius->setMaximum(250);
     PieMenuCenterRadius->setSingleStep(1);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPiemenu->addLayout(layoutRow);
     labelPieMenuFontSize = new QLabel(this);
     layoutRow->addWidget(labelPieMenuFontSize);
@@ -444,15 +444,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     PieMenuFontSize->setValue(Gui::ViewParams::defaultPieMenuFontSize());
     PieMenuFontSize->setEntryName("PieMenuFontSize");
     PieMenuFontSize->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     PieMenuFontSize->setMinimum(0);
     PieMenuFontSize->setMaximum(32);
     PieMenuFontSize->setSingleStep(1);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPiemenu->addLayout(layoutRow);
     labelPieMenuTriggerDelay = new QLabel(this);
     layoutRow->addWidget(labelPieMenuTriggerDelay);
@@ -461,15 +461,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     PieMenuTriggerDelay->setValue(Gui::ViewParams::defaultPieMenuTriggerDelay());
     PieMenuTriggerDelay->setEntryName("PieMenuTriggerDelay");
     PieMenuTriggerDelay->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     PieMenuTriggerDelay->setMinimum(0);
     PieMenuTriggerDelay->setMaximum(10000);
     PieMenuTriggerDelay->setSingleStep(100);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPiemenu->addLayout(layoutRow);
     PieMenuTriggerAction = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(PieMenuTriggerAction);
@@ -477,10 +477,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     PieMenuTriggerAction->setEntryName("PieMenuTriggerAction");
     PieMenuTriggerAction->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPiemenu->addLayout(layoutRow);
     labelPieMenuAnimationDuration = new QLabel(this);
     layoutRow->addWidget(labelPieMenuAnimationDuration);
@@ -489,15 +489,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     PieMenuAnimationDuration->setValue(Gui::ViewParams::defaultPieMenuAnimationDuration());
     PieMenuAnimationDuration->setEntryName("PieMenuAnimationDuration");
     PieMenuAnimationDuration->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     PieMenuAnimationDuration->setMinimum(0);
     PieMenuAnimationDuration->setMaximum(5000);
     PieMenuAnimationDuration->setSingleStep(100);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPiemenu->addLayout(layoutRow);
     labelPieMenuAnimationCurve = new QLabel(this);
     layoutRow->addWidget(labelPieMenuAnimationCurve);
@@ -510,10 +510,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
         PieMenuAnimationCurve->addItem(item);
     PieMenuAnimationCurve->setCurrentIndex(Gui::ViewParams::defaultPieMenuAnimationCurve());
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPiemenu->addLayout(layoutRow);
     PieMenuPopup = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(PieMenuPopup);
@@ -522,7 +522,7 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     PieMenuPopup->setParamGrpPath("View");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupOverlay = new QGroupBox(this);
     layout->addWidget(groupOverlay);
     auto layoutHorizOverlay = new QHBoxLayout(groupOverlay);
@@ -530,10 +530,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     layoutHorizOverlay->addLayout(layoutOverlay);
     layoutHorizOverlay->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     DockOverlayHideTabBar = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(DockOverlayHideTabBar);
@@ -541,10 +541,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHideTabBar->setEntryName("DockOverlayHideTabBar");
     DockOverlayHideTabBar->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     DockOverlayHidePropertyViewScrollBar = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(DockOverlayHidePropertyViewScrollBar);
@@ -552,10 +552,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHidePropertyViewScrollBar->setEntryName("DockOverlayHidePropertyViewScrollBar");
     DockOverlayHidePropertyViewScrollBar->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     DockOverlayAutoView = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(DockOverlayAutoView);
@@ -563,10 +563,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayAutoView->setEntryName("DockOverlayAutoView");
     DockOverlayAutoView->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     DockOverlayAutoMouseThrough = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(DockOverlayAutoMouseThrough);
@@ -574,10 +574,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayAutoMouseThrough->setEntryName("DockOverlayAutoMouseThrough");
     DockOverlayAutoMouseThrough->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     DockOverlayWheelPassThrough = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(DockOverlayWheelPassThrough);
@@ -585,10 +585,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayWheelPassThrough->setEntryName("DockOverlayWheelPassThrough");
     DockOverlayWheelPassThrough->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayWheelDelay = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayWheelDelay);
@@ -597,15 +597,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayWheelDelay->setValue(Gui::OverlayParams::defaultDockOverlayWheelDelay());
     DockOverlayWheelDelay->setEntryName("DockOverlayWheelDelay");
     DockOverlayWheelDelay->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayWheelDelay->setMinimum(0);
     DockOverlayWheelDelay->setMaximum(99999);
     DockOverlayWheelDelay->setSingleStep(1);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayAlphaRadius = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayAlphaRadius);
@@ -614,15 +614,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayAlphaRadius->setValue(Gui::OverlayParams::defaultDockOverlayAlphaRadius());
     DockOverlayAlphaRadius->setEntryName("DockOverlayAlphaRadius");
     DockOverlayAlphaRadius->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayAlphaRadius->setMinimum(1);
     DockOverlayAlphaRadius->setMaximum(100);
     DockOverlayAlphaRadius->setSingleStep(1);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     DockOverlayCheckNaviCube = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(DockOverlayCheckNaviCube);
@@ -630,10 +630,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayCheckNaviCube->setEntryName("DockOverlayCheckNaviCube");
     DockOverlayCheckNaviCube->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintTriggerSize = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintTriggerSize);
@@ -642,15 +642,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintTriggerSize->setValue(Gui::OverlayParams::defaultDockOverlayHintTriggerSize());
     DockOverlayHintTriggerSize->setEntryName("DockOverlayHintTriggerSize");
     DockOverlayHintTriggerSize->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintTriggerSize->setMinimum(1);
     DockOverlayHintTriggerSize->setMaximum(100);
     DockOverlayHintTriggerSize->setSingleStep(1);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintSize = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintSize);
@@ -659,15 +659,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintSize->setValue(Gui::OverlayParams::defaultDockOverlayHintSize());
     DockOverlayHintSize->setEntryName("DockOverlayHintSize");
     DockOverlayHintSize->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintSize->setMinimum(1);
     DockOverlayHintSize->setMaximum(100);
     DockOverlayHintSize->setSingleStep(1);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintLeftOffset = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintLeftOffset);
@@ -676,15 +676,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintLeftOffset->setValue(Gui::OverlayParams::defaultDockOverlayHintLeftOffset());
     DockOverlayHintLeftOffset->setEntryName("DockOverlayHintLeftOffset");
     DockOverlayHintLeftOffset->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintLeftOffset->setMinimum(0);
     DockOverlayHintLeftOffset->setMaximum(10000);
     DockOverlayHintLeftOffset->setSingleStep(10);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintLeftLength = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintLeftLength);
@@ -693,15 +693,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintLeftLength->setValue(Gui::OverlayParams::defaultDockOverlayHintLeftLength());
     DockOverlayHintLeftLength->setEntryName("DockOverlayHintLeftLength");
     DockOverlayHintLeftLength->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintLeftLength->setMinimum(0);
     DockOverlayHintLeftLength->setMaximum(10000);
     DockOverlayHintLeftLength->setSingleStep(10);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintRightOffset = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintRightOffset);
@@ -710,15 +710,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintRightOffset->setValue(Gui::OverlayParams::defaultDockOverlayHintRightOffset());
     DockOverlayHintRightOffset->setEntryName("DockOverlayHintRightOffset");
     DockOverlayHintRightOffset->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintRightOffset->setMinimum(0);
     DockOverlayHintRightOffset->setMaximum(10000);
     DockOverlayHintRightOffset->setSingleStep(10);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintRightLength = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintRightLength);
@@ -727,15 +727,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintRightLength->setValue(Gui::OverlayParams::defaultDockOverlayHintRightLength());
     DockOverlayHintRightLength->setEntryName("DockOverlayHintRightLength");
     DockOverlayHintRightLength->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintRightLength->setMinimum(0);
     DockOverlayHintRightLength->setMaximum(10000);
     DockOverlayHintRightLength->setSingleStep(10);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintTopOffset = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintTopOffset);
@@ -744,15 +744,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintTopOffset->setValue(Gui::OverlayParams::defaultDockOverlayHintTopOffset());
     DockOverlayHintTopOffset->setEntryName("DockOverlayHintTopOffset");
     DockOverlayHintTopOffset->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintTopOffset->setMinimum(0);
     DockOverlayHintTopOffset->setMaximum(10000);
     DockOverlayHintTopOffset->setSingleStep(10);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintTopLength = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintTopLength);
@@ -761,15 +761,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintTopLength->setValue(Gui::OverlayParams::defaultDockOverlayHintTopLength());
     DockOverlayHintTopLength->setEntryName("DockOverlayHintTopLength");
     DockOverlayHintTopLength->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintTopLength->setMinimum(0);
     DockOverlayHintTopLength->setMaximum(10000);
     DockOverlayHintTopLength->setSingleStep(10);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintBottomOffset = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintBottomOffset);
@@ -778,15 +778,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintBottomOffset->setValue(Gui::OverlayParams::defaultDockOverlayHintBottomOffset());
     DockOverlayHintBottomOffset->setEntryName("DockOverlayHintBottomOffset");
     DockOverlayHintBottomOffset->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintBottomOffset->setMinimum(0);
     DockOverlayHintBottomOffset->setMaximum(10000);
     DockOverlayHintBottomOffset->setSingleStep(10);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintBottomLength = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintBottomLength);
@@ -795,15 +795,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintBottomLength->setValue(Gui::OverlayParams::defaultDockOverlayHintBottomLength());
     DockOverlayHintBottomLength->setEntryName("DockOverlayHintBottomLength");
     DockOverlayHintBottomLength->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintBottomLength->setMinimum(0);
     DockOverlayHintBottomLength->setMaximum(10000);
     DockOverlayHintBottomLength->setSingleStep(10);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     DockOverlayHintTabBar = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(DockOverlayHintTabBar);
@@ -811,10 +811,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintTabBar->setEntryName("DockOverlayHintTabBar");
     DockOverlayHintTabBar->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayHintDelay = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayHintDelay);
@@ -823,15 +823,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayHintDelay->setValue(Gui::OverlayParams::defaultDockOverlayHintDelay());
     DockOverlayHintDelay->setEntryName("DockOverlayHintDelay");
     DockOverlayHintDelay->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayHintDelay->setMinimum(0);
     DockOverlayHintDelay->setMaximum(1000);
     DockOverlayHintDelay->setSingleStep(100);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlaySplitterHandleTimeout = new QLabel(this);
     layoutRow->addWidget(labelDockOverlaySplitterHandleTimeout);
@@ -840,15 +840,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlaySplitterHandleTimeout->setValue(Gui::OverlayParams::defaultDockOverlaySplitterHandleTimeout());
     DockOverlaySplitterHandleTimeout->setEntryName("DockOverlaySplitterHandleTimeout");
     DockOverlaySplitterHandleTimeout->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlaySplitterHandleTimeout->setMinimum(0);
     DockOverlaySplitterHandleTimeout->setMaximum(99999);
     DockOverlaySplitterHandleTimeout->setSingleStep(100);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     DockOverlayActivateOnHover = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(DockOverlayActivateOnHover);
@@ -856,10 +856,10 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayActivateOnHover->setEntryName("DockOverlayActivateOnHover");
     DockOverlayActivateOnHover->setParamGrpPath("View");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayDelay = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayDelay);
@@ -868,15 +868,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayDelay->setValue(Gui::OverlayParams::defaultDockOverlayDelay());
     DockOverlayDelay->setEntryName("DockOverlayDelay");
     DockOverlayDelay->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayDelay->setMinimum(0);
     DockOverlayDelay->setMaximum(5000);
     DockOverlayDelay->setSingleStep(100);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayAnimationDuration = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayAnimationDuration);
@@ -885,15 +885,15 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayAnimationDuration->setValue(Gui::OverlayParams::defaultDockOverlayAnimationDuration());
     DockOverlayAnimationDuration->setEntryName("DockOverlayAnimationDuration");
     DockOverlayAnimationDuration->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
+    // Auto generated code (Tools/params_utils.py:1345)
     DockOverlayAnimationDuration->setMinimum(0);
     DockOverlayAnimationDuration->setMaximum(5000);
     DockOverlayAnimationDuration->setSingleStep(100);
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutOverlay->addLayout(layoutRow);
     labelDockOverlayAnimationCurve = new QLabel(this);
     layoutRow->addWidget(labelDockOverlayAnimationCurve);
@@ -907,20 +907,20 @@ DlgSettingsUI::DlgSettingsUI(QWidget* parent)
     DockOverlayAnimationCurve->setCurrentIndex(Gui::OverlayParams::defaultDockOverlayAnimationCurve());
     layout->addItem(new QSpacerItem(40, 20, QSizePolicy::Fixed, QSizePolicy::Expanding));
     retranslateUi();
-    // Auto generated code (Tools/params_utils.py:645)
+    // Auto generated code (Tools/params_utils.py:670)
     init();
 }
 
-// Auto generated code (Tools/params_utils.py:652)
+// Auto generated code (Tools/params_utils.py:677)
 DlgSettingsUI::~DlgSettingsUI()
 {
     
 }
 
-// Auto generated code (Tools/params_utils.py:661)
+// Auto generated code (Tools/params_utils.py:686)
 void DlgSettingsUI::saveSettings()
 {
-    // Auto generated code (Tools/params_utils.py:497)
+    // Auto generated code (Tools/params_utils.py:522)
     TextCursorWidth->onSave();
     UseViewArea->onSave();
     DocumentTarget->onSave();
@@ -976,10 +976,10 @@ void DlgSettingsUI::saveSettings()
     DockOverlayAnimationCurve->onSave();
 }
 
-// Auto generated code (Tools/params_utils.py:670)
+// Auto generated code (Tools/params_utils.py:695)
 void DlgSettingsUI::loadSettings()
 {
-    // Auto generated code (Tools/params_utils.py:484)
+    // Auto generated code (Tools/params_utils.py:509)
     TextCursorWidth->onRestore();
     UseViewArea->onRestore();
     DocumentTarget->onRestore();
@@ -1035,7 +1035,7 @@ void DlgSettingsUI::loadSettings()
     DockOverlayAnimationCurve->onRestore();
 }
 
-// Auto generated code (Tools/params_utils.py:679)
+// Auto generated code (Tools/params_utils.py:704)
 void DlgSettingsUI::retranslateUi()
 {
     setWindowTitle(QObject::tr("UI"));
@@ -1205,7 +1205,7 @@ void DlgSettingsUI::retranslateUi()
     labelDockOverlayAnimationCurve->setToolTip(DockOverlayAnimationCurve->toolTip());
 }
 
-// Auto generated code (Tools/params_utils.py:697)
+// Auto generated code (Tools/params_utils.py:722)
 void DlgSettingsUI::changeEvent(QEvent *e)
 {
     if (e->type() == QEvent::LanguageChange) {
@@ -1214,7 +1214,7 @@ void DlgSettingsUI::changeEvent(QEvent *e)
     QWidget::changeEvent(e);
 }
 
-// Auto generated code (Tools/params_utils.py:710)
+// Auto generated code (Tools/params_utils.py:735)
 #include "moc_DlgSettingsUI.cpp"
 //[[[end]]]
 

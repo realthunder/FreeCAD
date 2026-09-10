@@ -61,7 +61,7 @@ def trace_comment():
 
 
 def get_module_path(module):
-    return path.dirname(module.__file__.split(f"src{path.sep}")[-1])
+    return path.dirname(module.__file__.split(f"src{path.sep}")[-1]).replace(path.sep, "/")
 
 
 def declare_begin(module, header=True):
@@ -199,6 +199,7 @@ def define(module, header=True):
 #include <unordered_map>
 #include <App/Application.h>
 #include <App/DynamicProperty.h>
+#include <App/ParamRegistry.h>
 #include "{class_name}.h"
 using namespace {namespace};
 """
@@ -281,23 +282,26 @@ public:
     }}
 
     {trace_comment()}
-    ~{class_name}P() {{
-    }}
+    ~{class_name}P() override = default;
 """
     )
+    on_change_tail = ""
+    if signal:
+        on_change_tail += """
+        signalParamChanged(sReason);"""
+    if user_on_change:
+        on_change_tail += f"""
+        {user_on_change}"""
     cog.out(
         f"""
     {trace_comment()}
-    void OnChange(Base::Subject<const char*> &param, const char* sReason) {{
-        (void)param;
+    void OnChange(Base::Subject<const char*> &, const char* sReason) override {{
         if(!sReason)
             return;
         auto it = funcs.find(sReason);
         if(it == funcs.end())
             return;
-        it->second(this);
-        {"signalParamChanged(sReason);" if signal else ""}
-        {user_on_change}
+        it->second(this);{on_change_tail}
     }}
 
 """
@@ -338,6 +342,27 @@ public:
 }} // Anonymous namespace
 """
     )
+
+    # The registry entry of every parameter, so that a search (the omni
+    # search box, and later the browser and MCP tiers) can find it by path,
+    # name or documentation and build an editor from its proxy. Static, so
+    # the class is listed whether or not anything has read it yet.
+    cog.out(
+        f"""
+{trace_comment()}
+static const App::ParamRegistry::Registrar _{class_name}Registrar({{"""
+    )
+    for param in params:
+        cog.out(
+            f"""
+    {param.registry_entry(namespace, class_name, param_path)},"""
+        )
+    cog.out(
+        f"""
+}});
+"""
+    )
+
     cog.out(
         f"""
 {trace_comment()}
@@ -937,9 +962,43 @@ class Param:
     def setter(self, handle='instance()'):
         return f'{self.handle(handle)}->Set{self.Type}("{self.param_name}",v)'
 
+    # App::ParamRegistry (App/ParamRegistry.h) describes every generated
+    # parameter to a search. The type name there is not the ParameterGrp verb
+    # (Type above). The default is handed over as the same C++ expression
+    # the getter is seeded with -- it may be a macro -- and the registry
+    # formats it by type; only the string types quote it themselves.
+    RegistryType = None
+
+    @property
+    def registry_default(self):
+        return str(self.default)
+
+    def registry_path(self, param_path):
+        if not self.subpath:
+            return param_path
+        if self.subpath.startswith('User parameter:'):
+            return self.subpath
+        return f'{param_path}/{self.subpath}'
+
+    def registry_entry(self, namespace, class_name, param_path):
+        '''One App::ParamInfo builder expression for the registrar list.'''
+        res = (f'App::ParamInfo("{namespace}", "{class_name}", '
+               f'"{self.registry_path(param_path)}", "{self.name}", "{self.param_name}", '
+               f'App::ParamInfo::{self.RegistryType}, {self.registry_default})')
+        if self.title:
+            res += f'\n        .setTitle({quote(self.title)})'
+        if self._doc:
+            res += f'\n        .setDoc({quote(self._doc)})'
+        if self.on_change:
+            res += '\n        .setOnChange()'
+        if self.proxy:
+            res += self.proxy.registry_fields(self)
+        return res
+
 
 class ParamBool(Param):
     Type = "Bool"
+    RegistryType = "Bool"
     C_Type = "bool"
     PropertyType = "App::PropertyBool"
     WidgetType = "Gui::PrefCheckBox"
@@ -968,6 +1027,7 @@ class ParamBool(Param):
 
 class ParamFloat(Param):
     Type = "Float"
+    RegistryType = "Float"
     C_Type = "double"
     PropertyType = "App::PropertyFloat"
     WidgetType = "Gui::PrefDoubleSpinBox"
@@ -976,6 +1036,7 @@ class ParamFloat(Param):
 
 class ParamString(Param):
     Type = "ASCII"
+    RegistryType = "String"
     C_Type = "std::string"
     PropertyType = "App::PropertyString"
     WidgetType = "Gui::PrefLineEdit"
@@ -989,9 +1050,14 @@ class ParamString(Param):
     def default(self):
         return f'"{self._default}"'
 
+    @property
+    def registry_default(self):
+        return quote(str(self._default))
+
 
 class ParamQString(Param):
     Type = "ASCII"
+    RegistryType = "String"
     C_Type = "QString"
     PropertyType = "App::PropertyString"
     WidgetType = "Gui::PrefLineEdit"
@@ -1000,6 +1066,10 @@ class ParamQString(Param):
     @property
     def default(self):
         return f'QStringLiteral("{self._default}")'
+
+    @property
+    def registry_default(self):
+        return quote(str(self._default))
 
     def getter(self, handle):
         return (
@@ -1012,6 +1082,7 @@ class ParamQString(Param):
 
 class ParamInt(Param):
     Type = "Int"
+    RegistryType = "Int"
     C_Type = "long"
     PropertyType = "App::PropertyInteger"
     WidgetType = "Gui::PrefSpinBox"
@@ -1020,6 +1091,7 @@ class ParamInt(Param):
 
 class ParamUInt(Param):
     Type = "Unsigned"
+    RegistryType = "UInt"
     C_Type = "unsigned long"
     PropertyType = "App::PropertyInteger"
     WidgetType = "Gui::PrefSpinBox"
@@ -1027,6 +1099,7 @@ class ParamUInt(Param):
 
 
 class ParamHex(ParamUInt):
+    RegistryType = "Hex"
     PropertyType = "App::PropertyColor"
     @property
     def default(self):
@@ -1097,6 +1170,22 @@ class ParamProxy:
         param._widget_restore()
         if self.param_bool:
             self.param_bool.widget_restore()
+
+    # The registry names the proxy after its class, "ParamSpinBox" ->
+    # "SpinBox", so an editor built outside the preference page can pick
+    # the same widget. Subclasses add the widget's setup (items, range).
+    # A custom proxy that the registry cannot describe keeps its own class
+    # name and the editor falls back to one chosen by the value type.
+    RegistryName = None
+
+    def registry_name(self):
+        if self.RegistryName:
+            return self.RegistryName
+        name = type(self).__name__
+        return name[5:] if name.startswith('Param') else name
+
+    def registry_fields(self, _param):
+        return f'\n        .setProxy("{self.registry_name()}")'
 
 
 class ComboBoxItem:
@@ -1177,6 +1266,18 @@ class ParamComboBox(ParamProxy):
     {param.widget_name}->setItemData({i}, QObject::tr("{item.tooltips}"), Qt::ToolTipRole);"""
                 )
 
+    def registry_fields(self, param):
+        items = []
+        for item in self.items:
+            data = ('nullptr' if not isinstance(item._data, str)
+                    else quote(item._data))
+            items.append(f'{{{quote(item.text)}, '
+                         f'{quote(item.tooltips) if item.tooltips else '""'}, {data}}}')
+        translate = 'true' if self.translate else 'false'
+        return (super().registry_fields(param)
+                + '\n        .setItems({' + ', '.join(items)
+                + f'}}, false, {translate})')
+
 
 class ParamLinePattern(ParamProxy):
     WidgetType = "Gui::PrefLinePattern"
@@ -1213,6 +1314,10 @@ class ParamColor(ParamProxy):
     {param.widget_name}->setAllowTransparency(true);"""
             )
 
+    def registry_fields(self, param):
+        return (super().registry_fields(param)
+                + f'\n        .setTransparency({"true" if self.transparency else "false"})')
+
 
 class ParamFile(ParamProxy):
     WidgetType = "Gui::PrefFileChooser"
@@ -1247,6 +1352,11 @@ class ParamSpinBox(ParamProxy):
                 f"""
     {param.widget_name}->setDecimals({self.decimals});"""
             )
+
+    def registry_fields(self, param):
+        return (super().registry_fields(param)
+                + f'\n        .setRange({self.value_min}, {self.value_max}, '
+                f'{self.value_step}, {self.decimals})')
 
 
 class ParamShortcutEdit(ParamProxy):

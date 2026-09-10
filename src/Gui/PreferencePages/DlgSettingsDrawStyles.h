@@ -28,10 +28,10 @@ import DlgSettingsDrawStyles
 DlgSettingsDrawStyles.declare_begin()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:519)
+// Auto generated code (Tools/params_utils.py:544)
 #include <Gui/PropertyPage.h>
 #include <Gui/PrefWidgets.h>
-// Auto generated code (Tools/params_utils.py:526)
+// Auto generated code (Tools/params_utils.py:551)
 class QLabel;
 class QGroupBox;
 
@@ -68,13 +68,13 @@ protected:
 
 private:
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupGeneral = nullptr;
     QLabel *labelDefaultDrawStyle = nullptr;
     Gui::PrefComboBox *DefaultDrawStyle = nullptr;
     Gui::PrefCheckBox *ForceSolidSingleSideLighting = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupSelection = nullptr;
     QLabel *labelTransparencyOnTop = nullptr;
     Gui::PrefDoubleSpinBox *TransparencyOnTop = nullptr;
@@ -95,7 +95,7 @@ private:
     QLabel *labelOutlineThicken = nullptr;
     Gui::PrefDoubleSpinBox *OutlineThicken = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupHiddenLines = nullptr;
     QLabel *labelHiddenLineSync = nullptr;
     Gui::PrefComboBox *HiddenLineSync = nullptr;
@@ -121,7 +121,7 @@ private:
     QLabel *labelHiddenLinePointSize = nullptr;
     Gui::PrefDoubleSpinBox *HiddenLinePointSize = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupShadow = nullptr;
     QLabel *labelShadowSync = nullptr;
     Gui::PrefComboBox *ShadowSync = nullptr;
@@ -175,7 +175,7 @@ import DlgSettingsDrawStyles
 DlgSettingsDrawStyles.declare_end()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:573)
+// Auto generated code (Tools/params_utils.py:598)
 };
 } // namespace Dialog
 } // namespace Gui

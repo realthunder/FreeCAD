@@ -31,10 +31,11 @@ PartParams.define()
 #include <unordered_map>
 #include <App/Application.h>
 #include <App/DynamicProperty.h>
+#include <App/ParamRegistry.h>
 #include "PartParams.h"
 using namespace Part;
 
-// Auto generated code (Tools/params_utils.py:209)
+// Auto generated code (Tools/params_utils.py:210)
 namespace {
 class PartParamsP: public ParameterGrp::ObserverType {
 public:
@@ -67,7 +68,7 @@ public:
     double MeshAngularDeflection;
     double MinimumAngularDeflection;
 
-    // Auto generated code (Tools/params_utils.py:253)
+    // Auto generated code (Tools/params_utils.py:254)
     PartParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part");
         handle->Attach(this);
@@ -126,131 +127,127 @@ public:
         funcs["MinimumAngularDeflection"] = &PartParamsP::updateMinimumAngularDeflection;
     }
 
-    // Auto generated code (Tools/params_utils.py:283)
-    ~PartParamsP() {
-    }
+    // Auto generated code (Tools/params_utils.py:284)
+    ~PartParamsP() override = default;
 
-    // Auto generated code (Tools/params_utils.py:290)
-    void OnChange(Base::Subject<const char*> &param, const char* sReason) {
-        (void)param;
+    // Auto generated code (Tools/params_utils.py:297)
+    void OnChange(Base::Subject<const char*> &, const char* sReason) override {
         if(!sReason)
             return;
         auto it = funcs.find(sReason);
         if(it == funcs.end())
             return;
         it->second(this);
-        
-        
     }
 
 
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateShapePropertyCopy(PartParamsP *self) {
         self->ShapePropertyCopy = self->handle->GetBool("ShapePropertyCopy", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateDisableShapeCache(PartParamsP *self) {
         self->DisableShapeCache = self->handle->GetBool("DisableShapeCache", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateCommandOverride(PartParamsP *self) {
         self->CommandOverride = self->handle->GetInt("CommandOverride", 2);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateEnableWrapFeature(PartParamsP *self) {
         self->EnableWrapFeature = self->handle->GetInt("EnableWrapFeature", 2);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateCopySubShape(PartParamsP *self) {
         self->CopySubShape = self->handle->GetBool("CopySubShape", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateUseBrepToolsOuterWire(PartParamsP *self) {
         self->UseBrepToolsOuterWire = self->handle->GetBool("UseBrepToolsOuterWire", true);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateUseBaseObjectName(PartParamsP *self) {
         self->UseBaseObjectName = self->handle->GetBool("UseBaseObjectName", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateAutoGroupSolids(PartParamsP *self) {
         self->AutoGroupSolids = self->handle->GetBool("AutoGroupSolids", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateSingleSolid(PartParamsP *self) {
         self->SingleSolid = self->handle->GetBool("SingleSolid", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateUsePipeForExtrusionDraft(PartParamsP *self) {
         self->UsePipeForExtrusionDraft = self->handle->GetBool("UsePipeForExtrusionDraft", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateLinearizeExtrusionDraft(PartParamsP *self) {
         self->LinearizeExtrusionDraft = self->handle->GetBool("LinearizeExtrusionDraft", true);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateAutoCorrectLink(PartParamsP *self) {
         self->AutoCorrectLink = self->handle->GetBool("AutoCorrectLink", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateRefineModel(PartParamsP *self) {
         self->RefineModel = self->handle->GetBool("RefineModel", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateAuxGroupUniqueLabel(PartParamsP *self) {
         self->AuxGroupUniqueLabel = self->handle->GetBool("AuxGroupUniqueLabel", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateSplitEllipsoid(PartParamsP *self) {
         self->SplitEllipsoid = self->handle->GetBool("SplitEllipsoid", true);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateParallelRunThreshold(PartParamsP *self) {
         self->ParallelRunThreshold = self->handle->GetInt("ParallelRunThreshold", 100);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateAutoValidateShape(PartParamsP *self) {
         self->AutoValidateShape = self->handle->GetBool("AutoValidateShape", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateFixShape(PartParamsP *self) {
         self->FixShape = self->handle->GetBool("FixShape", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateShareStoredSubShapes(PartParamsP *self) {
         self->ShareStoredSubShapes = self->handle->GetBool("ShareStoredSubShapes", true);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateBorrowBelowFace(PartParamsP *self) {
         self->BorrowBelowFace = self->handle->GetInt("BorrowBelowFace", 0);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateLoftMaxDegree(PartParamsP *self) {
         self->LoftMaxDegree = self->handle->GetUnsigned("LoftMaxDegree", 5);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateWarnUnnamedInput(PartParamsP *self) {
         self->WarnUnnamedInput = self->handle->GetInt("WarnUnnamedInput", 0);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateMinimumDeviation(PartParamsP *self) {
         self->MinimumDeviation = self->handle->GetFloat("MinimumDeviation", 0.05);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateMeshDeviation(PartParamsP *self) {
         self->MeshDeviation = self->handle->GetFloat("MeshDeviation", 0.2);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateMeshAngularDeflection(PartParamsP *self) {
         self->MeshAngularDeflection = self->handle->GetFloat("MeshAngularDeflection", 28.65);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateMinimumAngularDeflection(PartParamsP *self) {
         self->MinimumAngularDeflection = self->handle->GetFloat("MinimumAngularDeflection", 5.0);
     }
 };
 
-// Auto generated code (Tools/params_utils.py:332)
+// Auto generated code (Tools/params_utils.py:336)
 PartParamsP *instance() {
     static PartParamsP *inst = new PartParamsP;
     return inst;
@@ -258,498 +255,574 @@ PartParamsP *instance() {
 
 } // Anonymous namespace
 
-// Auto generated code (Tools/params_utils.py:343)
+// Auto generated code (Tools/params_utils.py:352)
+static const App::ParamRegistry::Registrar _PartParamsRegistrar({
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "ShapePropertyCopy", "ShapePropertyCopy", App::ParamInfo::Bool, false)
+        .setTitle("Shape Property Copy"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DisableShapeCache", "DisableShapeCache", App::ParamInfo::Bool, false)
+        .setTitle("Disable Shape Cache"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "CommandOverride", "CommandOverride", App::ParamInfo::Int, 2)
+        .setTitle("Command Override"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "EnableWrapFeature", "EnableWrapFeature", App::ParamInfo::Int, 2)
+        .setTitle("Enable Wrap Feature"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "CopySubShape", "CopySubShape", App::ParamInfo::Bool, false)
+        .setTitle("Copy Sub Shape"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "UseBrepToolsOuterWire", "UseBrepToolsOuterWire", App::ParamInfo::Bool, true)
+        .setTitle("Use Brep Tools Outer Wire"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "UseBaseObjectName", "UseBaseObjectName", App::ParamInfo::Bool, false)
+        .setTitle("Use Base Object Name"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "AutoGroupSolids", "AutoGroupSolids", App::ParamInfo::Bool, false)
+        .setTitle("Auto Group Solids"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "SingleSolid", "SingleSolid", App::ParamInfo::Bool, false)
+        .setTitle("Single Solid"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "UsePipeForExtrusionDraft", "UsePipeForExtrusionDraft", App::ParamInfo::Bool, false)
+        .setTitle("Use Pipe For Extrusion Draft"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "LinearizeExtrusionDraft", "LinearizeExtrusionDraft", App::ParamInfo::Bool, true)
+        .setTitle("Linearize Extrusion Draft"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "AutoCorrectLink", "AutoCorrectLink", App::ParamInfo::Bool, false)
+        .setTitle("Auto Correct Link"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "RefineModel", "RefineModel", App::ParamInfo::Bool, false)
+        .setTitle("Refine Model"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "AuxGroupUniqueLabel", "AuxGroupUniqueLabel", App::ParamInfo::Bool, false)
+        .setTitle("Aux Group Unique Label"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "SplitEllipsoid", "SplitEllipsoid", App::ParamInfo::Bool, true)
+        .setTitle("Split Ellipsoid"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "ParallelRunThreshold", "ParallelRunThreshold", App::ParamInfo::Int, 100)
+        .setTitle("Parallel Run Threshold"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "AutoValidateShape", "AutoValidateShape", App::ParamInfo::Bool, false)
+        .setTitle("Auto Validate Shape"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "FixShape", "FixShape", App::ParamInfo::Bool, false)
+        .setTitle("Fix Shape"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "ShareStoredSubShapes", "ShareStoredSubShapes", App::ParamInfo::Bool, true)
+        .setTitle("Share Stored Sub Shapes")
+        .setDoc("Let a stored shape borrow a sub-shape from another object's file instead\n"
+"of writing its geometry again (docs/SharedShapeStorage.md sec 12.4).\n"
+"Turning this off writes every file whole, which is what the format did\n"
+"before external references; the files stay readable either way."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "BorrowBelowFace", "BorrowBelowFace", App::ParamInfo::Int, 0)
+        .setTitle("Borrow Below Face")
+        .setDoc("Which sub-shapes may be borrowed below a shell, as a sum\n"
+"(docs/SharedShapeStorage.md sec 12.15): 0 none, which is what ships,\n"
+"1 a face inside a shell, 2 an edge inside a face or a wire, 4 a vertex\n"
+"inside an edge. Each of those associations is keyed on the identity of\n"
+"a geometry object -- a face's edges hold their 2D curve against the\n"
+"surface the face carries -- so this is sound only where the geometry is\n"
+"shared too, and it is off wherever DedupCrossFileGeometry is."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "LoftMaxDegree", "LoftMaxDegree", App::ParamInfo::UInt, 5)
+        .setTitle("Loft Max Degree"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "WarnUnnamedInput", "WarnUnnamedInput", App::ParamInfo::Int, 0)
+        .setTitle("Warn Unnamed Input")
+        .setDoc("Report a shape operation whose input shapes carry no element map, so\n"
+"the result cannot be named either. This is off by default because an\n"
+"absent element map is frequently correct -- program generated and\n"
+"imported geometry has none -- and because a genuine naming failure is\n"
+"developer information that an end user cannot act on. Turn it on when\n"
+"writing a workbench that builds shapes and wants its element names to\n"
+"survive a recompute. 0 off, 1 report each operation once per document\n"
+"recompute, 2 report every occurrence. Raising the Part module's log\n"
+"level to LOG reports every occurrence too, without this preference."),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MinimumDeviation", "MinimumDeviation", App::ParamInfo::Float, 0.05)
+        .setTitle("Minimum Deviation"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MeshDeviation", "MeshDeviation", App::ParamInfo::Float, 0.2)
+        .setTitle("Mesh Deviation"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MeshAngularDeflection", "MeshAngularDeflection", App::ParamInfo::Float, 28.65)
+        .setTitle("Mesh Angular Deflection"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MinimumAngularDeflection", "MinimumAngularDeflection", App::ParamInfo::Float, 5.0)
+        .setTitle("Minimum Angular Deflection"),
+});
+
+// Auto generated code (Tools/params_utils.py:368)
 ParameterGrp::handle PartParams::getHandle() {
     return instance()->handle;
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docShapePropertyCopy() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getShapePropertyCopy() {
     return instance()->ShapePropertyCopy;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultShapePropertyCopy() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setShapePropertyCopy(const bool &v) {
     instance()->handle->SetBool("ShapePropertyCopy",v);
     instance()->ShapePropertyCopy = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeShapePropertyCopy() {
     instance()->handle->RemoveBool("ShapePropertyCopy");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docDisableShapeCache() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getDisableShapeCache() {
     return instance()->DisableShapeCache;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultDisableShapeCache() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setDisableShapeCache(const bool &v) {
     instance()->handle->SetBool("DisableShapeCache",v);
     instance()->DisableShapeCache = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeDisableShapeCache() {
     instance()->handle->RemoveBool("DisableShapeCache");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docCommandOverride() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const long & PartParams::getCommandOverride() {
     return instance()->CommandOverride;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const long & PartParams::defaultCommandOverride() {
     const static long def = 2;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCommandOverride(const long &v) {
     instance()->handle->SetInt("CommandOverride",v);
     instance()->CommandOverride = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCommandOverride() {
     instance()->handle->RemoveInt("CommandOverride");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docEnableWrapFeature() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const long & PartParams::getEnableWrapFeature() {
     return instance()->EnableWrapFeature;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const long & PartParams::defaultEnableWrapFeature() {
     const static long def = 2;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setEnableWrapFeature(const long &v) {
     instance()->handle->SetInt("EnableWrapFeature",v);
     instance()->EnableWrapFeature = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeEnableWrapFeature() {
     instance()->handle->RemoveInt("EnableWrapFeature");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docCopySubShape() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getCopySubShape() {
     return instance()->CopySubShape;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultCopySubShape() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setCopySubShape(const bool &v) {
     instance()->handle->SetBool("CopySubShape",v);
     instance()->CopySubShape = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeCopySubShape() {
     instance()->handle->RemoveBool("CopySubShape");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docUseBrepToolsOuterWire() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getUseBrepToolsOuterWire() {
     return instance()->UseBrepToolsOuterWire;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultUseBrepToolsOuterWire() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setUseBrepToolsOuterWire(const bool &v) {
     instance()->handle->SetBool("UseBrepToolsOuterWire",v);
     instance()->UseBrepToolsOuterWire = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeUseBrepToolsOuterWire() {
     instance()->handle->RemoveBool("UseBrepToolsOuterWire");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docUseBaseObjectName() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getUseBaseObjectName() {
     return instance()->UseBaseObjectName;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultUseBaseObjectName() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setUseBaseObjectName(const bool &v) {
     instance()->handle->SetBool("UseBaseObjectName",v);
     instance()->UseBaseObjectName = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeUseBaseObjectName() {
     instance()->handle->RemoveBool("UseBaseObjectName");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docAutoGroupSolids() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getAutoGroupSolids() {
     return instance()->AutoGroupSolids;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultAutoGroupSolids() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setAutoGroupSolids(const bool &v) {
     instance()->handle->SetBool("AutoGroupSolids",v);
     instance()->AutoGroupSolids = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeAutoGroupSolids() {
     instance()->handle->RemoveBool("AutoGroupSolids");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docSingleSolid() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getSingleSolid() {
     return instance()->SingleSolid;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultSingleSolid() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setSingleSolid(const bool &v) {
     instance()->handle->SetBool("SingleSolid",v);
     instance()->SingleSolid = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeSingleSolid() {
     instance()->handle->RemoveBool("SingleSolid");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docUsePipeForExtrusionDraft() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getUsePipeForExtrusionDraft() {
     return instance()->UsePipeForExtrusionDraft;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultUsePipeForExtrusionDraft() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setUsePipeForExtrusionDraft(const bool &v) {
     instance()->handle->SetBool("UsePipeForExtrusionDraft",v);
     instance()->UsePipeForExtrusionDraft = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeUsePipeForExtrusionDraft() {
     instance()->handle->RemoveBool("UsePipeForExtrusionDraft");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docLinearizeExtrusionDraft() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getLinearizeExtrusionDraft() {
     return instance()->LinearizeExtrusionDraft;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultLinearizeExtrusionDraft() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setLinearizeExtrusionDraft(const bool &v) {
     instance()->handle->SetBool("LinearizeExtrusionDraft",v);
     instance()->LinearizeExtrusionDraft = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeLinearizeExtrusionDraft() {
     instance()->handle->RemoveBool("LinearizeExtrusionDraft");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docAutoCorrectLink() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getAutoCorrectLink() {
     return instance()->AutoCorrectLink;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultAutoCorrectLink() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setAutoCorrectLink(const bool &v) {
     instance()->handle->SetBool("AutoCorrectLink",v);
     instance()->AutoCorrectLink = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeAutoCorrectLink() {
     instance()->handle->RemoveBool("AutoCorrectLink");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docRefineModel() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getRefineModel() {
     return instance()->RefineModel;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultRefineModel() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setRefineModel(const bool &v) {
     instance()->handle->SetBool("RefineModel",v);
     instance()->RefineModel = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeRefineModel() {
     instance()->handle->RemoveBool("RefineModel");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docAuxGroupUniqueLabel() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getAuxGroupUniqueLabel() {
     return instance()->AuxGroupUniqueLabel;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultAuxGroupUniqueLabel() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setAuxGroupUniqueLabel(const bool &v) {
     instance()->handle->SetBool("AuxGroupUniqueLabel",v);
     instance()->AuxGroupUniqueLabel = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeAuxGroupUniqueLabel() {
     instance()->handle->RemoveBool("AuxGroupUniqueLabel");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docSplitEllipsoid() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getSplitEllipsoid() {
     return instance()->SplitEllipsoid;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultSplitEllipsoid() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setSplitEllipsoid(const bool &v) {
     instance()->handle->SetBool("SplitEllipsoid",v);
     instance()->SplitEllipsoid = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeSplitEllipsoid() {
     instance()->handle->RemoveBool("SplitEllipsoid");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docParallelRunThreshold() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const long & PartParams::getParallelRunThreshold() {
     return instance()->ParallelRunThreshold;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const long & PartParams::defaultParallelRunThreshold() {
     const static long def = 100;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setParallelRunThreshold(const long &v) {
     instance()->handle->SetInt("ParallelRunThreshold",v);
     instance()->ParallelRunThreshold = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeParallelRunThreshold() {
     instance()->handle->RemoveInt("ParallelRunThreshold");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docAutoValidateShape() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getAutoValidateShape() {
     return instance()->AutoValidateShape;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultAutoValidateShape() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setAutoValidateShape(const bool &v) {
     instance()->handle->SetBool("AutoValidateShape",v);
     instance()->AutoValidateShape = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeAutoValidateShape() {
     instance()->handle->RemoveBool("AutoValidateShape");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docFixShape() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getFixShape() {
     return instance()->FixShape;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultFixShape() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setFixShape(const bool &v) {
     instance()->handle->SetBool("FixShape",v);
     instance()->FixShape = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeFixShape() {
     instance()->handle->RemoveBool("FixShape");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docShareStoredSubShapes() {
     return QT_TRANSLATE_NOOP("PartParams",
 "Let a stored shape borrow a sub-shape from another object's file instead\n"
@@ -758,29 +831,29 @@ const char *PartParams::docShareStoredSubShapes() {
 "before external references; the files stay readable either way.");
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getShareStoredSubShapes() {
     return instance()->ShareStoredSubShapes;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultShareStoredSubShapes() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setShareStoredSubShapes(const bool &v) {
     instance()->handle->SetBool("ShareStoredSubShapes",v);
     instance()->ShareStoredSubShapes = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeShareStoredSubShapes() {
     instance()->handle->RemoveBool("ShareStoredSubShapes");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docBorrowBelowFace() {
     return QT_TRANSLATE_NOOP("PartParams",
 "Which sub-shapes may be borrowed below a shell, as a sum\n"
@@ -792,56 +865,56 @@ const char *PartParams::docBorrowBelowFace() {
 "shared too, and it is off wherever DedupCrossFileGeometry is.");
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const long & PartParams::getBorrowBelowFace() {
     return instance()->BorrowBelowFace;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const long & PartParams::defaultBorrowBelowFace() {
     const static long def = 0;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setBorrowBelowFace(const long &v) {
     instance()->handle->SetInt("BorrowBelowFace",v);
     instance()->BorrowBelowFace = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeBorrowBelowFace() {
     instance()->handle->RemoveInt("BorrowBelowFace");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docLoftMaxDegree() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const unsigned long & PartParams::getLoftMaxDegree() {
     return instance()->LoftMaxDegree;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const unsigned long & PartParams::defaultLoftMaxDegree() {
     const static unsigned long def = 5;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setLoftMaxDegree(const unsigned long &v) {
     instance()->handle->SetUnsigned("LoftMaxDegree",v);
     instance()->LoftMaxDegree = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeLoftMaxDegree() {
     instance()->handle->RemoveUnsigned("LoftMaxDegree");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docWarnUnnamedInput() {
     return QT_TRANSLATE_NOOP("PartParams",
 "Report a shape operation whose input shapes carry no element map, so\n"
@@ -855,132 +928,132 @@ const char *PartParams::docWarnUnnamedInput() {
 "level to LOG reports every occurrence too, without this preference.");
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const long & PartParams::getWarnUnnamedInput() {
     return instance()->WarnUnnamedInput;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const long & PartParams::defaultWarnUnnamedInput() {
     const static long def = 0;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setWarnUnnamedInput(const long &v) {
     instance()->handle->SetInt("WarnUnnamedInput",v);
     instance()->WarnUnnamedInput = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeWarnUnnamedInput() {
     instance()->handle->RemoveInt("WarnUnnamedInput");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMinimumDeviation() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const double & PartParams::getMinimumDeviation() {
     return instance()->MinimumDeviation;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const double & PartParams::defaultMinimumDeviation() {
     const static double def = 0.05;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMinimumDeviation(const double &v) {
     instance()->handle->SetFloat("MinimumDeviation",v);
     instance()->MinimumDeviation = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMinimumDeviation() {
     instance()->handle->RemoveFloat("MinimumDeviation");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMeshDeviation() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const double & PartParams::getMeshDeviation() {
     return instance()->MeshDeviation;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const double & PartParams::defaultMeshDeviation() {
     const static double def = 0.2;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMeshDeviation(const double &v) {
     instance()->handle->SetFloat("MeshDeviation",v);
     instance()->MeshDeviation = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMeshDeviation() {
     instance()->handle->RemoveFloat("MeshDeviation");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMeshAngularDeflection() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const double & PartParams::getMeshAngularDeflection() {
     return instance()->MeshAngularDeflection;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const double & PartParams::defaultMeshAngularDeflection() {
     const static double def = 28.65;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMeshAngularDeflection(const double &v) {
     instance()->handle->SetFloat("MeshAngularDeflection",v);
     instance()->MeshAngularDeflection = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMeshAngularDeflection() {
     instance()->handle->RemoveFloat("MeshAngularDeflection");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMinimumAngularDeflection() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const double & PartParams::getMinimumAngularDeflection() {
     return instance()->MinimumAngularDeflection;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const double & PartParams::defaultMinimumAngularDeflection() {
     const static double def = 5.0;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMinimumAngularDeflection(const double &v) {
     instance()->handle->SetFloat("MinimumAngularDeflection",v);
     instance()->MinimumAngularDeflection = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMinimumAngularDeflection() {
     instance()->handle->RemoveFloat("MinimumAngularDeflection");
 }

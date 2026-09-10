@@ -28,11 +28,11 @@ import LinkParams
 LinkParams.declare()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:72)
+// Auto generated code (Tools/params_utils.py:82)
 #include <Base/Parameter.h>
 
 
-// Auto generated code (Tools/params_utils.py:78)
+// Auto generated code (Tools/params_utils.py:90)
 namespace App {
 /** Convenient class to obtain App::Link related parameters
 
@@ -68,7 +68,7 @@ class AppExport LinkParams {
 public:
     static ParameterGrp::handle getHandle();
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HideScaleVector
     static const bool & getHideScaleVector();
@@ -78,7 +78,7 @@ public:
     static const char *docHideScaleVector();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CreateInPlace
     static const bool & getCreateInPlace();
@@ -88,7 +88,7 @@ public:
     static const char *docCreateInPlace();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CreateInContainer
     static const bool & getCreateInContainer();
@@ -98,7 +98,7 @@ public:
     static const char *docCreateInContainer();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ActiveContainerKey
     static const std::string & getActiveContainerKey();
@@ -108,9 +108,12 @@ public:
     static const char *docActiveContainerKey();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CopyOnChangeApplyToAll
+    ///
+    /// Stores the last user choice of whether to apply CopyOnChange setup to all link
+    /// that links to the same configurable object
     static const bool & getCopyOnChangeApplyToAll();
     static const bool & defaultCopyOnChangeApplyToAll();
     static void removeCopyOnChangeApplyToAll();
@@ -118,7 +121,7 @@ public:
     static const char *docCopyOnChangeApplyToAll();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ShowElement
     ///
@@ -132,7 +135,7 @@ public:
     static const char *docShowElement();
     //@}
 
-// Auto generated code (Tools/params_utils.py:150)
+// Auto generated code (Tools/params_utils.py:179)
 }; // class LinkParams
 } // namespace App
 //[[[end]]]

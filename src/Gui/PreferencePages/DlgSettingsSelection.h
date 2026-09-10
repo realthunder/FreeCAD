@@ -28,10 +28,10 @@ import DlgSettingsSelection
 DlgSettingsSelection.declare()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:516)
+// Auto generated code (Tools/params_utils.py:544)
 #include <Gui/PropertyPage.h>
 #include <Gui/PrefWidgets.h>
-// Auto generated code (Tools/params_utils.py:523)
+// Auto generated code (Tools/params_utils.py:551)
 class QLabel;
 class QGroupBox;
 
@@ -68,7 +68,7 @@ protected:
 
 private:
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupTreeViewSelection = nullptr;
     Gui::PrefCheckBox *SyncView = nullptr;
     Gui::PrefCheckBox *SyncSelection = nullptr;
@@ -76,7 +76,7 @@ private:
     Gui::PrefCheckBox *RecordSelection = nullptr;
     Gui::PrefCheckBox *PreSelection = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupDViewSelection = nullptr;
     Gui::PrefCheckBox *EnablePreselection = nullptr;
     Gui::PrefSpinBox *HighlightColor = nullptr;
@@ -94,7 +94,7 @@ private:
     QLabel *labelSelectionColorDifference = nullptr;
     Gui::PrefDoubleSpinBox *SelectionColorDifference = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupPreselectionToolTip = nullptr;
     QLabel *labelPreselectionToolTipCorner = nullptr;
     Gui::PrefComboBox *PreselectionToolTipCorner = nullptr;
@@ -104,7 +104,7 @@ private:
     Gui::PrefSpinBox *PreselectionToolTipOffsetY = nullptr;
     QLabel *labelPreselectionToolTipFontSize = nullptr;
     Gui::PrefSpinBox *PreselectionToolTipFontSize = nullptr;
-// Auto generated code (Tools/params_utils.py:570)
+// Auto generated code (Tools/params_utils.py:598)
 };
 } // namespace Dialog
 } // namespace Gui
