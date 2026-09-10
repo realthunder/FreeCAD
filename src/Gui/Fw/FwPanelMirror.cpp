@@ -21,6 +21,8 @@
 #include "PreCompiled.h"
 
 #include <QAbstractButton>
+#include <QAbstractItemView>
+#include <QAbstractScrollArea>
 #include <QApplication>
 #include <QBoxLayout>
 #include <QChildEvent>
@@ -30,7 +32,10 @@
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QLineEdit>
+#include <QPainter>
+#include <QPixmap>
 #include <QMenu>
 #include <QPushButton>
 #include <QScrollArea>
@@ -46,6 +51,7 @@
 #include <Base/Parameter.h>
 
 #include "Control.h"
+#include "Fw/FwImage.h"
 #include "Fw/FwPanelMirror.h"
 #include "Fw/FwQtView.h"
 #include "Fw/FwStore.h"
@@ -222,6 +228,18 @@ PanelMirror::PanelMirror()
     _flushTimer.setSingleShot(true);
     _flushTimer.setInterval(0);
     connect(&_flushTimer, &QTimer::timeout, this, &PanelMirror::flush);
+    _grabTimer.setSingleShot(true);
+    connect(&_grabTimer, &QTimer::timeout, this, [this]() {
+        // the grabs the rate cap held back: the last paint of a burst
+        // is what the client should see
+        QSet<QWidget*> pending;
+        pending.swap(_pendingGrabs);
+        for (QWidget* w : pending)
+            if (_models.contains(w))
+                _dirty.insert(w);
+        flush();
+    });
+    _clock.start();
     _showTimer.setSingleShot(true);
     _showTimer.setInterval(0);
     connect(&_showTimer, &QTimer::timeout, this, [this]() {
@@ -382,6 +400,11 @@ void PanelMirror::hide()
         return;
     _rebuildTimer.stop();
     _flushTimer.stop();
+    _grabTimer.stop();
+    _pictures.clear();
+    _grabbedAt.clear();
+    _pendingGrabs.clear();
+    _pictureCapTold = false;
     Store& store = Store::instance();
     // a client's own request may have closed the dialog (its reject):
     // the close is the desktop's fact and must reach that client too
@@ -428,7 +451,8 @@ void PanelMirror::scheduleFlush()
 
 void PanelMirror::markDirty(QWidget* widget)
 {
-    if (!_root || _walking || !_models.contains(widget))
+    // a grab renders the widget, which paints: not evidence of a change
+    if (!_root || _walking || _grabbing || !_models.contains(widget))
         return;
     _dirty.insert(widget);
     scheduleFlush();
@@ -439,6 +463,13 @@ bool PanelMirror::eventFilter(QObject* watched, QEvent* event)
     if (!watched->isWidgetType())
         return QObject::eventFilter(watched, event);
     auto w = static_cast<QWidget*>(watched);
+    if (!_models.contains(w)) {
+        // a scroll area (an item view, a text edit) paints its viewport,
+        // not itself: the viewport's paint is the view's evidence
+        auto area = qobject_cast<QAbstractScrollArea*>(w->parentWidget());
+        if (area && area->viewport() == w && _models.contains(area))
+            w = area;
+    }
     switch (event->type()) {
         case QEvent::Paint:
         case QEvent::Show:
@@ -574,7 +605,7 @@ void PanelMirror::walk(Walk& w)
     }
 }
 
-Widget* PanelMirror::newModel(QWidget* real, Widget* parentModel)
+Widget* PanelMirror::newModel(QWidget* real, Widget* parentModel, bool picture)
 {
     Widget* model = nullptr;
     auto box = qobject_cast<::QDialogButtonBox*>(real->parentWidget());
@@ -583,6 +614,12 @@ Widget* PanelMirror::newModel(QWidget* real, Widget* parentModel)
         model = new PanelButton(parentModel);
         model->setInitial(QStringLiteral("standardButton"),
                           static_cast<int>(box->standardButton(button)));
+    }
+    else if (picture) {
+        // a leaf the table does not know, with nothing inside: what it
+        // paints, as a label's pixmap (M2)
+        model = createWidget(QStringLiteral("QLabel"), parentModel);
+        _pictures.insert(real);
     }
     else {
         model = createWidget(tableClassOf(real), parentModel);
@@ -603,8 +640,19 @@ Widget* PanelMirror::mirrorWidget(Walk& w, QWidget* real, Widget* parentModel, b
     w.visited.insert(real);
     Widget* model = _models.value(real).data();
     isNew = !model;
+    const QString cls = tableClassOf(real);
+    const bool container = isContainer(real, cls);
     if (!model) {
-        model = newModel(real, parentModel);
+        bool picture = !container && cls == QLatin1String("QWidget");
+        if (picture && _pictures.size() >= maxPictures()) {
+            if (!_pictureCapTold) {
+                _pictureCapTold = true;
+                Base::Console().Log("PanelMirror: more than %d picture leaves, the rest are bare\n",
+                                    maxPictures());
+            }
+            picture = false;
+        }
+        model = newModel(real, parentModel, picture);
         _models.insert(real, model);
         Store::instance().adopt(QStringLiteral("pw:%1").arg(++widgetSerial()), model, false);
     }
@@ -613,8 +661,7 @@ Widget* PanelMirror::mirrorWidget(Walk& w, QWidget* real, Widget* parentModel, b
         // (the real move already happened)
         model->QObject::setParent(parentModel);
     }
-    const QString cls = tableClassOf(real);
-    if (isContainer(real, cls)) {
+    if (container) {
         QStringList signature;
         Layout* old = model->layout();
         buildContent(w, real, model, signature);
@@ -822,7 +869,10 @@ Layout* PanelMirror::buildLayout(Walk& w, QLayout* real, Widget* owner, QStringL
 
 void PanelMirror::bindModel(QWidget* real, Widget* model)
 {
-    FwQt::View::bind(model, real);
+    FwQt::View* view = FwQt::View::bind(model, real);
+    // an item view's rows are the panel's: reflected, not owned (M2)
+    if (view && qobject_cast<::QAbstractItemView*>(real))
+        view->reflectItems();
     connect(model, &Widget::propertiesChanged, this,
             [this, real, model](const QStringList& names, int source) {
                 onModelWritten(real, model, names, source);
@@ -839,6 +889,8 @@ void PanelMirror::watchWidget(QWidget* real)
         return;
     _watched.insert(real);
     real->installEventFilter(this);
+    if (auto area = qobject_cast<QAbstractScrollArea*>(real))
+        area->viewport()->installEventFilter(this);
     connect(real, &QObject::destroyed, this, [this, real]() {
         _watched.remove(real);
         releaseModel(real, false);
@@ -856,6 +908,8 @@ void PanelMirror::unwatchWidget(QWidget* real)
     if (!_watched.remove(real))
         return;
     real->removeEventFilter(this);
+    if (auto area = qobject_cast<QAbstractScrollArea*>(real))
+        area->viewport()->removeEventFilter(this);
     disconnect(real, nullptr, this, nullptr);
 }
 
@@ -867,6 +921,7 @@ void PanelMirror::releaseModel(QWidget* real, bool announce)
     QPointer<Widget> model = it.value();
     _models.erase(it);
     _dirty.remove(real);
+    forgetPicture(real);
     if (_watched.contains(real))
         unwatchWidget(real);
     if (!model)
@@ -883,6 +938,7 @@ void PanelMirror::releaseModel(QWidget* real, bool announce)
         if (childReal) {
             _models.remove(childReal);
             _dirty.remove(childReal);
+            forgetPicture(childReal);
             unwatchWidget(childReal);
         }
     }
@@ -936,12 +992,80 @@ QVariantMap PanelMirror::read(QWidget* real, Widget* model) const
         v.insert(QStringLiteral("checked"), box->isGroupVisible());
         v.insert(QStringLiteral("flat"), !box->hasHeader());
     }
+    else if (auto view = qobject_cast<::QAbstractItemView*>(real)) {
+        // the header, which no Q_PROPERTY carries
+        if (QAbstractItemModel* m = view->model()) {
+            const int cols = m->columnCount();
+            QStringList labels;
+            for (int c = 0; c < cols; ++c)
+                labels.append(m->headerData(c, Qt::Horizontal).toString());
+            v.insert(QStringLiteral("columnCount"), std::max(cols, 1));
+            v.insert(QStringLiteral("columns"), labels);
+        }
+    }
     return v;
+}
+
+QString PanelMirror::grabPicture(QWidget* real)
+{
+    if (!real->isVisible() || real->width() <= 0 || real->height() <= 0)
+        return QString();
+    const qint64 now = _clock.elapsed();
+    const qint64 last = _grabbedAt.value(real, -grabIntervalMs());
+    if (now - last < grabIntervalMs()) {
+        // too soon after the last one (a blinking caret would stream at
+        // the blink rate): once more when the interval is up
+        _pendingGrabs.insert(real);
+        if (!_grabTimer.isActive())
+            _grabTimer.start(static_cast<int>(grabIntervalMs() - (now - last)));
+        return QString();
+    }
+    _grabbedAt.insert(real, now);
+    ++_grabs;
+    // at 1x whatever the screen's ratio; the size capped
+    QPixmap pixmap(real->size());
+    pixmap.fill(Qt::transparent);
+    _grabbing = true;
+    real->render(&pixmap, QPoint(), QRegion(), QWidget::DrawChildren);
+    _grabbing = false;
+    if (pixmap.width() > maxPictureSide() || pixmap.height() > maxPictureSide())
+        pixmap = pixmap.scaled(maxPictureSide(), maxPictureSide(), Qt::KeepAspectRatio,
+                               Qt::SmoothTransformation);
+    return ImageStore::instance().add(pixmap);
+}
+
+void PanelMirror::forgetPicture(QWidget* real)
+{
+    _pictures.remove(real);
+    _grabbedAt.remove(real);
+    _pendingGrabs.remove(real);
 }
 
 void PanelMirror::refresh(QWidget* real, Widget* model, bool initial)
 {
-    const QVariantMap v = read(real, model);
+    QVariantMap v = read(real, model);
+    // what has no name to send and travels by image id (M2)
+    if (_pictures.contains(real)) {
+        const QString id = grabPicture(real);
+        if (!id.isNull())
+            v.insert(QStringLiteral("pixmap"), id);
+    }
+    else if (auto button = qobject_cast<::QAbstractButton*>(real)) {
+        if (!button->icon().isNull())
+            v.insert(QStringLiteral("icon"),
+                     ImageStore::instance().ofIcon(button->icon(), button->iconSize()));
+    }
+    else if (auto label = qobject_cast<::QLabel*>(real)) {
+        const QPixmap pixmap = label->pixmap();
+        if (!pixmap.isNull())
+            v.insert(QStringLiteral("pixmap"), ImageStore::instance().ofPixmap(pixmap));
+    }
+    else if (qobject_cast<::QAbstractItemView*>(real) && !initial) {
+        // what no model signal carries: rows hidden by the view, a
+        // tree's expansion
+        if (FwQt::View* view = FwQt::View::of(model))
+            view->syncReflectedRows();
+    }
     if (initial) {
         for (auto it = v.constBegin(); it != v.constEnd(); ++it)
             model->setInitial(it.key(), it.value());

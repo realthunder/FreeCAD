@@ -119,6 +119,21 @@ public:
     QModelIndex indexOf(int id, int column = 0) const;
     /// The row id of a real index (0 if none).
     int idOf(const QModelIndex& index) const;
+    /// REFLECT the real view's rows (docs/Sandbox.md 7.19 M2): the rows
+    /// are the panel's, not the model's.  Ids are minted for every row
+    /// the real model holds, the tree goes into the model as one insert
+    /// (the store's snapshot and fan-out carry it from there), and the
+    /// real model's `rowsInserted`, `rowsAboutToBeRemoved`, `rowsMoved`,
+    /// `modelReset`, `layoutChanged` and `dataChanged` keep it current
+    /// as item ops.  A cell reads the roles `ItemCell` has; a decoration
+    /// becomes an `img:` id through `Fw::ImageStore`.  A model op that
+    /// came from the real model is not applied back to it.
+    void reflectItems();
+    bool isReflecting() const;
+    /// What no model signal carries -- a row hidden by the view, a
+    /// tree's expansion -- re-read and sent as `row` ops where it
+    /// differs (the mirror's flush calls this on the view's repaint).
+    void syncReflectedRows();
 
 private:
     friend class EventRelay;
@@ -158,6 +173,14 @@ private:
     void applyCellTypes();
     void headerCall(const QString& which, const QString& method, const QVariantList& args);
     bool onItemRequest(const QString& name, const QVariantList& args);
+    // reflect mode
+    int mintRowId(const QModelIndex& index0);
+    QVariantMap readCell(const QModelIndex& index) const;
+    QVariantMap readRow(const QModelIndex& index0);
+    QVariantList readRows(const QModelIndex& parent, int first, int last);
+    bool rowHidden(const QModelIndex& index0) const;
+    void emitReflected(const QVariantMap& op);
+    void resyncReflected();
 
     Fw::Widget* _model;
     QPointer<QWidget> _widget;

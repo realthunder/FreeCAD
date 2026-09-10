@@ -44,6 +44,7 @@
 
 #include "Gui/Camera.h"
 #include "Gui/FileDialog.h"
+#include "Gui/Fw/FwImage.h"
 #include "Gui/Fw/FwPanelMirror.h"
 #include "Gui/Fw/FwQtView.h"
 #include "Gui/Fw/FwStore.h"
@@ -60,10 +61,34 @@
 #include "Gui/WidgetFactory.h"
 #include <QComboBox>
 #include <QFile>
+#include <QPainter>
+#include <QPaintEvent>
 #include <QStackedWidget>
 #include "fwui_TaskPanel_OrthoArray.h"
 
 namespace Fw = Gui::Fw;
+
+/// A custom-painted leaf (docs/Sandbox.md 7.19 M2): no model of its own,
+/// nothing inside, what it paints is what a client can get
+class PaintedLeaf: public QWidget
+{
+    Q_OBJECT
+public:
+    explicit PaintedLeaf(QWidget* parent = nullptr)
+        : QWidget(parent)
+    {
+        setObjectName(QStringLiteral("painted"));
+        setMinimumSize(40, 30);
+    }
+    QColor color = Qt::red;
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.fillRect(rect(), color);
+    }
+};
 
 // NOLINTBEGIN(readability-magic-numbers)
 class testFormWidgets: public QObject
@@ -1578,6 +1603,321 @@ private Q_SLOTS:
                  QStringLiteral("Count X"));
         mirror.stop();
         QVERIFY(!store.object(QStringLiteral("panel")));
+        QCOMPARE(store.count(), 0);
+    }
+
+    void test_panelMirrorItems()
+    {
+        // docs/Sandbox.md 7.19, M2: an item view's rows reflected (the
+        // real model's rows as the model's tree, kept current as item ops,
+        // a client's op landing in the real model), and the picture
+        // fallback (a custom-painted leaf as a label's pixmap by image id,
+        // re-sent on change only), button icons and label pixmaps by id
+        Fw::Store& store = Fw::Store::instance();
+        store.reset();
+        Fw::ImageStore& images = Fw::ImageStore::instance();
+        images.clear();
+        Fw::PanelMirror& mirror = Fw::PanelMirror::instance();
+        QSignalSpy messages(&store, &Fw::Store::message);
+        auto state = [](const QVariantMap& snap, const char* key) {
+            return snap.value(QStringLiteral("state")).toMap().value(QStringLiteral("q_")
+                                                                    + QLatin1String(key));
+        };
+        auto customs = [&messages](const QString& id, const QString& kind) {
+            QList<QVariantMap> out;
+            for (int i = 0; i < messages.count(); ++i) {
+                if (messages.at(i).at(0).toString() != id
+                    || messages.at(i).at(1).toString() != QLatin1String("custom"))
+                    continue;
+                QVariantMap content = messages.at(i).at(2).toMap();
+                if (kind.isEmpty() || content.value(QStringLiteral("item")).toString() == kind)
+                    out.append(content);
+            }
+            return out;
+        };
+        auto updates = [&messages](const QString& id, const char* key) {
+            QList<QVariantMap> out;
+            for (int i = 0; i < messages.count(); ++i) {
+                if (messages.at(i).at(0).toString() != id
+                    || messages.at(i).at(1).toString() != QLatin1String("update"))
+                    continue;
+                QVariantMap content = messages.at(i).at(2).toMap();
+                if (content.contains(QStringLiteral("q_") + QLatin1String(key)))
+                    out.append(content);
+            }
+            return out;
+        };
+        auto settle = [&mirror]() {
+            QCoreApplication::processEvents();
+            QCoreApplication::processEvents();
+            mirror.flush();
+        };
+
+        // the box: a checkable list with an icon and a tool tip, a two-
+        // column tree with an expanded parent, a painted leaf, a button
+        // with an icon, a label with a pixmap
+        auto hand = new QWidget;
+        auto vbox = new QVBoxLayout(hand);
+        auto list = new QListWidget(hand);
+        list->setObjectName(QStringLiteral("list"));
+        QPixmap red(16, 16);
+        red.fill(Qt::red);
+        for (const char* text : {"alpha", "beta", "gamma"}) {
+            auto item = new QListWidgetItem(QString::fromUtf8(text), list);
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(Qt::Unchecked);
+        }
+        list->item(1)->setCheckState(Qt::Checked);
+        list->item(2)->setIcon(QIcon(red));
+        list->item(2)->setToolTip(QStringLiteral("third"));
+        auto tree = new QTreeWidget(hand);
+        tree->setObjectName(QStringLiteral("tree"));
+        tree->setHeaderLabels({QStringLiteral("Name"), QStringLiteral("Value")});
+        auto top = new QTreeWidgetItem(tree, {QStringLiteral("top"), QStringLiteral("1")});
+        new QTreeWidgetItem(top, {QStringLiteral("child"), QStringLiteral("2")});
+        tree->expandItem(top);
+        auto painted = new PaintedLeaf(hand);
+        auto button = new QPushButton(QStringLiteral("Pick"), hand);
+        button->setObjectName(QStringLiteral("iconButton"));
+        button->setIcon(QIcon(red));
+        auto picture = new QLabel(hand);
+        picture->setObjectName(QStringLiteral("pictureLabel"));
+        picture->setPixmap(red);
+        vbox->addWidget(list);
+        vbox->addWidget(tree);
+        vbox->addWidget(painted);
+        vbox->addWidget(button);
+        vbox->addWidget(picture);
+        auto box = new Gui::TaskView::TaskBox(QStringLiteral("Items"), true, nullptr);
+        box->groupLayout()->addWidget(hand);
+        QWidget host;
+        auto hostLay = new QVBoxLayout(&host);
+        hostLay->addWidget(box);
+        host.show();
+        QCoreApplication::processEvents();
+
+        mirror.show(QStringLiteral("ItemsDialog"), {box}, nullptr);
+        const QString rootId = mirror.panelId();
+        QVERIFY(!rootId.isEmpty());
+        Fw::Widget* listModel = mirror.modelOf(list);
+        Fw::Widget* treeModel = mirror.modelOf(tree);
+        QVERIFY(listModel && treeModel);
+        auto listView = qobject_cast<Fw::ItemView*>(listModel);
+        auto treeView = qobject_cast<Fw::ItemView*>(treeModel);
+        QVERIFY(listView && treeView);
+        const QString listId = store.idOf(listModel);
+        const QString treeId = store.idOf(treeModel);
+        QCOMPARE(listModel->modelName(), QStringLiteral("QListWidgetModel"));
+        QCOMPARE(listModel->qtClass(), QStringLiteral("QListWidget"));
+        QVERIFY(Gui::FwQt::View::of(listModel)->isReflecting());
+
+        // the rows: the real model's, in the snapshot as `items`
+        QVariantMap listSnap = store.snapshot(listId);
+        QVariantList rows = listSnap.value(QStringLiteral("items")).toList();
+        QCOMPARE(rows.size(), 3);
+        auto cell0 = [](const QVariant& row) {
+            return row.toMap().value(QStringLiteral("cells")).toList().value(0).toMap();
+        };
+        QCOMPARE(cell0(rows.at(0)).value(QStringLiteral("text")).toString(), QStringLiteral("alpha"));
+        QCOMPARE(cell0(rows.at(0)).value(QStringLiteral("check")).toInt(), int(Qt::Unchecked));
+        QCOMPARE(cell0(rows.at(1)).value(QStringLiteral("check")).toInt(), int(Qt::Checked));
+        const QString iconId = cell0(rows.at(2)).value(QStringLiteral("icon")).toString();
+        QVERIFY2(iconId.startsWith(QLatin1String("img:")), qPrintable(iconId));
+        QVERIFY(images.contains(iconId));
+        QCOMPARE(cell0(rows.at(2)).value(QStringLiteral("toolTip")).toString(), QStringLiteral("third"));
+        QVERIFY(rows.at(0).toMap().value(QStringLiteral("flags")).toInt() & Qt::ItemIsUserCheckable);
+        const int id0 = rows.at(0).toMap().value(QStringLiteral("id")).toInt();
+        const int id1 = rows.at(1).toMap().value(QStringLiteral("id")).toInt();
+        QVERIFY(id0 > 0 && id1 > 0 && id0 != id1);
+        QCOMPARE(Gui::FwQt::View::of(listModel)->indexOf(id1).row(), 1);
+        // the tree: the header, a parent expanded with its child
+        QVariantMap treeSnap = store.snapshot(treeId);
+        QCOMPARE(state(treeSnap, "columns").toStringList(),
+                 (QStringList {QStringLiteral("Name"), QStringLiteral("Value")}));
+        QCOMPARE(state(treeSnap, "columnCount").toInt(), 2);
+        QVariantList treeRows = treeSnap.value(QStringLiteral("items")).toList();
+        QCOMPARE(treeRows.size(), 1);
+        QVariantMap topRow = treeRows.at(0).toMap();
+        QCOMPARE(topRow.value(QStringLiteral("cells")).toList().size(), 2);
+        QCOMPARE(topRow.value(QStringLiteral("expanded")).toBool(), true);
+        QVariantList kids = topRow.value(QStringLiteral("children")).toList();
+        QCOMPARE(kids.size(), 1);
+        QCOMPARE(cell0(kids.at(0)).value(QStringLiteral("text")).toString(), QStringLiteral("child"));
+        const int topId = topRow.value(QStringLiteral("id")).toInt();
+        const int childId = kids.at(0).toMap().value(QStringLiteral("id")).toInt();
+
+        // the open carried the rows, and nothing about the list went out
+        // before its open
+        bool listOpened = false;
+        for (int i = 0; i < messages.count(); ++i) {
+            if (messages.at(i).at(0).toString() != listId)
+                continue;
+            if (!listOpened) {
+                QCOMPARE(messages.at(i).at(1).toString(), QStringLiteral("open"));
+                QCOMPARE(messages.at(i).at(2).toMap().value(QStringLiteral("items")).toList().size(),
+                         3);
+                listOpened = true;
+            }
+        }
+        QVERIFY(listOpened);
+
+        // a client's check lands in the real item and fires the panel's
+        // itemChanged; the op fans out under the client's origin, once
+        messages.clear();
+        QSignalSpy changed(list, &QListWidget::itemChanged);
+        QVariantMap setOp {{QStringLiteral("item"), QStringLiteral("set")},
+                           {QStringLiteral("id"), id0},
+                           {QStringLiteral("col"), 0},
+                           {QStringLiteral("cell"), QVariantMap {{QStringLiteral("check"), 2}}}};
+        QVERIFY(store.applyCustom(listId, setOp, 7));
+        QCOMPARE(list->item(0)->checkState(), Qt::Checked);
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(listView->checkState(id0, 0), int(Qt::Checked));
+        QList<QVariantMap> sets = customs(listId, QStringLiteral("set"));
+        QCOMPARE(sets.size(), 1);
+        QCOMPARE(messages.at(0).at(3).toULongLong(), 7ULL);
+
+        // the panel's own changes arrive as item ops: an added row, a
+        // text set, a row taken, a child added under its parent
+        messages.clear();
+        list->addItem(QStringLiteral("delta"));
+        QList<QVariantMap> inserts = customs(listId, QStringLiteral("insert"));
+        QCOMPARE(inserts.size(), 1);
+        QVariantList inserted = inserts.at(0).value(QStringLiteral("rows")).toList();
+        QCOMPARE(inserted.size(), 1);
+        QCOMPARE(cell0(inserted.at(0)).value(QStringLiteral("text")).toString(),
+                 QStringLiteral("delta"));
+        QCOMPARE(inserts.at(0).value(QStringLiteral("index")).toInt(), 3);
+        const int deltaId = inserted.at(0).toMap().value(QStringLiteral("id")).toInt();
+        QCOMPARE(listView->rowCount(), 4);
+        QCOMPARE(messages.at(0).at(3).toULongLong(), 0ULL);
+        messages.clear();
+        list->item(0)->setText(QStringLiteral("alpha2"));
+        sets = customs(listId, QStringLiteral("set"));
+        QCOMPARE(sets.size(), 1);
+        QCOMPARE(sets.at(0).value(QStringLiteral("id")).toInt(), id0);
+        QCOMPARE(sets.at(0).value(QStringLiteral("cell")).toMap().value(QStringLiteral("text"))
+                     .toString(),
+                 QStringLiteral("alpha2"));
+        QCOMPARE(listView->text(id0, 0), QStringLiteral("alpha2"));
+        messages.clear();
+        delete list->takeItem(3);
+        QList<QVariantMap> removes = customs(listId, QStringLiteral("remove"));
+        QCOMPARE(removes.size(), 1);
+        QCOMPARE(removes.at(0).value(QStringLiteral("id")).toInt(), deltaId);
+        QCOMPARE(listView->rowCount(), 3);
+        QVERIFY(!listView->row(deltaId));
+        messages.clear();
+        new QTreeWidgetItem(top, {QStringLiteral("child2"), QStringLiteral("3")});
+        inserts = customs(treeId, QStringLiteral("insert"));
+        QCOMPARE(inserts.size(), 1);
+        QCOMPARE(inserts.at(0).value(QStringLiteral("parent")).toInt(), topId);
+        QCOMPARE(treeView->rowCount(topId), 2);
+        // a collapse from the widget reaches the model row; a client's
+        // expand reaches the widget
+        tree->collapseItem(top);
+        QCOMPARE(treeView->isExpanded(topId), false);
+        QVariantMap rowOp {{QStringLiteral("item"), QStringLiteral("row")},
+                           {QStringLiteral("id"), topId},
+                           {QStringLiteral("row"), QVariantMap {{QStringLiteral("expanded"), true}}}};
+        QVERIFY(store.applyCustom(treeId, rowOp, 7));
+        QVERIFY(top->isExpanded());
+        QVERIFY(treeView->row(childId));
+        // a row hidden by the view has no signal: the flush finds it
+        messages.clear();
+        list->setRowHidden(1, true);
+        settle();
+        QList<QVariantMap> rowOps = customs(listId, QStringLiteral("row"));
+        QCOMPARE(rowOps.size(), 1);
+        QCOMPARE(rowOps.at(0).value(QStringLiteral("id")).toInt(), id1);
+        QCOMPARE(rowOps.at(0).value(QStringLiteral("row")).toMap().value(QStringLiteral("hidden"))
+                     .toBool(),
+                 true);
+        QVERIFY(listView->row(id1)->hidden);
+        // a clear is a reset: one clear op, then the refill
+        messages.clear();
+        list->clear();
+        QCOMPARE(customs(listId, QStringLiteral("clear")).size(), 1);
+        QCOMPARE(listView->rowCount(), 0);
+        list->addItems({QStringLiteral("x"), QStringLiteral("y")});
+        QCOMPARE(listView->rowCount(), 2);
+        QCOMPARE(store.snapshot(listId).value(QStringLiteral("items")).toList().size(), 2);
+
+        // the picture: a label model with the real class, its pixmap an
+        // image id whose PNG is the widget's size
+        Fw::Widget* paintedModel = mirror.modelOf(painted);
+        QVERIFY(paintedModel);
+        QVERIFY(mirror.isPicture(painted));
+        QCOMPARE(mirror.pictureCount(), 1);
+        QCOMPARE(paintedModel->modelName(), QStringLiteral("QLabelModel"));
+        QCOMPARE(paintedModel->qtClass(), QStringLiteral("PaintedLeaf"));
+        const QString paintedId = store.idOf(paintedModel);
+        const QString pix1 = paintedModel->property("pixmap").toString();
+        QVERIFY2(pix1.startsWith(QLatin1String("img:")), qPrintable(pix1));
+        int w = 0, h = 0;
+        const QByteArray png = images.png(pix1, &w, &h);
+        QVERIFY(!png.isEmpty());
+        QCOMPARE(QSize(w, h), painted->size());
+        QImage decoded = QImage::fromData(png, "PNG");
+        QCOMPARE(decoded.size(), painted->size());
+        QCOMPARE(decoded.pixelColor(5, 5), QColor(Qt::red));
+        // a repaint with nothing changed sends nothing; a change sends
+        // one update with a new id (the rate cap defers, never drops)
+        QTest::qWait(mirror.grabIntervalMs() + 20);
+        messages.clear();
+        const int grabs = mirror.grabCount();
+        painted->update();
+        QTest::qWait(mirror.grabIntervalMs() + 50);
+        settle();
+        QVERIFY(mirror.grabCount() > grabs);
+        QCOMPARE(updates(paintedId, "pixmap").size(), 0);
+        QCOMPARE(paintedModel->property("pixmap").toString(), pix1);
+        painted->color = Qt::blue;
+        painted->update();
+        QTest::qWait(mirror.grabIntervalMs() + 50);
+        settle();
+        QList<QVariantMap> pixUpdates = updates(paintedId, "pixmap");
+        QCOMPARE(pixUpdates.size(), 1);
+        const QString pix2 = pixUpdates.at(0).value(QStringLiteral("q_pixmap")).toString();
+        QVERIFY(pix2 != pix1);
+        QCOMPARE(QImage::fromData(images.png(pix2), "PNG").pixelColor(5, 5), QColor(Qt::blue));
+
+        // a button's icon and a label's pixmap travel by id, encoded once
+        Fw::Widget* buttonModel = mirror.modelOf(button);
+        const QString buttonIcon = buttonModel->property("icon").toString();
+        QVERIFY2(buttonIcon.startsWith(QLatin1String("img:")), qPrintable(buttonIcon));
+        Fw::Widget* labelModel = mirror.modelOf(picture);
+        QCOMPARE(labelModel->modelName(), QStringLiteral("QLabelModel"));
+        QVERIFY(labelModel->property("pixmap").toString().startsWith(QLatin1String("img:")));
+        const int encoded = images.encoded();
+        button->update();
+        picture->update();
+        settle();
+        QCOMPARE(images.encoded(), encoded);
+        QCOMPARE(buttonModel->property("icon").toString(), buttonIcon);
+
+        // the image op: the PNG by id, UnknownImage for a stranger
+        Gui::installSceneWidgetOps();
+        auto control = [](const QString& json) {
+            return QJsonDocument::fromJson(QByteArray(Gui::handleSceneControlRequest(
+                                                          json.toStdString(), std::string(),
+                                                          false, 7)
+                                                          .c_str()))
+                .object();
+        };
+        QJsonObject reply = control(QStringLiteral("{\"op\":\"widgets.image\",\"id\":1,\"name\":\"%1\"}")
+                                        .arg(pix2));
+        QVERIFY2(reply.value(QLatin1String("ok")).toBool(), qPrintable(QJsonDocument(reply).toJson()));
+        QCOMPARE(reply.value(QLatin1String("format")).toString(), QStringLiteral("png"));
+        QCOMPARE(reply.value(QLatin1String("width")).toInt(), painted->width());
+        QCOMPARE(QByteArray::fromBase64(reply.value(QLatin1String("data")).toString().toLatin1()),
+                 images.png(pix2));
+        reply = control(QStringLiteral("{\"op\":\"widgets.image\",\"id\":2,\"name\":\"img:nope\"}"));
+        QVERIFY(!reply.value(QLatin1String("ok")).toBool());
+
+        mirror.hide();
+        QCOMPARE(mirror.pictureCount(), 0);
+        mirror.stop();
         QCOMPARE(store.count(), 0);
     }
 };

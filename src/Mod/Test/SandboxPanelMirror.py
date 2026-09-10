@@ -24,9 +24,13 @@ panel -- C++ (Pad's), Python over a .ui file (Draft's OrthoArray),
 Python over several .ui pages (a CAM op) -- walked into store models
 and streamed, no edit to any workbench; a client's write landing in the
 document through the panel's own slots, the read-back reaching the
-writer, the dialog closed through the root.  Needs the GUI and no
-guest: run it through scripts/sandbox-gui-gate.py under Xvfb.  Skips
-headless."""
+writer, the dialog closed through the root.  M2: Sketcher's constraint
+list reflected row by row, a client's check reaching the sketch; a
+QSvgWidget as one picture by image id, re-sent on change only.  Needs
+the GUI and no guest: run it through scripts/sandbox-gui-gate.py under
+Xvfb.  Skips headless."""
+
+import base64
 
 import json
 import unittest
@@ -77,8 +81,15 @@ class SandboxPanelMirrorTest(unittest.TestCase):
     def spin(ms=30, times=4):
         from PySide import QtCore, QtWidgets
 
+        # the whole gate runs inside one slot of the main loop, so a
+        # closed dialog's deleteLater (posted at this level) never runs
+        # on its own: flush it, as the desktop's loop would, or a dead
+        # panel's list keeps painting its gone sketch
+        deferred = QtCore.QEvent.Type.DeferredDelete
+        deferred = getattr(deferred, "value", deferred)
         for _ in range(times):
             QtWidgets.QApplication.processEvents()
+            QtCore.QCoreApplication.sendPostedEvents(None, deferred)
             loop = QtCore.QEventLoop()
             QtCore.QTimer.singleShot(ms, loop.quit)
             loop.exec()
@@ -333,3 +344,141 @@ class SandboxPanelMirrorTest(unittest.TestCase):
         self.assertTrue(s["state"]["q_text"])
         self.assertIsNotNone(self.named("finalDepth"))
         self.close_through_root(pid, "reject")
+
+    def test_sketcher_constraints(self):
+        """Sketcher's constraint list, reflected: the rows with their
+        checks arrive in the list's open, a client's check write lands
+        in the real item and reaches the sketch through the panel's own
+        itemChanged slot (the constraint's virtual space), the refilled
+        list comes back as ops."""
+        Gui = self.Gui
+        import TestSketcherApp
+
+        Gui.activateWorkbench("SketcherWorkbench")
+        self.spin()
+        sketch = self.doc.addObject("Sketcher::SketchObject", "SketchC")
+        TestSketcherApp.CreateRectangleSketch(sketch, (0, 0), (20, 10))
+        self.doc.recompute()
+        n = len(sketch.Constraints)
+        self.assertGreater(n, 0)
+        self.assertFalse(sketch.Constraints[0].InVirtualSpace)
+        self.subscribe()
+        self.assertTrue(Gui.ActiveDocument.setEdit(sketch, 0))
+        pid, root = self.open_panel()
+        wid = self.named("listWidgetConstraints")
+        self.assertIsNotNone(wid, "the constraint list was not mirrored")
+        snap = self.FW.snapshot(wid)
+        self.assertEqual(snap["model"], "QListWidgetModel")
+        self.assertEqual(snap["qtClass"], "SketcherGui::ConstraintView")
+        rows = snap.get("items", [])
+        self.assertEqual(len(rows), n, snap)
+        self.assertTrue(all(r["cells"][0].get("text") for r in rows), rows)
+        self.assertTrue(all("check" in r["cells"][0] for r in rows), rows)
+        self.assertEqual(rows[0]["cells"][0]["check"], 2)  # Checked: shown, not virtual
+        opens = [m for _, m in self.pushed(7) if m["method"] == "open" and m["id"] == wid]
+        self.assertEqual(len(opens), 1, [m["id"] for _, m in self.pushed(7)])
+        self.assertEqual(len(opens[0].get("items", [])), n)
+
+        # a client's check: the real item's check state, the panel's slot,
+        # the sketch
+        self.FW.pushed()
+        reply = self.control(
+            {
+                "op": "widgets.custom",
+                "target": wid,
+                "content": {"item": "set", "id": rows[0]["id"], "col": 0, "cell": {"check": 0}},
+            },
+            7,
+        )
+        self.assertTrue(reply["ok"], reply)
+        self.spin()
+        self.assertTrue(sketch.Constraints[0].InVirtualSpace)
+        # the panel's own answer to the sketch's change (its list updated
+        # in place or refilled) leaves the rows whole, the first one
+        # unchecked, whatever ops it took; those ops, the desktop's facts
+        # run by the client's own write, reached that client too
+        rows = self.FW.snapshot(wid).get("items", [])
+        self.assertEqual(len(rows), n)
+        self.assertEqual(rows[0]["cells"][0]["check"], 0)
+        for _, m in self.pushed(7):
+            if m["id"] == wid and m["method"] == "custom":
+                self.assertIn("item", m["content"], m)
+        self.close_through_root(pid, "reject")
+
+    def test_svg_picture(self):
+        """A custom-painted leaf -- a QSvgWidget in a Python panel -- is a
+        label model with the real class and an image id, the PNG fetched
+        through widgets.image; a repaint with nothing changed sends
+        nothing, a change sends one update with a new id."""
+        Gui = self.Gui
+        from PySide import QtCore
+
+        try:
+            from PySide6.QtSvgWidgets import QSvgWidget
+        except ImportError as e:
+            self.skipTest("no QSvgWidget: %s" % e)
+
+        def svg(color):
+            return QtCore.QByteArray(
+                (
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
+                    '<rect width="64" height="64" fill="%s"/></svg>' % color
+                ).encode()
+            )
+
+        widget = QSvgWidget()
+        widget.setObjectName("svgLeaf")
+        widget.setWindowTitle("Picture")
+        widget.load(svg("#ff0000"))
+        widget.setFixedSize(64, 64)
+
+        class Panel:
+            def __init__(self, form):
+                self.form = form
+
+        self.subscribe()
+        Gui.Control.showDialog(Panel(widget))
+        pid, root = self.open_panel()
+        wid = self.named("svgLeaf")
+        self.assertIsNotNone(wid, "the svg widget was not mirrored")
+        snap = self.FW.snapshot(wid)
+        self.assertEqual(snap["model"], "QLabelModel")
+        self.assertEqual(snap["qtClass"], "QSvgWidget")
+        pix = snap["state"].get("q_pixmap", "")
+        self.assertTrue(pix.startswith("img:"), snap["state"])
+        reply = self.control({"op": "widgets.image", "name": pix}, 7)
+        self.assertTrue(reply["ok"], reply)
+        self.assertEqual(reply["format"], "png")
+        self.assertEqual(base64.b64decode(reply["data"])[:4], b"\x89PNG")
+        self.assertEqual((reply["width"], reply["height"]), (64, 64))
+        reply = self.control({"op": "widgets.image", "name": "img:nope"}, 7)
+        self.assertFalse(reply["ok"], reply)
+
+        def pixmap_updates():
+            return [
+                m["content"]["q_pixmap"]
+                for _, m in self.pushed(7)
+                if m["id"] == wid and m["method"] == "update" and "q_pixmap" in m["content"]
+            ]
+
+        # past the rate cap, then a repaint with nothing changed
+        self.spin(60, 3)
+        self.FW.pushed()
+        widget.update()
+        self.spin(60, 4)
+        self.FW.panelFlush()
+        self.assertEqual(pixmap_updates(), [])
+        self.assertEqual(self.FW.snapshot(wid)["state"]["q_pixmap"], pix)
+        # a change: one update, a new id, fetchable
+        widget.load(svg("#0000ff"))
+        self.spin(60, 4)
+        self.FW.panelFlush()
+        ups = pixmap_updates()
+        self.assertEqual(len(ups), 1, ups)
+        self.assertNotEqual(ups[0], pix)
+        reply = self.control({"op": "widgets.image", "name": ups[0]}, 7)
+        self.assertTrue(reply["ok"], reply)
+        Gui.Control.closeDialog()
+        self.spin()
+        self.assertIsNone(self.FW.panelId())
+

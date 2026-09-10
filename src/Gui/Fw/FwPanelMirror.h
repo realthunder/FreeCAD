@@ -55,9 +55,21 @@
  * mounts once; the root's close implies the subtree (the children are
  * released without a message).  Runs only while something asked
  * (`start`), stops with the last subscriber (`stop`).
+ *
+ * M2: an item view's rows are REFLECTED (`FwQt::View::reflectItems`):
+ * the real model's rows go out in the open's `items` and change as
+ * item ops, a client's item op lands in the real model.  A leaf the
+ * class table does not know and that has nothing inside (a custom-
+ * painted widget) is a PICTURE: a `QLabel` model with the real class as
+ * `qtClass` and a `pixmap` key holding an `img:` id from `ImageStore`,
+ * re-grabbed on the widget's repaint (rate-capped per widget, the
+ * device pixel ratio ignored, the longest side capped), a new id sent
+ * only when the bytes changed, so many pictures per panel at most.
+ * Button icons and label pixmaps travel the same way.
  */
 
 #include <QDialogButtonBox>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QList>
 #include <QObject>
@@ -128,6 +140,34 @@ public:
     }
     /// The model of a real widget, or nullptr when it is not mirrored.
     Widget* modelOf(QWidget* widget) const;
+    /// Whether a real widget is mirrored as a picture (M2).
+    bool isPicture(QWidget* widget) const
+    {
+        return _pictures.contains(widget);
+    }
+    int pictureCount() const
+    {
+        return _pictures.size();
+    }
+    /// The picture quotas: the longest side of a grab, the least time
+    /// between two grabs of one widget, how many pictures a panel holds.
+    static int maxPictureSide()
+    {
+        return 1024;
+    }
+    static int grabIntervalMs()
+    {
+        return 100;
+    }
+    static int maxPictures()
+    {
+        return 32;
+    }
+    /// How many grabs ran since `start` (tests).
+    int grabCount() const
+    {
+        return _grabs;
+    }
 
 Q_SIGNALS:
     void shown(const QString& id);
@@ -152,7 +192,11 @@ private:
     Widget* mirrorWidget(Walk& walk, QWidget* real, Widget* parentModel, bool& isNew);
     void buildContent(Walk& walk, QWidget* real, Widget* model, QStringList& signature);
     Layout* buildLayout(Walk& walk, QLayout* real, Widget* owner, QStringList& signature);
-    Widget* newModel(QWidget* real, Widget* parentModel);
+    Widget* newModel(QWidget* real, Widget* parentModel, bool picture);
+    /// Grab a picture leaf now: its image id, or a null string when the
+    /// grab was deferred (rate cap) or the widget has nothing to show.
+    QString grabPicture(QWidget* real);
+    void forgetPicture(QWidget* real);
     void bindModel(QWidget* real, Widget* model);
     void watchWidget(QWidget* real);
     void unwatchWidget(QWidget* real);
@@ -168,10 +212,20 @@ private:
     bool _running = false;
     bool _walking = false;
     bool _relaying = false;
+    bool _grabbing = false;
+    bool _pictureCapTold = false;
     int _rebuilds = 0;
+    int _grabs = 0;
     QTimer _rebuildTimer;
     QTimer _flushTimer;
     QTimer _showTimer;
+    QTimer _grabTimer;
+    QElapsedTimer _clock;
+    /// the picture leaves, when each was last grabbed, which wait for
+    /// the rate cap
+    QSet<QWidget*> _pictures;
+    QHash<QWidget*, qint64> _grabbedAt;
+    QSet<QWidget*> _pendingGrabs;
     /// the dialog up: its class, boxes and button box
     QString _dialogClass;
     QList<QPointer<QWidget>> _contents;

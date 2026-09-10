@@ -199,6 +199,8 @@ quint64 Store::currentOrigin()
 
 void Store::announce(const QString& id, const QString& method, const QVariantMap& content)
 {
+    if (!_pending.isEmpty() && _pending.contains(id))
+        return;  // not open yet: its open carries the state
     Q_EMIT message(id, method, content, originSlot());
 }
 
@@ -240,10 +242,13 @@ void Store::adopt(const QString& id, Widget* w, bool announceIt)
     Q_EMIT objectOpened(w);
     if (announceIt)
         announce(id, QStringLiteral("open"), snapshot(id));
+    else
+        _pending.insert(id);
 }
 
 void Store::announceOpen(const QString& id)
 {
+    _pending.remove(id);
     if (isAdopted(id) && object(id))
         announce(id, QStringLiteral("open"), snapshot(id));
 }
@@ -255,6 +260,7 @@ bool Store::release(const QString& id, bool announceIt)
     Widget* w = object(id);
     _adopted.remove(id);
     _objects.remove(id);
+    _pending.remove(id);
     if (w) {
         Q_EMIT objectClosing(w);
         _ids.remove(w);
@@ -280,6 +286,12 @@ QVariantMap Store::snapshot(const QString& id) const
     out.insert(QStringLiteral("state"), state);
     if (Layout* lay = w->layout())
         out.insert(QStringLiteral("layout"), refsOf(*this, lay->spec()));
+    // an item view's rows, for a subscriber that mounts it whole (a
+    // reflected view's are the panel's: docs/Sandbox.md 7.19 M2)
+    if (auto view = qobject_cast<ItemView*>(w)) {
+        if (!view->topLevel().isEmpty())
+            out.insert(QStringLiteral("items"), view->snapshot());
+    }
     if (Widget* parent = w->parentWidget()) {
         const QString pid = idOf(parent);
         if (!pid.isEmpty())
@@ -373,8 +385,12 @@ bool Store::commCustom(const QString& id, const QVariantMap& content)
     }
     if (content.contains(QStringLiteral("item"))) {
         // an item op on a view's rows (docs/Sandbox.md 7.11, G3b)
-        if (auto view = qobject_cast<ItemView*>(w))
+        if (auto view = qobject_cast<ItemView*>(w)) {
+            const bool was = _guestItemOp;
+            _guestItemOp = currentOrigin() == 0;
             view->applyItemOp(content);
+            _guestItemOp = was;
+        }
         return true;
     }
     QString event = content.value(QStringLiteral("event")).toString();
@@ -435,6 +451,19 @@ void Store::watch(Widget* w, const QString& id)
         }
         announce(id, QStringLiteral("update"), state);
     });
+    if (auto view = qobject_cast<ItemView*>(w)) {
+        // an item op on the rows (docs/Sandbox.md 7.19 M2): the wire
+        // shape a client writes (`custom {item: ...}`) is what it hears,
+        // so a reflected view's rows fan out as the panel changes them;
+        // the guest's own op is not echoed to it
+        connect(view, &ItemView::itemsChanged, this, [this, id](const QVariantMap& op) {
+            if (_sink && !_guestItemOp) {
+                ++_stats.sent;
+                _sink(id, QStringLiteral("custom"), op);
+            }
+            announce(id, QStringLiteral("custom"), op);
+        });
+    }
     connect(w, &Widget::eventEmitted, this,
             [this, id](const QString& name, const QVariantList& args) {
                 QVariantMap content;
@@ -452,6 +481,7 @@ void Store::watch(Widget* w, const QString& id)
         if (it != _objects.end() && (it->isNull() || it->data() == obj)) {
             _objects.erase(it);
             _adopted.remove(id);
+            _pending.remove(id);
         }
     });
 }
