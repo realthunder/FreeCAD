@@ -595,12 +595,21 @@ Stage 2 had never been executed. Run 2026-09-09 on this box (Intel Iris Pro
 6200, macOS 12, Qt 6.11.1), `FC_RENDER_RHI=1` with render cache 3 and type
 `bgfx - Metal`, driving `scripts/composite_cost_probe.py`.
 
-**Note on getting there.** A default session on this box has an EMPTY
-`View/Render` parameter group, so `ViewParams::getRenderCache() == 3` is false
-and the whole warm-up block in `Application.cpp` is skipped. The probe sets
-those parameters from inside the script, which runs after the warm-up. That is
-why stage 2 had never run: not a failure, a configuration that never reached
-it. The run below passes a prepared parameter file with `-u`.
+**Note on getting there.** Neither parameter is read from the configuration
+at all. `RenderParams::selectRenderPath()`, called unconditionally from
+`Application.cpp:2379` before anything reads them, forces render cache 3 and
+sets the type to `preferredType()` -- the first registered backend whose name
+starts with `bgfx`. So a session's render path is DECIDED at startup, not
+configured, and the `Type` value in a `user.cfg` is an output of that decision
+rather than an input to it.
+
+What stopped stage 2 was therefore not configuration but two gates in the code.
+`FC_RENDER_RHI=1` is required for the adoption block to run at all
+(`QtRhi::warmupEnabled`). And before section 13, `bgfx - Metal` was registered
+only under `FC_BGFX_METAL`, so on macOS `preferredType()` could only reach
+`bgfx - OpenGL` -- which cannot run here, because `prepare()` finds GL 2.1
+against a shader pack needing 3.1, sets `glUnsupported` and returns false. The
+run below sets `FC_RENDER_RHI=1`, which happens to register Metal too.
 
 ### The ordering works
 
@@ -692,3 +701,57 @@ viewport has 3.5x fewer pixels than the 1920x1080 in that table. `queue`,
 -- the ring is absorbing the copy exactly as designed, so the composite costs
 about 5% of this frame rather than 18%. The readback cost that motivates Route
 D is a 4K-and-serialized cost, not one visible at this size.
+
+
+## 13. Metal is the default on macOS
+
+Changed 2026-09-10, and it is one line: `bgfx - Metal` is registered in
+`BGFXRendererLibP`'s constructor unconditionally, where it used to sit behind
+`FC_BGFX_METAL`.
+
+**Nothing else was needed, and the reason is worth stating because it inverts
+the framing.** `RenderParams::selectRenderPath()` runs unconditionally from
+`Application.cpp:2379`, before anything reads the parameters. It forces render
+cache 3 and sets the type to `preferredType()` -- the first REGISTERED backend
+whose name starts with `bgfx`. `typeMap` is a sorted map and `bgfx - Metal`
+sorts before `bgfx - OpenGL`, so Metal wins here the moment it exists.
+
+So macOS was never a different POLICY from the other platforms. They have
+defaulted to bgfx all along; this box was the one whose only registered backend
+could not run -- `prepare()` finds GL 2.1 against a shader pack needing 3.1,
+sets `glUnsupported`, returns false, and the session falls back to the render
+cache's own GL renderer. Every macOS session has been doing that silently. This
+change does not promote macOS ahead of anyone; it stops macOS being the one
+platform whose default is unreachable.
+
+A first attempt added a `RendererFactory::resolveType()` that mapped
+`"Default"` to a per-platform backend, threaded through both `warmup()`
+overloads, `create()`, `setRendererType()`, `SceneServeSource` and
+`ViewAreaCanvas::wanted()`. It was reverted unused: `selectRenderPath()`
+already decides this, and two mechanisms settling the same question is a defect
+waiting for a maintainer.
+
+### Measured, both directions
+
+Neutral probe -- a copy of `composite_cost_probe.py` with the two lines that
+set `RenderCache` and `Type` removed, so the run observes what the
+application chose rather than dictating it -- against a `user.cfg` holding
+nothing but autosave, and with `FC_BGFX_METAL` and `FC_RENDER_RHI` unset:
+
+| leg | warm-up | bgfx frames | verify |
+| --- | --- | --- | --- |
+| default | `bgfx - Metal` in 77 ms | 6 reports | `COMPOSITE DRAWS` x6 |
+| `FC_BGFX_METAL=0` | none | 0 | GL 2.1 refusal, Coin draws |
+
+The opt-out leg is the control that gives the first one its meaning: with Metal
+unregistered, `preferredType()` can only reach `bgfx - OpenGL`, which logs
+"is below the 3.1 this renderer's shaders need; drawing through the render cache
+instead" -- exactly the behaviour every macOS session had before this change.
+So `FC_BGFX_METAL=0` is a true restore, not merely a different failure.
+
+### The caveat
+
+Measured on ONE Mac: Intel Iris Pro 6200, macOS 12, Qt 6.11.1. Apple Silicon is
+untested here. The failure mode on a machine this does not suit is the one above
+-- `prepare()` fails, the renderer is null, Coin draws -- so the cost of being
+wrong is a slower 3D view, not a broken one.
