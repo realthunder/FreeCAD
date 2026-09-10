@@ -252,6 +252,27 @@ generally: any suite that saves into `%TEMP%` and then looks for its backups
 inherits this, and it degrades gradually rather than failing, so it presents
 as "that test got slow".
 
+**It came back, on the FIRST Windows box, 2026-09-10.** `%TEMP%` there held
+**68,282** entries -- 66,885 loose `.tmp` files spanning 2024-03 to that day,
+accumulating about 2,400 a day -- and `DeferredLoad_tests_run` hit the 1500 s
+timeout again after 35 minutes. So this is periodic maintenance, not a
+one-time fix on one machine. Sweeping the loose files out of the top level
+(68,118 deleted, 206 MB; the 127 subdirectories left alone, and anything
+touched in the last hour or held open skipped) took the suite to **12.29 s**
+against the real `%TEMP%`.
+
+**Two things a sweep must not take with it, one of them learned the hard
+way.** `%TEMP%\claude` holds a live agent session's scratchpad and its
+background-task output files. And **`/tmp` in Git Bash IS `%TEMP%`**, so
+`/tmp/ssh-agent-<user>.sock` -- the fixed socket `D:\works\sw\ssh-load.sh`
+puts the unlocked key's agent on, which `~/.profile` attaches every shell to
+-- is a loose file in the top level and gets swept with the rest. The agent
+process survives and is then unreachable: the port and cookie it listens with
+existed only inside that file. Every `git push` over SSH fails with
+"Permission denied (publickey)" until someone re-runs `source ssh-load.sh`
+and re-enters the passphrase. Exclude `ssh-agent-*.sock`, or sweep only
+`*.tmp`, which is where all the growth actually is.
+
 ### Python on Windows
 
 First run there is 2026-09-07, on `build/win-relwithdebinfo-801` with
