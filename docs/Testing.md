@@ -389,7 +389,7 @@ Counting individual test cases instead, across all 32 binaries, gives
 
 | Binary | Cases | Notes |
 |---|---|---|
-| `Tests_run` | 324 | The legacy suite: Base and App |
+| `Tests_run` | 329 | The legacy suite: Base and App; +5 `ParamRegistry*` since 2026-09-11 (docs/OmniSearch.md) |
 | `src/App/Toponaming_tests_run` | 256 | Element map, MappedName, IndexedName |
 | `src/App/PropertyMaterialList_tests_run` | 88 | |
 | `src/Mod/Part/TopoShapeEx_tests_run` | 86 | +3 disabled, section 4 |
@@ -420,6 +420,7 @@ Counting individual test cases instead, across all 32 binaries, gives
 | `src/Base/PyObjectTracking_tests_run` | 5 | |
 | `src/Gui/PublishOnly_tests_run` | 5 | |
 | `src/Gui/QuantitySpinBox_Tests_run` | 5 | QtTest, +3 skipped, section 4 |
+| `src/Gui/OmniSearch_Tests_run` | 6 | QtTest: the omni search layer without its box (docs/OmniSearch.md) |
 | `Points_tests_run` | 1 | |
 
 ### The render tests (`tests/render/`)

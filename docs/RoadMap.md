@@ -254,6 +254,10 @@ Python passthrough, so the protocol design questions below are all still open.</
   through-line" above. It is in daily use driving the live GUI, and the learning it was
   meant to produce is arriving: `search_api` exists because live API discovery turned out to
   be the agent's real bottleneck.</span>
+- The desktop's `/` omni search (`Std_OmniSearch`, [OmniSearch.md](./OmniSearch.md)) is
+  built as a widget-free search layer -- objects and properties, commands, the generated
+  parameters via `App::ParamRegistry` -- with the box on top, so the browser tier and an
+  agent can consume the same searches as control ops (section 6 there).
 - Requirements: structured errors (not crashes/tracebacks), transactions (do/undo/rollback),
   deterministic replayable results, cheap **semantic** state queries (DAG, properties,
   measurements, bbox — not pixels), a **sandboxed codegen surface** (the Pyodide sandbox)
