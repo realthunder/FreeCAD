@@ -47,6 +47,7 @@ pieces are frozen, not extended.**
     forms: dialogs, item views, ...  built       G3b: exec_(), the tree/list/table family as rows, containers, the file chooser; the 40-file harness (7.11)
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
+    the task panel mirror            sized       7.19: the desktop's task panel walked into models, streamed; RULED 2026-09-10 over the shim route
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -5031,6 +5032,328 @@ of hidden bars is the declared order (3).
   returns maps; under `FreeCADCmd` `sys.executable` is FreeCAD, so the
   dump test finds a plain interpreter under `sys.base_prefix`.
 
+### 7.19 The panel mirror sized: the desktop's task panel as models, streamed **[sized 2026-09-10]**
+
+Asked 2026-09-10, after the question "do we need to modify external
+Python workbench code to hook their task panels to our widget
+protocol": the shim route (a workbench's `PySide` import resolved to
+the model classes, sec 11 item 5) needs no edit for the bulk of a
+workbench and an edit per residue file (the linter over CAM: 438
+files, 139 using PySide, 30 with residue in 74 uses -- event filters,
+`QFileDialog`, drag and drop, `QSvgRenderer`, rich text,
+`QApplication` handles), and it never reaches a C++ panel at all.
+The alternative RULED 2026-09-10 ("B is good"): leave the workbench
+on real Qt, unmodified, and MIRROR the realized task panel -- the
+tool bar mirror of 7.18 generalized from `QToolBar` and `QAction` to
+the widget tree under `Control().showDialog`.  The workbench's event
+filters, drag and drop, timers and Coin trackers keep running on the
+host, where the real widget is; the browser sees a reflection and
+writes back through the store.  This covers what the shim cannot: the
+93 C++ `TaskDialog` subclasses of 7.12's corpus reach the browser
+without the H2 and H3 ports.  What it does not cover is the tier with
+no Qt: a serving desktop is the host, as in the thin-client model
+(docs/ThinClient.md 8.11, the shared session); the pure WASM tier
+keeps the shim route.  It does not touch 7.16 (the guest's Coin scene
+into the host's, the other direction, dropped in the re-aim) -- the
+two share only the pattern 7.16 arrived at, a walk of real objects.
+
+**What exists, and what the mirror reuses.**  More than 7.18 had:
+
+- **The binder.**  `FwQt::View::bind(model, widget)` adopts a real
+  QWidget as the rendering of a model (the UiLoader path of H0, a
+  ported panel's uic'd children).  It `readBack()`s every bag key
+  that is a `Q_PROPERTY` of the real widget through the meta-object
+  (`QColor` to a list, enums and flags to ints, icons skipped), and
+  `connectWidget()` wires the widget's edit signals into the bag as
+  `Source::Backend` writes and events -- `toggled`/`clicked` on a
+  button, `textEdited`/`returnPressed`/`editingFinished` on a line
+  edit, `valueChanged` on the spin boxes and `InputField`,
+  `currentIndexChanged` on a combo, the tab and stack `currentChanged`,
+  `ColorButton::changed`, `FileChooser`, the dialog button box,
+  `QuantitySpinBox` and `PrefQuantitySpinBox` by their own casts, 23
+  real classes in all.  `initItems()` on a bound item view attaches
+  to its REAL `QAbstractItemModel` (a `QStandardItemModel` is made
+  only when there is none): `clicked`/`doubleClicked`/`activated`/
+  `pressed`, `expanded`/`collapsed`, the selection and current
+  changes, `dataChanged` per cell, and `readBackItems()` for the
+  columns, headers and widths.  In the model -> widget direction
+  `apply()` orders the keys (range before value, items before index)
+  and `applyOne` calls the real setters.  So per widget the mirror is
+  `createWidget(realClass)` plus `bind`; the binder is the walker's
+  per-node body already, both directions.
+- **The class map.**  `Fw::createWidget(className)` answers a Qt class
+  name through `classTable()` (the model whose `qtClass` it is, a
+  model name accepted too) and a plain `Widget` for an unknown one --
+  the real widget's meta-object chain walked upward until the table
+  answers is the whole mapping: `Gui::PrefCheckBox` lands on the
+  `QCheckBox` model as it does for a .ui file, `Gui::UrlLabel` on
+  `QLabel`, Sketcher's `ConstraintView` on `QListWidget`.
+- **The store and the stream** (7.18 (a), built): `adopt(id, widget)`
+  for a host producer's object, `message(id, method, content,
+  origin)` for the fan-out, `snapshot(id)` and `snapshotOrder()` for a
+  late subscriber, `applyUpdate`/`applyCustom` under `OriginScope` for
+  a client's write; `SceneWidgets.cpp`'s ops `widgets.subscribe`
+  (`toolbars`, `all`), `widgets.icon` by name, `widgets.update`,
+  `widgets.custom`, and `SceneWidgetStream::wants(client, id)` which
+  already passes everything to an `all` subscriber.  A client's
+  `widgets.update` on a mirrored object is `commUpdate` from
+  `Source::Backend` -> `View::propertiesWritten` -> `apply` -> the
+  real widget's setter, which fires the real widget's signals into the
+  panel's own slots: the input direction needs no new code for what
+  the setters already signal (`setValue` -> `valueChanged`, `setChecked`
+  -> `toggled`, `setCurrentIndex` -> `currentIndexChanged`).
+- **The trigger.**  `TaskView::showDialog` emits
+  `Control().signalShowDialog(TaskView*, contents)` with the dialog's
+  content widgets (`TaskView.cpp:595`) and `signalRemoveDialog` on
+  removal (`:675`); `ControlSingleton::closedDialog` clears the active
+  dialog on `TaskDialog::aboutToBeDestroyed`.  The content is
+  `TaskBox`es (`QSint::ActionGroup`: `headerText`, `expandable`,
+  `header` as Q_PROPERTYs, `toggledExpansion`), a Python panel's
+  `form` widgets wrapped in one each (`TaskDialogPython::appendForm`).
+- **The mirror's own pattern** (7.18 (b), built, 688 lines): objects
+  adopted under synthetic ids, a `QPointer` map real -> model, a 0 ms
+  rebuild timer and a 0 ms flush timer coalescing the dirty set, an
+  event filter on the container for structural events
+  (`ActionAdded`/`ActionRemoved` there), `writeInitial`/`writeDiff`
+  so only changed keys leave, `destroyed` releasing the model.
+- **Key replay.**  docs/ThinClient.md 8.7 drives a parentless
+  `QuantitySpinBox` with replayed key events; the same primitive
+  serves the edit-finish semantics below.
+
+**The corpus** (the linter's `--ui` over `src/Mod` and `src/Gui`, 509
+.ui files, 2026-09-10; the class chain decides the model):
+
+    class                        widgets  files   model it lands on
+    ---------------------------  -------  -----   -----------------------------
+    QLabel                          2480    438   QLabel
+    QPushButton                      669    183   QPushButton
+    QGroupBox                        579    244   QGroupBox
+    QWidget (containers)             577    385   Widget, its layout walked
+    Gui::QuantitySpinBox             527    108   QuantitySpinBox (bound today)
+    QCheckBox                        447    178   QCheckBox
+    Gui::PrefCheckBox                369     73   QCheckBox (a .ui file's rule)
+    QComboBox                        365    194   QComboBox
+    QLineEdit                        300    135   QLineEdit
+    QToolButton, QDoubleSpinBox,     167+   ...   their own
+      QRadioButton, QSpinBox
+    Gui::InputField                  130     27   InputField (bound today)
+    Gui::Pref* (11 classes)          ~800          the base each extends
+    QListWidget, QTreeWidget,        81/44/        ItemView family (rows
+      QTreeView, QTableWidget,       23/19/        reflected, below)
+      QTableView, QListView          11/4
+    QSlider, QFrame, Line,           38/35/70      their own; Line a QFrame
+      QTextEdit, QPlainTextEdit,     24/12/7
+      QTextBrowser
+    QStackedWidget, QTabWidget,      19/18/        containers, walked
+      QSplitter, QScrollArea         18/11
+    no model of their own:           ~30    ~25   the chain, or the picture
+      QToolBox 5, ActionSelector 3,
+      AccelLineEdit 4, UrlLabel 4,
+      MatGui::MaterialTreeWidget 6,
+      MatGui::ImageLabel 2,
+      QtColorPicker 2, SqueezeLabel
+      2, ConstraintView, ElementView,
+      EditTableView, StatefulLabel 2,
+      ExpressionTextEdit 2,
+      PrefCheckableGroupBox 1
+
+Every class reaches a model or a container through its base:
+`QToolBox` is a `QFrame` (its pages walked, the tab semantics lost),
+`MaterialTreeWidget` and `ActionSelector` are `QWidget` composites
+walked through to the real views and buttons inside them,
+`ImageLabel` a `QLabel`.  Only a custom-painted leaf takes the
+picture fallback.  Beyond the .ui files, the code-built widgets of
+the 90 dialog units and the 109 Python `showDialog` sites use the same
+classes (7.12's corpus), and Sketcher's constraint and element lists
+put custom item widgets in a list (`setItemWidget`), which reflect as
+their cell text -- the 7.12 outlier, unchanged.
+
+**The design.**
+
+- **Root and ids.**  One adopted list object `panel` (as `toolbars`
+  is), a `Fw::QDialog` model `panel:<n>` per shown `TaskDialog` (`n` a
+  counter; `windowTitle` from the dialog, `standardButtons` from
+  `getStandardButtons()`, the button box's clicks crossing as the
+  dialog's `accept`/`reject`/`clicked(id)` requests, answered by
+  `Control().accept()`/`reject()`/the dialog's `clicked`), holding one
+  `QGroupBox` model per `TaskBox` with `qtClass`
+  `Gui::TaskView::TaskBox`, `title` = `headerText`, `checkable` =
+  `expandable`, `checked` = expanded (`toggledExpansion` both ways),
+  the icon by name where the box has one; under it the walked
+  content.  Widgets get `pw:<n>`.  Ids are minted per instance and
+  never reused, so a client that missed a `close` cannot write into
+  a stranger.
+- **The walk.**  Depth first from each `TaskBox`'s content widget:
+  for a `QWidget` whose chain `classTable()` answers, `createWidget`
+  with the real class name as `qtClass`, `View::bind`, adopt; then
+  its `layout()` as a `Fw::Layout` of the same kind (`QVBoxLayout`/
+  `QHBoxLayout`/`QGridLayout`/`QFormLayout` -> `VBox`/`HBox`/`Grid`/
+  `Form`; `QGridLayout::getItemPosition` and
+  `QFormLayout::getItemPosition` for `pos`; `QSpacerItem` ->
+  `addSpacer` with its policies; stretch and spacing; nested layouts
+  recursively; margins and spacing read), the layout's widgets walked
+  as the layout places them; a child no layout holds (a container
+  built by hand, `QScrollArea::widget()`, a tab or stack page,
+  `QSplitter` children) walked as a child with its geometry in the
+  bag.  A `QWidget` whose chain answers nothing and that has children
+  is a container (a plain `Widget`, walked through); one with no
+  children is a LEAF the walker does not understand: the picture
+  fallback.  Hidden widgets are walked and sent with `visible` false
+  (a stack's other pages exist for the client to switch to).
+- **The watch** -- what `bind` does not do.  `bind` reads once and
+  hears the user's edits; a panel then drives its own widgets from
+  code (a label's text after a recompute, a group enabled by a check
+  box, a combo refilled), and 39 of a `QWidget`'s 43 writable
+  properties carry NO notify signal (`enabled`, `visible`, `toolTip`,
+  the geometry, `QLabel::text` among them; measured through PySide's
+  meta-objects, 2026-09-10).  Rather than a table of notify signals
+  per class, the mirror re-reads on the widget's own evidence: an
+  event filter on every mirrored widget marks it dirty on `Paint`,
+  `EnabledChange`, `Show`, `Hide`, `ToolTipChange`, `FontChange`,
+  `StyleChange`, `LanguageChange`, `Resize`; a 0 ms flush re-runs
+  the meta-object read of the dirty widgets' bag keys and writes ONLY
+  the keys whose value differs from the bag, as `Source::Backend`
+  (the fan-out sends them; the binder's own `apply` is skipped by
+  identity).  A widget that changed while hidden repaints on `Show`
+  and is caught then, which is the right time for a mirror.  Cost:
+  a task panel holds 50 to 200 widgets with about ten keys each; a
+  re-read is a meta-object property read per key, microseconds per
+  widget, once per repaint burst -- to be measured on
+  `TaskPadParameters` and Draft's `task_orthoarray` as the first
+  number (sec 8).
+- **The structure watch.**  `ChildAdded`/`ChildRemoved` (on the next
+  tick: at `ChildAdded` the child is a bare `QObject` still under
+  construction, a known Qt trap) and `LayoutRequest` on a mirrored
+  container schedule a re-walk of that subtree, diffed against the
+  real -> model map: new widgets adopted, gone widgets released,
+  moved ones re-placed (`notifyLayout`).  `destroyed` on any mirrored
+  widget releases its model (the binder's `QPointer` goes null on its
+  own).  `signalRemoveDialog` and `closedDialog` release the panel.
+- **The input semantics** the setters do not give.  `setText` fires
+  `textChanged`, not `textEdited` or `editingFinished`, and panels
+  connect the latter two.  A client's `text` write on a line edit
+  therefore goes `setText` then the `textEdited(text)` signal (public
+  since Qt 5, emitted by the mirror), and a `custom` `editingFinished`
+  / `returnPressed` request replays the key (Return through
+  `QApplication::sendEvent`, 8.7's primitive) so the widget's own
+  handling runs.  `click` on a button is `QAbstractButton::click()`
+  (the existing `requested` path).  Focus requests `setFocus`.  Item
+  view edits go through the real model's `setData` (the existing
+  `applyItemOp`), selection through the selection model.
+- **Item views, reflected.**  `initItems` today assumes the model
+  owns the rows; a mirrored view's rows are the panel's.  A REFLECT
+  mode of `Items`: ids minted for the real model's existing rows
+  (`QPersistentModelIndex` per id), the row tree sent as one
+  `snapshot()` at adoption, then `rowsInserted`/`rowsRemoved`/
+  `rowsMoved`/`modelReset`/`layoutChanged` and the existing
+  `dataChanged` kept as item ops.  Cells read the roles `ItemCell`
+  has (text, icon by name where the decoration is a named pixmap,
+  else skipped, tool tip, check state, flags, colors, font bold,
+  alignment).  A `setItemWidget` cell reflects as its text.
+- **The picture fallback.**  A leaf with no model becomes a `QLabel`
+  model with `qtClass` the real class and a `pixmap` key holding an
+  image id `img:<sha1 of the PNG>`; the client fetches it once
+  through a new `widgets.image {id}` op (base64 PNG, a sibling of
+  `widgets.icon`), the mirror re-grabs (`QWidget::grab()`) on the
+  widget's `Paint`, coalesced with the flush, and sends a new id only
+  when the bytes changed.  Quotas: a size cap per grab (the device
+  pixel ratio ignored, 1x), a rate cap per widget (a blinking caret
+  in a custom editor would otherwise stream at the blink rate), a
+  count cap per panel.  Mouse input to a picture is a `custom`
+  `mouse(type, x, y, buttons)` request replayed as a `QMouseEvent`
+  -- the `EventRelay` of `watchEvents` reversed -- third stage,
+  optional; a picture is display first.
+- **Nested modals.**  A panel's slot may `exec()` a `QMessageBox`, a
+  `QFileDialog` or its own `QDialog`; the nested loop keeps serving
+  the socket, so the stream stays up, but the client sees nothing.
+  Third stage: an application-wide event filter on `Show` of a
+  top-level `QDialog` mirrors it as a root `dialog:<n>` by the same
+  walk (a `QMessageBox`'s buttons and text are ordinary widgets; a
+  non-native `QFileDialog`'s are too; the platform's native file
+  dialog is not a QWidget tree and is the client's own path picker,
+  the `FileChooser` model, ThinClient's side).  Under the shared
+  session (8.11) one modal blocks every client, which is the ruling's
+  own consequence, not the mirror's.
+- **What a client may write.**  A panel write is a write to a real
+  widget, and lands in the document through the panel's slots with
+  the desktop user's power: the position of 8.11 (one shared session,
+  the client IS the desktop user) already, and the command allowlist
+  of 7.18's `runCommandOp` stays the gate for tool bar clicks.  New
+  here: preference `Preferences/Fw/PanelMirror` (`all` | `none` | a
+  list of dialog class names), default `all` under the shared
+  session; a per-client grant is 8.12's multi-user work, not this.
+- **Subscription.**  `widgets.subscribe` gains `panels` beside
+  `toolbars` and `all`; `wants()` answers a `panels` subscriber for
+  the mirror's ids; the mirror starts with the first subscriber and
+  stops with the last (7.18's `checkMirror`), and a subscriber that
+  arrives while a panel is up gets the snapshot in `snapshotOrder`.
+- **The DOM side** is G7's (docs/ThinClient.md, the ThinClient
+  session): the class set from `widget-models.json` (7.18 (c)),
+  `VBox`/`HBox`/`Grid`/`Form` as flex and CSS grid, the panel
+  container with the box headers and the dialog buttons, an image
+  view for the picture model, item views over the row tree.
+  7.12's number, 1.5 to 2k of TypeScript, stands; nothing in this
+  section is spent on it.
+
+**Stages and gates.**
+
+    M1  the walk, bind, adopt, layout, the TaskBox root, the Control
+        hook, the watch and the structure watch, the input semantics,
+        the `panels` subscription.  Gate: gtest `PanelMirror` in
+        `FormWidgets.cpp` (a uic'd form under a TaskBox mirrored:
+        every named child a model of the expected class, the layout
+        spec matches the .ui, a `setText` from code arrives as an
+        update, a client `text` write fires the form's `textEdited`
+        slot, a hidden page shows on the stack's `currentIndex`);
+        GUI gate `SandboxPanelMirror.py` beside `SandboxNative`: Pad's
+        panel opened, `panel:1` snapshotted with its
+        `QuantitySpinBox`, `Length` written through `applyUpdate` and
+        read back from `Pad.Length`, then Draft's `task_orthoarray`
+        natively and CAM's `TaskPanel` (the `.ui`-driven op panel)
+        -- three workbenches, no edit to any.
+    M2  item views reflected (Sketcher's constraint list, BIM's
+        QStandardItem panels, CAM's tool table); the picture
+        fallback with `widgets.image`.  Gate: the constraint list's
+        rows and checks arrive and a check box write reaches the
+        sketch; a `QSvgWidget` arrives as one image and re-sends on
+        change only.
+    M3  nested modals; mouse replay into pictures.  Gate: a
+        `QMessageBox` from a panel slot arrives as `dialog:1` and its
+        button click returns the exec code.
+    M4  the measurement (sec 8): the re-read cost per repaint burst
+        on the two panels above, the bytes per second of a panel at
+        rest and while typing, against 7.18's tool bar numbers.
+
+**Cost** (lines, new; the binder, the store and the stream are reused):
+
+    the walk: class chain, bind, adopt, layout kinds, TaskBox root,
+      the Control hook, ids, the `panels` subscription             600-800
+    the watch: the event filter, the re-read/diff flush, the
+      structure re-walk, releases                                   350-450
+    input semantics: the edit signals, key replay, focus            150-200
+    item views, reflect mode                                        350-450
+    the picture fallback, `widgets.image`, quotas                   200-300
+    nested modals (M3)                                              200-300
+    tests: gtest, the GUI gate, the CAM and Draft panels            500-700
+    total                                                           2.4-3.2k, plus tests
+
+Rough scale at sec 7's pace: M1 one to two sessions, M2 one, M3 and
+M4 one.  Against the alternatives: the shim route (sec 11 item 5,
+route A) costs a native op binding of the same order PLUS an edit per
+residue file per workbench and gives no C++ panel; the H2 and H3
+ports (7.12) are 10 to 15k touched for the desktop's Qt-free future
+and now optional for the browser.
+
+**Limits, stated.**  Desktop-with-Qt hosts only.  A custom-painted
+leaf is a picture, not a control, until M3's replay.  A panel's
+keyboard shortcuts and event filters see replayed keys only where the
+mirror replays them (Return, Escape, Tab); a client's typing lands as
+`text` writes, not keystrokes.  Widgets a panel creates and shows
+OUTSIDE the task view (a floating tool window) are M3's modal walk or
+nothing.  Every upstream change to a panel is picked up by the walk
+for free -- the retire-on-break cost of the frozen guest path (1.7)
+does not exist here, which is the second reason the route won.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -5356,12 +5679,16 @@ push the user's call).
    cells, 8.3).  Measured by the existing bench and the 10k-cell sheet
    projection.  A bench of one shape program routed against native
    decides whether anything more is needed.
-5. **The browser's task panel** -- G7, the DOM walker over the widget
-   layer (7.12), and the `freecad.widgets` shim's op call bound
-   natively so Draft's panels run on the host without pyodide; the
-   toolkit gates (`SandboxForms`, `SandboxPanels`, `SandboxWidgets`,
-   `SandboxNative`) gain a native-mode twin.  Not a sandbox item; listed
-   because the code is shared.
+5. **The browser's task panel** -- RULED 2026-09-10 ("B is good"):
+   the PANEL MIRROR of 7.19 -- the desktop's real task panel walked
+   into models and streamed, no edit to any workbench, C++ panels
+   included -- with G7, the DOM view over the widget layer (7.12,
+   the ThinClient session's).  The `freecad.widgets` shim's op call
+   bound natively (route A: Draft's panels on the host without
+   pyodide, the toolkit gates' native-mode twin) drops behind it and
+   stays the answer for the tier with no Qt.  H2 and H3 (7.12) are
+   optional for the browser from here, kept for the Qt-free desktop
+   backend.  Not a sandbox item; listed because the code is shared.
 6. **An authoring panel for the document library** (item 2's carrier),
    on the widget layer -- after 5.
 
