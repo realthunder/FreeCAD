@@ -4779,20 +4779,167 @@ touches itself.  The dependency edge: `ImportStatement` and
 `<library>.Text` when the owner's document holds a library of that
 `Module` -- the DAG orders the library before its consumers, a
 `Text` edit recomputes them, and `getDeps` reports it in the pack;
-a name that is no library resolves to nothing, as today.  Same
-document only: a program that wants another file's library copies
-it, which is FeatureScript's rule too and keeps `doc.foreign` out of
-the import path.  The principal: `DocumentHashBuilder` collects
+a name that is no library resolves to nothing, as today.
+
+**Across files** **[RULED 2026-09-10: "why restrict same-document
+library, that kind of defeats the purpose of having a library if it
+can only be used in the same document, so it needs to be copied in
+to use?"]**.  The first draft of this section said same-document
+only and called it FeatureScript's rule; it is not -- a Feature
+Studio imports other documents' studios pinned to a version of that
+document, and a pin is what makes copying unnecessary.  What the
+wall was protecting does not need it: privilege, because a document
+principal cannot escalate (geometry calls are ALLOW for everyone,
+a foreign read prompts, GUI and host imports are DENY or PROMPT,
+the budget bounds the cost), so a hostile library gains nothing a
+program typed into the importer could not do, and the guest's
+per-principal module key already attributes the code to its origin
+(1.5's taint rule); and integrity, because a library file changing
+under its consumers is a supply-chain problem, answered by a pin,
+not a wall.  So a library in another file is reached the way this
+fork reaches another file's objects: through an external link.
+`App::ExpressionLibrary` gains `Source` (`App::PropertyXLink`, a
+library object in another document) and `Pinned` (`PropertyBool`)
+with `Snapshot` (`PropertyString`).  A LINKED library proxies the
+source's `Text` and takes its own `Module` name (the consumer's
+choice; relabeling is local); the link machinery loads the other
+file, follows a rename, and reports a missing file as any external
+link does; the one `doc.foreign` prompt happens when the link is
+made, the existing cross-document wall, and never per evaluation.
+LIVE (`Pinned` false): the consumers follow the source; an edit
+there recomputes here, the dependency edge of the previous
+paragraph crossing the link (consumer -> the linked library -> the
+source library's `Text`, through the XLink's own out-list).  PINNED:
+`Snapshot` holds the text and `Surface` the version at the pin; the
+file opens and recomputes with the source file absent, which is what
+makes it shareable; unpinning takes the source's current text, and
+the editor shows the diff.  Copying a library in is the degenerate
+case of a pin with the link dropped.  In the shared guest a module
+is keyed by the principal of the document whose text it IS -- the
+source's for a live link, the consumer's for a pin (the snapshot's
+text joins the consumer's hash) -- so ten consumers of one source
+build the module once.  The principal: `DocumentHashBuilder` collects
 expression containers only (`ExpressionSecurityRuntime.cpp:318-
 340`); the collector gains the libraries' `Text` through the unused
 `addScript(moduleClass, code)` (`ExpressionSecurity.cpp:386`), so a
 tampered library voids the document's grants exactly as a tampered
-expression does.  The native twin, for the parity rig only: native
-`ImportModules::getModule` resolves a same-document library by
-evaluating its `Text` in a native frame and wrapping the frame as a
-module -- the path the gate compares against, with enforcement off
-as the corpus rig runs; under enforcement it never runs, by fact (1).
-Python: `FreeCAD.ExpressionSandbox.libraries(doc)` for tests.
+expression does; a pinned snapshot joins the consumer's hash, a
+live link's text joins the source's, and only the source's.  The
+native twin, for the parity rig only: native `ImportModules::
+getModule` resolves a library the same way -- own, linked live, or
+pinned -- by evaluating its text in a native frame and wrapping the
+frame as a module: the path the gate compares against, with
+enforcement off as the corpus rig runs; under enforcement it never
+runs, by fact (1).  Python: `FreeCAD.ExpressionSandbox.
+libraries(doc)` for tests.
+
+**A worked example: how a library is stored, entered and called.**
+
+The library.  A document `Brackets.FCStd` holds one object, `Lib`,
+of type `App::ExpressionLibrary`, with `Module = "brackets"` and
+this `Text` (the engine's language; it is what the inherited text
+editor shows when the object is double-clicked):
+
+    import Part
+
+    hole_d = 4mm
+
+    def bracket(L, W, T):
+        base = Part.makeBox(L, W, T)
+        wall = Part.makeBox(T, W, L)
+        return base.fuse(wall).removeSplitter()
+
+    def holes(shape, d, count, pitch, z):
+        for i in range(count):
+            shape = shape.cut(Part.makeCylinder(d / 2, z,
+                                                vector(10mm + i * pitch, 10mm, 0)))
+        return shape
+
+How it is stored.  A property, nothing else: in the file's
+`Document.xml`, the object's `Text` is a `PropertyString` holding
+the source verbatim, beside `Module`, `Surface` (the version stamp
+of (b), say `1`) and, for a linked library, `Source` (the XLink's
+file and object), `Pinned` and `Snapshot`:
+
+    <Object type="App::ExpressionLibrary" name="Lib">
+      <Properties>
+        <Property name="Text" type="App::PropertyString">
+          <String value="import Part&#10;&#10;hole_d = 4mm&#10;..."/>
+        </Property>
+        <Property name="Module" type="App::PropertyString">
+          <String value="brackets"/>
+        </Property>
+        <Property name="Surface" type="App::PropertyString">
+          <String value="1"/>
+        </Property>
+      </Properties>
+    </Object>
+
+The entry point.  There is none in the `main` sense.  The text is a
+module: its statements run ONCE, top to bottom, in a fresh frame in
+the document's guest, the first time any expression of that document
+imports `brackets` (the guest's import miss asks the host
+`lib.source {"name": "brackets"}`, the host answers with the text
+of the library whose `Module` matches in the requesting principal's
+document, and the guest binds the frame as the module).  What the
+run leaves in the frame -- `bracket`, `holes`, `hole_d`, and `Part`
+-- is the library's API.  A module-level statement can compute (a
+table of sizes, a constant from a formula) but cannot act: no I/O,
+no document writes, no GUI, by the catalog.  The run repeats only
+when the text changes (the library's `onChanged(Text)` bumps its
+revision and drops the module with `lib.drop`; the next import
+rebuilds it) or after a guest reset.
+
+How other code invokes it, in the same file.  A `Part::Feature`
+named `Bracket` with three properties the user added -- `Length`
+40 mm, `Width` 20 mm, `Thick` 5 mm -- and this expression bound to
+its `Shape` (typed in `DlgExpressionInput`, multi-line; stored in the
+object's `ExpressionEngine` property as `<Expression path="Shape"
+expression="..."/>`):
+
+    from brackets import bracket, holes
+    import brackets
+    holes(bracket(Length, Width, Thick), brackets.hole_d, 3, 12mm, Thick)
+
+On recompute the engine evaluates this with a call frame
+(`PropertyExpressionEngine.cpp:851`), routed: the `from` statement
+resolves through the module registry, the two calls run in the
+guest, each `Part.*` call crosses as `geom.call` with handle
+arguments, the final shape comes back as a handle and lands in
+`Shape` through `setPyObject`.  `Length` changed in the property
+editor -> `Bracket` recomputes.  `Lib.Text` edited -> `Bracket`
+recomputes, because `from brackets import` gave `Bracket` a
+dependency on `Lib.Text`.  A spreadsheet cell does the same on one
+line, `;` separating simple statements:
+
+    =import brackets; brackets.bracket(A1, A2, A3).Volume
+
+and a second feature reuses the library with a different body:
+
+    from brackets import holes
+    holes(Part.makeBox(Length, Width, Thick), 6mm, 2, 20mm, Thick)
+
+(`Part` here is bound by the library's own `import Part` only inside
+the library; the consumer names it itself with `import Part` on a
+line above, or writes `brackets.Part` -- the sizing keeps modules
+honest rather than injecting names.)
+
+How another file invokes it.  `Assembly.FCStd` adds its own
+`App::ExpressionLibrary`, `LibB`, with `Source = Brackets.FCStd#Lib`
+(the XLink, made through the property editor's link picker or
+`LibB.Source = Brackets.getObject("Lib")` in the console, the one
+`doc.foreign` prompt answered then), `Module = "brackets"` (or any
+name the assembly prefers), `Pinned = true`, and `Snapshot` filled
+from the source at that moment.  Every expression in `Assembly.FCStd`
+imports `brackets` exactly as above; the file opens on a machine that
+has never seen `Brackets.FCStd`, because the snapshot is the text.
+Unpin, and the assembly follows the source: with `Brackets.FCStd`
+open, an edit to `Lib.Text` recomputes the assembly's brackets;
+absent, the link reports its missing file as an external link does
+and the consumers' expressions fail with "no library brackets" until
+it is found.  Live or pinned, the guest keys the module by the
+principal whose text it is, so the assembly and the source document
+share one built module when both are open on a live link.
 
 **(d) Per-document guests: NO.**  335 MB and 2.5 s per guest against
 the 1.5 s the item expected, and a reset that keeps about 100 MB:
@@ -4813,7 +4960,11 @@ byte-identical to the same file recomputed native with enforcement
 off; a parameter change recomputes to the native answer; save,
 reopen, equal; the library's `Text` edited -> consumers recompute;
 the `Text` tampered on disk -> a new principal, the file's grants
-gone.  A gtest `ExpressionImageHost.programs` for the function
+gone; a fourth fixture pair, the bracket library in one file and a
+consumer in another, opened linked live (edit there, recompute
+here), then pinned and opened with the source file absent (the
+snapshot serves, the shape equal), then unpinned with the source
+back (the diff shown, the text taken).  A gtest `ExpressionImageHost.programs` for the function
 objects (a `def` evaluated routed, called, passed as a value, a
 lambda in a comprehension) and the surface version.  The corpus
 gate stays green with the three fixtures added to its list.  The
@@ -4829,8 +4980,9 @@ one shape program.
         expression routed = native.
     D2  App::ExpressionLibrary, the registry and lib.source /
         lib.drop, the dependency edge, the principal hash, the
-        native twin, libraries().  Gate: SandboxProgram's library
-        half.
+        native twin, libraries(); the XLink Source, Pinned and
+        Snapshot, the cross-link edge.  Gate: SandboxProgram's
+        library half, the cross-file pair included.
     D3  the three fixtures, SandboxProgram complete, the corpus list,
         the bench, the tutorial text in docs.
     D4  memory: a ceiling per guest (V8's ResourceConstraints on the
@@ -4852,10 +5004,12 @@ one shape program.
         the principal hash                                                ~20
         the native twin                                                80-120
         libraries(), Python                                               ~40
+        the linked library: Source, Pinned, Snapshot, the cross-link
+          edge, the relabel, the missing-file report                  150-250
     D3  the three programs, twice each                                  ~150
         SandboxProgram, the gtest, the corpus list                    350-500
     D4  the ceiling and the measurement                               200-400
-    total                                                             1.5-2.3k
+    total                                                             1.7-2.5k
 
 At sec 7's pace: D1 one session, D2 one to two, D3 one, D4 one.
 
@@ -4863,8 +5017,10 @@ At sec 7's pace: D1 one session, D2 one to two, D3 one, D4 one.
 the guest asked for runs on the host to completion, so a fillet that
 takes a minute takes a minute -- the cost side of "the host always
 recomputes" (1.2), and the multi-process direction's to bound.
-Routed-only under enforcement, by design.  Same-document libraries
-only.  No classes in the language.  A program sees the document
+Routed-only under enforcement, by design.  A library in another
+file is reached by link, live or pinned, never by name alone (the
+module name is the consumer's; the file is the link's).  No classes
+in the language.  A program sees the document
 through the pack as an expression does: its own object's properties
 and what the identifiers resolve; it does not create document
 objects (the catalog has no such row, and 1.5's prior art has no
@@ -5904,9 +6060,11 @@ push the user's call).
    carrier is `App::ExpressionLibrary` on `App::TextDocument`, served
    into the guest through the import miss, namespaced per principal,
    with a dependency edge from `import` and the source in the
-   principal hash; per-document guests are OUT on the measurement
-   (2.5 s, 335 MB, resets retain ~100 MB); stages D1-D4, 1.5-2.3k
-   lines.  As asked: (a) the example set: two or three document-carried programs (a
+   principal hash; a library in another file is reached by an XLink,
+   live or pinned with a snapshot (RULED 2026-09-10 against a
+   same-document rule); per-document guests are OUT on the
+   measurement (2.5 s, 335 MB, resets retain ~100 MB); stages D1-D4,
+   1.7-2.5k lines.  As asked: (a) the example set: two or three document-carried programs (a
    parametric bracket, a stair) written in the engine's language,
    generating shapes, run routed and native; (b) the geometry surface
    audit against them -- the constructive set (`make*`, extrude,
