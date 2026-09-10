@@ -37,6 +37,11 @@ import sys
 import FreeCAD
 import FreeCADGui
 
+# An explicitly EMPTY FC_RENDER_BACKEND means "leave the startup choice
+# alone", which is the only way to photograph the PLATFORM DEFAULT --
+# RenderParams::selectRenderPath() picks it at startup and naming a
+# backend here overwrites it. Unset still means Vulkan, so every caller
+# that passes a name keeps working.
 BACKEND = os.environ.get("FC_RENDER_BACKEND", "bgfx - Vulkan")
 OUT = os.environ.get("FC_PROBE_OUT", "")
 READY = os.environ.get("FC_PROBE_READY", "")
@@ -62,7 +67,8 @@ def say(line):
 
 
 p = FreeCAD.ParamGet(RENDER)
-p.SetString("Type", BACKEND)
+if BACKEND:
+    p.SetString("Type", BACKEND)
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt(
     "RenderCache", 3)
 # The verify line rides on the frame report, which only prints under
@@ -202,7 +208,10 @@ def stage():
         v.redraw()
         v.waitFrameComplete()
 
-    say("backend   %s" % BACKEND)
+    # The parameter, not BACKEND: with BACKEND empty this is the whole
+    # point of the run, and with it set the two agree anyway.
+    say("backend   %s%s" % (p.GetString("Type"),
+                            "" if BACKEND else "  (startup default)"))
     say("readback  FC_BGFX_READBACK=%s verify=%s"
         % (os.environ.get("FC_BGFX_READBACK", "(default 1)"),
            os.environ.get("FC_BGFX_READBACK_VERIFY", "(off)")))

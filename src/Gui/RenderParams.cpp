@@ -6862,8 +6862,55 @@ std::string RenderParams::preferredType()
     // without the engine says "Default" instead of asking for a type
     // nobody can create, and a stored name from another build cannot
     // survive into this one.
+    //
+    // Among the engine's own backends the list below decides, most
+    // preferred first. It has to be said here because the registered
+    // names arrive alphabetically -- RendererFactory::types() walks a
+    // std::map -- and an alphabetical accident is not a choice.
+    //
+    // Windows leads with Direct3D 11, and on measurement rather than
+    // taste: docs/RenderEngine.md 7.10 ("The composite priced") prices
+    // the readback composite at +2.17 ms a frame on it against +7.09 on
+    // Direct3D 12 and +7.61 on Vulkan, which puts it 8% ahead of both
+    // while submission itself is a three-way tie -- and all three spend
+    // about an eighth of what OpenGL spends to issue the same draws.
+    //
+    // macOS leads with Metal because nothing else can run this renderer
+    // there at all (Apple caps the compatibility profile Coin needs at
+    // GL 2.1). Everywhere else OpenGL still leads: Vulkan is registered
+    // only when asked for, because no one has yet looked at a session on
+    // it, and an unverified default is a worse answer than an opt-in.
+    // See BGFXRendererLibP's constructor, which is where each backend's
+    // availability is decided.
+    //
+    // A name that did not register is skipped, so this is a preference
+    // and not a requirement: a benchmark leg that registers one backend
+    // and names it through this group's Type key still gets it.
+    static const char *const order[] = {
+#if defined(FC_OS_WIN32)
+        "bgfx - Direct3D11",
+        "bgfx - Direct3D12",
+        "bgfx - Vulkan",
+        "bgfx - OpenGL",
+#elif defined(FC_OS_MACOSX)
+        "bgfx - Metal",
+        "bgfx - OpenGL",
+#else
+        "bgfx - OpenGL",
+        "bgfx - Vulkan",
+#endif
+    };
+    const std::vector<std::string> types = Render::RendererFactory::types();
+    for (const char *name : order) {
+        for (const auto &t : types) {
+            if (t == name)
+                return t;
+        }
+    }
+    // Anything the list does not name -- a backend added to the engine
+    // and not to it, or another engine's type entirely.
     std::string type;
-    for (const auto &t : Render::RendererFactory::types()) {
+    for (const auto &t : types) {
         if (boost::starts_with(t, "bgfx")) {
             return t;
         }
