@@ -71,6 +71,16 @@ protected:
     {
         return QDir::cleanPath(user.getLocalPath(QString::fromUtf8(path))).toStdString();
     }
+
+    /// What getRelativePath does to a path it strips nothing else from: it
+    /// removes a leading '/' IF THERE IS ONE (Library.cpp, "Remove any
+    /// leading '/'"). Spelling that as substr(1) assumes there always is,
+    /// which holds wherever QDir::tempPath() is "/var/..." and does not on
+    /// Windows, where it is "C:/Users/.../Temp" and the 'C' gets eaten.
+    static std::string withoutLeadingSlash(const std::string& path)
+    {
+        return (!path.empty() && path.front() == '/') ? path.substr(1) : path;
+    }
 };
 
 TEST_F(TestLibraryPaths, relativePathStripsTheNameAsAWholeComponent)
@@ -106,7 +116,7 @@ TEST_F(TestLibraryPaths, relativePathKeepsADirectoryThatMerelyStartsWithTheRoot)
 {
     // A sibling directory whose name begins with the library's own
     const std::string sibling = root() + "2/Steel.FCMat";
-    EXPECT_EQ(relative(sibling.c_str()), sibling.substr(1));
+    EXPECT_EQ(relative(sibling.c_str()), withoutLeadingSlash(sibling));
 }
 
 /// The test the three other callers make through Library::isPathPrefix:
