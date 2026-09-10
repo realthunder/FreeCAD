@@ -5985,6 +5985,12 @@ Command line: `--grant <permission>[:<target>]`, `--policy <file>`.
 
 **Re-aimed 2026-09-08 (1.2).**  In order; each step ships alone.
 
+**Ruled 2026-09-10, the build order of the two sizings:** the panel
+mirror FIRST (7.19, M1 to M3, item 5 -- the ThinClient session told
+on 2026-09-10 and asked for its panel requirements, the DOM view to
+go in parallel against the panels the store already streams), and
+only when it is done the document program (7.17, D1 to D4, item 2).
+
 **Ruled 2026-09-10, ahead of item 2:** first merge `origin/RemoteEdit`
 (the ThinClient shared-session branch, cut from `LinkVibe` at
 `48378dec12`; docs/ThinClient.md 8.11/8.12 there) INTO `SecurePython`
