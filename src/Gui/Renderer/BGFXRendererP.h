@@ -1818,9 +1818,12 @@ public:
         // Registering it is the WHOLE change, because
         // RenderParams::selectRenderPath() already decides the session's
         // render path at startup (Application.cpp) and its
-        // preferredType() takes the first registered backend named
-        // "bgfx*". typeMap is sorted, and "bgfx - Metal" sorts before
-        // "bgfx - OpenGL", so Metal wins here the moment it exists.
+        // preferredType() names "bgfx - Metal" first on macOS, skipping
+        // any name that did not register -- so Metal wins here the
+        // moment it exists. (Until 2026-09-10 preferredType() took the
+        // first registered "bgfx*" name and Metal won by sorting before
+        // "bgfx - OpenGL" in the map. Same outcome, but an alphabetical
+        // accident rather than a choice, which is why it is now stated.)
         // That also means macOS was never a different POLICY from the
         // other platforms -- they have defaulted to bgfx all along; this
         // box was simply the one whose only registered backend could not
