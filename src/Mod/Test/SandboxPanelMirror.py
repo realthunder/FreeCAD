@@ -26,7 +26,9 @@ and streamed, no edit to any workbench; a client's write landing in the
 document through the panel's own slots, the read-back reaching the
 writer, the dialog closed through the root.  M2: Sketcher's constraint
 list reflected row by row, a client's check reaching the sketch; a
-QSvgWidget as one picture by image id, re-sent on change only.  Needs
+QSvgWidget as one picture by image id, re-sent on change only.  M3: a
+QMessageBox exec'd from a panel slot arrives as a `dialog:<n>` root and
+a client's button click is the exec code.  Needs
 the GUI and no guest: run it through scripts/sandbox-gui-gate.py under
 Xvfb.  Skips headless."""
 
@@ -111,6 +113,7 @@ class SandboxPanelMirrorTest(unittest.TestCase):
         self.assertTrue(reply["ok"], reply)
         self.assertIn("panel", reply)
         self.assertIsNone(reply["panel"])
+        self.assertEqual(reply.get("dialogs"), [])
         self.spin()
         self.FW.pushed()
         return reply
@@ -482,3 +485,115 @@ class SandboxPanelMirrorTest(unittest.TestCase):
         self.spin()
         self.assertIsNone(self.FW.panelId())
 
+    def test_nested_messagebox(self):
+        """A QMessageBox exec'd from a panel slot (M3): while the slot
+        blocks in the nested loop the box arrives as a `dialog:<n>` root
+        with the real class, its text as Qt's own label, its buttons by
+        flag; a client's Yes through the root returns the exec code to
+        the slot, the root's close reaches the writer, the panel stays."""
+        Gui = self.Gui
+        from PySide import QtCore, QtWidgets
+
+        form = QtWidgets.QWidget()
+        form.setObjectName("askForm")
+        form.setWindowTitle("Ask")
+        lay = QtWidgets.QVBoxLayout(form)
+        button = QtWidgets.QPushButton("Ask", form)
+        button.setObjectName("askButton")
+        lay.addWidget(button)
+        result = {}
+        yes = 0x4000  # QMessageBox.Yes
+
+        def ask():
+            box = QtWidgets.QMessageBox(
+                QtWidgets.QMessageBox.Icon.Question,
+                "Really",
+                "Proceed?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                Gui.getMainWindow(),
+            )
+            box.setObjectName("askBox")
+            result["code"] = box.exec()
+
+        button.clicked.connect(ask)
+
+        class Panel:
+            def __init__(self, form):
+                self.form = form
+
+        self.subscribe()
+        Gui.Control.showDialog(Panel(form))
+        pid, root = self.open_panel()
+        bid = self.named("askButton")
+        self.assertIsNotNone(bid)
+        seen = {}
+
+        def probe():
+            # inside the slot's exec loop: the walk's tick has run
+            try:
+                self.spin(30, 3)
+                ids = self.FW.dialogIds()
+                seen["ids"] = list(ids)
+                seen["active"] = self.FW.panelId()
+                if ids:
+                    snap = self.FW.snapshot(ids[0])
+                    seen["root"] = snap
+                    label = self.named("qt_msgbox_label")
+                    seen["label"] = self.FW.snapshot(label) if label else None
+                    seen["opens"] = [
+                        m["id"] for _, m in self.pushed(7) if m["method"] == "open"
+                    ]
+                    seen["buttons"] = sorted(
+                        self.FW.snapshot(i)["state"]["q_standardButton"]
+                        for i in self.FW.ids()
+                        if i.startswith("pw:")
+                        and self.FW.snapshot(i)["model"] == "QPushButtonModel"
+                        and self.FW.snapshot(i)["state"].get("q_standardButton")
+                    )
+                    self.FW.pushed()
+                    seen["reply"] = self.control(
+                        {
+                            "op": "widgets.custom",
+                            "target": ids[0],
+                            "content": {"event": "clicked", "args": [yes]},
+                        },
+                        7,
+                    )
+            except Exception as e:  # reported after the slot returns
+                seen["error"] = repr(e)
+
+        QtCore.QTimer.singleShot(80, probe)
+        self.FW.pushed()
+        reply = self.control(
+            {"op": "widgets.custom", "target": bid, "content": {"event": "click"}}, 7
+        )
+        self.assertTrue(reply["ok"], reply)
+        self.spin()
+        self.assertNotIn("error", seen, seen)
+        self.assertEqual(result.get("code"), yes)
+        self.assertEqual(len(seen.get("ids", [])), 1, seen)
+        did = seen["ids"][0]
+        self.assertTrue(did.startswith("dialog:"), did)
+        self.assertEqual(seen["active"], pid)
+        self.assertEqual(seen["root"]["model"], "QDialogModel")
+        self.assertEqual(seen["root"]["qtClass"], "QMessageBox")
+        self.assertEqual(seen["root"]["state"]["q_windowTitle"], "Really")
+        self.assertTrue(seen["root"]["state"]["q_modal"])
+        self.assertEqual(seen["root"]["parent"], "IPY_MODEL_panel")
+        self.assertIsNotNone(seen["label"], seen)
+        self.assertEqual(seen["label"]["state"]["q_text"], "Proceed?")
+        self.assertIn(yes, seen["buttons"])
+        self.assertIn(0x10000, seen["buttons"])  # No
+        self.assertEqual(seen["opens"][-1], did, seen["opens"])
+        self.assertTrue(seen["reply"]["ok"], seen["reply"])
+        # the close reached the writer, the box's widgets are gone, the
+        # panel is still up
+        closes = [m["id"] for _, m in self.pushed(7) if m["method"] == "close"]
+        self.assertIn(did, closes)
+        self.assertNotIn(pid, closes)
+        self.assertEqual(self.FW.dialogIds(), [])
+        self.assertFalse([i for i in self.FW.ids() if i.startswith("dialog:")])
+        self.assertIsNone(self.named("qt_msgbox_label"))
+        self.assertEqual(self.FW.panelId(), pid)
+        self.assertIsNotNone(self.named("askButton"))
+        self.close_through_root(pid, "reject")

@@ -21,6 +21,7 @@
 #include "PreCompiled.h"
 
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QLocale>
 #include <QTimer>
@@ -212,6 +213,12 @@ void Gui::installSceneWidgetOps()
         // dialog up is mirrored at once)
         const QString panel = Fw::PanelMirror::instance().panelId();
         reply[QLatin1String("panel")] = panel.isEmpty() ? QJsonValue() : QJsonValue(panel);
+        // and the top-level dialogs up (M3), in show order: a dialog a
+        // client subscribes under is mirrored at once too
+        QJsonArray dialogs;
+        for (const QString& did : Fw::PanelMirror::instance().dialogIds())
+            dialogs.append(did);
+        reply[QLatin1String("dialogs")] = dialogs;
         reply[QLatin1String("theme")] =
             getMainWindow() ? getMainWindow()->overrideIcons() : QString();
         reply[QLatin1String("locale")] = QLocale().name();

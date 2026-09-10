@@ -33,6 +33,9 @@
 #include <QTest>
 
 #include <QLabel>
+#include <QMessageBox>
+#include <QMouseEvent>
+#include <QWheelEvent>
 
 #include <App/Application.h>
 #include <App/Document.h>
@@ -40,6 +43,7 @@
 #include <App/ExpressionParser.h>
 #include <App/Placement.h>
 #include <App/PropertyUnits.h>
+#include <Base/Parameter.h>
 #include <src/App/InitApplication.h>
 
 #include "Gui/Camera.h"
@@ -81,12 +85,45 @@ public:
         setMinimumSize(40, 30);
     }
     QColor color = Qt::red;
+    /// the mouse it was given (M3: a client's pointer replayed)
+    struct Seen
+    {
+        QEvent::Type type;
+        QPoint pos;
+        Qt::MouseButton button;
+        Qt::MouseButtons buttons;
+        QPoint delta;
+    };
+    QList<Seen> events;
 
 protected:
     void paintEvent(QPaintEvent*) override
     {
         QPainter p(this);
         p.fillRect(rect(), color);
+    }
+    void mousePressEvent(QMouseEvent* e) override
+    {
+        record(e);
+    }
+    void mouseReleaseEvent(QMouseEvent* e) override
+    {
+        record(e);
+    }
+    void mouseMoveEvent(QMouseEvent* e) override
+    {
+        record(e);
+    }
+    void wheelEvent(QWheelEvent* e) override
+    {
+        events.append({e->type(), e->position().toPoint(), Qt::NoButton, e->buttons(),
+                       e->angleDelta()});
+    }
+
+private:
+    void record(QMouseEvent* e)
+    {
+        events.append({e->type(), e->position().toPoint(), e->button(), e->buttons(), QPoint()});
     }
 };
 
@@ -1919,6 +1956,244 @@ private Q_SLOTS:
         QCOMPARE(mirror.pictureCount(), 0);
         mirror.stop();
         QCOMPARE(store.count(), 0);
+    }
+
+    void test_panelMirrorDialogs()
+    {
+        // docs/Sandbox.md 7.19, M3: a top-level dialog shown while the
+        // mirror runs is a root `dialog:<n>` in the panel list, walked from
+        // the window (a message box's text and buttons are ordinary
+        // widgets), closed on its hide; a client's button click returns
+        // the exec code; a picture leaf takes the client's mouse back
+        Fw::Store& store = Fw::Store::instance();
+        store.reset();
+        Fw::PanelMirror& mirror = Fw::PanelMirror::instance();
+        QSignalSpy messages(&store, &Fw::Store::message);
+        auto named = [&store](const QString& name) -> Fw::Widget* {
+            for (const QString& id : store.ids()) {
+                Fw::Widget* w = store.object(id);
+                if (w && w->objectName() == name && id.startsWith(QLatin1String("pw:")))
+                    return w;
+            }
+            return nullptr;
+        };
+        auto dialogRoots = [&store]() {
+            QStringList out;
+            for (const QString& id : store.ids())
+                if (id.startsWith(QLatin1String("dialog:")))
+                    out.append(id);
+            return out;
+        };
+        auto closes = [&messages]() {
+            QStringList out;
+            for (int i = 0; i < messages.count(); ++i)
+                if (messages.at(i).at(1).toString() == QLatin1String("close"))
+                    out.append(messages.at(i).at(0).toString());
+            return out;
+        };
+        auto tick = []() {
+            QCoreApplication::processEvents();
+            QCoreApplication::processEvents();
+        };
+        auto custom = [&store](const QString& id, const char* event, const QVariantList& args) {
+            return store.applyCustom(id,
+                                     QVariantMap {{QStringLiteral("event"), QLatin1String(event)},
+                                                  {QStringLiteral("args"), args}},
+                                     7);
+        };
+
+        // a panel with a picture leaf, up first: the dialogs join it
+        auto hand = new QWidget;
+        auto vbox = new QVBoxLayout(hand);
+        auto painted = new PaintedLeaf(hand);
+        vbox->addWidget(painted);
+        auto box = new Gui::TaskView::TaskBox(QStringLiteral("Mouse"), true, nullptr);
+        box->groupLayout()->addWidget(hand);
+        QWidget host;
+        auto hostLay = new QVBoxLayout(&host);
+        hostLay->addWidget(box);
+        host.show();
+        tick();
+        mirror.show(QStringLiteral("MouseDialog"), {box}, nullptr);
+        const QString panelId = mirror.panelId();
+        QVERIFY(!panelId.isEmpty());
+        QVERIFY(mirror.isPicture(painted));
+        QCOMPARE(mirror.dialogCount(), 0);
+        QVERIFY(dialogRoots().isEmpty());
+        Fw::Widget* list = store.object(QStringLiteral("panel"));
+        QVERIFY(list);
+        QCOMPARE(list->layout()->count(), 1);
+
+        // a plain dialog shown (not exec'd, so the test goes on): a root of
+        // its own on the next tick, its label and buttons walked, every
+        // open with a parent and the root last, the list re-laid
+        messages.clear();
+        QDialog dlg;
+        dlg.setObjectName(QStringLiteral("nested"));
+        dlg.setWindowTitle(QStringLiteral("Ask"));
+        auto dlgLay = new QVBoxLayout(&dlg);
+        auto label = new QLabel(QStringLiteral("Really?"), &dlg);
+        label->setObjectName(QStringLiteral("askLabel"));
+        auto buttons = new QDialogButtonBox(QDialogButtonBox::Yes | QDialogButtonBox::No, &dlg);
+        buttons->setObjectName(QStringLiteral("askButtons"));
+        connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        dlgLay->addWidget(label);
+        dlgLay->addWidget(buttons);
+        dlg.show();
+        tick();
+        QCOMPARE(mirror.dialogCount(), 1);
+        const QString dialogId = mirror.dialogIds().value(0);
+        QVERIFY2(dialogId.startsWith(QLatin1String("dialog:")), qPrintable(dialogId));
+        QCOMPARE(dialogRoots(), QStringList {dialogId});
+        Fw::Widget* root = store.object(dialogId);
+        QVERIFY(root);
+        QCOMPARE(root->modelName(), QStringLiteral("QDialogModel"));
+        QCOMPARE(root->qtClass(), QStringLiteral("QDialog"));
+        QCOMPARE(root->property("windowTitle").toString(), QStringLiteral("Ask"));
+        QCOMPARE(root->property("visible").toBool(), true);
+        QCOMPARE(root->parentWidget(), list);
+        QCOMPARE(mirror.modelOf(&dlg), root);
+        QCOMPARE(list->layout()->count(), 2);
+        Fw::Widget* labelModel = named(QStringLiteral("askLabel"));
+        QVERIFY(labelModel);
+        QCOMPARE(labelModel->property("text").toString(), QStringLiteral("Really?"));
+        QCOMPARE(labelModel->parentWidget(), root);
+        const QString labelId = store.idOf(labelModel);
+        Fw::Widget* buttonsModel = named(QStringLiteral("askButtons"));
+        QVERIFY(buttonsModel);
+        QCOMPARE(buttonsModel->layout()->count(), 2);
+        QList<int> flags;
+        for (Fw::Widget* b : buttonsModel->findChildren<Fw::Widget*>())
+            flags.append(b->property("standardButton").toInt());
+        QVERIFY(flags.contains(static_cast<int>(QDialogButtonBox::Yes)));
+        QVERIFY(flags.contains(static_cast<int>(QDialogButtonBox::No)));
+        QStringList opens;
+        bool listRelaid = false;
+        for (int i = 0; i < messages.count(); ++i) {
+            const QString id = messages.at(i).at(0).toString();
+            const QString method = messages.at(i).at(1).toString();
+            const QVariantMap content = messages.at(i).at(2).toMap();
+            if (method == QLatin1String("open")) {
+                opens.append(id);
+                QVERIFY2(content.contains(QStringLiteral("parent")), qPrintable(id));
+            }
+            if (id == QLatin1String("panel") && method == QLatin1String("update")
+                && content.contains(QStringLiteral("layoutSpec")))
+                listRelaid = true;
+        }
+        QVERIFY(opens.contains(labelId));
+        QCOMPARE(opens.last(), dialogId);
+        QVERIFY(listRelaid);
+
+        // a client's `clicked [Yes]` on the root: the real button, the
+        // dialog's accept, one close for the root and none for its
+        // widgets, the panel untouched
+        messages.clear();
+        QSignalSpy finished(&dlg, &QDialog::finished);
+        QVERIFY(custom(dialogId, "clicked", {static_cast<int>(QDialogButtonBox::Yes)}));
+        QCOMPARE(finished.count(), 1);
+        QCOMPARE(dlg.result(), static_cast<int>(QDialog::Accepted));
+        QVERIFY(!dlg.isVisible());
+        QCOMPARE(closes(), QStringList {dialogId});
+        QVERIFY(!store.object(dialogId));
+        QVERIFY(!store.object(labelId));
+        QCOMPARE(mirror.dialogCount(), 0);
+        QCOMPARE(list->layout()->count(), 1);
+        QCOMPARE(mirror.panelId(), panelId);
+        QVERIFY(mirror.modelOf(painted));
+
+        // a message box exec'd: the walk runs inside its loop, Qt's
+        // `qt_msgbox_label` is content, a client's No is the exec code
+        messages.clear();
+        QMessageBox msg(QMessageBox::Question, QStringLiteral("Sure"), QStringLiteral("Proceed?"),
+                        QMessageBox::Yes | QMessageBox::No);
+        msg.setObjectName(QStringLiteral("msgBox"));
+        QVariantMap seen;
+        QTimer::singleShot(50, &msg, [&]() {
+            seen[QStringLiteral("count")] = mirror.dialogCount();
+            const QString id = mirror.dialogIds().value(0);
+            seen[QStringLiteral("id")] = id;
+            Fw::Widget* r = store.object(id);
+            seen[QStringLiteral("class")] = r ? r->qtClass() : QString();
+            seen[QStringLiteral("modal")] = r ? r->property("modal") : QVariant();
+            Fw::Widget* text = named(QStringLiteral("qt_msgbox_label"));
+            seen[QStringLiteral("text")] = text ? text->property("text").toString() : QString();
+            custom(id, "clicked", {static_cast<int>(QMessageBox::No)});
+        });
+        const int code = msg.exec();
+        QCOMPARE(code, static_cast<int>(QMessageBox::No));
+        QCOMPARE(seen.value(QStringLiteral("count")).toInt(), 1);
+        const QString msgId = seen.value(QStringLiteral("id")).toString();
+        QVERIFY2(msgId.startsWith(QLatin1String("dialog:")), qPrintable(msgId));
+        QVERIFY(msgId != dialogId);
+        QCOMPARE(seen.value(QStringLiteral("class")).toString(), QStringLiteral("QMessageBox"));
+        QCOMPARE(seen.value(QStringLiteral("modal")).toBool(), true);
+        QCOMPARE(seen.value(QStringLiteral("text")).toString(), QStringLiteral("Proceed?"));
+        QCOMPARE(mirror.dialogCount(), 0);
+        QCOMPARE(closes(), QStringList {msgId});
+
+        // a dialog class the preference does not list is not mirrored
+        ParameterGrp::handle grp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Fw");
+        grp->SetASCII("PanelMirror", "QMessageBox");
+        QDialog refused;
+        refused.show();
+        tick();
+        QCOMPARE(mirror.dialogCount(), 0);
+        refused.hide();
+        grp->RemoveASCII("PanelMirror");
+
+        // mouse replay into the picture: the client's press, move,
+        // release and wheel land in the widget's own handlers at the
+        // picture's pixels
+        painted->events.clear();
+        const QString paintedId = store.idOf(mirror.modelOf(painted));
+        QVERIFY(custom(paintedId, "mouse", {QStringLiteral("press"), 10, 5}));
+        QVERIFY(custom(paintedId, "mouse",
+                       {QStringLiteral("move"), 12, 6, 0, static_cast<int>(Qt::LeftButton)}));
+        QVERIFY(custom(paintedId, "mouse",
+                       {QStringLiteral("release"), 12, 6, static_cast<int>(Qt::LeftButton)}));
+        QVERIFY(custom(paintedId, "wheel", {3, 4, 0, 120}));
+        QCOMPARE(painted->events.size(), 4);
+        QCOMPARE(painted->events.at(0).type, QEvent::MouseButtonPress);
+        QCOMPARE(painted->events.at(0).pos, QPoint(10, 5));
+        QCOMPARE(painted->events.at(0).button, Qt::LeftButton);
+        QCOMPARE(painted->events.at(0).buttons, Qt::MouseButtons(Qt::LeftButton));
+        QCOMPARE(painted->events.at(1).type, QEvent::MouseMove);
+        QCOMPARE(painted->events.at(1).pos, QPoint(12, 6));
+        QCOMPARE(painted->events.at(1).button, Qt::NoButton);
+        QCOMPARE(painted->events.at(1).buttons, Qt::MouseButtons(Qt::LeftButton));
+        QCOMPARE(painted->events.at(2).type, QEvent::MouseButtonRelease);
+        QCOMPARE(painted->events.at(2).button, Qt::LeftButton);
+        QCOMPARE(painted->events.at(2).buttons, Qt::MouseButtons(Qt::NoButton));
+        QCOMPARE(painted->events.at(3).type, QEvent::Wheel);
+        QCOMPARE(painted->events.at(3).pos, QPoint(3, 4));
+        QCOMPARE(painted->events.at(3).delta, QPoint(0, 120));
+        // not into a control: the box is not a picture
+        painted->events.clear();
+        QVERIFY(custom(store.idOf(mirror.modelOf(box)), "mouse", {QStringLiteral("press"), 1, 1}));
+        QCOMPARE(painted->events.size(), 0);
+
+        // stop with a dialog up: its close goes with the mirror's, the
+        // real dialog untouched; nothing is followed after
+        QDialog late;
+        late.setObjectName(QStringLiteral("late"));
+        late.show();
+        tick();
+        QCOMPARE(mirror.dialogCount(), 1);
+        const QString lateId = mirror.dialogIds().value(0);
+        messages.clear();
+        mirror.stop();
+        QVERIFY(closes().contains(lateId));
+        QVERIFY(closes().contains(panelId));
+        QCOMPARE(store.count(), 0);
+        QVERIFY(late.isVisible());
+        QDialog after;
+        after.show();
+        tick();
+        QCOMPARE(mirror.dialogCount(), 0);
+        QVERIFY(!mirror.isRunning());
     }
 };
 
