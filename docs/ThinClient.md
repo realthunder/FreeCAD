@@ -1744,8 +1744,47 @@ joiner is in, the view's own otherwise -- and the desktop viewer opens a scope a
 event while it is in a session, so a desktop click into a browser-started sketch selects
 where the sketcher's observer listens. The sketcher reads the view for its camera math
 through `editViewer()` (the current scope's view when it is one of this edit's, else the
-initiator's) at 16 sites; `edit->viewer` stays the initiator. Not yet: the per-client
-selection message and the forwarding observer with its toggle (the fifth piece).
+initiator's) at 16 sites; `edit->viewer` stays the initiator.
+
+**Built 2026-09-11 (item 1, the fifth piece).** A pick from a client with a mirror runs
+under a `ViewerScope` on that mirror whether or not it is editing, so it lands in the
+SESSION's instance: the mirror's own in view mode (the desktop's tree does not move, no
+other client's highlight changes), the initiator's inside an edit. A client with no mirror
+still commits into the room, having no view to land in. What the server resolved is told
+to the one client it belongs to: `Private::ClientSelection`, one observer per mirror on
+that mirror's instance, marks the client dirty on add, remove, set and clear (never
+preselect, which is the client's own already), and the publish timer sends
+`{"cmd":"selection","doc":..,"items":[{"obj":..,"sub":..},..]}` -- the instance whole,
+as the on-view set is. The browser viewer hands it to the DOM layer and keeps painting its
+local pick. The sync toggle: `Private::SessionForwarder`, created on `signalInEdit` when
+the initiator is a mirror, sits on that instance and replays add, remove, clear, set and
+preselect into the room under a re-entrancy guard and the no-top-parent check; it never
+switches the instance. `selectionSync` is a control op (`{"op":"selectionSync","on":
+bool}`, mutating; without `on` it reads), default on; off drops the forwarder and leaves
+the desktop's chrome where its user left it; the session's end takes back whatever was
+forwarded during it, whatever the toggle says by then, so no client's selection outlives
+its session on the desktop's chrome any more than in its own instance.
+
+Found on the way, by the first positive reading of a replayed click: a served document's
+`SoFCUnifiedSelection` root has no viewer, and its `handleEvent` still ran the desktop's
+hover and click logic on every replayed event the edit mode did not mark handled -- picked
+nothing, and removed from the session's instance the preselection the sketcher had just
+made, so a browser's click in a sketch never selected anything (the old assertion, "does
+not reach the room", passed with nothing selected at all). A view-less root now skips its
+own selection logic and only forwards the event to its children. And a second one behind
+it, from the browser's own click: the sketcher turned the initiating MIRROR's camera to face
+the sketch plane on entry, as it does for a desktop window, while the browser kept drawing
+its own view and restated it on its next frame -- so a move resolved in one camera and the
+press in another. A mirror's camera is the client's (`ViewerContext::cameraIsRemote`), and
+the sketcher no longer turns it; telling the client to adopt the sketch view is a later
+wire message, not a server-side adjustment.
+
+The readings that changed with the ruling: `serve-mirror-pick.py` reads the mirrored
+picks off the `selection` messages instead of the room (which it now asserts untouched),
+`serve-mirror-edit.py` asserts a view-mode pick told back and the room empty, then the
+room following the in-edit pick, and `serve-edit-browser.py` the same two the other way
+round; `serve-shared-edit.py` gains the toggle: the room follows with it on, keeps what it
+had with it off, and is emptied by the session's end.
 
 Verified: `SharedEditingRootTest` (8 cases in `tests/src/Gui/MirrorViewer.cpp`: one root
 under two mirrors hung once, a joiner seeing the initiator's content, the initiator

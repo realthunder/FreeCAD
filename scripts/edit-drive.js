@@ -14,7 +14,7 @@
 // Usage:  node scripts/edit-drive.js <url> <object> <settle_ms>
 // Phases (also appended to EDIT_PHASES, a file, because node buffers its
 // stdout to a pipe and the caller samples its counters on these):
-//   PHASE settled | viewclick | entered | drawn | editclick | escaped | done
+//   PHASE settled | viewclick | entered | editclick | drawn | escaped | done
 // EDIT_RESULT names a file the page's own readings are written to as
 // JSON -- what the VIEWER believed, against what the server saw.
 const ppPath = process.env.PUPPETEER_PATH || 'puppeteer-core';
@@ -39,6 +39,14 @@ function phase(name) {
 // plain addEventListener handlers, so a dispatched event reaches exactly
 // the code a real one would.
 const HELPERS = () => {
+  // What the server tells this client its selection is (docs/ThinClient.md
+  // 8.11): the viewer hands every control message to the DOM layer as an
+  // fc:control event, and the selection ones are kept here for the caller.
+  window.__fcSelections = [];
+  window.addEventListener('fc:control', (e) => {
+    if (e.detail && e.detail.cmd === 'selection')
+      window.__fcSelections.push(e.detail);
+  });
   window.__fcRect = () => {
     const c = document.getElementById('canvas');
     const r = c.getBoundingClientRect();
@@ -57,6 +65,11 @@ const HELPERS = () => {
       bubbles: true, cancelable: true, key: key}));
   };
   window.__fcClick = async (x, y) => {
+    // A pointer is somewhere before it presses: the move is what an edit
+    // mode preselects on, and the sketcher selects on release what the
+    // move preselected. A press with no move before it selects nothing.
+    window.__fcMouse('mousemove', x, y, 0, 0);
+    await new Promise(r => setTimeout(r, 60));
     window.__fcMouse('mousedown', x, y, 1, 0);
     await new Promise(r => setTimeout(r, 60));
     window.__fcMouse('mouseup', x, y, 0, 0);
@@ -118,6 +131,8 @@ const HELPERS = () => {
       await window.__fcClick(cx, cy);
     });
     await sleep(1200);
+    out.viewSelection = await page.evaluate(
+        () => window.__fcSelections.slice(-1)[0] || null);
     phase('viewclick');
 
     // 2. Ask for the edit session. The viewer sends the op and believes
@@ -136,7 +151,21 @@ const HELPERS = () => {
     out.editingAfterEnter = await page.evaluate(() => window.fcviewerEditing);
     phase('entered');
 
-    // 3. Work in it: a press, a drag across the canvas paced on the
+    // 3. A click while editing, at the middle of the canvas where the
+    // sketch's line still is (the drag below moves it). It goes up the
+    // 'E' channel, not as a pick: the sketcher selects the line into the
+    // session's instance, which is this client's own, and the server
+    // tells the client so; with the sync toggle on the room follows too.
+    await page.evaluate(async () => {
+      const {cx, cy} = window.__fcRect();
+      await window.__fcClick(cx, cy);
+    });
+    await sleep(1200);
+    out.editSelection = await page.evaluate(
+        () => window.__fcSelections.slice(-1)[0] || null);
+    phase('editclick');
+
+    // 4. Work in it: a press, a drag across the canvas paced on the
     // page's own frames, a release. Under the split of sec 8.9 step 4
     // the left button is the edit mode's, so none of this is an orbit --
     // and the server counts every one of them as an 'E' frame.
@@ -164,16 +193,6 @@ const HELPERS = () => {
     await sleep(800);
     phase('drawn');
 
-    // 4. A click while editing. It goes up the 'E' channel, not as a
-    // pick, and whatever it selects is this client's own -- so the room
-    // must be where entering the edit left it.
-    await page.evaluate(async () => {
-      const {cx, cy} = window.__fcRect();
-      await window.__fcClick(cx, cy);
-    });
-    await sleep(1200);
-    phase('editclick');
-
     // 5. Escape. The sketcher handles it and ends the session itself --
     // the client never asks -- so this is the leaving edge the server
     // has to push and the viewer has to believe.
@@ -190,6 +209,7 @@ const HELPERS = () => {
       out.leftOnEscape = false;
     }
     out.editingAfterEscape = await page.evaluate(() => window.fcviewerEditing);
+    out.selections = await page.evaluate(() => window.__fcSelections);
     phase('escaped');
     await sleep(500);
   }

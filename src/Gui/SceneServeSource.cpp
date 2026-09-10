@@ -52,6 +52,7 @@
 #endif
 
 #include <App/Application.h>
+#include <Base/Tools.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <Base/Console.h>
@@ -303,6 +304,52 @@ public:
     /// its definition below.
     std::unique_ptr<SelectionMirror> selectionMirror;
 
+    /** One client's own selection, told back to that client
+     * (docs/ThinClient.md 8.11, view mode).
+     *
+     * A pick from a client with a mirror lands in the mirror's own
+     * instance rather than in the room, so nothing on the desktop moves
+     * and no other client's highlight changes; what the server resolved
+     * is told to the one client it belongs to as a `selection` message,
+     * coalesced onto the publish timer like the on-view parameters. One
+     * per mirror, attached to that mirror's instance; see the definition
+     * below.
+     */
+    struct ClientSelection;
+    std::map<uint64_t, std::unique_ptr<ClientSelection>> clientSelections;
+    /// The clients whose instance changed since the last publish.
+    std::set<uint64_t> selectionDirty;
+
+    /** A browser-started session's selection, forwarded into the room
+     * (8.11, the sync toggle).
+     *
+     * The session's instance is the initiating mirror's; the sketcher's
+     * observer sits on it and every view's in-edit events select into
+     * it. What the desktop's tree, panels and highlight follow is the
+     * room, so with the toggle on this observer replays the session's
+     * add, remove, clear and preselect into the room -- one way, with a
+     * re-entrancy guard -- and with it off nothing is forwarded and the
+     * desktop's chrome stays where its user left it. Never switches the
+     * instance: the sketcher's observer remembered it at attach time.
+     * In a desktop-started session the instance IS the room and there
+     * is nothing to forward. See the definition below.
+     */
+    struct SessionForwarder;
+    std::unique_ptr<SessionForwarder> forwarder;
+    bool selectionSync = true;
+    /// Whether anything reached the room through a forwarder during the
+    /// session in progress, so its end knows whether there is anything
+    /// to take back -- whatever the toggle says by then.
+    bool sessionForwarded = false;
+
+    void flushClientSelections();
+    void announceSelection(uint64_t client);
+    /// Start or stop forwarding for the session the document is in.
+    void updateForwarder();
+    /// Drop the forwarder; with \a takeBack, clear from the room what it
+    /// forwarded.
+    void endForwarder(bool takeBack);
+
     /*!
      * One mirror viewer per connected client (docs/ThinClient.md sec 8.3).
      *
@@ -323,6 +370,10 @@ public:
         if (!mirror) {
             mirror = std::make_unique<MirrorViewer>(
                 doc, root, root->getRenderManager(), renderer.get());
+            // What this client selects from now on is its own, and it
+            // is told (8.11).
+            clientSelections[frame.client] = std::make_unique<ClientSelection>(
+                this, frame.client, mirror->selectionInstance());
             // The entry boxes an edit mode opens in this view have no
             // widget to draw themselves on, so they are restated to the
             // client that owns the view whenever they change
@@ -525,6 +576,32 @@ public:
             announceOnViewParameters(client);
     }
 
+    /// The selection message: {"cmd":"selection","doc":..,"items":
+    /// [{"obj":..,"sub":..},..]}, the whole of that client's instance.
+    /// Whole rather than a delta for the same reason the on-view set is:
+    /// a handful of items, and a client that reconnects must be able to
+    /// paint from one message.
+    void announceSelectionTo(uint64_t client, SelectionSingleton *instance)
+    {
+        if (!instance)
+            return;
+        std::string json = "{\"cmd\":\"selection\",\"doc\":\"" + groupName
+            + "\",\"items\":[";
+        bool first = true;
+        for (const auto &sel : instance->getSelection(nullptr, ResolveMode::NoResolve)) {
+            if (!first)
+                json += ',';
+            first = false;
+            json += "{\"obj\":";
+            jsonQuoted(json, sel.FeatName ? sel.FeatName : "");
+            json += ",\"sub\":";
+            jsonQuoted(json, sel.SubName ? sel.SubName : "");
+            json += '}';
+        }
+        json += "]}";
+        Render::SceneStreamServer::instance().sendControl(client, json);
+    }
+
     void announceOnViewParameters(uint64_t client)
     {
         MirrorViewer *mirror = mirrorFor(client);
@@ -575,6 +652,9 @@ public:
         // body unrefs below -- and a destructor body runs before any
         // member is destroyed, so leaving them to their own turn would
         // leave every one of them holding a freed graph in between.
+        // The observers on the mirrors' instances before the mirrors.
+        forwarder.reset();
+        clientSelections.clear();
         mirrors.clear();
         // The path tracers next: each joins its encoder thread and
         // tears its session down, and nothing below feeds them again.
@@ -967,11 +1047,219 @@ struct SceneServeSource::Private::SelectionMirror : public SelectionObserver
     }
 };
 
+/*!
+ * One client's own selection told back to it; see Private::clientSelections.
+ */
+struct SceneServeSource::Private::ClientSelection : public SelectionObserver
+{
+    Private *p;
+    uint64_t client;
+
+    ClientSelection(Private *priv, uint64_t c, SelectionSingleton *instance)
+        : SelectionObserver(false, ResolveMode::NoResolve)
+        , p(priv)
+        , client(c)
+    {
+        // Attached to the mirror's instance: the scope makes it current
+        // for the one call that reads it.
+        if (instance) {
+            SelectionScope scope(*instance);
+            attachSelectionToCurrent();
+        }
+    }
+
+    void onSelectionChanged(const SelectionChanges &reason) override
+    {
+        switch (reason.Type) {
+        case SelectionChanges::SetSelection:
+        case SelectionChanges::AddSelection:
+        case SelectionChanges::RmvSelection:
+        case SelectionChanges::ClrSelection:
+            break;
+        default:
+            // Preselection is the client's own already (8.2a): it hovers
+            // locally and is never told.
+            return;
+        }
+        p->selectionDirty.insert(client);
+        if (p->owner)
+            p->owner->schedulePublish();
+    }
+};
+
+/*!
+ * A browser-started session's selection forwarded into the room; see
+ * Private::forwarder.
+ */
+struct SceneServeSource::Private::SessionForwarder : public SelectionObserver
+{
+    Private *p;
+    SelectionSingleton *instance;
+    /// Set while a replay into the room runs: whatever that raises is
+    /// not forwarded again.
+    bool forwarding = false;
+
+    SessionForwarder(Private *priv, SelectionSingleton *inst)
+        : SelectionObserver(false, ResolveMode::NoResolve)
+        , p(priv)
+        , instance(inst)
+    {
+        if (instance) {
+            SelectionScope scope(*instance);
+            attachSelectionToCurrent();
+        }
+    }
+
+    void onSelectionChanged(const SelectionChanges &msg) override
+    {
+        if (forwarding || !instance)
+            return;
+        Base::StateLocker guard(forwarding);
+        SelectionSingleton &room = SelectionRoom();
+        // An in-edit pick names an element of the object in edit, which
+        // the room's top-parent check would refuse as the desktop's own
+        // in-edit picks are let through.
+        SelectionNoTopParentCheck noParentCheck;
+        switch (msg.Type) {
+        case SelectionChanges::AddSelection:
+            room.addSelection(msg.pDocName, msg.pObjectName, msg.pSubName,
+                              msg.x, msg.y, msg.z);
+            p->sessionForwarded = true;
+            break;
+        case SelectionChanges::RmvSelection:
+            room.rmvSelection(msg.pDocName, msg.pObjectName, msg.pSubName);
+            p->sessionForwarded = true;
+            break;
+        case SelectionChanges::ClrSelection:
+            room.clearSelection(msg.pDocName && *msg.pDocName ? msg.pDocName : nullptr);
+            p->sessionForwarded = true;
+            break;
+        case SelectionChanges::SetSelection:
+            // The set replaced whole: the room follows item by item.
+            room.clearSelection();
+            for (const auto &sel : instance->getSelection(nullptr, ResolveMode::NoResolve))
+                room.addSelection(sel.DocName, sel.FeatName, sel.SubName,
+                                  sel.x, sel.y, sel.z);
+            p->sessionForwarded = true;
+            break;
+        case SelectionChanges::SetPreselect:
+            room.setPreselect(msg.pDocName, msg.pObjectName, msg.pSubName,
+                              msg.x, msg.y, msg.z);
+            p->sessionForwarded = true;
+            break;
+        case SelectionChanges::RmvPreselect:
+            room.rmvPreselect();
+            break;
+        default:
+            break;
+        }
+    }
+};
+
+void SceneServeSource::Private::flushClientSelections()
+{
+    if (selectionDirty.empty())
+        return;
+    std::set<uint64_t> dirty;
+    dirty.swap(selectionDirty);
+    for (uint64_t client : dirty)
+        announceSelection(client);
+}
+
+void SceneServeSource::Private::announceSelection(uint64_t client)
+{
+    MirrorViewer *mirror = mirrorFor(client);
+    if (mirror)
+        announceSelectionTo(client, mirror->selectionInstance());
+}
+
+void SceneServeSource::Private::updateForwarder()
+{
+    // Only a session a mirror started has an instance that is not the
+    // room. Idempotent: the same session asked twice keeps its forwarder.
+    if (!doc || !selectionSync) {
+        forwarder.reset();
+        return;
+    }
+    ViewerContext *initiator = doc->editingViewer();
+    if (!initiator || !clientOf(initiator) || !initiator->selectionInstance()) {
+        forwarder.reset();
+        return;
+    }
+    if (forwarder && forwarder->instance == initiator->selectionInstance())
+        return;
+    forwarder = std::make_unique<SessionForwarder>(this, initiator->selectionInstance());
+}
+
+void SceneServeSource::Private::endForwarder(bool takeBack)
+{
+    forwarder.reset();
+    if (!takeBack)
+        return;
+    const bool clear = sessionForwarded;
+    sessionForwarded = false;
+    if (clear) {
+        SelectionSingleton &room = SelectionRoom();
+        room.rmvPreselect();
+        room.clearSelection();
+    }
+}
+
+void SceneServeSource::setSelectionSync(bool on)
+{
+    if (pimpl->selectionSync == on)
+        return;
+    pimpl->selectionSync = on;
+    if (on)
+        pimpl->updateForwarder();
+    else
+        // Off leaves the desktop's chrome where its user left it (8.11):
+        // nothing taken back.
+        pimpl->endForwarder(false);
+}
+
+bool SceneServeSource::selectionSync() const
+{
+    return pimpl->selectionSync;
+}
+
+namespace
+{
+/// The `selectionSync` control op: {"op":"selectionSync","on":bool} sets
+/// the toggle for the bound document, without "on" it reads it; either
+/// way the reply carries "on". Mutating, so a view-only connection may
+/// not flip it.
+void installSelectionSyncOp()
+{
+    static bool installed = false;
+    if (installed)
+        return;
+    installed = true;
+    registerSceneControlOp(QStringLiteral("selectionSync"), true,
+        [](const QJsonObject &req, const std::string &boundDoc, uint64_t) {
+            App::Document *adoc = App::GetApplication().getDocument(boundDoc.c_str());
+            SceneServeSource *src = SceneServeSource::sourceFor(adoc);
+            if (!src)
+                return sceneControlError(req.value(QLatin1String("id")), "NoDocument",
+                                         QStringLiteral("no served document is bound"));
+            const QJsonValue on = req.value(QLatin1String("on"));
+            if (on.isBool())
+                src->setSelectionSync(on.toBool());
+            QJsonObject reply;
+            reply[QLatin1String("id")] = req.value(QLatin1String("id"));
+            reply[QLatin1String("ok")] = true;
+            reply[QLatin1String("on")] = src->selectionSync();
+            return reply;
+        });
+}
+}  // namespace
+
 SceneServeSource::SceneServeSource(Document *doc)
     : pimpl(new Private)
 {
     pimpl->doc = doc;
     pimpl->owner = this;
+    installSelectionSyncOp();
 
     const std::string &type = RenderParams::getType();
     if (type.empty() || type == "Default") {
@@ -1060,10 +1348,17 @@ SceneServeSource::SceneServeSource(Document *doc)
         pimpl->connections.emplace_back(doc->signalInEdit.connect(
             [this](const ViewProviderDocumentObject &vp) {
                 pimpl->joinEditing();
+                pimpl->updateForwarder();
                 pimpl->announceEdit(true, vp);
             }));
         pimpl->connections.emplace_back(doc->signalResetEdit.connect(
             [this](const ViewProviderDocumentObject &vp) {
+                // The forwarder goes with the session, and takes what it
+                // forwarded out of the room: no client's selection
+                // outlives its edit session, on the desktop's chrome any
+                // more than in its own instance. Before the mirrors
+                // leave, since it is attached to the initiator's instance.
+                pimpl->endForwarder(true);
                 pimpl->leaveEditing();
                 pimpl->announceEdit(false, vp);
             }));
@@ -1209,8 +1504,12 @@ void SceneServeSource::installHandlers()
         QMetaObject::invokeMethod(qApp, [self, streams, client]() {
             auto gone = streams->take(client, -1);
             gone.clear();
-            if (self)
+            if (self) {
+                // The observer before the instance it observes.
+                self->pimpl->clientSelections.erase(client);
+                self->pimpl->selectionDirty.erase(client);
                 self->pimpl->mirrors.erase(client);
+            }
         }, Qt::QueuedConnection);
     }, docName);
 
@@ -1314,16 +1613,18 @@ void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
     std::unique_ptr<SoPickedPoint> picked;
     MirrorViewer *mirror = pimpl->mirrorFor(client);
 
-    // And it commits in that mirror's own selection when the mirror is
-    // the view the document's edit session is running in -- which is what
-    // "an in-edit pick is the mirror's own" comes to in code (sec 8.4).
-    // A click from a client that is merely looking commits into the room,
-    // as 8.2a rules: the room is what the tree, the property panel and
-    // every other viewer agree on. Held open past the pick, because it is
-    // the addSelection below that has to land in the right instance.
-    std::unique_ptr<ViewerScope> inEdit;
-    if (mirror && mirror->isEditingViewProvider())
-        inEdit = std::make_unique<ViewerScope>(mirror);
+    // And it commits in that client's view: the scope names the mirror,
+    // and with it the SESSION's selection instance (docs/ThinClient.md
+    // 8.11) -- the mirror's own in view mode, so a browser's click moves
+    // neither the desktop's tree nor another client's highlight and is
+    // told back to that one client (ClientSelection); the initiator's
+    // inside an edit session, where the tool state machine listens. A
+    // client with no mirror has no view to land in and commits into the
+    // room as before. Held open past the pick, because it is the
+    // addSelection below that has to land in the right instance.
+    std::unique_ptr<ViewerScope> inView;
+    if (mirror)
+        inView = std::make_unique<ViewerScope>(mirror);
 
     if (mirror) {
         // With an element kind asked for, the hits are offered front to
@@ -1580,6 +1881,7 @@ void SceneServeSource::onPublishTimeout()
     // After the publish, so a client has the geometry these numbers
     // describe before it is told the numbers (docs/ThinClient.md sec 8.7).
     pimpl->flushOnViewParameters();
+    pimpl->flushClientSelections();
 }
 
 bool SceneServeSource::publishNow()

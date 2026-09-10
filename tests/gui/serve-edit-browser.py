@@ -248,6 +248,12 @@ def build():
         doc = FreeCAD.newDocument(DOC, hidden=True)
         state["doc"] = doc
         sketch = doc.addObject("Sketcher::SketchObject", OBJ)
+        # The selection singleton's trace, read back from the Report view
+        # at the end: which instance heard what, in order.
+        ow = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/OutputWindow")
+        for key in ("checkLogging", "checkWarning", "checkError", "checkMessage"):
+            ow.SetBool(key, True)
+        FreeCAD.setLogLevel("Selection", "Trace")
         sketch.addGeometry(Part.LineSegment(FreeCAD.Vector(-5, 0, 0),
                                             FreeCAD.Vector(5, 0, 0)), False)
         doc.recompute()
@@ -318,7 +324,7 @@ def verify():
             note("---- driver log")
             note(run.tail(25))
 
-        for phase in ("settled", "viewclick", "entered", "drawn", "editclick",
+        for phase in ("settled", "viewclick", "entered", "editclick", "drawn",
                       "escaped"):
             if phase not in state["samples"]:
                 check("the run reached '%s'" % phase, False,
@@ -338,8 +344,8 @@ def verify():
         check("the browser connected as a viewer",
               settled["client"] is not None, settled["client"])
 
-        # 1. A click in view mode is the room's (sec 8.2a). This is also
-        # the control for the reading in 5. Judged on the trace rather
+        # 1. A click in view mode is the client's own (8.11): the room
+        # does not move. This is also the control for the reading in 5. Judged on the trace rather
         # than on the phase sample: a phase sample is taken when the GUI
         # thread next runs the poll, and entering an edit blocks it long
         # enough that two markers can be read in one pass and given the
@@ -350,8 +356,8 @@ def verify():
         # and the room has been left as leaving it left it.
         first_edit = next((i for i, s in enumerate(trace) if s[1]), len(trace))
         before_edit = trace[:first_edit]
-        check("a click in view mode commits into the room",
-              any(s[4] for s in before_edit),
+        check("a click in view mode is the client's own: the room does not move",
+              not any(s[4] for s in before_edit),
               [s[4] for s in before_edit[:60]])
 
         # 2. The browser's own ask entered the session -- on both sides:
@@ -390,13 +396,32 @@ def verify():
               "%d frames for %d dispatched moves"
               % (after_input - before_input, moves))
 
-        # 6. A click while editing is this client's own, so the room
-        # must be where entering the edit left it -- which is empty,
-        # because the edit op clears the room as it starts.
+        # 6. A click while editing lands in the session's instance, the
+        # mirror's, and with the sync toggle on is forwarded into the
+        # room, which entering the edit had left empty.
         check("entering edit left the room selecting nothing",
               not entered["room"], entered["room"])
-        check("a click while editing does not reach the room",
-              not editclick["room"], editclick["room"])
+        check("a click while editing follows into the room (sync on)",
+              bool(editclick["room"]), editclick["room"])
+        # And what the server told the browser, both times: its own
+        # instance, whole, as a `selection` message the viewer handed to
+        # the DOM layer.
+        view_sel = said.get("viewSelection") or {}
+        edit_sel = said.get("editSelection") or {}
+        check("the view-mode click was told back to the browser",
+              any(i.get("obj") == OBJ for i in view_sel.get("items", [])), view_sel)
+        check("the in-edit click was told back to the browser",
+              any(i.get("obj") == OBJ for i in edit_sel.get("items", [])), edit_sel)
+        note("INFO selection messages the page saw: %s" % (said.get("selections"),))
+        try:
+            from PySide import QtWidgets
+            mw = FreeCADGui.getMainWindow()
+            for w in mw.findChildren(QtWidgets.QTextEdit) + mw.findChildren(QtWidgets.QPlainTextEdit):
+                for line in w.toPlainText().splitlines():
+                    if "Selection.cpp" in line:
+                        note("INFO " + line[:160])
+        except Exception:
+            note("INFO report view unreadable: " + traceback.format_exc()[-200:])
 
         # 7. Escape: handled by the sketcher, so the client never asked.
         # Both halves -- the session ended, and the viewer was told.

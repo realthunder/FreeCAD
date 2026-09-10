@@ -21,14 +21,14 @@ What is asserted:
     zero and coming back, the same reading the desktop probe takes;
   - an 'E' input event is replayed in that view: a pointer move over the
     sketch reaches the edit path and the server pushes the result;
-  - and what that client selects while it is editing is its own. A 'P'
-    pick sent in view mode commits into the room, as sec 8.2a rules it
-    should -- the room is what the tree, the property panel and every
-    other viewer agree on. The same pick sent while this client is
-    editing does not: it lands in the mirror's own instance, and the
-    room is left as entering the edit left it, which is empty. Read on
-    the GUI thread through FreeCADGui.Selection, which with no scope
-    open IS the room;
+  - and what that client selects is its own (8.11). A 'P' pick sent in
+    view mode lands in the mirror's instance and is told back to that
+    client as a `selection` message; the room, read on the GUI thread
+    through FreeCADGui.Selection (which with no scope open IS the room),
+    does not move. The same pick sent while this client is editing lands
+    in the session's instance -- the mirror's, since it started the
+    session -- and with the sync toggle on (the default) is forwarded
+    into the room, so the desktop's chrome follows the browser;
   - the `resetEdit` op ends the session and gives the graph back;
   - and a client that drops mid-edit does not leave the document holding
     a pointer to a mirror that no longer exists. That is the case the
@@ -118,7 +118,7 @@ class Client(threading.Thread):
         self.edit_without_camera = None
         self.edit_with_camera = None
         self.input_pushed = None
-        self.view_pick_pushed = None
+        self.view_pick_told = None
         self.reset = None
 
     def run(self):
@@ -148,7 +148,7 @@ class Client(threading.Thread):
         # only thing selected.
         ws.drain(0.3)
         ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0)))
-        self.view_pick_pushed = ws.next_binary(5.0) is not None
+        self.view_pick_told = ws.next_push("selection", 5.0, since=len(ws.pushes))
         ws.drain(0.7)
 
         # 4. Now into edit, which is where the mirror's own selection
@@ -295,14 +295,14 @@ def verify():
         # Selection: the room's, sampled throughout. A click in view mode
         # is the room's business (sec 8.2a); a click from the client that
         # is editing is that client's own (sec 8.4).
-        check("a view-mode pick was answered with a push",
-              client.view_pick_pushed is True,
-              "pushed: %s" % client.view_pick_pushed)
-        check("a view-mode pick commits into the room",
-              any(not s[0] and s[3] for s in seen),
-              [s[3] for s in seen[:60]])
-        check("entering edit leaves the room selecting nothing",
-              all(not s[3] for s in seen if s[0]),
+        told = client.view_pick_told or b""
+        check("a view-mode pick is told back to the client that made it",
+              b'"obj":"Sketch"' in told, told[:120])
+        check("a view-mode pick lands in the client's own instance, not the room",
+              all(not s[3] for s in seen if not s[0]),
+              [s[3] for s in seen if not s[0]][:20])
+        check("the room follows the client's in-edit pick (sync on)",
+              any(s[0] and s[3] for s in seen),
               [s[3] for s in seen if s[0]][:20])
 
         reset = client.reset or {}

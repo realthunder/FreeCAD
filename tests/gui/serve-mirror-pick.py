@@ -32,6 +32,7 @@ straight down, so the arithmetic below is legible.
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout); registered in ctest by tests/gui/CMakeLists.txt.
 """
+import json as jsonlib
 import math
 import os
 import threading
@@ -149,6 +150,26 @@ class Client(threading.Thread):
         self.face_pushed = None
         self.toggle_on_pushed = None
         self.bad_frame_pushed = None
+        # What the server told this client its selection is, after each
+        # pick (docs/ThinClient.md 8.11): a mirrored pick lands in the
+        # mirror's own instance rather than in the room, and the client
+        # is told, so the readings are taken off those messages in the
+        # shape the room samples used to have.
+        self.told = []
+
+    def told_one(self, ws, timeout=5.0):
+        raw = ws.next_push("selection", timeout, since=len(ws.pushes))
+        if raw is None:
+            return None
+        items = jsonlib.loads(raw.decode("utf-8")).get("items", [])
+        byobj = {}
+        for it in items:
+            byobj.setdefault(it["obj"], [])
+            if it["sub"]:
+                byobj[it["obj"]].append(it["sub"])
+        sel = sorted((obj, tuple(sorted(subs))) for obj, subs in byobj.items())
+        self.told.append(sel)
+        return sel
 
     def run(self):
         try:
@@ -175,7 +196,7 @@ class Client(threading.Thread):
         ws.send(2, camera_frame())
         t0 = clock()
         ws.send(2, pick(*outside))
-        data = ws.next_binary(5.0)
+        data = self.told_one(ws)
         self.mirror_pushed = data is not None
         if data is not None:
             self.mirror_ms = (clock() - t0) * 1000.0
@@ -190,7 +211,7 @@ class Client(threading.Thread):
         # and the push is a push.
         upp = units_per_px()
         ws.send(2, pick(*ray_to(0.0 - 3.0 * upp, 5.0)))
-        self.restated_pushed = ws.next_binary(5.0) is not None
+        self.restated_pushed = self.told_one(ws) is not None
         ws.next_binary(0.3)
 
         # 2c. The combined frame of sec 8.10a: a camera and a pick in one
@@ -202,7 +223,7 @@ class Client(threading.Thread):
         ws.send(2, wsclient.camera_and_pick(
             camera_frame(near=FAR_NEAR, far=FAR_FAR, eye=FAR_EYE),
             pick(*ray_to(5.0, 10.0 + 3.0 * far_upp, FAR_EYE))))
-        self.combined_pushed = ws.next_binary(5.0) is not None
+        self.combined_pushed = self.told_one(ws) is not None
         ws.next_binary(0.3)
 
         # 2d. The selection grammar (sec 8.5). The flags byte carries what
@@ -215,28 +236,28 @@ class Client(threading.Thread):
         edge = ray_to(10.0 + 3.0 * far_upp, 5.0, FAR_EYE)
 
         ws.send(2, pick(*face, modifiers=REPLACE))
-        ws.next_binary(5.0)
+        self.told_one(ws)
         ws.drain(0.3)
 
         ws.send(2, pick(*edge, modifiers=TOGGLE))
-        self.toggle_on_pushed = ws.next_binary(5.0) is not None
+        self.toggle_on_pushed = self.told_one(ws) is not None
         ws.drain(0.3)
 
         ws.send(2, pick(*edge, modifiers=TOGGLE))
-        ws.next_binary(5.0)
+        self.told_one(ws)
         ws.drain(0.3)
 
         # An object is selected either entire or by its parts, never both,
         # so this must REPLACE the face rather than join it.
         ws.send(2, pick(*face, modifiers=EXTEND | WHOLE))
-        ws.next_binary(5.0)
+        self.told_one(ws)
         ws.drain(0.3)
 
         # And the element kind is honoured: there is no edge within the
         # pick radius of the middle of a face, so an edge-only click there
         # finds nothing -- and a replace that finds nothing clears.
         ws.send(2, pick(*face, modifiers=REPLACE | EDGE_ONLY))
-        ws.next_binary(5.0)
+        self.told_one(ws)
         ws.drain(0.3)
 
         # 3. A camera frame that is not usable must be refused, not
@@ -245,7 +266,7 @@ class Client(threading.Thread):
         ws.send(2, camera_frame(height_angle=float("nan"), near=FAR_NEAR,
                                 far=FAR_FAR, eye=FAR_EYE))
         ws.send(2, pick(*ray_to(5.0, 5.0, FAR_EYE)))
-        self.face_pushed = ws.next_binary(5.0) is not None
+        self.face_pushed = self.told_one(ws) is not None
         ws.sock.close()
 
 
@@ -313,8 +334,12 @@ def verify():
                      if client.mirror_ms is not None else None))
 
     # What it picked: an edge of the box, which is the element a
-    # zero-radius ray could never land on.
-    seen = state["seen"]
+    # zero-radius ray could never land on. Read off what the server told
+    # the client (8.11): the mirror's instance, not the room, which the
+    # GUI thread's samples show untouched throughout.
+    seen = client.told
+    check("no mirrored pick reached the room",
+          all(not s for s in state["seen"]), str(state["seen"][:20]))
     edges = [s for s in seen
              if s and s[0][0] == "Box" and s[0][1]
              and s[0][1][0].startswith("Edge")]
@@ -365,7 +390,8 @@ def verify():
     check("a face pick still works after a refused camera frame",
           client.face_pushed is True, "pushed: %s" % client.face_pushed)
     check("the refused frame left the mirror usable",
-          selection_now() == [("Box", ("Face6",))], str(selection_now()))
+          bool(client.told) and client.told[-1] == [("Box", ("Face6",))],
+          str(client.told[-1:]))
 
     if client.mirror_ms is not None:
         note("click-to-push through the mirror: %.1f ms" % client.mirror_ms)

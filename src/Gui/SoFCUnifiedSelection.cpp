@@ -1607,7 +1607,16 @@ SoFCUnifiedSelection::Private::setSelection(const std::vector<PickedInfo> &infos
 void
 SoFCUnifiedSelection::handleEvent(SoHandleEventAction * action)
 {
-    if (selectionRole.getValue()) {
+    // A root with no viewer -- a served document's -- has no picking of
+    // its own: a browser's click arrives as a 'P' ray resolved on that
+    // client's mirror, and a replayed 'E' event belongs to the edit mode
+    // in the session (docs/ThinClient.md 8.11). Running the desktop's
+    // hover and click logic here would find nothing under the pointer
+    // every time and remove, from the instance the edit mode listens
+    // on, the preselection the mode had just made -- which is how a
+    // replayed click in a sketch selected nothing. The event still goes
+    // on to the children, for the draggers that live in the scene.
+    if (selectionRole.getValue() && pimpl->pcViewer) {
         pimpl->handleEvent(action);
     }
 

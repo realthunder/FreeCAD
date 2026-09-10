@@ -8048,7 +8048,14 @@ void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
     else
         editSubName.resize(dot-editSubName.c_str()+1);
 
-    if (_AdjustCamera) {
+    // A client's camera is not turned: it is stated over the wire and
+    // restated on the client's next frame (ViewerContext::cameraIsRemote),
+    // so an adjustment here would only disagree with the picture the
+    // client draws until then, and every pointer event resolved in between
+    // would land somewhere the client cannot see -- which is how a
+    // browser's click in a sketch picked nothing on the move and something
+    // else on the press.
+    if (_AdjustCamera && !viewer->cameraIsRemote()) {
         auto transform = getEditingPlacement();
 
         // Will the sketch be visible from the new position (#0000957)?

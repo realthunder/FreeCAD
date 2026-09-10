@@ -242,6 +242,10 @@ public:
     SoEventManager* getSoEventManager() const override;
     const SbViewportRegion& getViewportRegion() const override;
     Gui::Document* getDocument() override;
+    bool cameraIsRemote() const override
+    {
+        return true;
+    }
     SoFCRenderCacheManager* getRenderCacheManager() const override;
     Render::Renderer* getExternalRenderer() const override;
     //@}

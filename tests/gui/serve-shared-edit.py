@@ -35,8 +35,14 @@ Then the client entering:
     geometry under it, which is what "the desktop draws in it" comes to
     without a mouse: what its events would pick against is there;
   - the desktop's task panel is up for a session it did not start;
+  - the sync toggle (the fifth piece): with it on, the client's in-edit
+    pick on the sketch's line is forwarded into the room, which is what
+    the desktop's tree and panels read; the client is told its own
+    selection either way; with it off (the `selectionSync` op) a change
+    in the client's instance leaves the room where it was;
   - the client's resetEdit takes the desktop window out again: the root
-    leaves its graph, the geometry goes back, getInEdit is None.
+    leaves its graph, the geometry goes back, getInEdit is None, and what
+    was forwarded into the room is taken back with the session.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout); registered in ctest by tests/gui/CMakeLists.txt.
@@ -74,6 +80,11 @@ state = {"doc": None, "client": None, "done": False, "t0": clock(),
 desktop_entered = threading.Event()
 desktop_left = threading.Event()
 desktop_sampled = threading.Event()
+room_sampled_on = threading.Event()
+room_sampled_off = threading.Event()
+
+# The selection grammar's flags byte (docs/ThinClient.md 8.5).
+REPLACE, TOGGLE = 0, 1
 
 
 def note(msg):
@@ -89,6 +100,15 @@ def check(name, cond, detail=""):
 
 def camera_frame():
     return wsclient.camera_frame(EYE, QUAT, HEIGHT_ANGLE, NEAR, FAR, VW, VH)
+
+
+def ray_to(x, y):
+    """The world ray the stated eye casts through the pixel showing
+    world (x, y) on the sketch plane."""
+    depth = EYE[2]
+    direction = ((x - EYE[0]) / depth, (y - EYE[1]) / depth, -1.0)
+    length = math.sqrt(sum(c * c for c in direction))
+    return EYE, tuple(c / length for c in direction)
 
 
 class Client(threading.Thread):
@@ -108,6 +128,12 @@ class Client(threading.Thread):
         self.input_pushed_desktop = None
         self.edit_reply = None
         self.input_pushed_own = None
+        self.picked_on = threading.Event()
+        self.picked_off = threading.Event()
+        self.told_click = None
+        self.told_on = None
+        self.sync_off = None
+        self.told_off = None
         self.reset = None
 
     def run(self):
@@ -118,6 +144,8 @@ class Client(threading.Thread):
             self.ready.set()
             self.moved_in_desktop_edit.set()
             self.entered.set()
+            self.picked_on.set()
+            self.picked_off.set()
 
     def talk(self):
         ws = WS(self.port)
@@ -154,6 +182,40 @@ class Client(threading.Thread):
                                         time_ms=2000))
         self.input_pushed_own = ws.next_binary(5.0) is not None
         ws.drain(0.3)
+
+        # A click replayed into the session, as a browser's is: a move
+        # onto the line (right of the origin, which sits at the centre),
+        # a press, a release. The sketcher preselects on the move and
+        # selects on the release, into the session's instance, and this
+        # client is told. Before 2026-09-11 the served selection root ran
+        # the desktop's hover on the replayed move, found nothing (it has
+        # no viewer) and removed the preselection, so nothing selected.
+        px, py = VW // 2 + 30, VH // 2
+        ws.send(2, wsclient.input_frame(wsclient.MOVE, px, py, time_ms=2100))
+        ws.drain(0.2)
+        ws.send(2, wsclient.input_frame(wsclient.PRESS, px, py, code=0, time_ms=2200))
+        ws.drain(0.1)
+        ws.send(2, wsclient.input_frame(wsclient.RELEASE, px, py, code=0, time_ms=2300))
+        self.told_click = ws.next_push("selection", 5.0, since=len(ws.pushes))
+        ws.drain(0.3)
+
+        # The sync toggle (8.11). A pick on the line in this client's own
+        # session lands in the session's instance -- this mirror's -- and
+        # with the toggle on is forwarded into the room, which the
+        # desktop reads. Then off: the instance changes (the same element
+        # toggled away) and the room must not follow.
+        ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0), REPLACE))
+        self.told_on = ws.next_push("selection", 5.0, since=len(ws.pushes))
+        ws.drain(0.3)
+        self.picked_on.set()
+        room_sampled_on.wait(30.0)
+        self.sync_off = ws.op('{"id":5,"op":"selectionSync","on":false}')
+        ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0), TOGGLE))
+        self.told_off = ws.next_push("selection", 5.0, since=len(ws.pushes))
+        ws.drain(0.3)
+        self.picked_off.set()
+        room_sampled_off.wait(30.0)
+
         self.reset = ws.op('{"id":3,"op":"resetEdit"}')
         ws.drain(0.5)
         ws.close()
@@ -209,6 +271,13 @@ def desktop_edit_root():
     return (count, children)
 
 
+def room_selection():
+    """What the room holds: FreeCADGui.Selection on the GUI thread with
+    no scope open IS the room."""
+    return sorted((s.ObjectName, tuple(s.SubElementNames))
+                  for s in FreeCADGui.Selection.getSelectionEx(DOC))
+
+
 def panel_up():
     try:
         return FreeCADGui.Control.activeDialog() is not None
@@ -218,7 +287,7 @@ def panel_up():
 
 def sample():
     s = (state["phase"], in_edit(), root_children(), views_3d(),
-         desktop_edit_root(), panel_up())
+         desktop_edit_root(), panel_up(), room_selection())
     state["samples"].append(s)
     return s
 
@@ -282,7 +351,13 @@ def poll():
             # joined by the time the op was answered.
             state["phase"] = "client-edit"
             QtCore.QTimer.singleShot(400, lambda: (sample(), desktop_sampled.set()))
-        elif phase == "client-edit" and not client.is_alive():
+        elif phase == "client-edit" and client.picked_on.is_set():
+            state["phase"] = "sync-on"
+            QtCore.QTimer.singleShot(300, lambda: (sample(), room_sampled_on.set()))
+        elif phase == "sync-on" and client.picked_off.is_set():
+            state["phase"] = "sync-off"
+            QtCore.QTimer.singleShot(300, lambda: (sample(), room_sampled_off.set()))
+        elif phase == "sync-off" and not client.is_alive():
             state["phase"] = "end"
     except Exception:
         note("ABORT poll:\n" + traceback.format_exc())
@@ -309,6 +384,7 @@ def verify():
         a = [s for s in samples if s[0] == "desktop-edit"]
         b = [s for s in samples if s[0] == "client-edit"]
         idle = [s for s in samples if s[0] in ("start", "end", "desktop-leave")]
+        b = b + [s for s in samples if s[0] in ("sync-on", "sync-off")]
 
         # A. The desktop's session, read from the client and the window.
         told = client.told_entered or b""
@@ -344,8 +420,29 @@ def verify():
                   any(panels), panels[:10])
         check("a pointer move from the initiating client is answered",
               client.input_pushed_own is True, "pushed: %s" % client.input_pushed_own)
+        # The sync toggle, read from the room.
+        on = [s for s in samples if s[0] == "sync-on"]
+        off = [s for s in samples if s[0] == "sync-off"]
+        told = client.told_click or b""
+        check("a click replayed into the session selects the line and is told back",
+              b'"obj":"Sketch"' in told and b'"sub":""' not in told, told[:160])
+        told = client.told_on or b""
+        check("the client's in-edit pick is told back to it",
+              b'"obj":"Sketch"' in told and b'"sub":""' not in told, told[:160])
+        check("with sync on the room follows the client's in-edit pick",
+              any(s[6] and s[6][0][0] == "Sketch" for s in on), [s[6] for s in on[-3:]])
+        sync_off = reply_of(client.sync_off)
+        check("the selectionSync op turns the toggle off",
+              sync_off.get("ok") is True and sync_off.get("on") is False, sync_off)
+        told = client.told_off or b""
+        check("the toggled element left the client's instance",
+              b'"items":[]' in told, told[:160])
+        check("with sync off the room keeps what it had",
+              any(s[6] and s[6][0][0] == "Sketch" for s in off), [s[6] for s in off[-3:]])
         reset = reply_of(client.reset)
         check("the client's resetEdit is accepted", reset.get("ok") is True, reset)
+        check("the session's end takes the forwarded selection back",
+              not room_selection(), room_selection())
 
         # Idle again: the root is out of the window's graph, and the
         # geometry is back.
@@ -369,6 +466,8 @@ def finish():
     desktop_entered.set()
     desktop_left.set()
     desktop_sampled.set()
+    room_sampled_on.set()
+    room_sampled_off.set()
     try:
         FreeCADGui.getDocument(DOC).resetEdit()
     except Exception:

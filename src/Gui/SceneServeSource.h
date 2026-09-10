@@ -142,6 +142,17 @@ public:
      */
     void schedulePublish();
 
+    /** The selection sync toggle (docs/ThinClient.md 8.11).
+     *
+     * In a session a browser started, whether that session's selection
+     * is forwarded into the room so the desktop's tree, panels and
+     * highlight follow it. Default on; off leaves the desktop's chrome
+     * where its user left it. Set from a client through the
+     * `selectionSync` control op.
+     */
+    void setSelectionSync(bool on);
+    bool selectionSync() const;
+
     /// Traverse and publish now, on the calling thread. Returns false if
     /// nothing was published (invalid source, or the feeds had not
     /// changed).

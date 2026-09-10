@@ -8413,6 +8413,14 @@ static void handleControlMessage(const char *json)
         parseOnViewAnchors(json);
         fcviewer_onview_event(json);
     }
+    else if (std::strstr(json, "\"cmd\":\"selection\"")) {
+        // This client's own selection as the server resolved it
+        // (docs/ThinClient.md 8.11): the viewer keeps painting its local
+        // pick, which is instant; the DOM layer gets the server's word,
+        // which is what a filtered pick or an in-edit element comes back
+        // as. Nothing here is rerouted by it.
+        fcviewer_control_event(json);
+    }
     else if (std::strstr(json, "\"id\":") || std::strstr(json, "\"op\":")) {
         // This viewer's own edit request, answered (sec 8.9 step 4). Read
         // here rather than in the chrome because the input routing is

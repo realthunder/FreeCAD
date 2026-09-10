@@ -236,6 +236,20 @@ public:
     virtual std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>& pnts) const = 0;
     /// The camera this view looks through, or null before one is stated.
     SoCamera* getCamera() const;
+    /** Whether the camera is a client's, stated over the wire.
+     *
+     * A desktop view owns its camera and an edit mode may turn it -- the
+     * sketcher faces the sketch plane on entry. A mirror's camera is what
+     * its client last stated and will state again on its next frame
+     * (docs/ThinClient.md 8.11: the camera stays the client's), so an
+     * adjustment here would only disagree with the picture the client
+     * draws until then, and every pixel resolved in between would land
+     * somewhere the client cannot see.
+     */
+    virtual bool cameraIsRemote() const
+    {
+        return false;
+    }
     /** The world-space size of what the viewport shows.
      *
      * Camera arithmetic and an aspect ratio, so it is the same answer with
