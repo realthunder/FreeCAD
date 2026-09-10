@@ -269,7 +269,9 @@ void MaterialLibraryLocal::updatePaths(const QString& oldPath, const QString& ne
         std::make_unique<std::map<QString, std::shared_ptr<Material>>>();
     for (auto& itp : *_materialPathMap) {
         QString path = itp.first;
-        if (path.startsWith(op)) {
+        // Whole components: renaming "Metal" must leave "Metals/..." alone.
+        // The map is keyed case-sensitively, so this comparison is too.
+        if (isPathPrefix(path, op)) {
             path = np + path.remove(0, op.size());
         }
         itp.second->setDirectory(path);

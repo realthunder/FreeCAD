@@ -322,10 +322,11 @@ std::shared_ptr<Material> MaterialManagerLocal::getMaterialByPath(const QString&
             if (!materialLibrary) {
                 continue;
             }
-            if (cleanPath.startsWith(
-                    materialLibrary->getDirectory(),
-                    materialLibrary->caseSensitivity()
-                )) {
+            // A whole component, or a library at ".../Material" answers for
+            // a path in ".../Material2" and the real owner never gets asked
+            if (Library::isPathPrefix(cleanPath,
+                                      materialLibrary->getDirectory(),
+                                      materialLibrary->caseSensitivity())) {
                 try {
                     return materialLibrary->getMaterialByPath(cleanPath);
                 }

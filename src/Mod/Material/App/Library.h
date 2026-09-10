@@ -107,6 +107,15 @@ public:
 
     static QString canonical(const QString& path);
 
+    /// Is `prefix` a whole leading path component of `path` -- the test to
+    /// make before taking a prefix off a path, or reading one as "this path
+    /// is inside that one". A plain startsWith() does not ask it, and the
+    /// library named "User" then finds itself at the front of every absolute
+    /// path under a macOS home. An empty prefix matches, as it always did.
+    static bool isPathPrefix(const QString& path,
+                             const QString& prefix,
+                             Qt::CaseSensitivity sensitivity = Qt::CaseSensitive);
+
     Qt::CaseSensitivity caseSensitivity() const;
 
 private:

@@ -30,11 +30,14 @@
 
 #include <Mod/Material/App/Library.h>
 
-/// A library strips its own name off the front of a path it is given, and the
-/// name is a whole path component. Getting that wrong was not academic: the
-/// library named "User" found "/User" at the front of every absolute path
-/// under a macOS home, took it off, and keyed the card at "s/someone/..." --
-/// so a card saved into the User library could not be read back at all.
+/// A library takes its own name, and its own root directory, off the front of
+/// a path it is given -- and both are whole path components. Getting that
+/// wrong was not academic: the library named "User" found "/User" at the
+/// front of every absolute path under a macOS home, took it off, and keyed
+/// the card at "s/someone/..." -- so a card saved into the User library could
+/// not be read back at all. The same unbounded test decided which library a
+/// path belonged to, where a library at ".../Material" would answer for a
+/// path in ".../Material2".
 class TestLibraryPaths: public ::testing::Test
 {
 protected:
@@ -91,4 +94,56 @@ TEST_F(TestLibraryPaths, localPathStripsTheNameAsAWholeComponent)
 {
     EXPECT_EQ(local("/User/Metal/Steel.FCMat"), root() + "/Metal/Steel.FCMat");
     EXPECT_EQ(local("/Users/someone/Steel.FCMat"), root() + "/Users/someone/Steel.FCMat");
+}
+
+TEST_F(TestLibraryPaths, relativePathStripsTheRootAsAWholeComponent)
+{
+    const std::string card = root() + "/Metal/Steel.FCMat";
+    EXPECT_EQ(relative(card.c_str()), "Metal/Steel.FCMat");
+}
+
+TEST_F(TestLibraryPaths, relativePathKeepsADirectoryThatMerelyStartsWithTheRoot)
+{
+    // A sibling directory whose name begins with the library's own
+    const std::string sibling = root() + "2/Steel.FCMat";
+    EXPECT_EQ(relative(sibling.c_str()), sibling.substr(1));
+}
+
+/// The test the three other callers make through Library::isPathPrefix:
+/// two managers deciding which library owns a path, and a folder rename
+/// deciding which cards move with it
+TEST_F(TestLibraryPaths, isPathPrefixWantsAWholeComponent)
+{
+    using Materials::Library;
+
+    EXPECT_TRUE(Library::isPathPrefix(QStringLiteral("/a/b"), QStringLiteral("/a/b")));
+    EXPECT_TRUE(Library::isPathPrefix(QStringLiteral("/a/b/c"), QStringLiteral("/a/b")));
+    EXPECT_FALSE(Library::isPathPrefix(QStringLiteral("/a/bb/c"), QStringLiteral("/a/b")));
+    EXPECT_FALSE(Library::isPathPrefix(QStringLiteral("/a/b2"), QStringLiteral("/a/b")));
+    EXPECT_FALSE(Library::isPathPrefix(QStringLiteral("/a"), QStringLiteral("/a/b")));
+
+    // Relative keys, which is the shape a folder rename compares
+    EXPECT_TRUE(Library::isPathPrefix(QStringLiteral("Metal/Steel.FCMat"),
+                                      QStringLiteral("Metal")));
+    EXPECT_FALSE(Library::isPathPrefix(QStringLiteral("Metals/Iron.FCMat"),
+                                       QStringLiteral("Metal")));
+}
+
+TEST_F(TestLibraryPaths, isPathPrefixKeepsTheTwoEdgesStartsWithHad)
+{
+    using Materials::Library;
+
+    // An empty prefix took nothing off and matched everything; it still does
+    EXPECT_TRUE(Library::isPathPrefix(QStringLiteral("/a/b"), QString()));
+    // A prefix that already ends at a separator has its own boundary
+    EXPECT_TRUE(Library::isPathPrefix(QStringLiteral("/a/b"), QStringLiteral("/")));
+}
+
+TEST_F(TestLibraryPaths, isPathPrefixHonoursTheCaseSensitivityItIsGiven)
+{
+    using Materials::Library;
+
+    EXPECT_FALSE(Library::isPathPrefix(QStringLiteral("/A/b"), QStringLiteral("/a")));
+    EXPECT_TRUE(
+        Library::isPathPrefix(QStringLiteral("/A/b"), QStringLiteral("/a"), Qt::CaseInsensitive));
 }

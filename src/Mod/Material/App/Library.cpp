@@ -35,26 +35,6 @@ using namespace Materials;
 
 TYPESYSTEM_SOURCE(Materials::Library, Base::BaseClass)
 
-namespace
-{
-
-/// Does `clean` carry `prefix` as a whole leading path component? A raw
-/// startsWith() does not ask that, and the library named "User" then takes
-/// the "/User" out of "/Users/someone/..." -- which is what every absolute
-/// path under a macOS home looks like to it, leaving a relative path of
-/// "s/someone/...". Keys stored that way never match the relative path a
-/// caller looks a card up by, so a card saved into the User library could
-/// not be read back on this platform at all.
-bool hasLeadingComponent(const QString& clean, const QString& prefix)
-{
-    return clean.startsWith(prefix)
-        && (clean.length() == prefix.length()
-            || clean.at(prefix.length()) == QLatin1Char('/'));
-}
-
-}  // namespace
-
-
 Library::Library(const QString& libraryName, const QString& iconPath, bool readOnly)
     : _name(libraryName)
     , _readOnly(readOnly)
@@ -139,6 +119,25 @@ void Library::setCaseSensitivity()
     }
 }
 
+bool Library::isPathPrefix(const QString& path,
+                           const QString& prefix,
+                           Qt::CaseSensitivity sensitivity)
+{
+    if (prefix.isEmpty()) {
+        // Nothing to take off, which is what startsWith() said too
+        return true;
+    }
+    if (!path.startsWith(prefix, sensitivity)) {
+        return false;
+    }
+
+    // The prefix has to end where a component ends. Without this the library
+    // named "User" takes the "/User" off "/Users/someone/...", and a library
+    // rooted at ".../Material" claims ".../Material2" as its own.
+    return path.length() == prefix.length() || path.at(prefix.length()) == QLatin1Char('/')
+        || prefix.endsWith(QLatin1Char('/'));
+}
+
 Qt::CaseSensitivity Library::caseSensitivity() const
 {
     return (_caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive);
@@ -182,7 +181,7 @@ QString Library::getLocalPath(const QString& path) const
 
     QString clean = QDir::cleanPath(path);
     QString prefix = QStringLiteral("/") + getName();
-    if (hasLeadingComponent(clean, prefix)) {
+    if (isPathPrefix(clean, prefix)) {
         // Remove the library name from the path
         filePath += clean.right(clean.length() - prefix.length());
     }
@@ -205,7 +204,7 @@ QString Library::getRelativePath(const QString& path) const
     QString filePath;
     QString clean = QDir::cleanPath(path);
     QString prefix = QStringLiteral("/") + getName();
-    if (hasLeadingComponent(clean, prefix)) {
+    if (isPathPrefix(clean, prefix)) {
         // Remove the library name from the path
         filePath = clean.right(clean.length() - prefix.length());
     }
@@ -214,7 +213,7 @@ QString Library::getRelativePath(const QString& path) const
     }
 
     prefix = getDirectoryPath();
-    if (filePath.startsWith(prefix, caseSensitivity())) {
+    if (isPathPrefix(filePath, prefix, caseSensitivity())) {
         // Remove the library root from the path
         filePath = filePath.right(filePath.length() - prefix.length());
     }
