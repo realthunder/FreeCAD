@@ -4235,9 +4235,14 @@ this, then G4, then F1 (sec 11).
 `Activated()`s now run to their last line from the guest; what was
 built, and what the run taught:
 
-- **The host registry** (`MainWindow::addStatusBarItem` /
-  `removeStatusBarItem` / `statusBarItem` / `statusBarItems` /
-  `isStatusBarItem`, `MainWindowPy` the same by keyword) as sized: the
+- **The host registry** -- SUPERSEDED 2026-09-10 by the RemoteEdit
+  merge (sec 11): LinkVibe had built the same registry (`c324d79dfd`,
+  `StatusBarItemSpec`, `MainWindow/StatusBar`), and the merge keeps
+  that one, with our `statusBarItem` / `isStatusBarItem` on top; the
+  note below records what this branch had built.  (`MainWindow::
+  addStatusBarItem` / `removeStatusBarItem` / `statusBarItem` /
+  `statusBarItems` / `isStatusBarItem`, `MainWindowPy` the same by
+  keyword) as sized: the
   fork's seven fixtures register with orders 100-200 left and 700-900
   right, the bar is re-added in order on every registration (QStatusBar's
   insert indices are absolute and it hides what it removes, so each
@@ -4623,6 +4628,409 @@ pivy wheel rebuild); 900 in the wheel (the walker 300, the host node,
 camera, event and view shims 400, the view provider glue and the MDI
 shim 200); 600 of gate.  G4a is the larger half.
 
+### 7.17 -- reserved for the document program (sec 11 item 2), not yet written
+
+### 7.18 The tool bar mirror sized: the desktop's tool bars as models, streamed **[sized 2026-09-10; BUILT 2026-09-10]**
+
+Asked by the ThinClient session (docs/ThinClient.md 8.11, its order's
+item 4: "SecurePython merged; toolbars streamed; client show/hide") and
+ruled 2026-09-10 (sec 11).  Three pieces: **(a)** a multi-subscriber
+signal on `Gui::Fw::Store` beside its one sink, **(b)** a mirror of the
+native tool bars into `QAction` / `QToolBar` models, **(c)** a JSON dump
+of the model classes for their DOM backend.  (a) and (c) are small and
+sized inline; (b) is the section.  The ten requirements the ThinClient
+session sent on 2026-09-10 (per-connection subscription, plain JSON on
+its control channel, command-name identity and order, icons by name
+fetched once, action groups with the desktop's default-switching,
+tooltip/status tip/shortcut text and coalesced live state, tool bar
+name/title/visible and `setState` as one diff, the server's locale,
+clicks as its `command` op, tool bars only) are taken as the spec and
+answered one by one at the end.
+
+**What exists, and what the mirror reuses.**
+
+- The models: `Fw::QAction` (text, icon as a PATH or name string,
+  checkable, checked, shortcut, separator, `command` / `commandIndex`)
+  and `Fw::QToolBar` (a `Layout::Bar` of action refs, separators and
+  widgets; iconSize, toolButtonStyle, movable, floatable, orientation,
+  toggleViewAction), both from 7.15, with `Widget`'s own enabled,
+  visible, toolTip, statusTip, objectName, windowTitle.
+  `FwQt::realizeAction` binds a model whose `command` is set to the
+  host command's REAL `QAction` (`commandAction`: `Command::getAction()`,
+  `initAction()` first, the group's member by `commandIndex`, 1-based,
+  0 the group's own) through an `ActionView` that reads the real action
+  back and applies the model's touched keys -- so a model already
+  stands for a real action, in the model -> action direction.
+- The store (`FwStore.h`): objects by comm id, guest-driven `commOpen`
+  / `commUpdate` / `commCustom` / `commClose`, one `Sink`; `watch`
+  forwards a `propertiesChanged` not from `Source::Guest` as an
+  `update` of the `q_` keys and an `eventEmitted` as a `custom`.
+  `Layout::spec()` already serializes a layout tree (items: widget /
+  layout / action refs as `QObject*`, separator, stretch, spacing,
+  spacer, pos).
+- The desktop: `ToolBarManager::toolBars()` (name -> `QToolBar`, the
+  main window's, the status bar's and the menu bar areas'),
+  `setup(ToolBarItem*)` rebuilding the bars on a workbench switch,
+  `setState(names, state)` on a sketch edit (visibility and the toggle
+  action only; the bar set does not change), `toolbarNames` the
+  workbench's declared order.  Action state: `MainWindow::updateActions`
+  -> `CommandManager::testActive` on a 150 ms timer and on selection
+  changes; `QAction::changed` fires only when a value actually changes.
+  A group: `ActionGroup` (a `QActionGroup` of the members, separators
+  included, `isExclusive`, the `_dropDown` face), the group's own
+  `QAction` re-faced from the member at `property("defaultAction")`
+  (0-based over `actions()`); a click on a member goes
+  `ActionGroup::onActivated(QAction*)` -> `Command::invoke(index,
+  TriggerChildAction)` -> `onInvoke` sets `defaultAction` and re-runs
+  `setup`, and `GroupCommand::activated` persists it.  A member's
+  `Action` parent names its `Command` (`Action::command()`); the members
+  of a `RecentFilesAction` or `WindowAction` are plain `QAction`s with
+  no command.
+- The channel: `registerSceneControlOp(op, mutating, handler(req,
+  boundDoc))` -- the registered form has NO client id, the built-in ops
+  (`edit`, `command`, `onViewFocus`) take one; `SceneStreamServer::
+  sendControl(client, json)` queues a text frame to one connection,
+  `setClientClosedHandler` says when one leaves; `runCommandOp` is
+  `runCommandByName` under the client's `ViewerScope`, allowlisted to
+  `Sketcher_Create*` (docs/ThinClient.md 8.7).
+
+**(a) The fan-out signal, sized.**  On `Store`:
+
+- `Q_SIGNAL void message(const QString& id, const QString& method,
+  const QVariantMap& content, quint64 origin)`, emitted wherever the
+  sink is called today (the two `watch` lambdas), whether or not a sink
+  is set; `open` and `close` are emitted too (the sink never needed
+  them: the guest opened the comm), so a subscriber sees the object's
+  whole life.  The sink stays what it is.
+- `Store::OriginScope` -- an RAII tag (`quint64`, 0 the desktop) the
+  stream sets while it applies a client's write, carried on every
+  `message` the write causes: the fan-out skips the writer, which is
+  the layer's "a `Source::Backend` write does not echo to its writer"
+  rule extended from one writer to N.
+- `Store::snapshot(id)` -> `{model, qtClass, state (the q_ keys),
+  layout (Layout::spec with the refs as IPY_MODEL_ strings), parent
+  (ref or empty)}`, what a late subscriber gets per object, in an order
+  where a referenced object precedes the referrer.
+- `Store::adopt(id, Widget*)`: a host producer's object under a
+  synthetic id, watched like a comm's; `commClose` of an adopted id
+  from the guest is refused (`false`), `reset()` keeps them (a guest
+  reset is not the desktop's).  `Store::notifyLayout(id)`: an outbound
+  `update` carrying `layoutSpec` (today only `q_` keys go out, layouts
+  being the guest's own).
+- Applying a client's write: `Store::applyUpdate(id, state, origin)`
+  = `commUpdate` from `Source::Backend` under the scope, and
+  `applyCustom(id, content, origin)` the same for a request.
+
+Gtests in `tests/src/Gui/FormWidgets.cpp`: two slots on `message`, a
+Backend write under origin 7 arrives at both with origin 7; a snapshot
+of a bar with an action, a separator and a widget round-trips as refs;
+an adopted object survives `reset()` and refuses a guest close.  About
+150 lines of C++ and 80 of test.
+
+**(b) The mirror, sized.**
+
+*Identity.*  Every mirrored object is a store object under a synthetic
+id, keyed as the client keys: `cmd:<Command name>` for a command's
+action, `cmd:<group>#<k>` for the member `k` of a group (k =
+`commandIndex`, 1-based over `ActionGroup::actions()`, separators
+counted, so the id names the SAME real `QAction` `commandAction` would
+return), `toolbar:<objectName>` for a bar (the `ToolBarManager` key),
+`widget:<bar>#<n>` for a widget action, and ONE list object,
+`toolbars`, whose layout is the ordered bars.  Ids are stable across
+snapshots and workbench switches: a command's real `QAction` lives as
+long as the command, and so does its model.
+
+*The models.*  A `Fw::QAction` per real action, bound the existing way
+-- `command` / `commandIndex` set, `FwQt::realizeAction` making the
+`ActionView` onto the real action (a write from a client then goes
+model -> real action exactly as a guest's would) -- and kept CURRENT
+the new way: the mirror connects the real action's `changed` and
+refreshes the bag from it (`Source::Native`: text, icon, toolTip,
+statusTip, shortcut, enabled, visible, checkable, checked).  The read
+back writes only what differs, so a client's own write, having reached
+the real action, comes back as no change and no message.  Four traits
+added to `QAction` on both sides (C++ model and `models.py`, the guest
+never sets them): `members` (refs, in `actions()` order, a separator a
+member with `separator` true), `defaultAction` (int, 0-based over
+`members`, -1 none -- the desktop's `property("defaultAction")`, read
+after every `onInvoke`), `exclusive` (bool), `dropDown` (bool).  A
+member model: `command` = the GROUP's name, `commandIndex` = k (its
+binding identity), plus `memberCommand` = the member's own command
+name when it has one, else "" (a plain-`QAction` member of a
+`RecentFilesAction`).  Icons: the `icon` trait carries the NAME --
+`Command::getPixmap()` for a command action, which is what
+`BitmapFactory().iconFromTheme` resolves, a theme name or a file
+path as the workbench wrote it; for the group's own action the default
+member's name; for an action with an icon and no name (a toggle
+action, a plain member) "" -- the client shows text.  Never pixels.
+Tooltip and status tip as the desktop shows them (the `QAction`'s,
+translated by `Command::setup`; the rich tool tip `Action::
+createToolTip` makes is HTML -- the mirror sends the plain
+`Command::getToolTipText` translation, the HTML form is the desktop's
+own composition of that text, the title and the shortcut); the
+shortcut as `QKeySequence::toString(NativeText)`.
+
+A `Fw::QToolBar` per bar: `objectName` = the name, `windowTitle` = the
+translated title, `visible` (the bar's `isVisibleTo(mainWindow)`, so
+`setState`'s hide reads as `visible: false`), `orientation`,
+`iconSize`, `toolButtonStyle`, and one new trait `area` (string:
+`top` / `left` / `right` / `bottom` / `statusbar` / `menubar-left` /
+`menubar-right` -- the fork parks bars in the status bar and beside
+the menu bar); its `bar()` layout is the real bar's `actions()` in
+order: a command action as its `cmd:` ref, a separator as a separator
+item, a `QWidgetAction` (the workbench combo, a spin box) as a
+`widget:` ref to a plain `Fw::Widget` whose `qtClass` is the real
+widget's class name -- the kind a client may skip.  The `toolbars`
+object (a `Fw::Widget`, qtClass `QMainWindow`) has a bar layout whose
+widget items are the `toolbar:` refs in the desktop's order: by area,
+then by geometry (row, then x) for shown bars and by `toolbarNames`
+(the declared order) for hidden ones -- the visual order after the
+user drags a bar is `QMainWindowLayout`'s private state, and geometry
+is its only public trace.
+
+*The producer.*  `Gui::Fw::ToolBarMirror` (`src/Gui/Fw/
+FwToolBarMirror.h/.cpp`), a singleton `QObject` started by the first
+subscriber and stopped by the last (a desktop with no client runs
+nothing; `stop` closes the adopted objects).  `rebuild()`: walk
+`ToolBarManager::toolBars()`, make or update the models, diff against
+the previous set -- bars gone are closed, new ones opened, a bar whose
+content changed gets `notifyLayout`, and the `toolbars` list is
+re-sent ONCE (its `layoutSpec`).  That is the "one snapshot-level
+diff": bar names are the client's keys, action ids do not change, so a
+workbench switch is per-bar opens and closes plus one order message,
+never per-action churn.  Triggers: a new signal `ToolBarManager::
+toolBarsChanged()` emitted at the end of `setup(ToolBarItem*)` and of
+`setState()`; `Application::signalActivateWorkbench`; each bar's
+`visibilityChanged` (a bar-level update); an event filter per bar for
+`QEvent::ActionAdded` / `ActionRemoved` (Draft's tray, a workbench
+adding to a bar at run time -- that bar alone is re-laid).  Live
+state: `changed` on every mirrored real action marks it dirty; a 0 ms
+single-shot flushes the dirty set as one `setProperties` per action
+(one `update` message, the changed keys only).  `testActive`'s 150 ms
+sweep touches every command but `changed` fires only on a real
+change, so a sweep that changes nothing sends nothing, and one that
+enables twenty commands sends twenty single-key updates in one tick.
+A group's `defaultAction` is read back on the group's own `changed`
+(re-facing changes its icon and text, which is the same tick).
+
+*The transport* -- `src/Gui/SceneWidgets.cpp`, in Gui, on the control
+channel of docs/ThinClient.md 4.2, one op per store message:
+
+- The registry gains a client-aware form: `registerSceneControlOp(op,
+  mutating, handler(req, boundDoc, client))` beside the existing one
+  (the `RegisteredOp` struct carries either; `handleSceneControlRequest`
+  already has the client id).
+- `{"op":"widgets.subscribe", "toolbars": true}` -- the connection
+  joins the tool bar stream (`"all": true` joins everything in the
+  store: the guest's forms, later the task panel); the reply is `ok`
+  plus `"theme"` (the desktop's icon override set, `MainWindow::
+  overrideIcons`, "" for the stock theme); then, from the GUI thread,
+  one `{"op":"widgets","method":"open","id":..,"model":..,"qtClass":..,
+  "state":{..},"layout":{..},"parent":..}` per existing object in
+  reference order, and from then on `{"op":"widgets","method":
+  "update"|"custom"|"close","id":..,"content":{..}}` for every store
+  `message` whose origin is not this client.  `{"op":"widgets.
+  subscribe","toolbars":false}` or `widgets.unsubscribe` leaves; a
+  closed connection leaves through `setClientClosedHandler`; the last
+  one out stops the mirror.  Subscription is per connection: a phone
+  that says nothing gets nothing.
+- `{"op":"widgets.icon","name":..,"size":24}` -> `{ok, "name",
+  "format": "svg", "data": "<svg ..."}` (the SVG text itself) when the
+  name resolves to an SVG file (a small new `BitmapFactory().
+  iconSource(name)`: the file `iconFromTheme` would load, read as
+  bytes -- the theme override consulted, the same lookup), else
+  `{"format": "png", "data": <base64>, "size": n}` from
+  `QIcon::pixmap(n)` where only a pixmap exists (a PNG resource, a
+  Python command's bitmap); `{ok:false, code:"UnknownIcon"}` otherwise.
+  The `format` field is the ThinClient session's ask of 2026-09-10:
+  the channel is JSON text, so the encoding is stated, never sniffed
+  (its reply also accepted the two deviations below).  The client
+  caches by (theme, name); a theme change on the desktop is one
+  `custom {"event":"theme","args":[name]}` on the `toolbars` object,
+  which is the cache-drop cue.
+- `{"op":"widgets.update","id":..,"state":{"q_checked":true}}` ->
+  `Store::applyUpdate` under the client's origin -- the model's
+  `ActionView` writes the real action; `{"op":"widgets.custom","id":..,
+  "content":{"event":"trigger"}}` -> `applyCustom` -> the model's
+  `request("trigger")` -> the real `QAction::trigger()`.  For a member
+  that is the real `QActionGroup`'s `triggered`, so `ActionGroup::
+  onActivated(QAction*)` runs, `invoke(index, TriggerChildAction)`
+  moves the default and the group's face, and the next tick shows it
+  -- the desktop's own path, not a re-implementation.  Both ops are
+  `mutating` (refused on a view-only connection).
+- The `command` op gains an optional `"index"` (1-based, the model's
+  `commandIndex`): `cmd->invoke(index - 1, Command::TriggerChildAction)`
+  -- the same member path for a client that keys on command names and
+  never opens the model (the ThinClient session's item 9); without
+  `index` it is `runCommandByName` as today.  The allowlist stands as
+  theirs: a click on a command it refuses reads `CommandRefused`, which
+  that session accepts until dialogs mirror (8.11).
+- Values on the wire are the bag's, which is traitlets-shaped already:
+  strings, bools, ints, floats, lists, maps, refs as `IPY_MODEL_<id>`
+  strings, a colour as `[r, g, b, a]` floats (the layer's `q_color`),
+  an enum as its Qt integer.  `QVariant` -> `QJsonValue` is the whole
+  conversion; nothing `QVariant`-only crosses.
+
+*The gate.*  `SandboxToolBarMirror`, a GUI gate module in the rig's
+default list (`scripts/sandbox-gui-gate.py`), driven through a
+`FreeCADGui.FormWidgets` hook (`mirrorToolBars(on)`, `snapshot(id)`,
+`messages()` -- a drained list of the store's `message` emissions, the
+gate's subscriber): activate Draft, assert the `toolbars` order names
+Draft's bars in area order, each bar's layout its actions as `cmd:`
+refs with the kinds right (a separator, the workbench combo as a
+`widget:` item); a group command (`Draft_...` has none natively --
+`Std_ViewIsometric`'s `Std_ViewGroup` or `Part_CompPrimitives`): its
+members, the default, `invoke(k, TriggerChildAction)` from the test
+moving `defaultAction` and re-facing the group's `icon` in the next
+tick; a checkable (`Std_ToggleVisibility` is not; `Draft_ToggleGrid`
+is) toggled from the model reaching the real action and coming back
+as no message; `testActive` with a selection change producing one
+update per changed action and none otherwise; a sketch edit
+(`Std_SketchEdit` needs a document: the gate opens a sketch, calls
+`Gui.ActiveDocument.setEdit`) arriving as bar-level `visible` updates
+and one order message, no action churn; switching to BIM closing
+Draft's bars and opening BIM's with the `cmd:` ids of shared commands
+unchanged.  The transport in Tests_run (`tests/src/Gui/
+SceneWidgets.cpp`): the stream with an injected sender in place of
+`SceneStreamServer::sendControl`, subscribe / snapshot order /
+update / unsubscribe / a closed client, and the `widgets.icon` op on
+a stock SVG and a PNG.
+
+*Budget.*  About 1100 lines of host C++ (the mirror 550, the stream
+and the three ops 300, the store's (a) 150, the registry form, the
+manager's signal, the `command` op's index and the icon source 100),
+15 lines of `models.py` (the five traits), and 400 of gate.  One
+session, (a) first because the gate needs it.
+
+**(c) The model dump, sized.**  `src/Tools/bindings/dumpWidgetModels.py`
+reads `freecad/widgets/models.py` and `items.py` with `ast` -- not by
+importing them: the conda Python has no `ipywidgets` or `traitlets`,
+and the guest's is in pyodide -- and writes JSON: per class with a
+`_model_name` (its Python name, `qt_class`, the base model, the `q_`
+traits with trait type as a JSON type name -- Unicode `string`, Bool
+`bool`, Int `int`, Float `float`, List `list` with its item type, Dict
+`object` -- the default literal and `allow_none`), the `Signal(...)`
+declarations with their argument specs, and the `CLASSES` map (Qt
+class name -> model).  Shape: `{"module": "freecad.widgets",
+"version": "0.1", "prefix": "q_", "classes": {"QActionModel":
+{"python": "QAction", "qtClass": "QAction", "base": "QWidgetModel",
+"properties": {"text": {"type": "string", "default": ""}, ...},
+"signals": {"triggered": ["bool"], ...}}, ...}, "qtClasses":
+{"QDialog": "QDialogModel", ...}}`.  A trait whose default is not a
+literal (a call, a name) is recorded with `"default": null` and
+`"opaque": true` rather than guessed.  The build runs it beside the
+wheel (`src/App/CMakeLists.txt`, the `WidgetsSandboxWheel` block) into
+`<build>/<datadir>/Pyodide/widget-models.json` (`share/Pyodide/` in
+the conda tree, beside the wheels), installed under `<datadir>/
+Pyodide/`, so the DOM backend's build reads one file with no Python of
+its own; the script also runs alone.  Test: a plain
+unittest in the Python suite (`src/Mod/Test/SandboxModelDump.py`, no
+GUI) running the script on the tree and asserting the `QActionModel`
+entry, the base chain to `QWidgetModel`, and that every `CLASSES` value
+is a dumped class.  About 200 lines of Python and 40 of test.
+
+**The ten requirements, answered.**
+
+1. Per connection: `widgets.subscribe` / `unsubscribe`, snapshot on
+   attach, diffs after, nothing to a connection that never asked.
+2. Plain JSON on the control channel, one op per store message; refs
+   as strings, colours as float lists (the layer's form, in the dump),
+   enums as Qt integers.  Not hex strings: the dump names the type,
+   and one encoding on both wires is worth more than a second one.
+3. Bars in area-then-geometry order, actions in bar order, identity
+   `command` + `commandIndex` (the command name, and the member index
+   for a group), separators as layout items, widget actions as a
+   `widget:` kind with the real class name.
+4. Icons by name in the stream, `widgets.icon` fetching SVG bytes or a
+   PNG at a stated size once, cached by (theme, name); a theme change
+   is one event.  No per-icon overlay state: the fork's override is
+   one global set, and the desktop varies nothing else per icon.
+5. Groups: `members`, `defaultAction`, `exclusive`, `dropDown` on the
+   group's model; a member's trigger goes through the real
+   `QActionGroup`, so the default moves as it does for the desktop
+   user and the next tick shows it; checkable and exclusive members
+   read as `checkable` / `checked` live.
+6. toolTip, statusTip, shortcut text, enabled / visible / checked live,
+   coalesced per 0 ms tick; `testActive` costs one message per action
+   that actually changed.
+7. Per bar name, title, `visible`, `area`, the ordered layout;
+   `setState` arrives as bar-level `visible` updates and one order
+   message, the action ids untouched.
+8. The server's locale, noted in the subscribe reply (`"locale"`).
+9. The `command` op as today, plus `index` for a group member; the
+   model path (`widgets.custom` trigger) is the alternative for a
+   client that holds the models anyway.
+10. Tool bars only: no menu bar, no context menus, no dock or status
+    bar, no task panel -- the latter being 7.12's port, and it will
+    ride the same stream when it exists.
+
+Nothing in the ten enlarges the sizing.  The two things NOT done as
+asked, said plainly: colours stay float lists (2), and the visual order
+of hidden bars is the declared order (3).
+
+**Built 2026-09-10, as sized, with these notes.**
+
+- **(a)** `Fw::Store::message(id, method, content, origin)` beside the
+  sink; `adopt` / `release` / `isAdopted`, `snapshot`, `snapshotOrder`,
+  `applyUpdate` / `applyCustom`, `notifyLayout`, `OriginScope` /
+  `currentOrigin`; `open` and `close` announced for comm objects too;
+  `reset()` keeps the adopted objects and announces the guest's
+  closes.  `snapshotOrder` follows an object's state and layout refs
+  but NOT its parent ref: a container names its children through its
+  layout, so following the parent back put the container before its
+  last child (the first gate run showed `toolbar:Clipboard` after
+  `toolbars`).  A write from a client is echoed as the layer has it --
+  an equal write is still a write -- under the client's origin, which
+  the stream skips; nothing comes back from the real action for an
+  equal value (the mirror writes only what differs).
+- **(b)** `Gui::Fw::ToolBarMirror` (`src/Gui/Fw/FwToolBarMirror.*`),
+  `Gui::SceneWidgetStream` and the five `widgets.*` ops
+  (`src/Gui/SceneWidgets.*`, registered by
+  `installSceneControlHandler`), the client-aware
+  `registerSceneControlOp` form, `ToolBarManager::toolBarsChanged`
+  (and `toolBars()` made public), `ActionGroup::hasDropDownMenu`,
+  `BitmapFactory::iconSource(name, size, format)`, the `command` op's
+  `index`, the five `QAction` traits and `QToolBar.area` on both sides.
+  One rule the sizing did not state: a bar whose toggle action the
+  desktop hides -- another workbench's, or one `setState` forced
+  hidden -- is NOT mirrored (`ToolBarManager::toolBars()` lists every
+  bar ever made, hidden ones included; the first gate run mirrored
+  Part Design's bars under Draft).  So a workbench switch IS per-bar
+  closes and opens plus one order message, and a `setState` hide is a
+  close, which is item 7 as asked.  A client's write to a mirrored
+  action goes through `FwQt::bindAction` (bound by pointer), not the
+  command write filter: the filter is for the guest.  A connection
+  that is gone is dropped when a push to it fails (the server's closed
+  handler is per document group; the stream is not).  The tool tip is
+  the command's translated tool tip text; a plain action's rich text
+  is flattened.  Not built: the theme-change event on the `toolbars`
+  object (a theme change is a stylesheet change; a client
+  re-subscribes) -- sec 13.  The `command` op's `index` sits behind
+  that op's `Sketcher_Create*` allowlist (docs/ThinClient.md 8.7) like
+  the rest of it; the model path (`widgets.custom` with `trigger` on
+  the member) is the one the gate exercises, and it moves the default
+  the desktop's way.
+- **(c)** `src/Tools/bindings/dumpWidgetModels.py`, the
+  `WidgetModelsJson` target writing `<build>/share/Pyodide/
+  widget-models.json` (39 classes, 54 Qt names), a base that is no
+  model of its own (`QAbstractItemView`, `QAbstractButton`,
+  `QAbstractSpinBox`, `InputField`) folded into its model subclasses.
+- **Gates**: `FormWidgets.cpp` `test_storeFanOut` and
+  `test_widgetStream` (19 cases now); `SandboxToolBarMirror` (5, in
+  the GUI gate's default list, last, no guest: the structure under
+  Draft, `Std_DrawStyle` as the group, the coalescing on a selection
+  change, the transport with the injected sender, the switch to Part);
+  `SandboxModelDump` (6, in the Python suite).  Hooks for the gates on
+  `FreeCADGui.FormWidgets`: `watchMessages` / `messages`, `snapshot`,
+  `snapshotOrder`, `mirrorToolBars`, `mirrorFlush`, `control` (a
+  request under a client id, the stream's sender injected: a client
+  above 1000 is "gone") and `pushed`.
+- **Facts that bit**: this fork's Draft bars are "Draft Creation",
+  "Draft Modification" (not upstream's "Draft creation tools");
+  `FormWidgets`' `variantToPy` flattens a nested list, so `pushed()`
+  returns maps; under `FreeCADCmd` `sys.executable` is FreeCAD, so the
+  dump test finds a plain interpreter under `sys.base_prefix`.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -4781,7 +5189,7 @@ Non-ASCII object names occur in real files.  Rig:
                                                           typed on the host, the key
                                                           stream, a menu, the main window
                                                           shim (7.11); the same gate script
-    tests/src/Gui/FormWidgets.cpp                   17    H0-H1, G3b, G3c: the host widget
+    tests/src/Gui/FormWidgets.cpp                   19    H0-H1, G3b, G3c: the host widget
                                                           layer's property core, class set,
                                                           layout ops, code-built layouts,
                                                           bars, actions, the key relay,
@@ -4789,8 +5197,18 @@ Non-ASCII object names occur in real files.  Rig:
                                                           output for OrthoArray, the Qt
                                                           backend binding uic's widgets, the
                                                           ports, the item views, dialogs and
-                                                          containers (7.12, 7.11);
+                                                          containers (7.12, 7.11); the
+                                                          store's fan-out and the widget
+                                                          stream (7.18);
                                                           FormWidgets_Tests_run, offscreen
+    src/Mod/Test/SandboxToolBarMirror.py             5    7.18: the tool bar mirror under
+                                                          Draft (structure, a group's
+                                                          default, coalescing, the stream
+                                                          with an injected sender, a
+                                                          workbench switch); the GUI gate
+                                                          script, no guest needed
+    src/Mod/Test/SandboxModelDump.py                 6    7.18 (c): the widget model dump
+                                                          run on the tree; the Python suite
     src/Mod/Spreadsheet/TestSpreadsheet*.py          --   run with routing ON for parity
 
 The acceptance harness opens a real saved-and-reopened `.FCStd` under a
@@ -4859,7 +5277,24 @@ tool bars (the ToolBarManager's live QAction set) into `QAction` /
 `QToolBar` models with a change notification on `setState`, and a
 JSON dump of the model classes, properties and defaults generated
 from the guest `models.py` for their DOM backend.  Sizing 7.17 waits
-behind it.
+behind it.  **Merged 2026-09-10** (the merge commit on SecurePython,
+338 commits from RemoteEdit at its tip): thirteen files conflicted;
+the one semantic conflict was the status bar registry, which BOTH
+branches had built independently (7.15 here, LinkVibe's `c324d79dfd`
+there) -- resolved in favour of LinkVibe's (`StatusBarItemSpec`, the
+`MainWindow/StatusBar` group, the id as the widget's objectName,
+orders 0-1000 with the workbench band 550-699 between the input hints
+at 100 and the notifications at 800), keeping from ours what callers
+need: `MainWindow::statusBarItem(id)` and `isStatusBarItem(widget)`
+(the tool bar manager's skip), the Python `statusBarItem`, and the two
+sandbox indicators registered at 900 and 910 right; `SandboxGui.cpp`'s
+`gui.mainwindow` ops and the `SandboxInitGui` gate follow the new
+group and names.  The bgfx, OndselSolver, cycles and vg-renderer
+submodules moved with the merge.  The three pieces are SIZED as 7.18
+(with the ThinClient session's ten requirements of 2026-09-10 answered
+there); 7.17 stays reserved for the document program.  **All three
+BUILT 2026-09-10** (7.18's built note; the peer session told, the
+push the user's call).
 
 0. **The cut** (1.6, audited): RULED 2026-09-09 "freeze everything"
    -- not executed, not scheduled; the guest-GUI code stays frozen in
@@ -5411,6 +5846,17 @@ sockets, any network for the reference image, a webview escape hatch.
   site-packages -- untested, and it would bring the 1.5 s import back.
 - The audit log's retention and where the Report view shows it; the
   addon manifest format.
+- The widget stream (7.18): no theme-change event yet -- a desktop
+  icon-theme change is a stylesheet change, and a client's icon cache
+  keyed (theme, name) is refreshed by re-subscribing; a guest form's
+  own layout ops (`commCustom` with `layout`) are forwarded to the
+  backend and not announced on `Store::message`, so an `all`
+  subscriber sees a guest form's layout as it was at open and at
+  `notifyLayout`, not its later incremental ops (the mirror's bars
+  re-send their whole layout, so the tool bars are exact); the
+  `command` op's `index` is behind that op's `Sketcher_Create*`
+  allowlist until dialogs mirror (docs/ThinClient.md 8.11), the model
+  path is the live one.
 
 ## 14. Sources and what the audit found
 

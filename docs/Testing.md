@@ -11,8 +11,8 @@ as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
-| Python (`FreeCADCmd -t 0`) | **2630 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-09) |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **522 of 522 passing**, 0 failures, 7 ctest entries disabled |
+| Python (`FreeCADCmd -t 0`) | **2688 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-10, after the RemoteEdit merge) |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **605 of 605 passing** (2026-09-10), 0 failures, 7 ctest entries disabled -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available" |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **478 of 478 passing** (2026-09-07), 1 disabled -- see "C++ on macOS" |
 
