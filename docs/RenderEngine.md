@@ -2679,8 +2679,166 @@ have moved are shown not to have moved.
 
 None of this includes the composite. Every backend but GL renders
 without reaching the screen in these runs (`BGFXView::blit` stands
-aside), so these are submission costs rather than frames on screen; the
-readback composite adds an upload plus a quad to each non-GL row.
+aside), so these are submission costs rather than frames on screen.
+What the composite adds is NOT "an upload plus a quad", as this
+paragraph claimed until it was measured: it is 2.17 to 7.61 ms a frame
+depending on the backend, and most of that lands where the composite's
+own counters never look. The next section measures it, and it changes
+which backend wins.
+
+### The composite priced, and the ordering it overturns (2026-09-09, quiet box)
+
+The table above was measured before Route A existed, so its non-GL rows
+price a frame that never reached the screen. This is the same model
+through the app as it now runs, plus the control that says what the
+composite itself costs. Eleven legs, about three hours, and **nothing
+touched the box while any of them measured** -- which is the whole
+reason the numbers are usable, and the reason an earlier attempt at
+this table was thrown away.
+
+**The shape of the run is the instrument.** Seven legs live: one
+DISCARD first (the fifth trap -- a session's first leg reads high),
+then a palindrome, `vk d3d11 d3d12 | d3d12 d3d11 vk`, so each backend
+holds two legs symmetric about the middle. A drift running one way
+through the session cancels in the pair mean; a pair that disagrees
+says so rather than hiding. Then four control legs with
+`FC_BGFX_READBACK=0` -- discard first again -- in the SAME binary,
+because comparing against the morning's composite-free table would
+compare two binaries and attribute four hours of unrelated commits to
+the composite.
+
+**Every number below is a measured leg; the two discards appear
+nowhere.** Live rows are the pair mean, off rows the single control
+leg. Mixing a discard into one row and not another is how a table
+stops being a comparison.
+
+Composite live (pair means) against the same backend with the composite
+off, ms per frame:
+
+| Backend | live a | live b | live | off | price | `screen` says | unaccounted |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Direct3D 11 | 88.70 | 87.29 | **88.00** | 85.83 | **+2.17** | 0.84 | 1.33 |
+| Direct3D 12 | 96.22 | 94.81 | **95.52** | 88.43 | **+7.09** | 0.78 | 6.31 |
+| Vulkan | 100.06 | 95.88 | **97.97** | 90.36 | **+7.61** | 1.23 | 6.38 |
+
+`bgfx::frame` alone, which is where the readback is serviced: 20.95
+against 19.86 on D3D11 (**+1.09**), 25.03 against 20.04 on D3D12
+(**+4.99**), 27.62 against 20.04 on Vulkan (**+7.58**).
+
+**The box held still, and that is the first thing to check.** Spread on
+the shared C++ terms WITHIN a backend is 1-4%, against 67% on the
+discarded attempt. The one exception is `vk-a`, which reads about 6%
+high on `submitloop`, `pre` and `post` together -- the tell again. It
+is kept in the row above rather than quietly dropped, but it is the leg
+to distrust: Vulkan's clean legs read 95.88 live and 90.36 off, which
+prices the composite at **+5.52** instead of +7.61. Both numbers are in
+the same place relative to the finding -- three to seven times what
+Direct3D 11 pays -- and `bgfx::frame` says the same thing without the
+ambiguity, +7.18 on the clean leg against +7.58 on the pair.
+
+**The composite's own accounting understates it by 3x to 8x.** The
+`screen` row reports 0.78-1.23 ms of upload plus quad and is not wrong
+about those; the rest is inside `bgfx::frame`, where bgfx services the
+readback. And `wait` reads 0.00 on every leg, correctly -- the route is
+pipelined and reads a frame late, so OUR code never blocks. A cost that
+appears in neither `wait` nor `total` still lands on the frame; an
+instrument measuring its own section is not measuring the route.
+
+**Which backend wins is now decided by the composite, not by
+submission.** Submission is a near tie -- 19.6-21.2 ms across all three
+-- and the non-GL frames sit within 4% of each other with the composite
+off. Turn it on and Direct3D 11 leads by 8%, purely because the
+readback is nearly free on it and costs the other two 5 to 7.6 ms.
+
+**So the earlier ordering claim does not survive, and it should not be
+quoted.** "Vulkan first, Direct3D 11 alongside, Direct3D 12 behind" was
+read off single legs of one session. Composite-free this morning:
+Vulkan 87.54, D3D11 88.06, D3D12 92.52. Composite-free tonight, in the
+newer binary: D3D11 85.83, D3D12 88.43, Vulkan 90.36. The three swap
+places between sessions at a 2-5% margin, so on THIS workload they are
+a tie and the ordering among them is noise. What survives every session
+is the separation that is an order of magnitude rather than a few
+percent: **OpenGL spends about 8x what any of them spend to issue the
+same 41259 draws.** Rank GL against the rest; do not rank the rest
+against each other on this model.
+
+**The composite is also correct at speed, which is not automatic.**
+Every live leg: 0 stale of 197-208 landed frames, mean latency exactly
+2.0 frames. Pipelining is what makes the screen trail the scene by two
+frames -- about 180 ms at these frame times -- and that lag, not the
+milliseconds, is the honest cost of Route A on a model this size.
+
+**! The binaries carried no `NDEBUG`.** `/O2 /Ob1 /MD /Zi`, release
+CRT, bgfx's own asserts off (`BX_CONFIG_DEBUG=0`), but `assert()` live
+in our own translation units. That was fixed after these legs ran, and
+measuring it again changed nothing -- see the next section, which also
+withdraws the guess that it mattered.
+
+**A teardown hang worth knowing about when driving legs.** One leg
+finished measuring, wrote its complete result, and then sat 21 minutes
+at idle CPU with its documents closed and its main window closed --
+wedged after `quit()`, not slow. Six other legs exited cleanly and it
+has not reproduced. A driver that waits for the process to exit hangs
+with it, so wait for the output file's closing `run` line instead and
+kill the process after that.
+
+### Restoring NDEBUG changed nothing measurable (2026-09-09)
+
+The tables above were measured on binaries that defined **no `NDEBUG`**
+in any configuration, because
+`src/3rdParty/cycles/src/cmake/configure_build.cmake` `CACHE ... FORCE`s
+the global MSVC flag variables -- Blender build code assuming it is the
+top-level project -- and none of its Release, RelWithDebInfo or
+MinSizeRel strings carried `/DNDEBUG`. So `assert()` was live in every
+translation unit of FreeCAD, and `/J` (unsigned `char`) was imposed on
+all of it by a vendored path tracer.
+
+That is an ODR mismatch and not merely a preference: OCCT is built
+`/MD /Zi /O2 /Ob1 /DNDEBUG` and Coin `/O2 /Ob1 /DNDEBUG` on this box
+(verified in their caches, not assumed), and their headers inline into
+our translation units, so the same inline function was compiled both
+ways and the linker kept whichever it saw first.
+`docs/DevEnvironment.md` warns against exactly this.
+
+Fixed in the cycles fork, rebuilt whole (4628 targets, 43 minutes, and
+`FreeCADRenderer.dll` shrank by 161 KB, which is what compiling asserts
+out should look like), and measured again: five legs, composite live,
+same model, same size, same settings.
+
+**The frame did not move.** Vulkan's two uncontaminated legs read 96.23
+and 96.25 -- agreeing to 0.02 ms -- against 94.32 and 95.88 with
+asserts live. Position-matched:
+
+| | `submitloop` | `pre` | frame |
+| --- | --- | --- | --- |
+| Vulkan, asserts live | 24.82 | **25.27** | 95.10 |
+| Vulkan, `NDEBUG` | 25.67 | **25.26** | 96.24 |
+| Direct3D 12, asserts live | 26.40 | **27.45** | 96.22 |
+| Direct3D 12, `NDEBUG` | 26.80 | **27.45** | 94.63 |
+
+`pre` is identical to a hundredth of a millisecond on both backends,
+and everything else moves less than the run-to-run noise, in the wrong
+direction as often as the right one.
+
+**So the caveat this section previously carried is withdrawn.** It said
+the absolute milliseconds were "inflated, most of all in `submitloop`
+and `pre`". That was an inference from "asserts are live", it was
+never measured, and when measured it was false. The tables above stand
+as absolute numbers as well as comparisons -- subject to `/Ob1`, which
+is still short of Release inlining and was not tested. **Keep the fix
+for the ODR mismatch, which is a correctness argument; it buys no frame
+time on this workload.**
+
+**And the fifth trap needs restating.** It says a session's FIRST leg
+reads high. Across the two sessions here the first leg was clean both
+times and the **SECOND** leg read about 5% high both times -- Vulkan
+100.06 after 94.32, then 100.99 after 96.23, with `submitloop`, `pre`
+and `post` rising together each time, which is the tell that it is the
+box rather than the backend. Whatever the mechanism (both sessions had
+heavy disk activity behind them -- a document open, and a full rebuild
+six minutes earlier), position is not the rule. The rule is the one
+that survives: **read the shared columns first, repeat every backend,
+and discard any leg whose backend-independent terms moved.**
 
 ### Route D -- Qt owns the device -- is the destination
 

@@ -755,3 +755,58 @@ Measured on ONE Mac: Intel Iris Pro 6200, macOS 12, Qt 6.11.1. Apple Silicon is
 untested here. The failure mode on a machine this does not suit is the one above
 -- `prepare()` fails, the renderer is null, Coin draws -- so the cost of being
 wrong is a slower 3D view, not a broken one.
+## 14. What the composite costs, measured (2026-09-09)
+
+Section 2 priced a readback as a serialized transfer -- 2.42-2.51 ms at
+1080p on this box -- and section 10 built the pipelined route on top of it.
+This is what the finished route costs inside a real frame, measured on
+`MiSTerFlat.FCStd` (17058 solids, 41259 draws, 1280x720) by running each
+backend with the composite live and again with `FC_BGFX_READBACK=0` in the
+SAME binary. Full method and the backend tables: `docs/RenderEngine.md` 7.10,
+"The composite priced".
+
+| Backend | composite off | composite live | price | what `screen` reports | unaccounted |
+| --- | --- | --- | --- | --- | --- |
+| Direct3D 11 | 85.83 | 88.00 | **+2.17** | 0.84 | 1.33 |
+| Direct3D 12 | 88.43 | 95.52 | **+7.09** | 0.78 | 6.31 |
+| Vulkan | 90.36 | 97.97 | **+7.61** | 1.23 | 6.38 |
+
+Every figure is a measured leg, with the two discard legs excluded; the
+live columns are pair means. One Vulkan leg reads about 6% high on terms
+no backend can move, and dropping it puts Vulkan's price at +5.52 rather
+than +7.61 -- either way, several times what Direct3D 11 pays.
+
+**Three things follow, and two of them are warnings about our own
+instrument.**
+
+**The `screen` row is honest about its section and misleading as a total.**
+It reports the upload and the quad, which it measures correctly at
+0.78-1.23 ms. The rest of the price -- 1.3 ms on Direct3D 11, 6.3 on the
+other two -- is inside `bgfx::frame`, where bgfx services the readback
+itself. Anyone sizing Route A off the `screen` row alone will size it 3x to
+9x light.
+
+**`wait 0.00` is correct and proves nothing about cost.** The route reads a
+frame late by design, so our code genuinely never blocks -- and the readback
+still costs the frame. The counter answers "did WE stall", not "what did
+this cost", and those separated the moment the route was pipelined.
+
+**The price is strongly backend-specific, which is a Route D argument.**
+Direct3D 11 pays 2.17 ms for the composite where Direct3D 12 pays 7.09 and
+Vulkan 7.61. With it live, D3D11 is 8% ahead of both on a workload where
+submission is a three-way tie (19.6-21.2 ms), so on Windows today the
+readback -- not the API -- picks the winner. Route D removes that term
+entirely rather than optimizing it, and the backends that Route A punishes
+hardest are the two whose device adoption section 3 already examined.
+
+The lag is unchanged from section 10 and is the cost that does not appear in
+any millisecond column: 0 stale frames of 197-208 landed on every backend,
+mean latency exactly 2.0 frames, so the screen trails the scene by about 180
+ms on a model this size.
+
+**! The binaries carried no `NDEBUG`** (`src/3rdParty/cycles` FORCEs the
+global MSVC flag variables and its strings omitted it). That was fixed and
+re-measured afterwards, and it moved nothing: `pre` came back identical to a
+hundredth of a millisecond on two backends. So these are absolute frame times
+as well as deltas. `docs/RenderEngine.md` 7.10 carries the numbers and
+withdraws the earlier guess that asserts were inflating them.

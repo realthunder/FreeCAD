@@ -219,6 +219,23 @@ TIMING_RE = re.compile(
     r".*? other=(?P<other>-?\d+)")
 
 
+# What the readback composite costs INSIDE the frame, and how many
+# frames showed an image older than the scene. Both belong in a
+# backend table now that the non-GL backends actually reach the
+# screen: without them the rows price submission for a frame nobody
+# can see. `stale` is as much the answer as the milliseconds are --
+# the route is pipelined, so a stale frame is one where the screen
+# showed the previous image, and on a 90ms frame two frames of
+# readback latency is 180ms of lag.
+COMP_RE = re.compile(
+    r"render readback composite \(ms/frame\): queue (?P<queue>-?[\d.]+) \| "
+    r"wait (?P<wait>-?[\d.]+) \| convert (?P<convert>-?[\d.]+) \| "
+    r"upload (?P<upload>-?[\d.]+) \| quad (?P<quad>-?[\d.]+) \| "
+    r"total (?P<total>-?[\d.]+) -- (?P<frames>\d+) frames, "
+    r"(?P<landed>\d+) landed, (?P<stale>\d+) stale, "
+    r"mean latency (?P<latency>-?[\d.]+) frames")
+
+
 class Report(object):
     """Frame-weighted mean of the engine's own per-frame report.
 
@@ -245,6 +262,14 @@ class Report(object):
         self.height = 0
         self.coin = dict((k, 0.0) for k in self.COIN)
         self.coinframes = 0
+        # The composite publishes its own window and its own frame
+        # count, like the Coin line and for the same reason.
+        self.comp = dict((k, 0.0) for k in
+                         ("queue", "wait", "convert", "upload", "quad",
+                          "total", "latency"))
+        self.compframes = 0
+        self.complanded = 0
+        self.compstale = 0
 
     def __call__(self, notifier, message, level):
         if not self.on:
@@ -261,6 +286,10 @@ class Report(object):
             m = TIMING_RE.search(line)
             if m:
                 self._coin(m)
+                continue
+            m = COMP_RE.search(line)
+            if m:
+                self._comp(m)
 
     def _frame(self, m):
         n = int(m.group("frames"))
@@ -307,6 +336,26 @@ class Report(object):
         self.coinframes += n
         for k in self.COIN:
             self.coin[k] += float(m.group(k))
+
+    def _comp(self, m):
+        n = int(m.group("frames"))
+        if not n:
+            return
+        self.compframes += n
+        self.complanded += int(m.group("landed"))
+        self.compstale += int(m.group("stale"))
+        for k in ("queue", "wait", "convert", "upload", "quad", "total"):
+            self.comp[k] += float(m.group(k)) * n
+        # Latency is per LANDED frame, not per composite frame: a stale
+        # frame landed nothing and has no latency to average.
+        self.comp["latency"] += (float(m.group("latency"))
+                                 * int(m.group("landed")))
+
+    def compmean(self, key):
+        if key == "latency":
+            return (self.comp[key] / self.complanded
+                    if self.complanded else None)
+        return self.comp[key] / self.compframes if self.compframes else None
 
     def coinmean(self, key):
         return self.coin[key] / self.coinframes if self.coinframes else None
@@ -496,6 +545,20 @@ def bench():
         % (rep.width, rep.height, fmt(rep.mean("draws"), "%.0f"),
            fmt(rep.mean("prims"), "%.0f"), pixels, cover,
            len(doc.Objects), shapes))
+    # Printed only when the composite ran. On OpenGL the GL blit
+    # carries the frame and there is no composite to price; on every
+    # other backend this is the difference between "the frame was
+    # submitted" and "the frame reached the screen".
+    if rep.compframes:
+        say("  screen  queue %s | upload %s | quad %s | convert %s"
+            " | total %s"
+            % (fmt(rep.compmean("queue")), fmt(rep.compmean("upload")),
+               fmt(rep.compmean("quad")), fmt(rep.compmean("convert")),
+               fmt(rep.compmean("total"))))
+        say("  lag     %d landed, %d stale (%.1f%%), mean latency %s frames"
+            % (rep.complanded, rep.compstale,
+               100.0 * rep.compstale / rep.compframes,
+               fmt(rep.compmean("latency"), "%.1f")))
     say("  run     frames %d windows %d load %.1fs %s"
         % (n, max(0, rep.windows - 1), load_s,
            os.path.basename(DOC) if DOC else "chess"))
@@ -517,6 +580,14 @@ def deferred():
     # its GPU memory while the next one measures. Close the documents
     # first so no save prompt can appear, then the window, and quit
     # from the next turn of the loop.
+    #
+    # Even this is not a guarantee. On 2026-09-09 one leg of eleven ran
+    # all of the below and then sat 21 MINUTES at idle CPU with its
+    # result already written -- wedged after the quit, not slow, and not
+    # reproduced since. So a driver script must not treat "the process
+    # exited" as "the leg finished": wait for the closing `run` line in
+    # FC_BENCH_OUT, which is written before any of this, and kill the
+    # process once it is there.
     from PySide import QtCore
     for name in list(FreeCAD.listDocuments()):
         try:
