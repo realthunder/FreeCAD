@@ -4846,6 +4846,21 @@ Command line: `--grant <permission>[:<target>]`, `--policy <file>`.
 
 **Re-aimed 2026-09-08 (1.2).**  In order; each step ships alone.
 
+**Ruled 2026-09-10, ahead of item 2:** first merge `origin/RemoteEdit`
+(the ThinClient shared-session branch, cut from `LinkVibe` at
+`48378dec12`; docs/ThinClient.md 8.11/8.12 there) INTO `SecurePython`
+-- merge, never rebase; a dry merge on 2026-09-10 conflicts in
+MainWindow.cpp/.h, MainWindowPy.cpp/.h, SceneControl.cpp/.h,
+ViewArea.cpp, MeshLevelSource.cpp, the web style.css and the two docs
+-- then build what that session asked of the widget layer: a
+multi-subscriber signal on `Gui::Fw::Store` (the fan-out point for N
+streamed clients, beside the single sink), a mirror of the native
+tool bars (the ToolBarManager's live QAction set) into `QAction` /
+`QToolBar` models with a change notification on `setState`, and a
+JSON dump of the model classes, properties and defaults generated
+from the guest `models.py` for their DOM backend.  Sizing 7.17 waits
+behind it.
+
 0. **The cut** (1.6, audited): RULED 2026-09-09 "freeze everything"
    -- not executed, not scheduled; the guest-GUI code stays frozen in
    place under the sec 7 header's retire-on-break rule, and 1.7
