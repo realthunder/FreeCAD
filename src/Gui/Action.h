@@ -222,6 +222,14 @@ public:
     int checkedAction() const;
     void setCheckedAction(int);
 
+    /** Fill a menu with the group's actions the way the drop-down does.
+     *
+     * Checkable members become radio buttons or check boxes, as in the
+     * toolbar button's menu, so a menu built elsewhere (the omni search
+     * box expanding a group) looks and behaves the same.
+     */
+    void populateMenu(QMenu *menu) const;
+
 protected:
     QActionGroup* groupAction() const {
         return _group;

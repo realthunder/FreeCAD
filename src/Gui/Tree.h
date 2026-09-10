@@ -162,6 +162,15 @@ public:
 
     void resetItemSearch();
     void startItemSearch(QLineEdit*);
+    /** Prepare an item search and return the object that anchors it.
+     *
+     * Picks the document to search from the current selection (falling
+     * back to the active document) and returns one of its objects, the
+     * owner an App::ObjectIdentifier is parsed against and the root an
+     * ExpressionCompleter completes from. Null when there is nothing to
+     * search.
+     */
+    App::DocumentObject *startItemSearch();
     void itemSearch(const QString &text, bool select);
 
     void relabelObject();

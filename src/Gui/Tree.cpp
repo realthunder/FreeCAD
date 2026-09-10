@@ -1423,6 +1423,11 @@ void TreeWidget::resetItemSearch() {
 }
 
 void TreeWidget::startItemSearch(QLineEdit *edit) {
+    if (auto obj = startItemSearch())
+        static_cast<ExpressionLineEdit*>(edit)->setDocumentObject(obj);
+}
+
+App::DocumentObject *TreeWidget::startItemSearch() {
 
     if(TreeParams::getRecordSelection())
         Selection().selStackPush();
@@ -1448,8 +1453,7 @@ void TreeWidget::startItemSearch(QLineEdit *edit) {
     else if(searchDoc && searchDoc->getDocument()->getObjects().size())
         obj = searchDoc->getDocument()->getObjects().front();
 
-    if(obj)
-        static_cast<ExpressionLineEdit*>(edit)->setDocumentObject(obj);
+    return obj;
 }
 
 void TreeWidget::itemSearch(const QString &text, bool select) {
