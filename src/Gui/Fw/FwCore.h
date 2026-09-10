@@ -98,7 +98,11 @@ enum class Source
 {
     Native = 0,   ///< a typed setter, or the generated setupUi
     Backend = 1,  ///< a view reporting what the user did
-    Guest = 2     ///< the sandbox guest's comm
+    Guest = 2,    ///< the sandbox guest's comm
+    /// A streamed client's write (docs/Sandbox.md 7.18, 7.19): applied
+    /// by the backend like a native write (the widget must show it),
+    /// touching nothing (like a backend's), echoed to the guest.
+    Client = 3
 };
 
 class GuiExport Widget : public QObject
@@ -469,6 +473,9 @@ struct GuiExport LayoutItem
     bool spacer = false;
     int stretch = 0;
     int spacing = 0;
+    /// A widget's or nested layout's alignment in a box or grid cell
+    /// (`Qt::Alignment` value); 0 is the layout's default.
+    int alignment = 0;
     /// A spacer's size hint and size policies (`QSizePolicy::Policy`).
     int width = 0;
     int height = 0;
@@ -574,6 +581,20 @@ public:
     /// `"pos"`): what a backend builds a code-built layout from, and
     /// what the guest's layout spec becomes here.
     QVariantMap spec() const;
+    /// A widget's or nested layout's stretch factor (a box layout's
+    /// `setStretch`) and alignment, by item index; silent (the spec
+    /// carries them as the item's `stretch` and `align`).
+    void setItemStretch(int index, int stretch);
+    void setItemAlignment(int index, int alignment);
+    /// A layout-level value the spec carries beside its fixed keys (a
+    /// grid's `columnStretch`, `rowStretch`, `columnMinimumWidth` as
+    /// lists): what a mirror reads off a real layout; silent.  An
+    /// invalid value removes the key.
+    void setExtra(const QString& key, const QVariant& value);
+    QVariantMap extras() const
+    {
+        return _extras;
+    }
     // QFormLayout
     void addRow(Widget* label, Widget* field);
     void addRow(Widget* field);
@@ -590,6 +611,7 @@ private:
     QList<LayoutItem> _items;
     Layout* _parentLayout = nullptr;
     QVariantList _margins;
+    QVariantMap _extras;
     int _spacing = -1;
     friend class Widget;
 };

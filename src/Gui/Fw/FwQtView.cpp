@@ -67,6 +67,7 @@
 #include <QTreeView>
 #include <QDockWidget>
 #include <QToolBar>
+#include <QToolBox>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QWidget>
@@ -1090,15 +1091,13 @@ View* View::buildForm(Fw::Widget* model, QWidget* parent)
 
 // ---- the bag -> the widget ----------------------------------------------------------
 
-void View::readBack()
+QVariantMap View::readProperties(QWidget* w, const QStringList& keys)
 {
-    QWidget* w = _widget.data();
+    QVariantMap out;
     if (!w)
-        return;
+        return out;
     const QMetaObject* mo = w->metaObject();
-    for (const QString& key : _model->propertyNames()) {
-        if (key == QLatin1String("visible") || _model->isTouched(key))
-            continue;
+    for (const QString& key : keys) {
         int idx = mo->indexOfProperty(key.toUtf8().constData());
         if (idx < 0)
             continue;
@@ -1106,10 +1105,11 @@ void View::readBack()
         if (!v.isValid())
             continue;
         if (v.userType() == QMetaType::QColor) {
-            _model->setInitial(key, colorList(v.value<QColor>()));
+            out.insert(key, colorList(v.value<QColor>()));
             continue;
         }
-        if (v.userType() == QMetaType::QIcon || v.userType() == QMetaType::QPixmap)
+        if (v.userType() == QMetaType::QIcon || v.userType() == QMetaType::QPixmap
+            || v.userType() == QMetaType::QFont)
             continue;
         if (v.userType() == QMetaType::QByteArray)
             v = QString::fromUtf8(v.toByteArray());
@@ -1117,8 +1117,24 @@ void View::readBack()
             v = v.toInt();
         else if (!v.canConvert<QString>() && !v.canConvert<QStringList>())
             continue;
-        _model->setInitial(key, v);
+        out.insert(key, v);
     }
+    return out;
+}
+
+void View::readBack()
+{
+    QWidget* w = _widget.data();
+    if (!w)
+        return;
+    QStringList keys;
+    for (const QString& key : _model->propertyNames()) {
+        if (key != QLatin1String("visible") && !_model->isTouched(key))
+            keys.append(key);
+    }
+    const QVariantMap values = readProperties(w, keys);
+    for (auto it = values.constBegin(); it != values.constEnd(); ++it)
+        _model->setInitial(it.key(), it.value());
 }
 
 void View::apply(const QStringList& names)
@@ -1226,6 +1242,8 @@ void View::applyOne(const QString& key, const QVariant& value)
             t->setCurrentIndex(value.toInt());
         else if (auto s = qobject_cast<QStackedWidget*>(w))
             s->setCurrentIndex(value.toInt());
+        else if (auto tb = qobject_cast<QToolBox*>(w))
+            tb->setCurrentIndex(value.toInt());
     }
     else if (key == QLatin1String("tabs")) {
         if (auto t = qobject_cast<QTabWidget*>(w)) {

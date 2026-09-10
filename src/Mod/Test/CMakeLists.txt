@@ -30,6 +30,7 @@ SET(Test_SRCS
     SandboxProxyImport.py
     SandboxModelDump.py
     SandboxToolBarMirror.py
+    SandboxPanelMirror.py
     SandboxInitGui.py
     SandboxCorpusGui.py
 )

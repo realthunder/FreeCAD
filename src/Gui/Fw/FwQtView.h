@@ -99,6 +99,11 @@ public:
     void release(bool deleteWidget);
     /// Apply the bag under `keys` to the widget.
     void apply(const QStringList& keys);
+    /// The widget's values under `keys`, read through its meta-object
+    /// as `bind` reads them back: a key that is no Q_PROPERTY of the
+    /// widget is absent, a color is a list, an enum or flag an int, an
+    /// icon or pixmap skipped.  What a mirror re-reads (FwPanelMirror).
+    static QVariantMap readProperties(QWidget* widget, const QStringList& keys);
 
     // Fw::Backend: the model's direct channel (a QSignalBlocker on the
     // model does not reach it)

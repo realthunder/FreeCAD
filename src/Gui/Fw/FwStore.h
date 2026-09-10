@@ -101,14 +101,21 @@ public:
     /// id: watched like a comm's, announced as `open`, kept across a
     /// guest `reset()`, and never closed by the guest (`commClose` of an
     /// adopted id answers false).  Replaces an object already under `id`.
-    void adopt(const QString& id, Widget* widget);
+    void adopt(const QString& id, Widget* widget, bool announce = true);
+    /// Announce an object adopted quietly (`adopt(id, w, false)`) as
+    /// `open` now: a producer that adopts a whole tree first, so every
+    /// object's `parent` ref resolves, and announces it in reference
+    /// order after.  Nothing for an id that is not adopted.
+    void announceOpen(const QString& id);
     bool isAdopted(const QString& id) const
     {
         return _adopted.contains(id);
     }
     /// Take an adopted object out (announced as `close`); the producer
     /// deletes it.  False when `id` is not adopted.
-    bool release(const QString& id);
+    /// `announce` false takes the object out without a `close` message:
+    /// a subtree whose root's close implies it (the panel mirror's).
+    bool release(const QString& id, bool announce = true);
     /// The object's whole state for a late subscriber: `{"model",
     /// "qtClass", "state" (the q_ keys), "layout" (Layout::spec with
     /// the refs as IPY_MODEL_ strings, absent without one), "parent"
@@ -119,8 +126,9 @@ public:
     /// names it through its own layout and so comes after it): the
     /// order a subscriber can rebuild in.
     QStringList snapshotOrder() const;
-    /// A streamed client's write: `commUpdate` from `Source::Backend`
-    /// under `origin`, so the fan-out can skip the writer.
+    /// A streamed client's write: `commUpdate` from `Source::Client`
+    /// under `origin`, so the fan-out can skip the writer; a bound view
+    /// applies it to the real widget (a `Backend` write it would not).
     bool applyUpdate(const QString& id, const QVariantMap& state, quint64 origin);
     /// A streamed client's request (`{"event", "args"}`), likewise.
     bool applyCustom(const QString& id, const QVariantMap& content, quint64 origin);

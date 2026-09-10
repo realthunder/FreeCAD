@@ -230,7 +230,7 @@ Widget* Store::commOpen(const QString& id, const QVariantMap& state)
     return w;
 }
 
-void Store::adopt(const QString& id, Widget* w)
+void Store::adopt(const QString& id, Widget* w, bool announceIt)
 {
     if (!w || id.isEmpty())
         return;
@@ -238,10 +238,17 @@ void Store::adopt(const QString& id, Widget* w)
     _adopted.insert(id);
     ++_stats.opened;
     Q_EMIT objectOpened(w);
-    announce(id, QStringLiteral("open"), snapshot(id));
+    if (announceIt)
+        announce(id, QStringLiteral("open"), snapshot(id));
 }
 
-bool Store::release(const QString& id)
+void Store::announceOpen(const QString& id)
+{
+    if (isAdopted(id) && object(id))
+        announce(id, QStringLiteral("open"), snapshot(id));
+}
+
+bool Store::release(const QString& id, bool announceIt)
 {
     if (!isAdopted(id))
         return false;
@@ -253,7 +260,8 @@ bool Store::release(const QString& id)
         _ids.remove(w);
         disconnect(w, nullptr, this, nullptr);
     }
-    announce(id, QStringLiteral("close"), QVariantMap());
+    if (announceIt)
+        announce(id, QStringLiteral("close"), QVariantMap());
     return true;
 }
 
@@ -314,7 +322,7 @@ bool Store::applyUpdate(const QString& id, const QVariantMap& state, quint64 ori
         return false;
     OriginScope scope(origin);
     ++_stats.updated;
-    applyState(w, state, false, Source::Backend);
+    applyState(w, state, false, Source::Client);
     return true;
 }
 
@@ -441,8 +449,10 @@ void Store::watch(Widget* w, const QString& id)
     connect(w, &QObject::destroyed, this, [this, id](QObject* obj) {
         _ids.remove(obj);
         auto it = _objects.find(id);
-        if (it != _objects.end() && (it->isNull() || it->data() == obj))
+        if (it != _objects.end() && (it->isNull() || it->data() == obj)) {
             _objects.erase(it);
+            _adopted.remove(id);
+        }
     });
 }
 

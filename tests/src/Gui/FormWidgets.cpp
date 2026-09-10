@@ -44,6 +44,7 @@
 
 #include "Gui/Camera.h"
 #include "Gui/FileDialog.h"
+#include "Gui/Fw/FwPanelMirror.h"
 #include "Gui/Fw/FwQtView.h"
 #include "Gui/Fw/FwStore.h"
 #include "Gui/SceneControl.h"
@@ -54,6 +55,12 @@
 #include "Gui/InputField.h"
 #include "Gui/QuantitySpinBox.h"
 #include "Gui/TaskView/TaskOrientation.h"
+#include "Gui/TaskView/TaskView.h"
+#include "Gui/UiLoader.h"
+#include "Gui/WidgetFactory.h"
+#include <QComboBox>
+#include <QFile>
+#include <QStackedWidget>
 #include "fwui_TaskPanel_OrthoArray.h"
 
 namespace Fw = Gui::Fw;
@@ -1250,6 +1257,328 @@ private Q_SLOTS:
         delete label;
         delete other;
         stream.setSender(nullptr);
+    }
+
+    void test_panelMirror()
+    {
+        // docs/Sandbox.md 7.19, M1: a real task panel -- a uic'd form under
+        // a TaskBox, a hand-built box, the button box -- walked into store
+        // models, kept current from the widgets, written into from a client
+        Fw::Store& store = Fw::Store::instance();
+        store.reset();
+        Fw::PanelMirror& mirror = Fw::PanelMirror::instance();
+        QSignalSpy messages(&store, &Fw::Store::message);
+        auto ref = [](const QVariant& v) {
+            return v.toString().mid(QStringLiteral("IPY_MODEL_").size());
+        };
+        auto items = [](const QVariantMap& snap) {
+            return snap.value(QStringLiteral("layout")).toMap().value(QStringLiteral("items"))
+                .toList();
+        };
+        auto state = [](const QVariantMap& snap, const char* key) {
+            return snap.value(QStringLiteral("state")).toMap().value(QStringLiteral("q_")
+                                                                    + QLatin1String(key));
+        };
+        auto named = [&store](const QString& name) -> Fw::Widget* {
+            for (const QString& id : store.ids()) {
+                Fw::Widget* w = store.object(id);
+                if (w && w->objectName() == name && id.startsWith(QLatin1String("pw:")))
+                    return w;
+            }
+            return nullptr;
+        };
+        auto idOf = [&store, &named](const QString& name) { return store.idOf(named(name)); };
+
+        // Draft's OrthoArray form through the host's loader, as a workbench
+        // has it, under a TaskBox
+        Gui::GetWidgetFactorySupplier();  // the loader makes FreeCAD's own widgets
+        auto loader = Gui::UiLoader::newInstance();
+        QFile file(QString::fromUtf8(FW_TEST_UI_FILE));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QWidget* form = loader->load(&file);
+        QVERIFY(form);
+        auto box = new Gui::TaskView::TaskBox(QStringLiteral("Ortho array"), true, nullptr);
+        box->groupLayout()->addWidget(form);
+        // a box built by hand: a line edit, a combo with a stretch and an
+        // alignment, a stack of two pages
+        auto hand = new QWidget;
+        auto vbox = new QVBoxLayout(hand);
+        vbox->setObjectName(QStringLiteral("handLayout"));
+        auto edit = new QLineEdit(hand);
+        edit->setObjectName(QStringLiteral("handEdit"));
+        auto combo = new QComboBox(hand);
+        combo->setObjectName(QStringLiteral("handCombo"));
+        combo->addItems({QStringLiteral("alpha"), QStringLiteral("beta")});
+        auto stack = new QStackedWidget(hand);
+        stack->setObjectName(QStringLiteral("handStack"));
+        auto page0 = new QLabel(QStringLiteral("page zero"), stack);
+        page0->setObjectName(QStringLiteral("page0"));
+        stack->addWidget(page0);
+        auto page1 = new QLabel(QStringLiteral("page one"), stack);
+        page1->setObjectName(QStringLiteral("page1"));
+        stack->addWidget(page1);
+        vbox->addWidget(edit);
+        vbox->addWidget(combo, 2, Qt::AlignRight);
+        vbox->addWidget(stack);
+        auto box2 = new Gui::TaskView::TaskBox(QStringLiteral("Hand"), true, nullptr);
+        box2->groupLayout()->addWidget(hand);
+        auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        // shown (offscreen), so the widgets paint and the watch has its evidence
+        QWidget host;
+        auto hostLay = new QVBoxLayout(&host);
+        hostLay->addWidget(box);
+        hostLay->addWidget(box2);
+        hostLay->addWidget(buttons);
+        host.show();
+        QCoreApplication::processEvents();
+
+        mirror.show(QStringLiteral("TestDialog"), {box, box2}, buttons);
+        QVERIFY(mirror.isRunning());
+        const QString rootId = mirror.panelId();
+        QVERIFY(rootId.startsWith(QLatin1String("panel:")));
+        QVERIFY(store.isAdopted(QStringLiteral("panel")));
+
+        // the root: a QDialog model with the dialog's class; its layout the
+        // boxes then the button box
+        QVariantMap root = store.snapshot(rootId);
+        QCOMPARE(root.value(QStringLiteral("model")).toString(), QStringLiteral("QDialogModel"));
+        QCOMPARE(root.value(QStringLiteral("qtClass")).toString(), QStringLiteral("TestDialog"));
+        QCOMPARE(state(root, "windowTitle").toString(), QStringLiteral("Ortho array"));
+        QCOMPARE(root.value(QStringLiteral("parent")).toString(), QStringLiteral("IPY_MODEL_panel"));
+        QVariantList rootItems = items(root);
+        QCOMPARE(rootItems.size(), 3);
+        const QString boxId = ref(rootItems.at(0).toMap().value(QStringLiteral("widget")));
+        QVariantMap boxSnap = store.snapshot(boxId);
+        QCOMPARE(boxSnap.value(QStringLiteral("model")).toString(), QStringLiteral("QGroupBoxModel"));
+        QCOMPARE(boxSnap.value(QStringLiteral("qtClass")).toString(),
+                 QStringLiteral("Gui::TaskView::TaskBox"));
+        QCOMPARE(state(boxSnap, "title").toString(), QStringLiteral("Ortho array"));
+        QCOMPARE(state(boxSnap, "checkable").toBool(), true);
+        QCOMPARE(state(boxSnap, "checked").toBool(), true);
+        QCOMPARE(state(boxSnap, "flat").toBool(), false);
+        QCOMPARE(boxSnap.value(QStringLiteral("parent")).toString(),
+                 QStringLiteral("IPY_MODEL_") + rootId);
+        const QString buttonsId = ref(rootItems.at(2).toMap().value(QStringLiteral("widget")));
+        QVariantMap buttonsSnap = store.snapshot(buttonsId);
+        QCOMPARE(buttonsSnap.value(QStringLiteral("model")).toString(),
+                 QStringLiteral("QDialogButtonBoxModel"));
+        QCOMPARE(state(buttonsSnap, "standardButtons").toInt(),
+                 static_cast<int>(QDialogButtonBox::Ok | QDialogButtonBox::Cancel));
+        QVariantList buttonItems = items(buttonsSnap);
+        QCOMPARE(buttonItems.size(), 2);
+        QSet<int> flags;
+        for (const QVariant& item : buttonItems) {
+            QVariantMap b = store.snapshot(ref(item.toMap().value(QStringLiteral("widget"))));
+            QCOMPARE(b.value(QStringLiteral("model")).toString(), QStringLiteral("QPushButtonModel"));
+            QVERIFY(!state(b, "text").toString().isEmpty());
+            flags.insert(state(b, "standardButton").toInt());
+        }
+        QCOMPARE(flags, (QSet<int> {QDialogButtonBox::Ok, QDialogButtonBox::Cancel}));
+
+        // every named child of the form is a model of the expected class,
+        // the real class name kept as qtClass
+        struct Expect
+        {
+            const char* name;
+            const char* model;
+            const char* qtClass;
+        };
+        for (const Expect& e : {Expect {"radiobutton_x_axis", "QRadioButtonModel", "QRadioButton"},
+                                Expect {"spinbox_n_X", "QSpinBoxModel", "QSpinBox"},
+                                Expect {"input_X_x", "InputFieldModel", "Gui::InputField"},
+                                Expect {"group_X", "QGroupBoxModel", "QGroupBox"},
+                                Expect {"label_n_X", "QLabelModel", "QLabel"},
+                                Expect {"button_reset_X", "QPushButtonModel", "QPushButton"},
+                                Expect {"DraftOrthoArrayTaskPanel", "QWidgetModel", "QWidget"}}) {
+            Fw::Widget* w = named(QString::fromUtf8(e.name));
+            QVERIFY2(w, e.name);
+            QCOMPARE(w->modelName(), QString::fromUtf8(e.model));
+            QCOMPARE(w->qtClass(), QString::fromUtf8(e.qtClass));
+        }
+        QCOMPARE(named(QStringLiteral("label_n_X"))->property("text").toString(),
+                 form->findChild<QLabel*>(QStringLiteral("label_n_X"))->text());
+        QCOMPARE(named(QStringLiteral("spinbox_n_X"))->property("value").toInt(),
+                 form->findChild<QSpinBox*>(QStringLiteral("spinbox_n_X"))->value());
+
+        // the layout spec matches the .ui: the form's grid by name and count,
+        // a cell's position as the real grid has it
+        Fw::Widget* formModel = named(QStringLiteral("DraftOrthoArrayTaskPanel"));
+        QVERIFY(formModel->layout());
+        QCOMPARE(formModel->layout()->className(), QStringLiteral("QGridLayout"));
+        QCOMPARE(formModel->layout()->objectName(), QStringLiteral("gridLayout_3"));
+        QCOMPARE(formModel->layout()->count(), form->layout()->count());
+        // (grid_X is nested in the group's gridLayout_2, as the .ui has it)
+        Fw::Widget* groupX = named(QStringLiteral("group_X"));
+        QCOMPARE(groupX->layout()->objectName(), QStringLiteral("gridLayout_2"));
+        auto realGrid = form->findChild<QGridLayout*>(QStringLiteral("grid_X"));
+        QVERIFY(realGrid);
+        Fw::Layout* modelGrid = groupX->findLayout(QStringLiteral("grid_X"));
+        QVERIFY(modelGrid);
+        QCOMPARE(modelGrid->parentLayout(), groupX->layout());
+        Fw::Widget* inputXx = named(QStringLiteral("input_X_x"));
+        int idx = modelGrid->indexOf(inputXx);
+        QVERIFY(idx >= 0);
+        int row = 0, col = 0, rs = 0, cs = 0;
+        realGrid->getItemPosition(realGrid->indexOf(form->findChild<QWidget*>(
+                                      QStringLiteral("input_X_x"))),
+                                  &row, &col, &rs, &cs);
+        QCOMPARE(modelGrid->itemAt(idx)->position, (QVariantList {row, col, rs, cs}));
+        QCOMPARE(row, 0);
+        QCOMPARE(col, 1);
+        // the hand-built box: the stretch and the alignment on the combo,
+        // the stack's pages, the hidden one sent as not visible
+        Fw::Widget* handModel = named(QStringLiteral("handEdit"))->parentWidget();
+        QCOMPARE(handModel->layout()->objectName(), QStringLiteral("handLayout"));
+        QVariantMap handSpec = handModel->layout()->spec();
+        QVariantList handItems = handSpec.value(QStringLiteral("items")).toList();
+        QCOMPARE(handItems.size(), 3);
+        QCOMPARE(handItems.at(1).toMap().value(QStringLiteral("stretch")).toInt(), 2);
+        QCOMPARE(handItems.at(1).toMap().value(QStringLiteral("align")).toInt(),
+                 static_cast<int>(Qt::AlignRight));
+        QVERIFY(!handItems.at(0).toMap().contains(QStringLiteral("stretch")));
+        QCOMPARE(named(QStringLiteral("handCombo"))->property("items").toStringList(),
+                 (QStringList {QStringLiteral("alpha"), QStringLiteral("beta")}));
+        const QString stackId = idOf(QStringLiteral("handStack"));
+        QCOMPARE(items(store.snapshot(stackId)).size(), 2);
+        QCOMPARE(named(QStringLiteral("page0"))->property("visible").toBool(), true);
+        QCOMPARE(named(QStringLiteral("page1"))->property("visible").toBool(), false);
+
+        // the opens: children before their container, the root last, every
+        // widget with its parent
+        QStringList opened;
+        for (int i = 0; i < messages.count(); ++i) {
+            if (messages.at(i).at(1).toString() == QLatin1String("open")) {
+                opened.append(messages.at(i).at(0).toString());
+                QVariantMap content = messages.at(i).at(2).toMap();
+                if (opened.last() != QLatin1String("panel"))
+                    QVERIFY2(content.contains(QStringLiteral("parent")), qPrintable(opened.last()));
+            }
+        }
+        QCOMPARE(opened.last(), rootId);
+        QVERIFY(opened.indexOf(idOf(QStringLiteral("input_X_x")))
+                < opened.indexOf(idOf(QStringLiteral("group_X"))));
+        QVERIFY(opened.indexOf(idOf(QStringLiteral("group_X")))
+                < opened.indexOf(store.idOf(formModel)));
+        QVERIFY(opened.indexOf(store.idOf(formModel)) < opened.indexOf(boxId));
+        QVERIFY(opened.indexOf(buttonsId) < opened.indexOf(rootId));
+        QVERIFY(!opened.contains(QString()));
+
+        // a setText from code arrives as one update, on the widget's own
+        // evidence (its repaint)
+        messages.clear();
+        QLabel* realLabel = form->findChild<QLabel*>(QStringLiteral("label_n_X"));
+        realLabel->setText(QStringLiteral("Count X"));
+        QCoreApplication::processEvents();
+        QCoreApplication::processEvents();
+        mirror.flush();
+        const QString labelId = idOf(QStringLiteral("label_n_X"));
+        int labelUpdates = 0;
+        for (int i = 0; i < messages.count(); ++i) {
+            if (messages.at(i).at(0).toString() == labelId
+                && messages.at(i).at(1).toString() == QLatin1String("update")) {
+                ++labelUpdates;
+                QCOMPARE(messages.at(i).at(2).toMap().value(QStringLiteral("q_text")).toString(),
+                         QStringLiteral("Count X"));
+            }
+        }
+        QCOMPARE(labelUpdates, 1);
+        QCOMPARE(named(QStringLiteral("label_n_X"))->property("text").toString(),
+                 QStringLiteral("Count X"));
+
+        // a client's `text` write fires the form's textEdited slot
+        QSignalSpy edited(edit, &QLineEdit::textEdited);
+        QSignalSpy finished(edit, &QLineEdit::editingFinished);
+        const QString editId = idOf(QStringLiteral("handEdit"));
+        QVERIFY(store.applyUpdate(editId, QVariantMap {{QStringLiteral("q_text"),
+                                                         QStringLiteral("typed")}}, 7));
+        QCOMPARE(edit->text(), QStringLiteral("typed"));
+        QCOMPARE(edited.count(), 1);
+        QCOMPARE(edited.at(0).at(0).toString(), QStringLiteral("typed"));
+        QVERIFY(store.applyCustom(editId, QVariantMap {{QStringLiteral("event"),
+                                                         QStringLiteral("editingFinished")}}, 7));
+        QCOMPARE(finished.count(), 1);
+        // a combo index from a client fires `activated` as a pick would
+        QSignalSpy activated(combo, qOverload<int>(&QComboBox::activated));
+        QVERIFY(store.applyUpdate(idOf(QStringLiteral("handCombo")),
+                                  QVariantMap {{QStringLiteral("q_currentIndex"), 1}}, 7));
+        QCOMPARE(combo->currentIndex(), 1);
+        QCOMPARE(activated.count(), 1);
+
+        // a hidden page shows on the stack's currentIndex, and the change
+        // comes back from the widgets under the desktop's origin
+        messages.clear();
+        QVERIFY(store.applyUpdate(stackId, QVariantMap {{QStringLiteral("q_currentIndex"), 1}}, 7));
+        QCOMPARE(stack->currentIndex(), 1);
+        QCoreApplication::processEvents();
+        QCoreApplication::processEvents();
+        mirror.flush();
+        QCOMPARE(named(QStringLiteral("page1"))->property("visible").toBool(), true);
+        QCOMPARE(named(QStringLiteral("page0"))->property("visible").toBool(), false);
+        bool page1Shown = false;
+        for (int i = 0; i < messages.count(); ++i) {
+            if (messages.at(i).at(0).toString() == idOf(QStringLiteral("page1"))
+                && messages.at(i).at(2).toMap().value(QStringLiteral("q_visible")).toBool()) {
+                page1Shown = true;
+                QCOMPARE(messages.at(i).at(3).toULongLong(), 0ULL);
+            }
+        }
+        QVERIFY(page1Shown);
+
+        // the dialog's buttons: a client's reject reaches the button box
+        QSignalSpy rejected(buttons, &QDialogButtonBox::rejected);
+        QVERIFY(store.applyCustom(rootId, QVariantMap {{QStringLiteral("event"),
+                                                         QStringLiteral("reject")}}, 7));
+        QCOMPARE(rejected.count(), 1);
+        QSignalSpy accepted(buttons, &QDialogButtonBox::accepted);
+        QVERIFY(store.applyCustom(rootId, QVariantMap {{QStringLiteral("event"), QStringLiteral("clicked")},
+                                                       {QStringLiteral("args"), QVariantList {
+                                                           static_cast<int>(QDialogButtonBox::Ok)}}},
+                                  7));
+        QCOMPARE(accepted.count(), 1);
+
+        // structure: a widget added to the hand-built box arrives as an open
+        // and one layout update of its container
+        messages.clear();
+        const int walks = mirror.rebuildCount();
+        auto extra = new QLabel(QStringLiteral("extra"), hand);
+        extra->setObjectName(QStringLiteral("handExtra"));
+        vbox->addWidget(extra);
+        QCoreApplication::processEvents();
+        QCoreApplication::processEvents();
+        if (mirror.rebuildCount() == walks)
+            mirror.rebuild();
+        QVERIFY(named(QStringLiteral("handExtra")));
+        int opens = 0, layoutUpdates = 0;
+        for (int i = 0; i < messages.count(); ++i) {
+            const QString method = messages.at(i).at(1).toString();
+            if (method == QLatin1String("open"))
+                ++opens;
+            if (messages.at(i).at(0).toString() == store.idOf(handModel)
+                && messages.at(i).at(2).toMap().contains(QStringLiteral("layoutSpec")))
+                ++layoutUpdates;
+        }
+        QCOMPARE(opens, 1);
+        QCOMPARE(layoutUpdates, 1);
+        QCOMPARE(handModel->layout()->count(), 4);
+
+        // hide: one close for the root, none for the children; the real
+        // widgets untouched
+        messages.clear();
+        mirror.hide();
+        QStringList closes;
+        for (int i = 0; i < messages.count(); ++i)
+            if (messages.at(i).at(1).toString() == QLatin1String("close"))
+                closes.append(messages.at(i).at(0).toString());
+        QCOMPARE(closes, QStringList {rootId});
+        QVERIFY(!store.object(editId));
+        QVERIFY(!store.isAdopted(editId));
+        QVERIFY(mirror.panelId().isEmpty());
+        QCOMPARE(edit->text(), QStringLiteral("typed"));
+        QCOMPARE(form->findChild<QLabel*>(QStringLiteral("label_n_X"))->text(),
+                 QStringLiteral("Count X"));
+        mirror.stop();
+        QVERIFY(!store.object(QStringLiteral("panel")));
+        QCOMPARE(store.count(), 0);
     }
 };
 

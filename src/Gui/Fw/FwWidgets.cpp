@@ -223,6 +223,11 @@ QFrame::QFrame(Widget* parent)
     : Widget(parent)
 {
     setQtClass(QStringLiteral("QFrame"));
+    // `QFrame::Shape` and `QFrame::Shadow` values: a .ui "Line" is a
+    // frame whose shape is HLine (4) or VLine (5)
+    declare(QStringLiteral("frameShape"), 0);
+    declare(QStringLiteral("frameShadow"), 0);
+    declare(QStringLiteral("lineWidth"), 1);
 }
 
 // ---- text inputs ------------------------------------------------------------

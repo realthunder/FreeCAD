@@ -26,9 +26,11 @@
  * (docs/ThinClient.md 4.2), one op per store message.
  *
  * Ops (all `mutating`, refused on a view-only connection):
- *   widgets.subscribe   {"toolbars": bool, "all": bool} -> ok, "theme",
- *                       "locale"; then one "open" push per object in
- *                       reference order, and every later message
+ *   widgets.subscribe   {"toolbars": bool, "panels": bool, "all": bool}
+ *                       -> ok, "theme", "locale", "panel" (the id of the
+ *                       task dialog up, or null); then one "open" push
+ *                       per object in reference order, and every later
+ *                       message
  *   widgets.unsubscribe                                 -> ok
  *   widgets.icon        {"name", "size"} -> "format" ("svg" | "png"),
  *                       "data" (SVG text, or base64 PNG), "size"
@@ -37,8 +39,8 @@
  * Pushes: {"op": "widgets", "method": "open" | "update" | "custom" |
  * "close", "id", ... the snapshot's keys for open, "content" otherwise}.
  *
- * A "toolbars" subscription starts the tool bar mirror; the last one
- * out stops it.  A connection is dropped from the sets when a push to
+ * A "toolbars" subscription starts the tool bar mirror, a "panels" one
+ * the panel mirror (docs/Sandbox.md 7.19); the last one out stops it.  A connection is dropped from the sets when a push to
  * it fails (the server says it is gone).
  */
 
@@ -67,18 +69,18 @@ public:
     using Sender = std::function<bool(uint64_t client, const std::string& json)>;
     void setSender(Sender sender);
 
-    /// `toolbars` joins the tool bar mirror's objects, `all` every store
-    /// object; both false leaves.  The snapshot is pushed from the
-    /// event loop (after the reply).
-    void subscribe(uint64_t client, bool toolbars, bool all);
+    /// `toolbars` joins the tool bar mirror's objects, `panels` the
+    /// panel mirror's, `all` every store object; all false leaves.  The
+    /// snapshot is pushed from the event loop (after the reply).
+    void subscribe(uint64_t client, bool toolbars, bool all, bool panels = false);
     void unsubscribe(uint64_t client);
     bool isSubscribed(uint64_t client) const
     {
-        return _toolbars.contains(client) || _all.contains(client);
+        return _toolbars.contains(client) || _all.contains(client) || _panels.contains(client);
     }
     int subscriberCount() const
     {
-        return (_toolbars | _all).size();
+        return (_toolbars | _all | _panels).size();
     }
     /// Push the snapshot to one client now (what the deferred push does).
     void pushSnapshot(uint64_t client);
@@ -93,6 +95,7 @@ private:
 
     Sender _sender;
     QSet<uint64_t> _toolbars;
+    QSet<uint64_t> _panels;
     QSet<uint64_t> _all;
     bool _connected = false;
 };

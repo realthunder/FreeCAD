@@ -453,6 +453,8 @@ SET(Fw_SRCS
     Fw/FwStore.h
     Fw/FwToolBarMirror.cpp
     Fw/FwToolBarMirror.h
+    Fw/FwPanelMirror.cpp
+    Fw/FwPanelMirror.h
     Fw/FwQtView.cpp
     Fw/FwQtView.h
     Fw/FwQtPanel.cpp

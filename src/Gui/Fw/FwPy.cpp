@@ -32,6 +32,7 @@
 #include "Fw/FwQtPanel.h"
 #include "Fw/FwQtView.h"
 #include "Fw/FwStore.h"
+#include "Fw/FwPanelMirror.h"
 #include "Fw/FwToolBarMirror.h"
 #include "SceneControl.h"
 #include "SceneWidgets.h"
@@ -442,6 +443,32 @@ PyObject* py_mirrorFlush(PyObject*, PyObject*)
     return PyLong_FromLong(ToolBarMirror::instance().rebuildCount());
 }
 
+PyObject* py_mirrorPanels(PyObject*, PyObject* args)
+{
+    int on = 1;
+    if (!PyArg_ParseTuple(args, "|p", &on))
+        return nullptr;
+    if (on)
+        PanelMirror::instance().start();
+    else
+        PanelMirror::instance().stop();
+    return PyBool_FromLong(PanelMirror::instance().isRunning());
+}
+
+PyObject* py_panelFlush(PyObject*, PyObject*)
+{
+    PanelMirror::instance().flush();
+    return PyLong_FromLong(PanelMirror::instance().rebuildCount());
+}
+
+PyObject* py_panelId(PyObject*, PyObject*)
+{
+    const QString id = PanelMirror::instance().panelId();
+    if (id.isEmpty())
+        Py_RETURN_NONE;
+    return PyUnicode_FromString(id.toUtf8().constData());
+}
+
 /// What the injected sender collected: [(client, json)].
 QVariantList& pushLog()
 {
@@ -494,6 +521,11 @@ PyMethodDef Methods[] = {
      "snapshotOrder() -> every id, the referenced before the referrer"},
     {"mirrorToolBars", py_mirrorToolBars, METH_VARARGS,
      "mirrorToolBars(on=True) -> bool: start or stop the tool bar mirror"},
+    {"mirrorPanels", py_mirrorPanels, METH_VARARGS,
+     "mirrorPanels(on=True) -> running: start/stop the panel mirror (docs/Sandbox.md 7.19)"},
+    {"panelFlush", py_panelFlush, METH_NOARGS,
+     "panelFlush() -> rebuild count: re-read the panel mirror's dirty widgets now"},
+    {"panelId", py_panelId, METH_NOARGS, "panelId() -> the mirrored dialog's id, or None"},
     {"mirrorFlush", py_mirrorFlush, METH_NOARGS,
      "mirrorFlush() -> flush the mirror's coalesced state; the rebuild count"},
     {"control", py_control, METH_VARARGS,

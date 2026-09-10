@@ -591,6 +591,10 @@ QVariantMap Layout::spec() const
                      QVariantList {item.width, item.height, item.hPolicy, item.vPolicy});
         if (!item.position.isEmpty())
             m.insert(QStringLiteral("pos"), item.position);
+        if ((item.widget || item.layout) && item.stretch)
+            m.insert(QStringLiteral("stretch"), item.stretch);
+        if ((item.widget || item.layout) && item.alignment)
+            m.insert(QStringLiteral("align"), item.alignment);
         items.append(m);
     }
     out.insert(QStringLiteral("items"), items);
@@ -598,7 +602,31 @@ QVariantMap Layout::spec() const
         out.insert(QStringLiteral("margins"), _margins);
     if (_spacing >= 0)
         out.insert(QStringLiteral("spacing"), _spacing);
+    for (auto it = _extras.constBegin(); it != _extras.constEnd(); ++it) {
+        if (!out.contains(it.key()))
+            out.insert(it.key(), it.value());
+    }
     return out;
+}
+
+void Layout::setItemStretch(int index, int stretch)
+{
+    if (index >= 0 && index < _items.size())
+        _items[index].stretch = stretch;
+}
+
+void Layout::setItemAlignment(int index, int alignment)
+{
+    if (index >= 0 && index < _items.size())
+        _items[index].alignment = alignment;
+}
+
+void Layout::setExtra(const QString& key, const QVariant& value)
+{
+    if (value.isValid())
+        _extras.insert(key, value);
+    else
+        _extras.remove(key);
 }
 
 void Layout::addRow(Widget* label, Widget* field)

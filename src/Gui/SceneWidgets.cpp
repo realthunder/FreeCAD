@@ -26,6 +26,7 @@
 #include <QTimer>
 
 #include "BitmapFactory.h"
+#include "Fw/FwPanelMirror.h"
 #include "Fw/FwStore.h"
 #include "Fw/FwToolBarMirror.h"
 #include "MainWindow.h"
@@ -69,9 +70,9 @@ void SceneWidgetStream::setSender(Sender sender)
     _sender = std::move(sender);
 }
 
-void SceneWidgetStream::subscribe(uint64_t client, bool toolbars, bool all)
+void SceneWidgetStream::subscribe(uint64_t client, bool toolbars, bool all, bool panels)
 {
-    if (!toolbars && !all) {
+    if (!toolbars && !all && !panels) {
         unsubscribe(client);
         return;
     }
@@ -89,6 +90,10 @@ void SceneWidgetStream::subscribe(uint64_t client, bool toolbars, bool all)
         _all.insert(client);
     else
         _all.remove(client);
+    if (panels)
+        _panels.insert(client);
+    else
+        _panels.remove(client);
     checkMirror();
     if (fresh) {
         // after the reply has gone out: the snapshot follows it
@@ -103,6 +108,7 @@ void SceneWidgetStream::unsubscribe(uint64_t client)
 {
     _toolbars.remove(client);
     _all.remove(client);
+    _panels.remove(client);
     checkMirror();
 }
 
@@ -116,13 +122,23 @@ void SceneWidgetStream::checkMirror()
     else if (!mirror.isRunning()) {
         mirror.start();
     }
+    Fw::PanelMirror& panels = Fw::PanelMirror::instance();
+    if (_panels.isEmpty()) {
+        if (panels.isRunning())
+            panels.stop();
+    }
+    else if (!panels.isRunning()) {
+        panels.start();
+    }
 }
 
 bool SceneWidgetStream::wants(uint64_t client, const QString& id) const
 {
     if (_all.contains(client))
         return true;
-    return _toolbars.contains(client) && Fw::ToolBarMirror::owns(id);
+    if (_toolbars.contains(client) && Fw::ToolBarMirror::owns(id))
+        return true;
+    return _panels.contains(client) && Fw::PanelMirror::owns(id);
 }
 
 void SceneWidgetStream::send(uint64_t client, const std::string& json)
@@ -132,6 +148,7 @@ void SceneWidgetStream::send(uint64_t client, const std::string& json)
     // gone: out of the sets, and the mirror stops with the last one
     _toolbars.remove(client);
     _all.remove(client);
+    _panels.remove(client);
     checkMirror();
 }
 
@@ -154,7 +171,7 @@ void SceneWidgetStream::pushSnapshot(uint64_t client)
 void SceneWidgetStream::onMessage(const QString& id, const QString& method,
                                   const QVariantMap& content, quint64 origin)
 {
-    if (_toolbars.isEmpty() && _all.isEmpty())
+    if (_toolbars.isEmpty() && _all.isEmpty() && _panels.isEmpty())
         return;
     QJsonObject msg;
     if (method == QLatin1String("open"))
@@ -165,7 +182,7 @@ void SceneWidgetStream::onMessage(const QString& id, const QString& method,
     msg[QLatin1String("method")] = method;
     msg[QLatin1String("id")] = id;
     const std::string json = compact(msg);
-    const QSet<uint64_t> clients = _toolbars | _all;
+    const QSet<uint64_t> clients = _toolbars | _all | _panels;
     for (uint64_t client : clients) {
         if (client == origin || !wants(client, id))
             continue;
@@ -185,9 +202,15 @@ void Gui::installSceneWidgetOps()
         const QJsonValue id = req.value(QLatin1String("id"));
         const bool toolbars = req.value(QLatin1String("toolbars")).toBool(false);
         const bool all = req.value(QLatin1String("all")).toBool(false);
-        SceneWidgetStream::instance().subscribe(client, toolbars, all);
+        const bool panels = req.value(QLatin1String("panels")).toBool(false);
+        SceneWidgetStream::instance().subscribe(client, toolbars, all, panels);
         QJsonObject reply = okReply(id);
-        reply[QLatin1String("subscribed")] = toolbars || all;
+        reply[QLatin1String("subscribed")] = toolbars || all || panels;
+        // whether a task dialog is up, so a client tells "none" from
+        // "pending" (the mirror starts with the subscription, and the
+        // dialog up is mirrored at once)
+        const QString panel = Fw::PanelMirror::instance().panelId();
+        reply[QLatin1String("panel")] = panel.isEmpty() ? QJsonValue() : QJsonValue(panel);
         reply[QLatin1String("theme")] =
             getMainWindow() ? getMainWindow()->overrideIcons() : QString();
         reply[QLatin1String("locale")] = QLocale().name();
