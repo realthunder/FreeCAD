@@ -37,12 +37,19 @@ import sys
 import FreeCAD
 import FreeCADGui
 
-# An explicitly EMPTY FC_RENDER_BACKEND means "leave the startup choice
-# alone", which is the only way to photograph the PLATFORM DEFAULT --
+# FC_RENDER_BACKEND=default means "leave the startup choice alone",
+# which is the only way to photograph the PLATFORM DEFAULT --
 # RenderParams::selectRenderPath() picks it at startup and naming a
 # backend here overwrites it. Unset still means Vulkan, so every caller
 # that passes a name keeps working.
+#
+# A word rather than the empty string on purpose: cmd.exe cannot hold an
+# empty environment variable at all ("set VAR=" DELETES it), so an empty
+# value would silently mean "unset" on the one platform this is most
+# likely to be run on, and the run would quietly test Vulkan instead.
 BACKEND = os.environ.get("FC_RENDER_BACKEND", "bgfx - Vulkan")
+if BACKEND.strip().lower() == "default":
+    BACKEND = ""
 OUT = os.environ.get("FC_PROBE_OUT", "")
 READY = os.environ.get("FC_PROBE_READY", "")
 HOLD = os.environ.get("FC_PROBE_HOLD", "") not in ("", "0")
