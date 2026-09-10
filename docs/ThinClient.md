@@ -640,6 +640,12 @@ view-mode hover, which is where the traffic is; the edit-mode case is bounded be
 mode is one object with small deltas, and confirming that bound is part of stage 4, not an
 assumption to build on.
 
+**Amended 2026-09-10 (8.11).** Selection still round-trips to the *server* -- the pick is
+resolved there, which is the authority -- but where it lands is the client's own instance,
+not the room: a browser's view-mode click no longer moves the desktop's tree or property
+panel, and the browser's inspector is fed by a per-client selection message instead of the
+room's stream. The rule and the edit-mode half are in 8.11.
+
 
 ### 8.3 The mirror viewer: pure offscreen Coin, no widget, no GL
 
@@ -1626,11 +1632,29 @@ thrown away, and the two seams where it would fork are named below.
 
 **What it changes in what was built.**
 
-- **The mirror's own selection (8.4, end) reverses.** A browser's in-edit picks and hover
-  drive the desktop's panels and colour the sketch for everyone; that is the sharing.
-  `MirrorViewer::selectionInstance()` answers null, which is the room. The selection
-  stack, `ViewerScope`'s push and `attachSelectionToCurrent()` stay as they are -- dormant
-  infrastructure, the first expansion seam.
+- **The selection stack (8.4) stays, and becomes the first step toward per client**
+  (ruled 2026-09-10). Three rules. *View mode:* a client's (pre)selection is its own --
+  preselect local as 8.2a has it, selection resolved on the server and landing in the
+  mirror's instance, told back to that one client by an observer on it, painted by the
+  client. *Edit mode:* the session has ONE selection instance and every view's in-edit
+  events select into it, which is what makes editing work whatever else is toggled: the
+  sketcher's observer (`attachSelectionToCurrent`) sits on the session's instance and
+  `ViewerScope` pushes it per replayed event. The instance is the initiator's -- the room
+  when the desktop started the edit, so the desktop does not change at all; the mirror's
+  when a browser did, with a desktop click into that edit running under a scope that
+  pushes the session's instance (one hook in the desktop viewer's event delivery, a no-op
+  when the instance is the room). *The sync toggle*, default on, is a forwarding observer
+  on the session's instance replaying add, remove, clear and preselect into the room with
+  an echo guard, so the desktop's tree, panels and 3D highlight follow the browser; off,
+  nothing is forwarded and the desktop's chrome stays where its user left it. It applies
+  to browser-started sessions only -- in a desktop-started one the session's instance is
+  the room and there is nothing to withhold. A toggle that *switched* instances would
+  leave the sketcher deaf, because `attachSelectionToCurrent` remembers the instance at
+  attach time; forwarding never moves it. One honest limit: the sketcher colours a
+  selected element by writing the edit geometry's material, and that geometry is one graph
+  in every view, so the toggle hides the room's highlight and not the green line; accepted
+  for now, since the edit geometry is shared state by this section's definition, and
+  per-view colouring is 8.12 item C.
 - **The edit binds to the document, not to a view.** As built, a desktop sketch edit is
   invisible to browsers and a browser's is invisible to the desktop: `setupEditingRoot`
   *moves* the sketch's children into one view's editing root, which the desktop hangs
@@ -1683,7 +1707,8 @@ at all, per client; a phone's default is off. The tool rail of section 5 is the 
 *own* chrome over the same commands, and the two coexist.
 
 **Order.** (1) The shared edit visible in every view -- the root, `setEditingViewProvider`
-for all views, `'E'` from every client, mirror selection = room; the oracle is the desktop
+for all views, `'E'` from every client, the session's selection instance, the per-client
+selection message, the forwarding observer and its toggle; the oracle is the desktop
 entering a sketch and a browser drawing in it, then the browser entering and the desktop's
 panel appearing and the desktop drawing in it. (2) Gesture arbitration; undo/redo ops.
 (3) The External/CarbonCopy pick from a browser (the "in-edit click" of 8.10, simpler now:
@@ -1722,7 +1747,8 @@ instance: dormant. The 2123 `Selection()` sites never need touching. Not per cli
 `preselPos`, `pickBackFace`, `currentHighlight`) and the render cache manager's highlight
 and on-top paths -- one shared graph cannot carry N highlights. Per client: selection
 streamed per client and painted by the client, as view-mode hover already is, with the
-server painting nothing for a mirror. `SelectionMirror` feeds the served root from the
+server painting nothing for a mirror -- the per-client selection message of 8.11 is the
+first piece of exactly this. `SelectionMirror` feeds the served root from the
 room; the observers pinned to the room (the tree, the property editor, 18 `Attach` sites)
 would need a session-following class, which `attachSelectionToCurrent` already is.
 
