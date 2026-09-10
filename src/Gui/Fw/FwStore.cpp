@@ -22,6 +22,9 @@
 
 #include <Base/Console.h>
 
+#include <algorithm>
+#include <functional>
+
 #include "Fw/FwStore.h"
 #include "Fw/FwWidgets.h"
 
@@ -76,7 +79,45 @@ QVariant refsOf(const Store& store, const QVariant& v)
             out.append(refsOf(store, x));
         return out;
     }
+    if (v.typeId() == QMetaType::QVariantMap) {
+        QVariantMap out;
+        QVariantMap in = v.toMap();
+        for (auto it = in.constBegin(); it != in.constEnd(); ++it)
+            out.insert(it.key(), refsOf(store, it.value()));
+        return out;
+    }
     return v;
+}
+
+/// The refs (`IPY_MODEL_<id>` strings) anywhere in a value.
+void collectRefs(const QVariant& v, QStringList& out)
+{
+    switch (v.typeId()) {
+        case QMetaType::QString: {
+            const QString s = v.toString();
+            if (s.startsWith(kModelRef))
+                out.append(s.mid(kModelRef.size()));
+            break;
+        }
+        case QMetaType::QVariantList:
+            for (const QVariant& x : v.toList())
+                collectRefs(x, out);
+            break;
+        case QMetaType::QVariantMap: {
+            const QVariantMap m = v.toMap();
+            for (auto it = m.constBegin(); it != m.constEnd(); ++it)
+                collectRefs(it.value(), out);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+quint64& originSlot()
+{
+    static quint64 origin = 0;
+    return origin;
 }
 
 /// A layout spec from the guest (`{"class", "name", "items", "margins",
@@ -140,23 +181,158 @@ bool Store::owns(const QVariantMap& state)
         == QLatin1String(moduleName());
 }
 
-Widget* Store::commOpen(const QString& id, const QVariantMap& state)
+Store::OriginScope::OriginScope(quint64 origin)
+    : _saved(originSlot())
+{
+    originSlot() = origin;
+}
+
+Store::OriginScope::~OriginScope()
+{
+    originSlot() = _saved;
+}
+
+quint64 Store::currentOrigin()
+{
+    return originSlot();
+}
+
+void Store::announce(const QString& id, const QString& method, const QVariantMap& content)
+{
+    Q_EMIT message(id, method, content, originSlot());
+}
+
+void Store::insert(const QString& id, Widget* w)
 {
     if (Widget* old = object(id)) {
         Q_EMIT objectClosing(old);
         _ids.remove(old);
         _objects.remove(id);
+        _adopted.remove(id);
         delete old;
     }
-    QString modelName = state.value(QStringLiteral("_model_name")).toString();
-    Widget* w = createWidget(modelName.isEmpty() ? QStringLiteral("QWidgetModel") : modelName);
     _objects.insert(id, w);
     _ids.insert(w, id);
     watch(w, id);
+}
+
+Widget* Store::commOpen(const QString& id, const QVariantMap& state)
+{
+    if (isAdopted(id))
+        return nullptr;
+    QString modelName = state.value(QStringLiteral("_model_name")).toString();
+    Widget* w = createWidget(modelName.isEmpty() ? QStringLiteral("QWidgetModel") : modelName);
+    insert(id, w);
     applyState(w, state, true);
     ++_stats.opened;
     Q_EMIT objectOpened(w);
+    announce(id, QStringLiteral("open"), snapshot(id));
     return w;
+}
+
+void Store::adopt(const QString& id, Widget* w)
+{
+    if (!w || id.isEmpty())
+        return;
+    insert(id, w);
+    _adopted.insert(id);
+    ++_stats.opened;
+    Q_EMIT objectOpened(w);
+    announce(id, QStringLiteral("open"), snapshot(id));
+}
+
+bool Store::release(const QString& id)
+{
+    if (!isAdopted(id))
+        return false;
+    Widget* w = object(id);
+    _adopted.remove(id);
+    _objects.remove(id);
+    if (w) {
+        Q_EMIT objectClosing(w);
+        _ids.remove(w);
+        disconnect(w, nullptr, this, nullptr);
+    }
+    announce(id, QStringLiteral("close"), QVariantMap());
+    return true;
+}
+
+QVariantMap Store::snapshot(const QString& id) const
+{
+    Widget* w = object(id);
+    if (!w)
+        return QVariantMap();
+    QVariantMap out;
+    out.insert(QStringLiteral("model"), w->modelName());
+    out.insert(QStringLiteral("qtClass"), w->qtClass());
+    QVariantMap state;
+    const QVariantMap& props = w->properties();
+    for (auto it = props.constBegin(); it != props.constEnd(); ++it)
+        state.insert(kPrefix + it.key(), refsOf(*this, it.value()));
+    out.insert(QStringLiteral("state"), state);
+    if (Layout* lay = w->layout())
+        out.insert(QStringLiteral("layout"), refsOf(*this, lay->spec()));
+    if (Widget* parent = w->parentWidget()) {
+        const QString pid = idOf(parent);
+        if (!pid.isEmpty())
+            out.insert(QStringLiteral("parent"), kModelRef + pid);
+    }
+    return out;
+}
+
+QStringList Store::snapshotOrder() const
+{
+    QStringList order;
+    QSet<QString> done;
+    QStringList all = ids();
+    std::sort(all.begin(), all.end());
+    std::function<void(const QString&, int)> visit = [&](const QString& id, int depth) {
+        if (done.contains(id) || !_objects.contains(id) || depth > 64)
+            return;
+        done.insert(id);
+        // what the object refers to (its state, its layout) comes
+        // first; its parent does NOT: a container names its children
+        // through its layout, and following the parent back would put
+        // the container before its last child
+        QVariantMap snap = snapshot(id);
+        snap.remove(QStringLiteral("parent"));
+        QStringList refs;
+        collectRefs(snap, refs);
+        for (const QString& r : refs)
+            visit(r, depth + 1);
+        order.append(id);
+    };
+    for (const QString& id : all)
+        visit(id, 0);
+    return order;
+}
+
+bool Store::applyUpdate(const QString& id, const QVariantMap& state, quint64 origin)
+{
+    Widget* w = object(id);
+    if (!w)
+        return false;
+    OriginScope scope(origin);
+    ++_stats.updated;
+    applyState(w, state, false, Source::Backend);
+    return true;
+}
+
+bool Store::applyCustom(const QString& id, const QVariantMap& content, quint64 origin)
+{
+    OriginScope scope(origin);
+    return commCustom(id, content);
+}
+
+void Store::notifyLayout(const QString& id)
+{
+    Widget* w = object(id);
+    if (!w)
+        return;
+    QVariantMap content;
+    Layout* lay = w->layout();
+    content.insert(QStringLiteral("layoutSpec"), lay ? refsOf(*this, lay->spec()) : QVariant());
+    announce(id, QStringLiteral("update"), content);
 }
 
 bool Store::commUpdate(const QString& id, const QVariantMap& state)
@@ -216,6 +392,8 @@ bool Store::commCustom(const QString& id, const QVariantMap& content)
 
 bool Store::commClose(const QString& id)
 {
+    if (isAdopted(id))
+        return false;
     Widget* w = object(id);
     if (!w) {
         _objects.remove(id);
@@ -225,6 +403,7 @@ bool Store::commClose(const QString& id)
     Q_EMIT objectClosing(w);
     _ids.remove(w);
     _objects.remove(id);
+    announce(id, QStringLiteral("close"), QVariantMap());
     // the guest tree may have re-parented other store objects under
     // this one: they stay (their comms are open), as hidden top-levels
     for (Widget* child : w->childWidgets())
@@ -237,23 +416,27 @@ bool Store::commClose(const QString& id)
 void Store::watch(Widget* w, const QString& id)
 {
     connect(w, &Widget::propertiesChanged, this, [this, w, id](const QStringList& names, int src) {
-        if (src == static_cast<int>(Source::Guest) || !_sink)
-            return;
         QVariantMap state;
         for (const QString& n : names)
-            state.insert(kPrefix + n, w->property(n));
-        ++_stats.sent;
-        _sink(id, QStringLiteral("update"), state);
+            state.insert(kPrefix + n, refsOf(*this, w->property(n)));
+        // the guest's own write is not echoed to it; every subscriber
+        // hears it (the guest writes under origin 0, like the desktop)
+        if (src != static_cast<int>(Source::Guest) && _sink) {
+            ++_stats.sent;
+            _sink(id, QStringLiteral("update"), state);
+        }
+        announce(id, QStringLiteral("update"), state);
     });
     connect(w, &Widget::eventEmitted, this,
             [this, id](const QString& name, const QVariantList& args) {
-                if (!_sink)
-                    return;
                 QVariantMap content;
                 content.insert(QStringLiteral("event"), name);
                 content.insert(QStringLiteral("args"), refsOf(*this, args));
-                ++_stats.events;
-                _sink(id, QStringLiteral("custom"), content);
+                if (_sink) {
+                    ++_stats.events;
+                    _sink(id, QStringLiteral("custom"), content);
+                }
+                announce(id, QStringLiteral("custom"), content);
             });
     connect(w, &QObject::destroyed, this, [this, id](QObject* obj) {
         _ids.remove(obj);
@@ -263,7 +446,7 @@ void Store::watch(Widget* w, const QString& id)
     });
 }
 
-void Store::applyState(Widget* w, const QVariantMap& state, bool initial)
+void Store::applyState(Widget* w, const QVariantMap& state, bool initial, Source source)
 {
     QVariantMap props;
     for (auto it = state.constBegin(); it != state.constEnd(); ++it) {
@@ -311,10 +494,10 @@ void Store::applyState(Widget* w, const QVariantMap& state, bool initial)
         }
     }
     if (!props.isEmpty())
-        w->setProperties(props, Source::Guest);
+        w->setProperties(props, source);
     // after the values: the guest's own list is the truth
     auto touched = state.constFind(QStringLiteral("_touched"));
-    if (touched != state.constEnd())
+    if (touched != state.constEnd() && source == Source::Guest)
         w->setTouched(touched->toStringList());
 }
 
@@ -349,16 +532,26 @@ QStringList Store::ids() const
 
 void Store::reset()
 {
-    QList<QPointer<Widget>> all = _objects.values();
-    _objects.clear();
-    _ids.clear();
-    for (const auto& p : all) {
-        if (!p.isNull()) {
-            Q_EMIT objectClosing(p.data());
-            for (Widget* child : p->childWidgets())
-                child->QObject::setParent(nullptr);
-            delete p.data();
+    // the adopted objects are the desktop's, not the guest's: they stay
+    QList<QPair<QString, QPointer<Widget>>> gone;
+    for (auto it = _objects.begin(); it != _objects.end();) {
+        if (_adopted.contains(it.key())) {
+            ++it;
+            continue;
         }
+        gone.append({it.key(), it.value()});
+        if (!it->isNull())
+            _ids.remove(it->data());
+        it = _objects.erase(it);
+    }
+    for (const auto& p : gone) {
+        if (!p.second.isNull()) {
+            Q_EMIT objectClosing(p.second.data());
+            for (Widget* child : p.second->childWidgets())
+                child->QObject::setParent(nullptr);
+            delete p.second.data();
+        }
+        announce(p.first, QStringLiteral("close"), QVariantMap());
     }
 }
 

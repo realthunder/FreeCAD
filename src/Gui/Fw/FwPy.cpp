@@ -32,6 +32,9 @@
 #include "Fw/FwQtPanel.h"
 #include "Fw/FwQtView.h"
 #include "Fw/FwStore.h"
+#include "Fw/FwToolBarMirror.h"
+#include "SceneControl.h"
+#include "SceneWidgets.h"
 #include "Fw/FwWidgets.h"
 #include "PythonWrapper.h"
 
@@ -371,7 +374,132 @@ PyObject* py_knownClasses(PyObject*, PyObject*)
     return variantToPy(knownClasses());
 }
 
+// -- the fan-out, the mirror and the stream (docs/Sandbox.md 7.18) ----
+
+/// The store's `message` emissions since the last drain, once a gate
+/// asked for them: [{"id", "method", "content", "origin"}].
+QVariantList& messageLog()
+{
+    static QVariantList log;
+    static bool connected = false;
+    if (!connected) {
+        connected = true;
+        QObject::connect(&Store::instance(), &Store::message,
+                         [](const QString& id, const QString& method, const QVariantMap& content,
+                            quint64 origin) {
+                             QVariantMap m;
+                             m.insert(QStringLiteral("id"), id);
+                             m.insert(QStringLiteral("method"), method);
+                             m.insert(QStringLiteral("content"), content);
+                             m.insert(QStringLiteral("origin"), static_cast<qulonglong>(origin));
+                             log.append(m);
+                         });
+    }
+    return log;
+}
+
+PyObject* py_messages(PyObject*, PyObject*)
+{
+    QVariantList out = messageLog();
+    messageLog().clear();
+    return variantToPy(out);
+}
+
+PyObject* py_watchMessages(PyObject*, PyObject*)
+{
+    messageLog();
+    Py_RETURN_NONE;
+}
+
+PyObject* py_snapshot(PyObject*, PyObject* args)
+{
+    const char* id = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &id))
+        return nullptr;
+    return variantToPy(store().snapshot(QString::fromUtf8(id)));
+}
+
+PyObject* py_snapshotOrder(PyObject*, PyObject*)
+{
+    return variantToPy(store().snapshotOrder());
+}
+
+PyObject* py_mirrorToolBars(PyObject*, PyObject* args)
+{
+    int on = 1;
+    if (!PyArg_ParseTuple(args, "|p", &on))
+        return nullptr;
+    if (on)
+        ToolBarMirror::instance().start();
+    else
+        ToolBarMirror::instance().stop();
+    return PyBool_FromLong(ToolBarMirror::instance().isRunning());
+}
+
+PyObject* py_mirrorFlush(PyObject*, PyObject*)
+{
+    ToolBarMirror::instance().flush();
+    return PyLong_FromLong(ToolBarMirror::instance().rebuildCount());
+}
+
+/// What the injected sender collected: [(client, json)].
+QVariantList& pushLog()
+{
+    static QVariantList log;
+    static bool injected = false;
+    if (!injected) {
+        injected = true;
+        SceneWidgetStream::instance().setSender([](uint64_t client, const std::string& json) {
+            // a client above 1000 is "gone" (a test's lost connection)
+            if (client > 1000)
+                return false;
+            QVariantMap entry;
+            entry.insert(QStringLiteral("client"), static_cast<qulonglong>(client));
+            entry.insert(QStringLiteral("json"), QString::fromStdString(json));
+            log.append(entry);
+            return true;
+        });
+    }
+    return log;
+}
+
+PyObject* py_control(PyObject*, PyObject* args)
+{
+    const char* json = nullptr;
+    unsigned long long client = 1;
+    int viewOnly = 0;
+    if (!PyArg_ParseTuple(args, "s|Kp", &json, &client, &viewOnly))
+        return nullptr;
+    pushLog();
+    installSceneWidgetOps();
+    std::string reply = handleSceneControlRequest(json, std::string(), viewOnly != 0, client);
+    return PyUnicode_FromString(reply.c_str());
+}
+
+PyObject* py_pushed(PyObject*, PyObject*)
+{
+    QVariantList out = pushLog();
+    pushLog().clear();
+    return variantToPy(out);
+}
+
 PyMethodDef Methods[] = {
+    {"messages", py_messages, METH_NOARGS,
+     "messages() -> the store's message emissions since the last call"
+     " ([{id, method, content, origin}]); starts collecting on first use"},
+    {"watchMessages", py_watchMessages, METH_NOARGS,
+     "watchMessages() -> start collecting the store's messages"},
+    {"snapshot", py_snapshot, METH_VARARGS, "snapshot(id) -> the object's whole state"},
+    {"snapshotOrder", py_snapshotOrder, METH_NOARGS,
+     "snapshotOrder() -> every id, the referenced before the referrer"},
+    {"mirrorToolBars", py_mirrorToolBars, METH_VARARGS,
+     "mirrorToolBars(on=True) -> bool: start or stop the tool bar mirror"},
+    {"mirrorFlush", py_mirrorFlush, METH_NOARGS,
+     "mirrorFlush() -> flush the mirror's coalesced state; the rebuild count"},
+    {"control", py_control, METH_VARARGS,
+     "control(json, client=1, viewOnly=False) -> the reply: a scene control request,"
+     " the widget stream's pushes collected for pushed() (a client above 1000 is gone)"},
+    {"pushed", py_pushed, METH_NOARGS, "pushed() -> [{client, json}] since the last call"},
     {"ids", py_ids, METH_NOARGS, "ids() -> the comm ids of the store's objects"},
     {"count", py_count, METH_NOARGS, "count() -> how many objects the store holds"},
     {"reset", py_reset, METH_NOARGS, "reset() -> drop every object"},

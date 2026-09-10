@@ -44,6 +44,7 @@
 
 #include <QHash>
 #include <QPointer>
+#include <QSet>
 
 #include "FwCore.h"
 
@@ -94,6 +95,53 @@ public:
         return static_cast<bool>(_sink);
     }
 
+    // -- the fan-out and host producers (docs/Sandbox.md 7.18 (a)) --------
+
+    /// A host producer's object (the tool bar mirror's) under a synthetic
+    /// id: watched like a comm's, announced as `open`, kept across a
+    /// guest `reset()`, and never closed by the guest (`commClose` of an
+    /// adopted id answers false).  Replaces an object already under `id`.
+    void adopt(const QString& id, Widget* widget);
+    bool isAdopted(const QString& id) const
+    {
+        return _adopted.contains(id);
+    }
+    /// Take an adopted object out (announced as `close`); the producer
+    /// deletes it.  False when `id` is not adopted.
+    bool release(const QString& id);
+    /// The object's whole state for a late subscriber: `{"model",
+    /// "qtClass", "state" (the q_ keys), "layout" (Layout::spec with
+    /// the refs as IPY_MODEL_ strings, absent without one), "parent"
+    /// (a ref, or absent)}`.  Empty for an unknown id.
+    QVariantMap snapshot(const QString& id) const;
+    /// Every id, an object AFTER the objects it references (its
+    /// layout's items, refs in its properties -- not its parent, which
+    /// names it through its own layout and so comes after it): the
+    /// order a subscriber can rebuild in.
+    QStringList snapshotOrder() const;
+    /// A streamed client's write: `commUpdate` from `Source::Backend`
+    /// under `origin`, so the fan-out can skip the writer.
+    bool applyUpdate(const QString& id, const QVariantMap& state, quint64 origin);
+    /// A streamed client's request (`{"event", "args"}`), likewise.
+    bool applyCustom(const QString& id, const QVariantMap& content, quint64 origin);
+    /// Send the object's layout out (an `update` whose content is
+    /// `{"layoutSpec": spec}`): a producer whose layout changed.
+    void notifyLayout(const QString& id);
+
+    /// Who is writing: a tag carried on every `message` the write
+    /// causes.  0 is the desktop (and the guest); a stream sets its
+    /// client's id while it applies that client's write.
+    class GuiExport OriginScope
+    {
+    public:
+        explicit OriginScope(quint64 origin);
+        ~OriginScope();
+
+    private:
+        quint64 _saved;
+    };
+    static quint64 currentOrigin();
+
     // -- the objects --------------------------------------------------------
 
     Widget* object(const QString& id) const;
@@ -130,14 +178,26 @@ public:
 Q_SIGNALS:
     void objectOpened(Gui::Fw::Widget* widget);
     void objectClosing(Gui::Fw::Widget* widget);
+    /// Everything that leaves the store, for any number of subscribers
+    /// (the sink is one: the guest).  `method` is "open" (content: the
+    /// snapshot), "update" (the q_ keys written, or a `layoutSpec`),
+    /// "custom" (`{"event", "args"}`) or "close" (empty); `origin` is
+    /// the writer's tag (see OriginScope) -- a subscriber streaming to
+    /// that writer skips the message.
+    void message(const QString& id, const QString& method, const QVariantMap& content,
+                 quint64 origin);
 
 private:
     Store();
-    void applyState(Widget* w, const QVariantMap& state, bool initial);
+    void applyState(Widget* w, const QVariantMap& state, bool initial,
+                    Source source = Source::Guest);
     void watch(Widget* w, const QString& id);
+    void insert(const QString& id, Widget* w);
+    void announce(const QString& id, const QString& method, const QVariantMap& content);
 
     QHash<QString, QPointer<Widget>> _objects;
     QHash<const QObject*, QString> _ids;
+    QSet<QString> _adopted;
     Sink _sink;
     Stats _stats;
 };

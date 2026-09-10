@@ -1862,6 +1862,30 @@ public:
     {
         return property("commandIndex").toInt();
     }
+    /// A group's members (refs to `QAction` models), in order; the
+    /// index of the one the button shows (-1 none); exclusive;
+    /// drop-down (docs/Sandbox.md 7.18, the tool bar mirror).
+    QVariantList members() const
+    {
+        return property("members").toList();
+    }
+    int defaultAction() const
+    {
+        return property("defaultAction").toInt();
+    }
+    bool isExclusive() const
+    {
+        return property("exclusive").toBool();
+    }
+    bool isDropDown() const
+    {
+        return property("dropDown").toBool();
+    }
+    /// A member's own command name ("" for a plain member action).
+    QString memberCommand() const
+    {
+        return property("memberCommand").toString();
+    }
     /// A programmatic trigger: toggles a checkable, fires `triggered`.
     void trigger();
     /// Ask the backend to trigger the real action.
@@ -1920,6 +1944,11 @@ public:
     void setOrientation(int orientation)
     {
         setProperty("orientation", orientation);
+    }
+    /// Where the desktop shows the bar (docs/Sandbox.md 7.18).
+    QString area() const
+    {
+        return property("area").toString();
     }
 
 Q_SIGNALS:

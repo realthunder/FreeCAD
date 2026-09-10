@@ -183,6 +183,15 @@ public:
 
     void setState(const QList<QString>& names, State state);
 
+Q_SIGNALS:
+    /// The bar set, their content or their visibility changed as a
+    /// whole: after setup() (a workbench switch) and after setState()
+    /// (a sketch edit).  The tool bar mirror (docs/Sandbox.md 7.18)
+    /// rebuilds on it.
+    void toolBarsChanged();
+
+public:
+
     void removeToolBar(const QString &);
 
     static bool isCustomToolBarName(const char *name);
@@ -223,6 +232,12 @@ public:
      */
     void setTitleBarToolBars(bool enable);
 
+    /// The bars this manager knows, by name: the main window's, the
+    /// status bar area's and the menu bar areas' (a registered status
+    /// bar item is not one).  Public for the tool bar mirror
+    /// (docs/Sandbox.md 7.18), which walks them.
+    std::map<QString, QPointer<QToolBar>> toolBars();
+
 protected Q_SLOTS:
     void onToggleToolBar(bool);
     void onMovableChanged(bool);
@@ -231,7 +246,6 @@ protected Q_SLOTS:
 protected:
     void setup(ToolBarItem*, QToolBar*) const;
     /** Returns a list of all currently existing toolbars. */
-    std::map<QString, QPointer<QToolBar>> toolBars();
 
     ToolBarItem::DefaultVisibility getToolbarPolicy(const QToolBar *) const;
 

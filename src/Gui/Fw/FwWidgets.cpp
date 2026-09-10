@@ -1782,6 +1782,14 @@ Gui::Fw::QAction::QAction(Widget* parent)
     declare(QStringLiteral("separator"), false);
     declare(QStringLiteral("command"), QString());
     declare(QStringLiteral("commandIndex"), 0);
+    // a group (docs/Sandbox.md 7.18): the members in order, the one the
+    // button shows, exclusivity and the drop-down face; a member's own
+    // command name beside its (group, index) binding identity
+    declare(QStringLiteral("members"), QVariantList());
+    declare(QStringLiteral("defaultAction"), -1);
+    declare(QStringLiteral("exclusive"), false);
+    declare(QStringLiteral("dropDown"), false);
+    declare(QStringLiteral("memberCommand"), QString());
 }
 
 Gui::Fw::QAction::QAction(const QString& text, Widget* parent)
@@ -1846,6 +1854,10 @@ Gui::Fw::QToolBar::QToolBar(Widget* parent)
     declare(QStringLiteral("floatable"), true);
     declare(QStringLiteral("orientation"), 1);
     declare(QStringLiteral("toggleViewAction"), QVariant());
+    // where the desktop shows the bar (docs/Sandbox.md 7.18): "top",
+    // "left", "right", "bottom", "statusbar", "menubar-left",
+    // "menubar-right", "floating"; "" for a bar of the guest's own
+    declare(QStringLiteral("area"), QString());
 }
 
 Gui::Fw::QToolBar::QToolBar(const QString& title, Widget* parent)

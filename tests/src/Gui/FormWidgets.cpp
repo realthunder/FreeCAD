@@ -45,6 +45,11 @@
 #include "Gui/Camera.h"
 #include "Gui/FileDialog.h"
 #include "Gui/Fw/FwQtView.h"
+#include "Gui/Fw/FwStore.h"
+#include "Gui/SceneControl.h"
+#include "Gui/SceneWidgets.h"
+#include <QJsonDocument>
+#include <QJsonObject>
 #include "Gui/Fw/FwWidgets.h"
 #include "Gui/InputField.h"
 #include "Gui/QuantitySpinBox.h"
@@ -1026,6 +1031,225 @@ private Q_SLOTS:
         delete w;
         QCoreApplication::processEvents();
         App::GetApplication().closeDocument("FwExpression");
+    }
+
+    void test_storeFanOut()
+    {
+        // docs/Sandbox.md 7.18 (a): the store's `message` signal beside
+        // its one sink, a host producer's adopted objects, the snapshot
+        // a late subscriber rebuilds from, and the writer's origin tag
+        Fw::Store& store = Fw::Store::instance();
+        store.reset();
+        QSignalSpy messages(&store, &Fw::Store::message);
+        QStringList sunk;
+        store.setSink([&sunk](const QString& id, const QString& method, const QVariantMap&) {
+            sunk << id + QLatin1Char('/') + method;
+        });
+
+        // a producer's bar with an action, a separator and a widget
+        auto action = new Fw::QAction(QStringLiteral("Line"));
+        action->setCommand(QStringLiteral("Std_Nothing"));
+        action->setIcon(QStringLiteral("Draft_Line"));
+        auto combo = new Fw::Widget;
+        combo->setQtClass(QStringLiteral("WorkbenchComboBox"));
+        auto bar = new Fw::QToolBar(QStringLiteral("Draft creation"));
+        bar->setObjectName(QStringLiteral("Draft creation tools"));
+        bar->addAction(action);
+        bar->addSeparator();
+        bar->addWidget(combo);
+        store.adopt(QStringLiteral("cmd:Std_Nothing"), action);
+        store.adopt(QStringLiteral("widget:Draft creation tools#2"), combo);
+        store.adopt(QStringLiteral("toolbar:Draft creation tools"), bar);
+        QVERIFY(store.isAdopted(QStringLiteral("toolbar:Draft creation tools")));
+        QCOMPARE(messages.count(), 3);
+        QCOMPARE(messages.at(2).at(1).toString(), QStringLiteral("open"));
+        QVariantMap snap = messages.at(2).at(2).toMap();
+        QCOMPARE(snap.value(QStringLiteral("model")).toString(), QStringLiteral("QToolBarModel"));
+        QVariantList items = snap.value(QStringLiteral("layout")).toMap()
+                                 .value(QStringLiteral("items")).toList();
+        QCOMPARE(items.size(), 3);
+        QCOMPARE(items.at(0).toMap().value(QStringLiteral("action")).toString(),
+                 QStringLiteral("IPY_MODEL_cmd:Std_Nothing"));
+        QVERIFY(items.at(1).toMap().value(QStringLiteral("separator")).toBool());
+        QCOMPARE(items.at(2).toMap().value(QStringLiteral("widget")).toString(),
+                 QStringLiteral("IPY_MODEL_widget:Draft creation tools#2"));
+        QCOMPARE(snap.value(QStringLiteral("state")).toMap()
+                     .value(QStringLiteral("q_windowTitle")).toString(),
+                 QStringLiteral("Draft creation"));
+        // the snapshot order: the referenced before the referrer
+        QStringList order = store.snapshotOrder();
+        QVERIFY(order.indexOf(QStringLiteral("cmd:Std_Nothing"))
+                < order.indexOf(QStringLiteral("toolbar:Draft creation tools")));
+        QVERIFY(order.indexOf(QStringLiteral("widget:Draft creation tools#2"))
+                < order.indexOf(QStringLiteral("toolbar:Draft creation tools")));
+        // the sink (the guest) heard none of this: nothing of its own
+        QVERIFY(sunk.isEmpty());
+
+        // a native write: one update, origin 0, the sink hears it too
+        messages.clear();
+        action->setEnabled(false);
+        QCOMPARE(messages.count(), 1);
+        QCOMPARE(messages.at(0).at(0).toString(), QStringLiteral("cmd:Std_Nothing"));
+        QCOMPARE(messages.at(0).at(1).toString(), QStringLiteral("update"));
+        QCOMPARE(messages.at(0).at(2).toMap().value(QStringLiteral("q_enabled")).toBool(), false);
+        QCOMPARE(messages.at(0).at(3).toULongLong(), 0ULL);
+        QCOMPARE(sunk, QStringList {QStringLiteral("cmd:Std_Nothing/update")});
+
+        // a client's write under its origin: the message carries it
+        messages.clear();
+        QVERIFY(store.applyUpdate(QStringLiteral("cmd:Std_Nothing"),
+                                  QVariantMap {{QStringLiteral("q_checked"), true}}, 7));
+        QVERIFY(action->isChecked());
+        QCOMPARE(messages.count(), 1);
+        QCOMPARE(messages.at(0).at(3).toULongLong(), 7ULL);
+        QCOMPARE(Fw::Store::currentOrigin(), 0ULL);
+        // a client's request, likewise
+        messages.clear();
+        QSignalSpy requested(action, &Fw::Widget::requested);
+        QVERIFY(store.applyCustom(QStringLiteral("cmd:Std_Nothing"),
+                                  QVariantMap {{QStringLiteral("event"), QStringLiteral("trigger")}},
+                                  7));
+        QCOMPARE(requested.count(), 1);
+        // a producer's layout change is one update
+        messages.clear();
+        bar->addSeparator();
+        store.notifyLayout(QStringLiteral("toolbar:Draft creation tools"));
+        QCOMPARE(messages.count(), 1);
+        QCOMPARE(messages.at(0).at(2).toMap().value(QStringLiteral("layoutSpec")).toMap()
+                     .value(QStringLiteral("items")).toList().size(),
+                 4);
+
+        // the guest cannot close an adopted object, and a reset keeps it
+        QVERIFY(!store.commClose(QStringLiteral("cmd:Std_Nothing")));
+        QVariantMap guestState;
+        guestState.insert(QStringLiteral("_model_name"), QStringLiteral("QLabelModel"));
+        QVERIFY(store.commOpen(QStringLiteral("g1"), guestState));
+        QCOMPARE(store.count(), 4);
+        messages.clear();
+        store.reset();
+        QCOMPARE(store.count(), 3);
+        QVERIFY(store.object(QStringLiteral("toolbar:Draft creation tools")) == bar);
+        QCOMPARE(messages.count(), 1);
+        QCOMPARE(messages.at(0).at(0).toString(), QStringLiteral("g1"));
+        QCOMPARE(messages.at(0).at(1).toString(), QStringLiteral("close"));
+        // the producer takes its objects out: one close each
+        messages.clear();
+        QVERIFY(store.release(QStringLiteral("toolbar:Draft creation tools")));
+        QVERIFY(!store.release(QStringLiteral("toolbar:Draft creation tools")));
+        QCOMPARE(messages.count(), 1);
+        QCOMPARE(messages.at(0).at(1).toString(), QStringLiteral("close"));
+        store.release(QStringLiteral("cmd:Std_Nothing"));
+        store.release(QStringLiteral("widget:Draft creation tools#2"));
+        QCOMPARE(store.count(), 0);
+        delete bar;  // the widget item is the bar's child, the action is not
+        delete action;
+        store.setSink(nullptr);
+    }
+
+    void test_widgetStream()
+    {
+        // docs/Sandbox.md 7.18: the store fanned out over the control
+        // channel, per connection, with the writer skipped
+        Fw::Store& store = Fw::Store::instance();
+        store.reset();
+        Gui::installSceneWidgetOps();
+        Gui::SceneWidgetStream& stream = Gui::SceneWidgetStream::instance();
+        QList<QPair<uint64_t, QJsonObject>> pushed;
+        stream.setSender([&pushed](uint64_t client, const std::string& json) {
+            if (client > 1000)
+                return false;  // a lost connection
+            pushed.append({client, QJsonDocument::fromJson(QByteArray::fromStdString(json)).object()});
+            return true;
+        });
+        auto control = [](const char* json, uint64_t client, bool viewOnly = false) {
+            return QJsonDocument::fromJson(QByteArray(
+                                               Gui::handleSceneControlRequest(json, std::string(),
+                                                                              viewOnly, client)
+                                                   .c_str()))
+                .object();
+        };
+
+        auto label = new Fw::QLabel(QStringLiteral("hello"));
+        store.adopt(QStringLiteral("cmd:Std_Label"), label);
+        auto other = new Fw::QLabel(QStringLiteral("guest"));
+        store.adopt(QStringLiteral("g:other"), other);
+
+        // a view-only connection may not subscribe (the ops mutate)
+        QJsonObject reply = control(R"({"id":1,"op":"widgets.subscribe","toolbars":true})", 5,
+                                    true);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), false);
+        // client 5 takes the mirror's ids only (no main window here: the
+        // mirror itself does not start), client 6 everything
+        reply = control(R"({"id":2,"op":"widgets.subscribe","toolbars":true})", 5);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), true);
+        QVERIFY(reply.contains(QLatin1String("locale")));
+        reply = control(R"({"id":3,"op":"widgets.subscribe","all":true})", 6);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), true);
+        QCOMPARE(stream.subscriberCount(), 2);
+        QVERIFY(pushed.isEmpty());  // the snapshot follows the reply
+        QCoreApplication::processEvents();
+        QStringList got;
+        for (const auto& p : pushed)
+            got << QString::number(p.first) + QLatin1Char('/')
+                    + p.second.value(QLatin1String("id")).toString();
+        got.sort();
+        QCOMPARE(got, (QStringList {QStringLiteral("5/cmd:Std_Label"),
+                                    QStringLiteral("6/cmd:Std_Label"),
+                                    QStringLiteral("6/g:other")}));
+        QCOMPARE(pushed.at(0).second.value(QLatin1String("method")).toString(),
+                 QStringLiteral("open"));
+        QCOMPARE(pushed.at(0).second.value(QLatin1String("model")).toString(),
+                 QStringLiteral("QLabelModel"));
+
+        // a native write reaches both, as one op each
+        pushed.clear();
+        label->setText(QStringLiteral("changed"));
+        QCOMPARE(pushed.size(), 2);
+        QCOMPARE(pushed.at(0).second.value(QLatin1String("method")).toString(),
+                 QStringLiteral("update"));
+        QCOMPARE(pushed.at(0).second.value(QLatin1String("content")).toObject()
+                     .value(QLatin1String("q_text")).toString(),
+                 QStringLiteral("changed"));
+
+        // client 6's own write: applied, echoed to 5 only
+        pushed.clear();
+        reply = control(R"({"id":4,"op":"widgets.update","target":"cmd:Std_Label",)"
+                        R"("state":{"q_text":"from six"}})", 6);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), true);
+        QCOMPARE(label->text(), QStringLiteral("from six"));
+        QCOMPARE(pushed.size(), 1);
+        QCOMPARE(pushed.at(0).first, 5ULL);
+        // an unknown target
+        reply = control(R"({"id":5,"op":"widgets.update","target":"nope","state":{}})", 6);
+        QCOMPARE(reply.value(QLatin1String("code")).toString(), QStringLiteral("UnknownObject"));
+
+        // an icon by name: a stock SVG, and a name that is nothing
+        reply = control(R"({"id":6,"op":"widgets.icon","name":"document-new"})", 6);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), true);
+        QCOMPARE(reply.value(QLatin1String("format")).toString(), QStringLiteral("svg"));
+        QVERIFY(reply.value(QLatin1String("data")).toString().contains(QLatin1String("<svg")));
+        reply = control(R"({"id":7,"op":"widgets.icon","name":"no-such-icon-anywhere"})", 6);
+        QCOMPARE(reply.value(QLatin1String("code")).toString(), QStringLiteral("UnknownIcon"));
+
+        // leaving, and a connection that is gone
+        reply = control(R"({"id":8,"op":"widgets.unsubscribe"})", 6);
+        QCOMPARE(stream.subscriberCount(), 1);
+        control(R"({"id":9,"op":"widgets.subscribe","all":true})", 1001);
+        QCOMPARE(stream.subscriberCount(), 2);
+        QCoreApplication::processEvents();  // its snapshot push fails: dropped
+        QCOMPARE(stream.subscriberCount(), 1);
+        pushed.clear();
+        label->setText(QStringLiteral("last"));
+        QCOMPARE(pushed.size(), 1);
+        QCOMPARE(pushed.at(0).first, 5ULL);
+        control(R"({"id":10,"op":"widgets.subscribe","toolbars":false})", 5);
+        QCOMPARE(stream.subscriberCount(), 0);
+
+        store.release(QStringLiteral("cmd:Std_Label"));
+        store.release(QStringLiteral("g:other"));
+        delete label;
+        delete other;
+        stream.setSender(nullptr);
     }
 };
 

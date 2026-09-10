@@ -46,6 +46,7 @@
 #include "Document.h"
 #include "MirrorViewer.h"
 #include "SceneControl.h"
+#include "SceneWidgets.h"
 #include "SceneServeSource.h"
 #include "Selection.h"
 #include "View3DInventor.h"
@@ -95,6 +96,7 @@ App::PropertyContainer *sceneView(const std::string &boundDoc = {})
 struct RegisteredOp {
     bool mutating;
     SceneControlOpHandler handler;
+    SceneControlClientOpHandler clientHandler;
 };
 
 std::map<QString, RegisteredOp> &registeredOps()
@@ -756,8 +758,20 @@ QJsonObject runCommandOp(const QJsonObject &req, const std::string &boundDoc,
     // answer in a process with several browsers connected.
     ViewerScope scope(viewer);
     const QByteArray cmd = name.toUtf8();
+    // "index": a group command's member, 1-based as the widget layer's
+    // `commandIndex` counts (docs/Sandbox.md 7.18) -- the desktop's own
+    // path for a click on a member: the default moves with it
+    const int index = req.value(QLatin1String("index")).toInt(0);
     try {
-        Application::Instance->commandManager().runCommandByName(cmd.constData());
+        if (index > 0) {
+            Command *group = Application::Instance->commandManager()
+                                 .getCommandByName(cmd.constData());
+            if (!group)
+                return errorReply(id, "UnknownCommand", name);
+            group->invoke(index - 1, Command::TriggerChildAction);
+        }
+        else
+            Application::Instance->commandManager().runCommandByName(cmd.constData());
     }
     catch (Base::Exception &e) {
         return errorReply(id, "CommandFailed", QString::fromUtf8(e.what()));
@@ -814,7 +828,13 @@ QJsonObject onViewFocusOp(const QJsonObject &req, const std::string &boundDoc,
 void Gui::registerSceneControlOp(const QString &op, bool mutating,
                                  SceneControlOpHandler handler)
 {
-    registeredOps()[op] = RegisteredOp{mutating, std::move(handler)};
+    registeredOps()[op] = RegisteredOp{mutating, std::move(handler), nullptr};
+}
+
+void Gui::registerSceneControlOp(const QString &op, bool mutating,
+                                 SceneControlClientOpHandler handler)
+{
+    registeredOps()[op] = RegisteredOp{mutating, nullptr, std::move(handler)};
 }
 
 QJsonObject Gui::sceneControlError(const QJsonValue &id, const char *code,
@@ -857,7 +877,9 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
         else if (op == QLatin1String("setProperty"))
             reply = setProperty(req, boundDoc);
         else if (registered != registeredOps().end())
-            reply = registered->second.handler(req, boundDoc);
+            reply = registered->second.clientHandler
+                ? registered->second.clientHandler(req, boundDoc, client)
+                : registered->second.handler(req, boundDoc);
         else if (op == QLatin1String("edit"))
             reply = setEditOp(req, boundDoc, client);
         else if (op == QLatin1String("resetEdit"))
@@ -876,6 +898,8 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
 
 void Gui::installSceneControlHandler(const std::string &docName)
 {
+    // the widget stream's ops ride this channel (docs/Sandbox.md 7.18)
+    installSceneWidgetOps();
     // Installed on the named document's group (empty = the default
     // group). The document is bound by NAME and re-resolved per request
     // on the GUI thread: a queued request must not carry a pointer

@@ -216,6 +216,7 @@ public:
     void setIsMode(bool check) { _isMode = check; }
 
     void setDropDownMenu(bool check) { _dropDown = check; }
+    bool hasDropDownMenu() const { return _dropDown; }
     QAction* addAction(QAction*);
     QAction* addAction(const QString&);
     QList<QAction*> actions() const;

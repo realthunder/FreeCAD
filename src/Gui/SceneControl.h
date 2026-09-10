@@ -73,6 +73,16 @@ using SceneControlOpHandler =
 GuiExport void registerSceneControlOp(const QString &op, bool mutating,
                                       SceneControlOpHandler handler);
 
+/// The same with the connection the request arrived on (SceneClientInfo::
+/// id), for an op that keeps per-connection state -- the widget stream's
+/// subscriptions (docs/Sandbox.md 7.18).
+using SceneControlClientOpHandler =
+    std::function<QJsonObject(const QJsonObject &req,
+                              const std::string &boundDoc,
+                              uint64_t client)>;
+GuiExport void registerSceneControlOp(const QString &op, bool mutating,
+                                      SceneControlClientOpHandler handler);
+
 /// The error reply shape the built-in ops use, for handlers to match:
 /// {"id": <echoed>, "ok": false, "code": ..., "message": ...}.
 GuiExport QJsonObject sceneControlError(const QJsonValue &id,

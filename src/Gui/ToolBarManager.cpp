@@ -1079,6 +1079,7 @@ void ToolBarManager::setup(ToolBarItem* toolBarItems)
         toolbar->toggleViewAction()->setVisible(false);
         setToolBarVisible(toolbar, false);
     }
+    Q_EMIT toolBarsChanged();
 }
 
 void ToolBarManager::setToolBarVisible(QToolBar *toolbar, bool show)
@@ -2046,6 +2047,8 @@ void ToolBarManager::setState(const QList<QString>& names, State state)
         }
         setToolBarVisible(tb, visible);
     }
+    if (state != State::SaveState)
+        Q_EMIT toolBarsChanged();
 }
 
 void ToolBarManager::setupToolBarIconSize()

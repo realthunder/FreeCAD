@@ -451,6 +451,8 @@ SET(Fw_SRCS
     Fw/FwWidgets.h
     Fw/FwStore.cpp
     Fw/FwStore.h
+    Fw/FwToolBarMirror.cpp
+    Fw/FwToolBarMirror.h
     Fw/FwQtView.cpp
     Fw/FwQtView.h
     Fw/FwQtPanel.cpp
@@ -940,6 +942,7 @@ SET(View3D_CPP_SRCS
     ViewerContext.cpp
     MirrorViewer.cpp
     SceneControl.cpp
+    SceneWidgets.cpp
     View3DInventorRiftViewer.cpp
     View3DSettings.cpp
     CoinRiftWidget.cpp
@@ -972,6 +975,7 @@ SET(View3D_SRCS
     ViewerContext.h
     MirrorViewer.h
     SceneControl.h
+    SceneWidgets.h
     View3DInventorRiftViewer.h
     View3DSettings.h
     CoinRiftWidget.h

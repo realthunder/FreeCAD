@@ -2257,6 +2257,15 @@ class QAction(QWidget):
     # 0 the group's own) instead of making an action
     q_command = Unicode("").tag(sync=True)
     q_commandIndex = Int(0).tag(sync=True)
+    # a group as the tool bar mirror streams it (docs/Sandbox.md 7.18):
+    # the members (refs, in order), the one the button shows, exclusive,
+    # the drop-down face, a member's own command; the guest never sets
+    # them (its QActionGroup stays guest-only)
+    q_members = List().tag(sync=True)
+    q_defaultAction = Int(-1).tag(sync=True)
+    q_exclusive = Bool(False).tag(sync=True)
+    q_dropDown = Bool(False).tag(sync=True)
+    q_memberCommand = Unicode("").tag(sync=True)
 
     triggered = Signal(bool)
     toggled = Signal(bool)
@@ -2482,6 +2491,9 @@ class QToolBar(QWidget):
     q_floatable = Bool(True).tag(sync=True)
     q_orientation = Int(1).tag(sync=True)
     q_toggleViewAction = Unicode("", allow_none=True).tag(sync=True)
+    # where the desktop shows a mirrored bar (docs/Sandbox.md 7.18); ""
+    # for a bar of the guest's own
+    q_area = Unicode("").tag(sync=True)
 
     actionTriggered = Signal(object)
     visibilityChanged = Signal(bool)
