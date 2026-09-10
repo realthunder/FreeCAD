@@ -52,8 +52,10 @@ pieces are frozen, not extended.**
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
                                                  confined to the Mod roots, both containers
-    the document program             to size     sec 11 item 2: the carrier, the surface audit,
-                                                 per-document guests, the gate
+    the document program             sized       7.17: a Part::Feature's Shape expression is the
+                                                 program (runs today); App::ExpressionLibrary the
+                                                 carrier; function objects in the image the one gap;
+                                                 per-document guests OUT (335 MB, 2.5 s each)
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
@@ -4629,7 +4631,247 @@ pivy wheel rebuild); 900 in the wheel (the walker 300, the host node,
 camera, event and view shims 400, the view provider glue and the MDI
 shim 200); 600 of gate.  G4a is the larger half.
 
-### 7.17 -- reserved for the document program (sec 11 item 2), not yet written
+### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10]**
+
+Sec 11 item 2, the re-aim's one target (1.2): a program a DOCUMENT
+carries, written in the expression engine's language, generating
+shapes through the curated geometry surface, evaluated in the
+document's guest.  Five parts were named -- (a) an example set, (b)
+the surface audit and its versioning, (c) the carrier, (d)
+per-document guests, (e) the gate.  Sized against the code and a
+probe run on 2026-09-10 (`FreeCADCmd`, the pyodide runtime, this
+box), which decided more than the reading did.
+
+**What the language is.**  `ExpressionParser.y` is a statement
+language already: `if`/`elif`/`else`, `while`, `for ... in`, `try`,
+`def`, `lambda`, `return`, `import` and `from ... import`,
+assignment and the augmented assignments, comprehensions, lists,
+tuples, dicts, the units and the engine builtins (`vector`,
+`placement`, `rotation`, `matrix`, `sin`, `sqrt`, `range`, `len`,
+`str`, ...).  No classes.  `#@pybegin` / `#@pyend` is a lexer state
+(python-mode strings and builtins visibility, `PseudoStatement`),
+not host Python.  A property expression evaluates with a call frame
+(`PropertyExpressionEngine.cpp:851`, `OptionCallFrame`), so a
+multi-line program with assignments and `def` binds to a property as
+it stands, and `DlgExpressionInput` edits it multi-line
+(`Gui::ExpressionTextEdit`).  A shape that comes back lands in a
+`Part::Feature`'s `Shape` through `Property::setPathValue` ->
+`ObjectIdentifier::setValue` -> `setPyObject`, the handle decoded to
+the host `TopoShapePy` before the handles clear (3.2).  So the
+"program object" needs no new class: a `Part::Feature` with its
+parameters as properties and the program as the expression on
+`Shape`.
+
+**The probe** (a scratch script, not in the tree; the numbers are
+this box's):
+
+    form                                        native            routed (pyodide)
+    ------------------------------------------  ----------------  ------------------------------
+    import Part; base = makeBox(..); base       PermissionNeeded  Solid, 4000 mm3, on the Shape
+      bound to Shape, recompute                 (host.import:     property path: WORKS
+                                                Part is PROMPT
+                                                for a document)
+    a = Length*2; b = a + 1mm; b (on a length)  81 mm             81 mm
+    def f(x): return x*3; f(Length)             120 mm            "function objects are not
+                                                                  supported in the sandbox image"
+    lambda, called                              --                the same refusal
+    for i in range(1,5): fuse boxes (a stair)   --                Compound, 15000 mm3, 37.5 ms
+    while, list comprehension, range, len       --                work
+    import FreeCAD / from FreeCAD import Vector --                work (the facade)
+    import math; math.pi                        --                works
+    extrude, revolve, fuse, cut, common,        --                work
+      section, translate, rotate, scale,
+      transformGeometry, Placement =, Volume,
+      Area, Faces, CenterOfMass, isValid,
+      ShapeType, Part.Face/Wire/makePolygon/
+      makeCircle/makeCompound/Vertex/Circle,
+      ArcOfCircle.toShape
+    makeFillet, makeChamfer, mirror,            --                "No attribute named ..."
+      makeThickness, Part.makeCylinder,
+      makeSphere, makeLoft, makeHelix
+    the bracket (two boxes, fuse, cleaned)      --                12-20 ms per evaluation
+    guest boot (first evaluation)               --                2.5 s, RSS +335 MB
+    second evaluation                           --                0.2 ms
+    RSS across three reset()s                   --                462 -> 557 -> 633 -> 659 MB
+
+Four facts fall out.  (1) A document program is ROUTED-ONLY by the
+catalog: natively `import Part` is `host.import:Part`, PROMPT for a
+document principal, fail-closed -- which is 1.4's rule working, and
+means sec 11 item 3 (routing ON by default) and the runtime offer of
+2.5 are this feature's precondition; a build with no guest shows the
+padlock's download offer, never a native run.  (2) The ONE language
+gap in the guest is function objects: `makeFunc` and the `FUNC` value
+path throw under `FC_EXPR_IMAGE` (`Expression.cpp:4648`, `:6565`)
+because a function escapes the evaluation as an `ExpressionPy`, a
+host binding -- and `ExpressionPy` is `__call__` plus `__doc__`
+(`ExpressionPy.xml`, `ExpressionPyImp.cpp` 100 lines): the smallest
+binding in the tree, left out of `ImageSources.cmake` because the
+corpus never stored a function (Phase 0's reverse audit).  Without
+it a library is impossible; with it a library is a frame.  (3) The
+constructive surface is most of the way there -- `TopoShapePy` 53 of
+111 members annotated, 345 annotations across the XMLs (217 call,
+108 value, 20 handle), the `Part` facade 33 callables -- and the
+holes are a list, below.  (4) A guest is 2.5 s and 335 MB, and a
+reset does not give the memory back (about 100 MB retained per
+reset, decelerating).
+
+**(a) The example set.**  Three programs, each also the tutorial's
+text: the **bracket** (two boxes fused and cleaned, three
+parameters; runs today), the **stair** (a `for` over `range`, boxes
+translated and fused; runs today), the **flange** (a polygon face
+extruded, bolt holes cut from `makeCylinder`, edges filleted, a
+`def` per hole pattern -- needs (b) and the function objects).  Each
+is written twice: as the expression on a `Part::Feature`'s `Shape`,
+and as a library (c) with the feature's expression a one-line call.
+About 150 lines of engine code, saved as `.FCStd` fixtures for (e).
+
+**(b) The surface audit, and the version.**  To annotate, one XML
+line each, `<Sandbox tier="call"/>`: on `TopoShapePy` `makeFillet`,
+`makeChamfer`, `mirror`, `makeThickness`, `makeOffset2D`,
+`translated`, `rotated`, `scaled`, `generalFuse`, `slice`, `slices`,
+`check`, `childShapes`, `removeInternalWires`, and `Shells`,
+`CompSolids`, `Compounds` as `handle`; in the `Part` facade's table
+(`MODULE_FACADES` in the generator) `makeCylinder`, `makeSphere`,
+`makeCone`, `makeTorus`, `makeWedge`, `makeLoft`, `makeHelix`,
+`makeTube`, `makeRevolution`, `makeRuledSurface`, `makeSweepSurface`,
+`makeFilledFace`, `makeThread`.  Not added, by the OpenSCAD rule of
+1.5 (no I/O): `read`, `export*`, `import*`, `makeShapeFromMesh`,
+`show`, `open`, `insert`; not added because they are the element
+map's own (`mapSubElement`, `getElementHistory`, `searchSubShape`),
+which a program addresses through the handle-tier sub-shape lists.
+The VERSION: the generator writes `FCX_SURFACE_VERSION` -- an
+integer bumped by hand when a member is removed or its meaning
+changes, and beside it the sha256 of the sorted annotated set (name,
+tier, signature) -- into both `.inc` files and `FreeCAD.
+ExpressionSandbox.surfaceVersion()`; a library records `Surface` at
+its last edit, a document `Meta["ExpressionSurface"]` at save; on
+open a lower integer is logged once per document ("written against
+surface 1, this build is 2"), never refused -- FeatureScript's pin is
+a promise the host cannot keep for OCCT's own behaviour, so ours is a
+record and a warning.  The sizing declined a per-file pinned facade
+set: it would mean shipping every past surface.
+
+**(c) The carrier.**  `App::ExpressionLibrary`, a subclass of
+`App::TextDocument` (`Text` inherited: the source; the view provider
+and its `TextDocumentEditorView` inherited: the authoring editor,
+which closes sec 11 item 6 for the library half), plus `Module`
+(`PropertyString`, the import name, default the object's `Name`) and
+`Surface` (the version of (b)).  Semantics: the source is engine
+statements evaluated ONCE in a fresh frame in the document's guest;
+the frame's bindings become a module object; `import <Module>` or
+`from <Module> import f` in any expression of the SAME document
+binds it.  How it reaches the guest: lazily, through the import
+miss.  The image's `ImportModules::getModule` (`Expression.cpp:2385`)
+already asks the host about a `ModuleNotFoundError`
+(`missingImportOffer`, 5.5); a step before that, a `_fcx.libraries`
+registry keyed by the CURRENT principal is consulted, and on a miss
+a new op `lib.source {name}` asks the host, which answers from the
+requesting principal's document -- the library's `Text`, its
+`Surface`, a revision counter -- or "no such library", after which
+the package offer runs as today.  The guest builds the module
+(`types.ModuleType`, the frame's variables as attributes, the engine
+function objects of fact (2) among them) under the principal's key,
+so two documents' `lib` never meet in the shared guest.  Changes:
+the library's `onChanged(Text)` bumps the revision and sends
+`lib.drop {name}` for its principal (never `reset()`: fact (4)), and
+touches itself.  The dependency edge: `ImportStatement` and
+`FromStatement` gain `_getIdentifiers`, resolving a module name to
+`<library>.Text` when the owner's document holds a library of that
+`Module` -- the DAG orders the library before its consumers, a
+`Text` edit recomputes them, and `getDeps` reports it in the pack;
+a name that is no library resolves to nothing, as today.  Same
+document only: a program that wants another file's library copies
+it, which is FeatureScript's rule too and keeps `doc.foreign` out of
+the import path.  The principal: `DocumentHashBuilder` collects
+expression containers only (`ExpressionSecurityRuntime.cpp:318-
+340`); the collector gains the libraries' `Text` through the unused
+`addScript(moduleClass, code)` (`ExpressionSecurity.cpp:386`), so a
+tampered library voids the document's grants exactly as a tampered
+expression does.  The native twin, for the parity rig only: native
+`ImportModules::getModule` resolves a same-document library by
+evaluating its `Text` in a native frame and wrapping the frame as a
+module -- the path the gate compares against, with enforcement off
+as the corpus rig runs; under enforcement it never runs, by fact (1).
+Python: `FreeCAD.ExpressionSandbox.libraries(doc)` for tests.
+
+**(d) Per-document guests: NO.**  335 MB and 2.5 s per guest against
+the 1.5 s the item expected, and a reset that keeps about 100 MB:
+ten open documents would be 3 GB.  The shared guest stays, with the
+per-principal module namespace of (c) doing the isolation the guest
+boundary would have done for names; principals are per evaluation
+already (`ImageHost::evalExpression`'s owner scope).  What a shared
+guest cannot isolate -- one document's runaway allocation -- is the
+memory ceiling of sec 13, now sized as D4 below; crash isolation is
+the multi-process OCCT direction's (`docs/ComputeBoundaries.md`),
+not the guest's.  The reset retention is a new trap (sec 12) and a
+D4 measurement.
+
+**(e) The gate.**  `SandboxProgram` (a Python gate module in the
+default list beside `SandboxCorpusGui`): the three fixture files
+open with routing ON, recompute, and each `Shape` is BRep
+byte-identical to the same file recomputed native with enforcement
+off; a parameter change recomputes to the native answer; save,
+reopen, equal; the library's `Text` edited -> consumers recompute;
+the `Text` tampered on disk -> a new principal, the file's grants
+gone.  A gtest `ExpressionImageHost.programs` for the function
+objects (a `def` evaluated routed, called, passed as a value, a
+lambda in a comprehension) and the surface version.  The corpus
+gate stays green with the three fixtures added to its list.  The
+bench of sec 11 item 4 runs the flange routed against native as its
+one shape program.
+
+**Stages.**
+
+    D1  function objects in the image (ExpressionPy into
+        ImageSources.cmake, the two throws removed, the FUNC value
+        path); the surface annotations; the version stamp and
+        surfaceVersion().  Gate: the gtest; the flange as an
+        expression routed = native.
+    D2  App::ExpressionLibrary, the registry and lib.source /
+        lib.drop, the dependency edge, the principal hash, the
+        native twin, libraries().  Gate: SandboxProgram's library
+        half.
+    D3  the three fixtures, SandboxProgram complete, the corpus list,
+        the bench, the tutorial text in docs.
+    D4  memory: a ceiling per guest (V8's ResourceConstraints on the
+        isolate, pyodide's MAXIMUM_MEMORY at wheel build) with the
+        outcome a budget-style refusal, and the reset retention
+        measured to its cause (V8 heap not shrinking, or the guest's
+        buffers held by the host).
+
+**Cost** (lines, new or changed):
+
+    D1  ExpressionPy in the image, the two throws, the FUNC path       100-200
+        annotations (14 + 3 XML lines, 13 table entries)                  ~40
+        the version: generator, both .inc, surfaceVersion(), the
+          library and document records, the open-time log            150-250
+    D2  the object (App + Gui registration, icon)                    100-150
+        the guest registry and module build                          100-150
+        lib.source / lib.drop, the host side                         100-150
+        the dependency edge (ImportStatement, FromStatement)           60-100
+        the principal hash                                                ~20
+        the native twin                                                80-120
+        libraries(), Python                                               ~40
+    D3  the three programs, twice each                                  ~150
+        SandboxProgram, the gtest, the corpus list                    350-500
+    D4  the ceiling and the measurement                               200-400
+    total                                                             1.5-2.3k
+
+At sec 7's pace: D1 one session, D2 one to two, D3 one, D4 one.
+
+**Limits, stated.**  The budget interrupts the GUEST; an OCCT call
+the guest asked for runs on the host to completion, so a fillet that
+takes a minute takes a minute -- the cost side of "the host always
+recomputes" (1.2), and the multi-process direction's to bound.
+Routed-only under enforcement, by design.  Same-document libraries
+only.  No classes in the language.  A program sees the document
+through the pack as an expression does: its own object's properties
+and what the identifiers resolve; it does not create document
+objects (the catalog has no such row, and 1.5's prior art has no
+such need).  The shared guest means one document's slow program
+delays another's evaluation -- the same queue expressions share
+today.
+
 
 ### 7.18 The tool bar mirror sized: the desktop's tool bars as models, streamed **[sized 2026-09-10; BUILT 2026-09-10]**
 
@@ -5655,8 +5897,16 @@ push the user's call).
    in the GUI gate (a saved document whose view provider names a module
    outside every root reopens without that Proxy and without the
    import; one under the user's `Mod` restores).
-2. **The document program** -- to be SIZED as 7.17 before building:
-   (a) the example set: two or three document-carried programs (a
+2. **The document program** -- **SIZED 2026-09-10 as 7.17**: a
+   statement program bound to a `Part::Feature`'s `Shape` already
+   recomputes routed (the probe's bracket and stair); the one guest
+   gap is function objects (`ExpressionPy` into the image); the
+   carrier is `App::ExpressionLibrary` on `App::TextDocument`, served
+   into the guest through the import miss, namespaced per principal,
+   with a dependency edge from `import` and the source in the
+   principal hash; per-document guests are OUT on the measurement
+   (2.5 s, 335 MB, resets retain ~100 MB); stages D1-D4, 1.5-2.3k
+   lines.  As asked: (a) the example set: two or three document-carried programs (a
    parametric bracket, a stair) written in the engine's language,
    generating shapes, run routed and native; (b) the geometry surface
    audit against them -- the constructive set (`make*`, extrude,
@@ -5905,6 +6155,10 @@ sockets, any network for the reference image, a webview escape hatch.
 - Windows and macOS path handling in the pyodide scoping is by
   construction only; nothing ran there.
 - `pre-commit` and `black` are not on this box's PATH.
+- A guest `reset()` does not give its memory back: RSS 462 -> 557 ->
+  633 -> 659 MB over three resets (2026-09-10, 7.17), about 100 MB
+  retained each, decelerating.  Reset for a package install only;
+  a library edit drops one module (`lib.drop`), never the guest.
 - The WASI stdlib slice has no `importlib`: guest prelude code imports
   with `__import__` and walks dotted names by hand.
 - `FeaturePythonT::Proxy` is private; tests reach it through
@@ -6151,7 +6405,8 @@ sockets, any network for the reference image, a webview escape hatch.
   the item, as Qt does; `Gui.ActiveDocument` carries `resetEdit` and
   `Document` only.
 - The GUI live expression editors evaluate as session, unconfined.
-- No memory ceiling for a guest.
+- No memory ceiling for a guest -- sized as 7.17's D4 (a guest is
+  335 MB at boot; the reset retention of sec 12 measured to its cause).
 - Addon principal granularity (per addon, per file?) is still open.
 - Whether a document network grant may ever be "always" (a
   content-hashed identity makes it safe against tampering; a
