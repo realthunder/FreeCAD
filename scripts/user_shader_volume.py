@@ -173,7 +173,7 @@ def run():
         sh = doc.addObject("App::Shader", "FireFx")
         sh.Programs = [prog]
         sh.Demo = "None"
-        ap = doc.addObject("App::Appearance", "FireLook")
+        ap = doc.addObject("App::ShaderBinding", "FireLook")
         ap.Scope = "Object"
         ap.ElementList = [sh, fire]
         doc.recompute()

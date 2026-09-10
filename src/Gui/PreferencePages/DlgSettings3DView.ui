@@ -221,6 +221,9 @@ Changing this option requires a restart of the application.</string>
         </item>
         <item row="8" column="0">
          <widget class="Gui::PrefCheckBox" name="checkBoxEnhancedPick">
+          <property name="checked">
+           <bool>true</bool>
+          </property>
           <property name="toolTip">
            <string>Enable 3D picking acceleration. The effect is only noticable for very complex
 geometry shape, and may cause some initial lag due to bufferring.</string>

@@ -26,6 +26,7 @@
 #include "DocumentObject.h"
 #include "FeaturePython.h"
 #include "Link.h"
+#include "PropertyFile.h"
 #include "PropertyGeo.h"
 #include "PropertyLinks.h"
 #include "PropertyStandard.h"
@@ -49,16 +50,35 @@ public:
 
     /// Renderer pipeline stage the program attaches to ("material", "post", ...)
     PropertyString Stage;
-    /// Source dialect of the program text
+    /// Source dialect of the program text: shading-language text
+    /// (BGFX_SC, GLSL) or, for a "material"-stage program, a MaterialX
+    /// document in FragmentProgram (MATERIALX -- see
+    /// docs/CyclesIntegration.md sec 8 item 15)
     PropertyEnumeration Dialect;
     /// Vertex stage source; empty uses the renderer's stock vertex stage
-    PropertyString VertexProgram;
+    PropertyStringIncluded VertexProgram;
     /// Fragment stage source
-    PropertyString FragmentProgram;
+    PropertyStringIncluded FragmentProgram;
     /// Particle state step of a stateful emitter: a fragment program
     /// advancing the state textures by one fixed step. Empty = the
     /// emitter is stateless (docs/RenderEngine.md §5.8)
-    PropertyString SimulateProgram;
+    PropertyStringIncluded SimulateProgram;
+    /// Which surface of a MATERIALX document this program is shaded
+    /// by: the name of one of the document's surfacematerial nodes, or
+    /// of a bare surface shader node where it states no material.
+    /// Empty renders the first surface the document states, which is
+    /// what a single-material document has. An asset's whole material
+    /// set is usually ONE document, and this is what picks one out of
+    /// it (docs/MaterialStorage.md sec 17.13).
+    PropertyString Surface;
+    /// Files a MATERIALX document refers to, each under the name the
+    /// document calls it by. What makes a document with image maps
+    /// self-contained: the bytes ride in the .FCStd, and the text handed
+    /// to the renderers names them where they actually are on the
+    /// machine that opened it (docs/MaterialStorage.md sec 16). Kept in
+    /// step with the document by the view provider, which is the side
+    /// that can read one.
+    PropertyFileIncludedList Images;
     /// Blend override of the material-stage beauty draw
     /// (Default keeps the draw's stock state)
     PropertyEnumeration Blend;
@@ -103,7 +123,24 @@ public:
         return "Gui::ViewProviderShaderProgram";
     }
 
+    /** Restore a document written while the sources were plain strings.
+     *
+     * PropertyStringIncluded writes the same <String> element, so the value
+     * itself needs no conversion -- only the type-changed door has to be
+     * opened, or the container drops it without a word.
+     */
+    void handleChangedPropertyType(Base::XMLReader &reader,
+                                   const char *TypeName,
+                                   Property *prop) override;
+
+protected:
+    void onChanged(const Property *prop) override;
+
 private:
+    /// Name the stored sources after what they hold, which is what an
+    /// unpacked project shows: the dialect decides the extension.
+    void updateSourceExtensions();
+
     static const char* DialectEnums[];
     static const char* BlendEnums[];
 };
@@ -190,12 +227,12 @@ using ShaderPython = App::FeaturePythonT<Shader>;
  * Like-named dynamic properties override shader parameters per binding.
  * Overlaps: longest chain wins, then TreeRank, then name.
  */
-class AppExport Appearance : public LinkGroup
+class AppExport ShaderBinding : public LinkGroup
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(App::Appearance);
+    PROPERTY_HEADER_WITH_OVERRIDE(App::ShaderBinding);
 
 public:
-    Appearance();
+    ShaderBinding();
 
     /// Target scope: whole object (direct attachment), matched
     /// occurrences (per-instance chain override), or a single face
@@ -219,14 +256,14 @@ public:
 
     const char* getViewProviderName() const override
     {
-        return "Gui::ViewProviderAppearance";
+        return "Gui::ViewProviderShaderBinding";
     }
 
 private:
     static const char* ScopeEnums[];
 };
 
-using AppearancePython = App::FeaturePythonT<Appearance>;
+using ShaderBindingPython = App::FeaturePythonT<ShaderBinding>;
 
 }  // namespace App
 

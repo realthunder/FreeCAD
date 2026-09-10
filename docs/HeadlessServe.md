@@ -77,6 +77,20 @@ the stream needs to keep current.
 GUI thread), and the work notifier (`scheduleRedraw()`, so a finished level job gets
 published).
 
+**(f) The selection observer -- missed by this inventory, found 2026-09-06.** The viewer
+is a `SelectionObserver`, and `View3DInventorViewer::onSelectionChanged` is what hands every
+selection and preselection change of its document to the selection root as an
+`SoFCSelectionAction` / `SoFCHighlightAction`; the root's `checkSelection` then feeds the
+render cache manager, which is where the selection draws on the wire come from. The source
+built its root, set its document and installed the pick handler, and a remote pick duly
+landed in `Gui::Selection` on the GUI thread -- and no publish ever showed it, because
+nothing told the root, and because the root's renderer branch bailed out without a viewer
+to build the detail path from (`SoFCUnifiedSelection.cpp`, `beginDetailPath`: with a
+viewer, the viewer's groups are prepended; with none, the provider's root is a direct
+child of the selection root and nothing is). The measurement of `ThinClient.md` sec 8.1
+found both; `SceneServeSource::Private::SelectionMirror` is the observer now, and
+`tests/gui/serve-selection-echo.py` is the loop over a socket.
+
 Plus the overlays — axis cross, navigation cube — which are viewer furniture captured through
 `setExternalOverlay()`. A headless source has no business producing them; the viewer draws its
 own.
@@ -105,7 +119,7 @@ block, and nothing after it. In `BGFXRenderer` this means factoring the region
 callers share it, and skipping the `getView()`/`bgfxFbo` gate entirely. The audit says this is
 clean: `makeSnapshot` reads only CPU members (`scene`, `objectInfo`, `selections`,
 `highlight`, `overlays`, the configs), and the one call inside it that looks like a GPU
-dependency — `_BGFXLib.viewerShaderBins()` (`BGFXRenderer.cpp:13654`) — is offline `shaderc`
+dependency -- `_BGFXLib.viewerShaderBins()` (`BGFXRenderer.cpp:13654`; now `shipUserShader()`) -- is offline `shaderc`
 invocation plus file reads, no bgfx device. `width`/`height` and `clearColor` become
 parameters rather than view state.
 

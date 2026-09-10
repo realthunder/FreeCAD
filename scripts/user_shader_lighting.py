@@ -149,7 +149,7 @@ def run():
         tgt = doc.addObject("App::Link", "Target")
         tgt.LinkedObject = box
         tgt.ViewObject.Visibility = False
-        ap = doc.addObject("App::Appearance", "Look")
+        ap = doc.addObject("App::ShaderBinding", "Look")
         ap.Scope = "Instance"
         ap.ElementList = [sh, tgt]
         doc.recompute()

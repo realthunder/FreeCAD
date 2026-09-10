@@ -75,11 +75,49 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // post-pass setup).
     if (userShaderGen != _BGFXLib.userCompileGeneration)
         dirtyChanged = true;
+    // The stand-in record is per frame: the first submit of a sub-view
+    // sequence starts it, the later ones add to it, the tail reads it.
+    if (!subCtx.active || subCtx.first) {
+        _BGFXLib.userProgramStoodIn = false;
+        frameOwes = false;
+    }
 #endif
     (void)feedChanged;
     feedDirty = false;
     sceneDirty = false;
     renderOk = false;
+
+    // Coin hands us a GL projection: it clips depth against [-1,1].
+    // Every other bgfx backend clips against [0,1], and the rest of
+    // the engine already assumes the matrix it is given matches
+    // caps->homogeneousDepth -- the shadow crop below, the proxy
+    // hierarchy, the masked and query cullers all branch on it. The
+    // camera projection was the one matrix that reached bgfx
+    // unconverted, so off GL the far half of every scene fell outside
+    // the clipper and simply vanished.
+    //
+    // The remap is z -> (z + w) / 2, i.e. only the z row (indices
+    // 2/6/10/14 of the column-major matrix) changes. The w row is left
+    // alone on purpose: its z entry is how every shader tells a
+    // perspective camera from an orthographic one, and no shader reads
+    // the z row at all, so this stays confined to the clip depth.
+    //
+    // projMatrixFed keeps the matrix as Coin gave it, for the one
+    // consumer that must not see the local backend's convention: the
+    // scene publish/dump, whose viewer renders on a backend of its own
+    // and builds its camera to suit.
+    const void *projMatrixFed = projMatrix;
+    if (projMatrix) {
+        const bgfx::Caps *caps = bgfx::getCaps();
+        if (caps && !caps->homogeneousDepth) {
+            const float *fed = reinterpret_cast<const float *>(projMatrix);
+            std::memcpy(projClip, fed, sizeof(projClip));
+            for (int c = 0; c < 4; ++c)
+                projClip[4 * c + 2] = 0.5f * (fed[4 * c + 2]
+                                              + fed[4 * c + 3]);
+            projMatrix = projClip;
+        }
+    }
 
     // The camera the shadow ground sizes itself to
     // (LightConfig::groundFollowCamera). Taken here, at the top, for
@@ -272,7 +310,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // re-upload. Relinking on WebGL2 is just as slow as it is on a
     // native driver, and re-streaming the scene there is worse.
     const bool progChanged =
-        _BGFXLib.standaloneSamples != view->msaaSamples
+        _BGFXLib.effectiveSamples(_BGFXLib.standaloneSamples)
+            != view->msaaSamples
         || _BGFXLib.shaderGeneration != view->shaderGen;
     // What the scene colour's format follows. Off the frame's config
     // rather than view->outputTransform, which a debug view mode zeroes
@@ -348,7 +387,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     const bool progChanged =
         _BGFXLib.shaderGeneration != view->shaderGen
         || (_BGFXLib.desktopSamples >= 0
-            && _BGFXLib.desktopSamples != view->msaaSamples);
+            && _BGFXLib.effectiveSamples(_BGFXLib.desktopSamples)
+                != view->msaaSamples);
     // The lost-framebuffer case rebuilds once, not every frame:
     // view->targetsFailed says the last attempt found the handle pool
     // full, and a bailed frame never reaches bgfx::frame(), which is
@@ -394,7 +434,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (getenv("FC_BGFX_DEBUG_CLEAR"))
         clearColor = 0xff0000ff;
 
-    maybeDumpScene(viewMatrix, projMatrix, width, height, clearColor,
+    maybeDumpScene(viewMatrix, projMatrixFed, width, height, clearColor,
                    dirtyChanged);
 
 #ifndef FC_RENDERER_STANDALONE
@@ -738,6 +778,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 auto tags = Render::planMeshRefines(
                     scene, levelPlanner.viewMatrix(),
                     levelPlanner.projMatrix(), h, refineTolerance);
+                // A refine asked for is a mesh drawn coarser than the
+                // plan wants: this frame is not the picture yet. Per
+                // frame on purpose -- a refine that lands republishes
+                // and re-plans, and a plan that stays quiet must not
+                // hold a stale "owes" over every later frame.
+                if (!tags.empty())
+                    frameOwes = true;
 
                 // The hard ceiling (sec 13c.5): the budget is a
                 // line climbs may not cross, judged against the
@@ -1040,7 +1087,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         }
     }
 
-    publishScene(viewMatrix, projMatrix, width, height, clearColor,
+    publishScene(viewMatrix, projMatrixFed, width, height, clearColor,
                  dirtyChanged);
 #endif
 
@@ -1135,6 +1182,37 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // The ground receiver and the bulb tiles read as shadow settings
     // but pay for neither: the ground quad draws unshadowed without a
     // map (submitShadowGround), and the bulb atlas is its own group.
+    //
+    // A MATCAP frame does not tap the map either: its whole shading is
+    // a camera-fixed studio looked up by the view normal, with no light
+    // and no shadow term, which is the point of the mode -- form reads
+    // the same wherever the light sits. So a matcap view of a document
+    // whose Shadow setting happens to be on was holding 117MB it could
+    // never sample, and re-rendering the map whenever a caster moved.
+    //
+    // Two things still tap it in a matcap frame and are asked before
+    // the set is dropped:
+    //   - the volumetric shafts, which REQUIRE shadowActive (volActive
+    //     below is gated on it) and are a frame effect rather than a
+    //     surface one, so the mode does not exempt them;
+    //   - a draw carrying a GENERATED material, which takes the OpenPBR
+    //     branch whatever the frame's shading mode says
+    //     (FC_USER_MATERIAL in fc_mesh_lighting.sh) and so keeps a
+    //     shadow term the matcap branch does not have.
+    bool matcapTapsShadow = false;
+    const bool matcapFrame = matcapconf.enabled && !hlconfig.show;
+    if (matcapFrame) {
+        matcapTapsShadow = volconf.enabled;
+        for (const auto &d : scene) {
+            const auto &sh = d.material.usershader;
+            if (sh && sh->dialect == Render::UserShader::Dialect::MaterialX) {
+                matcapTapsShadow = true;
+                break;
+            }
+        }
+    }
+    const bool shadowWanted = view->m_shadow && lightconf.valid
+        && lightconf.shadow && (!matcapFrame || matcapTapsShadow);
     {
         // Coin's sizing: the next power of two of precision * the cap.
         float prec = bx::clamp(lightconf.precision, 0.01f, 1.0f);
@@ -1144,9 +1222,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
             desired = uint16_t(desired << 1);
         view->shadowSizeWanted = desired;
     }
-    view->updateEffect(BGFXView::EffectShadow,
-                       view->m_shadow && lightconf.valid
-                           && lightconf.shadow);
+    view->updateEffect(BGFXView::EffectShadow, shadowWanted);
     // One shared mirror target, wanted by either consumer.
     view->updateEffect(BGFXView::EffectReflection,
                        lightconf.groundReflection
@@ -1308,7 +1384,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->pbrEnvBlur = pbrconf.envBlur;
     // Matcap replaces the lit shading outright, so it does not care
     // whether the environment could be built the way PBR does.
-    view->matcapFrame = matcapconf.enabled && !hlconfig.show;
+    view->matcapFrame = matcapFrame;
     // What the Tessellation draw style fills its faces with, so they
     // occlude without being seen (Coin gets this from the render
     // manager's hidden-line pass, not from the draw style).
@@ -1415,12 +1491,39 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     d[j] /= len;
             }
         };
-        view->viewAmbientFed = viewlightconf.fed;
+        // The Realistic branch is lit by the SCENE -- the environment,
+        // the scene light, and any light a DOCUMENT adds -- and not by
+        // the viewport's own aids. Two of those aids are dropped here.
+        //
+        // The headlight, backlight and fill light are camera-attached
+        // (`eyeSpace`, which is what the bridge computes them to be),
+        // and Coin's LIGHT_MODEL_AMBIENT is a Phong-era global fudge.
+        // Both exist so that Classic can never show an unlit model,
+        // which is what that mode is FOR and stays true of it (Matcap
+        // needs neither: its studio is the shading). Adding them on top
+        // of image-based lighting instead puts a FLOOR under the
+        // picture that no environment setting can remove: with a black
+        // environment, no sun and no lights, a 0.5 grey box still drew
+        // at byte 68 where the path tracer -- the same shading model,
+        // traced -- draws black. Measured, and the floor split exactly
+        // into these two: headlight 0.0503, ambient 0.0075 of linear
+        // light (docs/MaterialStorage.md sec 17.13).
+        //
+        // Gated on pbrActive rather than on the config, so a frame that
+        // asked for Realistic and fell back to Classic because the
+        // environment could not be built keeps the lights it is about
+        // to shade with. It is the same flag the shader branches on.
+        const bool sceneLitOnly = pbrActive;
+        view->viewAmbientFed = viewlightconf.fed && !sceneLitOnly;
         view->viewAmbient = viewlightconf.ambient;
         int n = 0;
         if (viewlightconf.fed) {
             for (int i = 0; i < viewlightconf.count; ++i) {
                 const Render::ViewLight &l = viewlightconf.lights[i];
+                // A document's own lights are the scene and stay; the
+                // viewer's camera-attached ones do not.
+                if (sceneLitOnly && l.eyeSpace)
+                    continue;
                 // A spot light spends TWO slots: its position, colour
                 // and attenuation fill a light's twelve floats already,
                 // and the cone axis is three more, so it goes in the
@@ -1497,8 +1600,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // (a known first-cut deviation).
     bool shadowActive = false;
     float lightViewMtx[16], lightProjMtx[16];
-    if (view->m_shadow && bboxValid && lightconf.valid
-            && lightconf.shadow) {
+    if (shadowWanted && bboxValid) {
         const Render::LightConfig &light = lightconf;
         shadowActive = true;
         {
@@ -2980,6 +3082,26 @@ bool BGFXRenderer::Private::render(const QColor &col,
             idReadbackWanted = true;
     }
 
+    // A frame capture wants two passes of its own: the depth encode
+    // and the blit-only copy view. Decided here, where the pass table
+    // is built, while whether the capture is HELD (a user shader still
+    // compiling, the host still feeding shapes) is only known at the
+    // end of the frame -- so the passes are declared and then simply
+    // not submitted into if the hold turns out to apply. A declared
+    // pass nobody draws into costs a view-state assignment.
+    //
+    // One readback in flight at a time, as with the audit: a second
+    // would overwrite the buffers the first is still being written
+    // into.
+#ifdef FC_RENDERER_STANDALONE
+    const bool captureWanted = false;
+#else
+    static const bool debugReadback =
+        getenv("FC_BGFX_DEBUG_READBACK") != nullptr;
+    const bool captureWanted = (dumpPending || debugReadback)
+        && !captureReadyFrame && view->ensureCaptureTargets();
+#endif
+
     // Ground reflection: mirror the world about the shadow ground
     // plane (z = scene bbox bottom, the plane the ground quad sits
     // on) and re-render the opaque scene with the original camera —
@@ -3612,6 +3734,29 @@ bool BGFXRenderer::Private::render(const QColor &col,
             bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
         configTail(i, id);
     };
+    auto configCaptureDepth = [&](int, uint16_t id) {
+        // The depth encode writes a full-viewport colour target of its
+        // own; nothing samples it but the blit that follows, so no
+        // clear is needed -- the fullscreen triangle covers every
+        // texel.
+        bgfx::setViewFrameBuffer(id, view->captureDepthFbo);
+        bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                           clearColor, 1.0f, 0);
+        bgfx::setViewRect(id, 0, 0, width, height);
+        bgfx::setViewTransform(id, nullptr, nullptr);
+        bgfx::setViewMode(id, bgfx::ViewMode::Default);
+    };
+    auto configCapture = [&](int, uint16_t id) {
+        // Blit-only, exactly like configIdReadback: no framebuffer,
+        // nothing drawn. It is last so the copies see the finished
+        // frame.
+        bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
+        bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                           clearColor, 1.0f, 0);
+        bgfx::setViewRect(id, 0, 0, width, height);
+        bgfx::setViewTransform(id, nullptr, nullptr);
+        bgfx::touch(id);
+    };
     auto configIdReadback = [&](int, uint16_t id) {
         // Blit-only view: no framebuffer of its own, nothing drawn
         // into it. It exists to place the copy after the pass it
@@ -3900,6 +4045,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     declPass(V::ViewDebugScene, debugSceneRender || idPassRender,
              configDebugScene);
     declPass(V::ViewIdReadback, idReadbackWanted, configIdReadback);
+    declPass(V::ViewCaptureDepth, captureWanted, configCaptureDepth);
+    declPass(V::ViewCapture, captureWanted, configCapture);
     // Shared by the measurement and the culling that acts on it: both
     // rasterize boxes against the finished opaque depth, and it is the
     // view id that places them there. The software oracle rasterizes no
@@ -4016,8 +4163,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // that still owes simulation steps keeps the view animating
     // (docs/RenderEngine.md §5.8) — that is how a frozen frame
     // reaches its warm-up state.
-    if (view->stepParticles(scene, animTime, debugconf.freezeFrame))
+    if (view->stepParticles(scene, animTime, debugconf.freezeFrame)) {
         animatedFrame = true;
+        // A frozen frame short of its warm-up is not the picture yet;
+        // a live one is animating, which is never "incomplete".
+        if (debugconf.freezeFrame)
+            frameOwes = true;
+    }
     // ... and immediately hand what they hit to the water, which is
     // the only consumer that has to see it before anything draws.
     view->splatImpacts(animTime, debugconf.freezeFrame,
@@ -4107,8 +4259,9 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->projMatrix = reinterpret_cast<const float *>(projMatrix);
 
     // Frustum culling: world-space clip planes extracted from the
-    // camera view-projection (Gribb-Hartmann; the fed matrices follow
-    // Coin's GL clip conventions). A scene draw whose world bounds
+    // camera view-projection (Gribb-Hartmann, against this backend's
+    // clip volume -- the projection was remapped to it at the top of
+    // the frame). A scene draw whose world bounds
     // lie fully outside any plane skips its color/water/prepass
     // submits below. Shadow casters are exempt — off-screen geometry
     // still casts into the view — as are autozoom draws (their model
@@ -4132,13 +4285,21 @@ bool BGFXRenderer::Private::render(const QColor &col,
                    reinterpret_cast<const float *>(projMatrix));
         // Row-vector convention (v' = v * M): clip component i is
         // dot(v, column i); plane k folds column 3 with the column
-        // of its axis. GL clip volume, so the near plane is w + z.
+        // of its axis. That holds for five of the six planes on both
+        // conventions -- only the near one differs, being w + z under
+        // GL's [-1,1] clip volume and plain z under the [0,1] volume
+        // every other backend uses.
+        const bgfx::Caps *clipCaps = bgfx::getCaps();
+        const bool glClip = !clipCaps || clipCaps->homogeneousDepth;
         float planes[6][4];
         for (int k = 0; k < 6; ++k) {
             int axis = k >> 1;
             float sign = (k & 1) ? -1.0f : 1.0f;
+            const bool nearPlane = axis == 2 && !(k & 1);
             for (int r = 0; r < 4; ++r)
-                planes[k][r] = vp[r * 4 + 3] + sign * vp[r * 4 + axis];
+                planes[k][r] = (nearPlane && !glClip ? 0.0f
+                                                     : vp[r * 4 + 3])
+                    + sign * vp[r * 4 + axis];
         }
         sceneCulled.assign(scene.size(), 0);
         size_t nculled = 0;
@@ -6232,6 +6393,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         return true;
     }
     frameNum = timedBgfxFrame();
+    _BGFXLib.sweepUserCaches();
 #else
     // The output colour transform, when one is selected: encode the
     // finished frame into presentTex so the blit below transfers the
@@ -6241,6 +6403,58 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (view->outputTransform != Render::OutputConfig::None
             && bgfx::isValid(view->presentFbo))
         view->present();
+    // The capture rides on ViewCapture, the last view id, so it has to
+    // be QUEUED before the frame boundary that executes it -- the
+    // opposite of the GL composite below, which reads a framebuffer
+    // bgfx has already filled. Everything the frame draws is submitted
+    // by now, present included, so what gets copied is the finished
+    // image.
+    //
+    // The completeness verdict is needed here rather than after the
+    // boundary because the hold decides whether to copy at all; its
+    // inputs are all settled by submission, and the assignments that
+    // publish it stay where they were.
+    const bool frameWasComplete = !_BGFXLib.userProgramStoodIn
+        && !hostHold && !frameOwes;
+    const bool holdDump = dumpPending && !frameWasComplete
+        && pendingDump.waitComplete;
+    if (captureWanted && !holdDump) {
+        // Encode the scene depth into a colour target this pass owns,
+        // then ask for both it and the finished colour back. Depth is
+        // what no backend blits, and geometryPixels is measured from
+        // it, so this pass is the whole reason a capture is portable.
+        bgfx::setTexture(0, view->s_texSceneDepth, view->bgfxDepth);
+        view->fullscreen(BGFXView::ViewCaptureDepth, view->m_progDepthEnc,
+                         BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        // Sized off the staging texture's own format, which
+        // ensureCaptureTargets picked to match the blit source -- the
+        // RGBA8 present output when a colour transform is on, the
+        // scene colour otherwise.
+        captureHdr = view->captureColorFormat
+            == bgfx::TextureFormat::RGBA16F;
+        captureColor.assign(size_t(view->width) * view->height
+                            * (captureHdr ? 8 : 4), 0);
+        captureDepth.assign(size_t(view->width) * view->height * 4, 0);
+        capturePixW = view->width;
+        capturePixH = view->height;
+        captureIsDump = dumpPending;
+        captureRequest = pendingDump;
+        captureReadyFrame = view->readbackCapture(captureColor.data(),
+                                                  captureDepth.data());
+        if (!captureReadyFrame) {
+            captureColor.clear();
+            captureDepth.clear();
+            captureIsDump = false;
+        }
+        // dumpPending deliberately STAYS set until the readback
+        // lands. It is what frameDumpPending() reports and what
+        // pumpFrameDump loops on, and the request is not served until
+        // the pixels are actually here -- clearing it at the queue
+        // would hand the caller the PREVIOUS capture's statistics,
+        // which is a wrong answer rather than a slow one. A second
+        // request cannot start a second readback meanwhile:
+        // captureWanted requires captureReadyFrame to be clear.
+    }
     // The finished frame belongs in whatever framebuffer the caller had
     // bound when it asked for it: the widget's own for an on-screen
     // frame, a capture target for a screenshot (renderOffscreen).
@@ -6253,6 +6467,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     _BGFXLib.makeCurrent();
     cpuMark(CpuCtxOut);
     frameNum = timedBgfxFrame();
+    _BGFXLib.sweepUserCaches();
     // bgfx::frame() has its own timer; restart the chain past it so
     // it is not counted twice.
     if (debugconf.frameTiming)
@@ -6264,22 +6479,179 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // A sub-view rect is stated in the DESTINATION framebuffer's own
     // pixels -- the widget's device pixels -- because that is what the
     // blit writes into and what the y-flip has to measure against.
-    view->blit(dumpPending ? &pendingDump : nullptr, &lastStats,
+    // A draw that asked for a user program still compiling drew with
+    // the stock program standing in (getUserProgram). That frame is
+    // right to show and wrong to capture: a one-shot dump is a picture
+    // of the scene with its materials, and a surface drawn without one
+    // is not that -- it is how a chess piece came back plain white in a
+    // golden capture, always the piece whose compile finished last
+    // (docs/RenderDebug.md sec 5.2a). So the dump is held for a later
+    // frame: needsRedraw() keeps reporting it, the compile's finish
+    // bumps the generation, and the frame that draws with the program
+    // consumes it. Bounded by the compile itself -- a failed or killed
+    // compile is recorded and its draw stands in without asking again.
+    // And the host's word (holdFrameDump): the publish that fed this
+    // frame deferred shapes under its capture budget, so the scene is
+    // still arriving. Same hold, same release -- the follow-up publish
+    // the viewer schedules catches the deferred shapes up.
+    // The verdict is the frame's, dump or no dump: it is what
+    // Renderer::frameComplete reports and what the counters below
+    // let a waiter wait for. Two flags and two increments; nothing
+    // here waits.
+    // Both were decided before the frame boundary, where the capture
+    // had to read them (the copy is queued, not read back, so it
+    // cannot wait until here).
+    hostHold = false;
+    lastFrameComplete = frameWasComplete;
+    ++renderedFrameCount;
+    if (frameWasComplete)
+        ++completeFrameCount;
+    dumpHeld = holdDump;
+    // The composite only. The frame readback that used to live inside
+    // this call is now the portable capture queued above -- which is
+    // what lets a golden render test gate a backend that has no GL
+    // framebuffer to read.
+    view->blit(&lastStats,
                subCtx.active ? subCtx.x : 0,
                subCtx.active ? subCtx.y : 0,
                subCtx.active
                    ? int(widget->height() * widget->devicePixelRatioF() + 0.5)
                    : 0);
     cpuMark(CpuBlit);
-    if (dumpPending && !pendingDump.overlays) {
-        // That frame went to the screen as well as to the capture, and
-        // it is missing the chrome the capture asked to leave out. It
-        // would stay on screen until something else happened to dirty
-        // the scene, so redraw it whole.
-        sceneDirty = true;
-    }
-    dumpPending = false;
 #endif
+
+    // The capture lands a frame or two after the copy was queued, the
+    // same arrangement and for the same reason as the cull audit
+    // below: bgfx says which frame will have filled the buffers, and
+    // they must not be touched before it. pumpFrameDump is a loop over
+    // frames, so the wait costs the caller nothing but the frames it
+    // was already driving.
+    if (captureReadyFrame && frameNum >= captureReadyFrame) {
+        const size_t n = size_t(capturePixW) * capturePixH;
+        // Decode to the tight RGBA8, top-down image writeDumpImage and
+        // the stats both want. Two things vary by backend and this is
+        // where both are answered: the colour may be RGBA16F (linear
+        // light, while colour managed) and the origin may be bottom
+        // left. The old path hard-coded "glReadPixels rows are
+        // bottom-up", which is true of GL and of nothing else.
+        const bool flip = bgfx::getCaps()->originBottomLeft;
+        std::vector<unsigned char> rgba(n * 4);
+        long long nonFinite = 0;
+        for (uint16_t y = 0; y < capturePixH; ++y) {
+            const size_t sy = flip ? size_t(capturePixH - 1 - y) : y;
+            unsigned char *dst = &rgba[size_t(y) * capturePixW * 4];
+            if (captureHdr) {
+                const uint16_t *src = reinterpret_cast<const uint16_t *>(
+                        captureColor.data()) + sy * capturePixW * 4;
+                for (uint16_t x = 0; x < capturePixW; ++x)
+                    for (int c = 0; c < 4; ++c) {
+                        const float v = bx::halfToFloat(src[x * 4 + c]);
+                        // NaN walks straight through min/max -- every
+                        // comparison against it is false, so both return
+                        // it -- and std::lround(NaN) is undefined, which
+                        // turned a NaN channel into an arbitrary byte.
+                        // Measured: a shader NaN reached a golden as a
+                        // saturated primary and read as a shading
+                        // difference rather than as the NaN it was. Zero
+                        // is what the clamp was already asking for.
+                        float f;
+                        if (v == v && v - v == 0.0f) {
+                            f = std::min(std::max(v, 0.0f), 1.0f);
+                        }
+                        else {
+                            f = 0.0f;
+                            ++nonFinite;
+                        }
+                        dst[x * 4 + c] = (unsigned char)
+                            std::lround(f * 255.0f);
+                    }
+            }
+            else {
+                std::memcpy(dst,
+                            captureColor.data() + sy * capturePixW * 4,
+                            size_t(capturePixW) * 4);
+            }
+        }
+        // geometryPixels against the same 0.999 threshold the GL
+        // readback used, so the number means what it always meant --
+        // and now means it on every backend, which is the point of
+        // encoding depth into a colour target at all.
+        const float *depth = reinterpret_cast<const float *>(
+                captureDepth.data());
+        long ng = 0, r = 0, g = 0, b = 0;
+        for (uint16_t y = 0; y < capturePixH; ++y) {
+            const size_t sy = flip ? size_t(capturePixH - 1 - y) : y;
+            const float *drow = depth + sy * capturePixW;
+            const unsigned char *crow = &rgba[size_t(y) * capturePixW * 4];
+            for (uint16_t x = 0; x < capturePixW; ++x) {
+                if (drow[x] < 0.999f) {
+                    ++ng;
+                    r += crow[x * 4];
+                    g += crow[x * 4 + 1];
+                    b += crow[x * 4 + 2];
+                }
+            }
+        }
+        lastStats.width = capturePixW;
+        lastStats.height = capturePixH;
+        lastStats.temporalSamples = view->accumFrames;
+        lastStats.geometryPixels = ng;
+        lastStats.nonFiniteChannels = captureHdr ? nonFinite : -1;
+        // Said out loud as well as recorded: this is a broken frame,
+        // and the capture that carries it should not become a golden.
+        if (nonFinite)
+            RENDER_ERR("capture read back " << nonFinite
+                       << " non-finite channels (forced to 0) -- the"
+                          " shading produced NaN or infinity, so this"
+                          " frame is not fit to bless");
+        lastStats.avgColor[0] = ng ? float(r) / float(ng) : -1.0f;
+        lastStats.avgColor[1] = ng ? float(g) / float(ng) : -1.0f;
+        lastStats.avgColor[2] = ng ? float(b) / float(ng) : -1.0f;
+        lastStats.valid = true;
+        static const char *const envDump =
+            getenv("FC_BGFX_DEBUG_DUMP_FRAME");
+        if (getenv("FC_BGFX_DEBUG_READBACK")) {
+            fprintf(stderr,
+                    "bgfx capture %dx%d: %ld geometry pixels,"
+                    " avg color %ld,%ld,%ld\n",
+                    int(capturePixW), int(capturePixH), ng,
+                    ng ? r/ng : -1, ng ? g/ng : -1, ng ? b/ng : -1);
+#ifndef FC_RENDERER_STANDALONE
+            if (envDump && *envDump)
+                BGFXView::writeDumpImage(envDump, rgba.data(),
+                                         capturePixW, capturePixH);
+#endif
+        }
+        // Writing the frame to a path is a desktop errand. The browser
+        // tier has no filesystem anybody could fetch from and answers a
+        // dump request by sending the pixels back over the wire, which
+        // the caller below is already pumping on.
+#ifndef FC_RENDERER_STANDALONE
+        if (captureIsDump && !captureRequest.path.empty()
+                && !BGFXView::writeDumpImage(captureRequest.path,
+                                             rgba.data(),
+                                             capturePixW, capturePixH))
+            fprintf(stderr, "bgfx: frame dump write failed: %s\n",
+                    captureRequest.path.c_str());
+#endif
+        captureReadyFrame = 0;
+        dumpHeld = false;
+        if (captureIsDump) {
+            // Served: the pixels are here and lastStats describes them,
+            // so this is where the request the caller is pumping on
+            // ends.
+            dumpPending = false;
+            if (!captureRequest.overlays) {
+                // That frame went to the screen as well as to the
+                // capture, and it is missing the chrome the capture
+                // asked to leave out. It would stay on screen until
+                // something else happened to dirty the scene, so
+                // redraw it whole.
+                sceneDirty = true;
+            }
+        }
+        captureIsDump = false;
+    }
 
     // The cull audit's id image lands a frame or two after the copy
     // was queued — bgfx says which frame, and the buffer must not be

@@ -167,7 +167,7 @@ def run():
         sh = doc.addObject("App::Shader", "Fx")
         sh.Programs = [prog]
         sh.Demo = "None"
-        ap = doc.addObject("App::Appearance", "Look")
+        ap = doc.addObject("App::ShaderBinding", "Look")
         ap.ElementList = [sh, box]
         doc.recompute()
         settle()

@@ -61,8 +61,8 @@ not hand-written here. Keep desktop-GL assumptions out of renderer code.
 ### Shader sources
 
 - Source: `src/Gui/Renderer/bgfx/shaders/*.sc` (fragment/vertex) and
-  `*.sh` (shared includes, e.g. `fc_mesh_fs.sh`, `fc_volume.sh`,
-  `fc_volume_shadow.sh`).
+  `*.sh` (shared includes, e.g. `fc_mesh_fs.sh`, `fc_glass_fs.sh`,
+  `fc_volume.sh`, `fc_volume_shadow.sh`).
 - Compiled with `shaders/compile.sh` into
   `assets/shaders/{glsl,spirv,essl}/*.bin` (committed artifacts).
   `glsl` = desktop GL, `spirv` = Vulkan, `essl` = WebGL2/WASM.
@@ -256,11 +256,26 @@ config struct the bridge fills. "Property" = per-view dynamic
 
 ### 3.8 Glass
 - **Pass**: `ViewGlassFront/Back` (depths) → `ViewGlassSurface`.
-- **Shader**: `fs_fc_glass.sc`; shadow tint in `fs_fc_shadow_tint.sc`.
+- **Shader**: `fs_fc_glass.sc` including `fc_glass_fs.sh`; shadow tint
+  in `fs_fc_shadow_tint.sc`.
 - **What**: IOR screen-space refraction, Fresnel env reflection, per-channel
   Beer-Lambert absorption over body thickness; casts a soft tinted shadow.
 - **Controls**: per-object `Render_Glass`, `Render_GlassIOR`,
   `Render_GlassDensity`, `Render_GlassRoughness`.
+- **MaterialX**: a surface stating a constant `transmission_weight` of
+  one half or more is a glass body too, claimed by the capture
+  (`Material::glassmtlx`, docs/MaterialStorage.md sec 17.21): the
+  document's `transmission_color` is the body colour, LINEAR and never
+  decoded, its `transmission_depth` the density (`1 / depth`; none =
+  a tint applied once at the surface, `u_glassTint`), `specular_ior`
+  the IOR and `specular_roughness` the roughness (a mapped one by its
+  mean). `Render_Glass` on the same shape wins. Those flat values feed
+  the flat consumers only -- the shadow tint, the viewer tier, and the
+  pass while its splice compiles: on the desktop the body draws with
+  `fc_glass_fs.sh` spliced with the document's generated material
+  function (`FC_USER_MATERIAL`, paired with `vs_fc_mesh_tex`), which
+  reads the transmission colour, depth and weight, the IOR, the
+  roughness and a normal map per fragment (sec 17.22).
 
 ### 3.9 Ground reflection
 - **Passes**: `ViewGroundRefl` (mirrored-camera opaque re-render) →

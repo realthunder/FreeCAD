@@ -68,7 +68,13 @@ public:
     CosmeticVertex* clone() const;
 
     Base::Vector3d permaPoint;           //permanent, unscaled value
-    int            linkGeom;             //connection to corresponding "geom" Vertex (fragile - index based!)
+    //! where this cosmetic vertex landed in the view's vertex geometry.  It is
+    //! derived, not a reference: addCosmeticVertexesToGeom rewrites it on every
+    //! projection and nothing reads the stored value back, so unlike the other
+    //! index-based references (docs/TopoNamingEnhance.md sec 3.6) it has
+    //! nothing to carry by name -- the cosmetic vertex is identified by its
+    //! tag, which does not move.
+    int            linkGeom;
                                          //better to do reverse search for CosmeticTag in vertex geometry
     App::Color     color;
     double         size;

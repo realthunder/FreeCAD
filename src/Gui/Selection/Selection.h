@@ -240,6 +240,7 @@ template class GuiExport Base::Subject<const Gui::SelectionChanges&>;
 namespace Gui
 {
     class ViewProviderDocumentObject;
+    class SelectionSingleton;
 
 /**
  * The SelectionObserver class simplifies the step to write classes that listen
@@ -275,16 +276,34 @@ public:
 
     /** Attaches to the selection. */
     void attachSelection();
+    /** Attaches to whichever instance is current right now.
+     *
+     * That is the room on the desktop and everywhere else no
+     * Gui::SelectionScope is open, so this is attachSelection() unless a
+     * client's view is handling an event or entering an edit. Inside one
+     * it is that client's instance, and the observer stays with it: an
+     * edit mode's own observer belongs to the edit session it was built
+     * in rather than to the room, or a browser's in-edit picks would
+     * colour nothing and the room's would colour somebody else's sketch.
+     * docs/ThinClient.md section 8.4.
+     *
+     * The instance is remembered, so an observer that outlives the scope
+     * goes on hearing the one it attached to, and detaches from that one.
+     */
+    void attachSelectionToCurrent();
     /** Detaches from the selection. */
     void detachSelection();
 
 private:
     virtual void onSelectionChanged(const SelectionChanges& msg) = 0;
     void _onSelectionChanged(const SelectionChanges& msg);
+    void attachTo(SelectionSingleton& sel);
 
 private:
     using Connection = fastsignals::connection;
     Connection connectSelection;
+    /// The instance this observer is attached to; null means the room.
+    SelectionSingleton* observed = nullptr;
     std::string filterDocName;
     std::string filterObjName;
     ResolveMode resolve;
@@ -793,9 +812,27 @@ public:
     SelectionStyle getSelectionStyle();
     //@}
 
+    /** The current selection instance
+     *
+     * Normally the room instance below, and on the desktop always. While a
+     * Gui::SelectionScope is open it is that scope's instance instead, so
+     * everything reached through Gui::Selection() -- the sketcher's picks,
+     * the SoFCUnifiedSelection handler, the selection undo stack, roughly
+     * 1500 call sites -- lands in a mirror's own selection for the dynamic
+     * extent of one replayed event, none of them touched.
+     * See docs/ThinClient.md section 8.4.
+     */
     static SelectionSingleton& instance();
+    /** The shared instance a document's viewers and panels agree on
+     *
+     * Observers pin to this one, so what a mirror picks does not drive the
+     * room's tree view or property panel; a mirror commits into the room
+     * deliberately instead. Reached as Gui::SelectionRoom().
+     */
+    static SelectionSingleton& roomInstance();
     static void destruct ();
     friend class SelectionFilter;
+    friend class SelectionScope;
 
     // Python interface
     static PyMethodDef    Methods[];
@@ -837,12 +874,19 @@ protected:
     static PyObject *sSetPreselectionText (PyObject *self,PyObject *args);
     static PyObject *sGetPreselectionText (PyObject *self,PyObject *args);
 
-protected:
-    /// Construction
+public:
+    /** Construction
+     *
+     * The room instance is reached through instance() and built on demand.
+     * An instance built directly is an additional one -- a mirror's, made
+     * current for a while by a Gui::SelectionScope -- and belongs to
+     * whoever built it.
+     */
     SelectionSingleton();
     /// Destruction
     ~SelectionSingleton() override;
 
+protected:
     /// Observer message from the App doc
     void slotDeletedObject(const App::DocumentObject&);
 
@@ -930,7 +974,24 @@ protected:
                                                 ResolveMode resolve,
                                                 const char **subelement=nullptr);
 
+    /// The current instance: the innermost scope's, or the room's
     static SelectionSingleton* _pcSingleton;
+    /// The room instance, which outlives every scope
+    static SelectionSingleton* _pcRoom;
+    /// What each open scope displaced, innermost last
+    static std::vector<SelectionSingleton*> _InstanceStack;
+
+    static void pushInstance(SelectionSingleton &sel);
+    static void popInstance(SelectionSingleton &sel);
+
+    /** The application's deleted-object signal, held so it is dropped again
+     *
+     * It cost nothing while there was one instance living as long as the
+     * process. A mirror's instance dies with its connection, and a slot
+     * bound to a destroyed instance is a call into freed memory the next
+     * time any object is deleted.
+     */
+    fastsignals::scoped_connection connectDeletedObject;
 
     std::string DocName;
     std::string FeatName;
@@ -964,10 +1025,22 @@ inline std::vector<T*> SelectionSingleton::getObjectsOfType(const char* pDocName
     return type;
 }
 
-/// Get the global instance
+/// Get the current instance
 inline SelectionSingleton& Selection()
 {
     return SelectionSingleton::instance();
+}
+
+/** Get the room instance
+ *
+ * Use this instead of Selection() to register an observer, or to notify one:
+ * an observer belongs to the room for as long as it lives, and must not be
+ * bound to whichever instance happened to be current when it was built.
+ * docs/ThinClient.md section 8.4.
+ */
+inline SelectionSingleton& SelectionRoom()
+{
+    return SelectionSingleton::roomInstance();
 }
 
 /** Helper class to disable logging selection action to MacroManager
@@ -1011,6 +1084,30 @@ class GuiExport SelectionContext {
 public:
     SelectionContext(const App::SubObjectT &sobj = App::SubObjectT());
     ~SelectionContext();
+};
+
+/** Helper class to make a selection instance the current one
+ *
+ * Gui::Selection() resolves to this scope's instance for the scope's dynamic
+ * extent, which is how one replayed event from a browser client, and the
+ * publish that follows it, run against that client's own selection without
+ * any of the call sites behind the accessor being touched. Observers are
+ * unaffected: they attach to the room instance and keep hearing only it.
+ *
+ * Scopes nest, and unwind innermost first. On the desktop none is ever
+ * opened, so the current instance is the room and nothing about selection
+ * behaves differently. docs/ThinClient.md section 8.4.
+ */
+class GuiExport SelectionScope {
+public:
+    explicit SelectionScope(SelectionSingleton &sel);
+    ~SelectionScope();
+
+    SelectionScope(const SelectionScope &) = delete;
+    SelectionScope &operator=(const SelectionScope &) = delete;
+
+private:
+    SelectionSingleton *pushed;
 };
 
 template<typename T>

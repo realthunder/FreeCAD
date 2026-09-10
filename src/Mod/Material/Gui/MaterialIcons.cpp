@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDataStream>
 #include <QDir>
@@ -72,6 +73,15 @@ namespace
 constexpr int RenderPerTick = 4;
 /// Multisampling of the rendered frame. The downsample to the smaller
 /// sizes does most of the anti-aliasing work; this cleans up the largest.
+///
+/// Stated here and pinned on the viewer (setNumSamples), NOT left to the
+/// AntiAliasing preference, for the same reason as every other setting in
+/// settings(): these pictures ship. The preference's default went from 4x
+/// to off (View3DInventorViewer::getNumSamples), and the icons rendered
+/// after that came out with a BINARY alpha -- 0 or 255, no coverage
+/// ladder at all -- against the 0/64/128/191/255 of the ones already in
+/// the binary. A sphere in Realistic shading is exactly the case that
+/// default gives up: a bare limb with no edge drawn along it.
 constexpr int IconSamples = 4;
 
 /** The PNG text key a bundled icon states its appearance digest under
@@ -205,6 +215,9 @@ public:
         setAttribute(Qt::WA_DontShowOnScreen);
         const int size = MaterialIcons::sizes().front();
         resize(size, size);
+        // Before the backend is created below: attaching the feed is what
+        // hands it a sample count (applyRendererAntiAliasing).
+        setNumSamples(IconSamples);
         show();
 
         _material = new SoMaterial;
@@ -288,7 +301,7 @@ public:
         place(shape == Shape::Sphere ? SphereFrame : CylinderFrame);
     }
 
-    void apply(const App::Material& mat, const App::SurfaceFinish& finish,
+    void apply(const App::MaterialAppearance& mat, const App::SurfaceFinish& finish,
                const App::MaterialRenderProperties& props)
     {
         const Base::Color& d = mat.diffuseColor;
@@ -308,7 +321,7 @@ public:
         // Every draw in the scene takes the same appearance and the same
         // finish; what differs between them is the frame each states,
         // which is geometry and was set once when it was built.
-        // A card can also state render features App::Material does not
+        // A card can also state render features App::MaterialAppearance does not
         // carry. Glass is the one that reaches an icon: without it a
         // glass card renders as its Phong fallback, which for a
         // transparency near 1 is a featureless disc -- the four shipped
@@ -721,6 +734,13 @@ private:
         set("Render_PBREnvBackground", false);
         set("Render_Matcap", false);
         set("Render_AO", false);
+        // Inert at today's default (off), and pinned for the same reason
+        // the sample count is: it is a preference, and what it does to a
+        // picture is refine it over ~32 jittered frames while the view sits
+        // idle. An icon is grabbed on the second frame of two, so a user
+        // who has it on would be handed whichever partial accumulation that
+        // frame happened to hold.
+        set("Render_TemporalAccum", false);
 
         // Which environment and how much of it, stated here rather
         // than inherited. These pictures ship, so they have to be
@@ -772,6 +792,21 @@ MaterialIcons::MaterialIcons()
     _timer->setSingleShot(true);
     _timer->setInterval(0);
     connect(_timer, &QTimer::timeout, this, &MaterialIcons::drain);
+    // instance() is a function-local static, so this object is destroyed
+    // by the exit handlers -- after main() has returned and with it
+    // QApplication, the platform integration and the display connection.
+    // _scene is a View3DInventorViewer, a QWidget owning a GL context,
+    // and destroying one THEN takes QOpenGLContext::destroy() into a
+    // GLX/Mesa stack that has already been torn down: a segfault at
+    // every exit. Qt's rule is that no widget may outlive QApplication,
+    // so the viewer goes now, while there is still an application to
+    // release it against.
+    if (auto* app = QCoreApplication::instance()) {
+        connect(app, &QCoreApplication::aboutToQuit, this, [this] {
+            _quitting = true;
+            _scene.reset();
+        });
+    }
 }
 
 MaterialIcons::~MaterialIcons() = default;
@@ -794,7 +829,7 @@ void MaterialIcons::invalidate()
     _paths.clear();
 }
 
-QString MaterialIcons::digestOf(const App::Material& material,
+QString MaterialIcons::digestOf(const App::MaterialAppearance& material,
                                 const App::SurfaceFinish& finish,
                                 const App::MaterialRenderProperties& render)
 {
@@ -841,7 +876,7 @@ QIcon MaterialIcons::fromImage(const QImage& image) const
     return icon;
 }
 
-QIcon MaterialIcons::icon(const QString& key, const App::Material& material,
+QIcon MaterialIcons::icon(const QString& key, const App::MaterialAppearance& material,
                           const QString& name,
                           const App::MaterialRenderProperties& render)
 {
@@ -888,7 +923,7 @@ QIcon MaterialIcons::icon(const QString& key, const App::Material& material,
     return {};
 }
 
-App::Material MaterialIcons::finishMaterial(uint8_t pattern)
+App::MaterialAppearance MaterialIcons::finishMaterial(uint8_t pattern)
 {
     // One material for every pattern except in its GLOSS, so that what
     // differs between the icons is the finish and nothing else. A
@@ -907,7 +942,7 @@ App::Material MaterialIcons::finishMaterial(uint8_t pattern)
     // Aluminium's measured reflectance for the base colour, LINEAR (see
     // docs/RenderEngine.md -- the BRDF is linear and nothing applies an
     // sRGB transform).
-    App::Material metal;
+    App::MaterialAppearance metal;
     metal.setPBR(true);
     metal.diffuseColor.set(0.9130F, 0.9220F, 0.9240F);
     metal.ambientColor.set(0.0913F, 0.0922F, 0.0924F);
@@ -1024,7 +1059,7 @@ App::SurfaceFinish MaterialIcons::defaultFinish(uint8_t pattern)
 
 QIcon MaterialIcons::finishIcon(const App::SurfaceFinish& finish)
 {
-    const App::Material neutral = finishMaterial(finish.pattern);
+    const App::MaterialAppearance neutral = finishMaterial(finish.pattern);
     const QString digest = digestOf(neutral, finish);
     const QString key = QStringLiteral("finish:%1").arg(digest);
     auto it = _cache.find(key);
@@ -1065,7 +1100,7 @@ QIcon MaterialIcons::patternIcon(const QString& key, const QString& materialName
         return it->second;
     }
     // No digest: a swatch is drawn from the hatch definition, not from an
-    // App::Material, so there is nothing for the staleness guard to
+    // App::MaterialAppearance, so there is nothing for the staleness guard to
     // compare and the file is taken as it stands.
     return fromResource(key, patternResourceName(materialName), QString());
 }
@@ -1172,7 +1207,7 @@ QString MaterialIcons::iconPath(const QString& key) const
     return it == _paths.end() ? QString() : it->second;
 }
 
-bool MaterialIcons::renderToFile(const App::Material& material,
+bool MaterialIcons::renderToFile(const App::MaterialAppearance& material,
                                  const App::SurfaceFinish& finish, const QString& path,
                                  const App::MaterialRenderProperties& props,
                                  IconShape shape)
@@ -1204,12 +1239,12 @@ void MaterialIcons::drain()
     }
 }
 
-QImage MaterialIcons::render(const App::Material& material,
+QImage MaterialIcons::render(const App::MaterialAppearance& material,
                              const App::SurfaceFinish& finish,
                              const App::MaterialRenderProperties& props,
                              IconShape shape)
 {
-    if (_failed) {
+    if (_failed || _quitting) {
         return {};
     }
     try {
@@ -1237,7 +1272,7 @@ QImage MaterialIcons::render(const App::Material& material,
     }
 }
 
-QIcon MaterialIcons::build(const QString& key, const App::Material& material,
+QIcon MaterialIcons::build(const QString& key, const App::MaterialAppearance& material,
                            const App::SurfaceFinish& finish,
                            const App::MaterialRenderProperties& props,
                            IconShape shape)

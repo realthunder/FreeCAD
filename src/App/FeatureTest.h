@@ -55,8 +55,8 @@ public:
 
   App::PropertyColor        Colour;
   App::PropertyColorList    ColourList;
-  App::PropertyMaterial     Material;
-  App::PropertyMaterialList MaterialList;
+  App::PropertyAppearance     Material;
+  App::PropertyAppearanceList MaterialList;
 
   // special types
   App::PropertyDistance     Distance;

@@ -123,6 +123,7 @@ ParamGroup = (
         'CyclesTimeLimit',
         'CyclesDenoise',
         'CyclesPixelSize',
+        'CyclesMaxStreams',
     )]),
 )
 

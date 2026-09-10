@@ -325,6 +325,9 @@ void Application::setupPythonTypes()
 
     Base::Interpreter().addType(&App::MaterialPy::Type, pAppModule, "Material");
     Base::Interpreter().addType(&App::MaterialListPy::Type, pAppModule, "MaterialList");
+    // The class is App::AppearanceList now; the Python type keeps the name
+    // fork macros use, and answers to the new one as well.
+    Base::Interpreter().addType(&App::MaterialListPy::Type, pAppModule, "AppearanceList");
     Base::Interpreter().addType(&App::MetadataPy::Type, pAppModule, "Metadata");
 
     Base::Interpreter().addType(&App::StringHasherPy::Type, pAppModule, "StringHasher");
@@ -1964,11 +1967,6 @@ static void freecadNewHandler ()
 }
 #endif
 
-#if defined(FC_OS_LINUX)
-#include <execinfo.h>
-#include <dlfcn.h>
-#include <cxxabi.h>
-#endif
 #if !defined(_MSC_VER)
 #include <unistd.h>
 #endif
@@ -1984,6 +1982,18 @@ static void freecadNewHandler ()
 #if HAVE_CONFIG_H
 #include <config.h>
 #endif // HAVE_CONFIG_H
+
+// Guarded by the same macro as the body of printBacktrace() rather
+// than by the OS, and placed after config.h because that is where
+// the macro comes from: the configure check
+// (cMake/ConfigureChecks.cmake) compiles a real backtrace() call,
+// and it succeeds on macOS too, where <execinfo.h> exists but the
+// FC_OS_LINUX guard this replaces never let the include through.
+#if defined(HAVE_BACKTRACE_SYMBOLS)
+#include <execinfo.h>
+#include <dlfcn.h>
+#include <cxxabi.h>
+#endif
 
 #include <Base/CrashLog.h>
 #if defined(_MSC_VER)
@@ -2331,13 +2341,15 @@ void Application::initTypes()
     App::PropertyComplexGeoData     ::init();
     App::PropertyColor              ::init();
     App::PropertyColorList          ::init();
-    App::PropertyMaterial           ::init();
-    App::PropertyMaterialList       ::init();
+    App::PropertyAppearance         ::init();
+    App::PropertyAppearanceList       ::init();
     App::PropertySurfaceFinishList  ::init();
     App::PropertySurfaceTextureList ::init();
     App::PropertyPath               ::init();
     App::PropertyFile               ::init();
     App::PropertyFileIncluded       ::init();
+    App::PropertyStringIncluded     ::init();
+    App::PropertyFileIncludedList   ::init();
     App::PropertyPythonObject       ::init();
     App::PropertyExpressionContainer::init();
     App::PropertyExpressionEngine   ::init();
@@ -2467,8 +2479,8 @@ void Application::initTypes()
     App::ShaderProgramPython       ::init();
     App::Shader                    ::init();
     App::ShaderPython              ::init();
-    App::Appearance                ::init();
-    App::AppearancePython          ::init();
+    App::ShaderBinding                ::init();
+    App::ShaderBindingPython          ::init();
     App::SavedView                 ::init();
 
     // Expression classes
@@ -2545,6 +2557,19 @@ void Application::initTypes()
     new Base::ExceptionProducer<Base::UnitsMismatchError>;
     new Base::ExceptionProducer<Base::CADKernelError>;
     new Base::ExceptionProducer<Base::RestoreError>;
+
+    // Former names, still resolved so documents and macros written before
+    // the rename keep working (Base::Type::addLegacyName). Registered
+    // here rather than in each init() because TYPESYSTEM_SOURCE writes
+    // that function, and because one list is easier to read than a
+    // sentence buried in each class.
+    Base::Type::addLegacyName(App::PropertyAppearance::getClassTypeId(),
+                              "App::PropertyMaterial");
+    Base::Type::addLegacyName(App::PropertyAppearanceList::getClassTypeId(),
+                              "App::PropertyMaterialList");
+    Base::Type::addLegacyName(App::ShaderBinding::getClassTypeId(), "App::Appearance");
+    Base::Type::addLegacyName(App::ShaderBindingPython::getClassTypeId(),
+                              "App::AppearancePython");
 }
 
 namespace {

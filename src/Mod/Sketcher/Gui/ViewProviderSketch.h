@@ -73,6 +73,7 @@ struct EditData;
 
 namespace Gui {
 class View3DInventorViewer;
+class ViewerContext;
 }
 
 namespace Sketcher {
@@ -243,18 +244,18 @@ public:
 
     /// give projecting line of position
     void getProjectingLine(const SbVec2s&,
-                           const Gui::View3DInventorViewer *viewer,
+                           const Gui::ViewerContext *viewer,
                            SbLine&) const;
 
     /// helper to detect preselection
     bool detectPreselection(const SoPickedPoint *Point,
-                            const Gui::View3DInventorViewer *viewer,
+                            const Gui::ViewerContext *viewer,
                             const SbVec2s &cursorPos,
                             bool preselect=true);
 
     /// Helper for detectPreselection(), for constraints only.
     std::set<int> detectPreselectionConstr(const SoPickedPoint *Point,
-                                           const Gui::View3DInventorViewer *viewer,
+                                           const Gui::ViewerContext *viewer,
                                            const SbVec2s &cursorPos,
                                            bool preselect=true);
 
@@ -263,7 +264,7 @@ public:
 
     /// box selection method
     void doBoxSelection(const SbVec2s &startPos, const SbVec2s &endPos,
-                        const Gui::View3DInventorViewer *viewer);
+                        const Gui::ViewerContext *viewer);
 
     /// helper change the color of the sketch according to selection and solver status
     void updateColor();
@@ -315,14 +316,14 @@ public:
     /// is called by the tree if the user double clicks on the object
     bool doubleClicked() override;
     /// is called when the Provider is in edit and the mouse is moved
-    bool mouseMove(const SbVec2s& pos, Gui::View3DInventorViewer* viewer) override;
+    bool mouseMove(const SbVec2s& pos, Gui::ViewerContext* viewer) override;
     /// is called when the Provider is in edit and a key event ocours. Only ESC ends edit.
     bool keyPressed(bool pressed, int key) override;
     /// is called when the Provider is in edit and the mouse is clicked
     bool mouseButtonPressed(int Button,
                             bool pressed,
                             const SbVec2s& cursorPos,
-                            const Gui::View3DInventorViewer* viewer) override;
+                            const Gui::ViewerContext* viewer) override;
     //@}
 
     void deleteSelected();
@@ -391,8 +392,8 @@ protected:
     //@{
     bool setEdit(int ModNum) override;
     void unsetEdit(int ModNum) override;
-    void setEditViewer(Gui::View3DInventorViewer*, int ModNum) override;
-    void unsetEditViewer(Gui::View3DInventorViewer*) override;
+    void setEditViewer(Gui::ViewerContext*, int ModNum) override;
+    void unsetEditViewer(Gui::ViewerContext*) override;
     //@}
 
     /// update solver information based on last solving at SketchObject

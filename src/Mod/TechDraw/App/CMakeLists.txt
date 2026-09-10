@@ -44,6 +44,7 @@ link_directories(${OCC_LIBRARY_DIR})
 generate_from_xml(DrawPagePy)
 generate_from_xml(DrawViewPy)
 generate_from_xml(DrawViewPartPy)
+generate_from_xml(DrawViewSectionPy)
 generate_from_xml(DrawBrokenViewPy)
 generate_from_xml(DrawViewSymbolPy)
 generate_from_xml(DrawTemplatePy)
@@ -203,6 +204,8 @@ SET(Geometry_SRCS
     PropertyCosmeticEdgeList.h
     PropertyCosmeticVertexList.cpp
     PropertyCosmeticVertexList.h
+    PropertyProjectedGeometry.cpp
+    PropertyProjectedGeometry.h
     CosmeticExtension.cpp
     CosmeticExtension.h
 )
@@ -216,6 +219,8 @@ SET(Python_SRCS
     DrawViewPartPyImp.cpp
     DrawBrokenViewPy.xml
     DrawBrokenViewPyImp.cpp
+    DrawViewSectionPy.xml
+    DrawViewSectionPyImp.cpp
     DrawViewSymbolPy.xml
     DrawViewSymbolPyImp.cpp
     DrawTemplatePy.xml

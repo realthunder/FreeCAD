@@ -1016,7 +1016,7 @@ void ViewProviderMesh::clipMeshCallback(void* ud, SoEventCallback* n)
     Gui::WaitCursor wc;
 
     // When this callback function is invoked we must in either case leave the edit mode
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
     view->setEditing(false);
     view->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), clipMeshCallback, ud);
     n->setHandled();
@@ -1086,7 +1086,7 @@ void ViewProviderMesh::trimMeshCallback(void* ud, SoEventCallback* n)
     Gui::WaitCursor wc;
 
     // When this callback function is invoked we must in either case leave the edit mode
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
     view->setEditing(false);
     view->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), trimMeshCallback, ud);
     n->setHandled();
@@ -1156,7 +1156,7 @@ void ViewProviderMesh::partMeshCallback(void* ud, SoEventCallback* cb)
     Gui::WaitCursor wc;
 
     // When this callback function is invoked we must in either case leave the edit mode
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(cb->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(cb);
     view->setEditing(false);
     view->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), partMeshCallback, ud);
     cb->setHandled();
@@ -1229,7 +1229,7 @@ void ViewProviderMesh::segmMeshCallback(void* ud, SoEventCallback* cb)
     Gui::WaitCursor wc;
 
     // When this callback function is invoked we must in either case leave the edit mode
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(cb->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(cb);
     view->setEditing(false);
     view->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), segmMeshCallback, ud);
     cb->setHandled();
@@ -1299,7 +1299,7 @@ void ViewProviderMesh::segmMeshCallback(void* ud, SoEventCallback* cb)
 void ViewProviderMesh::selectGLCallback(void* ud, SoEventCallback* n)
 {
     // When this callback function is invoked we must in either case leave the edit mode
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
     view->setEditing(false);
     view->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), selectGLCallback, ud);
     n->setHandled();
@@ -1685,7 +1685,7 @@ void ViewProviderMesh::segmentMesh(const MeshCore::MeshKernel& toolMesh,
 void ViewProviderMesh::faceInfoCallback(void* ud, SoEventCallback* n)
 {
     const SoMouseButtonEvent* mbe = static_cast<const SoMouseButtonEvent*>(n->getEvent());
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
 
     // Mark all incoming mouse button events as handled, especially, to deactivate the selection
     // node
@@ -1778,7 +1778,7 @@ void ViewProviderMesh::faceInfoCallback(void* ud, SoEventCallback* n)
 void ViewProviderMesh::fillHoleCallback(void* ud, SoEventCallback* n)
 {
     const SoMouseButtonEvent* mbe = static_cast<const SoMouseButtonEvent*>(n->getEvent());
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
 
     // Mark all incoming mouse button events as handled, especially, to deactivate the selection
     // node
@@ -1827,7 +1827,7 @@ void ViewProviderMesh::markPartCallback(void* ud, SoEventCallback* n)
     // handle only mouse button events
     if (n->getEvent()->isOfType(SoMouseButtonEvent::getClassTypeId())) {
         const SoMouseButtonEvent* mbe = static_cast<const SoMouseButtonEvent*>(n->getEvent());
-        Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+        Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
 
         // Mark all incoming mouse button events as handled, especially, to deactivate the selection
         // node

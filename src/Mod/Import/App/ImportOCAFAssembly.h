@@ -31,7 +31,7 @@
 
 #include <TopoDS_Shape.hxx>
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Mod/Import/ImportGlobal.h>
 
 

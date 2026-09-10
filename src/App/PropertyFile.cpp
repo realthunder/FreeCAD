@@ -43,6 +43,8 @@ using namespace App;
 using namespace Base;
 using namespace std;
 
+FC_LOG_LEVEL_INIT("App", true, 2, true)
+
 
 
 //**************************************************************************
@@ -170,6 +172,11 @@ void PropertyFileIncluded::collectBlobs(FileBlobManager& manager,
     // pass is where the property is known. Null blobs are ignored by the
     // manager, so a property holding nothing costs a call and no more.
     manager.noteReferenced(_blob, FileBlobManager::referrerOf(this, object));
+}
+
+std::string PropertyFileIncluded::blobExtension() const
+{
+    return Base::FileInfo(_BaseFileName).extension();
 }
 
 void PropertyFileIncluded::assignRestoredBlob(const FileBlobHandle& blob)
@@ -607,3 +614,420 @@ void PropertyFile::setPyObject(PyObject *value)
     }
 }
 
+
+//**************************************************************************
+// PropertyStringIncluded
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+TYPESYSTEM_SOURCE(App::PropertyStringIncluded , App::PropertyString)
+
+PropertyStringIncluded::PropertyStringIncluded() = default;
+
+// Same reasoning as ~PropertyFileIncluded: the file belongs to the blob, so
+// letting go of the handle is all that is owed -- except when this property
+// is still queued for content it will now never take.
+PropertyStringIncluded::~PropertyStringIncluded()
+{
+    if (_pendingManager) {
+        _pendingManager->removePendingReferrer(this);
+    }
+}
+
+FileBlobManager &PropertyStringIncluded::blobManager() const
+{
+    if (auto container = getContainer()) {
+        if (auto doc = container->getOwnerDocument()) {
+            return doc->getFileBlobManager();
+        }
+    }
+    return FileBlobManager::defaultManager();
+}
+
+void PropertyStringIncluded::setBlobExtension(const char* ext)
+{
+    _ext = (ext && ext[0]) ? ext : "txt";
+    if (!_ext.empty() && _ext.front() == '.') {
+        _ext.erase(0, 1);   // taken either way; stored the way both users want
+    }
+}
+
+void PropertyStringIncluded::setValue(const char* sString)
+{
+    // The blob holds the text it was made from. A new value has no stored
+    // form until something asks for one, and keeping the old handle here
+    // would save the previous text under the new value's name.
+    _blob.reset();
+    PropertyString::setValue(sString);
+}
+
+const FileBlobHandle &PropertyStringIncluded::ensureBlob() const
+{
+    auto &manager = blobManager();
+    if (_blob && !Base::FileInfo(_blob->path()).exists()) {
+        // Saving under a new name gives the document a new transient
+        // directory, so the stored path is stale. The directory is renamed
+        // with its contents, so the file is still where relocatedPath() says.
+        Base::FileInfo moved(manager.relocatedPath(_blob));
+        if (moved.exists()) {
+            manager.repath(_blob, moved.filePath());
+        }
+        else {
+            // Writing the hash of content nothing can read would lose the
+            // text. It cannot be lost here: the value is in memory, so drop
+            // the handle and store it again below.
+            FC_WARN(getFullName() << ": stored text is gone from "
+                    << _blob->path() << ", writing it again");
+            _blob.reset();
+        }
+    }
+    if (_blob || _cValue.size() < inlineLimit()) {
+        return _blob;
+    }
+    try {
+        // Written where the store adopts from, then handed over: adoptFile()
+        // hashes it and drops the duplicate when the same text is already
+        // stored, which is what makes one document assigned fifty times cost
+        // one file.
+        const std::string path = manager.uniquePath("string." + _ext);
+        {
+            Base::ofstream to(Base::FileInfo(path),
+                              std::ios::out | std::ios::binary | std::ios::trunc);
+            if (!to) {
+                FC_ERR("cannot write " << getFullName() << " to " << path
+                        << ", storing it inline");
+                return _blob;
+            }
+            to.write(_cValue.data(), std::streamsize(_cValue.size()));
+        }
+        _blob = manager.adoptFile(path.c_str(), _ext.c_str());
+    }
+    catch (const Base::Exception &e) {
+        // Losing the blob costs sharing, never content: the caller writes
+        // the text inline instead.
+        FC_ERR("cannot store " << getFullName() << " as a file: " << e.what());
+        _blob.reset();
+    }
+    return _blob;
+}
+
+void PropertyStringIncluded::collectBlobs(FileBlobManager& manager,
+                                          const DocumentObject* object) const
+{
+    // The collect pass runs before anything is written, so this is where the
+    // file has to exist. Null blobs -- short text -- are ignored by the
+    // manager, so a property staying inline costs a call and no more.
+    manager.noteReferenced(ensureBlob(), FileBlobManager::referrerOf(this, object));
+}
+
+void PropertyStringIncluded::assignRestoredBlob(const FileBlobHandle& blob)
+{
+    // No aboutToSetValue()/hasSetValue(): this completes the restore of a
+    // value the document already had, and touching the document here would
+    // mark it modified just by being opened.
+    _pendingManager = nullptr;
+    _blob = blob;
+    _cValue.clear();
+    if (!blob) {
+        return;
+    }
+    Base::ifstream from(Base::FileInfo(blob->path()),
+                        std::ios::in | std::ios::binary);
+    if (!from) {
+        FC_ERR("cannot read " << getFullName() << " back from " << blob->path());
+        return;
+    }
+    std::ostringstream str;
+    str << from.rdbuf();
+    _cValue = str.str();
+}
+
+void PropertyStringIncluded::Save (Base::Writer &writer) const
+{
+    // The store exists at schema 5 and above; below it the text goes inline,
+    // which forfeits sharing rather than content (blobContentNeedsStore()
+    // stays false for exactly that reason).
+    if (writer.getSchemaVersion() >= 5) {
+        if (const FileBlobHandle &blob = ensureBlob()) {
+            // Noted again here for the same reason PropertyFileIncluded does:
+            // it costs nothing, and it keeps a property written through a
+            // path the collect pass does not walk from losing its content.
+            blobManager().noteReferenced(blob, FileBlobManager::referrerOf(this));
+            writer.Stream() << writer.ind() << "<String hash=\""
+                            << encodeAttribute(blob->hash()) << "\"/>\n";
+            return;
+        }
+    }
+    PropertyString::Save(writer);
+}
+
+void PropertyStringIncluded::Restore(Base::XMLReader &reader)
+{
+    reader.readElement("String");
+    if (reader.hasAttribute("hash")) {
+        const std::string hash = reader.getAttribute("hash");
+        _blob.reset();
+        _cValue.clear();
+        if (!hash.empty()) {
+            // The manager owns the content and hands it over once the archive
+            // entries have been drained, so this property never goes looking.
+            auto &manager = blobManager();
+            _pendingManager = &manager;
+            manager.addPendingReferrer(hash, this);
+        }
+        return;
+    }
+    // The inline form -- which is also every document written before this
+    // property had a type of its own.
+    setValue(reader.getAttribute("value"));
+}
+
+Property *PropertyStringIncluded::Copy() const
+{
+    auto p = new PropertyStringIncluded();
+    p->_cValue = _cValue;
+    p->_ext = _ext;
+    // The blob is the file this exact text is stored in, so the copy may
+    // share it: an undo snapshot of a MaterialX document costs a reference,
+    // and the copy does not have to hash the text again to be saved.
+    p->_blob = _blob;
+    return p;
+}
+
+void PropertyStringIncluded::Paste(const Property &from)
+{
+    const auto *same = dynamic_cast<const PropertyStringIncluded*>(&from);
+    // setValue() drops the blob, which is right for text arriving from
+    // anywhere else; a paste from the same type may keep it, the content
+    // being identical by definition.
+    PropertyString::Paste(from);
+    if (same && same->_blob && same->_blob->owner() == &blobManager()) {
+        _blob = same->_blob;
+    }
+}
+
+unsigned int PropertyStringIncluded::getMemSize () const
+{
+    unsigned int mem = PropertyString::getMemSize();
+    if (_blob) {
+        mem += static_cast<unsigned int>(_blob->path().size());
+    }
+    return mem;
+}
+
+//**************************************************************************
+// PropertyFileIncludedList
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+TYPESYSTEM_SOURCE(App::PropertyFileIncludedList , App::Property)
+
+PropertyFileIncludedList::PropertyFileIncludedList() = default;
+
+PropertyFileIncludedList::~PropertyFileIncludedList()
+{
+    cancelPending();
+}
+
+FileBlobManager &PropertyFileIncludedList::blobManager() const
+{
+    if (auto container = getContainer()) {
+        if (auto doc = container->getOwnerDocument()) {
+            return doc->getFileBlobManager();
+        }
+    }
+    return FileBlobManager::defaultManager();
+}
+
+void PropertyFileIncludedList::cancelPending()
+{
+    if (_pendingManager) {
+        // Withdraws every entry this property queued: the queue is keyed on
+        // the referrer, not on the hash, so one call clears them all.
+        _pendingManager->removePendingReferrer(this);
+        _pendingManager = nullptr;
+    }
+}
+
+void PropertyFileIncludedList::awaitPending()
+{
+    // The manager owns the content and hands it over once the archive
+    // entries have been drained, so this property never goes looking. A
+    // hash the store already holds is served on the spot.
+    for (const auto &hash : _files.pendingHashes()) {
+        auto &manager = blobManager();
+        _pendingManager = &manager;
+        manager.addPendingReferrer(hash, this);
+    }
+}
+
+void PropertyFileIncludedList::setFile(const char *name, const char *path, const char *original)
+{
+    aboutToSetValue();
+    _files.setFile(blobManager(), name, path, original);
+    hasSetValue();
+}
+
+void PropertyFileIncludedList::setBlob(const char *name, const FileBlobHandle &blob,
+                                       const char *original)
+{
+    aboutToSetValue();
+    _files.setBlob(blobManager(), name, blob, original);
+    hasSetValue();
+}
+
+void PropertyFileIncludedList::removeFile(const char *name)
+{
+    if (!_files.find(name)) {
+        return;
+    }
+    aboutToSetValue();
+    _files.remove(name);
+    hasSetValue();
+}
+
+void PropertyFileIncludedList::setValues(std::vector<Entry> files)
+{
+    aboutToSetValue();
+    cancelPending();
+    _files.assign(blobManager(), std::move(files));
+    // An entry that names content the store does not hold yet -- copied
+    // off a value whose restore was still pending -- keeps waiting for it
+    // here rather than staying a hash with nothing behind it, which a save
+    // would write without ever writing the content.
+    awaitPending();
+    hasSetValue();
+}
+
+void PropertyFileIncludedList::setValue(const FileSet &files)
+{
+    setValues(files.entries());
+}
+
+void PropertyFileIncludedList::clear()
+{
+    if (_files.empty()) {
+        return;
+    }
+    aboutToSetValue();
+    cancelPending();
+    _files.clear();
+    hasSetValue();
+}
+
+void PropertyFileIncludedList::assignRestoredBlob(const FileBlobHandle &blob)
+{
+    // No aboutToSetValue()/hasSetValue(): this completes the restore of a
+    // value the document already had, and touching the document here would
+    // mark it modified just by being opened.
+    if (_files.assignRestoredBlob(blob)) {
+        _pendingManager = nullptr;
+    }
+}
+
+void PropertyFileIncludedList::collectBlobs(FileBlobManager &manager,
+                                            const DocumentObject *object) const
+{
+    _files.collectBlobs(manager, FileBlobManager::referrerOf(this, object));
+}
+
+void PropertyFileIncludedList::Save(Base::Writer &writer) const
+{
+    // Below schema 5 there is no store to write to and no per-property
+    // spelling to fall back on. blobContentNeedsStore() is what stops a
+    // document holding these from being offered that schema; if one is
+    // written anyway the names are kept, so what was lost can be said.
+    _files.save(writer, "FileIncludedList", &blobManager(), FileBlobManager::referrerOf(this));
+}
+
+void PropertyFileIncludedList::Restore(Base::XMLReader &reader)
+{
+    cancelPending();
+    _files.restore(reader, "FileIncludedList");
+    awaitPending();
+}
+
+Property *PropertyFileIncludedList::Copy() const
+{
+    auto p = new PropertyFileIncludedList();
+    // Sharing the blobs is the whole point: an undo snapshot of a material's
+    // maps costs a reference each, not their bytes. A copy of a value still
+    // waiting for its content copies the wait as a hash with no handle, and
+    // setValues() takes the wait up again when it is pasted back.
+    p->_files = _files;
+    return p;
+}
+
+void PropertyFileIncludedList::Paste(const Property &from)
+{
+    const auto &other = dynamic_cast<const PropertyFileIncludedList&>(from);
+    setValues(other._files.entries());
+}
+
+unsigned int PropertyFileIncludedList::getMemSize() const
+{
+    return Property::getMemSize() + _files.getMemSize();
+}
+
+bool PropertyFileIncludedList::isSame(const Property &other) const
+{
+    if (&other == this) {
+        return true;
+    }
+    if (getTypeId() != other.getTypeId()) {
+        return false;
+    }
+    return _files == static_cast<const PropertyFileIncludedList&>(other)._files;
+}
+
+PyObject *PropertyFileIncludedList::getPyObject()
+{
+    // A dict of name -> path, which is what a consumer asks this property
+    // for. An entry whose content has not arrived maps to an empty string
+    // rather than being left out: the document says it is there.
+    Py::Dict dict;
+    for (const auto &file : _files.entries()) {
+        dict.setItem(file.name, Py::String(file.blob ? file.blob->path() : std::string()));
+    }
+    return Py::new_reference_to(dict);
+}
+
+void PropertyFileIncludedList::setPyObject(PyObject *value)
+{
+    if (!PyDict_Check(value)) {
+        std::string error = "type must be a dict of name to file path, not ";
+        error += value->ob_type->tp_name;
+        THROWM(Base::TypeError, error)
+    }
+
+    std::vector<Entry> files;
+    PyObject *key = nullptr;
+    PyObject *item = nullptr;
+    Py_ssize_t pos = 0;
+    // PyDict_Next borrows both, and yields insertion order, which is the
+    // order the entries are then stored and written in.
+    while (PyDict_Next(value, &pos, &key, &item)) {
+        if (!PyUnicode_Check(key)) {
+            std::string error = "the name of an included file must be a string, not ";
+            error += key->ob_type->tp_name;
+            THROWM(Base::TypeError, error)
+        }
+        if (!PyUnicode_Check(item)) {
+            std::string error = "the path of an included file must be a string, not ";
+            error += item->ob_type->tp_name;
+            THROWM(Base::TypeError, error)
+        }
+        Entry file;
+        file.name = PyUnicode_AsUTF8(key);
+        if (file.name.empty()) {
+            THROWM(Base::ValueError, "An included file needs a name")
+        }
+        const std::string path = PyUnicode_AsUTF8(item);
+        file.original = path;
+        if (!path.empty()) {
+            file.blob = blobManager().insertFile(
+                    path.c_str(), Base::FileInfo(file.name).extension().c_str());
+            file.hash = file.blob ? file.blob->hash() : std::string();
+        }
+        files.push_back(std::move(file));
+    }
+    setValues(std::move(files));
+}

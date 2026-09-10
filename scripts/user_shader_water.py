@@ -227,7 +227,7 @@ def run():
         sh = doc.addObject("App::Shader", "WaterFx")
         sh.Programs = [prog]
         sh.Demo = "None"
-        ap = doc.addObject("App::Appearance", "WaterLook")
+        ap = doc.addObject("App::ShaderBinding", "WaterLook")
         ap.Scope = "Object"
         ap.ElementList = [sh, pool]
         doc.recompute()

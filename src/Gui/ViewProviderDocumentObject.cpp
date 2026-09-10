@@ -42,7 +42,7 @@
 #include <App/Document.h>
 #include <App/DocumentObserver.h>
 #include <App/GeoFeatureGroupExtension.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <App/Origin.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>

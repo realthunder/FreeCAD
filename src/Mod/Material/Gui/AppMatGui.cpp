@@ -110,7 +110,7 @@ private:
         try {
             auto material = Materials::MaterialManager::getManager().getMaterial(
                 QString::fromUtf8(uuid));
-            const App::Material appearance = material->getMaterialAppearance();
+            const App::MaterialAppearance appearance = material->getMaterialAppearance();
             return Py::Boolean(MatGui::MaterialIcons::instance().renderToFile(
                 appearance, appearance.finish, QString::fromUtf8(path),
                 material->getRenderProperties()));
@@ -129,7 +129,7 @@ private:
         try {
             auto material = Materials::MaterialManager::getManager().getMaterial(
                 QString::fromUtf8(uuid));
-            const App::Material appearance = material->getMaterialAppearance();
+            const App::MaterialAppearance appearance = material->getMaterialAppearance();
             return Py::String(MatGui::MaterialIcons::digestOf(
                                   appearance, appearance.finish,
                                   material->getRenderProperties())

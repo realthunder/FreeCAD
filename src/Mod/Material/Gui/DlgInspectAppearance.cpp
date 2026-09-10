@@ -86,12 +86,12 @@ DlgInspectAppearance::DlgInspectAppearance(QWidget* parent)
     std::vector<Gui::ViewProvider*> views = getSelection();
     update(views);
 
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 }
 
 DlgInspectAppearance::~DlgInspectAppearance()
 {
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
 
 bool DlgInspectAppearance::accept()
@@ -177,11 +177,11 @@ void DlgInspectAppearance::update(std::vector<Gui::ViewProvider*>& views)
             ui->tabAppearance->clear();
             if (labelProp && QString::fromUtf8(labelProp->getValue()).size() > 0) {
                 auto* prop =
-                    dynamic_cast<App::PropertyMaterialList*>(view->getPropertyByName("ShapeAppearance"));
+                    dynamic_cast<App::PropertyAppearanceList*>(view->getPropertyByName("ShapeAppearance"));
                 if (prop) {
                     for (int index = 0; index < prop->getSize(); index++) {
                         // This fork deliberately offers no getValues() on
-                        // PropertyMaterialList -- see the comment on the class.
+                        // PropertyAppearanceList -- see the comment on the class.
                         // Read one entry instead, which also returns by value.
                         auto material = prop->getMaterial(index);
                         auto* tab = makeAppearanceTab(material);
@@ -193,7 +193,7 @@ void DlgInspectAppearance::update(std::vector<Gui::ViewProvider*>& views)
     }
 }
 
-QWidget* DlgInspectAppearance::makeAppearanceTab(const App::Material& material)
+QWidget* DlgInspectAppearance::makeAppearanceTab(const App::MaterialAppearance& material)
 {
     QWidget* tab = new QWidget(this);
 

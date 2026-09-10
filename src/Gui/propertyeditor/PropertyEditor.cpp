@@ -898,7 +898,7 @@ void PropertyEditor::contextMenuEvent(QContextMenuEvent *ev) {
         setupAction("EvalOnRestore", MA_EvalOnRestore, App::Property::EvalOnRestore, App::PropertyType::Prop_None);
         setupAction("CopyOnChange", MA_CopyOnChange, App::Property::CopyOnChange, App::PropertyType::Prop_None);
         if (auto prop = props.begin()->getProperty()) {
-            if (prop->isDerivedFrom(App::PropertyMaterial::getClassTypeId()))
+            if (prop->isDerivedFrom(App::PropertyAppearance::getClassTypeId()))
                 setupAction("MaterialEdit", MA_MaterialEdit, App::Property::MaterialEdit, App::PropertyType::Prop_None);
         }
     }

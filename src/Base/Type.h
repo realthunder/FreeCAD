@@ -120,6 +120,33 @@ public:
     static Type fromName(const char* name);
     static Type fromKey(unsigned int key);
     const char* getName() const;
+    /** Let a former spelling of this type's name still resolve to it
+     *
+     * A registered type name is not just a symbol. It is written into
+     * every saved document as the type= attribute, and it is named by
+     * string from Python -- addObject, addProperty, isDerivedFrom, and
+     * every by-name lookup those reach. Renaming the C++ class therefore
+     * renames a wire format and a scripting API at the same time, and
+     * both fail SILENTLY when they miss: fromName answers badType, a
+     * restore drops the property without a word, isDerivedFrom just says
+     * false.
+     *
+     * An alias puts the old spelling in the same lookup table, pointing
+     * at the same type, so a document written before the rename and a
+     * macro on someone's disk both still resolve to the type they always
+     * meant. It is permanent, not a transition aid: the documents and the
+     * macros do not get migrated.
+     *
+     * The type also remembers the name, so a writer targeting a schema
+     * that predates the rename can write what that schema's readers
+     * expect (see getLegacyName and Base::Writer::typeName).
+     *
+     * Refuses to shadow a name some live type already owns.
+     */
+    static void addLegacyName(const Type& type, const char* legacyName);
+    /// The name this type was registered under before it was renamed, or
+    /// nullptr if it never was. See addLegacyName.
+    const char* getLegacyName() const;
     Type getParent() const;
     bool isDerivedFrom(const Type& type) const;
 

@@ -178,9 +178,9 @@ struct AppExport SurfaceTexture
     bool operator!=(const SurfaceTexture& t) const { return !operator==(t); }
 };
 
-/** Material class
+/** MaterialAppearance class
  */
-class AppExport Material
+class AppExport MaterialAppearance
 {
 public:
     enum MaterialType {
@@ -214,13 +214,13 @@ public:
      */
     //@{
     /** Sets the USER_DEFINED material type. The user must set the colors afterwards. */
-    Material();
+    MaterialAppearance();
     /** Defines the colors and shininess for the material \a MatName. If \a MatName isn't defined then USER_DEFINED is
      * set and the user must define the colors itself.
      */
-    explicit Material(const char* MatName);
+    explicit MaterialAppearance(const char* MatName);
     /** Does basically the same as the constructor above unless that it accepts a MaterialType as argument. */
-    explicit Material(const MaterialType MatType);
+    explicit MaterialAppearance(const MaterialType MatType);
     //@}
 
     /** Set a material by name
@@ -290,7 +290,7 @@ public:
      * there, a dielectric 0.04 scaled by the tint. The result is tagged
      * Phong.
      */
-    static Material pbrToPhong(const Material& raw);
+    static MaterialAppearance pbrToPhong(const MaterialAppearance& raw);
 
     /** The PBR material a Phong material most nearly means
      *
@@ -303,7 +303,7 @@ public:
      * keeps the look but forgets the specular colour, which Phong alone
      * can state.
      */
-    static Material phongToPbr(const Material& classic);
+    static MaterialAppearance phongToPbr(const MaterialAppearance& classic);
 
     /** @name PBR readings of one material value
      *
@@ -322,7 +322,7 @@ public:
 
     /** Switch the reading, converting the values so the look survives
      *
-     * The value-level counterpart of PropertyMaterialList::convertPBR:
+     * The value-level counterpart of PropertyAppearanceList::convertPBR:
      * pbrToPhong one way, phongToPbr the other, and nothing at all when
      * the mode already matches. This is what setting the mode means
      * everywhere a material value is edited -- assign the flag directly
@@ -372,9 +372,23 @@ public:
     std::string imagePath;
     std::string uuid;
     //@}
+    /** The MaterialX document set this look is shaded by, as a manifest hash
+     *
+     * The content hash of an App::MaterialXDocument manifest -- the tree
+     * object naming the document and its image maps by content -- or empty
+     * when the look is the Phong/PBR slots alone. ONE string, held the way
+     * a texture slot holds a map's hash: the property storing this is the
+     * blob referrer and keeps the manifest and every file it names alive,
+     * and App::FileBlobManager owns the bytes. A card carrying a MaterialX
+     * document puts its manifest hash here (docs/MaterialStorage.md sec
+     * 17.8), so it rides the follow rule and the per-face palette like the
+     * colours do, and is carried through every Phong/PBR conversion
+     * untouched.
+     */
+    std::string materialx;
     /** Which reading the slot values carry
      *
-     * A value-level tag, not storage: PropertyMaterialList keeps the mode
+     * A value-level tag, not storage: PropertyAppearanceList keeps the mode
      * once for the whole list and stamps it on every material it hands
      * out, so a script can see which reading the values it holds are in.
      * Assigning materials back to a list adopts their tag; the dict
@@ -383,7 +397,7 @@ public:
     bool pbr = false;
     //@}
 
-    bool operator==(const Material& m) const
+    bool operator==(const MaterialAppearance& m) const
     {
         // Two appearances naming the same material card are the same
         // appearance whatever their colours currently say, which is how
@@ -397,9 +411,9 @@ public:
             diffuseColor==m.diffuseColor && specularColor==m.specularColor &&
             emissiveColor==m.emissiveColor && finish==m.finish &&
             texture==m.texture &&
-            image==m.image && imagePath==m.imagePath;
+            image==m.image && imagePath==m.imagePath && materialx==m.materialx;
     }
-    bool operator!=(const Material& m) const
+    bool operator!=(const MaterialAppearance& m) const
     {
         return !operator==(m);
     }
@@ -411,11 +425,11 @@ private:
 /** One dynamic Render_* view property stated by a material card.
  *
  * The renderer's media features -- glass and its kin -- are per-object
- * dynamic properties on the VIEW provider, not fields of Material: they
+ * dynamic properties on the VIEW provider, not fields of MaterialAppearance: they
  * turn a closed shape into a volume, and a volume has no faces to attach
  * a per-face appearance to (docs/ShapeAppearanceDesign.md sec 8). A card
  * that wants to state one therefore hands over a list of these rather
- * than anything Material could carry, and the Gui side creates the
+ * than anything MaterialAppearance could carry, and the Gui side creates the
  * properties. The type lives here, in App, because it has to cross from
  * the Materials module to Gui, which cannot see Materials directly.
  */

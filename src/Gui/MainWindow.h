@@ -69,6 +69,33 @@ public:
 };
 
 /**
+ * Identifies which side of the status bar an item belongs to.
+ * Left items are non-permanent (a status message may temporarily cover them);
+ * Right items are permanent and never obscured.
+ */
+enum class StatusBarSlot
+{
+    Left,
+    Right,
+};
+
+/**
+ * Metadata describing a status-bar item registered through
+ * MainWindow::addStatusBarItem(). The caller states intent -- slot, order, a
+ * stable id and a human title -- and MainWindow owns the layout, the ordering,
+ * the persistence of the user's show/hide choice and the context-menu entry.
+ */
+struct StatusBarItemSpec
+{
+    QByteArray id;    ///< Stable identifier, used for removal and persistence.
+    QString title;    ///< Label shown in the status bar's context menu.
+    StatusBarSlot slot = StatusBarSlot::Right;
+    int order = 0;    ///< Sort key within the slot; lower sits closer to the centre.
+    bool persistentVisibility = true;  ///< Remember the show/hide choice across sessions.
+    int stretch = 0;  ///< Layout stretch factor.
+};
+
+/**
  * The MainWindow class provides a main window with menu bar, toolbars, dockable windows,
  * a status bar and mainly a workspace for the MDI windows.
  * @author Werner Mayer
@@ -263,30 +290,29 @@ public:
     void showHints(const std::list<InputHint>& hints = {});
     void hideHints();
 
-    /** @name The status bar registry (docs/Sandbox.md 7.15)
-     * Upstream's `addStatusBarItem`: a workbench registers a widget by
-     * id and the main window owns its placement -- the slot ("Left",
-     * the message band; "Right", the permanent band), the rank by
-     * `order` among the registered items of that slot (the fork's own
-     * widgets sit at 100-200 on the left and 700-900 on the right, so
-     * the workbench band 550-699 lands left of them) -- and, for an
-     * item with a title, its visibility: persisted per id under
-     * BaseApp/Preferences/MainWindow/StatusBarItems and toggled from
-     * the status bar's context menu.  The same widget registered again
-     * is moved; another widget under the same id replaces the first.
+    /** @name Status bar items
+     *
+     * A workbench does not touch the QStatusBar layout: it registers a widget
+     * here, and this window decides where the widget sits, in what order,
+     * whether the user's show/hide choice survives a restart, and how it
+     * appears in the status bar's context menu. Draft, BIM and Tux are written
+     * against this API and create their widgets through
+     * UiLoader().createWidget("Gui::ToolBar").
      */
     //@{
-    void addStatusBarItem(QWidget* widget, const QString& id, const QString& title = QString(),
-                          const QString& slot = QStringLiteral("Right"), int order = 500,
-                          int stretch = 0);
-    /// Take the item out of the bar (the widget is hidden, not deleted).
-    QWidget* removeStatusBarItem(const QString& id);
-    QWidget* statusBarItem(const QString& id) const;
-    /// Whether `widget` is a registered item (the tool bar manager leaves
-    /// such a tool bar where it is).
+    /// Registers and places \a widget in the status bar according to \a spec.
+    void addStatusBarItem(QWidget* widget, const StatusBarItemSpec& spec);
+    /// Removes a registered item by id. Does not delete the widget.
+    void removeStatusBarItem(const QByteArray& id);
+    /// Shows or hides a registered item, persisting it when the item asked for that.
+    void setStatusBarItemEnabled(const QByteArray& id, bool enabled);
+    /// Appends a checkable toggle action for every registered item to \a menu.
+    void buildStatusBarContextMenu(QMenu& menu);
+    /// The registered widget under \a id, null when there is none.
+    QWidget* statusBarItem(const QByteArray& id) const;
+    /// Whether \a widget is a registered item (the tool bar manager then
+    /// leaves such a tool bar where it is instead of adopting it).
     bool isStatusBarItem(const QWidget* widget) const;
-    /// The registered ids, in bar order.
-    QStringList statusBarItems() const;
     //@}
 
     void initDockWindows(bool show);
@@ -394,6 +420,9 @@ private:
      * the kit installs its own inline integration each time.
      */
     void setupTitleBarMenu();
+
+    /// Re-place every registered status-bar item in slot and order.
+    void relayoutStatusBar();
 
     void setupDockWindows();
     bool setupSelectionView();

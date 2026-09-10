@@ -23,7 +23,7 @@
 #ifndef MESH_IO_H
 #define MESH_IO_H
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Base/Matrix.h>
 
 #include "MeshKernel.h"

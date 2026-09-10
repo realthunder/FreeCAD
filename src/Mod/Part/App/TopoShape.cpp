@@ -162,7 +162,7 @@
 #endif // _PreComp_
 
 #include <App/DocumentParams.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/BoundBox.h>
 #include <Base/Builder3D.h>

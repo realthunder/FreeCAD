@@ -123,15 +123,19 @@ if (BUILD_BGFX)
     # inherits bx's PUBLIC BX_CONFIG_DEBUG define, without which bx
     # headers refuse to compile.
     target_link_libraries(vg-renderer PUBLIC bx bgfx)
-    # The embedded shaders are baked by vg-renderer/src/shaders/rebake.sh,
-    # which runs shaderc on a Linux host and therefore cannot produce the
-    # two Direct3D bytecode profiles; embedded_shader.h's platform-support
-    # switches exist to be overridden for exactly this case. Nothing is
-    # lost: the renderer's own runtime shader packs are glsl/spirv/essl
-    # only, so the bgfx backend never runs on Direct3D anyway.
-    target_compile_definitions(vg-renderer PRIVATE
-        BGFX_PLATFORM_SUPPORTS_DXBC=0
-        BGFX_PLATFORM_SUPPORTS_DXIL=0)
+    # The embedded shaders are baked by vg-renderer/src/shaders/rebake.sh
+    # and carry every profile bgfx bakes for its own, Direct3D included
+    # since 2026-09-06 -- so nothing overrides embedded_shader.h's
+    # platform-support switches here any more. It used to: the set was
+    # baked on Linux, where shaderc cannot produce dxbc or dxil, and the
+    # two switches were forced off to match. That was wrong on Windows,
+    # where bgfx picks Direct3D 11 by default: createEmbeddedShader found
+    # no entry for the running renderer, every vg program came back
+    # invalid, and bgfx substitutes program handle 0 for an invalid
+    # program rather than refusing the draw -- so the frame was drawn by
+    # an unrelated program and only the gradient band of the smoke test
+    # noticed (docs/Testing.md, "The vg smokes on Windows"). Rebake on
+    # Windows if these are ever regenerated.
     # C++20 to match bgfx/bx (bx headers require it); PIC because the
     # static archive links into the FreeCADRenderer shared lib.
     set_target_properties(vg-renderer PROPERTIES
@@ -173,6 +177,85 @@ if(BUILD_CYCLES)
     # platform allows); OptiX needs OPTIX_ROOT_DIR and disables itself
     # otherwise. Kernel binaries stay off: they compile at runtime.
     add_subdirectory(cycles)
+endif()
+
+if(BUILD_MATERIALX)
+    # MaterialX (docs/CyclesIntegration.md sec 8 item 15 phase B): the
+    # node-graph material DESCRIPTION language. Two consumers, neither
+    # of which uses MaterialX's own lighting -- the Cycles interpreter
+    # walks the graph into ccl nodes, and the raster path generates a
+    # material-inputs function through a bgfx-flavoured ShaderGen
+    # target. So only Core, Format, GenShader, GenHw and GenGlsl are
+    # built; Render (and with it the 134MB resources install), the
+    # viewer, the graph editor, the OSL/MDL/MSL/Slang back-ends, the
+    # Python and JavaScript bindings and the tests are all off.
+    #
+    # Static, and the tree already sets CMAKE_POSITION_INDEPENDENT_CODE
+    # for itself, which is what the link into the FreeCADRenderer shared
+    # library needs.
+    set(MATERIALX_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(MATERIALX_BUILD_GEN_GLSL ON CACHE BOOL "" FORCE)
+    foreach(_mtlx_off
+            MATERIALX_BUILD_GEN_OSL
+            MATERIALX_BUILD_GEN_MDL
+            MATERIALX_BUILD_GEN_MSL
+            MATERIALX_BUILD_GEN_SLANG
+            MATERIALX_BUILD_RENDER
+            MATERIALX_BUILD_TESTS
+            MATERIALX_BUILD_PYTHON
+            MATERIALX_BUILD_JS
+            MATERIALX_BUILD_VIEWER
+            MATERIALX_BUILD_GRAPH_EDITOR
+            MATERIALX_BUILD_DOCS
+            MATERIALX_BUILD_MONOLITHIC)
+        set(${_mtlx_off} OFF CACHE BOOL "" FORCE)
+    endforeach()
+    unset(_mtlx_off)
+
+    # Three things the tree does to the ENCLOSING project that a
+    # vendored build must not inherit:
+    #
+    #  - Its install rules. MaterialX installs its static archives, its
+    #    headers, an EXPORT set and a package config file named after
+    #    CMAKE_PROJECT_NAME -- which under add_subdirectory() is
+    #    FreeCAD, so it would write a FreeCADConfig.cmake over ours.
+    #    Every one of those rules is guarded by NOT SKBUILD (the
+    #    wheel-build switch), so declaring SKBUILD here suppresses the
+    #    lot; its only other effects are on the Python bindings (off)
+    #    and on RPATH (meaningless for a static archive). The data
+    #    library is then installed below, where we want it.
+    #  - CMAKE_INSTALL_PREFIX. The tree FORCEs it to
+    #    <bindir>/installed whenever the prefix was left at its
+    #    default, which for a build that did not pass one would move
+    #    the whole of FreeCAD's install.
+    #  - enable_testing() plus its own CTest cases; ours is the only
+    #    test registry (nothing is registered here because
+    #    MATERIALX_BUILD_TESTS is off, but the guard is free).
+    set(SKBUILD ON)
+    set(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT FALSE)
+    # Nothing here is a Qt target; FreeCAD turns AUTOMOC on globally,
+    # which otherwise runs moc over every MaterialX translation unit.
+    set(CMAKE_AUTOMOC OFF)
+    set(CMAKE_AUTOUIC OFF)
+    set(CMAKE_AUTORCC OFF)
+    add_subdirectory(MaterialX)
+    unset(SKBUILD)
+
+    # The .mtlx node definitions of the standard library are DATA: both
+    # consumers read them at run time to resolve a document's node
+    # references, the way the Cycles kernel source ships beside the
+    # binary. Staged into the build tree as well so a build tree runs
+    # without installing.
+    set(_mtlx_libs ${CMAKE_CURRENT_SOURCE_DIR}/MaterialX/libraries)
+    add_custom_target(Renderer_materialx_libraries ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+                ${_mtlx_libs}
+                ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/materialx/libraries
+        COMMENT "MaterialX data library"
+        VERBATIM)
+    install(DIRECTORY ${_mtlx_libs}
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/Renderer/materialx)
+    unset(_mtlx_libs)
 endif()
 
 if (BUILD_DILIGENT)

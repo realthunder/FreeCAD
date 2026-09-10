@@ -32,6 +32,8 @@
 #endif
 
 // boost/uuid/uuid_generators.hpp used to pull this in; boost 1.90 does not.
+#include <algorithm>
+
 #include <boost/random.hpp>
 
 #include <BRepTools.hxx>
@@ -211,6 +213,7 @@ CenterLine* CenterLine::CenterLineBuilder(const DrawViewPart* partFeat,
         cl->m_edges = edges;
         cl->m_verts = verts;
         cl->m_flip2Line = flip;
+        cl->updateSavedNames(partFeat);
     }
     return cl;
 }
@@ -383,6 +386,37 @@ std::string CenterLine::toString() const
     std::string clCSV = ss.str();
     std::string fmtCSV = m_format.toString();
     return clCSV + ", $$$, " + fmtCSV;
+}
+
+//! point the stored references at whatever elements carry their names now
+bool CenterLine::fixByName(const TechDraw::DrawViewPart* partFeat)
+{
+    bool moved = DrawViewPart::repointByName(partFeat, m_faceNames, m_faces);
+    moved = DrawViewPart::repointByName(partFeat, m_edgeNames, m_edges) || moved;
+    moved = DrawViewPart::repointByName(partFeat, m_vertNames, m_verts) || moved;
+    return moved;
+}
+
+//! record the name of each element the centre line is built from
+bool CenterLine::updateSavedNames(const TechDraw::DrawViewPart* partFeat)
+{
+    // while the view has not projected there is nothing to record, and
+    // recording nothing would throw away what the document brought with it
+    auto keep = [](const std::vector<std::string>& fresh,
+                   std::vector<std::string>& stored) {
+        bool anyNamed = std::any_of(fresh.begin(), fresh.end(),
+                                    [](const std::string& name) { return !name.empty(); });
+        if ((!anyNamed && !stored.empty()) || fresh == stored) {
+            return false;
+        }
+        stored = fresh;
+        return true;
+    };
+
+    bool changed = keep(DrawViewPart::geometryNamesOf(partFeat, m_faces), m_faceNames);
+    changed = keep(DrawViewPart::geometryNamesOf(partFeat, m_edges), m_edgeNames) || changed;
+    changed = keep(DrawViewPart::geometryNamesOf(partFeat, m_verts), m_vertNames) || changed;
+    return changed;
 }
 
 void CenterLine::dump(const char* title)
@@ -847,10 +881,14 @@ void CenterLine::Save(Base::Writer &writer) const
              "\">" << std::endl;
 
     writer.incInd();
-    for (auto& f: m_faces) {
+    // the name rides along as an attribute of the reference it stands for, so
+    // a document written before names existed reads back unchanged
+    for (size_t i = 0; i < m_faces.size(); i++) {
         writer.Stream()
             << writer.ind()
-            << "<Face value=\"" << f <<"\"/>" << std::endl;
+            << "<Face value=\"" << m_faces.at(i)
+            << "\" name=\"" << (i < m_faceNames.size() ? m_faceNames.at(i) : std::string())
+            << "\"/>" << std::endl;
     }
     writer.decInd();
 
@@ -863,10 +901,12 @@ void CenterLine::Save(Base::Writer &writer) const
              "\">" << std::endl;
 
     writer.incInd();
-    for (auto& e: m_edges) {
+    for (size_t i = 0; i < m_edges.size(); i++) {
         writer.Stream()
             << writer.ind()
-            << "<Edge value=\"" << e <<"\"/>" << std::endl;
+            << "<Edge value=\"" << m_edges.at(i)
+            << "\" name=\"" << (i < m_edgeNames.size() ? m_edgeNames.at(i) : std::string())
+            << "\"/>" << std::endl;
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</Edges>" << std::endl;
@@ -878,10 +918,12 @@ void CenterLine::Save(Base::Writer &writer) const
              "\">" << std::endl;
 
     writer.incInd();
-    for (auto& p: m_verts) {
+    for (size_t i = 0; i < m_verts.size(); i++) {
         writer.Stream()
             << writer.ind()
-            << "<CLPoint value=\"" << p <<"\"/>" << std::endl;
+            << "<CLPoint value=\"" << m_verts.at(i)
+            << "\" name=\"" << (i < m_vertNames.size() ? m_vertNames.at(i) : std::string())
+            << "\"/>" << std::endl;
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</CLPoints>" << std::endl ;
@@ -959,6 +1001,8 @@ void CenterLine::Restore(Base::XMLReader &reader)
         reader.readElement("Face");
         std::string f = reader.getAttribute("value");
         m_faces.push_back(f);
+        m_faceNames.push_back(
+            reader.hasAttribute("name") ? reader.getAttribute("name") : std::string());
     }
     reader.readEndElement("Faces");
 
@@ -970,6 +1014,8 @@ void CenterLine::Restore(Base::XMLReader &reader)
         reader.readElement("Edge");
         std::string e = reader.getAttribute("value");
         m_edges.push_back(e);
+        m_edgeNames.push_back(
+            reader.hasAttribute("name") ? reader.getAttribute("name") : std::string());
     }
     reader.readEndElement("Edges");
 
@@ -981,6 +1027,8 @@ void CenterLine::Restore(Base::XMLReader &reader)
         reader.readElement("CLPoint");
         std::string p = reader.getAttribute("value");
         m_verts.push_back(p);
+        m_vertNames.push_back(
+            reader.hasAttribute("name") ? reader.getAttribute("name") : std::string());
     }
     reader.readEndElement("CLPoints");
 
@@ -1051,6 +1099,9 @@ CenterLine* CenterLine::copy() const
     newCL->m_faces = m_faces;
     newCL->m_edges = m_edges;
     newCL->m_verts = m_verts;
+    newCL->m_faceNames = m_faceNames;
+    newCL->m_edgeNames = m_edgeNames;
+    newCL->m_vertNames = m_vertNames;
 
     TechDraw::BaseGeomPtr newGeom = m_geometry->copy();
     newCL->m_geometry = newGeom;

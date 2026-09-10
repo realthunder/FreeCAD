@@ -125,11 +125,9 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
     // unique user shader it writes. Ready variants attach to
     // the snapshot; pending compiles republish when they
     // finish (dirtyChanged above).
-    snap.shaderBins =
-        [](const Render::UserShader &s,
-           std::vector<Render::UserShader::Compiled> &out) {
-            _BGFXLib.viewerShaderBins(s, out);
-        };
+    snap.shipShader = [](Render::UserShader &s) {
+        _BGFXLib.shipUserShader(s);
+    };
     // v24: assemble the volume-splice variants exactly as the
     // frame loop would (shared collectMediumUsers keeps the
     // sources byte-identical) so the shader table carries their

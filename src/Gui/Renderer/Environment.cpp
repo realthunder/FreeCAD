@@ -42,7 +42,21 @@ void sampleEnvImage(const TextureImage &img, const float d[3], float out[3], boo
     float u, v;
     if (img.width >= img.height * 3 / 2) {
         // Equirectangular: azimuth around Z, elevation from Z.
-        u = 0.5f + std::atan2(d[1], d[0]) / (2.0f * kPi);
+        //
+        // MINUS the azimuth, which is the convention every other tool
+        // that reads one of these files uses -- Cycles' kernel spells
+        // it direction_to_equirectangular, u = 0.5 - atan2(y, x)/2pi,
+        // and bakeEnvironment in CyclesScene.cpp already documents
+        // that layout because it writes one. A plus here reads the
+        // picture MIRRORED: the background faces the wrong way and so
+        // does every reflection in it. It went unseen because this is
+        // the single sampler behind BOTH engines -- the raster builds
+        // its cubemap through it and the path tracer bakes its equirect
+        // through it -- so the two agreed with each other while both
+        // disagreed with the world. Measured against Blender on the
+        // chess set: mean absolute error 45.9 bytes as it was, 4.4 with
+        // the environment mirrored back (fcad-probes/blender_chess.py).
+        u = 0.5f - std::atan2(d[1], d[0]) / (2.0f * kPi);
         v = std::acos(std::clamp(d[2], -1.0f, 1.0f)) / kPi;
     }
     else {
@@ -380,6 +394,18 @@ void envRadiance(const PBRConfig &pbr, const float d[3], float out[3], bool mana
         return;
     }
     envRadianceProcedural(pbr.envPreset, d, out);
+}
+
+float envBlurAngle(float blur)
+{
+    blur = std::clamp(blur, 0.0f, 1.0f);
+    if (blur <= 0.0f)
+        return 0.0f;
+    // 45 degrees at one, halved for every eighth of the slider below
+    // it. Written from the wide end so the top of the range is the
+    // stated number rather than whatever 256 doublings of a texel
+    // happen to land on.
+    return 0.25f * kPi * std::pow(2.0f, 8.0f * (blur - 1.0f));
 }
 
 }  // namespace Render

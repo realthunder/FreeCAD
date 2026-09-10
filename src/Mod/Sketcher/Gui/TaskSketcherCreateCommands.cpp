@@ -50,13 +50,13 @@ TaskSketcherCreateCommands::TaskSketcherCreateCommands(QWidget* parent)
     // setPointSize(views);
     // setLineWidth(views);
     // setTransparency(views);
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 }
 
 TaskSketcherCreateCommands::~TaskSketcherCreateCommands()
 {
     // delete ui;
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
 
 void TaskSketcherCreateCommands::changeEvent(QEvent* e)

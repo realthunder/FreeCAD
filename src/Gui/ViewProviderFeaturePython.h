@@ -63,8 +63,8 @@ public:
     std::vector<Base::Vector3d> getSelectionShape(const char* Element) const;
     ValueT setEdit(int ModNum);
     ValueT unsetEdit(int ModNum);
-    ValueT setEditViewer(View3DInventorViewer*, int ModNum);
-    ValueT unsetEditViewer(View3DInventorViewer*);
+    ValueT setEditViewer(ViewerContext*, int ModNum);
+    ValueT unsetEditViewer(ViewerContext*);
     ValueT doubleClicked();
     ValueT iconMouseEvent(QMouseEvent *ev, const QByteArray &);
     bool getToolTip(const QByteArray &, QString &) const;
@@ -577,11 +577,11 @@ protected:
             return ViewProviderT::unsetEdit(ModNum);
         }
     }
-    void setEditViewer(View3DInventorViewer *viewer, int ModNum) override {
+    void setEditViewer(ViewerContext *viewer, int ModNum) override {
         if (imp->setEditViewer(viewer,ModNum) == ViewProviderFeaturePythonImp::NotImplemented)
             ViewProviderT::setEditViewer(viewer,ModNum);
     }
-    void unsetEditViewer(View3DInventorViewer *viewer) override {
+    void unsetEditViewer(ViewerContext *viewer) override {
         if (imp->unsetEditViewer(viewer) == ViewProviderFeaturePythonImp::NotImplemented)
             ViewProviderT::unsetEditViewer(viewer);
     }

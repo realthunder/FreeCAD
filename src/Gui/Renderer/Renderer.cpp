@@ -33,6 +33,8 @@
 #include <QDebug>
 #endif
 
+#include <unordered_map>
+
 using namespace Render;
 
 namespace {
@@ -66,6 +68,41 @@ int64_t nowNs()
 static std::mutex _modeNameMutex;
 static std::vector<std::string> _modeNames;
 static std::map<std::string, uint16_t> _modeNameIds;
+
+std::uint64_t Render::CacheSerial::next()
+{
+    // Relaxed: the only thing asked of these is that two live objects
+    // never share one and that the sequence is the same in every run of
+    // the same work. Nothing orders memory by them.
+    static std::atomic<std::uint64_t> counter{1};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+std::uint64_t Render::CacheSerial::forNode(const void *node)
+{
+    if (!node) {
+        return 0;
+    }
+    // One table for the process, and a lock: caches are built off the
+    // main thread, and two threads assigning different serials to one
+    // node would put two materials that must meet into different
+    // buckets. The cost is paid once per captured node per traversal --
+    // a light, a clip plane, a texture -- not per shape and not per
+    // comparison, which reads the memoized value straight out of the
+    // info.
+    static std::mutex mutex;
+    static std::unordered_map<const void *, std::uint64_t> serials;
+    const std::lock_guard<std::mutex> guard(mutex);
+    // Entries for nodes that have since died are left in place. They
+    // cannot collide with anything live (see forNode's contract), and
+    // the table is bounded by the number of distinct addresses that have
+    // ever held a captured node.
+    auto res = serials.emplace(node, std::uint64_t(0));
+    if (res.second) {
+        res.first->second = next();
+    }
+    return res.first->second;
+}
 
 uint16_t Render::internModeName(const char *name)
 {

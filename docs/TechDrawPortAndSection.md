@@ -685,9 +685,12 @@ display. Traps that cost time, so they are written down: headless
 bgfx in our fork *requires* a 0x0 resolution with all-null platform
 data (a non-zero size fails init with no message); the embedded
 shaders were rebaked (`src/shaders/rebake.sh` in the fork) with
-glsl/essl/spv/wgsl/mtl, and consumers define
+glsl/essl/spv/wgsl/mtl, and consumers defined
 `BGFX_PLATFORM_SUPPORTS_DXBC=0/_DXIL=0` because a Linux host cannot
-produce the two Direct3D profiles; GL read-back is bottom-up
+produce the two Direct3D profiles -- which was wrong on Windows, where
+bgfx picks Direct3D 11 by default and draws with a substituted program
+instead of failing; both profiles are baked in since 2026-09-06
+(vg fork `134c460`, `docs/Testing.md`, "The vg smokes on Windows"); GL read-back is bottom-up
 (`caps->originBottomLeft`).
 
 **M1 landed** (`19a3d3632c`, `a00bb0e51e`): `Vg2D` (context + font

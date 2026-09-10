@@ -28,6 +28,7 @@
 // it compiles on cycles_embed's terms.
 
 #include <string>
+#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -305,6 +306,27 @@ private:
                                const Maps &maps,
                                const Finish &finish,
                                const FaceImage &face);
+    /// The shader of a draw whose material is a MaterialX document
+    /// (docs/CyclesIntegration.md sec 8 item 15 phase B): the document
+    /// IS the material, so none of the draw's own surface, maps,
+    /// finish or face palette applies -- only the section clip, which
+    /// is a property of the scene and not of the material. Null when
+    /// the document cannot be interpreted, and the caller then renders
+    /// the draw's stock material.
+    ccl::Shader *materialXShader(const UserShader &shader, const Clip &clip);
+    /// Documents this translator has already had its say about, so a
+    /// scene of a thousand draws sharing one material reports its
+    /// warnings -- or its refusal -- once and not once per draw.
+    std::set<std::string> materialXReported;
+    /// The notes already made, keyed by DOCUMENT and message rather
+    /// than by surface: a note about the model a document is authored
+    /// against is one note, whatever the number of surfaces wearing it.
+    std::set<std::string> materialXNoted;
+    /// And of those, the ones that failed: the negative cache that
+    /// stops the next restate importing the data library all over
+    /// again only to fail the same way.
+    std::set<std::string> materialXFailed;
+
     /// The shader of a per-vertex-attribute draw: the surface rides the
     /// mesh, so a scene of vertex-painted meshes with no section, no
     /// maps and no finish shares ONE of these; what does not ride a
@@ -366,11 +388,28 @@ private:
                        RenderReport &report,
                        bool &changed);
 
+    /// A shader node cannot be deleted (Cycles does not support it), so
+    /// a key nothing shades under any more -- a dragged section plane
+    /// keys every shader it clips by its coefficients, so a drag mints
+    /// keys without bound -- is RECYCLED instead: releaseUnusedShaders
+    /// drops the orphan's graph (freeing its image handles) and parks
+    /// the node as a spare, and the next new key re-graphs a spare
+    /// before it creates a node.
+    struct ShaderEntry {
+        ccl::Shader *shader = nullptr;
+        int images = 0;  ///< image texture nodes its graph carries
+    };
+    /// A spare shader node re-graphed, or a fresh one.
+    ccl::Shader *acquireShader();
+    /// Park every shader no live mesh references; true when one was.
+    bool releaseUnusedShaders();
+
     ccl::Scene *scene;
     bool managed;
     int debugView = 0;  ///< SceneInput::debugView of the last translate
-    std::unordered_map<std::string, ccl::Shader *> shaders;
-    int imageNodes = 0;  ///< image texture nodes built into them
+    std::unordered_map<std::string, ShaderEntry> shaders;
+    std::vector<ccl::Shader *> spareShaders;
+    int imageNodes = 0;  ///< image texture nodes in the live shaders
     std::unordered_map<std::string, MeshEntry> meshes;
     std::vector<Instance> instances;
 
@@ -394,6 +433,11 @@ private:
     float lightMax[3] = {-1.0f, -1.0f, -1.0f};
     ccl::Object *lightObject = nullptr;
     ccl::Light *lightNode = nullptr;
+    /// The environment as a sampled light (translateWorld), made once
+    /// and never restated: it carries no state of its own, the world
+    /// shader it samples is the scene's default_background.
+    ccl::Light *envLight = nullptr;
+    ccl::Object *envLightObject = nullptr;
 };
 
 }  // namespace Render::Cycles

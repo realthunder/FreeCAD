@@ -98,6 +98,16 @@ public:
     /** Set the material by specifying its UUID
      */
     void setMaterial(const QString& uuid);
+    /** Put one synthetic row at the top of the list, above every library
+     *
+     * A look picker needs a way back to "whatever the object's material
+     * card says", and that way has to sit in the list itself rather than
+     * only on a button beside it (docs/MaterialStorage.md 15.5). The row
+     * is not a card: it carries \a id where a card carries its UUID, and
+     * choosing it emits leadingEntrySelected() instead of
+     * materialSelected(). Pass an empty \a id to take the row away.
+     */
+    void setLeadingEntry(const QString& id, const QString& text, const QString& toolTip = {});
     /** get the material UUID
      */
     QString getMaterialUUID() const;
@@ -177,6 +187,11 @@ public:
 Q_SIGNALS:
     /** Emits this signal when a material has been selected */
     void materialSelected(const std::shared_ptr<Materials::Material>& material);
+    /** Emits this signal when the synthetic top row has been chosen
+     *
+     * There is no card behind it, so materialSelected() cannot carry it.
+     */
+    void leadingEntrySelected();
     void onMaterial(const QString& uuid);
     void onExpanded(bool expanded);
 
@@ -213,6 +228,11 @@ private:
 
     QString m_materialDisplay;
     QString m_uuid;
+    /// The synthetic top row: its id, its label and its tip. Empty id,
+    /// no row -- see setLeadingEntry().
+    QString m_leadingId;
+    QString m_leadingText;
+    QString m_leadingToolTip;
     /// What the box held before the last keystroke, which is how a
     /// deletion is told from an insertion -- see inlineComplete().
     QString m_typed;

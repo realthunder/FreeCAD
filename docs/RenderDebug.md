@@ -622,6 +622,53 @@ view.saveRenderDump(path,
 
 - One-shot: arms a capture that executes on the next rendered frame, then
   disarms. No env vars, no per-frame overwrite.
+- **Consumed only by a complete frame.** The backend declines to consume
+  the dump with a frame that is not yet the picture asked for, and holds
+  it for a later one: a frame in which a draw asked for a user-shader
+  program still compiling (`shaderc` runs in a subprocess; the stock
+  program stands in meanwhile -- a surface without its material), or a
+  frame drawn from a publish that deferred shapes under its capture
+  budget (`Render CaptureBudgetMS`; the viewer says so through
+  `Renderer::holdFrameDump()` before the frame). `frameDumpHeld()`
+  reports a held frame, and `View3DInventorViewer::pumpFrameDump`
+  counts it as progress: its quiet timeout (5 s) restarts on every held
+  frame and every pending compile, under a 120 s total. Both holds are
+  bounded by what they wait for -- a failed or watchdog-killed compile
+  is recorded and its draw stands in for good without asking again, and
+  each follow-up publish captures at least one more deferred shape. The
+  case that made this necessary is section 5.2a.
+- **The same verdict is a signal in its own right.** `Renderer::
+  frameComplete()` is the last frame's verdict; `renderedFrames()` and
+  `completeFrames()` count frames since the backend came up, so a
+  waiter records the complete count and stops when it advances (a
+  verdict left over from before the request proves nothing). What a
+  complete frame means: every user-shader program compiled, every
+  deferred shape arrived, a frozen frame's particle warm-up reached
+  (`stepParticles` still owing steps under `DebugFreezeFrame`), and no
+  mesh refine the level plan just asked for. On the frame path this is
+  two flag writes, two increments and a compare -- nothing waits there.
+  The consumers: `View3DInventorViewer::waitFrameComplete(timeoutMs)`
+  pumps frames until one complete frame has rendered since the call
+  (quiet 5 s restarting on every frame rendered and every pending
+  compile, 120 s in all), the Qt signal `frameCompleted()` fires from
+  `renderScene` on the frame that advanced the count, and Python has
+  `view.waitFrameComplete(timeout=120000)` and `view.isFrameComplete()`.
+  `render_verify.py` settles on the wait instead of a frame count
+  (`RV_SETTLE` is now extra frames, default 0), which is what lets the
+  chess set take exactly the time it needs and the small scene almost
+  none. Cycles too: `view.cyclesRender()` waits for a complete frame
+  before it translates the render cache (a publish still catching up
+  deferred shapes would otherwise trace half a scene), and
+  `view.cyclesViewportStatus()['complete']` says the live session has
+  rendered its whole sample budget for the scene and camera as last
+  stated -- what a probe polls instead of sleeping.
+- **The wait is the default of every capture, and an argument.**
+  `FrameDumpRequest::waitComplete` (default true) is what the frame
+  tail honours; `saveRenderDump`, `saveImage`, `getRenderStats` and
+  `cyclesRender` take `wait=True` and pass it down (`savePicture` /
+  `imageFromRenderer` carry it in C++, so a Std_ViewScreenShot waits
+  too). `wait=False` takes the very next frame as it stands, mid-arrival
+  included -- the one thing a probe of the arrival itself needs.
 - `source="renderer"` reuses the existing readback code path, promoted from
   env-gated static to a renderer-level `requestFrameDump(path, mode)` API;
   PNG via Qt's imagewriter instead of hand-rolled PPM.
@@ -902,19 +949,667 @@ passes on a build the user can see is broken is worse than no harness.
   wrong: neither the place nor the cause was what the text suggested,
   and both were real bugs that had been called cosmetic
   (`docs/CoinRetirement.md` stage 1a).
+- WARNING: **a probe that sets a `RenderDebug_*` parameter writes the
+  USER'S config, and every later run inherits it.** These are global
+  `RenderParams` (`User parameter:BaseApp/Preferences/View/Render`), not
+  view properties -- setting one on a view is inert (2.3), so a probe has
+  to set the parameter, and a probe that exits without clearing it leaves
+  it set for the desktop session too. What makes this worse than a wrong
+  picture is the shape of the failure. A probe that left
+  `DebugViewMode` at 11 turned every subsequent capture into the id
+  image, which is opaque and centre-sampled; the next question asked of
+  those captures -- "does this render the same twice?" -- came back a
+  clean 33/33, because an id image has no partial coverage and so cannot
+  show a coverage defect at all. **A false PASS, from a stale
+  preference.** Run such a probe under an isolated `XDG_CONFIG_HOME`, or
+  clear the key afterwards, and check `preferences` in a sidecar before
+  trusting a capture set.
+- IMPORTANT: **the sidecar's preferences are an ALLOWLIST, and a key that
+  is not on it does not restage.** `viewKeys` in `View3DInventorPyImp.cpp`
+  names what goes out; anything else is invisible to a golden.
+  `AntiAliasing` was missing from it until 2026-09-01, which meant a
+  golden captured multisampled compared against whatever the running
+  profile happened to say -- diverging along every silhouette in every
+  stage, for a reason no sidecar reported. The `msaa` field records the
+  resolved sample count, but nothing ever restaged from it. When adding a
+  preference that changes what a frame looks like, add it to `viewKeys`
+  in the same commit.
 
-This closes the "no reliable way to verify rendering" gap: the SwiftShader
-blindspot is covered by the desktop leg being a *real-GPU readback* of the
-same knob-for-knob staged frame.
 
-The user-shader feature (section 6) has its own companion harness,
-`scripts/user-shader-verify.sh`: a desktop leg running the
-document-object-model GUI suites under xvfb (`user_shader_params.py`,
-`user_shader_post.py` — property binding, per-binding overrides,
-activation/deactivation with byte-exact restores) and a viewer leg
-re-running the pipeline against a live headless-Chromium WASM viewer
-(`user_shader_viewer.py` scene-graph route,
-`user_shader_viewer_appearance.py` document-object route).
+### 5.2 The committed test set (what ctest actually runs)
+
+Everything above describes the harness. This is the part of it that is
+wired into the build, so a regression is caught by a test run rather than
+by someone remembering to capture a set by hand -- `tests/render/`.
+
+**Nothing else in ctest draws a pixel.** The suites whose names suggest
+rendering -- `RenderProperties`, `RenderCacheMaterial`, `MaterialXGen`,
+`MaskedOcclusion`, `CullBenefit` -- are all deliberately built without a
+GL context, and `PublishOnly_tests_run` goes further and asserts that no
+driver is even mapped. That is the gap this set closes.
+
+| test | what it is | cost |
+|---|---|---|
+| `RenderSmokeVg_tests_run` | `fcvgsmoke`: bgfx up headless in its own process, vg paths/gradients/strokes/text drawn offscreen, pixels read back, ink checked per primitive | 0.3 s |
+| `RenderSmokePage2D_tests_run` | the same binary's retained-`Page2D` scenario: pan, in-band zoom, band crossing, rotation, damage, removal | 0.3 s |
+| `RenderGoldenRaster_tests_run` | `scripts/render-test-scene.py` staged in a real FreeCAD on the platform's own display leg (xvfb on Linux -- see 5.2b), one camera, the five pipeline stages, compared against blessed references | 28 s Linux, 21 s macOS |
+| `RenderGoldenRasterFlat_tests_run` | the same scene and stages with `FC_RENDER_TEST_BG=0`: the environment still lights the model but is not drawn, so the frame is the model | 20 s |
+| `RenderGoldenCycles_tests_run` | the same scene path traced on the CPU (64 spp, 240x180) | 29 s |
+| `RenderGoldenChess_tests_run` | the MaterialX chess set: a real asset with a real material library, raster and path traced | 65 s, see below |
+| `RenderGoldenChessFlat_tests_run` | the chess set the same way, background off | 65 s |
+
+The first four run in a default `ctest`. The path-traced legs and the chess set are opt-in:
+
+    cmake -DFC_RENDER_HEAVY_TESTS=ON <build> && ctest -L render-heavy
+
+WARNING: **a ctest LABEL does not keep a test out of a default run.** It
+only gives `-L` something to select on; `ctest` with no arguments still
+executes it. Neither does the `CONFIGURATIONS` property, which is not
+filtered at all when no `-C` is passed -- measured directly: a test
+carrying `CONFIGURATIONS render-heavy` ran anyway on a plain `ctest`.
+**Registration is the only gate that actually holds**, which is why the
+heavy tests are behind a CMake option and not behind their label alone.
+The label is kept so `-L` can select them once the option is on.
+
+**The reference images are their own repository**
+(`realthunder/fcad-render-refs`, branch `LinkVibe`), mounted at
+`tests/render/refs` as a git submodule (`git submodule update --init
+tests/render/refs`), because a golden set is binary and is rewritten on
+every reblessing -- churn that does not belong in the history of the
+source tree. Every golden test is *skipped, not failed*, when that
+checkout is absent, the same courtesy `MaterialXGen_tests_run` extends to
+the MaterialX submodule. Its README carries the reblessing procedure; a
+reblessing is a commit there and a submodule bump here.
+
+#### 5.2b The platform legs, and why a golden belongs to one backend
+
+`scripts/render-verify.sh` picks its leg from `uname`, and it is the only
+place that knows how a display is raised:
+
+| | Linux | macOS |
+|---|---|---|
+| display | `xvfb-run` + `QT_QPA_PLATFORM=xcb` | the real window server, `QT_QPA_PLATFORM=cocoa` (a window appears) |
+| backend | `bgfx - OpenGL` (llvmpipe headless, `--gpu` for the device) | `bgfx - Metal`, registered by `FC_BGFX_METAL=1` |
+| launch | `setsid nohup`, cleanup kills the process group (xvfb-run, Xvfb and FreeCAD are three processes) | `nohup`, cleanup kills the pid -- there is no group, and no `setsid` to make one |
+| build tree | `build/conda-relwithdebinfo-801` | `build/mac-relwithdebinfo-801` |
+
+Isolation is unchanged by that: what keeps a capture off the live session
+is the private `XDG_*` dirs and `--user-cfg`, not the display. The macOS
+leg does need a logged-in window server, so it cannot run over a bare ssh
+session. `--gpu` is a no-op there -- every macOS run is already on the
+device.
+
+`tests/render/CMakeLists.txt` requires `xvfb-run` **on Linux only**.
+Requiring it everywhere is why the golden tests on macOS did not merely
+skip: they were never registered, so a `ctest` run there was short two
+tests and said nothing about it.
+
+*** **What the Linux gate actually witnesses: llvmpipe, on both sides of
+the comparison.** `fc_add_golden_test` calls `render-verify.sh` with no
+`--gpu`, and it cannot: that leg needs a real Wayland socket and opens a
+window on the desktop, which is not something a `ctest` run can do. So
+the registered Linux legs -- the ones that blessed the references and
+the ones that check them -- are the default headless `xvfb` leg, and
+that is `bgfx - OpenGL` on **llvmpipe**, a software rasterizer. Measured
+on the Linux box 2026-09-08 through the device field `640ed8a4d5` added:
+`OpenGL 2.1 / llvmpipe (LLVM 20.1.2, 256 bits) / 4.5 (Compatibility
+Profile) / Mesa 25.2.8 / vendor 0x0000 device 0x0000`.
+
+That is not a defect, and it is the right default -- a change that is a
+no-op by construction is exactly what a software rasterizer can prove,
+deterministically and without a GPU in the room. But read the two tiers
+for what they are: **Linux gates the logic, macOS gates the device.**
+Every macOS run is on the real window server and the real Metal device
+(`--gpu` is a no-op there), so the Metal sets are the only blessed
+references on this project taken on hardware. A green Linux golden run
+is not evidence about driver-shaped behaviour, and the open
+`raster/mode0` residual below is exactly the kind of thing it cannot
+settle.
+
+*** **The four OpenGL reference sets record no device at all.** They
+predate `640ed8a4d5`, so `refs/raster`, `refs/raster-flat`, `refs/chess`
+and `refs/chess-flat` have no `device` field in their sidecars and what
+hardware blessed them is written down nowhere. Only `refs/*-metal`
+carries it. Re-blessing is the only way that gets fixed, so if a set is
+re-blessed for any other reason, that is the moment.
+
+**`refs/raster-metal` and `refs/raster-flat-metal` are blessed** (2026-09-07,
+macOS 12 / Metal, Intel iGPU `0x8086 0x1622`), so
+`RenderGoldenRaster_tests_run` and `RenderGoldenRasterFlat_tests_run`
+now register and pass on the macOS leg -- 21.4 s each. Both were
+restaged from their OpenGL siblings, so the camera is byte-identical to
+the one those were blessed on, and two such captures compare byte-exact
+at `--tol 0`.
+
+**`refs/chess-metal` and `refs/chess-flat-metal` followed the same day**
+(section 5.2c), so the real-document leg gates on Metal too. Only the
+Cycles set has no Metal counterpart, and cannot get one from this box:
+`BUILD_CYCLES` is off and the `src/3rdParty/cycles` submodule is not
+checked out.
+
+**A golden is a picture of one backend, and the blessed sets are
+OpenGL.** So `fc_add_golden_test` looks for `refs/<set>-metal` on Apple
+and registers nothing until that set exists. Handing the OpenGL set to
+Metal is not a stricter test, it is a different one, and the first run
+that tried it said so (2026-09-07, this box, Metal on `0x8086 0x1622`):
+with the camera restaged from `refs/raster` -- byte-identical Coin camera
+string, identical 858x608 viewport -- every stage diverged (depth 24.8%
+of pixels past tolerance, normal 19.0%, AO 25.3%, shadow 18.7%, beauty
+89.9%), and the defects behind that are worth stating exactly, because
+they are the first thing a Metal blessing would have to fix.
+
+**All of them are fixed as of 2026-09-07**, and the same restaged run
+now compares against the OpenGL golden at depth 0.0002% of pixels past
+tolerance (one pixel), normal 0.0002%, AO 0.1248% (mean 0.02), shadow
+0.0002%, beauty 0.3527% (mean 0.17), with `geometryPixels` 108191 --
+the golden's own count. Two defects were diagnosed here first and a
+third only surfaced once they were out of the way; each is recorded
+below with what it actually was, because the diagnosis is the expensive
+half and the next backend will meet the same three.
+
+*The frame is vertically mirrored.* Flip the golden and **100.00%** of
+the Metal geometry mask falls inside it, at zero shift; the depth stage
+then agrees to max delta 29, mean 2.01 (14.8% of pixels past tol 3),
+where the best-fitting shift left 92% of them past it. So this is an
+origin-convention fault, not a camera one. The capture path does ask --
+`BGFXFrame.cpp` 6494, `const bool flip = caps->originBottomLeft`, which
+reverses the rows on GL and correctly does not on Metal, where the flag
+is false -- so the fault is upstream of the readback.
+
+**The cause is `vs_fc_comp.sc`, confirmed by experiment.** It derives its
+UV straight from clip space, `v_texcoord0 = a_position.xy * 0.5 + 0.5`,
+under a comment reasoning that "the OIT targets are rendered by the same
+backend, so no cross-API Y-flip is needed". The premise is true and the
+conclusion does not follow: bgfx's V origin for a render target differs
+by API whoever wrote it, so `y*0.5+0.5 -> 1` samples the top on GL and
+the bottom on Metal. Adding `#if !BGFX_SHADER_LANGUAGE_GLSL
+v_texcoord0.y = 1.0 - v_texcoord0.y; #endif` and rebuilding **only** the
+shader assets (`ninja Renderer_assets`, no C++ rebuild) inverted the
+mirror exactly -- containment of the Metal geometry against the golden
+went from 62.05% upright / 100.00% flipped to 100.00% upright / 62.05%
+flipped -- while `geometryPixels` stayed at 75236, not one pixel moved.
+So the two defects are independent: this UV is the whole of the mirror
+and none of the clipping. What the stage diff does with the mirror
+corrected sets the expectation for a real fix: depth falls from 24.8% of
+pixels past tolerance to 8.3%, normal 19.0% to 7.1%, shadow 18.7% to
+8.7%, AO 25.3% to 20.0%, beauty 89.9% to 78.8%. Roughly a third of each,
+and what remains is the clipped half -- so fixing the origin alone still
+leaves every stage failing, and neither defect can be signed off on its
+own.
+
+That one-liner was the cause, not the whole fix, because the file is
+misnamed by its own comment: `ensureProgram` pairs `vs_fc_comp` with
+`fs_fc_present`, `fs_fc_depthenc`, `fs_fc_debug`, `fs_fc_comp`,
+`fs_fc_env`, `fs_fc_sun`, the bloom chain, `fs_fc_ssao`/`fs_fc_gtao` and
+their blurs, `fs_fc_cavity`, `fs_fc_shadow_blur`, the volume passes,
+`fs_fc_cycles_blit` and the user volumetrics -- it is the engine's
+fullscreen vertex shader, which is why the DEBUG stages were mirrored
+too (`m_progDebug` is `vs_fc_comp` + `fs_fc_debug`).
+
+**What shipped is `fc_screen.sh`**, which owns both directions of the
+conversion -- `fc_clipToUv` for the UV of the pixel at a clip-space xy
+(the fullscreen vertex stage, and the water SSR's own perspective
+divide) and `fc_uvToNdc` for the inverse (`fc_prepassViewPos`, `volRay`,
+`debugRay`, the env/sun/ground-shadow rays, and the impact splat that
+must land on one named texel). Both are identities on GL, so the OpenGL
+frame is unchanged by construction. See `docs/RenderEngine.md` sec 3.6.
+
+**One thing feared before the fix turned out not to be true**, and it is
+worth correcting here because it was the argument for delaying: flipping
+`vs_fc_comp` does NOT leave two conventions live beside the passes that
+build their own UV from `gl_FragCoord.xy * u_viewTexel.xy`
+(`fs_fc_groundrefl`, `fc_glass_fs.sh`, `fc_line_sdf_fs.sh`).
+`gl_FragCoord.y` counts from the same edge the texture v does on GL,
+Metal and Vulkan alike, so those passes were always right on both, and
+the flip brings the clip-space route INTO agreement with them rather
+than out of it. What did have to be swept was every open-coded
+`*0.5+0.5` and `*2-1` on a screen UV -- `fs_fc_ssao`'s sample
+projection and `fs_fc_debug`'s `debugRay` were found only after the
+first two fixes landed, by the AO and shadow stages still diverging.
+
+Worth knowing, from before the fix: across `*.sc` and `*.sh`,
+`BGFX_SHADER_LANGUAGE_GLSL` matched exactly one file,
+`fs_fc_groundshadow_plane.sc`, and what it handles there is the
+[-1,1] -> [0,1] `gl_FragDepth` conversion. So the tree had one precedent
+for the projection fix and none at all for the origin one.
+
+*And the far half of the scene is clipped away.* With the flip
+understood, what survives is the FAR half -- which is exactly what
+feeding a GL [-1,1] projection to a [0,1] clipper predicts, and the
+reason to read the two defects together rather than separately. The
+floor ends in a flat cut instead of its far apex, and the glass rod and
+the bulb are gone entirely (`geometryPixels` 75236 against 108191). The
+camera projection is the one matrix that reaches bgfx unconverted: Coin
+builds it GL-convention (`View3DInventorViewer.cpp`,
+`cam->getViewVolume(aspect)`) and `BGFXFrame.cpp` hands it to
+`bgfx::setViewTransform` as it stands -- 3292 for the scene views, and
+3520, 3535, 3680, 3803 for the rest -- while `view->projMatrix` carries
+the same bytes on to the shaders and the CPU-side culling. Everything
+else consults `caps->homogeneousDepth` (1610, 1617, 1627-1628, 1713,
+`ProxyHierarchy.cpp`, `OcclusionCull.h`), but those are secondary
+consumers; the primary camera transform is the one place that does not,
+which is what you would expect of code no non-GL backend had run. For
+this scene's camera the constants are unambiguous: Coin's GL ortho gives
+`P[10] = -0.023595`, `P[14] = -1.038783`, while a correct [0,1] ortho for
+the same near/far is `-0.011797` and `-0.019392` -- a factor of two on
+one and nothing like a scale on the other, so a dump of what the frame
+receives settles it in one line.
+
+**What shipped**: `render()` remaps the fed matrix once, at the top of
+the frame, `z -> (z + w) / 2` on the z row alone, and everything
+downstream sees a matrix matching `caps->homogeneousDepth`. The w row is
+left alone on purpose, so the perspective test every shader makes still
+reads -1 or 0, and no shader reads the z row at all -- which is why the
+conversion turned out to be local to clipping after all, in spite of
+`setViewTransform` also feeding the predefined `u_proj`. Two consumers
+needed a say: the scene publish and dump keep the matrix as Coin gave
+it, because their viewer renders on a backend of its own, and the
+Gribb-Hartmann frustum extraction now branches on the convention for its
+near plane (`w + z` under GL, plain `z` otherwise). On GL the remap does
+not run, so the OpenGL frame is unchanged by construction.
+
+*And a third defect was hiding behind those two: an orthographic camera
+read as a perspective one.* With the mirror and the clipping fixed, the
+beauty stage was still 72.6% divergent while depth had fallen to
+0.0002%. Geometry was right and shading was not, and the picture said
+where: the environment background was a white starburst radiating from a
+vanishing point, and the whole frame ran 33 levels bright. The cause is
+that GLSL indexes a matrix by COLUMN and every other language bgfx
+targets indexes it by ROW (`BGFX_SHADER_MATRIX_COLUMN_MAJOR`,
+`bgfx_shader.sh` 25). bgfx makes `mul()` agree across that split, and
+`mtxFromRows`/`mtxFromCols` build a matrix either way, but a written-out
+`m[i][j]` names transposed elements -- silently, with no compile error.
+A dozen shaders tell a perspective camera from an orthographic one by
+`u_proj[2][3]`, the w row's z entry, -1 or 0; off GL that subscript
+lands on the z row's w entry instead, which is never 0. So every
+orthographic camera was taken for a perspective one, and the ray fan
+rebuilt from `u_proj[0][0]` -- 0.0227 for this camera, read as a
+perspective x scale -- fanned 44x too wide across the sky.
+
+**What shipped**: `fc_matrix.sh` and `FC_MTX(m, i, j)`, which names the
+element the CPU wrote at `float[16]` index `4*i + j`; the 78 subscripts
+across 14 files were substituted mechanically, index for index, so the
+GL expansion is character-for-character what was there before. Nothing
+else in the shader set indexes a matrix: every construction already went
+through `mtxFromCols`, and `mul()` was never at risk.
+
+WARNING: **Grep for the convention, not for the symptom.** This one cost
+a full diagnosis round because the first two defects masked it, and it
+is the kind that will recur: `#if BGFX_SHADER_LANGUAGE_GLSL` and
+`BGFX_SHADER_MATRIX_COLUMN_MAJOR` in `bgfx_shader.sh` are the complete
+list of what bgfx says differs per backend and does NOT paper over.
+Before blaming a new backend's driver, read that file and check the
+shader set against it.
+
+WARNING: **Test the flip before the shift.** Two wrong readings were
+published here before the right one, and both are cheap to repeat.
+First, "compressed 1.65x vertically" -- a bounding-box artefact: the
+ratio was the clipping, not a scale. Then "translated 119 px, with the
+surviving depth inverted" -- a silhouette coincidence, because the near
+and far halves of this floor are similar triangles and a shift matched
+one to the other at 99.90% while the flip that matches at 100.00% went
+untested. The "inverted depth" was the same flip seen through mode 1,
+which is `1.0 - clamp(prepass linear view depth * u_debugParams.y)`
+(`fs_fc_debug.sc`): a NORMALIZED PREPASS quantity written as `-v_vpos.z`
+from the model-view transform, not the depth buffer and not a function
+of the projection at all. It was never evidence about clip space. A
+mask comparison that does not try `flipud` first can align two lobes of
+a symmetric silhouette and read as confirmation.
+
+**The containment check is `scripts/render_contain.py`** (added 2026-09-08;
+the diagnosis above was done with an ad-hoc script that was never committed).
+It builds the geometry mask from the depth stage -- mode 1 is the normalized
+prepass depth on black, so "not background" is the mask -- and reports
+containment, `|current AND golden| / |current|`, under identity, `flipud`
+and, with `--shift N`, the best integer offset. The asymmetry is the point:
+a frame missing its far half is 100% contained and a mirrored one is not,
+so `--both` separates a clipped frame from a moved one. The mask is close
+to but not the sidecar's `geometryPixels` -- 106114 against 108191 on
+`refs/raster`, the difference being geometry that quantizes to black in the
+PNG -- so read it for placement, not as a pixel budget.
+
+```sh
+# the two blessed sets agree: identity 100.00%, flip 43.66%
+.conda/run.sh python scripts/render_contain.py \
+    tests/render/refs/raster tests/render/refs/raster-metal --both
+# what the mirror looked like: identity 43.66%, flip 100.00%
+```
+
+It prints the transforms in the order the warning above insists on, and
+exits non-zero when anything but identity fits better.
+
+A fourth reading worth naming as wrong: the sidecar's `avgColor` is not
+the PNG's mean, and it does not even track it in sign. It is measured on
+the engine's own buffer, and it sits about 10 levels under the written
+frame's mean at rest (golden: 145.15 recorded, 155.48 in the file). On
+the run where the background ran 33 levels bright it read 143.4 -- LOWER
+than the golden's 145.15 -- while the PNG's mean was 188.93 against
+155.48. It would have said the two frames nearly agreed. Diff the
+pixels; `avgColor` is a capture fingerprint, not a measurement.
+
+WARNING: **A poll pattern that works under GNU grep can hang the whole
+leg elsewhere.** `render-verify.sh` waited for the capture with
+`grep -q "^DONE$\|^ABORT"`, and a `$` in MID-pattern is an anchor only
+in ERE: POSIX BRE reads it as a literal dollar, and only GNU grep bends
+that rule before a `\|`. So on macOS, where `/usr/bin/grep` is BSD grep,
+the poll asked for a line beginning "DONE$", never matched, and every
+capture sat out its whole `--timeout` after the work was finished --
+426.5 s of a 420 s budget under ctest for a capture that takes about 20.
+It looked exactly like a hang, and was mistaken for one. Both polls
+(here and in `user-shader-verify.sh`) now use `grep -qE`. The two golden
+tests run in 21.4 s each on the macOS leg, not 426.6.
+
+The same idiom without a mid-pattern `$` is fine, and is left alone in
+`gui-test.sh` and `file-blob-verify.sh`: BSD grep does support `\|`, and
+`^FAIL\|^ABORT` matches on both. It is only the anchor that differs.
+
+WARNING: **A restaging must not carry the backend across.** The sidecar records
+the whole `View/Render` group, `Type` included, and that key describes
+the machine that blessed the golden rather than the picture it blessed.
+`render_verify.py` skips it (`RESTAGE_SKIP`): replaying it put a macOS
+run on `bgfx - OpenGL`, where Apple's 2.1 compatibility profile cannot
+run these shaders at all -- the renderer stands aside for the render
+cache, and all five stages then failed with `Frame capture timed out`
+waiting for a frame that was never coming. The platform picks its own
+backend in `render-test-scene.py` (`FC_RENDER_BACKEND` overrides), and
+the sidecar's own `backend` and `device` fields are where the blessing's
+identity is recorded.
+
+**The two scenes are deliberately different in kind.**
+`scripts/render-test-scene.py` is four primitives built in process -- a
+matte floor, a rough box, a metal sphere, a glass rod and one
+shadow-casting bulb -- chosen so that one cheap scene still puts content
+in every stage the diff walks, the shadow buffer included.
+`scripts/render-test-chess.py` imports the MaterialX chess set from the
+submodule, which is the case that exercises map binding, the texture path
+and the MaterialX splice. A synthetic scene cannot fail the way a real
+document does, and a real document is too slow to run every time; hence
+one of each.
+
+**Each scene is registered twice, with the background drawn and without
+it** (`FC_RENDER_TEST_BG`, read by both scene scripts). They are not the
+same test. With a background most of the frame is scenery, so a change to
+the model moves a few hundred pixels while a camera that lands slightly
+differently moves a hundred thousand and buries it. Without one, the
+frame is the model and the diff is about what is under test. The
+background is drawn by the engine too, so neither case replaces the
+other.
+
+WARNING: **the flat leg has to turn off the environment, not just the
+gradient.** `Render_PBREnvBackground` defaults to *on*, and the drawn
+environment sits over the viewer's gradient -- so a scene that clears
+`Gradient`/`RadialGradient` and sets `BackgroundColor` while leaving the
+environment alone produces the *same frame* as its lit sibling. That was
+`refs/raster-flat` as first blessed on 2026-09-05: its beauty frame
+differed from `refs/raster` on 7.9% of pixels with a maximum channel
+delta of **1** -- twenty seconds of default `ctest` spent re-testing the
+frame the previous test had just checked. `render-test-chess.py` had it
+right (`p.SetBool("PBREnvBackground", BACKGROUND)`); `render-test-scene.py`
+did not, and now does. Blessed correctly, the two legs diverge on 79.5%
+of the beauty pixels (max 121) with depth, normal, AO and shadow
+byte-identical -- the same geometry, a different background, which is
+exactly the shape the pair should have. If a *-flat set ever compares
+near-identical to its sibling, this is the first thing to check.
+
+*** **CLOSED 2026-09-08: the `raster` beauty stage did not compare
+byte-exact, and the cause was a stale reference.** A fresh Linux capture
+restaged from `refs/raster` matched depth, normal, AO and shadow
+byte-for-byte and diverged on the beauty stage alone: **7.9421% of
+pixels past `--tol 0`, max channel delta 1, mean 0.08**. Every one of
+those pixels was on the environment background and none on geometry;
+`refs/raster` needs re-blessing and nothing needs fixing. The diagnosis
+is kept in full because it took two sessions and three hypotheses, two
+of which were wrong, and the wrong ones are the reusable part.
+
+Three properties of the number mattered, in the order they were found:
+
+- **It is bit-stable.** The same run repeated on a quiet box gives
+  7.9421% both times, to four decimals. So it is a deterministic
+  difference between what the tree renders now and what was blessed,
+  not run-to-run noise, and it will not wash out by re-running.
+- **The llvmpipe leg itself is bit-deterministic, so this is not
+  render noise.** Tested 2026-09-08: a capture saved, the golden test
+  re-run, and capture diffed against capture at `--tol 0 --frac 0` --
+  all five stages OK, and the two beauty PNGs share an md5
+  (`09ac9269585855cb0986d0848aba941e`). Two renders that ought to be
+  identical *are* identical, to the byte. An earlier guess that ~7.9%
+  at max 1 was the beauty stage's characteristic 1-LSB population under
+  software rasterization is therefore **wrong**, and is recorded here
+  only so nobody re-derives it.
+
+So the difference is between **what the tree renders now** and **what
+was blessed**, and it is carrying information rather than noise.
+
+**The chronology narrows it to a four-hour window, and `refs/raster` is
+the only set inside it.** Blessing times against the commits of the same
+day:
+
+| | |
+|---|---|
+| `6e8b01e` 09-05 **08:40** | `refs/raster` blessed |
+| `bbb144e104` 09-05 11:48 | a frame dump waits for a complete frame |
+| `01470cc` 09-05 **11:51** | `refs/chess`, `refs/chess-flat` blessed |
+| `638d3ab1c7` 09-05 13:06 | every capture waits on the complete-frame signal |
+| `0a79dec` 09-05 **16:15** | `refs/raster-flat` re-blessed |
+
+Every set blessed after 11:48 compares byte-exact today; the one set
+blessed before it does not. That is a correlation and not yet a cause --
+and note the mechanism does not obviously fit, since an incomplete frame
+means a stand-in shader or a missing shape, which would diverge by far
+more than one level.
+
+**RESOLVED 2026-09-08: it is the environment background, and
+`refs/raster` is a stale blessing rather than a defect.** The test was
+to intersect the divergent-pixel mask with the mode 1 geometry mask,
+and the answer was not close:
+
+```
+frame            858 x 608 = 521664
+geometry px      106114
+divergent px     41431
+  on geometry    0
+  on background  41431      9.97% of the background area
+max channel delta 1
+```
+
+**Zero divergent pixels on geometry.** Not few -- none. What was
+predicted from the areas alone was 10.02% of the background (geometry
+108191 of 521664, so background 79.26% of the frame, and 7.9421% of the
+frame is 10.02% of that); what was measured was 9.97%, the 0.05 point
+being the quantize-to-black gap between the sidecar's `geometryPixels`
+and the mode 1 mask. About one background pixel in ten sits across a
+quantization boundary and rounds the other way than it did when the set
+was blessed.
+
+The reasoning that got there, since it generalizes: `refs/raster` draws
+the environment background and `refs/raster-flat` does not, they are the
+same scene on the same box, and it is the flat set that is byte-exact.
+The environment was very nearly the only difference between the set that
+diverged and the set that did not.
+
+**Two consequences.** First, both halves of the cross-API work are
+cleared by this: a change to clip depth, UV origin or matrix indexing
+cannot produce a difference that is zero on every geometric pixel. That
+was an inference from `max 1`; it is now a measurement. Second, the
+"do not re-bless" instruction above is **withdrawn for this set**. It
+was right while the difference might have carried information about a
+defect. It does not -- the only thing it was protecting was the age of
+the artefact -- so the action is to re-bless `refs/raster`, on a box
+that records its device. It is an OpenGL set, so that box is the Linux
+one; macOS cannot produce a GL capture here at all (Apple caps the
+compatibility profile at 2.1).
+
+And the point that costs nothing to state: **the `device` field would
+have answered this in one step instead of two sessions.** The four
+OpenGL sets predate it. Whatever else a re-blessing is worth, it is
+worth that.
+
+Worth knowing before chasing it: the Linux leg is a software rasterizer
+on both sides (see 5.2b), so this residual has never been seen on real
+hardware, and a driver explanation cannot be either confirmed or
+dismissed from that box.
+
+**The Cycles leg is reproducible as it stands, and must be kept that
+way.** The offline path sets no seed, so the integrator default applies,
+and denoising is enabled only on the *viewport* path
+(`CyclesViewport.cpp`), never on `cyclesRender`. Measured on the small
+scene: two restaged runs are byte-exact at `--tol 0 --frac 0`, and the
+trace costs 1.3 s at 64 spp. CPU is the device on purpose -- it is the
+one every box has, and two devices do not produce identical pixels, so a
+set blessed on CUDA cannot be compared against a CPU run.
+
+Captures are named so that `render_diff.py` needed no change to gain a
+second renderer: a traced frame is written as
+`<prefix>--cycles--mode0.png`, which its existing filename grammar reads
+as a group of its own whose single stage is the beauty frame.
+
+WARNING: **Bless the restaged set, never the fresh one** (the rule stated
+in section 5, now with numbers). Fresh-vs-restaged on the small scene
+differs on up to 0.0098% of pixels with a maximum channel delta of 254,
+purely from the sidecar camera's ~8 significant digits;
+restaged-vs-restaged is byte-exact.
+
+**Path tracing amplifies that rounding, and the chess set shows it.**
+Where the small scene's traced frame moved by a maximum delta of 1
+between a fresh and a restaged camera, the chess set's moved by 53 over
+0.25% of its pixels -- enough to fail the default tolerance. Nothing is
+wrong with the renderer: a camera that differs in its last digit sends
+different rays, and a detailed textured scene under an HDR environment
+turns that into visibly different noise where four primitives under a
+single bulb did not. It is the sharpest argument for the rule -- the
+raster leg of the same run compared clean, so a set blessed from a fresh
+capture would have looked fine right up until the traced leg was added.
+
+`scripts/render-verify.sh` takes `--cycles`, `--cycles-device`,
+`--cycles-samples` and `--cycles-size` for the traced leg.
+
+#### 5.2a The chess set: the race the test found on its first day
+
+`refs/chess` was not blessed with the rest of the set: on the raster leg
+a piece of the MaterialX chess set intermittently came back plain
+untextured white instead of jade-with-gold-trim -- 2 runs in 12, same
+build, same restaged camera, nothing logged, the differing pixels in one
+tight box around the black queen (y 318-400, x 325-361 at 858x582), the
+Cycles leg of the same runs right every time, and a 4x settle no help.
+Chased 2026-09-05 and fixed the same day. Three findings, all three now
+in the code:
+
+- **The white piece was a capture of a program still compiling.** A
+  MaterialX material is compiled by a `shaderc` subprocess
+  (`BGFXRendererLibP::ensureUserShaderBin`, asynchronous, cached on disk
+  under `$XDG_CACHE_HOME/FreeCAD/BGFXUserShaders`), and until its binary
+  lands `getUserProgram` returns an invalid handle and the draw uses the
+  stock program: no maps, no material, white. Compile order is
+  deterministic, the black set's surfaces are asked last (see the next
+  item), and the black queen's is the last of those -- which is why the
+  rare failure was always that piece and byte-identical. Fix: the frame
+  records that a draw stood in, and the tail of such a frame does not
+  consume a pending dump (section 4.2). The wait is bounded by the
+  compile's own watchdog; a failed compile is recorded and never asked
+  again, so a capture of a scene with a broken material still returns.
+- **The scene was still arriving.** A publish that spends its capture
+  budget (`Render CaptureBudgetMS`) leaves first-time shapes out of the
+  frame and catches them up in follow-up publishes, one or more shapes
+  per pass. On this box the chess set's black pieces reach the backend
+  some fifteen seconds after the white ones, because the frames in
+  between are cold -- generating fifteen MaterialX variants and, once
+  their binaries land, building fifteen programs and uploading their
+  maps on llvmpipe is a second or more per program. A dump consumed in
+  that window is a picture of half a chess set. Fix: the viewer tells
+  the backend before each frame whether the last publish deferred
+  anything (`Renderer::holdFrameDump`), and the dump is held the same
+  way. And a held frame counts as progress for `pumpFrameDump`: its old
+  5 s timeout, measured from the request, expired inside the one frame
+  that built five programs -- which is also why every wait tried before
+  this one "did not work".
+- **The deterministic repro measured the camera, not the material.**
+  `--settle 0` failed 100% of the time at 31.7022% of pixels, and that
+  number never moved, fixed or not. It was the camera: the scene's
+  `fitAll()` animates the position into place in ten per-frame steps
+  (`viewBoundBox` -> `animatedViewAll`), and with frames of seconds
+  during the cold compile the animation was still overwriting the
+  restaged camera thirty seconds later -- the diff image shows the board
+  twice, offset, on an unchanged environment. Both `render_verify.py`
+  (in `freeze()`) and the chess scene now switch navigation animation
+  off (`setAnimationEnabled(False)`), so a fit and a `view<Name>()` land
+  in one step. The material race was real and is fixed; its repro was
+  measuring something else.
+
+Verified after the fix: zero-settle restage captures of the chess set
+compare clean against a good capture, run after run, with a private
+shader cache (a cold compile every run); the default-settle runs the
+same; and the rest of the render set unchanged. `refs/chess` and
+`refs/chess-flat` are blessed from restaged captures, so
+`RenderGoldenChess_tests_run` and its flat variant run with
+`-DFC_RENDER_HEAVY_TESTS=ON`. If a chess diff ever again shows a lone
+piece, re-read this section before calling it noise: the hold is what
+guarantees the material, and a lone divergence around one piece would
+mean it has been bypassed.
+
+#### 5.2c The chess set on Metal: three faults, none of them the backend
+
+Chased 2026-09-07, the session after the Metal shader conventions were
+fixed (5.2b). The raster chess leg is the one that can break
+independently -- it is the only test that exercises MaterialX, map
+binding and the texture path, and the per-face texture and matcap
+shaders were not part of that sweep. It came up clean on Metal:
+**0.3288% of the beauty pixels past tolerance, max channel delta 140,
+mean 0.16**, against the 0.3527% the raster pair shows. Nothing in the
+material path needed a Metal fix.
+
+Getting there took three, and every one of them is a *portability* fault
+in the harness rather than anything the renderer did. They are worth
+stating because each failed silently or nearly so.
+
+- **The scene script named its backend.** `render-test-chess.py` set
+  `View/Render` `Type` to `"bgfx - OpenGL"` as a literal, where
+  `render-test-scene.py` picks per platform. The commit that gated the
+  harness by platform updated one scene script and missed the other.
+  On macOS that asks for a backend Apple's GL 2.1 compatibility profile
+  cannot run these shaders on, so no frame ever came: all five capture
+  steps failed, and what they *reported* was
+  `FreeCADGui.ActiveDocument` being None.
+- **The scene imported pivy, which this box does not have.** The camera
+  was staged as `getCameraNode().orientation.setValue(coin.SbRotation(
+  ...))`, and there is no `pivy` in the macOS conda env, so `stage()`
+  raised at its second import and the document was never created. That
+  is the None above. The staging failure was invisible because `say()`
+  wrote to `FreeCAD.Console`, which in a GUI run goes to the report
+  view: `run.log` held nothing. It now writes to stderr as well, which
+  is what `render-verify.sh` redirects, and the traceback was in the
+  log on the next run. The camera is staged through
+  `View3DInventor.setCameraOrientation((x, y, z, w))` -- same
+  quaternion, no pivy.
+- **A restage replayed an absolute asset path from the blessing box.**
+  With the scene finally staging, the frame came back with no
+  environment at all: flat grey where Venice should be, the model lit
+  by the fallback. 99.9782% of pixels, mean 71.09. The cause is in the
+  sidecar: `Render_PBREnvImage` (and the `View/Render` preference
+  behind it) is recorded as the absolute path of the HDR *on the box
+  that blessed the set*, `/home/thunder/works/sw/fcad/...`, and
+  `render_verify.py` wrote it back verbatim. The setting takes any
+  string; the renderer says `cannot embed environment image ... does
+  not exist` into the report view and carries on with the built-in
+  environment. A capture of a scene with its environment missing, and
+  a passing-looking harness.
+
+  `relocate()` in `render_verify.py` now maps such a value onto the
+  current checkout -- keep a path that exists, else take the longest
+  tail of it that exists under the repository, else write nothing and
+  report the setting as failed. Writing nothing is the point: the scene
+  script's own value is a better answer than a dead path, and a
+  reported failure is better than either.
+
+**The registration rule this leaves behind.** The chess entries asked
+for the traced leg unconditionally and so were gated on `BUILD_CYCLES`,
+which this box does not have -- a blessed `chess-metal` would still
+have registered nothing. They now register with the traced flags only
+when Cycles is built, and `fc_add_golden_test` refuses to register a
+test whose golden *holds* a traced frame when this build cannot produce
+one (`render_diff.py` reads the missing group as a divergence, and
+rightly). So the OpenGL sets keep their traced leg, the Metal ones are
+raster-only until someone blesses them with Cycles built, and the
+raster leg of the chess scene gates everywhere either way.
 
 ---
 
@@ -1008,7 +1703,9 @@ Implementation notes from the second slice (`material` stage):
   user contract is one color output), section-clip discard is not applied
   to user programs, and a draw with a user shader is excluded from the
   cross-object instancing path. While the async compile is pending or
-  failed the standard program stands in — never a black object.
+  failed the standard program stands in -- never a black object. A
+  pending frame dump is not consumed by a frame that stood in (section
+  4.2): the capture waits for the material, the screen does not.
 - **User vertex stage.** A program carrying a vertex source replaces the
   stock `vs_fc_mesh` pairing (vertex contract: `$input a_position,
   a_normal, a_color0` / `$output v_normal, v_color0, v_vpos`; the
@@ -1114,13 +1811,18 @@ runtime GLSL compiler. Coin's nodes carry *source*. Reconciliation:
   (demo preview, Appearance bindings, the direct scene-graph route, the
   browser tier via the snapshot's shader table) sees it, because the
   parameters ride the captured `UserShader` and are recorded with the
-  consuming draws. Like-named dynamic properties on an `App::Appearance`
+  consuming draws. Like-named dynamic properties on a `App::ShaderBinding`
   override the program's values for that binding only; a parameter the
   program does not carry is added, so a binding can drive any uniform the
   shader source declares. The backend zeroes every dynamically bound
   uniform that is not in the consuming draw's parameter list — uniform
   values persist backend-side between frames, so a removed parameter
-  would otherwise keep feeding its stale value.
+  would otherwise keep feeding its stale value. One dialect declares
+  its parameters the other way round: a MATERIALX program's `Param_*`
+  properties are materialized FROM the document, which declares its own
+  interface, and are withdrawn with it
+  (docs/CyclesIntegration.md sec 6.11). Everything downstream of the
+  property is the same chain.
 - **Predefined stages, not arbitrary hooks.** Users pick named attachment
   points: `post` (full-screen pass over composited color — simplest, first),
   `material` (replace surface shading for an object), later possibly
@@ -1173,7 +1875,7 @@ need XLink machinery owned by a document object.
   handles `generatePrimitives`-tessellated shapes; else fall back to a tiny
   `SoIndexedFaceSet` tessellation). Complex-shape previews use a normal
   Appearance binding instead.
-- **App::Appearance** — the binder that activates shading, an
+- **App::ShaderBinding** (was App::Appearance) -- the binder that activates shading, an
   `App::LinkGroup` whose children carry both the effect and its scope. The
   shader is the first child that resolves (through any chain of links) to
   an `App::Shader` — use an `App::Link` child to pull the effect from a

@@ -393,6 +393,7 @@ SET(Document_CPP_SRCS
     Document.cpp
     DocumentParams.cpp
     FileBlobManager.cpp
+    FileSet.cpp
     GroupParams.cpp
     DocumentObject.cpp
     Extension.cpp
@@ -463,6 +464,7 @@ SET(Document_HPP_SRCS
     Document.h
     DocumentParams.h
     FileBlobManager.h
+    FileSet.h
     GroupParams.h
     DocumentObject.h
     Extension.h
@@ -571,8 +573,9 @@ SET(FreeCADApp_CPP_SRCS
     IndexedName.cpp
     MappedElement.cpp
     MappedName.cpp
-    Material.cpp
-    MaterialList.cpp
+    MaterialAppearance.cpp
+    MaterialXDocument.cpp
+    AppearanceList.cpp
     MaterialPyImp.cpp
     MaterialListPyImp.cpp
     Metadata.cpp
@@ -598,8 +601,9 @@ SET(FreeCADApp_HPP_SRCS
     Enumeration.h
     IndexedName.h
     MappedName.h
-    Material.h
-    MaterialList.h
+    MaterialAppearance.h
+    MaterialXDocument.h
+    AppearanceList.h
     Metadata.h
     ElementNamingUtils.h
     StringHasher.h

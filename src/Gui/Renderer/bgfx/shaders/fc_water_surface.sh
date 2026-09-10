@@ -52,6 +52,8 @@ uniform vec4 u_shadowParams;
 // x = EVSM warp exponent (0 = plain VSM), y = plain-VSM light-bleed threshold.
 uniform vec4 u_evsm;
 #include "fc_shadow_tap.sh"   // the shared VSM/EVSM bound
+#include "fc_screen.sh"
+#include "fc_matrix.sh"
 // Maps view space to shadow map uv (xy) + light-window depth (z).
 uniform mat4 u_shadowMatrix;
 // x = ambient ripple type (0 = directional waves, 1 = rain drops,
@@ -100,8 +102,8 @@ vec4 fcWaterShadeFragment(vec3 normal, vec3 vpos, vec2 fragCoord)
 {
 	vec3 n = normalize(normal);
 	// The surface reads two-sided: flip toward the viewer (GL
-	// projection: perspective u_proj[2][3] != 0, viewer down -z).
-	vec3 V = u_proj[2][3] != 0.0 ? normalize(-vpos)
+	// projection: perspective FC_MTX(u_proj, 2, 3) != 0, viewer down -z).
+	vec3 V = FC_MTX(u_proj, 2, 3) != 0.0 ? normalize(-vpos)
 	                             : vec3(0.0, 0.0, 1.0);
 	if (dot(n, V) < 0.0)
 		n = -n;
@@ -320,17 +322,17 @@ vec4 fcWaterShadeFragment(vec3 normal, vec3 vpos, vec2 fragCoord)
 				// projection. Reconstruct the sample's world
 				// position from its prepass depth and reject
 				// anything above the surface plane.
-				vec2 sndc = ruv * 2.0 - vec2_splat(1.0);
+				vec2 sndc = fc_uvToNdc(ruv);
 				vec3 sv;
-				if (u_proj[2][3] != 0.0)
+				if (FC_MTX(u_proj, 2, 3) != 0.0)
 					sv = vec3(
-					    (sndc.x + u_proj[2][0]) / u_proj[0][0],
-					    (sndc.y + u_proj[2][1]) / u_proj[1][1],
+					    (sndc.x + FC_MTX(u_proj, 2, 0)) / FC_MTX(u_proj, 0, 0),
+					    (sndc.y + FC_MTX(u_proj, 2, 1)) / FC_MTX(u_proj, 1, 1),
 					    -1.0) * p0.z;
 				else
 					sv = vec3(
-					    (sndc.x - u_proj[3][0]) / u_proj[0][0],
-					    (sndc.y - u_proj[3][1]) / u_proj[1][1],
+					    (sndc.x - FC_MTX(u_proj, 3, 0)) / FC_MTX(u_proj, 0, 0),
+					    (sndc.y - FC_MTX(u_proj, 3, 1)) / FC_MTX(u_proj, 1, 1),
 					    -p0.z);
 				vec3 sw = mul(u_invView, vec4(sv, 1.0)).xyz;
 				if (dot(sw - wp, nw) > 0.05)
@@ -387,7 +389,7 @@ vec4 fcWaterShadeFragment(vec3 normal, vec3 vpos, vec2 fragCoord)
 				Pprev = P;
 				P += Rv * stp;
 				vec4 c = mul(u_proj, vec4(P, 1.0));
-				suv = c.xy / c.w * 0.5 + 0.5;
+				suv = fc_clipToUv(c.xy / c.w);
 				if (suv.x < 0.0 || suv.x > 1.0
 					|| suv.y < 0.0 || suv.y > 1.0)
 					break;
@@ -402,7 +404,7 @@ vec4 fcWaterShadeFragment(vec3 normal, vec3 vpos, vec2 fragCoord)
 				{
 					vec3 m = (a + b) * 0.5;
 					vec4 c = mul(u_proj, vec4(m, 1.0));
-					suv = c.xy / c.w * 0.5 + 0.5;
+					suv = fc_clipToUv(c.xy / c.w);
 					vec4 s = texture2D(s_texNormalZ, suv);
 					if (s.w > 0.5 && -m.z > s.z) b = m; else a = m;
 				}

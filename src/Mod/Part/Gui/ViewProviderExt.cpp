@@ -1525,7 +1525,7 @@ void PartGui::PropertyDiffuseColor::init()
                  &PartGui::PropertyDiffuseColor::create);
 }
 
-void PropertyDiffuseColor::setAppearance(App::PropertyMaterialList *appearance,
+void PropertyDiffuseColor::setAppearance(App::PropertyAppearanceList *appearance,
                                          const App::PropertyColor *shapeColor)
 {
     _appearance = appearance;
@@ -1599,7 +1599,7 @@ void PropertyDiffuseColor::setSize(int newSize, const Base::Color &def)
         App::PropertyColorList::setSize(newSize, def);
         return;
     }
-    App::Material mat = _appearance->getMaterial(0);
+    App::MaterialAppearance mat = _appearance->getMaterial(0);
     mat.diffuseColor = def;
     _appearance->setSize(newSize, mat);
 }
@@ -1905,7 +1905,7 @@ ViewProviderPartExt::ViewProviderPartExt()
 
     static const char *osgroup = "Object Style";
 
-    App::Material lmat;
+    App::MaterialAppearance lmat;
     lmat.ambientColor.set(0.2f,0.2f,0.2f);
     lmat.diffuseColor.set(lr,lg,lb);
     lmat.specularColor.set(0.0f,0.0f,0.0f);
@@ -1913,7 +1913,7 @@ ViewProviderPartExt::ViewProviderPartExt()
     lmat.shininess = 1.0f;
     lmat.transparency = 0.0f;
 
-    App::Material vmat;
+    App::MaterialAppearance vmat;
     vmat.ambientColor.set(0.2f,0.2f,0.2f);
     vmat.diffuseColor.set(vr,vg,vb);
     vmat.specularColor.set(0.0f,0.0f,0.0f);
@@ -2174,7 +2174,7 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
             updateColors();
     }
     else if (prop == &LineMaterial) {
-        const App::Material& Mat = LineMaterial.getValue();
+        const App::MaterialAppearance& Mat = LineMaterial.getValue();
         if (LineColor.getValue() != Mat.diffuseColor)
             LineColor.setValue(Mat.diffuseColor);
         pcLineMaterial->ambientColor.setValue(Mat.ambientColor.r,Mat.ambientColor.g,Mat.ambientColor.b);
@@ -2185,7 +2185,7 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         pcLineMaterial->transparency.setValue(Mat.transparency);
     }
     else if (prop == &PointMaterial) {
-        const App::Material& Mat = PointMaterial.getValue();
+        const App::MaterialAppearance& Mat = PointMaterial.getValue();
         if (PointColor.getValue() != Mat.diffuseColor)
             PointColor.setValue(Mat.diffuseColor);
         pcPointMaterial->ambientColor.setValue(Mat.ambientColor.r,Mat.ambientColor.g,Mat.ambientColor.b);
@@ -2855,7 +2855,7 @@ std::vector<Base::Vector3d> ViewProviderPartExt::getSelectionShape(const char* /
 // Per-face material divergence the instanced representation cannot carry:
 // the color variants bake diffuse+transparency only; every other component
 // must stay uniform in value to ride the inherited object material.
-static bool materialsUnrepresentable(const std::vector<App::Material> &mats)
+static bool materialsUnrepresentable(const std::vector<App::MaterialAppearance> &mats)
 {
     for (size_t i = 1; i < mats.size(); ++i) {
         if (mats[i].ambientColor != mats[0].ambientColor
@@ -2883,7 +2883,7 @@ void ViewProviderPartExt::applyShapeAppearance()
         return;
     }
     int count = ShapeAppearance.getSize();
-    std::vector<App::Material> mats;
+    std::vector<App::MaterialAppearance> mats;
     mats.reserve(count);
     for (int i = 0; i < count; ++i)
         mats.push_back(ShapeAppearance.getPhongMaterial(i));
@@ -2930,7 +2930,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
     // reaches the node -- and so that any per-face arrays a previous
     // whole-material apply left there collapse back to scalars.
     {
-        const App::Material m = ShapeAppearance.getPhongBase();
+        const App::MaterialAppearance m = ShapeAppearance.getPhongBase();
         const SbColor ambient(m.ambientColor.r, m.ambientColor.g, m.ambientColor.b);
         const SbColor specular(m.specularColor.r, m.specularColor.g, m.specularColor.b);
         const SbColor emissive(m.emissiveColor.r, m.emissiveColor.g, m.emissiveColor.b);
@@ -2982,7 +2982,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
 
 }
 
-void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& colors)
+void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::MaterialAppearance>& colors)
 {
     // Not during a restore, for the same reason as the colour overload.
     if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange)
@@ -3005,7 +3005,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
     if (instanced) {
         // The uniform-valued non-diffuse components ride the object
         // material; diffuse+transparency partition the instances.
-        const App::Material m0 = colors.empty() ? ShapeAppearance.getPhongBase() : colors[0];
+        const App::MaterialAppearance m0 = colors.empty() ? ShapeAppearance.getPhongBase() : colors[0];
         pcShapeMaterial->ambientColor.setValue(
             m0.ambientColor.r, m0.ambientColor.g, m0.ambientColor.b);
         pcShapeMaterial->specularColor.setValue(
@@ -3068,7 +3068,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
 
         // The BASE: the faces this short apply leaves unstated wear what
         // the object wears, which is exactly what the base is
-        const App::Material material = ShapeAppearance.getBase();
+        const App::MaterialAppearance material = ShapeAppearance.getBase();
         for (; i < numfaces; ++i) {
             dc[i].setValue(material.diffuseColor.r, material.diffuseColor.g, material.diffuseColor.b);
             ac[i].setValue(material.ambientColor.r, material.ambientColor.g, material.ambientColor.b);
@@ -3087,7 +3087,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
         return;
     }
 
-    const App::Material material = colors.size()==1?colors[0]:ShapeAppearance.getBase();
+    const App::MaterialAppearance material = colors.size()==1?colors[0]:ShapeAppearance.getBase();
     pcFaceBind->value = SoMaterialBinding::OVERALL;
     pcShapeMaterial->diffuseColor.setValue(material.diffuseColor.r, material.diffuseColor.g, material.diffuseColor.b);
     pcShapeMaterial->ambientColor.setValue(material.ambientColor.r, material.ambientColor.g, material.ambientColor.b);
@@ -3920,7 +3920,7 @@ void ViewProviderPartExt::setupContextMenu(QMenu* menu, QObject* receiver, const
     act->setData(QVariant((int)ViewProvider::Color));
 }
 
-void ViewProviderPartExt::setEditViewer(Gui::View3DInventorViewer *viewer, int ModNum) {
+void ViewProviderPartExt::setEditViewer(Gui::ViewerContext *viewer, int ModNum) {
     if (ModNum == ViewProvider::Color)
         Gui::Control().showDialog(new Gui::TaskElementColors(this,true));
     else
@@ -7568,7 +7568,7 @@ void ViewProviderPartExt::finishRestoring()
 {
     inherited::finishRestoring();
 
-    auto syncMaterial = [](const App::Material &Mat, SoMaterial *pcMaterial) {
+    auto syncMaterial = [](const App::MaterialAppearance &Mat, SoMaterial *pcMaterial) {
         pcMaterial->ambientColor.setValue(Mat.ambientColor.r,Mat.ambientColor.g,Mat.ambientColor.b);
         pcMaterial->specularColor.setValue(Mat.specularColor.r,Mat.specularColor.g,Mat.specularColor.b);
         pcMaterial->emissiveColor.setValue(Mat.emissiveColor.r,Mat.emissiveColor.g,Mat.emissiveColor.b);

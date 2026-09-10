@@ -42,7 +42,42 @@ public:
     bool cleanup() const;
     void setCleanup(bool);
 
+    /** What a glTF mesh becomes: the triangulation the file states, or
+     * B-Rep geometry sewn from its facets.
+     *
+     * glTF is a mesh format, and the rebuild is a translation with a
+     * price: it goes through points and facets, so it drops the UVs and
+     * the authored normals with everything else the file said about the
+     * surface -- a mesh authored for images cannot be shaded after it --
+     * and on a large mesh it dominates the import (chess_set.glb, 1.5M
+     * triangles: fifteen minutes and unfinished, against 0.2 seconds
+     * without). What it buys is a shape with edges and vertices, which
+     * is what CAD work selects, snaps and dimensions.
+     *
+     * The `GltfRebuildBRep` preference under Mod/Import states which,
+     * and defaults to None.
+     */
+    enum class RebuildBRep
+    {
+        /// Never. Each mesh arrives as the face (or faces) the reader
+        /// built, carrying its triangulation, its UVs and its normals.
+        None = 0,
+        /// Only where nothing needs what the rebuild would drop: a mesh
+        /// whose material names a texture, or whose triangulation states
+        /// texture coordinates, is left alone.
+        Auto = 1,
+        /// Always, whatever the mesh states. Upstream FreeCAD's
+        /// behaviour, and the escape hatch for a file wanted purely as
+        /// geometry.
+        All = 2,
+    };
+    RebuildBRep rebuildBRep() const;
+    void setRebuildBRep(RebuildBRep);
+
 private:
+    /// Whether \a shape is rebuilt. \a textured says the mesh's own
+    /// visualization material names a texture map.
+    bool rebuilds(const TopoDS_Shape& shape, bool textured) const;
     TopoDS_Shape fixShape(TopoDS_Shape);
     void processDocument(Handle(TDocStd_Document) hDoc);
     TopoDS_Shape processSubShapes(Handle(TDocStd_Document) hDoc,
@@ -51,6 +86,7 @@ private:
 private:
     Base::FileInfo file;
     bool clean = true;
+    RebuildBRep rebuild = RebuildBRep::None;
 };
 
 }  // namespace Import

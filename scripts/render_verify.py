@@ -11,7 +11,9 @@ capture directories stage by stage.
 Staging comes from one of two sources:
 
 - **Manifest** (default): the RV_CAMERAS named standard views, staged as
-  ``view<Name>()`` + ``fitAll()`` — deterministic for a fixed scene.
+  ``view<Name>()`` + ``fitAll()`` -- deterministic for a fixed scene once
+  navigation animation is off (freeze() turns it off; animated, both
+  take ten frames to land and a capture can fall inside them).
 - **Golden restage** (RV_GOLDEN set): cameras, render properties *and*
   the recorded preferences are re-applied 1:1 from the golden captures'
   sidecar JSONs, so goldens stay valid when defaults change (§5
@@ -33,6 +35,27 @@ Environment contract (all optional except RV_OUT):
                viewer to connect. The viewer keeps its own camera (pin it
                with the page's &cam= URL parameter), so viewer captures are
                named <scene>--viewercam--mode<N>--viewer.png.
+  RV_SETTLE    extra frames to run before capturing (default 0). The
+               harness first waits for the backend's own complete-frame
+               signal (view.waitFrameComplete: every user shader
+               compiled, every deferred shape arrived, the frozen
+               particle warm-up reached), which is what used to need a
+               frame count; this is only for content that signal does
+               not cover.
+  RV_CYCLES    "1" -> also path trace each staged camera with the Cycles
+               engine (docs/CyclesIntegration.md phase 3), written as
+               <prefix>--cycles--mode0.png so render_diff.py pairs it as a
+               group of its own. Needs a BUILD_CYCLES build.
+  RV_CYCLES_SAMPLES  samples per pixel for that leg (default 32)
+  RV_CYCLES_DEVICE   Cycles device (default "CPU" -- see below)
+  RV_CYCLES_SIZE     "WxH" for that leg (default "320x240")
+
+The Cycles leg is deterministic as it stands and must be kept that way:
+the offline path sets no seed, so the integrator's default applies, and
+denoising is enabled only on the *viewport* path, never here. A CPU
+device is the default because it is the only one every box has, and
+because two devices do not produce identical pixels -- a golden blessed
+on CUDA cannot be compared against a CPU run.
 """
 import glob
 import json
@@ -52,6 +75,13 @@ MODES = [int(m) for m in os.environ.get("RV_MODES", "0,1,2,3,4").split(",") if m
 GOLDEN = os.environ.get("RV_GOLDEN", "")
 VIEWER = os.environ.get("RV_VIEWER", "") == "1"
 VIEWER_TIMEOUT = float(os.environ.get("RV_VIEWER_TIMEOUT", "120"))
+SETTLE = int(os.environ.get("RV_SETTLE", "0"))
+CYCLES = os.environ.get("RV_CYCLES", "") == "1"
+CYCLES_SAMPLES = int(os.environ.get("RV_CYCLES_SAMPLES", "32"))
+CYCLES_DEVICE = os.environ.get("RV_CYCLES_DEVICE", "CPU")
+CYCLES_W, _, CYCLES_H = os.environ.get("RV_CYCLES_SIZE", "320x240").partition("x")
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Named standard views the manifest may use (View3DInventorPy methods).
 VIEW_METHODS = {
@@ -80,6 +110,39 @@ def view():
     return FreeCADGui.ActiveDocument.ActiveView
 
 
+def relocate(value):
+    """Map an absolute path recorded by another checkout onto this one.
+
+    An asset path in a sidecar -- Render_PBREnvImage is the one that
+    matters -- is the blessing box's own absolute path, and no other box
+    has that path. Replayed verbatim it does not merely fail to load,
+    it fails SILENTLY: the setting takes the string, the renderer says
+    "cannot embed environment image ... does not exist" into the report
+    view and carries on with the built-in environment, so the capture is
+    a picture of a scene with its HDR environment missing. Measured on
+    the chess set restaged from a Linux-blessed golden: 99.98% of the
+    beauty pixels differed, mean 71 -- read at first as a Metal defect,
+    when the frame simply had no environment in it.
+
+    So: keep a path that exists, and otherwise look for the longest tail
+    of it that exists under this repository (which finds
+    .../src/3rdParty/... wherever the checkout lives). None means the
+    value names nothing here and must not be written at all -- the
+    scene script's own setting is a better answer than a dead path.
+    Values that are not absolute paths pass through untouched.
+    """
+    if not isinstance(value, str) or not value or not os.path.isabs(value):
+        return value
+    if os.path.exists(value):
+        return value
+    parts = [p for p in value.replace("\\", "/").split("/") if p]
+    for i in range(len(parts)):
+        cand = os.path.join(REPO, *parts[i:])
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
 def apply_properties(v, props):
     """Re-apply a sidecar's properties dict onto the view, best-effort.
 
@@ -95,6 +158,10 @@ def apply_properties(v, props):
     for name, value in sorted(props.items()):
         if not hasattr(v, name):
             failed.append(name + ":missing")
+            continue
+        value = relocate(value)
+        if value is None:
+            failed.append(name + ":path")
             continue
         candidates = [value]
         if isinstance(value, float):
@@ -126,6 +193,20 @@ PREF_SETTERS = {
 }
 
 
+# One key a restaging must NOT carry across: the renderer selection.
+# The sidecar records the whole View/Render group, "Type" included, and
+# that key describes the machine that blessed the golden rather than the
+# picture it blessed. Replaying it puts a macOS run on "bgfx - OpenGL",
+# where Apple's 2.1 compatibility profile cannot run these shaders at
+# all -- the renderer stands aside for the render cache and every
+# capture then times out waiting for a frame that is not coming
+# (measured: 5 of 5 stages, restaged from the GL-blessed raster set).
+# The platform picks its own backend in the scene script, and the
+# sidecar's own "backend" and "device" fields are where the blessing's
+# identity is recorded.
+RESTAGE_SKIP = {("View/Render", "Type")}
+
+
 def apply_preferences(prefs):
     """Re-apply a sidecar's preference groups, best-effort.
 
@@ -152,6 +233,12 @@ def apply_preferences(prefs):
                 continue
             setter, cast = entry
             for name, value in sorted(values.items()):
+                if (group, name) in RESTAGE_SKIP:
+                    continue
+                value = relocate(value)
+                if value is None:
+                    failed.append("%s/%s:path" % (group, name))
+                    continue
                 try:
                     getattr(grp, setter)(name, cast(value))
                     applied += 1
@@ -172,7 +259,8 @@ def golden_stagings():
         prefix = re.sub(r"--mode0\.png\.json$", "", base)
         stagings.append((prefix, data.get("camera", ""),
                          data.get("properties", {}),
-                         data.get("preferences", {})))
+                         data.get("preferences", {}),
+                         data.get("viewportSize")))
     return stagings
 
 
@@ -259,6 +347,13 @@ def freeze():
     """
     grp = FreeCAD.ParamGet(FREEZE_GROUP)
     grp.SetBool(FREEZE_PARAM, True)
+    # Navigation animation too: viewIsometric() and fitAll() animate
+    # the camera into place in ten per-frame steps, and a frame during
+    # a cold user-shader compile is seconds, so an animation started
+    # by the scene was still overwriting a restaged camera thirty
+    # seconds later -- a whole-board shift that read as a 32% diff and
+    # was chased for a day as a material defect. Assigned cameras only.
+    view().setAnimationEnabled(False)
     # The engine picks the change up through the parameter observer;
     # pump once so it is in force before anything is captured.
     view().redraw()
@@ -284,10 +379,18 @@ def settle_state():
     one settle here covers every staging that follows.
     """
     v = view()
-    for _ in range(150):
+    # The backend's own word (docs/RenderDebug.md sec 4.2): a complete
+    # frame is one with every user shader compiled, every deferred shape
+    # arrived and the frozen warm-up reached. Waiting for that instead
+    # of for a frame count is what lets the chess set take the time it
+    # needs and the small scene almost none.
+    ok = v.waitFrameComplete(120000)
+    check("frame complete", ok)
+    for _ in range(SETTLE):
         v.redraw()
         FreeCADGui.updateGui()
-    note("state settled")
+    note("state settled (complete frame%s)"
+         % (" + %d frames" % SETTLE if SETTLE else ""))
 
 
 def stage_named(cam):
@@ -302,9 +405,75 @@ def stage_named(cam):
     return fn
 
 
-def stage_golden(prefix, camera, props, prefs):
+def restage_viewport(size):
+    """Resize the 3D view to the golden's viewportSize.
+
+    The sidecar has always recorded viewportSize and nothing read it, so
+    --golden faithfully restaged the camera, the properties and the
+    preferences and then compared images that need not be the same
+    size. A capture that inherits whatever the desktop or the window
+    manager happened to give it is not reproducible, and the --gpu leg
+    (a real window rather than xvfb's fixed screen) could not be diffed
+    against the goldens at all.
+
+    Resize the MDI SUBWINDOW, not the top-level window. Two reasons.
+    While the subwindow is maximized the QMdiArea owns its geometry and
+    resize() on it is simply overridden, so showNormal() comes first.
+    And driving the top-level window instead makes the size a REQUEST to
+    the window manager -- which a Wayland compositor may clamp or refuse
+    -- where this is pure Qt widget layout with nothing outside the
+    process in the loop. Measured equal on one box; only this one stays
+    equal on the next.
+
+    Best-effort: a view that will not reach the size is reported and the
+    capture still runs, because a size mismatch is something the diff
+    can see and say, and aborting here would hide it.
+    """
+    v = view()
+    if not size or len(size) != 2:
+        return
+    want = (int(size[0]), int(size[1]))
+    if tuple(v.getSize()) == want:
+        return
+    from PySide import QtWidgets
+    sub = None
+    w = FreeCADGui.getMainWindow().findChild(QtWidgets.QMdiArea)
+    if w:
+        for c in w.subWindowList():
+            if c.isAncestorOf(w.focusWidget() or c) or c is w.activeSubWindow():
+                sub = c
+                break
+    if sub is None:
+        note("viewport %s wanted, no MDI subwindow found" % (want,))
+        return
+    if sub.isMaximized():
+        sub.showNormal()
+    # Converge: the subwindow carries frame and decoration the view does
+    # not, so the delta is applied rather than the size assigned, and
+    # re-measured. A handful of rounds is plenty; it is a fixed offset.
+    for _ in range(8):
+        got = tuple(v.getSize())
+        if got == want:
+            break
+        sub.resize(sub.width() + (want[0] - got[0]),
+                   sub.height() + (want[1] - got[1]))
+        FreeCADGui.updateGui()
+    got = tuple(v.getSize())
+    if got == want:
+        note("viewport restaged to %dx%d" % want)
+    else:
+        note("viewport %s wanted, got %s -- the diff will show it" %
+             (want, got))
+
+
+def stage_golden(prefix, camera, props, prefs, size=None):
     def fn():
         v = view()
+        # Size first: the camera's aspect and everything screen-space
+        # (the AO radius in pixels, the line feather) are resolved
+        # against the viewport, so restaging them into a different one
+        # would stage the wrong picture.
+        restage_viewport(size)
         # Preferences first, properties second: a Render_* view property
         # outranks the parameter it was seeded from, so applying them
         # the other way round would let a stale property win.
@@ -326,6 +495,34 @@ def capture(prefix, m):
             else view().saveRenderDump(path)
         check("capture %s" % os.path.basename(path),
               r == path and os.path.getsize(path) > 1000)
+    return fn
+
+
+def capture_cycles(prefix):
+    """Path trace the staged camera to <prefix>--cycles--mode0.png.
+
+    Named with a --mode0 tail so render_diff.py's existing filename
+    grammar pairs it: the leg becomes a group of its own ("...--cycles")
+    whose single stage is the beauty frame. Nothing about the diff
+    needed to change to gain a second renderer.
+
+    A failure here is reported and does not abort the run -- the raster
+    captures already taken still stand, and a build without BUILD_CYCLES
+    should not take the whole harness down.
+    """
+    def fn():
+        path = os.path.join(OUT, "%s--cycles--mode0.png" % prefix)
+        try:
+            stats = view().cyclesRender(path, int(CYCLES_W), int(CYCLES_H),
+                                        CYCLES_SAMPLES, CYCLES_DEVICE)
+        except Exception as exc:
+            check("cycles %s" % os.path.basename(path), False, exc)
+            return
+        check("cycles %s" % os.path.basename(path),
+              os.path.exists(path) and os.path.getsize(path) > 1000,
+              "objects=%s triangles=%s seconds=%s" % (
+                  stats.get("objects"), stats.get("triangles"),
+                  stats.get("seconds")) if isinstance(stats, dict) else stats)
     return fn
 
 
@@ -373,15 +570,20 @@ def build_steps():
             note("ABORT no *--mode0.png.json sidecars in golden dir " + GOLDEN)
             os._exit(1)
         note("restaging %d cameras from golden %s" % (len(stagings), GOLDEN))
-        for prefix, camera, props, prefs in stagings:
-            add_step(300, stage_golden(prefix, camera, props, prefs))
+        for prefix, camera, props, prefs, size in stagings:
+            add_step(300, stage_golden(prefix, camera, props, prefs, size))
             for m in MODES:
                 add_step(700 if m == MODES[0] else 200, capture(prefix, m))
+            if CYCLES:
+                add_step(300, capture_cycles(prefix))
     else:
         for cam in CAMERAS:
             add_step(300, stage_named(cam))
+            prefix = "%s--%s" % (SCENE, cam)
             for m in MODES:
-                add_step(700 if m == MODES[0] else 200, capture("%s--%s" % (SCENE, cam), m))
+                add_step(700 if m == MODES[0] else 200, capture(prefix, m))
+            if CYCLES:
+                add_step(300, capture_cycles(prefix))
     if VIEWER:
         add_step(500, viewer_wait(), auto=False)  # polls; advances itself
         for m in MODES:

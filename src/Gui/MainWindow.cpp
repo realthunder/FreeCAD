@@ -285,6 +285,15 @@ private:
 
 // -------------------------------------
 // Pimpl class
+/// One widget registered through MainWindow::addStatusBarItem().
+struct StatusBarItem
+{
+    StatusBarItemSpec spec;
+    QPointer<QWidget> widget;
+    bool enabled = true;  ///< The user's show/hide intent, not the current state.
+    bool placed = false;  ///< Whether the status bar currently holds the widget.
+};
+
 struct MainWindowP
 {
     DimensionWidget* sizeLabel;
@@ -313,6 +322,10 @@ struct MainWindowP
     int screen = -1;
     fastsignals::advanced_scoped_connection connParam;
     ParameterGrp::handle hGrp;
+    /// Registered status-bar items, kept sorted by relayoutStatusBar().
+    std::vector<StatusBarItem> statusBarItems;
+    /// Where a persistent item's show/hide choice is remembered.
+    ParameterGrp::handle hStatusBar;
     bool _restoring = false;
     bool _closingAll = false;
     QTime _showNormal;
@@ -332,18 +345,6 @@ struct MainWindowP
 
     QString overrideIcons;
 
-    /// One registered status bar item (docs/Sandbox.md 7.15).
-    struct StatusBarItem
-    {
-        QString id;
-        QString title;
-        QString slot;
-        int order = 500;
-        int stretch = 0;
-        QPointer<QWidget> widget;
-    };
-    QList<StatusBarItem> statusItems;
-    QObject* statusBarMenu = nullptr;
     bool hasOverrideIcons = false;
     QString overrideExtraIcons;
     bool hasOverrideExtraIcons = false;
@@ -505,6 +506,8 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
 
     d->hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/MainWindow");
+    d->hStatusBar = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/MainWindow/StatusBar");
 
     // After d->hGrp, which it reads, and before the menu bar exists, which is
     // what it decides the layout of.
@@ -562,38 +565,51 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     d->hintLabel = new InputHintWidget(statusBar());
     d->hintLabel->setObjectName(QStringLiteral("SB_HintLabel"));
     d->hintLabel->setWindowTitle(tr("Input hints"));
-    // Hints must keep their full sizeHint and never be clipped (upstream's
-    // registry sets this; ours leaves a widget's policy to the widget).
+    // Hints must keep their full sizeHint and never be clipped.
     d->hintLabel->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
 
-    // The fork's own widgets register like a workbench's (docs/Sandbox.md
-    // 7.15): one ordering, and the workbench band (550-699) lands left
-    // of the right-hand fixtures.  No title: they are not user-toggled.
-    addStatusBarItem(d->actionLabel, QStringLiteral("SB_ActionLabel"), QString(),
-                     QStringLiteral("Left"), 100, 1);
-    addStatusBarItem(d->hintLabel, QStringLiteral("SB_HintLabel"), QString(),
-                     QStringLiteral("Left"), 200);
+    // Everything in the status bar goes through addStatusBarItem(), this
+    // window's own widgets included. The order band is upstream's, so a
+    // workbench widget registered at 550-699 lands where its author meant it
+    // to: Preselection(0) and Progress(50) on the left, then Input Hints(100),
+    // [workbench 550-699], Notifications(800) and Unit System(1000) on the
+    // right.
+    addStatusBarItem(d->actionLabel,
+                     {"actionLabel",
+                      //: A context menu action showing or hiding the
+                      //: preselection info in the status bar
+                      tr("Preselection"),
+                      StatusBarSlot::Left,
+                      0,
+                      true,
+                      1});
     QProgressBar* progressBar = Gui::SequencerBar::instance()->getProgressBar(statusBar());
     progressBar->setWindowTitle(tr("Progress bar"));
     progressBar->setObjectName(QStringLiteral("SB_ProgressBar"));
-    addStatusBarItem(progressBar, QStringLiteral("SB_ProgressBar"), QString(),
-                     QStringLiteral("Right"), 700);
-    addStatusBarItem(d->sizeLabel, QStringLiteral("SB_DimensionWidget"), QString(),
-                     QStringLiteral("Right"), 710);
+    addStatusBarItem(progressBar,
+                     {"progressBar", QString(), StatusBarSlot::Left, 50, true, 0});
+    addStatusBarItem(d->hintLabel,
+                     {"hintLabel",
+                      //: A context menu action showing or hiding the input
+                      //: hints in the status bar
+                      tr("Input Hints"),
+                      StatusBarSlot::Right,
+                      100,
+                      true,
+                      0});
+    addStatusBarItem(d->sizeLabel,
+                     {"sizeLabel", QString(), StatusBarSlot::Right, 1000, true, 0});
 
-    // expression permission indicator (popup-blocker analog): lights up
-    // when expressions are blocked pending a grant
-    auto permissionIndicator = new Dialog::PermissionIndicator(statusBar());
-    permissionIndicator->setObjectName(QStringLiteral("SB_PermissionIndicator"));
-    addStatusBarItem(permissionIndicator, QStringLiteral("SB_PermissionIndicator"), QString(),
-                     QStringLiteral("Right"), 800);
-
-    // expression sandbox indicator: permanently lit, warning while
-    // expression Python runs in this process, and a click flips it
-    auto sandboxIndicator = new Dialog::SandboxIndicator(statusBar());
-    sandboxIndicator->setObjectName(QStringLiteral("SB_SandboxIndicator"));
-    addStatusBarItem(sandboxIndicator, QStringLiteral("SB_SandboxIndicator"), QString(),
-                     QStringLiteral("Right"), 810);
+    // The expression sandbox's two lights (docs/Sandbox.md 7.15), between
+    // the notifications and the unit system, no title: not user-toggled.
+    // The permission indicator (a popup-blocker analog) lights up while
+    // expressions are blocked pending a grant; the sandbox indicator is
+    // permanently lit, warning while expression Python runs in this
+    // process, and a click flips it.
+    addStatusBarItem(new Dialog::PermissionIndicator(statusBar()),
+                     {"SB_PermissionIndicator", QString(), StatusBarSlot::Right, 900, false, 0});
+    addStatusBarItem(new Dialog::SandboxIndicator(statusBar()),
+                     {"SB_SandboxIndicator", QString(), StatusBarSlot::Right, 910, false, 0});
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/NotificationArea");
 
@@ -602,8 +618,17 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     NotificationArea* notificationArea = new NotificationArea(statusBar());
     notificationArea->setObjectName(QStringLiteral("notificationArea"));
     notificationArea->setStyleSheet(QStringLiteral("text-align:left;"));
-    addStatusBarItem(notificationArea, QStringLiteral("notificationArea"), QString(),
-                     QStringLiteral("Right"), 900);
+    addStatusBarItem(notificationArea,
+                     {"notificationArea",
+                      //: A context menu action showing or hiding the
+                      //: notification area in the status bar
+                      tr("Notifications"),
+                      StatusBarSlot::Right,
+                      800,
+                      false,
+                      0});
+    // This one has a preference of its own and is not the registry's to
+    // remember, hence persistentVisibility=false above.
     notificationArea->setVisible(notificationAreaEnabled);
 
     // clears the action label
@@ -3336,169 +3361,190 @@ void MainWindow::hideHints()
     d->hintLabel->clearHints();
 }
 
-// ---- the status bar registry (docs/Sandbox.md 7.15) ----
-
-namespace {
-
-const char* StatusBarItemsGroup = "User parameter:BaseApp/Preferences/MainWindow/StatusBarItems";
-
-/// The status bar's context menu: the titled items, checked when
-/// shown; a toggle persists per id.
-class StatusBarMenu : public QObject
+namespace
 {
-public:
-    explicit StatusBarMenu(MainWindow* mw)
-        : QObject(mw->statusBar())
-        , _mw(mw)
-    {
-        mw->statusBar()->installEventFilter(this);
+// Whether a widget owns its own show/hide lifecycle -- the progress bar, which
+// the sequencer shows only while an operation runs. Such a widget carries a
+// userEnabled property, which the registry drives instead of calling
+// setVisible() behind the widget's back.
+bool statusItemOwnsVisibility(QWidget* widget)
+{
+    return widget->property("userEnabled").isValid();
+}
+
+void applyStatusItemEnabled(QWidget* widget, bool enabled)
+{
+    if (statusItemOwnsVisibility(widget)) {
+        widget->setProperty("userEnabled", enabled);
     }
-
-protected:
-    bool eventFilter(QObject* obj, QEvent* e) override
-    {
-        if (e->type() != QEvent::ContextMenu || !_mw)
-            return QObject::eventFilter(obj, e);
-        auto ce = static_cast<QContextMenuEvent*>(e);
-        // the tool bar manager's own area in the status bar keeps its
-        // own menu
-        for (QWidget* w = _mw->statusBar()->childAt(ce->pos()); w && w != _mw->statusBar();
-             w = w->parentWidget()) {
-            if (w->objectName() == QLatin1String("StatusBarArea"))
-                return QObject::eventFilter(obj, e);
-        }
-        QMenu menu(_mw->statusBar());
-        for (const QString& id : _mw->statusBarItems()) {
-            QWidget* w = _mw->statusBarItem(id);
-            const QString title = w ? w->windowTitle() : QString();
-            if (!w || title.isEmpty())
-                continue;
-            QAction* a = menu.addAction(title);
-            a->setCheckable(true);
-            a->setChecked(w->isVisible());
-            QPointer<QWidget> pw(w);
-            connect(a, &QAction::toggled, this, [pw, id](bool on) {
-                if (pw)
-                    pw->setVisible(on);
-                App::GetApplication().GetParameterGroupByPath(StatusBarItemsGroup)
-                    ->SetBool(id.toUtf8().constData(), on);
-            });
-        }
-        if (menu.isEmpty())
-            return QObject::eventFilter(obj, e);
-        menu.exec(ce->globalPos());
-        e->accept();
-        return true;
+    else {
+        widget->setVisible(enabled);
     }
-
-private:
-    QPointer<MainWindow> _mw;
-};
-
+}
 }  // namespace
 
-void MainWindow::addStatusBarItem(QWidget* widget, const QString& id, const QString& title,
-                                  const QString& slot, int order, int stretch)
+void MainWindow::addStatusBarItem(QWidget* widget, const StatusBarItemSpec& spec)
 {
-    if (!widget || id.isEmpty())
+    if (!widget) {
         return;
-    if (!d->statusBarMenu)
-        d->statusBarMenu = new StatusBarMenu(this);
-    if (!title.isEmpty())
-        widget->setWindowTitle(title);
-    // the same id again: the earlier widget goes (a replacement) or the
-    // same one moves; the same widget under another id moves too
-    for (int i = d->statusItems.size() - 1; i >= 0; --i) {
-        const auto& it = d->statusItems.at(i);
-        if (it.id == id || it.widget == widget || it.widget.isNull()) {
-            if (it.widget && it.widget != widget) {
-                statusBar()->removeWidget(it.widget);
+    }
+
+    // One id, one registration: re-registering replaces rather than duplicates.
+    removeStatusBarItem(spec.id);
+
+    if (!spec.id.isEmpty()) {
+        widget->setObjectName(QString::fromUtf8(spec.id));
+    }
+    if (!spec.title.isEmpty()) {
+        widget->setWindowTitle(spec.title);
+    }
+
+    StatusBarItem item;
+    item.spec = spec;
+    item.widget = widget;
+    // Everything starts visible; a persistent item then takes whatever the
+    // user last chose.
+    item.enabled = true;
+    if (spec.persistentVisibility && !spec.id.isEmpty()) {
+        item.enabled = d->hStatusBar->GetBool(spec.id.constData(), true);
+    }
+    d->statusBarItems.push_back(item);
+
+    relayoutStatusBar();
+}
+
+void MainWindow::removeStatusBarItem(const QByteArray& id)
+{
+    auto& items = d->statusBarItems;
+    auto it = std::find_if(items.begin(), items.end(), [&](const StatusBarItem& i) {
+        return i.spec.id == id;
+    });
+    if (it == items.end()) {
+        return;
+    }
+    if (it->widget && it->placed) {
+        statusBar()->removeWidget(it->widget);
+    }
+    items.erase(it);
+    relayoutStatusBar();
+}
+
+void MainWindow::relayoutStatusBar()
+{
+    QStatusBar* sb = statusBar();
+
+    // addWidget()/addPermanentWidget() force-show what they take, so a relayout
+    // in the middle of an operation would reveal a progress bar that is not
+    // running. Remember what was actually on screen and put it back.
+    QHash<QWidget*, bool> wasVisible;
+    for (auto& item : d->statusBarItems) {
+        if (item.widget) {
+            wasVisible.insert(item.widget, item.widget->isVisible());
+            if (item.placed) {
+                sb->removeWidget(item.widget);
+                item.placed = false;
             }
-            d->statusItems.removeAt(i);
         }
     }
-    MainWindowP::StatusBarItem item;
-    item.id = id;
-    item.title = title;
-    item.slot = slot == QLatin1String("Left") ? QStringLiteral("Left") : QStringLiteral("Right");
-    item.order = order;
-    item.stretch = stretch;
-    item.widget = widget;
-    d->statusItems.append(item);
-    std::stable_sort(d->statusItems.begin(), d->statusItems.end(),
-                     [](const MainWindowP::StatusBarItem& a, const MainWindowP::StatusBarItem& b) {
-                         if (a.slot != b.slot)
-                             return a.slot == QLatin1String("Left");
-                         return a.order < b.order;
+
+    // Left slot before right slot; within a slot, ascending order. Stable, so
+    // two items claiming one order keep their registration sequence.
+    std::stable_sort(d->statusBarItems.begin(),
+                     d->statusBarItems.end(),
+                     [](const StatusBarItem& a, const StatusBarItem& b) {
+                         if (a.spec.slot != b.spec.slot) {
+                             return a.spec.slot == StatusBarSlot::Left;
+                         }
+                         return a.spec.order < b.spec.order;
                      });
-    // QStatusBar's insert indices are absolute and it hides what it
-    // removes: re-add every registered widget in order, each keeping
-    // the visibility it had (the new one shows unless the user hid its
-    // id before)
-    QList<QPair<QPointer<QWidget>, bool>> shown;
-    for (const auto& it : d->statusItems) {
-        if (!it.widget)
+
+    for (auto& item : d->statusBarItems) {
+        if (!item.widget) {
             continue;
-        bool visible = it.widget->isVisibleTo(statusBar()) || it.widget == widget;
-        shown.append({it.widget, visible});
-        statusBar()->removeWidget(it.widget);
-    }
-    for (const auto& it : d->statusItems) {
-        if (!it.widget)
-            continue;
-        if (it.slot == QLatin1String("Left"))
-            statusBar()->addWidget(it.widget, it.stretch);
-        else
-            statusBar()->addPermanentWidget(it.widget, it.stretch);
-    }
-    for (const auto& pair : shown) {
-        if (pair.first)
-            pair.first->setVisible(pair.second);
-    }
-    if (!title.isEmpty()) {
-        auto grp = App::GetApplication().GetParameterGroupByPath(StatusBarItemsGroup);
-        if (!grp->GetBool(id.toUtf8().constData(), true))
-            widget->hide();
+        }
+        if (item.spec.slot == StatusBarSlot::Left) {
+            sb->addWidget(item.widget, item.spec.stretch);
+        }
+        else {
+            sb->addPermanentWidget(item.widget, item.spec.stretch);
+        }
+        item.placed = true;
+
+        if (statusItemOwnsVisibility(item.widget)) {
+            item.widget->setProperty("userEnabled", item.enabled);
+            item.widget->setVisible(item.enabled && wasVisible.value(item.widget, false));
+        }
+        else {
+            // The registry's intent, not isVisible(): during construction the
+            // window is not shown yet and isVisible() is false for everything.
+            item.widget->setVisible(item.enabled);
+        }
     }
 }
 
-QWidget* MainWindow::removeStatusBarItem(const QString& id)
+void MainWindow::setStatusBarItemEnabled(const QByteArray& id, bool enabled)
 {
-    for (int i = 0; i < d->statusItems.size(); ++i) {
-        if (d->statusItems.at(i).id != id)
-            continue;
-        QWidget* w = d->statusItems.at(i).widget;
-        d->statusItems.removeAt(i);
-        if (w)
-            statusBar()->removeWidget(w);
-        return w;
+    auto it = std::find_if(d->statusBarItems.begin(),
+                           d->statusBarItems.end(),
+                           [&](const StatusBarItem& i) { return i.spec.id == id; });
+    if (it == d->statusBarItems.end()) {
+        return;
     }
-    return nullptr;
+    it->enabled = enabled;
+    if (it->widget) {
+        applyStatusItemEnabled(it->widget, enabled);
+    }
+    if (it->spec.persistentVisibility && !id.isEmpty()) {
+        d->hStatusBar->SetBool(id.constData(), enabled);
+    }
 }
 
-QWidget* MainWindow::statusBarItem(const QString& id) const
+void MainWindow::buildStatusBarContextMenu(QMenu& menu)
 {
-    for (const auto& it : d->statusItems)
-        if (it.id == id)
-            return it.widget;
+    // relayoutStatusBar() keeps the vector sorted, so the menu reads in the
+    // order the bar does.
+    for (auto& item : d->statusBarItems) {
+        QWidget* widget = item.widget;
+        if (!widget) {
+            continue;
+        }
+        // A widget that titles itself (the progress bar, the unit chooser)
+        // registers with an empty spec title; fall back to its own.
+        const QString title = item.spec.title.isEmpty() ? widget->windowTitle() : item.spec.title;
+        if (title.isEmpty()) {
+            continue;
+        }
+        QAction* action = menu.addAction(title);
+        action->setCheckable(true);
+        action->setChecked(item.enabled);
+        const QByteArray id = item.spec.id;
+        connect(action, &QAction::toggled, this, [this, id](bool on) {
+            setStatusBarItemEnabled(id, on);
+        });
+    }
+}
+
+QWidget* MainWindow::statusBarItem(const QByteArray& id) const
+{
+    for (const auto& item : d->statusBarItems) {
+        if (item.spec.id == id) {
+            return item.widget;
+        }
+    }
     return nullptr;
 }
 
 bool MainWindow::isStatusBarItem(const QWidget* widget) const
 {
-    for (const auto& it : d->statusItems)
-        if (it.widget && it.widget == widget)
+    if (!widget) {
+        return false;
+    }
+    for (const auto& item : d->statusBarItems) {
+        if (item.widget == widget) {
             return true;
+        }
+    }
     return false;
-}
-
-QStringList MainWindow::statusBarItems() const
-{
-    QStringList ids;
-    for (const auto& it : d->statusItems)
-        if (it.widget)
-            ids.append(it.id);
-    return ids;
 }
 
 void MainWindow::showStatus(int type, const QString& message)

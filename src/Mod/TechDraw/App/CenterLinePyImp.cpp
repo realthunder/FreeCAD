@@ -298,6 +298,21 @@ void CenterLinePy::setPoints(Py::List arg)
     cLine->m_verts = setGeom(arg);
 }
 
+Py::List CenterLinePy::getEdgeNames() const
+{
+    return getGeom(this->getCenterLinePtr()->m_edgeNames);
+}
+
+Py::List CenterLinePy::getFaceNames() const
+{
+    return getGeom(this->getCenterLinePtr()->m_faceNames);
+}
+
+Py::List CenterLinePy::getPointNames() const
+{
+    return getGeom(this->getCenterLinePtr()->m_vertNames);
+}
+
 PyObject *CenterLinePy::getCustomAttributes(const char* /*attr*/) const
 {
     return nullptr;

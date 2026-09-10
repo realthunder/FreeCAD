@@ -34,6 +34,7 @@
 #include <Gui/Document.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
+#include <Gui/ViewerContext.h>
 
 
 namespace Gui
@@ -90,8 +91,14 @@ private:
     void onTimeOut();
 
 private:
-    /// Viewer responsible for the active document
-    Gui::View3DInventorViewer* vpViewer = nullptr;
+    /** The view whose keys these are.
+     *
+     * The view the tool is running in, not whichever window the
+     * application calls active -- in a process serving several browsers
+     * that question names either nothing or somebody else's
+     * (docs/ThinClient.md sec 8.3).
+     */
+    Gui::ViewerContext* vpViewer = nullptr;
     KeyboardEventHandlingMode keyMode;
 
     QTimer timer;

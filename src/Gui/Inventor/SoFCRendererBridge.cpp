@@ -33,6 +33,7 @@
 #include <sstream>
 #include <unordered_map>
 
+#include <QFile>
 #include <QImage>
 
 #include <App/Application.h>
@@ -88,6 +89,8 @@
 #include "../ViewParams.h"
 #include "../RenderParams.h"
 #include "../View3DInventor.h"
+#include "../Renderer/ImageDecode.h"
+#include "../Renderer/MaterialXSupport.h"
 
 FC_LOG_LEVEL_INIT("Renderer", true, true)
 
@@ -1050,6 +1053,24 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.glassior = m.glassior;
         res.glassdensity = m.glassdensity;
         res.glassroughness = m.glassroughness;
+        // A MaterialX surface stating transmission is a glass body too
+        // (docs/MaterialStorage.md sec 17.21): the document's
+        // transmission colour, depth, IOR and roughness stand where
+        // Render_Glass would put the card's, and every consumer of the
+        // glass flag -- pass activation, the medium exemptions, the
+        // shadow tint, instancing, the snapshot -- sees an ordinary
+        // glass draw. Render_Glass wins when both are stated: it is the
+        // user's own word on this shape, the document is its material's.
+        if (!res.glass && m.usershader && m.usershader->glass.claimed
+                && m.usershader->stage == "material") {
+            const Render::UserShader::Glass & g = m.usershader->glass;
+            res.glass = true;
+            res.glassmtlx = true;
+            res.glassior = g.ior;
+            res.glassdensity = g.density;
+            res.glassroughness = g.roughness;
+            std::copy(g.color, g.color + 3, res.glasscolor);
+        }
         res.cloud = m.cloud;
         res.clouddensity = m.clouddensity;
         res.clouddetail = m.clouddetail;
@@ -1933,19 +1954,30 @@ static std::vector<float> shaderParamValues(const SoNode * node)
     return res;
 }
 
-// Fetch a shader object's bgfx .sc source: inline for BGFX_SC, read from
-// disk for FILENAME with a .sc suffix. Empty = not consumable.
-static std::string shaderObjectSource(const SoShaderObject * obj)
+// Fetch a shader object's source and say what dialect it is: inline for
+// BGFX_SC and MATERIALX, read from disk for FILENAME with a .sc or .mtlx
+// suffix. Empty = not consumable.
+static std::string shaderObjectSource(const SoShaderObject * obj,
+                                      Render::UserShader::Dialect & dialect,
+                                      std::string & sourcePath)
 {
+    dialect = Render::UserShader::Dialect::ShaderText;
+    sourcePath.clear();
     SbString src = obj->sourceProgram.getValue();
     if (src.getLength() == 0)
         return {};
     int type = obj->sourceType.getValue();
     if (type == SoShaderObject::BGFX_SC)
         return src.getString();
+    if (type == SoShaderObject::MATERIALX) {
+        dialect = Render::UserShader::Dialect::MaterialX;
+        return src.getString();
+    }
     if (type == SoShaderObject::FILENAME) {
         int len = src.getLength();
-        if (len <= 3 || src.getSubString(len - 3) != ".sc")
+        if (len > 5 && src.getSubString(len - 5) == ".mtlx")
+            dialect = Render::UserShader::Dialect::MaterialX;
+        else if (len <= 3 || src.getSubString(len - 3) != ".sc")
             return {};
         Base::FileInfo fi(src.getString());
         Base::ifstream file(fi);
@@ -1955,9 +1987,103 @@ static std::string shaderObjectSource(const SoShaderObject * obj)
         }
         std::stringstream ss;
         ss << file.rdbuf();
+        // A MaterialX document states its images relative to itself,
+        // so the consumer needs the file it was read from, not just
+        // its text.
+        if (dialect == Render::UserShader::Dialect::MaterialX)
+            sourcePath = src.getString();
         return ss.str();
     }
     return {};
+}
+
+static std::shared_ptr<const Render::TextureImage>
+loadParamImage(const std::string &path, bool keepGray);
+
+/// Decode the images a MaterialX document names.
+///
+/// Parsing a document means loading the standard data library behind
+/// it, which is far too much to do per capture -- and a capture happens
+/// on every scene change. So the answer is cached on the document's own
+/// identity, its file where it has one and its text where it does not,
+/// exactly as the generator caches the shader it makes from it. The
+/// pixels underneath are cached again by loadParamImage(), which is
+/// what notices a map edited in another program.
+///
+/// The same inspection says what the worn surface's TRANSMISSION
+/// resolves to flat (DocumentInfo::transmission), which is what lets
+/// the engine's glass pass claim a transmissive MaterialX surface
+/// (docs/MaterialStorage.md sec 17.21) -- so the cache is per document
+/// AND surface, and the answer rides the shader as UserShader::glass.
+static void loadMaterialXImages(const std::string & xml,
+                                const std::string & sourcePath,
+                                const std::string & surface,
+                                std::vector<Render::UserShader::Image> & out,
+                                Render::UserShader::Glass & glass)
+{
+    out.clear();
+    glass = Render::UserShader::Glass();
+    if (!Render::MaterialX::available())
+        return;
+    struct Entry {
+        std::vector<std::string> images;
+        Render::MaterialX::DocumentInfo::Transmission transmission;
+    };
+    static std::map<std::string, Entry> cache;
+    const std::string key =
+        (sourcePath.empty() ? xml : sourcePath) + '\0' + surface;
+    auto it = cache.find(key);
+    if (it == cache.end()) {
+        Render::MaterialX::DocumentInfo info =
+            Render::MaterialX::inspect(xml, sourcePath, surface);
+        Entry entry;
+        entry.images = std::move(info.images);
+        entry.transmission = info.transmission;
+        it = cache.emplace(key, std::move(entry)).first;
+    }
+    for (const std::string & path : it->second.images) {
+        Render::UserShader::Image image;
+        image.path = path;
+        // Never as grey: a map the document reads one channel of is
+        // still an RGB file, and the generated code samples .rgb.
+        image.image = loadParamImage(path, false);
+        out.push_back(std::move(image));
+    }
+    const auto & t = it->second.transmission;
+    if (!t.glass)
+        return;
+    glass.claimed = true;
+    glass.ior = t.ior > 0.0f ? t.ior : 1.5f;
+    // OpenPBR: the colour is what survives the stated depth, so the
+    // Beer-Lambert density is its reciprocal -- the same reading the
+    // path tracer's absorption volume takes of it (CyclesMaterialX.cpp).
+    // No depth is not "automatic" but none: the colour is then a tint
+    // applied once at the surface, and glasscolor carries it either way.
+    glass.density = t.depth > 0.0f ? 1.0f / t.depth : 0.0f;
+    glass.roughness = std::min(std::max(t.roughness, 0.0f), 1.0f);
+    std::copy(t.color, t.color + 3, glass.color);
+    // A mapped roughness cannot be sampled by a pass that draws the
+    // body with one roughness; the map's MEAN stands in, which follows
+    // the document where the model's default would ignore it. The
+    // decoded pixels are in hand already -- the map is one of the
+    // document's images, loaded above.
+    if (!t.roughnessImage.empty()) {
+        for (const auto & image : out) {
+            if (image.path != t.roughnessImage || !image.image)
+                continue;
+            const Render::TextureImage & img = *image.image;
+            const size_t n = size_t(std::max(img.width, 0))
+                * size_t(std::max(img.height, 0));
+            const size_t stride = size_t(std::max(img.numComponents, 1));
+            if (n == 0 || img.pixels.size() < n * stride * img.sampleSize())
+                break;
+            double sum = 0.0;
+            for (size_t i = 0; i < n; ++i)
+                sum += img.component(i * stride);
+            glass.roughness = std::min(std::max(float(sum / double(n)), 0.0f), 1.0f);
+            break;
+        }
+    }
 }
 
 bool
@@ -1973,11 +2099,35 @@ RendererBridge::translateShaderProgram(const SoNode * node,
         auto obj = dynamic_cast<SoShaderObject*>(child);
         if (!obj || !obj->isActive.getValue())
             continue;
-        std::string src = shaderObjectSource(obj);
+        Render::UserShader::Dialect dialect;
+        std::string sourcePath;
+        std::string src = shaderObjectSource(obj, dialect, sourcePath);
         if (src.empty())
             continue;
-        if (obj->isOfType(SoVertexShader::getClassTypeId()))
+        // A MaterialX document describes the whole surface, so it can
+        // only be the program's fragment source; a vertex object
+        // carrying one is meaningless and dropped.
+        if (dialect != Render::UserShader::Dialect::ShaderText) {
+            out.dialect = dialect;
+            out.sourcePath = sourcePath;
+            // Which surface of the document is worn (sec 17.13). Read
+            // off the object that carries the document, so a program
+            // whose fragment object states one gets it and every other
+            // shape of program leaves it empty.
+            out.surface = obj->sourceSurface.getValue().getString();
+            // A document names its maps as paths, and the consumer of
+            // this shader may have no filesystem to open them with
+            // (docs/CyclesIntegration.md sec 6.12). Decoded here, once
+            // per document, and carried with it.
+            loadMaterialXImages(src, sourcePath, out.surface, out.images,
+                                out.glass);
+            sourcePath.clear();
+        }
+        if (obj->isOfType(SoVertexShader::getClassTypeId())) {
+            if (dialect != Render::UserShader::Dialect::ShaderText)
+                continue;
             out.vertexSource = std::move(src);
+        }
         else if (obj->isOfType(SoFragmentShader::getClassTypeId())) {
             // The second fragment object of a program is the particle
             // state step, not a replacement beauty stage
@@ -2195,6 +2345,18 @@ decodeParamImage(const std::string &path, bool keepGray)
         for (int y = 0; y < img.height(); ++y)
             std::memcpy(tex->pixels.data() + size_t(y) * rowLen,
                         img.constScanLine(y), rowLen);
+        // The file itself, when it is one every tier can decode: the
+        // transport ships it in place of the pixels (SceneDump v75,
+        // docs/MaterialStorage.md sec 17.23). Decided by what is in the
+        // file, like the Radiance test above, not by its name.
+        QFile file(qpath);
+        if (file.open(QIODevice::ReadOnly)) {
+            QByteArray bytes = file.readAll();
+            if (Render::isEncodedImage(
+                    reinterpret_cast<const uint8_t *>(bytes.constData()),
+                    size_t(bytes.size())))
+                tex->encoded.assign(bytes.begin(), bytes.end());
+        }
     }
     return tex;
 }

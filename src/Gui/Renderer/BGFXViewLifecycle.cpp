@@ -786,7 +786,7 @@ void BGFXView::init(bool keepShared)
     // renderbuffer plus a resolve texture; the present pass samples
     // the resolve (WebGL2 backs both via renderbufferStorageMultisample
     // + blitFramebuffer).
-    int samples = _BGFXLib.standaloneSamples;
+    int samples = _BGFXLib.effectiveSamples(_BGFXLib.standaloneSamples);
     msaaSamples = samples;
 #else
     width = uint16_t(_BGFXLib.viewWidth(widget));
@@ -795,11 +795,17 @@ void BGFXView::init(bool keepShared)
     // bgfx owns MSAA in its own offscreen target: prefer the preference
     // override (BGFXRenderer::setMSAASamples) over the host widget's GL
     // format, so an AntiAliasing change need not recreate the Qt view.
-    int samples = _BGFXLib.desktopSamples >= 0
-        ? _BGFXLib.desktopSamples
-        : widget->format().samples();
+    int samples = _BGFXLib.effectiveSamples(
+        _BGFXLib.desktopSamples >= 0 ? _BGFXLib.desktopSamples
+                                     : widget->format().samples());
     msaaSamples = samples;
 #endif
+    // \a samples came through _BGFXLib.effectiveSamples above, which is
+    // where a backend that has already failed to build multisampled
+    // scene targets is held to one sample (docs/ThinClient.md sec
+    // 8.10c). It is applied there, and not with a clamp here, so that
+    // the frame path's "do the targets still match what was asked for"
+    // test can ask the same question and get the same answer.
     std::printf("bgfx: view init %ux%u msaa %d\n",
                 unsigned(width), unsigned(height), msaaSamples);
     shaderGen = _BGFXLib.shaderGeneration;
@@ -853,7 +859,33 @@ void BGFXView::init(bool keepShared)
     // orthogonal bits — masking BGFX_TEXTURE_RT out of them would
     // turn MSAA_X4 (0x3) into MSAA_X2 (0x2) and desync the depth
     // sample count from the color attachment's.
-    bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags);
+    // Sampleable, always: the ViewCaptureDepth encode reads this
+    // attachment, and it must never be a REBUILD that makes it
+    // readable. accumTex is life-sized, so a rebuild destroys the idle
+    // temporal accumulation and zeroes accumFrames -- and latching the
+    // demand on the first capture put that rebuild AFTER the run had
+    // settled, where nothing waits for the average to re-converge:
+    // frameComplete means every user shader compiled and every
+    // deferred shape arrived, and says nothing about convergence.
+    //
+    // ! That is a real hazard and NOT a measured defect. It was
+    // written to explain a 1-LSB drift on the raster/mode0 golden, and
+    // that explanation was WRONG -- the image is byte-identical with
+    // the latch, without it, and at the commit before the capture work
+    // existed, and it is bit-stable across runs. The drift predates all
+    // of this and is still unattributed. So do not reintroduce the
+    // latch on the grounds that its cost was never observed; the reason
+    // to build it up front is that a mid-run rebuild of the
+    // accumulation is not something a capture should be able to cause,
+    // whether or not a golden happens to show it.
+    //
+    // The cost is a write-only attachment becoming a plain sampleable
+    // one, which is the same memory without MSAA -- and MSAA is off by
+    // default (View3DInventorViewer::getNumSamples), analytic line
+    // coverage having removed the reason it used to be mandatory. With
+    // MSAA on it adds a resolve texture, which is the honest price of a
+    // capture that works on every backend.
+    bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags, true);
     bgfx::Attachment attachment[2];
     // No mip chain on these render targets; the default resolve flag
     // (BGFX_RESOLVE_AUTO_GEN_MIPS) is also rejected for depth attachments.
@@ -874,6 +906,29 @@ void BGFXView::init(bool keepShared)
     // (textures) or an invalid framebuffer -- and both end here, so the
     // latch is read off the result rather than off which call failed.
     targetsFailed = !bgfx::isValid(bgfxFbo);
+    // Before calling it a lost view: it may be the MULTISAMPLING that
+    // could not be had rather than the memory (docs/ThinClient.md sec
+    // 8.10c). On WebGL2 a multisampled RGBA16F attachment fails to
+    // create while the capability bit says it would not, and every
+    // browser viewer defaults to four samples -- so this branch was the
+    // whole browser tier drawing nothing, once per frame, for ever,
+    // while the log said only that a pool had run dry.
+    //
+    // Latched for the process and retried at once, because there is
+    // nothing to be gained by discovering it again on the next view or
+    // the next frame. The retry does NOT keep the shared resources: an
+    // MSAA change re-decides m_oit and so which program set exists,
+    // which is exactly what init(false) is for. Returning after it is
+    // what makes this a retry rather than two half-built views.
+    if (targetsFailed && msaaSamples > 1
+            && !_BGFXLib.msaaTargetsUnavailable) {
+        _BGFXLib.msaaTargetsUnavailable = true;
+        std::printf("bgfx: %dx MSAA scene targets could not be created on "
+                    "this backend -- rebuilding without multisampling\n",
+                    msaaSamples);
+        init(false);
+        return;
+    }
     if (targetsFailed) {
         static bool warned = false;
         if (!warned) {
@@ -931,6 +986,12 @@ void BGFXView::init(bool keepShared)
     // (no Qt framebuffer to GL-blit into there).
     ensureProgram(m_progPresent, "vs_fc_comp", "fs_fc_present");
     ensureUniform(s_texScene, "s_texScene", bgfx::UniformType::Sampler);
+    // The capture depth encode (readbackCapture). A program and a
+    // sampler cost nothing until a capture asks for the pass, and
+    // building them here keeps every program creation in one place.
+    ensureProgram(m_progDepthEnc, "vs_fc_comp", "fs_fc_depthenc");
+    ensureUniform(s_texSceneDepth, "s_texSceneDepth",
+                  bgfx::UniformType::Sampler);
     ensureUniform(u_outputParams, "u_outputParams",
                   bgfx::UniformType::Vec4);
     // The other half of the same setting: the vertex stages decode
@@ -1403,6 +1464,7 @@ void BGFXView::init(bool keepShared)
     ensureUniform(s_texGlassBack, "s_texGlassBack",
                   bgfx::UniformType::Sampler);
     ensureUniform(u_glassParams, "u_glassParams", bgfx::UniformType::Vec4);
+    ensureUniform(u_glassTint, "u_glassTint", bgfx::UniformType::Vec4);
     ensureUniform(s_texLineSdf, "s_texLineSdf",
                   bgfx::UniformType::Sampler);
     ensureUniform(s_texLineSdfAux, "s_texLineSdfAux",
@@ -1513,6 +1575,23 @@ bgfx::VertexBufferHandle BGFXView::whiteColors(int numVertices)
     return whiteColorVb;
 }
 
+/// Stream 2 (a_texcoord0) for a draw paired with a textured vertex
+/// stage outside the texture path: the mesh's own coordinates when it
+/// has any, under the identity texture matrix. A mesh with none leaves
+/// the stream unbound, and only GL then reads the (0, 0) constant a
+/// generated material saw before: on Vulkan an unbound attribute reads
+/// the vertex position instead (see MatVertex in BGFXRendererP.h), so
+/// treat what it carries as arbitrary rather than as zero.
+void BGFXView::bindMeshTexCoord(GpuMesh *gpu, const Render::MeshData &mesh)
+{
+    gpu->geom->ensureTexCoord(mesh);
+    if (bgfx::isValid(gpu->geom->texcoord))
+        bgfx::setVertexBuffer(2, gpu->geom->texcoord);
+    float texmat[16];
+    bx::mtxIdentity(texmat);
+    bgfx::setUniform(u_texMatrix, texmat);
+}
+
 void BGFXView::setMeshVertexBuffers(GpuMesh *gpu, const Render::MeshData &mesh)
 {
     bgfx::setVertexBuffer(0, gpu->geom->vbh);
@@ -1521,7 +1600,11 @@ void BGFXView::setMeshVertexBuffers(GpuMesh *gpu, const Render::MeshData &mesh)
                                  : whiteColors(mesh.numVertices));
     // Per-face material stream, bound only when the mesh carries one:
     // draws without it leave a_color1/a_color2 unbound, and the shader
-    // only reads them when u_matEmissive.w flags the stream in.
+    // only reads them when u_matEmissive.w flags the stream in -- which
+    // BGFXViewSubmit gates on this same handle being valid. It has to
+    // stay that way: an unbound attribute is a constant on GL but the
+    // vertex position on Vulkan, so the flag is the only thing keeping
+    // geometry out of the material slots.
     if (bgfx::isValid(gpu->mats))
         bgfx::setVertexBuffer(3, gpu->mats);
 }
@@ -1603,9 +1686,10 @@ bool BGFXView::writeDumpImage(const std::string &path,
         if (!fp)
             return false;
         fprintf(fp, "P6\n%d %d\n255\n", width, height);
-        // glReadPixels rows are bottom-up; PPM top-down.
+        // Both are top-down: the caller has already applied whatever
+        // flip its backend's origin called for.
         std::vector<unsigned char> row(size_t(width) * 3);
-        for (int y = height - 1; y >= 0; --y) {
+        for (int y = 0; y < height; ++y) {
             const unsigned char *src = color + size_t(y) * width * 4;
             for (int x = 0; x < width; ++x) {
                 row[size_t(x)*3] = src[size_t(x)*4];
@@ -1619,13 +1703,23 @@ bool BGFXView::writeDumpImage(const std::string &path,
     }
     QImage img(color, width, height, width * 4,
                QImage::Format_RGBA8888);
-    return img.mirrored().save(QString::fromStdString(path));
+    return img.save(QString::fromStdString(path));
 }
 
-void BGFXView::blit(const Render::FrameDumpRequest *dump,
-          Render::RenderStats *stats,
+void BGFXView::blit(Render::RenderStats *stats,
           int dstX, int dstY, int dstH)
 {
+    (void)stats;
+    // The composite is GL, all the way down: it wraps bgfx's colour and
+    // depth attachments in a GL framebuffer and glBlitFramebuffers them
+    // into the widget's. bgfx::getInternal only yields a GL texture
+    // name while bgfx is running on GL -- on Metal it is an
+    // id<MTLTexture>, which the FBO then reports as an incomplete
+    // attachment. Nothing here can be salvaged for another backend, so
+    // it stands aside and Coin draws the view instead.
+    if (bgfx::getRendererType() != bgfx::RendererType::OpenGL
+            && bgfx::getRendererType() != bgfx::RendererType::OpenGLES)
+        return;
     // Only GL 1.1 is exported by Windows' opengl32, so the framebuffer entry
     // points below must be resolved against the current context rather than
     // called directly -- ELF systems get them from libGL and never noticed.
@@ -1718,59 +1812,6 @@ void BGFXView::blit(const Render::FrameDumpRequest *dump,
                          GL_NEAREST);
     checkGLError("blit depth");
 
-    // Frame readback: the grandfathered per-frame env gates
-    // (FC_BGFX_DEBUG_READBACK stderr stats + FC_BGFX_DEBUG_DUMP_FRAME
-    // PPM) and the one-shot requestFrameDump captures share one
-    // read; this is the only view of what the DESKTOP GL path
-    // actually renders — the streamed viewer renders with its own
-    // (WASM) backend, so stream screenshots cannot show
-    // desktop-specific artifacts.
-    static const bool readback = (getenv("FC_BGFX_DEBUG_READBACK") != nullptr);
-    if (readback || dump) {
-        std::vector<float> depth(width * height);
-        std::vector<unsigned char> color(width * height * 4);
-        glReadPixels(0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT,
-                     depth.data());
-        // The color lives in the bgfx color FBO — the read binding
-        // still points at the depth-only FBO here (color would read
-        // back all zero).
-        f->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-        glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE,
-                     color.data());
-        long n = 0, r = 0, g = 0, b = 0;
-        for (int i = 0; i < width * height; ++i) {
-            if (depth[i] < 0.999f) {
-                ++n;
-                r += color[i*4];
-                g += color[i*4 + 1];
-                b += color[i*4 + 2];
-            }
-        }
-        if (stats) {
-            stats->width = width;
-            stats->height = height;
-            stats->temporalSamples = accumFrames;
-            stats->geometryPixels = n;
-            stats->avgColor[0] = n ? float(r) / float(n) : -1.0f;
-            stats->avgColor[1] = n ? float(g) / float(n) : -1.0f;
-            stats->avgColor[2] = n ? float(b) / float(n) : -1.0f;
-            stats->valid = true;
-        }
-        if (readback) {
-            fprintf(stderr,
-                    "bgfx fbo %dx%d: %ld geometry pixels, avg color %ld,%ld,%ld\n",
-                    width, height, n,
-                    n ? r/n : -1, n ? g/n : -1, n ? b/n : -1);
-            static const char *envDump = getenv("FC_BGFX_DEBUG_DUMP_FRAME");
-            if (envDump && *envDump)
-                writeDumpImage(envDump, color.data(), width, height);
-        }
-        if (dump && !dump->path.empty()
-                && !writeDumpImage(dump->path, color.data(),
-                                   width, height))
-            fprintf(stderr, "bgfx: frame dump write failed: %s\n",
-                    dump->path.c_str());
-    }
     f->glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
 }
 #endif // !FC_RENDERER_STANDALONE

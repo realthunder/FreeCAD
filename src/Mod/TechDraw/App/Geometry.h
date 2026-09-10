@@ -24,6 +24,8 @@
 #define TECHDRAW_GEOMETRY_H
 
 #include <memory>
+#include <string>
+#include <vector>
 #include <boost/uuid/uuid.hpp>
 
 #include <Base/Reader.h>
@@ -134,8 +136,19 @@ class TechDrawExport BaseGeom : public std::enable_shared_from_this<BaseGeom>
         void setHlrVisible(bool state) { hlrVisible = state; }
         bool getReversed()  { return reversed; }
         void setReversed(bool state) { reversed = state; }
+        //! The index of the element this projected edge came from, in the
+        //! Edge<n> numbering of DrawViewPart::getProjectionShape().  -1 when
+        //! there is none -- a silhouette has no source edge.
         int getRef3d()  { return ref3D; }
         void setRef3d(int ref)  { ref3D = ref; }
+        //! The mapped name of that source element, and the name of this
+        //! projected edge derived from it:
+        //! <sourceElementName>;HLR:<class>:<ordinal>.  Both are empty until
+        //! the projection has been named (GeometryObject::nameEdgeGeometry).
+        const std::string& getSource3d() const { return source3D; }
+        void setSource3d(const std::string& name) { source3D = name; }
+        const std::string& getHlrName() const { return hlrName; }
+        void setHlrName(const std::string& name) { hlrName = name; }
         TopoDS_Edge getOCCEdge()  { return occEdge; }
         void setOCCEdge(TopoDS_Edge newEdge)  { occEdge = newEdge; }
         bool getCosmetic()  { return cosmetic; }
@@ -167,7 +180,9 @@ protected:
         edgeClass classOfEdge;
         bool hlrVisible;
         bool reversed;
-        int ref3D;                      //obs?
+        int ref3D;                      //source element index, 0 if unknown
+        std::string source3D;           //mapped name of the source element
+        std::string hlrName;            //name of this projected edge
         TopoDS_Edge occEdge;            //projected Edge
         bool cosmetic;
         //TODO: all these attributes should be private
@@ -352,7 +367,21 @@ class TechDrawExport Face
         Face() = default;
         ~Face();
         TopoDS_Face toOccFace() const;
+        //! The mapped names of the 3D elements the bounding wires were
+        //! projected from, sorted and without duplicates, and the name this
+        //! projected face carries because of them:
+        //! <sourceName>|<sourceName>|...;HLRF:<ordinal>.  Both are empty until
+        //! the faces have been named (GeometryObject::nameFaceGeometry).
+        const std::vector<std::string>& getSources3d() const { return sources3D; }
+        void setSources3d(std::vector<std::string> names) { sources3D = std::move(names); }
+        const std::string& getHlrName() const { return hlrName; }
+        void setHlrName(const std::string& name) { hlrName = name; }
+
         std::vector<Wire *> wires;
+
+    protected:
+        std::vector<std::string> sources3D;
+        std::string hlrName;
 };
 using FacePtr = std::shared_ptr<Face>;
 
@@ -384,6 +413,17 @@ class TechDrawExport Vertex
         void setHlrVisible(bool state) { hlrVisible = state; }
         int getRef3d()  { return ref3D; }
         void setRef3d(int ref)  { ref3D = ref; }
+        //! The mapped names of the 3D elements the edges meeting at this
+        //! vertex were projected from, sorted and without duplicates, and the
+        //! name this projected vertex carries because of them:
+        //! <sourceName>|<sourceName>|...;HLRV:<ordinal>.  A centre mark takes
+        //! the single source of its circle and ;HLRC: instead.  Both are empty
+        //! until the vertices have been named
+        //! (GeometryObject::nameVertexGeometry).
+        const std::vector<std::string>& getSources3d() const { return sources3D; }
+        void setSources3d(std::vector<std::string> names) { sources3D = std::move(names); }
+        const std::string& getHlrName() const { return hlrName; }
+        void setHlrName(const std::string& name) { hlrName = name; }
         TopoDS_Vertex getOCCVertex()  { return occVertex; }
         void setOCCVertex(TopoDS_Vertex newVertex)  { occVertex = newVertex; }
         bool getCosmetic()  { return cosmetic; }
@@ -406,6 +446,8 @@ class TechDrawExport Vertex
         ExtractionType extractType;       //obs?
         bool hlrVisible;                 //visible according to HLR
         int ref3D;                        //obs. never used.
+        std::vector<std::string> sources3D;//mapped names of the source elements
+        std::string hlrName;              //name of this projected vertex
         bool m_center;
         TopoDS_Vertex occVertex;
         bool cosmetic;

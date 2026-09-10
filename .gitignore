@@ -70,3 +70,8 @@ files_to_translate.txt
 # runs `npm install` in the source tree (src/Gui/Renderer/wasm/CMakeLists.txt),
 # so this appears for anyone who builds it
 /src/Gui/Renderer/web/node_modules/
+
+# The golden render reference images (tests/render/CMakeLists.txt) are
+# their own repository, checked out here. Ignored only until it has a
+# remote and a .gitmodules entry; a submodule path may stay listed here
+# harmlessly.

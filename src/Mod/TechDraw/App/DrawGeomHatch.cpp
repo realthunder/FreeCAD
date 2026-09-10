@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <iomanip>
 # include <sstream>
 
@@ -91,6 +92,9 @@ DrawGeomHatch::DrawGeomHatch()
                       "Pattern rotation in degrees anticlockwise");
     ADD_PROPERTY_TYPE(PatternOffset, (0.0, 0.0, 0.0), vgroup, App::Prop_None,
                       "Pattern offset");
+    ADD_PROPERTY_TYPE(SavedNames, (), vgroup, App::Prop_None,
+                      "Names of the projected faces Source points at");
+    SavedNames.setStatus(App::Property::Hidden, true);
 
     m_saveFile = "";
     m_saveName = "";
@@ -109,6 +113,7 @@ void DrawGeomHatch::onChanged(const App::Property* prop)
     if (prop == &Source) {
         //rebuild the linesets
         makeLineSets();
+        updateSavedNames();
     }
     if (prop == &FilePattern) {
         replacePatIncluded(FilePattern.getValue());
@@ -119,6 +124,37 @@ void DrawGeomHatch::onChanged(const App::Property* prop)
     }
 
     App::DocumentObject::onChanged(prop);
+}
+
+//! record the name of each face Source points at
+void DrawGeomHatch::updateSavedNames()
+{
+    std::vector<std::string> names =
+        DrawViewPart::geometryNamesOf(Source.getValue(), Source.getSubValues());
+
+    // while the view has no faces there is nothing to record, and recording
+    // nothing would throw away what the document brought with it
+    bool anyNamed = std::any_of(names.begin(), names.end(),
+                                [](const std::string& name) { return !name.empty(); });
+    if (!anyNamed && !SavedNames.getValues().empty()) {
+        return;
+    }
+
+    if (names != SavedNames.getValues()) {
+        SavedNames.setValues(names);
+    }
+}
+
+//! point Source at whatever faces carry the stored names now
+bool DrawGeomHatch::fixByName()
+{
+    std::vector<std::string> subNames = Source.getSubValues();
+    if (!DrawViewPart::repointByName(Source.getValue(), SavedNames.getValues(), subNames)) {
+        return false;
+    }
+
+    Source.setValue(Source.getValue(), subNames);
+    return true;
 }
 
 App::DocumentObjectExecReturn *DrawGeomHatch::execute()

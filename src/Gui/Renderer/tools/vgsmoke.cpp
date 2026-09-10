@@ -51,6 +51,29 @@
 #include "Page2D.h"
 #include "Vg2D.h"
 
+// Page2D is compiled into this tool rather than linked from
+// FreeCADRenderer (the CMake comment on the target says why), and the
+// three device hooks it calls live in Renderer.cpp, which is a Qt
+// translation unit. They exist to hand a Qt-owned GL context to the
+// frames Page2D pumps, and they are answered by walking the registered
+// RendererLibs. A standalone tool registers none, so these are the same
+// answers the library itself gives with an empty registry -- not stubs
+// that pretend: there is no device here, and the offscreen path brings
+// up its own.
+namespace Render
+{
+bool RendererFactory::deviceSharesQtGL()
+{
+    return false;
+}
+bool RendererFactory::deviceMakeCurrent()
+{
+    return false;
+}
+void RendererFactory::deviceDoneCurrent()
+{}
+}  // namespace Render
+
 static std::vector<uint8_t> readFile(const char* path)
 {
     std::vector<uint8_t> data;

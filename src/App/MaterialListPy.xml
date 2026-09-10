@@ -4,9 +4,9 @@
         Father="PyObjectBase"
         Name="MaterialListPy"
         PythonName="App.MaterialList"
-        TwinPointer="MaterialList"
-        Twin="MaterialList"
-        Include="App/MaterialList.h"
+        TwinPointer="AppearanceList"
+        Twin="AppearanceList"
+        Include="App/AppearanceList.h"
         Namespace="App"
         FatherInclude="Base/PyObjectBase.h"
         FatherNamespace="Base"
@@ -331,19 +331,19 @@ converts nothing (App.Material.PBR does convert).</UserDocu>
         </Sequence>
         <ClassDeclarations>public:
     /// Become a live view of \a prop, which registers this object with it
-    void attach(PropertyMaterialList *prop);
+    void attach(PropertyAppearanceList *prop);
     /// Stop being one, keeping the value as it stands (a shared snapshot).
     /// Called by the property when it dies, and by any assignment that
     /// hands this list to a new owner.
     void detachFromOwner();
     /// The property this is a view of, or null once detached
-    PropertyMaterialList *getOwner() const { return owner; }
+    PropertyAppearanceList *getOwner() const { return owner; }
     /// The value, wherever it lives: the owner's while attached, this
     /// object's own once detached
-    const MaterialList &amp;list() const;
+    const AppearanceList &amp;list() const;
 
     /// Run a write, through the owner's change signalling while attached
-    void edit(const std::function&lt;void(MaterialList &amp;)&gt; &amp;op, int touched = -1);
+    void edit(const std::function&lt;void(AppearanceList &amp;)&gt; &amp;op, int touched = -1);
 
 private:
     /// Whether a write is allowed at all, i.e. the object is alive and not
@@ -359,12 +359,12 @@ private:
      * whatever followed the argument on the way out, and added to this.
      */
     //@{
-    using ColorGetter = Color (MaterialList::*)(int) const;
-    using ColorSetter = void (MaterialList::*)(int, const Color &amp;);
-    using ColorAllSetter = void (MaterialList::*)(const Color &amp;);
-    using FloatGetter = float (MaterialList::*)(int) const;
-    using FloatSetter = void (MaterialList::*)(int, float);
-    using FloatAllSetter = void (MaterialList::*)(float);
+    using ColorGetter = Color (AppearanceList::*)(int) const;
+    using ColorSetter = void (AppearanceList::*)(int, const Color &amp;);
+    using ColorAllSetter = void (AppearanceList::*)(const Color &amp;);
+    using FloatGetter = float (AppearanceList::*)(int) const;
+    using FloatSetter = void (AppearanceList::*)(int, float);
+    using FloatAllSetter = void (AppearanceList::*)(float);
 
     PyObject *colorGet(PyObject *args, ColorGetter getter);
     PyObject *colorSet(PyObject *args, ColorSetter setter, ColorAllSetter allsetter);
@@ -378,8 +378,8 @@ private:
     void editTexture(int idx, const std::function&lt;void(SurfaceTexture &amp;)&gt; &amp;op);
     //@}
 
-    PropertyMaterialList *owner = nullptr;
-    MaterialList *ownvalue = nullptr;
+    PropertyAppearanceList *owner = nullptr;
+    AppearanceList *ownvalue = nullptr;
         </ClassDeclarations>
     </PythonExport>
 </GenerateModel>

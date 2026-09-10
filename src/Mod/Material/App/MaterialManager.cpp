@@ -29,7 +29,7 @@
 #include <QMutexLocker>
 
 #include <App/Application.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 
 #include "Exceptions.h"
 #include "MaterialConfigLoader.h"
@@ -141,7 +141,7 @@ void MaterialManager::refresh()
 //
 //=====
 
-std::shared_ptr<App::Material> MaterialManager::defaultAppearance()
+std::shared_ptr<App::MaterialAppearance> MaterialManager::defaultAppearance()
 {
     ParameterGrp::handle hGrp =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
@@ -164,7 +164,7 @@ std::shared_ptr<App::Material> MaterialManager::defaultAppearance()
         return distribution(generator);
     };
 
-    App::Material mat(App::Material::DEFAULT);
+    App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
     bool randomColor = hGrp->GetBool("RandomColor", false);
 
     if (randomColor) {
@@ -189,7 +189,7 @@ std::shared_ptr<App::Material> MaterialManager::defaultAppearance()
     mat.shininess = Base::fromPercent(initialShininess);
     mat.transparency = Base::fromPercent(initialTransparency);
 
-    return std::make_shared<App::Material>(mat);
+    return std::make_shared<App::MaterialAppearance>(mat);
 }
 
 std::shared_ptr<Material> MaterialManager::defaultMaterial()
@@ -533,7 +533,7 @@ std::shared_ptr<Material> MaterialManager::getMaterial(const QString& uuid) cons
     return _localManager->getMaterial(uuid);
 }
 
-std::shared_ptr<Material> MaterialManager::getMaterial(const App::Material& material)
+std::shared_ptr<Material> MaterialManager::getMaterial(const App::MaterialAppearance& material)
 {
     MaterialManager manager;
 

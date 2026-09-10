@@ -763,6 +763,19 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CyclesPixelSize->setValue(Gui::RenderParams::defaultCyclesPixelSize());
     CyclesPixelSize->setEntryName("CyclesPixelSize");
     CyclesPixelSize->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutExternalshadingCycles->addLayout(layoutRow);
+    labelCyclesMaxStreams = new QLabel(this);
+    layoutRow->addWidget(labelCyclesMaxStreams);
+    CyclesMaxStreams = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(CyclesMaxStreams);
+    CyclesMaxStreams->setValue(Gui::RenderParams::defaultCyclesMaxStreams());
+    CyclesMaxStreams->setEntryName("CyclesMaxStreams");
+    CyclesMaxStreams->setParamGrpPath("View/Render");
     layout->addItem(new QSpacerItem(40, 20, QSizePolicy::Fixed, QSizePolicy::Expanding));
     retranslateUi();
     // Auto generated code (Tools/params_utils.py:645)
@@ -827,6 +840,7 @@ void DlgSettingsRender::saveSettings()
     CyclesTimeLimit->onSave();
     CyclesDenoise->onSave();
     CyclesPixelSize->onSave();
+    CyclesMaxStreams->onSave();
 }
 
 // Auto generated code (Tools/params_utils.py:670)
@@ -881,6 +895,7 @@ void DlgSettingsRender::loadSettings()
     CyclesTimeLimit->onRestore();
     CyclesDenoise->onRestore();
     CyclesPixelSize->onRestore();
+    CyclesMaxStreams->onRestore();
 }
 
 // Auto generated code (Tools/params_utils.py:679)
@@ -1040,6 +1055,9 @@ void DlgSettingsRender::retranslateUi()
     CyclesPixelSize->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCyclesPixelSize()));
     labelCyclesPixelSize->setText(QObject::tr("Cycles pixel size"));
     labelCyclesPixelSize->setToolTip(CyclesPixelSize->toolTip());
+    CyclesMaxStreams->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCyclesMaxStreams()));
+    labelCyclesMaxStreams->setText(QObject::tr("Cycles served sessions"));
+    labelCyclesMaxStreams->setToolTip(CyclesMaxStreams->toolTip());
 }
 
 // Auto generated code (Tools/params_utils.py:697)

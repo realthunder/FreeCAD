@@ -160,6 +160,18 @@ class MaterialSyncTestCases(unittest.TestCase):
         obj = self.boxWith(doc, material)
         self.assertEqual(self.status(obj), "Absent")
 
+    def testADeletedCardDoesNotComeBackOnRefresh(self):
+        """Refresh reads the libraries as they are now. The loader's entry
+        map is static so a card can inherit across libraries, and it was
+        never reset between passes: a card whose file was deleted came back
+        to the tree on every refresh until restart."""
+        card = self.newLibraryCard()
+        uuid = card.UUID
+        self.assertEqual(self.MaterialManager.getMaterial(uuid).UUID, uuid)
+        self.removeLibraryCard()
+        with self.assertRaises(LookupError):
+            self.MaterialManager.getMaterial(uuid)
+
     def testARenameDoesNotCountAsADivergence(self):
         """
         The comparison is by content. A card called something else is the same

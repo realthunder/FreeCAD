@@ -64,8 +64,8 @@ public:
     //App::PropertyFloatConstraint PointSize;
     //App::PropertyColor LineColor;
     //App::PropertyColor PointColor;
-    //App::PropertyMaterial LineMaterial;
-    //App::PropertyMaterial PointMaterial;
+    //App::PropertyAppearance LineMaterial;
+    //App::PropertyAppearance PointMaterial;
     //App::PropertyBool ControlPoints;
     //App::PropertyEnumeration Lighting;
 

@@ -66,6 +66,24 @@ if(TARGET FreeCADGui)
     add_test(NAME RenderCacheMaterial_tests_run
              COMMAND RenderCacheMaterial_tests_run)
 
+    # Whether flat_map is the right container for the draw list. A
+    # measurement rather than an assertion, so its body is DISABLED and
+    # ctest only pays for a process that reports zero tests run.
+    add_executable(RenderCacheMapBench_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/RenderCacheMapBench.cpp)
+    target_include_directories(RenderCacheMapBench_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(RenderCacheMapBench_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME RenderCacheMapBench_tests_run
+             COMMAND RenderCacheMapBench_tests_run)
+
     # A material card's Render_* view properties landing on a view
     # provider (docs/CyclesIntegration.md phase 6 item 14). The subject
     # is the dynamic property table, which the mapping reaches through
@@ -88,12 +106,94 @@ if(TARGET FreeCADGui)
                           gtest_main FreeCADGui FreeCADApp FreeCADBase)
     add_test(NAME RenderProperties_tests_run
              COMMAND RenderProperties_tests_run)
+
+    # The selection instance stack (docs/ThinClient.md section 8.4). What
+    # it asserts -- which instance Gui::Selection() resolves to, and that
+    # an observer stays pinned to the room -- is settled entirely inside
+    # SelectionSingleton, so the test needs no document, no main window
+    # and no QApplication, and links FreeCADGui only to reach the class.
+    add_executable(SelectionStack_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/SelectionStack.cpp)
+    target_include_directories(SelectionStack_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(SelectionStack_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME SelectionStack_tests_run
+             COMMAND SelectionStack_tests_run)
+
+    # The per-client mirror viewer (docs/ThinClient.md sec 8.3): the
+    # ray-to-pixel round trip and the pick radius that Coin refuses to
+    # apply to an explicitly set ray. A mirror is a camera, a viewport and
+    # a scene graph, so this needs Coin but no document, no main window and
+    # no QApplication -- FreeCADGui only to reach the class.
+    add_executable(MirrorViewer_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/MirrorViewer.cpp)
+    target_include_directories(MirrorViewer_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(MirrorViewer_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME MirrorViewer_tests_run
+             COMMAND MirrorViewer_tests_run)
+
+    # The on-view parameters an edit mode opens in a view with no widget
+    # (docs/ThinClient.md sec 8.7). Unlike the mirror set above this one
+    # DOES need a QApplication, because the claim being tested is that the
+    # entry box is a real QuantitySpinBox that simply is never shown -- it
+    # builds widgets, types into them with replayed key frames and reads
+    # them back, all under the offscreen platform the test asks for
+    # itself.
+    add_executable(OnViewParameter_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/OnViewParameter.cpp)
+    target_include_directories(OnViewParameter_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(OnViewParameter_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase
+                          ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
+    add_test(NAME OnViewParameter_tests_run
+             COMMAND OnViewParameter_tests_run)
 endif()
 
 if(TARGET FreeCADRenderer)
     add_executable(SceneDump_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/SceneDump.cpp)
     target_link_libraries(SceneDump_tests_run gtest_main FreeCADRenderer)
     add_test(NAME SceneDump_tests_run COMMAND SceneDump_tests_run)
+
+    # The raster MaterialX generator. It reads the shipped data
+    # library, and a bare test binary has no one to seed the renderer's
+    # resource path, so the build states where it is.
+    add_executable(MaterialXGen_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/MaterialXGen.cpp)
+    target_link_libraries(MaterialXGen_tests_run gtest_main FreeCADRenderer)
+    # And where the vendored example materials are, for the one case
+    # the whole surface-name feature exists for: a real asset whose
+    # whole material set is one document (docs/MaterialStorage.md 17.13).
+    # Skipped at run time when the submodule is not checked out.
+    target_compile_definitions(MaterialXGen_tests_run PRIVATE
+        # CMAKE_INSTALL_DATADIR, not a literal "share": it is what stages the
+        # data library (src/3rdParty/CMakeLists.txt), and it is "data" on
+        # Windows -- where the literal left every case failing with "the
+        # MaterialX data library is missing from this install".
+        FC_TEST_RENDERER_RESOURCES="${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/"
+        FC_TEST_MATERIALX_RESOURCES="${CMAKE_SOURCE_DIR}/src/3rdParty/MaterialX/resources/")
+    add_test(NAME MaterialXGen_tests_run COMMAND MaterialXGen_tests_run)
 
     add_executable(MeshSimplify_tests_run
                    ${CMAKE_CURRENT_SOURCE_DIR}/MeshSimplify.cpp)
@@ -151,14 +251,33 @@ if(TARGET FreeCADRenderer)
     # reasoning as above, and then some: the whole claim of the mode is
     # that the process needs no GPU and no display, which only a test
     # that links nothing graphical can make.
-    # UNIX only: it speaks to the server over BSD sockets and reads
-    # /proc/self/maps to prove no driver got mapped, neither of which
-    # Windows has -- porting it needs Winsock and another way to
-    # enumerate the loaded modules.
+    # UNIX only: it speaks to the server over BSD sockets, and proves no
+    # driver got mapped by enumerating the loaded images -- through
+    # /proc/self/maps on Linux and dyld on macOS. Windows has neither;
+    # porting it needs Winsock and EnumProcessModules.
     if(UNIX)
         add_executable(PublishOnly_tests_run
                        ${CMAKE_CURRENT_SOURCE_DIR}/PublishOnly.cpp)
         target_link_libraries(PublishOnly_tests_run gtest_main FreeCADRenderer)
         add_test(NAME PublishOnly_tests_run COMMAND PublishOnly_tests_run)
     endif()
+
+    # The scene server over a real socket (docs/SceneServerPort.md
+    # stage 0): the oracle every stage of the port is judged by. The
+    # client side is Boost.Beast -- header-only, hence the include dir
+    # and no Boost component to link -- so the test is portable and the
+    # handshake is checked by an implementation that is not ours. Built
+    # on every platform on purpose: where the listener is still the
+    # POSIX-only stub the failure is the verdict.
+    add_executable(SceneServerWire_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/SceneServerWire.cpp)
+    target_include_directories(SceneServerWire_tests_run PRIVATE
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(SceneServerWire_tests_run gtest_main FreeCADRenderer)
+    if(WIN32)
+        target_link_libraries(SceneServerWire_tests_run ws2_32 mswsock)
+    elseif(UNIX)
+        target_link_libraries(SceneServerWire_tests_run pthread)
+    endif()
+    add_test(NAME SceneServerWire_tests_run COMMAND SceneServerWire_tests_run)
 endif()

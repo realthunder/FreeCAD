@@ -88,6 +88,7 @@
 # include <QDir>
 # include <QElapsedTimer>
 # include <QPointer>
+# include <QScreen>
 # include <QEventLoop>
 # include <QKeyEvent>
 # include <QMessageBox>
@@ -764,6 +765,9 @@ struct View3DInventorViewer::Private
     int cyclesSubView = 0;
     uint64_t cyclesSceneGen = 0;
     bool cyclesFed = false;
+    /// Render::Renderer::completeFrames as last seen by renderScene,
+    /// so frameCompleted() fires once per complete frame.
+    uint64_t completeFramesSeen = 0;
     Render::PBRConfig cyclesPbr;
     Render::BumpConfig cyclesBump;
     Render::OutputConfig cyclesOutput;
@@ -1437,7 +1441,6 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
 View3DInventorViewer::View3DInventorViewer(QWidget* parent, const QtGLWidget* sharewidget)
     : Quarter::SoQTQuarterAdaptor(parent, sharewidget)
     , SelectionObserver(false, ResolveMode::NoResolve)
-    , editViewProvider(nullptr)
     , nonObjectGroup(nullptr)
     , navigation(nullptr)
     , renderType(Native)
@@ -1457,7 +1460,6 @@ View3DInventorViewer::View3DInventorViewer(QWidget* parent, const QtGLWidget* sh
 View3DInventorViewer::View3DInventorViewer(const QtGLFormat& format, QWidget* parent, const QtGLWidget* sharewidget)
     : Quarter::SoQTQuarterAdaptor(format, parent, sharewidget)
     , SelectionObserver(false, ResolveMode::NoResolve)
-    , editViewProvider(nullptr)
     , nonObjectGroup(nullptr)
     , navigation(nullptr)
     , renderType(Native)
@@ -1474,10 +1476,102 @@ View3DInventorViewer::View3DInventorViewer(const QtGLFormat& format, QWidget* pa
     init();
 }
 
+// The ViewerContext rows Quarter already answers. Forwarding only: the
+// qualified calls bind non-virtually, so none of these re-enters itself.
+SoNode* View3DInventorViewer::getSceneGraph() const
+{
+    return inherited::getSceneGraph();
+}
+
+SoRenderManager* View3DInventorViewer::getSoRenderManager() const
+{
+    return inherited::getSoRenderManager();
+}
+
+SoEventManager* View3DInventorViewer::getSoEventManager() const
+{
+    return inherited::getSoEventManager();
+}
+
+const SbViewportRegion& View3DInventorViewer::getViewportRegion() const
+{
+    return inherited::getViewportRegion();
+}
+
+float View3DInventorViewer::getPickRadius() const
+{
+    return inherited::getPickRadius();
+}
+
+double View3DInventorViewer::devicePixelRatio() const
+{
+    return inherited::devicePixelRatio();
+}
+
+QWidget* View3DInventorViewer::getWidget() const
+{
+    return inherited::getWidget();
+}
+
+QWidget* View3DInventorViewer::getGLWidget() const
+{
+    return inherited::getGLWidget();
+}
+
+QWidget* View3DInventorViewer::datumEditorParent() const
+{
+    // The MDI window rather than this widget: an entry box floats over the
+    // canvas, and a child of the canvas would be clipped by it.
+    return parentWidget();
+}
+
+bool View3DInventorViewer::sendKeyEvent(QKeyEvent* event)
+{
+    // Posted to this widget, which is where it would have gone had the
+    // entry box not held the keyboard focus.
+    return QApplication::sendEvent(this, event);
+}
+
+QWidget* View3DInventorViewer::getWidget()
+{
+    return inherited::getWidget();
+}
+
+QWidget* View3DInventorViewer::getGLWidget()
+{
+    return inherited::getGLWidget();
+}
+
+Qt::MouseButtons View3DInventorViewer::mouseButtons() const
+{
+    // One pointer on a desktop, so the application's answer is this view's
+    // answer. A mirror answers from the button bits its client sent instead,
+    // which is the whole reason the question is asked of a context.
+    return QApplication::mouseButtons();
+}
+
+double View3DInventorViewer::logicalDotsPerInchX() const
+{
+    if (auto* scr = screen()) {
+        return scr->logicalDotsPerInchX();
+    }
+    return 96.0;
+}
+
+void View3DInventorViewer::setFocusToView()
+{
+    setFocus();
+}
+
+View3DInventorViewer* View3DInventorViewer::fromEventCallback(const SoEventCallback* node)
+{
+    // Checked, because the user data is a ViewerContext and the other
+    // implementation of that is not a widget at all.
+    return dynamic_cast<View3DInventorViewer*>(ViewerContext::fromEventCallback(node));
+}
+
 void View3DInventorViewer::init()
 {
-    pcEditingRoot = nullptr;
-
     _pimpl.reset(new Private(this));
 
     // A redraw held back by the throttle comes back through this timer, so a
@@ -1619,7 +1713,12 @@ void View3DInventorViewer::init()
     setSceneGraph(pcViewProviderRoot);
     // Event callback node
     pEventCallback = new SoEventCallback();
-    pEventCallback->setUserData(this);
+    // The base subobject, deliberately: a pointer to this object and a pointer
+    // to its ViewerContext base are different addresses, so storing one and
+    // reading back the other through void* would read the wrong bytes. Readers
+    // go through ViewerContext::fromEventCallback, or the checked
+    // View3DInventorViewer::fromEventCallback for the desktop viewer.
+    pEventCallback->setUserData(static_cast<ViewerContext*>(this));
     pEventCallback->ref();
     pcViewProviderRoot->addChild(pEventCallback);
     pEventCallback->addEventCallback(SoEvent::getClassTypeId(), handleEventCB, this);
@@ -1647,15 +1746,9 @@ void View3DInventorViewer::init()
 
     pcClipPlane = nullptr;
 
-    pcEditingRoot = new SoSeparator;
-    pcEditingRoot->ref();
-    pcEditingRoot->setName("EditingRoot");
-    pcEditingTransform = new SoTransform;
-    pcEditingTransform->ref();
-    pcEditingTransform->setName("EditingTransform");
-    restoreEditingRoot = false;
-    pcEditingRoot->addChild(pcEditingTransform);
-
+    // The editing root itself is ViewerContext's; where it hangs is this
+    // view's. A sibling of the render-cache-captured selectionRoot, so an
+    // edit never reaches the main scene feed and is captured separately.
     inventorSelection->getAuxRoot()->addChild(pcEditingRoot);
 
     // Create group for the non physical object
@@ -1791,9 +1884,6 @@ View3DInventorViewer::~View3DInventorViewer()
     this->environment = nullptr;
 
     inventorSelection.reset(nullptr);
-
-    this->pcEditingRoot->unref();
-    this->pcEditingTransform->unref();
 
     if (this->pcClipPlane) {
         this->pcClipPlane->unref();
@@ -2239,11 +2329,24 @@ bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, 
     input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
     input.section = RendererBridge::translateSectionConfig(settings);
     input.pbr = RendererBridge::translatePBRConfig(settings);
-    // The facade Render_PBR states the raster shading, so an External
-    // view reads it false -- but a Cycles still of that view must show
-    // the same environment the live session does (which forces the
-    // flag outright, see feedCyclesViewport). Off External the facade
-    // stands: the still keeps matching what the raster view honours.
+    // The facade Render_PBR states which branch the RASTER pipeline
+    // shades with, and the path tracer does not take orders from it: it
+    // is physically based by definition, which is the whole reason to
+    // reach for it, so it lights every scene with the environment and
+    // builds a physical BSDF whatever the viewport is drawing. The flag
+    // survives here for ONE thing -- pbr.enabled && pbr.envBackground
+    // decides whether the environment is SEEN as the backdrop, not
+    // whether it LIGHTS (SceneTranslator::translateWorld) -- and an
+    // External view reads the facade false, which would leave a still of
+    // it with a plain background where the live session shows the room.
+    // Hence the force (and see feedCyclesViewport).
+    //
+    // A Classic view's still therefore does NOT match its viewport, on
+    // purpose: Classic is lit by a headlight, which is a viewing aid and
+    // not a light in the room. A Realistic view's does match, because
+    // that mode and this engine are now the same tier -- both lit by the
+    // scene and neither by the viewport's aids (docs/MaterialStorage.md
+    // sec 17.13, ruled 2026-09-03).
     if (_pimpl->view
             && _pimpl->view->ShadingType.getValue() == View3DInventor::ShadingExternal)
         input.pbr.enabled = true;
@@ -2333,10 +2436,30 @@ void View3DInventorViewer::syncExternalShading()
         return;
     }
     // Only Cycles exists; ExternalRenderType is consulted the day a
-    // second engine registers. The options are the view's Cycles_*
-    // properties where materialized, the preferences underneath where
-    // not -- the same effective-value rule every Render_* setting
-    // follows.
+    // second engine registers.
+    Render::Cycles::ViewportOptions options = cyclesViewportOptions();
+    // A write that restated the running value -- the shading options
+    // refresh loop, a document touch -- must not throw the refining
+    // frame away.
+    if (_pimpl->cyclesViewport
+            && options.device == _pimpl->cyclesOptions.device
+            && options.samples == _pimpl->cyclesOptions.samples
+            && options.timeLimit == _pimpl->cyclesOptions.timeLimit
+            && options.denoise == _pimpl->cyclesOptions.denoise
+            && options.pixelSize == _pimpl->cyclesOptions.pixelSize)
+        return;
+    std::string error;
+    if (setCyclesViewport(&options, &error))
+        _pimpl->cyclesOptions = options;
+    else
+        Base::Console().Warning("External shading: %s\n", error.c_str());
+}
+
+Render::Cycles::ViewportOptions View3DInventorViewer::cyclesViewportOptions() const
+{
+    // The view's Cycles_* properties where materialized, the
+    // preferences underneath where not -- the same effective-value
+    // rule every Render_* setting follows.
     App::PropertyContainer *settings = _pimpl->renderSettings();
     Render::Cycles::ViewportOptions options;
     options.device = RenderParams::getCyclesDevice();
@@ -2363,21 +2486,29 @@ void View3DInventorViewer::syncExternalShading()
                     settings->getPropertyByName("Cycles_PixelSize")))
             options.pixelSize = int(prop->getValue());
     }
-    // A write that restated the running value -- the shading options
-    // refresh loop, a document touch -- must not throw the refining
-    // frame away.
-    if (_pimpl->cyclesViewport
-            && options.device == _pimpl->cyclesOptions.device
-            && options.samples == _pimpl->cyclesOptions.samples
-            && options.timeLimit == _pimpl->cyclesOptions.timeLimit
-            && options.denoise == _pimpl->cyclesOptions.denoise
-            && options.pixelSize == _pimpl->cyclesOptions.pixelSize)
-        return;
-    std::string error;
-    if (setCyclesViewport(&options, &error))
-        _pimpl->cyclesOptions = options;
-    else
-        Base::Console().Warning("External shading: %s\n", error.c_str());
+    return options;
+}
+
+void View3DInventorViewer::cyclesSceneConfig(Render::Cycles::SceneInput &input,
+                                             const QColor &col) const
+{
+    App::PropertyContainer *settings = _pimpl->renderSettings();
+    input.pbr = RendererBridge::translatePBRConfig(settings);
+    // A running Cycles session IS external shading, whatever started
+    // it (the External shading type, the cyclesViewport() binding, or
+    // an editor's preview), so the enabled flag it receives states
+    // that fact -- not the Render_PBR facade, which only says what the
+    // RASTER pipeline shades and reads false by design under External.
+    // Left as the facade, the env background gate in translateWorld
+    // (pbr.enabled && pbr.envBackground) could never pass and the
+    // environment went missing behind every External frame.
+    input.pbr.enabled = true;
+    input.bump = RendererBridge::translateBumpConfig(settings);
+    input.section = RendererBridge::translateSectionConfig(settings);
+    input.output = RendererBridge::translateOutputConfig(settings);
+    input.light = RendererBridge::translateLightConfig(nullptr, settings);
+    input.background = _pimpl->backgroundFeed(col);
+    input.debugView = int(RenderParams::getDebugViewMode());
 }
 
 void View3DInventorViewer::Private::detachCyclesConsumer()
@@ -2429,60 +2560,39 @@ void View3DInventorViewer::Private::feedCyclesViewport(const QColor &col,
     camera.height = height;
 
     App::PropertyContainer *settings = renderSettings();
-    Render::PBRConfig pbr = RendererBridge::translatePBRConfig(settings);
-    // A running Cycles session IS external shading, whatever started
-    // it (the External shading type or the cyclesViewport() binding),
-    // so the enabled flag it receives states that fact -- not the
-    // Render_PBR facade, which only says what the RASTER pipeline
-    // shades and reads false by design under External. Left as the
-    // facade, the env background gate in translateWorld (pbr.enabled
-    // && pbr.envBackground) could never pass and the environment went
-    // missing behind every External frame.
-    pbr.enabled = true;
-    Render::BumpConfig bump = RendererBridge::translateBumpConfig(settings);
-    Render::SectionConfig secconf = RendererBridge::translateSectionConfig(settings);
-    Render::OutputConfig output = RendererBridge::translateOutputConfig(settings);
-    Render::LightConfig light = RendererBridge::translateLightConfig(nullptr, settings);
-    Render::Background background = backgroundFeed(col);
-    const int debugView = int(RenderParams::getDebugViewMode());
+    Render::Cycles::SceneInput input;
+    owner->cyclesSceneConfig(input, col);
+    const Render::Background &background = input.background;
     const uint64_t gen = host->sceneGeneration();
     const bool sameBackground = background.type == cyclesBackground.type
         && background.fromColor == cyclesBackground.fromColor
         && background.toColor == cyclesBackground.toColor
         && background.midColor == cyclesBackground.midColor
         && background.hasMid == cyclesBackground.hasMid;
-    if (cyclesFed && gen == cyclesSceneGen && pbr == cyclesPbr && bump == cyclesBump
-        && output == cyclesOutput
-        && debugView == cyclesDebugView
-        && light == cyclesLight && secconf == cyclesSection && sameBackground) {
+    if (cyclesFed && gen == cyclesSceneGen && input.pbr == cyclesPbr
+        && input.bump == cyclesBump && input.output == cyclesOutput
+        && input.debugView == cyclesDebugView
+        && input.light == cyclesLight && input.section == cyclesSection && sameBackground) {
         vp->setCamera(camera);
         return;
     }
     SoFCRenderCache *cache = manager ? manager->getSceneCache() : nullptr;
     if (!cache)
         return;
-    Render::Cycles::SceneInput input;
     RendererBridge::SectionOnTop section;
     section.noOnTop = Gui::sectionStyle(settings, "NoOnTop", ViewParams::getNoSectionOnTop());
     section.concave = Gui::sectionStyle(settings, "Concave", ViewParams::getSectionConcave());
     input.draws = RendererBridge::translate(cache->getVertexCaches(true), section);
-    input.section = secconf;
-    input.pbr = pbr;
-    input.bump = bump;
-    input.output = output;
-    input.light = light;
-    input.background = background;
     input.camera = camera;
-    input.debugView = debugView;
     vp->setScene(input);
     cyclesFed = true;
     cyclesSceneGen = gen;
-    cyclesPbr = pbr;
-    cyclesBump = bump;
-    cyclesOutput = output;
-    cyclesDebugView = debugView;
-    cyclesLight = light;
-    cyclesSection = secconf;
+    cyclesPbr = input.pbr;
+    cyclesBump = input.bump;
+    cyclesOutput = input.output;
+    cyclesDebugView = input.debugView;
+    cyclesLight = input.light;
+    cyclesSection = input.section;
     cyclesBackground = background;
 }
 
@@ -2495,105 +2605,6 @@ bool View3DInventorViewer::feedCanvasCyclesViewport(const QColor &col, const SbM
     _pimpl->feedCyclesViewport(col, view, proj, width, height,
                                feeder->getRenderCacheManager(), _pimpl->canvasSubView);
     return true;
-}
-
-void View3DInventorViewer::setEditingTransform(const Base::Matrix4D &mat)
-{
-    // NOLINTBEGIN
-    if (pcEditingTransform) {
-        double dMtrx[16];
-        mat.getGLMatrix(dMtrx);
-        pcEditingTransform->setMatrix(SbMatrix(
-                    dMtrx[0], dMtrx[1], dMtrx[2],  dMtrx[3],
-                    dMtrx[4], dMtrx[5], dMtrx[6],  dMtrx[7],
-                    dMtrx[8], dMtrx[9], dMtrx[10], dMtrx[11],
-                    dMtrx[12],dMtrx[13],dMtrx[14], dMtrx[15]));
-    }
-    // NOLINTEND
-}
-
-void View3DInventorViewer::setupEditingRoot(SoNode *node, const Base::Matrix4D *mat) {
-    if(!editViewProvider) {
-        return;
-    }
-
-    resetEditingRoot(false);
-    if(mat) {
-        setEditingTransform(*mat);
-    }
-    else {
-        setEditingTransform(getDocument()->getEditingTransform());
-    }
-    if(node) {
-        restoreEditingRoot = false;
-        pcEditingRoot->addChild(node);
-        return;
-    }
-
-    restoreEditingRoot = true;
-    auto root = editViewProvider->getRoot();
-    for(int i=0,count=root->getNumChildren();i<count;++i) {
-        SoNode *node = root->getChild(i);
-        if(node != editViewProvider->getTransformNode()) {
-            pcEditingRoot->addChild(node);
-        }
-    }
-    coinRemoveAllChildren(root);
-    ViewProviderLink::updateLinks(editViewProvider);
-}
-
-void View3DInventorViewer::resetEditingRoot(bool updateLinks)
-{
-    if(!editViewProvider || pcEditingRoot->getNumChildren()<=1) {
-        return;
-    }
-    if(!restoreEditingRoot) {
-        pcEditingRoot->getChildren()->truncate(1);
-        return;
-    }
-    restoreEditingRoot = false;
-    auto root = editViewProvider->getRoot();
-    if (root->getNumChildren()) {
-        FC_ERR("WARNING!!! Editing view provider root node is tampered");
-    }
-    root->addChild(editViewProvider->getTransformNode());
-    for (int i=1,count=pcEditingRoot->getNumChildren();i<count;++i) {
-        root->addChild(pcEditingRoot->getChild(i));
-    }
-    pcEditingRoot->getChildren()->truncate(1);
-
-    // handle exceptions eventually raised by ViewProviderLink
-    try {
-        if (updateLinks) {
-            ViewProviderLink::updateLinks(editViewProvider);
-        }
-    }
-    catch (const Py::Exception& e) {
-        /* coverity[UNCAUGHT_EXCEPT] Uncaught exception */
-        // Coverity created several reports when removeViewProvider()
-        // is used somewhere in a destructor which indirectly invokes
-        // resetEditingRoot().
-        // Now theoretically Py::type can throw an exception which nowhere
-        // will be handled and thus terminates the application. So, add an
-        // extra try/catch block here.
-        try {
-            Py::Object py = Py::type(e);
-            if (py.isString()) {
-                Py::String str(py);
-                Base::Console().Warning("%s\n", str.as_std_string("utf-8").c_str());
-            }
-            else {
-                Py::String str(py.repr());
-                Base::Console().Warning("%s\n", str.as_std_string("utf-8").c_str());
-            }
-            // Prints message to console window if we are in interactive mode
-            PyErr_Print();
-        }
-        catch (Py::Exception& e) {
-            e.clear();
-            Base::Console().Error("Unexpected exception raised in View3DInventorViewer::resetEditingRoot\n");
-        }
-    }
 }
 
 SoPickedPoint* View3DInventorViewer::getPointOnRay(const SbVec2s& pos, const ViewProvider* vp) const
@@ -2704,40 +2715,6 @@ SoPickedPoint* View3DInventorViewer::getPointOnRay(const SbVec3f& pos, const SbV
     SoPickedPoint* pick = rp.getPickedPoint();
     //return (pick ? pick->copy() : 0); // needs the same instance of CRT under MS Windows
     return (pick ? new SoPickedPoint(*pick) : nullptr);
-}
-
-void View3DInventorViewer::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum)
-{
-    this->editViewProvider = vp;
-    this->editViewProvider->setEditViewer(this, ModNum);
-    addEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,this->editViewProvider);
-}
-
-/// reset from edit mode
-void View3DInventorViewer::resetEditingViewProvider()
-{
-    if (this->editViewProvider) {
-
-        // In case the event action still has grabbed a node when leaving edit mode
-        // force to release it now
-        SoEventManager* mgr = getSoEventManager();
-        SoHandleEventAction* heaction = mgr->getHandleEventAction();
-        if (heaction && heaction->getGrabber()) {
-            heaction->releaseGrabber();
-        }
-
-        resetEditingRoot();
-
-        this->editViewProvider->unsetEditViewer(this);
-        removeEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,this->editViewProvider);
-        this->editViewProvider = nullptr;
-    }
-}
-
-/// reset from edit mode
-bool View3DInventorViewer::isEditingViewProvider() const
-{
-    return this->editViewProvider != nullptr;
 }
 
 /// display override mode
@@ -3718,7 +3695,8 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
     syncLightRotation();
 }
 
-void View3DInventorViewer::savePicture(int width, int height, int sample, const QColor& bg, QImage& img) const
+void View3DInventorViewer::savePicture(int width, int height, int sample, const QColor& bg, QImage& img,
+                                       bool waitComplete) const
 {
     // An external render backend draws the scene from its own feeds into
     // its own targets; the Coin scene graph it was fed from renders to
@@ -3728,7 +3706,7 @@ void View3DInventorViewer::savePicture(int width, int height, int sample, const 
     // overlays and background included.
     if (getExternalRenderer()) {
         auto self = const_cast<View3DInventorViewer*>(this);  // NOLINT
-        if (self->imageFromRenderer(width, height, bg, img))
+        if (self->imageFromRenderer(width, height, bg, img, waitComplete))
             return;
         Base::Console().Warning("Render backend frame capture failed; "
                                 "falling back to the plain GL capture\n");
@@ -4264,6 +4242,16 @@ int View3DInventorViewer::getNumSamples()
     // NOLINTEND
 }
 
+int View3DInventorViewer::numSamples() const
+{
+    return _numSamples >= 0 ? _numSamples : getNumSamples();
+}
+
+void View3DInventorViewer::setNumSamples(int samples)
+{
+    _numSamples = samples;
+}
+
 GLenum View3DInventorViewer::getInternalTextureFormat()
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
@@ -4331,7 +4319,7 @@ void View3DInventorViewer::setRenderType(RenderType type)
             auto gl = static_cast<QtGLWidget*>(this->viewport());  // NOLINT
             gl->makeCurrent();
             QOpenGLFramebufferObjectFormat fboFormat;
-            fboFormat.setSamples(getNumSamples());
+            fboFormat.setSamples(numSamples());
             fboFormat.setAttachment(QtGLFramebufferObject::CombinedDepthStencil);
             auto fbo = new QtGLFramebufferObject(width, height, fboFormat);
             if (fbo->format().samples() > 0) {
@@ -4371,7 +4359,7 @@ QImage View3DInventorViewer::grabFramebuffer()
     int width = size[0];
     int height = size[1];
 
-    int samples = getNumSamples();
+    int samples = numSamples();
     if (samples == 0) {
         // if anti-aliasing is off we can directly use glReadPixels
         QImage img(QSize(width, height), QImage::Format_RGB32);
@@ -4380,7 +4368,7 @@ QImage View3DInventorViewer::grabFramebuffer()
     }
     else {
         QOpenGLFramebufferObjectFormat fboFormat;
-        fboFormat.setSamples(getNumSamples());
+        fboFormat.setSamples(numSamples());
         fboFormat.setAttachment(QOpenGLFramebufferObject::Depth);
         fboFormat.setTextureTarget(GL_TEXTURE_2D);
         fboFormat.setInternalTextureFormat(getInternalTextureFormat());
@@ -4437,8 +4425,19 @@ bool View3DInventorViewer::pumpFrameDump(Render::Renderer *renderer)
 {
     if (!renderer)
         return false;
-    QElapsedTimer timer;
-    timer.start();
+    // Two clocks: the backend holds a dump while a user shader the
+    // scene wears is still compiling (a surface drawn without its
+    // material is not the picture asked for), and a cold compile of a
+    // whole material set is a subprocess per shader and seconds of
+    // wall clock, so the quiet timeout is measured from the last
+    // pending compile rather than from the request. The total bounds a
+    // compile that never reports -- the backend's own watchdog is 20 s
+    // per shader, and a killed compile releases the hold -- and a
+    // scene that never finishes arriving.
+    QElapsedTimer quiet;
+    quiet.start();
+    QElapsedTimer total;
+    total.start();
     for (;;) {
         // Processing events can run scene/view scripts that destroy and
         // recreate the external renderer (e.g. a renderer-type or MSAA
@@ -4449,7 +4448,53 @@ bool View3DInventorViewer::pumpFrameDump(Render::Renderer *renderer)
             return false;
         if (!renderer->frameDumpPending())
             return true;
-        if (timer.elapsed() >= 5000)
+        // A held frame is a frame: the backend drew, and declined to
+        // consume the dump because the picture was not complete yet.
+        // Building the programs a finished compile unlocks is itself
+        // seconds on a software driver, so a frame's own duration
+        // must never run the quiet clock out.
+        if (renderer->shaderCompilePending() || renderer->frameDumpHeld())
+            quiet.restart();
+        if (quiet.elapsed() >= 5000 || total.elapsed() >= 120000)
+            return false;
+        if (auto rm = getSoRenderManager())
+            rm->scheduleRedraw();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+}
+
+bool View3DInventorViewer::waitFrameComplete(int timeoutMs)
+{
+    Render::Renderer *renderer = getExternalRenderer();
+    if (!renderer) {
+        // Nothing asynchronous stands between Coin and its frame.
+        redraw(true);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        return true;
+    }
+    // Same two clocks as pumpFrameDump, and for the same reason: a
+    // frame that builds a dozen programs on a software driver is
+    // longer than any quiet timeout, so progress is a frame rendered
+    // (complete or not) or a compile still pending, never wall clock
+    // since the request.
+    const uint64_t startComplete = renderer->completeFrames();
+    uint64_t seenRendered = renderer->renderedFrames();
+    QElapsedTimer quiet;
+    quiet.start();
+    QElapsedTimer total;
+    total.start();
+    for (;;) {
+        Render::Renderer *current = getExternalRenderer();
+        if (!current || current != renderer)
+            return false;
+        if (renderer->completeFrames() > startComplete)
+            return true;
+        const uint64_t rendered = renderer->renderedFrames();
+        if (rendered != seenRendered || renderer->shaderCompilePending()) {
+            seenRendered = rendered;
+            quiet.restart();
+        }
+        if (quiet.elapsed() >= 5000 || total.elapsed() >= timeoutMs)
             return false;
         if (auto rm = getSoRenderManager())
             rm->scheduleRedraw();
@@ -4458,7 +4503,8 @@ bool View3DInventorViewer::pumpFrameDump(Render::Renderer *renderer)
 }
 
 bool View3DInventorViewer::imageFromRenderer(int width, int height,
-                                             const QColor& bgcolor, QImage& img)
+                                             const QColor& bgcolor, QImage& img,
+                                             bool waitComplete)
 {
     Render::Renderer *renderer = getExternalRenderer();
     if (!renderer)
@@ -4492,6 +4538,7 @@ bool View3DInventorViewer::imageFromRenderer(int width, int height,
     // axis cross, no on-screen text — which is what the Coin route this
     // stands in for produced.
     req.overlays = false;
+    req.waitComplete = waitComplete;
     bool ok = renderer->requestFrameDump(req) && pumpFrameDump(renderer);
 
     if (bgcolor.isValid()) {
@@ -4949,7 +4996,7 @@ bool View3DInventorViewer::applyRendererAntiAliasing()
     // compositing, so the sample count is applied directly — no need to clone
     // the view to obtain a multisampled GL context (which would tear down and
     // recreate the backend). The change takes effect on the next frame.
-    _pimpl->renderer->setMSAASamples(getNumSamples());
+    _pimpl->renderer->setMSAASamples(numSamples());
     if (auto rm = getSoRenderManager())
         rm->scheduleRedraw();
     return true;
@@ -6388,6 +6435,17 @@ void View3DInventorViewer::renderScene()
                     Render::StyleAsIs, 0, false, nullptr, 0);
         _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
+        // The backend draws what the LAST traversal fed it. If that
+        // publish deferred shapes under its capture budget (the
+        // follow-up publish is scheduled below, after this frame), the
+        // scene it holds is partial, and a one-shot dump must not be
+        // consumed by this frame: say so before it runs.
+        if (selectionRoot) {
+            if (auto manager = selectionRoot->getRenderManager()) {
+                if (manager->getDeferredCaptureCount() > 0)
+                    _pimpl->renderer->holdFrameDump();
+            }
+        }
         // render() publishes on the way past when something is listening
         // (docs/HeadlessServe.md §4), and a published object entry names
         // its object for the viewer. The names come from here rather
@@ -6407,6 +6465,13 @@ void View3DInventorViewer::renderScene()
         outPre.stop();
         externalRendered =
             _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
+        if (externalRendered) {
+            const uint64_t n = _pimpl->renderer->completeFrames();
+            if (n != _pimpl->completeFramesSeen) {
+                _pimpl->completeFramesSeen = n;
+                Q_EMIT frameCompleted();
+            }
+        }
         // Time-animated backend content (e.g. water caustics) keeps
         // advancing by itself: schedule the follow-up frame.
         if (externalRendered && _pimpl->renderer->animating())
@@ -6648,39 +6713,6 @@ float View3DInventorViewer::getMaxDimension() const {
     float fWidth = -1.0;
     getDimensions(fHeight, fWidth);
     return std::max(fHeight, fWidth);
-}
-
-void View3DInventorViewer::getDimensions(float& fHeight, float& fWidth) const
-{
-    SoCamera* camera = getSoRenderManager()->getCamera();
-    if (!camera) {
-        // no camera there
-        return;
-    }
-
-    float aspectRatio = getViewportRegion().getViewportAspectRatio();
-
-    SoType type = camera->getTypeId();
-    if (type.isDerivedFrom(SoOrthographicCamera::getClassTypeId())) {
-        // NOLINTBEGIN
-        fHeight = static_cast<SoOrthographicCamera*>(camera)->height.getValue();
-        fWidth = fHeight;
-        // NOLINTEND
-    }
-    else if (type.isDerivedFrom(SoPerspectiveCamera::getClassTypeId())) {
-        // NOLINTBEGIN
-        float fHeightAngle = static_cast<SoPerspectiveCamera*>(camera)->heightAngle.getValue();
-        fHeight = std::tan(fHeightAngle / 2.0) * 2.0 * camera->focalDistance.getValue();
-        fWidth = fHeight;
-        // NOLINTEND
-    }
-
-    if (aspectRatio > 1.0) {
-        fWidth *= aspectRatio;
-    }
-    else {
-        fHeight *= aspectRatio;
-    }
 }
 
 void View3DInventorViewer::printDimension() const
@@ -7005,19 +7037,6 @@ SbVec2s View3DInventorViewer::getPointOnViewport(const SbVec3f& pnt) const
     return {xpos, ypos};
 }
 
-QPoint View3DInventorViewer::toQPoint(const SbVec2s& pnt) const
-{
-    const SbViewportRegion& vp = this->getSoRenderManager()->getViewportRegion();
-    const SbVec2s& vps = vp.getViewportSizePixels();
-    int xpos = pnt[0];
-    int ypos = vps[1] - pnt[1] - 1;
-
-    qreal dev_pix_ratio = devicePixelRatio();
-    xpos = int(std::roundf(xpos / dev_pix_ratio));
-    ypos = int(std::roundf(ypos / dev_pix_ratio));
-
-    return {xpos, ypos};
-}
 
 SbVec2s View3DInventorViewer::fromQPoint(const QPoint& pnt) const
 {

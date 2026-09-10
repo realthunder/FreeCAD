@@ -26,6 +26,7 @@
 #include <QCompleter>
 #include <QEvent>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QSignalBlocker>
 #include <QStandardItemModel>
@@ -36,7 +37,9 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/GeoFeature.h>
+#include <App/ShaderObject.h>
 #include <Gui/Application.h>
+#include <Gui/Command.h>
 #include <Gui/DlgMaterialPropertiesImp.h>
 #include <Gui/DockWindowManager.h>
 #include <Gui/PrefWidgets.h>
@@ -50,6 +53,7 @@
 #include <Mod/Material/App/MaterialManager.h>
 #include <Mod/Material/App/ModelUuids.h>
 #include <Mod/Material/App/PropertyMaterial.h>
+#include <Mod/Material/App/ShaderGraph.h>
 
 #include "DlgDisplayPropertiesImp.h"
 #include "MaterialIcons.h"
@@ -109,7 +113,7 @@ public:
         bool hasElementColor = false;
         for (const auto& view : views) {
             if (auto* prop =
-                    dynamic_cast<App::PropertyMaterial*>(view->getPropertyByName(property))) {
+                    dynamic_cast<App::PropertyAppearance*>(view->getPropertyByName(property))) {
                 // This fork's PropertyMaterial has no per-field getters.
                 Base::Color color = prop->getValue().diffuseColor;
                 QSignalBlocker block(buttonColor);
@@ -207,7 +211,7 @@ DlgDisplayPropertiesImp::DlgDisplayPropertiesImp(QWidget* parent, Qt::WindowFlag
         setPropertiesFromSelection();
     }
 
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 
     // NOLINTBEGIN
     d->connectChangedObject = Gui::Application::Instance->signalChangedObject.connect(
@@ -225,8 +229,20 @@ DlgDisplayPropertiesImp::~DlgDisplayPropertiesImp()
     d->connectChangedObject.disconnect();
     d->connectDeletedObject.disconnect();
     d->connectDeleteDocument.disconnect();
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
+
+namespace
+{
+/// What the synthetic top row of the look list carries where a card
+/// carries its UUID. Not a UUID and never written to a document -- it
+/// only has to be a string no card can answer to.
+const QString& asMaterialId()
+{
+    static const QString id = QStringLiteral("as-material");
+    return id;
+}
+}  // namespace
 
 void DlgDisplayPropertiesImp::setupFilters()
 {
@@ -243,6 +259,11 @@ void DlgDisplayPropertiesImp::setupFilters()
     filter->setName(tr("Texture appearance"));
     filter->addRequiredComplete(Materials::ModelUUIDs::ModelUUID_Rendering_Texture);
     filterList->push_back(filter);
+    // Cards shaded by a MaterialX shader graph (docs/MaterialStorage.md sec 17)
+    filter = std::make_shared<Materials::MaterialFilter>();
+    filter->setName(tr("MaterialX appearance"));
+    filter->addRequiredComplete(Materials::ModelUUIDs::ModelUUID_Rendering_MaterialX);
+    filterList->push_back(filter);
 
     // Deliberately no "All materials" tab: this is a LOOK picker, and
     // physical cards and hatch patterns have no look to offer
@@ -251,6 +272,13 @@ void DlgDisplayPropertiesImp::setupFilters()
     d->ui.widgetMaterial->setIncludeLegacy(false);
 
     d->ui.widgetMaterial->setFilter(filterList);
+    // The first entry is the way back to the object's card, so the list
+    // says what the status line under it says (docs/MaterialStorage.md
+    // 15.5). It is the same action as the Reset to material button.
+    d->ui.widgetMaterial->setLeadingEntry(asMaterialId(),
+                                          tr("As material"),
+                                          tr("Take the look from the object's material card, "
+                                             "and keep taking it when the card changes"));
 
     // The picker at the top is the Material panel's, filter and all: it
     // edits the object's CARD, which is what mass, FEM and CAM read
@@ -315,6 +343,15 @@ void DlgDisplayPropertiesImp::setupConnections()
             &DlgDisplayPropertiesImp::onCardSelected);
     connect(d->ui.buttonResetToMaterial,
             &QPushButton::clicked,
+            this,
+            &DlgDisplayPropertiesImp::onResetToMaterial);
+    connect(d->ui.buttonEditShaderGraph,
+            &QPushButton::clicked,
+            this,
+            &DlgDisplayPropertiesImp::onEditShaderGraph);
+    // The list's own way to the same place
+    connect(d->ui.widgetMaterial,
+            &MaterialTreeWidget::leadingEntrySelected,
             this,
             &DlgDisplayPropertiesImp::onResetToMaterial);
     // The other way into the same slot -- a name typed and committed --
@@ -449,15 +486,12 @@ void DlgDisplayPropertiesImp::slotChangedObject(const Gui::ViewProvider& obj,
                 d->ui.buttonPointColor->blockSignals(blocked);
             }
         }
-        else if (prop.isDerivedFrom<App::PropertyMaterialList>()) {
+        else if (prop.isDerivedFrom<App::PropertyAppearanceList>()) {
             if (prop_name == "ShapeAppearance") {
-                // No getValues() on this fork's PropertyMaterialList by design
-                // -- read the one entry, which returns by value.
-                const auto& matList = static_cast<const App::PropertyMaterialList&>(prop);
-                if (matList.getSize() > 0) {
-                    App::Material material = matList.getMaterial(0);
-                    d->ui.widgetMaterial->setMaterial(QString::fromStdString(material.uuid));
-                }
+                // The look, the list's selection, the status line and the
+                // Reset button all move together, and setMaterialCard is
+                // what moves them.
+                setMaterialCard(getTargets());
             }
         }
         else if (prop.isDerivedFrom<App::PropertyInteger>()) {
@@ -728,7 +762,7 @@ void DlgDisplayPropertiesImp::setColorPlot(const std::vector<Gui::ViewProvider*>
     bool material = false;
     for (auto view : views) {
         auto* prop =
-            dynamic_cast<App::PropertyMaterial*>(view->getPropertyByName("TextureMaterial"));
+            dynamic_cast<App::PropertyAppearance*>(view->getPropertyByName("TextureMaterial"));
         if (prop) {
             material = true;
             break;
@@ -740,17 +774,16 @@ void DlgDisplayPropertiesImp::setColorPlot(const std::vector<Gui::ViewProvider*>
 
 void DlgDisplayPropertiesImp::setShapeAppearance(const std::vector<Gui::ViewProvider*>& views)
 {
+    // Which look it is, and whether the list shows it, is setMaterialCard's
+    // to say; this decides only whether there is one to edit at all.
     bool material = false;
-    App::Material mat = App::Material(App::Material::DEFAULT);
     for (auto view : views) {
         if (auto* prop =
-                dynamic_cast<App::PropertyMaterialList*>(view->getPropertyByName("ShapeAppearance"))) {
+                dynamic_cast<App::PropertyAppearanceList*>(view->getPropertyByName("ShapeAppearance"))) {
             if (prop->getSize() == 0) {
                 continue;
             }
             material = true;
-            mat = prop->getMaterial(0);
-            d->ui.widgetMaterial->setMaterial(QString::fromStdString(mat.uuid));
             break;
         }
     }
@@ -891,7 +924,7 @@ void DlgDisplayPropertiesImp::setShapeFinish(const std::vector<Gui::ViewProvider
     bool hasAppearance = false;
     App::SurfaceFinish finish;
     for (auto view : views) {
-        if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
+        if (auto* prop = dynamic_cast<App::PropertyAppearanceList*>(
                 view->getPropertyByName("ShapeAppearance"))) {
             if (prop->getSize() == 0) {
                 continue;
@@ -945,7 +978,7 @@ void DlgDisplayPropertiesImp::applyFinish()
     }
 
     for (auto view : getTargets()) {
-        if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
+        if (auto* prop = dynamic_cast<App::PropertyAppearanceList*>(
                 view->getPropertyByName("ShapeAppearance"))) {
             // The uniform setter: every entry gets this finish, and an
             // unset one clears the field entirely rather than storing a
@@ -1177,13 +1210,13 @@ void DlgDisplayPropertiesImp::setMaterialCard(const std::vector<Gui::ViewProvide
     // one there is nothing for the look to follow, and the panel is what it
     // always was (docs/MaterialStorage.md 15.5).
     Materials::PropertyMaterial* card = nullptr;
-    App::PropertyMaterialList* appearance = nullptr;
+    App::PropertyAppearanceList* appearance = nullptr;
     for (auto view : views) {
         if (!card) {
             card = cardOf(view);
         }
         if (!appearance) {
-            appearance = dynamic_cast<App::PropertyMaterialList*>(
+            appearance = dynamic_cast<App::PropertyAppearanceList*>(
                     view->getPropertyByName("ShapeAppearance"));
         }
     }
@@ -1212,10 +1245,92 @@ void DlgDisplayPropertiesImp::setMaterialCard(const std::vector<Gui::ViewProvide
         state = painted ? tr("Custom, %n face(s) painted", "", int(painted)) : tr("Custom");
     }
     d->ui.labelAppearance->setText(state);
+    // The list's selection says what the status line says: the top row
+    // while the look is the card's, the look's own card once it is not.
+    if (!appearance) {
+        d->ui.widgetMaterial->setMaterial(QString());
+    }
+    else if (appearance->isFollowingMaterial()) {
+        d->ui.widgetMaterial->setMaterial(asMaterialId());
+    }
+    else {
+        d->ui.widgetMaterial->setMaterial(QString::fromStdString(appearance->getBase().uuid));
+    }
     // Shown only while it applies, which is the rule the sync commands
     // follow (docs/MaterialStorage.md 13.5)
     d->ui.buttonResetToMaterial->setVisible(
             card != nullptr && appearance != nullptr && !appearance->isFollowingMaterial());
+
+    // The same rule for the shader graph: the button is there while the
+    // card carries a graph to put on the object, and reads Revert while
+    // one is on it (17.11)
+    bool hasGraph = false;
+    App::ShaderBinding* materialized = nullptr;
+    for (auto view : views) {
+        if (auto* vp = dynamic_cast<Gui::ViewProviderDocumentObject*>(view)) {
+            if (!materialized) {
+                materialized = Materials::ShaderGraph::materialized(vp->getObject());
+            }
+        }
+        if (auto* worn = cardOf(view)) {
+            try {
+                hasGraph = hasGraph || worn->getValue().hasMaterialX();
+            }
+            catch (const Materials::MaterialNotFound&) {
+            }
+        }
+    }
+    d->ui.buttonEditShaderGraph->setVisible(hasGraph || materialized);
+    d->ui.buttonEditShaderGraph->setText(materialized ? tr("Revert Shader Graph")
+                                                      : tr("Edit Shader Graph..."));
+}
+
+void DlgDisplayPropertiesImp::onEditShaderGraph()
+{
+    // Through Python, as the sync commands go: one primitive, undoable,
+    // and on the macro record
+    for (auto view : getTargets()) {
+        auto* vp = dynamic_cast<Gui::ViewProviderDocumentObject*>(view);
+        auto* obj = vp ? vp->getObject() : nullptr;
+        if (!obj || !obj->getDocument()) {
+            continue;
+        }
+        const char* doc = obj->getDocument()->getName();
+        const char* name = obj->getNameInDocument();
+        if (Materials::ShaderGraph::materialized(obj)) {
+            if (Materials::ShaderGraph::edited(obj)) {
+                auto answer = QMessageBox::question(
+                    this,
+                    tr("Revert Shader Graph"),
+                    tr("The shader graph of %1 has been edited. Reverting discards the edits "
+                       "and draws the card's graph again.")
+                        .arg(QString::fromUtf8(obj->Label.getValue())),
+                    QMessageBox::Discard | QMessageBox::Cancel,
+                    QMessageBox::Cancel);
+                if (answer != QMessageBox::Discard) {
+                    continue;
+                }
+            }
+            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Revert shader graph"));
+            Gui::Command::doCommand(Gui::Command::Doc,
+                                    "import Materials\n"
+                                    "Materials.revertShaderGraph(App.getDocument('%s').getObject('%s'))",
+                                    doc,
+                                    name);
+            Gui::Command::commitCommand();
+        }
+        else if (cardOf(view)) {
+            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Edit shader graph"));
+            Gui::Command::doCommand(Gui::Command::Doc,
+                                    "import Materials\n"
+                                    "Materials.materializeShaderGraph("
+                                    "App.getDocument('%s').getObject('%s'), 'ShapeMaterial')",
+                                    doc,
+                                    name);
+            Gui::Command::commitCommand();
+        }
+    }
+    setMaterialCard(getTargets());
 }
 
 void DlgDisplayPropertiesImp::onCardSelected(const std::shared_ptr<Materials::Material>& material)
@@ -1230,25 +1345,11 @@ void DlgDisplayPropertiesImp::onCardSelected(const std::shared_ptr<Materials::Ma
 
 void DlgDisplayPropertiesImp::onResetToMaterial()
 {
+    // One answer in one place: the context-menu command reaches the same
+    // primitive (docs/MaterialStorage.md 15.5).
     for (auto view : getTargets()) {
-        auto* prop = dynamic_cast<App::PropertyMaterialList*>(
-                view->getPropertyByName("ShapeAppearance"));
-        auto* geometry = dynamic_cast<App::GeoFeature*>(
-                dynamic_cast<Gui::ViewProviderDocumentObject*>(view)
-                        ? dynamic_cast<Gui::ViewProviderDocumentObject*>(view)->getObject()
-                        : nullptr);
-        if (!prop || !geometry) {
-            continue;
-        }
-        const App::Material card = geometry->getMaterialAppearance();
-        if (card == App::Material()) {
-            continue;   // nothing to go back to
-        }
-        // The base, and following again from now on. The faces holding a
-        // look of their own keep it: this is not "clear the overrides".
-        prop->followMaterial(card);
         if (auto* vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(view)) {
-            Gui::applyMaterialRenderProperties(vp, geometry->getMaterialRenderProperties());
+            vp->resetAppearanceToMaterial();
         }
     }
     setMaterialCard(getTargets());
@@ -1259,14 +1360,14 @@ void DlgDisplayPropertiesImp::onMaterialSelected(
 {
     std::vector<Gui::ViewProvider*> Provider = getTargets();
     for (auto it : Provider) {
-        if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
+        if (auto* prop = dynamic_cast<App::PropertyAppearanceList*>(
                 it->getPropertyByName("ShapeAppearance"))) {
             // A card states colours and gloss, never a machining, so the
             // material it builds carries finish None -- and this write
             // states every field of the base, which would take the finish
             // set one row down with it. Carry it across, and the texture
             // beside it, for the same reason applyWholeMaterial does.
-            App::Material appearance = material->getMaterialAppearance();
+            App::MaterialAppearance appearance = material->getMaterialAppearance();
             appearance.finish = prop->getBase().finish;
             appearance.texture = prop->getBase().texture;
             // The BASE: a look chosen here outranks the object's card from
@@ -1274,7 +1375,7 @@ void DlgDisplayPropertiesImp::onMaterialSelected(
             // look of their own keep it (docs/MaterialStorage.md 15.5).
             prop->setBase(appearance);
         }
-        // A card may also state render features App::Material cannot
+        // A card may also state render features App::MaterialAppearance cannot
         // carry -- glass so far. Those are dynamic properties on the view
         // provider, so they are applied beside the appearance, not
         // through it. Applied unconditionally: a card that states none

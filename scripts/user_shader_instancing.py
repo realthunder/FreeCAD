@@ -215,7 +215,7 @@ def run():
         tgt = doc.addObject("App::Link", "TargetLink")
         tgt.LinkedObject = (a1, ["Assembly2.Box."])
         tgt.Placement.Base = FreeCAD.Vector(0, 0, 60)
-        ap = doc.addObject("App::Appearance", "Look")
+        ap = doc.addObject("App::ShaderBinding", "Look")
         ap.Scope = "Instance"
         ap.ElementList = [sh, tgt]
         doc.recompute()
@@ -287,7 +287,7 @@ def run():
         tgt3 = doc.addObject("App::Link", "TargetLink2")
         tgt3.LinkedObject = (a1, ["Assembly2.Box."])
         tgt3.Placement.Base = FreeCAD.Vector(0, 0, 60)
-        app = doc.addObject("App::Appearance", "PartLook")
+        app = doc.addObject("App::ShaderBinding", "PartLook")
         app.Scope = "Instance"
         app.ElementList = [shp, tgt3]
         doc.recompute()

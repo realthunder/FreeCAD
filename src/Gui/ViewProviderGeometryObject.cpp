@@ -48,8 +48,10 @@
 #include <QImage>
 #include <QMenu>
 
+#include <Base/Console.h>
 #include <Base/Reader.h>
 #include <Base/Tools.h>
+#include <Base/Type.h>
 
 #include <App/Document.h>
 #include <App/PropertyFile.h>
@@ -70,7 +72,9 @@
 #include "SoFCSelection.h"
 #include "SoFCUnifiedSelection.h"
 #include "Inventor/SoFCRenderMaterial.h"
+#include <Inventor/nodes/SoShaderProgram.h>
 #include "Renderer/Renderer.h"
+#include "ViewProviderShaderObject.h"
 #include "View3DInventorViewer.h"
 
 
@@ -114,7 +118,7 @@ ViewProviderGeometryObject::ViewProviderGeometryObject()
     // ShapeColor and Transparency instead of carrying DEFAULT's colour until
     // the first change syncs them. The default material itself stays this
     // fork's (STEEL under USER_DEFINED), not upstream's.
-    App::Material mat(App::Material::DEFAULT);
+    App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
     mat.diffuseColor.set(r, g, b);
     mat.transparency = Base::fromPercent(initialTransparency);
     ADD_PROPERTY_TYPE(ShapeAppearance, (mat), osgroup, App::Prop_None, "Shape appearance");
@@ -146,6 +150,11 @@ ViewProviderGeometryObject::ViewProviderGeometryObject()
 ViewProviderGeometryObject::~ViewProviderGeometryObject()
 {
     pcShapeMaterial->unref();
+    if (pcMaterialXNode) {
+        pcMaterialXNode->unref();
+        ViewProviderShaderBinding::releaseMaterialXNode(
+                getObject() ? getObject()->getDocument() : nullptr, materialXHash);
+    }
     if (pcRenderMaterial)
         pcRenderMaterial->unref();
     if (pcRenderTexture)
@@ -185,14 +194,14 @@ namespace {
  * per-face colours -- which is every document written before ShapeAppearance,
  * since ShapeMaterial sorts after DiffuseColor -- throws those colours away.
  */
-void applyWholeMaterial(App::PropertyMaterialList &appearance, const App::Material &value)
+void applyWholeMaterial(App::PropertyAppearanceList &appearance, const App::MaterialAppearance &value)
 {
     // ShapeMaterial cannot state a shading model -- it is a plain material
     // and its serialised form has no room for one -- so it must never
     // restate the appearance's. Without this the compatibility name would
     // convert a PBR appearance to Phong just by being restored after it
     // (it sorts later), or by an old macro writing through it.
-    App::Material mat = value;
+    App::MaterialAppearance mat = value;
     mat.pbr = appearance.isPBR();
     // A surface finish is the same case one field further on: ShapeMaterial's
     // serialised form has no room for one either, so the value arriving here
@@ -236,7 +245,7 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
             ShapeAppearance.setDiffuseColor(c);
     }
     else if (prop == &ShapeMaterial) {
-        const App::Material &mat = ShapeMaterial.getValue();
+        const App::MaterialAppearance &mat = ShapeMaterial.getValue();
         // Only a single appearance can be pushed into the one Coin material
         // node, as below: a per-face one is carried by the shape's own
         // material arrays and pushing a single colour would wipe them.
@@ -328,11 +337,17 @@ void Gui::PropertyShapeColor::init()
                  "App::PropertyColor", &Gui::PropertyShapeColor::create);
 }
 
-TYPESYSTEM_SOURCE_P(Gui::PropertyShapeMaterial)
-void Gui::PropertyShapeMaterial::init()
+TYPESYSTEM_SOURCE_P(Gui::PropertyShapeAppearance)
+void Gui::PropertyShapeAppearance::init()
 {
-    initSubclass(Gui::PropertyShapeMaterial::classTypeId, "Gui::_PropertyShapeMaterial",
-                 "App::PropertyMaterial", &Gui::PropertyShapeMaterial::create);
+    initSubclass(Gui::PropertyShapeAppearance::classTypeId, "Gui::_PropertyShapeAppearance",
+                 "App::PropertyAppearance", &Gui::PropertyShapeAppearance::create);
+    // Was Gui::_PropertyShapeMaterial, and every GuiDocument.xml written so
+    // far says so -- the render examples under data/examples/render alone
+    // carry eighteen of them. The alias is what keeps those readable; without
+    // it the restore takes the "type changed" branch and drops the value.
+    Base::Type::addLegacyName(Gui::PropertyShapeAppearance::classTypeId,
+                              "Gui::_PropertyShapeMaterial");
 }
 
 void PropertyShapeColor::setValue(const Base::Color &col)
@@ -380,14 +395,14 @@ void PropertyShapeColor::Restore(Base::XMLReader &reader)
     applyToAppearance();
 }
 
-void PropertyShapeMaterial::setValue(const App::Material &mat)
+void PropertyShapeAppearance::setValue(const App::MaterialAppearance &mat)
 {
-    App::PropertyMaterial::setValue(mat);
+    App::PropertyAppearance::setValue(mat);
     if (_appearance)
         applyWholeMaterial(*_appearance, mat);
 }
 
-void PropertyShapeMaterial::applyToAppearance()
+void PropertyShapeAppearance::applyToAppearance()
 {
     // Also the entry point for an old document's ShapeMaterial, which arrives
     // after its per-face colours: those are the more specific value and the
@@ -396,13 +411,13 @@ void PropertyShapeMaterial::applyToAppearance()
         applyWholeMaterial(*_appearance, getValue());
 }
 
-void PropertyShapeMaterial::Restore(Base::XMLReader &reader)
+void PropertyShapeAppearance::Restore(Base::XMLReader &reader)
 {
-    App::PropertyMaterial::Restore(reader);
+    App::PropertyAppearance::Restore(reader);
     applyToAppearance();
 }
 
-void ViewProviderGeometryObject::setCoinAppearance(const App::Material &mat)
+void ViewProviderGeometryObject::setCoinAppearance(const App::MaterialAppearance &mat)
 {
     pcShapeMaterial->ambientColor.setValue(mat.ambientColor.r, mat.ambientColor.g, mat.ambientColor.b);
     pcShapeMaterial->diffuseColor.setValue(mat.diffuseColor.r, mat.diffuseColor.g, mat.diffuseColor.b);
@@ -430,8 +445,8 @@ void ViewProviderGeometryObject::handleChangedPropertyType(Base::XMLReader &read
         return;
     }
     if (prop == &ShapeMaterial
-            && strcmp(TypeName, App::PropertyMaterial::getClassTypeId().getName()) == 0) {
-        App::PropertyMaterial old;
+            && strcmp(TypeName, App::PropertyAppearance::getClassTypeId().getName()) == 0) {
+        App::PropertyAppearance old;
         old.Restore(reader);
         ShapeMaterial.mirrorValue(old.getValue());
         ShapeMaterial.applyToAppearance();
@@ -481,7 +496,7 @@ bool loadTextureImage(const char *path, SoSFImage &field,
 }
 
 // Load an image a material card carried as CONTENT rather than as a
-// path (App::Material::image, upstream's "TextureImage"): the encoded
+// path (App::MaterialAppearance::image, upstream's "TextureImage"): the encoded
 // bytes of an image file, base64 in every card that has ever held one.
 // Falls back to reading it as raw file bytes, so a card written with
 // the payload unencoded still draws.
@@ -595,10 +610,20 @@ void ViewProviderGeometryObject::updateRenderTexture()
     // object-space position.
     const bool faceImages = ShapeAppearance.hasImage();
     const bool faceImagesOnMeshUV = faceImages && faceTextureScale() <= 0.0f;
+    // A MaterialX shader graph is the third case, and the plainest one:
+    // its image nodes read `texcoord`, which is the mesh's OWN
+    // coordinates in both backends -- the generated raster code samples
+    // v_texcoord0 and the path tracer's interpreter emits a texture
+    // coordinate node reading ATTR_STD_UV. Without an enabled unit there
+    // are none of either, and every one of the document's maps comes out
+    // as its corner texel: MaterialX's chess set rendered as flat grey
+    // paint (docs/MaterialStorage.md sec 17.13).
+    const bool materialXGraph =
+        ShapeAppearance.getSize() && !ShapeAppearance.getBase().materialx.empty();
     bool wantTexture = (color && color[0]) || (bump && bump[0])
         || (emissive && emissive[0]) || (occlusion && occlusion[0])
         || (metallicroughness && metallicroughness[0])
-        || faceImagesOnMeshUV;
+        || faceImagesOnMeshUV || materialXGraph;
     if (!wantTexture) {
         if (pcRenderTexture) {
             int idx = pcRoot->findChild(pcRenderTexture);
@@ -803,8 +828,65 @@ void ViewProviderGeometryObject::updateFaceTextures(
     faceTextureSources = std::move(palette);
 }
 
+void ViewProviderGeometryObject::updateMaterialXNode()
+{
+    // Uniform for now: the BASE's document set. A per-face palette of
+    // documents is the per-triangle shader slot work of step 9.
+    //
+    // The column itself is real -- the appearance stores, saves and
+    // restores a document set per face -- so an object CAN hold one that
+    // nothing draws. Say so once, on the edit that starts it, rather
+    // than let the picture disagree with the data in silence.
+    bool varies = ShapeAppearance.variesInMaterialX();
+    if (varies != materialXVaries) {
+        materialXVaries = varies;
+        if (varies && getObject()) {
+            Base::Console().Warning(
+                "%s: a per-face MaterialX document set is stored but not "
+                "drawn; every face shows the base's document "
+                "(docs/MaterialStorage.md sec 17.11)\n",
+                getObject()->getFullName().c_str());
+        }
+    }
+    std::string hash = ShapeAppearance.getSize() ? ShapeAppearance.getBase().materialx
+                                                 : std::string();
+    App::Document *doc = getObject() ? getObject()->getDocument() : nullptr;
+    if (hash == materialXHash && (hash.empty() || pcMaterialXNode))
+        return;
+    if (pcMaterialXNode) {
+        int idx = pcRoot->findChild(pcMaterialXNode);
+        if (idx >= 0)
+            pcRoot->removeChild(idx);
+        pcMaterialXNode->unref();
+        pcMaterialXNode = nullptr;
+        ViewProviderShaderBinding::releaseMaterialXNode(doc, materialXHash);
+    }
+    materialXHash = hash;
+    if (hash.empty() || !doc)
+        return;
+    // Null while the blobs have not all arrived: finishRestoring() comes
+    // back through updateRenderMaterial() once the archive is drained.
+    SoShaderProgram *node = ViewProviderShaderBinding::acquireMaterialXNode(doc, hash);
+    if (!node)
+        return;
+    node->ref();
+    pcMaterialXNode = node;
+    // At the head of the root, where a Scope=Object binding puts its node:
+    // the capture callback routes a material-stage program found there
+    // into this object's own render cache.
+    //
+    // Index 0 is also the losing end on purpose. The cache's
+    // setUserShader keeps the LAST material-stage program traversed, and
+    // an explicit binding beats the card an object wears, so the card
+    // goes IN FRONT of a binding node already there. The other direction
+    // is the binding's to keep: applyDirectBindings() inserts behind
+    // this node when it finds one.
+    pcRoot->insertChild(node, 0);
+}
+
 void ViewProviderGeometryObject::updateRenderMaterial()
 {
+    updateMaterialXNode();
     // The Render_* dynamic properties are optional per-object render
     // engine settings; a SoFCRenderMaterial node at the head of the view
     // provider root carries them into the mode-3 render cache (the node
@@ -1286,10 +1368,11 @@ void ViewProviderGeometryObject::updateRenderShadowStyle()
 void ViewProviderGeometryObject::attach(App::DocumentObject *pcObj)
 {
     ViewProviderDragger::attach(pcObj);
-    // The card's look, for an object that carries one: nothing announces it
-    // here the way a later card change does, and a fresh object that has
-    // never been given an appearance of its own follows its card
-    // (docs/MaterialStorage.md 15.3).
+    // The card's look, for a FRESH object that carries one: nothing
+    // announces it here the way a later card change does, and an object
+    // that has never been given an appearance of its own follows its card
+    // (docs/MaterialStorage.md 15.3). A restored one is not fresh, and the
+    // guard inside stands this down for it.
     applyMaterialAppearance();
 }
 
@@ -1299,8 +1382,17 @@ void ViewProviderGeometryObject::applyMaterialAppearance()
     if (!geometry) {
         return;
     }
-    const App::Material card = geometry->getMaterialAppearance();
-    const App::Material none;
+    // The follow gates the moment a card is SET, and nothing else. A
+    // restore is the file's own record landing: the appearance it states,
+    // the Render_* properties it states, are what this object looks like,
+    // and re-taking the card over them would overwrite a look the user
+    // chose and saved (docs/MaterialStorage.md 15.3). The base is stored
+    // while following, so there is nothing to re-derive here either.
+    if (App::Document::isAnyRestoring()) {
+        return;
+    }
+    const App::MaterialAppearance card = geometry->getMaterialAppearance();
+    const App::MaterialAppearance none;
     if (card == none) {
         return;   // no card, or a card with nothing to say about the look
     }
@@ -1313,11 +1405,48 @@ void ViewProviderGeometryObject::applyMaterialAppearance()
     // The BASE only: the faces holding a look of their own keep it, where
     // the old whole-value write had to refuse a per-face appearance outright
     ShapeAppearance.followMaterial(card);
+    // The card's MaterialX document set, if it has one, is in the store by
+    // now (Materials::PropertyMaterial::setValue); the appearance takes its
+    // own hold on it so the look outlives the card property's
+    ShapeAppearance.holdStoredBlobs();
     // Only where the card is in control of the look: the same guard that
     // stops us overwriting a hand-picked appearance has to stop us clearing
     // a hand-set Render_Glass. A card stating none clears the previous
     // card's, which is the point of applying it even when empty.
     applyMaterialRenderProperties(this, geometry->getMaterialRenderProperties());
+}
+
+bool ViewProviderGeometryObject::canResetAppearanceToMaterial() const
+{
+    auto geometry = dynamic_cast<const App::GeoFeature*>(getObject());
+    if (!geometry || ShapeAppearance.isFollowingMaterial()) {
+        return false;
+    }
+    return geometry->getMaterialAppearance() != App::MaterialAppearance();
+}
+
+bool ViewProviderGeometryObject::resetAppearanceToMaterial()
+{
+    auto geometry = dynamic_cast<App::GeoFeature*>(getObject());
+    if (!geometry) {
+        return false;
+    }
+    const App::MaterialAppearance card = geometry->getMaterialAppearance();
+    if (card == App::MaterialAppearance()) {
+        return false;   // nothing to go back to
+    }
+    // The BASE, and following again from now on. The faces holding a look
+    // of their own keep it (docs/MaterialStorage.md 15.5).
+    ShapeAppearance.followMaterial(card);
+    // The card's MaterialX document set, if it has one, is in the store by
+    // now (Materials::PropertyMaterial::setValue); the appearance takes its
+    // own hold on it so the look outlives the card property's
+    ShapeAppearance.holdStoredBlobs();
+    // The card's render features come back with its colours: a Render_Glass
+    // the abandoned look left behind is the card's to state again, or to
+    // clear by stating none.
+    applyMaterialRenderProperties(this, geometry->getMaterialRenderProperties());
+    return true;
 }
 
 void ViewProviderGeometryObject::deriveFollowMaterial()
@@ -1329,12 +1458,12 @@ void ViewProviderGeometryObject::deriveFollowMaterial()
     if (!geometry) {
         return;
     }
-    const App::Material card = geometry->getMaterialAppearance();
-    const App::Material none;
+    const App::MaterialAppearance card = geometry->getMaterialAppearance();
+    const App::MaterialAppearance none;
     if (card == none) {
         return;   // a document without a card restores not following
     }
-    const App::Material &base = ShapeAppearance.getBase();
+    const App::MaterialAppearance &base = ShapeAppearance.getBase();
     if (base == card || base == none) {
         ShapeAppearance.setFollowMaterial(true);
     }
@@ -1409,7 +1538,7 @@ void ViewProviderGeometryObject::refreshAppearanceMirrors()
                 guard(App::Property::NoModify, &ShapeColor);
         ShapeColor.mirrorValue(color);
     }
-    App::Material material = ShapeAppearance.getBase();
+    App::MaterialAppearance material = ShapeAppearance.getBase();
     if (!(material == ShapeMaterial.getValue())) {
         Base::ObjectStatusLocker<App::Property::Status, App::Property>
                 guard(App::Property::NoModify, &ShapeMaterial);
@@ -1443,15 +1572,10 @@ void ViewProviderGeometryObject::deriveAppearanceBase()
 void ViewProviderGeometryObject::finishRestoring()
 {
     deriveAppearanceBase();
+    // Only the flag, never the card's look: the flag decides what the NEXT
+    // card set does, while what this object looks like now is what the file
+    // said it looks like (docs/MaterialStorage.md 15.3).
     deriveFollowMaterial();
-    {
-        // The card's look, re-taken now that both it and the appearance are
-        // in hand (docs/MaterialStorage.md 15.3). NoModify, or a document
-        // whose card has moved on opens already modified.
-        Base::ObjectStatusLocker<App::Property::Status, App::Property>
-                guard(App::Property::NoModify, &ShapeAppearance);
-        applyMaterialAppearance();
-    }
     refreshAppearanceMirrors();
     updateBoundingBox();
     // Restored Render_* dynamic properties (per-object render engine

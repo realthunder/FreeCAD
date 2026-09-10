@@ -4,7 +4,7 @@ In-FreeCAD driver run by user-shader-verify.sh (viewer leg) after
 scripts/demo-lights.py — same shape as user_shader_viewer.py, but the
 post shader arrives via the document-object route: App::ShaderProgram
 (stage=post, Param_Mix property) + App::Shader + empty-target
-App::Appearance. A passing check proves the merged setAppearanceShaders
+App::ShaderBinding. A passing check proves the merged setAppearanceShaders
 config reaches the snapshot's user-shader table, the server-side essl
 compile, and the viewer render.
 
@@ -170,7 +170,7 @@ def create_appearance():
     sh = doc.addObject("App::Shader", "Fx")
     sh.Programs = [prog]
     sh.Demo = "None"
-    ap = doc.addObject("App::Appearance", "Look")
+    ap = doc.addObject("App::ShaderBinding", "Look")
     ap.ElementList = [sh]  # shader-only group = scene-level post
     doc.recompute()
     _shared["prog"] = prog

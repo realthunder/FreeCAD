@@ -1,0 +1,179 @@
+"""The MaterialX chess set, staged for the golden render tests.
+
+The real-document leg of the render test set (docs/RenderDebug.md
+section 5.2): glTF pieces wearing the MaterialX chess-set document under
+a stated HDR environment. Where render-test-scene.py is four primitives
+built in process, this one imports a real asset with a real material
+library, which is the case that exercises the map binding, the texture
+path and the MaterialX splice.
+
+It is the heavy leg on purpose and is registered only with
+FC_RENDER_HEAVY_TESTS=ON. Both assets ship in the MaterialX submodule,
+so nothing outside the tree is needed; the ctest entry checks they are
+checked out before registering.
+
+An in-repo companion of ~/works/sw/fcad-probes/chess_serve.py, which
+stages the same scene for a streamed viewer. Kept here rather than
+referenced there because a test may not depend on a probe directory that
+is not part of the repository.
+
+Deterministic by construction, as a golden scene must be: every setting
+is a literal, the environment picture is the one in the tree, and the
+camera is assigned as a literal rotation rather than animated into place
+(viewIsometric() and friends animate, and a capture taken mid-flight is
+not reproducible), with navigation animation switched off before the
+import runs its own fit, so that no fit animates.
+"""
+import os
+import sys
+import traceback
+
+import FreeCAD
+import FreeCADGui
+
+# Before the first 3D view exists: the MaterialX splice only happens in
+# the bgfx renderer, which only exists in render-cache mode 3.
+FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt("RenderCache", 3)
+# The backend to gate, chosen the same way render-test-scene.py chooses
+# it: macOS caps the compatibility profile Coin needs at GL 2.1 while
+# these shaders need 3.1, so there IS no GL leg there and Metal is the
+# only backend the golden set can be taken on. FC_RENDER_BACKEND names
+# one explicitly; otherwise the platform's own is the default.
+BACKEND = os.environ.get("FC_RENDER_BACKEND")
+if not BACKEND:
+    BACKEND = "bgfx - Metal" if sys.platform == "darwin" else "bgfx - OpenGL"
+FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render").SetString(
+    "Type", BACKEND)
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RES = os.path.join(REPO, "src/3rdParty/MaterialX/resources")
+GLB = os.path.join(RES, "Geometry/chess_set.glb")
+MTLX = os.path.join(
+    RES, "Materials/Examples/StandardSurface/standard_surface_chess_set.mtlx")
+HDR = os.path.join(RES, "Lights/san_giuseppe_bridge.hdr")
+RENDER = "User parameter:BaseApp/Preferences/View/Render"
+
+# FC_RENDER_TEST_BG=0 keeps the HDR environment as the LIGHT but stops
+# drawing it as the picture behind the model. It matters most here: the
+# chess set occupies a modest part of the frame and the Venice HDR fills
+# the rest, so with the background on most of a golden's pixels are
+# scenery. A regression in the material of a piece moves a few hundred
+# of them; a camera that lands a degree off moves a hundred thousand.
+# The flat case makes the model the subject of its own test, and the
+# background case still covers the environment path -- so both exist.
+BACKGROUND = os.environ.get("FC_RENDER_TEST_BG", "1") != "0"
+
+
+def say(s):
+    # stderr as well as the console: in a GUI run the console goes to the
+    # report view, which a headless capture has no way to read, so a
+    # staging failure left run.log empty and said nothing about itself.
+    # stderr is what render-verify.sh redirects into run.log.
+    FreeCAD.Console.PrintMessage("[render-test-chess] %s\n" % s)
+    sys.stderr.write("[render-test-chess] %s\n" % s)
+    sys.stderr.flush()
+
+
+def stage():
+    import ImportGui
+
+    FreeCAD.ParamGet(
+        "User parameter:BaseApp/Preferences/NotificationArea").SetBool(
+        "NonIntrusiveNotificationsEnabled", False)
+    # Autosave fires on a timer and would land mid-capture.
+    FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document").SetInt(
+        "AutoSaveTimeout", 0)
+
+    p = FreeCAD.ParamGet(RENDER)
+    p.SetBool("PBR", True)
+    p.SetBool("PBRFromSpecular", False)
+    p.SetBool("PBREnvBackground", BACKGROUND)
+    p.SetFloat("PBREnvBlur", 0.0)
+    p.SetFloat("PBREnvIntensity", 1.0)
+    p.SetString("PBREnvImage", HDR)
+    p.SetBool("AO", False)
+    p.SetBool("Cavity", False)
+    p.SetBool("Matcap", False)
+    p.SetBool("Bloom", False)
+    p.SetBool("Volumetric", False)
+    p.SetBool("GroundReflection", False)
+    p.SetBool("Shadow", False)
+    # Temporal accumulation keeps refining a parked frame, so two runs
+    # would capture different amounts of convergence.
+    p.SetBool("TemporalAccum", False)
+    p.SetBool("Light", False)
+    p.SetInt("OutputTransform", 1)
+    p.SetFloat("Exposure", 1.0)
+
+    view = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
+    view.SetBool("ShowAxisCross", False)
+    view.SetBool("ShowNaviCube", False)
+    view.SetBool("CornerCoordSystem", False)
+    view.SetBool("ShowFPS", False)
+    if not BACKGROUND:
+        view.SetBool("Gradient", False)
+        view.SetBool("RadialGradient", False)
+        view.SetBool("UseBackgroundColorMid", False)
+        view.SetUnsigned("BackgroundColor", 858993663)
+
+    doc = FreeCAD.newDocument("RenderTestChess")
+    FreeCADGui.ActiveDocument = FreeCADGui.getDocument(doc.Name)
+    # Animation off BEFORE anything fits: ImportGui.insert runs a view
+    # fit of its own while the progressive load is still live, and an
+    # animated fit is a nested event loop that lasts as long as ten
+    # frames take -- seconds under load. That is the window in which
+    # the tree widget's timer once crashed the process (a rank write
+    # judged as a user edit), and in which a camera restaged by the
+    # harness gets overwritten by the animation still in flight. There
+    # is no preference for this: the navigation style starts with
+    # animation on and only the view's own switch turns it off.
+    v = FreeCADGui.ActiveDocument.ActiveView
+    v.setAnimationEnabled(False)
+    ImportGui.insert(GLB, doc.Name)
+    ImportGui.insert(MTLX, doc.Name)
+    doc.recompute()
+
+    pieces = [o for o in doc.Objects if o.isDerivedFrom("Part::Feature")]
+    say("%d shapes, %d wearing a surface"
+        % (len(pieces),
+           sum(1 for o in pieces
+               if o.ShapeMaterial
+               and o.ShapeMaterial.getAppearanceValue("MaterialXSurface"))))
+
+    try:
+        v.ShowNaviCube = False
+    except Exception:
+        pass
+    try:
+        v.setAxisCross(False)
+    except Exception:
+        pass
+    v.setCameraType("Perspective")
+    # fitAll() would animate the camera into place in ten per-frame
+    # steps, and a frame during the cold compile of this material set
+    # is seconds: the animation was still moving the camera when the
+    # harness captured, thirty seconds on. Animation is off (above).
+    # The view's own quaternion setter, not the camera node's field: a
+    # node reached through getCameraNode() is a pivy object, and pivy is
+    # not part of every box's environment (it is absent from the macOS
+    # conda env, where this import was the whole reason the scene never
+    # staged and every capture step then failed on a null ActiveDocument).
+    # The tuple overload takes the same four floats SbRotation did; it
+    # also repositions the camera to keep the rotation centre, which the
+    # fitAll() below settles either way.
+    v.setCameraOrientation((0.4247, 0.1759, 0.3389, 0.8226))
+    v.fitAll()
+    say("STAGED OK")
+
+
+def deferred():
+    try:
+        stage()
+    except Exception:
+        say(traceback.format_exc())
+        say("STAGE FAILED")
+
+
+from PySide import QtCore  # noqa: E402  (after the parameter setup above)
+
+QtCore.QTimer.singleShot(1500, deferred)

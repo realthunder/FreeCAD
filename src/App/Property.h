@@ -75,8 +75,8 @@ public:
         ReadOnly = 2, // for property editor
         Hidden = 3, // for property editor
         Transient = 4, // for property container save
-        MaterialEdit = 5, // to turn ON PropertyMaterial edit
-        NoMaterialListEdit = 6, // to turn OFF PropertyMaterialList edit
+        MaterialEdit = 5, // to turn ON PropertyAppearance edit
+        NoMaterialListEdit = 6, // to turn OFF PropertyAppearanceList edit
         Output = 7, // same effect as Prop_Output
         LockDynamic = 8, // prevent being removed from dynamic property
         NoModify = 9, // prevent causing Gui::Document::setModified()
@@ -623,7 +623,7 @@ public:
      * Save() weighs a list against the archive entry it would otherwise take
      * out, and getMemSize() answers that for every list whose stored form is
      * its written form. A list that stores itself more compactly than it
-     * writes itself -- PropertyMaterialList at a schema too old for the per
+     * writes itself -- PropertyAppearanceList at a schema too old for the per
      * field encoding -- has to say so here, or a list that is small in memory
      * and enormous on disk lands inline in Document.xml.
      */

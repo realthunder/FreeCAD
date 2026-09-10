@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <set>
 #include <sstream>
@@ -30,6 +31,11 @@
 
 #include "CyclesSceneP.h"
 #include "Environment.h"
+#ifdef HAVE_MATERIALX
+#include "CyclesMaterialXP.h"
+#endif
+
+#include <Base/Console.h>
 
 #include "kernel/types.h"
 #include "scene/attribute.h"
@@ -378,64 +384,211 @@ std::vector<float> bakeEnvironment(const PBRConfig &pbr, bool managed,
     return rgba;
 }
 
-/// Area-average a baked equirect down to \a outWidth x \a outHeight,
-/// which is how the background blur is made: a smaller picture read
-/// back through the engine's linear interpolation IS the defocused
-/// one, the same way the raster background reads a level of its
-/// cubemap. Each output texel averages the block of input texels it
-/// covers, so nothing is dropped -- a point source stays as bright as
-/// its share of the block, which is what keeps a blurred sky from
-/// losing its sun.
-std::vector<float> downsampleEquirect(const std::vector<float> &rgba,
-                                      int width, int height,
-                                      int outWidth, int outHeight)
+/// One level of a box mip pyramid over a baked equirect, halved in
+/// both directions from the level above.
+struct EquirectLevel
 {
+    std::vector<float> rgba;
+    int width = 0;
+    int height = 0;
+};
+
+/// Box mip pyramid of \a rgba, down to a single texel. Wrapping in
+/// longitude and clamping in latitude is the sampler's business; the
+/// halving itself never needs a neighbour outside the level.
+std::vector<EquirectLevel> buildEquirectPyramid(const std::vector<float> &rgba,
+                                                int width, int height)
+{
+    std::vector<EquirectLevel> levels;
+    levels.push_back({rgba, width, height});
+    while (levels.back().width > 1 || levels.back().height > 1) {
+        const EquirectLevel &src = levels.back();
+        EquirectLevel dst;
+        dst.width = std::max(src.width / 2, 1);
+        dst.height = std::max(src.height / 2, 1);
+        dst.rgba.assign(size_t(dst.width) * size_t(dst.height) * 4, 0.0f);
+        const int sx = src.width / dst.width;
+        const int sy = src.height / dst.height;
+        for (int y = 0; y < dst.height; ++y) {
+            for (int x = 0; x < dst.width; ++x) {
+                float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                for (int j = 0; j < sy; ++j) {
+                    for (int i = 0; i < sx; ++i) {
+                        const float *px = src.rgba.data()
+                            + (size_t(y * sy + j) * src.width
+                               + size_t(x * sx + i)) * 4;
+                        for (int c = 0; c < 4; ++c)
+                            acc[c] += px[c];
+                    }
+                }
+                float *px = dst.rgba.data() + (size_t(y) * dst.width + x) * 4;
+                for (int c = 0; c < 4; ++c)
+                    px[c] = acc[c] / float(sx * sy);
+            }
+        }
+        levels.push_back(std::move(dst));
+    }
+    return levels;
+}
+
+/// Bilinear fetch at \a u, \a v -- the same parameterisation
+/// bakeEnvironment writes, u wrapping in longitude and v clamping at
+/// the poles.
+void sampleEquirectLevel(const EquirectLevel &lv, float u, float v,
+                         float out[3])
+{
+    const float fx = u * lv.width - 0.5f;
+    const float fy = std::clamp(v * lv.height - 0.5f,
+                                0.0f, float(lv.height) - 1.0f);
+    const int x0 = int(std::floor(fx));
+    const float tx = fx - float(x0);
+    const int y0 = int(std::floor(fy));
+    const float ty = fy - float(y0);
+    const int y1 = std::min(y0 + 1, lv.height - 1);
+    auto wrap = [&lv](int x) {
+        x %= lv.width;
+        return x < 0 ? x + lv.width : x;
+    };
+    const int xa = wrap(x0);
+    const int xb = wrap(x0 + 1);
+    const float *p00 = lv.rgba.data() + (size_t(y0) * lv.width + xa) * 4;
+    const float *p10 = lv.rgba.data() + (size_t(y0) * lv.width + xb) * 4;
+    const float *p01 = lv.rgba.data() + (size_t(y1) * lv.width + xa) * 4;
+    const float *p11 = lv.rgba.data() + (size_t(y1) * lv.width + xb) * 4;
+    for (int c = 0; c < 3; ++c) {
+        const float a = p00[c] + (p10[c] - p00[c]) * tx;
+        const float b = p01[c] + (p11[c] - p01[c]) * tx;
+        out[c] = a + (b - a) * ty;
+    }
+}
+
+/// Trilinear fetch in direction \a d at fractional level \a lod.
+void sampleEquirectPyramid(const std::vector<EquirectLevel> &levels,
+                           const float d[3], float lod, float out[3])
+{
+    const float u = 0.5f - std::atan2(d[1], d[0]) / (2.0f * kPi);
+    const float v = 1.0f - std::acos(std::clamp(d[2], -1.0f, 1.0f)) / kPi;
+    lod = std::clamp(lod, 0.0f, float(levels.size() - 1));
+    const int l0 = int(lod);
+    const int l1 = std::min(l0 + 1, int(levels.size()) - 1);
+    const float t = lod - float(l0);
+    sampleEquirectLevel(levels[size_t(l0)], u, v, out);
+    if (t <= 0.0f || l1 == l0)
+        return;
+    float b[3];
+    sampleEquirectLevel(levels[size_t(l1)], u, v, b);
+    for (int c = 0; c < 3; ++c)
+        out[c] += (b[c] - out[c]) * t;
+}
+
+/// The width the camera-ray copy of the environment is baked at for
+/// \a blur, or 0 for "no blurred copy" -- which is what zero asks
+/// for, and what keeps a sharp world the graph it has always had.
+///
+/// A defocused sky carries no detail finer than the aperture, so the
+/// copy only has to hold that much: six texels across the blur radius,
+/// which is enough for the engine's linear interpolation to
+/// reconstruct it without faceting, and no more. That is why this is
+/// no longer the old eight-halvings law -- that one shrank the picture
+/// to as few as four texels and let bilinear magnification supply the
+/// "blur", which is the same mistake the raster backend was making
+/// with its mip chain, and it showed up the same way.
+int envBlurWidth(float blur, int width)
+{
+    const float alpha = envBlurAngle(blur);
+    if (alpha <= 0.0f)
+        return 0;
+    const int out = int(std::lround(6.0 * double(kPi) / double(alpha)));
+    return std::clamp(out, 32, width);
+}
+
+/// The camera-ray copy of a baked equirect, defocused: \a rgba
+/// convolved with the disc of directions the aperture subtends
+/// (Render::envBlurAngle), resampled to \a outWidth x \a outHeight.
+///
+/// This is the same lens the raster background draws through, run on
+/// the CPU instead of in a fragment shader -- same cone, same uniform
+/// spread over its solid angle, same choice of level per tap -- so the
+/// two backdrops stay one picture at every slider position. Averaging
+/// directions in linear radiance is what makes it a lens rather than a
+/// smudge: a small bright source spreads into an even disc that keeps
+/// its energy, so a blurred sky keeps its sun.
+///
+/// The tap count follows the radius in source texels and the level
+/// each tap reads follows the SPACING between taps, so the footprints
+/// tile the disc with no gaps however wide it opens -- and a narrow
+/// aperture costs a handful of taps instead of the full 32.
+std::vector<float> blurEquirect(const std::vector<float> &rgba,
+                                int width, int height, float alpha,
+                                int outWidth, int outHeight)
+{
+    const std::vector<EquirectLevel> levels =
+        buildEquirectPyramid(rgba, width, height);
+    // Radians a source texel spans in longitude, the unit the aperture
+    // radius and the pyramid are both measured in.
+    const float texel = 2.0f * kPi / float(width);
+    const float radius = alpha / texel;
+    const int taps = std::clamp(int(std::ceil(2.0f * radius)), 1, 32);
+    const float lod = std::clamp(
+        std::log2(std::max(2.0f * radius / std::sqrt(float(taps)), 1.0f)),
+        0.0f, float(levels.size() - 1));
+    const float cosA = std::cos(alpha);
+    // Golden angle: successive taps a full turn apart stay even at
+    // every prefix of the sequence, so any tap count still covers the
+    // disc.
+    constexpr float kGolden = 2.39996323f;
+
     std::vector<float> out(size_t(outWidth) * size_t(outHeight) * 4);
     for (int y = 0; y < outHeight; ++y) {
-        const int y0 = y * height / outHeight;
-        const int y1 = std::max((y + 1) * height / outHeight, y0 + 1);
+        const float theta = (1.0f - (y + 0.5f) / outHeight) * kPi;
+        const float st = std::sin(theta);
+        const float ct = std::cos(theta);
         for (int x = 0; x < outWidth; ++x) {
-            const int x0 = x * width / outWidth;
-            const int x1 = std::max((x + 1) * width / outWidth, x0 + 1);
-            float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-            for (int sy = y0; sy < y1; ++sy) {
-                for (int sx = x0; sx < x1; ++sx) {
-                    const float *px =
-                        rgba.data() + (size_t(sy) * width + sx) * 4;
-                    for (int c = 0; c < 4; ++c)
-                        acc[c] += px[c];
-                }
+            const float phi = (0.5f - (x + 0.5f) / outWidth) * 2.0f * kPi;
+            const float d[3] = {st * std::cos(phi), st * std::sin(phi), ct};
+            // Any tangent frame will do -- the taps are rotationally
+            // symmetric about d -- as long as the seed axis is never
+            // parallel to it.
+            const bool polar = std::abs(d[2]) > 0.999f;
+            const float seed[3] = {polar ? 1.0f : 0.0f, 0.0f,
+                                   polar ? 0.0f : 1.0f};
+            float tx[3] = {seed[1] * d[2] - seed[2] * d[1],
+                           seed[2] * d[0] - seed[0] * d[2],
+                           seed[0] * d[1] - seed[1] * d[0]};
+            const float tl = std::sqrt(tx[0] * tx[0] + tx[1] * tx[1]
+                                       + tx[2] * tx[2]);
+            for (int c = 0; c < 3; ++c)
+                tx[c] /= tl;
+            const float ty[3] = {d[1] * tx[2] - d[2] * tx[1],
+                                 d[2] * tx[0] - d[0] * tx[2],
+                                 d[0] * tx[1] - d[1] * tx[0]};
+            float acc[3] = {0.0f, 0.0f, 0.0f};
+            for (int i = 0; i < taps; ++i) {
+                // Uniform over the cap's SOLID angle, which is what an
+                // aperture covers: the cosine runs linearly from 1 to
+                // cos(alpha), so the taps thin out with radius exactly
+                // as a disc does.
+                const float u = (float(i) + 0.5f) / float(taps);
+                const float tc = 1.0f + (cosA - 1.0f) * u;
+                const float ts = std::sqrt(std::max(1.0f - tc * tc, 0.0f));
+                const float ph = float(i) * kGolden;
+                const float cp = std::cos(ph);
+                const float sp = std::sin(ph);
+                float dir[3];
+                for (int c = 0; c < 3; ++c)
+                    dir[c] = d[c] * tc + (tx[c] * cp + ty[c] * sp) * ts;
+                float tap[3];
+                sampleEquirectPyramid(levels, dir, lod, tap);
+                for (int c = 0; c < 3; ++c)
+                    acc[c] += tap[c];
             }
-            const float n = float((y1 - y0) * (x1 - x0));
             float *px = out.data() + (size_t(y) * outWidth + x) * 4;
-            for (int c = 0; c < 4; ++c)
-                px[c] = acc[c] / n;
+            for (int c = 0; c < 3; ++c)
+                px[c] = acc[c] / float(taps);
+            px[3] = 1.0f;
         }
     }
     return out;
-}
-
-/// The width the camera-ray copy of the environment is baked down to
-/// for \a blur, or 0 for "no blurred copy" -- which is what zero asks
-/// for, and what keeps a sharp world the graph it has always had.
-///
-/// Eight halvings end to end, the same span the raster background
-/// slides along its cubemap's mip chain, so the slider reads as one
-/// softness in both. It is measured from the picture this engine bakes
-/// rather than from a fixed reference, so zero stays "as sharp as this
-/// engine gets": for the procedural presets the two bakes are the same
-/// angular resolution and the two backdrops match outright, and for a
-/// user picture large enough to be baked sharper than the raster
-/// cubemap, Cycles keeps that sharpness instead of being blurred down
-/// to meet it.
-int envBlurWidth(float blur, int width)
-{
-    blur = std::clamp(blur, 0.0f, 1.0f);
-    if (blur <= 0.0f)
-        return 0;
-    const int out = int(std::lround(double(width)
-                                    * std::pow(2.0, -8.0 * double(blur))));
-    return std::clamp(out, 4, width - 1);
 }
 
 /// A baked equirect the engine's image manager serves to the world
@@ -943,6 +1096,7 @@ bool SceneTranslator::translate(const SceneInput &input, RenderReport &report)
         report.released = int(unused.size());
         changed = true;
     }
+    changed |= releaseUnusedShaders();
 
     changed |= translateLight(input.light, sceneMin, sceneMax);
 
@@ -1051,6 +1205,37 @@ bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
     // draws its gradient, the Cycles image blits over it).
     scene->background->set_transparent(!(pbr.enabled && pbr.envBackground));
 
+    // The environment as a LIGHT that is sampled, not only a backdrop
+    // that is hit. Without a background light in the scene Cycles
+    // never importance-samples the world (device_update_background:
+    // "no background light found, signal renderer to skip sampling"),
+    // so a sun in the picture is reached only when a BSDF sample
+    // happens to point at it. That is unbiased in float and useless in
+    // a frame: san_giuseppe_bridge.hdr holds 43 per cent of its
+    // irradiance in texels above radiance 64 with a peak of 35,000, a
+    // diffuse sample finds that disc about once in a hundred thousand,
+    // and the hit lands in ONE pixel that clips at white. So the model
+    // rendered without its sun -- darker and bluer than Blender's
+    // Cycles, which creates this light for every world by default,
+    // while the backdrop, a camera ray, agreed exactly
+    // (docs/MaterialStorage.md 17.18). Made once; the importance map
+    // follows the background shader through Shader::tag_update.
+    if (!envLight) {
+        auto *light = scene->create_node<ccl::BackgroundLight>();
+        light->set_use_mis(true);
+        light->set_map_resolution(0);
+        light->set_is_enabled(true);
+        ccl::array<ccl::Node *> used;
+        used.push_back_slow(scene->default_background);
+        light->set_used_shaders(used);
+        auto *object = scene->create_node<ccl::Object>();
+        object->set_tfm(ccl::transform_identity());
+        object->set_visibility(ccl::PATH_RAY_VISIBILITY_ALL & ~ccl::PATH_RAY_VISIBILITY_CAMERA);
+        object->set_geometry(light);
+        envLight = light;
+        envLightObject = object;
+    }
+
     const int width = pbr.envImage && pbr.envImage->width > 0
         ? std::clamp(pbr.envImage->width, 256, 4096) : 1024;
     const int height = std::max(width / 2, 128);
@@ -1086,16 +1271,17 @@ bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
     };
 
     // The background blur (Render_PBREnvBlur), which the raster backend
-    // does by reading a level of its cubemap. A path tracer cannot: the
-    // world it samples IS the light, so softening it would relight the
-    // scene, and an environment texture has no lod to read anyway. So
-    // the softening is put where it belongs instead -- a second,
-    // smaller bake of the same environment, mixed in on CAMERA rays
-    // alone. Lighting, reflections and refractions keep the sharp
-    // world; only what is seen behind the model changes. That is the
-    // node graph Blender users build by hand for this (Blender ships no
-    // control for it: its viewport Blur slider is the raster preview's
-    // only), and it costs one small picture and three nodes.
+    // does by convolving its cubemap with the aperture as it draws. A
+    // path tracer cannot soften the world in place: what it samples IS
+    // the light, so blurring it would relight the scene. So the
+    // softening is put where it belongs instead -- a second bake of the
+    // same environment through the same lens (blurEquirect, the same
+    // cone as Render::envBlurAngle gives the shader), mixed in on
+    // CAMERA rays alone. Lighting, reflections and refractions keep the
+    // sharp world; only what is seen behind the model changes. That is
+    // the node graph Blender users build by hand for this (Blender
+    // ships no control for it: its viewport Blur slider is the raster
+    // preview's only), and it costs one small picture and three nodes.
     //
     // Is Camera Ray is 1 through a Transparent BSDF as well, so a
     // see-through pass-through shows the soft backdrop too. Same there.
@@ -1103,8 +1289,9 @@ bool SceneTranslator::translateWorld(const PBRConfig &pbr, const OutputConfig &o
     ccl::ShaderOutput *envColor = nullptr;
     if (blurWidth > 0) {
         const int blurHeight = std::max(blurWidth / 2, 1);
-        auto *soft = addEnv(downsampleEquirect(pixels, width, height,
-                                               blurWidth, blurHeight),
+        auto *soft = addEnv(blurEquirect(pixels, width, height,
+                                         envBlurAngle(pbr.envBlur),
+                                         blurWidth, blurHeight),
                             blurWidth, blurHeight);
         auto *sharp = addEnv(std::move(pixels), width, height);
         auto *mix = graph->create_node<ccl::MixColorNode>();
@@ -1240,7 +1427,17 @@ bool SceneTranslator::translateLight(const LightConfig &light,
         tfm = frameAlongZ(light.direction, origin);
         node = sun;
     }
-    node->set_cast_shadow(light.shadow);
+    // LightConfig::shadow is NOT read, deliberately. It is Render_Shadow,
+    // which is the raster backend's shadow MAP -- "a convenience switch
+    // to drop shadows without leaving the Shadow display style", by its
+    // own documentation, and a cost/technique knob rather than a
+    // statement about the scene. A path tracer has no shadow map: its
+    // shadow is what happens when a shadow ray meets the model, so
+    // switching it off does not simplify a picture, it makes the light
+    // pass through solid matter -- a picture of nothing. The same
+    // reasoning keeps GTAO, cavity, matcap and bloom out of
+    // Cycles::SceneInput (docs/MaterialStorage.md sec 17.13).
+    node->set_cast_shadow(true);
     node->set_use_mis(true);
     ccl::array<ccl::Node *> used;
     used.push_back_slow(scene->default_light);
@@ -1487,6 +1684,13 @@ SceneTranslator::Maps SceneTranslator::resolveMaps(const Material &m,
             double areaUV = 0.0;
             const int32_t *idx = mesh.triangleIndices + start;
             for (int i = 0; i + 2 < count; i += 3) {
+                // The range is validated where the mesh is built
+                // (translateDraw); this runs first, so it guards its
+                // own reads.
+                if (idx[i] < 0 || idx[i] >= mesh.numVertices || idx[i + 1] < 0
+                    || idx[i + 1] >= mesh.numVertices || idx[i + 2] < 0
+                    || idx[i + 2] >= mesh.numVertices)
+                    continue;
                 const float *p0 = mesh.positions + size_t(idx[i]) * 3;
                 const float *p1 = mesh.positions + size_t(idx[i + 1]) * 3;
                 const float *p2 = mesh.positions + size_t(idx[i + 2]) * 3;
@@ -2138,6 +2342,49 @@ void SceneTranslator::applyFaceImage(ccl::ShaderGraph *graph,
     links.alpha = ops.math(ccl::NODE_MATH_MULTIPLY, links.alpha, node->output("Alpha"));
 }
 
+ccl::Shader *SceneTranslator::acquireShader()
+{
+    if (!spareShaders.empty()) {
+        ccl::Shader *shader = spareShaders.back();
+        spareShaders.pop_back();
+        return shader;
+    }
+    return scene->create_node<ccl::Shader>();
+}
+
+bool SceneTranslator::releaseUnusedShaders()
+{
+    if (shaders.empty())
+        return false;
+    // Live is what a live mesh references; everything else in the map
+    // is a key nothing shades under any more (the doc's example is a
+    // dragged section plane, whose coefficients key every shader they
+    // clip). The node cannot be deleted, so it is re-graphed empty --
+    // dropping its image handles -- and parked for acquireShader.
+    std::set<const ccl::Node *> live;
+    for (const auto &entry : meshes) {
+        const ccl::array<ccl::Node *> &used = entry.second.mesh->get_used_shaders();
+        for (size_t i = 0; i < used.size(); ++i)
+            live.insert(used[i]);
+    }
+    bool released = false;
+    for (auto it = shaders.begin(); it != shaders.end();) {
+        if (live.count(it->second.shader)) {
+            ++it;
+            continue;
+        }
+        ccl::Shader *shader = it->second.shader;
+        shader->name = ccl::ustring("fc_spare");
+        shader->set_graph(std::make_unique<ccl::ShaderGraph>());
+        shader->tag_update(scene);
+        imageNodes -= it->second.images;
+        spareShaders.push_back(shader);
+        it = shaders.erase(it);
+        released = true;
+    }
+    return released;
+}
+
 ccl::Shader *SceneTranslator::uniformShader(const Surface &s,
                                             const Clip &clip,
                                             const Maps &maps,
@@ -2157,9 +2404,10 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s,
         << s.glassDensity << clip.key() << maps.key() << face.key() << finish.key();
     auto it = shaders.find(key.str());
     if (it != shaders.end())
-        return it->second;
+        return it->second.shader;
 
-    ccl::Shader *shader = scene->create_node<ccl::Shader>();
+    const int imagesBefore = imageNodes;
+    ccl::Shader *shader = acquireShader();
     shader->name = ccl::ustring(key.str());
     auto graph = std::make_unique<ccl::ShaderGraph>();
     auto *info = graph->create_node<ccl::ObjectInfoNode>();
@@ -2235,8 +2483,104 @@ ccl::Shader *SceneTranslator::uniformShader(const Surface &s,
     }
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
-    shaders[key.str()] = shader;
+    shaders[key.str()] = ShaderEntry{shader, imageNodes - imagesBefore};
     return shader;
+}
+
+ccl::Shader *SceneTranslator::materialXShader(const UserShader &user, const Clip &clip)
+{
+#ifndef HAVE_MATERIALX
+    (void)user;
+    (void)clip;
+    return nullptr;
+#else
+    // A document is its own identity: the file it came from when it
+    // came from one, otherwise its text, AND which of its surfaces is
+    // worn -- one document usually carries a whole asset's material set
+    // (docs/MaterialStorage.md sec 17.13). Two draws sharing a material
+    // share the shader, which is what keeps a document off the
+    // per-draw path -- interpreting one costs a library import.
+    const std::string identity =
+        (user.sourcePath.empty() ? user.fragmentSource : user.sourcePath)
+        + '\0' + user.surface;
+    // A parameter is part of the shader here, not a uniform on it: the
+    // path tracer has no uniforms, so a value becomes a ValueNode in
+    // the graph (docs/CyclesIntegration.md sec 6.11) and two parameter
+    // sets are two shaders. The document's own identity stays separate
+    // from them, because a document that will not interpret will not
+    // interpret at any value.
+    std::string variant = identity;
+    for (const auto &param : user.params) {
+        variant += '|' + param.name;
+        for (float v : param.values)
+            variant += ' ' + std::to_string(v);
+    }
+    const std::string key = (debugView ? "dbg" + std::to_string(debugView) + ':'
+                                       : std::string())
+        + "mtlx:" + std::to_string(std::hash<std::string> {}(variant)) + clip.key();
+    auto it = shaders.find(key);
+    if (it != shaders.end())
+        return it->second.shader;
+
+    // A document that failed once fails the same way every restate,
+    // and finding that out costs a data-library import each time.
+    if (materialXFailed.count(identity))
+        return nullptr;
+
+    auto fail = [&](const std::string &why) -> ccl::Shader * {
+        materialXFailed.insert(identity);
+        if (materialXReported.insert(identity).second)
+            Base::Console().Error("MaterialX material not rendered: %s\n", why.c_str());
+        return nullptr;
+    };
+
+    std::string error;
+    mx::DocumentPtr doc =
+        Render::MaterialX::loadDocument(user.fragmentSource, user.sourcePath, error);
+    if (!doc)
+        return fail(error);
+    // The document's declared inputs, overridden by the material's
+    // Param_* values before anything reads it (sec 6.11).
+    Render::MaterialX::applyInputs(doc, user.params, user.surface);
+
+    // The graph is built BEFORE the scene node, because a Cycles
+    // shader cannot be taken back: delete_node(Shader *) only clears
+    // the reference count -- "don't delete unused shaders, not
+    // supported", scene.cpp -- so a shader created for a document
+    // that then fails to interpret stays in scene->shaders with a
+    // null graph, and the next device update dereferences it
+    // (ShaderManager::device_update_pre -> graph->output()). Creating
+    // it only once there is something to put in it is the whole fix.
+    auto graph = std::make_unique<ccl::ShaderGraph>();
+    MaterialXResult built = buildMaterialXSurface(graph.get(), doc, user.surface);
+    if (!built.surface)
+        return fail(built.error);
+    imageNodes += built.images;
+    ccl::Shader *shader = acquireShader();
+    shader->name = ccl::ustring(key);
+    // Per DOCUMENT, not per surface: a note about the model a document
+    // is authored against is true of every surface in it, and a set
+    // like the chess set carries fifteen. The message is part of the
+    // key, so two surfaces with different notes still both report.
+    // Kept apart from materialXReported, which gates the FAILURE
+    // report and has to stay per surface -- one surface of a document
+    // can fail where another does not.
+    {
+        const std::string document =
+            user.sourcePath.empty() ? user.fragmentSource : user.sourcePath;
+        for (const auto &w : built.warnings) {
+            if (materialXNoted.insert(document + '\0' + w).second)
+                Base::Console().Warning("MaterialX: %s\n", w.c_str());
+        }
+    }
+    connectSurface(graph.get(), built.surface, clip);
+    if (built.volume)
+        graph->connect(built.volume, graph->output()->input("Volume"));
+    shader->set_graph(std::move(graph));
+    shader->tag_update(scene);
+    shaders[key] = ShaderEntry{shader, built.images};
+    return shader;
+#endif
 }
 
 ccl::Shader *SceneTranslator::attributeShader(const Clip &clip,
@@ -2248,14 +2592,15 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip,
         + "fc_attributes" + clip.key() + maps.key() + face.key() + finish.key();
     auto it = shaders.find(key);
     if (it != shaders.end())
-        return it->second;
+        return it->second.shader;
     // One graph for every per-vertex draw: the mesh carries the
     // resolved surface as attributes (fc_base, fc_pbr = metallic /
     // roughness / alpha, fc_emissive), which is what keeps a
     // thousand-colour vertex-painted mesh at one shader instead of
     // a thousand. The maps, when the draw has them, sample on top of
     // those attributes exactly as they do on top of the scalars.
-    ccl::Shader *shader = scene->create_node<ccl::Shader>();
+    const int imagesBefore = imageNodes;
+    ccl::Shader *shader = acquireShader();
     shader->name = ccl::ustring(key);
     auto graph = std::make_unique<ccl::ShaderGraph>();
     auto *base = graph->create_node<ccl::AttributeNode>();
@@ -2293,7 +2638,7 @@ ccl::Shader *SceneTranslator::attributeShader(const Clip &clip,
     }
     shader->set_graph(std::move(graph));
     shader->tag_update(scene);
-    shaders[key] = shader;
+    shaders[key] = ShaderEntry{shader, imageNodes - imagesBefore};
     return shader;
 }
 
@@ -2359,7 +2704,20 @@ bool SceneTranslator::translateDraw(const DrawCall &draw,
     const bool faceFinish = stream && m.finishpalette;
     const bool faceFrame = stream && m.framepalette;
     const bool faceLayer = stream && hasFaceTex && m.facetexlayer < 0;
-    auto variantShader = [&](const Finish &fin, const FaceImage &face) {
+    // A "material"-stage MaterialX program replaces the whole surface:
+    // the document states the material, so the draw's own colour,
+    // maps, finish and face palettes are not consulted. A document
+    // this build cannot interpret falls back to the stock material
+    // rather than dropping the draw (the sandboxed-failure rule).
+    const UserShader *mtlx = nullptr;
+    if (m.usershader && m.usershader->dialect == UserShader::Dialect::MaterialX
+        && m.usershader->stage == "material")
+        mtlx = m.usershader.get();
+    auto variantShader = [&](const Finish &fin, const FaceImage &face) -> ccl::Shader * {
+        if (mtlx) {
+            if (ccl::Shader *s = materialXShader(*mtlx, clip))
+                return s;
+        }
         return perVertex ? attributeShader(clip, maps, fin, face)
                          : uniformShader(uniform, clip, maps, fin, face);
     };

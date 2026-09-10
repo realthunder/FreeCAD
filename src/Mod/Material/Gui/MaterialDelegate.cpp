@@ -220,6 +220,19 @@ bool MaterialDelegate::editorEvent(QEvent* event,
             // QString propertyName = group->child(row, 0)->text();
             QString propertyName = group->child(row, 0)->data().toString();
 
+            if (propertyName == QStringLiteral("MaterialXShaderGraph")) {
+                // The graph, its names and its files are one pick, never
+                // three typed fields (docs/MaterialStorage.md 17.12)
+                Q_EMIT const_cast<MaterialDelegate*>(this)->shaderGraphRequested();
+                return true;
+            }
+            if (propertyName == QStringLiteral("MaterialXSurface")) {
+                // The surfaces are the graph's to state, so they are
+                // offered rather than typed (17.13)
+                Q_EMIT const_cast<MaterialDelegate*>(this)->shaderSurfaceRequested();
+                return true;
+            }
+
             auto type = getType(index);
             if (type == Materials::MaterialValue::Color) {
                 showColorModal(propertyName, item);

@@ -189,7 +189,7 @@ class SandboxInitGuiTest(unittest.TestCase):
         """The host's own registry (docs/Sandbox.md 7.15), the fork repair:
         `addStatusBarItem` from host Python places two items by `order`
         in the permanent band, left of the fork's fixtures; a titled item
-        the user hid (its id under MainWindow/StatusBarItems) comes back
+        the user hid (its id under MainWindow/StatusBar) comes back
         hidden; `removeStatusBarItem` takes one out."""
         import FreeCADGui as Gui
         from PySide import QtWidgets
@@ -200,7 +200,7 @@ class SandboxInitGuiTest(unittest.TestCase):
         a.setObjectName("SandboxInitGui_A")
         b = QtWidgets.QLabel("B")
         b.setObjectName("SandboxInitGui_B")
-        params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/MainWindow/StatusBarItems")
+        params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/MainWindow/StatusBar")
         try:
             mw.addStatusBarItem(b, id="SandboxInitGui_B", title="Sandbox item B",
                                 slot="Right", order=560)
@@ -215,7 +215,7 @@ class SandboxInitGuiTest(unittest.TestCase):
             self.assertTrue(self.wait_until(lambda: a.x() > 0 and b.x() > a.x(), times=20),
                             (a.x(), b.x(), perm.x()))
             self.assertLess(b.x(), perm.x())
-            self.assertLess(sb.findChild(QtWidgets.QWidget, "SB_ActionLabel").x(), a.x())
+            self.assertLess(sb.findChild(QtWidgets.QWidget, "actionLabel").x(), a.x())
             # the user's choice persists per id
             params.SetBool("SandboxInitGui_A", False)
             mw.removeStatusBarItem("SandboxInitGui_A")
@@ -223,9 +223,9 @@ class SandboxInitGuiTest(unittest.TestCase):
             self.spin(20, 2)
             self.assertFalse(a.isVisible())
             self.assertTrue(b.isVisible())
-            self.assertIsNotNone(mw.removeStatusBarItem("SandboxInitGui_B"))
+            self.assertIsNotNone(mw.statusBarItem("SandboxInitGui_B"))
+            mw.removeStatusBarItem("SandboxInitGui_B")
             self.assertIsNone(mw.statusBarItem("SandboxInitGui_B"))
-            self.assertIsNone(mw.removeStatusBarItem("SandboxInitGui_B"))
         finally:
             params.RemBool("SandboxInitGui_A")
             mw.removeStatusBarItem("SandboxInitGui_A")

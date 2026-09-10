@@ -7,6 +7,7 @@ target_sources(
     ${CMAKE_CURRENT_SOURCE_DIR}/TestMaterialRender.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TestMaterials.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TestMaterialValue.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/TestMaterialX.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TestModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TestModelProperties.cpp
 )

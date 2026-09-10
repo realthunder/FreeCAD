@@ -1,12 +1,15 @@
 set(Library FreeCADRenderer)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+# stb_image (ImageDecode.cpp): bimg's vendored copy, header only. The
+# submodule is present whether or not the bgfx backend is built.
+include_directories(${CMAKE_SOURCE_DIR}/src/3rdParty/bgfx/bimg/3rdparty)
 
 file(GLOB CMakeCache RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}/CMakeCache.txt)
 
-set(Renderer_Headers Renderer.h Environment.h Page2D.h Page2DWire.h DrawDevice.h DrawSurface.h FrameImageConsumer.h FrameStreamWire.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
+set(Renderer_Headers Renderer.h ImageDecode.h MaterialXSupport.h Environment.h Page2D.h Page2DWire.h DrawDevice.h DrawSurface.h FrameImageConsumer.h FrameStreamWire.h SceneDump.h SceneLadder.h ProxyHierarchy.h ProxyStore.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h OccluderMesh.h MeshSource.h SceneServer.h)
 set(Renderer_HPP_SRCS ${Renderer_Headers})
-set(Renderer_CPP_SRCS Renderer.cpp Environment.cpp Page2D.cpp Page2DWire.cpp DrawDevice.cpp FrameImageConsumer.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
+set(Renderer_CPP_SRCS Renderer.cpp MaterialXSupport.cpp MaterialXGen.cpp Environment.cpp Page2D.cpp Page2DWire.cpp DrawDevice.cpp FrameImageConsumer.cpp ImageDecode.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp ProxyStore.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp OccluderMesh.cpp MeshSource.cpp SceneServer.cpp)
 set(Renderer_LIBS FreeCADBase
                   ${QtCore_LIBRARIES}
                   ${QtWidgets_LIBRARIES}
@@ -41,7 +44,12 @@ if(BUILD_BGFX)
     # Private: nothing outside this library calls bgfx, and example-common
     # carries bgfx's own entry point, which asks any executable that links
     # it for a _main_ it does not have.
-    list(APPEND Renderer_PRIVATE_LIBS bgfx bx bimg example-common vg-renderer)
+    # vg-renderer BEFORE example-common: both vendor fontstash (vg-renderer
+    # compiles it directly, bgfx inlines it into nanovg.cpp), and nothing here
+    # uses bgfx's nanovg. With example-common first, Apple's ld resolves the
+    # fons* symbols out of nanovg.cpp.o, then pulls vg-renderer's fontstash.cpp.o
+    # for its own symbols and fails with 32 duplicates. GNU ld happens not to.
+    list(APPEND Renderer_PRIVATE_LIBS bgfx bx bimg vg-renderer example-common)
 endif(BUILD_BGFX)
 
 if(BUILD_DILIGENT)
@@ -72,6 +80,73 @@ if(BUILD_DILIGENT)
 
 endif(BUILD_DILIGENT)
 
+# MaterialX (docs/CyclesIntegration.md sec 8 item 15 phase B). Like the
+# Cycles unit below, MaterialXSupport.cpp and MaterialXGen.cpp compile either way -- with
+# the library it is the real thing, without it the stub that reports
+# the support absent -- so only the flag and the libraries are
+# conditional. PRIVATE: MaterialXSupport.h names no MaterialX type, so
+# nothing outside this library needs its headers.
+if(BUILD_MATERIALX)
+    list(APPEND Renderer_HPP_SRCS MaterialXSupportP.h)
+    list(APPEND Renderer_PRIVATE_LIBS MaterialXCore MaterialXFormat
+                                      MaterialXGenShader MaterialXGenGlsl)
+    add_definitions(-DHAVE_MATERIALX)
+endif()
+
+# The shader graph editor (docs/ShaderGraphEditor.md): MaterialX's node
+# editor hosted on bgfx's ImGui inside a Qt widget. Dear ImGui itself
+# is bgfx's patched copy, already compiled into example-common (with
+# bgfx's own example renderer, which is not used); imgui-node-editor is
+# our submodule. FC_SHADER_GRAPH_EDITOR is the compile-time switch the
+# Gui side reads too (src/Gui/CMakeLists.txt), so both halves come and
+# go together.
+if(BUILD_BGFX AND BUILD_MATERIALX)
+    set(_node_editor ${CMAKE_SOURCE_DIR}/src/3rdParty/imgui-node-editor)
+    if(NOT EXISTS ${_node_editor}/imgui_node_editor.cpp)
+        message(FATAL_ERROR "imgui-node-editor submodule missing: "
+                            "run 'git submodule update --init src/3rdParty/imgui-node-editor'")
+    endif()
+    list(APPEND Renderer_CPP_SRCS
+        GraphEditor/ImGuiBgfx.cpp
+        GraphEditor/ImGuiStb.cpp
+        GraphEditor/ImGuiStdlib.cpp
+        GraphEditor/ImGuiSurface.cpp
+        GraphEditor/GraphEditorWidget.cpp
+        GraphEditor/EngineGraphHost.cpp
+        GraphEditor/Graph.cpp
+        GraphEditor/UiNode.cpp
+        GraphEditor/Layout.cpp
+        GraphEditor/UiProperties.cpp
+        GraphEditor/NodeEditorDrawing.cpp
+        GraphEditor/NodeEditorWidgets.cpp
+        ${_node_editor}/imgui_node_editor.cpp
+        ${_node_editor}/imgui_node_editor_api.cpp
+        ${_node_editor}/imgui_canvas.cpp
+        ${_node_editor}/crude_json.cpp)
+    list(APPEND Renderer_HPP_SRCS
+        GraphEditor/ImGuiBgfx.h
+        GraphEditor/ImGuiStdlib.h
+        GraphEditor/ImGuiSurface.h
+        GraphEditor/GraphEditorWidget.h
+        GraphEditor/EngineGraphHost.h
+        GraphEditor/GraphHost.h
+        GraphEditor/Graph.h
+        GraphEditor/UiNode.h
+        GraphEditor/Layout.h
+        GraphEditor/UiProperties.h
+        GraphEditor/NodeEditorDrawing.h
+        GraphEditor/NodeEditorWidgets.h)
+    # The node editor includes <imgui.h> and <imgui_internal.h> bare;
+    # our own sources take <dear-imgui/...> through example-common's
+    # public include path. Same files either way.
+    include_directories(${_node_editor}
+                        ${CMAKE_SOURCE_DIR}/src/3rdParty/bgfx/bgfx/3rdparty/dear-imgui)
+    # The node editor and the ported editor use ImVec2 arithmetic, which
+    # ImGui only defines on request, and before its own header.
+    add_definitions(-DFC_SHADER_GRAPH_EDITOR -DIMGUI_DEFINE_MATH_OPERATORS)
+    unset(_node_editor)
+endif()
+
 # The Cycles unit (docs/CyclesIntegration.md). One source either way:
 # built with the engine it is an object library of its own, because the
 # Cycles headers come with the SSE4.2 flags and feature defines that
@@ -83,6 +158,10 @@ if(BUILD_CYCLES)
     add_library(FreeCADRendererCycles OBJECT
         CyclesRenderer.cpp CyclesScene.cpp CyclesViewport.cpp CyclesStream.cpp
         CyclesRenderer.h CyclesSceneP.h)
+    if(BUILD_MATERIALX)
+        target_sources(FreeCADRendererCycles PRIVATE
+            CyclesMaterialX.cpp CyclesMaterialXP.h)
+    endif()
     target_link_libraries(FreeCADRendererCycles
         PUBLIC cycles_embed
         PRIVATE FreeCADBase ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
@@ -113,6 +192,15 @@ if(BUILD_CYCLES)
     # FreeCADRenderer_EXPORTS: the objects land in the FreeCADRenderer
     # shared library, so RendererExport has to mean export here too.
     target_compile_definitions(FreeCADRendererCycles PRIVATE HAVE_CYCLES FreeCADRenderer_EXPORTS)
+    # add_definitions(-DHAVE_MATERIALX) above reaches this target too
+    # (same directory), so it must be able to include the headers that
+    # define promises: the interpreter of a MaterialX graph into ccl
+    # nodes lives in CyclesScene.cpp.
+    if(BUILD_MATERIALX)
+        target_link_libraries(FreeCADRendererCycles PRIVATE MaterialXCore
+                                                           MaterialXFormat
+                                                           MaterialXGenShader)
+    endif()
     set_target_properties(FreeCADRendererCycles PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
@@ -259,8 +347,21 @@ if(BUILD_BGFX)
     # frame buffer, pixels read back and checked). Build-tree developer
     # tool like fcscenediff -- not installed. Links vg-renderer/bgfx
     # directly, no Qt and no ${Library}.
-    add_executable(fcvgsmoke tools/vgsmoke.cpp)
-    target_link_libraries(fcvgsmoke ${Library} vg-renderer bgfx bx)
+    #
+    # Page2D and Vg2D are COMPILED IN rather than linked from ${Library},
+    # and that is not a convenience. On Windows bgfx is a static library
+    # (the export-macro reason in src/3rdParty/CMakeLists.txt), so an exe
+    # that links both bgfx and FreeCADRenderer holds two copies of bgfx's
+    # globals: bgfx::init would initialise the exe's while Page2D, living
+    # in the DLL, allocated from the DLL's -- whose g_allocator is still
+    # null. That is an access violation in bx::alloc under bgfx::makeRef,
+    # and it is what --page2d did on Windows until 2026-09-06
+    # (docs/Testing.md, "The vg smokes on Windows"). Both files depend on
+    # nothing but bgfx, bx, vg and the STL, and FreeCADRenderer_STATIC is
+    # the headers' own switch for being compiled outside the DLL.
+    add_executable(fcvgsmoke tools/vgsmoke.cpp Page2D.cpp Vg2D.cpp)
+    target_compile_definitions(fcvgsmoke PRIVATE FreeCADRenderer_STATIC=1)
+    target_link_libraries(fcvgsmoke vg-renderer bgfx bx)
     set_target_properties(fcvgsmoke PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     SET_BIN_DIR(fcvgsmoke fcvgsmoke)
 endif()

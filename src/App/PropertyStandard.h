@@ -35,10 +35,10 @@
 #include <Base/Uuid.h>
 
 #include "Property.h"
-#include "MaterialList.h"
+#include "AppearanceList.h"
 #include "Enumeration.h"
 #include "FileBlobManager.h"
-#include "Material.h"
+#include "MaterialAppearance.h"
 
 
 namespace Base {
@@ -1076,10 +1076,18 @@ protected:
     void saveStream(Base::OutputStream &) const override;
 };
 
-/** Material properties
- * This is the father of all properties handling colors.
+/** One appearance: the look of a thing, not the material it is made of
+ *
+ * Holds an App::MaterialAppearance -- ambient, diffuse, specular and
+ * emissive colour, shininess, transparency. Was App::PropertyMaterial,
+ * which collided with Materials::PropertyMaterial (the material CARD)
+ * and with Mesh::PropertyMaterial, three unrelated things under one
+ * name. The former type name is still resolved, so documents and macros
+ * that say App::PropertyMaterial keep working; see
+ * Application::initTypes. The saved XML element is still
+ * <PropertyMaterial> -- that is the file format and does not move.
  */
-class AppExport PropertyMaterial : public Property
+class AppExport PropertyAppearance : public Property
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
@@ -1090,17 +1098,17 @@ public:
      * A constructor.
      * A more elaborate description of the constructor.
      */
-    PropertyMaterial();
+    PropertyAppearance();
 
     /**
      * A destructor.
      * A more elaborate description of the destructor.
      */
-    ~PropertyMaterial() override;
+    ~PropertyAppearance() override;
 
     /** Sets the property
      */
-    void setValue(const Material &mat);
+    void setValue(const MaterialAppearance &mat);
     void setAmbientColor(const Color& col);
     void setDiffuseColor(const Color& col);
     void setSpecularColor(const Color& col);
@@ -1110,7 +1118,7 @@ public:
 
     /** This method returns a string representation of the property
      */
-    const Material &getValue() const;
+    const MaterialAppearance &getValue() const;
 
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
@@ -1129,7 +1137,7 @@ public:
     unsigned int getMemSize () const override{return sizeof(_cMat);}
 
 private:
-    Material _cMat;
+    MaterialAppearance _cMat;
 };
 
 /** A list of materials: a base, and the faces that override it
@@ -1138,7 +1146,7 @@ private:
  * at all it usually varies over a few faces of many. An imported solid is a
  * body colour with some pads on it; an object with a uniform appearance is
  * one material. Storing whole materials makes every entry pay for that: an
- * App::Material is 80 bytes against a colour's 16, so a 10,000 face import
+ * App::MaterialAppearance is 80 bytes against a colour's 16, so a 10,000 face import
  * spends 800 KB saying what a base and twenty overrides would have said.
  *
  * So the storage is (docs/ShapeAppearanceDesign.md 12):
@@ -1169,14 +1177,14 @@ private:
  */
 class MaterialListPy;
 
-class AppExport PropertyMaterialList : public PropertyLists,
+class AppExport PropertyAppearanceList : public PropertyLists,
                                        public BlobReferrerProperty,
-                                       public AtomicPropertyChangeInterface<PropertyMaterialList>
+                                       public AtomicPropertyChangeInterface<PropertyAppearanceList>
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    using atomic_change = AtomicPropertyChangeInterface<PropertyMaterialList>::AtomicPropertyChange;
+    using atomic_change = AtomicPropertyChangeInterface<PropertyAppearanceList>::AtomicPropertyChange;
     friend atomic_change;
     /// Reads the value in place; every write it makes goes through
     /// editList(), so nothing bypasses the change signalling
@@ -1184,11 +1192,22 @@ public:
 
     bool canShareDefault() const override { return true; }
 
-    PropertyMaterialList();
-    ~PropertyMaterialList() override;
+    /** The saved XML element, frozen at what the type used to be called
+     *
+     * PropertyLists derives the element from the live type name, so the
+     * rename to PropertyAppearanceList would have written <AppearanceList>
+     * and then searched every existing document for it -- and found
+     * <MaterialList>, restoring the appearance EMPTY with one console line
+     * to show for it. The element is the file format, not the type name;
+     * the same decision froze <PropertyMaterial> on PropertyAppearance.
+     */
+    const char *xmlName() const override { return "MaterialList"; }
+
+    PropertyAppearanceList();
+    ~PropertyAppearanceList() override;
 
     /// The material every entry of an empty field reads as
-    static const Material &defaultMaterial();
+    static const MaterialAppearance &defaultMaterial();
 
     /** @name The Python view of this property
      *
@@ -1203,7 +1222,7 @@ public:
     void unregisterView(MaterialListPy *view);
     /// Run a write against the value, recording and signalling it if it
     /// changed.  touched is the entry a per entry write names.
-    void editList(const std::function<void(MaterialList &)> &op, int touched = -1);
+    void editList(const std::function<void(AppearanceList &)> &op, int touched = -1);
     //@}
 
     /** @name The value this property holds
@@ -1213,8 +1232,8 @@ public:
      * first write through any holder pays for the storage.
      */
     //@{
-    const MaterialList &getList() const { return _list; }
-    void setList(const MaterialList &list);
+    const AppearanceList &getList() const { return _list; }
+    void setList(const AppearanceList &list);
     //@}
 
     /** @name Whole material access
@@ -1225,14 +1244,14 @@ public:
     //@{
     int getSize() const override { return _list.getSize(); }
     void setSize(int newSize) override;
-    void setSize(int newSize, const Material &def);
+    void setSize(int newSize, const MaterialAppearance &def);
 
-    void setValue(const Material &mat);
-    void setValue(const std::vector<Material> &values = std::vector<Material>()) {
+    void setValue(const MaterialAppearance &mat);
+    void setValue(const std::vector<MaterialAppearance> &values = std::vector<MaterialAppearance>()) {
         setValues(values);
     }
-    void setValues(const std::vector<Material> &values);
-    void setValues(std::vector<Material> &&values);
+    void setValues(const std::vector<MaterialAppearance> &values);
+    void setValues(std::vector<MaterialAppearance> &&values);
 
     /** There is deliberately no getValues()
      *
@@ -1251,11 +1270,11 @@ public:
      * wanted through the per field accessors below, which touch no memory
      * that is not already there.
      */
-    Material operator[](int idx) const { return getMaterial(idx); }
-    Material getMaterial(int idx) const;
-    void set1Value(int idx, const Material &mat);
+    MaterialAppearance operator[](int idx) const { return getMaterial(idx); }
+    MaterialAppearance getMaterial(int idx) const;
+    void set1Value(int idx, const MaterialAppearance &mat);
     /// upstream's spelling of set1Value, so their call sites port unchanged
-    void setValue(int idx, const Material &mat) { set1Value(idx, mat); }
+    void setValue(int idx, const MaterialAppearance &mat) { set1Value(idx, mat); }
     //@}
 
     /** @name The base entry and the overriding faces
@@ -1266,8 +1285,8 @@ public:
      * face an override or drops it back.
      */
     //@{
-    const Material &getBase() const { return _list.getBase(); }
-    void setBase(const Material &mat);
+    const MaterialAppearance &getBase() const { return _list.getBase(); }
+    void setBase(const MaterialAppearance &mat);
     const std::vector<uint32_t> &getOverrides() const { return _list.getOverrides(); }
     bool hasOverrides() const { return _list.hasOverrides(); }
     bool isOverride(int idx) const { return _list.isOverride(idx); }
@@ -1306,7 +1325,7 @@ public:
     bool isFollowingMaterial() const { return _list.isFollowingMaterial(); }
     void setFollowMaterial(bool enable);
     /// The card's look as the base, without ending the follow
-    void followMaterial(const Material &card);
+    void followMaterial(const MaterialAppearance &card);
     //@}
 
     /** @name Per field access, as it is stored
@@ -1335,6 +1354,8 @@ public:
     { return _list.getImagePathOverrides(); }
     const std::vector<std::string> &getUuidOverrides() const
     { return _list.getUuidOverrides(); }
+    const std::vector<std::string> &getMaterialXOverrides() const
+    { return _list.getMaterialXOverrides(); }
     const std::vector<SurfaceFinish> &getFinishOverrides() const
     { return _list.getFinishOverrides(); }
 
@@ -1345,6 +1366,7 @@ public:
     bool variesInShininess() const { return _list.variesInShininess(); }
     bool variesInImage() const { return _list.variesInImage(); }
     bool variesInUuid() const { return _list.variesInUuid(); }
+    bool variesInMaterialX() const { return _list.variesInMaterialX(); }
     bool variesInFinish() const { return _list.variesInFinish(); }
     bool variesInTexture() const { return _list.variesInTexture(); }
     //@}
@@ -1365,6 +1387,7 @@ public:
     std::vector<std::string> getImages() const { return _list.getImages(); }
     std::vector<std::string> getImagePaths() const { return _list.getImagePaths(); }
     std::vector<std::string> getUuids() const { return _list.getUuids(); }
+    std::vector<std::string> getMaterialXs() const { return _list.getMaterialXs(); }
     std::vector<SurfaceFinish> getFinishes() const { return _list.getFinishes(); }
     //@}
 
@@ -1398,11 +1421,12 @@ public:
     const std::string &getImage(int idx) const;
     const std::string &getImagePath(int idx) const;
     const std::string &getUuid(int idx) const;
+    const std::string &getMaterialX(int idx) const;
     SurfaceFinish getFinish(int idx) const;
     /// By value, because the storage holds distinct records rather than
     /// one per entry: there is no array element to hand a reference into
     SurfaceTexture getTexture(int idx) const;
-    Material::MaterialType getType(int idx) const;
+    MaterialAppearance::MaterialType getType(int idx) const;
 
     /** The first entry's field, which is upstream's no-argument spelling
      *
@@ -1429,6 +1453,7 @@ public:
     void setImages(const std::vector<std::string> &values);
     void setImagePaths(const std::vector<std::string> &values);
     void setUuids(const std::vector<std::string> &values);
+    void setMaterialXs(const std::vector<std::string> &values);
     /// The records clamp on the way in (SurfaceFinish::normalize), so what
     /// is stored is always something a consumer can draw
     void setFinishes(const std::vector<SurfaceFinish> &values);
@@ -1446,6 +1471,7 @@ public:
     void setImage(int idx, const std::string &value);
     void setImagePath(int idx, const std::string &value);
     void setUuid(int idx, const std::string &value);
+    void setMaterialX(int idx, const std::string &value);
     void setFinish(int idx, const SurfaceFinish &value);
     void setTexture(int idx, const SurfaceTexture &value);
 
@@ -1469,6 +1495,7 @@ public:
     void setImage(const std::string &value);
     void setImagePath(const std::string &value);
     void setUuid(const std::string &value);
+    void setMaterialX(const std::string &value);
     void setFinish(const SurfaceFinish &value);
     void setTexture(const SurfaceTexture &value);
     //@}
@@ -1557,13 +1584,24 @@ public:
     /// file with several referrers -- which is why the appearance names its
     /// own referrers here instead of handing the collect pass one handle.
     void collectBlobs(FileBlobManager &manager, const DocumentObject *object) const override;
+    /** Take hold of the stored content the value names
+     *
+     * A card applied to the base (followMaterial) brings a MaterialX
+     * manifest hash whose bytes the card's own property has already put in
+     * the store; this claims them for the list, which is what keeps them
+     * alive and lets a save note them from here. Content not in the store
+     * is queued with the manager as a restore would queue it.
+     */
+    void holdStoredBlobs() { requestTextureBlobs(); }
     /// Take a restored blob into whichever slots name its hash
     void assignRestoredBlob(const FileBlobHandle &blob) override;
     /// The texture content has no schema 4 spelling: the maps themselves ride
     /// a companion element, the bytes behind them live in the store and
     /// nowhere else. A save with no store keeps the hashes and drops the
     /// files, which is what makes this the one referrer answering true.
-    bool blobContentNeedsStore() const override { return hasTexture(); }
+    /// A MaterialX manifest hash has no spelling at all without the store,
+    /// so it forces the offer the same way a texture does
+    bool blobContentNeedsStore() const override { return hasTexture() || _list.hasMaterialX(); }
     //@}
 
     /** @name PBR mode
@@ -1589,7 +1627,7 @@ public:
     /** Flip the mode AND convert the stored values so the look survives
      *
      * The editor's toggle. Toward Phong every entry goes through
-     * getPhongMaterial(); toward PBR through Material::phongToPbr (base
+     * getPhongMaterial(); toward PBR through MaterialAppearance::phongToPbr (base
      * colour kept, roughness from the shininess fit, dielectric). A
      * Phong-PBR-Phong round trip keeps the look but forgets the specular
      * colour, which only Phong can state. One atomic change; a no-op
@@ -1620,10 +1658,10 @@ public:
      * encodings, the Coin GL display leg, and exporters to formats with
      * no PBR terms.
      */
-    Material getPhongMaterial(int idx) const;
+    MaterialAppearance getPhongMaterial(int idx) const;
     /// The Phong reading of the BASE, which is what a consumer with one
     /// material node to fill wants: the object's look, not face 0's
-    Material getPhongBase() const { return _list.getPhongBase(); }
+    MaterialAppearance getPhongBase() const { return _list.getPhongBase(); }
     //@}
 
     /** Whether the diffuse colour is the only field that varies per entry
@@ -1663,7 +1701,7 @@ public:
     void RestoreDocFile(Base::Reader &reader) override;
 
 protected:
-    Material getPyValue(PyObject *) const;
+    MaterialAppearance getPyValue(PyObject *) const;
     void setPyValues(const std::vector<PyObject*> &vals, const std::vector<int> &indices) override;
 
     void restoreXML(Base::XMLReader &) override;
@@ -1698,7 +1736,7 @@ private:
     void applyPendingTexture();
     /// Land the base and the override list a schema 5 file states, with the
     /// checks the storage's invariants turn into a file format
-    void installBase(const Material &base, int8_t type);
+    void installBase(const MaterialAppearance &base, int8_t type);
     /// The document's blob store, or the process-wide one for a property
     /// with no document -- the same resolution PropertyFileIncluded makes
     FileBlobManager &blobManager() const;
@@ -1706,13 +1744,16 @@ private:
     /// not already hold. Called once the palette has landed, from both
     /// restore paths.
     void requestTextureBlobs();
+    /// Ask for the files a HELD manifest names; a restore calls it once the
+    /// manifest itself has arrived, since only the manifest knows them.
+    void requestMaterialXChildren(const std::string &manifestHash);
 
     /** Run a write against the value and signal it only if it changed
      *
      * Every mutator goes through this. It works because the value is
      * copy-on-write: taking a snapshot costs a pointer, so the write can
      * simply be made and the result compared by STORAGE IDENTITY -- if the
-     * value is unchanged, MaterialList's own setters return without
+     * value is unchanged, AppearanceList's own setters return without
      * detaching and the pointer is still the one the snapshot holds.
      *
      * The old value then goes back for exactly as long as it takes to open
@@ -1727,9 +1768,9 @@ private:
     /** The value, which several holders may share
      *
      * A Python variable, an undo snapshot and this property can all name
-     * the same storage until one of them writes; see App::MaterialList.
+     * the same storage until one of them writes; see App::AppearanceList.
      */
-    MaterialList _list;
+    AppearanceList _list;
     /// The Python views handed out and not yet dropped. Raw pointers: a
     /// view unregisters itself when Python drops it, and this property
     /// detaches every one of them on the way out.
@@ -1765,12 +1806,12 @@ private:
  * both, and both readings are honest.
  *
  * ⭐ What that buys is a save that is lossless BOTH ways at once, which no
- * amount of cleverness inside PropertyMaterialList's own encodings could
+ * amount of cleverness inside PropertyAppearanceList's own encodings could
  * give: upstream reads the material element byte for byte as it always has
  * and simply walks past this one (readElement skips elements whose name it
  * did not ask for), while we read both and lose nothing.
  *
- * ⚠️ It is never a member of anything. PropertyMaterialList::Save builds one
+ * ⚠️ It is never a member of anything. PropertyAppearanceList::Save builds one
  * on the stack, hands it the finishes, writes it, and drops it; Restore does
  * the mirror. That is deliberate: as a container property it would join the
  * undo stack and snapshot bytes that ShapeAppearance's own Copy() already

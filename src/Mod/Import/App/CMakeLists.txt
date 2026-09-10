@@ -32,6 +32,8 @@ SET(Import_SRCS
     #ImportOCAFAssembly.h
     ReaderGltf.cpp
     ReaderGltf.h
+    ReaderLook.cpp
+    ReaderLook.h
     RenderMaterial.h
     ReaderIges.cpp
     ReaderIges.h

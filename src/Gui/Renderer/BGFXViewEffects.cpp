@@ -767,6 +767,31 @@ void BGFXView::submitLineSdf(const Render::DrawCall &draw,
     ++drawcount;
 }
 
+void BGFXView::glassBodyColors(const Render::Material &mat, float absorb[4],
+                               float tint[4]) const
+{
+    tint[0] = tint[1] = tint[2] = tint[3] = 1.0f;
+    if (!mat.glassmtlx) {
+        // Authored, decoded when the pipeline is colour managed -- the
+        // same rule as the mesh pass, and the one Cycles applies to the
+        // same colour before its absorption volume. Handed over encoded,
+        // fs_fc_glass.sc absorbed with (1 - sRGB) where the tracer
+        // absorbed with (1 - linear), 0.30 against 0.55 for a 0.7
+        // channel, and its frosted scatter wash multiplied linear
+        // irradiance by a display number.
+        unpackAuthoredColor(mat.diffuse, absorb, colorManaged());
+        return;
+    }
+    // The document's colour is linear already and is never decoded.
+    // With a depth it is the absorption colour; without one OpenPBR
+    // says it tints the transmitted light once at the surface, so the
+    // body absorbs nothing and the tint carries it.
+    float *dst = mat.glassdensity > 0.0f ? absorb : tint;
+    absorb[0] = absorb[1] = absorb[2] = absorb[3] = 1.0f;
+    for (int c = 0; c < 3; ++c)
+        dst[c] = mat.glasscolor[c];
+}
+
 void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject)
 {
     if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -783,15 +808,10 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
 
     const Render::Material &mat = draw.material;
     float color[4];
-    // Authored, decoded when the pipeline is colour managed -- the
-    // same rule as the mesh pass, and the one Cycles applies to the
-    // same colour before its absorption volume. Handed over encoded,
-    // fs_fc_glass.sc absorbed with (1 - sRGB) where the tracer
-    // absorbed with (1 - linear), 0.30 against 0.55 for a 0.7 channel,
-    // and its frosted scatter wash multiplied linear irradiance by a
-    // display number.
-    unpackAuthoredColor(mat.diffuse, color, colorManaged());
+    float tint[4];
+    glassBodyColors(mat, color, tint);
     bgfx::setUniform(u_matColor, color);
+    bgfx::setUniform(u_glassTint, tint);
     // Like every vs_fc_mesh pairing: u_params is a global uniform,
     // an unset value would inherit a line draw's depth bias.
     float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -800,9 +820,13 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
     float ior = mat.glassior > 0.0f ? mat.glassior : 1.5f;
     // Automatic absorption density from the body extent: about one
     // optical depth across the diagonal (before the diffuse tint
-    // weighting), like the water medium's automatic density.
+    // weighting), like the water medium's automatic density. Not for
+    // a MaterialX glass: there a zero density is the document's own
+    // statement (no depth, a surface tint) and stays zero.
     float density = mat.glassdensity;
-    if (density <= 0.0f) {
+    if (mat.glassmtlx)
+        density = std::max(density, 0.0f);
+    else if (density <= 0.0f) {
         density = 0.0f;
         float dx = draw.bboxMax[0] - draw.bboxMin[0];
         float dy = draw.bboxMax[1] - draw.bboxMin[1];
@@ -834,6 +858,32 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
 
     setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
     setMeshVertexBuffers(gpu, *draw.mesh);
+
+    // A MaterialX glass (docs/MaterialStorage.md sec 17.22): the body
+    // stage spliced with the document's generated material function,
+    // which reads the colour, roughness, IOR, depth, weight and normal
+    // per fragment where the uniforms above carry one of each. The
+    // flat program stands in while the compile is pending or failed,
+    // and on the viewer tier, so the body is glass either way. Paired
+    // with vs_fc_mesh_tex like the mesh splice, so the mesh's texture
+    // coordinates ride stream 2 under the identity texture matrix --
+    // the document's own uv transforms are in its graph.
+    bgfx::ProgramHandle prog = m_progGlass;
+    if (mat.glassmtlx && mat.usershader
+            && mat.usershader->dialect == Render::UserShader::Dialect::MaterialX
+            && mat.usershader->stage == "material"
+            && !mat.usershader->fragmentSource.empty()) {
+        bgfx::ProgramHandle uprog = _BGFXLib.getUserProgram(
+            *mat.usershader, "vs_fc_mesh", false,
+            BGFXRendererLibP::GlassSplice);
+        if (bgfx::isValid(uprog)) {
+            _BGFXLib.pushUserParams(*mat.usershader);
+            pushUserImages(*mat.usershader);
+            bindMeshTexCoord(gpu, *draw.mesh);
+            prog = uprog;
+        }
+    }
+
     if (draw.indexCount > 0)
         bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
                              uint32_t(draw.indexCount));
@@ -845,7 +895,7 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
     if (mat.culling && !mat.twoside)
         state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
     bgfx::setState(state);
-    bgfx::submit(vid(ViewGlassSurface), m_progGlass);
+    bgfx::submit(vid(ViewGlassSurface), prog);
     ++drawcount;
 }
 

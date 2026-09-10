@@ -774,7 +774,7 @@ void ViewProviderFemMesh::setColorByIdHelper(
 
 void ViewProviderFemMesh::setMaterialOverall() const
 {
-    const App::Material& mat = ShapeAppearance[0];
+    const App::MaterialAppearance& mat = ShapeAppearance[0];
     Base::Color baseDif = mat.diffuseColor;
     Base::Color baseAmb = mat.ambientColor;
     Base::Color baseSpe = mat.specularColor;
@@ -806,7 +806,7 @@ void ViewProviderFemMesh::setMaterialByColorArray(
     const std::vector<unsigned long>& vElementIdx
 ) const
 {
-    const App::Material& baseMat = ShapeAppearance[0];
+    const App::MaterialAppearance& baseMat = ShapeAppearance[0];
     Base::Color baseDif = baseMat.diffuseColor;
     Base::Color baseAmb = baseMat.ambientColor;
     Base::Color baseSpe = baseMat.specularColor;

@@ -23,6 +23,7 @@
 #ifndef FC_RENDERCACHE_H
 #define FC_RENDERCACHE_H
 
+#include <cstdint>
 #include <vector>
 #include <map>
 #include <memory>
@@ -43,9 +44,25 @@ namespace Render {
 struct UserShader;
 struct FinishPalette;
 struct FramePalette;
+
+/// The creation serial of one of the immutable, pointer-shared cache
+/// objects, or 0 for a null one (Render::CacheSerial).
+///
+/// Out of line, and taking the pointer, so that the render cache can go
+/// on holding these as an incomplete type -- which is the whole reason
+/// they are standalone structs. Reached only when every earlier field
+/// of a material ties.
+GuiExport std::uint64_t cacheSerialOf(const FinishPalette *palette);
+GuiExport std::uint64_t cacheSerialOf(const FramePalette *palette);
+GuiExport std::uint64_t cacheSerialOf(const UserShader *shader);
+
+/// The stable serial of a captured NODE (Render::CacheSerial::forNode),
+/// which is what the texture and node infos below are ordered by.
+GuiExport std::uint64_t cacheSerialOfNode(const void *node);
 }
 
 class SoFCVertexCache;
+class SoFCRenderCache;
 class SoFCRenderCacheP;
 class SoState;
 class SoTexture;
@@ -57,6 +74,25 @@ class SoDepthBuffer;
 class SbBox3f;
 class SoClipPlane;
 class SoMFColor;
+
+/// Coin declares intrusive_ptr_add_ref/release for SoBase* only, so a
+/// CoinPtr<T> reaches them through a derived-to-base conversion -- which
+/// needs T complete. Both types are still incomplete where the entries
+/// further down construct their CoinPtr members inline: SoFCVertexCache
+/// because SoFCVertexCache.h includes this header before defining it,
+/// SoFCRenderCache because the use is inside its own definition. GCC
+/// defers those member instantiations to the end of the translation
+/// unit, by which point both are complete; clang does them right there,
+/// and every TU that includes this header fails to compile.
+///
+/// Declaring the exact match early settles the overload without needing
+/// the definition. The definitions are the inline ones that already sit
+/// below each class -- at the foot of this header, and at the foot of
+/// SoFCVertexCache.h.
+void intrusive_ptr_add_ref(SoFCVertexCache * obj);
+void intrusive_ptr_release(SoFCVertexCache * obj);
+void intrusive_ptr_add_ref(SoFCRenderCache * obj);
+void intrusive_ptr_release(SoFCRenderCache * obj);
 
 class GuiExport SoFCRenderCache : public SoCache {
   typedef SoCache inherited;
@@ -101,10 +137,29 @@ public:
     SbMatrix matrix;
     bool identity = true;
     bool transparent = false;
+    /// Memoized by setTexture(); see the note in compare().
+    std::uint64_t serial = 0;
+
+    void setTexture(SoNode * node) {
+      this->texture = node;
+      this->serial = Render::cacheSerialOfNode(node);
+    }
 
     int compare(const TextureInfo & other) const {
-      if (this->texture < other.texture) return -1;
-      if (this->texture > other.texture) return 1;
+    // ORDERED BY A STABLE SERIAL, not by the address and not by a Coin
+    // node id.
+    //
+    // The address is different in every run, and a draw order that
+    // follows it renders differently from run to run wherever two draws
+    // contend for a pixel at equal depth. A node id is deterministic but
+    // MOVES: Coin reassigns it on every notify(), so a material captured
+    // before one and a material captured after it disagree about the same
+    // node, and buildFromPrevious -- which merges a previous publish's
+    // map with entries built now -- turns one light into two buckets that
+    // draw identically. CacheSerial::forNode is both: fixed for the
+    // node's whole life, and free of addresses.
+      if (this->serial < other.serial) return -1;
+      if (this->serial > other.serial) return 1;
       if (this->transparent < other.transparent) return -1;
       if (this->transparent > other.transparent) return 1;
       if (this->identity < other.identity) return -1;
@@ -142,10 +197,29 @@ public:
     SbMatrix matrix;
     bool identity = true;
     bool resetmatrix = false;;
+    /// Memoized by setNode(); see the note in compare().
+    std::uint64_t serial = 0;
+
+    void setNode(SoNode * n) {
+      this->node = n;
+      this->serial = Render::cacheSerialOfNode(n);
+    }
 
     int compare(const NodeInfo & other) const {
-      if (this->node < other.node) return -1;
-      if (this->node > other.node) return 1;
+    // ORDERED BY A STABLE SERIAL, not by the address and not by a Coin
+    // node id.
+    //
+    // The address is different in every run, and a draw order that
+    // follows it renders differently from run to run wherever two draws
+    // contend for a pixel at equal depth. A node id is deterministic but
+    // MOVES: Coin reassigns it on every notify(), so a material captured
+    // before one and a material captured after it disagree about the same
+    // node, and buildFromPrevious -- which merges a previous publish's
+    // map with entries built now -- turns one light into two buckets that
+    // draw identically. CacheSerial::forNode is both: fixed for the
+    // node's whole life, and free of addresses.
+      if (this->serial < other.serial) return -1;
+      if (this->serial > other.serial) return 1;
       if (this->identity < other.identity) return -1;
       if (this->identity > other.identity) return 1;
       if (!this->identity) {
@@ -432,7 +506,10 @@ public:
     NodeInfoArray clippers;
     NodeInfoArray autozoom;
 
-    void init(SoState * state = nullptr);
+    // Exported on its own: _Material is nested in SoFCRenderCache, and a
+    // nested class is not carried out of the DLL by the enclosing class's
+    // export, so RenderCacheMapBench_tests_run cannot link this without it.
+    GuiExport void init(SoState * state = nullptr);
 
     bool isOnTop() const {
       return order > 0 || annotation > 0;
@@ -440,6 +517,14 @@ public:
 
     bool hasLinePattern() const {
       return (linepattern & 0xffff) != 0xffff;
+    }
+
+    /// The creation serial of a shared, immutable cache object, or 0
+    /// for none -- which keeps a null ordering first, where the null
+    /// pointer used to.
+    template<class T>
+    static inline std::uint64_t serialOf(const std::shared_ptr<const T> &p) {
+      return Render::cacheSerialOf(p.get());
     }
 
     inline bool operator<(const _Material &other) const {
@@ -524,15 +609,18 @@ public:
         if (finishdepth > other.finishdepth) return false;
         if (finishangle < other.finishangle) return true;
         if (finishangle > other.finishangle) return false;
-        // Pointer identity: a palette is immutable once published and
-        // one node makes one, so two draws sharing a palette share the
-        // pointer (like usershader below).
-        if (finishpalette.get() < other.finishpalette.get()) return true;
-        if (finishpalette.get() > other.finishpalette.get()) return false;
+        // Pointer identity is what says two draws SHARE a palette: it is
+        // immutable once published and one node makes one. The ORDER,
+        // though, is by creation serial and not by address -- an address
+        // is different in every run, and a draw order that follows it
+        // makes the picture differ wherever two draws contend for a
+        // pixel at equal depth (Render::CacheSerial).
+        if (serialOf(finishpalette) < serialOf(other.finishpalette)) return true;
+        if (serialOf(finishpalette) > serialOf(other.finishpalette)) return false;
         if (finishindices < other.finishindices) return true;
         if (finishindices > other.finishindices) return false;
-        if (framepalette.get() < other.framepalette.get()) return true;
-        if (framepalette.get() > other.framepalette.get()) return false;
+        if (serialOf(framepalette) < serialOf(other.framepalette)) return true;
+        if (serialOf(framepalette) > serialOf(other.framepalette)) return false;
         if (frameindices < other.frameindices) return true;
         if (frameindices > other.frameindices) return false;
         if (facetextures < other.facetextures) return true;
@@ -587,8 +675,8 @@ public:
         if (lightshadow > other.lightshadow) return false;
         if (lightshadowext < other.lightshadowext) return true;
         if (lightshadowext > other.lightshadowext) return false;
-        if (usershader.get() < other.usershader.get()) return true;
-        if (usershader.get() > other.usershader.get()) return false;
+        if (serialOf(usershader) < serialOf(other.usershader)) return true;
+        if (serialOf(usershader) > serialOf(other.usershader)) return false;
         if (lightmodel < other.lightmodel) return true;
         if (lightmodel > other.lightmodel) return false;
         if (vertexordering < other.vertexordering) return true;

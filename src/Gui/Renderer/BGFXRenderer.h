@@ -88,6 +88,8 @@ public:
     virtual void clearCaptureFilter() override;
     virtual bool setCaptureScene(DrawCallList &&draws) override;
     virtual void clearCaptureScene() override;
+    virtual bool shaderCompilePending() const override;
+    virtual int shaderCompileGeneration() const override;
 private:
 #ifndef FC_RENDERER_STANDALONE
     bool renderFiltered(const QColor &bg,
@@ -163,7 +165,13 @@ public:
     /// its own backbuffer (wasm dumpFrame protocol).
     virtual bool requestFrameDump(const FrameDumpRequest &req) override;
     virtual bool frameDumpPending() const override;
+    virtual void holdFrameDump() override;
+    virtual bool frameDumpHeld() const override;
+    virtual bool frameComplete() const override;
+    virtual uint64_t renderedFrames() const override;
+    virtual uint64_t completeFrames() const override;
     virtual bool getRenderStats(RenderStats &stats) const override;
+    virtual std::string deviceName() const override;
     virtual bool reloadShaders() override;
     /// Drop this view's sized targets (BGFXView::destroyTargets, the
     /// resize path's release); the next frame rebuilds them.

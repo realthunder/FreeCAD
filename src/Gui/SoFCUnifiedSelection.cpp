@@ -196,6 +196,23 @@ public:
         return false;
     }
 
+    /// Start \a path where the render cache manager resolves \a vp:
+    /// a viewer puts its own groups between this root and the
+    /// provider's root (View3DInventorViewer::appendDetailPath), a
+    /// view-less root -- a headless serve source, SceneServeSource.cpp
+    /// -- holds the provider's root as a direct child, so there is
+    /// nothing to prepend. False when \a vp is not in this scene.
+    bool beginDetailPath(SoPath *path, ViewProvider *vp) const {
+        if (this->pcViewer) {
+            if (!this->pcViewer->hasViewProvider(vp))
+                return false;
+            this->pcViewer->appendDetailPath(path, vp);
+            return true;
+        }
+        SoNode *root = vp->getRoot();
+        return root && master->findChild(root) >= 0;
+    }
+
     void touch() {
         if (this->pcViewer && this->pcViewer->getRootPath()) {
             SoNode * head = this->pcViewer->getRootPath()->getHead();
@@ -674,6 +691,26 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
     std::vector<PickedInfo> ret;
     Filter filter;
 
+    // Everything below picks through a view: the on-top path starts at
+    // the viewer's root path, the late-pick paths come off its render
+    // action, and the fallback applies the ray to the graph the viewer
+    // holds. A view-less root -- the headless serve source's, whose one
+    // graph is shared by every connected client (SceneServeSource.cpp) --
+    // has none of those, and its clients do not pick here anyway: a
+    // browser's click arrives as a ray and is resolved against that
+    // client's own mirror (docs/ThinClient.md sec 8.3), which is the only
+    // place a per-client camera and pick radius exist.
+    //
+    // So this answers "nothing picked", which is what setHighlight and
+    // setSelection below already answer when they find no viewer. It has
+    // to be said HERE rather than left to them, because the way it used
+    // to be said was a null dereference: the preselect that a replayed
+    // pointer move triggers (handleEvent -> onPreselectTimer) walks
+    // straight into pcViewer->getRootPath(), and a browser hovering over
+    // a served document was all it took to reach it.
+    if (!pcViewer)
+        return ret;
+
     FC_TIME_INIT(t);
 
     if (pickBackFace && pcViewer->hasOnTopObject())
@@ -1005,11 +1042,8 @@ bool SoFCUnifiedSelection::Private::checkSelection(SelectionChanges::MsgType sel
     {
         SoDetail *detail = nullptr;
         detailPath->truncate(0);
-        if (useRenderer()) {
-            if (!pcViewer || !pcViewer->hasViewProvider(vp))
-                return false;
-            pcViewer->appendDetailPath(detailPath, vp);
-        }
+        if (useRenderer() && !beginDetailPath(detailPath, vp))
+            return false;
         if(vp->getDetailPath(objT.getSubName().c_str(),detailPath,true,detail)) {
             SoSelectionElementAction::Type type = SoSelectionElementAction::None;
             if (selType == SelectionChanges::AddSelection) {
@@ -1034,7 +1068,7 @@ bool SoFCUnifiedSelection::Private::checkSelection(SelectionChanges::MsgType sel
                         // on top if any of its sub element is
                         // selected.
                         nodePath = new SoPath(detailPath->getLength());
-                        pcViewer->appendDetailPath(nodePath, vp);
+                        beginDetailPath(nodePath, vp);
                         SoDetail *tmp = nullptr;
                         std::string sub = objT.getSubNameNoElement();
                         vp->getDetailPath(sub.c_str(),
@@ -1126,11 +1160,8 @@ bool SoFCUnifiedSelection::Private::doAction(SoAction * action)
             {
                 detailPath->truncate(0);
                 SoDetail *det = 0;
-                if (useRenderer()) {
-                    if (!pcViewer || !pcViewer->hasViewProvider(vp))
-                        return false;
-                    pcViewer->appendDetailPath(detailPath, vp);
-                }
+                if (useRenderer() && !beginDetailPath(detailPath, vp))
+                    return false;
                 if(vp->getDetailPath(hilaction->SelChange->pSubName,detailPath,true,det)) {
                     setHighlight(detailPath,det,static_cast<ViewProviderDocumentObject*>(vp),
                                  hilaction->SelChange->pSubName,

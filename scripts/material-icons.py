@@ -44,8 +44,15 @@ breaks if you forget -- each file states the digest of the appearance it
 was rendered from, and one that no longer matches is ignored in favour of
 a fresh render -- but every stale icon then costs a render on first sight.
 
-It needs a real GPU. The renderer draws these, so a software GL stack
-gives you either nothing or something that is not what users will see.
+Render it on a real GPU. The renderer draws these, and what a user
+sees is a GPU drawing them.
+
+Measured, though, the stack matters far less than that warning used to
+claim: the same 33 icons rendered here through llvmpipe instead of the
+GPU come out with byte-identical COVERAGE -- every alpha pixel of the
+33 -- and differ only in shading, by 0.68 levels of 255 on average.
+What does move the picture is a preference the scene forgets to pin;
+see IconSamples in MaterialIcons.cpp for the one that bit.
 
     cd <build>
     GALLIUM_DRIVER=d3d12 MESA_LOADER_DRIVER_OVERRIDE=d3d12 \\

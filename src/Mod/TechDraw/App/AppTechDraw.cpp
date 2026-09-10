@@ -61,6 +61,7 @@
 #include "PropertyCenterLineList.h"
 #include "PropertyCosmeticEdgeList.h"
 #include "PropertyCosmeticVertexList.h"
+#include "PropertyProjectedGeometry.h"
 #include "PropertyGeomFormatList.h"
 
 
@@ -127,6 +128,7 @@ PyMOD_INIT_FUNC(TechDraw)
     TechDraw::CosmeticEdge          ::init();
     TechDraw::PropertyCosmeticVertexList::init();
     TechDraw::CosmeticVertex        ::init();
+    TechDraw::PropertyProjectedGeometry::init();
 
     TechDraw::CosmeticExtension     ::init();
     TechDraw::CosmeticExtensionPython::init();

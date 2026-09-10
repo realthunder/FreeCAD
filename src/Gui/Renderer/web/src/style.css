@@ -832,3 +832,47 @@
 }
 .fc-sheet-formula .fc-sheet-preview-err { color: #ffb0b0; }
 .fc-sheet-preview-err { color: #c00000; }
+/* The on-view parameters an edit mode has open (docs/ThinClient.md sec
+   8.7): entry boxes floating over the canvas at a point the viewer
+   projects each frame.
+
+   Sized and coloured after the desktop's, which is a QuantitySpinBox
+   next to the cursor: small, monospaced digits, and dimmed until the
+   user has fixed the value rather than letting the pointer drive it. */
+.fc-onview {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.fc-onview-box {
+  position: absolute;
+  /* Centred on the anchor, which is where the desktop puts it too --
+     the transform rather than a margin so the box can be any width. */
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  width: 7ch;
+  padding: 1px 4px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center;
+  color: #cfd3dc;
+  background: rgba(24, 26, 31, 0.92);
+  border: 1px solid rgba(150, 156, 170, 0.55);
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  caret-color: #7fb6ff;
+}
+
+/* Fixed by the user rather than driven by the pointer -- the desktop
+   says the same thing by switching the label from its deactivated
+   colour to the constraint colour. */
+.fc-onview-box.fc-onview-set {
+  color: #fff;
+  border-color: #7fb6ff;
+}
+
+.fc-onview-box:focus {
+  outline: none;
+  border-color: #7fb6ff;
+  box-shadow: 0 0 0 2px rgba(127, 182, 255, 0.35);
+}

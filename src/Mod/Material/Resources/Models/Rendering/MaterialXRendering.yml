@@ -1,0 +1,72 @@
+---
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+# ***************************************************************************
+# *                                                                         *
+# *   Copyright (c) 2026 Zheng Lei <realthunder.dev@gmail.com>              *
+# *                                                                         *
+# *   This program is free software; you can redistribute it and/or modify  *
+# *   it under the terms of the GNU Lesser General Public License (LGPL)    *
+# *   as published by the Free Software Foundation; either version 2 of     *
+# *   the License, or (at your option) any later version.                   *
+# *   for detail see the LICENCE text file.                                 *
+# *                                                                         *
+# *   This program is distributed in the hope that it will be useful,       *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+# *   GNU Library General Public License for more details.                  *
+# *                                                                         *
+# *   You should have received a copy of the GNU Library General Public     *
+# *   License along with this program; if not, write to the Free Software   *
+# *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
+# *   USA                                                                   *
+# *                                                                         *
+# ***************************************************************************
+
+# A card carrying this model is shaded by a shader graph -- a MaterialX
+# document, a node graph with the image maps it refers to -- instead of by
+# the colour slots alone (docs/MaterialStorage.md sec 17, docs/CyclesIntegration.md sec
+# 6.13). It inherits Basic Rendering so the card still has a look where no
+# renderer can run the document.
+#
+# The files are named twice. MaterialXNames are what the graph CALLS
+# them, one per file, the graph itself among them; that is the key the
+# renderers join on, and it is the same string on every machine.
+# MaterialXFiles is the LIBRARY form beside it: where each file is, relative
+# to the materialx/ directory at the library's root. The paths are not part
+# of the card's identity, which is computed over the files' CONTENT hashes;
+# a card stored in a document names hashes and no paths at all.
+
+AppearanceModel:
+  Name: "Shader Graph Rendering"
+  UUID: '1b396dbe-b345-41e2-a42d-5b2934f50880'
+  URL: ''
+  Description: "Shaded by a MaterialX shader graph and its image maps"
+  DOI: ""
+  Inherits:
+    - BasicRendering:
+      UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
+  MaterialXShaderGraph:
+    DisplayName: "Shader Graph"
+    Type: 'String'
+    Units: ''
+    URL: ''
+    Description: "The MaterialX shader graph (.mtlx) this card is shaded by: the stated name of the entry that is the graph, one of the Shader Graph Names"
+  MaterialXSurface:
+    DisplayName: "Surface"
+    Type: 'String'
+    Units: ''
+    URL: ''
+    Description: "Which surface of the shader graph this card is shaded by: the name of one of its surfacematerial nodes. Empty is the first one the graph states, which is what a graph with a single material has"
+  MaterialXNames:
+    DisplayName: "Shader Graph Names"
+    Type: 'List'
+    Units: ''
+    URL: ''
+    Description: "What the MaterialX shader graph calls each file, one per entry of Shader Graph Files, the graph itself included"
+  MaterialXFiles:
+    DisplayName: "Shader Graph Files"
+    Type: 'FileList'
+    Units: ''
+    URL: ''
+    Description: "Library form only: each file's path relative to the library's materialx/ directory. Not part of the card's identity"

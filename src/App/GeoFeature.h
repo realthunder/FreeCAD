@@ -27,7 +27,7 @@
 #include <memory>
 #include "DocumentObject.h"
 #include "MappedElement.h"
-#include "Material.h"
+#include "MaterialAppearance.h"
 #include "PropertyGeo.h"
 #include "ComplexGeoData.h"
 
@@ -39,6 +39,8 @@ class PropertyXLinkSub;
 
 /** Base class of all geometric document objects.
  */
+class PropertyLinkBase;
+
 class AppExport GeoFeature : public App::DocumentObject
 {
     PROPERTY_HEADER_WITH_OVERRIDE(App::GeoFeature);
@@ -172,11 +174,30 @@ public:
      * make a snapshot of all referenced element geometry. After change, user
      * code may call this function to search for the new element name that
      * reference to the same geometry of the old element.
+     *
+     * @param referrer: the link property making the request, with 'obj' and
+     * 'subname' the reference as that property holds it (the sub-name path
+     * ending in the old, indexed element name).  Optional: it lets a
+     * feature answer from evidence the referrer's own document keeps for a
+     * reference into another document (docs/TopoNamingEnhance.md 7.13).
      */
     virtual const std::vector<std::string>& searchElementCache(const std::string &element,
                                                                Data::SearchOptions options = Data::SearchOption::CheckGeometry,
                                                                double tol = 1e-7,
-                                                               double atol = 1e-10) const;
+                                                               double atol = 1e-10,
+                                                               const PropertyLinkBase *referrer = nullptr,
+                                                               const DocumentObject *obj = nullptr,
+                                                               const char *subname = nullptr) const;
+
+    /** Called when a link property stops holding element references into
+     * this feature: it is being re-set, or destroyed with its owner.
+     *
+     * Whatever the feature retained for that referrer (searchElementCache)
+     * may be let go of.  Only a notice: the property may register again a
+     * moment later with new content, so the feature should re-evaluate at
+     * its next safe point rather than act here.
+     */
+    virtual void onElementReferenceReleased(PropertyLinkBase *prop) { (void)prop; }
 
 
     /// Return the object that owns the shape that contains the give element name
@@ -188,19 +209,19 @@ public:
     /// Return the higher level element names of the given element
     virtual std::vector<Data::IndexedName> getHigherElements(const char *name, bool silent=false) const;
 
-    /** @brief Appearance of the feature's material, as an App::Material
+    /** @brief Appearance of the feature's material, as an App::MaterialAppearance
      *
      * The material itself lives in the Materials module, which the Gui module
      * cannot reach directly. These two virtuals are the bridge: a feature that
      * carries a material card reports its appearance here, and the view
      * provider reads it from the App side without linking Materials.
      */
-    virtual App::Material getMaterialAppearance() const;
-    /// Set the feature's material appearance from an App::Material
-    virtual void setMaterialAppearance(const App::Material& material);
+    virtual App::MaterialAppearance getMaterialAppearance() const;
+    /// Set the feature's material appearance from an App::MaterialAppearance
+    virtual void setMaterialAppearance(const App::MaterialAppearance& material);
     /** Render_* view properties the feature's material card states
      *
-     * The third leg of the same bridge, for what App::Material cannot
+     * The third leg of the same bridge, for what App::MaterialAppearance cannot
      * carry: the media features are dynamic properties on the view
      * provider rather than fields of a material (see
      * App::MaterialRenderProperty). Empty unless the card states one.

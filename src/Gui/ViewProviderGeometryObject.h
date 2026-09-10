@@ -25,7 +25,7 @@
 #define GUI_VIEWPROVIDER_GEOMETRYOBJECT_H
 
 #include "ViewProviderDragger.h"
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Base/Tools.h>
 #include <Inventor/lists/SoPickedPointList.h>
 #include <cstdint>
@@ -41,6 +41,8 @@ class SoTexture2;
 class SoTexture2Transform;
 class SoBumpMap;
 class SoShadowStyle;
+
+class SoShaderProgram;
 
 namespace Gui {
 
@@ -64,7 +66,7 @@ class GuiExport PropertyShapeColor : public App::PropertyColor
 
 public:
     /// The appearance this colour lives in. Null until the owner wires it.
-    void setAppearance(App::PropertyMaterialList *appearance)
+    void setAppearance(App::PropertyAppearanceList *appearance)
     { _appearance = appearance; }
 
     void setValue(const Base::Color &col);
@@ -92,35 +94,41 @@ public:
     void applyToAppearance();
 
 private:
-    App::PropertyMaterialList *_appearance {nullptr};
+    App::PropertyAppearanceList *_appearance {nullptr};
 };
 
 /** ShapeMaterial, kept as a name over the appearance
+ *
+ * The class was PropertyShapeMaterial; the PROPERTY is still called
+ * ShapeMaterial and stays that way -- that name is in every saved
+ * document and every macro, and renaming it is a separate decision from
+ * renaming the type. Its registered type name keeps an alias to the old
+ * spelling (see Gui::PropertyShapeAppearance::init).
  *
  * Retired as a store: the appearance holds the material. Kept as a property
  * so old macros and old documents that say ShapeMaterial still land
  * somewhere, and hidden from the property editor so one datum does not
  * appear as two rows.
  */
-class GuiExport PropertyShapeMaterial : public App::PropertyMaterial
+class GuiExport PropertyShapeAppearance : public App::PropertyAppearance
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    void setAppearance(App::PropertyMaterialList *appearance)
+    void setAppearance(App::PropertyAppearanceList *appearance)
     { _appearance = appearance; }
 
-    void setValue(const App::Material &mat);
+    void setValue(const App::MaterialAppearance &mat);
     /// See PropertyShapeColor::mirrorValue; same no-op rule
-    void mirrorValue(const App::Material &mat)
-    { if (!(mat == getValue())) App::PropertyMaterial::setValue(mat); }
+    void mirrorValue(const App::MaterialAppearance &mat)
+    { if (!(mat == getValue())) App::PropertyAppearance::setValue(mat); }
 
     void Restore(Base::XMLReader &reader) override;
     /// See PropertyShapeColor::applyToAppearance; same ordering rule
     void applyToAppearance();
 
 private:
-    App::PropertyMaterialList *_appearance {nullptr};
+    App::PropertyAppearanceList *_appearance {nullptr};
 };
 
 class SoFCSelection;
@@ -155,9 +163,9 @@ public:
      * case of one appearance for the whole object costs one entry per field
      * rather than one whole material (docs/ShapeAppearanceDesign.md).
      */
-    App::PropertyMaterialList ShapeAppearance;
+    App::PropertyAppearanceList ShapeAppearance;
     /// Retired store, kept as a name over the appearance (hidden in the editor)
-    PropertyShapeMaterial ShapeMaterial;
+    PropertyShapeAppearance ShapeMaterial;
     App::PropertyBool BoundingBox;
 
     /**
@@ -221,6 +229,24 @@ public:
      */
     void applyMaterialAppearance();
 
+    /** Whether going back to the card's look would change anything
+     *
+     * There has to be a card with a look to go back TO, and the object has
+     * to have stopped following it. What the panel's Reset to material
+     * button and the context-menu command both ask before offering
+     * themselves (docs/MaterialStorage.md 15.5).
+     */
+    bool canResetAppearanceToMaterial() const;
+
+    /** Take the card's look again, and follow it from now on
+     *
+     * The deliberate way back, so no follow guard: this is what ENDS a
+     * look the user chose. The faces holding a look of their own keep it
+     * -- this is not "clear the overrides". Answers whether it did
+     * anything.
+     */
+    bool resetAppearanceToMaterial();
+
     /** Decide, once, whether a restored appearance follows its card
      *
      * A document written before the flag existed cannot state it, and
@@ -249,6 +275,16 @@ public:
     virtual void showBoundingBox(bool);
     //@}
 
+    /** The shared card program node this object wears, or null
+     *
+     * For the one other inserter at the root's head: a Scope=Object
+     * ShaderBinding must place its own program AFTER this one,
+     * because the render cache keeps the LAST material-stage
+     * program traversed and an explicit binding beats the card the
+     * object wears.
+     */
+    SoShaderProgram *getMaterialXNode() const { return pcMaterialXNode; }
+
 protected:
     /// get called by the container whenever a property has been changed
     void onChanged(const App::Property* prop) override;
@@ -260,7 +296,7 @@ protected:
                                    App::Property *prop) override;
 
     /// Push one whole material into the Coin material node
-    void setCoinAppearance(const App::Material &mat);
+    void setCoinAppearance(const App::MaterialAppearance &mat);
 
     virtual unsigned long getBoundColor() const;
     void updateBoundingBox();
@@ -268,6 +304,18 @@ protected:
     /// Sync the optional SoFCRenderMaterial node (render engine per-object
     /// PBR parameters) with the Render_* dynamic properties.
     void updateRenderMaterial();
+    /** Sync the shared MaterialX program node with the appearance
+     *
+     * The base's MaterialAppearance::materialx names a card-carried
+     * document set by its manifest hash; the shared node built from it
+     * (ViewProviderShaderBinding::acquireMaterialXNode) goes in at the
+     * root's head like a binding's does, and is given back when the hash
+     * changes or goes. Called from updateRenderMaterial(), so both an
+     * appearance edit and the post-restore pass reach it -- the second
+     * matters because the node needs blobs a restore drains only after
+     * the view document has been read.
+     */
+    void updateMaterialXNode();
     /// Sync the optional SoTexture2/SoTexture2Transform/SoBumpMap/
     /// SoFCRenderTexture nodes with the Render_BaseColorTexture /
     /// Render_Texture* / Render_NormalMap / Render_EmissiveMap /
@@ -322,6 +370,14 @@ protected:
 protected:
     SoMaterial       * pcShapeMaterial{nullptr};
     SoFCRenderMaterial * pcRenderMaterial{nullptr};
+    /// The shared card node this object wears, and the manifest hash it
+    /// was acquired for (see updateMaterialXNode)
+    SoShaderProgram  * pcMaterialXNode{nullptr};
+    std::string materialXHash;
+    /// Whether the appearance's MaterialX column VARIED at the last
+    /// sync. Only the base is drawn, so this is what keeps the
+    /// warning about that to the edit that starts it.
+    bool materialXVaries{false};
     SoTexture2       * pcRenderTexture{nullptr};
     SoTexture2Transform * pcRenderTexTransform{nullptr};
     SoBumpMap        * pcRenderBumpMap{nullptr};

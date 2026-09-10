@@ -29,7 +29,7 @@
 # include <cstring>
 #endif
 
-#include "Material.h"
+#include "MaterialAppearance.h"
 
 using namespace App;
 
@@ -173,9 +173,9 @@ uint8_t SurfaceTexture::slotFromName(const char *name)
 }
 
 //===========================================================================
-// Material
+// MaterialAppearance
 //===========================================================================
-Material::Material()
+MaterialAppearance::MaterialAppearance()
   : shininess{0.2000f}
   , transparency{}
 {
@@ -183,21 +183,21 @@ Material::Material()
     setType(USER_DEFINED);
 }
 
-Material::Material(const char* MatName)
+MaterialAppearance::MaterialAppearance(const char* MatName)
   : shininess{0.2000f}
   , transparency{}
 {
     set(MatName);
 }
 
-Material::Material(const MaterialType MatType)
+MaterialAppearance::MaterialAppearance(const MaterialType MatType)
   : shininess{0.2000f}
   , transparency{}
 {
     setType(MatType);
 }
 
-void Material::set(const char* MatName)
+void MaterialAppearance::set(const char* MatName)
 {
     if (strcmp("Brass",MatName) == 0 ) {
         setType(BRASS);
@@ -290,7 +290,7 @@ void Material::set(const char* MatName)
     }
 }
 
-void Material::setType(const MaterialType MatType)
+void MaterialAppearance::setType(const MaterialType MatType)
 {
     _matType = MatType;
     // A preset states the whole material and none of them states a finish
@@ -494,7 +494,7 @@ void Material::setType(const MaterialType MatType)
     }
 }
 
-float Material::shininessToRoughness(float shininess)
+float MaterialAppearance::shininessToRoughness(float shininess)
 {
     // The classical Blinn-Phong to microfacet match is on the GGX/Beckmann
     // WIDTH: alpha = sqrt(2 / (n + 2)) for a Phong exponent n. Roughness is
@@ -509,16 +509,16 @@ float Material::shininessToRoughness(float shininess)
     return std::min(std::pow(2.0f / (exponent + 2.0f), 0.25f), 1.0f);
 }
 
-float Material::roughnessToShininess(float roughness)
+float MaterialAppearance::roughnessToShininess(float roughness)
 {
     const float alpha = std::max(roughness * roughness, 1e-3f);
     const float exponent = 2.0f / (alpha * alpha) - 2.0f;
     return std::clamp(exponent / 128.0f, 0.0f, 1.0f);
 }
 
-Material Material::pbrToPhong(const Material& raw)
+MaterialAppearance MaterialAppearance::pbrToPhong(const MaterialAppearance& raw)
 {
-    Material mat = raw;
+    MaterialAppearance mat = raw;
     const Color& base = raw.diffuseColor;
     const Color& tint = raw.specularColor;
     const float metallic = tint.a;
@@ -531,9 +531,9 @@ Material Material::pbrToPhong(const Material& raw)
     return mat;
 }
 
-Material Material::phongToPbr(const Material& classic)
+MaterialAppearance MaterialAppearance::phongToPbr(const MaterialAppearance& classic)
 {
-    Material mat = classic;
+    MaterialAppearance mat = classic;
     // White tint, metallic 0: a Phong specular is an intensity, and every
     // Phong surface is a dielectric as far as the model can say.
     mat.specularColor.set(1.0f, 1.0f, 1.0f, 0.0f);
@@ -542,24 +542,24 @@ Material Material::phongToPbr(const Material& classic)
     return mat;
 }
 
-void Material::setPBR(bool enable)
+void MaterialAppearance::setPBR(bool enable)
 {
     if (pbr == enable)
         return;
     *this = enable ? phongToPbr(*this) : pbrToPhong(*this);
 }
 
-float Material::getMetallic() const
+float MaterialAppearance::getMetallic() const
 {
     return pbr ? specularColor.a : 0.0f;  // the Phong model has no metals
 }
 
-float Material::getRoughness() const
+float MaterialAppearance::getRoughness() const
 {
     return pbr ? shininess : shininessToRoughness(shininess);
 }
 
-void Material::setMetallic(float value)
+void MaterialAppearance::setMetallic(float value)
 {
     // Stating a metallic factor decides the mode: the Phong slot this
     // lands in means something else, and a value written there would be
@@ -568,7 +568,7 @@ void Material::setMetallic(float value)
     specularColor.a = value;
 }
 
-void Material::setRoughness(float value)
+void MaterialAppearance::setRoughness(float value)
 {
     setPBR(true);
     shininess = value;

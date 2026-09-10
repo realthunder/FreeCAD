@@ -84,12 +84,26 @@ void WorkbenchManipulator::addCommands(Gui::MenuItem* menuBar,
         if (!sync) {
             return;
         }
+        // The way back from a look the user chose, beside the command that
+        // chose it, and only while there is a card to go back to
+        // (docs/MaterialStorage.md 15.5).
+        if (applies("Material_ResetAppearance")) {
+            auto reset = new Gui::MenuItem();
+            reset->setCommand("Material_ResetAppearance");
+            par->insertItem(item, reset);
+        }
         // The two sync commands (docs/MaterialStorage.md sec 13) go next to
         // the command that assigned the material in the first place, but only
         // when they have something to act on: a divergence to take, or a card
         // to write back. An entry greyed out nine times in ten is clutter in a
         // menu that is long already.
-        for (const char* command : {"Material_UpdateFromLibrary", "Material_SaveToLibrary"}) {
+        // Copy Material and Paste Material (docs/MaterialStorage.md 17.12)
+        // under the same rule: Copy while the selection carries a card or a
+        // look, Paste while the clipboard holds one
+        for (const char* command : {"Material_UpdateFromLibrary",
+                                    "Material_SaveToLibrary",
+                                    "Material_Copy",
+                                    "Material_Paste"}) {
             if (applies(command)) {
                 auto sync = new Gui::MenuItem();
                 sync->setCommand(command);

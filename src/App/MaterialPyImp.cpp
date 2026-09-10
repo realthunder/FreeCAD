@@ -33,7 +33,7 @@ using namespace App;
 PyObject *MaterialPy::PyMake(struct _typeobject *, PyObject *, PyObject *)  // Python wrapper
 {
     // create a new instance of MaterialPy and the Twin object
-    return new MaterialPy(new Material);
+    return new MaterialPy(new MaterialAppearance);
 }
 
 // constructor method
@@ -59,21 +59,22 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
     PyObject* image = nullptr;
     PyObject* imagePath = nullptr;
     PyObject* uuid = nullptr;
-    static const std::array<const char *, 21> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
+    PyObject* materialx = nullptr;
+    static const std::array<const char *, 22> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
                                                           "EmissiveColor", "Shininess", "Transparency",
                                                           "PBR", "Metallic", "Roughness",
                                                           "Finish", "FinishPitch", "FinishDepth",
                                                           "FinishAngle", "Texture", "TextureScale",
                                                           "TextureOffset", "TextureRotation",
                                                           "Image", "ImagePath",
-                                                          "Uuid", nullptr};
+                                                          "Uuid", "MaterialX", nullptr};
 
-    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOOOOOOOOOOOOO", kwds_colors,
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOOOOOOOOOOOOOO", kwds_colors,
         &diffuse, &ambient, &specular, &emissive, &shininess, &transparency,
         &pbr, &metallic, &roughness,
         &finish, &finishPitch, &finishDepth, &finishAngle,
         &texture, &textureScale, &textureOffset, &textureRotation,
-        &image, &imagePath, &uuid)) {
+        &image, &imagePath, &uuid, &materialx)) {
         return -1;
     }
 
@@ -172,6 +173,10 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
         if (uuid) {
             setUuid(Py::String(uuid));
         }
+
+        if (materialx) {
+            setMaterialX(Py::String(materialx));
+        }
     }
     catch (Base::Exception& e) {
         e.setPyException();
@@ -196,7 +201,7 @@ PyObject* MaterialPy::set(PyObject * args)
     if (!PyArg_ParseTuple(args, "s", &pstr))
         return nullptr;
 
-    getMaterialPtr()->set(pstr);
+    getMaterialAppearancePtr()->set(pstr);
 
     Py_Return;
 }
@@ -204,10 +209,10 @@ PyObject* MaterialPy::set(PyObject * args)
 Py::Tuple MaterialPy::getAmbientColor() const
 {
     Py::Tuple tuple(4);
-    tuple.setItem(0, Py::Float(getMaterialPtr()->ambientColor.r));
-    tuple.setItem(1, Py::Float(getMaterialPtr()->ambientColor.g));
-    tuple.setItem(2, Py::Float(getMaterialPtr()->ambientColor.b));
-    tuple.setItem(3, Py::Float(getMaterialPtr()->ambientColor.a));
+    tuple.setItem(0, Py::Float(getMaterialAppearancePtr()->ambientColor.r));
+    tuple.setItem(1, Py::Float(getMaterialAppearancePtr()->ambientColor.g));
+    tuple.setItem(2, Py::Float(getMaterialAppearancePtr()->ambientColor.b));
+    tuple.setItem(3, Py::Float(getMaterialAppearancePtr()->ambientColor.a));
     return tuple;
 }
 
@@ -219,16 +224,16 @@ void MaterialPy::setAmbientColor(Py::Tuple arg)
     c.b = Py::Float(arg.getItem(2));
     if (arg.size() == 4)
     c.a = Py::Float(arg.getItem(3));
-    getMaterialPtr()->ambientColor = c;
+    getMaterialAppearancePtr()->ambientColor = c;
 }
 
 Py::Tuple MaterialPy::getDiffuseColor() const
 {
     Py::Tuple tuple(4);
-    tuple.setItem(0, Py::Float(getMaterialPtr()->diffuseColor.r));
-    tuple.setItem(1, Py::Float(getMaterialPtr()->diffuseColor.g));
-    tuple.setItem(2, Py::Float(getMaterialPtr()->diffuseColor.b));
-    tuple.setItem(3, Py::Float(getMaterialPtr()->diffuseColor.a));
+    tuple.setItem(0, Py::Float(getMaterialAppearancePtr()->diffuseColor.r));
+    tuple.setItem(1, Py::Float(getMaterialAppearancePtr()->diffuseColor.g));
+    tuple.setItem(2, Py::Float(getMaterialAppearancePtr()->diffuseColor.b));
+    tuple.setItem(3, Py::Float(getMaterialAppearancePtr()->diffuseColor.a));
     return tuple;
 }
 
@@ -240,16 +245,16 @@ void MaterialPy::setDiffuseColor(Py::Tuple arg)
     c.b = Py::Float(arg.getItem(2));
     if (arg.size() == 4)
     c.a = Py::Float(arg.getItem(3));
-    getMaterialPtr()->diffuseColor = c;
+    getMaterialAppearancePtr()->diffuseColor = c;
 }
 
 Py::Tuple MaterialPy::getEmissiveColor() const
 {
     Py::Tuple tuple(4);
-    tuple.setItem(0, Py::Float(getMaterialPtr()->emissiveColor.r));
-    tuple.setItem(1, Py::Float(getMaterialPtr()->emissiveColor.g));
-    tuple.setItem(2, Py::Float(getMaterialPtr()->emissiveColor.b));
-    tuple.setItem(3, Py::Float(getMaterialPtr()->emissiveColor.a));
+    tuple.setItem(0, Py::Float(getMaterialAppearancePtr()->emissiveColor.r));
+    tuple.setItem(1, Py::Float(getMaterialAppearancePtr()->emissiveColor.g));
+    tuple.setItem(2, Py::Float(getMaterialAppearancePtr()->emissiveColor.b));
+    tuple.setItem(3, Py::Float(getMaterialAppearancePtr()->emissiveColor.a));
     return tuple;
 }
 
@@ -261,16 +266,16 @@ void MaterialPy::setEmissiveColor(Py::Tuple arg)
     c.b = Py::Float(arg.getItem(2));
     if (arg.size() == 4)
     c.a = Py::Float(arg.getItem(3));
-    getMaterialPtr()->emissiveColor = c;
+    getMaterialAppearancePtr()->emissiveColor = c;
 }
 
 Py::Tuple MaterialPy::getSpecularColor() const
 {
     Py::Tuple tuple(4);
-    tuple.setItem(0, Py::Float(getMaterialPtr()->specularColor.r));
-    tuple.setItem(1, Py::Float(getMaterialPtr()->specularColor.g));
-    tuple.setItem(2, Py::Float(getMaterialPtr()->specularColor.b));
-    tuple.setItem(3, Py::Float(getMaterialPtr()->specularColor.a));
+    tuple.setItem(0, Py::Float(getMaterialAppearancePtr()->specularColor.r));
+    tuple.setItem(1, Py::Float(getMaterialAppearancePtr()->specularColor.g));
+    tuple.setItem(2, Py::Float(getMaterialAppearancePtr()->specularColor.b));
+    tuple.setItem(3, Py::Float(getMaterialAppearancePtr()->specularColor.a));
     return tuple;
 }
 
@@ -282,69 +287,69 @@ void MaterialPy::setSpecularColor(Py::Tuple arg)
     c.b = Py::Float(arg.getItem(2));
     if (arg.size() == 4)
     c.a = Py::Float(arg.getItem(3));
-    getMaterialPtr()->specularColor = c;
+    getMaterialAppearancePtr()->specularColor = c;
 }
 
 Py::Float MaterialPy::getShininess() const
 {
-    return Py::Float(getMaterialPtr()->shininess);
+    return Py::Float(getMaterialAppearancePtr()->shininess);
 }
 
 void MaterialPy::setShininess(Py::Float arg)
 {
-    getMaterialPtr()->shininess = arg;
+    getMaterialAppearancePtr()->shininess = arg;
 }
 
 Py::Float MaterialPy::getTransparency() const
 {
-    return Py::Float(getMaterialPtr()->transparency);
+    return Py::Float(getMaterialAppearancePtr()->transparency);
 }
 
 void MaterialPy::setTransparency(Py::Float arg)
 {
-    getMaterialPtr()->transparency = arg;
+    getMaterialAppearancePtr()->transparency = arg;
 }
 
 Py::Boolean MaterialPy::getPBR() const
 {
-    return Py::Boolean(getMaterialPtr()->pbr);
+    return Py::Boolean(getMaterialAppearancePtr()->pbr);
 }
 
 void MaterialPy::setPBR(Py::Boolean arg)
 {
     // Converting, like every other way of editing this value: the surface
     // keeps looking like itself in the other model
-    getMaterialPtr()->setPBR(arg);
+    getMaterialAppearancePtr()->setPBR(arg);
 }
 
 Py::Float MaterialPy::getMetallic() const
 {
-    return Py::Float(getMaterialPtr()->getMetallic());
+    return Py::Float(getMaterialAppearancePtr()->getMetallic());
 }
 
 void MaterialPy::setMetallic(Py::Float arg)
 {
-    getMaterialPtr()->setMetallic(arg);
+    getMaterialAppearancePtr()->setMetallic(arg);
 }
 
 Py::Float MaterialPy::getRoughness() const
 {
-    return Py::Float(getMaterialPtr()->getRoughness());
+    return Py::Float(getMaterialAppearancePtr()->getRoughness());
 }
 
 void MaterialPy::setRoughness(Py::Float arg)
 {
-    getMaterialPtr()->setRoughness(arg);
+    getMaterialAppearancePtr()->setRoughness(arg);
 }
 
 Py::String MaterialPy::getFinish() const
 {
-    return Py::String(SurfaceFinish::patternName(getMaterialPtr()->finish.pattern));
+    return Py::String(SurfaceFinish::patternName(getMaterialAppearancePtr()->finish.pattern));
 }
 
 void MaterialPy::setFinish(Py::String arg)
 {
-    SurfaceFinish &finish = getMaterialPtr()->finish;
+    SurfaceFinish &finish = getMaterialAppearancePtr()->finish;
     finish.pattern = SurfaceFinish::patternFromName(std::string(arg).c_str());
     // Clearing the pattern clears what sized it, so that "no finish" is one
     // state rather than a pattern of None carrying stale numbers
@@ -354,35 +359,35 @@ void MaterialPy::setFinish(Py::String arg)
 // The three size attributes deliberately do NOT clamp: normalize() zeroes
 // everything while the pattern is None, so clamping here would wipe a pitch
 // written before the pattern it belongs to. The clamp happens where the
-// value is stored (PropertyMaterialList) and when a pattern is set.
+// value is stored (PropertyAppearanceList) and when a pattern is set.
 Py::Float MaterialPy::getFinishPitch() const
 {
-    return Py::Float(getMaterialPtr()->finish.pitch);
+    return Py::Float(getMaterialAppearancePtr()->finish.pitch);
 }
 
 void MaterialPy::setFinishPitch(Py::Float arg)
 {
-    getMaterialPtr()->finish.pitch = static_cast<float>(arg);
+    getMaterialAppearancePtr()->finish.pitch = static_cast<float>(arg);
 }
 
 Py::Float MaterialPy::getFinishDepth() const
 {
-    return Py::Float(getMaterialPtr()->finish.depth);
+    return Py::Float(getMaterialAppearancePtr()->finish.depth);
 }
 
 void MaterialPy::setFinishDepth(Py::Float arg)
 {
-    getMaterialPtr()->finish.depth = static_cast<float>(arg);
+    getMaterialAppearancePtr()->finish.depth = static_cast<float>(arg);
 }
 
 Py::Float MaterialPy::getFinishAngle() const
 {
-    return Py::Float(getMaterialPtr()->finish.angle);
+    return Py::Float(getMaterialAppearancePtr()->finish.angle);
 }
 
 void MaterialPy::setFinishAngle(Py::Float arg)
 {
-    getMaterialPtr()->finish.angle = static_cast<float>(arg);
+    getMaterialAppearancePtr()->finish.angle = static_cast<float>(arg);
 }
 
 Py::Dict MaterialPy::getTexture() const
@@ -391,7 +396,7 @@ Py::Dict MaterialPy::getTexture() const
     // caller can test it with `in` and a round trip through this dict says
     // exactly what the material said
     Py::Dict dict;
-    const SurfaceTexture &texture = getMaterialPtr()->texture;
+    const SurfaceTexture &texture = getMaterialAppearancePtr()->texture;
     for (uint8_t slot = 0; slot < SurfaceTexture::SlotCount; ++slot) {
         if (!texture.maps[slot].empty()) {
             dict.setItem(SurfaceTexture::slotName(slot), Py::String(texture.maps[slot]));
@@ -404,7 +409,7 @@ void MaterialPy::setTexture(Py::Dict arg)
 {
     // Every slot at once: an absent key clears its slot rather than leaving
     // whatever was there, so assigning a dict states the whole texture
-    SurfaceTexture texture = getMaterialPtr()->texture;
+    SurfaceTexture texture = getMaterialAppearancePtr()->texture;
     for (auto &hash : texture.maps) {
         hash.clear();
     }
@@ -419,7 +424,7 @@ void MaterialPy::setTexture(Py::Dict arg)
     // Clearing the last slot clears what positioned it, so that "no texture"
     // is one state rather than a transform with nothing to transform
     texture.normalize();
-    getMaterialPtr()->texture = texture;
+    getMaterialAppearancePtr()->texture = texture;
 }
 
 // The transform attributes deliberately do NOT clamp, for the reason the
@@ -428,7 +433,7 @@ void MaterialPy::setTexture(Py::Dict arg)
 // map it belongs to. The clamp happens where the value is stored.
 Py::Tuple MaterialPy::getTextureScale() const
 {
-    const SurfaceTexture &texture = getMaterialPtr()->texture;
+    const SurfaceTexture &texture = getMaterialAppearancePtr()->texture;
     Py::Tuple value(2);
     value.setItem(0, Py::Float(texture.scale[0]));
     value.setItem(1, Py::Float(texture.scale[1]));
@@ -440,14 +445,14 @@ void MaterialPy::setTextureScale(Py::Tuple arg)
     if (arg.size() != 2) {
         throw Py::ValueError("a texture scale is (u, v)");
     }
-    SurfaceTexture &texture = getMaterialPtr()->texture;
+    SurfaceTexture &texture = getMaterialAppearancePtr()->texture;
     texture.scale[0] = static_cast<float>(Py::Float(arg[0]));
     texture.scale[1] = static_cast<float>(Py::Float(arg[1]));
 }
 
 Py::Tuple MaterialPy::getTextureOffset() const
 {
-    const SurfaceTexture &texture = getMaterialPtr()->texture;
+    const SurfaceTexture &texture = getMaterialAppearancePtr()->texture;
     Py::Tuple value(2);
     value.setItem(0, Py::Float(texture.offset[0]));
     value.setItem(1, Py::Float(texture.offset[1]));
@@ -459,49 +464,59 @@ void MaterialPy::setTextureOffset(Py::Tuple arg)
     if (arg.size() != 2) {
         throw Py::ValueError("a texture offset is (u, v)");
     }
-    SurfaceTexture &texture = getMaterialPtr()->texture;
+    SurfaceTexture &texture = getMaterialAppearancePtr()->texture;
     texture.offset[0] = static_cast<float>(Py::Float(arg[0]));
     texture.offset[1] = static_cast<float>(Py::Float(arg[1]));
 }
 
 Py::Float MaterialPy::getTextureRotation() const
 {
-    return Py::Float(getMaterialPtr()->texture.rotation);
+    return Py::Float(getMaterialAppearancePtr()->texture.rotation);
 }
 
 void MaterialPy::setTextureRotation(Py::Float arg)
 {
-    getMaterialPtr()->texture.rotation = static_cast<float>(arg);
+    getMaterialAppearancePtr()->texture.rotation = static_cast<float>(arg);
 }
 
 Py::String MaterialPy::getImage() const
 {
-    return Py::String(getMaterialPtr()->image);
+    return Py::String(getMaterialAppearancePtr()->image);
 }
 
 void MaterialPy::setImage(Py::String arg)
 {
-    getMaterialPtr()->image = static_cast<std::string>(arg);
+    getMaterialAppearancePtr()->image = static_cast<std::string>(arg);
 }
 
 Py::String MaterialPy::getImagePath() const
 {
-    return Py::String(getMaterialPtr()->imagePath);
+    return Py::String(getMaterialAppearancePtr()->imagePath);
 }
 
 void MaterialPy::setImagePath(Py::String arg)
 {
-    getMaterialPtr()->imagePath = static_cast<std::string>(arg);
+    getMaterialAppearancePtr()->imagePath = static_cast<std::string>(arg);
 }
 
 Py::String MaterialPy::getUuid() const
 {
-    return Py::String(getMaterialPtr()->uuid);
+    return Py::String(getMaterialAppearancePtr()->uuid);
+}
+
+Py::String MaterialPy::getMaterialX() const
+{
+    return Py::String(getMaterialAppearancePtr()->materialx);
+}
+
+void MaterialPy::setMaterialX(Py::String arg)
+{
+    getMaterialAppearancePtr()->materialx = static_cast<std::string>(arg);
 }
 
 void MaterialPy::setUuid(Py::String arg)
 {
-    getMaterialPtr()->uuid = static_cast<std::string>(arg);
+    getMaterialAppearancePtr()->uuid = static_cast<std::string>(arg);
 }
 
 PyObject *MaterialPy::getCustomAttributes(const char* /*attr*/) const
@@ -534,7 +549,7 @@ int MaterialPy::setCustomAttributes(const char* attr, PyObject* obj)
     }
 
     Color* target = nullptr;
-    Material* material = getMaterialPtr();
+    MaterialAppearance* material = getMaterialAppearancePtr();
     if (strcmp(attr, "DiffuseColor") == 0) {
         target = &material->diffuseColor;
     }

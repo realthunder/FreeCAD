@@ -23,6 +23,10 @@
 
 #include <QColorDialog>
 #include <QDesktopServices>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QInputDialog>
 #include <QIODevice>
 #include <QItemSelectionModel>
 #include <QMenu>
@@ -40,10 +44,12 @@
 #include <Base/Quantity.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
+#include <Gui/FileDialog.h>
 #include <Gui/InputField.h>
 #include <Gui/PrefWidgets.h>
 #include <Gui/SpinBox.h>
 #include <Gui/WaitCursor.h>
+#include <Gui/Renderer/MaterialXSupport.h>
 
 #include <Mod/Material/App/Exceptions.h>
 #include <Mod/Material/App/MaterialLibrary.h>
@@ -435,6 +441,14 @@ void MaterialsEditor::onAppearanceAdd(bool checked)
             // Add default appearance properties
             *_material = *(getMaterialManager().defaultAppearance());
         }
+        if (selected == Materials::ModelUUIDs::ModelUUID_Rendering_MaterialX
+            || model->inherits(Materials::ModelUUIDs::ModelUUID_Rendering_MaterialX)) {
+            // A shader graph model without a graph is three fields nobody
+            // can fill by hand; not picking one is not adding the model
+            if (!pickShaderGraph()) {
+                _material->removeAppearance(selected);
+            }
+        }
 
         updateMaterial();
     }
@@ -798,6 +812,148 @@ void MaterialsEditor::createAppearanceTree()
     tree->setItemDelegateForColumn(1, delegate);
 
     connect(delegate, &MaterialDelegate::propertyChange, this, &MaterialsEditor::propertyChange);
+    connect(delegate, &MaterialDelegate::shaderGraphRequested, this, [this]() {
+        pickShaderGraph();
+    });
+    connect(delegate, &MaterialDelegate::shaderSurfaceRequested, this, [this]() {
+        pickShaderSurface();
+    });
+}
+
+bool MaterialsEditor::pickShaderGraph()
+{
+    const QString path = Gui::FileDialog::getOpenFileName(this,
+                                                          tr("Shader Graph"),
+                                                          QString(),
+                                                          tr("MaterialX shader graph (*.mtlx)"));
+    if (path.isEmpty()) {
+        return false;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this,
+                             tr("Shader Graph"),
+                             tr("Cannot read '%1'").arg(QDir::toNativeSeparators(path)));
+        return false;
+    }
+    const std::string xml = file.readAll().toStdString();
+
+    // What the graph SAYS its images are called is the key everything
+    // downstream joins on, so the names come from the file and nowhere
+    // else; the paths are where those names resolve beside it today, and
+    // the library save moves them (docs/MaterialStorage.md 17.12)
+    const auto references = Render::MaterialX::imageReferences(xml, path.toStdString());
+    const QString graph = QFileInfo(path).fileName();
+
+    // Which of the graph's surfaces this card is. A graph describing one
+    // material has one and the question is not asked; an asset's whole
+    // material set is one file with many, and then the card is one of
+    // them and has to say which (docs/MaterialStorage.md sec 17.13).
+    QString surface;
+    const auto info = Render::MaterialX::inspect(xml, path.toStdString());
+    if (info.materials.size() > 1) {
+        QStringList choices;
+        for (const auto& name : info.materials) {
+            choices.append(QString::fromStdString(name));
+        }
+        if (!chooseSurface(graph, choices, surface)) {
+            return false;
+        }
+    }
+    auto names = std::make_shared<QList<QVariant>>();
+    auto files = std::make_shared<QList<QVariant>>();
+    names->append(graph);
+    files->append(path);
+    QStringList missing;
+    for (const auto& reference : references) {
+        names->append(QString::fromStdString(reference.name));
+        files->append(QString::fromStdString(reference.path));
+        if (reference.path.empty()) {
+            missing.append(QString::fromStdString(reference.name));
+        }
+    }
+    _material->setAppearanceValue(QStringLiteral("MaterialXShaderGraph"), graph);
+    _material->setAppearanceValue(QStringLiteral("MaterialXSurface"), surface);
+    _material->setAppearanceValue(QStringLiteral("MaterialXNames"), names);
+    _material->setAppearanceValue(QStringLiteral("MaterialXFiles"), files);
+    _material->resolveMaterialXFiles(QString());
+    _material->setEditStateAlter();
+    if (!missing.isEmpty()) {
+        QMessageBox::warning(this,
+                             tr("Shader Graph"),
+                             tr("%1 refers to images that are not beside it:\n%2")
+                                 .arg(graph, missing.join(QStringLiteral("\n"))));
+    }
+    updateMaterial();
+    return true;
+}
+
+bool MaterialsEditor::chooseSurface(const QString& graph,
+                                   const QStringList& choices,
+                                   QString& surface)
+{
+    int current = choices.indexOf(surface);
+    bool picked = false;
+    const QString chosen = QInputDialog::getItem(this,
+                                                 tr("Surface"),
+                                                 tr("'%1' states %2 surfaces. "
+                                                    "Which one is this card?")
+                                                     .arg(graph)
+                                                     .arg(choices.size()),
+                                                 choices,
+                                                 current < 0 ? 0 : current,
+                                                 false,
+                                                 &picked);
+    if (!picked) {
+        return false;
+    }
+    surface = chosen;
+    return true;
+}
+
+bool MaterialsEditor::pickShaderSurface()
+{
+    // The graph is the first of the card's files, and where it is on this
+    // machine is what resolveMaterialXFiles() worked out (17.6)
+    const QStringList names = _material->getMaterialXNames();
+    const auto& paths = _material->getMaterialXPaths();
+    const QString graph = _material->getMaterialXShaderGraph();
+    QString path;
+    for (int i = 0; i < names.size() && i < int(paths.size()); ++i) {
+        if (names[i] == graph) {
+            path = QString::fromStdString(paths[std::size_t(i)]);
+            break;
+        }
+    }
+    QFile file(path);
+    if (path.isEmpty() || !file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this,
+                             tr("Surface"),
+                             tr("Pick a shader graph first: which surfaces there "
+                                "are is the graph's to say."));
+        return false;
+    }
+    const std::string xml = file.readAll().toStdString();
+    const auto info = Render::MaterialX::inspect(xml, path.toStdString());
+    if (info.materials.empty()) {
+        QMessageBox::warning(this,
+                             tr("Surface"),
+                             tr("'%1' states no surface: %2")
+                                 .arg(graph, QString::fromStdString(info.error)));
+        return false;
+    }
+    QStringList choices;
+    for (const auto& name : info.materials) {
+        choices.append(QString::fromStdString(name));
+    }
+    QString surface = _material->getMaterialXSurface();
+    if (!chooseSurface(graph, choices, surface)) {
+        return false;
+    }
+    _material->setAppearanceValue(QStringLiteral("MaterialXSurface"), surface);
+    _material->setEditStateAlter();
+    updateMaterial();
+    return true;
 }
 
 QIcon MaterialsEditor::getIcon(const std::shared_ptr<Materials::Library>& library)

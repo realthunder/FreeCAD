@@ -40,6 +40,7 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_matrix.sh"
 #include "fc_prepass_read.sh"
 
 SAMPLER2D(s_texNormalZ, 0);
@@ -57,7 +58,7 @@ void main()
 		return;
 	}
 
-	bool persp = u_proj[2][3] != 0.0;
+	bool persp = FC_MTX(u_proj, 2, 3) != 0.0;
 	float cz = cnz.z;
 
 	vec2 texel = u_cavityParams.zw;

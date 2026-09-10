@@ -215,6 +215,19 @@ int Writer::getSchemaVersion() const
     return schemaVersion;
 }
 
+const char* Writer::typeName(const Base::Type& type) const
+{
+    // 0 is "no document schema resolved" -- an object export, a content
+    // dump. Nothing there is being written for an older reader, so it gets
+    // the current name like schema 5 does.
+    if (schemaVersion > 0 && schemaVersion < 5) {
+        if (const char* legacy = type.getLegacyName()) {
+            return legacy;
+        }
+    }
+    return type.getName();
+}
+
 int Writer::getFileVersion() const
 {
     return fileVersion;

@@ -56,6 +56,24 @@ RendererExport void sampleEnvImage(const TextureImage &img,
 /// set, else the procedural preset.
 RendererExport void envRadiance(const PBRConfig &pbr, const float d[3], float out[3], bool managed);
 
+/// Half-angle, in radians, of the aperture the background is drawn
+/// through for softening  blur (PBRConfig::envBlur, 0..1).
+///
+/// The backdrop is defocused, so the filter every backend applies to
+/// it is a LENS: the sharp environment convolved with the disc of
+/// directions an aperture subtends, uniformly over solid angle. This
+/// is the one shared number behind that -- the raster backend spreads
+/// its taps over this cone, the path tracer bakes its camera-ray copy
+/// convolved with it -- so one slider position is one softness in
+/// both, and neither backend is free to invent its own law.
+///
+/// Zero is sharp; one opens to 45 degrees, as wide as a defocus can
+/// go before the backdrop stops reading as a place. In between it
+/// doubles every eighth of the slider -- the same eight halvings the
+/// raster cube map's mip chain used to be walked along, now read as
+/// an angle instead of a mip level.
+RendererExport float envBlurAngle(float blur);
+
 }  // namespace Render
 
 #endif  // RENDER_ENVIRONMENT_H

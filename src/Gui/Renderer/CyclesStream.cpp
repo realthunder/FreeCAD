@@ -40,6 +40,7 @@
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -77,21 +78,33 @@ void unpackAuthored(uint32_t rgba, float out[3], bool managed)
             out[i] = srgbToLinear(out[i]);
 }
 
-/// Bottom-up premultiplied linear half4 to top-down RGB8, composited
-/// over \a background where the film was transparent: the same flat
-/// colour or vertical ramp the offline render writes (CyclesRenderer.cpp
-/// writePng), encoded exactly when the scene is colour managed.
-void composite(const ccl::half4 *px, int width, int height,
-               const Background &background, bool managed,
-               std::vector<uint8_t> &rgb)
+}  // namespace
+
+// Bottom-up premultiplied linear half4 to 8-bit rows, composited over
+// the background where the film was transparent: the same flat colour
+// or vertical ramp the offline render writes (CyclesRenderer.cpp
+// writePng), encoded exactly when the scene is colour managed. The
+// stream takes it top-down RGB for the JPEG encoder; the shader graph
+// editor's preview bottom-up RGBA, as GL reads a framebuffer back.
+void compositeFrame(const void *half4, int width, int height,
+                    const Background &background, bool managed,
+                    int channels, bool topDown, std::vector<uint8_t> &out)
 {
+    const ccl::half4 *px = static_cast<const ccl::half4 *>(half4);
+    if (!px || width <= 0 || height <= 0 || (channels != 3 && channels != 4)) {
+        out.clear();
+        return;
+    }
     float from[3], to[3], mid[3];
     unpackAuthored(background.fromColor, from, managed);
     unpackAuthored(background.toColor, to, managed);
     unpackAuthored(background.midColor, mid, managed);
-    rgb.resize(size_t(width) * size_t(height) * 3);
+    out.resize(size_t(width) * size_t(height) * size_t(channels));
     for (int y = 0; y < height; ++y) {
-        const float t = height > 1 ? float(y) / float(height - 1) : 0.0f;
+        // The ramp runs top to bottom in the row order of the OUTPUT;
+        // y here is the output row.
+        const float t = height > 1
+            ? float(topDown ? y : height - 1 - y) / float(height - 1) : 0.0f;
         float bg[3];
         for (int i = 0; i < 3; ++i) {
             if (background.type == Background::Flat)
@@ -102,9 +115,10 @@ void composite(const ccl::half4 *px, int width, int height,
             else
                 bg[i] = from[i] + (to[i] - from[i]) * t;
         }
-        const ccl::half4 *src = px + size_t(height - 1 - y) * size_t(width);
-        uint8_t *dst = rgb.data() + size_t(y) * size_t(width) * 3;
-        for (int x = 0; x < width; ++x, ++src, dst += 3) {
+        const int srcRow = topDown ? height - 1 - y : y;
+        const ccl::half4 *src = px + size_t(srcRow) * size_t(width);
+        uint8_t *dst = out.data() + size_t(y) * size_t(width) * size_t(channels);
+        for (int x = 0; x < width; ++x, ++src, dst += channels) {
             const float a = std::clamp(ccl::half_to_float(src->w), 0.0f, 1.0f);
             const float c[3] = {ccl::half_to_float(src->x), ccl::half_to_float(src->y),
                                 ccl::half_to_float(src->z)};
@@ -112,9 +126,13 @@ void composite(const ccl::half4 *px, int width, int height,
                 const float v = c[i] + bg[i] * (1.0f - a);
                 dst[i] = managed ? encode(v) : quantize(v);
             }
+            if (channels == 4)
+                dst[3] = 255;
         }
     }
 }
+
+namespace {
 
 class FrameStreamImpl : public FrameStream
 {
@@ -132,6 +150,10 @@ public:
         viewport = Viewport::create(options.viewport, error);
         if (!viewport)
             return false;
+        // The slot this stream holds in the cap travels with whatever
+        // the viewport retires, so that a session still being torn
+        // down is still counted (sec 7.1).
+        viewport->setRetireToken(capSlot());
         // Cycles' threads report a staged frame; the encoder thread
         // is what takes it.
         viewport->setRedrawCallback([this] {
@@ -259,8 +281,7 @@ private:
                     return;
                 enc = managed;
                 got = viewport->takeFrame([&](const void *px, int w, int h) {
-                    composite(static_cast<const ccl::half4 *>(px), w, h, background,
-                              managed, rgb);
+                    compositeFrame(px, w, h, background, managed, 3, true, rgb);
                     width = w;
                     height = h;
                 });
@@ -273,9 +294,14 @@ private:
                     std::string msg = "{\"op\":\"cycles\",\"event\":\"error\",\"cell\":"
                         + std::to_string(options.cell) + ",\"message\":\"";
                     for (char ch : st.error) {
-                        if (ch == '"' || ch == '\\')
+                        // Any control character breaks the JSON string
+                        // (a newline is just the one an engine message
+                        // actually carries); a space keeps it readable.
+                        if (ch == '"' || ch == '\\') {
                             msg += '\\';
-                        if (ch == '\n')
+                            msg += ch;
+                        }
+                        else if (static_cast<unsigned char>(ch) < 0x20)
                             msg += ' ';
                         else
                             msg += ch;
@@ -349,7 +375,29 @@ std::unique_ptr<FrameStream> FrameStream::create(
         std::function<void(const std::string &)> notify,
         std::string *error)
 {
-    auto stream = std::make_unique<FrameStreamImpl>(options, std::move(send), std::move(notify));
+    std::unique_ptr<FrameStreamImpl> stream;
+    {
+        // The cap (sec 7.1) is read with the count frozen: the
+        // construction that takes the slot happens under the same
+        // lock, so two connections cannot both find room for the last
+        // one. The device, which is what takes the time, is created
+        // outside it by start().
+        static std::mutex admit;
+        std::lock_guard<std::mutex> lock(admit);
+        // The stream being replaced does not count against its own
+        // replacement while its device is still going away.
+        const int live = liveCount() - (options.replacing.expired() ? 0 : 1);
+        if (options.maxStreams > 0 && live >= options.maxStreams) {
+            if (error) {
+                *error = "this server already runs " + std::to_string(live)
+                    + " path-traced sessions, which is its limit ("
+                    + std::to_string(options.maxStreams) + ")";
+            }
+            return nullptr;
+        }
+        stream =
+            std::make_unique<FrameStreamImpl>(options, std::move(send), std::move(notify));
+    }
     if (!stream->start(error))
         return nullptr;
     return stream;

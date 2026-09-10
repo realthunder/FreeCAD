@@ -19,6 +19,8 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_screen.sh"
+#include "fc_matrix.sh"
 #include "fc_prepass_read.sh"
 
 #define AO_SAMPLES 16
@@ -39,7 +41,7 @@ void main()
 		return;
 	}
 
-	bool persp = u_proj[2][3] != 0.0;
+	bool persp = FC_MTX(u_proj, 2, 3) != 0.0;
 	float viewZ = nz.z;
 	vec3 pos = fc_prepassViewPos(v_texcoord0, viewZ, persp);
 
@@ -105,13 +107,13 @@ void main()
 		{
 			if (sz < 1.0e-6)
 				continue;
-			suv = vec2((u_proj[0][0] * s.x - u_proj[2][0] * sz) / sz,
-			           (u_proj[1][1] * s.y - u_proj[2][1] * sz) / sz);
+			suv = vec2((FC_MTX(u_proj, 0, 0) * s.x - FC_MTX(u_proj, 2, 0) * sz) / sz,
+			           (FC_MTX(u_proj, 1, 1) * s.y - FC_MTX(u_proj, 2, 1) * sz) / sz);
 		}
 		else
-			suv = vec2(u_proj[0][0] * s.x + u_proj[3][0],
-			           u_proj[1][1] * s.y + u_proj[3][1]);
-		suv = suv * 0.5 + vec2_splat(0.5);
+			suv = vec2(FC_MTX(u_proj, 0, 0) * s.x + FC_MTX(u_proj, 3, 0),
+			           FC_MTX(u_proj, 1, 1) * s.y + FC_MTX(u_proj, 3, 1));
+		suv = fc_clipToUv(suv);
 
 		vec4 snz = texture2D(s_texNormalZ, suv);
 		// Occluded when written geometry lies in front of the sample

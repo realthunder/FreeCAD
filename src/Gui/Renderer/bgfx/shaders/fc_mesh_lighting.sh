@@ -84,6 +84,7 @@ uniform vec4 u_lightColor;
 // swidth * 0.001, the 0.1 spot factor folded in), w = kernel mode —
 // 0 single tap, 1 Coin's 4-tap dithered kernel, N >= 3 an N x N grid.
 uniform vec4 u_evsm;
+#include "fc_openpbr.sh"      // the OpenPBR surface (the PBR branch)
 #include "fc_shadow_tap.sh"   // the shared VSM/EVSM bound (needs both above)
 #include "fc_matcap.sh"       // procedural matcaps (needs nothing but a normal)
 uniform mat4 u_shadowMatrix;
@@ -245,38 +246,49 @@ vec3 fcBaseFromSpecular(vec3 diffuse, vec3 spec, out float metal)
 	             vec3_splat(0.0), vec3_splat(1.0));
 }
 
-/* One light's contribution to the metallic/roughness branch: GGX with
- * Karis' fast Smith-joint visibility and Schlick Fresnel. `l` points
- * from the surface toward the light, view space; the view vector is
- * +z. The specular term is clamped -- a facing plane sits exactly on
- * the GGX peak (1 / pi a^2) under a light along the view axis, which
- * would flash whole faces white at low roughness.
+/* The user material-stage splice. A MaterialX document generates a
+ * function that states the OpenPBR parameters (Renderer/MaterialXGen.cpp);
+ * the assembled variant defines FC_USER_MATERIAL and appends that
+ * function after this file, so the prototype here is what lets the
+ * shading branch below call it. Without the define this compiles to
+ * nothing and the branch shades the draw's own appearance -- the same
+ * arrangement the volume stage uses for its medium functions
+ * (fc_volume.sh).
  *
- * The headlight used to have its own collapsed form here (L = V makes
- * ndl = ndh = ndv and vdh = 1, so Fresnel reduces to f0). It is not a
- * separate case any more, because it is not a separate light any more
- * -- and the general form below reduces to exactly that collapsed one
- * when L = V, visibility term included, so nothing changed by folding
- * it in.
+ * The document IS the surface: it runs after the defaults and before
+ * anything is evaluated, so what it does not state keeps OpenPBR's own
+ * default rather than the draw's.
  */
-vec3 fcPbrDirect(vec3 n, vec3 l, vec3 lcol, vec3 kd, vec3 f0,
-                 float a, float twoside)
+#ifdef FC_USER_MATERIAL
+void fcUserMaterialInputs(inout FcOpenPbr m, FcMtlxGeom g);
+#endif
+
+/* One light's contribution to the OpenPBR branch. The light vector `l`
+ * points from the surface toward the light in view space; the BSDF is
+ * evaluated in the surface's own local frame, so it is transformed
+ * there first. A two-sided draw shades a back-lit face as if the light
+ * were on this side, the way GL's two-sided lighting reverses the
+ * normal. The caller multiplies by the light's colour.
+ *
+ * The gain on the cosine is not physics: it is the direct-light gain
+ * this branch has carried since PBR arrived (249741eb69). It is kept
+ * so that swapping the shading model does not also change every
+ * document's brightness -- one change at a time -- and it is the knob
+ * to revisit when the appearance presets are re-authored as OpenPBR
+ * materials.
+ */
+#define FC_PBR_DIRECT_GAIN 1.2
+
+vec3 fcOpenPbrLight(FcOpenPbr m, FcPbrWeights w, vec3 vloc, vec3 l,
+                    vec3 tx, vec3 ty, vec3 n, float twoside)
 {
-	float ndv = max(n.z, 1.0e-4);
-	float ndl = dot(n, l);
+	vec3 lloc = vec3(dot(l, tx), dot(l, ty), dot(l, n));
 	if (twoside > 0.5)
-		ndl = abs(ndl);
-	ndl = max(ndl, 0.0);
-	vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
-	float ndh = max(dot(n, h), 0.0);
-	float vdh = max(h.z, 0.0);
-	float d = ndh * ndh * (a * a - 1.0) + 1.0;
-	float D = a * a / (3.14159265 * d * d);
-	float vis = 0.5 / max(mix(2.0 * ndl * ndv, ndl + ndv, a), 1.0e-4);
-	vec3 F = f0 + (vec3_splat(1.0) - f0)
-		* exp2((-5.55473 * vdh - 6.98316) * vdh);
-	return (kd * 0.31830989 + F * min(D * vis, 4.0))
-		* lcol * (ndl * 1.2);
+		lloc.z = abs(lloc.z);
+	if (lloc.z <= 0.0)
+		return vec3_splat(0.0);
+	return fcOpenPbrBsdf(m, w, vloc, lloc)
+		* (lloc.z * FC_PBR_DIRECT_GAIN);
 }
 // Local effect lights: unshadowed point lights added on top of
 // whatever lighting model runs (the usual engine effect-light shortcut
@@ -459,7 +471,7 @@ float fcSceneShadow(vec3 vpos, vec2 fragCoord, out vec3 tint)
  */
 vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
                      vec2 fragCoord, float occ, float metal, float rough,
-                     vec3 matEmissive, vec4 matSpec)
+                     vec3 matEmissive, vec4 matSpec, FcMtlxGeom mtlxGeom)
 {
 	vec3 color = base.rgb;
 
@@ -480,9 +492,30 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 	if (u_lightPos.w > -0.5)
 		sceneL = normalize(vpos - u_lightPos.xyz);
 
+	// Which shading model this draw runs. A GENERATED material (a
+	// MaterialX document) is an OpenPBR surface by construction, so it
+	// takes that branch whatever the frame's shading mode says: a
+	// matcap or a Phong evaluation has nowhere to put what the document
+	// states, and the draw would silently render as though no document
+	// were attached -- which is exactly how this arrived, with every
+	// leg of the splice probe reading byte-identical to its control.
+#ifdef FC_USER_MATERIAL
+	bool matcapBranch = false;
+	bool openPbrBranch = true;
+	// The frame carries no PBR configuration when its PBR mode is off,
+	// and its environment intensity is then zero. A document asks for a
+	// physically shaded surface, so it gets the environment at full
+	// strength rather than an unlit one.
+	float envIntensity = u_pbrParams.x > 0.5 ? u_pbrParams.w : 1.0;
+#else
+	bool matcapBranch = u_matcapParams.x > 0.5;
+	bool openPbrBranch = u_pbrParams.x > 0.5;
+	float envIntensity = u_pbrParams.w;
+#endif
+
 	if (u_params.y > 0.5)
 	{
-		if (u_matcapParams.x > 0.5)
+		if (matcapBranch)
 		{
 			// Matcap: the whole shading is a camera-fixed studio looked
 			// up by the view normal. No lights, no shadow tap -- that is
@@ -496,60 +529,90 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			color = mix(mc, mc * base.rgb, u_matcapParams.z)
 				* (occ * ao);
 		}
-		else if (u_pbrParams.x > 0.5)
+		else if (openPbrBranch)
 		{
-			// Metallic/roughness BRDF: the ordinary Coin lights
-			// (the headlight and whatever else the traversal
-			// holds) plus image based lighting from the fixed
-			// world-space environment. Two-sided surfaces flip the
-			// normal toward the viewer; single-sided back faces go
-			// dark like the fixed-function headlight.
+			// OpenPBR (fc_openpbr.sh): the layered surface that this
+			// rasterizer and the Cycles path tracer both describe, under
+			// the ordinary Coin lights, the shadowed scene light and the
+			// fixed world-space environment. Two-sided surfaces flip the
+			// normal toward the viewer; single-sided back faces go dark
+			// like the fixed-function headlight.
 			if (u_params.z > 0.5 && n.z < 0.0)
 				n = -n;
 			float ndv = max(n.z, 1.0e-4);
-			// A negative metalness asks for the Phong specular
-			// colour to be read as material data -- nothing
-			// authored one, so the appearance's own reflectance
-			// is the best statement of the surface there is.
+
+			// A negative metalness asks for the Phong specular colour to
+			// be read as material data -- nothing authored one, so the
+			// appearance's own reflectance is the best statement of the
+			// surface there is. That solve is unchanged: this branch
+			// swapped its shading MODEL, not the inputs to it, so every
+			// tuned appearance preset still arrives as the base colour,
+			// metalness and roughness it always did.
 			vec3 pbrBase = base.rgb;
 			float pbrMetal = metal;
 			if (metal < 0.0)
-				pbrBase = fcBaseFromSpecular(base.rgb,
-				                             matSpec.rgb,
+				pbrBase = fcBaseFromSpecular(base.rgb, matSpec.rgb,
 				                             pbrMetal);
-			vec3 f0 = mix(vec3_splat(0.04), pbrBase, pbrMetal);
-			vec3 kd = pbrBase * (1.0 - pbrMetal);
-			float a = rough * rough;
 
-			// The ordinary lights always contribute, and
-			// unshadowed (Coin's SoShadowGroup keeps them beside
-			// the shadow light the same way). No AO on them: the
-			// dominant one is the headlight, which shines along
-			// the view ray, and a visible fragment is by
-			// definition unoccluded toward the camera ...
+			// The rest of OpenPBR's parameters keep their spec defaults,
+			// which is exactly the stock CAD surface: no coat, no fuzz, a
+			// white specular colour at IOR 1.5. Nothing states them yet
+			// -- a MaterialX document is what will.
+			FcOpenPbr m;
+			fcOpenPbrDefaults(m);
+			m.baseColor = pbrBase;
+			m.baseMetalness = pbrMetal;
+			m.specularRoughness = rough;
+#ifdef FC_USER_MATERIAL
+			// A generated material replaces the whole surface:
+			// the document states it, so the draw's own colour,
+			// metalness and roughness above are only what it
+			// leaves unstated.
+			fcUserMaterialInputs(m, mtlxGeom);
+			// The normal it states (a normal map, carried to
+			// geometry_normal) replaces the mesh's, on the mesh's
+			// side of the surface; everything below -- the frame,
+			// the lights, the environment lookups -- reads it.
+			n = fcOpenPbrShadingNormal(m, n);
+			ndv = max(n.z, 1.0e-4);
+#endif
+			fcOpenPbrClamp(m);
+
+			// The local shading frame, and the view vector in it.
+			vec3 tx, ty;
+			fcOpenPbrFrame(n, tx, ty);
+			vec3 vloc = vec3(sqrt(max(0.0, 1.0 - ndv * ndv)), 0.0, ndv);
+			FcPbrWeights w;
+			fcOpenPbrWeights(m, ndv, w);
+
+			// The ordinary lights always contribute, and unshadowed
+			// (Coin's SoShadowGroup keeps them beside the shadow light
+			// the same way). No AO on them: the dominant one is the
+			// headlight, which shines along the view ray, and a visible
+			// fragment is by definition unoccluded toward the camera ...
 			vec3 direct = vec3_splat(0.0);
 			for (int vi = 0; vi < VIEW_LIGHTS; ++vi)
 			{
 				vec3 vl, vlcol;
-				// Active slots are packed from 0 with the tail
-				// zeroed, so the first empty one ends the list --
-				// eight slots cost what the scene actually uses.
+				// Active slots are packed from 0 with the tail zeroed, so
+				// the first empty one ends the list -- eight slots cost
+				// what the scene actually uses.
 				if (!fcViewLight(vi, vpos, vl, vlcol))
 					break;
-				direct += fcPbrDirect(n, vl, vlcol, kd, f0, a,
-				                      u_params.z);
+				direct += fcOpenPbrLight(m, w, vloc, vl, tx, ty, n,
+				                         u_params.z) * vlcol;
 			}
 			// ... and the shadowed scene light adds on top.
 			if (u_lightDir.w > 0.5)
-				direct += fcPbrDirect(n, -sceneL,
-				                      u_lightColor.rgb * shadowTint,
-				                      kd, f0, a, u_params.z)
-					* shadow;
+				direct += fcOpenPbrLight(m, w, vloc, -sceneL, tx, ty, n,
+				                         u_params.z)
+					* (u_lightColor.rgb * shadowTint * shadow);
 
-			// IBL in world space (the environment does not follow
-			// the camera): SH irradiance for the diffuse part, the
-			// prefiltered mip chain plus Lazarov's analytic
-			// environment BRDF for the specular part.
+			// IBL in world space (the environment does not follow the
+			// camera): SH irradiance for the diffuse-like lobes, and the
+			// prefiltered mip chain in the mirror direction for the
+			// microfacet ones. A coat is smoother than what it covers, so
+			// it reads a mip of its own.
 			vec3 nw = normalize(
 				mul(u_invView, vec4(n, 0.0)).xyz);
 			vec3 rw = normalize(mul(u_invView,
@@ -564,34 +627,34 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 				+ u_envSH[6].xyz * (3.0 * nw.z * nw.z - 1.0)
 				+ u_envSH[7].xyz * (nw.x * nw.z)
 				+ u_envSH[8].xyz * (nw.x * nw.x - nw.y * nw.y);
-			vec3 pref = textureCubeLod(s_texEnv, rw,
-			                           rough * 5.0).xyz;
-			vec4 r4 = rough * vec4(-1.0, -0.0275, -0.572, 0.022)
-				+ vec4(1.0, 0.0425, 1.04, -0.04);
-			float a004 = min(r4.x * r4.x, exp2(-9.28 * ndv))
-				* r4.x + r4.y;
-			vec2 ab = vec2(-1.04, 1.04) * a004 + r4.zw;
-			vec3 envBrdf = f0 * ab.x + vec3_splat(ab.y);
+			vec3 prefSpec = textureCubeLod(s_texEnv, rw,
+			                               m.specularRoughness * 5.0).xyz;
+			vec3 prefCoat = m.coatWeight > 0.0
+				? textureCubeLod(s_texEnv, rw, m.coatRoughness * 5.0).xyz
+				: vec3_splat(0.0);
+
 			// The scene ambient (Coin's LIGHT_MODEL_AMBIENT, i.e.
 			// SoEnvironment) taken for what it physically is here: a
-			// uniform-radiance environment. It therefore reaches the
-			// specular term as well as the diffuse one, which is the
-			// only form that reaches a METAL -- a metal has no diffuse
-			// at all, so an ambient folded into kd alone would leave it
-			// exactly as dark as before. It is the light-model
-			// quantity on its own, NOT the material's ambient colour
-			// times it the way Blinn-Phong wants: the BRDF here already
-			// states the surface, and the ambient slot of a material
-			// read as metallic/roughness means nothing.
+			// uniform-radiance environment. It therefore reaches every
+			// lobe, which is the only form that reaches a METAL -- a
+			// metal has no diffuse at all, so an ambient folded into the
+			// diffuse alone would leave it exactly as dark as before. It
+			// is the light-model quantity on its own, NOT the material's
+			// ambient colour times it the way Blinn-Phong wants: the BSDF
+			// here already states the surface, and the ambient slot of a
+			// material read as OpenPBR means nothing.
 			//
 			// Deliberately outside u_pbrParams.w: that knob says how
 			// bright the user's environment map is, and this is a light
 			// beside it, not part of it.
 			vec3 ambRad = u_envAmbient.w > 0.5
 				? u_envAmbient.rgb : vec3_splat(0.0);
-			color = (kd * max(irr, vec3_splat(0.0)) + pref * envBrdf)
-					* (u_pbrParams.w * occ * ao)
-				+ (kd + envBrdf) * (ambRad * (occ * ao))
+
+			color = fcOpenPbrEnv(m, w, ndv, max(irr, vec3_splat(0.0)),
+			                     prefSpec, prefCoat)
+					* (envIntensity * occ * ao)
+				+ fcOpenPbrEnv(m, w, ndv, ambRad, ambRad, ambRad)
+					* (occ * ao)
 				+ direct;
 		}
 		else
@@ -850,6 +913,31 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 
 	color += matEmissive;
 	return vec4(color, base.a);
+}
+
+// The geometry a caller that has none can pass. A generated material
+// asking for a coordinate the draw does not carry reads zero, which is
+// what the generator warned about when it emitted the reference.
+FcMtlxGeom fcMtlxGeomNone()
+{
+	FcMtlxGeom g;
+	g.normalWorld = vec3(0.0, 0.0, 1.0);
+	g.tangentWorld = vec3(1.0, 0.0, 0.0);
+	g.positionWorld = vec3_splat(0.0);
+	g.normalObject = vec3(0.0, 0.0, 1.0);
+	g.positionObject = vec3_splat(0.0);
+	g.texcoord0 = vec2(0.0, 0.0);
+	g.color0 = vec3_splat(1.0);
+	return g;
+}
+
+// Geometry-less overload, for the callers that predate the splice.
+vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
+                     vec2 fragCoord, float occ, float metal, float rough,
+                     vec3 matEmissive, vec4 matSpec)
+{
+	return fcShadeFragment(base, n, geoN, vpos, fragCoord, occ, metal,
+	                       rough, matEmissive, matSpec, fcMtlxGeomNone());
 }
 
 // Scalar-material overload: the signature user material-stage shaders

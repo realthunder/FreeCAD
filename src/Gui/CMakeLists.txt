@@ -778,6 +778,13 @@ SET(Editor_HPP_SRCS
     SyntaxHighlighter.h
     TextEdit.h
 )
+# The shader graph editor's view (docs/ShaderGraphEditor.md sec 4.4);
+# its widget lives in FreeCADRenderer under the same switch.
+if(BUILD_BGFX AND BUILD_MATERIALX)
+    add_definitions(-DFC_SHADER_GRAPH_EDITOR)
+    list(APPEND Editor_CPP_SRCS ShaderGraphView.cpp ShaderGraphHost.cpp)
+    list(APPEND Editor_HPP_SRCS ShaderGraphView.h ShaderGraphHost.h)
+endif()
 SET(Editor_SRCS
     ${Editor_CPP_SRCS}
     ${Editor_HPP_SRCS}
@@ -930,6 +937,8 @@ SET(View3D_CPP_SRCS
     View3DInventorExamples.cpp
     View3DInventorSelection.cpp
     View3DInventorViewer.cpp
+    ViewerContext.cpp
+    MirrorViewer.cpp
     SceneControl.cpp
     View3DInventorRiftViewer.cpp
     View3DSettings.cpp
@@ -960,6 +969,8 @@ SET(View3D_SRCS
     View3DInventorExamples.h
     View3DInventorSelection.h
     View3DInventorViewer.h
+    ViewerContext.h
+    MirrorViewer.h
     SceneControl.h
     View3DInventorRiftViewer.h
     View3DSettings.h
@@ -1458,8 +1469,17 @@ SET(FreeCADGui_SRCS
     ${FreeCADGui_SDK_MOC_HDRS}
 )
 
+if(APPLE)
+    # Qt's SF Symbol icons throw on macOS 12; the file says why and how.
+    SET(FreeCADGui_MAC_SRCS
+        MacSymbolIconCompat.mm
+    )
+    SOURCE_GROUP("Mac" FILES ${FreeCADGui_MAC_SRCS})
+endif(APPLE)
+
 SET(FreeCADGui_SRCS
     ${FreeCADGui_SDK_SRCS}
+    ${FreeCADGui_MAC_SRCS}
     ${FreeCADGui_CPP_SRCS}
     ${FreeCADGui_XML_SRCS}
     ${qsint_MOC_SRCS}

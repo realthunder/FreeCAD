@@ -57,6 +57,7 @@
 
 #include "ExportOCAFGui.h"
 #include "ImportOCAFGui.h"
+#include "ReaderLookGui.h"
 #include "OCAFBrowser.h"
 
 #include "dxf/ImpExpDxfGui.h"
@@ -484,6 +485,25 @@ private:
                 PyMem_Free(DocName);
                 pcDoc = App::GetApplication().getDocument(Utf8DocName.c_str());
             }
+            if (file.hasExtension({"mtlx"})) {
+                // A material document is not geometry: it says which of its
+                // materials each piece of an asset already here wears
+                // (docs/MaterialStorage.md sec 17.13 item 2). So it dresses
+                // the document it is imported into and makes nothing, and a
+                // new empty document would have nothing to dress.
+                if (!pcDoc) {
+                    pcDoc = App::GetApplication().getActiveDocument();
+                }
+                if (!pcDoc) {
+                    throw Py::Exception(PyExc_IOError,
+                                        "a look is read onto the objects of a document, "
+                                        "and there is no document open");
+                }
+                if (readLook(file, pcDoc) < 0) {
+                    throw Py::Exception(PyExc_IOError, "no look to read");
+                }
+                return Py::None();
+            }
             if (!pcDoc) {
                 pcDoc = App::GetApplication().newDocument();
             }
@@ -609,10 +629,12 @@ private:
                 auto gdoc = Gui::Application::Instance->getDocument(pcDoc);
                 // copy: afterImport() may add objects and invalidate the array
                 std::vector<App::DocumentObject*> objs = pcDoc->getObjects();
+                std::vector<App::DocumentObject*> fresh;
                 for (auto obj : objs) {
                     if (existingIds.count(obj->getID())) {
                         continue;
                     }
+                    fresh.push_back(obj);
                     pcDoc->afterImport(obj);
                     if (gdoc) {
                         auto vp = Base::freecad_dynamic_cast<Gui::ViewProviderDocumentObject>(
@@ -622,6 +644,11 @@ private:
                         }
                     }
                 }
+                // An asset carrying its materials in a MaterialX document
+                // beside it dresses itself as it arrives; only what this
+                // import made, so a second asset in the document is left
+                // alone (docs/MaterialStorage.md sec 17.13 item 2)
+                readSidecarLook(file, pcDoc, fresh);
             }
             }
             hApp->Close(hDoc);
@@ -661,7 +688,7 @@ private:
         return {};
     }
 
-    static bool getShapeAppearance(App::DocumentObject* obj, std::vector<App::Material>& mats,
+    static bool getShapeAppearance(App::DocumentObject* obj, std::vector<App::MaterialAppearance>& mats,
                                    bool& pbr)
     {
         // Whole materials, only when the appearance says something the
@@ -719,7 +746,7 @@ private:
         // put the PBR factors. Entry 0 -- the whole-object reading, and the
         // first face's for a per-face appearance, since one glTF material
         // per object is all this carries.
-        if (auto* appearance = Base::freecad_dynamic_cast<App::PropertyMaterialList>(
+        if (auto* appearance = Base::freecad_dynamic_cast<App::PropertyAppearanceList>(
                 vp->getPropertyByName("ShapeAppearance"))) {
             if (appearance->isPBR() && appearance->getSize() > 0) {
                 mat.metallic = appearance->getMetallic(0);

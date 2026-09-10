@@ -23,6 +23,10 @@
 
 #include "PreCompiled.h"
 
+#include <cstring>
+
+#include <Base/Reader.h>
+
 #include "ShaderObject.h"
 
 
@@ -32,7 +36,8 @@ using namespace App;
 
 PROPERTY_SOURCE(App::ShaderProgram, App::DocumentObject)
 
-const char* ShaderProgram::DialectEnums[] = {"BGFX_SC", "GLSL", nullptr};
+const char* ShaderProgram::DialectEnums[] = {"BGFX_SC", "GLSL", "MATERIALX",
+                                             nullptr};
 const char* ShaderProgram::BlendEnums[] = {"Default", "Alpha", "Additive",
                                            nullptr};
 
@@ -48,7 +53,12 @@ ShaderProgram::ShaderProgram()
             "'post' (full screen pass)");
     Dialect.setEnums(DialectEnums);
     ADD_PROPERTY_TYPE(Dialect, ((long)0), "Shader", Prop_None,
-            "Source dialect of the program text");
+            "Source dialect of the program text: BGFX_SC and GLSL are\n"
+            "shading-language text the backend compiles, while\n"
+            "MATERIALX makes FragmentProgram a MaterialX document -- a\n"
+            "node graph describing the surface, which each backend\n"
+            "interprets in its own vocabulary. Only the 'material'\n"
+            "stage accepts MATERIALX");
     ADD_PROPERTY_TYPE(VertexProgram, (""), "Shader", Prop_None,
             "Vertex stage source; leave empty to use the renderer's\n"
             "stock vertex stage of the target pipeline stage");
@@ -61,6 +71,18 @@ ShaderProgram::ShaderProgram()
             "s_pstate0/s_pstate1 and writing the next. Leave empty for\n"
             "a stateless emitter, whose vertex stage computes position\n"
             "from the seed and the clock alone");
+    ADD_PROPERTY_TYPE(Surface, (""), "Shader", Prop_None,
+            "Which surface of a MATERIALX document this program is\n"
+            "shaded by, named as the document names it. Leave empty\n"
+            "for the first surface the document states, which is what\n"
+            "a document describing a single material has; a document\n"
+            "carrying a whole asset's material set states many");
+    ADD_PROPERTY_TYPE(Images, (), "Shader", Prop_None,
+            "Image files a MATERIALX document refers to, stored in the\n"
+            "document so it travels: each is held under the name the\n"
+            "document calls it by, and the renderers are handed a\n"
+            "document naming them where they are on this machine.\n"
+            "Kept in step with FragmentProgram automatically");
     Blend.setEnums(BlendEnums);
     ADD_PROPERTY_TYPE(Blend, ((long)0), "Shader", Prop_None,
             "Blend override of the material-stage beauty draw:\n"
@@ -116,6 +138,49 @@ ShaderProgram::ShaderProgram()
             "frozen frame is drawn (the DebugFreezeFrame render\n"
             "parameter). Gives a deterministic capture settled motion\n"
             "instead of particles at their spawn points");
+    updateSourceExtensions();
+}
+
+// The sources are stored as shared files (App::PropertyStringIncluded), and
+// the extension is what an unpacked project shows them under. Only the name
+// depends on the dialect -- the content is the same text either way -- so
+// this is presentation, not behaviour.
+void ShaderProgram::updateSourceExtensions()
+{
+    const char *ext = ".txt";
+    switch (Dialect.getValue()) {
+    case 0: ext = ".sc"; break;      // BGFX_SC
+    case 1: ext = ".glsl"; break;    // GLSL
+    case 2: ext = ".mtlx"; break;    // MATERIALX
+    default: break;
+    }
+    VertexProgram.setBlobExtension(ext);
+    FragmentProgram.setBlobExtension(ext);
+    SimulateProgram.setBlobExtension(ext);
+}
+
+void ShaderProgram::onChanged(const Property *prop)
+{
+    if (prop == &Dialect) {
+        updateSourceExtensions();
+    }
+    DocumentObject::onChanged(prop);
+}
+
+void ShaderProgram::handleChangedPropertyType(Base::XMLReader &reader,
+                                              const char *TypeName,
+                                              Property *prop)
+{
+    // A document written before the sources were blob-backed states them as
+    // App::PropertyString. The two types write the same element, so the value
+    // reads back as it is; only the type name moved.
+    if (TypeName && strcmp(TypeName, "App::PropertyString") == 0
+            && (prop == &VertexProgram || prop == &FragmentProgram
+                || prop == &SimulateProgram)) {
+        prop->Restore(reader);
+        return;
+    }
+    DocumentObject::handleChangedPropertyType(reader, TypeName, prop);
 }
 
 // ----------------------------------------------------------------------------
@@ -152,11 +217,11 @@ Shader::Shader()
 
 // ----------------------------------------------------------------------------
 
-PROPERTY_SOURCE(App::Appearance, App::LinkGroup)
+PROPERTY_SOURCE(App::ShaderBinding, App::LinkGroup)
 
-const char* Appearance::ScopeEnums[] = {"Object", "Instance", "Element", nullptr};
+const char* ShaderBinding::ScopeEnums[] = {"Object", "Instance", "Element", nullptr};
 
-Appearance::Appearance()
+ShaderBinding::ShaderBinding()
 {
     Scope.setEnums(ScopeEnums);
     ADD_PROPERTY_TYPE(Scope, ((long)0), "Appearance", Prop_None,
@@ -169,7 +234,7 @@ Appearance::Appearance()
             "  face element (e.g. Face3) shades only that face");
 }
 
-Shader *Appearance::resolveShader(DocumentObject **shaderChild) const
+Shader *ShaderBinding::resolveShader(DocumentObject **shaderChild) const
 {
     if (shaderChild)
         *shaderChild = nullptr;
@@ -186,7 +251,7 @@ Shader *Appearance::resolveShader(DocumentObject **shaderChild) const
     return nullptr;
 }
 
-std::vector<DocumentObject *> Appearance::getTargets() const
+std::vector<DocumentObject *> ShaderBinding::getTargets() const
 {
     DocumentObject *shaderChild = nullptr;
     resolveShader(&shaderChild);
@@ -212,14 +277,14 @@ template<> const char* App::ShaderPython::getViewProviderName() const {
     return "Gui::ViewProviderShaderPython";
 }
 
-PROPERTY_SOURCE_TEMPLATE(App::AppearancePython, App::Appearance)
-template<> const char* App::AppearancePython::getViewProviderName() const {
-    return "Gui::ViewProviderAppearancePython";
+PROPERTY_SOURCE_TEMPLATE(App::ShaderBindingPython, App::ShaderBinding)
+template<> const char* App::ShaderBindingPython::getViewProviderName() const {
+    return "Gui::ViewProviderShaderBindingPython";
 }
 /// @endcond
 
 // explicit template instantiation
 template class AppExport FeaturePythonT<App::ShaderProgram>;
 template class AppExport FeaturePythonT<App::Shader>;
-template class AppExport FeaturePythonT<App::Appearance>;
+template class AppExport FeaturePythonT<App::ShaderBinding>;
 }

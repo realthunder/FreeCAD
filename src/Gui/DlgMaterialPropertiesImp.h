@@ -33,8 +33,8 @@
 
 namespace App {
 class Property;
-class PropertyMaterial;
-class PropertyMaterialList;
+class PropertyAppearance;
+class PropertyAppearanceList;
 }
 
 namespace Gui {
@@ -46,7 +46,7 @@ class Ui_DlgMaterialProperties;
 /** The appearance editor
  *
  * Edits the named material property -- ShapeAppearance's whole list, or a
- * plain PropertyMaterial like a colour plot's TextureMaterial -- across
+ * plain PropertyAppearance like a colour plot's TextureMaterial -- across
  * every given view provider. Every edit applies as it is committed (a
  * colour picked, a spin box stepped), so the 3D view answers live; OK
  * keeps the result and Cancel restores the appearance the dialog opened
@@ -76,8 +76,8 @@ private:
     void onMetallicValueChanged(int);
     void onRoughnessValueChanged(int);
 
-    App::PropertyMaterialList* listProperty(Gui::ViewProvider*) const;
-    App::PropertyMaterial* singleProperty(Gui::ViewProvider*) const;
+    App::PropertyAppearanceList* listProperty(Gui::ViewProvider*) const;
+    App::PropertyAppearance* singleProperty(Gui::ViewProvider*) const;
     /// Relabel and show/hide the rows for the shading model
     void updateModeView(bool pbr);
     /// Refresh every control from the first object holding the property

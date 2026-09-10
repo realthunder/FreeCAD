@@ -195,6 +195,15 @@ private:
                 Import::ReaderGltf reader(file);
                 reader.read(hDoc);
             }
+            else if (file.hasExtension({"mtlx"})) {
+                // Import::ReaderLook does the FreeCAD half of a look, but
+                // reading the document is MaterialX's, and MaterialX is
+                // carried by the renderer, which the App tier does not link
+                // (docs/MaterialStorage.md sec 17.13 item 2)
+                throw Py::Exception(PyExc_IOError,
+                                    "reading a MaterialX look needs the GUI module: "
+                                    "ImportGui.insert()");
+            }
             else {
                 throw Py::Exception(PyExc_IOError, "no supported file format");
             }

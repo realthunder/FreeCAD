@@ -28,7 +28,7 @@
 #endif
 
 #include <App/Application.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Parameter.h>
@@ -417,6 +417,15 @@ double Preferences::svgHatchFactor()
 bool Preferences::SectionUsePreviousCut()
 {
     return getPreferenceGroup("General")->GetBool("SectionUsePreviousCut", false);
+}
+
+//! Whether a view keeps the projection it made in the document, so that
+//! reopening the document does not have to project again.  Off makes every
+//! page rebuild on restore the way it always did, at no cost in file size.
+//! See docs/TechDrawStoredGeometry.md.
+bool Preferences::storeProjectedGeometry()
+{
+    return getPreferenceGroup("General")->GetBool("StoreProjectedGeometry", true);
 }
 
 //! an index into the list of available line standards/version found in LineGroupDirectory

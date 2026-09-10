@@ -228,6 +228,77 @@ BGFXStyleState::lookupStyleOverride(uint64_t objectKey)
     return it->second.has ? &it->second : nullptr;
 }
 
+void
+BGFXView::pushUserImages(const Render::UserShader &shader)
+{
+    if (shader.dialect != Render::UserShader::Dialect::MaterialX)
+        return;
+    // The document's images stacked as the layers of ONE array, in the
+    // order the generated code names them -- which is what lets a
+    // material carry more maps than the mesh shader has units free
+    // (docs/CyclesIntegration.md sec 6.12).
+    //
+    // Joined on the PATH, because the two halves are produced by sides
+    // that cannot see each other's naming: the generator resolved the
+    // file, the capture decoded it. A layer whose pixels never arrived
+    // is left null and uploads white, which is the map missing and
+    // nothing else -- never another draw's texture.
+    Render::TexturePalette layers;
+    std::string samplerName;
+    int unit = 0;
+#ifndef FC_RENDERER_STANDALONE
+    const auto &variant = _BGFXLib.materialXVariant(shader);
+    if (variant.images.empty() || variant.imageSampler.empty())
+        return;
+    samplerName = variant.imageSampler;
+    unit = variant.imageUnit;
+    layers.entries.resize(variant.images.size());
+    for (const auto &want : variant.images) {
+        if (want.layer < 0 || want.layer >= int(layers.entries.size()))
+            continue;
+        for (const auto &have : shader.images) {
+            if (have.path == want.path && have.image) {
+                layers.entries[want.layer] = have.image;
+                break;
+            }
+        }
+    }
+#else
+    // No generator on this tier: the producer made the join once and
+    // shipped the answer on each image (UserShader::Image::layer) with
+    // the sampler and unit its program declares (docs/MaterialStorage.md
+    // sec 17.23). A snapshot older than that carries no images at all,
+    // and no program to bind them to either.
+    if (shader.imageSampler.empty())
+        return;
+    samplerName = shader.imageSampler;
+    unit = shader.imageUnit;
+    int count = 0;
+    for (const auto &have : shader.images)
+        count = std::max(count, have.layer + 1);
+    if (count <= 0)
+        return;
+    layers.entries.resize(size_t(count));
+    for (const auto &have : shader.images) {
+        if (have.layer >= 0 && have.image)
+            layers.entries[size_t(have.layer)] = have.image;
+    }
+#endif
+    const bgfx::UniformHandle sampler = _BGFXLib.userSampler(samplerName);
+    if (!bgfx::isValid(sampler))
+        return;
+    // The white 1x1 stand-in when the array cannot be built at all (no
+    // array-texture support, or the upload was refused): a sampler2DArray
+    // left unbound is undefined rather than merely blank.
+    bgfx::TextureHandle tex = m_whiteTexArray;
+    if (GpuTextureArray *array =
+            getTextureArray(layers, int(layers.entries.size()),
+                            GpuTextureArray::MaterialSide))
+        tex = array->handle;
+    if (bgfx::isValid(tex))
+        bgfx::setTexture(uint8_t(unit), sampler, tex);
+}
+
 void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
                       bool mapped)
 {
@@ -1393,6 +1464,22 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
             *mat.usershader, "vs_fc_mesh");
         if (bgfx::isValid(uprog)) {
             _BGFXLib.pushUserParams(*mat.usershader);
+            // A MaterialX document's maps, bound to the samplers its
+            // generated code declared (docs/CyclesIntegration.md sec
+            // 6.12). Units 13 and up, which is why the state textures
+            // below can still claim 10 and 11.
+            pushUserImages(*mat.usershader);
+            // A generated material pairs with the TEXTURED vertex
+            // stage whatever the draw's own texturing says, so the
+            // mesh's texture coordinates have to be on stream 2 for
+            // it -- an unbound stream reads a constant and every map
+            // samples one texel. A draw the texture path already set
+            // up has them there (with its own texture matrix); the
+            // rest get them here, under the identity.
+            if (!textured
+                    && mat.usershader->dialect
+                        == Render::UserShader::Dialect::MaterialX)
+                bindMeshTexCoord(mesh, *draw.mesh);
             // A stateful emitter's vertex stage reads this frame's
             // particle state by vertex texture fetch — the same
             // texels the step passes wrote a few views ago

@@ -417,7 +417,7 @@ void ViewProviderAssembly::unsetDragger()
     }
 }
 
-void ViewProviderAssembly::setEditViewer(Gui::View3DInventorViewer* viewer, int ModNum)
+void ViewProviderAssembly::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
 {
     ViewProviderPart::setEditViewer(viewer, ModNum);
 
@@ -464,7 +464,7 @@ bool ViewProviderAssembly::keyPressed(bool pressed, int key)
     return false;  // handle all other key events
 }
 
-bool ViewProviderAssembly::mouseMove(const SbVec2s& cursorPos, Gui::View3DInventorViewer* viewer)
+bool ViewProviderAssembly::mouseMove(const SbVec2s& cursorPos, Gui::ViewerContext* viewer)
 {
     try {
         return tryMouseMove(cursorPos, viewer);
@@ -475,7 +475,7 @@ bool ViewProviderAssembly::mouseMove(const SbVec2s& cursorPos, Gui::View3DInvent
     }
 }
 
-bool ViewProviderAssembly::tryMouseMove(const SbVec2s& cursorPos, Gui::View3DInventorViewer* viewer)
+bool ViewProviderAssembly::tryMouseMove(const SbVec2s& cursorPos, Gui::ViewerContext* viewer)
 {
     if (!isInEditMode()) {
         return false;
@@ -630,7 +630,7 @@ bool ViewProviderAssembly::mouseButtonPressed(
     int Button,
     bool pressed,
     const SbVec2s& cursorPos,
-    const Gui::View3DInventorViewer* viewer
+    const Gui::ViewerContext* viewer
 )
 {
     Q_UNUSED(cursorPos);
@@ -1020,7 +1020,7 @@ ViewProviderAssembly::DragMode ViewProviderAssembly::findDragMode()
     return DragMode::Translation;
 }
 
-void ViewProviderAssembly::initMove(const SbVec2s& cursorPos, Gui::View3DInventorViewer* viewer)
+void ViewProviderAssembly::initMove(const SbVec2s& cursorPos, Gui::ViewerContext* viewer)
 {
     try {
         tryInitMove(cursorPos, viewer);
@@ -1030,7 +1030,7 @@ void ViewProviderAssembly::initMove(const SbVec2s& cursorPos, Gui::View3DInvento
     }
 }
 
-void ViewProviderAssembly::tryInitMove(const SbVec2s& cursorPos, Gui::View3DInventorViewer* viewer)
+void ViewProviderAssembly::tryInitMove(const SbVec2s& cursorPos, Gui::ViewerContext* viewer)
 {
     dragMode = findDragMode();
     if (dragMode == DragMode::None) {
@@ -1489,7 +1489,7 @@ void ViewProviderAssembly::applyIsolationRecursively(
 
     if (!isolate) {
         float trans = mode == IsolateMode::Transparent ? 0.8 : 1.0;
-        // Upstream reads this from App::Material::getDefaultAppearance(), which this
+        // Upstream reads this from App::MaterialAppearance::getDefaultAppearance(), which this
         // fork does not have; the same preference is reachable through ViewParams.
         App::Color transparentColor;
         transparentColor.setPackedValue(Gui::ViewParams::getDefaultShapeColor());

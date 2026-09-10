@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GenerateModel xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="generateMetaModel_Module.xsd">
+  <PythonExport
+    Father="DrawViewPartPy"
+    Name="DrawViewSectionPy"
+    Twin="DrawViewSection"
+    TwinPointer="DrawViewSection"
+    Include="Mod/TechDraw/App/DrawViewSection.h"
+    Namespace="TechDraw"
+    FatherInclude="Mod/TechDraw/App/DrawViewPartPy.h"
+    FatherNamespace="TechDraw">
+    <Documentation>
+      <Author Licence="LGPL" Name="realthunder" EMail="realthunder.dev@gmail.com" />
+      <UserDocu>Feature for creating and manipulating Technical Drawing section views</UserDocu>
+    </Documentation>
+    <Methode Name="getCutPieces">
+      <Documentation>
+        <UserDocu>getCutPieces() - the result of the section cut, in the global frame and
+before centering, scaling and rotating.  The shape carries element names: the
+face made by the cut is named from the cutting tool's SectionPlane face, so it
+keeps its name when the model changes or SectionOrigin moves.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getCuttingTool">
+      <Documentation>
+        <UserDocu>getCuttingTool() - the tool this section cuts with, with the element names
+its faces carry (SectionPlane, SectionBack and the four sides).  Rebuilt on
+demand from the current section plane and the size of the last cut input.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getCutFaces">
+      <Documentation>
+        <UserDocu>getCutFaces() - the faces the cut opened, as a compound in the
+view coordinates the cut surface is drawn in.  Empty until the cut has run, or
+until a stored projection has been read back (docs/TechDrawStoredGeometry.md).</UserDocu>
+      </Documentation>
+    </Methode>
+    <CustomAttributes />
+  </PythonExport>
+</GenerateModel>

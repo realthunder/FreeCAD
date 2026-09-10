@@ -559,13 +559,29 @@ PyObject* MaterialPy::getAppearanceValue(PyObject* args)
 PyObject* MaterialPy::setAppearanceValue(PyObject* args)
 {
     char* name;
-    char* value;
-    if (!PyArg_ParseTuple(args, "ss", &name, &value)) {
+    PyObject* value;
+    if (!PyArg_ParseTuple(args, "sO", &name, &value)) {
         return nullptr;
     }
 
-    getMaterialPtr()->setAppearanceValue(QString::fromStdString(name),
-                                         QString::fromStdString(value));
+    if (PyUnicode_Check(value)) {
+        getMaterialPtr()->setAppearanceValue(QString::fromStdString(name),
+                                             QString::fromUtf8(PyUnicode_AsUTF8(value)));
+    }
+    else if (PyList_Check(value) || PyTuple_Check(value)) {
+        // A List, FileList or ImageList property: the shader graph's names
+        // and files are the ones a script has to state
+        auto list = std::make_shared<QList<QVariant>>();
+        Py::Sequence sequence(value);
+        for (const auto& item : sequence) {
+            list->append(QString::fromUtf8(Py::String(item).as_std_string("utf-8").c_str()));
+        }
+        getMaterialPtr()->setAppearanceValue(QString::fromStdString(name), list);
+    }
+    else {
+        PyErr_SetString(PyExc_TypeError, "value must be a string or a list of strings");
+        return nullptr;
+    }
     Py_INCREF(Py_None);
     return Py_None;
 }

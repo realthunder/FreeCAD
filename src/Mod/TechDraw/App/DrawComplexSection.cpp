@@ -108,7 +108,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Base/BoundBox.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -154,13 +154,20 @@ DrawComplexSection::~DrawComplexSection()
     abortMakeAlignedPieces();
 }
 
-TopoDS_Shape DrawComplexSection::makeCuttingTool(double dMax)
+//! Build the tool that cuts a complex section.  Unlike the simple section's
+//! prism, this one is swept from the user's own profile object, so its faces
+//! take their names from that profile's elements -- which says *which segment
+//! of the profile* made a face, and so survives the profile gaining a segment
+//! (docs/TopoNamingEnhance.md sec 8.3).  The geometry is exactly what it was;
+//! only the makers changed to the name propagating ones.
+Part::TopoShape DrawComplexSection::makeCuttingTool(double dMax)
 {
     //    Base::Console().Message("DCS::makeCuttingTool()\n");
-    TopoDS_Wire profileWire = makeProfileWire();
-    if (profileWire.IsNull()) {
+    Part::TopoShape profileShape = makeProfileShape();
+    if (profileShape.isNull()) {
         THROWM(Base::RuntimeError, "Can not make wire from cutting tool (1)")
     }
+    TopoDS_Wire profileWire = TopoDS::Wire(profileShape.getShape());
 
     if (debugSection()) {
         //the nose to tail version of the profile
@@ -180,19 +187,20 @@ TopoDS_Shape DrawComplexSection::makeCuttingTool(double dMax)
     gp_Trsf mov;
     mov.SetTranslation(gp_Vec(gClosestBasis) * (-dMax));
     TopLoc_Location loc(mov);
-    profileWire.Move(loc);
+    profileShape = profileShape.moved(loc);
+    profileWire = TopoDS::Wire(profileShape.getShape());
 
     gp_Vec extrudeDir(0.0, 0.0, 1.0);//arbitrary default
     if (BRep_Tool::IsClosed(profileWire)) {
         // Wire is closed, so make a face from it and extrude "vertically"
-        BRepBuilderAPI_MakeFace mkFace(profileWire);
-        TopoDS_Face toolFace = mkFace.Face();
-        if (toolFace.IsNull()) {
-            return TopoDS_Shape();
+        Part::TopoShape toolFace = makeProfileFace(profileShape);
+        if (toolFace.isNull()) {
+            return Part::TopoShape();
         }
-        gp_Dir gpNormal = getFaceNormal(toolFace);
+        TopoDS_Face face = TopoDS::Face(toolFace.getSubShape(TopAbs_FACE, 1));
+        gp_Dir gpNormal = getFaceNormal(face);
         extrudeDir = 2.0 * dMax * gpNormal;
-        return BRepPrimAPI_MakePrism(toolFace, extrudeDir).Shape();
+        return toolFace.makEPrism(extrudeDir);
     }
 
     // if the wire is open (the normal case of a more or less linear profile),
@@ -208,37 +216,61 @@ TopoDS_Shape DrawComplexSection::makeCuttingTool(double dMax)
         validateOffsetProfile(profileWire, SectionNormal.getValue(), angleThresholdDeg);
     }
 
-    m_toolFaceShape = extrudeWireToFace(profileWire, gClosestBasis, 2.0 * dMax);
+    m_toolFaceShape = extrudeWireToFace(profileShape, gClosestBasis, 2.0 * dMax);
     if (debugSection()) {
-        BRepTools::Write(m_toolFaceShape, "DCSToolFaceShape.brep");//debug
+        BRepTools::Write(m_toolFaceShape.getShape(), "DCSToolFaceShape.brep");//debug
     }
     extrudeDir = dMax * sectionCS.Direction();
-    TopoDS_Shape roughTool = BRepPrimAPI_MakePrism(m_toolFaceShape, extrudeDir).Shape();
-    if (roughTool.ShapeType() == TopAbs_COMPSOLID ||
-        roughTool.ShapeType() == TopAbs_COMPOUND) {
+    Part::TopoShape roughTool = m_toolFaceShape.makEPrism(extrudeDir);
+    if (roughTool.shapeType() == TopAbs_COMPSOLID ||
+        roughTool.shapeType() == TopAbs_COMPOUND) {
         //Composite Solids do not cut well if they contain "solids" with no volume. This
         //happens if the profile has segments parallel to the extrude direction.
         //We need to disassemble it and only keep the real solids.
-        BRep_Builder builder;
-        TopoDS_Compound comp;
-        builder.MakeCompound(comp);
-        TopExp_Explorer expSolids(roughTool, TopAbs_SOLID);
-        for (; expSolids.More(); expSolids.Next()) {
-            TopoDS_Solid solid = TopoDS::Solid(expSolids.Current());
+        std::vector<Part::TopoShape> keepers;
+        for (const auto& solid : roughTool.getSubTopoShapes(TopAbs_SOLID)) {
             GProp_GProps gprops;
-            BRepGProp::VolumeProperties(solid, gprops);
+            BRepGProp::VolumeProperties(solid.getShape(), gprops);
             double volume = gprops.Mass();
             if (volume > EWTOLERANCE) {
-                builder.Add(comp, solid);
+                keepers.push_back(solid);
             }
         }
+        //the default force=true keeps a lone keeper wrapped in a compound,
+        //which is what the raw builder always produced
+        Part::TopoShape comp;
+        comp.makECompound(keepers);
         return comp;
     }
 
-    return BRepPrimAPI_MakePrism(m_toolFaceShape, extrudeDir).Shape();
+    return roughTool;
 }
 
-TopoDS_Shape DrawComplexSection::getShapeToPrepare() const
+//! A face from a closed profile, named from the profile's own edges.  Falls
+//! back to the plain OCCT face maker -- unnamed, the way this was before --
+//! when the name propagating maker will not take the wire, so a profile that
+//! used to build a tool still builds one.
+Part::TopoShape DrawComplexSection::makeProfileFace(const Part::TopoShape& profileShape)
+{
+    try {
+        Part::TopoShape face = profileShape.makEFace();
+        if (!face.isNull() && face.hasSubShape(TopAbs_FACE)) {
+            return face;
+        }
+    }
+    catch (const Base::Exception& e) {
+        Base::Console().Log("DCS::makeProfileFace - named face maker failed - %s\n", e.what());
+    }
+    catch (const Standard_Failure& e) {
+        Base::Console().Log("DCS::makeProfileFace - named face maker failed - %s\n",
+                            e.GetMessageString());
+    }
+
+    BRepBuilderAPI_MakeFace mkFace(TopoDS::Wire(profileShape.getShape()));
+    return Part::TopoShape(mkFace.Face());
+}
+
+Part::TopoShape DrawComplexSection::getShapeToPrepare() const
 {
     //    Base::Console().Message("DCS::getShapeToPrepare()\n");
     if (ProjectionStrategy.getValue() == 0) {
@@ -250,7 +282,7 @@ TopoDS_Shape DrawComplexSection::getShapeToPrepare() const
 }
 
 //get the shape ready for projection and cut surface finding
-TopoDS_Shape DrawComplexSection::prepareShape(const TopoDS_Shape& cutShape, double shapeSize)
+Part::TopoShape DrawComplexSection::prepareShape(const Part::TopoShape& cutShape, double shapeSize)
 {
     //    Base::Console().Message("DCS::prepareShape() - strategy: %d\n", ProjectionStrategy.getValue());
     if (ProjectionStrategy.getValue() == 0) {
@@ -260,7 +292,7 @@ TopoDS_Shape DrawComplexSection::prepareShape(const TopoDS_Shape& cutShape, doub
 
     //"Aligned" projection (Aligned Section)
     if (m_alignResult.IsNull()) {
-        return TopoDS_Shape();
+        return Part::TopoShape();
     }
 
     // The unfolded fiction is not one rigid move of the cut shape: a
@@ -268,7 +300,9 @@ TopoDS_Shape DrawComplexSection::prepareShape(const TopoDS_Shape& cutShape, doub
     m_preparedFrameValid = false;
     m_cutFrameValid = false;
 
-    TopoDS_Shape centeredShape = ShapeUtils::centerShapeXY(m_alignResult, getProjectionCS());
+    //the aligned pieces are assembled in a worker from bare shapes, so there
+    //are no names to carry here -- only the type follows the base class
+    Part::TopoShape centeredShape(ShapeUtils::centerShapeXY(m_alignResult, getProjectionCS()));
     m_preparedShape = ShapeUtils::scaleShape(centeredShape, getScale());
     if (!DrawUtil::fpCompare(Rotation.getValue(), 0.0)) {
         m_preparedShape =
@@ -279,7 +313,7 @@ TopoDS_Shape DrawComplexSection::prepareShape(const TopoDS_Shape& cutShape, doub
 }
 
 
-void DrawComplexSection::makeSectionCut(const TopoDS_Shape& baseShape)
+void DrawComplexSection::makeSectionCut(const Part::TopoShape& baseShape)
 {
     abortMakeAlignedPieces();
 
@@ -324,14 +358,16 @@ void DrawComplexSection::makeSectionCut(const TopoDS_Shape& baseShape)
             });
 
         params.featureName = getFullName();
-        params.rawShape = BRepBuilderAPI_Copy(baseShape).Shape();
-        if (m_toolFaceShape.IsNull()) {
+        params.rawShape = BRepBuilderAPI_Copy(baseShape.getShape()).Shape();
+        if (m_toolFaceShape.isNull()) {
             //only the Offset path (DVS::makeSectionCut -> makeCuttingTool)
             //builds the tool face; a section created Aligned from the start
             //(scripting) has none yet and the null copy below would throw
             makeCuttingTool(m_shapeSize);
         }
-        params.toolFaceShape = BRepBuilderAPI_Copy(m_toolFaceShape).Shape();
+        //the worker gets the bare shape: mapping names writes to the document's
+        //hasher, which has no locking (docs/TopoNamingEnhance.md sec 8.2)
+        params.toolFaceShape = BRepBuilderAPI_Copy(m_toolFaceShape.getShape()).Shape();
         params.projectionStrategy = ProjectionStrategy.getValue();
         params.sectionNormal = SectionNormal.getValue();
         params.shapeSize = m_shapeSize;
@@ -371,7 +407,7 @@ void DrawComplexSection::abortMakeAlignedPieces()
 
 void DrawComplexSection::onSectionCutFinished(std::shared_ptr<TopoDS_Shape> cutPieces)
 {
-    m_cutPieces = *cutPieces;
+    m_cutPieces = nameCutPieces(m_cutHistory, *cutPieces);
     if (waitingForAlign())
         return;
     DrawViewSection::onSectionCutFinished(cutPieces);
@@ -384,7 +420,7 @@ void DrawComplexSection::onMakeAlignedPiecedFinished(std::shared_ptr<TopoDS_Shap
     m_alignResult  = *result;
     if (waitingForCut())
         return;
-    *result = m_cutPieces;
+    *result = m_cutPieces.getShape();
     DrawViewSection::onSectionCutFinished(result);
 }
 
@@ -621,21 +657,22 @@ TopoDS_Compound DrawComplexSection::singleToolIntersections(const TopoDS_Shape& 
     builder.MakeCompound(result);
 
     if (debugSection()) {
-        BRepTools::Write(cutShape, "DCSOffsetCutShape.brep");              //debug
-        BRepTools::Write(m_toolFaceShape, "DCSOffsetCuttingToolFace.brep");//debug
+        BRepTools::Write(cutShape, "DCSOffsetCutShape.brep");                        //debug
+        BRepTools::Write(m_toolFaceShape.getShape(), "DCSOffsetCuttingToolFace.brep");//debug
     }
 
-    if (m_toolFaceShape.IsNull()) {
+    if (m_toolFaceShape.isNull()) {
         return result;
     }
 
+    TopoDS_Shape toolFaceShape = m_toolFaceShape.getShape();
     TopExp_Explorer expFaces(cutShape, TopAbs_FACE);
     for (; expFaces.More(); expFaces.Next()) {
         TopoDS_Face face = TopoDS::Face(expFaces.Current());
-        if (!boxesIntersect(face, m_toolFaceShape)) {
+        if (!boxesIntersect(face, toolFaceShape)) {
             continue;
         }
-        std::vector<TopoDS_Face> commonFaces = faceShapeIntersect(face, m_toolFaceShape);
+        std::vector<TopoDS_Face> commonFaces = faceShapeIntersect(face, toolFaceShape);
         for (auto& cFace : commonFaces) {
             builder.Add(result, cFace);
         }
@@ -700,7 +737,7 @@ TopoDS_Shape DrawComplexSection::getShapeToIntersect()
         return DrawViewSection::getShapeToIntersect();
     }
     //Aligned
-    return m_preparedShape;
+    return m_preparedShape.getShape();
 }
 
 TopoDS_Shape DrawComplexSection::getShapeForDetail() const
@@ -709,7 +746,7 @@ TopoDS_Shape DrawComplexSection::getShapeForDetail() const
         return DrawViewSection::getShapeForDetail();
     }
     //Aligned
-    return m_preparedShape;
+    return m_preparedShape.getShape();
 }
 
 bool DrawComplexSection::getShapeForDetailFrame(gp_Trsf& frame) const
@@ -731,22 +768,41 @@ TopoDS_Wire DrawComplexSection::makeProfileWire() const
 TopoDS_Wire DrawComplexSection::makeProfileWire(App::DocumentObject* toolObj)
 {
     //    Base::Console().Message("DCS::makeProfileWire()\n");
+    Part::TopoShape profileShape = makeProfileShape(toolObj);
+    if (profileShape.isNull()) {
+        return TopoDS_Wire();
+    }
+    return TopoDS::Wire(profileShape.getShape());
+}
+
+Part::TopoShape DrawComplexSection::makeProfileShape() const
+{
+    App::DocumentObject* toolObj = CuttingToolWireObject.getValue();
+    return makeProfileShape(toolObj);
+}
+
+//! The profile wire, carrying the profile object's own element names.  The
+//! names are what the cutting tool's faces are built from, so the section
+//! face ends up saying which segment of the profile made it.
+Part::TopoShape DrawComplexSection::makeProfileShape(App::DocumentObject* toolObj)
+{
+    //    Base::Console().Message("DCS::makeProfileShape()\n");
     if (!isProfileObject(toolObj)) {
-        return TopoDS_Wire();
+        return Part::TopoShape();
     }
 
-    Part::TopoShape toolShape = Part::Feature::getShape(toolObj);
+    //getTopoShape, not getShape: the latter drops the element map
+    Part::TopoShape toolShape = Part::Feature::getTopoShape(toolObj);
     if (toolShape.isNull()) {
-        return TopoDS_Wire();
+        return Part::TopoShape();
     }
 
-    TopoDS_Wire profileWire;
     if (!toolShape.hasSubShape(TopAbs_WIRE))
         toolShape = toolShape.makEWires();
-    profileWire = TopoDS::Wire(toolShape.getSubShape(TopAbs_WIRE, 1));
-    if (profileWire.IsNull())
-        return TopoDS_Wire();
-    return makeNoseToTailWire(profileWire);
+    Part::TopoShape profileShape = toolShape.getSubTopoShape(TopAbs_WIRE, 1);
+    if (profileShape.isNull())
+        return Part::TopoShape();
+    return makeNoseToTailShape(profileShape);
 }
 
 gp_Vec DrawComplexSection::makeProfileVector(TopoDS_Wire profileWire)
@@ -1081,7 +1137,7 @@ bool DrawComplexSection::validateProfilePosition(TopoDS_Wire profileWire, gp_Ax2
 
     Bnd_Box shapeBox;
     shapeBox.SetGap(0.0);
-    BRepBndLib::AddOptimal(m_saveShape, shapeBox);
+    BRepBndLib::AddOptimal(m_saveShape.getShape(), shapeBox);
     double xMin = 0, xMax = 0, yMin = 0, yMax = 0, zMin = 0, zMax = 0;
     shapeBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
     double spanLow = xMin;
@@ -1162,6 +1218,19 @@ TopoDS_Shape DrawComplexSection::extrudeWireToFace(TopoDS_Wire& wire, gp_Dir ext
     return mkPrism.Shape();
 }
 
+//! The same sweep with the names carried through: makEPrism puts the wire's
+//! edge names onto the faces it generates from them.  The wire is moved to the
+//! start of the sweep and handed back moved, as the raw version leaves it.
+Part::TopoShape DrawComplexSection::extrudeWireToFace(Part::TopoShape& wire, gp_Dir extrudeDir,
+                                                     double extrudeDist)
+{
+    gp_Trsf mov;
+    mov.SetTranslation(gp_Vec(extrudeDir) * (-extrudeDist));
+    wire = wire.moved(TopLoc_Location(mov));
+
+    return wire.makEPrism(gp_Vec(extrudeDir) * 2.0 * extrudeDist);
+}
+
 //returns the normal of the face to be extruded into a cutting tool
 //the face is expected to be planar
 gp_Dir DrawComplexSection::getFaceNormal(TopoDS_Face& face)
@@ -1239,6 +1308,29 @@ TopoDS_Wire DrawComplexSection::makeNoseToTailWire(TopoDS_Wire inWire)
         mkWire.Add(edge);
     }
     return mkWire.Wire();
+}
+
+//! The same reordering, with the element names put back.  Nothing is rebuilt
+//! but the wire itself -- the edges in it are the ones that came in -- so
+//! mapSubElement finds every one of them by identity and restores its name.
+Part::TopoShape DrawComplexSection::makeNoseToTailShape(const Part::TopoShape& inWire)
+{
+    if (inWire.isNull()) {
+        return inWire;
+    }
+
+    TopoDS_Wire sorted = makeNoseToTailWire(TopoDS::Wire(inWire.getShape()));
+    if (sorted.IsNull()) {
+        return Part::TopoShape();
+    }
+    if (sorted.IsSame(inWire.getShape())) {
+        //a one edge profile is returned unchanged, names and all
+        return inWire;
+    }
+
+    Part::TopoShape result(sorted);
+    result.mapSubElement(inWire);
+    return result;
 }
 
 //static

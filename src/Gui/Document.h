@@ -58,6 +58,7 @@ class BaseView;
 class MDIView;
 class View3DInventor;
 class ViewProvider;
+class ViewerContext;
 class ViewProviderDocumentObject;
 class Application;
 class DocumentPy;
@@ -341,6 +342,13 @@ public:
     bool setEdit(Gui::ViewProvider* p, int ModNum=0, const char *subname=nullptr);
     const Base::Matrix4D &getEditingTransform() const;
     void setEditingTransform(const Base::Matrix4D &mat);
+    /** The view the current edit session is bound to, or null.
+     *
+     * Asked by a view that is going away while an edit is running in
+     * it: a client's mirror dies with its connection, and the document
+     * must not be left pointing at it.
+     */
+    ViewerContext *editingViewer() const;
     /// reset from edit mode, this cause all document to reset edit
     void resetEdit();
     /** Set whether leaving edit mode should restore the previous edit session

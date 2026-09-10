@@ -394,7 +394,7 @@ void PropertyContainer::Save (Base::Writer &writer) const
     writer.incInd();
     for(auto prop : transients) {
         writer.Stream() << writer.ind() << "<_Property name=\"" << prop->getName()
-            << "\" type=\"" << prop->getTypeId().getName()
+            << "\" type=\"" << writer.typeName(prop->getTypeId())
             << "\" status=\"" << prop->getStatus() << "\"/>\n";
     }
     writer.decInd();
@@ -404,7 +404,7 @@ void PropertyContainer::Save (Base::Writer &writer) const
     {
         writer.incInd(); // indentation for 'Property name'
         writer.Stream() << writer.ind() << "<Property name=\"" << it.first << "\" type=\""
-                        << it.second->getTypeId().getName();
+                        << writer.typeName(it.second->getTypeId());
 
         dynamicProps.save(it.second,writer);
 
@@ -554,7 +554,7 @@ void SharedDefaults::save(Base::Writer &writer) const
     for (const auto &v : entries) {
         writer.incInd();
         writer.Stream() << writer.ind() << "<Property name=\"" << v.first
-                        << "\" type=\"" << v.second.type.getName();
+                        << "\" type=\"" << writer.typeName(v.second.type);
         if (v.second.status)
             writer.Stream() << "\" status=\"" << v.second.status;
         writer.Stream() << "\">\n";
@@ -565,6 +565,23 @@ void SharedDefaults::save(Base::Writer &writer) const
     writer.Stream() << writer.ind() << "</Properties>\n";
     writer.decInd();
 }
+
+namespace {
+/** Does this property's type answer to the name the file states?
+ *
+ * The saved name is resolved rather than compared, so a type renamed since
+ * the file was written matches through its alias, and a name no build here
+ * knows still answers false instead of throwing.
+ */
+bool sameType(const Base::Type &type, const char *savedName)
+{
+    if (strcmp(type.getName(), savedName) == 0) {
+        return true;
+    }
+    Base::Type saved = Base::Type::fromName(savedName);
+    return !saved.isBad() && saved == type;
+}
+}  // namespace
 
 void PropertyContainer::Restore(Base::XMLReader &reader)
 {
@@ -645,8 +662,14 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
                     FC_LOG("no module for " << TypeName << ": " << e.what());
                 }
             }
-            // name and type match
-            if (prop && strcmp(prop->getTypeId().getName(), TypeName.c_str()) == 0) {
+            // name and type match. Compared by resolving the saved name, not
+            // by spelling it: a renamed type answers to its former name too
+            // (Base::Type::addLegacyName), and a file written before the
+            // rename states that former name. A plain strcmp reads that as a
+            // type change and hands it to handleChangedPropertyType, which
+            // drops the value in silence -- the same trap the module-loading
+            // comment above describes, arriving by a different door.
+            if (prop && sameType(prop->getTypeId(), TypeName.c_str())) {
                 if (!prop->testStatus(Property::Transient) 
                         && !status.test(Property::Transient)
                         && !status.test(Property::PropTransient)

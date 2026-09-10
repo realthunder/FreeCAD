@@ -84,6 +84,8 @@ public:
     static const QString ModelUUID_Rendering_Advanced;
     static const QString ModelUUID_Rendering_Vector;
     static const QString ModelUUID_Rendering_Glass;
+    /// Shaded by a MaterialX shader graph and its maps (MaterialXRendering.yml)
+    static const QString ModelUUID_Rendering_MaterialX;
 
     /// The two hatch models. A card carrying one of these and no Basic
     /// rendering states a 2D fill for a TechDraw section and not a

@@ -204,7 +204,7 @@ def bind_green_medium():
     sh = doc.addObject("App::Shader", "GreenFx")
     sh.Programs = [prog]
     sh.Demo = "None"
-    ap = doc.addObject("App::Appearance", "GreenLook")
+    ap = doc.addObject("App::ShaderBinding", "GreenLook")
     ap.ElementList = [sh, _shared["fire"]]
     doc.recompute()
     _shared["ap"] = ap

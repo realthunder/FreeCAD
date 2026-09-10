@@ -41,6 +41,7 @@
 #include "MaterialLoader.h"
 #include "Model.h"
 #include "ModelManager.h"
+#include "ModelUuids.h"
 
 
 using namespace Materials;
@@ -359,6 +360,50 @@ void MaterialYamlEntry::addToTree(
         }
     }
 
+    // The shader graph set. A card stored in a document carries it as
+    // a block of its own, by content (Material::saveCanonicalMaterialX); a
+    // library card states it through the model's properties, and its files
+    // are hashed off the library's materialx/ directory here, so identity
+    // is over content on both routes (docs/MaterialStorage.md 17.6).
+    if (yamlModel["MaterialX"]) {
+        auto node = yamlModel["MaterialX"];
+        if (!finalModel->hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_MaterialX)) {
+            finalModel->addAppearance(ModelUUIDs::ModelUUID_Rendering_MaterialX);
+        }
+        // "Document" is the key the block was first written with; files
+        // saved before the term became "shader graph" still name it
+        auto graph = node["ShaderGraph"] ? node["ShaderGraph"] : node["Document"];
+        if (graph) {
+            finalModel->setAppearanceValue(QStringLiteral("MaterialXShaderGraph"),
+                                           QString::fromStdString(graph.as<std::string>()));
+        }
+        if (node["Surface"]) {
+            const auto surface = node["Surface"].as<std::string>();
+            finalModel->setAppearanceValue(QStringLiteral("MaterialXSurface"),
+                                           QString::fromStdString(surface));
+        }
+        if (node["Names"]) {
+            finalModel->setAppearanceValue(QStringLiteral("MaterialXNames"),
+                                           readList(node["Names"]));
+        }
+        std::vector<std::string> hashes;
+        if (node["Hashes"]) {
+            // Named, not dereferenced inline. Through C++20 a range-for
+            // extends only the temporary its reference BINDS to, and
+            // that is the pointee here -- the shared_ptr itself dies at
+            // the end of the range initializer and takes the list with
+            // it, so the loop walks freed memory. It corrupted the heap
+            // about half the runs of the test that reads a stored card.
+            auto list = readList(node["Hashes"]);
+            for (const auto& hash : *list) {
+                hashes.push_back(hash.toString().toStdString());
+            }
+        }
+        finalModel->setMaterialXHashes(hashes);
+    }
+    else if (finalModel->hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_MaterialX)) {
+        finalModel->resolveMaterialXFiles(library->getDirectoryPath());
+    }
     QString path = QDir(directory).absolutePath();
     (*materialMap)[uuid] = library->addMaterial(finalModel, path);
 }
@@ -610,6 +655,12 @@ void MaterialLoader::loadLibrary(const std::shared_ptr<MaterialLibraryLocal>& li
 void MaterialLoader::loadLibraries(
     const std::shared_ptr<std::list<std::shared_ptr<MaterialLibrary>>>& libraryList)
 {
+    // A full pass starts from nothing. The entry map is static so that a
+    // card can inherit from one in a library loaded BEFORE it, and it was
+    // never reset: every refresh re-added every card ever seen, so a card
+    // deleted from a library came back to the tree until restart, and a
+    // deleted shader card warned about its missing files on every refresh
+    _materialEntryMap = std::make_unique<std::map<QString, std::shared_ptr<MaterialEntry>>>();
     if (libraryList) {
         for (auto& it : *libraryList) {
             if (it->isLocal()) {

@@ -26,7 +26,7 @@
 
 #include <Base/Vector3D.h>
 #include <Base/Rotation.h>
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
 #include <Gui/ViewProviderExtensionPython.h>
@@ -66,7 +66,7 @@ public:
     void getClosestGridPoint(double &x, double &y) const;
     double getGridSize() const;
 
-    void attachViewer(Gui::View3DInventorViewer *viewer);
+    void attachViewer(Gui::ViewerContext *viewer);
     void detachViewer();
 
 protected:

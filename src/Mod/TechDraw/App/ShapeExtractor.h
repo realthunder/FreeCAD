@@ -29,6 +29,7 @@
 #include <App/Link.h>
 #include <Base/Type.h>
 #include <Base/Vector3D.h>
+#include <Mod/Part/App/TopoShape.h>
 
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
@@ -39,10 +40,14 @@ namespace TechDraw
 class TechDrawExport ShapeExtractor
 {
 public:
-    static TopoDS_Shape getShapes(const std::vector<App::DocumentObject*> links, bool include2d = true);
-    static std::vector<TopoDS_Shape> getShapes2d(const std::vector<App::DocumentObject*> links);
-    static std::vector<TopoDS_Shape> getShapesFromObject(const App::DocumentObject* docObj);
-    static TopoDS_Shape getShapesFused(const std::vector<App::DocumentObject*> links);
+    //! The shape getters return Part::TopoShape rather than TopoDS_Shape so that the
+    //! element map of the source features reaches the view geometry -- see
+    //! docs/TopoNamingEnhance.md section 3.  The shapes are assembled with the
+    //! name-propagating makers (makECompound, makEBoolean) for the same reason.
+    static Part::TopoShape getShapes(const std::vector<App::DocumentObject*> links, bool include2d = true);
+    static std::vector<Part::TopoShape> getShapes2d(const std::vector<App::DocumentObject*> links);
+    static std::vector<Part::TopoShape> getShapesFromObject(const App::DocumentObject* docObj);
+    static Part::TopoShape getShapesFused(const std::vector<App::DocumentObject*> links);
     static TopoDS_Shape getShapeFromXLink(const App::Link* xLink);
 
     static bool is2dObject(App::DocumentObject* obj);
@@ -52,9 +57,9 @@ public:
     static bool isDatumPoint(App::DocumentObject* obj);
     static Base::Vector3d getLocation3dFromFeat(App::DocumentObject *obj);
 
-    static TopoDS_Shape stripInfiniteShapes(TopoDS_Shape inShape);
+    static Part::TopoShape stripInfiniteShapes(const Part::TopoShape& inShape);
 
-    static TopoDS_Shape getLocatedShape(const App::DocumentObject* docObj);
+    static Part::TopoShape getLocatedShape(const App::DocumentObject* docObj);
 
     static bool isSketchObject(const App::DocumentObject* obj);
 

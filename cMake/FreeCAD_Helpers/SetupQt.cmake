@@ -45,6 +45,26 @@ foreach(COMPONENT IN LISTS FREECAD_QT_COMPONENTS)
         set(Qt${COMPONENT}_LIBRARIES Qt${FREECAD_QT_MAJOR_VERSION}::${COMPONENT})
     endif()
     set(Qt${COMPONENT}_INCLUDE_DIRS ${Qt${FREECAD_QT_MAJOR_VERSION}${COMPONENT}_INCLUDE_DIRS})
+    # Qt's legacy Qt6Foo_INCLUDE_DIRS / _LIBRARIES variables are set by its
+    # config file, and that file is not re-read once the component is marked
+    # found -- so if ANYTHING found Qt before this loop, find_package above
+    # short-circuits and both variables come back empty. That is not
+    # hypothetical: SetupPCL() runs at CMakeLists.txt:59, drags in VTK, and
+    # VTK's config finds Qt6; every target that took its Qt includes from
+    # QtCore_INCLUDE_DIRS then compiled without them ("'QString' file not
+    # found" in src/Base, with FREECAD_USE_PCL=ON). The imported target is
+    # always there, so ask it.
+    if(NOT Qt${COMPONENT}_INCLUDE_DIRS AND TARGET Qt${FREECAD_QT_MAJOR_VERSION}::${COMPONENT})
+        get_target_property(Qt${COMPONENT}_INCLUDE_DIRS
+                            Qt${FREECAD_QT_MAJOR_VERSION}::${COMPONENT}
+                            INTERFACE_INCLUDE_DIRECTORIES)
+        if(NOT Qt${COMPONENT}_INCLUDE_DIRS)
+            set(Qt${COMPONENT}_INCLUDE_DIRS "")
+        endif()
+    endif()
+    if(NOT Qt${COMPONENT}_LIBRARIES AND TARGET Qt${FREECAD_QT_MAJOR_VERSION}::${COMPONENT})
+        set(Qt${COMPONENT}_LIBRARIES Qt${FREECAD_QT_MAJOR_VERSION}::${COMPONENT})
+    endif()
     set(Qt${COMPONENT}_FOUND ${Qt${FREECAD_QT_MAJOR_VERSION}${COMPONENT}_FOUND})
     set(Qt${COMPONENT}_VERSION ${Qt${FREECAD_QT_MAJOR_VERSION}${COMPONENT}_VERSION})
 endforeach()

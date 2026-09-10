@@ -1235,18 +1235,22 @@ Reply mainWindowCall(HandleTable& table, const json& a)
                 return replyErr("RuntimeError", "gui.mainwindow.addStatusBarItem: not realized");
             QObject::connect(w, &QObject::destroyed, qw, &QObject::deleteLater);
         }
-        mw->addStatusBarItem(qw, QString::fromUtf8(a[2].get_ref<const std::string&>().c_str()),
-                             QString::fromUtf8(a[3].get_ref<const std::string&>().c_str()),
-                             QString::fromUtf8(a[4].get_ref<const std::string&>().c_str()),
-                             a[5].get<int>());
+        Gui::StatusBarItemSpec spec;
+        spec.id = QByteArray(a[2].get_ref<const std::string&>().c_str());
+        spec.title = QString::fromUtf8(a[3].get_ref<const std::string&>().c_str());
+        spec.slot = a[4].get_ref<const std::string&>() == "Left" ? Gui::StatusBarSlot::Left
+                                                                  : Gui::StatusBarSlot::Right;
+        spec.order = a[5].get<int>();
+        mw->addStatusBarItem(qw, spec);
         return replyOk(true);
     }
     if (m == "removeStatusBarItem") {
         if (a.size() != 2 || !a[1].is_string())
             return replyErr("ProtocolError", "gui.mainwindow: [removeStatusBarItem, id]");
-        return replyOk(mw->removeStatusBarItem(
-                           QString::fromUtf8(a[1].get_ref<const std::string&>().c_str()))
-                       != nullptr);
+        const QByteArray id(a[1].get_ref<const std::string&>().c_str());
+        const bool had = mw->statusBarItem(id) != nullptr;
+        mw->removeStatusBarItem(id);
+        return replyOk(had);
     }
     if (m == "hasToolBar") {
         // a HOST tool bar by object name (a workbench's own, built from

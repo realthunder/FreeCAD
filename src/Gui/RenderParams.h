@@ -2174,10 +2174,11 @@ public:
     /// 
     /// How sharp it is DRAWN behind the model is a separate
     /// question, and the answer is Render_PBREnvBlur: the background
-    /// pass reads a level of that cubemap the way a real backdrop is
-    /// out of focus, and at zero it reads the level it was baked at.
-    /// The lighting and the reflections use the sharp levels
-    /// whatever the blur says.
+    /// pass draws that cubemap through a lens aperture, the way a
+    /// real backdrop is out of focus, and at zero the aperture is
+    /// shut and it is drawn as baked. The lighting and the
+    /// reflections read the sharp environment whatever the blur
+    /// says.
     /// 
     /// Empty falls back to that dialog's current image, then to the
     /// procedural environment.
@@ -2235,10 +2236,16 @@ public:
     /// Accessor for parameter PBREnvBlur
     ///
     /// How far out of focus the environment background is, 0 to 1.
-    /// Zero draws it at the resolution it was baked at; one flattens
-    /// it to a single average colour. Only the BACKGROUND is
-    /// affected -- the lighting and the reflections read the whole
-    /// environment whatever this says.
+    /// Zero is sharp -- the resolution it was baked at; one opens the
+    /// aperture to 45 degrees, and in between it doubles every eighth
+    /// of the range. Only the BACKGROUND is affected -- the lighting
+    /// and the reflections read the whole environment whatever this
+    /// says.
+    /// 
+    /// It is a defocus, not a smudge: the environment is convolved
+    /// with the disc of directions an aperture subtends, in linear
+    /// radiance, so a small bright source spreads into an even bokeh
+    /// disc that keeps its energy rather than being averaged away.
     /// 
     /// A backdrop wants some of this. A real one is out of focus, and
     /// softening also lets a small bright source bleed into a wide
@@ -2253,12 +2260,12 @@ public:
     /// same backdrop: they bake the environment at the same angular
     /// resolution. The external path tracer gets there differently,
     /// since the world it samples IS the light and softening it
-    /// would relight the scene -- so a second, smaller bake of the
-    /// same environment is mixed in on CAMERA rays alone, and the
-    /// lighting, reflections and refractions keep the sharp world.
-    /// One consequence of that rule: a camera ray stays a camera ray
-    /// through a transparent surface, so a see-through pass-through
-    /// shows the soft backdrop as well.
+    /// would relight the scene -- so a second bake of the same
+    /// environment through the same aperture is mixed in on CAMERA
+    /// rays alone, and the lighting, reflections and refractions keep
+    /// the sharp world. One consequence of that rule: a camera ray
+    /// stays a camera ray through a transparent surface, so a
+    /// see-through pass-through shows the soft backdrop as well.
     static const double & getPBREnvBlur();
     static const double & defaultPBREnvBlur();
     static void removePBREnvBlur();
@@ -2947,6 +2954,27 @@ public:
     static void removeCyclesPixelSize();
     static void setCyclesPixelSize(const long &v);
     static const char *docCyclesPixelSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CyclesMaxStreams
+    ///
+    /// How many path-traced sessions this process serves at once
+    /// (docs/CyclesIntegration.md sec 7.1). A browser viewer that asks
+    /// for a path-traced view gets a Cycles session of its own -- one
+    /// per traced cell, per connection, across every served document --
+    /// and each holds a device context and the scene on that device.
+    /// A start made when this many are already running is refused with
+    /// 'TooManyStreams'; the viewer says so and stays on its raster
+    /// view. 0 or less means no cap, which is what the desktop views
+    /// and the offline render have always had: this counts served
+    /// streams only.
+    static const long & getCyclesMaxStreams();
+    static const long & defaultCyclesMaxStreams();
+    static void removeCyclesMaxStreams();
+    static void setCyclesMaxStreams(const long &v);
+    static const char *docCyclesMaxStreams();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

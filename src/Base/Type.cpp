@@ -52,6 +52,10 @@ struct Base::TypeData
     {}
 
     std::string name;
+    /// The name this type was registered under before a rename, if any.
+    /// Empty for all but the handful of renamed types. See
+    /// Type::addLegacyName.
+    std::string legacyName;
     Type parent;
     Type type;
     Type::instantiationMethod instMethod;
@@ -364,6 +368,36 @@ Type Type::fromKey(unsigned int key)
 const char* Type::getName() const
 {
     return typedata[index]->name.c_str();
+}
+
+void Type::addLegacyName(const Type& type, const char* legacyName)
+{
+    if (type.isBad() || !legacyName || !legacyName[0]) {
+        return;
+    }
+
+    // Never shadow a live type. Two types answering to one name would make
+    // fromName pick by registration order, which is the kind of thing that
+    // works on the machine it was written on and picks the other one
+    // somewhere else.
+    auto pos = typemap.find(legacyName);
+    if (pos != typemap.end()) {
+        if (pos->second != type.getKey()) {
+            Console().Warning("Type: '%s' is already a registered type, "
+                              "not aliasing it to '%s'\n",
+                              legacyName, type.getName());
+        }
+        return;
+    }
+
+    typemap[legacyName] = type.getKey();
+    typedata[type.getKey()]->legacyName = legacyName;
+}
+
+const char* Type::getLegacyName() const
+{
+    const std::string& legacy = typedata[index]->legacyName;
+    return legacy.empty() ? nullptr : legacy.c_str();
 }
 
 Type Type::getParent() const

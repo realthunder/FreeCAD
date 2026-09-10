@@ -104,7 +104,7 @@ public:
      * instead. Both null until the owner wires them, and the property is a
      * plain colour list until then.
      */
-    void setAppearance(App::PropertyMaterialList *appearance,
+    void setAppearance(App::PropertyAppearanceList *appearance,
                        const App::PropertyColor *shapeColor);
 
     /** @name Reads, overriding or hiding the base ones
@@ -166,7 +166,7 @@ protected:
     void saveStream(Base::OutputStream &str) const override;
 
 private:
-    App::PropertyMaterialList *_appearance {nullptr};
+    App::PropertyAppearanceList *_appearance {nullptr};
     const App::PropertyColor *_shapeColor {nullptr};
     /** Where getValues() resolves the appearance into
      *
@@ -220,12 +220,12 @@ public:
     // Points
     App::PropertyFloatConstraint PointSize;
     App::PropertyColor PointColor;
-    App::PropertyMaterial PointMaterial;
+    App::PropertyAppearance PointMaterial;
     App::PropertyColorList PointColorArray;
     // Lines
     App::PropertyFloatConstraint LineWidth;
     App::PropertyColor LineColor;
-    App::PropertyMaterial LineMaterial;
+    App::PropertyAppearance LineMaterial;
     App::PropertyColorList LineColorArray;
     // Faces (Gui::ViewProviderGeometryObject::ShapeColor and Gui::ViewProviderGeometryObject::ShapeAppearance apply)
     /// A name over ShapeAppearance's diffuse field, not a second store
@@ -273,7 +273,7 @@ public:
     */
     //@{
     void setHighlightedFaces(const std::vector<App::Color>& colors);
-    void setHighlightedFaces(const std::vector<App::Material>& colors);
+    void setHighlightedFaces(const std::vector<App::MaterialAppearance>& colors);
     void unsetHighlightedFaces();
     /// Reapply the document appearance to the face material node: the
     /// per-face colour path while diffuse is the only field that varies,
@@ -311,7 +311,7 @@ public:
     /** @name Edit methods */
     //@{
     void setupContextMenu(QMenu*, QObject*, const char*) override;
-    virtual void setEditViewer(Gui::View3DInventorViewer*, int ModNum) override;
+    virtual void setEditViewer(Gui::ViewerContext*, int ModNum) override;
 
     virtual void setShapePropertyName(const char *propName);
     const char *getShapePropertyName() const;

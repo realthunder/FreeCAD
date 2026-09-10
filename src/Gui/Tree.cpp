@@ -4940,7 +4940,7 @@ void TreeWidget::onItemSelectionChanged ()
                         setFocus();
                 }
                 // For triggering property editor refresh
-                Gui::Selection().signalSelectionChanged(SelectionChanges());
+                Gui::SelectionRoom().signalSelectionChanged(SelectionChanges());
             }
         }
         for(auto &v : DocumentMap)

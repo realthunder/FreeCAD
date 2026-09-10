@@ -822,7 +822,9 @@ def buildGuiDocumentFromGuiData(document, guidata):
                 colorindex += 1
                 guidoc += '                    <ColorList file="' + tempcolorname + '"/>\n'
                 files.append((tempcolorfile, tempcolorname))
-            elif prop["type"] in ["App::PropertyMaterial"]:
+            # Both spellings: the type is read off an existing GuiDocument.xml,
+            # and every file written before the rename says the former one.
+            elif prop["type"] in ["App::PropertyAppearance", "App::PropertyMaterial"]:
                 guidoc += '                    <PropertyMaterial ambientColor="' + str(
                     prop["value"][0]
                 )

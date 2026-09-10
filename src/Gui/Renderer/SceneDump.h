@@ -123,12 +123,15 @@ struct SceneSnapshot {
     /// (UserShader::compiled) so the compiler-less viewer tiers can
     /// load the programs.
     UserShaderConfig usershaderconf;
-    /// Save-side hook: called once per unique user shader written, to
-    /// append server-compiled binary variants for the viewer tiers
-    /// beyond whatever the shader already carries. Unset when loading
-    /// (and in tiers with no compiler).
-    std::function<void(const UserShader &,
-                       std::vector<UserShader::Compiled> &)> shaderBins;
+    /// Save-side hook: called once per unique user shader written, on
+    /// the COPY that travels, to make it whole for the viewer tiers --
+    /// append the server-compiled binary variants beyond whatever the
+    /// shader already carries, and resolve a MaterialX document's image
+    /// layout (UserShader::Image::layer, imageSampler, imageUnit)
+    /// against the producer's generator, which those tiers do not have
+    /// (docs/MaterialStorage.md sec 17.23). Unset when loading (and in
+    /// tiers with no compiler).
+    std::function<void(UserShader &shipped)> shipShader;
 
     /// Save-side hook enabling out-of-band texture payloads (v26): when
     /// set, a texture is written as its header plus its content key,
@@ -289,6 +292,14 @@ struct SceneSnapshot {
         /// snapshot is not applied.
         std::function<bool(SceneSnapshot &snap,
                            const void *data, size_t size)> fill;
+        /// The payload is a texture's pixels (or its encoded file):
+        /// \a fill writes that one texture object and nothing of the
+        /// snapshot it was born in, so it may run against any
+        /// snapshot -- which is what lets a consumer carry it across
+        /// a publish that superseded the one naming it. A group's or
+        /// a material's fill writes into its own snapshot's tables and
+        /// may not.
+        bool texture = false;
         /// The rung the current plan targets (docs/SceneStreaming.md
         /// §7, "Selection is a plan, not a reaction"): an index into
         /// \a levels, `kPlanBox` for the box below the ladder, or
@@ -346,6 +357,21 @@ struct SceneSnapshot {
         std::vector<uint8_t> inlineData;
     };
     std::vector<DeferredChunk> deferredChunks;
+
+    /// Textures by content key ACROSS publishes, installed by the
+    /// consumer before a load (docs/MaterialStorage.md sec 17.23). A
+    /// republish re-parses every chunk it names into fresh objects,
+    /// but the draws an unchanged object keeps still hold the objects
+    /// of the publish that carried them -- and a texture whose pixels
+    /// were in flight when the next publish arrived was filled into an
+    /// object nothing drew, or into none at all. With the memo the
+    /// re-parse hands back the object the draws already hold, so a
+    /// fill from any publish lands where it is looked at. Weak, so a
+    /// texture nothing holds any more is simply read again. Unset
+    /// (the default) is one publish at a time, which is what a
+    /// bundled capture is.
+    typedef std::map<std::string, std::weak_ptr<TextureImage>> TextureMemo;
+    std::shared_ptr<TextureMemo> textureMemo;
 
     //////////////////////////////////////////////////////////////////
     // Delta publishing (v34, docs/SceneStreaming.md §5)

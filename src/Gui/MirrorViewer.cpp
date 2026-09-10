@@ -1,0 +1,1229 @@
+/***************************************************************************
+ *   Copyright (c) 2026 Zheng, Lei <realthunder.dev@gmail.com>             *
+ *                                                                         *
+ *   This file is part of the FreeCAD CAx development system.              *
+ *                                                                         *
+ *   This library is free software; you can redistribute it and/or         *
+ *   modify it under the terms of the GNU Library General Public           *
+ *   License as published by the Free Software Foundation; either          *
+ *   version 2 of the License, or (at your option) any later version.      *
+ *                                                                         *
+ *   This library  is distributed in the hope that it will be useful,      *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU Library General Public License for more details.                  *
+ *                                                                         *
+ *   You should have received a copy of the GNU Library General Public     *
+ *   License along with this library; see the file COPYING.LIB. If not,    *
+ *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
+ *   Suite 330, Boston, MA  02111-1307, USA                                *
+ *                                                                         *
+ ***************************************************************************/
+
+#include "PreCompiled.h"
+
+#ifndef _PreComp_
+#include <algorithm>
+#include <cmath>
+
+#include <QEvent>
+#include <QKeyEvent>
+#include <QString>
+
+#include <Inventor/SbLine.h>
+#include <Inventor/SbPlane.h>
+#include <Inventor/SbViewVolume.h>
+#include <Inventor/SoEventManager.h>
+#include <Inventor/SoPath.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/SoRenderManager.h>
+#include <Inventor/actions/SoHandleEventAction.h>
+#include <Inventor/events/SoKeyboardEvent.h>
+#include <Inventor/events/SoLocation2Event.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
+#include <Inventor/nodes/SoEventCallback.h>
+#include <Inventor/actions/SoGetBoundingBoxAction.h>
+#include <Inventor/actions/SoGetMatrixAction.h>
+#include <Inventor/actions/SoRayPickAction.h>
+#include <Inventor/actions/SoSearchAction.h>
+#include <Inventor/nodes/SoOrthographicCamera.h>
+#include <Inventor/nodes/SoPerspectiveCamera.h>
+#include <Inventor/nodes/SoGroup.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoTransform.h>
+#endif
+
+#include <Base/Converter.h>
+#include <Base/Exception.h>
+#include <Base/Matrix.h>
+#include <Base/Placement.h>
+
+#include "Document.h"
+#include "EditableDatumLabel.h"
+#include "InventorBase.h"
+#include "MirrorViewer.h"
+#include "Selection.h"
+#include "SoMouseWheelEvent.h"
+#include "Utilities.h"
+#include "ViewProvider.h"
+
+using namespace Gui;
+
+/// A mirror has no screen to ask, and the client that does is a browser,
+/// whose logical pixel is defined against exactly this.
+constexpr double kCssDotsPerInch = 96.0;
+
+namespace
+{
+/// Foot of the perpendicular from \a point to \a plane.
+///
+/// This and lineIntersection below are copies of the two file-static
+/// helpers in View3DInventorViewer.cpp, because getPointOnLine has to give
+/// the same answer as the desktop's and the construction is what makes it
+/// the same answer. They -- and most of the camera-math block further down,
+/// which is the desktop's arithmetic over a client's camera -- want hoisting
+/// into ViewerContext, where both implementations could share one copy.
+/// Stage 4 is when the edit path first exercises them and so when a shared
+/// version could be shown to be right (docs/ThinClient.md sec 8.9).
+SbVec3f projectOntoPlane(const SbVec3f& point, const SbPlane& plane)
+{
+    const SbVec3f normal = plane.getNormal();
+    return point - normal * (normal.dot(point) + plane.getDistanceFromOrigin());
+}
+
+/// Where the line p11..p12 meets the line p21..p22, assuming they do.
+SbVec3f lineIntersection(const SbVec3f& p11, const SbVec3f& p12, const SbVec3f& p21,
+                         const SbVec3f& p22)
+{
+    const SbVec3f da = p12 - p11;
+    const SbVec3f db = p22 - p21;
+    const SbVec3f dc = p21 - p11;
+    const double s = double(dc.cross(db).dot(da.cross(db))) / da.cross(db).sqrLength();
+    return p11 + da * float(s);
+}
+}  // namespace
+
+class MirrorViewer::Private
+{
+public:
+    Document* doc = nullptr;
+    SoNode* scene = nullptr;
+    SoFCRenderCacheManager* cacheManager = nullptr;
+    Render::Renderer* renderer = nullptr;
+
+    /// The client's, as of its last 'C' frame.
+    MirrorViewer::Camera state;
+    bool stated = false;
+
+    /** The camera node, rebuilt when the client switches projection.
+     *
+     * A node rather than the bare fields because picking needs it traversed
+     * as a child, and because everything the edit path asks for is
+     * SoCamera's own arithmetic.
+     */
+    SoCamera* camera = nullptr;
+
+    /** The manager the edit path reaches for the camera and the viewport.
+     *
+     * Eighteen of the roughly sixty viewer calls an edit mode makes are
+     * getSoRenderManager(), and every one of them wants one of those two
+     * (docs/ThinClient.md section 8.3). It is deliberately never given a
+     * scene graph: setSceneGraph() refs the root and attaches a node sensor
+     * that fires on every change, which for one manager per connected client
+     * is a cost with nothing behind it -- this manager never renders, and
+     * getSceneGraph() answers from the mirror's own member.
+     */
+    SoRenderManager* renderManager = nullptr;
+
+    SbViewportRegion viewport {short(1), short(1)};
+
+    /** The graph one client's events are handled over.
+     *
+     * The camera first, because SoHandleEventAction has to traverse one to
+     * have a view volume at all; then this client's event callback node,
+     * which is what ViewProvider::eventCallback is hung on; then the served
+     * scene, shared with every other client. Per client and not in the
+     * shared graph precisely so that a callback installed for one client
+     * does not fire for another's events -- the served root has one
+     * traversal per client, and each sees only its own callback.
+     */
+    SoSeparator* eventRoot = nullptr;
+    SoEventCallback* eventCallback = nullptr;
+    SoEventManager* eventManager = nullptr;
+
+    /// What the client's pointer and keyboard last said. Coin's events
+    /// carry the modifier state on every event, and the button state is
+    /// what ViewerContext::mouseButtons answers from.
+    SbVec2s pointer {0, 0};
+    Qt::MouseButtons buttons {Qt::NoButton};
+    bool shift = false;
+    bool ctrl = false;
+    bool alt = false;
+
+    bool editing = false;
+    bool selectionEnabled = true;
+
+    /** The entry boxes an edit mode has open here, in the order built.
+     *
+     * That order is the controller's own: it builds its set in one loop,
+     * so the index a client names is the index the tool means. The boxes
+     * are owned by the controller and merely registered here, which is why
+     * this is a vector of raw pointers and why removal is by identity.
+     */
+    std::vector<EditableDatumLabel*> onViewParams;
+    /** Which of them takes the keys.
+     *
+     * Focus on the desktop is Qt's, and a widget that is never shown is
+     * never focused, so for a mirror it is recorded here instead -- set
+     * through the same setFocusToSpinbox() the controller already calls.
+     */
+    EditableDatumLabel* focusedParam = nullptr;
+    std::function<void()> onViewParamsChanged;
+    /** The key frame being routed into an entry box, if any.
+     *
+     * The box may hand the key back (DrawSketchKeyboardManager decides
+     * which keys it claims), and what goes to the scene then is this --
+     * the event as it arrived, rather than a Qt event translated back into
+     * a Coin one and rounded twice.
+     */
+    Input pendingKey;
+    bool hasPendingKey = false;
+    /** This client's own selection (docs/ThinClient.md section 8.4).
+     *
+     * Current for the extent of anything replayed through this view, so
+     * the sketcher's picks, the preselect the unified selection root
+     * resolves and the selection undo stack are all this client's and not
+     * the room's. Held by value: it dies with the connection, which is
+     * what the scoped connection inside it is for.
+     */
+    SelectionSingleton selection;
+    /// Ends this view's half of an edit session when the document ends it.
+    fastsignals::scoped_connection resetEditConn;
+    /// Whether the editing root is currently a child of the served graph.
+    bool editRootAttached = false;
+
+    /// Put the editing root where the publish traversal will find it.
+    void attachEditingRoot(SoNode* editRoot)
+    {
+        if (editRootAttached || !editRoot || !scene
+            || !scene->isOfType(SoGroup::getClassTypeId())) {
+            return;
+        }
+        static_cast<SoGroup*>(scene)->insertChild(editRoot, 0);
+        editRootAttached = true;
+    }
+
+    void detachEditingRoot(SoNode* editRoot)
+    {
+        if (!editRootAttached) {
+            return;
+        }
+        editRootAttached = false;
+        if (!editRoot || !scene || !scene->isOfType(SoGroup::getClassTypeId())) {
+            return;
+        }
+        auto* group = static_cast<SoGroup*>(scene);
+        const int index = group->findChild(editRoot);
+        if (index >= 0) {
+            group->removeChild(index);
+        }
+    }
+
+    ~Private()
+    {
+        delete eventManager;
+        if (eventRoot) {
+            eventRoot->unref();
+        }
+        if (eventCallback) {
+            eventCallback->unref();
+        }
+        if (camera) {
+            camera->unref();
+        }
+        delete renderManager;
+    }
+
+    /// Keep the event root's camera the one the client last stated: a
+    /// change of projection replaces the node, not just its fields.
+    void seatCamera()
+    {
+        if (!eventRoot || !camera) {
+            return;
+        }
+        if (eventRoot->getNumChildren() && eventRoot->getChild(0) == camera) {
+            return;
+        }
+        if (eventRoot->getNumChildren()
+            && eventRoot->getChild(0)->isOfType(SoCamera::getClassTypeId())) {
+            eventRoot->replaceChild(0, camera);
+        }
+        else {
+            eventRoot->insertChild(camera, 0);
+        }
+        if (eventManager) {
+            eventManager->setCamera(camera);
+        }
+    }
+
+    /// The scene as a pickable graph: the camera has to be traversed for
+    /// SoRayPickAction to have a view volume at all.
+    CoinPtr<SoSeparator> pickRoot() const
+    {
+        CoinPtr<SoSeparator> root(new SoSeparator, true);
+        root->addChild(camera);
+        root->addChild(scene);
+        return root;
+    }
+
+    /** The view volume the pick action will see during traversal.
+     *
+     * The camera's own, from its stated aspect ratio, which is what the
+     * LEAVE_ALONE viewport mapping makes traversal use too -- so a point
+     * projected here and a ray the action computes from that point are the
+     * same ray. See setCamera() for why the mapping is not the default.
+     */
+    SbViewVolume viewVolume() const
+    {
+        return camera->getViewVolume(0.0F);
+    }
+
+    /** A viewport pixel as the fraction of the canvas it sits at.
+     *
+     * The desktop's getNormalizedPosition does this and then corrects for
+     * the aspect ratio, and the mirror deliberately does not. The reason is
+     * the one difference between the two cameras: nothing sets a desktop
+     * viewer's SoCamera::aspectRatio, so it stays 1 and getViewVolume()
+     * hands back a SQUARE frustum, which that correction is what maps a
+     * pixel into. A mirror's camera states the client's real aspect --
+     * that is what a mirror is -- so its frustum already has it and
+     * correcting again multiplies it in twice. Measured: every off-centre
+     * x came back exactly aspect times too far out.
+     *
+     * So the mirror has one convention rather than two. Every row here and
+     * the pick path share this space and the camera's own view volume, and
+     * theCameraMathAgreesWithThePickPathAboutAPixel is what says so.
+     */
+    SbVec2f normalizedPosition(const SbVec2s& pnt) const
+    {
+        const SbVec2s& pixels = viewport.getViewportSizePixels();
+        return {float(pnt[0]) / float(pixels[0]), float(pnt[1]) / float(pixels[1])};
+    }
+
+    /// Where the focal plane is, clamped into the frustum the way every
+    /// desktop caller of it does.
+    float focalDistance() const
+    {
+        const float nearDist = camera->nearDistance.getValue();
+        const float farDist = camera->farDistance.getValue();
+        float focal = camera->focalDistance.getValue();
+        if (focal < nearDist || focal > farDist) {
+            focal = 0.5F * (nearDist + farDist);
+        }
+        return focal;
+    }
+};
+
+MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
+                           SoFCRenderCacheManager* cacheManager, Render::Renderer* renderer)
+    : pimpl(std::make_unique<Private>())
+{
+    pimpl->doc = doc;
+    pimpl->scene = scene;
+    pimpl->cacheManager = cacheManager;
+    pimpl->renderer = renderer;
+    pimpl->renderManager = new SoRenderManager;
+
+    // The event path. The callback node's user data is the ViewerContext
+    // base subobject deliberately: a pointer to this object and a pointer
+    // to its base are different addresses, and the thirty-two readers of
+    // that field cast it back through void*.
+    pimpl->eventCallback = new SoEventCallback;
+    pimpl->eventCallback->ref();
+    pimpl->eventCallback->setUserData(static_cast<ViewerContext*>(this));
+
+    pimpl->eventRoot = new SoSeparator;
+    pimpl->eventRoot->ref();
+    pimpl->eventRoot->setName("MirrorEventRoot");
+    pimpl->eventRoot->addChild(pimpl->eventCallback);
+    if (scene) {
+        pimpl->eventRoot->addChild(scene);
+    }
+
+    pimpl->eventManager = new SoEventManager;
+    pimpl->eventManager->setSceneGraph(pimpl->eventRoot);
+    pimpl->eventManager->setViewportRegion(pimpl->viewport);
+
+    // An edit mode leaves selection behind it -- the sketcher clears and
+    // then selects the sketch it just left, "convenience" on a desktop --
+    // and in this instance that would be one client's selection surviving
+    // the session it belonged to. Dropped when the document says the
+    // session is over, which is after the edit mode has finished touching
+    // it (Gui::Document::_resetEdit signals after finishEditing).
+    if (doc) {
+        pimpl->resetEditConn = doc->signalResetEdit.connect(
+            [this](const ViewProviderDocumentObject&) {
+                if (pimpl->doc && pimpl->doc->editingViewer() == this) {
+                    pimpl->selection.rmvPreselect();
+                    pimpl->selection.clearSelection();
+                }
+            });
+    }
+}
+
+MirrorViewer::~MirrorViewer()
+{
+    // A connection can drop in the middle of an edit, and this view is
+    // what the document's edit session was bound to. Ending the session
+    // first is what keeps Gui::Document from being left holding a pointer
+    // to a mirror that no longer exists -- and it is the whole session
+    // that has to end, not just this view's half, because a served
+    // document has no other view to carry it on in.
+    if (pimpl->doc && pimpl->doc->editingViewer() == this) {
+        // In this view, so that what the edit mode does to selection on
+        // its way out is done to this client's instance and not to the
+        // room's -- a client dropping mid-edit must not leave the sketch
+        // it was editing selected for everybody else.
+        ViewerScope scope(this);
+        pimpl->doc->resetEdit();
+    }
+    // And whatever is left: give the view provider its children back now,
+    // while this is still a MirrorViewer. The base destructor cannot,
+    // because resetEditingRoot reaches getDocument() and by then there is
+    // no override left to reach.
+    resetEditingViewProvider();
+}
+
+void MirrorViewer::setCamera(const Camera& camera)
+{
+    const bool typeChanged = !pimpl->camera
+        || (camera.perspective
+            != (pimpl->camera->getTypeId() == SoPerspectiveCamera::getClassTypeId()));
+    if (typeChanged) {
+        if (pimpl->camera) {
+            pimpl->camera->unref();
+        }
+        pimpl->camera = camera.perspective ? static_cast<SoCamera*>(new SoPerspectiveCamera)
+                                           : static_cast<SoCamera*>(new SoOrthographicCamera);
+        pimpl->camera->ref();
+        // Not the ADJUST_CAMERA default, and this is the one place where
+        // a mirror must not simply copy the desktop. Under ADJUST_CAMERA
+        // Coin applies the height angle to the SMALLER viewport dimension
+        // (below unit aspect it scales the volume by 1/aspect), which is
+        // the Inventor convention a resizable window wants. A browser
+        // canvas applies it vertically at every aspect. On a landscape
+        // canvas the two agree, so nothing would have shown -- and on a
+        // phone held upright, which is most of what this tier is for, every
+        // pick would have been resolved through a frustum wider than the
+        // one the client drew. LEAVE_ALONE takes the camera's stated aspect
+        // as given, which is the client's convention exactly.
+        pimpl->camera->viewportMapping.setValue(SoCamera::LEAVE_ALONE);
+    }
+
+    pimpl->camera->position.setValue(camera.position);
+    pimpl->camera->orientation.setValue(camera.orientation);
+    pimpl->camera->nearDistance.setValue(camera.nearDistance);
+    pimpl->camera->farDistance.setValue(camera.farDistance);
+    pimpl->camera->aspectRatio.setValue(camera.aspectRatio);
+    // No focal distance on the wire: the client orbits about a point the
+    // server has no name for, and everything that asks for one wants "the
+    // middle of what is in view", which is what this is.
+    pimpl->camera->focalDistance.setValue(
+        0.5F * (camera.nearDistance + camera.farDistance));
+    if (camera.perspective) {
+        static_cast<SoPerspectiveCamera*>(pimpl->camera)
+            ->heightAngle.setValue(camera.heightOrAngle);
+    }
+    else {
+        static_cast<SoOrthographicCamera*>(pimpl->camera)
+            ->height.setValue(camera.heightOrAngle);
+    }
+
+    // The WINDOW size first, and it is not optional. A viewport region
+    // carries both a pixel size and a normalized one, and setViewportPixels
+    // derives the second from the first against the window -- so setting
+    // only the pixels on a default-constructed region (a 100x100 window)
+    // leaves a canvas of 800x600 describing itself as 8.0 x 6.0 of its
+    // window. Picking never noticed, because it reads the pixel size; every
+    // row that asks where a pixel is in the world reads the normalized one,
+    // and those came back hundreds of times out.
+    pimpl->viewport.setWindowSize(camera.sizePixels);
+    pimpl->viewport.setViewportPixels(SbVec2s(0, 0), camera.sizePixels);
+    pimpl->renderManager->setCamera(pimpl->camera);
+    pimpl->renderManager->setViewportRegion(pimpl->viewport);
+    pimpl->seatCamera();
+    if (pimpl->eventManager) {
+        pimpl->eventManager->setViewportRegion(pimpl->viewport);
+    }
+    pimpl->state = camera;
+    pimpl->stated = true;
+}
+
+bool MirrorViewer::hasCamera() const
+{
+    return pimpl->stated && pimpl->camera;
+}
+
+bool MirrorViewer::rayToNormPoint(const SbVec3f& origin, const SbVec3f& dir,
+                                  SbVec2f& normPoint) const
+{
+    if (!hasCamera() || dir.sqrLength() <= 0.0F) {
+        return false;
+    }
+    const SbViewVolume vv = pimpl->viewVolume();
+    if (vv.getDepth() == 0.0F || vv.getWidth() == 0.0F || vv.getHeight() == 0.0F) {
+        return false;
+    }
+    // Any point on the ray but the eye projects to the same place, so take
+    // one comfortably inside the frustum: for a perspective camera the ray
+    // origin IS the eye, where the projection divides by zero.
+    SbVec3f along = dir;
+    along.normalize();
+    SbVec3f point = origin + along * (vv.getNearDist() + 0.5F * vv.getDepth());
+    SbVec3f screen;
+    vv.projectToScreen(point, screen);
+    normPoint.setValue(screen[0], screen[1]);
+    return true;
+}
+
+SoPickedPoint* MirrorViewer::pickRay(
+    const SbVec3f& origin, const SbVec3f& dir,
+    const std::function<bool(const SoPickedPoint&)>& accept) const
+{
+    SbVec2f normPoint;
+    if (!pimpl->scene || !rayToNormPoint(origin, dir, normPoint)) {
+        return nullptr;
+    }
+    SoRayPickAction action(pimpl->viewport);
+    action.setNormalizedPoint(normPoint);
+    action.setRadius(pimpl->state.pickRadius);
+    if (accept) {
+        // Every hit along the ray rather than the nearest, because the
+        // caller is filtering by what each one turns out to BE -- the
+        // client's pick filter admits one element kind, and the nearest
+        // hit is usually a face standing in front of the edge it wants.
+        action.setPickAll(true);
+    }
+    action.apply(pimpl->pickRoot());
+    if (!accept) {
+        SoPickedPoint* picked = action.getPickedPoint();
+        return picked ? new SoPickedPoint(*picked) : nullptr;
+    }
+    const SoPickedPointList& hits = action.getPickedPointList();
+    for (int i = 0; i < hits.getLength(); ++i) {
+        // Front to back, so the first acceptable one is the nearest.
+        if (accept(*hits[i])) {
+            return new SoPickedPoint(*hits[i]);
+        }
+    }
+    return nullptr;
+}
+
+bool MirrorViewer::handleInput(const Input& input)
+{
+    // Without a camera there is no view volume, so a pointer position is
+    // not a place in the world and every pick made from it would be
+    // resolved through a default frustum -- plausible, and wrong.
+    if (!hasCamera() || !pimpl->eventManager) {
+        return false;
+    }
+
+    pimpl->shift = input.shift;
+    pimpl->ctrl = input.ctrl;
+    pimpl->alt = input.alt;
+
+    // Coin's viewport origin is bottom left; a canvas reports top left.
+    // Flipped here against the height the mirror resolves everything else
+    // against, so a client that resized between frames cannot make the
+    // pick path and the event path disagree about where a pixel is.
+    const SbVec2s& size = pimpl->viewport.getViewportSizePixels();
+    if (input.kind != Input::KeyDown && input.kind != Input::KeyUp) {
+        pimpl->pointer.setValue(short(input.x), short(size[1] - 1 - input.y));
+    }
+
+    auto stamp = [&](SoEvent& event) {
+        event.setTime(SbTime(input.time));
+        event.setPosition(pimpl->pointer);
+        event.setShiftDown(input.shift);
+        event.setCtrlDown(input.ctrl);
+        event.setAltDown(input.alt);
+    };
+    auto button = [](int code) {
+        switch (code) {
+            case 2:
+                return SoMouseButtonEvent::BUTTON2;
+            case 3:
+                return SoMouseButtonEvent::BUTTON3;
+            default:
+                return SoMouseButtonEvent::BUTTON1;
+        }
+    };
+    auto qtButton = [](int code) {
+        switch (code) {
+            case 2:
+                return Qt::MiddleButton;
+            case 3:
+                return Qt::RightButton;
+            default:
+                return Qt::LeftButton;
+        }
+    };
+
+    // Built on the stack: SoHandleEventAction does not keep the event, and
+    // a mirror replays one at a time on the thread that owns the document.
+    switch (input.kind) {
+        case Input::Move: {
+            SoLocation2Event event;
+            stamp(event);
+            return replay(event);
+        }
+        case Input::Press:
+        case Input::Release: {
+            const bool press = input.kind == Input::Press;
+            // The button state before the event is delivered, because that
+            // is what the desktop's QApplication::mouseButtons() would
+            // report to a handler running inside the press.
+            if (press) {
+                pimpl->buttons |= qtButton(input.code);
+            }
+            else {
+                pimpl->buttons &= ~Qt::MouseButtons(qtButton(input.code));
+            }
+            SoMouseButtonEvent event;
+            stamp(event);
+            event.setButton(button(input.code));
+            event.setState(press ? SoButtonEvent::DOWN : SoButtonEvent::UP);
+            return replay(event);
+        }
+        case Input::Wheel: {
+            SoMouseWheelEvent event(input.delta);
+            stamp(event);
+            return replay(event);
+        }
+        case Input::KeyDown:
+        case Input::KeyUp: {
+            // An entry box that has the keys takes them first, which is
+            // the desktop's order and not a new rule: there the box holds
+            // the Qt focus for as long as a tool with on-view parameters
+            // is running, and every key reaches it before the view. What
+            // it does not claim it hands back through sendKeyEvent below
+            // (docs/ThinClient.md section 8.7).
+            if (pimpl->focusedParam) {
+                return routeKeyToParameter(input);
+            }
+            return replayKey(input);
+        }
+    }
+    return false;
+}
+
+namespace
+{
+
+/// A Coin key code as the Qt key an entry box expects.
+///
+/// The client sends X11 keysyms with the case folded away (section 8.5), and
+/// for every printable one the keysym IS the character -- so the mapping is
+/// the identity for punctuation and digits, an upcase for letters, and a
+/// table only for the named keys. The character the key actually produced
+/// travels beside it and is not derived here: shift over a keysym is a
+/// keyboard layout question, and the client is the only side that knows the
+/// layout.
+int qtKeyForCoinKey(int code)
+{
+    switch (code) {
+        case 0xff1b: return Qt::Key_Escape;
+        case 0xff0d: return Qt::Key_Return;
+        case 0xff8d: return Qt::Key_Enter;
+        case 0xff09: return Qt::Key_Tab;
+        case 0xff08: return Qt::Key_Backspace;
+        case 0xffff: return Qt::Key_Delete;
+        case 0xff63: return Qt::Key_Insert;
+        case 0xff50: return Qt::Key_Home;
+        case 0xff57: return Qt::Key_End;
+        case 0xff55: return Qt::Key_PageUp;
+        case 0xff56: return Qt::Key_PageDown;
+        case 0xff51: return Qt::Key_Left;
+        case 0xff52: return Qt::Key_Up;
+        case 0xff53: return Qt::Key_Right;
+        case 0xff54: return Qt::Key_Down;
+        default: break;
+    }
+    if (code >= 0xffbe && code <= 0xffc9) {
+        return Qt::Key_F1 + (code - 0xffbe);
+    }
+    if (code >= 0x61 && code <= 0x7a) {
+        return code - 0x61 + Qt::Key_A;
+    }
+    if (code >= 0x20 && code < 0x7f) {
+        return code;
+    }
+    return Qt::Key_unknown;
+}
+
+}  // namespace
+
+bool MirrorViewer::replayKey(const Input& input)
+{
+    SoKeyboardEvent event;
+    event.setTime(SbTime(input.time));
+    event.setPosition(pimpl->pointer);
+    event.setShiftDown(input.shift);
+    event.setCtrlDown(input.ctrl);
+    event.setAltDown(input.alt);
+    event.setKey(SoKeyboardEvent::Key(input.code));
+    event.setState(input.kind == Input::KeyDown ? SoButtonEvent::DOWN
+                                                : SoButtonEvent::UP);
+    return replay(event);
+}
+
+bool MirrorViewer::routeKeyToParameter(const Input& input)
+{
+    EditableDatumLabel* param = pimpl->focusedParam;
+    if (!param) {
+        return false;
+    }
+
+    Qt::KeyboardModifiers mods = Qt::NoModifier;
+    if (input.shift) {
+        mods |= Qt::ShiftModifier;
+    }
+    if (input.ctrl) {
+        mods |= Qt::ControlModifier;
+    }
+    if (input.alt) {
+        mods |= Qt::AltModifier;
+    }
+
+    QString text;
+    if (input.delta > 0) {
+        text = QString(QChar(char16_t(input.delta)));
+    }
+    QKeyEvent event(input.kind == Input::KeyDown ? QEvent::KeyPress
+                                                : QEvent::KeyRelease,
+                    qtKeyForCoinKey(input.code), mods, text);
+
+    // This view current for the extent of it, exactly as replay() does:
+    // what the box does with the key runs the tool's own code, and that
+    // code asks which view it is in.
+    ViewerScope scope(this);
+    // Kept so that a key the box hands back reaches the scene as the event
+    // it arrived as, rather than as this Qt translation of it.
+    pimpl->pendingKey = input;
+    pimpl->hasPendingKey = true;
+    const bool handled = param->sendKeyEvent(&event);
+    pimpl->hasPendingKey = false;
+    return handled;
+}
+
+bool MirrorViewer::sendKeyEvent(QKeyEvent* event)
+{
+    (void)event;
+    if (!pimpl->hasPendingKey) {
+        // Nothing arrived over the wire to hand back. A Qt key event
+        // manufactured by something else has no Coin event behind it, and
+        // guessing one would put a key in the scene that no client pressed.
+        return false;
+    }
+    return replayKey(pimpl->pendingKey);
+}
+
+std::vector<MirrorViewer::OnViewParam> MirrorViewer::onViewParameters() const
+{
+    std::vector<OnViewParam> params;
+    params.reserve(pimpl->onViewParams.size());
+    for (EditableDatumLabel* label : pimpl->onViewParams) {
+        // A box that is not in edit is not on screen: the controller
+        // deactivates the ones that do not belong to the current mode, and
+        // the client should stop showing them at the same moment.
+        if (!label->isActive() || !label->isInEdit()) {
+            continue;
+        }
+        OnViewParam param;
+        param.anchor = label->getAnchorPoint();
+        param.text = label->getText().toStdString();
+        label->getSelection(param.selStart, param.selLength);
+        param.focus = label == pimpl->focusedParam;
+        param.set = label->isSet;
+        params.push_back(param);
+    }
+    return params;
+}
+
+void MirrorViewer::setOnViewParametersCallback(std::function<void()> callback)
+{
+    pimpl->onViewParamsChanged = std::move(callback);
+}
+
+bool MirrorViewer::focusOnViewParameter(int index)
+{
+    if (index < 0 || size_t(index) >= pimpl->onViewParams.size()) {
+        return false;
+    }
+    EditableDatumLabel* label = pimpl->onViewParams[size_t(index)];
+    if (!label->isActive() || !label->isInEdit()) {
+        return false;
+    }
+    ViewerScope scope(this);
+    label->setFocusToSpinbox();
+    return true;
+}
+
+void MirrorViewer::addOnViewParameter(EditableDatumLabel* label)
+{
+    if (label) {
+        pimpl->onViewParams.push_back(label);
+    }
+}
+
+void MirrorViewer::removeOnViewParameter(EditableDatumLabel* label)
+{
+    auto it = std::find(pimpl->onViewParams.begin(), pimpl->onViewParams.end(),
+                        label);
+    if (it != pimpl->onViewParams.end()) {
+        pimpl->onViewParams.erase(it);
+    }
+    if (pimpl->focusedParam == label) {
+        pimpl->focusedParam = nullptr;
+    }
+    onViewParametersChanged();
+}
+
+void MirrorViewer::onViewParameterFocused(EditableDatumLabel* label)
+{
+    pimpl->focusedParam = label;
+}
+
+void MirrorViewer::onViewParametersChanged()
+{
+    if (pimpl->onViewParamsChanged) {
+        pimpl->onViewParamsChanged();
+    }
+}
+
+bool MirrorViewer::replay(SoEvent& event)
+{
+    // The view this event is being handled in, for the extent of handling
+    // it. Gui::Document::setEdit asks for it rather than for the active
+    // window, which in a process serving several browsers names either
+    // nothing or somebody else's (docs/ThinClient.md sec 8.9).
+    ViewerScope scope(this);
+    pimpl->eventManager->setViewportRegion(pimpl->viewport);
+    pimpl->eventManager->processEvent(&event);
+    SoHandleEventAction* action = pimpl->eventManager->getHandleEventAction();
+    return action && action->isHandled();
+}
+
+SoNode* MirrorViewer::getSceneGraph() const
+{
+    return pimpl->scene;
+}
+
+SoRenderManager* MirrorViewer::getSoRenderManager() const
+{
+    return pimpl->renderManager;
+}
+
+SoEventManager* MirrorViewer::getSoEventManager() const
+{
+    return pimpl->eventManager;
+}
+
+const SbViewportRegion& MirrorViewer::getViewportRegion() const
+{
+    return pimpl->viewport;
+}
+
+Gui::Document* MirrorViewer::getDocument()
+{
+    return pimpl->doc;
+}
+
+SoFCRenderCacheManager* MirrorViewer::getRenderCacheManager() const
+{
+    return pimpl->cacheManager;
+}
+
+Render::Renderer* MirrorViewer::getExternalRenderer() const
+{
+    return pimpl->renderer;
+}
+
+float MirrorViewer::getPickRadius() const
+{
+    return pimpl->state.pickRadius;
+}
+
+double MirrorViewer::devicePixelRatio() const
+{
+    return pimpl->state.devicePixelRatio;
+}
+
+Qt::MouseButtons MirrorViewer::mouseButtons() const
+{
+    // This client's, tracked across its own event stream. The desktop
+    // answers the same question from QApplication, which is one pointer
+    // and so the same answer; a mirror has one pointer per connection and
+    // the application's is somebody else's entirely.
+    return pimpl->buttons;
+}
+
+double MirrorViewer::logicalDotsPerInchX() const
+{
+    return kCssDotsPerInch;
+}
+
+SbVec3f MirrorViewer::getViewDirection() const
+{
+    if (!hasCamera()) {
+        return {0, 0, -1};
+    }
+    return pimpl->camera->getViewVolume().getProjectionDirection();
+}
+
+SbVec3f MirrorViewer::getCenterPointOnFocalPlane() const
+{
+    if (!hasCamera()) {
+        return {0, 0, 0};
+    }
+    SbVec3f direction;
+    pimpl->camera->orientation.getValue().multVec(SbVec3f(0, 0, -1), direction);
+    return pimpl->camera->position.getValue()
+        + pimpl->camera->focalDistance.getValue() * direction;
+}
+
+SbVec3f MirrorViewer::getPointOnFocalPlane(const SbVec2s& pnt) const
+{
+    if (!hasCamera()) {
+        return {};
+    }
+    const SbViewVolume vol = pimpl->camera->getViewVolume();
+    SbLine line;
+    vol.projectPointToLine(pimpl->normalizedPosition(pnt), line);
+    SbVec3f point;
+    vol.getPlane(pimpl->focalDistance()).intersect(line, point);
+    return point;
+}
+
+SbVec3f MirrorViewer::getPointOnXYPlaneOfPlacement(const SbVec2s& pnt,
+                                                   const Base::Placement& plc) const
+{
+    if (!hasCamera()) {
+        THROWM(Base::RuntimeError, "No camera stated by this client")
+    }
+    const SbViewVolume vol = pimpl->camera->getViewVolume();
+    SbLine line;
+    vol.projectPointToLine(pimpl->normalizedPosition(pnt), line);
+
+    const Base::Vector3d normalVector = plc.getRotation().multVec(Base::Vector3d(0, 0, 1));
+    const SbPlane plane(Base::convertTo<SbVec3f>(normalVector),
+                        Base::convertTo<SbVec3f>(plc.getPosition()));
+    SbVec3f point;
+    if (plane.intersect(line, point)) {
+        return point;
+    }
+    THROWM(Base::RuntimeError, "No intersection found")
+}
+
+SbVec3f MirrorViewer::getPointOnLine(const SbVec2s& pnt, const SbVec3f& axisCenter,
+                                     const SbVec3f& axis) const
+{
+    if (!hasCamera()) {
+        return {};
+    }
+    // The desktop's construction, not an equivalent of it: the point on the
+    // axis whose projection onto the focal plane is nearest the pointer's.
+    // The obvious shortcut -- the point on the axis nearest the pick ray --
+    // is the same answer only for an orthographic camera, where the ray runs
+    // along the focal normal, and this tier's clients are perspective.
+    const SbViewVolume vol = pimpl->camera->getViewVolume();
+    const SbPlane focalPlane = vol.getPlane(pimpl->focalDistance());
+    SbLine ray;
+    SbVec3f onFocalPlane;
+    vol.projectPointToLine(pimpl->normalizedPosition(pnt), ray);
+    focalPlane.intersect(ray, onFocalPlane);
+
+    // An axis pointing at the eye has no direction on the focal plane to be
+    // near, so the pointer's own focal-plane point is the whole answer.
+    const SbVec3f focalNormal = focalPlane.getNormal();
+    if (std::fabs(axis.dot(focalNormal)) > 1.0F - 1e-6F) {
+        return onFocalPlane;
+    }
+    const SbLine projected(projectOntoPlane(axisCenter, focalPlane),
+                           projectOntoPlane(axisCenter + axis, focalPlane));
+    const SbVec3f onProjected = projected.getClosestPoint(onFocalPlane);
+    return lineIntersection(onProjected, onProjected + focalNormal, axisCenter,
+                            axisCenter + axis);
+}
+
+SbVec2s MirrorViewer::getPointOnViewport(const SbVec3f& pnt) const
+{
+    if (!hasCamera()) {
+        return {0, 0};
+    }
+    const SbVec2s& size = pimpl->viewport.getViewportSizePixels();
+    SbViewVolume vol =
+        pimpl->camera->getViewVolume(pimpl->viewport.getViewportAspectRatio());
+    SbVec3f point(pnt);
+    vol.projectToScreen(point, point);
+    return {short(std::lround(point[0] * size[0])), short(std::lround(point[1] * size[1]))};
+}
+
+SbVec2f MirrorViewer::screenCoordsOfPath(SoPath* path) const
+{
+    if (!hasCamera()) {
+        return {0, 0};
+    }
+    SoGetMatrixAction gma(pimpl->viewport);
+    gma.apply(path);
+
+    SbVec3f coords(0, 0, 0);
+    gma.getMatrix().transpose().multMatrixVec(coords, coords);
+    pimpl->camera->getViewVolume().projectToScreen(coords, coords);
+
+    // The projection is square-normalized, so the shorter side sets the
+    // scale and the longer one is centred -- the desktop's own arithmetic,
+    // over the client's canvas instead of a GL widget.
+    const SbVec2s& size = pimpl->viewport.getViewportSizePixels();
+    const float width = float(size[0]);
+    const float height = float(size[1]);
+    if (width >= height) {
+        coords[0] = coords[0] * height + 0.5F * (width - height);
+        coords[1] *= height;
+    }
+    else {
+        coords[0] *= width;
+        coords[1] = coords[1] * width + 0.5F * (height - width);
+    }
+    return {coords[0], coords[1]};
+}
+
+void MirrorViewer::getNearPlane(SbVec3f& rcPt, SbVec3f& rcNormal) const
+{
+    if (!hasCamera()) {
+        return;
+    }
+    const SbViewVolume vol = pimpl->camera->getViewVolume();
+    const SbPlane nearPlane = vol.getPlane(vol.nearDist);
+    const float dist = nearPlane.getDistanceFromOrigin();
+    rcNormal = nearPlane.getNormal();
+    rcNormal.normalize();
+    rcPt.setValue(dist * rcNormal[0], dist * rcNormal[1], dist * rcNormal[2]);
+}
+
+float MirrorViewer::getMaxDimension() const
+{
+    if (!hasCamera()) {
+        return 0.0F;
+    }
+    float height = pimpl->state.heightOrAngle;
+    if (pimpl->state.perspective) {
+        height = 2.0F * std::tan(0.5F * pimpl->state.heightOrAngle)
+            * pimpl->camera->focalDistance.getValue();
+    }
+    float width = height;
+    const float ratio = pimpl->viewport.getViewportAspectRatio();
+    if (ratio > 1.0F) {
+        width *= ratio;
+    }
+    else {
+        height *= ratio;
+    }
+    return std::max(height, width);
+}
+
+bool MirrorViewer::getSceneBoundBox(SbBox3f& box) const
+{
+    if (!pimpl->scene) {
+        return false;
+    }
+    SoGetBoundingBoxAction action(pimpl->viewport);
+    action.apply(pimpl->scene);
+    const SbBox3f bbox = action.getBoundingBox();
+    if (bbox.isEmpty()) {
+        return false;
+    }
+    box = bbox;
+    return true;
+}
+
+void MirrorViewer::setCameraOrientation(const SbRotation& orientation, bool moveToCenter)
+{
+    // Applied so that anything computed straight afterwards sees it, but the
+    // client is the authority on its own camera and the next 'C' frame
+    // overwrites this. Turning a browser's view from the server is a
+    // downlink message, not a mirror operation.
+    if (!hasCamera()) {
+        return;
+    }
+    if (moveToCenter) {
+        const SbVec3f focal = getCenterPointOnFocalPlane();
+        SbVec3f direction;
+        orientation.multVec(SbVec3f(0, 0, -1), direction);
+        pimpl->camera->position.setValue(
+            focal - pimpl->camera->focalDistance.getValue() * direction);
+    }
+    pimpl->camera->orientation.setValue(orientation);
+    pimpl->state.orientation = orientation;
+    pimpl->state.position = pimpl->camera->position.getValue();
+}
+
+std::vector<SbVec2f> MirrorViewer::getGLPolygon(const std::vector<SbVec2s>& pnts) const
+{
+    // In the same space as everything else here, for the same reason:
+    // whatever these points are compared against was projected through this
+    // mirror's camera (see Private::normalizedPosition).
+    std::vector<SbVec2f> poly;
+    poly.reserve(pnts.size());
+    const SbVec2s& origin = pimpl->viewport.getViewportOriginPixels();
+    for (const auto& pnt : pnts) {
+        poly.push_back(pimpl->normalizedPosition(pnt - origin));
+    }
+    return poly;
+}
+
+SoPickedPoint* MirrorViewer::getPointOnRay(const SbVec2s& pos, const ViewProvider* vp) const
+{
+    if (!hasCamera() || !pimpl->scene || !vp) {
+        return nullptr;
+    }
+    // While a mode is editing this view provider its children are not under
+    // its own root any more -- setupEditingRoot moved them under the editing
+    // root -- so searching for that root would find an empty node and pick
+    // nothing. This is the desktop's rule, and it is the one that makes a
+    // sketcher drag able to grab what it drew.
+    // Both of these outlive the branch on purpose: an SoSearchAction owns
+    // the path it hands back, so a path read from one that has gone out of
+    // scope is a dangling pointer.
+    SoSearchAction search;
+    CoinPtr<SoPath> editPath;
+    SoPath* path = nullptr;
+    if (vp == editViewProvider && pcEditingRoot->getNumChildren() > 1) {
+        editPath = CoinPtr<SoPath>(new SoPath, true);
+        editPath->append(pcEditingRoot);
+        path = editPath;
+    }
+    else {
+        search.setNode(vp->getRoot());
+        search.setSearchingAll(true);
+        search.apply(pimpl->scene);
+        path = search.getPath();
+    }
+    if (!path) {
+        return nullptr;
+    }
+
+    // The desktop's pattern: a throwaway graph of the camera, the subgraph's
+    // accumulated transform, and the subgraph, so the pick is confined to
+    // this view provider and still lands in world space.
+    SoGetMatrixAction gma(pimpl->viewport);
+    gma.apply(path);
+    auto* transform = new SoTransform;
+    transform->setMatrix(gma.getMatrix());
+
+    CoinPtr<SoSeparator> root(new SoSeparator, true);
+    root->addChild(pimpl->camera);
+    root->addChild(transform);
+    root->addChild(path->getTail());
+
+    SoRayPickAction action(pimpl->viewport);
+    action.setPoint(pos);
+    action.setRadius(pimpl->state.pickRadius);
+    action.apply(root);
+    SoPickedPoint* picked = action.getPickedPoint();
+    return picked ? new SoPickedPoint(*picked) : nullptr;
+}
+
+SoPickedPoint* MirrorViewer::getPointOnRay(const SbVec3f& pos, const SbVec3f& dir,
+                                           const ViewProvider* vp) const
+{
+    SbVec2f normPoint;
+    if (!vp || !rayToNormPoint(pos, dir, normPoint)) {
+        return nullptr;
+    }
+    const SbVec2s& size = pimpl->viewport.getViewportSizePixels();
+    return getPointOnRay(SbVec2s(short(std::lround(normPoint[0] * size[0])),
+                                 short(std::lround(normPoint[1] * size[1]))),
+                         vp);
+}
+
+void MirrorViewer::appendDetailPath(SoPath* path, ViewProvider* vp)
+{
+    // The desktop prefixes the path with its own view-provider root and the
+    // group it keeps view furniture in. A mirror shares the served graph,
+    // where a view provider's root is a direct child, so there is nothing to
+    // prefix -- which is the rule SoFCUnifiedSelection::beginDetailPath
+    // already states for a view-less root, and takes by asking whether it
+    // has a viewer at all. That field is a View3DInventorViewer, so nothing
+    // reaches this yet; it is here because the answer for a mirror is known
+    // and is not the desktop's.
+    (void)path;
+    (void)vp;
+}
+
+SelectionSingleton* MirrorViewer::selectionInstance() const
+{
+    return &pimpl->selection;
+}
+
+void MirrorViewer::setEditing(bool edit)
+{
+    pimpl->editing = edit;
+}
+
+bool MirrorViewer::isEditing() const
+{
+    return pimpl->editing;
+}
+
+void MirrorViewer::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum)
+{
+    // Into the published graph before the base fills it, because filling it
+    // is what the change-driven traversal has to notice. First child, which
+    // is where the desktop's sits: the aux root is added to the selection
+    // root at construction, ahead of every view provider.
+    if (vp) {
+        pimpl->attachEditingRoot(pcEditingRoot);
+    }
+    ViewerContext::setEditingViewProvider(vp, ModNum);
+}
+
+void MirrorViewer::resetEditingViewProvider()
+{
+    ViewerContext::resetEditingViewProvider();
+    // After, not before: the base gives the view provider its children back
+    // out of this root, and it has to still be somewhere the traversal can
+    // see for that to be published.
+    pimpl->detachEditingRoot(pcEditingRoot);
+}
+
+void MirrorViewer::addEventCallback(SoType eventtype, SoEventCallbackCB* cb, void* userdata)
+{
+    pimpl->eventCallback->addEventCallback(eventtype, cb, userdata);
+}
+
+void MirrorViewer::removeEventCallback(SoType eventtype, SoEventCallbackCB* cb, void* userdata)
+{
+    pimpl->eventCallback->removeEventCallback(eventtype, cb, userdata);
+}
+
+void MirrorViewer::setRedirectToSceneGraph(bool redirect)
+{
+    (void)redirect;
+}
+
+void MirrorViewer::setSelectionEnabled(bool enable)
+{
+    pimpl->selectionEnabled = enable;
+}
+
+bool MirrorViewer::isSelectionEnabled() const
+{
+    return pimpl->selectionEnabled;
+}
+
+bool MirrorViewer::isSelecting() const
+{
+    // No rubber band without a widget to draw one on.
+    return false;
+}

@@ -80,6 +80,7 @@
 #include <Base/UnitsApi.h>
 
 #include <Language/Translator.h>
+#include "Renderer/CyclesRenderer.h"
 #include "Renderer/Renderer.h"
 #include <Quarter/Quarter.h>
 
@@ -131,9 +132,13 @@
 #include "ToolBarManager.h"
 #include "TransactionObject.h"
 #include "TextDocumentEditorView.h"
+#ifdef FC_SHADER_GRAPH_EDITOR
+# include "ShaderGraphView.h"
+#endif
 #include "UiLoader.h"
 #include "View3DViewerPy.h"
 #include "View3DInventor.h"
+#include "ViewerContext.h"
 #include "ViewProviderAnnotation.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderDocumentObjectGroup.h"
@@ -714,6 +719,11 @@ Application::Application(bool GUIenabled)
 Application::~Application()
 {
     Base::Console().Log("Destruct Gui::Application\n");
+    // A path tracer session released by a closing view is destroyed by
+    // a worker, not where it was released (docs/CyclesIntegration.md
+    // sec 5.12). Wait for those here: past this point the process
+    // starts unloading what that worker is still inside.
+    Render::Cycles::waitForRetiredSessions();
     WorkbenchManager::destruct();
     WorkbenchManipulator::removeAll();
     SelectionSingleton::destruct();
@@ -1342,6 +1352,24 @@ void Application::activateView(const Base::Type& type, bool create)
 /// Getter for the active view
 Gui::Document* Application::activeDocument() const
 {
+    // The document of the view whose input is being handled, when one is
+    // being handled at all (docs/ThinClient.md sec 8.7). "Active" is
+    // desktop state -- it is whichever document the main window last put
+    // in front -- and in a process serving several browsers it names
+    // nothing, or somebody else's. The same answer setEdit was given for
+    // the active WINDOW, one level up: ask the view the event arrived
+    // through first.
+    //
+    // Nothing on the desktop opens a ViewerScope, so the desktop answer
+    // does not move. What this reaches is the code a served event runs
+    // through that was never given a view to ask -- a Command's
+    // getActiveGuiDocument() above all, which is how a sketch tool finds
+    // the view provider to hand its handler to.
+    if (ViewerContext* viewer = ViewerContext::current()) {
+        if (Gui::Document* doc = viewer->getDocument()) {
+            return doc;
+        }
+    }
     return d->activeDocument;
 }
 
@@ -2413,12 +2441,15 @@ void Application::initTypes()
     Gui::SplitView3DInventor                    ::init();
     Gui::ViewArea                               ::init();
     Gui::TextDocumentEditorView                 ::init();
+#ifdef FC_SHADER_GRAPH_EDITOR
+    Gui::ShaderGraphView                        ::init();
+#endif
     Gui::EditorView                             ::init();
     Gui::PythonEditorView                       ::init();
     // View Provider
     // Properties whose storage redirects into ShapeAppearance
     Gui::PropertyShapeColor                     ::init();
-    Gui::PropertyShapeMaterial                  ::init();
+    Gui::PropertyShapeAppearance                  ::init();
 
     Gui::ViewProvider                           ::init();
     Gui::ViewProviderExtension                  ::init();
@@ -2476,13 +2507,19 @@ void Application::initTypes()
     Gui::LinkView                               ::init();
     Gui::ViewProviderLink                       ::init();
     Gui::ViewProviderLinkPython                 ::init();
-    // ViewProviderAppearance derives ViewProviderLink — init after it
+    // ViewProviderShaderBinding derives ViewProviderLink -- init after it
     Gui::ViewProviderShaderProgram              ::init();
     Gui::ViewProviderShaderProgramPython        ::init();
     Gui::ViewProviderShader                     ::init();
     Gui::ViewProviderShaderPython               ::init();
-    Gui::ViewProviderAppearance                 ::init();
-    Gui::ViewProviderAppearancePython           ::init();
+    Gui::ViewProviderShaderBinding                 ::init();
+    Gui::ViewProviderShaderBindingPython           ::init();
+    // Former names, still resolved so a GuiDocument.xml written before the
+    // rename restores its view providers (Base::Type::addLegacyName).
+    Base::Type::addLegacyName(Gui::ViewProviderShaderBinding::getClassTypeId(),
+                              "Gui::ViewProviderAppearance");
+    Base::Type::addLegacyName(Gui::ViewProviderShaderBindingPython::getClassTypeId(),
+                              "Gui::ViewProviderAppearancePython");
     Gui::AxisOrigin                             ::init();
     Gui::ViewProviderSavedView                  ::init();
     Gui::ViewProviderDatum                      ::init();

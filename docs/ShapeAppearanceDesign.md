@@ -2762,8 +2762,9 @@ On `MaterialListPy`, the live view of sec 11:
   gain the per-face meaning of 12.2.
 
 `FollowMaterial` is the third attribute, and belongs to sec 15 of
-`MaterialStorage.md`: it decides where `Base` comes from, not what an
-override is.
+`MaterialStorage.md`: it decides whether SETTING the object's card writes
+`Base`, not what an override is. It gates that moment only -- a restore
+brings back the base the file stored, following or not.
 
 ### 12.6 Invariants
 

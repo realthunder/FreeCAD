@@ -588,8 +588,9 @@ PyObject* View3DInventorPy::saveImage(PyObject *args)
     char *cFileName,*cColor="Current",*cComment="$MIBA";
     int w=-1,h=-1;
     int s=View3DInventorViewer::getNumSamples();
+    int wait=1;
 
-    if (!PyArg_ParseTuple(args, "et|iissi","utf-8",&cFileName,&w,&h,&cColor,&cComment,&s))
+    if (!PyArg_ParseTuple(args, "et|iissii","utf-8",&cFileName,&w,&h,&cColor,&cComment,&s,&wait))
         return nullptr;
 
     try {
@@ -608,7 +609,7 @@ PyObject* View3DInventorPy::saveImage(PyObject *args)
             bg.setNamedColor(colname);
 
         QImage img;
-        getView3DInventorPtr()->getViewer()->savePicture(w, h, s, bg, img);
+        getView3DInventorPtr()->getViewer()->savePicture(w, h, s, bg, img, wait != 0);
 
         SoFCOffscreenRenderer& renderer = SoFCOffscreenRenderer::instance();
         SoCamera* cam = getView3DInventorPtr()->getViewer()->getSoRenderManager()->getCamera();
@@ -694,7 +695,18 @@ static void writeRenderDumpSidecar(View3DInventor *view,
     QJsonObject root;
 
     QJsonObject capture;
-    capture[QStringLiteral("file")] = QString::fromUtf8(imagePath.c_str());
+    // The BASENAME, not the path it was written to. A golden's
+    // sidecar is a shared artefact in a public repository, and the
+    // blessing box's own absolute path is both meaningless there and
+    // a trap of a shape this tree has already paid for once:
+    // Render_PBREnvImage carried a blessing box's absolute path into
+    // a golden, and render_verify's relocate() exists to defend the
+    // properties against exactly that. Nothing reads this field back
+    // -- the verifier derives the image name from the sidecar's own
+    // -- so it is descriptive, and a description should not name a
+    // directory that exists on one machine.
+    capture[QStringLiteral("file")] =
+        QFileInfo(QString::fromUtf8(imagePath.c_str())).fileName();
     capture[QStringLiteral("source")] = QString::fromUtf8(source);
     if (mode >= 0)
         capture[QStringLiteral("mode")] = mode;
@@ -721,9 +733,19 @@ static void writeRenderDumpSidecar(View3DInventor *view,
         root[QStringLiteral("devicePixelRatio")] =
             glWidget->devicePixelRatioF();
     }
-    if (auto renderer = viewer->getExternalRenderer())
+    if (auto renderer = viewer->getExternalRenderer()) {
         root[QStringLiteral("backend")] =
             QString::fromUtf8(renderer->type().c_str());
+        // Which DEVICE drew it, not just which backend was selected.
+        // "bgfx - OpenGL" is what a software rasterizer and a real
+        // adapter both report, and a reference image blessed on one
+        // device does not compare against another -- so without this a
+        // capture carries no way to tell afterwards which it was.
+        const std::string device = renderer->deviceName();
+        if (!device.empty())
+            root[QStringLiteral("device")] =
+                QString::fromUtf8(device.c_str());
+    }
     root[QStringLiteral("msaa")] = View3DInventorViewer::getNumSamples();
 
     const auto &config = App::Application::Config();
@@ -744,6 +766,12 @@ static void writeRenderDumpSidecar(View3DInventor *view,
         st[QStringLiteral("height")] = stats->height;
         st[QStringLiteral("geometryPixels")] =
             double(stats->geometryPixels);
+        // Recorded in the sidecar so a blessing can be refused
+        // rather than merely regretted: a non-zero count means the
+        // shading produced NaN or infinity, and the capture holds
+        // arbitrary pixels wherever it did.
+        st[QStringLiteral("nonFiniteChannels")] =
+            double(stats->nonFiniteChannels);
         QJsonArray avg;
         avg.append(stats->avgColor[0]);
         avg.append(stats->avgColor[1]);
@@ -840,6 +868,14 @@ static void writeRenderDumpSidecar(View3DInventor *view,
     // light rig and its ambient, the background, the chrome drawn over
     // the scene, and the pipeline switches.
     static const std::set<std::string> viewKeys = {
+        // AntiAliasing decides whether a silhouette has coverage at all,
+        // so a golden restaged without it compares a multisampled capture
+        // against an aliased one and diverges along every edge in every
+        // stage. It was missing while the default moved from 4x to off
+        // (12ad499101), which is exactly when a golden set would have
+        // needed it. The `msaa` field above records the resolved count
+        // but nothing restages from it.
+        "AntiAliasing",
         "RenderCache", "Orthographic", "UseVBO",
         "TransparentObjectRenderType",
         "EnableHeadlight", "HeadlightColor", "HeadlightDirection",
@@ -877,9 +913,11 @@ PyObject* View3DInventorPy::cyclesRender(PyObject *args, PyObject *kwds)
     int height = 480;
     int samples = 64;
     const char *device = "CPU";
-    static char *kwlist[] = {"path", "width", "height", "samples", "device", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "et|iiis", kwlist,
-                                     "utf-8", &cPath, &width, &height, &samples, &device))
+    PyObject *waitObj = Py_True;
+    static char *kwlist[] = {"path", "width", "height", "samples", "device", "wait", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "et|iiisO", kwlist,
+                                     "utf-8", &cPath, &width, &height, &samples, &device,
+                                     &waitObj))
         return nullptr;
     std::string path(cPath);
     PyMem_Free(cPath);
@@ -888,6 +926,16 @@ PyObject* View3DInventorPy::cyclesRender(PyObject *args, PyObject *kwds)
     std::string error;
     Render::Cycles::RenderReport report;
     bool ok = false;
+    // The scene traced is the render cache as it stands, and a publish
+    // that deferred shapes under its capture budget has not finished
+    // stating it: wait for a complete frame first, with the GIL held
+    // like saveRenderDump's pump (the event loop may run script
+    // timers). A timeout is reported and the render goes ahead -- a
+    // slow machine gets a picture, not a refusal.
+    if (PyObject_IsTrue(waitObj) > 0 && !viewer->waitFrameComplete())
+        Base::Console().Warning("cyclesRender: the scene did not reach a "
+                                "complete frame in time; tracing it as it "
+                                "stands\n");
     // The render blocks for as long as the samples take and touches no
     // Python; the snapshot before it is Coin, not Python, either.
     Py_BEGIN_ALLOW_THREADS
@@ -955,6 +1003,7 @@ PyObject* View3DInventorPy::cyclesViewportStatus(PyObject *args)
     Py::Dict dict;
     dict.setItem("running", Py::Boolean(status.running));
     dict.setItem("progress", Py::Float(status.progress));
+    dict.setItem("complete", Py::Boolean(status.complete));
     dict.setItem("status", Py::String(status.status));
     dict.setItem("error", Py::String(status.error));
     dict.setItem("meshes", Py::Long(status.report.meshes));
@@ -973,17 +1022,43 @@ PyObject* View3DInventorPy::cyclesViewportStatus(PyObject *args)
     return Py::new_reference_to(dict);
 }
 
+PyObject* View3DInventorPy::waitFrameComplete(PyObject *args, PyObject *kwds)
+{
+    int timeout = 120000;
+    static char *kwlist[] = {"timeout", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i", kwlist, &timeout))
+        return nullptr;
+    try {
+        View3DInventorViewer *viewer = getView3DInventorPtr()->getViewer();
+        return Py::new_reference_to(Py::Boolean(viewer->waitFrameComplete(timeout)));
+    } PY_CATCH
+}
+
+PyObject* View3DInventorPy::isFrameComplete(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    try {
+        View3DInventorViewer *viewer = getView3DInventorPtr()->getViewer();
+        Render::Renderer *renderer = viewer->getExternalRenderer();
+        return Py::new_reference_to(
+            Py::Boolean(!renderer || renderer->frameComplete()));
+    } PY_CATCH
+}
+
 PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)
 {
     char *cPath;
     char *cSource = "renderer";
     PyObject *modeObj = Py_None;
     PyObject *metaObj = Py_True;
-    static char *kwlist[] = {"path", "source", "mode", "metadata", nullptr};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "et|sOO", kwlist,
+    PyObject *waitObj = Py_True;
+    static char *kwlist[] = {"path", "source", "mode", "metadata", "wait", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "et|sOOO", kwlist,
                                      "utf-8", &cPath, &cSource,
-                                     &modeObj, &metaObj))
+                                     &modeObj, &metaObj, &waitObj))
         return nullptr;
+    const bool wait = PyObject_IsTrue(waitObj) > 0;
 
     std::string path(cPath);
     PyMem_Free(cPath);
@@ -1011,6 +1086,7 @@ PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)
             Render::FrameDumpRequest req;
             req.path = path;
             req.mode = mode;
+            req.waitComplete = wait;
             if (!renderer->requestFrameDump(req))
                 throw Py::RuntimeError("Render backend has no frame capture");
             if (!viewer->pumpFrameDump(renderer))
@@ -1035,6 +1111,10 @@ PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)
                 throw Py::RuntimeError("View has no GL widget");
             const qreal dpr = glWidget->devicePixelRatioF();
             QImage img;
+            // The composited frame is the backend's frame too, so the
+            // same wait applies before it is read.
+            if (wait)
+                viewer->waitFrameComplete();
             // The composited GL frame specifically -- not savePicture,
             // which sends a backend-rendered view to source='renderer'
             // and would make these two sources the same capture.
@@ -1093,8 +1173,10 @@ PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)
                             root = doc.object();
                     }
                     QJsonObject capture;
+                    // The basename, as above.
                     capture[QStringLiteral("file")] =
-                        QString::fromUtf8(file.c_str());
+                        QFileInfo(QString::fromUtf8(file.c_str()))
+                            .fileName();
                     capture[QStringLiteral("source")] =
                         QStringLiteral("viewer");
                     if (mode >= 0)
@@ -1138,9 +1220,11 @@ PyObject* View3DInventorPy::reloadShaders(PyObject *args)
     } PY_CATCH
 }
 
-PyObject* View3DInventorPy::getRenderStats(PyObject *args)
+PyObject* View3DInventorPy::getRenderStats(PyObject *args, PyObject *kwds)
 {
-    if (!PyArg_ParseTuple(args, ""))
+    PyObject *waitObj = Py_True;
+    static char *kwlist[] = {"wait", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O", kwlist, &waitObj))
         return nullptr;
     try {
         View3DInventorViewer *viewer = getView3DInventorPtr()->getViewer();
@@ -1148,6 +1232,7 @@ PyObject* View3DInventorPy::getRenderStats(PyObject *args)
         if (!renderer)
             throw Py::RuntimeError("No external renderer active on this view");
         Render::FrameDumpRequest req;    // stats-only readback, no file
+        req.waitComplete = PyObject_IsTrue(waitObj) > 0;
         if (!renderer->requestFrameDump(req))
             throw Py::RuntimeError("Render backend has no frame capture");
         if (!viewer->pumpFrameDump(renderer))
@@ -1160,6 +1245,8 @@ PyObject* View3DInventorPy::getRenderStats(PyObject *args)
         dict.setItem("height", Py::Long(stats.height));
         dict.setItem("geometryPixels",
                      Py::Long(long(stats.geometryPixels)));
+        dict.setItem("nonFiniteChannels",
+                     Py::Long(long(stats.nonFiniteChannels)));
         Py::Tuple avg(3);
         avg.setItem(0, Py::Float(stats.avgColor[0]));
         avg.setItem(1, Py::Float(stats.avgColor[1]));

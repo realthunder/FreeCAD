@@ -3514,7 +3514,7 @@ public:
     static void selectionCallback(void * ud, SoEventCallback * n)
     {
         SelectionCallbackHandler* selectionHandler = reinterpret_cast<SelectionCallbackHandler*>(ud);
-        Gui::View3DInventorViewer* view = reinterpret_cast<Gui::View3DInventorViewer*>(n->getUserData());
+        Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
         const SoEvent* ev = n->getEvent();
         if (ev->isOfType(SoKeyboardEvent::getClassTypeId())) {
 
@@ -3649,7 +3649,7 @@ static void selectionCallback(void * ud, SoEventCallback * cb)
 {
     const SoEvent* ev = cb->getEvent();
     cb->setHandled();
-    auto view  = reinterpret_cast<Gui::View3DInventorViewer*>(cb->getUserData());
+    auto view  = Gui::View3DInventorViewer::fromEventCallback(cb);
     bool unselect = false;
     bool backFaceCull = true;
     bool singleSelect = true;

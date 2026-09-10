@@ -81,7 +81,7 @@ private:
 
     std::vector<Gui::ViewProvider*> getSelection() const;
     void update(std::vector<Gui::ViewProvider*>& views);
-    QWidget* makeAppearanceTab(const App::Material& material);
+    QWidget* makeAppearanceTab(const App::MaterialAppearance& material);
 };
 
 

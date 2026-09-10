@@ -48,6 +48,7 @@
 #include "InventorBase.h"
 #include "Inventor/SoFCDisplayModeElement.h"
 #include "View3DInventorSelection.h"
+#include "ViewerContext.h"
 #include "Quarter/SoQTQuarterAdaptor.h"
 
 class SoTranslation;
@@ -55,7 +56,7 @@ class SoTransform;
 class SoText2;
 class SoGetBoundingBoxAction;
 class SoFCRenderCacheManager;
-namespace Render::Cycles { struct RenderReport; struct ViewportOptions; struct ViewportStatus; }
+namespace Render::Cycles { struct RenderReport; struct ViewportOptions; struct ViewportStatus; struct SceneInput; }
 
 class SoSeparator;
 class SoDetail;
@@ -120,7 +121,9 @@ class AbstractMouseSelection;
 /** GUI view into a 3D scene provided by View3DInventor
  *
  */
-class GuiExport View3DInventorViewer : public Quarter::SoQTQuarterAdaptor, public SelectionObserver
+class GuiExport View3DInventorViewer : public Quarter::SoQTQuarterAdaptor,
+                                      public SelectionObserver,
+                                      public ViewerContext
 {
     using inherited = Quarter::SoQTQuarterAdaptor;
     Q_OBJECT
@@ -167,11 +170,9 @@ public:
     /** @name Render mode
       */
     //@{
-    enum RenderType {
-        Native,
-        Framebuffer,
-        Image
-    };
+    /// RenderType and its enumerators are ViewerContext's now, and reached
+    /// through this class as before.
+    using ViewerContext::RenderType;
     //@}
 
     /** @name Background
@@ -189,6 +190,45 @@ public:
     ~View3DInventorViewer() override;
 
     void init();
+
+    /** @name ViewerContext rows that Quarter already answers
+     *
+     * These exist on QuarterWidget and SoQTQuarterAdaptor as plain members.
+     * Redeclaring them here is what makes them overrides of the ViewerContext
+     * virtuals -- and what keeps the name unambiguous, since it is now
+     * reachable through two bases. The bodies forward; there is no behaviour
+     * here.
+     */
+    //@{
+    SoNode* getSceneGraph() const override;
+    SoRenderManager* getSoRenderManager() const override;
+    SoEventManager* getSoEventManager() const override;
+    const SbViewportRegion& getViewportRegion() const override;
+    float getPickRadius() const override;
+    double devicePixelRatio() const override;
+    QWidget* getWidget() const override;
+    QWidget* getGLWidget() const override;
+    /// Non-const overloads Quarter offers, kept reachable past the redeclaration above.
+    QWidget* getWidget();
+    QWidget* getGLWidget();
+    /// Which mouse buttons are down, from this view's own event handling.
+    Qt::MouseButtons mouseButtons() const override;
+    double logicalDotsPerInchX() const override;
+    void setFocusToView() override;
+    /** Quarter's camera accessor, named the same as ViewerContext's.
+     *
+     * Both walk to the same node -- the render manager's -- and a view that
+     * inherits two of them makes the name ambiguous at every call site, so
+     * one is chosen here. Quarter's, because it is the one this class's own
+     * code has always called.
+     */
+    using Quarter::SoQTQuarterAdaptor::getCamera;
+    /// An on-view entry box is a child of the MDI window, over the canvas.
+    QWidget* datumEditorParent() const override;
+    /// A key an entry box did not claim goes back to this widget.
+    bool sendKeyEvent(QKeyEvent* event) override;
+    static View3DInventorViewer* fromEventCallback(const SoEventCallback* node);
+    //@}
 
     /// Observer message from the Selection
     void onSelectionChanged(const SelectionChanges &Reason) override;
@@ -237,7 +277,18 @@ public:
 
     /// Get the preferred samples from the user settings
     static int getNumSamples();
-    void setRenderType(RenderType type);
+    /// The multisampling THIS viewer draws with: the user preference,
+    /// unless the viewer has been given a count of its own.
+    int numSamples() const;
+    /// Fix this viewer's multisampling, whatever the preference says.
+    ///
+    /// For a viewer whose picture is an artifact rather than a view of
+    /// the user's model: the material icons are rendered by one and ship
+    /// in the binary, so what it draws must not move when the
+    /// AntiAliasing default does. A negative value gives the preference
+    /// back.
+    void setNumSamples(int samples);
+    void setRenderType(RenderType type) override;
     RenderType getRenderType() const;
     void renderToFramebuffer(QtGLFramebufferObject*);
     QImage grabFramebuffer();
@@ -245,14 +296,32 @@ public:
                               const QColor& bgcolor, QImage& img);
     /// Pump paint events until an armed one-shot frame dump has been
     /// consumed by a rendered frame (docs/RenderDebug.md §4.2); false on
-    /// timeout, or if the renderer was replaced while pumping.
+    /// timeout, or if the renderer was replaced while pumping. The
+    /// backend holds the dump while a user shader is still compiling,
+    /// or the scene is still arriving under the capture budget, and
+    /// the timeout waits with it (5 s quiet, 120 s in all).
     bool pumpFrameDump(Render::Renderer *renderer);
+    /** Pump frames until the external backend has rendered a COMPLETE
+     * one since this call (Render::Renderer::frameComplete: every user
+     * shader compiled, every deferred shape arrived, a frozen frame's
+     * particle warm-up reached, no mesh refine outstanding) -- the
+     * picture, rather than a number of frames. The built-in signal a
+     * test settles on; frameCompleted() is the same event as a Qt
+     * signal. The quiet timeout (5 s) restarts on every frame rendered
+     * and every pending compile, under \a timeoutMs in all. Without a
+     * backend one frame is rendered and that is the picture. False on
+     * timeout, or if the renderer was replaced while pumping.
+     */
+    bool waitFrameComplete(int timeoutMs = 120000);
     /// Capture the frame through the render backend's own one-shot dump
     /// rather than an offscreen Coin render, which cannot see what the
     /// backend drew. False when there is no backend or it has no capture
     /// path, and the caller falls back to the Coin route.
+    /// \a waitComplete: the dump is consumed only by a complete frame
+    /// (Render::FrameDumpRequest::waitComplete); false takes the next
+    /// frame as it stands.
     bool imageFromRenderer(int width, int height, const QColor& bgcolor,
-                           QImage& img);
+                           QImage& img, bool waitComplete = true);
 
     void setViewing(bool enable) override;
     virtual void setCursorEnabled(bool enable);
@@ -282,16 +351,11 @@ public:
     ViewProvider* getViewProviderByPathFromTail(SoPath*) const;
     /// get all view providers of given type
     std::vector<ViewProvider*> getViewProvidersOfType(const Base::Type& typeId) const;
-    /// set the ViewProvider in special edit mode
-    void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum);
-    /// return whether a view provider is edited
-    bool isEditingViewProvider() const;
-    /// reset from edit mode
-    void resetEditingViewProvider();
-    void setupEditingRoot(SoNode *node=nullptr, const Base::Matrix4D *mat=nullptr);
-    void resetEditingRoot(bool updateLinks=true);
-    void setEditingTransform(const Base::Matrix4D &mat);
-    SoSeparator * getEditRootNode() const { return pcEditingRoot; }
+    // The edit-mode rows -- setEditingViewProvider, resetEditingViewProvider,
+    // setupEditingRoot, resetEditingRoot, setEditingTransform,
+    // getEditRootNode -- are ViewerContext's now: none of them was view work.
+    // What this view still does for itself is hang pcEditingRoot under the
+    // aux root, which it does once at construction.
     /** Helper method to get picked entities while editing.
      * It's in the responsibility of the caller to delete the returned instance.
      */
@@ -397,7 +461,8 @@ public:
      * Creates an image with width \a width and height \a height of the current scene graph
      * using a multi-sampling of \a sample and exports the rendered scenegraph to an image.
      */
-    void savePicture(int width, int height, int sample, const QColor& bg, QImage& img) const;
+    void savePicture(int width, int height, int sample, const QColor& bg, QImage& img,
+                     bool waitComplete = true) const;
     void saveGraphic(int pagesize, const QColor&, SoVectorizeAction* va) const;
     //@}
     /**
@@ -414,7 +479,7 @@ public:
     void stopSelection();
     bool isSelecting() const;
     std::vector<SbVec2f> getGLPolygon(SelectionRole* role=nullptr) const;
-    std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>&) const;
+    std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>&) const override;
     const std::vector<SbVec2s>& getPolygon(SelectionRole* role=nullptr) const;
     void setSelectionEnabled(bool enable);
     bool isSelectionEnabled() const;
@@ -497,7 +562,6 @@ public:
     /** Converts Inventor coordinates into Qt coordinates.
      * The conversion takes the device pixel ratio into account.
      */
-    QPoint toQPoint(const SbVec2s&) const;
 
     /** Converts Qt coordinates into Inventor coordinates.
      * The conversion takes the device pixel ratio into account.
@@ -746,7 +810,6 @@ public:
     void updateHatchTexture();
     void refreshRenderCache();
 
-    void getDimensions(float& fHeight, float& fWidth) const;
     float getMaxDimension() const;
     SbVec3f getCenterPointOnFocalPlane() const;
 
@@ -755,7 +818,7 @@ public:
     void setDocument(Gui::Document *pcDocument);
     Gui::Document* getDocument();
 
-    virtual PyObject *getPyObject();
+    PyObject *getPyObject() override;
 
     const SoPath *getGroupOnTopPath();
 
@@ -820,6 +883,22 @@ public:
                            std::string *error);
     /// What the live Cycles session is doing; false when there is none.
     bool cyclesViewportStatus(Render::Cycles::ViewportStatus &status) const;
+    /** The Cycles options in effect for this view: the view's Cycles_*
+     * properties where materialized, the preferences underneath where
+     * not -- the effective-value rule every Render_* setting follows.
+     * What syncExternalShading starts a session with, and what a
+     * consumer rendering on this view's behalf (the shader graph
+     * editor's preview, docs/ShaderGraphEditor.md sec 15) starts its
+     * own with.
+     */
+    Render::Cycles::ViewportOptions cyclesViewportOptions() const;
+    /** Fill the per-frame configs of a Cycles scene from this view's
+     * render settings: PBR (enabled -- a Cycles session IS external
+     * shading, see the feed), bump, output, light, section, the
+     * background from \a col (or the view's gradient), and the debug
+     * view mode. The draws and the camera are the caller's.
+     */
+    void cyclesSceneConfig(Render::Cycles::SceneInput &input, const QColor &col) const;
     /** Make the live external session agree with the view's shading
      * choice (the External value of View3DInventor::ShadingType).
      *
@@ -853,6 +932,13 @@ public:
 
     struct Private;
     friend struct Private;
+
+Q_SIGNALS:
+    /// The external backend has just rendered a complete frame (see
+    /// waitFrameComplete): emitted from renderScene, on the frame that
+    /// advanced Render::Renderer::completeFrames. Nothing listens by
+    /// default; an unconnected emit is a connection-list check.
+    void frameCompleted();
 
 public Q_SLOTS:
     /** Redraw the view, subject to the live-operation redraw throttle.
@@ -918,10 +1004,11 @@ private:
     void createStandardCursors(double);
 
 private:
+    /// Multisampling of this viewer alone; < 0 defers to the preference.
+    int _numSamples {-1};
     NaviCube* naviCube;
     std::set<ViewProvider*> _ViewProviderSet;
     std::list<GLGraphicsItem*> graphicsItems;
-    ViewProvider* editViewProvider;
     SoFCBackgroundGradient *pcBackGround;
     SoSwitch               *pcBackGroundSwitch;
     SoSeparator * backgroundroot;
@@ -947,9 +1034,6 @@ private:
     std::unique_ptr<SoFCSelectionAction> selectionAction;
     std::unique_ptr<SoFCHighlightAction> highlightAction;
 
-    SoSeparator * pcEditingRoot;
-    SoTransform * pcEditingTransform;
-    bool restoreEditingRoot;
     SoEventCallback* pEventCallback;
     NavigationStyle* navigation;
     SoFCUnifiedSelection* selectionRoot;

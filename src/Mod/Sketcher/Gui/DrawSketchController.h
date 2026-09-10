@@ -598,12 +598,19 @@ protected:
     /** @brief Initialises on-screen parameters */
     void initNOnViewParameters(int n)
     {
-        Gui::View3DInventorViewer* viewer = handler->getViewer();
+        // The view the tool is running in, desktop or mirror. An on-view
+        // parameter is an entry box shown next to the cursor, and where
+        // there is no widget to show one the same box is built unshown
+        // and streamed to the client instead -- which is the view's
+        // business, not this controller's (docs/ThinClient.md sec 8.7).
+        Gui::ViewerContext* viewer = handler->getViewer();
+        onViewParameters.clear();
+        if (!viewer) {
+            return;
+        }
 
         auto doc = Gui::Application::Instance->editDocument();
         auto placement = Base::Placement(doc->getEditingTransform());
-
-        onViewParameters.clear();
 
         for (int i = 0; i < n; i++) {
 
@@ -747,7 +754,12 @@ protected:
 
     bool isOnViewParameterVisible(unsigned int onviewparameterindex)
     {
-        return ovpVisibilityManager.isVisible(onViewParameters[onviewparameterindex].get());
+        // Guarded rather than assumed, like the two above: the set is
+        // empty in a view that cannot host the widgets at all
+        // (initNOnViewParameters), and every caller reaches this before
+        // it indexes.
+        return onviewparameterindex < onViewParameters.size()
+            && ovpVisibilityManager.isVisible(onViewParameters[onviewparameterindex].get());
     }
 
     /** Resets the on-view parameter controls */

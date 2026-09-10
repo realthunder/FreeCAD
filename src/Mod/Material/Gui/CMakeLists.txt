@@ -13,6 +13,7 @@ endif(BUILD_MATERIAL_EXTERNAL)
 set(MatGui_LIBS
     Materials
     FreeCADGui
+    FreeCADRenderer
 )
 
 list(APPEND MatGui_LIBS

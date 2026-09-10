@@ -31,6 +31,7 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentParams.h>
+#include <App/MaterialXDocument.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Writer.h>
@@ -83,10 +84,14 @@ void PropertyMaterial::setValue(const Material& mat)
     // still refers to them.
     _blob.reset();
     _hash.clear();
+    // The document set has to be IN the store before anything can draw it,
+    // which is now, not at save time
+    _materialXBlobs.clear();
+    holdMaterialXBlobs(false);
     hasSetValue();
 }
 
-void PropertyMaterial::setValue(const App::Material& mat)
+void PropertyMaterial::setValue(const App::MaterialAppearance& mat)
 {
     aboutToSetValue();
     // Copy on write: the card is shared and const, so setting the appearance
@@ -96,6 +101,10 @@ void PropertyMaterial::setValue(const App::Material& mat)
     _card = std::move(edited);
     _blob.reset();
     _hash.clear();
+    // The document set has to be IN the store before anything can draw it,
+    // which is now, not at save time
+    _materialXBlobs.clear();
+    holdMaterialXBlobs(false);
     hasSetValue();
 }
 
@@ -215,10 +224,137 @@ App::BlobReferrer PropertyMaterial::referrer(const App::DocumentObject* object) 
 void PropertyMaterial::collectBlobs(App::FileBlobManager& manager,
                                     const App::DocumentObject* object) const
 {
+    holdMaterialXBlobs(false);
+    noteMaterialXBlobs(manager, object);
     if (!storesContent()) {
         return;
     }
     manager.noteReferenced(ensureBlob(), referrer(object));
+}
+
+Material PropertyMaterial::cardForLibrary() const
+{
+    Material card(*_card);
+    if (!card.hasMaterialX()) {
+        return card;
+    }
+    holdMaterialXBlobs(false);
+    const auto& hashes = card.getMaterialXHashes();
+    auto paths = card.getMaterialXPaths();
+    paths.resize(hashes.size());
+    for (std::size_t i = 0; i < hashes.size(); ++i) {
+        if (!paths[i].empty() || hashes[i].empty()) {
+            continue;
+        }
+        for (const auto& blob : _materialXBlobs) {
+            if (blob && blob->hash() == hashes[i] && !blob->path().empty()) {
+                paths[i] = blob->path();
+                break;
+            }
+        }
+    }
+    card.setMaterialXPaths(paths);
+    return card;
+}
+
+void PropertyMaterial::holdMaterialXBlobs(bool queueMissing) const
+{
+    if (!_card || _unresolved || !_card->hasMaterialX()) {
+        return;
+    }
+    auto& manager = blobManager();
+    auto held = [this](const std::string& hash) {
+        for (const auto& blob : _materialXBlobs) {
+            if (blob && blob->hash() == hash) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto& hashes = _card->getMaterialXHashes();
+    const auto& paths = _card->getMaterialXPaths();
+    const QStringList names = _card->getMaterialXNames();
+    for (std::size_t i = 0; i < hashes.size(); ++i) {
+        const std::string& hash = hashes[i];
+        if (hash.empty() || held(hash)) {
+            continue;
+        }
+        if (auto blob = manager.find(hash)) {
+            _materialXBlobs.push_back(std::move(blob));
+            continue;
+        }
+        if (i < paths.size() && !paths[i].empty()) {
+            // A library card: the bytes are on this machine, under the path
+            // the loader hashed them at
+            const std::string ext = static_cast<int>(i) < names.size()
+                ? Base::FileInfo(names[static_cast<int>(i)].toStdString()).extension()
+                : std::string();
+            try {
+                if (auto blob = manager.insertFile(paths[i].c_str(), ext.c_str())) {
+                    _materialXBlobs.push_back(std::move(blob));
+                    continue;
+                }
+            }
+            catch (const Base::Exception& e) {
+                Base::Console().error("PropertyMaterial: cannot store '%s': %s\n",
+                                      paths[i].c_str(), e.what());
+            }
+        }
+        if (queueMissing) {
+            // A card restored from a document, whose bytes are in the archive
+            // being read: the manager hands them over once it reaches them
+            auto* self = const_cast<PropertyMaterial*>(this);
+            self->_pendingManager = &manager;
+            manager.addPendingReferrer(hash, self);
+        }
+    }
+    // The manifest itself, written from what is known -- it is a pure
+    // function of names and hashes, so it needs none of the files present
+    const App::MaterialXDocument manifest = _card->getMaterialXManifest();
+    if (manifest.isSet() && !held(manifest.manifestHash())) {
+        if (auto blob = manifest.store(manager)) {
+            _materialXBlobs.push_back(std::move(blob));
+        }
+    }
+}
+
+void PropertyMaterial::noteMaterialXBlobs(App::FileBlobManager& manager,
+                                          const App::DocumentObject* object) const
+{
+    if (_materialXBlobs.empty() || !_card) {
+        return;
+    }
+    const App::MaterialXDocument manifest = _card->getMaterialXManifest();
+    const std::string manifestHash = manifest.isSet() ? manifest.manifestHash() : std::string();
+    for (const auto& blob : _materialXBlobs) {
+        if (!blob) {
+            continue;
+        }
+        App::BlobReferrer named = App::FileBlobManager::referrerOf(this, object);
+        if (blob->hash() == manifestHash) {
+            if (!named.name.empty()) {
+                named.name += ".materialx";
+            }
+            named.ext = ".manifest";
+        }
+        else {
+            // Named after what the document calls the file, so an unpacked
+            // project shows brass_color.jpg and not a hash
+            for (const auto& file : manifest.files) {
+                if (file.hash == blob->hash()) {
+                    Base::FileInfo fi(file.name);
+                    const std::string stem = fi.fileNamePure();
+                    if (!named.name.empty() && !stem.empty()) {
+                        named.name += "." + stem;
+                    }
+                    const std::string ext = fi.extension();
+                    named.ext = ext.empty() ? std::string() : "." + ext;
+                    break;
+                }
+            }
+        }
+        manager.noteReferenced(blob, named);
+    }
 }
 
 void PropertyMaterial::Save(Base::Writer& writer) const
@@ -247,6 +383,8 @@ void PropertyMaterial::Save(Base::Writer& writer) const
                 // does: a property written through a path the collect pass
                 // does not walk would otherwise lose its content.
                 blobManager().noteReferenced(blob, referrer(nullptr));
+                holdMaterialXBlobs(false);
+                noteMaterialXBlobs(blobManager(), nullptr);
                 hash = blob->hash();
             }
         }
@@ -273,6 +411,10 @@ void PropertyMaterial::assign(const std::shared_ptr<const Material>& card, bool 
     _card = card;
     _hash.clear();
     _unresolved = unresolved;
+    // The card's document set: from the store, from the library's files,
+    // or from the archive still being read
+    _materialXBlobs.clear();
+    holdMaterialXBlobs(true);
 }
 
 void PropertyMaterial::assignUnresolved(const std::string& hash)
@@ -299,6 +441,8 @@ void PropertyMaterial::Restore(Base::XMLReader& reader)
     _blob.reset();
     _hash.clear();
     _unresolved = false;
+    _materialXBlobs.clear();
+    _pendingCardHash.clear();
 
     const std::string hash =
         reader.hasAttribute("hash") ? reader.getAttribute<const char*>("hash") : std::string();
@@ -325,6 +469,7 @@ void PropertyMaterial::Restore(Base::XMLReader& reader)
         assignUnresolved(hash);
         auto& manager = blobManager();
         _pendingManager = &manager;
+        _pendingCardHash = hash;
         manager.addPendingReferrer(hash, this);
         return;
     }
@@ -362,6 +507,11 @@ void PropertyMaterial::Restore(Base::XMLReader& reader)
 
 bool PropertyMaterial::blobUnavailable()
 {
+    if (_card && !_unresolved) {
+        // The card is here; what is missing is one of its MaterialX files.
+        // Nothing stands in for a map, and the card keeps its colour slots.
+        return false;
+    }
     _pendingManager = nullptr;
     if (_uuid.isEmpty()) {
         return false;
@@ -393,9 +543,21 @@ bool PropertyMaterial::blobUnavailable()
 
 void PropertyMaterial::assignRestoredBlob(const App::FileBlobHandle& blob)
 {
-    _pendingManager = nullptr;
+    if (blob && _card && !_unresolved && blob->hash() != _pendingCardHash) {
+        // Not the card: one of its MaterialX files, asked for by
+        // holdMaterialXBlobs() once the card itself had arrived
+        for (const auto& held : _materialXBlobs) {
+            if (held && held->hash() == blob->hash()) {
+                return;
+            }
+        }
+        _materialXBlobs.push_back(blob);
+        return;
+    }
+    _pendingCardHash.clear();
     _blob = blob;
     if (!blob) {
+        _pendingManager = nullptr;
         assignUnresolved(_hash);
         return;
     }
@@ -520,7 +682,7 @@ bool PropertyMaterial::saveToLibrary()
     // The writer stamps the placement onto the card it is given, and the
     // shared card must not be reachable from that -- everyone else holding it
     // is entitled to the card they were handed.
-    auto card = std::make_shared<Material>(*_card);
+    auto card = std::make_shared<Material>(cardForLibrary());
     try {
         MaterialManager::getManager().saveMaterial(library, card, path, true, false, false);
     }
@@ -541,7 +703,7 @@ bool PropertyMaterial::saveToLibrary()
 const char* PropertyMaterial::getEditorName() const
 {
     if (testStatus(MaterialEdit)) {
-        return "";  //"Gui::PropertyEditor::PropertyMaterialItem";
+        return "";  //"Gui::PropertyEditor::PropertyAppearanceItem";
     }
     return "";
 }
@@ -557,6 +719,7 @@ App::Property* PropertyMaterial::Copy() const
     p->_uuid = _uuid;
     p->_name = _name;
     p->_unresolved = _unresolved;
+    p->_materialXBlobs = _materialXBlobs;
     return p;
 }
 
@@ -571,7 +734,9 @@ void PropertyMaterial::Paste(const App::Property& from)
     _unresolved = other._unresolved;
     // Not the blob: the value may be arriving from another document, whose
     // store this one's handles must not point into. ensureBlob() puts it in
-    // the right store when it is next needed.
+    // the right store when it is next needed, and holdMaterialXBlobs() the
+    // document set.
     _blob.reset();
+    _materialXBlobs.clear();
     hasSetValue();
 }

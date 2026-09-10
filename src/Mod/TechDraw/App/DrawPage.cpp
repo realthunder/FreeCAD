@@ -306,7 +306,18 @@ void DrawPage::requestPaint(void) { signalGuiPaint(this); }
 void DrawPage::onDocumentRestored()
 {
     if (canUpdate()) {
-        updateAllViews();
+        // A view that brought its projection back from the document draws
+        // what it drew when it was written, so there is nothing to rebuild;
+        // only the views that stored nothing, or were written out of date,
+        // project again.  See docs/TechDrawStoredGeometry.md.
+        updateAllViews(true);
+    }
+    else if (hasStoredGeometry()) {
+        // The page may not follow the model, but the projections it stored
+        // are back, so what is derived from them is brought up to date
+        // against them.  Without this a page that cannot update draws its
+        // geometry with every dimension reading zero.
+        updateDerivedViews();
     }
 
     App::DocumentObject::onDocumentRestored();
@@ -320,7 +331,7 @@ void DrawPage::redrawCommand()
     forceRedraw(false);
 }
 
-void DrawPage::updateAllViews()
+void DrawPage::updateAllViews(bool reuseStored)
 {
     //    Base::Console().Message("DP::updateAllViews()\n");
     std::vector<App::DocumentObject*> featViews =
@@ -331,12 +342,23 @@ void DrawPage::updateAllViews()
         TechDraw::DrawViewPart* part = dynamic_cast<TechDraw::DrawViewPart*>(v);
         if (part) {
             //view, section, detail, dpgi
+            if (reuseStored && part->canReuseStoredGeometry()) {
+                continue;
+            }
             part->recomputeFeature();
         }
     }
     //second, do the rest of the views that may depend on a part view
-    //TODO: check if we have 2 layers of dependency (ex. leader > weld > tile?)
-    for (auto& v : featViews) {
+    updateDerivedViews();
+}
+
+//! the views that are derived from a part view rather than from the model:
+//! dimensions, balloons, hatches, leader lines.  What they hold is transient
+//! and cheap, and it is read off the part view geometry.
+//TODO: check if we have 2 layers of dependency (ex. leader > weld > tile?)
+void DrawPage::updateDerivedViews()
+{
+    for (auto& v : getAllViews()) {
         TechDraw::DrawViewPart* part = dynamic_cast<TechDraw::DrawViewPart*>(v);
         if (part) {
             continue;
@@ -348,6 +370,18 @@ void DrawPage::updateAllViews()
             view->recomputeFeature();
         }
     }
+}
+
+//! whether any view on the page brought a projection back from the document
+bool DrawPage::hasStoredGeometry()
+{
+    for (auto& v : getAllViews()) {
+        auto* part = dynamic_cast<TechDraw::DrawViewPart*>(v);
+        if (part && part->canReuseStoredGeometry()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::vector<App::DocumentObject*> DrawPage::getAllViews(void)

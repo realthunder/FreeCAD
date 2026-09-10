@@ -359,7 +359,7 @@ void MeshFaceAddition::addFacetCallback(void* ud, SoEventCallback* n)
 {
     MeshFaceAddition* that = static_cast<MeshFaceAddition*>(ud);
     ViewProviderFace* face = that->faceView;
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
 
     const SoEvent* ev = n->getEvent();
     // If we are in navigation mode then ignore all but key events
@@ -678,7 +678,7 @@ float MeshFillHole::findClosestPoint(const SbLine& ray,
 void MeshFillHole::fileHoleCallback(void* ud, SoEventCallback* n)
 {
     MeshFillHole* self = static_cast<MeshFillHole*>(ud);
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
 
     const SoEvent* ev = n->getEvent();
     if (ev->getTypeId() == SoLocation2Event::getClassTypeId()) {

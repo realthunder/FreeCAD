@@ -209,6 +209,17 @@ struct TextureImage {
     }
 
     std::vector<uint8_t> pixels;
+    /// The file \ref pixels were decoded from, as authored -- a JPEG or
+    /// a PNG (ImageDecode.h says which), kept beside the pixels by a
+    /// producer that read one. Consumers read \ref pixels; this is for
+    /// the TRANSPORT, which ships it instead of the pixels when it is
+    /// here: a 2k map is a few hundred kilobytes as a file and sixteen
+    /// megabytes decoded, and a document's worth of maps is the
+    /// difference between a scene that streams and one that does not
+    /// (docs/MaterialStorage.md sec 17.23). The content key is then the
+    /// key of these bytes. Empty for a texture nobody read from such a
+    /// file -- a Coin texture, a rendered palette, a Radiance picture.
+    std::vector<uint8_t> encoded;
 
     enum Wrap : uint8_t { Repeat, Clamp };
     uint8_t wrapS = Repeat;
@@ -230,6 +241,9 @@ struct TextureImage {
     /// must be filled from the key before the texture can be uploaded.
     /// Only a streamed snapshot defers; a bundled one is self-contained.
     bool deferred = false;
+    /// The deferred payload is an encoded file (see \ref encoded), to be
+    /// decoded into `pixels` when it lands rather than copied.
+    bool encodedPayload = false;
 };
 
 /// Window background drawn behind the scene, mirroring the Coin-side
@@ -796,10 +810,93 @@ struct RenderDebugConfig {
 /// passes. Compilation is the backend's job (bgfx: runtime shaderc
 /// compile cache); a shader that fails to compile is skipped with an
 /// error report, never a black screen.
+/// A creation serial for the immutable, pointer-shared cache objects
+///
+/// Pointer identity is what says two draws share a palette or a shader:
+/// they are immutable once published and one node makes one. But the
+/// render cache's material map ORDERS by these too, and ordering by the
+/// ADDRESS made the draw list's order depend on where the allocator
+/// happened to put them -- which is different in every run of the same
+/// binary. Where two draws then contend for one pixel at equal depth --
+/// the rim circle a cylinder's wall and its top face share -- the
+/// picture changed from run to run with it. A serial orders them by
+/// creation instead, which is the same in every run.
+///
+/// Every construction takes a FRESH serial, copies and moves included,
+/// so two live objects can never share one. They must not: a tie in the
+/// ordering is what makes the map treat two palettes as one.
+struct RendererExport CacheSerial {
+    CacheSerial(): value(next()) {}
+    CacheSerial(const CacheSerial &): value(next()) {}
+    CacheSerial(CacheSerial &&) noexcept: value(next()) {}
+    CacheSerial &operator=(const CacheSerial &) { value = next(); return *this; }
+    CacheSerial &operator=(CacheSerial &&) noexcept { value = next(); return *this; }
+    ~CacheSerial() = default;
+
+    /// Never 0: 0 is what a null shared_ptr orders as.
+    static std::uint64_t next();
+
+    /// A serial for a NODE, memoized by ADDRESS: the same node gets the
+    /// same one for as long as it lives, and the sequence is the same in
+    /// every run.
+    ///
+    /// This is what a Coin node id could not be. An id moves on every
+    /// notify(), so a material captured before one and a material
+    /// captured after it disagreed about the same node, and the
+    /// incremental flatten -- which merges a previous publish's map with
+    /// entries built now -- turned one light into two buckets. A serial
+    /// never moves, so those two materials still meet in one bucket, and
+    /// the ordering is still free of addresses.
+    ///
+    /// Keying the memo on the address is safe precisely because everything
+    /// that holds one of these -- SoFCRenderCache's NodeInfo and
+    /// TextureInfo -- keeps a STRONG reference (CoinPtr is an
+    /// intrusive_ptr). No address can be reused while anything able to
+    /// compare its serial is still alive, so two LIVE nodes can never
+    /// share one. A dead node's entry may later be inherited by a new
+    /// node at that address, which is harmless: they are never live at
+    /// once, and the new node wants a serial of its own only in the sense
+    /// that it must not collide with a live one.
+    static std::uint64_t forNode(const void *node);
+
+    std::uint64_t value;
+};
+
 /// One user shader program (standalone so the render cache can hold a
 /// shared_ptr to a "material"-stage program inside its per-draw
 /// Material without pulling in the whole config).
 struct UserShader {
+    /// Orders this shader in the render cache's material map. Not part
+    /// of what the shader IS, so it takes no part in operator==.
+    CacheSerial serial;
+    /// What the source strings below ARE (docs/CyclesIntegration.md
+    /// sec 8 item 15 phase B). Shading-language text the backend
+    /// compiles, or a MaterialX document -- a node graph describing
+    /// the surface, which each backend interprets in its own
+    /// vocabulary rather than compiling: the path tracer walks it into
+    /// its own shader nodes, the raster path generates a
+    /// material-inputs function from it. Only a "material"-stage
+    /// program is ever anything but ShaderText.
+    enum class Dialect : uint8_t {
+        ShaderText = 0,
+        MaterialX = 1,
+    };
+    Dialect dialect = Dialect::ShaderText;
+    /// Where a MaterialX document came from, when it came from a file
+    /// (empty for one authored inline). A real material states its
+    /// images as paths RELATIVE to its own document, so this is what
+    /// they resolve against; it is also what a self-contained document
+    /// would have to replace, which is the open question of
+    /// docs/CyclesIntegration.md sec 8 item 15 decision 2.
+    std::string sourcePath;
+    /// Which surface of a MaterialX document is shaded: the name of one
+    /// of its surfacematerial nodes (SoShaderObject::sourceSurface).
+    /// Empty renders the first surface the document states, which is
+    /// what a single-material document has -- an asset's whole material
+    /// set is usually one document, and this picks one out of it
+    /// (docs/MaterialStorage.md sec 17.13). Part of the shader's
+    /// identity: two surfaces of one document are two shaders.
+    std::string surface;
     /// Pipeline stage name from SoShaderProgram::stage. Backends map
     /// known names and warn-and-skip unknown ones.
     std::string stage;
@@ -809,6 +906,8 @@ struct UserShader {
     /// (for "post": the full-screen triangle, input v_texcoord0; for
     /// "material": the stock mesh vertex stage, outputs v_normal,
     /// v_color0, v_vpos).
+    /// When dialect is MaterialX, fragmentSource is the MaterialX
+    /// document instead and the other two are empty.
     std::string vertexSource;
     std::string fragmentSource;
     /// Particle state step of a stateful emitter (docs/RenderEngine.md
@@ -839,24 +938,99 @@ struct UserShader {
         /// Binary of simulateSource, paired with the viewer's stock
         /// full-screen vertex shader. Empty for a stateless program.
         std::vector<uint8_t> simBin;
+        /// The glass body splice of a MaterialX document
+        /// (docs/MaterialStorage.md sec 17.23): the same generated
+        /// material function spliced into the glass pass's fragment
+        /// stage, paired with the stock textured mesh vertex stage
+        /// like fsBin is. Empty for shader text and for a document
+        /// whose surface claims no glass body, where the viewer's flat
+        /// glass program stands in.
+        std::vector<uint8_t> glassBin;
 
         bool operator==(const Compiled &o) const {
             return profile == o.profile && vsBin == o.vsBin
-                && fsBin == o.fsBin && simBin == o.simBin;
+                && fsBin == o.fsBin && simBin == o.simBin
+                && glassBin == o.glassBin;
         }
         bool operator!=(const Compiled &o) const { return !(*this == o); }
     };
     /// Transport payload attached at snapshot-serialization time
-    /// (SceneSnapshot::shaderBins); empty on the desktop's own config
+    /// (SceneSnapshot::shipShader); empty on the desktop's own config
     /// feed. Part of equality on purpose: a viewer must re-apply a
     /// config whose sources it already has once the bins arrive.
     std::vector<Compiled> compiled;
 
+    /// One image a MaterialX document names, decoded
+    /// (docs/CyclesIntegration.md sec 6.12).
+    ///
+    /// The document states its maps as file PATHS, and the raster path
+    /// cannot open a file: not in a viewer tier that has no filesystem,
+    /// and not on the render thread even where it could. So the capture
+    /// decodes them and they travel with the shader like its pixels.
+    /// The generator, which alone knows the sampler names it emitted,
+    /// reports which sampler each path belongs to -- so the two lists
+    /// are joined on `path`, and neither side has to predict the
+    /// other's naming.
+    struct Image {
+        /// Absolute path the document resolved to. The join key.
+        std::string path;
+        std::shared_ptr<const TextureImage> image;
+        /// Which layer of the generated program's image array this
+        /// file is, or -1 when the generated code does not read it (or
+        /// nobody has said). The join, done once: the producer's ship
+        /// hook (SceneSnapshot::shipShader) resolves it against its
+        /// generator before the shader travels, so a tier with no
+        /// generator of its own binds the layers it was handed
+        /// (docs/MaterialStorage.md sec 17.23). The desktop leaves it
+        /// -1 and joins through its own variant.
+        int layer = -1;
+
+        bool operator==(const Image &o) const {
+            const uint64_t a = image ? image->textureId : 0;
+            const uint64_t b = o.image ? o.image->textureId : 0;
+            return path == o.path && a == b && layer == o.layer;
+        }
+        bool operator!=(const Image &o) const { return !(*this == o); }
+    };
+    /// The document's images, in document order. Empty for every shader
+    /// that is not a MaterialX document naming a file.
+    std::vector<Image> images;
+    /// The array sampler the generated program declares for those
+    /// layers and the unit it claims -- transport fields, filled by the
+    /// same ship hook that resolves Image::layer, for the tiers that
+    /// have no generator to ask. Empty and 0 until then, and for a
+    /// document naming no image.
+    std::string imageSampler;
+    int imageUnit = 0;
+
+    /// What the MaterialX surface's transmission resolves to for a
+    /// consumer that draws it as a glass BODY -- the engine's glass pass,
+    /// which has one colour, IOR, density and roughness per draw
+    /// (docs/MaterialStorage.md sec 17.21). Resolved by the capture once
+    /// per document and surface from DocumentInfo::transmission, and
+    /// folded into the draw's Material (glass, glassmtlx, glasscolor,
+    /// ...) where the shader is worn. Derived from fragmentSource and
+    /// surface, so it takes no part in operator== and does not travel:
+    /// a viewer tier receives the Material it was folded into.
+    struct Glass {
+        bool claimed = false;
+        float ior = 1.5f;
+        /// 1 / transmission_depth; 0 = the colour tints at the surface.
+        float density = 0.0f;
+        float roughness = 0.0f;
+        /// Linear.
+        float color[3] = {1.0f, 1.0f, 1.0f};
+    };
+    Glass glass;
+
     bool operator==(const UserShader &o) const {
-        return stage == o.stage && vertexSource == o.vertexSource
+        return dialect == o.dialect && sourcePath == o.sourcePath
+            && surface == o.surface
+            && stage == o.stage && vertexSource == o.vertexSource
             && fragmentSource == o.fragmentSource
             && simulateSource == o.simulateSource && params == o.params
-            && compiled == o.compiled;
+            && compiled == o.compiled && images == o.images
+            && imageSampler == o.imageSampler && imageUnit == o.imageUnit;
     }
     bool operator!=(const UserShader &o) const { return !(*this == o); }
 };
@@ -900,6 +1074,13 @@ struct FrameDumpRequest {
     /// — editing overlays, dimensions) are scene content and are drawn
     /// either way.
     bool overlays = true;
+    /// Consumed only by a COMPLETE frame (frameComplete: every user
+    /// shader compiled, every deferred shape arrived, the frozen
+    /// warm-up reached) -- the default, because a capture is of the
+    /// scene as authored. False takes the very next frame whatever
+    /// its state: the scene as it stands mid-arrival, which is what a
+    /// probe of the arrival itself wants to see.
+    bool waitComplete = true;
 };
 
 /// Readback statistics of a captured frame — the cheap numeric
@@ -914,6 +1095,15 @@ struct RenderStats {
     /// Average color of the geometry pixels, 0-255 per channel;
     /// -1 when no geometry pixel exists.
     float avgColor[3] = {-1.0f, -1.0f, -1.0f};
+    /// Channels the capture read back as NaN or infinity, forced to 0
+    /// so the image is deterministic. NOT a curiosity: a frame that
+    /// carries one is a frame whose shading blew up, and the pixel it
+    /// lands on is arbitrary -- so a capture with a non-zero count is
+    /// not fit to bless, and a diff against one is measuring the wrong
+    /// thing. Zero on every backend that is behaving; -1 when the
+    /// capture was not the float path (an RGBA8 readback cannot carry
+    /// a NaN).
+    long long nonFiniteChannels = -1;
 
     /// Backend handle-pool occupancy at the last completed frame, each
     /// beside the pool it is measured against (-1 where the backend
@@ -1840,6 +2030,10 @@ static constexpr int MaxFinishPalette = 8;
 /// once published: draws share one by pointer, which is also how the
 /// backend batches them.
 struct FinishPalette {
+    /// Orders this palette in the render cache's material map. Not
+    /// part of what the palette IS, so it takes no part in operator==.
+    CacheSerial serial;
+
     struct Entry {
         uint8_t pattern = 0;    ///< App::SurfaceFinish::Pattern, 0 = none
         float pitch = 0.0f;     ///< mm of object space, feature spacing
@@ -1935,6 +2129,10 @@ struct SurfaceFrame {
 /// FinishPalette,
 /// and shared by pointer for the same batching reason.
 struct FramePalette {
+    /// Orders this palette in the render cache's material map. Not
+    /// part of what the palette IS, so it takes no part in operator==.
+    CacheSerial serial;
+
     /// At most MaxFramePalette entries. Entry 0 is the first face's
     /// frame, which is what a draw with no stream -- an unbound index
     /// attribute, or a mesh whose stream collapsed because every face
@@ -2212,6 +2410,17 @@ struct Material {
     float glassior = 0.0f;
     float glassdensity = 0.0f;
     float glassroughness = 0.0f;
+    /// The glass claim came from the draw's MaterialX surface, not from
+    /// Render_Glass: the producer resolved the document's transmission
+    /// into the four fields above (docs/MaterialStorage.md sec 17.21).
+    /// Two readings change with it. The body colour is glasscolor --
+    /// LINEAR, as the document states it, never the authored diffuse
+    /// and never decoded -- and a glassdensity of 0 is not "automatic"
+    /// but NONE: OpenPBR's transmission_depth 0 means the colour tints
+    /// the transmitted light once at the surface instead of absorbing
+    /// over the body.
+    bool glassmtlx = false;
+    float glasscolor[3] = {1.0f, 1.0f, 1.0f};
 
     /// Cloud body flag of a triangle draw (SoFCRenderMaterial, typically
     /// fed from a ViewProvider Render_Cloud property): while the
@@ -3143,6 +3352,15 @@ public:
     /// Clients that skip rendering while idle must render while this is
     /// true; the default is conservatively true.
     virtual bool isSceneDirty() const { return true; }
+    /// User shaders compile asynchronously on the desktop (docs/
+    /// RenderDebug.md sec 6): a frame drawn while one is in flight
+    /// draws the stock material in its place. Whether any compile is in
+    /// flight, and a counter that advances each time one finishes
+    /// (either way) -- what a consumer that rendered a stand-in frame
+    /// polls to know when to render again. Defaults: never pending,
+    /// never advancing.
+    virtual bool shaderCompilePending() const { return false; }
+    virtual int shaderCompileGeneration() const { return 0; }
     /// Per-frame physically based shading configuration.
     virtual void setPBRConfig(const PBRConfig &config) { (void)config; }
 
@@ -3311,10 +3529,55 @@ public:
     /// True while an armed frame dump has not been consumed by a
     /// rendered frame yet — the caller pumps frames until this clears.
     virtual bool frameDumpPending() const { return false; }
+    /// The host's word that the NEXT frame is not the whole scene -- a
+    /// publish deferred shapes under its capture budget, so what the
+    /// backend holds is a scene still arriving. A pending dump is not
+    /// consumed by that frame; the backend holds it for a later one,
+    /// as it does for a frame drawn with a user shader still compiling.
+    /// Per frame: cleared once the frame has run.
+    virtual void holdFrameDump() {}
+    /// Whether the last rendered frame held a pending dump (for a
+    /// compiling shader or at the host's word). A pumping caller reads
+    /// it as progress: a held frame is a frame, and one that builds a
+    /// dozen programs on a software driver takes longer than any quiet
+    /// timeout should.
+    virtual bool frameDumpHeld() const { return false; }
+    /// Whether the last rendered frame was COMPLETE -- the picture as
+    /// authored: every user-shader program compiled, every shape the
+    /// publish deferred arrived, a frozen frame's particle warm-up
+    /// reached, and no mesh refine asked for by the level ladder. The
+    /// same verdict that holds a frame dump, exposed so a test (or
+    /// anyone else) can wait for the picture instead of for a number
+    /// of frames. Costs the frame two flag writes and a compare; every
+    /// wait lives in the caller. True where the backend has nothing
+    /// to say.
+    virtual bool frameComplete() const { return true; }
+    /// Frames rendered, and complete frames rendered, since the backend
+    /// came up. A waiter records the complete count, pumps, and stops
+    /// when it advances -- a verdict left over from before the request
+    /// proves nothing about the scene since -- and reads the rendered
+    /// count as progress, so a frame that takes longer than any quiet
+    /// timeout never runs it out.
+    virtual uint64_t renderedFrames() const { return 0; }
+    virtual uint64_t completeFrames() const { return 0; }
     /// Statistics of the last frame readback (a consumed frame dump);
     /// false while none has run.
     virtual bool getRenderStats(RenderStats &stats) const
     { (void)stats; return false; }
+    /// The GPU (and driver) this backend is actually running on, as a
+    /// human-readable line; empty when the backend cannot say.
+    ///
+    /// type() is not this and cannot stand in for it: it names the
+    /// backend a viewer SELECTED, so a software rasterizer and a real
+    /// adapter both report "bgfx - OpenGL". A golden render reference
+    /// blessed on one device does not compare against another
+    /// (tests/render/CMakeLists.txt says so for the Cycles leg), and
+    /// without this a capture carries no record of which device made
+    /// it -- so the exposure is real and undetectable after the fact.
+    /// Measured: llvmpipe, Mesa d3d12 under xvfb, and d3d12 on a
+    /// desktop window produce three visibly different captures and one
+    /// identical type() string.
+    virtual std::string deviceName() const { return std::string(); }
     /// Reload the backend's shader programs from disk on the next
     /// rendered frame (docs/RenderDebug.md §3): with FC_BGFX_SHADER_DIR
     /// pointing at a development asset tree, recompiling a shader

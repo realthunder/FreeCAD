@@ -33,7 +33,7 @@
 #include <XCAFDoc_ColorTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Mod/Import/ImportGlobal.h>
 
 

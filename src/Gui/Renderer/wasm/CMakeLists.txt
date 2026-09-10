@@ -77,6 +77,7 @@ add_executable(fcviewer
     ../Vg2D.cpp
     ../Renderer.cpp
     ../Environment.cpp
+    ../ImageDecode.cpp
     ../SceneDump.cpp
     ../SceneLadder.cpp
     ../MeshSimplify.cpp

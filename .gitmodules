@@ -3,10 +3,22 @@
 	url = https://github.com/realthunder/bgfx.cmake.git
 [submodule "src/3rdParty/OndselSolver"]
 	path = src/3rdParty/OndselSolver
-	url = https://github.com/FreeCAD/OndselSolver.git
+	url = https://github.com/realthunder/OndselSolver.git
+	branch = LinkVibe
 [submodule "src/3rdParty/vg-renderer"]
 	path = src/3rdParty/vg-renderer
 	url = https://github.com/realthunder/vg-renderer.git
 [submodule "src/3rdParty/cycles"]
 	path = src/3rdParty/cycles
 	url = https://github.com/realthunder/cycles.git
+[submodule "src/3rdParty/MaterialX"]
+	path = src/3rdParty/MaterialX
+	url = https://github.com/AcademySoftwareFoundation/MaterialX.git
+[submodule "src/3rdParty/imgui-node-editor"]
+	path = src/3rdParty/imgui-node-editor
+	url = https://github.com/realthunder/imgui-node-editor.git
+	branch = LinkVibe
+[submodule "tests/render/refs"]
+	path = tests/render/refs
+	url = https://github.com/realthunder/fcad-render-refs.git
+	branch = LinkVibe

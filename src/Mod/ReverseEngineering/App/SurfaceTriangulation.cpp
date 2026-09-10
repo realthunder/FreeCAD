@@ -40,8 +40,9 @@
 #include <pcl/common/io.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/pcl_config.h>
-// PCL 1.12 merged point_traits.h into type_traits.h and later dropped it.
-#if PCL_VERSION_COMPARE(>=, 1, 12, 0)
+// pcl/point_traits.h was a deprecated forwarding header and PCL 1.12
+// deleted it; its contents have been pcl/type_traits.h since 1.11.
+#if PCL_VERSION_COMPARE(>=, 1, 11, 0)
 #include <pcl/type_traits.h>
 #else
 #include <pcl/point_traits.h>

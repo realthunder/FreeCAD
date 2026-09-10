@@ -273,7 +273,7 @@ struct ImportOCAF2::ColorInfo {
     std::vector<App::Color> edgeColors;
     /// One whole material per face; filled by scanFaceMaterials only when
     /// a field beyond diffuse varies across the faces
-    std::vector<App::Material> faceMaterials;
+    std::vector<App::MaterialAppearance> faceMaterials;
     /// faceMaterials carry raw PBR slots (every contributing material had
     /// the PBR definition) -- the appearance they land in goes PBR mode
     bool pbrMaterials = false;
@@ -349,12 +349,12 @@ bool ImportOCAF2::getRenderMaterial(TDF_Label label, RenderMaterial& mat)
 
 namespace {
 /// A glTF texture's own encoded bytes, base64 -- what a per-face
-/// material carries an image AS (App::Material::image).
+/// material carries an image AS (App::MaterialAppearance::image).
 ///
 /// The whole-object texture properties are PropertyFileIncluded and can
 /// name the temp file the reader extracts, because the property copies
 /// it into the document. A per-face image has no such property behind
-/// it: App::Material::imagePath is persisted verbatim, so a temp file
+/// it: App::MaterialAppearance::imagePath is persisted verbatim, so a temp file
 /// would be gone by the time the document is reopened. The bytes travel
 /// instead, once per face that wears them.
 std::string encodeTexture(const Handle(Image_Texture)& tex)
@@ -577,7 +577,7 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
     // encoding is a copy of the whole file.
     std::map<const Image_Texture*, std::string> encoded;
     auto convert = [&](const Handle(XCAFDoc_VisMaterial)& visMat,
-                       bool withImage) -> App::Material {
+                       bool withImage) -> App::MaterialAppearance {
         if (allPbr) {
             // The raw factors: metallic into the specular alpha under a
             // white tint, roughness into the shininess slot -- exact, no
@@ -588,7 +588,7 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
             // trip, hold unchanged). Material() rather than DEFAULT: its
             // untouched fields equal the appearance property's own
             // defaults, so they cost no storage.
-            App::Material mat;
+            App::MaterialAppearance mat;
             const XCAFDoc_VisMaterialPBR& pbr = visMat->PbrMaterial();
             // Tagged, not converted: the slots below ARE the PBR reading,
             // and the tag is what carries that to the appearance the
@@ -617,7 +617,7 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
             }
             return mat;
         }
-        App::Material mat(App::Material::DEFAULT);
+        App::MaterialAppearance mat(App::MaterialAppearance::DEFAULT);
         XCAFDoc_VisMaterialCommon common = visMat->HasCommonMaterial()
             ? visMat->CommonMaterial()
             : visMat->ConvertToCommonMaterial();
@@ -629,26 +629,26 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
         }
         return mat;
     };
-    auto hasEmissive = [](const App::Material& mat) {
+    auto hasEmissive = [](const App::MaterialAppearance& mat) {
         return mat.emissiveColor.r > 0.004f || mat.emissiveColor.g > 0.004f
             || mat.emissiveColor.b > 0.004f;
     };
     // What a face with no material of its own reads as, per mode: the PBR
     // filler mirrors the appearance property's own unset reading (white
     // tint, metallic 0, mid roughness) so a uniform run of it elides.
-    App::Material defMat(App::Material::DEFAULT);
+    App::MaterialAppearance defMat(App::MaterialAppearance::DEFAULT);
     if (allPbr) {
-        defMat = App::Material();
+        defMat = App::MaterialAppearance();
         defMat.pbr = true;
         defMat.specularColor.set(1.0f, 1.0f, 1.0f);
         defMat.specularColor.a = 0.0f;
         defMat.shininess = 0.5f;
     }
 
-    std::vector<App::Material> mats;
+    std::vector<App::MaterialAppearance> mats;
     if (!faceMatList.empty()) {
         mats.assign(numFaces, defMat);
-        std::unordered_map<const XCAFDoc_VisMaterial*, App::Material> converted;
+        std::unordered_map<const XCAFDoc_VisMaterial*, App::MaterialAppearance> converted;
         for (const auto& v : faceMatList) {
             auto it = converted.find(v.second.get());
             if (it == converted.end()) {
@@ -658,7 +658,7 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
         }
     }
     else {
-        App::Material mat = convert(wholeMat, false);
+        App::MaterialAppearance mat = convert(wholeMat, false);
         // A Phong whole-object material matters only for its emissive --
         // see the gate below. A PBR one always matters: its metallic and
         // roughness are authored factors the renderer shades natively.
@@ -692,7 +692,7 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
     colors.pbrMaterials = allPbr;
     colors.faceImages =
         std::any_of(mats.begin(), mats.end(),
-                    [](const App::Material& m) { return !m.image.empty(); });
+                    [](const App::MaterialAppearance& m) { return !m.image.empty(); });
 
     // Diffuse and transparency ride the resolved face colours (the reader
     // mirrors each material's base colour into the colour labels, and a
@@ -877,7 +877,7 @@ bool ImportOCAF2::createObject(App::Document* doc,
                 TopoDS_Compound comp;
                 builder.MakeCompound(comp);
                 std::vector<App::Color> childColors;
-                std::vector<App::Material> childMats;
+                std::vector<App::MaterialAppearance> childMats;
                 for (int idx = 0; idx < numFaces; ++idx) {
                     if (faceGroup[idx] != g) {
                         continue;

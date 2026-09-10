@@ -512,9 +512,13 @@ void BGFXView::submitShadowTint(const Render::DrawCall &draw)
 
     const Render::Material &mat = draw.material;
     float color[4];
-    // The glass diffuse, authored: decoded like the glass pass decodes
-    // it, so the shadow carries the tint the body absorbs with.
-    unpackAuthoredColor(mat.diffuse, color, colorManaged());
+    float tint[4];
+    // The body's colour as the glass pass reads it, so the shadow
+    // carries the tint the body absorbs or tints with -- whichever a
+    // MaterialX glass states, the product is both.
+    glassBodyColors(mat, color, tint);
+    for (int c = 0; c < 3; ++c)
+        color[c] *= tint[c];
     bgfx::setUniform(u_matColor, color);
     setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
     bgfx::setVertexBuffer(0, gpu->geom->vbh);

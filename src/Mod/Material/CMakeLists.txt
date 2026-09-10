@@ -314,6 +314,7 @@ SET(MaterialModel_Files
     Resources/Models/Rendering/AdvancedRendering.yml
     Resources/Models/Rendering/BasicRendering.yml
     Resources/Models/Rendering/GlassRendering.yml
+    Resources/Models/Rendering/MaterialXRendering.yml
     Resources/Models/Rendering/TextureRendering.yml
     Resources/Models/Rendering/VectorRendering.yml
     "Resources/Models/Test/Test Model.yml"
@@ -330,6 +331,8 @@ set(MaterialTest_Files
     materialtests/TestMaterialCanonical.py
     materialtests/TestMaterialBlobs.py
     materialtests/TestMaterialSync.py
+    materialtests/TestShaderGraph.py
+    materialtests/TestMaterialClipboard.py
 )
 
 ADD_CUSTOM_TARGET(MaterialTest ALL

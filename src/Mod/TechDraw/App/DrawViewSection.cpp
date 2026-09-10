@@ -83,6 +83,7 @@
 
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/ProgressIndicator.h>
+#include <Mod/Part/App/TopoShapeOpCode.h>
 
 #include "DrawGeomHatch.h"
 #include "DrawHatch.h"
@@ -93,6 +94,8 @@
 #include "Preferences.h"
 
 #include "DrawViewSection.h"
+// inclusion of the generated files (generated out of DrawViewSectionPy.xml)
+#include <Mod/TechDraw/App/DrawViewSectionPy.h>
 
 using namespace TechDraw;
 
@@ -329,7 +332,7 @@ void DrawViewSection::onChanged(const App::Property* prop)
     DrawView::onChanged(prop);
 }
 
-TopoDS_Shape DrawViewSection::getShapeToCut()
+Part::TopoShape DrawViewSection::getShapeToCut()
 {
     //    Base::Console().Message("DVS::getShapeToCut() - %s\n",
     //    getNameInDocument());
@@ -338,10 +341,10 @@ TopoDS_Shape DrawViewSection::getShapeToCut()
     TechDraw::DrawViewSection* dvs = nullptr;
     TechDraw::DrawViewDetail* dvd = nullptr;
     if (!base) {
-        return TopoDS_Shape();
+        return Part::TopoShape();
     }
 
-    TopoDS_Shape shapeToCut;
+    Part::TopoShape shapeToCut;
     if (base->isDerivedFrom<TechDraw::DrawViewSection>()) {
         dvs = static_cast<TechDraw::DrawViewSection*>(base);
         shapeToCut = dvs->getShapeToCut();
@@ -362,7 +365,7 @@ TopoDS_Shape DrawViewSection::getShapeToCut()
     }
     else {
         Base::Console().Message("DVS::getShapeToCut - base is weird\n");
-        return TopoDS_Shape();
+        return Part::TopoShape();
     }
     return shapeToCut;
 }
@@ -435,15 +438,15 @@ App::DocumentObjectExecReturn* DrawViewSection::execute()
         return new App::DocumentObjectExecReturn("BaseView object not found");
     }
 
-    TopoDS_Shape baseShape = getShapeToCut();
+    Part::TopoShape baseShape = getShapeToCut();
 
-    if (baseShape.IsNull()) {
+    if (baseShape.isNull()) {
         return DrawView::execute();
     }
 
     // is SectionOrigin valid?
     Bnd_Box centerBox;
-    BRepBndLib::AddOptimal(baseShape, centerBox);
+    BRepBndLib::AddOptimal(baseShape.getShape(), centerBox);
     centerBox.SetGap(0.0);
     Base::Vector3d orgPnt = SectionOrigin.getValue();
 
@@ -483,9 +486,9 @@ bool DrawViewSection::isBaseValid() const
     return false;
 }
 
-void DrawViewSection::sectionExec(TopoDS_Shape& baseShape)
+void DrawViewSection::sectionExec(Part::TopoShape& baseShape)
 {
-    if (baseShape.IsNull()) {
+    if (baseShape.isNull()) {
         // should be caught before this
         return;
     }
@@ -503,7 +506,7 @@ void DrawViewSection::abortSectionCut()
     waitingForCut(false);
 }
 
-void DrawViewSection::makeSectionCut(const TopoDS_Shape &baseShape)
+void DrawViewSection::makeSectionCut(const Part::TopoShape &baseShape)
 {
     abortSectionCut();
 
@@ -529,9 +532,14 @@ void DrawViewSection::makeSectionCut(const TopoDS_Shape &baseShape)
         params.progress = progress;
         params.featureName = getFullName();
         params.output = cutPieces;
-        params.baseShape = BRepBuilderAPI_Copy(baseShape).Shape();
+        params.history = std::make_shared<CutHistory>();
+        m_cutHistory = params.history;
+        // the copy keeps the element map: makECopy, not BRepBuilderAPI_Copy
+        params.baseShape = baseShape.makECopy();
         m_saveShape = params.baseShape;//save shape for 2nd pass
         params.cuttingTool = makeCuttingTool(m_shapeSize);
+        params.history->tool = params.cuttingTool;
+        m_cuttingTool = params.cuttingTool;
         params.trimAfterCut = TrimAfterCut.getValue();
 
         waitingForCut(true);
@@ -560,11 +568,11 @@ void DrawViewSection::makeSectionCut(const TopoDS_Shape &baseShape)
 void DrawViewSection::doSectionCut(const SectionParams &params)
 {
     if (debugSection()) {
-        BRepTools::Write(params.baseShape, "DVSCopy.brep");//debug
+        BRepTools::Write(params.baseShape.getShape(), "DVSCopy.brep");//debug
     }
 
     if (debugSection()) {
-        BRepTools::Write(params.cuttingTool, "DVSTool.brep");//debug
+        BRepTools::Write(params.cuttingTool.getShape(), "DVSTool.brep");//debug
     }
 
     auto progress = params.progress;
@@ -576,27 +584,34 @@ void DrawViewSection::doSectionCut(const SectionParams &params)
     BRep_Builder builder;
     TopoDS_Compound cutPieces;
     builder.MakeCompound(cutPieces);
-    TopExp_Explorer expl(params.baseShape, TopAbs_SOLID);
-    for (; expl.More(); expl.Next()) {
-        const TopoDS_Solid& s = TopoDS::Solid(expl.Current());
+    // The makers are kept in params.history: the element names are mapped from
+    // them on the main thread, since the hasher they would write to is shared
+    // with the document and has no locking (CutHistory in the header).
+    const TopoDS_Shape& tool = params.cuttingTool.getShape();
+    for (auto& solid : params.baseShape.getSubTopoShapes(TopAbs_SOLID)) {
+        const TopoDS_Shape& s = solid.getShape();
 #if OCC_VERSION_HEX < 0x070600
-        BRepAlgoAPI_Cut mkCut(s, params.cuttingTool);
+        auto mkCut = std::make_shared<BRepAlgoAPI_Cut>(s, tool);
 #   if OCC_VERSION_HEX < 0x070500
-        mkCut.SetProgressIndicator(pi);
+        mkCut->SetProgressIndicator(pi);
         pi->NewScope(100, progress->text().c_str());
         pi->Show();
 #   else
         Message_ProgressScope scope(pi->Start(), progress->text().c_str(), 100);
-        mkCut.SetProgressIndicator(scope);
+        mkCut->SetProgressIndicator(scope);
 #   endif
 #else
-        BRepAlgoAPI_Cut mkCut(s, params.cuttingTool, pi->Start());
+        auto mkCut = std::make_shared<BRepAlgoAPI_Cut>(s, tool, pi->Start());
 #endif
-        if (!mkCut.IsDone()) {
+        if (!mkCut->IsDone()) {
             Base::Console().Warning("DVS: Section cut of some solid has failed in %s\n", params.featureName.c_str());
         }
         else {
-            builder.Add(cutPieces, mkCut.Shape());
+            builder.Add(cutPieces, mkCut->Shape());
+            if (params.history) {
+                params.history->sources.push_back(solid);
+                params.history->makers.push_back(mkCut);
+            }
         }
 #if OCC_VERSION_HEX < 0x070500
         pi->EndScope();
@@ -614,20 +629,23 @@ void DrawViewSection::doSectionCut(const SectionParams &params)
         progress->setText((progress->text() + QT_TRANSLATE_NOOP("TechDraw", " (second pass)")).c_str());
 
 #if OCC_VERSION_HEX < 0x070600
-        BRepAlgoAPI_Cut mkCut2(cutPieces, params.cuttingTool);
+        auto mkCut2 = std::make_shared<BRepAlgoAPI_Cut>(cutPieces, tool);
 #   if OCC_VERSION_HEX < 0x070500
-        mkCut2.SetProgressIndicator(pi);
+        mkCut2->SetProgressIndicator(pi);
         pi->NewScope(100, progress->text().c_str());
         pi->Show();
 #   else
         Message_ProgressScope scope(pi->Start(), progress->text().c_str(), 100);
-        mkCut2.SetProgressIndicator(scope);
+        mkCut2->SetProgressIndicator(scope);
 #   endif
 #else
-        BRepAlgoAPI_Cut mkCut2(cutPieces, params.cuttingTool, pi->Start());
+        auto mkCut2 = std::make_shared<BRepAlgoAPI_Cut>(cutPieces, tool, pi->Start());
 #endif
-        if (mkCut2.IsDone()) {
-            *params.output = mkCut2.Shape();
+        if (mkCut2->IsDone()) {
+            *params.output = mkCut2->Shape();
+            if (params.history) {
+                params.history->trim = mkCut2;
+            }
             if (debugSection()) {
                 BRepTools::Write(*params.output, "DVSCutPieces2.brep");//debug
             }
@@ -636,6 +654,10 @@ void DrawViewSection::doSectionCut(const SectionParams &params)
 #if OCC_VERSION_HEX < 0x070500
         pi->EndScope();
 #endif
+    }
+
+    if (params.history) {
+        params.history->result = *params.output;
     }
 
     // check for error in cut
@@ -652,7 +674,7 @@ void DrawViewSection::doSectionCut(const SectionParams &params)
 
 //! position, scale and rotate shape for  buildGeometryObject
 //! save the cut shape for further processing
-TopoDS_Shape DrawViewSection::prepareShape(const TopoDS_Shape& rawShape, double shapeSize)
+Part::TopoShape DrawViewSection::prepareShape(const Part::TopoShape& rawShape, double shapeSize)
 {
     //    Base::Console().Message("DVS::prepareShape - %s - rawShape.IsNull: %d
     //    shapeSize: %.3f\n",
@@ -661,12 +683,12 @@ TopoDS_Shape DrawViewSection::prepareShape(const TopoDS_Shape& rawShape, double 
     (void)shapeSize;// shapeSize is not used in this base class, but is
                     // interesting for derived classes
     // build display geometry as in DVP, with minor mods
-    TopoDS_Shape preparedShape;
+    Part::TopoShape preparedShape;
     try {
         Base::Vector3d origin(0.0, 0.0, 0.0);
         m_projectionCS = getProjectionCS(origin);
         gp_Pnt inputCenter;
-        inputCenter = ShapeUtils::findCentroid(rawShape, m_projectionCS);
+        inputCenter = ShapeUtils::findCentroid(rawShape.getShape(), m_projectionCS);
         Base::Vector3d centroid(inputCenter.X(), inputCenter.Y(), inputCenter.Z());
 
         m_cutShapeRaw = rawShape;
@@ -674,7 +696,7 @@ TopoDS_Shape DrawViewSection::prepareShape(const TopoDS_Shape& rawShape, double 
         m_cutFrame = m_pendingCutFrame;
         m_cutFrameValid = m_pendingCutFrameValid;
         preparedShape = ShapeUtils::moveShape(rawShape, centroid * -1.0);
-        m_cutShape = preparedShape;
+        m_cutShape = preparedShape.getShape();
         m_saveCentroid = centroid;
 
         preparedShape = ShapeUtils::scaleShape(preparedShape, getScale());
@@ -712,7 +734,7 @@ TopoDS_Shape DrawViewSection::prepareShape(const TopoDS_Shape& rawShape, double 
     return preparedShape;
 }
 
-TopoDS_Shape DrawViewSection::makeCuttingTool(double shapeSize)
+Part::TopoShape DrawViewSection::makeCuttingTool(double shapeSize)
 {
     //    Base::Console().Message("DVS::makeCuttingTool(%.3f) - %s\n", shapeSize,
     //    getNameInDocument());
@@ -722,24 +744,122 @@ TopoDS_Shape DrawViewSection::makeCuttingTool(double shapeSize)
     BRepBuilderAPI_MakeFace mkFace(pln, -shapeSize, shapeSize, -shapeSize, shapeSize);
     TopoDS_Face aProjFace = mkFace.Face();
     if (aProjFace.IsNull()) {
-        return TopoDS_Shape();
+        return Part::TopoShape();
     }
     if (debugSection()) {
         BRepTools::Write(aProjFace, "DVSSectionFace.brep");// debug
     }
     gp_Vec extrudeDir = shapeSize * gp_Vec(gpNormal);
-    return BRepPrimAPI_MakePrism(aProjFace, extrudeDir, false, true).Shape();
+    Part::TopoShape tool(BRepPrimAPI_MakePrism(aProjFace, extrudeDir, false, true).Shape());
+    nameToolFaces(tool, pln);
+    return tool;
+}
+
+//! Give the prism's faces fixed names, so that the faces the cut creates
+//! inherit one.  The names are decided by geometry rather than by the order
+//! OCCT built the prism in: the face lying in the section plane is
+//! SectionPlane -- the one users hatch, colour and dimension against -- the
+//! parallel face behind it is SectionBack, and the four sides are named by
+//! the axis of the section plane's own coordinate system they face along.
+//! Nothing here depends on shapeSize or on where the plane sits, so moving
+//! SectionOrigin leaves every name unchanged.
+void DrawViewSection::nameToolFaces(Part::TopoShape& tool, const gp_Pln& sectionPlane)
+{
+    if (tool.isNull()) {
+        return;
+    }
+
+    const gp_Ax3& cs = sectionPlane.Position();
+    const gp_Dir& normal = cs.Direction();
+    const gp_Dir& xDir = cs.XDirection();
+    const gp_Dir& yDir = cs.YDirection();
+    constexpr double parallel = 0.999;   // ~2.5 degrees, and the faces are axis aligned
+
+    int index = 0;
+    for (const auto& face : tool.getSubTopoShapes(TopAbs_FACE)) {
+        ++index;
+        BRepAdaptor_Surface surface(TopoDS::Face(face.getShape()));
+        if (surface.GetType() != GeomAbs_Plane) {
+            continue;
+        }
+        const gp_Pln facePln = surface.Plane();
+        const gp_Dir faceDir = facePln.Axis().Direction();
+        const gp_Vec offset(sectionPlane.Location(), facePln.Location());
+
+        const char* name = nullptr;
+        if (std::fabs(faceDir.Dot(normal)) > parallel) {
+            name = std::fabs(offset.Dot(gp_Vec(normal))) < Precision::Confusion()
+                       ? "SectionPlane" : "SectionBack";
+        }
+        else if (std::fabs(faceDir.Dot(xDir)) > parallel) {
+            name = offset.Dot(gp_Vec(xDir)) > 0.0 ? "SectionSideXMax" : "SectionSideXMin";
+        }
+        else if (std::fabs(faceDir.Dot(yDir)) > parallel) {
+            name = offset.Dot(gp_Vec(yDir)) > 0.0 ? "SectionSideYMax" : "SectionSideYMin";
+        }
+        if (!name) {
+            continue;
+        }
+
+        tool.setElementName(Data::IndexedName::fromConst("Face", index),
+                            Data::MappedName(name));
+    }
+}
+
+//! Map the element names of the cut onto its result.  Called on the main
+//! thread with the history the worker recorded: the sources and the OCCT
+//! makers, whose Generated/Modified history is what makEShape reads.  Falls
+//! back to the unnamed compound whenever there is no history to map -- an
+//! aborted cut, a failed boolean, or a derived class that cuts its own way.
+Part::TopoShape DrawViewSection::nameCutPieces(const std::shared_ptr<CutHistory>& history,
+                                              const TopoDS_Shape& cutPieces) const
+{
+    if (!history || history->makers.empty() || !history->result.IsSame(cutPieces)) {
+        return Part::TopoShape(cutPieces);
+    }
+
+    try {
+        std::vector<Part::TopoShape> pieces;
+        for (size_t i = 0; i < history->makers.size(); ++i) {
+            Part::TopoShape piece;
+            piece.makEShape(*history->makers[i],
+                            {history->sources[i], history->tool},
+                            Part::OpCodes::Cut);
+            pieces.push_back(piece);
+        }
+
+        Part::TopoShape named;
+        named.makECompound(pieces);
+
+        if (history->trim) {
+            Part::TopoShape trimmed;
+            trimmed.makEShape(*history->trim, {named, history->tool}, Part::OpCodes::Cut);
+            named = trimmed;
+        }
+
+        return named;
+    }
+    catch (const Base::Exception& e) {
+        Base::Console().Warning("DVS::nameCutPieces - %s - naming failed - %s\n",
+                                getNameInDocument(), e.what());
+    }
+    catch (const Standard_Failure& e) {
+        Base::Console().Warning("DVS::nameCutPieces - %s - naming failed - %s\n",
+                                getNameInDocument(), e.GetMessageString());
+    }
+    return Part::TopoShape(cutPieces);
 }
 
 void DrawViewSection::onSectionCutFinished(std::shared_ptr<TopoDS_Shape> cutPieces)
 {
     waitingForCut(false);
     m_progress.reset();
-    m_cutPieces = *cutPieces;
+    m_cutPieces = nameCutPieces(m_cutHistory, *cutPieces);
+    m_cutHistory.reset();
 
     m_preparedShape = prepareShape(getShapeToPrepare(), m_shapeSize);
     if (debugSection()) {
-        BRepTools::Write(m_preparedShape, "DVSPreparedShape.brep");// debug
+        BRepTools::Write(m_preparedShape.getShape(), "DVSPreparedShape.brep");// debug
     }
 
     postSectionCutTasks();
@@ -1358,6 +1478,33 @@ void DrawViewSection::unsetupObject()
     DrawViewPart::unsetupObject();
 }
 
+//! keep the cut faces beside the projection they belong to
+void DrawViewSection::captureGeometry()
+{
+    if (!m_geometryObject || !Preferences::storeProjectedGeometry()) {
+        ProjectedGeometry.clear();
+        return;
+    }
+    ProjectedGeometry.capture(*m_geometryObject, m_saveCentroid, m_sectionTopoDSFaces);
+}
+
+//! put the projection and the cut faces back.  The TechDraw faces the cut
+//! surface is drawn from are made from the stored compound the same way the
+//! cut made them, which costs a face walk instead of a boolean.
+bool DrawViewSection::restoreStoredGeometry()
+{
+    if (!DrawViewPart::restoreStoredGeometry()) {
+        return false;
+    }
+
+    const TopoDS_Shape& cutFaces = ProjectedGeometry.getCutFaces();
+    if (!cutFaces.IsNull() && cutFaces.ShapeType() == TopAbs_COMPOUND) {
+        m_sectionTopoDSFaces = TopoDS::Compound(cutFaces);
+        m_tdSectionFaces = makeTDSectionFaces(m_sectionTopoDSFaces);
+    }
+    return true;
+}
+
 void DrawViewSection::onDocumentRestored()
 {
     makeLineSets();
@@ -1459,6 +1606,15 @@ int DrawViewSection::prefCutSurface(void)
 bool DrawViewSection::showSectionEdges(void)
 {
     return Preferences::getPreferenceGroup("General")->GetBool("ShowSectionEdges", true);
+}
+
+PyObject* DrawViewSection::getPyObject()
+{
+    if (PythonObject.is(Py::_None())) {
+        // ref counter is set to 1
+        PythonObject = Py::Object(new DrawViewSectionPy(this), true);
+    }
+    return Py::new_reference_to(PythonObject);
 }
 
 // Python Drawing feature

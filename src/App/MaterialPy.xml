@@ -3,9 +3,10 @@
     <PythonExport
     Father="PyObjectBase"
     Name="MaterialPy"
-    TwinPointer="Material"
-    Twin="Material"
-    Include="App/Material.h"
+    TwinPointer="MaterialAppearance"
+    Twin="MaterialAppearance"
+    PythonName="App.Material"
+    Include="App/MaterialAppearance.h"
     Namespace="App"
     FatherInclude="Base/PyObjectBase.h"
     FatherNamespace="Base"
@@ -216,6 +217,18 @@ same appearance whatever their colours currently say.
                 </UserDocu>
             </Documentation>
             <Parameter Name="Uuid" Type="String"/>
+        </Attribute>
+        <Attribute Name="MaterialX" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The MaterialX document set this look is shaded by, as the content hash of
+its manifest -- or an empty string when the look is the colour slots alone.
+The manifest names the document and its image maps by content; the bytes
+live in the document's blob store, held by the property that stores this
+appearance.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="MaterialX" Type="String"/>
         </Attribute>
         <CustomAttributes />
     </PythonExport>

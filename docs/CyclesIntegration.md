@@ -3,8 +3,12 @@
 Bringing Blender's Cycles path tracer into the fork as a vendored
 renderer, feeding a 3D view that draws nothing of its own but the
 selection highlight. Written 2026-08-27 as the plan and the rulings;
-phases 0-3 are built (section 8 carries the record per phase, section
-6.2 the translation as it stands). Phase 4, the viewport, is next.
+every phase of the plan is built (section 8 carries the record per
+phase, section 6.2 the translation as it stands). Item 15's phase B,
+the MaterialX bridge, is built through section 6.14; the material card
+that carries a shader graph (section 6.13) was designed here and is
+built under `docs/MaterialStorage.md`, which is where that work now
+lives.
 
 Related: `docs/RenderEngine.md` (the bgfx engine that hosts the blit),
 `docs/CAMSimRenderPort.md` (sections 8 and 10 -- the borrowed-frame
@@ -602,8 +606,13 @@ already has on the device.
   reads its geometry on the way out. A mesh whose content changed
   arrives under a new key (the generation, or a new cacheId), so it
   is built beside the old one and the old one is released the same
-  pass; shaders are never deleted (Cycles does not support it) and
-  are bounded by distinct surfaces anyway.
+  pass. A shader cannot be deleted (Cycles does not support it), and
+  "bounded by distinct surfaces" is not a bound when a section plane
+  drags -- its coefficients key every shader they clip, so a drag
+  mints keys without end. So a shader no live mesh references is
+  RECYCLED after the pass instead: its graph is dropped (freeing its
+  image handles) and the node is parked, and the next new key
+  re-graphs a parked node before it creates one.
 - **World and light.** `translateWorld()` remembers the `PBRConfig`
   and `OutputConfig` it baked from and returns early when they are
   equal; `translateLight()` the same with `LightConfig` plus, for a
@@ -778,6 +787,193 @@ canvas, and the fixed-size crops padded the missing rows; the
 frame draws no feature lines in these cells (raster or traced), so the
 edge-over-blit route of section 5.8 is exercised only by the lone-view
 step here.
+
+### 5.12 Retiring a session off the calling thread (2026-09-04)
+
+Releasing a Cycles session used to freeze the application, for as long
+as a first-ever GPU kernel compile takes.
+
+The chain is short. `~Session` cancels and then joins its own thread
+unconditionally (`session/session.cpp`). The cancel calls
+`device->cancel()`, whose base is empty and which only the Metal
+backend overrides. And the CUDA backend's kernel load compiles with a
+plain blocking `system("nvcc ...")` (`device/cuda/device_impl.cpp`),
+which nothing can interrupt. So a session released while its thread is
+inside that compile waits for nvcc to finish, and every release we make
+was on the thread that asked: a closing 3D view, a preview switched
+back to Raster, an editor closing, all of them the GUI thread.
+
+The compile itself was never the problem. It has always run on the
+session's own thread, which is why the pane keeps answering while it
+runs. Only the teardown was synchronous.
+
+A session is therefore not destroyed where it is released. It is handed
+to a worker with the translator that states its scene (which points
+into it, so the two travel together and go in that order), and the
+caller returns at once. The worker destroys them one at a time, in the
+order they were retired: two devices tearing down at once is not
+something to ask of a driver.
+
+Three things make that safe.
+
+- **The driver must not hold the viewport.** The staging display driver
+  woke the host through a lambda capturing `this`, which a retired
+  session would call after its viewport was gone. It calls a
+  `RedrawGate` held by shared pointer instead. `call()` runs under the
+  gate's lock, so `close()` returning means no thread is still inside
+  the callback and no later one will enter. The viewport closes the
+  gate before it retires; each session gets its own.
+- **The mutex and condition variables are never freed.** A detached
+  worker parked in `wait()` for the life of the process hangs
+  `pthread_cond_destroy` at exit, which is the trap already fixed once
+  in `Part/Gui/MeshLevelSource.cpp`. They are leaked heap objects, as
+  they are there.
+- **The application drains on its way out.**
+  `Render::Cycles::waitForRetiredSessions()`, called at the top of
+  `Gui::Application::~Application`, waits for the queue to empty. Past
+  that point the process starts unloading what the worker is still
+  inside. It says so on the console rather than looking hung, which
+  matters when it does have to wait.
+
+What it costs: while one session is retiring, its replacement is
+already alive, so two devices hold their memory for the overlap. On a
+preview that is nothing; on two large scenes it is real, and it is the
+price of not freezing.
+
+Then the engine's own half of it, in our Cycles fork (`057c2c87b`):
+the compile can be stopped, and a stopped one leaves nothing behind.
+
+`Device::cancel()` exists upstream for exactly this -- its comment says
+"cancel any long running device operations (e.g. shader compilations)"
+-- but outside Metal nothing implemented it. `util::Subprocess` runs the
+compiler as a child in a process group of its own (`posix_spawn` with
+`POSIX_SPAWN_SETPGROUP`) and kills the group on cancel from another
+thread. The group and not the process: nvcc drives cicc and ptxas, and
+killing the shell or nvcc alone leaves the work running. The CUDA and
+HIP devices own one and override `cancel()` (OptiX and HIP-RT inherit
+it), `MultiDevice` forwards to its sub-devices, and a compile stopped
+this way reports no error -- being asked to stop is not a failure.
+
+**Windows takes the whole tree too, through a job object** (built
+2026-09-04 on the Windows side of this same laptop -- sec 4.1 -- which
+is where nvcc, the real `nvoptix.dll` and the HIP SDK all are).
+`system()` gives the caller no handle to anything, so the command is
+started by hand instead: `CreateProcessW` on `cmd /s /c`, **suspended**,
+the process put in a job object created with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, then resumed and waited on by
+handle, with `cancel()` calling `TerminateJobObject`. Suspended is not
+a detail: a shell that got as far as starting nvcc would leave it
+outside the job and out of the cancel's reach. `KILL_ON_JOB_CLOSE`
+covers the paths that never reach a cancel as well -- whatever is still
+in the job dies when `run()` drops the last handle to it.
+
+Two things the sketch that stood here did not have:
+
+- **`/s`.** It makes cmd's quoting rule the simple one -- strip the
+  first and last quote, take the rest of the line verbatim. Every
+  command that gets here carries quoted paths of its own, which the
+  rule without `/s` counts and then takes apart.
+- **The child is handed exactly the three standard handles**,
+  duplicated inheritable and passed in a
+  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. `system()` ran the compiler on
+  the caller's handles, and a compiler's diagnostics are the "see
+  console for details" that a failed compile refers to, so they have to
+  keep arriving wherever the application's output goes -- a redirected
+  log included. The handle list keeps that without the other half of
+  what `system()` does, which is to inherit everything inheritable in a
+  process this size. Duplicating also keeps the list free of the
+  repeats it rejects, since stdout and stderr are commonly one handle.
+
+If the job cannot be created or joined, the command still runs; it runs
+uncancellable, which is exactly what it did before, and says so.
+
+A killable compile makes a half-written kernel likely rather than
+merely possible, and the cache could not survive one: all three
+backends wrote straight to the final path, and a cache hit is an
+existence check, so a truncated file would be loaded forever after.
+That was already reachable without any cancel, by two devices building
+the same uncached kernel at once. They now compile to a path of the
+process's own (`path_temp_for`) and move it onto the real name
+(`path_rename`) once the compiler has succeeded, removing the temporary
+on every failure. That half is platform-independent and covers Windows
+as well.
+
+Together these turn the drain above into a formality: the cancel that
+`~Session` already issues now reaches the compiler, so the join it
+waits on returns in about a second instead of at the end of the
+compile.
+
+Verified with `~/works/sw/fcad-probes/shader_graph_cold_teardown.{py,sh}`,
+which gives the process its own `XDG_CACHE_HOME` so the compile is
+guaranteed cold and the box's shared kernel cache -- a serving rig uses
+it -- is never touched. With nvcc and cicc confirmed running, switching
+the preview back to Raster (which stops the tracer and destroys its
+viewport) left the GUI thread's own heartbeat timer with a longest gap
+of 0.11 s against a 0.1 s interval, the editor still drawing and the
+document still recomputing. Before the change the same release blocked
+that thread for the whole compile.
+
+With the engine's half in as well, the compilers were gone a second
+after the release and the cache was left empty -- which is the torn
+file not being written. A second, uninterrupted attempt compiled for
+267 s, left exactly one `.cubin` and no temporary, and the traced frame
+followed a second later with no tracer error. The quit was immediate;
+the run before the cancel existed spent 274 s of its exit waiting for
+the same compile.
+
+What the probe measures deserves care. Its first version judged the
+second compile by "a sphere is on the pane", which passed in one second
+because the raster frame from the mode switch has one -- it proved
+nothing at all. A compile is judged by the engine's own finish line and
+by what the cache directory holds.
+
+**Verified again on Windows** (2026-09-04, native `BUILD_CYCLES=ON`
+build, FreeCAD under cdb; probes in
+`D:\works\sw\fcad-probes\win_kernel_compile_cancel`). The cold cache is
+arranged differently there and it is worth knowing: `path_cache_get()`
+has no XDG branch on Windows, so the kernels land in `cache\kernels`
+**beside the binary**, and a cold compile is arranged by moving that
+directory aside rather than by setting a variable.
+
+With `FreeCAD -> cmd -> nvcc -> cmd -> cicc` confirmed running,
+`view.cyclesViewport(False)` returned in **0.003 s** and the GUI
+thread's own heartbeat timer showed a longest gap of **0.124 s**
+against its 0.1 s interval; every process in that tree was gone and the
+cache directory was left empty -- no `.cubin`, no temporary. The
+second, uninterrupted attempt compiled for **283 s**, left exactly one
+19,005,168-byte `.cubin` and no temporary, and the session reached
+"Rendering Done, Sample 16/16". A third cold compile released with the
+quit right behind it put the process out in about a second with nothing
+of the compiler left running: the drain covering the overlap, rather
+than waiting out a compile.
+
+**HIP was measured the same way and is the deeper tree.** hipcc is a
+batch file, so the command is `call hipcc ...` and the job holds
+`cmd -> hipcc -> cmd -> clang -> clang`. The release returned in
+0.002 s, the heartbeat's longest gap was 0.12 s, and all five were
+gone. Sec 4.2's point holds -- AMD is only reachable from the Windows
+side of this box -- and this is the first work to have needed it.
+
+The mechanism itself was taken separately, since a kernel compile is a
+slow way to ask a small question: a test against the tree's
+`cycles_util.lib` runs a command that starts a grandchild of its own
+and appends to a log once a second. Cancelled once that grandchild was
+demonstrably alive, `run()` returned 0.62 s into a command with a
+minute to go, reported -1 rather than the kill's exit status, and
+**the grandchild's log stopped
+growing** -- which is the difference between taking the tree and
+killing the process that was started. It also holds the quoting and the
+inherited stdout above, and that closing the job takes what a finished
+command left running.
+
+Two traps for the next scripted quit here, both of which cost a
+measurement. `mainWindow.close()` and, in Qt 6, `QApplication.quit()`
+alike stop at the "Unsaved document" modal, which a script does not
+see: an exit that "took 420 s" was that box waiting for an answer while
+the compile it was meant to interrupt ran to completion. Close the
+documents first (`App.closeDocument` discards). And a document that was
+just saved is not therefore unmodified -- the view's own state touches
+it again.
 
 ## 6. Scene translation
 
@@ -1338,6 +1534,907 @@ period from the object origin the first analytic model assumed;
 Cycles was right and the model was not.
 
 
+### 6.8 MaterialX shader graphs (phase B step 0, built 2026-08-31)
+
+Phase B's first step is the plumbing: the language vendored, its data
+library shipped, and a document able to arrive on a shader object and
+be told it is wrong. Nothing interprets a document yet -- that is step
+1 for Cycles and step 2 for the raster path.
+
+**Vendored** at `src/3rdParty/MaterialX`, upstream
+`AcademySoftwareFoundation/MaterialX` pinned at v1.39.5, behind
+`BUILD_MATERIALX` (ON, degraded into like `BUILD_BGFX` when the
+submodule is absent, rather than asked for like `BUILD_CYCLES`: Core,
+Format, GenShader, GenHw and GenGlsl have no external dependency and
+build in ninety objects). Everything else is off -- Render and with it
+the 134MB `resources/` install, the viewer, the graph editor, the
+OSL/MDL/MSL/Slang back-ends, the Python and JavaScript bindings, the
+tests. Three things the tree does to its enclosing project have to be
+held off, and each would have been found the hard way:
+
+- Its install rules name the EXPORT set and the package config file
+  after `CMAKE_PROJECT_NAME`, which under `add_subdirectory` is
+  FreeCAD -- it would have written a `FreeCADConfig.cmake` over ours.
+  Every one of those rules is guarded by `NOT SKBUILD`, so declaring
+  `SKBUILD` around the `add_subdirectory` suppresses the lot; its only
+  other effects are on the Python bindings (off) and on RPATH
+  (meaningless for a static archive).
+- It FORCEs `CMAKE_INSTALL_PREFIX` to `<bindir>/installed` whenever
+  the prefix was left at its default. Our presets pass one, so this
+  would have gone unnoticed here and moved the whole install of a
+  build that did not.
+- FreeCAD turns `AUTOMOC` on globally, which otherwise runs moc over
+  every MaterialX translation unit.
+
+The `libraries/` tree -- 2.5MB of `.mtlx` node definitions, which both
+consumers read at run time to resolve a document's node references --
+ships as data at `<resource>/Renderer/materialx/libraries`, staged
+into the build tree as well, the same arrangement as the Cycles kernel
+source of section 4.1.
+
+**A document reaches the renderer** the way a `.sc` program does. The
+chain gained one value at each link, none of them a new mechanism:
+
+- `App::ShaderProgram::Dialect` gains `MATERIALX`, making
+  `FragmentProgram` the document XML. Only the `material` stage means
+  anything with it.
+- `SoShaderObject::SourceType` gains `MATERIALX` in the Coin fork
+  (appended, registered by name, advertised as the `shader-materialx`
+  feature tag; no layout change, so the fork ABI version stands).
+  Coin's own GL pipeline skips it exactly as it skips `BGFX_SC`, and a
+  `.mtlx` FILENAME resolves to it.
+- `Render::UserShader` gains `dialect` and `sourcePath`, so a back-end
+  can tell a document from shader text and knows where the document
+  came from. They ride the snapshot at v70, and the shader chunk's own
+  revision moves with it (13) -- the bytes moved, so a cached chunk
+  from an older build would read the stage string out of the dialect
+  byte.
+
+A document may be stated as a PATH instead of inline, and that is not
+a convenience: a real material names its images RELATIVE to its own
+document (MaterialX's own examples reach `../../../Images/` through an
+inherited `fileprefix`), so only the file route gives the consumer
+something to resolve them against. `FragmentProgram` therefore reads
+as a path when its first non-blank character is not `<` -- a document,
+being XML, never looks like a path -- and the view provider sends it
+down Coin's FILENAME route, whose `.mtlx` suffix resolves back to
+MATERIALX. `loadDocument` then flattens every filename in one pass:
+`fileprefix` is inherited, so no single element's value is the answer,
+and the search path (the document's own directory, then the data
+library) turns what is left into absolute paths. An image the document
+names that is not there is a warning, not a refusal -- that map is
+missing, the material still renders. This is open decision 2 answered
+for now in the file direction; a self-contained inline document would
+have to carry its images some other way (FileBlobs).
+
+**Validation at load.** `Render::MaterialX::inspect()`
+(`MaterialXSupport.cpp`) parses a document, imports the data library
+so its node references resolve, runs MaterialX's own `validate()` and
+then asks the one question a syntactically valid document can still
+fail: does it describe a surface at all -- a material node, or a bare
+surface shader. The view provider calls it wherever a program is
+materialized, which for a stored document is document load, and
+reports once per distinct text. `MaterialXSupport.h` names no
+MaterialX type, so the rest of the tree sees the same header with or
+without the library and a build without it says so; the typed API the
+consumers will share is `MaterialXSupportP.h`.
+
+Verified on MaterialX's own example materials through the GUI: the
+OpenPBR, Standard Surface and glTF PBR samples each load and report
+their surface node (`open_pbr_surface`, `standard_surface`,
+`gltf_pbr`), and four negative legs each report the right thing --
+malformed XML with the character offset, a document with no surface, a
+dangling node reference, and a document on the `post` stage.
+
+
+### 6.9 The MaterialX interpreter (phase B step 1, built 2026-08-31)
+
+Cycles has a shader node vocabulary of its own, so a MaterialX shader graph
+is INTERPRETED into it rather than compiled -- the route every engine
+with such a vocabulary takes (Unreal's Interchange builds
+material-function nodes, three.js' MaterialXLoader builds TSL nodes),
+and it needs neither OSL nor any shading-language work.
+`CyclesMaterialX.cpp`.
+
+**Where it plugs in.** A `material`-stage user shader whose dialect is
+MaterialX replaces the whole surface: `translateDraw` builds
+`materialXShader` instead of the uniform or attribute shader, and the
+draw's own colour, maps, finish and per-face palettes are not
+consulted, because the document IS the material. The section clip
+still applies -- that is a property of the scene, not of the material
+-- so the closure still goes out through `connectSurface`. Shaders are
+keyed on the document's identity (its file, or its text), so a
+thousand draws sharing a material share one interpretation.
+
+A document this build cannot interpret does not take the frame with
+it: the draw renders its stock material and the reason is reported
+once. The raster path stands down the same way for now, by the
+opposite route -- `getUserProgram` and `viewerShaderBins` (since
+renamed `shipUserShader`) refuse a non-text dialect at the one door
+every stage's compile goes through,
+so a document is never handed to shaderc, which would report a compile
+error per material and draw nothing new. The raster splice is step 2.
+
+**The value model.** Everything becomes a node, constants included:
+Cycles folds a constant subexpression at graph build, so stating one
+as a `ValueNode` costs nothing at render and saves the interpreter a
+second, constant-only evaluation path. A value carries its MaterialX
+type's component count, because Cycles has only float and float3
+sockets and a `color4`'s fourth component has to ride beside the
+triple.
+
+**The node table** covers the stdlib pattern vocabulary: images
+(`image`, `tiledimage`), geometry (`texcoord`, `position`, `normal`,
+`tangent`, `bitangent`, `geomcolor`), the arithmetic and transcendental
+nodes componentwise over scalars and triples, `clamp`/`remap`/
+`smoothstep`, `mix` and the `if*` comparisons, `separate*`/`combine*`/
+`extract`/`convert`, `normalmap`, the noises and the ramps. It is a
+FLOOR, not the vocabulary: a node whose nodedef is implemented as a
+MaterialX nodegraph -- which most compound library nodes and every one
+of the shading-model translations are -- is interpreted by descending
+into that graph with the node bound as its interface. `place2d`,
+`hextiledimage` and the glTF image nodes come for free that way, and
+the four example materials below needed no table entry beyond it.
+
+**OpenPBR is the canonical surface.** `open_pbr_surface` maps onto
+`PrincipledBsdfNode`, whose v2 sockets are OpenPBR parameters; every
+other shading model arrives through MaterialX's OWN translation graphs
+(`translateShader` on the chosen surface, with the source's unstated
+defaults stated and its normal carried across -- MaterialStorage.md
+17.19), so there is one shading model to be right
+about and the rest is the library's business. Three places in the
+mapping are a decision rather than a rename:
+
+- Cycles' Specular IOR Level scales F0 by two (`f0 *= 2.0f *
+  specular_ior_level`, `svm/closure.h`), so its neutral value is 0.5
+  where OpenPBR's `specular_weight` neutral is 1: the mapping is
+  `weight * 0.5`, not the identity a socket-name match suggests.
+- `base_weight` scales the diffuse albedo and Cycles has no socket for
+  it, so it folds into the base colour, which is what a weight of that
+  kind means.
+- `transmission_depth` becomes an absorption volume at density
+  `1 / depth`, the Beer-Lambert closure the fork's glass materials
+  already use (section 6.2). With NO depth, OpenPBR's colour is a tint
+  applied once at the surface, which Principled has no socket for: it
+  folds into Base Color as `base * mix(1, transmission_color,
+  transmission_weight)`, exact for a fully transmissive body (the
+  chess set's pawn heads) and tinting the diffuse share too for a
+  partial one -- what Blender's own importers accept. The depth is
+  read FLAT through the translation graph (`flatConstant`): a
+  translated standard_surface carries every input as a connection, so
+  the literal read this used to do said 0 for every stated depth.
+
+Two traps the table exists to avoid, both of which yield a
+plausible-looking wrong material rather than an error:
+
+- **A missing input is not a zero.** MaterialX states an unconnected
+  texture coordinate, normal or position as `defaultgeomprop` on the
+  NODEDEF, not as a value. Reading it as the type's zero samples every
+  texel at (0, 0) and renders one flat colour -- the same shape as the
+  stride trap of section 6.5.
+- **An image's colour space is not the document's.** A document's
+  working space (`lin_rec709` on the root) is inherited by every
+  element, so asking an input for its ACTIVE colour space answers
+  "linear" for a normal or roughness map that states nothing. The
+  file's own stated space is the answer where there is one, and the
+  node's TYPE decides otherwise: a `color3`/`color4` image is colour,
+  anything else is data.
+
+**A shader cannot be taken back.** The first version of
+`materialXShader` created the `ccl::Shader` and then deleted it when
+the document failed to interpret. `Scene::delete_node(Shader *)` does
+not do that -- "don't delete unused shaders, not supported", it only
+clears the reference count -- so the graph-less shader stayed in
+`scene->shaders` and the next device update dereferenced its null
+graph (`ShaderManager::device_update_pre` -> `graph->output()`), an
+abort inside the render thread. The graph is therefore built first and
+the scene node created only once there is something to put in it. A
+document that failed is also remembered, so the next restate does not
+import the data library again to fail the same way.
+
+**Verification** is DIFFERENTIAL, because a path-traced PBR pixel has
+no closed form worth writing down: the same material is stated twice,
+once as a document and once through the fork's own appearance
+properties -- whose translation into the very same Principled sockets
+phases 3 to 6 already verified -- and the two frames are held against
+each other. `build/probes/mtlx/probe.sh <CPU|CUDA> <spp> <tag>`, on
+the debug tree under xvfb, prints MTLX_RESULT. Thirteen legs, all
+passing on CPU and CUDA:
+
+- The base colour matches the control, and WHICH control it matches is
+  the colour-space finding: 0.003 against a control stated as the sRGB
+  ENCODING of the document's value, 0.053 against one stated raw. A
+  MaterialX shader graph states linear colour; the fork's own properties
+  state an encoded colour the colour-managed pipeline decodes on the
+  way in (section 6.1's trap, from the other side).
+- The document overrides the object's own colour (0.153 against the
+  green the box is actually painted), so leg 1 was the document's
+  doing and not the object's.
+- `multiply(red, 0.5)` renders bit-identically to a literal half-red
+  (the arithmetic is exact and Cycles is deterministic at a fixed
+  sample count), and measurably apart from full red (0.047).
+- Metalness changes the surface (0.042); emission adds blue (+0.285).
+- A `standard_surface` document renders bit-identically to the OpenPBR
+  one -- MaterialX's own translation graph lands exactly on the native
+  mapping.
+- An image graph paints the checker it names (21% reddish, 79% bluish
+  against a blue-ish environment).
+- A `disney_principled` document, which has no translation to OpenPBR,
+  falls back to the stock material EXACTLY (0.0) rather than aborting
+  or rendering black.
+- MaterialX's own `open_pbr_default`, `open_pbr_carpaint`,
+  `standard_surface_brass_tiled` and `standard_surface_wood_tiled`,
+  stated as paths so their images resolve, each build a shader and
+  render distinctly (0.12 to 0.17 from the stock material). Between
+  them they exercise `tiledimage`, `normalmap`, `place2d` and the
+  nodegraph expansion, and none of them reported an uninterpreted
+  node.
+
+Not yet covered: `gltf_pbr` and `UsdPreviewSurface` have no
+translation TO OpenPBR in the library (only from `standard_surface`
+to them), so they report and render stock. The render report's
+`images` count reads 0 for a MaterialX image -- it counts the fork's
+own texture uploads, and Cycles loads these from file itself.
+
+
+### 6.10 The raster half: OpenPBR and the generator (phase B step 2, built 2026-08-31)
+
+Cycles reads a MaterialX shader graph by interpreting it (section 6.9).
+The rasterizer cannot: it has no node vocabulary, it has a shading
+language. So the raster half is two pieces -- a surface model both
+engines can describe, and a generator that turns a document into shader
+text for it.
+
+**The mesh shader shades an OpenPBR surface.** The PBR branch evaluated
+a single metallic/roughness GGX lobe, which has no expression for a
+coat or a fuzz and no relation to what the Cycles translator builds
+beyond the two sockets they happen to share. It now evaluates OpenPBR
+(ASWF v1.1), the model Cycles' Principled BSDF v2 is aligned to, so the
+two engines describe ONE surface. `fc_openpbr.sh` carries it: the
+diffuse (EON), dielectric specular, metal (F82-tint conductor), coat
+and fuzz lobes, the slab weights that layer them, and the environment
+terms. OpenPBR-viewer's rasterizer is the reference, with four
+departures the file states in full:
+
+- The lobe DIRECTIONAL ALBEDOS -- which the slab layering needs at
+  every fragment and the environment terms reuse -- are the analytic
+  split-sum fit the IBL path already used, not the reference's
+  16-sample Monte Carlo. Sixteen GGX samples per lobe per fragment is
+  not a viewport budget.
+- No transmission and no subsurface lobe. A rasterizer cannot refract
+  through geometry: transmission is the glass pass's business
+  (docs/ShaderDesign.md 3.8), and a constant `transmission_weight` of
+  one half or more is routed there as a glass body
+  (docs/MaterialStorage.md sec 17.21), where the same generated
+  material function runs per fragment (sec 17.22); a mapped weight,
+  and subsurface, which has no raster route at all, degrade to
+  diffuse.
+- No anisotropy (no tangent frame on the untextured path, and an
+  isotropic environment probe) and no thin film (rasterizable, but ~180
+  lines of complex arithmetic on every mesh draw).
+- None of the OpenPBR 1.2 extras -- specular haze, retroreflectivity,
+  dispersion. These have no socket in Cycles' Principled either, so
+  implementing them would move raster AWAY from parity.
+
+The first two are RASTER limits, not Cycles ones: Cycles renders
+transmission, subsurface, anisotropy and thin film properly, so a
+document using them is a known divergence between the two engines
+rather than a parity failure. Only the last group is absent from both.
+
+**The inputs did not change.** A draw still arrives as a base colour, a
+metalness and a roughness; the Khronos spec-gloss solve still stands in
+where nothing authored a metalness; and the rest of OpenPBR's
+parameters keep their spec defaults, which is exactly the stock CAD
+surface. One change at a time: the shading model moved, the appearance
+data did not, so the tuned presets still read as themselves. Measured
+by A/B against the previous shaders on demo-pbr, same tree and frozen
+frames: mean radiance ratio 0.9991, with the differences confined to
+the spheres and strongest on the smooth non-metal highlight rims --
+where the exact dielectric Fresnel replaces Schlick at f0 = 0.04 and
+the diffuse gives up the energy the specular layer takes. The 1.2
+direct-light gain the branch has carried since PBR arrived is kept for
+the same reason, and is now named and explained rather than sitting
+bare in the arithmetic.
+
+**The generator** (`MaterialXGen.cpp`) emits a MATERIAL-INPUTS
+function, not a program:
+
+    void fcUserMaterialInputs(inout FcOpenPbr m, FcMtlxGeom g)
+
+MaterialX's own hardware generator emits a complete lit shader -- its
+lighting, its environment, its uniform blocks -- and none of that is
+wanted, because the engine already owns shadows, IBL, the section clip
+and the per-face palettes, and a document that replaced them would lose
+every one. The document describes the SURFACE; the engine keeps the
+lighting.
+
+That shape falls out of one fact about the library: OpenPBR's reference
+implementation IS a MaterialX nodegraph, so the stock generator emits a
+call to it carrying every OpenPBR parameter and then 2100 lines of
+closure. Registering an implementation of our own for that nodegraph --
+`GenContext::addNodeImplementation`, which wins over expanding it --
+leaves the pattern graph above generating exactly as MaterialX would,
+with the whole standard library behind it, and never expands the
+closure below. The default OpenPBR material comes out at 79 lines
+instead of 2176. A stated constant folds to a literal rather than a
+uniform nothing would write (`SHADER_INTERFACE_REDUCED`), so a value
+change regenerates -- what a document leaves genuinely open becomes a
+`Param_*` in step 3.
+
+Three things the stock pixel stage does had to be redone rather than
+inherited, and each was a failure before it was a decision:
+
+- A vertex-data port is named by its SUBSTITUTION TOKEN
+  (`$normalWorld`), not by the text the emitted code carries. The
+  preamble is therefore driven off MaterialX's own vertex-data block
+  and answers each name from the mesh shader's varyings; anything it
+  cannot answer is reported and reads as zero.
+- The geometry arrives as a struct PARAMETER. Read at file scope the
+  varyings compile on GLSL and ESSL and fail on SPIR-V -- the same
+  restriction the existing code records for `gl_FragCoord`.
+- bgfx defines `M_PI` too, and not with identical text, which the
+  preprocessor stops on; and the uv-transform token substitution the
+  image nodes include by name is set by the stage this replaces.
+
+**The splice** follows the volume stage's shape (docs/RenderEngine.md
+sec 5.3): the stock header prototypes the function under
+`FC_USER_MATERIAL`, the assembled variant defines it and appends the
+generated source after the include, and without the define the whole
+thing compiles to nothing. The variant is the stock TEXTURED mesh
+fragment stage -- the one whose vertex stage carries a texture
+coordinate -- without `TEXTURE` defined, so no texture environment is
+applied over what the document states. It is generated and compiled
+once per document identity, not per draw.
+
+A generated material also FORCES the OpenPBR branch. A document is an
+OpenPBR surface by construction, so it cannot shade through a matcap or
+a Phong evaluation -- neither has anywhere to put what the document
+states -- and a frame with PBR mode off carries no environment
+intensity either, so a forced draw takes the environment at full
+strength rather than rendering unlit.
+
+**What the raster path cannot do it reports**, and the draw keeps its
+stock appearance -- the sandboxed-failure rule of section 6.9. One case
+as this section was written: a shading model with no translation to
+OpenPBR (`UsdPreviewSurface` and the hair models translate to nothing).
+An image node was the second, and is one no longer -- see section 6.12.
+Cycles renders both properly, loading image files itself.
+
+**Verification** is in three layers, because the chain is long:
+
+- Ten unit tests (`tests/src/Gui/MaterialXGen.cpp`) pin the generator's
+  contract. They earned their keep: the image guard first read
+  MaterialX's own environment sampler, which is filename-typed too, and
+  so refused every document ever written.
+- Over MaterialX's own example materials, outside the tree, every
+  document that generates was compiled through the in-tree shaderc on
+  all three profiles (glsl, spirv, essl): 24 of the 50 examples, the
+  other 26 being the reported cases above.
+- `build/probes/mtlxraster/probe.sh` runs the whole chain from dialect
+  to drawn pixel. Seven legs, all passing: a document overrides the
+  object's own colour (0.115 against the green the box is painted);
+  `multiply(red, 0.5)` renders BIT-IDENTICALLY to a literal half-red
+  and measurably apart from full red; metalness changes the surface
+  (0.066); a coat (0.022) and a fuzz (0.031) change it, and nothing but
+  an OpenPBR evaluation could be drawing those; and a
+  `UsdPreviewSurface` document falls back to the stock appearance
+  EXACTLY (0.0).
+
+Two traps that probe records. A user program compiles ASYNCHRONOUSLY
+and the stock program stands in until it lands -- which draws exactly
+the control frame, so a short settle measures "nothing changed" for
+every leg and reads as a dead splice. And the config the probes copy
+has MATCAP on, which is how the forced branch above came to be needed:
+a document attached to an object rendered as though it were not there.
+
+Not yet: `geometry_opacity` (a material cannot move a draw into the
+transparent pass mid-frame). The `Param_*` interface is step 3, and is
+section 6.11; images were the other gap here and are section 6.12,
+which is also what moved the image case out of the reported list above.
+
+
+### 6.11 The declared interface (phase B step 3, built 2026-08-31)
+
+A material is not finished when it renders. Someone has to be able to
+change it -- and a MaterialX shader graph is XML, so without an interface
+the only way to move a number in one is to edit text and recompile a
+shader. Step 3 is that interface: the document's own declared inputs
+become `Param_*` dynamic properties on the `App::ShaderProgram`, bound
+to both consumers.
+
+**What counts as a parameter is what the document DECLARES.** MaterialX
+has one construct for this and the documents in its own library all use
+it: a node graph's `<input>` elements, which carry the value, the type,
+and `uiname`/`uifolder` metadata for presenting it. Those are the
+knobs. A value written on the surface shader node is a different thing
+-- the document's statement about the surface, no more open to change
+than the graph it is wired into -- and it stays the literal section
+6.10 folds it into. So `standard_surface_marble_solid.mtlx` publishes
+six parameters (Color 1, Color 2, Scale 1, Scale 2, Power, Octaves) and
+`open_pbr_carpaint.mtlx`, which declares nothing, publishes none. An
+input a graph declares but no node inside it names is left out too: a
+knob wired to nothing is worse than no knob.
+
+**The direction is reversed** from everything else in the user-shader
+system (docs/RenderDebug.md sec 6.4), where the author declares a
+`Param_*` property and writes a shader that reads the matching uniform.
+Here the document is the authority: the properties are materialized
+from it, one that is no longer declared is withdrawn, and an existing
+property keeps its value, so re-reading a document is not a reset. Only
+a MATERIALX-dialect program's parameters are managed this way -- a
+hand-written `.sc` program's `Param_*` are its author's own and nothing
+takes them away. A document that will not parse withdraws nothing
+either: a document is edited in place, so it spends time unparsable on
+the way from one valid state to the next, and taking the properties
+away over that would take the user's values with them.
+
+**The two consumers take a parameter in their own vocabulary**, which
+is the same split as the document itself:
+
+- Raster: one `uniform vec4 u_<name>` per parameter, read as its own
+  type at the top of the generated function (`u_gain.x`,
+  `u_tint.xyz`, `int(u_octaves.x)`). That is the vec4-lane packing
+  every other user-shader parameter already travels in, so the value
+  reaches the draw through the existing chain --
+  property -> `SoShaderParameter` -> captured `UserShader::params` ->
+  `pushUserParams` at the consuming submit -- and a `App::ShaderBinding`
+  can override it per binding for free. The generated source is cached
+  by the DOCUMENT's identity, so a parameter edit compiles nothing: it
+  is a uniform write, live.
+- Cycles: the value is written into the document before it is
+  interpreted, and comes out the other side as a `ValueNode` in the
+  shader graph. A path tracer has no uniforms; a parameter is part of
+  the shader, so two parameter sets are two shaders and the shader
+  cache keys on the values. The document's own identity stays separate
+  from them, because a document that will not interpret will not
+  interpret at any value.
+
+**Publishing the interface on the raster side took the generator the
+other way round.** MaterialX's `SHADER_INTERFACE_REDUCED`, which step 2
+used, folds a graph's declared inputs into the code as numbers -- which
+is exactly right for a constant and exactly wrong for a knob. The
+interface type is now COMPLETE, which publishes every value the graph
+did not connect, and the generator emits the declarations itself: a
+published value that is one of the document's declared inputs becomes
+the uniform, and everything else becomes a file-scope `const` with the
+value MaterialX would have folded in. The generated code is therefore
+unchanged for a document that declares nothing, which is what the seven
+frozen probe legs of section 6.10 re-measure to the digit.
+
+Three things fell out of the library that are worth keeping written
+down:
+
+- **A published uniform already names the declared input**, not the
+  node input that reads it: MaterialX sets the port's path to the
+  interface input when there is one. So the enumeration and the
+  generator agree by namepath with no name matching anywhere, and a
+  declared input read by a dozen nodes is one parameter reading one
+  lane group -- where MaterialX's own viewer, which dedupes the other
+  way round, would drive only the first of them.
+- **The interface is read from the document as AUTHORED**, before the
+  OpenPBR translation. A graph interface survives that translation
+  untouched, so one enumeration answers for the property editor, the
+  path tracer (which interprets the document as written) and the
+  generator (which works on the translation) alike.
+- **The surface node's own values are not declared at all.** They are
+  published like everything else, but OpenPbrInputs emits them as
+  literals and no generated line names them, so declaring them would
+  add a few dozen dead globals per material -- in names like
+  `base_color` and `specular_color`, at file scope, next to the mesh
+  shader's own.
+- **A graph input named as a surface input is FUSED with it.**
+  MaterialX resolves a graph's interface names in the enclosing graph's
+  socket namespace, and the surface's nodedef put every one of its own
+  inputs in there first, so a graph declaring `base_color` never gets a
+  socket of its own: the reads inside it go through the surface's
+  socket. That is the obvious document to write, not an exotic one, and
+  with the rule above it generated a name nothing declared. A published
+  value is therefore matched to a declared input by namepath first and
+  by NAME second -- safe precisely because the fusion is itself by
+  name, so after it exactly one socket carries that name and every read
+  of the declared input goes through it.
+
+A declared input is named by the document, and its uniform is
+`u_<name>` like every other shader parameter -- so a document declaring
+an input named after one of the engine's own uniforms (`fcTime`, say)
+generates a redeclaration, the compile fails, and the draw keeps its
+stock appearance with the compiler's message reported. That is the
+sandboxed-failure rule doing its job rather than a name check nobody
+could keep current.
+
+**The property carries the type the document states**: float, integer
+and boolean; `color3`/`color4` as an `App::PropertyColor`;
+`vector2`/`vector3` as an `App::PropertyVector`; `vector4` as a float
+list. The document's `uiname`, `uifolder` and `doc` become the
+property's tooltip. A colour is carried in the document's own colour
+space, which is what the document itself states and what the generated
+code (whose colour transforms sit downstream of the uniform) expects --
+the property holds exactly the numbers the `.mtlx` text would.
+
+**Verification.** Eighteen unit tests now (`tests/src/Gui/MaterialXGen.cpp`),
+eight of them this step's: what the interface is, what it is not, that
+one input read twice is one uniform, that it survives the translation,
+that each type reads its lane as itself, and that an input named as
+a surface input still binds. Over MaterialX's own
+example materials, the same 24 of 50 generate as before and all of them
+still compile through the in-tree shaderc on glsl, spirv and essl --
+`standard_surface_marble_solid` now with six uniforms in it. Both
+probes carry the chain end to end: `build/probes/mtlxraster/probe.sh`
+grows five legs (the declared interface becomes exactly one property
+carrying the document's value; a parameter edit reaches the draw with
+no regeneration; a parameter value renders where the same value stated
+in a document renders; a withdrawn declaration withdraws its property;
+and the effect's demo preview shades with the document rather than with
+its own DemoColor), and `build/probes/mtlx/probe.sh` grows a leg
+holding the path-traced frames against two frames earlier legs already
+rendered from documents stating the same colours: the declared default
+lands on leg 1's red and the override on leg 3's literal half-red, both
+to a mean absolute difference of 0.0, and the override moves the frame
+by 0.0465. Twelve raster legs and sixteen path-traced ones, both PASS;
+the seven raster legs that predate this step re-measure to the digit,
+and ctest is 454/454.
+
+`scripts/demo-materialx.py` is what this looks like from the outside:
+seventeen documents from `scripts/materialx/`, each EMBEDDED in an
+`App::ShaderProgram` and hung on its own ball, so the saved `.FCStd`
+carries every material in it and opens the same anywhere. Two of the
+seventeen declare an interface, and their balls come up with the knobs
+in the property editor. Writing that demo is also what found the fused
+name above.
+
+Not yet, and the remaining piece of step 3: a material card able to
+carry a `.mtlx`. Designed 2026-09-01 and recorded in section 6.13; not
+built.
+
+
+### 6.12 Images in the raster path (phase B, built 2026-09-01)
+
+Twenty-six of MaterialX's fifty example materials name an image file,
+and until now every one of them was refused by the raster path and left
+to the path tracer. The refusal was honest -- an image node reaches the
+generated code as a sampler, and nothing declared or bound one -- but it
+is what a real material looks like: a photograph of a surface is the
+usual way to state one.
+
+**The join is the file path.** Two sides have to agree, and neither can
+see the other. The GENERATOR alone knows the sampler names, because
+MaterialX derives them from the node graph; the CAPTURE alone can decode
+a file, because the render thread must not open one and a viewer tier
+may have no filesystem at all. So the generator reports
+`{sampler, unit, path}` per image and the capture reports
+`{path, pixels}`, and `BGFXView::pushUserImages` joins the two lists on
+the path before the draw. Neither side has to predict the other's
+naming, and the path is what both of them already have.
+
+**The pixels travel with the shader.** `UserShader::images` carries
+decoded `TextureImage`s, which is the vehicle the whole engine already
+uses: content-keyed, blob-stored, deferrable. `RendererBridge` decodes
+them through the same `loadParamImage()` cache the environment and the
+ground texture use -- so a map edited in another program is picked up,
+and the document is only re-inspected when its text or its file changes
+(parsing one means loading the standard data library behind it, which is
+far too much to do per capture).
+
+**Two things bgfx needed that MaterialX does not write.** Both were
+found by compiling every generated example on all three profiles, and
+neither shows up on a desktop GL run:
+
+- The SIGNATURE was already right by luck. MaterialX 1.39 writes the
+  sampler parameter through a token (`$texSamplerSignature`, default
+  `sampler2D tex_sampler`), and bgfx `#define`s `sampler2D` to its
+  `BgfxSampler2D` struct pair on the backends that split texture from
+  sampler. So the stock token passes one of those by value, unchanged.
+- The CALL was not. MaterialX writes the GLSL builtins `texture()` and
+  `textureGrad()`; bgfx spells the portable forms `texture2D()` and
+  `texture2DGrad()` and only defines them where the builtin is missing.
+  The generated preamble therefore shims the other way, under exactly
+  the condition `bgfx_shader.sh` switches on -- so a GLSL or ESSL build
+  reads its own builtin and only the HLSL-family backends are rewritten.
+  Without it the five image materials compiled on glsl and essl and
+  failed on spirv alone, which no desktop probe would ever have shown.
+
+**The unit budget is the real limit.** The generated function is spliced
+into the stock mesh fragment stage, which declares samplers 0..10, and a
+stateful particle emitter binds 11 and 12. That leaves 13, 14 and 15 of
+the sixteen bgfx guarantees, so a document may claim three images and
+one wanting more is refused whole -- reported, and drawn as its stock
+appearance -- rather than drawn with some of its maps reading another
+pass's texture. Three is enough for base colour, roughness and metallic,
+which is what the library's tiled materials use; the chess set uses
+exactly three. **A 2D array over one unit is what lifts this**, the way
+the per-face palette (6.7) already holds many images on unit 10, and it
+is the obvious next step if the cap starts to bite. An image the
+document names but that is not on disk is not a refusal: that sampler is
+left unbound and the map draws as the backend default, which the
+generator warns about.
+
+> Superseded the same week by **6.14**: the cap did start to bite, the
+> images are the layers of one array now, and the two paragraphs above
+> describe how it worked for one day. What is still true of them is the
+> join (on the path) and how the pixels travel.
+
+**The streaming tier does not get this yet.** `UserShader::images`
+carries the pixels in memory, but `SceneDump` does not write them, so a
+viewer with no filesystem would load a program whose samplers nothing
+binds and draw every map as the backend default. So the server-side
+compile (`viewerShaderBins`) declines a document that names images, and
+that tier keeps the stock-appearance fallback it had before this
+section. Carrying the images through the snapshot is the next step, and
+the vehicle is already there: a `TextureImage` is content-keyed and
+blob-stored, and the snapshot's texture table already deduplicates and
+defers exactly these.
+
+> Built two days later: the images travel with the shader (snapshot
+> v74), joined to the program's array layers by the ship hook, and the
+> glass splice travels beside the mesh one -- MaterialStorage.md 17.23.
+
+**Verification.** Twenty-one unit tests
+(`tests/src/Gui/MaterialXGen.cpp`), four of them new: an image becomes a
+declared sampler, a missing file is said rather than refused, two images
+never share a unit, and the portable-call shim is present. Over
+MaterialX's own examples, outside the tree, generation now succeeds for
+**29 of 50 where it was 24**, and all 29 compile through the in-tree
+shaderc on glsl, spirv and essl -- 87 compiles, no failures. The
+remaining 21 are the models that do not translate to OpenPBR
+(`UsdPreviewSurface` and the hair shaders), which is 6.10's case and not
+this one. `build/probes/mtlxraster/probe.sh` grows three legs that run
+the whole chain to a drawn pixel: a document naming a file changes the
+picture at all; swapping that file for one of another colour moves it
+again, and the red file's frame is redder than the blue file's while the
+blue file's is bluer, which is what proves the sampler reads THAT file
+and not merely something; and the same colour stated as a literal draws
+the same as stated as a file, to a mean absolute difference of 0.0001.
+That last number also says what the colour management does, which is
+nothing: the document states no colour space for the file, so its bytes
+are read as authored and 230/255 is the 0.902 a literal would have been.
+
+Writing those legs re-taught a trap this file already records. The first
+cut asserted that a red image "draws reddest" -- a channel ORDERING over
+the body mask -- and it failed. It was right to: the studio environment
+is blue-ish, and at this roughness a LITERAL red draws with more blue
+than red in the mean too, which is why the literal and the image agreed
+to 0.0001 while both "failed". An absolute colour assertion over that
+mask reads the environment. Assert one frame against another, where the
+environment cancels.
+
+
+
+### 6.13 A material card that carries a document (designed 2026-09-01, NOT built)
+
+The last piece of phase B step 3, and the first one whose shape was
+decided in discussion rather than found in the code. **Everything below
+is a design record: none of it is built.**
+
+**What it is for.** A MaterialX shader graph renders today only if someone
+builds an `App::ShaderProgram` for it by hand and binds it through an
+`App::ShaderBinding` -- which is what `scripts/demo-materialx.py` does
+seventeen times. That is the author's route, not the user's. The user's
+route is the material library: pick "Brushed Aluminium" out of a list
+and have the object look like it. A card that carries a `.mtlx` is what
+joins the two.
+
+**Prior art.** Every system with a node-graph material separates the
+GRAPH from the per-use values. Unreal states it most plainly: a Material
+is the graph, compiled once, and a Material Instance is a thin set of
+parameter overrides on top of it. Blender shares one node datablock
+between all users and a per-object difference means a copy. USD binds a
+material prim and overrides by referencing it and restating inputs. The
+fork already has this split and did not have to invent it:
+`ViewProviderShaderProgram` owns the library node built from the
+program, and `ViewProviderAppearance::ownProgramNode()` builds a
+per-binding CLONE with that binding's parameter overrides baked in. A
+card-carried document slots into that; it does not get a scheme of its
+own.
+
+**Decision 1 (the user's, 2026-09-01): assignment creates nothing, and
+an explicit command materializes.** Assigning the card stays what
+assigning a card has always been -- a write to `ShapeMaterial` -- and
+the view provider renders it, exactly as a glass card already grows
+`Render_Glass*` dynamic properties without adding an object to the tree.
+A separate command turns that into real `ShaderProgram` / `Shader` /
+`Appearance` objects when someone wants to edit the graph or its knobs.
+The common case leaves the tree clean; the power case stays open.
+
+**Decision 1a (the user's): the node construction lives in
+`ViewProviderAppearance`, for dedup, and the node struct is SHARED with
+copy-on-write.** This is the part that keeps the two routes from
+becoming two implementations:
+
+- One Coin node structure per distinct card, not per object. Fifty
+  objects carrying "Brushed Aluminium" share one `SoShaderProgram`
+  triple, so there is one document parse, one generation and one
+  compile -- and `materialXVariants` already keys its generation on
+  document identity, so it agrees with this for free.
+- It is built where the binding machinery already is.
+  `ViewProviderAppearance` owns `applyDirectBindings()`, which inserts a
+  program node at each target view provider's root, and `rebuildAllBindings()`,
+  a per-document static coordinator. A registry of card-built nodes is a
+  sibling of those, and `syncShaderNodes()` -- already shared between
+  the program view provider and the per-binding clone -- is the one
+  construction function all three routes call.
+- **COW on edit.** The shared struct is immutable while it is shared. The
+  materialize command copies it into the real document objects, seeded
+  with what the card stated, and that object's binding switches from the
+  shared node to its own. An edit therefore never reaches the other
+  forty-nine objects, and nothing has to be copied until an edit happens.
+
+**Decision 2 (the user's): the card carries the document EMBEDDED.**
+Open decision 2 was answered in the file direction for the
+`ShaderProgram` (6.8); for the CARD it is answered the other way. A
+card is a library asset that gets copied into documents and passed
+between machines, and a card that names a path is a card that breaks
+when it travels.
+
+Two things follow, and the first is cheaper than it first looked:
+
+- **The card's own path is the resolution anchor.** A relative image
+  name resolves against `dirname(the document's source URI)`, then the
+  data library (`searchPath()`), and MaterialX's own examples are
+  written that way -- `standard_surface_brass_tiled.mtlx` reaches its
+  maps through `../../../Images/`. Inline text has no source URI, so
+  that entry would vanish and every relative map would resolve to
+  nothing. But a card IS a file: the `.FCMat` it was read from stands in
+  as the source URI, and `loadDocument` already flattens every relative
+  filename to an absolute path in one pass at load. Embedding does not
+  lose the anchor, it moves it.
+- **Travel needs the image bytes, not just resolvable paths.** An
+  absolute path that resolves here points at nothing on another machine,
+  so an embedded document is a self-contained material DESCRIPTION and
+  not a self-contained material. The images have to ride along, and the
+  machinery for that exists: `App::FileBlobManager` and
+  `Document::collectFileBlobs()`. This is wiring, not new work -- and
+  it is only needed for image-carrying cards. The seventeen documents
+  the demo already embeds are imageless, which is why that reopen test
+  passed without any of this.
+
+**The card side.** A new appearance model beside `GlassRendering.yml`,
+which is the precedent for a fork-authored model whose fields drive
+rendering rather than colour. One field holding the document text; the
+card format already carries `File` and `Image` typed fields
+(`TextureRendering.yml` uses both), so a text field is not a new kind of
+thing. A card carrying it must also reach the Appearance panel's look
+list, which means one more filter beside "Basic appearance" and
+"Texture appearance" in `DlgDisplayPropertiesImp::setupFilters()`.
+
+**Where the parameters live** is the one question that needs no new
+answer. The document's declared inputs become `Param_*` properties
+(6.11); the card's copy states the defaults, and a per-object difference
+is a per-binding override -- the layer `ownProgramNode()` already bakes.
+Under decision 1 an unmaterialized object has no binding object to hang
+an override on, so until it is materialized it wears the card's values;
+wanting to change one is exactly the moment the materialize command is
+for.
+
+**What to settle before building.** How the follow-the-card rule of
+`MaterialStorage.md` sec 15 extends to this -- a document is not an
+`App::Material`, so `FollowMaterial` as written does not decide it. What
+the materialize command is called and where it appears (the sync
+commands' shown-only-while-it-applies rule, 13.5, is the precedent).
+Whether materializing is reversible. And what the three-image cap of
+6.12 means for a card: a library card wanting five maps is refused by
+the raster path but rendered by Cycles, which is a confusing thing for a
+LIBRARY to do and is the strongest argument yet for the 2D-array
+generalisation.
+
+> That last one is **answered**: 6.14 built the array, and a card may
+> name sixteen images before the question arises again.
+
+> **Storage settled 2026-09-02, in `MaterialStorage.md` sec 17.** The
+> payload is one `App::FileSet` holding the document and its maps as
+> content-addressed blobs, carried on the appearance value; a library
+> keeps its files under descriptive names in a `materialx/`
+> sub-directory and identity is computed over the hashes. That
+> supersedes the "embedded" reading of decision 2 here -- the content
+> still travels with the document, as blobs rather than as text inside
+> the card -- and the flattened base64 form remains the clipboard and
+> export spelling. Sec 17 also carries the rename set and the build
+> order this lands in.
+
+### 6.14 Many images on one unit (phase B, built 2026-09-01)
+
+6.12 gave a document its images and, in the same breath, a cap of three
+of them -- the mesh fragment stage this material function is spliced
+into declares samplers 0..10 and a stateful particle emitter binds 11
+and 12, so a sampler per image left exactly 13, 14 and 15. Three is a
+base colour, a roughness and a metallic. It is not a base colour, a
+roughness, a metallic, a normal and an occlusion, which is the ordinary
+set; MaterialX's own `standard_surface_brick_procedural` names five and
+was refused whole. A card carrying such a document (6.13) would have
+been refused by the rasterizer and rendered by the path tracer, and a
+library that behaves differently in the two engines is a library nobody
+can trust.
+
+**The images are the LAYERS of one array texture.** The mechanism is not
+new: the per-face palette (6.7) already puts many images on unit 10 and
+picks between them per triangle, and `GpuTextureArray` -- content-keyed,
+resampled to the largest layer, mipped on the CPU -- is the same class
+here with two arguments added (how many layers, and how large). The unit
+count stops being what bounds a material; what bounds it now is the
+array itself, at sixteen layers, and a document past that is still
+refused whole rather than drawn with maps missing.
+
+**A layer is per FILE, not per node.** A material reading one map as its
+base colour and again as its coat colour costs one layer. That is worth
+saying because it is what makes sixteen generous: the deduplication is
+on the resolved absolute path, which is the same key the join already
+used.
+
+**Both spellings of a sampler had to move, and only one was obvious.**
+MaterialX passes an image into its library functions as a `sampler2D`,
+and it writes that parameter in two different places:
+
+- the hand-written library functions (`mx_image_color3`,
+  `mx_hextiledimage`, ...) take it through a token,
+  `$texSamplerSignature`, which one substitution turns into
+  `int tex_sampler`;
+- the GENERATED nodegraph implementations (`NG_tiledimage_color3` and
+  its kin) declare it through the TYPE SYNTAX for `filename` instead,
+  which is still `sampler2D`.
+
+Change one and not the other and the generated call has no matching
+overload -- `mx_image_float(sampler2D, ...)` against a definition taking
+`int`. Both are answered: the token substitution in `emitImageAccess`,
+and a `ScalarTypeSyntax` for `Type::FILENAME` registered in the
+generator's constructor. **The harness caught this immediately and a
+desktop run never would have**, because it is a compile error in three
+of the fifty examples and those three are exactly the tiled ones.
+
+**The three builtins are answered as functions, not as macros.**
+`texture()`, `textureLod()` and `textureGrad()` become `fcMtlxImage`,
+`fcMtlxImageLod` and `fcMtlxImageGrad`, emitted just above the macros
+that redirect the names -- so the bgfx spellings inside them expand
+before the redirection reaches them. `textureGrad` is the one bgfx has
+no array form of, so both vocabularies are written out under the same
+condition `bgfx_shader.sh` switches on: the GLSL builtin takes an array
+sampler directly, and the split-sampler backends reach the pair the way
+bgfx's own wrappers do. A document naming NO image keeps the plain
+`texture2D` shim of 6.12 and declares no sampler at all, so it claims no
+unit and nothing about it changed.
+
+**A missing map is now defined rather than incidental.** A file the
+document names that is not on disk gets no layer; the generated code
+carries -1 for it and the fetch answers black. Before, that sampler was
+simply left unbound and read whatever the backend defaulted to -- or,
+on a unit another draw had touched, that draw's texture.
+
+**Two costs, both deliberate.** The layers of an array are all one size,
+so every map is resampled onto the largest of them: a 2k albedo beside a
+512 roughness makes the roughness a 2k layer. The ceiling is 2048 for a
+material (the per-face palette keeps its 1024 -- a marking on a face is
+not a surface), and a total byte budget halves the layers when a
+document would otherwise ask for a quarter of a gigabyte. And an
+incomplete array is rebuilt while it waits for its pixels, which is
+right for a decode in flight and wrong forever for a file that will
+never decode, so the rebuild is bounded at 120 tries.
+
+**Verification.** Twenty-four unit tests
+(`tests/src/Gui/MaterialXGen.cpp`), three new and four rewritten: an
+image becomes a layer of one array, four images are four layers on one
+unit, two nodes naming one file share a layer, more images than the
+array holds is refused whole, and an imageless document claims no unit
+at all. `ctest` 455/455. The standalone generator harness of 6.12 is rebuilt as
+`build/probes/mtlxgen/harness.cpp` -- it generates every example in
+MaterialX's own corpus, splices it exactly as `materialXVariant()` does
+and runs the in-tree `shaderc` on glsl, spirv and essl. Generation now
+succeeds for **30 of 50 where it was 29** (the new one is the
+five-image brick), and **all 90 compiles pass**; the twenty refusals are
+the models with no translation to OpenPBR, which is 6.10's case.
+`build/probes/mtlxraster/probe.sh` grows three legs (18 now) to a drawn
+pixel: a four-image document draws at all (0.046 against the literal
+before it), swapping one of its four files moves the frame in that
+file's direction (0.038, and the red frame IS redder while the blue one
+is bluer, so the layers are not crossed), and one file read by two
+nodes draws as that file -- to 0.0000.
+
+Leg 15 was written twice, and the first cut is worth recording: it held
+the four-image document against a four-image document differing only in
+its COAT map and measured 0.0159, under the threshold. Nothing was
+wrong; a coat at half weight is simply a small thing next to a base
+colour. **A control frame has to differ in the thing being measured**,
+which here is whether the document draws at all -- so the second cut
+holds it against the red literal of leg 14 with the blue file as its
+base.
+
 ## 7. Preparing for out of process
 
 Cycles is a better candidate for process isolation than OCCT: it is
@@ -1379,9 +2476,9 @@ Rulings:
 
 - **One session per connection, not per document.** The camera is the
   viewer's, and two viewers looking from two places are two renders.
-  The cost is a device context per viewer (a CUDA context each). No
-  cap is built in: the grant list decides who is admitted at all, and
-  a stream dies with its connection.
+  The cost is a device context per viewer (a CUDA context each), which
+  is what the cap below counts. Who is admitted at all is still the
+  grant list's answer, and a stream dies with its connection.
 - **The frame rides the existing socket** as a new binary kind, not a
   new channel or an HTTP route: same door, same lifetime, in order
   with the scene deltas. A scene payload starts with a 64-bit version
@@ -1430,7 +2527,8 @@ The wire (`FrameStreamWire.h` is the one place the layout is spelled):
   "pixelSize":1,"quality":85,"maxPixels":2073600,"width":W,
   "height":H,"view":[16 floats],"proj":[16 floats]}` -> `{"id":N,
   "ok":true,"device":"CPU"}`; `"action":"stop"`; `"action":"devices"`
-  -> `{"id":N,"ok":true,"devices":[{"type":..,"description":..}]}`;
+  -> `{"id":N,"ok":true,"devices":[{"type":..,"description":..}],
+  "streams":N,"maxStreams":N}`;
   `"action":"status"` -> the `ViewportStatus` fields. Every one takes
   `"cell"` (default 0). Not refused for a view-only connection: a
   path-traced view mutates nothing.
@@ -1508,7 +2606,83 @@ the same rig: a two-cell layout pushed, cell 2 started on CUDA at its
 the two halves 51/255 apart (raster left, traced right, each under
 its own lines), the cell's stream stopped by clearing the layout.
 
-What this does NOT do yet: a cap on sessions per server; the interop
+**A cap on served sessions** (built 2026-09-04). A session is the most
+expensive thing a viewer can ask of this process -- a device context,
+the scene resident on that device, an encoder thread -- and anyone
+admitted could ask for one per traced cell, as often as they liked, on
+a box that may be hosting a live rig. `RenderParams::CyclesMaxStreams`
+(4 by default; 0 or less means no cap) is how many may live at once,
+across every served document and every connection. A start made when
+the cap is reached is answered `{"ok":false,"code":"TooManyStreams"}`
+with the count in its message, which the viewer already puts on its
+status line and into the `fc:cycles` event, and the server logs a line
+naming the connection and the cell. Nothing that is not a served
+stream is counted or capped: the desktop views, the shader graph
+editor's preview and the offline `cyclesRender` are not streams.
+
+- **It counts devices, not objects.** `FrameStream` makes one slot in
+  its base constructor -- so no implementation can forget to count,
+  and a build without the engine has the same counter -- and shares
+  it with its viewport, which copies it into every session it hands
+  to the reaper (sec 5.12). The reaper drops it after the session is
+  destroyed and never before. A stream that has stopped therefore
+  keeps its place for as long as its device is still being torn down,
+  which is the number that matters: the point of a cap on a machine
+  is what the machine is carrying, not how many objects are alive.
+  `FrameStream::liveCount()` reads it; `slotHandle()` is a handle on
+  one slot that outlives its stream.
+- **A restart frees its own slot first, and is forgiven it.** A
+  `start` for a cell that is already tracing releases that cell's
+  stream before it makes the replacement, where the two used to
+  overlap -- and, since that slot is now held until the teardown
+  finishes, hands the replacement a `StreamOptions::replacing` handle
+  on it, which is forgiven once against the cap. Without the release
+  a restart would double the cell's devices for no reason; without
+  the forgiveness a viewer at the cap could not restart its own
+  render at all -- the wait would be the whole teardown, minutes of
+  it on the cold-kernel-compile case sec 5.12 is about. Exactly one
+  slot is ever forgiven, and only while it is still held, so a viewer
+  that restarts in a loop still leaves every earlier session counted
+  and is refused at the cap. What it costs: a restart the engine then
+  refuses (no such device) leaves the cell with no stream instead of
+  the one it had, which is what the viewer is told.
+- **Checked twice, deliberately.** The serve source checks before it
+  creates, which is what produces the named code and the log line; the
+  engine checks again inside `FrameStream::create`, under the same
+  lock that constructs, which is the check two connections cannot race
+  through for the same last slot. Serve ops run on the GUI thread, so
+  today the second is a backstop rather than a live race.
+- The `devices` action's reply carries `"streams"` and `"maxStreams"`
+  as well, so a viewer or a probe can read the policy without
+  provoking a refusal.
+
+Verified 2026-09-04 under Xvfb, with `cycles_cap.sh` and its two arms
+in `~/works/sw/fcad-probes` (a serving FreeCAD on a port of its own,
+so a live serve is not touched, and a raw-WebSocket client asking for
+one more stream than the cap allows -- each start a CPU session of one sample
+at 128x96, so what is measured is the cap and not the machine). At a
+cap of 2: the first two connections were taken and the third refused
+with `TooManyStreams` and the message naming the limit, the count
+still 2 after the refusal, the server logging the connection and the
+cell; the `devices` reply reported `streams` 0 then 2; a restart of a
+cell already tracing was taken at the cap and left the count at 2,
+while a second cell of that same connection was refused; five
+restarts in a row were all taken and left the count where it started,
+which is the check that matters for the forgiveness -- a slot leaked
+by it would shrink the server's capacity for good; and a `stop` and,
+separately, a connection simply dropped each returned the slot and
+let the refused viewer in, the count reading its new value 0.25 s and
+0.51 s later, through the reaper rather than at the stop. At a cap of
+0 all three were admitted. ctest 473/473 after the change.
+
+What the probe cannot show is the hold itself: a CPU session tears
+down in milliseconds, so the slot is back before the next message is
+answered. The hold is for the case sec 5.12 is about -- a device
+whose teardown takes minutes -- where the old count would have handed
+the freed slot to another viewer while the first device was still
+resident.
+
+What this does NOT do yet: the interop
 path (the GPU frame still crosses the CPU twice,
 once into the staging buffer and once into the encoder); the
 frame-push latency of the connection loop's 200 ms poll (a queued
@@ -1762,17 +2936,20 @@ Phase 6 -- queued, not started. Two items, in this order.
     0. Vendor MaterialX as a submodule (Core/Format/GenShader/
        GenGlsl only), ship `libraries/` as an asset,
        `Dialect=MATERIALX` validates at document load.
+       **DONE 2026-08-31, section 6.8.**
     1. The Cycles interpreter, over MaterialX's own
        `resources/Materials/Examples` (OpenPBR + Standard Surface
        samples) -- first because it needs no shader-language work
        and the phase-A traps (colour spaces, stride, socket names)
-       are fresh.
+       are fresh. **DONE 2026-08-31, section 6.9.**
     2. The OpenPBR mesh shader, then the bgfx ShaderGen target and
        the splice; parity against the Cycles frames the way the
-       finish probe measures it.
+       finish probe measures it. **DONE 2026-08-31, section 6.10.**
     3. Interface: public inputs -> `Param_*`, the demo preview, and
        a material card able to carry a `.mtlx` (the appearance model
        of MaterialStorage.md already has a file slot).
+       **The interface and the preview are DONE 2026-08-31, section
+       6.11**; the material card is not started.
 
     **Open decisions** (2, 4 and 5 are provisional; 1 and 3 are
     ruled): (1) OpenPBR canonical -- RULED yes. (2) Where the

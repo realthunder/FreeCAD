@@ -24,7 +24,7 @@
 
 #include "DlgSettingsObjectColor.h"
 #include "ui_DlgSettingsObjectColor.h"
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include <Gui/PrefWidgets.h>
 #include "PartParams.h"
 

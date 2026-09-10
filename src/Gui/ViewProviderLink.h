@@ -110,7 +110,7 @@ public:
 
     std::vector<ViewProviderDocumentObject*> getChildren() const;
 
-    void setMaterial(int index, const App::Material *material);
+    void setMaterial(int index, const App::MaterialAppearance *material);
     void setDrawStyle(int linePattern, double lineWidth=0, double pointSize=0);
     void setTransform(int index, const Base::Matrix4D &mat);
     void renderDoubleSide(bool);
@@ -208,11 +208,11 @@ class GuiExport ViewProviderLink : public ViewProviderDocumentObject
 
 public:
     App::PropertyBool OverrideMaterial;
-    App::PropertyMaterialList ShapeAppearance;
+    App::PropertyAppearanceList ShapeAppearance;
     App::PropertyEnumeration DrawStyle;
     App::PropertyFloatConstraint LineWidth;
     App::PropertyFloatConstraint PointSize;
-    App::PropertyMaterialList MaterialList;
+    App::PropertyAppearanceList MaterialList;
     App::PropertyBoolList OverrideMaterialList;
     App::PropertyColorList OverrideColorList;
     App::PropertyPersistentObject ChildViewProvider;
@@ -295,7 +295,7 @@ public:
             const App::PropertyLinkSub &coloredElements,
             const App::PropertyColorList &colorList,
             bool overrideMaterial,
-            const App::Material *shapeMaterial,
+            const App::MaterialAppearance *shapeMaterial,
             int elementCount = 0);
 
     static void setElementColorsTo(
@@ -304,7 +304,7 @@ public:
             App::PropertyLinkSub &coloredElements,
             App::PropertyColorList &colorList,
             App::PropertyBool *overrideMaterial,
-            App::PropertyMaterialList *shapeMaterial,
+            App::PropertyAppearanceList *shapeMaterial,
             int elementCount = 0);
 
     static bool applyColorsTo(ViewProviderDocumentObject &vp, bool prevOverride);
@@ -342,8 +342,8 @@ protected:
             const View3DInventorViewer *view=0, int depth=0) const override;
 
     bool setEdit(int ModNum) override;
-    void setEditViewer(View3DInventorViewer*, int ModNum) override;
-    void unsetEditViewer(View3DInventorViewer*) override;
+    void setEditViewer(ViewerContext*, int ModNum) override;
+    void unsetEditViewer(ViewerContext*) override;
     bool linkEdit(const App::LinkBaseExtension *ext=nullptr) const;
     void _setupContextMenu(App::LinkBaseExtension *ext, QMenu*, QObject*, const char*);
 

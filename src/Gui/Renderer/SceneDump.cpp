@@ -20,6 +20,7 @@
  ****************************************************************************/
 
 #include "SceneDump.h"
+#include "ImageDecode.h"
 #include "MeshSimplify.h"
 #include "SceneLadder.h"
 
@@ -271,7 +272,47 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     a build whose background was fixed two cubemap levels down, so
 //     it reads as the blur that stands for the same softness rather
 //     than as the sharper default.
-const uint32_t kVersion = 70;
+// 71: a user shader says what DIALECT its sources are
+//     (UserShader::dialect): shading-language text, or a MaterialX
+//     document in fragmentSource, and where that document came from
+//     (UserShader::sourcePath), which is what its image references
+//     resolve against. A snapshot older than this reads as
+//     shader text, which is all those builds could write.
+//     (This was 70 on the branch it was written on, and 70 was taken
+//     by envBlur meanwhile; a dump from one of those unpublished
+//     builds reads its shader table as text.)
+// 72: a MaterialX user shader says WHICH of the document's surfaces it
+//     wears (UserShader::surface, docs/MaterialStorage.md sec 17.13).
+//     One document usually carries a whole asset's material set, and a
+//     snapshot older than this names none, which reads as the first
+//     surface -- what those builds rendered. The out-of-band shader
+//     chunk carries the same field, so kChunkVersion moves with it.
+// 73: a material carries glassmtlx and glasscolor -- a glass body
+//     claimed by its MaterialX surface's transmission, with the
+//     document's linear colour (docs/MaterialStorage.md sec 17.21). An
+//     older snapshot has neither: its glass bodies are all Render_Glass
+//     ones, which is what those builds drew. The material chunk carries
+//     the same fields, so kChunkVersion moves with it.
+// 74: a user shader carries its MaterialX images -- each one an
+//     ordinary texture record (deferred pixels under the streaming
+//     transport) with the layer of the generated program's image array
+//     it is -- plus that array's sampler name and unit, and each
+//     compiled variant carries the glass body splice's binary
+//     (docs/MaterialStorage.md sec 17.23). A viewer tier binds the
+//     document's maps and draws a MaterialX glass per fragment with
+//     them. An older snapshot has none of it, and the writer never
+//     shipped an image document's program at all, so the stock
+//     appearance stood in -- which is what those builds drew. The
+//     shader chunk carries the same fields, so kChunkVersion moves.
+// 75: a texture's payload may be the ENCODED file it was decoded from
+//     (a JPEG or a PNG, TextureImage::encoded) instead of its pixels,
+//     said by a flag after the sample kind; the reader decodes it on
+//     arrival (ImageDecode.h). Forty-three 2k maps were five hundred
+//     megabytes of raw pixels over the wire and twenty as files
+//     (docs/MaterialStorage.md sec 17.23). An older snapshot carries
+//     pixels only, and reads as before. Every chunk that inlines a
+//     texture header moves with it, so kChunkVersion moves.
+const uint32_t kVersion = 75;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -302,8 +343,22 @@ const uint32_t kVersion = 70;
 ///     keep filling the wireframe.
 /// 12: a group chunk's draws carry skipbounds (v67). The bytes moved,
 ///     so an older cached chunk would be MISREAD from that flag on --
-///     the bump retires it.)
-const uint32_t kChunkVersion = 12;
+///     the bump retires it.
+/// 13: a shader chunk carries the source dialect and source path
+///     (v70), ahead of the stage. Same story: the bytes moved, so an
+///     older cached chunk would read the stage string out of the
+///     dialect byte.
+/// 15: a material chunk carries glassmtlx and glasscolor (v73) after
+///     glassroughness. The bytes moved, so an older cached chunk would
+///     read its cloud flag out of the new field.
+/// 16: a shader chunk carries the glass splice binary per compiled
+///     variant and the document's images with their array layout
+///     (v74). Appended after everything the chunk carried, so nothing
+///     moved -- but an older cached chunk would answer no images and
+///     no glass splice forever, and the bump retires it.
+/// 17: a texture header, inlined by material and shader chunks alike,
+///     carries the encoded-payload flag (v75). The bytes moved.)
+const uint32_t kChunkVersion = 17;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1128,11 +1183,17 @@ void writeTexture(Writer &w, const TextureImage &t,
                   const SceneSnapshot::TextureBlobSink &blobs,
                   std::set<std::string> *sent = nullptr)
 {
+    // The file as authored travels when the producer kept it (v75): it
+    // is the same picture at a fortieth of the bytes, and every tier
+    // can decode it. The content key is then the key of THOSE bytes,
+    // which is what the consumer fetches.
+    const bool encoded = !t.encoded.empty();
+    const std::vector<uint8_t> &payload = encoded ? t.encoded : t.pixels;
     // An empty texture has nothing to fetch, so it stays inline whatever
     // the transport: deferring it would cost a round trip for no bytes.
-    bool defer = bool(blobs) && !t.pixels.empty();
-    if (t.contentKey.size() != 40 && !t.pixels.empty())
-        t.contentKey = sha1Hex(t.pixels.data(), t.pixels.size());
+    bool defer = bool(blobs) && !payload.empty();
+    if (t.contentKey.size() != 40 && !payload.empty())
+        t.contentKey = sha1Hex(payload.data(), payload.size());
 
     w.u64(t.textureId);
     w.i32(t.width);
@@ -1146,9 +1207,9 @@ void writeTexture(Writer &w, const TextureImage &t,
     // big image, a shared batch for a small one — and it cannot make
     // that call without being told. Inline, it is the byte count that
     // follows.
-    w.u32(uint32_t(t.pixels.size()));
+    w.u32(uint32_t(payload.size()));
     if (!defer)
-        w.raw(t.pixels.data(), t.pixels.size());
+        w.raw(payload.data(), payload.size());
     w.u8(t.wrapS);
     w.u8(t.wrapT);
     w.u8(t.model);
@@ -1157,9 +1218,46 @@ void writeTexture(Writer &w, const TextureImage &t,
     // payload, so an older reader stops before it and a newer one knows
     // the bytes it just took were floats.
     w.u8(t.sample);
+    // v75: whether the payload is the encoded file rather than pixels.
+    w.u8(encoded ? 1 : 0);
 
     if (defer && (!sent || sent->insert(t.contentKey).second))
-        blobs(t.contentKey, std::vector<uint8_t>(t.pixels));
+        blobs(t.contentKey, std::vector<uint8_t>(payload));
+}
+
+/// How large a decoded map may be on this tier. The browser holds its
+/// whole scene in one heap and every map at 2k costs it sixteen
+/// megabytes decoded; a document's worth is what the chess set is.
+/// The desktop keeps what the file says.
+#ifdef FC_RENDERER_STANDALONE
+constexpr int kDecodeMaxSide = 1024;
+#else
+constexpr int kDecodeMaxSide = 0;
+#endif
+
+/// Turn an encoded payload into the texture's pixels, at the tier's
+/// size cap. A payload that will not decode leaves the texture empty,
+/// which draws as the map missing -- the same answer a texture that
+/// was given up on gets.
+static void decodeInto(TextureImage &tex, const uint8_t *bytes, size_t size)
+{
+    int w = 0, h = 0;
+    std::vector<uint8_t> pixels;
+    if (decodeImage(bytes, size, tex.numComponents, kDecodeMaxSide, w, h,
+                    pixels)) {
+        tex.width = w;
+        tex.height = h;
+        tex.pixels.swap(pixels);
+    }
+    else {
+        // Said once per payload rather than swallowed: the map then
+        // draws as missing, and a picture drawn wrong with no line in
+        // the log is the one failure this transport must not have.
+        std::fprintf(stderr, "scene: texture payload of %zu bytes would "
+                             "not decode (%d components)\n",
+                     size, tex.numComponents);
+        tex.pixels.clear();
+    }
 }
 
 /// \a payloadSize, when given, receives the size of a deferred
@@ -1205,6 +1303,19 @@ std::shared_ptr<TextureImage> readTexture(Reader &r, uint32_t version,
     // hold.
     tex->sample = version >= 63 ? r.u8()
                                 : uint8_t(TextureImage::U8);
+    // v75: the payload is the encoded file. Inline, it is decoded here
+    // and now; deferred, the fill decodes it when it lands -- the
+    // flag rides on the texture until then (encodedPayload).
+    if (version >= 75 && r.u8() != 0) {
+        if (tex->deferred) {
+            tex->encodedPayload = true;
+        }
+        else {
+            std::vector<uint8_t> file;
+            file.swap(tex->pixels);
+            decodeInto(*tex, file.data(), file.size());
+        }
+    }
     return tex;
 }
 
@@ -1222,15 +1333,42 @@ void deferTexture(SceneSnapshot &snap,
     SceneSnapshot::DeferredChunk entry;
     entry.key = tex->contentKey;
     entry.size = size;
+    entry.texture = true;
     entry.fill = [tex](SceneSnapshot &, const void *data, size_t size) {
+        // Shared across publishes (SceneSnapshot::textureMemo), so two
+        // snapshots may each hold an entry for it: the second to land
+        // finds it filled and leaves it.
+        if (!tex->deferred)
+            return true;
         if (data) {
             const uint8_t *bytes = static_cast<const uint8_t *>(data);
-            tex->pixels.assign(bytes, bytes + size);
+            if (tex->encodedPayload)
+                decodeInto(*tex, bytes, size);
+            else
+                tex->pixels.assign(bytes, bytes + size);
         }
         tex->deferred = false;
         return true;
     };
     snap.deferredChunks.push_back(std::move(entry));
+}
+
+/// The object a texture with this content key is held as across
+/// publishes, when the consumer keeps such a memo: the one the memo
+/// holds if anything still holds it, else \a fresh, memoized. The
+/// caller queues the deferred fetch for whichever comes back and is
+/// still waiting -- a fill is idempotent, so a texture in flight in
+/// two snapshots at once is filled by the first to land.
+std::shared_ptr<TextureImage> memoTexture(
+    SceneSnapshot &snap, const std::shared_ptr<TextureImage> &fresh)
+{
+    if (!snap.textureMemo || !fresh || fresh->contentKey.empty())
+        return fresh;
+    auto &slot = (*snap.textureMemo)[fresh->contentKey];
+    if (auto held = slot.lock())
+        return held;
+    slot = fresh;
+    return fresh;
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -1244,16 +1382,30 @@ typedef std::vector<std::shared_ptr<const TextureImage>> TextureTable;
 // User shaders (v23): a deduplicated table referenced by index from
 // the post-stage config list and the draw materials. Each entry
 // carries its sources, parameters and the server-compiled viewer
-// binaries (UserShader::Compiled).
+// binaries (UserShader::Compiled), and (v74) a MaterialX document's
+// images with the layout the generated program reads them in.
 
 typedef std::map<const UserShader *, int32_t> ShaderIndex;
 typedef std::vector<std::shared_ptr<const UserShader>> ShaderTable;
 
-void writeUserShader(
-    Writer &w, const UserShader &s,
-    const std::function<void(const UserShader &,
-                             std::vector<UserShader::Compiled> &)> &bins)
+/// \a texSent, when given, is the writer's set of texture keys already
+/// handed to the blob sink (see writeTexture); the images travel as
+/// ordinary texture records, deferred under the streaming transport.
+void writeUserShader(Writer &w, const UserShader &shader,
+                     const SceneSnapshot &snap,
+                     std::set<std::string> *texSent)
 {
+    // The shader's own variants and layout plus whatever the save-side
+    // hook makes of it -- the server-compiled viewer binaries, the
+    // image layers -- on a copy, so the desktop's own object is never
+    // rewritten by a publish. First variant per profile wins on the
+    // viewer.
+    UserShader s = shader;
+    if (snap.shipShader)
+        snap.shipShader(s);
+    w.u8(uint8_t(s.dialect));
+    w.str(s.sourcePath);
+    w.str(s.surface);
     w.str(s.stage);
     w.str(s.vertexSource);
     w.str(s.fragmentSource);
@@ -1264,23 +1416,53 @@ void writeUserShader(
         w.u32(uint32_t(p.values.size()));
         w.floats(p.values.data(), p.values.size());
     }
-    // The shader's own variants plus whatever the save-side compile
-    // hook has ready, first entry per profile wins on the viewer.
-    std::vector<UserShader::Compiled> compiled = s.compiled;
-    if (bins)
-        bins(s, compiled);
-    w.u32(uint32_t(compiled.size()));
-    for (const auto &c : compiled) {
+    w.u32(uint32_t(s.compiled.size()));
+    for (const auto &c : s.compiled) {
         w.str(c.profile);
         w.bytes(c.vsBin);
         w.bytes(c.fsBin);
         w.bytes(c.simBin);
+        w.bytes(c.glassBin);
+    }
+    // v74: the document's images, joined to the generated program's
+    // array layers by the ship hook. Each is a whole texture record --
+    // header inline, pixels deferred by content key when the transport
+    // defers -- so the viewer fetches and caches a map exactly as it
+    // does a material's texture.
+    w.str(s.imageSampler);
+    w.i32(s.imageUnit);
+    w.u32(uint32_t(s.images.size()));
+    for (const auto &img : s.images) {
+        w.str(img.path);
+        w.i32(img.layer);
+        if (!img.image) {
+            w.u8(0);
+            continue;
+        }
+        w.u8(1);
+        writeTexture(w, *img.image, snap.textureBlobs, texSent);
     }
 }
 
-std::shared_ptr<const UserShader> readUserShader(Reader &r, uint32_t version)
+/// \a textures, when given, is the loader's content-keyed texture memo:
+/// an image two shaders name (or a shader and a material) is one
+/// object, fetched once. Deferred pixels are queued on \a snap.
+std::shared_ptr<const UserShader> readUserShader(
+    Reader &r, uint32_t version, SceneSnapshot &snap,
+    std::map<std::string, std::shared_ptr<TextureImage>> *textures)
 {
     auto s = std::make_shared<UserShader>();
+    if (version >= 71) {
+        uint8_t d = r.u8();
+        // An unknown dialect from a newer writer is not a shader this
+        // build can consume; leave it as text and let the backend
+        // report the compile failure it would report anyway.
+        if (d <= uint8_t(UserShader::Dialect::MaterialX))
+            s->dialect = UserShader::Dialect(d);
+        r.str(s->sourcePath, 0x1000u);
+    }
+    if (version >= 72)
+        r.str(s->surface, 0x1000u);
     r.str(s->stage, 0x100u);
     r.str(s->vertexSource);
     r.str(s->fragmentSource);
@@ -1314,6 +1496,42 @@ std::shared_ptr<const UserShader> readUserShader(Reader &r, uint32_t version)
         r.bytes(c.fsBin);
         if (version >= 39)
             r.bytes(c.simBin);
+        if (version >= 74)
+            r.bytes(c.glassBin);
+    }
+    if (version < 74)
+        return s;
+    r.str(s->imageSampler, 0x100u);
+    s->imageUnit = r.i32();
+    uint32_t ni = r.u32();
+    if (!r.ok || ni > 0x100u) {
+        r.ok = false;
+        return s;
+    }
+    s->images.resize(ni);
+    for (auto &img : s->images) {
+        r.str(img.path, 0x1000u);
+        img.layer = r.i32();
+        if (r.u8() == 0)
+            continue;
+        uint32_t size = 0;
+        auto tex = readTexture(r, version, &size);
+        if (!tex) {
+            r.ok = false;
+            return s;
+        }
+        if (textures && !tex->contentKey.empty()) {
+            auto it = textures->find(tex->contentKey);
+            if (it != textures->end()) {
+                img.image = it->second;
+                continue;
+            }
+            tex = memoTexture(snap, tex);
+            textures->emplace(tex->contentKey, tex);
+        }
+        if (tex->deferred)
+            deferTexture(snap, tex, size);
+        img.image = tex;
     }
     return s;
 }
@@ -1455,6 +1673,9 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     w.f(m.glassior);
     w.f(m.glassdensity);
     w.f(m.glassroughness);
+    w.b(m.glassmtlx);
+    for (int c = 0; c < 3; ++c)
+        w.f(m.glasscolor[c]);
     w.b(m.cloud);
     w.f(m.clouddensity);
     w.f(m.clouddetail);
@@ -1632,6 +1853,11 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
     m.glassior = r.f();
     m.glassdensity = r.f();
     m.glassroughness = r.f();
+    if (version >= 73) {
+        m.glassmtlx = r.b();
+        for (int c = 0; c < 3; ++c)
+            m.glasscolor[c] = r.f();
+    }
     m.cloud = r.b();
     m.clouddensity = r.f();
     m.clouddetail = r.f();
@@ -2055,7 +2281,7 @@ void initManifestWriter(ManifestWriter &st, const SceneSnapshot &snap)
             std::vector<uint8_t> chunk;
             writeChunk(chunk, [&st, s](Writer &cw) {
                 cw.u32(kChunkVersion);
-                writeUserShader(cw, *s, st.snap->shaderBins);
+                writeUserShader(cw, *s, *st.snap, &st.texSent);
             });
             std::string key = sha1Hex(chunk.data(), chunk.size());
             auto entry = std::make_pair(key, uint32_t(chunk.size()));
@@ -2573,6 +2799,7 @@ RefReader manifestRefReader(const LoaderPtr &st, SceneSnapshot &snap)
                 t = it->second;
                 return;
             }
+            tex = memoTexture(snap, tex);
             st->textures.emplace(tex->contentKey, tex);
         }
         if (tex->deferred)
@@ -2595,15 +2822,17 @@ RefReader manifestRefReader(const LoaderPtr &st, SceneSnapshot &snap)
             SceneSnapshot::DeferredChunk c;
             c.key = key;
             c.size = size;
-            c.fill = [sh](SceneSnapshot &, const void *data, size_t size) {
-                return readChunk(data, size, [&sh](Reader &cr) {
+            c.fill = [sh, st](SceneSnapshot &snap, const void *data,
+                              size_t size) {
+                return readChunk(data, size, [&](Reader &cr) {
                     if (cr.u32() != kChunkVersion) {
                         cr.ok = false;
                         return;
                     }
                     // The chunk's own layout revision gates the fields
                     // (checked just above), so it always reads current.
-                    auto parsed = readUserShader(cr, kVersion);
+                    auto parsed = readUserShader(cr, kVersion, snap,
+                                                 &st->textures);
                     if (cr.ok && parsed)
                         *sh = *parsed;
                 });
@@ -3065,7 +3294,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         // it) + the post-stage config list as table indices.
         w.u32(uint32_t(shaders.size()));
         for (auto *s : shaders)
-            writeUserShader(w, *s, snap.shaderBins);
+            writeUserShader(w, *s, snap, nullptr);
         w.u32(uint32_t(snap.usershaderconf.shaders.size()));
         for (const auto &s : snap.usershaderconf.shaders)
             w.i32(shaderIndex[&s]);
@@ -3328,7 +3557,7 @@ void loadMonolithicTables(Reader &r, SceneSnapshot &snap, uint32_t version,
         if (!r.ok || ns > 0x10000u)
             r.ok = false;
         for (uint32_t i = 0; r.ok && i < ns; ++i)
-            shaders.push_back(readUserShader(r, version));
+            shaders.push_back(readUserShader(r, version, snap, nullptr));
         uint32_t npost = r.u32();
         if (!r.ok || npost > 0x10000u)
             r.ok = false;

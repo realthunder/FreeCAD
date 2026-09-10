@@ -31,7 +31,7 @@
 #include <Base/COWData.h>
 
 #include "FileBlobManager.h"
-#include "Material.h"
+#include "MaterialAppearance.h"
 
 namespace App
 {
@@ -39,8 +39,8 @@ namespace App
 /// The property this list can be a live view of. MaterialListPy.xml injects
 /// declarations naming it into the generated binding header, which includes
 /// this one and nothing else that would declare it -- a friend declaration
-/// inside MaterialList is not enough to name the type at namespace scope.
-class PropertyMaterialList;
+/// inside AppearanceList is not enough to name the type at namespace scope.
+class PropertyAppearanceList;
 
 /// A texture palette's own bytes plus the hashes its records hold. Shared
 /// with PropertySurfaceTextureList, which stores the same pair.
@@ -48,7 +48,7 @@ AppExport std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette
 
 /** A list of materials, stored per field and shared by whoever holds it
  *
- * This is what PropertyMaterialList holds and what Python is handed. It is
+ * This is what PropertyAppearanceList holds and what Python is handed. It is
  * a VALUE: copying one costs a pointer, and the first write through either
  * copy pays for the storage. So an undo snapshot, a Python variable and the
  * property itself can all name the same arrays until one of them changes
@@ -57,7 +57,7 @@ AppExport std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette
  * @section materiallist_layout The layout: a base and the faces that
  * override it
  *
- * Not a vector<Material>. A material is ~140 bytes and an appearance is
+ * Not a vector<MaterialAppearance>. A material is ~140 bytes and an appearance is
  * overwhelmingly uniform or nearly so, so the list is
  * (docs/ShapeAppearanceDesign.md 12):
  *
@@ -72,8 +72,8 @@ AppExport std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette
  * diffuse array has three entries and every other one is empty.
  *
  * A ten thousand face box with one colour is one material. Reading a single
- * entry composes a Material out of the base and whatever the face overrides;
- * there is deliberately no getValues() (see PropertyMaterialList's note on
+ * entry composes a MaterialAppearance out of the base and whatever the face overrides;
+ * there is deliberately no getValues() (see PropertyAppearanceList's note on
  * it), and the per field getters below come in two kinds -- the sparse
  * storage, and a dense resolution built on read.
  *
@@ -102,10 +102,10 @@ AppExport std::size_t texturesMemSize(const std::vector<SurfaceTexture> &palette
  * hazard. The one consequence to know: a reference handed out by
  * getDiffuseOverrides() does not survive a later normalize.
  */
-class AppExport MaterialList
+class AppExport AppearanceList
 {
 public:
-    MaterialList() = default;
+    AppearanceList() = default;
 
     /** More distinct textures than the index can address
      *
@@ -116,7 +116,7 @@ public:
     static constexpr std::size_t MaxPaletteSize = 0x10000;
 
     /// The material every entry of an empty field reads as
-    static const Material &defaultMaterial();
+    static const MaterialAppearance &defaultMaterial();
 
     /** @name What a whole material stores
      *
@@ -127,7 +127,7 @@ public:
      * land in one palette slot rather than two.
      */
     //@{
-    static Color storedDiffuse(const Material &mat);
+    static Color storedDiffuse(const MaterialAppearance &mat);
     static SurfaceFinish storedFinish(const SurfaceFinish &finish);
     static SurfaceTexture storedTexture(const SurfaceTexture &texture);
     //@}
@@ -139,7 +139,7 @@ public:
      */
     //@{
     bool isShared() const { return _data.isShared(); }
-    bool isSameData(const MaterialList &other) const { return _data.isSameData(other._data); }
+    bool isSameData(const AppearanceList &other) const { return _data.isSameData(other._data); }
     //@}
 
     /** @name The base and the overriding faces
@@ -150,9 +150,9 @@ public:
      * drops it back when its value returns to the base's.
      */
     //@{
-    const Material &getBase() const;
+    const MaterialAppearance &getBase() const;
     /// The whole-object write: every face that is not an override follows
-    void setBase(const Material &mat);
+    void setBase(const MaterialAppearance &mat);
     /// Sorted, unique, every index below getSize()
     const std::vector<uint32_t> &getOverrides() const;
     bool hasOverrides() const;
@@ -201,7 +201,7 @@ public:
     void setFollowMaterial(bool enable);
     /// Take the card's look as the base AND keep following it -- the one
     /// base write that does not end the follow
-    void followMaterial(const Material &card);
+    void followMaterial(const MaterialAppearance &card);
     //@}
     /** Whether any entry wears exactly this diffuse colour
      *
@@ -216,13 +216,13 @@ public:
     //@{
     int getSize() const;
     void setSize(int newSize);
-    void setSize(int newSize, const Material &def);
+    void setSize(int newSize, const MaterialAppearance &def);
 
-    void setValue(const Material &mat);
-    void setValues(const std::vector<Material> &values);
-    Material operator[](int idx) const { return getMaterial(idx); }
-    Material getMaterial(int idx) const;
-    void set1Value(int idx, const Material &mat);
+    void setValue(const MaterialAppearance &mat);
+    void setValues(const std::vector<MaterialAppearance> &values);
+    MaterialAppearance operator[](int idx) const { return getMaterial(idx); }
+    MaterialAppearance getMaterial(int idx) const;
+    void set1Value(int idx, const MaterialAppearance &mat);
     //@}
 
     /** @name Per field access, as it is stored
@@ -245,6 +245,7 @@ public:
     const std::vector<std::string> &getImageOverrides() const;
     const std::vector<std::string> &getImagePathOverrides() const;
     const std::vector<std::string> &getUuidOverrides() const;
+    const std::vector<std::string> &getMaterialXOverrides() const;
     const std::vector<int8_t> &getTypeOverrides() const;
     const std::vector<SurfaceFinish> &getFinishOverrides() const;
     /// @see materiallist_layout: distinct values plus an index, handed out
@@ -267,6 +268,7 @@ public:
     bool variesInImage() const
     { return !getImageOverrides().empty() || !getImagePathOverrides().empty(); }
     bool variesInUuid() const { return !getUuidOverrides().empty(); }
+    bool variesInMaterialX() const { return !getMaterialXOverrides().empty(); }
     bool variesInType() const { return !getTypeOverrides().empty(); }
     bool variesInFinish() const { return !getFinishOverrides().empty(); }
     bool variesInTexture() const { return !getTextureIndex().empty(); }
@@ -289,6 +291,7 @@ public:
     std::vector<std::string> getImages() const;
     std::vector<std::string> getImagePaths() const;
     std::vector<std::string> getUuids() const;
+    std::vector<std::string> getMaterialXs() const;
     std::vector<int8_t> getTypes() const;
     std::vector<SurfaceFinish> getFinishes() const;
     /// The palette and one index per ENTRY, which is the form the
@@ -306,11 +309,12 @@ public:
     const std::string &getImage(int idx) const;
     const std::string &getImagePath(int idx) const;
     const std::string &getUuid(int idx) const;
+    const std::string &getMaterialX(int idx) const;
     SurfaceFinish getFinish(int idx) const;
     /// By value, because the storage holds distinct records rather than one
     /// per entry: there is no array element to hand a reference into
     SurfaceTexture getTexture(int idx) const;
-    Material::MaterialType getType(int idx) const;
+    MaterialAppearance::MaterialType getType(int idx) const;
     //@}
 
     /** @name Whole field writes, one value per entry
@@ -330,6 +334,7 @@ public:
     void setImages(const std::vector<std::string> &values);
     void setImagePaths(const std::vector<std::string> &values);
     void setUuids(const std::vector<std::string> &values);
+    void setMaterialXs(const std::vector<std::string> &values);
     void setFinishes(const std::vector<SurfaceFinish> &values);
     /// One record per entry going in; the palette is built from what is
     /// distinct among them
@@ -351,6 +356,7 @@ public:
     void setImage(int idx, const std::string &value);
     void setImagePath(int idx, const std::string &value);
     void setUuid(int idx, const std::string &value);
+    void setMaterialX(int idx, const std::string &value);
     void setFinish(int idx, const SurfaceFinish &value);
     void setTexture(int idx, const SurfaceTexture &value);
     //@}
@@ -380,6 +386,7 @@ public:
     void setImage(const std::string &value);
     void setImagePath(const std::string &value);
     void setUuid(const std::string &value);
+    void setMaterialX(const std::string &value);
     void setFinish(const SurfaceFinish &value);
     void setTexture(const SurfaceTexture &value);
     //@}
@@ -393,6 +400,8 @@ public:
     bool hasFinish() const;
     /// Whether any entry names a texture map
     bool hasTexture() const;
+    /// Whether any entry names a MaterialX document set
+    bool hasMaterialX() const;
 
     /** @name The texture maps as stored content
      *
@@ -418,6 +427,19 @@ public:
     /// Take content in under the hash it is named by, which is how a list
     /// moving between blob managers keeps its claim
     void holdTextureBlob(const FileBlobHandle &blob);
+    /** @name The MaterialX document sets, as stored content
+     *
+     * A manifest hash (MaterialAppearance::materialx) is held in the same
+     * map a map's hash is, and so is every file the manifest names. The
+     * children are only known through the manifest, so a restore asks for
+     * the manifest first and for its children once it has arrived.
+     */
+    //@{
+    /// Every manifest hash the base or an override names, once each.
+    std::vector<std::string> materialXHashes() const;
+    /// The content hashes a HELD manifest names; empty while it is not held.
+    std::vector<std::string> materialXChildren(const std::string &manifestHash) const;
+    //@}
     /// Tell a save which content this list refers to. One referrer name per
     /// SLOT, so the files land under readable names, and once per DISTINCT
     /// hash, because shared content is one file with several referrers.
@@ -456,10 +478,10 @@ public:
     void setMetallic(float value);
     void setRoughness(float value);
     /// One entry as a Phong material, whatever mode the list is in
-    Material getPhongMaterial(int idx) const;
+    MaterialAppearance getPhongMaterial(int idx) const;
     /// The base as a Phong material, which is what a consumer with one
     /// material node to fill wants: the object's look, not face 0's
-    Material getPhongBase() const;
+    MaterialAppearance getPhongBase() const;
     //@}
 
     /// Whether the diffuse colour is the only field that varies per entry
@@ -476,7 +498,7 @@ public:
      * must not serialise differently (the shared-default scheme elides a
      * property whose bytes match its class default).
      */
-    bool isSame(const MaterialList &other) const;
+    bool isSame(const AppearanceList &other) const;
 
     /** @name What a restore lands
      *
@@ -485,12 +507,12 @@ public:
      * by a colour's alpha.
      */
     //@{
-    void restoreValues(std::vector<Material> &&values, bool legacy);
+    void restoreValues(std::vector<MaterialAppearance> &&values, bool legacy);
     void applyRestoredTransparency(const std::vector<float> &transparency, bool legacy);
     //@}
 
 private:
-    friend class PropertyMaterialList;
+    friend class PropertyAppearanceList;
 
     /** The storage every holder of this list shares until one writes
      *
@@ -523,9 +545,9 @@ private:
          * Stored the way the fields are: the diffuse alpha carries the
          * transparency, the finish and the texture are clamped. Its type
          * is the base's type, so it is written through setMaterialType()
-         * -- Material::setType() rewrites every colour with the preset's.
+         * -- MaterialAppearance::setType() rewrites every colour with the preset's.
          */
-        Material base;
+        MaterialAppearance base;
         /// The faces holding their own, sorted and unique. Every array
         /// below is 0 or this long, and in this order.
         std::vector<uint32_t> overrides;
@@ -540,6 +562,9 @@ private:
         std::vector<std::string> image;
         std::vector<std::string> imagePath;
         std::vector<std::string> uuid;
+        /// Manifest hashes (MaterialAppearance::materialx), a string column
+        /// like uuid
+        std::vector<std::string> materialx;
         std::vector<int8_t> type;
         std::vector<SurfaceFinish> finish;
         std::vector<SurfaceTexture> texturePalette;
@@ -602,9 +627,9 @@ private:
      * every entry an override until a base is derived.
      */
     void adoptDense();
-    /// The base's type, written without Material::setType() taking the
+    /// The base's type, written without MaterialAppearance::setType() taking the
     /// preset's colours with it
-    static void setMaterialType(Material &mat, int8_t type);
+    static void setMaterialType(MaterialAppearance &mat, int8_t type);
     /** Everything one overriding position states, as a key that orders
      *
      * What makes two painted faces the same material, for the vote in
@@ -613,18 +638,18 @@ private:
      */
     //@{
     using OverrideKey = std::tuple<uint32_t, uint32_t, uint32_t, uint32_t, float, int8_t,
-                                   std::string, std::string, std::string,
+                                   std::string, std::string, std::string, std::string,
                                    uint8_t, float, float, float, uint16_t>;
     OverrideKey overrideKey(int pos) const;
     //@}
     /// Every field of one entry, which is what a per-face write and a
     /// growth with a filler both are
-    void applyEntry(int idx, const Material &mat);
-    /// The type field, which has no Material member to name it by
+    void applyEntry(int idx, const MaterialAppearance &mat);
+    /// The type field, which has no MaterialAppearance member to name it by
     void setTypeValue(int idx, int8_t value);
     /// Put a different base under the same entries, restating which faces
     /// override and which follow
-    void rebase(const Material &newBase) const;
+    void rebase(const MaterialAppearance &newBase) const;
     //@}
 
     /** What an empty specular / shininess field reads as, per mode
@@ -643,14 +668,14 @@ private:
     void endFollow();
     /// One material as this list reads it, converting what disagrees with
     /// the list's mode
-    Material inMode(const Material &mat) const;
+    MaterialAppearance inMode(const MaterialAppearance &mat) const;
 
     /** @name The field writes, taken by MEMBER POINTER rather than by
      * reference
      *
      * A reference would have to come out of wd(), which detaches -- and
      * these all have a "nothing changed" path that must leave the storage
-     * exactly as it found it, because that is how PropertyMaterialList
+     * exactly as it found it, because that is how PropertyAppearanceList
      * decides whether there is a change to record at all.
      *
      * Each takes both members of a field: where the base keeps it and where
@@ -660,18 +685,18 @@ private:
     /// A whole field, one value per entry -- collapsed first, so a uniform
     /// vector is the base write it says it is
     template<class T>
-    void setField(T Material::*base, std::vector<T> Data::*member,
+    void setField(T MaterialAppearance::*base, std::vector<T> Data::*member,
                   const std::vector<T> &values);
     /// One entry, which makes it an override or drops it back
     template<class T>
-    void setFieldValue(T Material::*base, std::vector<T> Data::*member, int idx,
+    void setFieldValue(T MaterialAppearance::*base, std::vector<T> Data::*member, int idx,
                        const T &value);
     /// The whole-object write: the base alone, the overriding faces left
     /// exactly where they are
     template<class T>
-    void setBaseField(T Material::*base, const T &value, const T &def);
+    void setBaseField(T MaterialAppearance::*base, const T &value, const T &def);
     /// The rgb-only write behind setDiffuseRGB / setSpecularRGB
-    void setFieldRGB(Color Material::*base, const Color &col, const Color &def);
+    void setFieldRGB(Color MaterialAppearance::*base, const Color &col, const Color &def);
     //@}
 
     Base::COWValue<Data> _data;

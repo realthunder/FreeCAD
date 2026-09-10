@@ -42,15 +42,22 @@ DrawSketchKeyboardManager::DrawSketchKeyboardManager()
     : QObject(nullptr)
     , keyMode(KeyboardEventHandlingMode::DSHControl)
 {
-    // get the active viewer, so that we can send it key events
-    auto doc = Gui::Application::Instance->activeDocument();
-
-    if (doc) {
-        auto temp = dynamic_cast<Gui::View3DInventor*>(doc->getActiveView());
-        if (temp) {
-            vpViewer = temp->getViewer();
-            keyMode = KeyboardEventHandlingMode::ViewProvider;
+    // The view being handled, so that we can send it key events. A tool is
+    // always started from inside one -- ViewerScope names it for the extent
+    // of the event that started it -- and only where nothing has said so
+    // does asking the application for its active window make sense.
+    vpViewer = Gui::ViewerContext::current();
+    if (!vpViewer) {
+        auto doc = Gui::Application::Instance->activeDocument();
+        if (doc) {
+            auto temp = dynamic_cast<Gui::View3DInventor*>(doc->getActiveView());
+            if (temp) {
+                vpViewer = temp->getViewer();
+            }
         }
+    }
+    if (vpViewer) {
+        keyMode = KeyboardEventHandlingMode::ViewProvider;
     }
 
     timer.setSingleShot(true);
@@ -85,7 +92,9 @@ bool DrawSketchKeyboardManager::eventFilter(QObject* object, QEvent* event)
         detectKeyboardEventHandlingMode(keyEvent);  // determine the handler
 
         if (vpViewer && isMode(KeyboardEventHandlingMode::ViewProvider)) {
-            return QApplication::sendEvent(vpViewer, keyEvent);
+            // Back to the scene: posted to the widget on the desktop, and
+            // replayed as the Coin event it arrived as on a mirror.
+            return vpViewer->sendKeyEvent(keyEvent);
         }
 
         return false;  // do not intercept the event and feed it to the widget

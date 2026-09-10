@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include "Gui/Renderer/MaskedOcclusion.h"

@@ -53,6 +53,16 @@ RendererExport bool available();
 /// engine.
 RendererExport std::vector<DeviceInfo> devices();
 
+/// Wait for every session retired by a destroyed or restarted Viewport
+/// to finish being destroyed. A session is not torn down where it is
+/// released -- `~Session` joins its own thread, which may be inside a
+/// first-ever GPU kernel compile that nothing interrupts, and that
+/// would be the GUI thread waiting minutes -- so a worker does it. The
+/// application calls this once on its way out, where the alternative
+/// is a thread still in the engine while the process unloads it.
+/// Returns at once without the engine, or with nothing retired.
+RendererExport void waitForRetiredSessions();
+
 /// The camera of a render: the same two GL-layout matrices every
 /// backend's render() takes (world -> eye, then eye -> clip), plus the
 /// pixel size they were built for. Perspective or orthographic is read
@@ -145,6 +155,11 @@ struct ViewportOptions {
 struct ViewportStatus {
     bool running = false;    ///< a session exists (a scene was set)
     float progress = 0.0f;   ///< 0..1 of the sample budget
+    /// The session has rendered its whole sample budget for the scene
+    /// and camera as last stated, with no error: the built-in signal a
+    /// test polls instead of sleeping. A restated scene or a moved
+    /// camera resets the session and clears it.
+    bool complete = false;
     std::string status;      ///< the engine's own status text
     std::string error;       ///< non-empty when the session failed
     RenderReport report;     ///< of the scene as last translated
@@ -189,6 +204,14 @@ public:
     virtual void setCamera(const CameraInput &camera) = 0;
     /// Hold the session (no sampling) or let it run.
     virtual void setPaused(bool paused) = 0;
+    /// Keep \a token alive for as long as any session this viewport
+    /// retires is still being destroyed: the viewport copies it into
+    /// every hand-off to the reaper (sec 5.12), which drops it after
+    /// the session is gone. What a served stream counts its slot in
+    /// the cap with, so that the slot outlives the device and not
+    /// merely the stream. Null by default; any thread that also owns
+    /// the viewport.
+    virtual void setRetireToken(std::shared_ptr<void> token) = 0;
     /// Called from the engine's threads whenever a newer frame is
     /// staged, so the host repaints and drawFrame picks it up.
     virtual void setRedrawCallback(std::function<void()> callback) = 0;
@@ -215,6 +238,16 @@ struct StreamOptions {
     int quality = 85;            ///< JPEG quality, 1..100
     int minIntervalMs = 100;     ///< least time between two frames sent
     long maxPixels = 1920L * 1080L;  ///< the render size cap (aspect kept)
+    int maxStreams = 0;          ///< how many streams this process may
+                                 ///< have alive at once, this one
+                                 ///< included; 0 = no cap. The server's
+                                 ///< policy, stated at every start.
+    /// The slot of the stream this one replaces
+    /// (FrameStream::slotHandle), while that stream's session is
+    /// still being torn down. Forgiven once against the cap, so that
+    /// a viewer at the cap can always restart its own render; expired
+    /// or empty otherwise, and never forgiven twice.
+    std::weak_ptr<void> replacing;
 };
 
 /// Phase 5 of the plan: a Viewport whose frames go to a remote viewer
@@ -228,6 +261,17 @@ struct StreamOptions {
 /// serialized here. Nothing here names a Gui type (sec 7).
 class RendererExport FrameStream
 {
+protected:
+    FrameStream();
+
+    /// This stream's slot in the cap. Handed to the viewport
+    /// (Viewport::setRetireToken) so that the slot is only freed once
+    /// every session the stream retired has been destroyed.
+    const std::shared_ptr<void> &capSlot() const
+    {
+        return slot;
+    }
+
 public:
     /// \a send delivers one wire message (FrameStreamWire.h) to the
     /// viewer from the encoder thread and answers false once the
@@ -240,6 +284,20 @@ public:
             std::function<bool(std::vector<uint8_t> &&)> send,
             std::function<void(const std::string &)> notify,
             std::string *error);
+    /// Streams alive in this process, across every source and every
+    /// connection: what StreamOptions::maxStreams caps. A stream
+    /// counts from its construction until every session it handed to
+    /// the reaper (sec 5.12) has been destroyed -- a device that is
+    /// still being torn down still holds its slot, which is the whole
+    /// point of a cap on a machine's devices.
+    static int liveCount();
+    /// A handle on this stream's slot that outlives the stream:
+    /// expired() once the session it retired is really destroyed.
+    /// What StreamOptions::replacing is given.
+    std::weak_ptr<void> slotHandle() const
+    {
+        return slot;
+    }
     virtual ~FrameStream();
 
     /// State the scene; its camera is ignored once the viewer has
@@ -251,7 +309,24 @@ public:
     virtual ViewportStatus status() const = 0;
     /// The viewer is gone (send answered false) or the session failed.
     virtual bool lost() const = 0;
+
+private:
+    std::shared_ptr<void> slot;
 };
+
+/// A staged viewport frame -- premultiplied linear half4, bottom-up,
+/// \a width the pitch, as Viewport::takeFrame hands it -- composited
+/// over \a background where the film was transparent (the same flat
+/// colour or vertical ramp the offline render writes), encoded to sRGB
+/// exactly when \a managed (the scene is colour managed), and packed
+/// to 8-bit rows of \a channels (3 = RGB, 4 = RGBA with alpha 255),
+/// top-down when \a topDown else bottom-up. Shared by the served
+/// stream (sec 7.1) and the shader graph editor's preview
+/// (docs/ShaderGraphEditor.md sec 15). Does nothing without the engine.
+RendererExport void compositeFrame(const void *half4, int width, int height,
+                                   const Background &background, bool managed,
+                                   int channels, bool topDown,
+                                   std::vector<uint8_t> &out);
 
 /// Phase 2 of the plan: render a hard-coded scene (a cube on a floor
 /// under a uniform sky) to a PNG at \a path, with \a samples per pixel

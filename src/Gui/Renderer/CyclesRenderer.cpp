@@ -24,6 +24,8 @@
 #include "CyclesSceneP.h"
 #include "Environment.h"
 
+#include <atomic>
+
 #ifdef HAVE_CYCLES
 
 #include <algorithm>
@@ -72,6 +74,8 @@ std::vector<DeviceInfo> devices()
     return {};
 }
 
+void waitForRetiredSessions() {}
+
 bool renderTestScene(const std::string &, int, int, int, const std::string &, std::string *error)
 {
     if (error)
@@ -101,6 +105,12 @@ std::unique_ptr<FrameStream> FrameStream::create(const StreamOptions &,
     if (error)
         *error = "this build carries no Cycles engine (BUILD_CYCLES is off)";
     return nullptr;
+}
+
+void compositeFrame(const void *, int, int, const Background &, bool, int, bool,
+                    std::vector<uint8_t> &out)
+{
+    out.clear();
 }
 
 #else  // HAVE_CYCLES
@@ -501,6 +511,39 @@ bool renderTestScene(const std::string &path,
 
 Viewport::~Viewport() = default;
 
+namespace
+{
+/// Streams alive in this process (sec 7.1's cap). Here rather than in
+/// the engine's translation unit so that the count is the same object
+/// in a build without the engine, and so that no implementation can
+/// forget it: a stream is counted by its own base.
+std::atomic<int> s_liveStreams{0};
+
+/// One slot of the cap. A stream makes one and shares it with its
+/// viewport, which copies it into every session it retires (sec
+/// 5.12); the slot is therefore freed by whichever of the two lets go
+/// last -- the stream, or the reaper once the device is really gone.
+struct StreamSlot {
+    StreamSlot()
+    {
+        ++s_liveStreams;
+    }
+    ~StreamSlot()
+    {
+        --s_liveStreams;
+    }
+};
+}  // namespace
+
+FrameStream::FrameStream()
+    : slot(std::make_shared<StreamSlot>())
+{}
+
 FrameStream::~FrameStream() = default;
+
+int FrameStream::liveCount()
+{
+    return s_liveStreams.load(std::memory_order_relaxed);
+}
 
 }  // namespace Render::Cycles

@@ -966,12 +966,36 @@ third-party command**, which a list of names never will.
   assigning a shape *is* an edit. There are two Visibility properties --
   the object's and the view provider's -- and one exemption covers both,
   because the view provider mirrors its own onto the object.
-- **View provider properties**, which no chokepoint above can see: every
-  one is in App, and a `ViewProvider` is a separate `PropertyContainer`.
-  This is right rather than merely convenient -- they are presentation,
-  the class the live view exists to keep usable, and `RestoreDrainGuard`
-  already draws the same line from the other side ("replayed view work
-  must not modify the document").
+- **`TreeRank`.** The tree view's own ordering bookkeeping, written by
+  the tree as it populates, from its own timer, never by a command.
+  Exempted by identity like Visibility, because a command that runs a
+  nested event loop -- the animated view fit `ImportGui.insert` runs
+  while the load is still live, or a modal dialog -- lets that timer
+  fire inside its own guard scope. Before the exemption the refusal
+  unwound `DocumentItem::createNewItem` between `rootItem` being set
+  and the item being inserted, and the next tick crashed in
+  `DocumentObjectItem::getParentItem` (the chess-flat render golden
+  with three heavy tests in parallel, 2026-09-05; the same run's chess
+  golden diverged by camera for the same reason, the fit still animating
+  under load when the harness restaged). Pinned twice: the exemption
+  itself by `DocumentTest.liveImportUserEditExemptsTreeRankByIdentity`,
+  and the whole chain -- import, guard, nested loop, tree timer, the
+  tick after -- by `GuiLiveImportNestedLoop_tests_run`
+  (`tests/gui/live-import-nested-loop.py`), which opens the window on
+  purpose now that the goldens no longer animate through it.
+- **View provider properties.** Every chokepoint above is in App and a
+  `ViewProvider` is a separate `PropertyContainer`, so none of them sees
+  the write itself -- but the write does arrive, one step removed:
+  `ViewProviderDocumentObject::onChanged` touches the object's
+  **`ViewObject`** mirror so the document notices presentation changing,
+  and that touch reaches `checkUserEdit`. `ViewObject` is exempted by
+  identity, the third of the three, because presentation is the class
+  the live view exists to keep usable, and `RestoreDrainGuard` already
+  draws the same line from the other side ("replayed view work must not
+  modify the document"). Found by `GuiLiveImportNestedLoop_tests_run` on
+  its first green-looking run (2026-09-06): the origin group's 300 ms
+  resize timer fired inside the nested loop, wrote the origin's `Size`,
+  and the command was aborted at `Origin.ViewObject`.
 - **`isPerformingTransaction()`** -- undo, redo and rollback take an edit
   away rather than make one.
 

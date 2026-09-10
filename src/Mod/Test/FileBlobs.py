@@ -1065,3 +1065,146 @@ class BlobExportImportCases(BlobTestCase):
         self.fileObject(source, "File2", b"unrelated")
         target.copyObject([wanted])
         self.assertEqual(len(self.storedBlobs(target)), 1)
+
+
+# ---------------------------------------------------------------------------
+# a string property whose stored form is a shared file
+# ---------------------------------------------------------------------------
+
+
+class BlobStringPropertyCases(BlobTestCase):
+    """App::PropertyStringIncluded: PropertyString's value, the blob store's
+    persistence. Shader sources are what it carries -- a MaterialX document is
+    kilobytes of XML, and the same document assigned twice used to go into
+    Document.xml twice."""
+
+    # Above PropertyStringIncluded::inlineLimit(), so it earns a file.
+    LONG = "<materialx version='1.39'>\n" + ("  <!-- padding -->\n" * 40) + "</materialx>\n"
+    OTHER = "<materialx version='1.39'>\n" + ("  <!-- other -->\n" * 40) + "</materialx>\n"
+    SHORT = "vec4 main() { return vec4(1.0); }"
+
+    def program(self, doc, name="Prog", source=None, dialect="MATERIALX"):
+        obj = doc.addObject("App::ShaderProgram", name)
+        obj.Dialect = dialect
+        obj.FragmentProgram = self.LONG if source is None else source
+        return obj
+
+    def testLongSourceLeavesDocumentXml(self):
+        doc = self.newDocument()
+        self.program(doc)
+        project = self.projectPath()
+        doc.saveAs(project)
+        self.assertNotIn("materialx version", self.documentXml(project))
+        self.assertEqual(len(self.blobEntries(project)), 1)
+
+    def testShortSourceStaysInline(self):
+        """A file per one-line source costs more than it saves."""
+        doc = self.newDocument()
+        self.program(doc, source=self.SHORT, dialect="GLSL")
+        project = self.projectPath()
+        doc.saveAs(project)
+        self.assertIn("vec4 main()", self.documentXml(project))
+        self.assertEqual(self.blobEntries(project), [])
+
+    def testRoundTrip(self):
+        doc = self.newDocument()
+        self.program(doc)
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertEqual(reopened.Objects[0].FragmentProgram, self.LONG)
+
+    def testIdenticalSourcesShareOneEntry(self):
+        """The whole point: one document assigned twice costs one entry."""
+        doc = self.newDocument()
+        self.program(doc, "Prog1")
+        self.program(doc, "Prog2")
+        project = self.projectPath()
+        doc.saveAs(project)
+        self.assertEqual(len(self.blobEntries(project)), 1)
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        for obj in reopened.Objects:
+            self.assertEqual(obj.FragmentProgram, self.LONG)
+
+    def testDistinctSourcesAreNotShared(self):
+        doc = self.newDocument()
+        self.program(doc, "Prog1", self.LONG)
+        self.program(doc, "Prog2", self.OTHER)
+        project = self.projectPath()
+        doc.saveAs(project)
+        self.assertEqual(len(self.blobEntries(project)), 2)
+
+    def testEntryNamedAfterTheDialect(self):
+        """An unpacked project shows the source under a name that says what it
+        is: the dialect decides the extension."""
+        doc = self.newDocument()
+        self.program(doc, "Prog")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        names = self.directoryBlobs(project)
+        self.assertEqual(len(names), 1)
+        self.assertTrue(names[0].endswith(".mtlx"), names[0])
+        self.assertIn("FragmentProgram", names[0])
+
+    def testEditReplacesTheStoredContent(self):
+        doc = self.newDocument()
+        obj = self.program(doc)
+        project = self.projectPath()
+        doc.saveAs(project)
+        obj.FragmentProgram = self.OTHER
+        doc.save()
+        self.assertEqual(len(self.blobEntries(project)), 1)
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertEqual(reopened.Objects[0].FragmentProgram, self.OTHER)
+
+    def testUndoRestoresPreviousSource(self):
+        doc = self.newDocument()
+        doc.UndoMode = 1
+        obj = self.program(doc)
+        doc.openTransaction("edit")
+        obj.FragmentProgram = self.OTHER
+        doc.commitTransaction()
+        doc.undo()
+        self.assertEqual(obj.FragmentProgram, self.LONG)
+
+    def testSchemaFourKeepsTheContentInline(self):
+        """There is no store below schema 5, so the text goes where it always
+        went: sharing is forfeited, content never is."""
+        doc = self.newDocument()
+        doc.SaveSchemaVersion = 4
+        self.program(doc)
+        project = self.projectPath()
+        doc.saveAs(project)
+        self.assertIn("materialx version", self.documentXml(project))
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertEqual(reopened.Objects[0].FragmentProgram, self.LONG)
+
+    def testDocumentWrittenAsAPlainStringStillRestores(self):
+        """The migration: these properties were App::PropertyString, and a
+        document that states that type must still read back."""
+        doc = self.newDocument()
+        doc.SaveSchemaVersion = 4  # the inline spelling, as it was written then
+        self.program(doc)
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+
+        rewritten = self.projectPath("legacy.FCStd")
+        source = zipfile.ZipFile(project)
+        target = zipfile.ZipFile(rewritten, "w", zipfile.ZIP_DEFLATED)
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "Document.xml":
+                data = data.replace(
+                    b'type="App::PropertyStringIncluded"', b'type="App::PropertyString"'
+                )
+            target.writestr(item, data)
+        target.close()
+        source.close()
+
+        reopened = self.openDocument(rewritten)
+        self.assertEqual(reopened.Objects[0].FragmentProgram, self.LONG)

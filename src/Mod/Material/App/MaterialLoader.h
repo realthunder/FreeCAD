@@ -136,7 +136,10 @@ public:
      * (docs/MaterialStorage.md sec 4.3). Returns null if the file cannot be
      * read or parsed; the caller decides what an unreadable card means.
      */
-    static std::shared_ptr<Material> getMaterialFromFile(const QString& path);
+    // Exported on its own: MaterialLoader is not an exported class, and a
+    // nested member is not carried out of the DLL by anything else, so
+    // Material_tests_run cannot link this without it.
+    static MaterialsExport std::shared_ptr<Material> getMaterialFromFile(const QString& path);
 
 private:
     MaterialLoader();

@@ -192,6 +192,14 @@ public:
      * must write back what the file said rather than what the stand-in is.
      */
     virtual bool blobUnavailable() { return false; }
+
+    /** Extension the content should be stored under, without the dot.
+     *
+     * Only names things -- the archive entry, and the file inside an unpacked
+     * project -- so that what version control sees says what it holds. Empty
+     * leaves the derived name without one.
+     */
+    virtual std::string blobExtension() const { return {}; }
 };
 
 /** Per-document store of the files referenced by PropertyFileIncluded.
@@ -252,6 +260,9 @@ public:
 
     /// Content hash of a file, or an empty string if it cannot be read.
     static std::string hashFile(const char* path);
+    /// Content hash of bytes held in memory, spelled as hashFile() spells it,
+    /// so a value computed here matches the blob the same bytes become.
+    static std::string hashBytes(const std::string& bytes);
 
     /** Store for properties that have no owning document.
      *

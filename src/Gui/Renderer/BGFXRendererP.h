@@ -28,6 +28,7 @@
 /// per-feature files). Not an API -- nothing outside
 /// src/Gui/Renderer may include it.
 #include "FCConfig.h"
+#include "MaterialXSupport.h"
 #include "BGFXRenderer.h"
 #include "SceneDump.h"
 #include "MeshSource.h"
@@ -143,6 +144,11 @@
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #   include <QtGui/qopenglcontext_platform.h>
+// The display a non-GL backend's surface is created against, reached
+// through the application rather than the context. Forward declarations
+// only -- it does not drag X11's or Wayland's headers (and their macros)
+// into this one.
+#   include <QtGui/qguiapplication_platform.h>
 #elif defined FC_OS_LINUX
 #   include <QtPlatformHeaders/QGLXNativeContext>
 typedef QGLXNativeContext OpenGLContext;
@@ -1733,6 +1739,39 @@ assembleMediumVariant(const char *body,
 class BGFXRendererLibP {
 public:
     BGFXRendererLibP() {
+#ifndef FC_RENDERER_STANDALONE
+        // Vulkan, opt-in for the same reason Metal is below: it renders
+        // and it CAPTURES, but it does not yet reach the screen.
+        // BGFXView::blit composites by wrapping bgfx's attachments in a
+        // GL framebuffer, so it stands aside on any non-GL backend and
+        // Coin draws the viewport -- a Vulkan session looks like a
+        // renderer that draws nothing. Frame capture is portable
+        // (bgfx::readTexture), which is what the golden render tests
+        // gate on, so the backend is verifiable without a viewport;
+        // offering it in the UI's backend list before the composite
+        // follows would read as a broken renderer rather than an
+        // unfinished one.
+        if (getenv("FC_BGFX_VULKAN"))
+            typeMap["bgfx - Vulkan"] = RendererType::Vulkan;
+#endif
+#if defined(FC_OS_MACOSX) && !defined(FC_RENDERER_STANDALONE)
+        // Metal is the only backend that can run this renderer on
+        // macOS: Apple caps the compatibility profile Coin needs at
+        // GL 2.1, the stock shader pack is GLSL 1.40 (GL 3.1), and the
+        // two cannot be reconciled in one shared context -- a 4.1 core
+        // context has no fixed-function pipeline for Coin, and macOS
+        // will not share across profiles.
+        //
+        // Opt-in until the desktop composite follows: BGFXView::blit
+        // stands aside on Metal (its GL framebuffer cannot wrap an
+        // id<MTLTexture>), so a Metal session renders and captures but
+        // does not yet put its frame on screen -- Coin draws that.
+        // Offering it in the backend list would read as a broken
+        // renderer rather than an unfinished one. Frame CAPTURE is
+        // portable now, which is what the golden render tests gate on.
+        if (getenv("FC_BGFX_METAL"))
+            typeMap["bgfx - Metal"] = RendererType::Metal;
+#endif
         for (auto &v : typeMap)
             types.push_back(v.first);
     }
@@ -1766,12 +1805,54 @@ public:
         return currentType != RendererType::Noop;
     }
 
+    /// bgfx::init does NOT fail when the backend it was asked for is
+    /// unavailable: it comes up on another one and says nothing. Every
+    /// report downstream then names the backend that was REQUESTED --
+    /// the capture sidecar's "backend" field among them -- while the
+    /// frames come from a different device, which is a golden blessed
+    /// on a device nobody can identify afterwards. Say it once, and
+    /// carry the real one from here on.
+    void adoptActualRenderer()
+    {
+        const RendererType::Enum actual = bgfx::getRendererType();
+        if (actual == currentType)
+            return;
+        RENDER_ERR("asked bgfx for " << bgfx::getRendererName(currentType)
+                   << ", it came up on " << bgfx::getRendererName(actual)
+                   << " -- that is what every frame is drawn on");
+        currentType = actual;
+    }
+
+    /// bgfx::init happens once per process, so the FIRST backend asked
+    /// for is the one the session gets and a later view asking for
+    /// another silently runs on the first. Worth saying out loud: the
+    /// startup warm-up brings a backend up before any 3D view exists
+    /// (Application.cpp), so a session that selects a different one
+    /// afterwards is not on the backend it believes it is.
+    void warnTypeLocked(RendererType::Enum want)
+    {
+        // Nothing is locked until a device is actually up: Noop means
+        // the next prepare() is free to bring bgfx up on whatever it is
+        // asked for, and a switch tears the old one down first
+        // (BGFXRendererLib::create -> shutdown).
+        if (!deviceUp() || want == currentType || want == typeLockWarned)
+            return;
+        typeLockWarned = want;
+        RENDER_ERR("bgfx is already running on "
+                   << bgfx::getRendererName(currentType) << " in this process; "
+                   << bgfx::getRendererName(want)
+                   << " needs a restart to select (bgfx::init is once per"
+                      " process)");
+    }
+    RendererType::Enum typeLockWarned = RendererType::Count;
+
 #ifdef FC_RENDERER_STANDALONE
     /// Standalone (no Qt): bgfx owns the native window/canvas handed in
     /// through setWindowHandle() — under Emscripten the "#canvas" CSS
     /// selector — and creates its own GL context on it.
     bool prepare(QOpenGLWidget *, RendererType::Enum type)
     {
+        warnTypeLocked(type);
         if (currentType == RendererType::Noop) {
             currentType = type;
             bgfx::Init init;
@@ -1792,6 +1873,8 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            adoptActualRenderer();
+            resolveDeviceName();
         }
         return true;
     }
@@ -1817,6 +1900,7 @@ public:
         // A device this build's shaders cannot run on, already reported.
         if (glUnsupported)
             return false;
+        warnTypeLocked(type);
         QElapsedTimer _warmClock;
         _warmClock.start();
         msContext = msDevice = 0;
@@ -1913,10 +1997,39 @@ public:
                 // d->offscreenWindow->setFormat(d->requestedFormat);
                 window->setGeometry(0, 0, widget->width(), widget->height());
                 window->create();
-#if BX_PLATFORM_OSX
-                init.platformData.nwh = get_nswindow_from_nsview(reinterpret_cast<void*>(window->winId()));
-#else
+                // winId() is an NSView* on macOS, an HWND on Windows and an X11
+                // Window elsewhere. bgfx takes all three: its Metal backend does its
+                // own isKindOfClass: dispatch over NSView/NSWindow/CAMetalLayer
+                // (renderer_mtl.cpp), so no Objective-C++ unwrapping is needed here.
                 init.platformData.nwh = reinterpret_cast<void*>(window->winId());
+#if defined(FC_OS_LINUX) && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+                // A window alone is not a surface here. bgfx builds the
+                // Vulkan surface itself and hands ndt straight to
+                // vkCreateXlibSurfaceKHR as the Display* -- a null one
+                // fails instantly -- while the Wayland path needs the
+                // wl_display AND to be told the handle is a wl_surface,
+                // which no pointer says about itself. Qt's winId() is
+                // already the right handle on both (an X11 Window, a
+                // wl_surface), so only the display side is missing.
+                // The GL path above needs none of this: bgfx is handed
+                // a context that already owns its surface.
+#   if QT_CONFIG(wayland)
+                if (auto *wl = qGuiApp->nativeInterface<
+                        QNativeInterface::QWaylandApplication>()) {
+                    init.platformData.ndt = wl->display();
+                    init.platformData.type =
+                        bgfx::NativeWindowHandleType::Wayland;
+                }
+                else
+#   endif
+#   if QT_CONFIG(xcb)
+                if (auto *x11 = qGuiApp->nativeInterface<
+                        QNativeInterface::QX11Application>())
+                    init.platformData.ndt = x11->display();
+                else
+#   endif
+                    RENDER_ERR("no native display handle; a non-GL backend"
+                               " cannot create its surface");
 #endif
             }
             // bgfx treats an all-null PlatformData as a request for a headless device, and
@@ -1930,8 +2043,8 @@ public:
                 RENDER_ERR("no native GL context handle; bgfx would fall back to headless");
                 return false;
             }
-            init.resolution.width = widget->width();
-            init.resolution.height = widget->height();
+            init.resolution.width = framebufferWidth(widget);
+            init.resolution.height = framebufferHeight(widget);
             init.resolution.reset = bgfxResetFlags();
             // See the standalone path above: a startup option, because
             // bgfx::init happens once per process.
@@ -1942,6 +2055,8 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            adoptActualRenderer();
+            resolveDeviceName();
             msDevice = _warmClock.nsecsElapsed() / 1.0e6;
         }
         return true;
@@ -2094,8 +2209,72 @@ public:
     struct UserProgram {
         bgfx::ProgramHandle prog = BGFX_INVALID_HANDLE;
         bool failed = false;
+        /// The frameSerial of the last lookup (sweepUserCaches).
+        uint32_t lastUsed = 0;
     };
     std::map<std::string, UserProgram> userPrograms;
+    /// The mesh-shader variant a MaterialX document compiles to, keyed
+    /// on the document's identity (its file, or its text). Generating
+    /// one costs tens of milliseconds -- a whole MaterialX document
+    /// load and shader generation -- and every draw sharing a material
+    /// asks for it every frame, so it is generated once. An entry that
+    /// is empty is a document that could not be generated; the reason
+    /// was reported when it was first tried, and the draw shades as its
+    /// stock appearance from then on without asking again.
+    /// What generating one MaterialX document produced.
+    struct MaterialXVariant {
+        /// The assembled fragment source: the stock mesh fragment stage
+        /// with the document's generated material-inputs function
+        /// spliced in. Empty when the document cannot be rendered by
+        /// the raster path.
+        std::string source;
+        /// The same function spliced into the glass body stage
+        /// (fc_glass_fs.sh), for a surface the capture claimed as a
+        /// glass body (Material::glassmtlx): one generation, two
+        /// assemblies. Empty exactly when `source` is.
+        std::string glassSource;
+        /// The layers `source` samples and the file each one wants
+        /// (docs/CyclesIntegration.md sec 6.12). Only the generator
+        /// knows the layer order, and only the capture has the pixels,
+        /// so the draw joins the two lists on the image's path.
+        std::vector<Render::MaterialX::GeneratedMaterial::Image> images;
+        /// The array sampler `source` declares for those layers and the
+        /// unit it claims. Empty and 0 when the document names no image.
+        std::string imageSampler;
+        int imageUnit = 0;
+        /// The frameSerial of the last lookup (sweepUserCaches).
+        uint32_t lastUsed = 0;
+    };
+    std::map<std::string, MaterialXVariant> materialXVariants;
+    /// Counts the frames submitted; what the two caches above stamp a
+    /// lookup with.
+    uint32_t frameSerial = 0;
+    /// Bound the two caches (docs/ShaderGraphEditor.md sec 14). The
+    /// graph editor makes a distinct text per gesture -- a variant, a
+    /// generated source, a linked program with its two shader handles
+    /// -- and a session of editing grew both maps without limit, toward
+    /// bgfx's 512 shader handles. Once a map is past its cap, entries
+    /// not looked up for a while are dropped; the sweep never touches
+    /// what this frame used, and below the cap nothing is touched, so
+    /// a scene's own materials are not churned by an object out of
+    /// view. Every user of a program handle re-resolves it per frame
+    /// and keeps it only within the frame, which is what makes a drop
+    /// after bgfx::frame() safe. Called once per frame, after it.
+    void sweepUserCaches();
+    /// The MaterialX generation warnings already printed, so a document
+    /// edited per gesture reports each note once.
+    std::set<std::string> materialXWarned;
+    /// Generate a MaterialX document's mesh-shader variant, once per
+    /// document, and remember it.
+    const MaterialXVariant &materialXVariant(const Render::UserShader &shader);
+    /// Sampler uniform handles by name, created on demand: the names
+    /// come from the generated shader, so they are not known until a
+    /// document has been generated. On the lib rather than the view
+    /// because a uniform handle is global to the backend, while the
+    /// TEXTURE it is given is the view's (BGFXView::pushUserImages).
+    std::map<std::string, bgfx::UniformHandle> userSamplers;
+    /// The handle for one generated sampler name, made on first use.
+    bgfx::UniformHandle userSampler(const std::string &name);
     /// Resolve a user program: user fragment stage + either a user
     /// vertex stage or the named stock vertex stage ("vs_fc_comp" for
     /// the post stage's full-screen triangle, "vs_fc_mesh" for the
@@ -2106,9 +2285,19 @@ public:
     /// (UserShader::simulateSource) instead of its beauty fragment
     /// stage, always paired with the stock full-screen vertex shader.
     /// Same cache, same async compile, same viewer-tier binary lookup.
+    /// splice = which stock fragment stage a MaterialX document's
+    /// generated material function is spliced into: the mesh stage
+    /// (the beauty passes) or the glass body stage (ViewGlassSurface,
+    /// docs/MaterialStorage.md sec 17.22). Ignored for shader text,
+    /// which is a whole fragment stage of its own. The standalone tier
+    /// answers it from the shipped glass binary (Compiled::glassBin),
+    /// and invalid while none travelled, so the viewer draws a
+    /// MaterialX glass with the flat pass until then.
+    enum UserSplice { MeshSplice, GlassSplice };
     bgfx::ProgramHandle getUserProgram(const Render::UserShader &shader,
                                        const char *stockVs,
-                                       bool simulate = false);
+                                       bool simulate = false,
+                                       UserSplice splice = MeshSplice);
 #ifndef FC_RENDERER_STANDALONE
     /// Per-shader compile bookkeeping, keyed by SHA1(source×target×type).
     std::set<std::string> userShaderInflight;
@@ -2120,6 +2309,16 @@ public:
     /// each renderer's dirty state so the next frame retries the lookup
     /// (and the scene server republishes with the fresh bins).
     int userCompileGeneration = 0;
+    /// Set by getUserProgram when a draw asked for a program whose
+    /// compile is still in flight and was handed the stock program to
+    /// stand in. Cleared at the head of every frame (a sub-view
+    /// sequence's first submit) and read at its tail: a one-shot frame
+    /// dump is not consumed by a frame that drew a stand-in, because
+    /// the picture asked for is the scene with its materials, and a
+    /// surface drawn without one is not that. A failed compile does
+    /// not set it -- its draw stands in for good and the frame is the
+    /// picture there is.
+    bool userProgramStoodIn = false;
 
     /// Disk-cache / async-compile step for one user shader. The default
     /// target is the active bgfx backend; \a platform / \a profile
@@ -2130,14 +2329,44 @@ public:
                             QString &binPath,
                             const char *platform = nullptr,
                             const char *profile = nullptr);
-    /// Server-side compile for the viewer tiers (docs/RenderDebug.md
-    /// §6.3): compile \a shader for each viewer target through the
-    /// async disk cache and append every READY variant to \a out.
-    /// Pending compiles republish on the next userCompileGeneration
-    /// bump; failed ones are dropped (reported once by the compile).
-    void viewerShaderBins(const Render::UserShader &shader,
-                          std::vector<Render::UserShader::Compiled> &out);
+    /// Make the copy of a user shader that travels whole for the viewer
+    /// tiers (SceneSnapshot::shipShader). Server-side compile
+    /// (docs/RenderDebug.md sec 6.3): compile \a shader for each viewer
+    /// target through the async disk cache and append every READY
+    /// variant to its compiled list -- for a MaterialX document, the
+    /// mesh splice and, where its surface claims a glass body, the
+    /// glass splice beside it. Pending compiles republish on the next
+    /// userCompileGeneration bump; failed ones are dropped (reported
+    /// once by the compile). And the document's image layout: each
+    /// image's array layer, the sampler and the unit, resolved against
+    /// the generator those tiers do not have (docs/MaterialStorage.md
+    /// sec 17.23).
+    void shipUserShader(Render::UserShader &shader);
 #endif
+
+    /// This backend could not build multisampled scene targets, so
+    /// nothing asks it to again (docs/ThinClient.md sec 8.10c).
+    /// Latched by BGFXView::init the one time it happens, off the
+    /// attempt rather than off bgfx::getCaps(): WebGL2 answers
+    /// BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER_MSAA for RGBA16F and then
+    /// fails every create, so the capability is a claim and the create
+    /// is the fact. Both tiers: a desktop driver may lie the same way,
+    /// and losing MSAA is always better than losing the scene.
+    bool msaaTargetsUnavailable = false;
+
+    /// The sample count a view's targets will actually be built at:
+    /// what was asked for, unless this backend has already proved it
+    /// cannot build multisampled scene targets.
+    ///
+    /// Both the build and the "do the targets still match what was
+    /// asked for" test must go through this, or they disagree by
+    /// exactly the fallback and the view rebuilds itself every frame --
+    /// which is what happened, and cost a hundredfold in frame rate
+    /// while still drawing the right picture.
+    int effectiveSamples(int requested) const
+    {
+        return msaaTargetsUnavailable && requested > 1 ? 1 : requested;
+    }
 
 #ifdef FC_RENDERER_STANDALONE
     /// Native window handle bgfx initializes on (Emscripten: the canvas
@@ -2147,8 +2376,12 @@ public:
     uint16_t standaloneWidth = 1024;
     uint16_t standaloneHeight = 768;
     // Scene render-target sample count (BGFXRenderer::setMSAASamples);
-    // a change re-creates the view targets on the next render().
-    int standaloneSamples = 4;
+    // a change re-creates the view targets on the next render(). Off by
+    // default, like the desktop's (View3DInventorViewer::getNumSamples):
+    // analytic line coverage is what removed the reason it used to be
+    // mandatory, and on WebGL2 a multisampled float scene target cannot
+    // be built at all.
+    int standaloneSamples = 0;
     /// Sub-view target size override (renderSubViews,
     /// docs/SplitViews.md sec 9.2): while non-zero the view's targets
     /// size to the sub-view rect instead of the canvas -- the
@@ -2181,12 +2414,22 @@ public:
     // sizes the view back on its own.
     uint16_t captureWidth = 0;
     uint16_t captureHeight = 0;
-    /// The size a desktop view renders at: the host widget's, unless an
-    /// offscreen capture is asking for its own.
+    /// The host widget's framebuffer size. Qt's width()/height() are
+    /// logical (device-independent) pixels; the widget's default
+    /// framebuffer, which blit() writes into, is that times the device
+    /// pixel ratio. Sized from width() alone, a view under
+    /// QT_SCALE_FACTOR=2 rendered into the bottom-left quadrant of the
+    /// 3D view (docs/ShaderGraphEditor.md sec 14).
+    static int framebufferWidth(QOpenGLWidget *widget)
+    { return int(widget->width() * widget->devicePixelRatioF() + 0.5); }
+    static int framebufferHeight(QOpenGLWidget *widget)
+    { return int(widget->height() * widget->devicePixelRatioF() + 0.5); }
+    /// The size a desktop view renders at: the host widget's framebuffer,
+    /// unless an offscreen capture is asking for its own.
     int viewWidth(QOpenGLWidget *widget) const
-    { return captureWidth ? int(captureWidth) : widget->width(); }
+    { return captureWidth ? int(captureWidth) : framebufferWidth(widget); }
     int viewHeight(QOpenGLWidget *widget) const
-    { return captureHeight ? int(captureHeight) : widget->height(); }
+    { return captureHeight ? int(captureHeight) : framebufferHeight(widget); }
     typedef void (*FreeResourceFunc)(QOpenGLFunctions *functions, GLuint id);
     std::vector<std::pair<GLuint, FreeResourceFunc>> pendingRemoves;
     std::unique_ptr<QOpenGLContext> context;
@@ -2257,6 +2500,47 @@ public:
 #endif
     };
     std::vector<std::string> types;
+    /// The GPU and driver bgfx actually came up on, resolved once after
+    /// bgfx::init and handed to a capture's sidecar. Process-wide,
+    /// because the device is: bgfx::init happens once.
+    std::string deviceName;
+
+    /// Resolve deviceName. The bgfx renderer name says which BACKEND
+    /// runs, which is not which DEVICE runs it -- llvmpipe and a real
+    /// adapter are both "OpenGL" -- so on GL the driver's own
+    /// GL_RENDERER/GL_VERSION strings carry the answer, and the caps'
+    /// vendor/device ids carry it everywhere else.
+    void resolveDeviceName()
+    {
+        if (!deviceName.empty())
+            return;
+        std::string s = bgfx::getRendererName(bgfx::getRendererType());
+        // Only where a context is current -- this runs at the tail of
+        // prepare(), where the GL path has one and the others never do.
+        // Qt-side only: the standalone and browser builds have no
+        // QOpenGLContext at all, and the caps below answer them.
+#ifndef FC_RENDERER_STANDALONE
+        if (auto *cur = QOpenGLContext::currentContext()) {
+            if (auto *f = cur->functions()) {
+                for (GLenum e : {GL_RENDERER, GL_VERSION}) {
+                    const auto *str = f->glGetString(e);
+                    if (str)
+                        s += " / " + std::string(
+                                reinterpret_cast<const char *>(str));
+                }
+            }
+        }
+#endif  // !FC_RENDERER_STANDALONE
+        if (const bgfx::Caps *caps = bgfx::getCaps()) {
+            char ids[64];
+            std::snprintf(ids, sizeof(ids),
+                          " / vendor 0x%04x device 0x%04x",
+                          caps->vendorId, caps->deviceId);
+            s += ids;
+        }
+        deviceName = s;
+    }
+
     /// Set once when the GL device turns out to be older than the stock
     /// shader pack needs: there is nothing to retry, and a frame asks
     /// every time.
@@ -2406,9 +2690,16 @@ struct ColorVertex
 // vertex attribute", and EVERY draw carrying the stream is dropped.
 // Desktop GL takes the other branch, so it never showed there.
 // Bound only for meshes that carry the stream; every other mesh-program
-// draw leaves the attributes unbound, which bgfx resolves to the GL
-// default attribute — finite values the shader multiplies out, since
-// it selects the stream over the material scalars by u_matEmissive.w.
+// draw leaves the attributes unbound, and what that reads is NOT the
+// same on every backend. GL substitutes the constant default attribute.
+// Vulkan has no such thing, so bgfx points the attribute at binding 0,
+// offset 0 (renderer_vk.cpp, the unsettedAttr loop) -- which for these
+// programs is the vertex POSITION, arriving as a colour. The shader
+// multiplies it out either way, because u_matEmissive.w selects the
+// stream over the material scalars only when the stream is really
+// bound; what it must never do is put such a value through a transform
+// that is undefined outside 0..1, which is exactly how the position's
+// negative coordinates once reached the frame as NaN (fc_color.sh).
 struct MatVertex
 {
     uint32_t emissive;
@@ -3365,8 +3656,42 @@ struct GpuTextureArray
     bool placeholder = false;
 
     /// Longest side any layer is resampled to. A per-face image is a
-    /// marking on one face of one part, not an environment.
+    /// marking on one face of one part, not an environment; a generated
+    /// material's maps are a surface someone authored and are allowed
+    /// the larger ceiling below.
     static constexpr int MaxSide = 1024;
+    static constexpr int MaterialSide = 2048;
+    /// What the whole array may cost, whatever its caller asked for.
+    /// The layers of an array are all one size, so "more layers" and
+    /// "bigger layers" multiply -- sixteen 2k layers would be a quarter
+    /// of a gigabyte before mips. Past this the layers are halved until
+    /// they fit, which is a softer answer than refusing the material.
+    static constexpr std::size_t MaxBytes = std::size_t(64) << 20;
+    /// The layers that were not usable when the array was built: what
+    /// `placeholder` is waiting on. The array is rebuilt when one of
+    /// them becomes usable and not before -- a file that will never
+    /// decode never triggers a rebuild, and a map that lands after any
+    /// number of frames still does. (A bound of 120 rebuilds used to
+    /// stand in for this and gave up on the browser tier, whose maps
+    /// arrive over a network: an array built while they were in flight
+    /// stayed white for good, and a metal piece with a white base and
+    /// a white metalness map was a chrome reflection of the sky.)
+    ///
+    /// Layer INDICES, examined against the palette handed in on each
+    /// call, never the image objects of the build: a streamed republish
+    /// re-parses a shader into fresh objects under the same ids, and
+    /// an array that watched the first publish's objects saw their
+    /// pixels never arrive while the current ones had them.
+    std::vector<uint16_t> waiting;
+    bool arrived(const Render::TexturePalette &palette) const
+    {
+        for (uint16_t i : waiting) {
+            if (i < palette.entries.size() && palette.entries[i]
+                    && usable(*palette.entries[i]))
+                return true;
+        }
+        return false;
+    }
 
     void destroy()
     {
@@ -3430,12 +3755,15 @@ struct GpuTextureArray
         }
     }
 
-    void upload(const Render::TexturePalette &palette)
+    void upload(const Render::TexturePalette &palette,
+                int maxLayers = Render::MaxFaceTexturePalette,
+                int maxSide = MaxSide)
     {
         placeholder = false;
+        waiting.clear();
         const uint16_t numLayers =
             uint16_t(std::min(palette.entries.size(),
-                              std::size_t(Render::MaxFaceTexturePalette)));
+                              std::size_t(std::max(maxLayers, 0))));
         if (!numLayers)
             return;
         // bgfx makes a plain 2D texture out of a one-layer request --
@@ -3458,13 +3786,19 @@ struct GpuTextureArray
             const auto &e = palette.entries[i];
             if (!e || !usable(*e)) {
                 placeholder = true;
+                waiting.push_back(i);
                 continue;
             }
             w = std::max(w, int(e->width));
             h = std::max(h, int(e->height));
         }
-        w = std::min(w, MaxSide);
-        h = std::min(h, MaxSide);
+        w = std::min(w, maxSide);
+        h = std::min(h, maxSide);
+        while ((w > 1 || h > 1)
+               && std::size_t(w) * std::size_t(h) * 4u * numSlices > MaxBytes) {
+            w = std::max(1, w >> 1);
+            h = std::max(1, h >> 1);
+        }
         const uint64_t flags = BGFX_SAMPLER_MIN_ANISOTROPIC
             | BGFX_SAMPLER_MAG_ANISOTROPIC;
         // WITH a mip chain, and it is not optional here: a face image
@@ -4429,6 +4763,25 @@ public:
                             // the scene color onto the default backbuffer
                             // (the desktop build GL-blits into the Qt
                             // framebuffer instead)
+        ViewCaptureDepth,   // fullscreen depth encode for a frame
+                            // capture: the scene depth attachment
+                            // sampled into a colour target, because
+                            // colour is what bgfx blits and reads back
+                            // on every backend (fs_fc_depthenc).
+        ViewCapture,        // blit-only view of a frame capture: copies
+                            // the finished scene colour and the encoded
+                            // depth into their readback textures.
+                            //
+                            // ! LAST, and that is the whole point.
+                            // bgfx runs views in id order, so a capture
+                            // asked anywhere earlier would copy the
+                            // scene colour before cavity, bloom, the
+                            // temporal accumulation and the output
+                            // transform had written to it -- a picture
+                            // of a half-finished frame. Its own id
+                            // rather than ViewPresent's for the reason
+                            // ViewIdReadback has one: a view's blits
+                            // run BEFORE its draws.
         NUM_VIEWS
     };
     // ! Counted to the first pass AFTER the overlay block, not to
@@ -4574,6 +4927,7 @@ public:
         // SSAO/debug-scene resources: framebuffers before the textures
         // they reference.
         fn(debugSceneFbo, LifeSized);
+        fn(captureDepthFbo, LifeSized);
         fn(aoPrepassFbo, LifeSized);
         fn(aoGenFbo, LifeSized);
         fn(aoBlurFbo, LifeSized);
@@ -4582,6 +4936,9 @@ public:
         fn(debugSceneTex, LifeSized);
         fn(debugSceneDepth, LifeSized);
         fn(idReadTex, LifeSized);
+        fn(captureDepthTex, LifeSized);
+        fn(captureColorRead, LifeSized);
+        fn(captureDepthRead, LifeSized);
         fn(aoNormalZ, LifeSized);
         fn(aoDepth, LifeSized);
         fn(aoTex, LifeSized);
@@ -4661,6 +5018,7 @@ public:
         fn(s_texLineSdf, LifeProgram);
         fn(s_texLineSdfAux, LifeProgram);
         fn(u_glassParams, LifeProgram);
+        fn(u_glassTint, LifeProgram);
         fn(s_texCloudFront, LifeProgram);
         fn(s_texCloudBack, LifeProgram);
         fn(u_cloudParams, LifeProgram);
@@ -4727,6 +5085,7 @@ public:
         fn(s_texAOScreen, LifeProgram);
         fn(u_debugParams, LifeProgram);
         fn(s_texDebugScene, LifeProgram);
+        fn(s_texSceneDepth, LifeProgram);
         fn(u_shadowParams, LifeProgram);
         fn(u_lightDir, LifeProgram);
         fn(u_lightPos, LifeProgram);
@@ -4813,6 +5172,7 @@ public:
         fn(m_progDebug, LifeProgram);
         fn(m_progDebugScene, LifeProgram);
         fn(m_progDebugSceneClip, LifeProgram);
+        fn(m_progDepthEnc, LifeProgram);
         fn(m_progCap, LifeProgram);
         fn(m_progCapClip, LifeProgram);
         fn(s_texHatch, LifeProgram);
@@ -5072,34 +5432,54 @@ public:
     /// programs whose vertex stage reads a_color0 (mesh/flat families);
     /// depth-only programs bind gpu->geom->vbh alone.
     void setMeshVertexBuffers(GpuMesh *gpu, const Render::MeshData &mesh);
+    /// Stream 2 (the mesh's texture coordinates) under the identity
+    /// texture matrix, for a program paired with vs_fc_mesh_tex outside
+    /// the texture path: a generated material's mesh or glass splice.
+    void bindMeshTexCoord(GpuMesh *gpu, const Render::MeshData &mesh);
 
     /// The array texture of a per-face palette, uploaded on demand.
     /// Null when this backend cannot do array textures at all, which
     /// leaves the draw untextured per face rather than mis-sampled.
-    GpuTextureArray *getTextureArray(const Render::TexturePalette &palette)
+    GpuTextureArray *getTextureArray(
+        const Render::TexturePalette &palette,
+        int maxLayers = Render::MaxFaceTexturePalette,
+        int maxSide = GpuTextureArray::MaxSide)
     {
         if (palette.entries.empty()
                 || !(bgfx::getCaps()->supported
                      & BGFX_CAPS_TEXTURE_2D_ARRAY))
             return nullptr;
-        // Content key: the ids of the layers in order. Two draws off one
-        // appearance share the palette pointer, but two appearances
-        // naming the same images should still share the upload.
+        // Content key: the ids of the layers in order, and the shape
+        // asked for -- a per-face palette and a material stacking the
+        // same images want arrays of different sizes, and one key for
+        // both would hand the second caller the first one's upload.
         uint64_t key = 1469598103934665603ull;
-        for (const auto &e : palette.entries) {
-            const uint64_t id = e ? e->textureId : 0;
-            key = (key ^ id) * 1099511628211ull;
-        }
+        auto mix = [&key](uint64_t v) { key = (key ^ v) * 1099511628211ull; };
+        for (const auto &e : palette.entries)
+            mix(e ? e->textureId : 0);
+        mix(uint64_t(maxLayers));
+        mix(uint64_t(maxSide));
         GpuTextureArray &tex = textureArrays[key];
         tex.lastUsed = frame;
-        // A placeholder is re-examined every frame: the pixels it
-        // stands in for are in flight and will arrive under these ids.
-        if (tex.placeholder)
+        // A placeholder is rebuilt when a layer it waited on has
+        // arrived -- and only then: a file that never decodes never
+        // wakes it, and rebuilding every layer of a 2k array once a
+        // frame on the chance would be a worse answer than one map
+        // staying white.
+        if (tex.placeholder && tex.arrived(palette))
             tex.destroy();
         if (!bgfx::isValid(tex.handle))
-            tex.upload(palette);
+            tex.upload(palette, maxLayers, maxSide);
         return bgfx::isValid(tex.handle) ? &tex : nullptr;
     }
+
+    /// Stack the images a MaterialX material names into one array
+    /// texture and bind it, for the draw about to be submitted
+    /// (docs/CyclesIntegration.md sec 6.12). A layer whose image did
+    /// not load uploads white: the document is still drawn, with that
+    /// one map missing, which is what the generator already warned
+    /// about.
+    void pushUserImages(const Render::UserShader &shader);
 
     GpuTexture *getTexture(const Render::TextureImage &data)
     {
@@ -5435,9 +5815,14 @@ public:
     /// reconstructs each pixel's world direction from the predefined
     /// u_proj/u_invView).
     ///
-    /// How far out of focus it is drawn is Render_PBREnvBlur, a lod
-    /// along m_envBgTex's box mip chain: zero is the map as baked,
-    /// which is the same backdrop the path tracer shows.
+    /// How far out of focus it is drawn is Render_PBREnvBlur, read as
+    /// a lens aperture (Render::envBlurAngle) and convolved in by
+    /// spreading taps over the cone it subtends: zero is the map as
+    /// baked, which is the same backdrop the path tracer shows.
+    /// m_envBgTex's mip chain is still what the taps read, but it now
+    /// sizes each tap's footprint to the spacing between taps rather
+    /// than standing in for the blur itself -- which is what a mip was
+    /// bad at, and why a wide setting used to be pixelated.
     void submitEnvBackground();
 
     void submitBackground(const Render::Background &bg);
@@ -5774,6 +6159,29 @@ public:
         bgfx::blit(vid(ViewIdReadback), idReadTex, 0, 0, debugSceneTex);
         return bgfx::readTexture(idReadTex, dst);
     }
+
+    /// Targets for a portable frame capture, created on first use at
+    /// viewport size.
+    ///
+    /// Two staging textures, because a render target cannot be read
+    /// back directly on any backend, and one colour target to carry the
+    /// depth: bgfx blits and reads back colour textures everywhere and
+    /// depth textures nowhere. What used to be two glReadPixels calls
+    /// against the scene framebuffer is this, and it is the difference
+    /// between a capture that only exists on OpenGL and one the golden
+    /// render tests can gate Metal and Vulkan with.
+    bool ensureCaptureTargets();
+
+    /// Copy this frame's finished colour and its encoded depth and ask
+    /// for both back. Returns the frame number at which \a color and
+    /// \a depth are filled -- the caller must keep both alive until
+    /// bgfx has reached it, exactly as readbackId requires. 0 = the
+    /// copy could not be made.
+    ///
+    /// Must be called with every pass of the frame already submitted
+    /// and before the frame boundary: the blit rides on ViewCapture,
+    /// the last view id, so it copies the finished image.
+    uint32_t readbackCapture(void *color, void *depth);
 
     /// Rasterize one scene triangle draw into the debug scene target
     /// (docs/RenderDebug.md): mode 6 accumulates a fragment count with
@@ -6136,6 +6544,17 @@ public:
     /// reflection (fs_fc_glass). Draws opaquely with depth write like
     /// the water surface.
     void submitGlassSurface(const Render::DrawCall &draw, bool depthReject);
+    /// The two colours of a glass body, linear: what it ABSORBS with
+    /// over its thickness (the complement is the Beer-Lambert sigma)
+    /// and what it TINTS the transmitted light with once at the
+    /// surface. A Render_Glass body absorbs with its authored diffuse,
+    /// decoded, and tints with nothing; a MaterialX glass (glassmtlx,
+    /// docs/MaterialStorage.md sec 17.21) states a linear colour whose
+    /// meaning its depth decides -- absorption when there is one, a
+    /// surface tint when there is none. Both passes that colour a
+    /// glass body (the surface and its shadow tint) read them here.
+    void glassBodyColors(const Render::Material &mat, float absorb[4],
+                         float tint[4]) const;
 
     /// Rasterize one line or point draw into the decoration
     /// distance field.
@@ -6271,9 +6690,15 @@ public:
     /// ViewPresent used to force on its own.
     void present();
 #ifndef FC_RENDERER_STANDALONE
-    /// Write \a color (tightly packed RGBA8, glReadPixels bottom-up
-    /// rows) to \a path: raw PPM for a .ppm extension, else through
-    /// Qt's image writers (PNG etc.).
+    /// Write \a color (tightly packed RGBA8, TOP-DOWN rows) to \a
+    /// path: raw PPM for a .ppm extension, else through Qt's image
+    /// writers (PNG etc.).
+    ///
+    /// Top-down because the caller now decides the orientation: the
+    /// capture readback flips by bgfx::getCaps()->originBottomLeft,
+    /// which is the portable answer. This used to flip unconditionally
+    /// on the grounds that "glReadPixels rows are bottom-up" -- true of
+    /// OpenGL, and of no other backend.
     static bool writeDumpImage(const std::string &path,
                                const unsigned char *color,
                                int width, int height);
@@ -6283,8 +6708,14 @@ public:
     /// for a sub-view blit -- the rect (dstX, dstY) is top-left
     /// widget coords, flipped against it into GL's bottom-left; 0
     /// keeps the full-surface transfer every plain frame does.
-    void blit(const Render::FrameDumpRequest *dump,
-              Render::RenderStats *stats,
+    ///
+    /// OpenGL only, and it is the one part of a frame that cannot be
+    /// anything else: the destination is the QOpenGLWidget's own
+    /// framebuffer, and what bgfx hands over is a GL texture name only
+    /// while bgfx is running on GL. On any other backend this is a
+    /// no-op and Coin composites the view by itself -- which is why
+    /// capturing a frame no longer goes through here.
+    void blit(Render::RenderStats *stats,
               int dstX = 0, int dstY = 0, int dstH = 0);
 #endif // !FC_RENDERER_STANDALONE
 
@@ -6411,6 +6842,8 @@ public:
             case ViewSectionCap: return "sectioncap";
             case ViewDebugScene: return "debugscene";
             case ViewIdReadback: return "idreadback";
+            case ViewCaptureDepth: return "capturedepth";
+            case ViewCapture: return "capture";
             case ViewWaterSurface: return "watersurface";
             case ViewGlassLineSdf: return "glasslinesdf";
             case ViewGlassSurface: return "glasssurface";
@@ -6533,6 +6966,21 @@ public:
     bgfx::TextureHandle idReadTex = BGFX_INVALID_HANDLE;
     uint16_t idReadW = 0;
     uint16_t idReadH = 0;
+    /// Portable frame capture (readbackCapture). captureDepthTex is the
+    /// colour target the depth encode writes; the two *Read textures
+    /// are the CPU-readable copies the blit lands in.
+    bgfx::ProgramHandle m_progDepthEnc = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texSceneDepth = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle captureDepthTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle captureDepthFbo = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle captureColorRead = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle captureDepthRead = BGFX_INVALID_HANDLE;
+    /// Format of captureColorRead: the scene colour's own, since a blit
+    /// requires source and destination formats to match and the scene
+    /// colour is RGBA16F while colour managed (hdrScene).
+    bgfx::TextureFormat::Enum captureColorFormat = bgfx::TextureFormat::Count;
+    uint16_t captureW = 0;
+    uint16_t captureH = 0;
     bgfx::UniformHandle s_texAccum = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texReveal = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCap = BGFX_INVALID_HANDLE;
@@ -6629,9 +7077,9 @@ public:
     /// (SceneTranslator::translateWorld, 1024x512 equirect), so at
     /// blur 0 the two shading models show the SAME backdrop -- which
     /// is the whole point of the control. Its mips are plain box
-    /// downsamples rather than GGX lobes: a defocused backdrop is what
-    /// they stand for, not a reflection, and box levels cost nothing
-    /// against the 64-sample prefilter the lighting cube pays.
+    /// downsamples rather than GGX lobes: they are read as a tap
+    /// footprint, not as a reflection lobe, and box levels cost
+    /// nothing against the 64-sample prefilter the lighting cube pays.
     static constexpr uint16_t kEnvBgSize = 256;
     bgfx::TextureHandle m_envTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_envBgTex = BGFX_INVALID_HANDLE;
@@ -6718,8 +7166,8 @@ public:
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
     float pbrEnvIntensity = 1.0f;
     /// How far out of focus the environment background is, 0..1
-    /// (PBRConfig::envBlur); 1 is the top of m_envBgTex's mip chain,
-    /// a single averaged colour.
+    /// (PBRConfig::envBlur); 1 is a 45-degree aperture, the widest
+    /// defocus that still reads as a place (Render::envBlurAngle).
     float pbrEnvBlur = 0.25f;
     bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_bumpParams = BGFX_INVALID_HANDLE;
@@ -7016,6 +7464,7 @@ public:
     bgfx::UniformHandle s_texGlassFront = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texGlassBack = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_glassParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_glassTint = BGFX_INVALID_HANDLE;
     // Line signed-distance field, sampled by the glass surface pass so
     // an edge seen through glass warps exactly like the face it lies on
     // (docs/RenderEngine.md, "Lines"). RGB is the line colour; alpha is
@@ -7334,6 +7783,9 @@ public:
     X(bgfxFbo) X(bgfxColor) X(bgfxDepth) \
     X(oitFbo) X(oitAccum) X(oitReveal) \
     X(debugSceneFbo) X(debugSceneTex) X(debugSceneDepth) X(idReadTex) \
+    X(captureDepthFbo) X(captureDepthTex) X(captureColorRead) \
+    X(captureDepthRead) X(captureColorFormat) \
+    X(captureW) X(captureH) \
     X(aoPrepassFbo) X(aoGenFbo) X(aoBlurFbo) X(aoMipFbo) \
     X(aoNormalZ) X(aoDepth) X(aoTex) X(aoBlurTex) X(aoNoiseTex) \
     X(aoMipTex) X(aoMipCount) X(aoMapHash) \
@@ -8915,6 +9367,11 @@ public:
     void updateBBox();
 
     QOpenGLWidget *widget;
+    /// The fed camera projection remapped to this backend's clip depth
+    /// (render()). Lives here rather than on the stack because the
+    /// frame hands the pointer on -- BGFXView::projMatrix keeps it for
+    /// the pass closures and the effect submits.
+    float projClip[16] = {};
     /// This renderer will never draw (docs/HeadlessServe.md §3.1): no
     /// bgfx view, no graphics device, no display. render() refuses;
     /// publishNoDraw() is the whole of what it does.
@@ -9361,6 +9818,28 @@ public:
     uint16_t idPixW = 0;
     uint16_t idPixH = 0;
     bool idAuditWarned = false;
+    /// In-flight portable frame capture (BGFXView::readbackCapture).
+    ///
+    /// The colour arrives in the scene target's own format, which is
+    /// RGBA16F while colour managed, so it is held as bytes and decoded
+    /// once it lands. bgfx writes into these from the render thread
+    /// long after the request, so they must not be resized or freed
+    /// while captureReadyFrame is non-zero.
+    std::vector<uint8_t> captureColor;
+    std::vector<uint8_t> captureDepth;  ///< R32F, one float per pixel
+    /// Frame at which both are filled; 0 = no capture in flight.
+    uint32_t captureReadyFrame = 0;
+    uint16_t capturePixW = 0;
+    uint16_t capturePixH = 0;
+    /// Whether the in-flight capture's colour is RGBA16F rather than
+    /// RGBA8 -- decoded when it lands, not guessed from the config,
+    /// which may have changed by then.
+    bool captureHdr = false;
+    /// The request the in-flight capture is serving. Copied rather
+    /// than referenced: a capture spans frames, and pendingDump is
+    /// overwritten by whatever asks next.
+    Render::FrameDumpRequest captureRequest;
+    bool captureIsDump = false;
     /// What cross-object instancing collapsed on the last frame
     /// (docs/DrawSubmission.md phase 0.5). Every submission decision is
     /// scoped against the draw count, and until this existed nothing
@@ -9433,6 +9912,22 @@ public:
     /// frame's blit; lastStats keeps that readback's statistics.
     Render::FrameDumpRequest pendingDump;
     bool dumpPending = false;
+    /// The host said the next frame is not the whole scene
+    /// (Renderer::holdFrameDump); read and cleared at the frame tail
+    /// beside the lib's stand-in record.
+    bool hostHold = false;
+    /// Whether the last frame held the pending dump (frameDumpHeld).
+    bool dumpHeld = false;
+    /// This frame still owes something the picture depends on: a
+    /// frozen frame's particle warm-up not yet reached, a mesh refine
+    /// the level plan just asked for. Per frame, like the lib's
+    /// stand-in record; the tail folds both into the verdict.
+    bool frameOwes = false;
+    /// The last frame's verdict and the counters behind
+    /// Renderer::frameComplete / renderedFrames / completeFrames.
+    bool lastFrameComplete = false;
+    uint64_t renderedFrameCount = 0;
+    uint64_t completeFrameCount = 0;
     Render::RenderStats lastStats;
     bool sceneDumped = false;   ///< FC_BGFX_DUMP_SCENE fired
     /// Frames since the feeds last changed, and the fingerprint that is

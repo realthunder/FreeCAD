@@ -10,7 +10,7 @@
       FatherInclude="Base/PyObjectBase.h"
       FatherNamespace="Base"
       Constructor="true"
-      Delete="true">
+      Delete="false">
     <Documentation>
       <Author Licence="LGPL" Name="WandererFan" EMail="wandererfan@gmail.com" />
       <UserDocu>GeomFormat specifies appearance parameters for TechDraw Geometry objects</UserDocu>
@@ -25,6 +25,21 @@
             <UserDocu>Create a copy of this geomformat</UserDocu>
         </Documentation>
     </Methode>
+    <Attribute Name="GeomIndex">
+      <Documentation>
+        <UserDocu>The index of the projected edge this format applies to.</UserDocu>
+      </Documentation>
+      <Parameter Name="GeomIndex" Type="Int"/>
+    </Attribute>
+    <Attribute Name="GeomName" ReadOnly="true">
+      <Documentation>
+        <UserDocu>The name that edge carried when the format was applied.  The index
+moves whenever the projection gains or loses an edge; the name does not, and it
+is what puts the format back on its own edge.  Empty in a document written
+before names existed.</UserDocu>
+      </Documentation>
+      <Parameter Name="GeomName" Type="String"/>
+    </Attribute>
     <Attribute Name="Tag" ReadOnly="true">
       <Documentation>
         <UserDocu>Gives the tag of the GeomFormat as string.</UserDocu>

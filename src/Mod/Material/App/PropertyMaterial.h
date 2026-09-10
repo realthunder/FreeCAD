@@ -75,7 +75,7 @@ public:
 
     /** Sets the appearance properties
      */
-    void setValue(const App::Material& mat);
+    void setValue(const App::MaterialAppearance& mat);
 
     /** This method returns a string representation of the property
      */
@@ -162,6 +162,14 @@ public:
      * \return whether the library was written.
      */
     bool saveToLibrary();
+    /** The card as a library writer needs it.
+     *
+     * A copy of the value whose shader graph files all say where their
+     * bytes are: a card that came out of a document's store has hashes and
+     * blobs but no paths, and Material::placeMaterialXFiles copies from
+     * paths. Every library write of a stored card goes through this.
+     */
+    Material cardForLibrary() const;
 
     void Save(Base::Writer& writer) const override;
     void Restore(Base::XMLReader& reader) override;
@@ -251,8 +259,24 @@ private:
      */
     void assignUnresolved(const std::string& hash);
 
+    /** Keep the card's MaterialX files in this document's store.
+     *
+     * The manifest and every file it names, taken from the store when it
+     * has them, inserted from the library paths when it does not, and --
+     * when \a queueMissing -- asked of the restore for what neither has.
+     * Held here so a card that is not being followed still keeps its
+     * document set for the day it is applied again.
+     */
+    void holdMaterialXBlobs(bool queueMissing) const;
+    /// Note the held MaterialX blobs for the save, named after their files.
+    void noteMaterialXBlobs(App::FileBlobManager& manager,
+                            const App::DocumentObject* object) const;
     std::shared_ptr<const Material> _card;
     mutable App::FileBlobHandle _blob;
+    /// The card's MaterialX manifest and files, see holdMaterialXBlobs()
+    mutable std::vector<App::FileBlobHandle> _materialXBlobs;
+    /// The card blob a restore is waiting for, to tell it from the files
+    std::string _pendingCardHash;
     mutable std::string _hash;
     QString _uuid;
     QString _name;

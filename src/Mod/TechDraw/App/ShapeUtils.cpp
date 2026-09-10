@@ -354,6 +354,114 @@ TopoDS_Shape ShapeUtils::centerShapeXY(const TopoDS_Shape& inShape, const gp_Ax2
     return ShapeUtils::moveShape(inShape, centroid * -1.0);
 }
 
+//! The named versions of the transformations above.  makETransform decides
+//! for itself whether the transformation needs a copy of the shape (it does
+//! when there is scaling or mirroring) or only a new location, and carries the
+//! element map across either way.  A null input gives a null result, as the
+//! raw versions do rather than throwing.
+Part::TopoShape ShapeUtils::mirrorShapeVec(const Part::TopoShape& input,
+                                           const Base::Vector3d& inputCenter, double scale)
+{
+    gp_Pnt gInput(inputCenter.x, inputCenter.y, inputCenter.z);
+    return ShapeUtils::mirrorShape(input, gInput, scale);
+}
+
+Part::TopoShape ShapeUtils::mirrorShape(const Part::TopoShape& input, const gp_Pnt& inputCenter,
+                                        double scale)
+{
+    if (input.isNull()) {
+        return Part::TopoShape();
+    }
+    try {
+        // scale about the centre and mirror about the Y axis, exactly as the
+        // TopoDS_Shape version composes them
+        gp_Trsf tempTransform;
+        //BRepBuilderAPI_Transform will loop forever if asked to use 0.0 as scale
+        tempTransform.SetScale(inputCenter, scale <= 0.0 ? 1.0 : scale);
+        gp_Trsf mirrorTransform;
+        mirrorTransform.SetMirror(gp_Ax2(inputCenter, gp_Dir(0, -1, 0)));
+        tempTransform.Multiply(mirrorTransform);
+
+        return input.makETransform(tempTransform);
+    }
+    catch (const Base::Exception&) {
+        return Part::TopoShape();
+    }
+    catch (const Standard_Failure&) {
+        return Part::TopoShape();
+    }
+}
+
+Part::TopoShape ShapeUtils::invertGeometry(const Part::TopoShape& input)
+{
+    if (input.isNull()) {
+        return input;
+    }
+    return ShapeUtils::mirrorShape(input, gp_Pnt(0.0, 0.0, 0.0), 1.0);
+}
+
+Part::TopoShape ShapeUtils::scaleShape(const Part::TopoShape& input, double scale)
+{
+    if (input.isNull()) {
+        return Part::TopoShape();
+    }
+    try {
+        gp_Trsf scaleTransform;
+        scaleTransform.SetScale(gp_Pnt(0, 0, 0), scale);
+        return input.makETransform(scaleTransform);
+    }
+    catch (const Base::Exception&) {
+        return Part::TopoShape();
+    }
+    catch (const Standard_Failure&) {
+        return Part::TopoShape();
+    }
+}
+
+Part::TopoShape ShapeUtils::rotateShape(const Part::TopoShape& input, const gp_Ax2& viewAxis,
+                                        double rotAngle)
+{
+    if (input.isNull()) {
+        return Part::TopoShape();
+    }
+    try {
+        gp_Trsf tempTransform;
+        tempTransform.SetRotation(viewAxis.Axis(), rotAngle * M_PI / 180.0);
+        return input.makETransform(tempTransform);
+    }
+    catch (const Base::Exception&) {
+        return Part::TopoShape();
+    }
+    catch (const Standard_Failure&) {
+        return Part::TopoShape();
+    }
+}
+
+Part::TopoShape ShapeUtils::moveShape(const Part::TopoShape& input, const Base::Vector3d& motion)
+{
+    if (input.isNull()) {
+        return Part::TopoShape();
+    }
+    try {
+        gp_Trsf xlate;
+        xlate.SetTranslation(gp_Vec(motion.x, motion.y, motion.z));
+        return input.makETransform(xlate);
+    }
+    catch (const Base::Exception&) {
+        return Part::TopoShape();
+    }
+    catch (const Standard_Failure&) {
+        return Part::TopoShape();
+    }
+}
+
+Part::TopoShape ShapeUtils::centerShapeXY(const Part::TopoShape& input, const gp_Ax2& coordSys)
+{
+    gp_Pnt inputCenter = findCentroidXY(input.getShape(), coordSys);
+    Base::Vector3d centroid = DrawUtil::toVector3d(inputCenter);
+    return ShapeUtils::moveShape(input, centroid * -1.0);
+}
+
 std::pair<Base::Vector3d, Base::Vector3d> ShapeUtils::getEdgeEnds(TopoDS_Edge edge)
 {
     std::pair<Base::Vector3d, Base::Vector3d> result;

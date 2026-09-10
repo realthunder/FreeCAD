@@ -27,8 +27,10 @@
 #include <set>
 
 #include <Base/Exception.h>
+#include <Base/FileInfo.h>
 
-#include "MaterialList.h"
+#include "AppearanceList.h"
+#include "MaterialXDocument.h"
 
 using namespace App;
 using namespace Base;
@@ -233,7 +235,7 @@ uint16_t paletteSlot(std::vector<SurfaceTexture> &palette, const SurfaceTexture 
         if (palette[i] == value)
             return static_cast<uint16_t>(i);
     }
-    if (palette.size() >= MaterialList::MaxPaletteSize)
+    if (palette.size() >= AppearanceList::MaxPaletteSize)
         throw Base::ValueError("too many distinct textures");
     palette.push_back(value);
     return static_cast<uint16_t>(palette.size() - 1);
@@ -351,7 +353,7 @@ void collapseDenseTexture(std::vector<SurfaceTexture> &palette, std::vector<uint
 /// The diffuse colour a whole material stores: its transparency field is the
 /// truth and the alpha holds its complement (see the storage note in the
 /// header).
-Color MaterialList::storedDiffuse(const Material &mat)
+Color AppearanceList::storedDiffuse(const MaterialAppearance &mat)
 {
     Color color = mat.diffuseColor;
     color.setTransparency(mat.transparency);
@@ -361,7 +363,7 @@ Color MaterialList::storedDiffuse(const Material &mat)
 /// The finish a whole material stores: clamped, so that everything reading
 /// this property back gets a record it can actually draw, whatever a caller
 /// assembled by hand or a file happened to state
-SurfaceFinish MaterialList::storedFinish(const SurfaceFinish &finish)
+SurfaceFinish AppearanceList::storedFinish(const SurfaceFinish &finish)
 {
     SurfaceFinish stored = finish;
     stored.normalize();
@@ -371,7 +373,7 @@ SurfaceFinish MaterialList::storedFinish(const SurfaceFinish &finish)
 /// The texture a whole material stores, clamped for the same reason -- and
 /// so that two records differing only in a transform nobody stated land in
 /// one palette slot rather than two
-SurfaceTexture MaterialList::storedTexture(const SurfaceTexture &texture)
+SurfaceTexture AppearanceList::storedTexture(const SurfaceTexture &texture)
 {
     SurfaceTexture stored = texture;
     stored.normalize();
@@ -379,7 +381,7 @@ SurfaceTexture MaterialList::storedTexture(const SurfaceTexture &texture)
 }
 
 // ==================== blobs ====================
-std::string MaterialList::insertTextureFile(const char *path, const char *extension)
+std::string AppearanceList::insertTextureFile(const char *path, const char *extension)
 {
     if (!path || !path[0]) {
         return {};
@@ -398,13 +400,13 @@ std::string MaterialList::insertTextureFile(const char *path, const char *extens
     return hash;
 }
 
-std::string MaterialList::getTextureFile(const std::string &hash) const
+std::string AppearanceList::getTextureFile(const std::string &hash) const
 {
     const auto it = rd().textureBlobs.find(hash);
     return it == rd().textureBlobs.end() ? std::string() : it->second->path();
 }
 
-void MaterialList::noteTextureBlobs(FileBlobManager &manager,
+void AppearanceList::noteTextureBlobs(FileBlobManager &manager,
                                             const BlobReferrer &referrer) const
 {
     ensureNormalized();
@@ -431,9 +433,74 @@ void MaterialList::noteTextureBlobs(FileBlobManager &manager,
             manager.noteReferenced(it->second, named);
         }
     }
+    // The MaterialX manifests and every file they name. A manifest is held
+    // like a map is, and its children are only known through it, so an
+    // entry whose manifest has not arrived has nothing more to note -- and
+    // nothing more to lose, since it cannot have been saved from here.
+    for (const auto &hash : materialXHashes()) {
+        const auto it = rd().textureBlobs.find(hash);
+        if (it == rd().textureBlobs.end()) {
+            continue;
+        }
+        BlobReferrer named = referrer;
+        if (!named.name.empty()) {
+            named.name += ".materialx";
+        }
+        named.ext = ".manifest";
+        manager.noteReferenced(it->second, named);
+        MaterialXDocument manifest;
+        if (!MaterialXDocument::readFile(it->second->path(), manifest)) {
+            continue;
+        }
+        for (const auto &file : manifest.files) {
+            const auto child = rd().textureBlobs.find(file.hash);
+            if (file.hash.empty() || child == rd().textureBlobs.end()) {
+                continue;
+            }
+            // Named after what the document calls the file, so an unpacked
+            // project shows brass_color.jpg and not a hash
+            BlobReferrer entry = referrer;
+            Base::FileInfo fi(file.name);
+            const std::string stem = fi.fileNamePure();
+            if (!entry.name.empty() && !stem.empty()) {
+                entry.name += "." + stem;
+            }
+            const std::string ext = fi.extension();
+            entry.ext = ext.empty() ? std::string() : "." + ext;
+            manager.noteReferenced(child->second, entry);
+        }
+    }
 }
 
-void MaterialList::assignRestoredBlob(const FileBlobHandle &blob)
+std::vector<std::string> AppearanceList::materialXHashes() const
+{
+    std::vector<std::string> hashes;
+    auto add = [&hashes](const std::string &hash) {
+        if (!hash.empty() && std::find(hashes.begin(), hashes.end(), hash) == hashes.end()) {
+            hashes.push_back(hash);
+        }
+    };
+    add(rd().base.materialx);
+    for (const auto &hash : rd().materialx) {
+        add(hash);
+    }
+    return hashes;
+}
+
+std::vector<std::string> AppearanceList::materialXChildren(const std::string &manifestHash) const
+{
+    const auto it = rd().textureBlobs.find(manifestHash);
+    if (it == rd().textureBlobs.end()) {
+        return {};
+    }
+    MaterialXDocument manifest;
+    if (!MaterialXDocument::readFile(it->second->path(), manifest)) {
+        return {};
+    }
+    return manifest.hashes();
+}
+
+void AppearanceList::assignRestoredBlob(const FileBlobHandle &blob)
 {
     // No value change: this completes the restore of a value the document
     // already had, and touching it here would mark a document modified just
@@ -454,7 +521,7 @@ void MaterialList::assignRestoredBlob(const FileBlobHandle &blob)
 
 /// Whether content is held for every hash the palette names, which is what
 /// tells a restore it has nothing left queued
-bool MaterialList::holdsEveryNamedBlob() const
+bool AppearanceList::holdsEveryNamedBlob() const
 {
     std::vector<SurfaceTexture> named = rd().texturePalette;
     named.push_back(rd().base.texture);
@@ -465,17 +532,28 @@ bool MaterialList::holdsEveryNamedBlob() const
             }
         }
     }
+    for (const auto &hash : materialXHashes()) {
+        if (rd().textureBlobs.find(hash) == rd().textureBlobs.end()) {
+            return false;
+        }
+        // The manifest is here, so its children are known; they count too
+        for (const auto &child : materialXChildren(hash)) {
+            if (rd().textureBlobs.find(child) == rd().textureBlobs.end()) {
+                return false;
+            }
+        }
+    }
     return true;
 }
 
-void MaterialList::holdTextureBlob(const FileBlobHandle &blob)
+void AppearanceList::holdTextureBlob(const FileBlobHandle &blob)
 {
     if (blob) {
         bd().textureBlobs[blob->hash()] = blob;
     }
 }
 
-std::vector<std::string> MaterialList::getTextureHashes() const
+std::vector<std::string> AppearanceList::getTextureHashes() const
 {
     std::vector<std::string> hashes;
     hashes.reserve(rd().textureBlobs.size());
@@ -495,7 +573,7 @@ std::vector<std::string> MaterialList::getTextureHashes() const
  * only where the palette has just been stated in full: the whole-list
  * assignments and the restore.
  */
-void MaterialList::pruneTextureBlobs()
+void AppearanceList::pruneTextureBlobs()
 {
     if (rd().textureBlobs.empty()) {
         return;
@@ -511,6 +589,12 @@ void MaterialList::pruneTextureBlobs()
             }
         }
     }
+    for (const auto &hash : materialXHashes()) {
+        named.insert(hash);
+        for (const auto &child : materialXChildren(hash)) {
+            named.insert(child);
+        }
+    }
     Data &d = bd();
     for (auto it = d.textureBlobs.begin(); it != d.textureBlobs.end();) {
         it = named.count(it->first) ? std::next(it) : d.textureBlobs.erase(it);
@@ -518,96 +602,102 @@ void MaterialList::pruneTextureBlobs()
 }
 
 // ==================== default ====================
-const Material &MaterialList::defaultMaterial()
+const MaterialAppearance &AppearanceList::defaultMaterial()
 {
-    static const Material def;
+    static const MaterialAppearance def;
     return def;
 }
 
 // ==================== the fields, as stored ====================
 
-int MaterialList::getSize() const
+int AppearanceList::getSize() const
 {
     return rd().count;
 }
 
-bool MaterialList::isPBR() const
+bool AppearanceList::isPBR() const
 {
     return rd().pbr;
 }
 
-bool MaterialList::isFollowingMaterial() const
+bool AppearanceList::isFollowingMaterial() const
 {
     return rd().follow;
 }
 
-const std::vector<Color> &MaterialList::getAmbientOverrides() const
+const std::vector<Color> &AppearanceList::getAmbientOverrides() const
 {
     ensureNormalized();
     return rd().ambient;
 }
 
-const std::vector<Color> &MaterialList::getDiffuseOverrides() const
+const std::vector<Color> &AppearanceList::getDiffuseOverrides() const
 {
     ensureNormalized();
     return rd().diffuse;
 }
 
-const std::vector<Color> &MaterialList::getSpecularOverrides() const
+const std::vector<Color> &AppearanceList::getSpecularOverrides() const
 {
     ensureNormalized();
     return rd().specular;
 }
 
-const std::vector<Color> &MaterialList::getEmissiveOverrides() const
+const std::vector<Color> &AppearanceList::getEmissiveOverrides() const
 {
     ensureNormalized();
     return rd().emissive;
 }
 
-const std::vector<float> &MaterialList::getShininessOverrides() const
+const std::vector<float> &AppearanceList::getShininessOverrides() const
 {
     ensureNormalized();
     return rd().shininess;
 }
 
-const std::vector<std::string> &MaterialList::getImageOverrides() const
+const std::vector<std::string> &AppearanceList::getImageOverrides() const
 {
     ensureNormalized();
     return rd().image;
 }
 
-const std::vector<std::string> &MaterialList::getImagePathOverrides() const
+const std::vector<std::string> &AppearanceList::getImagePathOverrides() const
 {
     ensureNormalized();
     return rd().imagePath;
 }
 
-const std::vector<std::string> &MaterialList::getUuidOverrides() const
+const std::vector<std::string> &AppearanceList::getUuidOverrides() const
 {
     ensureNormalized();
     return rd().uuid;
 }
 
-const std::vector<int8_t> &MaterialList::getTypeOverrides() const
+const std::vector<std::string> &AppearanceList::getMaterialXOverrides() const
+{
+    ensureNormalized();
+    return rd().materialx;
+}
+
+const std::vector<int8_t> &AppearanceList::getTypeOverrides() const
 {
     ensureNormalized();
     return rd().type;
 }
 
-const std::vector<SurfaceFinish> &MaterialList::getFinishOverrides() const
+const std::vector<SurfaceFinish> &AppearanceList::getFinishOverrides() const
 {
     ensureNormalized();
     return rd().finish;
 }
 
-const std::vector<SurfaceTexture> &MaterialList::getTexturePalette() const
+const std::vector<SurfaceTexture> &AppearanceList::getTexturePalette() const
 {
     ensureNormalized();
     return rd().texturePalette;
 }
 
-const std::vector<uint16_t> &MaterialList::getTextureIndex() const
+const std::vector<uint16_t> &AppearanceList::getTextureIndex() const
 {
     ensureNormalized();
     return rd().textureIndex;
@@ -619,68 +709,74 @@ const std::vector<uint16_t> &MaterialList::getTextureIndex() const
 // asks for ONCE. Everything that reads a single entry goes to the indexed
 // getters, which touch no memory that is not already there.
 
-std::vector<Color> MaterialList::getAmbientColors() const
+std::vector<Color> AppearanceList::getAmbientColors() const
 {
     ensureNormalized();
     return expandSparse(rd().count, rd().overrides, rd().ambient, rd().base.ambientColor);
 }
 
-std::vector<Color> MaterialList::getDiffuseColors() const
+std::vector<Color> AppearanceList::getDiffuseColors() const
 {
     ensureNormalized();
     return expandSparse(rd().count, rd().overrides, rd().diffuse, rd().base.diffuseColor);
 }
 
-std::vector<Color> MaterialList::getSpecularColors() const
+std::vector<Color> AppearanceList::getSpecularColors() const
 {
     ensureNormalized();
     return expandSparse(rd().count, rd().overrides, rd().specular, rd().base.specularColor);
 }
 
-std::vector<Color> MaterialList::getEmissiveColors() const
+std::vector<Color> AppearanceList::getEmissiveColors() const
 {
     ensureNormalized();
     return expandSparse(rd().count, rd().overrides, rd().emissive, rd().base.emissiveColor);
 }
 
-std::vector<float> MaterialList::getShininessValues() const
+std::vector<float> AppearanceList::getShininessValues() const
 {
     ensureNormalized();
     return expandSparse(rd().count, rd().overrides, rd().shininess, rd().base.shininess);
 }
 
-std::vector<std::string> MaterialList::getImages() const
+std::vector<std::string> AppearanceList::getImages() const
 {
     ensureNormalized();
     return expandSparse(rd().count, rd().overrides, rd().image, rd().base.image);
 }
 
-std::vector<std::string> MaterialList::getImagePaths() const
+std::vector<std::string> AppearanceList::getImagePaths() const
 {
     ensureNormalized();
     return expandSparse(rd().count, rd().overrides, rd().imagePath, rd().base.imagePath);
 }
 
-std::vector<std::string> MaterialList::getUuids() const
+std::vector<std::string> AppearanceList::getUuids() const
 {
     ensureNormalized();
     return expandSparse(rd().count, rd().overrides, rd().uuid, rd().base.uuid);
 }
 
-std::vector<int8_t> MaterialList::getTypes() const
+std::vector<std::string> AppearanceList::getMaterialXs() const
+{
+    ensureNormalized();
+    return expandSparse(rd().count, rd().overrides, rd().materialx, rd().base.materialx);
+}
+
+std::vector<int8_t> AppearanceList::getTypes() const
 {
     ensureNormalized();
     return expandSparse(rd().count, rd().overrides, rd().type,
                         static_cast<int8_t>(rd().base.getType()));
 }
 
-std::vector<SurfaceFinish> MaterialList::getFinishes() const
+std::vector<SurfaceFinish> AppearanceList::getFinishes() const
 {
     ensureNormalized();
     return expandSparse(rd().count, rd().overrides, rd().finish, rd().base.finish);
 }
 
-void MaterialList::getTextures(std::vector<SurfaceTexture> &palette,
+void AppearanceList::getTextures(std::vector<SurfaceTexture> &palette,
                                std::vector<uint16_t> &index) const
 {
     ensureNormalized();
@@ -710,20 +806,20 @@ void MaterialList::getTextures(std::vector<SurfaceTexture> &palette,
     collapseDenseTexture(palette, index, rd().count, defaultMaterial().texture);
 }
 
-bool MaterialList::hasTextureOrCard() const
+bool AppearanceList::hasTextureOrCard() const
 {
     ensureNormalized();
     return hasImage() || !rd().base.uuid.empty() || !rd().uuid.empty();
 }
 
-bool MaterialList::hasImage() const
+bool AppearanceList::hasImage() const
 {
     ensureNormalized();
     return !rd().base.image.empty() || !rd().image.empty()
         || !rd().base.imagePath.empty() || !rd().imagePath.empty();
 }
 
-bool MaterialList::hasFinish() const
+bool AppearanceList::hasFinish() const
 {
     // Normalised, so a finish written and then cleared answers false rather
     // than "there is still an array there"
@@ -731,7 +827,7 @@ bool MaterialList::hasFinish() const
     return !(rd().base.finish == defaultMaterial().finish) || !rd().finish.empty();
 }
 
-bool MaterialList::hasTexture() const
+bool AppearanceList::hasTexture() const
 {
     // A palette entry survives collapse only while some override resolves
     // to it, so the base and an empty palette are the whole answer
@@ -739,13 +835,19 @@ bool MaterialList::hasTexture() const
     return !(rd().base.texture == defaultMaterial().texture) || !rd().texturePalette.empty();
 }
 
+bool AppearanceList::hasMaterialX() const
+{
+    ensureNormalized();
+    return !rd().base.materialx.empty() || !rd().materialx.empty();
+}
+
 // ==================== storage ====================
-void MaterialList::touchFields()
+void AppearanceList::touchFields()
 {
     wd().normalized = false;
 }
 
-void MaterialList::normalize() const
+void AppearanceList::normalize() const
 {
     // Nothing stored is already the normal form, and writing through nd()
     // here would scribble on the shared empty value it answers with
@@ -767,6 +869,7 @@ void MaterialList::normalize() const
         std::vector<std::string>().swap(d.image);
         std::vector<std::string>().swap(d.imagePath);
         std::vector<std::string>().swap(d.uuid);
+        std::vector<std::string>().swap(d.materialx);
         std::vector<int8_t>().swap(d.type);
         std::vector<SurfaceFinish>().swap(d.finish);
         std::vector<SurfaceTexture>().swap(d.texturePalette);
@@ -801,6 +904,7 @@ void MaterialList::normalize() const
     fold(d.image, d.base.image);
     fold(d.imagePath, d.base.imagePath);
     fold(d.uuid, d.base.uuid);
+    fold(d.materialx, d.base.materialx);
     if (everyFace && !d.type.empty()) {
         bool uniform = true;
         for (std::size_t i = 1; i < d.type.size() && uniform; ++i)
@@ -835,6 +939,7 @@ void MaterialList::normalize() const
     drop(d.image, d.base.image);
     drop(d.imagePath, d.base.imagePath);
     drop(d.uuid, d.base.uuid);
+    drop(d.materialx, d.base.materialx);
     drop(d.type, static_cast<int8_t>(d.base.getType()));
     drop(d.finish, d.base.finish);
     collapseTexture(d.texturePalette, d.textureIndex, d.overrides.size(), d.base.texture);
@@ -855,6 +960,7 @@ void MaterialList::normalize() const
             || sparseAt(d.image, int(pos), d.base.image) != d.base.image
             || sparseAt(d.imagePath, int(pos), d.base.imagePath) != d.base.imagePath
             || sparseAt(d.uuid, int(pos), d.base.uuid) != d.base.uuid
+            || sparseAt(d.materialx, int(pos), d.base.materialx) != d.base.materialx
             || sparseAt(d.type, int(pos), static_cast<int8_t>(d.base.getType()))
                     != static_cast<int8_t>(d.base.getType())
             || !(sparseAt(d.finish, int(pos), d.base.finish) == d.base.finish)
@@ -874,6 +980,7 @@ void MaterialList::normalize() const
         compactSparse(d.image, keep);
         compactSparse(d.imagePath, keep);
         compactSparse(d.uuid, keep);
+        compactSparse(d.materialx, keep);
         compactSparse(d.type, keep);
         compactSparse(d.finish, keep);
         compactSparse(d.textureIndex, keep);
@@ -888,7 +995,7 @@ void MaterialList::normalize() const
     d.normalized = true;
 }
 
-void MaterialList::ensureNormalized() const
+void AppearanceList::ensureNormalized() const
 {
     // Normalising is deferred so that a loop setting one entry at a time
     // does not rescan the whole list on every step. It changes what is
@@ -902,36 +1009,36 @@ void MaterialList::ensureNormalized() const
 
 // ==================== the base ====================
 
-const Material &MaterialList::getBase() const
+const MaterialAppearance &AppearanceList::getBase() const
 {
     ensureNormalized();
     return rd().base;
 }
 
-bool MaterialList::hasDerivedBase() const
+bool AppearanceList::hasDerivedBase() const
 {
     return rd().baseDerived;
 }
 
-const std::vector<uint32_t> &MaterialList::getOverrides() const
+const std::vector<uint32_t> &AppearanceList::getOverrides() const
 {
     ensureNormalized();
     return rd().overrides;
 }
 
-bool MaterialList::hasOverrides() const
+bool AppearanceList::hasOverrides() const
 {
     ensureNormalized();
     return !rd().overrides.empty();
 }
 
-bool MaterialList::isOverride(int idx) const
+bool AppearanceList::isOverride(int idx) const
 {
     ensureNormalized();
     return overridePos(idx) >= 0;
 }
 
-int MaterialList::overridePos(int idx) const
+int AppearanceList::overridePos(int idx) const
 {
     if (idx < 0 || rd().overrides.empty())
         return -1;
@@ -942,7 +1049,7 @@ int MaterialList::overridePos(int idx) const
     return static_cast<int>(it - rd().overrides.begin());
 }
 
-int MaterialList::makeOverride(int idx)
+int AppearanceList::makeOverride(int idx)
 {
     const int found = overridePos(idx);
     if (found >= 0)
@@ -964,13 +1071,14 @@ int MaterialList::makeOverride(int idx)
     insertSparse(d.image, pos, d.base.image);
     insertSparse(d.imagePath, pos, d.base.imagePath);
     insertSparse(d.uuid, pos, d.base.uuid);
+    insertSparse(d.materialx, pos, d.base.materialx);
     insertSparse(d.type, pos, static_cast<int8_t>(d.base.getType()));
     insertSparse(d.finish, pos, d.base.finish);
     insertTexture(d.texturePalette, d.textureIndex, pos, d.base.texture);
     return pos;
 }
 
-void MaterialList::clearOverride(int idx)
+void AppearanceList::clearOverride(int idx)
 {
     const int pos = overridePos(idx);
     if (pos < 0)
@@ -986,12 +1094,13 @@ void MaterialList::clearOverride(int idx)
     eraseSparse(d.image, pos);
     eraseSparse(d.imagePath, pos);
     eraseSparse(d.uuid, pos);
+    eraseSparse(d.materialx, pos);
     eraseSparse(d.type, pos);
     eraseSparse(d.finish, pos);
     eraseSparse(d.textureIndex, pos);
 }
 
-void MaterialList::clearOverrides()
+void AppearanceList::clearOverrides()
 {
     if (rd().overrides.empty())
         return;
@@ -1006,6 +1115,7 @@ void MaterialList::clearOverrides()
     std::vector<std::string>().swap(d.image);
     std::vector<std::string>().swap(d.imagePath);
     std::vector<std::string>().swap(d.uuid);
+    std::vector<std::string>().swap(d.materialx);
     std::vector<int8_t>().swap(d.type);
     std::vector<SurfaceFinish>().swap(d.finish);
     std::vector<SurfaceTexture>().swap(d.texturePalette);
@@ -1013,14 +1123,14 @@ void MaterialList::clearOverrides()
     pruneTextureBlobs();
 }
 
-void MaterialList::setFollowMaterial(bool enable)
+void AppearanceList::setFollowMaterial(bool enable)
 {
     if (rd().follow == enable)
         return;
     wd().follow = enable;
 }
 
-void MaterialList::followMaterial(const Material &card)
+void AppearanceList::followMaterial(const MaterialAppearance &card)
 {
     setBase(card);
     // After the write, because setBase is a whole-object write and every
@@ -1033,15 +1143,15 @@ void MaterialList::followMaterial(const Material &card)
         wd().follow = true;
 }
 
-void MaterialList::endFollow()
+void AppearanceList::endFollow()
 {
     if (rd().follow)
         wd().follow = false;
 }
 
-void MaterialList::setBase(const Material &value)
+void AppearanceList::setBase(const MaterialAppearance &value)
 {
-    const Material mat = inMode(value);
+    const MaterialAppearance mat = inMode(value);
     ensureNormalized();
     if (rd().count == 0) {
         // A base with nothing to wear it is not a list; the same rule the
@@ -1054,6 +1164,7 @@ void MaterialList::setBase(const Material &value)
         && d.base.specularColor == mat.specularColor && d.base.emissiveColor == mat.emissiveColor
         && d.base.shininess == mat.shininess && d.base.image == mat.image
         && d.base.imagePath == mat.imagePath && d.base.uuid == mat.uuid
+        && d.base.materialx == mat.materialx
         && d.base.getType() == mat.getType() && d.base.finish == storedFinish(mat.finish)
         && d.base.texture == storedTexture(mat.texture)) {
         return;
@@ -1070,18 +1181,19 @@ void MaterialList::setBase(const Material &value)
     w.base.image = mat.image;
     w.base.imagePath = mat.imagePath;
     w.base.uuid = mat.uuid;
+    w.base.materialx = mat.materialx;
     w.base.finish = storedFinish(mat.finish);
     w.base.texture = storedTexture(mat.texture);
 }
 
-/// The base's type, without Material::setType() taking the preset's colours
+/// The base's type, without MaterialAppearance::setType() taking the preset's colours
 /// with it -- the trap getMaterial() documents, from the other side
-void MaterialList::setMaterialType(Material &mat, int8_t type)
+void AppearanceList::setMaterialType(MaterialAppearance &mat, int8_t type)
 {
     if (static_cast<int8_t>(mat.getType()) == type)
         return;
-    const Material saved = mat;
-    mat.setType(static_cast<Material::MaterialType>(type));
+    const MaterialAppearance saved = mat;
+    mat.setType(static_cast<MaterialAppearance::MaterialType>(type));
     mat.ambientColor = saved.ambientColor;
     mat.diffuseColor = saved.diffuseColor;
     mat.specularColor = saved.specularColor;
@@ -1091,12 +1203,13 @@ void MaterialList::setMaterialType(Material &mat, int8_t type)
     mat.image = saved.image;
     mat.imagePath = saved.imagePath;
     mat.uuid = saved.uuid;
+    mat.materialx = saved.materialx;
     mat.finish = saved.finish;
     mat.texture = saved.texture;
     mat.pbr = saved.pbr;
 }
 
-void MaterialList::adoptDense()
+void AppearanceList::adoptDense()
 {
     if (_data.isNull())
         return;
@@ -1110,7 +1223,7 @@ void MaterialList::adoptDense()
         return;
     }
 
-    const Material &def = defaultMaterial();
+    const MaterialAppearance &def = defaultMaterial();
     collapseField(d.ambient, def.ambientColor);
     collapseField(d.diffuse, storedDiffuse(def));
     collapseField(d.specular, specularDefault());
@@ -1119,6 +1232,7 @@ void MaterialList::adoptDense()
     collapseField(d.image, def.image);
     collapseField(d.imagePath, def.imagePath);
     collapseField(d.uuid, def.uuid);
+    collapseField(d.materialx, def.materialx);
     collapseField(d.type, static_cast<int8_t>(def.getType()));
     collapseField(d.finish, def.finish);
     collapseDenseTexture(d.texturePalette, d.textureIndex, d.count, def.texture);
@@ -1149,6 +1263,7 @@ void MaterialList::adoptDense()
     take(d.image, d.base.image);
     take(d.imagePath, d.base.imagePath);
     take(d.uuid, d.base.uuid);
+    take(d.materialx, d.base.materialx);
     take(d.finish, d.base.finish);
     if (d.type.size() == 1) {
         setMaterialType(d.base, d.type.front());
@@ -1181,7 +1296,7 @@ void MaterialList::adoptDense()
     normalize();
 }
 
-void MaterialList::ensureBase() const
+void AppearanceList::ensureBase() const
 {
     if (!rd().baseDerived)
         deriveBase();
@@ -1194,7 +1309,7 @@ void MaterialList::ensureBase() const
  * normal form numbers the palette in first-use order and holds no
  * duplicate.
  */
-MaterialList::OverrideKey MaterialList::overrideKey(int pos) const
+AppearanceList::OverrideKey AppearanceList::overrideKey(int pos) const
 {
     const Data &d = rd();
     const SurfaceFinish finish = sparseAt(d.finish, pos, d.base.finish);
@@ -1208,6 +1323,7 @@ MaterialList::OverrideKey MaterialList::overrideKey(int pos) const
         sparseAt(d.image, pos, d.base.image),
         sparseAt(d.imagePath, pos, d.base.imagePath),
         sparseAt(d.uuid, pos, d.base.uuid),
+        sparseAt(d.materialx, pos, d.base.materialx),
         finish.pattern, finish.pitch, finish.depth, finish.angle,
         d.textureIndex.empty() ? 0 : d.textureIndex[static_cast<std::size_t>(pos)]
     };
@@ -1220,7 +1336,7 @@ MaterialList::OverrideKey MaterialList::overrideKey(int pos) const
  * through the dense form of each field, which is the only way to ask the
  * question once per face rather than once per face per field.
  */
-void MaterialList::rebase(const Material &newBase) const
+void AppearanceList::rebase(const MaterialAppearance &newBase) const
 {
     Data &d = nd();
     const std::size_t n = static_cast<std::size_t>(d.count);
@@ -1236,6 +1352,8 @@ void MaterialList::rebase(const Material &newBase) const
     std::vector<std::string> imagePath =
             expandSparse(d.count, d.overrides, d.imagePath, d.base.imagePath);
     std::vector<std::string> uuid = expandSparse(d.count, d.overrides, d.uuid, d.base.uuid);
+    std::vector<std::string> materialx =
+            expandSparse(d.count, d.overrides, d.materialx, d.base.materialx);
     std::vector<int8_t> type = expandSparse(d.count, d.overrides, d.type,
                                             static_cast<int8_t>(d.base.getType()));
     std::vector<SurfaceFinish> finish =
@@ -1263,6 +1381,7 @@ void MaterialList::rebase(const Material &newBase) const
     std::vector<std::string>().swap(d.image);
     std::vector<std::string>().swap(d.imagePath);
     std::vector<std::string>().swap(d.uuid);
+    std::vector<std::string>().swap(d.materialx);
     std::vector<int8_t>().swap(d.type);
     std::vector<SurfaceFinish>().swap(d.finish);
     std::vector<SurfaceTexture>().swap(d.texturePalette);
@@ -1272,6 +1391,7 @@ void MaterialList::rebase(const Material &newBase) const
             && specular[i] == d.base.specularColor && emissive[i] == d.base.emissiveColor
             && shininess[i] == d.base.shininess && image[i] == d.base.image
             && imagePath[i] == d.base.imagePath && uuid[i] == d.base.uuid
+            && materialx[i] == d.base.materialx
             && type[i] == baseType && finish[i] == d.base.finish
             && texture[i] == d.base.texture) {
             continue;
@@ -1292,6 +1412,7 @@ void MaterialList::rebase(const Material &newBase) const
             d.image.push_back(std::move(image[i]));
             d.imagePath.push_back(std::move(imagePath[i]));
             d.uuid.push_back(std::move(uuid[i]));
+            d.materialx.push_back(std::move(materialx[i]));
             d.type.push_back(type[i]);
             d.finish.push_back(finish[i]);
             records.push_back(texture[i]);
@@ -1302,7 +1423,7 @@ void MaterialList::rebase(const Material &newBase) const
     normalize();
 }
 
-bool MaterialList::namesDiffuse(const Color &color) const
+bool AppearanceList::namesDiffuse(const Color &color) const
 {
     ensureNormalized();
     const Data &d = rd();
@@ -1318,7 +1439,7 @@ bool MaterialList::namesDiffuse(const Color &color) const
     return false;
 }
 
-void MaterialList::deriveBase(const Color *hint, const std::vector<double> *weights) const
+void AppearanceList::deriveBase(const Color *hint, const std::vector<double> *weights) const
 {
     if (_data.isNull() || rd().baseDerived)
         return;
@@ -1381,7 +1502,7 @@ void MaterialList::deriveBase(const Color *hint, const std::vector<double> *weig
     if (winner < 0)
         return;   // the faces already outside the overrides win
 
-    Material chosen = d.base;
+    MaterialAppearance chosen = d.base;
     setMaterialType(chosen, sparseAt(d.type, winner, static_cast<int8_t>(d.base.getType())));
     chosen.ambientColor = sparseAt(d.ambient, winner, d.base.ambientColor);
     chosen.diffuseColor = sparseAt(d.diffuse, winner, d.base.diffuseColor);
@@ -1391,12 +1512,13 @@ void MaterialList::deriveBase(const Color *hint, const std::vector<double> *weig
     chosen.image = sparseAt(d.image, winner, d.base.image);
     chosen.imagePath = sparseAt(d.imagePath, winner, d.base.imagePath);
     chosen.uuid = sparseAt(d.uuid, winner, d.base.uuid);
+    chosen.materialx = sparseAt(d.materialx, winner, d.base.materialx);
     chosen.finish = sparseAt(d.finish, winner, d.base.finish);
     chosen.texture = sparseTextureAt(d.texturePalette, d.textureIndex, winner, d.base.texture);
     rebase(chosen);
 }
 
-bool MaterialList::variesOnlyInDiffuse() const
+bool AppearanceList::variesOnlyInDiffuse() const
 {
     ensureNormalized();
     // Every non-diffuse override array empty: nothing but the colour is
@@ -1406,13 +1528,14 @@ bool MaterialList::variesOnlyInDiffuse() const
     return rd().ambient.empty() && rd().specular.empty() && rd().emissive.empty()
         && rd().shininess.empty() && rd().type.empty()
         && rd().image.empty() && rd().imagePath.empty() && rd().uuid.empty()
+        && rd().materialx.empty()
         && rd().finish.empty() && rd().textureIndex.empty();
 }
 
 //**************************************************************************
 // PBR mode
 
-const Color &MaterialList::specularDefault() const
+const Color &AppearanceList::specularDefault() const
 {
     // White F0 tint, metallic 0 in the alpha: the natural unset PBR
     // surface. The Phong default's alpha of one would read as full metal.
@@ -1420,27 +1543,27 @@ const Color &MaterialList::specularDefault() const
     return rd().pbr ? pbrDef : defaultMaterial().specularColor;
 }
 
-float MaterialList::shininessDefault() const
+float AppearanceList::shininessDefault() const
 {
     return rd().pbr ? 0.5f : defaultMaterial().shininess;
 }
 
-void MaterialList::requirePBR() const
+void AppearanceList::requirePBR() const
 {
     if (!rd().pbr)
         throw Base::RuntimeError("material list is not in PBR mode");
 }
 
-Material MaterialList::inMode(const Material &mat) const
+MaterialAppearance AppearanceList::inMode(const MaterialAppearance &mat) const
 {
     if (mat.pbr == rd().pbr)
         return mat;
-    Material converted = mat;
+    MaterialAppearance converted = mat;
     converted.setPBR(rd().pbr);
     return converted;
 }
 
-void MaterialList::setPBR(bool enable)
+void AppearanceList::setPBR(bool enable)
 {
     if (rd().pbr == enable)
         return;
@@ -1461,19 +1584,19 @@ void MaterialList::setPBR(bool enable)
     wd().base.pbr = enable;
 }
 
-void MaterialList::convertPBR(bool enable)
+void AppearanceList::convertPBR(bool enable)
 {
     if (wd().pbr == enable)
         return;
     // Convert while the old mode still governs the readings, then flip.
     // Per entry, so per-face variation converts entry by entry; normalize
     // collapses whatever stays uniform afterwards.
-    std::vector<Material> values;
+    std::vector<MaterialAppearance> values;
     values.reserve(wd().count);
     for (int i = 0; i < wd().count; ++i) {
         // Tagged with the mode they are in, so the conversion is the
         // value's own; setValues below then reads the new mode off them
-        Material mat = getMaterial(i);
+        MaterialAppearance mat = getMaterial(i);
         mat.setPBR(enable);
         values.push_back(mat);
     }
@@ -1481,20 +1604,20 @@ void MaterialList::convertPBR(bool enable)
     setValues(std::move(values));
 }
 
-float MaterialList::getMetallic(int idx) const
+float AppearanceList::getMetallic(int idx) const
 {
     if (!rd().pbr)
         return 0.0f;  // the Phong model has no metals
     return getSpecularColor(idx).a;
 }
 
-float MaterialList::getRoughness(int idx) const
+float AppearanceList::getRoughness(int idx) const
 {
     const float value = getShininess(idx);
-    return rd().pbr ? value : Material::shininessToRoughness(value);
+    return rd().pbr ? value : MaterialAppearance::shininessToRoughness(value);
 }
 
-void MaterialList::setMetallicValues(const std::vector<float> &values)
+void AppearanceList::setMetallicValues(const std::vector<float> &values)
 {
     // The alphas of the specular field, exactly as setTransparencies works
     // the diffuse alphas: empty is back-to-default, 1 uniform, N per entry,
@@ -1514,30 +1637,30 @@ void MaterialList::setMetallicValues(const std::vector<float> &values)
         for (int i = 0; i < newCount; ++i)
             colors[i].a = values[i];
     }
-    setField(&Material::specularColor, &Data::specular, colors);
+    setField(&MaterialAppearance::specularColor, &Data::specular, colors);
 }
 
-void MaterialList::setRoughnessValues(const std::vector<float> &values)
+void AppearanceList::setRoughnessValues(const std::vector<float> &values)
 {
     requirePBR();
-    setField(&Material::shininess, &Data::shininess, values);
+    setField(&MaterialAppearance::shininess, &Data::shininess, values);
 }
 
-void MaterialList::setMetallic(int idx, float value)
+void AppearanceList::setMetallic(int idx, float value)
 {
     requirePBR();
     Color color = getSpecularColor(idx < 0 || idx >= rd().count ? 0 : idx);
     color.a = value;
-    setFieldValue(&Material::specularColor, &Data::specular, idx, color);
+    setFieldValue(&MaterialAppearance::specularColor, &Data::specular, idx, color);
 }
 
-void MaterialList::setRoughness(int idx, float value)
+void AppearanceList::setRoughness(int idx, float value)
 {
     requirePBR();
-    setFieldValue(&Material::shininess, &Data::shininess, idx, value);
+    setFieldValue(&MaterialAppearance::shininess, &Data::shininess, idx, value);
 }
 
-void MaterialList::setMetallic(float value)
+void AppearanceList::setMetallic(float value)
 {
     // The base's tint alpha, as every whole-object write moves the base:
     // an overriding face holds its own metallic exactly as it holds its own
@@ -1545,32 +1668,32 @@ void MaterialList::setMetallic(float value)
     requirePBR();
     Color color = getBase().specularColor;
     color.a = value;
-    setBaseField(&Material::specularColor, color, specularDefault());
+    setBaseField(&MaterialAppearance::specularColor, color, specularDefault());
 }
 
-void MaterialList::setRoughness(float value)
+void AppearanceList::setRoughness(float value)
 {
     requirePBR();
-    setBaseField(&Material::shininess, value, shininessDefault());
+    setBaseField(&MaterialAppearance::shininess, value, shininessDefault());
 }
 
-Material MaterialList::getPhongMaterial(int idx) const
+MaterialAppearance AppearanceList::getPhongMaterial(int idx) const
 {
-    Material mat = getMaterial(idx);
+    MaterialAppearance mat = getMaterial(idx);
     if (!rd().pbr)
         return mat;
-    // Why the diffuse stays the base colour: see Material::pbrToPhong
-    return Material::pbrToPhong(mat);
+    // Why the diffuse stays the base colour: see MaterialAppearance::pbrToPhong
+    return MaterialAppearance::pbrToPhong(mat);
 }
 
-Material MaterialList::getPhongBase() const
+MaterialAppearance AppearanceList::getPhongBase() const
 {
-    const Material &mat = getBase();
-    return rd().pbr ? Material::pbrToPhong(mat) : mat;
+    const MaterialAppearance &mat = getBase();
+    return rd().pbr ? MaterialAppearance::pbrToPhong(mat) : mat;
 }
 
 // ==================== restore ====================
-void MaterialList::restoreValues(std::vector<Material> &&values, bool legacy)
+void AppearanceList::restoreValues(std::vector<MaterialAppearance> &&values, bool legacy)
 {
     touchFields();
     Data &d = wd();
@@ -1585,6 +1708,7 @@ void MaterialList::restoreValues(std::vector<Material> &&values, bool legacy)
     std::vector<std::string>().swap(d.image);
     std::vector<std::string>().swap(d.imagePath);
     std::vector<std::string>().swap(d.uuid);
+    std::vector<std::string>().swap(d.materialx);
     std::vector<int8_t>().swap(d.type);
     // No finish or texture here: none of the encodings that come through
     // this function can carry either, so every entry reads as unfinished
@@ -1602,6 +1726,7 @@ void MaterialList::restoreValues(std::vector<Material> &&values, bool legacy)
         d.image.reserve(d.count);
         d.imagePath.reserve(d.count);
         d.uuid.reserve(d.count);
+        d.materialx.reserve(d.count);
         d.type.reserve(d.count);
         for (auto &mat : values) {
             // The diffuse alpha exactly as the file states it; which of the
@@ -1616,6 +1741,7 @@ void MaterialList::restoreValues(std::vector<Material> &&values, bool legacy)
             d.image.push_back(std::move(mat.image));
             d.imagePath.push_back(std::move(mat.imagePath));
             d.uuid.push_back(std::move(mat.uuid));
+            d.materialx.push_back(std::move(mat.materialx));
             d.type.push_back(static_cast<int8_t>(mat.getType()));
         }
         if (legacy) {
@@ -1639,7 +1765,7 @@ void MaterialList::restoreValues(std::vector<Material> &&values, bool legacy)
     }
 }
 
-void MaterialList::applyRestoredTransparency(const std::vector<float> &transparency,
+void AppearanceList::applyRestoredTransparency(const std::vector<float> &transparency,
                                                      bool legacy)
 {
     if (transparency.empty() || wd().count == 0)
@@ -1668,7 +1794,7 @@ void MaterialList::applyRestoredTransparency(const std::vector<float> &transpare
 }
 
 // ==================== access ====================
-void MaterialList::setSize(int newSize)
+void AppearanceList::setSize(int newSize)
 {
     // Grow with what an unset entry reads as, which is the BASE: adding a
     // face to an object makes it look like the object.
@@ -1679,14 +1805,14 @@ void MaterialList::setSize(int newSize)
         wd().count = newSize;
         return;
     }
-    Material def = defaultMaterial();
+    MaterialAppearance def = defaultMaterial();
     def.specularColor = specularDefault();
     def.shininess = shininessDefault();
     def.pbr = rd().pbr;
     setSize(newSize, def);
 }
 
-void MaterialList::setSize(int newSize, const Material &fill)
+void AppearanceList::setSize(int newSize, const MaterialAppearance &fill)
 {
     if (newSize == rd().count)
         return;
@@ -1715,6 +1841,7 @@ void MaterialList::setSize(int newSize, const Material &fill)
             compactSparse(d.image, keep);
             compactSparse(d.imagePath, keep);
             compactSparse(d.uuid, keep);
+            compactSparse(d.materialx, keep);
             compactSparse(d.type, keep);
             compactSparse(d.finish, keep);
             compactSparse(d.textureIndex, keep);
@@ -1725,7 +1852,7 @@ void MaterialList::setSize(int newSize, const Material &fill)
 
     // Growth fills entries of this list, so the filler reads as this list
     // does; only a whole-list assignment restates the mode
-    const Material mat = inMode(fill);
+    const MaterialAppearance mat = inMode(fill);
     const int oldCount = rd().count;
     if (oldCount == 0) {
         // Nothing to be the base yet, so the filler IS it
@@ -1743,6 +1870,7 @@ void MaterialList::setSize(int newSize, const Material &fill)
         d.base.image = mat.image;
         d.base.imagePath = mat.imagePath;
         d.base.uuid = mat.uuid;
+        d.base.materialx = mat.materialx;
         d.base.finish = storedFinish(mat.finish);
         d.base.texture = storedTexture(mat.texture);
         return;
@@ -1757,24 +1885,25 @@ void MaterialList::setSize(int newSize, const Material &fill)
 
 /// Every field of one entry, which is the per-face write set1Value and a
 /// growth with a filler both are
-void MaterialList::applyEntry(int idx, const Material &mat)
+void AppearanceList::applyEntry(int idx, const MaterialAppearance &mat)
 {
-    setFieldValue(&Material::ambientColor, &Data::ambient, idx, mat.ambientColor);
-    setFieldValue(&Material::diffuseColor, &Data::diffuse, idx, storedDiffuse(mat));
-    setFieldValue(&Material::specularColor, &Data::specular, idx, mat.specularColor);
-    setFieldValue(&Material::emissiveColor, &Data::emissive, idx, mat.emissiveColor);
-    setFieldValue(&Material::shininess, &Data::shininess, idx, mat.shininess);
-    setFieldValue(&Material::image, &Data::image, idx, mat.image);
-    setFieldValue(&Material::imagePath, &Data::imagePath, idx, mat.imagePath);
-    setFieldValue(&Material::uuid, &Data::uuid, idx, mat.uuid);
+    setFieldValue(&MaterialAppearance::ambientColor, &Data::ambient, idx, mat.ambientColor);
+    setFieldValue(&MaterialAppearance::diffuseColor, &Data::diffuse, idx, storedDiffuse(mat));
+    setFieldValue(&MaterialAppearance::specularColor, &Data::specular, idx, mat.specularColor);
+    setFieldValue(&MaterialAppearance::emissiveColor, &Data::emissive, idx, mat.emissiveColor);
+    setFieldValue(&MaterialAppearance::shininess, &Data::shininess, idx, mat.shininess);
+    setFieldValue(&MaterialAppearance::image, &Data::image, idx, mat.image);
+    setFieldValue(&MaterialAppearance::imagePath, &Data::imagePath, idx, mat.imagePath);
+    setFieldValue(&MaterialAppearance::uuid, &Data::uuid, idx, mat.uuid);
+    setFieldValue(&MaterialAppearance::materialx, &Data::materialx, idx, mat.materialx);
     setTypeValue(idx, static_cast<int8_t>(mat.getType()));
-    setFieldValue(&Material::finish, &Data::finish, idx, storedFinish(mat.finish));
+    setFieldValue(&MaterialAppearance::finish, &Data::finish, idx, storedFinish(mat.finish));
     setTexture(idx, mat.texture);
 }
 
-/// The type field, which has no Material member to name it by: the base
+/// The type field, which has no MaterialAppearance member to name it by: the base
 /// keeps it inside the material, where setType() would rewrite the colours
-void MaterialList::setTypeValue(int idx, int8_t value)
+void AppearanceList::setTypeValue(int idx, int8_t value)
 {
     if (idx < 0 || idx >= rd().count)
         throw Base::RuntimeError("index out of bound");
@@ -1786,20 +1915,20 @@ void MaterialList::setTypeValue(int idx, int8_t value)
     setSparseAt(wd().type, pos, wd().overrides.size(), value, base);
 }
 
-Material MaterialList::getMaterial(int idx) const
+MaterialAppearance AppearanceList::getMaterial(int idx) const
 {
-    Material mat;
+    MaterialAppearance mat;
     if (idx < 0 || idx >= rd().count)
         return mat;
     ensureNormalized();
     const Data &d = rd();
     const int pos = overridePos(idx);
-    // The type goes on FIRST. Material::setType() rewrites every colour and
+    // The type goes on FIRST. MaterialAppearance::setType() rewrites every colour and
     // both floats with that type's preset, so a setType() after the fields
     // are laid in throws all of them away and the list hands back the
     // preset instead of what it stores -- silently, because the per field
     // getters below are unaffected and keep telling the truth.
-    mat.setType(static_cast<Material::MaterialType>(
+    mat.setType(static_cast<MaterialAppearance::MaterialType>(
                 sparseAt(d.type, pos, static_cast<int8_t>(d.base.getType()))));
     mat.ambientColor = sparseAt(d.ambient, pos, d.base.ambientColor);
     mat.diffuseColor = sparseAt(d.diffuse, pos, d.base.diffuseColor);
@@ -1812,6 +1941,7 @@ Material MaterialList::getMaterial(int idx) const
     mat.image = sparseAt(d.image, pos, d.base.image);
     mat.imagePath = sparseAt(d.imagePath, pos, d.base.imagePath);
     mat.uuid = sparseAt(d.uuid, pos, d.base.uuid);
+    mat.materialx = sparseAt(d.materialx, pos, d.base.materialx);
     mat.finish = sparseAt(d.finish, pos, d.base.finish);
     mat.texture = sparseTextureAt(d.texturePalette, d.textureIndex, pos, d.base.texture);
     // Stamp the list's mode on the value, so whoever holds it still knows
@@ -1820,12 +1950,12 @@ Material MaterialList::getMaterial(int idx) const
     return mat;
 }
 
-void MaterialList::setValue(const Material &mat)
+void AppearanceList::setValue(const MaterialAppearance &mat)
 {
-    setValues(std::vector<Material>(1, mat));
+    setValues(std::vector<MaterialAppearance>(1, mat));
 }
 
-void MaterialList::setValues(const std::vector<Material> &values)
+void AppearanceList::setValues(const std::vector<MaterialAppearance> &values)
 {
     // The list holds ONE mode, and an assignment states it through the
     // material it starts with; the rest are converted to that reading
@@ -1845,6 +1975,7 @@ void MaterialList::setValues(const std::vector<Material> &values)
     std::vector<std::string>().swap(d.image);
     std::vector<std::string>().swap(d.imagePath);
     std::vector<std::string>().swap(d.uuid);
+    std::vector<std::string>().swap(d.materialx);
     std::vector<int8_t>().swap(d.type);
     std::vector<SurfaceFinish>().swap(d.finish);
     std::vector<SurfaceTexture> textures;
@@ -1859,11 +1990,12 @@ void MaterialList::setValues(const std::vector<Material> &values)
         d.image.reserve(d.count);
         d.imagePath.reserve(d.count);
         d.uuid.reserve(d.count);
+        d.materialx.reserve(d.count);
         d.type.reserve(d.count);
         d.finish.reserve(d.count);
         textures.reserve(d.count);
         for (const auto &value : values) {
-            const Material mat = inMode(value);
+            const MaterialAppearance mat = inMode(value);
             d.ambient.push_back(mat.ambientColor);
             d.diffuse.push_back(storedDiffuse(mat));
             d.specular.push_back(mat.specularColor);
@@ -1872,6 +2004,7 @@ void MaterialList::setValues(const std::vector<Material> &values)
             d.image.push_back(mat.image);
             d.imagePath.push_back(mat.imagePath);
             d.uuid.push_back(mat.uuid);
+            d.materialx.push_back(mat.materialx);
             d.type.push_back(static_cast<int8_t>(mat.getType()));
             d.finish.push_back(storedFinish(mat.finish));
             textures.push_back(storedTexture(mat.texture));
@@ -1888,14 +2021,14 @@ void MaterialList::setValues(const std::vector<Material> &values)
     }
 }
 
-void MaterialList::set1Value(int idx, const Material &value)
+void AppearanceList::set1Value(int idx, const MaterialAppearance &value)
 {
     if (idx < -1 || idx > rd().count)
         throw Base::RuntimeError("index out of bound");
 
     // One entry cannot restate the whole list's mode, so it is converted
     // to it instead
-    const Material mat = inMode(value);
+    const MaterialAppearance mat = inMode(value);
     if (idx == -1 || idx == rd().count) {
         idx = rd().count;
         setSize(rd().count + 1, mat);
@@ -1911,77 +2044,83 @@ void MaterialList::set1Value(int idx, const Material &value)
 //**************************************************************************
 // Per field access
 
-Color MaterialList::getAmbientColor(int idx) const
+Color AppearanceList::getAmbientColor(int idx) const
 {
     ensureNormalized();
     return sparseAt(rd().ambient, overridePos(idx), rd().base.ambientColor);
 }
 
-Color MaterialList::getDiffuseColor(int idx) const
+Color AppearanceList::getDiffuseColor(int idx) const
 {
     ensureNormalized();
     return sparseAt(rd().diffuse, overridePos(idx), rd().base.diffuseColor);
 }
 
-Color MaterialList::getSpecularColor(int idx) const
+Color AppearanceList::getSpecularColor(int idx) const
 {
     ensureNormalized();
     return sparseAt(rd().specular, overridePos(idx), rd().base.specularColor);
 }
 
-Color MaterialList::getEmissiveColor(int idx) const
+Color AppearanceList::getEmissiveColor(int idx) const
 {
     ensureNormalized();
     return sparseAt(rd().emissive, overridePos(idx), rd().base.emissiveColor);
 }
 
-float MaterialList::getShininess(int idx) const
+float AppearanceList::getShininess(int idx) const
 {
     ensureNormalized();
     return sparseAt(rd().shininess, overridePos(idx), rd().base.shininess);
 }
 
-float MaterialList::getTransparency(int idx) const
+float AppearanceList::getTransparency(int idx) const
 {
     // The complement of the diffuse alpha; there is no second store.
     return getDiffuseColor(idx).transparency();
 }
 
-const std::string &MaterialList::getImage(int idx) const
+const std::string &AppearanceList::getImage(int idx) const
 {
     ensureNormalized();
     return sparseAt(rd().image, overridePos(idx), rd().base.image);
 }
 
-const std::string &MaterialList::getImagePath(int idx) const
+const std::string &AppearanceList::getImagePath(int idx) const
 {
     ensureNormalized();
     return sparseAt(rd().imagePath, overridePos(idx), rd().base.imagePath);
 }
 
-const std::string &MaterialList::getUuid(int idx) const
+const std::string &AppearanceList::getUuid(int idx) const
 {
     ensureNormalized();
     return sparseAt(rd().uuid, overridePos(idx), rd().base.uuid);
 }
 
-SurfaceFinish MaterialList::getFinish(int idx) const
+const std::string &AppearanceList::getMaterialX(int idx) const
+{
+    ensureNormalized();
+    return sparseAt(rd().materialx, overridePos(idx), rd().base.materialx);
+}
+
+SurfaceFinish AppearanceList::getFinish(int idx) const
 {
     ensureNormalized();
     return sparseAt(rd().finish, overridePos(idx), rd().base.finish);
 }
 
-SurfaceTexture MaterialList::getTexture(int idx) const
+SurfaceTexture AppearanceList::getTexture(int idx) const
 {
     ensureNormalized();
     return sparseTextureAt(rd().texturePalette, rd().textureIndex, overridePos(idx),
                            rd().base.texture);
 }
 
-Material::MaterialType MaterialList::getType(int idx) const
+MaterialAppearance::MaterialType AppearanceList::getType(int idx) const
 {
     ensureNormalized();
-    return static_cast<Material::MaterialType>(
+    return static_cast<MaterialAppearance::MaterialType>(
             sparseAt(rd().type, overridePos(idx), static_cast<int8_t>(rd().base.getType())));
 }
 
@@ -1996,13 +2135,13 @@ Material::MaterialType MaterialList::getType(int idx) const
  * returns the field to the DEFAULT, which is what it has always meant.
  */
 template<class T>
-void MaterialList::setField(T Material::*base, std::vector<T> Data::*member,
+void AppearanceList::setField(T MaterialAppearance::*base, std::vector<T> Data::*member,
                             const std::vector<T> &values)
 {
     std::vector<T> incoming = values;
     // The default a caller means by an empty vector is the material's own,
     // not the base's: this is the write that puts a field back
-    const Material &def = defaultMaterial();
+    const MaterialAppearance &def = defaultMaterial();
     collapseField(incoming, def.*base);
     const int newCount = static_cast<int>(values.size());
     if (newCount != rd().count && (newCount > 1 || rd().count == 0)) {
@@ -2033,32 +2172,32 @@ void MaterialList::setField(T Material::*base, std::vector<T> Data::*member,
         setFieldValue(base, member, i, incoming[static_cast<std::size_t>(i)]);
 }
 
-void MaterialList::setAmbientColors(const std::vector<Color> &colors)
+void AppearanceList::setAmbientColors(const std::vector<Color> &colors)
 {
-    setField(&Material::ambientColor, &Data::ambient, colors);
+    setField(&MaterialAppearance::ambientColor, &Data::ambient, colors);
 }
 
-void MaterialList::setDiffuseColors(const std::vector<Color> &colors)
+void AppearanceList::setDiffuseColors(const std::vector<Color> &colors)
 {
-    setField(&Material::diffuseColor, &Data::diffuse, colors);
+    setField(&MaterialAppearance::diffuseColor, &Data::diffuse, colors);
 }
 
-void MaterialList::setSpecularColors(const std::vector<Color> &colors)
+void AppearanceList::setSpecularColors(const std::vector<Color> &colors)
 {
-    setField(&Material::specularColor, &Data::specular, colors);
+    setField(&MaterialAppearance::specularColor, &Data::specular, colors);
 }
 
-void MaterialList::setEmissiveColors(const std::vector<Color> &colors)
+void AppearanceList::setEmissiveColors(const std::vector<Color> &colors)
 {
-    setField(&Material::emissiveColor, &Data::emissive, colors);
+    setField(&MaterialAppearance::emissiveColor, &Data::emissive, colors);
 }
 
-void MaterialList::setShininessValues(const std::vector<float> &values)
+void AppearanceList::setShininessValues(const std::vector<float> &values)
 {
-    setField(&Material::shininess, &Data::shininess, values);
+    setField(&MaterialAppearance::shininess, &Data::shininess, values);
 }
 
-void MaterialList::setTransparencies(const std::vector<float> &values)
+void AppearanceList::setTransparencies(const std::vector<float> &values)
 {
     // The alphas of the diffuse field, at the sizes the old float field
     // accepted: empty is back-to-default, 1 is uniform, N per entry -- and a
@@ -2080,34 +2219,39 @@ void MaterialList::setTransparencies(const std::vector<float> &values)
         for (int i = 0; i < newCount; ++i)
             colors[i].setTransparency(values[i]);
     }
-    setField(&Material::diffuseColor, &Data::diffuse, colors);
+    setField(&MaterialAppearance::diffuseColor, &Data::diffuse, colors);
 }
 
-void MaterialList::setImages(const std::vector<std::string> &values)
+void AppearanceList::setImages(const std::vector<std::string> &values)
 {
-    setField(&Material::image, &Data::image, values);
+    setField(&MaterialAppearance::image, &Data::image, values);
 }
 
-void MaterialList::setImagePaths(const std::vector<std::string> &values)
+void AppearanceList::setImagePaths(const std::vector<std::string> &values)
 {
-    setField(&Material::imagePath, &Data::imagePath, values);
+    setField(&MaterialAppearance::imagePath, &Data::imagePath, values);
 }
 
-void MaterialList::setUuids(const std::vector<std::string> &values)
+void AppearanceList::setUuids(const std::vector<std::string> &values)
 {
-    setField(&Material::uuid, &Data::uuid, values);
+    setField(&MaterialAppearance::uuid, &Data::uuid, values);
 }
 
-void MaterialList::setFinishes(const std::vector<SurfaceFinish> &values)
+void AppearanceList::setMaterialXs(const std::vector<std::string> &values)
+{
+    setField(&MaterialAppearance::materialx, &Data::materialx, values);
+}
+
+void AppearanceList::setFinishes(const std::vector<SurfaceFinish> &values)
 {
     std::vector<SurfaceFinish> clamped;
     clamped.reserve(values.size());
     for (const auto &value : values)
         clamped.push_back(storedFinish(value));
-    setField(&Material::finish, &Data::finish, clamped);
+    setField(&MaterialAppearance::finish, &Data::finish, clamped);
 }
 
-void MaterialList::setTextures(const std::vector<SurfaceTexture> &values)
+void AppearanceList::setTextures(const std::vector<SurfaceTexture> &values)
 {
     std::vector<SurfaceTexture> clamped;
     clamped.reserve(values.size());
@@ -2150,7 +2294,7 @@ void MaterialList::setTextures(const std::vector<SurfaceTexture> &values)
  * back on the next read.
  */
 template<class T>
-void MaterialList::setFieldValue(T Material::*base, std::vector<T> Data::*member, int idx,
+void AppearanceList::setFieldValue(T MaterialAppearance::*base, std::vector<T> Data::*member, int idx,
                                  const T &value)
 {
     if (idx < 0 || idx > rd().count)
@@ -2172,62 +2316,67 @@ void MaterialList::setFieldValue(T Material::*base, std::vector<T> Data::*member
     setSparseAt(wd().*member, pos, wd().overrides.size(), value, baseValue);
 }
 
-void MaterialList::setAmbientColor(int idx, const Color &col)
+void AppearanceList::setAmbientColor(int idx, const Color &col)
 {
-    setFieldValue(&Material::ambientColor, &Data::ambient, idx, col);
+    setFieldValue(&MaterialAppearance::ambientColor, &Data::ambient, idx, col);
 }
 
-void MaterialList::setDiffuseColor(int idx, const Color &col)
+void AppearanceList::setDiffuseColor(int idx, const Color &col)
 {
-    setFieldValue(&Material::diffuseColor, &Data::diffuse, idx, col);
+    setFieldValue(&MaterialAppearance::diffuseColor, &Data::diffuse, idx, col);
 }
 
-void MaterialList::setSpecularColor(int idx, const Color &col)
+void AppearanceList::setSpecularColor(int idx, const Color &col)
 {
-    setFieldValue(&Material::specularColor, &Data::specular, idx, col);
+    setFieldValue(&MaterialAppearance::specularColor, &Data::specular, idx, col);
 }
 
-void MaterialList::setEmissiveColor(int idx, const Color &col)
+void AppearanceList::setEmissiveColor(int idx, const Color &col)
 {
-    setFieldValue(&Material::emissiveColor, &Data::emissive, idx, col);
+    setFieldValue(&MaterialAppearance::emissiveColor, &Data::emissive, idx, col);
 }
 
-void MaterialList::setShininess(int idx, float value)
+void AppearanceList::setShininess(int idx, float value)
 {
-    setFieldValue(&Material::shininess, &Data::shininess, idx, value);
+    setFieldValue(&MaterialAppearance::shininess, &Data::shininess, idx, value);
 }
 
-void MaterialList::setTransparency(int idx, float value)
+void AppearanceList::setTransparency(int idx, float value)
 {
     // One entry's alpha: the same write as setDiffuseColor of that entry
     // with only the alpha changed, and it shares that setter's growth and
     // early-out behaviour.
     Color color = getDiffuseColor(idx < 0 || idx >= rd().count ? 0 : idx);
     color.setTransparency(value);
-    setFieldValue(&Material::diffuseColor, &Data::diffuse, idx, color);
+    setFieldValue(&MaterialAppearance::diffuseColor, &Data::diffuse, idx, color);
 }
 
-void MaterialList::setImage(int idx, const std::string &value)
+void AppearanceList::setImage(int idx, const std::string &value)
 {
-    setFieldValue(&Material::image, &Data::image, idx, value);
+    setFieldValue(&MaterialAppearance::image, &Data::image, idx, value);
 }
 
-void MaterialList::setImagePath(int idx, const std::string &value)
+void AppearanceList::setImagePath(int idx, const std::string &value)
 {
-    setFieldValue(&Material::imagePath, &Data::imagePath, idx, value);
+    setFieldValue(&MaterialAppearance::imagePath, &Data::imagePath, idx, value);
 }
 
-void MaterialList::setUuid(int idx, const std::string &value)
+void AppearanceList::setUuid(int idx, const std::string &value)
 {
-    setFieldValue(&Material::uuid, &Data::uuid, idx, value);
+    setFieldValue(&MaterialAppearance::uuid, &Data::uuid, idx, value);
 }
 
-void MaterialList::setFinish(int idx, const SurfaceFinish &value)
+void AppearanceList::setMaterialX(int idx, const std::string &value)
 {
-    setFieldValue(&Material::finish, &Data::finish, idx, storedFinish(value));
+    setFieldValue(&MaterialAppearance::materialx, &Data::materialx, idx, value);
 }
 
-void MaterialList::setTexture(int idx, const SurfaceTexture &value)
+void AppearanceList::setFinish(int idx, const SurfaceFinish &value)
+{
+    setFieldValue(&MaterialAppearance::finish, &Data::finish, idx, storedFinish(value));
+}
+
+void AppearanceList::setTexture(int idx, const SurfaceTexture &value)
 {
     // setFieldValue's body, over the pair: the palette is not a field the
     // member pointer form can address
@@ -2258,7 +2407,7 @@ void MaterialList::setTexture(int idx, const SurfaceTexture &value)
  * the old uniform writes did too.
  */
 template<class T>
-void MaterialList::setBaseField(T Material::*base, const T &value, const T &def)
+void AppearanceList::setBaseField(T MaterialAppearance::*base, const T &value, const T &def)
 {
     if (rd().count == 0) {
         if (value == def)
@@ -2272,51 +2421,51 @@ void MaterialList::setBaseField(T Material::*base, const T &value, const T &def)
     wd().base.*base = value;
 }
 
-void MaterialList::setAmbientColor(const Color &col)
+void AppearanceList::setAmbientColor(const Color &col)
 {
-    setBaseField(&Material::ambientColor, col, defaultMaterial().ambientColor);
+    setBaseField(&MaterialAppearance::ambientColor, col, defaultMaterial().ambientColor);
 }
 
-void MaterialList::setDiffuseColor(const Color &col)
+void AppearanceList::setDiffuseColor(const Color &col)
 {
-    setBaseField(&Material::diffuseColor, col, storedDiffuse(defaultMaterial()));
+    setBaseField(&MaterialAppearance::diffuseColor, col, storedDiffuse(defaultMaterial()));
 }
 
-void MaterialList::setSpecularColor(const Color &col)
+void AppearanceList::setSpecularColor(const Color &col)
 {
-    setBaseField(&Material::specularColor, col, specularDefault());
+    setBaseField(&MaterialAppearance::specularColor, col, specularDefault());
 }
 
-void MaterialList::setEmissiveColor(const Color &col)
+void AppearanceList::setEmissiveColor(const Color &col)
 {
-    setBaseField(&Material::emissiveColor, col, defaultMaterial().emissiveColor);
+    setBaseField(&MaterialAppearance::emissiveColor, col, defaultMaterial().emissiveColor);
 }
 
-void MaterialList::setShininess(float value)
+void AppearanceList::setShininess(float value)
 {
-    setBaseField(&Material::shininess, value, shininessDefault());
+    setBaseField(&MaterialAppearance::shininess, value, shininessDefault());
 }
 
-void MaterialList::setTransparency(float value)
+void AppearanceList::setTransparency(float value)
 {
     // The base's alpha, leaving its rgb alone -- and leaving the overriding
     // faces alone, which is what every whole-object write does
     Color color = getBase().diffuseColor;
     color.setTransparency(value);
-    setBaseField(&Material::diffuseColor, color, storedDiffuse(defaultMaterial()));
+    setBaseField(&MaterialAppearance::diffuseColor, color, storedDiffuse(defaultMaterial()));
 }
 
-void MaterialList::setDiffuseRGB(const Color &col)
+void AppearanceList::setDiffuseRGB(const Color &col)
 {
-    setFieldRGB(&Material::diffuseColor, col, storedDiffuse(defaultMaterial()));
+    setFieldRGB(&MaterialAppearance::diffuseColor, col, storedDiffuse(defaultMaterial()));
 }
 
-void MaterialList::setSpecularRGB(const Color &col)
+void AppearanceList::setSpecularRGB(const Color &col)
 {
-    setFieldRGB(&Material::specularColor, col, specularDefault());
+    setFieldRGB(&MaterialAppearance::specularColor, col, specularDefault());
 }
 
-void MaterialList::setFieldRGB(Color Material::*base, const Color &col, const Color &def)
+void AppearanceList::setFieldRGB(Color MaterialAppearance::*base, const Color &col, const Color &def)
 {
     // setTransparency's mirror image: the base's rgb, leaving its alpha
     // alone -- the diffuse alpha is the opacity and the PBR specular alpha
@@ -2331,33 +2480,38 @@ void MaterialList::setFieldRGB(Color Material::*base, const Color &col, const Co
 //**************************************************************************
 // Base class implementer
 
-void MaterialList::setImage(const std::string &value)
+void AppearanceList::setImage(const std::string &value)
 {
-    setBaseField(&Material::image, value, defaultMaterial().image);
+    setBaseField(&MaterialAppearance::image, value, defaultMaterial().image);
 }
 
-void MaterialList::setImagePath(const std::string &value)
+void AppearanceList::setImagePath(const std::string &value)
 {
-    setBaseField(&Material::imagePath, value, defaultMaterial().imagePath);
+    setBaseField(&MaterialAppearance::imagePath, value, defaultMaterial().imagePath);
 }
 
-void MaterialList::setUuid(const std::string &value)
+void AppearanceList::setUuid(const std::string &value)
 {
-    setBaseField(&Material::uuid, value, defaultMaterial().uuid);
+    setBaseField(&MaterialAppearance::uuid, value, defaultMaterial().uuid);
 }
 
-void MaterialList::setFinish(const SurfaceFinish &value)
+void AppearanceList::setMaterialX(const std::string &value)
 {
-    setBaseField(&Material::finish, storedFinish(value), defaultMaterial().finish);
+    setBaseField(&MaterialAppearance::materialx, value, defaultMaterial().materialx);
 }
 
-void MaterialList::setTexture(const SurfaceTexture &value)
+void AppearanceList::setFinish(const SurfaceFinish &value)
 {
-    setBaseField(&Material::texture, storedTexture(value), defaultMaterial().texture);
+    setBaseField(&MaterialAppearance::finish, storedFinish(value), defaultMaterial().finish);
+}
+
+void AppearanceList::setTexture(const SurfaceTexture &value)
+{
+    setBaseField(&MaterialAppearance::texture, storedTexture(value), defaultMaterial().texture);
 }
 
 // ==================== memsize ====================
-/** What this list holds, which is not what a Material weighs
+/** What this list holds, which is not what a MaterialAppearance weighs
  *
  * The base is a whole material in the struct and only its stated fields in
  * the value: a uniform grey list weighs one material in memory and nothing
@@ -2367,13 +2521,13 @@ void MaterialList::setTexture(const SurfaceTexture &value)
  * property, and counting the whole struct would send every appearance in
  * the document to an archive entry of its own.
  */
-unsigned int MaterialList::getMemSize() const
+unsigned int AppearanceList::getMemSize() const
 {
     ensureNormalized();
     const Data &d = rd();
     if (d.count == 0)
         return 0;
-    const Material &def = defaultMaterial();
+    const MaterialAppearance &def = defaultMaterial();
     std::size_t size = 0;
     if (!(d.base.ambientColor == def.ambientColor))
         size += sizeof(Color);
@@ -2388,6 +2542,7 @@ unsigned int MaterialList::getMemSize() const
     if (d.base.getType() != def.getType())
         size += sizeof(int8_t);
     size += d.base.image.size() + d.base.imagePath.size() + d.base.uuid.size();
+    size += d.base.materialx.size();
     if (!(d.base.finish == def.finish))
         size += sizeof(SurfaceFinish);
     if (!(d.base.texture == def.texture)) {
@@ -2403,13 +2558,14 @@ unsigned int MaterialList::getMemSize() const
         + d.finish.size() * sizeof(SurfaceFinish)
         + texturesMemSize(d.texturePalette)
         + d.textureIndex.size() * sizeof(uint16_t)
-        + stringsMemSize(d.image) + stringsMemSize(d.imagePath) + stringsMemSize(d.uuid);
+        + stringsMemSize(d.image) + stringsMemSize(d.imagePath) + stringsMemSize(d.uuid)
+        + stringsMemSize(d.materialx);
     return static_cast<unsigned int>(size);
 }
 
 
 // ==================== issame ====================
-bool MaterialList::isSame(const MaterialList &other) const
+bool AppearanceList::isSame(const AppearanceList &other) const
 {
     if (&other == this || _data.isSameData(other._data)) {
         return true;
@@ -2433,6 +2589,7 @@ bool MaterialList::isSame(const MaterialList &other) const
         && a.base.image == b.base.image
         && a.base.imagePath == b.base.imagePath
         && a.base.uuid == b.base.uuid
+        && a.base.materialx == b.base.materialx
         && a.base.getType() == b.base.getType()
         && a.base.finish == b.base.finish
         && a.base.texture == b.base.texture
@@ -2445,6 +2602,7 @@ bool MaterialList::isSame(const MaterialList &other) const
         && a.image == b.image
         && a.imagePath == b.imagePath
         && a.uuid == b.uuid
+        && a.materialx == b.materialx
         && a.type == b.type
         && a.finish == b.finish
         // Normalised on both sides, and the normal form is canonical

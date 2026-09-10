@@ -118,6 +118,14 @@ public:
 
     /// Set the number portion selected
     void selectNumber();
+    /** What is selected in the entry, and where the caret is without one.
+     *
+     * For a view that has to draw this box somewhere else -- a client's,
+     * over the wire (docs/ThinClient.md sec 8.7) -- so that what the user
+     * sees highlighted is what selectNumber() actually selected here.
+     * With no selection,  length is zero and  start is the caret.
+     */
+    void getSelection(int& start, int& length) const;
 
     void setRange(double min, double max);
     void checkRangeInExpression(bool);

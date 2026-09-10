@@ -21,19 +21,29 @@
  *                                                                         *
  **************************************************************************/
 
+#include <QApplication>
+#include <QClipboard>
+#include <QMimeData>
 #include <QPointer>
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
 #include <App/DocumentObject.h>
+#include <App/PropertyStandard.h>
 #include <Mod/Material/App/PropertyMaterial.h>
+#include <Mod/Material/App/MaterialClipboard.h>
+#include <Mod/Material/App/ShaderGraph.h>
 
+#include <Gui/Application.h>
 #include <Gui/Command.h>
+#include <Gui/ViewProvider.h>
 #include <Gui/Control.h>
 #include <Gui/MainWindow.h>
 #include <Gui/Selection/Selection.h>
+#include <Gui/ViewProviderGeometryObject.h>
 
 #include "DlgDisplayPropertiesImp.h"
 #include "DlgInspectAppearance.h"
@@ -322,10 +332,38 @@ void CmdMaterialSaveToLibrary::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
+    // An object whose materialized shader graph was edited saves the EDIT:
+    // a new card inheriting from the one it wears, carrying the text as it
+    // is now (docs/MaterialStorage.md 17.12). The object then wears that
+    // card and the binding comes off, since the card draws the same.
+    std::set<Materials::PropertyMaterial*> edited;
+    for (auto property : selectedMaterials()) {
+        auto owner = dynamic_cast<App::DocumentObject*>(property->getContainer());
+        if (!Materials::ShaderGraph::edited(owner)) {
+            continue;
+        }
+        edited.insert(property);
+        auto card = Materials::ShaderGraph::cardFromEdit(owner, *property);
+        if (!card) {
+            continue;
+        }
+        MatGui::MaterialSave dialog(card, Gui::getMainWindow());
+        if (dialog.exec() != QDialog::Accepted) {
+            continue;
+        }
+        openCommand(QT_TRANSLATE_NOOP("Command", "Save shader graph to library"));
+        property->setValue(*card);
+        Materials::ShaderGraph::revert(owner);
+        commitCommand();
+    }
+
     // By content: the same card assigned to twenty objects is one thing to
     // write, and one question to ask if it needs a home.
     std::map<std::string, std::vector<Materials::PropertyMaterial*>> byContent;
     for (auto property : selectedMaterials()) {
+        if (edited.count(property)) {
+            continue;
+        }
         if (property->libraryStatus() != Materials::PropertyMaterial::LibraryStatus::NoCard
             && !property->isUnresolved()) {
             byContent[property->getContentHash()].push_back(property);
@@ -342,7 +380,7 @@ void CmdMaterialSaveToLibrary::activated(int iMsg)
 
         // No card to write over, or a read only library. Where it goes is the
         // user's answer, and this is the dialog that already asks.
-        auto card = std::make_shared<Materials::Material>(properties.front()->getValue());
+        auto card = std::make_shared<Materials::Material>(properties.front()->cardForLibrary());
         MatGui::MaterialSave dialog(card, Gui::getMainWindow());
         if (dialog.exec() != QDialog::Accepted) {
             continue;
@@ -365,8 +403,228 @@ bool CmdMaterialSaveToLibrary::isActive()
             && !property->isUnresolved()) {
             return true;
         }
+        if (Materials::ShaderGraph::edited(
+                dynamic_cast<App::DocumentObject*>(property->getContainer()))) {
+            return true;
+        }
     }
     return false;
+}
+
+//===========================================================================
+// Material_Copy / Material_Paste
+//===========================================================================
+
+namespace
+{
+// The look an object draws with lives on its view provider
+App::PropertyAppearanceList* lookOf(App::DocumentObject* object)
+{
+    auto vp = Gui::Application::Instance->getViewProvider(object);
+    return vp ? dynamic_cast<App::PropertyAppearanceList*>(vp->getPropertyByName("ShapeAppearance"))
+              : nullptr;
+}
+
+Materials::PropertyMaterial* cardOf(App::DocumentObject* object)
+{
+    return dynamic_cast<Materials::PropertyMaterial*>(object->getPropertyByName("ShapeMaterial"));
+}
+
+// "Face7" of a sub-name that may be a path ("Group.Link.Face7") -> 6
+int faceIndexOf(const std::string& subname)
+{
+    const auto dot = subname.rfind('.');
+    const std::string element = dot == std::string::npos ? subname : subname.substr(dot + 1);
+    if (element.compare(0, 4, "Face") != 0) {
+        return -1;
+    }
+    try {
+        return std::stoi(element.substr(4)) - 1;
+    }
+    catch (const std::exception&) {
+        return -1;
+    }
+}
+}  // namespace
+
+DEF_STD_CMD_A(CmdMaterialCopy)
+
+CmdMaterialCopy::CmdMaterialCopy()
+    : Command("Material_Copy")
+{
+    sAppModule = "Material";
+    sGroup = QT_TR_NOOP("Material");
+    sMenuText = QT_TR_NOOP("Copy Material");
+    sToolTipText = QT_TR_NOOP("Copies the object's material card and look, with every file they "
+                              "refer to, so they can be pasted onto other objects, in other "
+                              "documents too");
+    sWhatsThis = "Material_Copy";
+    sStatusTip = sToolTipText;
+}
+
+void CmdMaterialCopy::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    // The first object with something to carry: one material goes on the
+    // clipboard, however many objects are selected
+    for (auto object : Gui::Selection().getObjectsOfType<App::DocumentObject>()) {
+        const std::string data =
+            Materials::Clipboard::pack(cardOf(object), lookOf(object), *object->getDocument());
+        if (data.empty()) {
+            continue;
+        }
+        auto mime = new QMimeData();
+        mime->setData(QString::fromLatin1(Materials::Clipboard::mimeType()),
+                      QByteArray(data.data(), static_cast<int>(data.size())));
+        QApplication::clipboard()->setMimeData(mime);
+        return;
+    }
+}
+
+bool CmdMaterialCopy::isActive()
+{
+    for (auto object : Gui::Selection().getObjectsOfType<App::DocumentObject>()) {
+        if (auto card = cardOf(object)) {
+            if (!card->isUnresolved()
+                && card->libraryStatus() != Materials::PropertyMaterial::LibraryStatus::NoCard) {
+                return true;
+            }
+        }
+        if (auto look = lookOf(object)) {
+            if (look->getSize()) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+DEF_STD_CMD_A(CmdMaterialPaste)
+
+CmdMaterialPaste::CmdMaterialPaste()
+    : Command("Material_Paste")
+{
+    sAppModule = "Material";
+    sGroup = QT_TR_NOOP("Material");
+    sMenuText = QT_TR_NOOP("Paste Material");
+    sToolTipText = QT_TR_NOOP("Gives the selected objects the copied material card and look; "
+                              "selected faces take the look as a per-face override");
+    sWhatsThis = "Material_Paste";
+    sStatusTip = sToolTipText;
+}
+
+void CmdMaterialPaste::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    const QMimeData* mime = QApplication::clipboard()->mimeData();
+    const QString type = QString::fromLatin1(Materials::Clipboard::mimeType());
+    if (!mime || !mime->hasFormat(type)) {
+        return;
+    }
+    const QByteArray bytes = mime->data(type);
+    const std::string data(bytes.constData(), static_cast<std::size_t>(bytes.size()));
+
+    openCommand(QT_TRANSLATE_NOOP("Command", "Paste material"));
+    bool applied = false;
+    for (const auto& selection : Gui::Selection().getSelectionEx(nullptr, App::DocumentObject::getClassTypeId(), Gui::ResolveMode::NoResolve)) {
+        // The selection hands out const objects; a paste is a write
+        auto object = const_cast<App::DocumentObject*>(selection.getObject());
+        if (!object || !object->getDocument()) {
+            continue;
+        }
+        std::vector<int> faces;
+        for (const auto& subname : selection.getSubNames()) {
+            const int face = faceIndexOf(subname);
+            if (face >= 0) {
+                faces.push_back(face);
+            }
+        }
+        // A face selection pastes the look onto those faces only; the
+        // card is the object's and is not touched by a face paste
+        auto card = faces.empty() ? cardOf(object) : nullptr;
+        applied = Materials::Clipboard::apply(data, card, lookOf(object), faces, *object->getDocument())
+            || applied;
+    }
+    if (applied) {
+        commitCommand();
+    }
+    else {
+        abortCommand();
+    }
+}
+
+bool CmdMaterialPaste::isActive()
+{
+    const QMimeData* mime = QApplication::clipboard()->mimeData();
+    if (!mime || !mime->hasFormat(QString::fromLatin1(Materials::Clipboard::mimeType()))) {
+        return false;
+    }
+    return !Gui::Selection().getObjectsOfType<App::DocumentObject>().empty();
+}
+
+//===========================================================================
+// Material_ResetAppearance
+//===========================================================================
+
+namespace
+{
+
+/// Every selected view provider that could take its card's look again.
+std::vector<Gui::ViewProviderGeometryObject*> resettableSelection()
+{
+    std::vector<Gui::ViewProviderGeometryObject*> found;
+    for (auto object : Gui::Selection().getObjectsOfType<App::DocumentObject>()) {
+        auto* vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(
+            Gui::Application::Instance->getViewProvider(object));
+        if (vp && vp->canResetAppearanceToMaterial()) {
+            found.push_back(vp);
+        }
+    }
+    return found;
+}
+
+}  // namespace
+
+DEF_STD_CMD_A(CmdMaterialResetAppearance)
+
+CmdMaterialResetAppearance::CmdMaterialResetAppearance()
+    : Command("Material_ResetAppearance")
+{
+    sAppModule = "Material";
+    sGroup = QT_TR_NOOP("Material");
+    sMenuText = QT_TR_NOOP("Reset Appearance To Material");
+    sToolTipText =
+        QT_TR_NOOP("Takes the look from the object's material card again, and keeps taking it");
+    sWhatsThis = "Material_ResetAppearance";
+    sStatusTip = sToolTipText;
+    eType = Alter3DView;
+}
+
+void CmdMaterialResetAppearance::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    openCommand(QT_TRANSLATE_NOOP("Command", "Reset appearance to material"));
+    int reset = 0;
+    for (auto vp : resettableSelection()) {
+        if (vp->resetAppearanceToMaterial()) {
+            ++reset;
+        }
+    }
+    if (reset == 0) {
+        abortCommand();
+        return;
+    }
+    commitCommand();
+    updateActive();
+}
+
+bool CmdMaterialResetAppearance::isActive()
+{
+    // Offered only while it applies -- the rule the sync commands follow
+    // (docs/MaterialStorage.md 13.5, 15.5). An object still following its
+    // card has nowhere to go back to.
+    return !resettableSelection().empty();
 }
 
 //---------------------------------------------------------------
@@ -382,6 +640,9 @@ void CreateMaterialCommands()
     rcCmdMgr.addCommand(new CmdInspectMaterial());
     rcCmdMgr.addCommand(new CmdMaterialUpdateFromLibrary());
     rcCmdMgr.addCommand(new CmdMaterialSaveToLibrary());
+    rcCmdMgr.addCommand(new CmdMaterialResetAppearance());
+    rcCmdMgr.addCommand(new CmdMaterialCopy());
+    rcCmdMgr.addCommand(new CmdMaterialPaste());
 #if defined(BUILD_MATERIAL_EXTERNAL)
     rcCmdMgr.addCommand(new CmdMigrateToExternal());
 #endif

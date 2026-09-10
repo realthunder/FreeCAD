@@ -66,7 +66,7 @@ public:
     static void refresh();
 
     // Defaults
-    static std::shared_ptr<App::Material> defaultAppearance();
+    static std::shared_ptr<App::MaterialAppearance> defaultAppearance();
     static std::shared_ptr<Material> defaultMaterial();
     static QString defaultMaterialUUID();
 
@@ -117,7 +117,7 @@ public:
     // Material management
     std::shared_ptr<std::map<QString, std::shared_ptr<Material>>> getLocalMaterials() const;
     std::shared_ptr<Material> getMaterial(const QString& uuid) const;
-    static std::shared_ptr<Material> getMaterial(const App::Material& material);
+    static std::shared_ptr<Material> getMaterial(const App::MaterialAppearance& material);
     std::shared_ptr<Material> getMaterialByPath(const QString& path) const;
     std::shared_ptr<Material> getMaterialByPath(const QString& path, const QString& library) const;
     std::shared_ptr<Material> getParent(const std::shared_ptr<Material>& material) const;

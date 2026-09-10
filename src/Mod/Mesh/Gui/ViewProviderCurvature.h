@@ -73,7 +73,7 @@ public:
     ~ViewProviderMeshCurvature() override;
 
     // NOLINTBEGIN
-    App::PropertyMaterial TextureMaterial;
+    App::PropertyAppearance TextureMaterial;
     // NOLINTEND
 
     /// Extracts the mesh data from the feature \a pcFeature and creates an Inventor node \a SoNode

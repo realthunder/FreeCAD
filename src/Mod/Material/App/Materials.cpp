@@ -21,14 +21,19 @@
  *                                                                         *
  **************************************************************************/
 
+#include <set>
+
 #include <QCryptographicHash>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QMetaType>
 #include <QUuid>
 
 
 
 #include <App/Application.h>
+#include <App/FileBlobManager.h>
 #include <Gui/MetaTypes.h>
 
 #include "Materials.h"
@@ -154,18 +159,22 @@ Base::Color MaterialProperty::getColor() const
     auto colorString = getValue().toString();
     std::stringstream stream(colorString.toStdString());
 
-    char c;
+    // Every channel starts defined. A slot with no value in it is an empty
+    // string, the first extraction fails, and a stream in a failed state
+    // skips every extraction after it -- so an unset colour used to come
+    // out of here as three floats nobody had ever written.
+    char c = 0;
     stream >> c;  // read "("
-    float red;
+    float red = 0.0F;
     stream >> red;
     stream >> c;  // ","
-    float green;
+    float green = 0.0F;
     stream >> green;
     stream >> c;  // ","
-    float blue;
+    float blue = 0.0F;
     stream >> blue;
     stream >> c;  // ","
-    float alpha = 1.0;
+    float alpha = 1.0F;
     if (c == ',') {
         stream >> alpha;
     }
@@ -534,6 +543,8 @@ Material::Material(const Material& other)
     , _oldFormat(other._oldFormat)
     , _editState(other._editState)
 {
+    _materialXHashes = other._materialXHashes;
+    _materialXPaths = other._materialXPaths;
     for (auto& it : other._tags) {
         _tags.insert(it);
     }
@@ -1666,6 +1677,11 @@ void Material::saveCanonicalModels(
     // so an empty model survives the round trip.
     std::map<QString, std::vector<std::shared_ptr<MaterialProperty>>> byModel;
     for (const auto& uuid : sortedStrings(modelUuids)) {
+        // The MaterialX model is written as its own block, by content and
+        // not by the library paths its properties hold (saveCanonicalMaterialX)
+        if (uuid == ModelUUIDs::ModelUUID_Rendering_MaterialX) {
+            continue;
+        }
         byModel[uuid];
     }
     for (const auto& it : properties) {
@@ -1674,6 +1690,9 @@ void Material::saveCanonicalModels(
             continue;
         }
         auto modelUuid = property->getModelUUID();
+        if (modelUuid == ModelUUIDs::ModelUUID_Rendering_MaterialX) {
+            continue;
+        }
         if (modelUuid.isEmpty()) {
             Base::Console().log("Material::saveCanonicalModels property '%s' names no model. "
                                 "Not written\n",
@@ -1709,6 +1728,216 @@ void Material::saveCanonical(QTextStream& stream) const
     saveCanonicalInherits(stream);
     saveCanonicalModels(stream, _physicalUuids, _physical, QStringLiteral("Models"));
     saveCanonicalModels(stream, _appearanceUuids, _appearance, QStringLiteral("AppearanceModels"));
+    saveCanonicalMaterialX(stream);
+}
+
+void Material::saveCanonicalMaterialX(QTextStream& stream) const
+{
+    // The shader graph set by CONTENT: the names the graph uses and the hash
+    // of each file, never where a library keeps them (docs/MaterialStorage.md
+    // 17.6). A card stored in a document reads this back and nothing else.
+    if (!hasMaterialX()) {
+        return;
+    }
+    const QStringList names = getMaterialXNames();
+    stream << "MaterialX:\n";
+    stream << "  ShaderGraph: \"" << MaterialValue::escapeString(getMaterialXShaderGraph()) << "\"\n";
+    // Written only when one is named, so a card that wears the graph's
+    // first surface keeps the canonical form -- and the content hash --
+    // it had before the key existed (sec 17.13)
+    const QString surface = getMaterialXSurface();
+    if (!surface.isEmpty()) {
+        stream << "  Surface: \"" << MaterialValue::escapeString(surface) << "\"\n";
+    }
+    stream << "  Names:\n";
+    for (const auto& name : names) {
+        stream << "    - \"" << MaterialValue::escapeString(name) << "\"\n";
+    }
+    stream << "  Hashes:\n";
+    for (int i = 0; i < names.size(); ++i) {
+        const std::string hash =
+            i < static_cast<int>(_materialXHashes.size()) ? _materialXHashes[i] : std::string();
+        stream << "    - \"" << QString::fromStdString(hash) << "\"\n";
+    }
+}
+
+bool Material::hasMaterialX() const
+{
+    return hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_MaterialX)
+        && hasAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))
+        && !getAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))->isNull()
+        && !getAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))->getString().isEmpty();
+}
+
+QString Material::getMaterialXShaderGraph() const
+{
+    if (!hasAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))) {
+        return {};
+    }
+    return getAppearanceProperty(QStringLiteral("MaterialXShaderGraph"))->getString();
+}
+
+QString Material::getMaterialXSurface() const
+{
+    if (!hasAppearanceProperty(QStringLiteral("MaterialXSurface"))) {
+        return {};
+    }
+    auto property = getAppearanceProperty(QStringLiteral("MaterialXSurface"));
+    return property->isNull() ? QString() : property->getString();
+}
+
+static QStringList listProperty(const Material& card, const char* name)
+{
+    QStringList out;
+    if (!card.hasAppearanceProperty(QString::fromLatin1(name))) {
+        return out;
+    }
+    auto property = card.getAppearanceProperty(QString::fromLatin1(name));
+    if (property->isNull()) {
+        return out;
+    }
+    for (const auto& value : property->getList()) {
+        out.push_back(value.toString());
+    }
+    return out;
+}
+
+QStringList Material::getMaterialXNames() const
+{
+    return listProperty(*this, "MaterialXNames");
+}
+
+QStringList Material::getMaterialXFiles() const
+{
+    return listProperty(*this, "MaterialXFiles");
+}
+
+void Material::resolveMaterialXFiles(const QString& libraryRoot)
+{
+    const QStringList names = getMaterialXNames();
+    const QStringList files = getMaterialXFiles();
+    _materialXHashes.assign(static_cast<std::size_t>(names.size()), std::string());
+    _materialXPaths.assign(static_cast<std::size_t>(names.size()), std::string());
+    if (names.isEmpty()) {
+        return;
+    }
+    if (files.size() != names.size()) {
+        Base::Console().warning("Material '%s': MaterialX names %d files but lists %d paths\n",
+                                _name.toUtf8().constData(),
+                                static_cast<int>(names.size()),
+                                static_cast<int>(files.size()));
+    }
+    const QDir root(QDir(libraryRoot).filePath(QStringLiteral("materialx")));
+    for (int i = 0; i < names.size() && i < files.size(); ++i) {
+        const QString path = QFileInfo(files[i]).isAbsolute() ? files[i] : root.filePath(files[i]);
+        const std::string hash = App::FileBlobManager::hashFile(path.toUtf8().constData());
+        if (hash.empty()) {
+            Base::Console().warning("Material '%s': MaterialX file '%s' is not at '%s'\n",
+                                    _name.toUtf8().constData(),
+                                    names[i].toUtf8().constData(),
+                                    path.toUtf8().constData());
+            continue;
+        }
+        _materialXHashes[static_cast<std::size_t>(i)] = hash;
+        _materialXPaths[static_cast<std::size_t>(i)] = path.toUtf8().constData();
+    }
+}
+
+bool Material::placeMaterialXFiles(const QString& libraryRoot, const QString& cardDir)
+{
+    if (!hasMaterialX()) {
+        return true;
+    }
+    const QStringList names = getMaterialXNames();
+    const auto count = static_cast<std::size_t>(names.size());
+    if (_materialXPaths.size() != count || _materialXHashes.size() != count) {
+        // Never resolved: a card the editor built from picked files, or
+        // one whose list was edited by hand
+        resolveMaterialXFiles(libraryRoot);
+    }
+    const QStringList files = getMaterialXFiles();
+    const QDir root(QDir(libraryRoot).filePath(QStringLiteral("materialx")));
+    const QDir dest(root.filePath(cardDir));
+    auto placed = std::make_shared<QList<QVariant>>();
+    std::set<QString> taken;
+    bool complete = true;
+    for (int i = 0; i < names.size(); ++i) {
+        const auto slot = static_cast<std::size_t>(i);
+        const QString old = i < files.size() ? files[i] : QString();
+        const QString src = QString::fromStdString(_materialXPaths[slot]);
+        if (src.isEmpty() || !QFileInfo::exists(src)) {
+            Base::Console().warning("Material '%s': shader graph file '%s' has no bytes to save\n",
+                                    _name.toUtf8().constData(),
+                                    names[i].toUtf8().constData());
+            placed->append(old);
+            complete = false;
+            continue;
+        }
+        // The stated name's own file name; two files the graph calls the
+        // same in different directories get told apart by a suffix
+        QString base = QFileInfo(names[i]).fileName();
+        if (base.isEmpty()) {
+            base = QFileInfo(src).fileName();
+        }
+        QString name = base;
+        for (int n = 1; taken.count(name); ++n) {
+            const QFileInfo info(base);
+            name = info.completeBaseName() + QStringLiteral("-") + QString::number(n);
+            if (!info.suffix().isEmpty()) {
+                name += QStringLiteral(".") + info.suffix();
+            }
+        }
+        taken.insert(name);
+        const QString dst = dest.filePath(name);
+        if (QFileInfo(dst).canonicalFilePath() != QFileInfo(src).canonicalFilePath()) {
+            if (!dest.mkpath(QStringLiteral("."))
+                || (QFileInfo::exists(dst) && !QFile::remove(dst))
+                || !QFile::copy(src, dst)) {
+                Base::Console().error("Material '%s': cannot copy '%s' to '%s'\n",
+                                      _name.toUtf8().constData(),
+                                      src.toUtf8().constData(),
+                                      dst.toUtf8().constData());
+                placed->append(old);
+                complete = false;
+                continue;
+            }
+            // A blob store keeps its files read-only; the library's copy is
+            // the author's to replace
+            QFile::setPermissions(dst,
+                                  QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                      | QFileDevice::ReadGroup | QFileDevice::ReadOther);
+        }
+        _materialXPaths[slot] = dst.toStdString();
+        placed->append(cardDir + QStringLiteral("/") + name);
+    }
+    setAppearanceValue(QStringLiteral("MaterialXFiles"), placed);
+    return complete;
+}
+
+App::MaterialXDocument Material::getMaterialXManifest() const
+{
+    App::MaterialXDocument manifest;
+    if (!hasMaterialX()) {
+        return manifest;
+    }
+    const QStringList names = getMaterialXNames();
+    if (names.isEmpty() || static_cast<int>(_materialXHashes.size()) != names.size()) {
+        return manifest;
+    }
+    for (int i = 0; i < names.size(); ++i) {
+        const std::string& hash = _materialXHashes[static_cast<std::size_t>(i)];
+        if (hash.empty()) {
+            return App::MaterialXDocument();   // half a manifest is another identity
+        }
+        manifest.files.push_back({names[i].toStdString(), hash});
+    }
+    const std::string document = getMaterialXShaderGraph().toStdString();
+    if (!manifest.find(document.c_str())) {
+        return App::MaterialXDocument();   // the document must be one of its own files
+    }
+    manifest.document = document;
+    manifest.surface = getMaterialXSurface().toStdString();
+    return manifest;
 }
 
 QString Material::getCanonicalForm() const
@@ -1747,6 +1976,8 @@ Material& Material::operator=(const Material& other)
     _dereferenced = other._dereferenced;
     _oldFormat = other._oldFormat;
     _editState = other._editState;
+    _materialXHashes = other._materialXHashes;
+    _materialXPaths = other._materialXPaths;
 
     _tags.clear();
     for (auto& it : other._tags) {
@@ -1784,7 +2015,7 @@ Material& Material::operator=(const Material& other)
     return *this;
 }
 
-Material& Material::operator=(const App::Material& other)
+Material& Material::operator=(const App::MaterialAppearance& other)
 {
     if (!hasAppearanceModel(ModelUUIDs::ModelUUID_Rendering_Basic)) {
         addAppearance(ModelUUIDs::ModelUUID_Rendering_Basic);
@@ -1886,38 +2117,49 @@ void Material::inheritedPropertyDiff([[maybe_unused]] const QString& parent)
 {}
 
 /*
- * Return an App::Material object describing the materials appearance, or DEFAULT if
+ * Return an App::MaterialAppearance object describing the materials appearance, or DEFAULT if
  * undefined.
  */
-App::Material Material::getMaterialAppearance() const
+App::MaterialAppearance Material::getMaterialAppearance() const
 {
-    App::Material material(App::Material::DEFAULT);
+    App::MaterialAppearance material(App::MaterialAppearance::DEFAULT);
 
     bool custom = false;
-    if (hasAppearanceProperty(QStringLiteral("AmbientColor"))) {
-        material.ambientColor = getAppearanceProperty(QStringLiteral("AmbientColor"))->getColor();
+    // A slot the card's model HAS is not a value the card STATES. The
+    // MaterialX model inherits the six colour slots and a look's card
+    // fills none of them: it says which shader graph shades the surface
+    // and leaves the colours to the Default card. A slot with nothing in
+    // it keeps the Default number it started with; the card still counts
+    // as an appearance of its own, which is what carries its identity
+    // (the uuid below) onto the object wearing it.
+    auto colorSlot = [this, &custom](const char* name, App::Color& slot) {
+        const QString key = QString::fromLatin1(name);
+        if (!hasAppearanceProperty(key)) {
+            return;
+        }
         custom = true;
-    }
-    if (hasAppearanceProperty(QStringLiteral("DiffuseColor"))) {
-        material.diffuseColor = getAppearanceProperty(QStringLiteral("DiffuseColor"))->getColor();
+        auto property = getAppearanceProperty(key);
+        if (!property->isNull()) {
+            slot = property->getColor();
+        }
+    };
+    auto floatSlot = [this, &custom](const char* name, float& slot) {
+        const QString key = QString::fromLatin1(name);
+        if (!hasAppearanceProperty(key)) {
+            return;
+        }
         custom = true;
-    }
-    if (hasAppearanceProperty(QStringLiteral("SpecularColor"))) {
-        material.specularColor = getAppearanceProperty(QStringLiteral("SpecularColor"))->getColor();
-        custom = true;
-    }
-    if (hasAppearanceProperty(QStringLiteral("EmissiveColor"))) {
-        material.emissiveColor = getAppearanceProperty(QStringLiteral("EmissiveColor"))->getColor();
-        custom = true;
-    }
-    if (hasAppearanceProperty(QStringLiteral("Shininess"))) {
-        material.shininess = getAppearanceProperty(QStringLiteral("Shininess"))->getFloat();
-        custom = true;
-    }
-    if (hasAppearanceProperty(QStringLiteral("Transparency"))) {
-        material.transparency = getAppearanceProperty(QStringLiteral("Transparency"))->getFloat();
-        custom = true;
-    }
+        auto property = getAppearanceProperty(key);
+        if (!property->isNull()) {
+            slot = static_cast<float>(property->getFloat());
+        }
+    };
+    colorSlot("AmbientColor", material.ambientColor);
+    colorSlot("DiffuseColor", material.diffuseColor);
+    colorSlot("SpecularColor", material.specularColor);
+    colorSlot("EmissiveColor", material.emissiveColor);
+    floatSlot("Shininess", material.shininess);
+    floatSlot("Transparency", material.transparency);
     if (hasAppearanceProperty(QStringLiteral("TextureImage"))) {
         auto property = getAppearanceProperty(QStringLiteral("TextureImage"));
         if (!property->isNull()) {
@@ -1937,8 +2179,18 @@ App::Material Material::getMaterialAppearance() const
         custom = true;
     }
 
+    if (hasMaterialX()) {
+        // The document set rides the look as ONE hash, the manifest's
+        // (docs/MaterialStorage.md 17.8). Unset while a file is missing:
+        // a card that cannot be shaded as stated keeps its colour slots.
+        const App::MaterialXDocument manifest = getMaterialXManifest();
+        if (manifest.isSet()) {
+            material.materialx = manifest.manifestHash();
+            custom = true;
+        }
+    }
     if (custom) {
-        material.setType(App::Material::USER_DEFINED);
+        material.setType(App::MaterialAppearance::USER_DEFINED);
         material.uuid = getUUID().toStdString();
     }
 

@@ -25,7 +25,7 @@
 # include <QPushButton>
 #endif
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 #include "DlgSettingsViewColor.h"
 #include "ui_DlgSettingsViewColor.h"
 #include "PrefWidgets.h"

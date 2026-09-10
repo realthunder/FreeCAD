@@ -423,7 +423,7 @@ bool PropertyPartShape::usesBlob(Base::Writer& writer) const
 }
 
 /// Extension a save under this writer stores the geometry under, no leading dot.
-static const char* blobExtension(Base::Writer& writer)
+static const char* shapeBlobExtension(Base::Writer& writer)
 {
     return writer.getMode("BinaryBrep") ? "bin" : "brp";
 }
@@ -431,7 +431,7 @@ static const char* blobExtension(Base::Writer& writer)
 void PropertyPartShape::makeBlob(Base::Writer& writer) const
 {
     auto& manager = blobManager();
-    const char* ext = blobExtension(writer);
+    const char* ext = shapeBlobExtension(writer);
     if (_blob) {
         // Still the right content only if it was written for this document
         // and in this format. A copied object carries a handle on another
@@ -538,7 +538,10 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
         _blobMotion = TopLoc_Location();
     }
 
-    if (_blob && owners) {
+    // A retained generation (Feature::materializeShapeVersions) borrows but
+    // never publishes: a later object that borrowed from it would have to
+    // be rewritten the day the generation is dropped.
+    if (_blob && owners && _publishes) {
         ShapeOwnerTable::File entry;
         entry.hash = _blob->hash();
         entry.plan = plan;
@@ -557,7 +560,7 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
 void PropertyPartShape::storeBlob(Base::Writer& writer, ShapeRefSet* refs) const
 {
     auto& manager = blobManager();
-    const char* ext = blobExtension(writer);
+    const char* ext = shapeBlobExtension(writer);
     const std::string path = manager.uniquePath(std::string("shape.") + ext);
     try {
         {
@@ -595,7 +598,7 @@ void PropertyPartShape::noteBlob(Base::Writer& writer) const
     auto referrer = App::FileBlobManager::referrerOf(this);
     // The extension is the property's to give: nothing about the content says
     // whether it was written as ASCII BRep or as binary.
-    referrer.ext = std::string(".") + blobExtension(writer);
+    referrer.ext = std::string(".") + shapeBlobExtension(writer);
     blobManager().noteReferenced(_blob, referrer);
 }
 
@@ -693,22 +696,27 @@ void PropertyPartShape::ensureRestored() const
         return;
     auto self = const_cast<PropertyPartShape*>(this);
     auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
-    if (!owner || !owner->getDocument()) {
-        self->_RestorePending = false;
-        return;
-    }
     if (!_RestoreHash.empty()) {
         // The blob arrives with the archive entries, which are drained after
         // the whole XML pass -- and the XML pass asks for this shape itself,
         // through the element map version check at the end of Restore(). Stay
         // pending until the file is here, exactly as the store branch does:
         // the property then reads as the null shape it is.
+        //
+        // No owning object is needed for this branch: the manager is the
+        // document's, reached through whatever container the property has,
+        // and a property the document itself owns (ForeignBaseShapes) comes
+        // back this way.
         if (!_blob)
             return;
         // Cleared before serving: whatever runs below reads the property
         // again, and must find a settled state instead of re-entering.
         self->_RestorePending = false;
         self->serveFromBlob();
+    }
+    else if (!owner || !owner->getDocument()) {
+        self->_RestorePending = false;
+        return;
     }
     else if (_StorePos != PropertyShapeStore::NoPosition) {
         // The store arrives with the archive entries, which are drained
@@ -803,6 +811,10 @@ void PropertyPartShape::validateShape(App::DocumentObject *obj)
     if (!obj || !obj->getDocument() || obj->isRestoring()
              || obj->getDocument()->testStatus(App::Document::Restoring))
         return;
+    // A retained generation is evidence, not the owner's geometry: it is
+    // neither fixed nor allowed to flag the owner invalid.
+    if (Feature::isBaseShapeVersion(this))
+        return;
     if (auto feat = Base::freecad_dynamic_cast<Part::Feature>(obj)) {
         if (_Shape.isNull()) {
             feat->InvalidShape.setValue(false);
@@ -829,8 +841,12 @@ void PropertyPartShape::setValue(const TopoShape& sh)
     // An unserved parked entry is dead: the value it would bring is
     // being overwritten. Never serve it after this.
     cancelRestorePending();
-    dropBlob(sh.getShape());
+    // Announced before the blob is dropped: the owner's onBeforeChange may
+    // retain the outgoing shape as a generation, and the file the last
+    // save wrote for it goes along (Feature::onBeforeChange). The stand-in
+    // the transaction takes there is a Copy(), which carries no blob.
     aboutToSetValue();
+    dropBlob(sh.getShape());
     _Shape = sh;
     _ShapeNoName.setShape(sh.getShape(), true);
     _ShapeNoName.Tag = -1;
@@ -855,8 +871,9 @@ void PropertyPartShape::setValue(const TopoShape& sh)
 void PropertyPartShape::setValue(const TopoDS_Shape& sh, bool resetElementMap)
 {
     cancelRestorePending();
-    dropBlob(sh);
+    // Announced first, see setValue(const TopoShape&).
     aboutToSetValue();
+    dropBlob(sh);
     auto obj = dynamic_cast<App::DocumentObject*>(getContainer());
     if(obj)
         _Shape.Tag = obj->getID();

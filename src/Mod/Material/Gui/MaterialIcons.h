@@ -31,7 +31,7 @@
 #include <QObject>
 #include <QString>
 
-#include <App/Material.h>
+#include <App/MaterialAppearance.h>
 
 class QImage;
 class QTimer;
@@ -121,7 +121,7 @@ public:
      * rendered; a card with no name simply renders. A null icon means
      * "not ready"; connect to iconReady() and ask again.
      */
-    QIcon icon(const QString& key, const App::Material& material,
+    QIcon icon(const QString& key, const App::MaterialAppearance& material,
                const QString& name = {},
                const App::MaterialRenderProperties& render = {});
 
@@ -132,7 +132,7 @@ public:
     /// The material a finish icon is rendered on: one polished metal for
     /// every pattern, so what differs is the finish and not the colour.
     /// Its gloss is the one thing that does vary -- see finishRoughness.
-    static App::Material finishMaterial(uint8_t pattern);
+    static App::MaterialAppearance finishMaterial(uint8_t pattern);
 
     /** How glossy the metal under \a pattern is
      *
@@ -185,7 +185,7 @@ public:
     /// The digest of a material's appearance, as the bundled icons are
     /// named by. Public for the icon generator (MatGui.appearanceDigest),
     /// which has to group cards by look before it renders anything.
-    static QString digestOf(const App::Material& material,
+    static QString digestOf(const App::MaterialAppearance& material,
                             const App::SurfaceFinish& finish,
                             const App::MaterialRenderProperties& render = {});
 
@@ -195,7 +195,7 @@ public:
      * digest it writes into the file is what later lets a stale bundled
      * icon be recognised as stale. False if nothing was rendered.
      */
-    bool renderToFile(const App::Material& material,
+    bool renderToFile(const App::MaterialAppearance& material,
                       const App::SurfaceFinish& finish, const QString& path,
                       const App::MaterialRenderProperties& render = {},
                       IconShape shape = IconShape::Sphere);
@@ -222,11 +222,11 @@ private:
     ~MaterialIcons() override;
 
     void drain();
-    QIcon build(const QString& key, const App::Material& material,
+    QIcon build(const QString& key, const App::MaterialAppearance& material,
                 const App::SurfaceFinish& finish,
                 const App::MaterialRenderProperties& render = {},
                 IconShape shape = IconShape::Sphere);
-    QImage render(const App::Material& material, const App::SurfaceFinish& finish,
+    QImage render(const App::MaterialAppearance& material, const App::SurfaceFinish& finish,
                   const App::MaterialRenderProperties& props, IconShape shape);
     /// A bundled or user-supplied icon, or a null icon where there is
     /// none and where the one there is has gone stale.
@@ -242,7 +242,7 @@ private:
     struct Request
     {
         QString key;
-        App::Material material;
+        App::MaterialAppearance material;
         App::SurfaceFinish finish;
         App::MaterialRenderProperties render;
     };
@@ -255,6 +255,11 @@ private:
     std::unique_ptr<IconScene> _scene;
     QTimer* _timer {nullptr};
     bool _failed {false};
+    /// Set once the application has begun to quit. The scene is a
+    /// QWidget owning a GL context, and Qt requires every widget to be
+    /// gone before QApplication is -- so it is dropped at aboutToQuit
+    /// and never built again after that.
+    bool _quitting {false};
 };
 
 }  // namespace MatGui

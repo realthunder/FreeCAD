@@ -17,13 +17,18 @@
 # Sets <out-var> to the list of generated .bin paths. Every *.sh include
 # is a dependency of every shader — coarse, but include edits are rare
 # and a stale-bin bug costs far more than the over-rebuild. The shader
-# list is a configure-time GLOB: an all-new .sc file still needs a cmake
-# reconfigure to be picked up (unchanged from the old committed-bin flow).
+# lists are GLOBs with CONFIGURE_DEPENDS: the build re-checks them and
+# reconfigures itself when a file is added or removed, so an all-new .sc
+# or .sh is picked up by the next build -- the runtime user-shader
+# compile includes from a COPY of the .sh set, and a new include that
+# was not in the copy failed every splice that named it while the flat
+# program stood in (docs/MaterialStorage.md sec 17.22).
 function(fc_bgfx_compile_shaders outvar)
     cmake_parse_arguments(ARG "" "SHADERC;SHADERDIR;BGFXINC;OUTDIR"
                           "PROFILES;DEPENDS" ${ARGN})
-    file(GLOB _srcs ${ARG_SHADERDIR}/vs_*.sc ${ARG_SHADERDIR}/fs_*.sc)
-    file(GLOB _incs ${ARG_SHADERDIR}/*.sh)
+    file(GLOB _srcs CONFIGURE_DEPENDS
+         ${ARG_SHADERDIR}/vs_*.sc ${ARG_SHADERDIR}/fs_*.sc)
+    file(GLOB _incs CONFIGURE_DEPENDS ${ARG_SHADERDIR}/*.sh)
     # The bgfx headers come from BGFXINC, not SHADERDIR — the submodule
     # is fork-patched, so an edit there must also re-trigger shaderc.
     list(APPEND _incs ${ARG_BGFXINC}/bgfx_shader.sh
@@ -98,8 +103,8 @@ endfunction()
 function(fc_bgfx_check_shaders outvar)
     cmake_parse_arguments(ARG "" "SHADERC;SRCDIR;SHADERDIR;BGFXINC;OUTDIR"
                           "PROFILES;DEPENDS" ${ARGN})
-    file(GLOB_RECURSE _srcs ${ARG_SRCDIR}/*.sc)
-    file(GLOB _incs ${ARG_SHADERDIR}/*.sh)
+    file(GLOB_RECURSE _srcs CONFIGURE_DEPENDS ${ARG_SRCDIR}/*.sc)
+    file(GLOB _incs CONFIGURE_DEPENDS ${ARG_SHADERDIR}/*.sh)
     list(APPEND _incs ${ARG_BGFXINC}/bgfx_shader.sh
                       ${ARG_BGFXINC}/bgfx_compute.sh)
     set(_varying ${ARG_SHADERDIR}/varying.def.sc)
@@ -193,7 +198,7 @@ endfunction()
 # stock shaders do.
 function(fc_bgfx_copy_shader_src outvar)
     cmake_parse_arguments(ARG "" "SHADERDIR;BGFXINC;OUTDIR" "" ${ARGN})
-    file(GLOB _incs ${ARG_SHADERDIR}/*.sh)
+    file(GLOB _incs CONFIGURE_DEPENDS ${ARG_SHADERDIR}/*.sh)
     list(APPEND _incs ${ARG_SHADERDIR}/varying.def.sc
                       ${ARG_BGFXINC}/bgfx_shader.sh
                       ${ARG_BGFXINC}/bgfx_compute.sh)

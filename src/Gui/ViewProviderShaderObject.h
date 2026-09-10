@@ -24,6 +24,7 @@
 #define GUI_ViewProviderShaderObject_H
 
 #include <map>
+#include <vector>
 
 #include <QPointer>
 
@@ -39,6 +40,14 @@ class SoFragmentShader;
 class SoSeparator;
 class SoGroup;
 
+/// Declared rather than included: MaterialXSupport.h is the renderer
+/// library's header, and one member function's parameter is no reason
+/// for every consumer of this one to see it.
+namespace Render::MaterialX
+{
+struct MaterialInput;
+}
+
 namespace Gui {
 
 class View3DInventorViewer;
@@ -47,7 +56,7 @@ class View3DInventorViewer;
  *
  * Owns the Coin SoShaderProgram node built from the object's properties.
  * The node instance is shared by every consumer (App::Shader demo preview,
- * Appearance bindings), so a property edit updates the node fields and Coin
+ * ShaderBinding objects), so a property edit updates the node fields and Coin
  * notification invalidates all enclosing render caches — no cross-view
  * notification needed. Displays nothing itself.
  */
@@ -61,7 +70,34 @@ public:
 
     void attach(App::DocumentObject *obj) override;
     void updateData(const App::Property *prop) override;
+    /// Rebuild the node once the document has finished restoring: the
+    /// sources are blob-backed and their content arrives after attach()
+    void finishRestoring() override;
     bool isShow() const override {return true;}
+
+    /** @name The shader graph editor (docs/ShaderGraphEditor.md sec 4.4)
+     *
+     * A MATERIALX-dialect program opens in Gui::ShaderGraphView, placed
+     * by Gui::ViewPlacement as a document view (a split cell by
+     * default). getMDIView() and show() are what the split-view area
+     * keys on: the cell content menu lists objects whose view is
+     * open, and a saved layout rehydrates an O:<name> cell through
+     * show(). Builds without the editor (no bgfx or no MaterialX)
+     * have these do nothing.
+     */
+    //@{
+    bool doubleClicked() override;
+    void setupContextMenu(QMenu *menu, QObject *receiver,
+                          const char *member) override;
+    MDIView *getMDIView() const override;
+    void show() override;
+    void beforeDelete() override;
+    /// Reveal the open view of this program, if any. False when none.
+    bool activateView() const;
+    /// Whether this program's document can be edited in the graph
+    /// editor: MATERIALX dialect, and the editor built in.
+    bool hasGraphEditor() const;
+    //@}
 
     /// The shared shader program node consumers insert into their graphs
     SoShaderProgram *getShaderNode() const;
@@ -72,6 +108,31 @@ public:
 
 private:
     void updateShaderNode();
+    /// Report what is wrong with a MATERIALX-dialect program's
+    /// document, once per distinct text (docs/CyclesIntegration.md
+    /// sec 8 item 15). A document is authored somewhere else and
+    /// arrives here whole, so the earliest place it can be checked is
+    /// where it is first materialized -- which is document load.
+    void validateDocument();
+    /// The warnings validateDocument last printed, so a note that holds
+    /// across parses is printed when it appears and not on each.
+    std::vector<std::string> reportedWarnings;
+    /// Materialize the document's declared interface as the object's
+    /// `Param_*` dynamic properties, the REVERSE of the hand-declared
+    /// direction everything else here takes: the document says what
+    /// the knobs are, and one that is gone takes its property with it.
+    /// An existing property keeps its value -- it is what the user set
+    /// -- so re-reading a document is not a reset.
+    void syncDocumentInterface(
+            const std::vector<Render::MaterialX::MaterialInput> &inputs);
+    /// Keep the object's Images property in step with what the document
+    /// refers to, so a document with maps travels in the .FCStd
+    /// (docs/MaterialStorage.md sec 16). Same rule as the interface
+    /// above: a name the document no longer refers to is dropped, and a
+    /// name already held is left alone -- its bytes are the stored ones,
+    /// which is the whole point, and re-reading them off this machine's
+    /// disk would undo the travelling on the machine that has them.
+    void syncDocumentImages(const std::string &xml, const std::string &sourcePath);
 
     CoinPtr<SoShaderProgram> pcShaderProgram;
     CoinPtr<SoVertexShader> pcVertexShader;
@@ -82,6 +143,10 @@ private:
     // uniform name -> parameter node, updated in place so a value edit
     // notifies without relisting the parameter field
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> paramNodes;
+    // What validateDocument() last had to say about, so that a resync
+    // over unchanged text is silent. Every property write on the
+    // object re-materializes the whole node triple.
+    std::string validatedSource;
 };
 
 using ViewProviderShaderProgramPython = ViewProviderPythonFeatureT<ViewProviderShaderProgram>;
@@ -92,7 +157,7 @@ using ViewProviderShaderProgramPython = ViewProviderPythonFeatureT<ViewProviderS
  * Displays the effect on a built-in Coin primitive (Demo property) with the
  * linked programs' shared SoShaderProgram nodes inserted ahead of the shape
  * (the SoFCRenderMaterial placement rules). Scene-level ("post") programs
- * are not applied by the demo — activating those is the Appearance object's
+ * are not applied by the demo -- activating those is the ShaderBinding object's
  * job.
  */
 class GuiExport ViewProviderShader : public ViewProviderDocumentObject
@@ -119,9 +184,9 @@ private:
 using ViewProviderShaderPython = ViewProviderPythonFeatureT<ViewProviderShader>;
 
 
-/** View provider of App::Appearance: activates the bound shader.
+/** View provider of App::ShaderBinding: activates the bound shader.
  *
- * The Appearance is a link group (docs/RenderDebug.md §6.5): the shader is
+ * The ShaderBinding is a link group (docs/RenderDebug.md sec 6.5): the shader is
  * the first child resolving to an App::Shader, every other child a target.
  * The children render like any link group's, so a target link child also
  * shows an instance carrying the effect.
@@ -150,13 +215,13 @@ using ViewProviderShaderPython = ViewProviderPythonFeatureT<ViewProviderShader>;
  * and draw over it. Shader-only Appearances activate the effect's
  * post-stage programs scene-wide.
  */
-class GuiExport ViewProviderAppearance : public ViewProviderLink
+class GuiExport ViewProviderShaderBinding : public ViewProviderLink
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderAppearance);
+    PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderShaderBinding);
 
 public:
-    ViewProviderAppearance();
-    ~ViewProviderAppearance() override;
+    ViewProviderShaderBinding();
+    ~ViewProviderShaderBinding() override;
 
     void attach(App::DocumentObject *obj) override;
     void finishRestoring() override;
@@ -164,7 +229,7 @@ public:
     void updateData(const App::Property *prop) override;
     void onChanged(const App::Property *prop) override;
 
-    /// Re-evaluate every Appearance binding of a document (chain-length +
+    /// Re-evaluate every ShaderBinding of a document (chain-length +
     /// TreeRank precedence)
     static void rebuildAllBindings(App::Document *doc);
 
@@ -173,6 +238,32 @@ public:
     /// list) must reach the new view's cache manager too. Schedules a
     /// coalesced rebuild; no-op for documents without Appearances.
     static void onViewCreated(App::Document *doc);
+
+    /** @name The shared node of a card-carried MaterialX document
+     *
+     * A material card that carries a MaterialX document puts its manifest
+     * hash on the appearance (App::MaterialAppearance::materialx,
+     * docs/MaterialStorage.md sec 17). Fifty objects wearing the card
+     * share ONE SoShaderProgram built from that manifest -- one document
+     * read, one generation, one compile (docs/CyclesIntegration.md 6.13
+     * decision 1a) -- kept here, beside the binding machinery that already
+     * inserts program nodes at target roots, in a per-document registry
+     * keyed by the manifest hash. The node is immutable while shared: an
+     * edit means materializing real shader objects, never touching this.
+     */
+    //@{
+    /** The shared node for \a manifestHash in \a doc, built on first use
+     *
+     * The manifest and every file it names must already be in the
+     * document's blob store; null while any is not (a restore still
+     * draining, a card whose files were never found), and the caller asks
+     * again later. Counted: every acquire is owed a release.
+     */
+    static SoShaderProgram *acquireMaterialXNode(App::Document *doc,
+                                                 const std::string &manifestHash);
+    /// Give back one hold on the shared node; the last release drops it.
+    static void releaseMaterialXNode(App::Document *doc, const std::string &manifestHash);
+    //@}
 
 private:
     void clearBindings();
@@ -201,7 +292,7 @@ private:
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> ownParamNodes;
 };
 
-using ViewProviderAppearancePython = ViewProviderPythonFeatureT<ViewProviderAppearance>;
+using ViewProviderShaderBindingPython = ViewProviderPythonFeatureT<ViewProviderShaderBinding>;
 
 } // namespace Gui
 

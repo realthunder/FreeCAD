@@ -13,6 +13,7 @@
  */
 
 #include "fc_color.sh"
+#include "fc_matrix.sh"
 
 #include "fc_mesh_lighting.sh"
 #include "fc_finish.sh"
@@ -106,7 +107,7 @@ void main()
 			// Parallax-occlusion: march the tangent-space view
 			// ray until it dips below the height field, then
 			// refine linearly between the last two samples.
-			vec3 vdir = u_proj[2][3] != 0.0
+			vec3 vdir = FC_MTX(u_proj, 2, 3) != 0.0
 				? normalize(-v_vpos) : vec3(0.0, 0.0, 1.0);
 			vec3 vts = vec3(dot(vdir, normalize(T)),
 			                dot(vdir, normalize(B)),
@@ -263,8 +264,21 @@ void main()
 			rough = frough;
 	}
 
+	// What a generated material may ask of the geometry. Filled here
+	// because this is where the varyings are readable -- the SPIR-V
+	// path resolves one only inside main() -- by the fill the glass
+	// stage shares (fc_openpbr.sh).
+#if defined(TEXTURE) || defined(FC_USER_MATERIAL)
+	vec2 mtlxUv = v_texcoord0;
+#else
+	vec2 mtlxUv = vec2(0.0, 0.0);
+#endif
+	FcMtlxGeom mtlxGeom = fcMtlxGeomFill(n, v_vpos, v_onrm, v_opos,
+	                                     mtlxUv, v_color0.rgb);
+
 	vec4 lit = fcShadeFragment(base, n, geoN, v_vpos, gl_FragCoord.xy,
-	                           occ, metal, rough, matEmissive, matSpec);
+	                           occ, metal, rough, matEmissive, matSpec,
+	                           mtlxGeom);
 	vec3 color = lit.rgb;
 	float alpha = lit.a;
 

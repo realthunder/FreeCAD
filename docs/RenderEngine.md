@@ -1091,6 +1091,66 @@ what they spend is the reader's idle GPU time and, on a laptop, their
 battery, which is a fact about their machine rather than about the model
 somebody authored.
 
+### 3.6 Cross-API conventions: clip depth and texture origin
+
+bgfx picks the backend at runtime, and two conventions differ under it.
+The engine settles both in one place each, so no pass has to think about
+which API it is on.
+
+**Clip depth.** OpenGL clips z against `[-1, 1]`; Metal, D3D and Vulkan
+clip against `[0, 1]`, and `caps->homogeneousDepth` says which. Every
+projection the engine *builds* -- the shadow crop, the bulb tiles, the
+overlays, the 2D page -- is built to the caps flag. The camera
+projection is the one it does not build: Coin hands it over in GL
+convention (`View3DInventorViewer`, `cam->getViewVolume`). `render()`
+remaps it once, at the top of the frame, `z -> (z + w) / 2` on the z row
+alone, and everything downstream -- `setViewTransform`, the predefined
+`u_proj`, `BGFXView::projMatrix`, the frustum planes, the proxy
+hierarchy, both cullers -- sees a matrix that matches the caps flag.
+Only the scene publish keeps the fed matrix, because its viewer renders
+on a backend of its own.
+
+The w row is deliberately left alone: `u_proj[2][3]` is how a dozen
+shaders tell a perspective camera from an orthographic one, and no
+shader reads the z row at all, so the remap stays confined to clipping.
+
+**Texture origin.** A render target's texture v = 0 is the bottom row
+under OpenGL and the top row everywhere else (`caps->originBottomLeft`),
+while clip y = +1 is the top of the viewport on every backend. So a UV
+derived from clip space is not the same function everywhere, and
+`fc_screen.sh` owns the pair that converts:
+
+- `fc_clipToUv(clip)` -- the UV of the pixel at a clip-space xy. The
+  fullscreen vertex stage `vs_fc_comp.sc` uses it, which puts every
+  screen-space pass in the engine on it; a screen-space walk that does
+  its own perspective divide (the water SSR) uses it too.
+- `fc_uvToNdc(uv)` -- the inverse, for unprojecting a texel back into
+  view space (`fc_prepassViewPos`, `volRay`, the env/sun/ground-shadow
+  rays) and for a splat that must land on one named texel of the target
+  it writes (`vs_fc_pimpact`).
+
+A pass that builds its UV from `gl_FragCoord.xy * u_viewTexel.xy`
+(`fs_fc_groundrefl`, `fc_glass_fs.sh`, `fc_line_sdf_fs.sh`) needs
+neither, and is not a second convention living alongside: `gl_FragCoord`
+counts from the same edge the texture v does on both APIs, which is
+exactly the agreement the helpers restore for the clip-space route.
+
+**Matrix subscripting.** GLSL indexes a matrix by column and every other
+language bgfx targets indexes it by row, which bgfx states as
+`BGFX_SHADER_MATRIX_COLUMN_MAJOR`. It makes `mul()` agree across that
+split and `mtxFromRows`/`mtxFromCols` build a matrix either way, but a
+written-out `m[i][j]` names transposed elements on the two halves -- a
+silent fault, not a compile error. `fc_matrix.sh` gives `FC_MTX(m, i, j)`,
+which names the element the CPU wrote at `float[16]` index `4*i + j`,
+and every subscript in the shader set goes through it.
+
+That one is worth knowing by its symptom. A dozen shaders tell a
+perspective camera from an orthographic one by the w row's z entry
+(`FC_MTX(u_proj, 2, 3)`, -1 or 0); read as `u_proj[2][3]` off GL it lands
+on the z row's w entry, which is never 0. So an orthographic camera was
+taken for a perspective one, and the ray fan rebuilt from the wrong
+entries turned the environment background into a starburst.
+
 ## 4. Draw model
 
 - `Render::DrawCall` = mesh reference (+ index sub-range), model
@@ -1496,7 +1556,7 @@ section is the *authoring reference*.
   shape (`Demo` = None/Box/Sphere/Cylinder/Cone/**Emitter**, §5.8) —
   the preview renders the effect applied to the shape; inert
   otherwise.
-- **`App::Appearance`** — the binder (a LinkGroup): child 0 resolves
+- **`App::ShaderBinding`** -- the binder (a LinkGroup): child 0 resolves
   to the Shader (possibly an `App::Link` into a shader-library
   document), remaining children are targets. `Scope` selects
   application: **Object** (attach at the target's view-provider root —
@@ -1715,7 +1775,7 @@ Color → rgba; Vector → xyz; FloatList/IntegerList → vec4 lanes
 `Param` group binds — other dynamic properties stay ordinary
 properties.
 
-An `App::Appearance` overrides parameters *per binding* with
+An `App::ShaderBinding` overrides parameters *per binding* with
 like-named `Param_*` properties of its own; an override the program
 does not declare is appended (a binding can drive any uniform the
 source declares).
@@ -1993,7 +2053,7 @@ future generalization to user-declared passes (a render graph) may
 come later; stage names and helper contracts are chosen so existing
 effects would survive it as pre-wired slots.
 
-**Activation = binding.** An `App::Appearance` binding a Shader with a
+**Activation = binding.** An `App::ShaderBinding` binding a Shader with a
 water-stage program *makes the target a water body*; no separate
 switch. The legacy per-object `Render_Water`/`Render_Fire`/
 `Render_Fountain` view properties remain as a parallel path; effect
@@ -2132,7 +2192,195 @@ phone).
   `RenderDebug_*` prop, `saveRenderDump(source='viewer')`, read the
   PNG.
 
-## 7. Known limitations / future work
+## 7. Which settings each shading model reads
+
+`View3DInventor::ShadingType` picks the model: **Classic** (fixed
+function Phong), **Realistic** (physically based, image lit), **Matcap**
+(a camera-fixed studio), **External** (the view is handed to a path
+tracer -- only Cycles exists). `Render_PBR` / `Render_Matcap` are a
+hidden facade over the enum, not a second truth.
+
+They are **two tiers, not four variations** (ruled 2026-09-03,
+docs/MaterialStorage.md sec 17.13):
+
+- **Classic and Matcap must never show an unlit model.** That is what
+  they are FOR -- a viewport you can always work in. Classic buys it
+  with the headlight and Coin's `LIGHT_MODEL_AMBIENT`; Matcap buys it
+  with a studio that needs no lights at all.
+- **Realistic and Cycles are lit by the SCENE** -- the environment, the
+  scene light, and any light a DOCUMENT adds -- and by none of the
+  viewport's own aids. Both may draw black, because a black scene is
+  black. They are the same tier at two qualities.
+
+Two rules fall out, and the tables below are their consequences:
+
+1. **A viewing aid is not a light.** The headlight, backlight and fill
+   light are camera-attached (`ViewLight::eyeSpace`) and the scene
+   ambient is a Phong-era global; they belong to Classic. Blender draws
+   the same line -- Solid mode's studio lights never render.
+2. **A quality dial belongs to an INTERACTIVE tier.** The raster trades
+   accuracy for frame rate everywhere (AO resolution, effect
+   resolution, the shadow map). An offline still has no such trade to
+   offer: nobody wants a render that is faster and wrong. So Cycles
+   reads no dial, and that -- not "shadows are a fake" -- is why it
+   ignores `Render_Shadow`.
+
+Legend: **Y** honoured, **-** not read, **n/a** meaningless here.
+
+### 7.1 Output, and what the frame is
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `OutputTransform` | Y | Y | Y | Y |
+| `Exposure` | Y | Y | Y | Y |
+| background colour / gradient | Y | Y | Y | Y |
+| section planes and their style | Y | Y | Y | Y |
+
+### 7.2 Which model shades
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `PBR` (the facade over ShadingType) | Y | Y | Y | **-** |
+| `Matcap`, `MatcapPreset`, `MatcapTint` | - | - | Y | - |
+
+`Render_PBR` says which branch the RASTER shades with. The path tracer
+is physically based by definition -- that is the whole reason to reach
+for it -- so it does not take orders from the facade. The flag survives
+into `Cycles::SceneInput` for ONE thing: `pbr.enabled && envBackground`
+decides whether the environment is SEEN as the backdrop, never whether
+it LIGHTS.
+
+### 7.3 The environment
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `PBREnvPreset`, `PBREnvImage`, `PBREnvEmbed` | - | Y | - | Y |
+| `PBREnvIntensity` | - | Y | - | Y |
+| `PBREnvBackground` | - | Y | - | Y |
+| `PBREnvBlur` | - | Y | - | Y |
+
+Classic and Matcap are not lit by the environment at all, and do not
+show it as a backdrop (`pbrActive` gates both).
+
+### 7.4 Lighting
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| the viewer's headlight / backlight / fill (`Light_*` view props) | Y | **-** | - | **-** |
+| scene ambient (`AmbientLightColor/Intensity`) | Y | **-** | - | **-** |
+| a light a DOCUMENT contains | Y | Y | - | Y |
+| `Light`, `LightIntensity`, `LightColor` | Y | Y | - | Y |
+| `LightDirection*`, `LightSpot`, `LightPosition*` | Y | Y | - | Y |
+| `LightCutOffAngle`, `LightDropOffRate` | Y | Y | - | Y |
+| `SunDisc`, `SunDiscSize` | Y | Y | - | - |
+| `GroundReflection`, `GroundReflectionIntensity` | Y | Y | Y | - |
+
+Matcap reads no light of any kind -- form must read the same wherever
+the light sits, which is the point of it. `SunDisc` is a backdrop
+element the raster draws; the path tracer gives its sun the real sun's
+half-degree instead. The ground receiver is a raster stage-prop.
+
+### 7.5 Material interpretation
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `PBRMetallic`, `PBRRoughness` | - | Y | - | Y |
+| `PBRFromSpecular` | - | Y | - | Y |
+| `ShininessMapping` | - | Y | - | Y |
+| `BumpScale` | Y | Y | Y | Y |
+| `Parallax` | Y | Y | Y | - |
+
+The normal is bump-perturbed before the branch, so a bump map reaches
+even the matcap lookup. Parallax is a raster trick with no meaning to a
+path tracer.
+
+### 7.6 Screen-space and post effects
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `AO`, `AOMethod`, `AORadius`, `AOIntensity` | Y | Y | Y | - |
+| `Cavity`, `CavityRadius`, `CavityValley`, `CavityRidge` | Y | Y | Y | - |
+| `Bloom`, `BloomThreshold`, `BloomIntensity`, `BloomRadius` | Y | Y | Y | - |
+
+GTAO reaches all three raster branches. It is kept in Realistic
+deliberately: it APPROXIMATES the occlusion the path tracer integrates
+exactly, so removing it would make Realistic less like Cycles, not
+more.
+
+### 7.7 Volumes, water and effect packages
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `Volumetric*`, `Caustics*` | Y | Y | Y | - |
+| `WaterSurface` and the `Water*` family | Y | Y | Y | - |
+
+Effect volumes arrive as draws and the translation counts them in
+`skipped`: a path tracer has no screen-space volume pass, and these
+are authored looks rather than statements about the geometry.
+
+### 7.8 Cost and quality dials -- the interactive tier only
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `Shadow` (the shadow MAP) | Y | Y | (map built, unused) | **-** |
+| `AOResolution`, `AOSlices`, `AOSteps` | Y | Y | Y | - |
+| `EffectResolution` | Y | Y | Y | - |
+| `TemporalAccum`, `TemporalAccumSamples` | Y | Y | Y | - |
+
+**`Shadow` stays honoured in Realistic**, and that is not an
+inconsistency with Cycles. In the raster it is a genuine dial: the
+shadow map is a whole extra pass over the scene from the light's point
+of view, every frame, and dropping it is the same kind of trade as
+halving the AO resolution. In a path tracer there is no map to skip --
+the shadow is what happens when a shadow ray meets the model -- so
+honouring the flag would not buy a cheaper approximation, it would draw
+light passing through solid matter. `translateLight` always casts.
+
+Matcap tapped no shadow and paid for one anyway: the map set is
+demanded by configuration -- a scene light is fed and `Shadow` is on --
+and the matcap branch has no shadow term to sample it with, so the mode
+held **117MB at `ShadowPrecision` 1.0** it could never read. The demand
+predicate now asks the mode, and **91.9MB** comes back (measured,
+`fcad-probes/matcapshadow_probe.py`, on the `renderTargetMemory` the
+render stats report).
+
+The per-frame RENDER was already free, and that is worth stating so the
+saving is not mistaken for a frame-rate one: the map is cached on a hash
+of the light matrices and the caster set, so on a static scene it
+re-renders only when a caster or the light moves. What the gate saves is
+the memory, and that re-render.
+
+Two things still tap the map in a matcap frame and keep it:
+
+- **the volumetric shafts**, which REQUIRE it (`volActive` is gated on
+  `shadowActive`) -- a frame effect rather than a surface one, so the
+  shading mode does not exempt them;
+- **a draw carrying a generated material**, which takes the OpenPBR
+  branch whatever the frame's mode says (`FC_USER_MATERIAL`) and so
+  keeps a shadow term the matcap branch does not have.
+
+The ground receiver is NOT one of them: `submitShadowGround` draws the
+quad unshadowed when there is no map.
+
+### 7.9 Engine settings, streaming and diagnostics
+
+| Setting | Classic | Realistic | Matcap | Cycles |
+| --- | :-: | :-: | :-: | :-: |
+| `CyclesDevice`, `CyclesSamples`, `CyclesTimeLimit` | n/a | n/a | n/a | Y |
+| `CyclesDenoise`, `CyclesPixelSize` | n/a | n/a | n/a | Y |
+| `Type`, `MaxViewIds`, `GpuMemoryBudgetMB` | Y | Y | Y | n/a |
+| tessellation and LOD (`Coarse*`, `Level*`, `MeshSkip*`, `Simplify*`, `ProgressiveLoad*`, `Climb*`, `Visual*`, `Descent*`, `ShapeVertices`, `PressureDrop*`, `TinyElementCutoff`, `LoadDropElements`, `ElementGateStagger`, `DowngradeLedger`, `WorkerVertexCache`, `CaptureBudgetMS`, `BackgroundReleaseDelay`) | Y | Y | Y | (the meshes it is handed) |
+| occlusion culling (`Occlusion*`) | Y | Y | Y | - |
+| `Debug*` | Y | Y | Y | `DebugViewMode` 2 only |
+
+These decide what geometry exists and at what fidelity, so they are
+upstream of shading: every raster model sees their result, and the path
+tracer traces whatever meshes the cache hands it. `DebugViewMode` 2 --
+the view-space shading normal -- is the one picture in which the two
+engines can be compared exactly, which is what the finish and map
+probes assert on.
+
+## 8. Known limitations / future work
 
 - Stock passes keep stock programs: a material-stage override does not
   affect shadows, picking, AO or section clipping; a displacing VS

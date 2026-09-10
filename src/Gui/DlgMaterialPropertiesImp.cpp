@@ -104,14 +104,14 @@ QColor DlgMaterialPropertiesImp::diffuseColor() const
     return ui->diffuseColor->color();
 }
 
-App::PropertyMaterialList* DlgMaterialPropertiesImp::listProperty(Gui::ViewProvider* vp) const
+App::PropertyAppearanceList* DlgMaterialPropertiesImp::listProperty(Gui::ViewProvider* vp) const
 {
-    return dynamic_cast<App::PropertyMaterialList*>(vp->getPropertyByName(material.c_str()));
+    return dynamic_cast<App::PropertyAppearanceList*>(vp->getPropertyByName(material.c_str()));
 }
 
-App::PropertyMaterial* DlgMaterialPropertiesImp::singleProperty(Gui::ViewProvider* vp) const
+App::PropertyAppearance* DlgMaterialPropertiesImp::singleProperty(Gui::ViewProvider* vp) const
 {
-    return dynamic_cast<App::PropertyMaterial*>(vp->getPropertyByName(material.c_str()));
+    return dynamic_cast<App::PropertyAppearance*>(vp->getPropertyByName(material.c_str()));
 }
 
 void DlgMaterialPropertiesImp::updateModeView(bool pbr)
@@ -147,7 +147,7 @@ void DlgMaterialPropertiesImp::syncFromProperty()
             }
             // The raw entry-0 slots: in PBR mode the diffuse IS the base
             // colour and the specular rgb the tint
-            App::Material mat = list->getMaterial(0);
+            App::MaterialAppearance mat = list->getMaterial(0);
             setButton(ui->ambientColor, mat.ambientColor);
             setButton(ui->diffuseColor, mat.diffuseColor);
             setButton(ui->emissiveColor, mat.emissiveColor);
@@ -161,7 +161,7 @@ void DlgMaterialPropertiesImp::syncFromProperty()
             return;
         }
         if (auto* single = singleProperty(vp)) {
-            const App::Material& mat = single->getValue();
+            const App::MaterialAppearance& mat = single->getValue();
             setButton(ui->ambientColor, mat.ambientColor);
             setButton(ui->diffuseColor, mat.diffuseColor);
             setButton(ui->emissiveColor, mat.emissiveColor);
@@ -175,7 +175,7 @@ void DlgMaterialPropertiesImp::syncFromProperty()
 
 /**
  * Toggles between the Phong and the PBR reading, converting the stored
- * values so the look survives the switch (see PropertyMaterialList::convertPBR).
+ * values so the look survives the switch (see PropertyAppearanceList::convertPBR).
  */
 void DlgMaterialPropertiesImp::onShadingModelActivated(int index)
 {
@@ -346,10 +346,10 @@ void DlgMaterialPropertiesImp::setViewProviders(const std::vector<Gui::ViewProvi
     bool haveList = false;
     for (auto vp : Objects) {
         App::Property* prop = vp->getPropertyByName(material.c_str());
-        if (prop && (prop->isDerivedFrom<App::PropertyMaterialList>()
-                     || prop->isDerivedFrom<App::PropertyMaterial>())) {
+        if (prop && (prop->isDerivedFrom<App::PropertyAppearanceList>()
+                     || prop->isDerivedFrom<App::PropertyAppearance>())) {
             snapshots.emplace_back(vp, std::unique_ptr<App::Property>(prop->Copy()));
-            haveList = haveList || prop->isDerivedFrom<App::PropertyMaterialList>();
+            haveList = haveList || prop->isDerivedFrom<App::PropertyAppearanceList>();
         }
     }
     ui->shadingModelLabel->setVisible(haveList);

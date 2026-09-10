@@ -23,11 +23,15 @@
  ***************************************************************************/
 
 #include <QDockWidget>
+#include <QIcon>
+#include <QPixmap>
+#include <QPushButton>
 #include <QSignalBlocker>
 #include <QString>
 #include <algorithm>
 #include <fastsignals/signal.h>
 
+#include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
@@ -35,6 +39,7 @@
 #include <Gui/Document.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/ViewProvider.h>
+#include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/WaitCursor.h>
 
 #include <Mod/Material/App/Exceptions.h>
@@ -43,6 +48,8 @@
 #include <Mod/Material/App/PropertyMaterial.h>
 
 #include "DlgMaterialImp.h"
+#include "MaterialIcons.h"
+#include "MaterialTreeWidget.h"
 #include "ui_DlgMaterial.h"
 
 
@@ -102,7 +109,7 @@ DlgMaterialImp::DlgMaterialImp(bool floating, QWidget* parent, Qt::WindowFlags f
         dw->show();
     }
 
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 
     // NOLINTBEGIN
     d->connectChangedObject = Gui::Application::Instance->signalChangedObject.connect(
@@ -117,7 +124,7 @@ DlgMaterialImp::~DlgMaterialImp()
 {
     // no need to delete child widgets, Qt does it all for us
     d->connectChangedObject.disconnect();
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
 
 void DlgMaterialImp::setupConnections()
@@ -126,6 +133,15 @@ void DlgMaterialImp::setupConnections()
             &MaterialTreeWidget::materialSelected,
             this,
             &DlgMaterialImp::onMaterialSelected);
+    connect(d->ui.buttonResetToMaterial,
+            &QPushButton::clicked,
+            this,
+            &DlgMaterialImp::onResetToMaterial);
+    // A rendered icon arrives after the render that makes it, so ask again
+    // when one lands rather than showing the blank it answered with first.
+    connect(&MaterialIcons::instance(), &MaterialIcons::iconReady, this, [this]() {
+        setAssignNote(getSelectionObjects());
+    });
 }
 
 void DlgMaterialImp::changeEvent(QEvent* e)
@@ -167,8 +183,8 @@ void DlgMaterialImp::slotChangedObject(const Gui::ViewProvider& obj, const App::
             return;
         }
         std::string prop_name = name;
-        if (prop.isDerivedFrom<App::PropertyMaterial>()) {
-            //auto& value = static_cast<const App::PropertyMaterial&>(prop).getValue();
+        if (prop.isDerivedFrom<App::PropertyAppearance>()) {
+            //auto& value = static_cast<const App::PropertyAppearance&>(prop).getValue();
             if (prop_name == "ShapeMaterial") {
                 // bool blocked = d->ui.buttonColor->blockSignals(true);
                 // auto color = value.diffuseColor;
@@ -177,6 +193,13 @@ void DlgMaterialImp::slotChangedObject(const Gui::ViewProvider& obj, const App::
                 //                                    (int)(255.0f * color.b)));
                 // d->ui.buttonColor->blockSignals(blocked);
             }
+        }
+        else if (prop.isDerivedFrom<App::PropertyAppearanceList>()
+                 && prop_name == "ShapeAppearance") {
+            // What assigning would do depends on whether the look still
+            // follows the card, and that answer changes the moment someone
+            // sets a look by hand -- with this panel open in front of them.
+            setAssignNote(getSelectionObjects());
         }
     }
 }
@@ -201,6 +224,7 @@ void DlgMaterialImp::setMaterial(const std::vector<App::DocumentObject*>& object
             try {
                 const auto& material = prop->getValue();
                 d->ui.widgetMaterial->setMaterial(material.getUUID());
+                setAssignNote(objects);
                 return;
             }
             catch (const Materials::MaterialNotFound&) {
@@ -208,6 +232,72 @@ void DlgMaterialImp::setMaterial(const std::vector<App::DocumentObject*>& object
         }
     }
     d->ui.widgetMaterial->setMaterial(Materials::MaterialManager::defaultMaterialUUID());
+    setAssignNote(objects);
+}
+
+void DlgMaterialImp::setAssignNote(const std::vector<App::DocumentObject*>& objects)
+{
+    // The card the picker is showing, which is the one an assignment would
+    // apply -- not necessarily the one the objects carry.
+    QIcon look;
+    const QString uuid = d->ui.widgetMaterial->getMaterialUUID();
+    if (!uuid.isEmpty()) {
+        try {
+            auto card = Materials::MaterialManager::getManager().getMaterial(uuid);
+            look = MaterialIcons::instance().icon(uuid,
+                                                  card->getMaterialAppearance(),
+                                                  card->getName(),
+                                                  card->getRenderProperties());
+        }
+        catch (const Materials::MaterialNotFound&) {
+        }
+    }
+    const int extent = MaterialTreeWidget::iconExtent();
+    d->ui.labelPreview->setPixmap(look.isNull() ? QPixmap() : look.pixmap(extent, extent));
+    d->ui.labelPreview->setVisible(!look.isNull());
+
+    // Whether assigning would carry the look across is the follow flag's
+    // answer, and it is per object: one object still following is enough
+    // for the assignment to change how something looks.
+    bool anyFollows = false;
+    bool anyCustom = false;
+    for (auto object : objects) {
+        auto* vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(
+            Gui::Application::Instance->getViewProvider(object));
+        if (!vp) {
+            continue;
+        }
+        if (vp->ShapeAppearance.isFollowingMaterial()) {
+            anyFollows = true;
+        }
+        else if (vp->canResetAppearanceToMaterial()) {
+            anyCustom = true;
+        }
+    }
+    if (anyFollows) {
+        d->ui.labelAssign->setText(tr("Assigning also applies this card's appearance."));
+    }
+    else if (anyCustom) {
+        d->ui.labelAssign->setText(tr("The appearance was set by hand and is kept as it is."));
+    }
+    else {
+        d->ui.labelAssign->setText(QString());
+    }
+    // Offered only while it applies, the rule the appearance panel and the
+    // context-menu command both follow (docs/MaterialStorage.md 13.5, 15.5)
+    d->ui.buttonResetToMaterial->setVisible(anyCustom);
+}
+
+void DlgMaterialImp::onResetToMaterial()
+{
+    for (auto object : getSelectionObjects()) {
+        auto* vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(
+            Gui::Application::Instance->getViewProvider(object));
+        if (vp) {
+            vp->resetAppearanceToMaterial();
+        }
+    }
+    setAssignNote(getSelectionObjects());
 }
 
 std::vector<Gui::ViewProvider*> DlgMaterialImp::getSelection() const
@@ -246,6 +336,7 @@ void DlgMaterialImp::onMaterialSelected(const std::shared_ptr<Materials::Materia
             prop->setValue(*material);
         }
     }
+    setAssignNote(objects);
 }
 
 // ----------------------------------------------------------------------------
