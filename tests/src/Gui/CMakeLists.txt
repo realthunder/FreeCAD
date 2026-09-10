@@ -22,6 +22,12 @@ add_test(NAME ClipConvention_tests_run COMMAND ClipConvention_tests_run)
 # Qt tests
 setup_qt_test(QuantitySpinBox)
 
+# The omni search layer without its box (docs/OmniSearch.md): the input
+# grammar, object and property resolution over a document, the parameter
+# search over App::ParamRegistry and the editor factory over Gui's
+# preference widgets. Widgets, hence a QApplication, hence a Qt test.
+setup_qt_test(OmniSearch)
+
 # The drain's walk over a live document (docs/DocumentLoad.md §13). The
 # cursor is header-only over App, and the claim being tested -- that the
 # walk survives objects coming and going between slices -- needs no window,

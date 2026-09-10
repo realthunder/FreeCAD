@@ -415,6 +415,8 @@ SET(Command_CPP_SRCS
     CommandPyImp.cpp
     ShortcutManager.cpp
     CommandCompleter.cpp
+    OmniSearch.cpp
+    OmniSearchBox.cpp
     FileDialogPyImp.cpp
     CommandActionPy.cpp
 )
@@ -426,6 +428,8 @@ SET(Command_SRCS
     CommandT.h
     ShortcutManager.h
     CommandCompleter.h
+    OmniSearch.h
+    OmniSearchBox.h
     CommandActionPy.h
 )
 SOURCE_GROUP("Command" FILES ${Command_SRCS})

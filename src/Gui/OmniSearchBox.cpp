@@ -1,0 +1,1286 @@
+/****************************************************************************
+ *   Copyright (c) 2026 Zheng Lei (realthunder) <realthunder.dev@gmail.com> *
+ *                                                                          *
+ *   This file is part of the FreeCAD CAx development system.               *
+ *                                                                          *
+ *   This library is free software; you can redistribute it and/or          *
+ *   modify it under the terms of the GNU Library General Public            *
+ *   License as published by the Free Software Foundation; either           *
+ *   version 2 of the License, or (at your option) any later version.       *
+ *                                                                          *
+ *   This library  is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of         *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the          *
+ *   GNU Library General Public License for more details.                   *
+ *                                                                          *
+ *   You should have received a copy of the GNU Library General Public      *
+ *   License along with this library; see the file COPYING.LIB. If not,     *
+ *   write to the Free Software Foundation, Inc., 59 Temple Place,          *
+ *   Suite 330, Boston, MA  02111-1307, USA                                 *
+ *                                                                          *
+ ****************************************************************************/
+
+#include "PreCompiled.h"
+
+#ifndef _PreComp_
+# include <algorithm>
+# include <sstream>
+# include <QAbstractItemView>
+# include <QIcon>
+# include <QApplication>
+# include <QCompleter>
+# include <QHBoxLayout>
+# include <QKeyEvent>
+# include <QLabel>
+# include <QMenu>
+# include <QMouseEvent>
+# include <QPainter>
+# include <QPushButton>
+# include <QStandardItemModel>
+# include <QStyle>
+# include <QStyledItemDelegate>
+# include <QTimer>
+# include <QToolButton>
+# include <QVBoxLayout>
+#endif
+
+#include <App/Application.h>
+#include <App/Document.h>
+#include <App/DocumentObject.h>
+#include <App/ParamRegistry.h>
+#include <App/Property.h>
+#include <Base/Console.h>
+#include <Base/Exception.h>
+#include <Base/Tools.h>
+
+#include "OmniSearchBox.h"
+#include "Action.h"
+#include "Application.h"
+#include "Command.h"
+#include "CommandCompleter.h"
+#include "Document.h"
+#include "ExpressionCompleter.h"
+#include "MainWindow.h"
+#include "MDIView.h"
+#include "PrefWidgets.h"
+#include "Selection/Selection.h"
+#include "Selection/SelectionView.h"
+#include "Tree.h"
+#include "ViewProviderDocumentObject.h"
+#include "propertyeditor/PropertyItem.h"
+
+using namespace Gui;
+using namespace Gui::OmniSearch;
+using App::ParamInfo;
+using App::ParamRegistry;
+
+namespace {
+
+/** Two-line rows for the completer popups: icon, title, a grey description,
+ * the shortcut or value on the right, and an arrow on a group command.
+ */
+class OmniItemDelegate : public QStyledItemDelegate
+{
+public:
+    static constexpr int IconSize = 24;
+    static constexpr int ArrowSize = 16;
+    static constexpr int Margin = 4;
+
+    explicit OmniItemDelegate(QObject *parent)
+        : QStyledItemDelegate(parent)
+    {}
+
+    static QRect arrowRect(const QRect &itemRect)
+    {
+        return QRect(itemRect.right() - Margin - ArrowSize,
+                     itemRect.top() + (itemRect.height() - ArrowSize) / 2,
+                     ArrowSize, ArrowSize);
+    }
+
+    static bool isGroup(const QModelIndex &index)
+    {
+        return index.data(IsGroupRole).toBool();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &) const override
+    {
+        QFont small = option.font;
+        small.setPointSizeF(small.pointSizeF() * 0.9);
+        int text = QFontMetrics(option.font).height() + QFontMetrics(small).height();
+        int h = std::max(text, IconSize) + 2 * Margin;
+        return QSize(option.rect.width(), h);
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+        opt.text.clear();
+        opt.icon = QIcon();
+
+        QVariant activeVar = index.data(IsActiveRole);
+        bool active = !activeVar.isValid() || activeVar.toBool();
+        if (!active)
+            opt.state &= ~QStyle::State_Enabled;
+
+        const QWidget *widget = opt.widget;
+        QStyle *style = widget ? widget->style() : QApplication::style();
+        style->drawPrimitive(QStyle::PE_PanelItemViewItem, &opt, painter, widget);
+
+        QRect r = opt.rect.adjusted(Margin, Margin, -Margin, -Margin);
+
+        QIcon icon = qvariant_cast<QIcon>(index.data(Qt::DecorationRole));
+        if (!icon.isNull()) {
+            QRect iconRect(r.left(), r.top() + (r.height() - IconSize) / 2, IconSize, IconSize);
+            icon.paint(painter, iconRect, Qt::AlignCenter,
+                       active ? QIcon::Normal : QIcon::Disabled);
+        }
+        r.setLeft(r.left() + IconSize + Margin * 2);
+
+        bool group = isGroup(index);
+        if (group) {
+            QStyleOption arrow;
+            arrow.rect = arrowRect(opt.rect);
+            arrow.palette = opt.palette;
+            arrow.state = opt.state & (QStyle::State_Enabled | QStyle::State_Selected);
+            style->drawPrimitive(QStyle::PE_IndicatorArrowRight, &arrow, painter, widget);
+            r.setRight(arrowRect(opt.rect).left() - Margin);
+        }
+
+        QPalette::ColorGroup cg = active ? QPalette::Normal : QPalette::Disabled;
+        bool selected = opt.state & QStyle::State_Selected;
+        QColor textColor = opt.palette.color(cg, selected ? QPalette::HighlightedText : QPalette::Text);
+        QColor dimColor = selected ? textColor : opt.palette.color(cg, QPalette::PlaceholderText);
+        if (!dimColor.isValid())
+            dimColor = textColor;
+
+        QString title = index.data(TitleRole).toString();
+        if (title.isEmpty())
+            title = index.data(Qt::DisplayRole).toString();
+        QString desc = index.data(DescriptionRole).toString();
+        QString right = index.data(ShortcutRole).toString();
+
+        QFont titleFont = opt.font;
+        QFont smallFont = opt.font;
+        smallFont.setPointSizeF(smallFont.pointSizeF() * 0.9);
+        QFontMetrics titleFM(titleFont);
+        QFontMetrics smallFM(smallFont);
+
+        int textHeight = titleFM.height() + smallFM.height();
+        int top = r.top() + (r.height() - textHeight) / 2;
+        QRect titleRect(r.left(), top, r.width(), titleFM.height());
+        QRect descRect(r.left(), top + titleFM.height(), r.width(), smallFM.height());
+
+        painter->save();
+        if (!right.isEmpty()) {
+            painter->setFont(smallFont);
+            painter->setPen(dimColor);
+            int w = smallFM.horizontalAdvance(right) + Margin;
+            QRect rightRect(titleRect.right() - w, titleRect.top(), w, titleRect.height());
+            painter->drawText(rightRect, Qt::AlignRight | Qt::AlignVCenter, right);
+            titleRect.setRight(rightRect.left() - Margin);
+        }
+        painter->setFont(titleFont);
+        painter->setPen(textColor);
+        painter->drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter,
+                          titleFM.elidedText(title, Qt::ElideRight, titleRect.width()));
+        if (!desc.isEmpty()) {
+            painter->setFont(smallFont);
+            painter->setPen(dimColor);
+            painter->drawText(descRect, Qt::AlignLeft | Qt::AlignVCenter,
+                              smallFM.elidedText(desc, Qt::ElideRight, descRect.width()));
+        }
+        painter->restore();
+    }
+};
+
+} // anonymous namespace
+
+namespace Gui {
+
+/// The property editor of a resolved property, as the property view would build it
+class OmniPropertyPanel : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit OmniPropertyPanel(QWidget *parent)
+        : QWidget(parent)
+    {
+        auto layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        label = new QLabel(this);
+        label->setTextFormat(Qt::PlainText);
+        layout->addWidget(label);
+        auto row = new QHBoxLayout;
+        layout->addLayout(row);
+        host = new QWidget(this);
+        hostLayout = new QHBoxLayout(host);
+        hostLayout->setContentsMargins(0, 0, 0, 0);
+        row->addWidget(host, 1);
+        exprButton = new QToolButton(this);
+        exprButton->setText(QStringLiteral("f(x)"));
+        exprButton->setToolTip(tr("Edit as expression"));
+        exprButton->setCheckable(true);
+        exprButton->setAutoRaise(true);
+        row->addWidget(exprButton);
+        connect(exprButton, &QToolButton::toggled, this, &OmniPropertyPanel::toggleExpression);
+    }
+
+    ~OmniPropertyPanel() override
+    {
+        clear();
+    }
+
+    bool isFor(App::Property *p) const
+    {
+        return item && p == prop;
+    }
+
+    void setProperty(App::Property *p, const App::SubObjectT &objT)
+    {
+        if (isFor(p))
+            return;
+        clear();
+        prop = p;
+        obj = objT;
+        if (!prop)
+            return;
+
+        const char *editorName = prop->getEditorName();
+        if (!editorName || !editorName[0])
+            editorName = "Gui::PropertyEditor::PropertyItem";
+        item = static_cast<PropertyEditor::PropertyItem*>(
+                PropertyEditor::PropertyItemFactory::instance().createPropertyItem(editorName));
+        if (!item) {
+            label->setText(tr("%1: no editor for property type %2")
+                    .arg(QString::fromUtf8(prop->getName()),
+                         QString::fromUtf8(prop->getTypeId().getName())));
+            return;
+        }
+        item->setPropertyName(*prop);
+        item->setPropertyData({prop});
+
+        QString title = QString::fromUtf8(obj.getSubObjectFullName().c_str());
+        label->setText(QStringLiteral("%1 . %2").arg(title, QString::fromUtf8(prop->getName())));
+        label->setToolTip(QString::fromUtf8(prop->getDocumentation()));
+
+        openTransaction();
+        exprButton->setVisible(item->isBound());
+        {
+            QSignalBlocker blocker(exprButton);
+            exprButton->setChecked(item->hasExpression());
+        }
+        buildEditor(exprButton->isChecked());
+    }
+
+    void clear()
+    {
+        if (editor) {
+            editor->removeEventFilter(this);
+            delete editor;
+            editor = nullptr;
+        }
+        closeTransaction();
+        delete item;
+        item = nullptr;
+        prop = nullptr;
+        label->clear();
+    }
+
+    void focusEditor()
+    {
+        if (editor)
+            editor->setFocus();
+    }
+
+Q_SIGNALS:
+    /// Return pressed in the editor: the edit is done
+    void finished();
+
+protected:
+    bool eventFilter(QObject *o, QEvent *e) override
+    {
+        if (e->type() == QEvent::KeyPress) {
+            auto ke = static_cast<QKeyEvent*>(e);
+            if ((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter)
+                    && ke->modifiers() == Qt::NoModifier) {
+                // Let the editor commit (a spin box's editingFinished) first
+                QTimer::singleShot(0, this, [this]() { Q_EMIT finished(); });
+            }
+        }
+        return QWidget::eventFilter(o, e);
+    }
+
+private Q_SLOTS:
+    void onValueChanged()
+    {
+        auto w = qobject_cast<QWidget*>(sender());
+        if (!w || !item || !editor)
+            return;
+        applyValue(item->editorData(editor));
+    }
+
+    void onExpressionChanged()
+    {
+        if (!item || !editor)
+            return;
+        applyValue(item->expressionEditorData(editor));
+    }
+
+    void onUserEditValue(const QVariant &v)
+    {
+        applyValue(v);
+    }
+
+    void toggleExpression(bool on)
+    {
+        if (!item)
+            return;
+        buildEditor(on);
+        focusEditor();
+    }
+
+private:
+    void applyValue(const QVariant &v)
+    {
+        if (!item)
+            return;
+        try {
+            item->setData(v);
+        }
+        catch (Base::Exception &e) {
+            e.ReportException();
+        }
+    }
+
+    void buildEditor(bool expression)
+    {
+        if (editor) {
+            editor->removeEventFilter(this);
+            delete editor;
+            editor = nullptr;
+        }
+        if (!item)
+            return;
+        if (expression) {
+            editor = item->createExpressionEditor(host, this, SLOT(onExpressionChanged()));
+            if (editor)
+                item->setExpressionEditorData(editor, item->data(1, Qt::EditRole));
+        }
+        else if (prop->testStatus(App::Property::UserEdit)) {
+            auto w = item->createPropertyEditorWidget(host);
+            w->setValue(PropertyEditor::PropertyItemAttorney::toString(item, item->data(1, Qt::EditRole)));
+            connect(w, &PropertyEditor::PropertyEditorWidget::valueChanged,
+                    this, &OmniPropertyPanel::onUserEditValue);
+            editor = w;
+        }
+        else {
+            editor = item->createEditor(host, this, SLOT(onValueChanged()));
+            if (editor) {
+                item->setEditorData(editor, item->data(1, Qt::EditRole));
+                if (item->isReadOnly())
+                    item->disableEditor(editor);
+            }
+        }
+        if (!editor) {
+            auto l = new QLabel(item->data(1, Qt::DisplayRole).toString(), host);
+            l->setTextFormat(Qt::PlainText);
+            editor = l;
+        }
+        editor->installEventFilter(this);
+        for (auto child : editor->findChildren<QWidget*>())
+            child->installEventFilter(this);
+        hostLayout->addWidget(editor);
+        editor->show();
+    }
+
+    App::Document *document() const
+    {
+        if (!prop)
+            return nullptr;
+        auto parent = prop->getContainer();
+        if (auto doc = Base::freecad_dynamic_cast<App::Document>(parent))
+            return doc;
+        App::DocumentObject *object = Base::freecad_dynamic_cast<App::DocumentObject>(parent);
+        if (!object) {
+            if (auto view = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(parent))
+                object = view->getObject();
+        }
+        if (object && object->isAttachedToDocument())
+            return object->getDocument();
+        return nullptr;
+    }
+
+    // As PropertyEditor::openEditor() and closeTransaction(): the edit is
+    // one undo step, and the document recomputes when it ends.
+    void openTransaction()
+    {
+        auto &app = App::GetApplication();
+        if (app.getActiveTransaction())
+            return;
+        auto doc = document();
+        if (!doc || doc->hasPendingTransaction())
+            return;
+        std::ostringstream str;
+        str << tr("Edit").toUtf8().constData() << ' ';
+        if (auto object = obj.getObject())
+            str << object->Label.getValue();
+        else
+            str << tr("document").toUtf8().constData();
+        str << ' ' << prop->getName();
+        transactionID = app.setActiveTransaction(str.str().c_str());
+        docT = doc;
+    }
+
+    void closeTransaction()
+    {
+        int tid = 0;
+        auto &app = App::GetApplication();
+        if (transactionID && app.getActiveTransaction(&tid) && tid == transactionID) {
+            try {
+                if (auto doc = docT.getDocument()) {
+                    if (!doc->isTransactionEmpty()
+                            && !doc->testStatus(App::Document::Recomputing)
+                            && doc->mustExecute())
+                        doc->recompute();
+                }
+            }
+            catch (Base::Exception &e) {
+                e.ReportException();
+            }
+            app.closeActiveTransaction();
+        }
+        transactionID = 0;
+    }
+
+    QLabel *label = nullptr;
+    QWidget *host = nullptr;
+    QHBoxLayout *hostLayout = nullptr;
+    QToolButton *exprButton = nullptr;
+    PropertyEditor::PropertyItem *item = nullptr;
+    QWidget *editor = nullptr;
+    App::Property *prop = nullptr;
+    App::SubObjectT obj;
+    App::DocumentT docT;
+    int transactionID = 0;
+};
+
+/// The editor of a chosen parameter, built from its proxy, applying as it changes
+class OmniParamPanel : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit OmniParamPanel(QWidget *parent)
+        : QWidget(parent)
+    {
+        auto layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        label = new QLabel(this);
+        label->setTextFormat(Qt::PlainText);
+        layout->addWidget(label);
+        pathLabel = new QLabel(this);
+        pathLabel->setTextFormat(Qt::PlainText);
+        pathLabel->setWordWrap(true);
+        pathLabel->setEnabled(false);
+        layout->addWidget(pathLabel);
+        auto row = new QHBoxLayout;
+        layout->addLayout(row);
+        host = new QWidget(this);
+        hostLayout = new QHBoxLayout(host);
+        hostLayout->setContentsMargins(0, 0, 0, 0);
+        row->addWidget(host, 1);
+        resetButton = new QPushButton(tr("Reset"), this);
+        resetButton->setToolTip(tr("Remove the stored value so the default applies"));
+        row->addWidget(resetButton);
+        connect(resetButton, &QPushButton::clicked, this, &OmniParamPanel::reset);
+    }
+
+    void setParam(const ParamInfo *p)
+    {
+        if (p == info && editor)
+            return;
+        clear();
+        info = p;
+        if (!info)
+            return;
+        label->setText(QString::fromUtf8(info->fullName().c_str()));
+        label->setToolTip(QCoreApplication::translate(info->className, info->doc));
+        pathLabel->setText(tr("%1    default: %2")
+                .arg(QString::fromUtf8(info->fullPath().c_str()),
+                     QString::fromUtf8(info->defaultValue.c_str())));
+        editor = createParamEditor(*info, host);
+        if (!editor) {
+            editor = new QLabel(tr("No editor"), host);
+        }
+        else if (auto pref = dynamic_cast<PrefWidget*>(editor)) {
+            // Save on every change: the effect is the point of editing here
+            pref->initAutoSave(QVariant(), true);
+        }
+        editor->installEventFilter(this);
+        for (auto child : editor->findChildren<QWidget*>())
+            child->installEventFilter(this);
+        hostLayout->addWidget(editor);
+        editor->show();
+    }
+
+    void clear()
+    {
+        delete editor;
+        editor = nullptr;
+        info = nullptr;
+        label->clear();
+        pathLabel->clear();
+    }
+
+    void focusEditor()
+    {
+        if (editor)
+            editor->setFocus();
+    }
+
+Q_SIGNALS:
+    void finished();
+
+protected:
+    bool eventFilter(QObject *o, QEvent *e) override
+    {
+        if (e->type() == QEvent::KeyPress) {
+            auto ke = static_cast<QKeyEvent*>(e);
+            if ((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter)
+                    && ke->modifiers() == Qt::NoModifier) {
+                QTimer::singleShot(0, this, [this]() { Q_EMIT finished(); });
+            }
+        }
+        return QWidget::eventFilter(o, e);
+    }
+
+private Q_SLOTS:
+    void reset()
+    {
+        if (!info)
+            return;
+        ParamRegistry::instance().reset(*info);
+        if (auto pref = dynamic_cast<PrefWidget*>(editor))
+            pref->onRestore();
+    }
+
+private:
+    QLabel *label = nullptr;
+    QLabel *pathLabel = nullptr;
+    QWidget *host = nullptr;
+    QHBoxLayout *hostLayout = nullptr;
+    QPushButton *resetButton = nullptr;
+    QWidget *editor = nullptr;
+    const ParamInfo *info = nullptr;
+};
+
+} // namespace Gui
+
+// ---------------------------------------------------------------------------
+// OmniSearchEdit
+
+OmniSearchEdit::OmniSearchEdit(QWidget *parent)
+    : QLineEdit(parent)
+{
+    setPlaceholderText(tr("/ objects and properties, /cmd commands, /param parameters"));
+    setupChooser();
+    setupCommands();
+    setupParams();
+    connect(this, &QLineEdit::textEdited, this, &OmniSearchEdit::onTextEdited);
+}
+
+OmniSearchEdit::~OmniSearchEdit() = default;
+
+void OmniSearchEdit::setupChooser()
+{
+    auto model = new QStandardItemModel(this);
+    struct Row { Mode mode; const char *title; QString desc; };
+    const Row rows[] = {
+        {Mode::Object, "/", tr("Documents, objects, sub-objects and properties")},
+        {Mode::Command, "/cmd", tr("Commands")},
+        {Mode::Param, "/param", tr("Application parameters")},
+    };
+    for (const auto &row : rows) {
+        auto item = new QStandardItem(QString::fromLatin1(modePrefix(row.mode)));
+        item->setData(QString::fromLatin1(row.title), TitleRole);
+        item->setData(row.desc, DescriptionRole);
+        item->setData(QString::fromLatin1(modePrefix(row.mode)), SearchTextRole);
+        model->appendRow(item);
+    }
+    chooser = new QCompleter(model, this);
+    chooser->setWidget(this);
+    chooser->setCompletionMode(QCompleter::PopupCompletion);
+    chooser->setFilterMode(Qt::MatchStartsWith);
+    chooser->setCaseSensitivity(Qt::CaseInsensitive);
+    chooser->popup()->setItemDelegate(new OmniItemDelegate(chooser->popup()));
+    connect(chooser, qOverload<const QString&>(&QCompleter::activated),
+            this, &OmniSearchEdit::setInputText);
+}
+
+void OmniSearchEdit::setupCommands()
+{
+    static_assert(int(CommandListModel::SearchTextRole) == int(OmniSearch::SearchTextRole),
+                  "the omni roles must line up with CommandListModel's");
+    static_assert(int(CommandListModel::IsGroupRole) == int(OmniSearch::IsGroupRole),
+                  "the omni roles must line up with CommandListModel's");
+    cmdModel = new CommandListModel(this);
+    cmdFilter = new KeywordFilterModel(this);
+    cmdFilter->setSourceModel(cmdModel);
+    cmdCompleter = new QCompleter(cmdFilter, this);
+    cmdCompleter->setWidget(this);
+    cmdCompleter->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
+    cmdCompleter->popup()->setItemDelegate(new OmniItemDelegate(cmdCompleter->popup()));
+    cmdCompleter->popup()->installEventFilter(this);
+    cmdCompleter->popup()->viewport()->installEventFilter(this);
+    connect(cmdCompleter, qOverload<const QModelIndex&>(&QCompleter::activated),
+            this, [this](const QModelIndex &index) {
+                justActivated = true;
+                if (index.data(IsActiveRole).toBool())
+                    Q_EMIT commandChosen(index.data(CommandListModel::CommandNameRole).toByteArray());
+            });
+}
+
+void OmniSearchEdit::setupParams()
+{
+    paramModel = new ParamListModel(this);
+    paramFilter = new KeywordFilterModel(this);
+    paramFilter->setSourceModel(paramModel);
+    paramCompleter = new QCompleter(paramFilter, this);
+    paramCompleter->setWidget(this);
+    paramCompleter->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
+    paramCompleter->popup()->setItemDelegate(new OmniItemDelegate(paramCompleter->popup()));
+    paramCompleter->popup()->installEventFilter(this);
+    connect(paramCompleter, qOverload<const QModelIndex&>(&QCompleter::activated),
+            this, [this](const QModelIndex &index) {
+                justActivated = true;
+                if (auto info = ParamListModel::infoOf(index))
+                    Q_EMIT paramChosen(info);
+            });
+}
+
+void OmniSearchEdit::setOwner(App::DocumentObject *owner)
+{
+    if (owner && !owner->isAttachedToDocument())
+        owner = nullptr;
+    ownerObj = owner;
+    if (objCompleter) {
+        objCompleter->setDocumentObject(owner);
+        return;
+    }
+    if (!owner)
+        return;
+    objCompleter = new ExpressionCompleter(owner, this, /*noProperty*/false, /*checkInList*/false);
+    objCompleter->setWidget(this);
+    objCompleter->popup()->installEventFilter(this);
+    connect(objCompleter, qOverload<const QString&>(&QCompleter::activated),
+            this, &OmniSearchEdit::completeObject);
+    connect(objCompleter, qOverload<const QString&>(&QCompleter::highlighted),
+            this, &OmniSearchEdit::completeObject);
+}
+
+App::DocumentObject *OmniSearchEdit::owner() const
+{
+    return ownerObj.getObject();
+}
+
+void OmniSearchEdit::setInputText(const QString &text)
+{
+    setText(text);
+    setCursorPosition(text.size());
+    onTextEdited(text);
+}
+
+// The chooser popup is a window of its own: shown before the box is the
+// active window it is torn down by the activation that follows, so wait
+// for the focus that activation brings.
+void OmniSearchEdit::requestChooser()
+{
+    if (hasFocus()) {
+        chooserPending = false;
+        setInputText(QStringLiteral("/"));
+        return;
+    }
+    chooserPending = true;
+}
+
+void OmniSearchEdit::focusInEvent(QFocusEvent *event)
+{
+    QLineEdit::focusInEvent(event);
+    if (chooserPending) {
+        chooserPending = false;
+        QTimer::singleShot(0, this, [this]() {
+            if (isVisible() && hasFocus())
+                setInputText(QStringLiteral("/"));
+        });
+    }
+}
+
+QCompleter *OmniSearchEdit::activeCompleter() const
+{
+    switch (input.mode) {
+    case Mode::Chooser:
+        return chooser;
+    case Mode::Object:
+        return objCompleter;
+    case Mode::Command:
+        return cmdCompleter;
+    case Mode::Param:
+        return paramCompleter;
+    }
+    return nullptr;
+}
+
+bool OmniSearchEdit::popupVisible() const
+{
+    for (auto c : {chooser, static_cast<QCompleter*>(objCompleter), cmdCompleter, paramCompleter}) {
+        if (c && c->popup()->isVisible())
+            return true;
+    }
+    return false;
+}
+
+void OmniSearchEdit::hidePopups()
+{
+    for (auto c : {chooser, static_cast<QCompleter*>(objCompleter), cmdCompleter, paramCompleter}) {
+        if (c)
+            c->popup()->hide();
+    }
+}
+
+QRect OmniSearchEdit::popupRect() const
+{
+    QRect r = rect();
+    if (r.width() < 300)
+        r.setWidth(300);
+    return r;
+}
+
+int OmniSearchEdit::filteredRowCount() const
+{
+    switch (input.mode) {
+    case Mode::Command:
+        return cmdFilter->rowCount();
+    case Mode::Param:
+        return paramFilter->rowCount();
+    default:
+        return 0;
+    }
+}
+
+QModelIndex OmniSearchEdit::filteredRow(int row) const
+{
+    switch (input.mode) {
+    case Mode::Command:
+        return cmdFilter->index(row, 0);
+    case Mode::Param:
+        return paramFilter->index(row, 0);
+    default:
+        return {};
+    }
+}
+
+static void showListPopup(QCompleter *completer, const QRect &rect)
+{
+    completer->complete(rect);
+    auto popup = completer->popup();
+    if (!popup->currentIndex().isValid() && completer->completionModel()->rowCount())
+        popup->setCurrentIndex(completer->completionModel()->index(0, 0));
+}
+
+void OmniSearchEdit::onTextEdited(const QString &text)
+{
+    if (completing)
+        return;
+    justActivated = false;
+    Input parsed = parseInput(text);
+    bool changed = parsed.mode != input.mode;
+    input = parsed;
+    if (changed) {
+        hidePopups();
+        Q_EMIT modeChanged(input.mode);
+    }
+
+    switch (input.mode) {
+    case Mode::Chooser:
+        chooser->setCompletionPrefix(text);
+        showListPopup(chooser, popupRect());
+        break;
+    case Mode::Object:
+        runObjectQuery();
+        break;
+    case Mode::Command:
+        cmdModel->update();
+        cmdFilter->setKeywords(input.query);
+        if (cmdFilter->rowCount())
+            showListPopup(cmdCompleter, popupRect());
+        else
+            cmdCompleter->popup()->hide();
+        break;
+    case Mode::Param:
+        paramFilter->setKeywords(input.query);
+        if (paramFilter->rowCount())
+            showListPopup(paramCompleter, popupRect());
+        else
+            paramCompleter->popup()->hide();
+        break;
+    }
+}
+
+void OmniSearchEdit::runObjectQuery()
+{
+    if (objCompleter)
+        objCompleter->slotUpdate(input.query, cursorPosition() - input.offset);
+    resolveObjectQuery();
+}
+
+void OmniSearchEdit::resolveObjectQuery()
+{
+    ObjectMatch match;
+    if (owner() && resolveObject(input.query, owner(), match)) {
+        resolvedProp = match.prop;
+        resolvedObj = match.obj;
+        Q_EMIT objectResolved(match);
+    }
+    else {
+        resolvedProp = nullptr;
+        resolvedObj = App::SubObjectT();
+        Q_EMIT objectUnresolved();
+    }
+}
+
+// The splice of ExpressionLineEdit::slotCompleteText(), offset by the
+// mode prefix the completer never sees.
+void OmniSearchEdit::completeObject(const QString &completion)
+{
+    if (!objCompleter || input.mode != Mode::Object)
+        return;
+    Base::StateLocker guard(completing);
+    int start, end, offset;
+    QString prefix(completion);
+    objCompleter->getPrefixRange(prefix, start, end, offset);
+    QString query = input.query;
+    QString before = query.left(start) + prefix;
+    QString after = query.mid(end);
+    QString full = text().left(input.offset) + before + after;
+    setText(full);
+    setCursorPosition(input.offset + before.length() + offset);
+    objCompleter->updatePrefixEnd(before.length());
+    input = parseInput(full);
+    resolveObjectQuery();
+}
+
+bool OmniSearchEdit::expandGroupAt(const QModelIndex &index)
+{
+    if (!index.isValid() || !index.data(IsGroupRole).toBool())
+        return false;
+    auto popup = cmdCompleter->popup();
+    QRect r = popup->visualRect(index);
+    QRect global(popup->viewport()->mapToGlobal(r.topLeft()), r.size());
+    Q_EMIT groupExpandRequested(index.data(CommandListModel::CommandNameRole).toByteArray(), global);
+    return true;
+}
+
+bool OmniSearchEdit::eventFilter(QObject *obj, QEvent *event)
+{
+    // The command popup: the arrow of a group row expands it
+    if (cmdCompleter && obj == cmdCompleter->popup()->viewport()
+            && event->type() == QEvent::MouseButtonPress) {
+        auto me = static_cast<QMouseEvent*>(event);
+        auto popup = cmdCompleter->popup();
+        QModelIndex index = popup->indexAt(me->pos());
+        if (index.isValid() && OmniItemDelegate::isGroup(index)
+                && OmniItemDelegate::arrowRect(popup->visualRect(index)).contains(me->pos())) {
+            expandGroupAt(index);
+            return true;
+        }
+    }
+    if (cmdCompleter && obj == cmdCompleter->popup() && event->type() == QEvent::KeyPress) {
+        auto ke = static_cast<QKeyEvent*>(event);
+        if (ke->key() == Qt::Key_Right && ke->modifiers() == Qt::NoModifier) {
+            if (expandGroupAt(cmdCompleter->popup()->currentIndex()))
+                return true;
+        }
+    }
+    // The object popup: ExpressionCompleter swallows Return into the list
+    // view, so the box never hears it; take it here.
+    if (objCompleter && obj == objCompleter->popup() && event->type() == QEvent::KeyPress) {
+        auto ke = static_cast<QKeyEvent*>(event);
+        if ((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter)
+                && ke->modifiers() == Qt::NoModifier) {
+            objCompleter->popup()->hide();
+            Q_EMIT enterPressed();
+            return true;
+        }
+    }
+    return QLineEdit::eventFilter(obj, event);
+}
+
+void OmniSearchEdit::keyPressEvent(QKeyEvent *event)
+{
+    switch (event->key()) {
+    case Qt::Key_Tab:
+    case Qt::Key_Backtab:
+        if (auto c = activeCompleter()) {
+            if (c->popup()->isVisible()) {
+                QKeyEvent ke(QEvent::KeyPress,
+                             event->key() == Qt::Key_Tab ? Qt::Key_Down : Qt::Key_Up,
+                             Qt::NoModifier);
+                QApplication::sendEvent(c->popup(), &ke);
+                event->accept();
+                return;
+            }
+        }
+        break;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+        if (justActivated) {
+            // The popup already answered this key with an activation
+            justActivated = false;
+            event->accept();
+            return;
+        }
+        if (!popupVisible()) {
+            Q_EMIT enterPressed();
+            event->accept();
+            return;
+        }
+        break;
+    default:
+        break;
+    }
+    QLineEdit::keyPressEvent(event);
+}
+
+void OmniSearchEdit::contextMenuEvent(QContextMenuEvent *event)
+{
+    QMenu *menu = createStandardContextMenu();
+    if (objCompleter)
+        objCompleter->setupContextMenu(menu);
+    menu->exec(event->globalPos());
+    delete menu;
+}
+
+// ---------------------------------------------------------------------------
+// OmniSearchBox
+
+OmniSearchBox *OmniSearchBox::instance()
+{
+    static QPointer<OmniSearchBox> inst;
+    if (!inst)
+        inst = new OmniSearchBox(getMainWindow());
+    return inst;
+}
+
+OmniSearchBox::OmniSearchBox(QWidget *parent)
+    : QFrame(parent, Qt::Tool | Qt::FramelessWindowHint)
+{
+    setObjectName(QStringLiteral("OmniSearchBox"));
+    setFrameShape(QFrame::StyledPanel);
+    setFrameShadow(QFrame::Raised);
+    setAutoFillBackground(true);
+
+    auto layout = new QVBoxLayout(this);
+    layout->setContentsMargins(6, 6, 6, 6);
+    lineEdit = new OmniSearchEdit(this);
+    lineEdit->setObjectName(QStringLiteral("OmniSearchEdit"));
+    layout->addWidget(lineEdit);
+
+    panelHost = new QWidget(this);
+    panelLayout = new QVBoxLayout(panelHost);
+    panelLayout->setContentsMargins(0, 4, 0, 0);
+    propertyPanel = new OmniPropertyPanel(panelHost);
+    paramPanel = new OmniParamPanel(panelHost);
+    panelLayout->addWidget(propertyPanel);
+    panelLayout->addWidget(paramPanel);
+    propertyPanel->hide();
+    paramPanel->hide();
+    panelHost->hide();
+    layout->addWidget(panelHost);
+
+    connect(lineEdit, &OmniSearchEdit::modeChanged, this, &OmniSearchBox::onModeChanged);
+    connect(lineEdit, &OmniSearchEdit::objectResolved, this, &OmniSearchBox::onObjectResolved);
+    connect(lineEdit, &OmniSearchEdit::objectUnresolved, this, &OmniSearchBox::onObjectUnresolved);
+    connect(lineEdit, &OmniSearchEdit::commandChosen, this, &OmniSearchBox::onCommandChosen);
+    connect(lineEdit, &OmniSearchEdit::groupExpandRequested, this, &OmniSearchBox::onGroupExpandRequested);
+    connect(lineEdit, &OmniSearchEdit::paramChosen, this, &OmniSearchBox::onParamChosen);
+    connect(lineEdit, &OmniSearchEdit::enterPressed, this, &OmniSearchBox::onEnterPressed);
+    connect(propertyPanel, &OmniPropertyPanel::finished, this, &OmniSearchBox::dismiss);
+    connect(paramPanel, &OmniParamPanel::finished, this, &OmniSearchBox::dismiss);
+}
+
+OmniSearchBox::~OmniSearchBox()
+{
+    qApp->removeEventFilter(this);
+}
+
+TreeWidget *OmniSearchBox::tree() const
+{
+    return TreeWidget::instance();
+}
+
+void OmniSearchBox::open()
+{
+    App::DocumentObject *owner = nullptr;
+    if (auto t = tree())
+        owner = t->startItemSearch();
+    if (!owner) {
+        if (auto doc = Application::Instance->activeDocument()) {
+            const auto &objs = doc->getDocument()->getObjects();
+            if (!objs.empty())
+                owner = objs.front();
+        }
+    }
+    lineEdit->setOwner(owner);
+
+    hidePanels();
+    lineEdit->hidePopups();
+    place();
+    show();
+    raise();
+    activateWindow();
+    lineEdit->requestChooser();
+    lineEdit->setFocus();
+    qApp->removeEventFilter(this);
+    qApp->installEventFilter(this);
+}
+
+void OmniSearchBox::dismiss()
+{
+    hide();
+}
+
+void OmniSearchBox::hideEvent(QHideEvent *event)
+{
+    qApp->removeEventFilter(this);
+    lineEdit->hidePopups();
+    hidePanels();
+    if (auto t = tree())
+        t->resetItemSearch();
+    Selection().rmvPreselect();
+    QFrame::hideEvent(event);
+}
+
+void OmniSearchBox::place()
+{
+    QWidget *anchor = getMainWindow();
+    if (auto view = getMainWindow()->activeWindow())
+        anchor = view;
+    QRect g(anchor->mapToGlobal(QPoint(0, 0)), anchor->size());
+    int w = std::clamp(int(g.width() * 0.6), 400, 720);
+    // Fixed width: the panels below the edit only ever change the height
+    setFixedWidth(w);
+    adjustSize();
+    move(g.center().x() - w / 2, g.top() + 40);
+}
+
+void OmniSearchBox::showPanel(QWidget *panel)
+{
+    for (auto p : {static_cast<QWidget*>(propertyPanel), static_cast<QWidget*>(paramPanel)})
+        p->setVisible(p == panel);
+    panelHost->show();
+    adjustSize();
+}
+
+void OmniSearchBox::hidePanels()
+{
+    propertyPanel->clear();
+    paramPanel->clear();
+    propertyPanel->hide();
+    paramPanel->hide();
+    panelHost->hide();
+    if (isVisible())
+        adjustSize();
+}
+
+bool OmniSearchBox::eventFilter(QObject *obj, QEvent *event)
+{
+    if (event->type() == QEvent::MouseButtonPress && obj->isWidgetType() && isVisible()) {
+        auto w = static_cast<QWidget*>(obj);
+        if (w == this || isAncestorOf(w))
+            return false;
+        if (menuRunning || QApplication::activePopupWidget() || QApplication::activeModalWidget())
+            return false;
+        // A click into the main window while the box shows is a dismissal
+        dismiss();
+    }
+    return false;
+}
+
+// Losing the activation to another window -- the main window on a click
+// into it, another application -- is a dismissal, unless the window is one
+// of ours: the expression dialog a bound property's editor opens is a
+// child of the box, and a menu or completer popup takes no activation.
+bool OmniSearchBox::event(QEvent *event)
+{
+    if (event->type() == QEvent::WindowDeactivate && isVisible()) {
+        QTimer::singleShot(0, this, [this]() {
+            if (!isVisible() || menuRunning || isActiveWindow())
+                return;
+            if (QApplication::activePopupWidget())
+                return;
+            if (auto active = QApplication::activeWindow()) {
+                for (QWidget *w = active; w; w = w->parentWidget()) {
+                    if (w == this)
+                        return;
+                }
+            }
+            dismiss();
+        });
+    }
+    return QFrame::event(event);
+}
+
+void OmniSearchBox::keyPressEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Escape) {
+        if (panelHost->isVisible()) {
+            hidePanels();
+            lineEdit->setFocus();
+        }
+        else {
+            dismiss();
+        }
+        event->accept();
+        return;
+    }
+    QFrame::keyPressEvent(event);
+}
+
+void OmniSearchBox::onModeChanged(Mode mode)
+{
+    hidePanels();
+    if (mode != Mode::Object) {
+        if (auto t = tree())
+            t->resetItemSearch();
+        Selection().rmvPreselect();
+    }
+}
+
+void OmniSearchBox::onObjectResolved(const ObjectMatch &match)
+{
+    auto t = tree();
+    if (match.prop) {
+        if (!propertyPanel->isFor(match.prop)) {
+            propertyPanel->setProperty(match.prop, match.obj);
+            showPanel(propertyPanel);
+        }
+        if (t) {
+            t->resetItemSearch();
+            if (auto item = TreeWidget::selectUp(match.obj, nullptr, false))
+                t->scrollToItem(item);
+        }
+        if (auto obj = match.obj.getObject()) {
+            SelectionNoTopParentCheck guard;
+            Selection().setPreselect(obj->getDocument()->getName(), obj->getNameInDocument(),
+                                     match.obj.getSubName().c_str(), 0, 0, 0,
+                                     SelectionChanges::MsgSource::TreeView);
+        }
+        return;
+    }
+    if (panelHost->isVisible())
+        hidePanels();
+    if (t)
+        t->itemSearch(lineEdit->currentInput().query, false);
+}
+
+void OmniSearchBox::onObjectUnresolved()
+{
+    if (panelHost->isVisible())
+        hidePanels();
+    if (auto t = tree())
+        t->resetItemSearch();
+}
+
+void OmniSearchBox::selectObject(const ObjectMatch &match)
+{
+    if (auto t = tree())
+        t->itemSearch(lineEdit->currentInput().query, true);
+    lineEdit->hidePopups();
+    QPoint pt = lineEdit->mapToGlobal(QPoint(0, lineEdit->height()));
+    {
+        Base::StateLocker guard(menuRunning);
+        SelectionContext selctx;
+        SelUpMenu menu(this);
+        TreeWidget::populateSelUpMenu(&menu, &match.obj);
+        if (menu.actions().isEmpty())
+            menu.addAction(tr("<None>"))->setEnabled(false);
+        TreeWidget::execSelUpMenu(&menu, pt);
+    }
+    dismiss();
+}
+
+void OmniSearchBox::onCommandChosen(const QByteArray &name)
+{
+    dismiss();
+    auto &manager = Application::Instance->commandManager();
+    if (name.size()) {
+        manager.runCommandByName(name.constData());
+        CmdHistoryAction::onInvokeCommand(name.constData(), true);
+    }
+}
+
+void OmniSearchBox::onGroupExpandRequested(const QByteArray &name, const QRect &rect)
+{
+    auto cmd = Application::Instance->commandManager().getCommandByName(name.constData());
+    if (!cmd)
+        return;
+    cmd->initAction();
+    auto group = qobject_cast<ActionGroup*>(cmd->getAction());
+    if (!group)
+        return;
+    lineEdit->hidePopups();
+    {
+        Base::StateLocker guard(menuRunning);
+        QMenu menu(this);
+        group->populateMenu(&menu);
+        setupMenuStyle(&menu);
+        menu.exec(QPoint(rect.right(), rect.top()));
+    }
+    dismiss();
+}
+
+void OmniSearchBox::onParamChosen(const ParamInfo *info)
+{
+    lineEdit->hidePopups();
+    paramPanel->setParam(info);
+    showPanel(paramPanel);
+    paramPanel->focusEditor();
+}
+
+void OmniSearchBox::onEnterPressed()
+{
+    switch (lineEdit->mode()) {
+    case Mode::Chooser:
+        break;
+    case Mode::Object: {
+        ObjectMatch match;
+        if (!lineEdit->owner() || !resolveObject(lineEdit->currentInput().query, lineEdit->owner(), match))
+            break;
+        if (match.prop) {
+            if (!propertyPanel->isFor(match.prop)) {
+                propertyPanel->setProperty(match.prop, match.obj);
+                showPanel(propertyPanel);
+            }
+            propertyPanel->focusEditor();
+        }
+        else {
+            selectObject(match);
+        }
+        break;
+    }
+    case Mode::Command:
+        if (lineEdit->filteredRowCount() == 1) {
+            auto index = lineEdit->filteredRow(0);
+            if (index.data(IsActiveRole).toBool())
+                onCommandChosen(index.data(CommandListModel::CommandNameRole).toByteArray());
+        }
+        break;
+    case Mode::Param:
+        if (lineEdit->filteredRowCount() == 1)
+            onParamChosen(ParamListModel::infoOf(lineEdit->filteredRow(0)));
+        break;
+    }
+}
+
+#include "OmniSearchBox.moc"
+#include "moc_OmniSearchBox.cpp"

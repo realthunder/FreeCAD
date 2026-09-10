@@ -764,6 +764,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Std_PickGeometry"
           << "Std_ItemMenu"
           << "Separator"
+          << "Std_OmniSearch"
           << "Std_CmdHistory"
           << "Std_CmdToolbarMenus"
           << "Separator"

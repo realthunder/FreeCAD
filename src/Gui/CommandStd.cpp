@@ -47,6 +47,7 @@
 #include "DlgUnitsCalculatorImp.h"
 #include "GuiConsole.h"
 #include "MainWindow.h"
+#include "OmniSearchBox.h"
 #include "OnlineDocumentation.h"
 #include "Selection.h"
 #include "ShareDocument.h"
@@ -990,6 +991,30 @@ Action * StdCmdHistory::createAction(void)
 }
 
 //===========================================================================
+// Std_OmniSearch
+//===========================================================================
+
+DEF_STD_CMD(StdCmdOmniSearch)
+
+StdCmdOmniSearch::StdCmdOmniSearch()
+  :Command("Std_OmniSearch")
+{
+  sGroup        = "Tools";
+  sMenuText     = QT_TR_NOOP("Omni search");
+  sToolTipText  = QT_TR_NOOP("Search objects and properties, commands, or application parameters");
+  sWhatsThis    = "Std_OmniSearch";
+  sStatusTip    = sToolTipText;
+  sAccel        = "/";
+  eType         = NoTransaction | NoHistory;
+}
+
+void StdCmdOmniSearch::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    OmniSearchBox::instance()->open();
+}
+
+//===========================================================================
 // Std_CmdToolbarMenus
 //===========================================================================
 
@@ -1350,6 +1375,7 @@ void CreateStdCommands()
     rcCmdMgr.addCommand(new StdCmdUnitsCalculator());
     rcCmdMgr.addCommand(new StdCmdShareDocument());
     rcCmdMgr.addCommand(new StdCmdHistory());
+    rcCmdMgr.addCommand(new StdCmdOmniSearch());
     rcCmdMgr.addCommand(new StdCmdToolbarMenus());
     rcCmdMgr.addCommand(new StdCmdRestart());
     rcCmdMgr.addCommand(new StdCmdResetAndRestart());
