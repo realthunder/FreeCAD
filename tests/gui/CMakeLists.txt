@@ -83,6 +83,8 @@ fc_add_gui_test(GuiSketchEditRoot_tests_run sketch-edit-root.py
 # and a client that drops mid-edit leaving no dangling binding behind.
 fc_add_gui_test(GuiServeMirrorEdit_tests_run serve-mirror-edit.py
                 --timeout 200)
+fc_add_gui_test(GuiServeSharedEdit_tests_run serve-shared-edit.py
+                --timeout 240)
 
 # A sketch tool's on-view parameters reach a client and are typed into
 # (docs/ThinClient.md sec 8.7, stage 5): the allowlisted `command` op

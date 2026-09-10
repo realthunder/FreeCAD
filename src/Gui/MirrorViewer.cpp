@@ -199,36 +199,6 @@ public:
     SelectionSingleton selection;
     /// Ends this view's half of an edit session when the document ends it.
     fastsignals::scoped_connection resetEditConn;
-    /// Whether the editing root is currently a child of the served graph.
-    bool editRootAttached = false;
-
-    /// Put the editing root where the publish traversal will find it.
-    void attachEditingRoot(SoNode* editRoot)
-    {
-        if (editRootAttached || !editRoot || !scene
-            || !scene->isOfType(SoGroup::getClassTypeId())) {
-            return;
-        }
-        static_cast<SoGroup*>(scene)->insertChild(editRoot, 0);
-        editRootAttached = true;
-    }
-
-    void detachEditingRoot(SoNode* editRoot)
-    {
-        if (!editRootAttached) {
-            return;
-        }
-        editRootAttached = false;
-        if (!editRoot || !scene || !scene->isOfType(SoGroup::getClassTypeId())) {
-            return;
-        }
-        auto* group = static_cast<SoGroup*>(scene);
-        const int index = group->findChild(editRoot);
-        if (index >= 0) {
-            group->removeChild(index);
-        }
-    }
-
     ~Private()
     {
         delete eventManager;
@@ -387,9 +357,10 @@ MirrorViewer::~MirrorViewer()
         ViewerScope scope(this);
         pimpl->doc->resetEdit();
     }
-    // And whatever is left: give the view provider its children back now,
+    // And whatever is left: give the view provider its children back now
+    // (the initiator), or take this view out of the session (a joiner),
     // while this is still a MirrorViewer. The base destructor cannot,
-    // because resetEditingRoot reaches getDocument() and by then there is
+    // because unhanging the root reaches a virtual and by then there is
     // no override left to reach.
     resetEditingViewProvider();
 }
@@ -1176,25 +1147,26 @@ bool MirrorViewer::isEditing() const
     return pimpl->editing;
 }
 
-void MirrorViewer::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum)
+void MirrorViewer::hangEditingRoot(EditingRoot* root, bool hang)
 {
-    // Into the published graph before the base fills it, because filling it
-    // is what the change-driven traversal has to notice. First child, which
-    // is where the desktop's sits: the aux root is added to the selection
-    // root at construction, ahead of every view provider.
-    if (vp) {
-        pimpl->attachEditingRoot(pcEditingRoot);
+    // Into the published graph when bound, which the base does before the
+    // initiator fills it, because filling it is what the change-driven
+    // traversal has to notice; out of it when unbound, which the base does
+    // after the restore, so the children leaving is published too. First
+    // child, which is where the desktop's sits: the aux root is added to
+    // the selection root at construction, ahead of every view provider.
+    // One session's root under N mirrors is N parents of one node, which
+    // is a Coin graph's ordinary condition.
+    if (!pimpl->scene || !pimpl->scene->isOfType(SoGroup::getClassTypeId())) {
+        return;
     }
-    ViewerContext::setEditingViewProvider(vp, ModNum);
-}
-
-void MirrorViewer::resetEditingViewProvider()
-{
-    ViewerContext::resetEditingViewProvider();
-    // After, not before: the base gives the view provider its children back
-    // out of this root, and it has to still be somewhere the traversal can
-    // see for that to be published.
-    pimpl->detachEditingRoot(pcEditingRoot);
+    auto* group = static_cast<SoGroup*>(pimpl->scene);
+    if (hang) {
+        root->hangUnder(group, 0);
+    }
+    else {
+        root->unhangFrom(group);
+    }
 }
 
 void MirrorViewer::addEventCallback(SoType eventtype, SoEventCallbackCB* cb, void* userdata)

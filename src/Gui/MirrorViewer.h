@@ -294,9 +294,12 @@ public:
     //@{
     void setEditing(bool edit) override;
     bool isEditing() const override;
-    void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum) override;
-    void resetEditingViewProvider() override;
     //@}
+
+protected:
+    void hangEditingRoot(EditingRoot* root, bool hang) override;
+
+public:
 
     /** This client's own selection instance.
      *

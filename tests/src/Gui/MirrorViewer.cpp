@@ -59,6 +59,9 @@
 
 #include <Gui/MirrorViewer.h>
 #include <Gui/Selection/Selection.h>
+#include <Gui/SoFCDB.h>
+#include <Gui/ViewProvider.h>
+#include <Gui/ViewerContext.h>
 
 namespace
 {
@@ -150,6 +153,14 @@ class MirrorViewerTest: public ::testing::Test
 protected:
     static void SetUpTestSuite()
     {
+        // Once per process: a derived fixture is a second suite to gtest
+        // and would run this again, and App::Application::init is not a
+        // thing to run twice.
+        static bool initialised = false;
+        if (initialised) {
+            return;
+        }
+        initialised = true;
         if (!SoDB::isInitialized()) {
             SoDB::init();
             SoInteraction::init();
@@ -551,6 +562,191 @@ TEST_F(MirrorViewerTest, editingTheRootDoesNothingWithNobodyEditing)
 
     mirror->resetEditingRoot();
     EXPECT_EQ(editRoot->getNumChildren(), 1);
+}
+
+/// One session, N views (docs/ThinClient.md 8.11): the root a session
+/// hangs is the document's, every view of the document shows through the
+/// same node, and only the initiator moves geometry into and out of it.
+class SharedEditingRootTest: public MirrorViewerTest
+{
+protected:
+    static void SetUpTestSuite()
+    {
+        MirrorViewerTest::SetUpTestSuite();
+        // A view provider's root is an SoFCSelectionRoot: the Gui node
+        // classes have to exist before one is built.
+        static bool guiCoinInit = false;
+        if (!guiCoinInit) {
+            Gui::SoFCDB::init();
+            guiCoinInit = true;
+        }
+    }
+    void SetUp() override
+    {
+        MirrorViewerTest::SetUp();
+        other = std::make_unique<Gui::MirrorViewer>(nullptr, scene, nullptr, nullptr);
+        vp = std::make_unique<Gui::ViewProvider>();
+        root = std::make_unique<Gui::EditingRoot>();
+    }
+    void TearDown() override
+    {
+        // Sessions end before the views and the root go, as a document
+        // ends them: the initiator first.
+        mirror->resetEditingViewProvider();
+        other->resetEditingViewProvider();
+        other.reset();
+        root.reset();
+        vp.reset();
+        MirrorViewerTest::TearDown();
+    }
+    int timesInScene(SoNode* node) const
+    {
+        int count = 0;
+        for (int i = 0; i < scene->getNumChildren(); ++i) {
+            if (scene->getChild(i) == node) {
+                ++count;
+            }
+        }
+        return count;
+    }
+    std::unique_ptr<Gui::MirrorViewer> other;
+    std::unique_ptr<Gui::ViewProvider> vp;
+    std::unique_ptr<Gui::EditingRoot> root;
+};
+
+TEST_F(SharedEditingRootTest, theInitiatorShowsThroughTheSessionsRoot)
+{
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    EXPECT_TRUE(mirror->isEditingInitiator());
+    EXPECT_EQ(mirror->getEditRootNode(), root->node());
+    EXPECT_EQ(mirror->editingRoot(), root.get());
+    // In the served graph, first, once.
+    EXPECT_EQ(scene->findChild(root->node()), 0);
+    EXPECT_EQ(timesInScene(root->node()), 1);
+
+    mirror->resetEditingViewProvider();
+    EXPECT_FALSE(mirror->isEditingViewProvider());
+    // Back on its own root, which is in no graph.
+    EXPECT_NE(mirror->getEditRootNode(), root->node());
+    EXPECT_EQ(scene->findChild(root->node()), -1);
+    EXPECT_EQ(static_cast<SoSeparator*>(mirror->getEditRootNode())->getNumChildren(), 1);
+}
+
+TEST_F(SharedEditingRootTest, aJoinerShowsTheSameRootAndTheSameContent)
+{
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    other->joinEditing(vp.get(), root.get());
+    EXPECT_TRUE(other->isEditingViewProvider());
+    EXPECT_FALSE(other->isEditingInitiator());
+    EXPECT_EQ(other->getEditingViewProvider(), vp.get());
+    EXPECT_EQ(other->getEditRootNode(), root->node());
+    EXPECT_EQ(other->getEditRootNode(), mirror->getEditRootNode());
+
+    // What the initiator hangs, the joiner sees: one node, two views.
+    auto* extra = new SoSeparator;
+    mirror->setupEditingRoot(extra);
+    EXPECT_TRUE(root->hasContent());
+    EXPECT_EQ(static_cast<SoSeparator*>(other->getEditRootNode())->getNumChildren(), 2);
+    EXPECT_EQ(static_cast<SoSeparator*>(other->getEditRootNode())->getChild(1), extra);
+}
+
+TEST_F(SharedEditingRootTest, twoViewsOnOneGraphHangTheRootOnce)
+{
+    // Both mirrors publish into the same served graph. The root goes in
+    // once, and stays while any view of the session still shows it.
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    other->joinEditing(vp.get(), root.get());
+    EXPECT_EQ(timesInScene(root->node()), 1);
+    EXPECT_EQ(root->hangCount(scene), 2);
+
+    other->leaveEditing();
+    EXPECT_EQ(timesInScene(root->node()), 1);
+    EXPECT_EQ(root->hangCount(scene), 1);
+    EXPECT_FALSE(other->isEditingViewProvider());
+
+    mirror->resetEditingViewProvider();
+    EXPECT_EQ(timesInScene(root->node()), 0);
+    EXPECT_EQ(root->hangCount(scene), 0);
+}
+
+TEST_F(SharedEditingRootTest, theInitiatorLeavingFirstKeepsTheJoinersRoot)
+{
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    other->joinEditing(vp.get(), root.get());
+    mirror->resetEditingViewProvider();
+    // The joiner still shows the session's root, still in the graph.
+    EXPECT_EQ(other->getEditRootNode(), root->node());
+    EXPECT_EQ(timesInScene(root->node()), 1);
+    other->leaveEditing();
+    EXPECT_EQ(timesInScene(root->node()), 0);
+}
+
+TEST_F(SharedEditingRootTest, aJoinerNeverMovesTheGeometry)
+{
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    other->joinEditing(vp.get(), root.get());
+    auto* extra = new SoSeparator;
+    mirror->setupEditingRoot(extra);
+    ASSERT_TRUE(root->hasContent());
+
+    // Neither a setup nor a reset from the joiner touches the root: the
+    // initiator owns the move, and the Python API on the wrong view must
+    // not pull the geometry out from under the tool.
+    auto* another = new SoSeparator;
+    another->ref();
+    other->setupEditingRoot(another);
+    EXPECT_EQ(root->node()->getNumChildren(), 2);
+    EXPECT_EQ(root->node()->getChild(1), extra);
+    other->resetEditingRoot();
+    EXPECT_EQ(root->node()->getNumChildren(), 2);
+    another->unref();
+
+    // Leaving does not either.
+    other->leaveEditing();
+    EXPECT_EQ(root->node()->getNumChildren(), 2);
+    mirror->resetEditingViewProvider();
+    EXPECT_EQ(root->node()->getNumChildren(), 1);
+}
+
+TEST_F(SharedEditingRootTest, joiningTwiceOrLeavingIdleIsHarmless)
+{
+    other->leaveEditing();
+    EXPECT_FALSE(other->isEditingViewProvider());
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    other->joinEditing(vp.get(), root.get());
+    other->joinEditing(vp.get(), root.get());
+    EXPECT_EQ(root->hangCount(scene), 2);
+    // The initiator asked to join its own session stays the initiator.
+    mirror->joinEditing(vp.get(), root.get());
+    EXPECT_TRUE(mirror->isEditingInitiator());
+    EXPECT_EQ(root->hangCount(scene), 2);
+}
+
+TEST_F(SharedEditingRootTest, aRootlessSessionUsesTheViewsOwn)
+{
+    // The unit harness's case: no document, no root handed over. The
+    // view's private root serves, and it is hung nowhere.
+    mirror->setEditingViewProvider(vp.get(), 0);
+    EXPECT_TRUE(mirror->isEditingInitiator());
+    EXPECT_NE(mirror->getEditRootNode(), root->node());
+    EXPECT_EQ(scene->findChild(mirror->getEditRootNode()), -1);
+    auto* extra = new SoSeparator;
+    mirror->setupEditingRoot(extra);
+    EXPECT_EQ(static_cast<SoSeparator*>(mirror->getEditRootNode())->getNumChildren(), 2);
+    mirror->resetEditingViewProvider();
+    EXPECT_EQ(static_cast<SoSeparator*>(mirror->getEditRootNode())->getNumChildren(), 1);
+}
+
+TEST_F(SharedEditingRootTest, aJoinerWithNoDocumentSelectsIntoItsOwn)
+{
+    // The session's selection is the initiator's only when a document
+    // names the initiator; a root with no document leaves each view its
+    // own instance, which is what a scope on it pushes.
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    other->joinEditing(vp.get(), root.get());
+    EXPECT_EQ(other->sessionSelectionInstance(), other->selectionInstance());
+    Gui::ViewerScope scope(other.get());
+    EXPECT_EQ(&Gui::Selection(), other->selectionInstance());
 }
 
 /// The event path (docs/ThinClient.md sec 8.5, the `'E'` frame). A

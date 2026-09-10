@@ -1718,6 +1718,46 @@ panel ported to models, tool widget first -- it is the only edit logic in the pa
 plain form -- and the constraint and element lists last, as `docs/Sandbox.md` 7.12
 already schedules them.
 
+**Built 2026-09-11 (item 1, the first four pieces).** The editing root is the document's:
+`Gui::EditingRoot` (`ViewerContext.h`) holds the separator, its transform, the restore
+flag and the move/restore bodies that used to sit on every `ViewerContext`, and
+`Gui::Document::editingRoot()` builds one on first need. A view hangs it through
+`hangEditingRoot(root, hang)` -- the desktop under its aux root (outside the render-cache
+feed, captured by `editingCapture`, which re-inits when the node changes), a mirror at the
+head of the served graph -- and the root counts its parents (`hangUnder`/`unhangFrom`), so
+N mirrors on one served graph insert it once and the last to leave takes it out. The
+capture-policy spike answered itself: one node under a desktop aux root and inside a served
+graph at the same time is a Coin multi-parent, and the render cache manager keys its caches
+per node with a validity check per traversal state, so each traversal keeps its own entry.
+`setEditingViewProvider(vp, mode, root)` is the initiator (binds, hangs,
+`ViewProvider::setEditViewer` moves the geometry, routes events); `joinEditing(vp, root)`
+is every other view (binds, hangs, stands its own selection and navigation aside, routes
+events, never `setEditViewer`) and `leaveEditing()` undoes it; a joiner's
+`setupEditingRoot`/`resetEditingRoot` are no-ops, since the initiator owns the move.
+`Gui::Document::setEdit` joins every other 3D window, `createView3D` joins a window opened
+mid-session, `_resetEdit` resets the initiator first and then the rest; the serving source
+joins every mirror on `signalInEdit`, joins a mirror stated mid-session at its first camera
+and tells that client, leaves them all on `signalResetEdit`, and announces both edges to
+every client with a mirror rather than to the initiator alone. The session's selection:
+`ViewerScope` pushes `sessionSelectionInstance()` -- the initiator's inside a session a
+joiner is in, the view's own otherwise -- and the desktop viewer opens a scope around every
+event while it is in a session, so a desktop click into a browser-started sketch selects
+where the sketcher's observer listens. The sketcher reads the view for its camera math
+through `editViewer()` (the current scope's view when it is one of this edit's, else the
+initiator's) at 16 sites; `edit->viewer` stays the initiator. Not yet: the per-client
+selection message and the forwarding observer with its toggle (the fifth piece).
+
+Verified: `SharedEditingRootTest` (8 cases in `tests/src/Gui/MirrorViewer.cpp`: one root
+under two mirrors hung once, a joiner seeing the initiator's content, the initiator
+leaving first, a joiner never moving geometry, the rootless harness case, a joiner's own
+instance without a document) and `tests/gui/serve-shared-edit.py`, the oracle as ruled: a
+document with a real window AND a served mirror, the desktop entering (the watching client
+is told, its pointer move is replayed into the session, the root sits in the window's
+graph with the sketch's geometry under it), then the client entering (the window reports
+the edit through its own viewer, no 3D view is created, the root and the geometry are in
+the window's graph, the task panel is up, the client's `resetEdit` takes the window out).
+Every earlier reading in `sketch-edit-root.py` and `serve-mirror-edit.py` still holds.
+
 ### 8.12 What per client would cost -- the multi-user roadmap
 
 Everything below is what 8.11 shares, listed from the view outward to the data, with what

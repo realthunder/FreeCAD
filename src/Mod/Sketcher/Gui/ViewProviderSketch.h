@@ -414,6 +414,15 @@ protected:
     void createEditInventorNodes();
     /// pointer to the edit data structure if the ViewProvider is in edit.
     std::unique_ptr<EditData> edit;
+    /** The view an event of this edit is being handled in.
+     *
+     * A session has one initiator (edit->viewer) and N views that joined
+     * it (docs/ThinClient.md 8.11); camera math for an event -- a pick
+     * ray, a near plane, a scale factor, a dot pitch -- is the math of the
+     * view the event came through, which ViewerScope names. Outside any
+     * scope, or in one that is not a view of this edit, the initiator's.
+     */
+    Gui::ViewerContext* editViewer() const;
     /// build up the visual of the constraints
     void rebuildConstraintsVisual();
 

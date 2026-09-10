@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <cfloat>
+# include <optional>
 # ifdef FC_OS_WIN32
 #  include <windows.h>
 # endif
@@ -1326,6 +1327,11 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
     // backend (and the WASM viewer) sharing the main scene camera; the
     // world-space geometry lines up with the main scene for free. Gated on
     // there being edit content (more than just the editing transform).
+    // The root is the session's and changes between sessions (a private
+    // one idle, the document's in edit): a capture built on the last one
+    // is dropped before a new one is built.
+    if (editingCapture.manager && editingCapture.root != owner->pcEditingRoot)
+        dropCapture(editingCapture, OverlayEditing);
     if (owner->pcEditingRoot && owner->pcEditingRoot->getNumChildren() > 1) {
         if (!editingCapture.manager)
             initCapture(editingCapture, owner->pcEditingRoot);
@@ -1746,10 +1752,10 @@ void View3DInventorViewer::init()
 
     pcClipPlane = nullptr;
 
-    // The editing root itself is ViewerContext's; where it hangs is this
-    // view's. A sibling of the render-cache-captured selectionRoot, so an
-    // edit never reaches the main scene feed and is captured separately.
-    inventorSelection->getAuxRoot()->addChild(pcEditingRoot);
+    // The editing root is the session's (Gui::Document's); where it hangs is
+    // this view's, and it is hung when a session binds it here
+    // (hangEditingRoot) rather than at construction: idle, a view shows
+    // through a private empty root that is in no graph at all.
 
     // Create group for the non physical object
     nonObjectGroup = new SoGroup();
@@ -1838,8 +1844,19 @@ View3DInventorViewer::~View3DInventorViewer()
     // closed 3D view is in edit mode the corresponding view provider must be restored
     // because otherwise it might be left in a broken state
     // See https://forum.freecad.org/viewtopic.php?f=3&t=39720
-    if (restoreEditingRoot) {
-        resetEditingRoot(false);
+    // The initiator gives the geometry back; every view, initiator or
+    // joiner, takes the session's root out of its own graph here, while
+    // that graph is still there to unhang from (the base destructor
+    // cannot reach this class's hangEditingRoot).
+    if (isEditingViewProvider()) {
+        if (isEditingInitiator()) {
+            resetEditingRoot(false);
+        }
+        removeEventCallback(SoEvent::getClassTypeId(), ViewProvider::eventCallback,
+                            editViewProvider);
+        editViewProvider = nullptr;
+        joinedEditing = false;
+        unbindEditingRoot();
     }
 
     // cleanup
@@ -3653,6 +3670,8 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
     if (!root) {
         _ViewProviderSet.clear();
         editViewProvider = nullptr;
+        joinedEditing = false;
+        unbindEditingRoot();
         return;
     }
 
@@ -6765,6 +6784,16 @@ bool View3DInventorViewer::processSoEvent(const SoEvent* ev)
     // throttle gets out of their way for the next little while.
     _pimpl->noteInput();
 
+    // In an edit session every event is handled AS this view, so that
+    // what it selects lands in the SESSION's instance (docs/ThinClient.md
+    // 8.11): the room for a session the desktop started, which is what
+    // Gui::Selection() answered here anyway, and the initiating client's
+    // own for one a browser started, where the tool state machine listens.
+    std::optional<ViewerScope> sessionScope;
+    if (editViewProvider) {
+        sessionScope.emplace(this);
+    }
+
     if (naviCubeEnabled && naviCube->processSoEvent(ev)) {
         return true;
     }
@@ -8669,6 +8698,25 @@ void View3DInventorViewer::setCursorRepresentation(int modearg)
     default:
         assert(0);
         break;
+    }
+}
+
+void View3DInventorViewer::hangEditingRoot(EditingRoot* root, bool hang)
+{
+    // A sibling of the render-cache-captured selectionRoot, so an edit
+    // never reaches the main scene feed and is captured separately
+    // (Private::editingCapture, which re-inits itself on the new node).
+    // The same node may hang under another view's aux root and inside a
+    // served graph at the same time: one session, N views.
+    if (!inventorSelection || !root) {
+        return;
+    }
+    SoGroup* aux = inventorSelection->getAuxRoot();
+    if (hang) {
+        root->hangUnder(aux);
+    }
+    else {
+        root->unhangFrom(aux);
     }
 }
 

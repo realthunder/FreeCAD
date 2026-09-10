@@ -125,6 +125,9 @@ struct DocumentP
     int                         _editMode;
     int                         _editModePrevious = 0;
     CoinPtr<SoNode>             _editRootNode;
+    /// The session root (Document::editingRoot); _editRootNode is its
+    /// node while a session runs.
+    std::unique_ptr<EditingRoot> _editRoot;
     ViewProvider*               _editViewProvider;
     ViewProvider*               _editViewProviderPrevious = nullptr;
     bool                        _editWantsRestore = false;
@@ -697,9 +700,21 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
     }
 
     if(editViewer) {
-        editViewer->setEditingViewProvider(d->_editViewProvider,ModNum);
+        EditingRoot *root = editingRoot();
+        editViewer->setEditingViewProvider(d->_editViewProvider, ModNum, root);
         d->_editingViewer = editViewer;
-        d->_editRootNode = editViewer->getEditRootNode();
+        d->_editRootNode = root->node();
+        // One session, every view (docs/ThinClient.md 8.11): the other 3D
+        // windows of this document join it -- the same root hung, their
+        // events routed to the same tool -- so a sketch entered in one
+        // window is drawn in from any of them. A client's mirror joins
+        // through the serving source, on signalInEdit below, since the
+        // document does not hold mirrors.
+        for (auto view : d->baseViews) {
+            auto view3d = dynamic_cast<View3DInventor *>(view);
+            if (view3d && view3d->getViewer() && view3d->getViewer() != editViewer)
+                view3d->getViewer()->joinEditing(d->_editViewProvider, root);
+        }
     }
     Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
     if (dlg)
@@ -735,6 +750,12 @@ void Document::setEditingTransform(const Base::Matrix4D &mat) {
 
 ViewerContext *Document::editingViewer() const {
     return d->_editingViewer;
+}
+
+EditingRoot *Document::editingRoot() {
+    if (!d->_editRoot)
+        d->_editRoot = std::make_unique<EditingRoot>(this);
+    return d->_editRoot.get();
 }
 
 void Document::resetEdit() {
@@ -777,17 +798,19 @@ void Document::_resetEdit()
 {
     std::list<Gui::BaseView*>::iterator it;
     if (d->_editViewProvider) {
-        for (it = d->baseViews.begin();it != d->baseViews.end();++it) {
-            auto activeView = dynamic_cast<View3DInventor *>(*it);
-            if (activeView)
-                activeView->getViewer()->resetEditingViewProvider();
-        }
-        // A view that is not one of this document's -- a client's mirror,
-        // which belongs to the serving source rather than to the document
-        // -- is not in that list. Idempotent, so a desktop viewer the loop
-        // above already reset is unharmed by being named twice.
+        // The initiator first: it gives the view provider its geometry
+        // back out of the shared root, and a view that is not one of this
+        // document's -- a client's mirror, which belongs to the serving
+        // source rather than to the document -- is not in the list below.
+        // Then every other view leaves the session it joined. Both are
+        // idempotent, so the initiator being named twice is unharmed.
         if (d->_editingViewer)
             d->_editingViewer->resetEditingViewProvider();
+        for (it = d->baseViews.begin();it != d->baseViews.end();++it) {
+            auto activeView = dynamic_cast<View3DInventor *>(*it);
+            if (activeView && activeView->getViewer())
+                activeView->getViewer()->resetEditingViewProvider();
+        }
 
         if (d->_editingObject)
             d->_editingObject->setStatus(App::ObjEditing, false);
@@ -3998,6 +4021,10 @@ View3DInventor *Document::createView3D()
         }
 
         auto view3D = new View3DInventor(this, getMainWindow(), shareWidget);
+        // A window opened while a session runs shows it too
+        // (docs/ThinClient.md 8.11).
+        if (d->_editViewProvider && d->_editingViewer && view3D->getViewer())
+            view3D->getViewer()->joinEditing(d->_editViewProvider, editingRoot());
 
         // Views can now have independent draw styles (i.e. override modes)
         //

@@ -31,6 +31,7 @@
 #include <Inventor/actions/SoHandleEventAction.h>
 #include <Inventor/events/SoEvent.h>
 #include <Inventor/misc/SoChildList.h>
+#include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
@@ -52,18 +53,186 @@ using namespace Gui;
 
 FC_LOG_LEVEL_INIT("3DViewer", true, true)
 
+// ---- EditingRoot ------------------------------------------------------------
+
+EditingRoot::EditingRoot(Gui::Document* document)
+    : doc(document)
+{
+    root = new SoSeparator;
+    root->ref();
+    root->setName("EditingRoot");
+    transform = new SoTransform;
+    transform->ref();
+    transform->setName("EditingTransform");
+    root->addChild(transform);
+}
+
+EditingRoot::~EditingRoot()
+{
+    // Not reset(): whoever moved a view provider's children here gives
+    // them back before letting go of this (the initiating view, in its
+    // own destructor at the latest). A root destroyed with content would
+    // take that content with it, which is the one thing owning the nodes
+    // must never do silently.
+    if (restore) {
+        FC_ERR("editing root destroyed while still holding an edit's geometry");
+    }
+    transform->unref();
+    root->unref();
+}
+
+bool EditingRoot::hasContent() const
+{
+    return root->getNumChildren() > 1;
+}
+
+void EditingRoot::hangUnder(SoGroup* parent, int index)
+{
+    if (!parent) {
+        return;
+    }
+    int& count = parents[parent];
+    if (count++ == 0 && parent->findChild(root) < 0) {
+        if (index < 0 || index > parent->getNumChildren()) {
+            parent->addChild(root);
+        }
+        else {
+            parent->insertChild(root, index);
+        }
+    }
+}
+
+void EditingRoot::unhangFrom(SoGroup* parent)
+{
+    auto it = parents.find(parent);
+    if (it == parents.end()) {
+        return;
+    }
+    if (--it->second > 0) {
+        return;
+    }
+    parents.erase(it);
+    const int index = parent->findChild(root);
+    if (index >= 0) {
+        parent->removeChild(index);
+    }
+}
+
+int EditingRoot::hangCount(SoGroup* parent) const
+{
+    auto it = parents.find(parent);
+    return it == parents.end() ? 0 : it->second;
+}
+
+void EditingRoot::setTransform(const Base::Matrix4D& mat)
+{
+    // NOLINTBEGIN
+    double dMtrx[16];
+    mat.getGLMatrix(dMtrx);
+    transform->setMatrix(SbMatrix(
+                dMtrx[0], dMtrx[1], dMtrx[2],  dMtrx[3],
+                dMtrx[4], dMtrx[5], dMtrx[6],  dMtrx[7],
+                dMtrx[8], dMtrx[9], dMtrx[10], dMtrx[11],
+                dMtrx[12],dMtrx[13],dMtrx[14], dMtrx[15]));
+    // NOLINTEND
+}
+
+void EditingRoot::setup(Gui::ViewProvider* vp, SoNode* node, const Base::Matrix4D* mat)
+{
+    if (!vp) {
+        return;
+    }
+    reset(vp, false);
+    if (mat) {
+        setTransform(*mat);
+    }
+    else if (doc) {
+        setTransform(doc->getEditingTransform());
+    }
+    if (node) {
+        restore = false;
+        root->addChild(node);
+        return;
+    }
+
+    restore = true;
+    auto vpRoot = vp->getRoot();
+    for (int i = 0, count = vpRoot->getNumChildren(); i < count; ++i) {
+        SoNode* child = vpRoot->getChild(i);
+        if (child != vp->getTransformNode()) {
+            root->addChild(child);
+        }
+    }
+    coinRemoveAllChildren(vpRoot);
+    ViewProviderLink::updateLinks(vp);
+}
+
+void EditingRoot::reset(Gui::ViewProvider* vp, bool updateLinks)
+{
+    if (!vp || !hasContent()) {
+        return;
+    }
+    if (!restore) {
+        root->getChildren()->truncate(1);
+        return;
+    }
+    restore = false;
+    auto vpRoot = vp->getRoot();
+    if (vpRoot->getNumChildren()) {
+        FC_ERR("WARNING!!! Editing view provider root node is tampered");
+    }
+    vpRoot->addChild(vp->getTransformNode());
+    for (int i = 1, count = root->getNumChildren(); i < count; ++i) {
+        vpRoot->addChild(root->getChild(i));
+    }
+    root->getChildren()->truncate(1);
+
+    // handle exceptions eventually raised by ViewProviderLink
+    try {
+        if (updateLinks) {
+            ViewProviderLink::updateLinks(vp);
+        }
+    }
+    catch (const Py::Exception& e) {
+        /* coverity[UNCAUGHT_EXCEPT] Uncaught exception */
+        // Coverity created several reports when removeViewProvider()
+        // is used somewhere in a destructor which indirectly invokes
+        // resetEditingRoot().
+        // Now theoretically Py::type can throw an exception which nowhere
+        // will be handled and thus terminates the application. So, add an
+        // extra try/catch block here.
+        try {
+            Py::Object py = Py::type(e);
+            if (py.isString()) {
+                Py::String str(py);
+                Base::Console().Warning("%s\n", str.as_std_string("utf-8").c_str());
+            }
+            else {
+                Py::String str(py.repr());
+                Base::Console().Warning("%s\n", str.as_std_string("utf-8").c_str());
+            }
+            // Prints message to console window if we are in interactive mode
+            PyErr_Print();
+        }
+        catch (Py::Exception& e) {
+            e.clear();
+            Base::Console().Error("Unexpected exception raised in EditingRoot::reset\n");
+        }
+    }
+}
+
+// ---- ViewerContext ----------------------------------------------------------
+
 ViewerContext::ViewerContext()
 {
-    // The editing root belongs to the context rather than to any view: what
-    // differs between a desktop viewer and a client's mirror is only where
-    // it is hung, which each of them does for itself.
-    pcEditingRoot = new SoSeparator;
-    pcEditingRoot->ref();
-    pcEditingRoot->setName("EditingRoot");
-    pcEditingTransform = new SoTransform;
-    pcEditingTransform->ref();
-    pcEditingTransform->setName("EditingTransform");
-    pcEditingRoot->addChild(pcEditingTransform);
+    // Idle, a view shows through a private root of its own: what a session
+    // binds is the document's, and what differs between a desktop viewer
+    // and a client's mirror is only where either is hung, which each of
+    // them does for itself (hangEditingRoot).
+    ownEditRoot = std::make_unique<EditingRoot>();
+    editRoot = ownEditRoot.get();
+    pcEditingRoot = editRoot->node();
+    pcEditingTransform = editRoot->transformNode();
 }
 
 // Out of line so the class has one key function, and with it one vtable and
@@ -71,16 +240,10 @@ ViewerContext::ViewerContext()
 // header.
 ViewerContext::~ViewerContext()
 {
-    // Not resetEditingRoot(): that reaches getDocument(), which by here has
-    // no override left to reach. An implementation that can still be
-    // holding a view provider's children gives them back in its OWN
-    // destructor, while it is still itself.
-    if (pcEditingTransform) {
-        pcEditingTransform->unref();
-    }
-    if (pcEditingRoot) {
-        pcEditingRoot->unref();
-    }
+    // Not resetEditingViewProvider(): that reaches virtuals which by here
+    // have no override left to reach. An implementation that can still be
+    // in a session ends its half of it in its OWN destructor, while it is
+    // still itself.
 }
 
 SoCamera* ViewerContext::getCamera() const
@@ -136,12 +299,51 @@ QPoint ViewerContext::toQPoint(const SbVec2s& pnt) const
     return {xpos, ypos};
 }
 
-void ViewerContext::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum)
+void ViewerContext::hangEditingRoot(EditingRoot*, bool)
 {
+}
+
+void ViewerContext::bindEditingRoot(EditingRoot* root)
+{
+    if (!root) {
+        root = ownEditRoot.get();
+    }
+    if (root == editRoot) {
+        return;
+    }
+    if (editRoot != ownEditRoot.get()) {
+        hangEditingRoot(editRoot, false);
+    }
+    editRoot = root;
+    pcEditingRoot = editRoot->node();
+    pcEditingTransform = editRoot->transformNode();
+    if (editRoot != ownEditRoot.get()) {
+        hangEditingRoot(editRoot, true);
+    }
+}
+
+void ViewerContext::unbindEditingRoot()
+{
+    bindEditingRoot(nullptr);
+}
+
+void ViewerContext::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum, EditingRoot* root)
+{
+    if (editViewProvider && joinedEditing) {
+        // Promoted from joiner to initiator: not a case anything asks for,
+        // and one the base cannot do right (the geometry is already
+        // moved). Leave first, then start clean.
+        leaveEditing();
+    }
     editViewProvider = vp;
+    joinedEditing = false;
     if (!editViewProvider) {
         return;
     }
+    // A private root is hung by no one, so the session's is what the
+    // other views can find; bound before setEditViewer, which is what
+    // fills it, so that the implementation that hangs it sees the fill.
+    bindEditingRoot(root);
     // Recorded here rather than inside setEditViewer below, which is
     // virtual and which ViewProviderDragger overrides without chaining
     // to the base -- so every geometry object would have answered null.
@@ -154,6 +356,10 @@ void ViewerContext::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum)
 void ViewerContext::resetEditingViewProvider()
 {
     if (!editViewProvider) {
+        return;
+    }
+    if (joinedEditing) {
+        leaveEditing();
         return;
     }
 
@@ -174,6 +380,57 @@ void ViewerContext::resetEditingViewProvider()
     removeEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,
                         editViewProvider);
     editViewProvider = nullptr;
+    // After the restore, so that an implementation whose graph has to see
+    // the children leave (a mirror's publish traversal) still has the root
+    // in it when they do.
+    unbindEditingRoot();
+}
+
+void ViewerContext::joinEditing(Gui::ViewProvider* vp, EditingRoot* root)
+{
+    if (!vp || !root) {
+        return;
+    }
+    if (editViewProvider) {
+        // Already in a session: the initiator, or a joiner of this same
+        // one. A joiner of another session is a document bug, not a
+        // state this view can repair by itself.
+        if (editViewProvider != vp || editRoot != root) {
+            FC_WARN("view asked to join an edit while in another");
+        }
+        return;
+    }
+    editViewProvider = vp;
+    joinedEditing = true;
+    bindEditingRoot(root);
+    // What every implementation of setEditViewer does for the initiating
+    // view, and what a joiner needs for the same reason: the view's own
+    // selection stands aside so a click reaches the tool, and navigation
+    // shows the edit cursor.
+    setEditing(true);
+    setSelectionEnabled(false);
+    addEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,
+                     editViewProvider);
+}
+
+void ViewerContext::leaveEditing()
+{
+    if (!editViewProvider || !joinedEditing) {
+        return;
+    }
+    if (SoEventManager* mgr = getSoEventManager()) {
+        SoHandleEventAction* heaction = mgr->getHandleEventAction();
+        if (heaction && heaction->getGrabber()) {
+            heaction->releaseGrabber();
+        }
+    }
+    removeEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,
+                        editViewProvider);
+    setSelectionEnabled(true);
+    setEditing(false);
+    editViewProvider = nullptr;
+    joinedEditing = false;
+    unbindEditingRoot();
 }
 
 SoNode* ViewerContext::getEditRootNode() const
@@ -181,104 +438,39 @@ SoNode* ViewerContext::getEditRootNode() const
     return pcEditingRoot;
 }
 
+SelectionSingleton* ViewerContext::sessionSelectionInstance() const
+{
+    if (editViewProvider && joinedEditing && editRoot && editRoot->document()) {
+        ViewerContext* initiator = editRoot->document()->editingViewer();
+        if (initiator && initiator != this) {
+            return initiator->selectionInstance();
+        }
+    }
+    return selectionInstance();
+}
+
 void ViewerContext::setEditingTransform(const Base::Matrix4D& mat)
 {
-    // NOLINTBEGIN
-    if (pcEditingTransform) {
-        double dMtrx[16];
-        mat.getGLMatrix(dMtrx);
-        pcEditingTransform->setMatrix(SbMatrix(
-                    dMtrx[0], dMtrx[1], dMtrx[2],  dMtrx[3],
-                    dMtrx[4], dMtrx[5], dMtrx[6],  dMtrx[7],
-                    dMtrx[8], dMtrx[9], dMtrx[10], dMtrx[11],
-                    dMtrx[12],dMtrx[13],dMtrx[14], dMtrx[15]));
-    }
-    // NOLINTEND
+    editRoot->setTransform(mat);
 }
 
 void ViewerContext::setupEditingRoot(SoNode* node, const Base::Matrix4D* mat)
 {
-    if (!editViewProvider) {
+    // The initiator owns the move: a joiner asked to set the root up (the
+    // Python API on the wrong view) would pull the geometry out from
+    // under the view running the tool.
+    if (!editViewProvider || joinedEditing) {
         return;
     }
-
-    resetEditingRoot(false);
-    if (mat) {
-        setEditingTransform(*mat);
-    }
-    else if (Gui::Document* doc = getDocument()) {
-        setEditingTransform(doc->getEditingTransform());
-    }
-    if (node) {
-        restoreEditingRoot = false;
-        pcEditingRoot->addChild(node);
-        return;
-    }
-
-    restoreEditingRoot = true;
-    auto root = editViewProvider->getRoot();
-    for (int i = 0, count = root->getNumChildren(); i < count; ++i) {
-        SoNode* child = root->getChild(i);
-        if (child != editViewProvider->getTransformNode()) {
-            pcEditingRoot->addChild(child);
-        }
-    }
-    coinRemoveAllChildren(root);
-    ViewProviderLink::updateLinks(editViewProvider);
+    editRoot->setup(editViewProvider, node, mat);
 }
 
 void ViewerContext::resetEditingRoot(bool updateLinks)
 {
-    if (!editViewProvider || pcEditingRoot->getNumChildren() <= 1) {
+    if (!editViewProvider || joinedEditing) {
         return;
     }
-    if (!restoreEditingRoot) {
-        pcEditingRoot->getChildren()->truncate(1);
-        return;
-    }
-    restoreEditingRoot = false;
-    auto root = editViewProvider->getRoot();
-    if (root->getNumChildren()) {
-        FC_ERR("WARNING!!! Editing view provider root node is tampered");
-    }
-    root->addChild(editViewProvider->getTransformNode());
-    for (int i = 1, count = pcEditingRoot->getNumChildren(); i < count; ++i) {
-        root->addChild(pcEditingRoot->getChild(i));
-    }
-    pcEditingRoot->getChildren()->truncate(1);
-
-    // handle exceptions eventually raised by ViewProviderLink
-    try {
-        if (updateLinks) {
-            ViewProviderLink::updateLinks(editViewProvider);
-        }
-    }
-    catch (const Py::Exception& e) {
-        /* coverity[UNCAUGHT_EXCEPT] Uncaught exception */
-        // Coverity created several reports when removeViewProvider()
-        // is used somewhere in a destructor which indirectly invokes
-        // resetEditingRoot().
-        // Now theoretically Py::type can throw an exception which nowhere
-        // will be handled and thus terminates the application. So, add an
-        // extra try/catch block here.
-        try {
-            Py::Object py = Py::type(e);
-            if (py.isString()) {
-                Py::String str(py);
-                Base::Console().Warning("%s\n", str.as_std_string("utf-8").c_str());
-            }
-            else {
-                Py::String str(py.repr());
-                Base::Console().Warning("%s\n", str.as_std_string("utf-8").c_str());
-            }
-            // Prints message to console window if we are in interactive mode
-            PyErr_Print();
-        }
-        catch (Py::Exception& e) {
-            e.clear();
-            Base::Console().Error("Unexpected exception raised in ViewerContext::resetEditingRoot\n");
-        }
-    }
+    editRoot->reset(editViewProvider, updateLinks);
 }
 
 PyObject* ViewerContext::getPyObject()
@@ -314,7 +506,10 @@ ViewerScope::ViewerScope(ViewerContext* context)
     // being handled here" would still be selecting in the last client's
     // instance: the two stacks out of step, which is the one thing this
     // shape exists to make impossible.
-    SelectionSingleton* sel = context ? context->selectionInstance() : nullptr;
+    // The SESSION's instance, which is the view's own outside an edit and
+    // the initiator's inside one (docs/ThinClient.md 8.11): a joiner's
+    // replayed click selects where the tool state machine is listening.
+    SelectionSingleton* sel = context ? context->sessionSelectionInstance() : nullptr;
     selection = std::make_unique<SelectionScope>(sel ? *sel : SelectionRoom());
 }
 

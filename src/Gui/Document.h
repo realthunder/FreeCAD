@@ -59,6 +59,7 @@ class MDIView;
 class View3DInventor;
 class ViewProvider;
 class ViewerContext;
+class EditingRoot;
 class ViewProviderDocumentObject;
 class Application;
 class DocumentPy;
@@ -346,9 +347,19 @@ public:
      *
      * Asked by a view that is going away while an edit is running in
      * it: a client's mirror dies with its connection, and the document
-     * must not be left pointing at it.
+     * must not be left pointing at it. The INITIATOR: every other view
+     * of the document joins the session it started (docs/ThinClient.md
+     * 8.11) and is not this.
      */
     ViewerContext *editingViewer() const;
+    /** The one editing root of this document's edit sessions.
+     *
+     * Built on first need and kept for the document's life; every view of
+     * the document, desktop window or client mirror, hangs this same node
+     * while a session runs, which is what makes one edit visible in all
+     * of them (docs/ThinClient.md 8.11).
+     */
+    EditingRoot *editingRoot();
     /// reset from edit mode, this cause all document to reset edit
     void resetEdit();
     /** Set whether leaving edit mode should restore the previous edit session

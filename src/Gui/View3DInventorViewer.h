@@ -493,6 +493,14 @@ public:
     //@{
     void setEditing(bool edit);
     bool isEditing() const { return this->editing; }
+
+protected:
+    /// Under the aux root, a sibling of the render-cache-captured
+    /// selectionRoot, so an edit never reaches the main scene feed and is
+    /// captured separately (editingCapture).
+    void hangEditingRoot(EditingRoot* root, bool hang) override;
+
+public:
     void setEditingCursor (const QCursor& cursor);
     void setComponentCursor(const QCursor& cursor);
     void setRedirectToSceneGraph(bool redirect) { this->redirected = redirect; }

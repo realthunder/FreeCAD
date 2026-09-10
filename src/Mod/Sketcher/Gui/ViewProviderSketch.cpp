@@ -738,10 +738,10 @@ void ViewProviderSketch::moveCursorToSketchPoint(Base::Vector2d point) {
 
     SbVec3f sbpoint(point.x,point.y,0.f);
 
-    if (!edit->viewer)
+    if (!editViewer())
         return;
 
-    auto viewer = edit->viewer;
+    auto viewer = editViewer();
 
     // Warping the pointer is the one thing here that genuinely needs a
     // window: it moves the physical cursor of whoever is at this machine.
@@ -789,10 +789,10 @@ void ViewProviderSketch::preselectAtPoint(Base::Vector2d point)
 
         SbVec3f sbpoint(point.x,point.y,0.f);
 
-        if (!edit->viewer)
+        if (!editViewer())
             return;
 
-        auto viewer = edit->viewer;
+        auto viewer = editViewer();
         SbVec2s screencoords = viewer->getPointOnViewport(sbpoint);
 
         std::unique_ptr<SoPickedPoint> Point(this->getPointOnRay(screencoords, viewer));
@@ -1369,9 +1369,9 @@ const char* ViewProviderSketch::getDefaultDisplayMode() const
 
 bool ViewProviderSketch::getElementPicked(const SoPickedPoint *pp, std::string &subname) const
 {
-    if (edit && edit->viewer) {
+    if (edit && editViewer()) {
         const_cast<ViewProviderSketch*>(this)->detectPreselection(
-                pp, edit->viewer, edit->curCursorPos, false);
+                pp, editViewer(), edit->curCursorPos, false);
         if (edit->lastPreselection.empty())
             return false;
         if (edit->lastCstrPreselections.empty()) {
@@ -1976,7 +1976,7 @@ Base::Vector3d ViewProviderSketch::seekConstraintPosition(const Base::Vector3d &
                                                           const SoNode *constraint)
 {
     assert(edit);
-    Gui::ViewerContext *viewer = edit->viewer;
+    Gui::ViewerContext *viewer = editViewer();
     if (!viewer)
         return Base::Vector3d();
 
@@ -2649,7 +2649,7 @@ SbVec3s ViewProviderSketch::getDisplayedSize(const SoImage *iconPtr) const
 
 void ViewProviderSketch::centerSelection()
 {
-    if (!edit || !edit->viewer)
+    if (!edit || !editViewer())
         return;
 
     SoGroup* group = new SoGroup();
@@ -2663,7 +2663,7 @@ void ViewProviderSketch::centerSelection()
         }
     }
 
-    Gui::ViewerContext* viewer = edit->viewer;
+    Gui::ViewerContext* viewer = editViewer();
     SoGetBoundingBoxAction action(viewer->getSoRenderManager()->getViewportRegion());
     action.apply(group);
     group->unref();
@@ -3231,7 +3231,7 @@ void ViewProviderSketch::updateColor(void)
     updateVirtualSpace();
 
     SbVec3f pnt, dir;
-    edit->viewer->getNearPlane(pnt, dir);
+    editViewer()->getNearPlane(pnt, dir);
     auto transform = getEditingPlacement();
     Base::Vector3d v0, v1;
     transform.multVec(Base::Vector3d(0,0,0), v0);
@@ -4066,7 +4066,7 @@ void ViewProviderSketch::drawConstraintIcons()
             SbVec3f pos0(startingpoint.x,startingpoint.y,startingpoint.z);
             SbVec3f pos1(endpoint.x,endpoint.y,endpoint.z);
 
-            Gui::ViewerContext *viewer = edit->viewer;
+            Gui::ViewerContext *viewer = editViewer();
             if (!viewer)
                 return;
             SoCamera* pCam = viewer->getSoRenderManager()->getCamera();
@@ -4443,8 +4443,8 @@ void ViewProviderSketch::drawTypicalConstraintIcon(const constrIconQueueItem &i)
 
 float ViewProviderSketch::getScaleFactor()
 {
-    if (edit && edit->viewer) {
-        Gui::ViewerContext *viewer = edit->viewer;
+    if (edit && editViewer()) {
+        Gui::ViewerContext *viewer = editViewer();
         SoCamera* camera = viewer->getSoRenderManager()->getCamera();
         float aspectRatio = camera->aspectRatio.getValue();
         float scale = camera->getViewVolume(aspectRatio).getWorldToScreenScale(SbVec3f(0.f, 0.f, 0.f), 0.1f) / (5*aspectRatio);
@@ -4581,8 +4581,8 @@ void ViewProviderSketch::initParams()
 #if QT_VERSION < QT_VERSION_CHECK(5,14,0)
         dpi = QApplication::desktop()->logicalDpiX();
 #else
-        if (edit->viewer)
-            dpi = edit->viewer->logicalDotsPerInchX();
+        if (editViewer())
+            dpi = editViewer()->logicalDotsPerInchX();
         else
             dpi = Gui::getMainWindow()->screen()->logicalDotsPerInchX();
 #endif
@@ -6887,7 +6887,7 @@ Restart:
         }
     }
 
-    edit->viewer->redraw();
+    editViewer()->redraw();
 }
 
 void ViewProviderSketch::rebuildConstraintsVisual(void)
@@ -7987,6 +7987,15 @@ void ViewProviderSketch::unsetEdit(int ModNum)
     }
 
     inherited::unsetEdit(ModNum); // notify grid that edit mode is being left
+}
+
+Gui::ViewerContext* ViewProviderSketch::editViewer() const
+{
+    if (Gui::ViewerContext* current = Gui::ViewerContext::current()) {
+        if (current->getEditingViewProvider() == this)
+            return current;
+    }
+    return edit ? edit->viewer : nullptr;
 }
 
 void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)

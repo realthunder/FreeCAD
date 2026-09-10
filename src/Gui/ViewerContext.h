@@ -28,6 +28,9 @@
 #include <memory>
 #include <vector>
 
+#include <map>
+#include <memory>
+
 #include <QtCore/qnamespace.h>
 #include <QtCore/QPoint>
 
@@ -47,6 +50,7 @@ class SoRenderManager;
 class SoEventManager;
 class SoEventCallback;  // NOLINT
 class SoFCRenderCacheManager;
+class SoGroup;
 class SoSeparator;
 class SoTransform;
 
@@ -72,6 +76,81 @@ class GLGraphicsItem;
 class SelectionScope;
 class SelectionSingleton;
 class EditableDatumLabel;
+
+/** The one editing root of an edit session (docs/ThinClient.md 8.11).
+ *
+ * A separator whose first child is always the editing transform, and the
+ * rule that an edit mode's geometry is moved out of the document's graph
+ * and under it, and back again when the session ends. There is one per
+ * session because a served document is one session with N views: the
+ * desktop's windows and every client's mirror all show the same edit, so
+ * they all hang the same node -- a Coin node takes several parents -- and
+ * each of them decides only WHERE it hangs (under the aux root on the
+ * desktop, outside the render-cache feed; inside the served graph for a
+ * mirror). Gui::Document owns its session's root; a ViewerContext with no
+ * document (the unit harness) builds a private one.
+ *
+ * Not a view. Nothing here reads a camera or a viewport; the bodies used to
+ * live on ViewerContext, where a second view of the same edit would have
+ * been a second root and a second move.
+ */
+class GuiExport EditingRoot
+{
+public:
+    explicit EditingRoot(Gui::Document* doc = nullptr);
+    ~EditingRoot();
+    EditingRoot(const EditingRoot&) = delete;
+    EditingRoot& operator=(const EditingRoot&) = delete;
+
+    SoSeparator* node() const
+    {
+        return root;
+    }
+    SoTransform* transformNode() const
+    {
+        return transform;
+    }
+    /// The document whose session this is, or null for a private root.
+    Gui::Document* document() const
+    {
+        return doc;
+    }
+    /// Whether an edit has hung anything here: more than the transform.
+    bool hasContent() const;
+    void setTransform(const Base::Matrix4D& mat);
+    /** Hang an edit mode's geometry here.
+     *
+     * With \a node, that node. Without, \a vp's own children are *moved*
+     * out of its root and under this one, so that the edit renders through
+     * the editing transform and picks as one thing; reset() puts them
+     * back. \a mat overrides the document's editing transform.
+     */
+    void setup(Gui::ViewProvider* vp, SoNode* node, const Base::Matrix4D* mat);
+    /// Give \a vp its children back, if they were moved; drop a handed
+    /// node. Idempotent: a second view leaving after the first has
+    /// nothing left to do.
+    void reset(Gui::ViewProvider* vp, bool updateLinks);
+    /** Put the node under \a parent (at \a index; -1 appends), counted.
+     *
+     * N views may share one parent -- every client's mirror hangs the
+     * root in the one served graph -- so the first to hang it inserts it
+     * and the last to unhang it takes it out; the desktop's aux roots are
+     * one parent per view and count to one.
+     */
+    void hangUnder(SoGroup* parent, int index = -1);
+    void unhangFrom(SoGroup* parent);
+    /// How many views hang this under \a parent (a test's question).
+    int hangCount(SoGroup* parent) const;
+
+private:
+    SoSeparator* root {nullptr};
+    SoTransform* transform {nullptr};
+    Gui::Document* doc {nullptr};
+    std::map<SoGroup*, int> parents;
+    /// Whether reset has children to give back to a view provider, as
+    /// opposed to a node someone handed setup.
+    bool restore {false};
+};
 
 /** What an edit mode is allowed to ask of the view it is running in.
  *
@@ -197,36 +276,73 @@ public:
     /// the desktop stops its navigation from claiming events.
     virtual void setEditing(bool edit) = 0;
     virtual bool isEditing() const = 0;
-    /// Take \a vp into edit here: bind the view to it, and route this
-    /// view's events to ViewProvider::eventCallback.
-    virtual void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum);
+    /** Start an edit session of \a vp in this view: the INITIATOR.
+     *
+     * Binds \a root (the document's; null builds a private one, for a view
+     * with no document), hangs it, gives the view provider this view
+     * (ViewProvider::setEditViewer, which is what moves its geometry under
+     * the root), and routes this view's events to
+     * ViewProvider::eventCallback.
+     */
+    virtual void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum,
+                                        EditingRoot* root = nullptr);
+    /// End the session here: a joiner leaves, the initiator gives the
+    /// view provider its geometry back and unsets itself from it.
     virtual void resetEditingViewProvider();
+    /** Join a session another view started (docs/ThinClient.md 8.11).
+     *
+     * The same root is hung here, this view's events are routed to the
+     * same view provider, and the view's own selection and navigation
+     * stand aside as they do for the initiator. What is NOT done is
+     * ViewProvider::setEditViewer: the initiator owns the move of the
+     * geometry, the camera it adjusted, and the tool state's own view.
+     * Idempotent; a no-op on the initiator itself.
+     */
+    void joinEditing(Gui::ViewProvider* vp, EditingRoot* root);
+    /// Undo joinEditing. A no-op on a view that is not a joiner.
+    void leaveEditing();
     bool isEditingViewProvider() const
     {
         return editViewProvider != nullptr;
     }
-    /** Hang an edit mode's geometry under the editing root.
-     *
-     * With \a node, that node. Without, the editing view provider's own
-     * children are *moved* out of its root and under this one, so that the
-     * edit renders through the editing transform and picks as one thing;
-     * resetEditingRoot puts them back. \a mat overrides the document's
-     * editing transform.
-     */
+    /// Whether this view started the session it is in (as opposed to
+    /// having joined it).
+    bool isEditingInitiator() const
+    {
+        return editViewProvider != nullptr && !joinedEditing;
+    }
+    /// Hang an edit mode's geometry under the session's root; see
+    /// EditingRoot::setup. A no-op with no editing view provider.
     void setupEditingRoot(SoNode* node = nullptr, const Base::Matrix4D* mat = nullptr);
     void resetEditingRoot(bool updateLinks = true);
     void setEditingTransform(const Base::Matrix4D& mat);
-    /** Where this view hangs the geometry of the mode editing in it.
+    /** The root this view shows the edit through.
      *
-     * Gui::Document remembers it so that a traversal arriving at that node
-     * knows it is looking at the edit, not at the document.
+     * The session's while one is running here, else this view's private
+     * one -- so it is never null, and idle it has one child, the
+     * transform. Gui::Document remembers the session's so that a
+     * traversal arriving at that node knows it is looking at the edit,
+     * not at the document.
      */
     virtual SoNode* getEditRootNode() const;
+    EditingRoot* editingRoot() const
+    {
+        return editRoot;
+    }
     /// The view provider being edited here, or null.
     Gui::ViewProvider* getEditingViewProvider() const
     {
         return editViewProvider;
     }
+    /** The selection an edit session's events select into.
+     *
+     * The initiator's (docs/ThinClient.md 8.11): the room when the desktop
+     * started the edit, a client's own when its browser did -- for every
+     * view of the session, so that the one tool state machine hears one
+     * selection whichever view the click came through. Outside a session,
+     * or for the initiator, this view's own (selectionInstance).
+     */
+    SelectionSingleton* sessionSelectionInstance() const;
     //@}
 
     /** @name Event delivery and selection mode */
@@ -393,20 +509,39 @@ public:
 protected:
     ViewerContext();
 
-    /** The editing root, built here and placed by the implementation.
+    /** Where this view hangs the editing root, and unhangs it.
      *
-     * Ref'd for this object's lifetime, and never unref'd by a view: a
-     * view adds it to its own graph and removes it, and this owns it. Its
-     * first child is always pcEditingTransform, which is why every test
-     * for "is anything being edited" reads getNumChildren() > 1.
+     * Called with the root just bound (\a hang true) and with the root
+     * about to be unbound (false), always in pairs, never twice in a row.
+     * The desktop puts it under the aux root; a mirror inserts it into the
+     * served graph. The base does nothing, for a view that only picks.
      */
+    virtual void hangEditingRoot(EditingRoot* root, bool hang);
+
+    /** The editing root this view currently shows through.
+     *
+     * The session's root while one runs here, else this view's own
+     * private one; pcEditingRoot and pcEditingTransform are that root's
+     * nodes, cached raw so the implementations read them as they always
+     * did. Idle, the root has one child, the transform, which is why every
+     * test for "is anything being edited" reads getNumChildren() > 1.
+     */
+    EditingRoot* editRoot {nullptr};
     SoSeparator* pcEditingRoot {nullptr};
     SoTransform* pcEditingTransform {nullptr};
-    /// Whether resetEditingRoot has children to give back to a view
-    /// provider, as opposed to a node someone handed setupEditingRoot.
-    bool restoreEditingRoot {false};
     /// The view provider in edit here.
     Gui::ViewProvider* editViewProvider {nullptr};
+    /// Whether this view joined the session rather than started it.
+    bool joinedEditing {false};
+    /// Make \a root (or the private one) the root shown here. An
+    /// implementation going away mid-session unbinds in its own
+    /// destructor, while its graph is still there to unhang from.
+    void bindEditingRoot(EditingRoot* root);
+    void unbindEditingRoot();
+
+private:
+    /// This view's private root, built on first need.
+    std::unique_ptr<EditingRoot> ownEditRoot;
 };
 
 /** Make \a context the current view for this scope's dynamic extent.

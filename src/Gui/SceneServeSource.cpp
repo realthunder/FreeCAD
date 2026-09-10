@@ -353,6 +353,17 @@ public:
         camera.devicePixelRatio = frame.devicePixelRatio;
         camera.pickRadius = frame.pickRadius;
         mirror->setCamera(camera);
+        // A view stated while a session runs joins it and is told so,
+        // like a desktop window opened mid-edit (8.11).
+        if (doc && !mirror->isEditingViewProvider()) {
+            ViewerContext *initiator = doc->editingViewer();
+            ViewProvider *vp = doc->getInEdit();
+            if (initiator && vp && initiator != mirror.get()) {
+                mirror->joinEditing(vp, doc->editingRoot());
+                if (auto vpd = dynamic_cast<ViewProviderDocumentObject *>(vp))
+                    announceEdit(true, *vpd, frame.client);
+            }
+        }
     }
 
     /** Replay one client's input event in that client's own view.
@@ -435,11 +446,16 @@ public:
      * one editor per document is the first cut (sec 8.10), and everyone
      * else is looking at the same graph as a spectator.
      */
-    void announceEdit(bool editing, const ViewProviderDocumentObject &vp)
+    void announceEdit(bool editing, const ViewProviderDocumentObject &vp,
+                      uint64_t onlyClient = 0)
     {
-        const uint64_t client = clientOf(doc ? doc->editingViewer() : nullptr);
-        if (!client)
-            return;   // a desktop edit, or nobody's
+        // Every client with a view, not only the one whose view started
+        // the session: under docs/ThinClient.md 8.11 the session is
+        // shared, each mirror has joined it (joinEditing), and each
+        // browser's left button is an 'E' frame while it runs. A client
+        // with no mirror yet has no view to edit in and is told when it
+        // states one (setClientCamera). \a onlyClient restates the state
+        // to that one connection.
         std::string json = "{\"cmd\":\"edit\",\"editing\":";
         json += editing ? "true" : "false";
         if (const App::DocumentObject *obj = vp.getObject()) {
@@ -448,7 +464,37 @@ public:
             json += "\"";
         }
         json += ",\"doc\":\"" + groupName + "\"}";
-        Render::SceneStreamServer::instance().sendControl(client, json);
+        auto &server = Render::SceneStreamServer::instance();
+        if (onlyClient) {
+            server.sendControl(onlyClient, json);
+            return;
+        }
+        for (const auto &entry : mirrors)
+            server.sendControl(entry.first, json);
+    }
+
+    /// Every mirror that did not start the document's session joins it
+    /// (docs/ThinClient.md 8.11): the shared root in its served graph,
+    /// its replayed events routed to the one tool.
+    void joinEditing()
+    {
+        if (!doc)
+            return;
+        ViewerContext *initiator = doc->editingViewer();
+        ViewProvider *vp = doc->getInEdit();
+        if (!initiator || !vp)
+            return;
+        EditingRoot *root = doc->editingRoot();
+        for (auto &entry : mirrors) {
+            if (entry.second.get() != initiator)
+                entry.second->joinEditing(vp, root);
+        }
+    }
+
+    void leaveEditing()
+    {
+        for (auto &entry : mirrors)
+            entry.second->leaveEditing();
     }
 
     /** Restate one client's on-view parameters to it (sec 8.7).
@@ -1013,10 +1059,12 @@ SceneServeSource::SceneServeSource(Document *doc)
         // handler rather than anything that runs later.
         pimpl->connections.emplace_back(doc->signalInEdit.connect(
             [this](const ViewProviderDocumentObject &vp) {
+                pimpl->joinEditing();
                 pimpl->announceEdit(true, vp);
             }));
         pimpl->connections.emplace_back(doc->signalResetEdit.connect(
             [this](const ViewProviderDocumentObject &vp) {
+                pimpl->leaveEditing();
                 pimpl->announceEdit(false, vp);
             }));
         pimpl->connections.emplace_back(doc->signalDeleteDocument.connect(
