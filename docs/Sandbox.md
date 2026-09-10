@@ -47,7 +47,7 @@ pieces are frozen, not extended.**
     forms: dialogs, item views, ...  built       G3b: exec_(), the tree/list/table family as rows, containers, the file chooser; the 40-file harness (7.11)
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
-    the task panel mirror            M1 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2-M4 sized
+    the task panel mirror            M2 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3-M4 sized
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -5430,7 +5430,7 @@ of hidden bars is the declared order (3).
   returns maps; under `FreeCADCmd` `sys.executable` is FreeCAD, so the
   dump test finds a plain interpreter under `sys.base_prefix`.
 
-### 7.19 The panel mirror sized: the desktop's task panel as models, streamed **[sized 2026-09-10; M1 BUILT 2026-09-10]**
+### 7.19 The panel mirror sized: the desktop's task panel as models, streamed **[sized 2026-09-10; M1 BUILT 2026-09-10; M2 BUILT 2026-09-10]**
 
 Asked 2026-09-10, after the question "do we need to modify external
 Python workbench code to hook their task panels to our widget
@@ -5870,6 +5870,106 @@ same day:
   command's pixmap), nested modals (M3), the measurement (M4).  A
   TaskBox's header icon is likewise nameless and not sent.
 
+**M2 built 2026-09-10** (`FwQt::View::reflectItems`, `Fw::ImageStore`
+in `src/Gui/Fw/FwImage.*`, the mirror's picture leaf, `widgets.image`;
+about 650 lines plus 450 of tests).  What the build settled:
+
+- **Reflect mode** (`View::reflectItems`, the mirror calls it after
+  `bind` on every `QAbstractItemView`).  Ids are minted per row of
+  the REAL model (a `QPersistentModelIndex` each, the binder's own
+  map), the tree is read once -- every column's `DisplayRole` text
+  (a `setItemWidget` cell with no text takes its widget's `text`),
+  the decoration as an `img:` id, tool tip, check state, foreground
+  and background as color lists, bold, alignment, the row's flags
+  (a cell's only where they differ from column 0's), `hidden` from
+  the view, `expanded` from a tree view, children recursively -- and
+  goes into the model as one `insert`, which the store's snapshot
+  then carries as `items` in the open.  From there `rowsInserted`,
+  `rowsAboutToBeRemoved` (the ids read before the indexes die),
+  `dataChanged` (a `set` per cell, skipped when the model's cell is
+  equal already, which is how a client's own set is not echoed while
+  a panel slot's further change in the same call is) keep it current;
+  `rowsMoved`, `modelReset` and `layoutChanged` re-read the whole
+  tree as a `clear` and an `insert` (a `QListWidget::clear()` is a
+  reset).  An op read from the real model is not applied back to it
+  (`fromReal`); a client's op goes the existing way, `applyCustom`
+  -> the model -> `View::applyItemOp` -> the real model's `setData`,
+  whose `itemChanged` runs the panel's slot -- Sketcher's constraint
+  check toggles the constraint's virtual space through
+  `onListWidgetConstraintsItemChanged`, unedited.  A reflected op
+  is announced under origin 0 whoever caused it: that slot runs
+  inside the client's own write, and what it changes in the list
+  must reach the writer too (the first gate run lost it to the
+  origin skip, as M1's close had been).  What no model signal
+  carries (`setRowHidden`, a tree's expansion from code) is re-read
+  on the view's repaint (`syncReflectedRows`, `row` ops).
+- **The store learned item ops.**  `Store::watch` had never announced
+  `ItemView::itemsChanged`: a native model's rows reached its own
+  view and no one else.  Now every item op fans out as `custom
+  {item: ...}` (the same shape a client writes, so the wire is
+  symmetric), to the guest sink too unless the guest's own comm is
+  applying it; `snapshot(id)` carries `items` for a view with rows.
+  And a QUIET adopt (`adopt(id, w, false)`) now holds every message
+  about the object until its `announceOpen` -- a reflected view's
+  first insert fired while the mirror was still registering the
+  tree, before the open that carries the same rows.
+- **The picture leaf.**  A widget whose class chain lands on
+  `QWidget` with neither a layout nor content children is mirrored
+  as a `QLabel` model with the real class as `qtClass` and `pixmap`
+  = `img:<sha1 of the PNG>`; `QWidget::render` into a 1x pixmap of
+  the widget's size (the longest side capped at 1024, scaled down
+  past it), on the widget's paint, coalesced with the flush, at most
+  once per 100 ms per widget (a grab that comes too soon is deferred
+  to the interval's end, never dropped, so the last paint of a burst
+  is what a client sees), 32 pictures per panel (the rest stay bare,
+  logged once).  The grab's own render paints the widget: `markDirty`
+  ignores it.  A hidden widget is not grabbed until it shows.  Same
+  bytes, same id, nothing sent -- the gtest's leaf repainted
+  unchanged sends no update, recolored sends exactly one.
+- **`Fw::ImageStore`**: PNG bytes by content id, the newest 512
+  kept, an icon registered once per `QIcon::cacheKey` and size, a
+  pixmap once per `QPixmap::cacheKey` (a label's pixmap re-read on
+  every repaint costs one hash lookup).  `widgets.image {name}`
+  answers base64 PNG with `width` and `height`, `UnknownImage` for
+  an evicted or unknown id (`name`, because `id` is the request's).
+- **Icons by id**: a button's `icon` at its `iconSize`, a label's
+  `pixmap`, an item cell's `icon` at the view's `iconSize` (16 px
+  when unset) all travel as `img:` ids the same way; the DOM fetches
+  `img:` where it would have asked `widgets.icon` for a name.  Not
+  a box's header icon: the `QGroupBox` model has no key for it.
+- **The viewport.**  A scroll area (an item view, a text edit) paints
+  its viewport, not itself, so the M1 watch never saw a list repaint;
+  the filter now sits on the viewport too and its paint is the
+  view's evidence.  The mirror's `read` adds `columns` and
+  `columnCount` for a view (no Q_PROPERTY carries the header).
+- **Gates**: `FormWidgets.cpp` `test_panelMirrorItems` (a checkable
+  list with an icon and a tool tip, a two-column tree with an
+  expanded parent, a painted leaf, an icon button, a pixmap label
+  under a TaskBox: the rows in the snapshot and the open with nothing
+  sent before it, a client's check landing in the real item and
+  firing `itemChanged` once under the client's origin, `addItem` /
+  `setText` / `takeItem` / a tree child / `clear` as one op each, a
+  collapse from the widget and an expand from a client, a hidden row
+  found on the flush, the picture's PNG at the widget's size and
+  color, no update on an unchanged repaint and one on a recolor, the
+  icon and pixmap encoded once, the image op and UnknownImage).
+  `SandboxPanelMirror` gained `test_sketcher_constraints` (the
+  rectangle sketch's constraint rows with checks in the list's open,
+  a client's uncheck putting constraint 0 in virtual space, the
+  rows whole after the panel's own update) and `test_svg_picture` (a `QSvgWidget` in a Python
+  panel: `QLabelModel` with `qtClass` `QSvgWidget`, the PNG 64x64
+  through `widgets.image`, no update on `update()`, one on a new
+  SVG).  A harness fact the second case exposed: the gate runs every
+  test inside one slot of the main loop, so a closed dialog's
+  `deleteLater` (posted at that level) never ran on its own and
+  Sketcher's constraint list kept painting its gone sketch (a
+  segfault in `ConstraintItem::data` when the next panel repainted
+  the task view); the gate's `spin` now flushes deferred deletes
+  explicitly, as the desktop's loop would.
+- **Not in M2**: mouse replay into a picture (M3), a box's header
+  icon, coalescing per-row ops (M4 measures Sketcher's list first),
+  nested modals (M3).
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -6049,9 +6149,12 @@ Non-ASCII object names occur in real files.  Rig:
                                                           script, no guest needed
     src/Mod/Test/SandboxModelDump.py                 6    7.18 (c): the widget model dump
                                                           run on the tree; the Python suite
-    src/Mod/Test/SandboxPanelMirror.py               3    7.19 M1: Pad's C++ panel, Draft's
+    src/Mod/Test/SandboxPanelMirror.py               5    7.19 M1: Pad's C++ panel, Draft's
                                                           OrthoArray, a CAM op mirrored,
                                                           written, closed through the root;
+                                                          M2: Sketcher's constraint list
+                                                          reflected and checked from a
+                                                          client, a QSvgWidget as a picture;
                                                           the GUI gate script, no guest
     src/Mod/Spreadsheet/TestSpreadsheet*.py          --   run with routing ON for parity
 
@@ -6732,13 +6835,16 @@ sockets, any network for the reference image, a webview escape hatch.
   `command` op's `index` is behind that op's `Sketcher_Create*`
   allowlist until dialogs mirror (docs/ThinClient.md 8.11), the model
   path is the live one.
-- The panel mirror (7.19, M1): a mirrored item view sends its columns
-  and headers but not its rows (M2's reflect mode); a custom-painted
-  leaf is a bare widget with no picture (M2); button and label icons
-  and a box's header icon have no name to send; a nested `exec()`
-  dialog is invisible to the client (M3); the re-read cost per
-  repaint burst is unmeasured (M4).  The watch has no `Resize`: the
-  bag carries no geometry.  A `QToolBox` is a `QTabWidget` to a
+- The panel mirror (7.19, M1 and M2): a box's header icon has no
+  name to send and no image key to carry it; a picture is display
+  only until M3's mouse replay; a panel that grows and shrinks a
+  list one row at a time and re-reads every item on each change
+  (Sketcher's constraint list) sends one op per row and per changed
+  cell, uncoalesced, which M4 measures; a row hidden by the
+  view is found on the view's next repaint, not at once; a nested
+  `exec()` dialog is invisible to the client (M3); the re-read cost
+  per repaint burst is unmeasured (M4).  The watch has no `Resize`:
+  the bag carries no geometry.  A `QToolBox` is a `QTabWidget` to a
   client.
 
 ## 14. Sources and what the audit found
