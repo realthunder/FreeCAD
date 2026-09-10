@@ -26,6 +26,19 @@ macro(SetGlobalCompilerAndLinkerSettings)
         # level. They used to be attached to Release and Debug only, so
         # RelWithDebInfo and MinSizeRel could not build at all. Set them once.
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zm150 /bigobj")
+        # /utf-8 and /nologo are the two flags this tree was getting only
+        # by accident. src/3rdParty/cycles used to FORCE the global flag
+        # cache variables (its configure_build.cmake, Blender build code
+        # written for a top-level project), and its string happened to
+        # carry both; it no longer reaches outside itself, and the tree
+        # still wants them. /utf-8 is not cosmetic: the sources are UTF-8
+        # without a BOM and over a thousand tracked files carry non-ASCII
+        # legitimately, so without it MSVC reads them in the system code
+        # page -- 936 on this box, where such a literal is mojibake at
+        # best and C2001 at worst. /nologo only silences a banner, once
+        # per translation unit across 4600-odd targets.
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /nologo /utf-8")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /nologo /utf-8")
         set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DFC_DEBUG")
         # set default libs
         set (CMAKE_C_STANDARD_LIBRARIES "kernel32.lib user32.lib gdi32.lib winspool.lib SHFolder.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib winmm.lib comsupp.lib Ws2_32.lib dbghelp.lib ")

@@ -2434,6 +2434,35 @@ makes the stacks confusing. **Leave `/DNDEBUG` alone**: OCCT and Coin were compi
 with it, and their headers inline into our translation units, so flipping it for
 FreeCAD only invites ODR mismatches.
 
+**Whose flags these are, since it was not FreeCAD's until 2026-09-10.**
+`src/3rdParty/cycles` used to `CACHE ... FORCE` the global MSVC flag variables from
+its own `configure_build.cmake` -- Blender build code written for a top-level
+project -- so a vendored path tracer set the compiler flags for the whole tree:
+`/J` (unsigned `char`) on everything, CMake's `/DWIN32 /D_WINDOWS /GR` discarded,
+and for a while no `NDEBUG` in any configuration. It is scoped to Cycles now, and
+`/utf-8` and `/nologo` -- which the tree was getting only because Cycles' string
+happened to carry them -- are set here on FreeCAD's own terms. `/utf-8` is not
+optional on this box: the sources are UTF-8 without a BOM and the system code page
+is 936. The full account, including why `/J` was not merely moved, is
+`docs/CyclesIntegration.md` 2.1.
+
+**A `CACHE ... FORCE`d entry outlives the code that wrote it.** Removing the FORCE
+does not restore CMake's defaults in a tree that already configured once -- the ten
+entries sit in `CMakeCache.txt`. Unset them and reconfigure:
+
+```bat
+.conda\run.cmd cmake -U CMAKE_CXX_FLAGS -U CMAKE_C_FLAGS ^
+    -U CMAKE_CXX_FLAGS_DEBUG -U CMAKE_CXX_FLAGS_RELEASE ^
+    -U CMAKE_CXX_FLAGS_MINSIZEREL -U CMAKE_CXX_FLAGS_RELWITHDEBINFO ^
+    -U CMAKE_C_FLAGS_DEBUG -U CMAKE_C_FLAGS_RELEASE ^
+    -U CMAKE_C_FLAGS_MINSIZEREL -U CMAKE_C_FLAGS_RELWITHDEBINFO ^
+    -S . -B build\win-relwithdebinfo-801
+```
+
+Then read the compile line out of `build.ninja`, not the cache -- they have
+disagreed here. A global flag change invalidates everything, so budget the full
+rebuild (4629 edges).
+
 #### Getting a debugger
 
 VS 2022 **BuildTools** ships no debugger — no `devenv`, and the Windows SDK's

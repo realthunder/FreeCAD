@@ -2390,14 +2390,20 @@ Windows box (RTX 2000 Ada, Vulkan 1.3.289) and the macOS box (Intel Iris
 Pro 6200, GL 2.1, Metal), with numbers measured on both rather than
 estimated.
 
-**What Windows runs today is unaffected by all of this.** The default
-`typeMap` (`BGFXRendererP.h` around 2457) holds exactly one entry,
-`bgfx - OpenGL`; the Direct3D 9/11/12 lines beside it are commented out,
-and Vulkan and Metal are added at runtime only under `FC_BGFX_VULKAN` /
-`FC_BGFX_METAL`. So the desktop viewport runs bgfx on GL inside Qt's own
-GL context and composites with a GL-to-GL framebuffer copy, which costs
+**What Windows ran when this was written is unaffected by all of this.**
+The default `typeMap` (`BGFXRendererP.h` around 2457) held exactly one
+entry, `bgfx - OpenGL`; the Direct3D 9/11/12 lines beside it are
+commented out, and Vulkan, Metal and Direct3D were added at runtime only
+under `FC_BGFX_VULKAN` / `FC_BGFX_METAL` / `FC_BGFX_D3D11` /
+`FC_BGFX_D3D12`. So the desktop viewport ran bgfx on GL inside Qt's own
+GL context and composited with a GL-to-GL framebuffer copy, which costs
 nothing like the transfers below. Everything here is about the backends
 that are NOT that.
+
+**! That is no longer what Windows runs.** Route A landed, the composite
+was priced, and Direct3D 11 became the Windows default on 2026-09-10 --
+see "Direct3D 11 is the Windows default now" below. Read this section as
+the investigation that led there, not as the current state.
 
 ### The actual constraint
 
@@ -2839,6 +2845,38 @@ heavy disk activity behind them -- a document open, and a full rebuild
 six minutes earlier), position is not the rule. The rule is the one
 that survives: **read the shared columns first, repeat every backend,
 and discard any leg whose backend-independent terms moved.**
+
+### Direct3D 11 is the Windows default now (2026-09-10)
+
+The measurement above is what makes it one, so it is recorded here
+rather than in the code. Two changes, both small:
+
+- `BGFXRendererLibP`'s constructor registers `bgfx - Direct3D11`
+  unconditionally on Windows. It was behind `FC_BGFX_D3D11`, from when
+  no non-GL backend could reach the screen at all. `FC_BGFX_D3D12` and
+  `FC_BGFX_VULKAN` stay opt-in -- they are there to be measured, and a
+  leg names its backend through the `Render/Type` parameter anyway
+  (`scripts/render-bench.py`). `FC_BGFX_D3D11=0` opts back out, for a
+  device where D3D11 will not come up.
+- `RenderParams::preferredType()` now ranks the engine's backends by an
+  explicit per-platform list instead of taking the first name that
+  starts with `bgfx`. That worked only because
+  `RendererFactory::types()` walks a `std::map` and
+  `"bgfx - Direct3D11"` sorts first -- an alphabetical accident, and one
+  that was already giving the wrong answer elsewhere: `"bgfx - OpenGL"`
+  sorts BEFORE `"bgfx - Vulkan"`, so `FC_BGFX_VULKAN` alone selected
+  OpenGL. Windows now reads D3D11, D3D12, Vulkan, OpenGL; macOS reads
+  Metal then OpenGL, since nothing else runs there; everywhere else
+  OpenGL still leads, because Vulkan there is unverified and an
+  unverified default is worse than an opt-in.
+
+**What a Windows session pays for it.** The readback composite, on every
+frame, where the GL path composites through a shared GL framebuffer
+without one. That is the +2.17 ms priced above, against GL's ~8x
+submission penalty on 41259 draws -- so the trade is decided by scene
+size, and it is decided the right way for the models this project is
+aimed at. The two-frame pipeline latency comes with it. Route D removes
+both.
 
 ### Route D -- Qt owns the device -- is the destination
 

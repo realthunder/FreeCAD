@@ -1757,16 +1757,39 @@ public:
             typeMap["bgfx - Vulkan"] = RendererType::Vulkan;
 #endif
 #if defined(FC_OS_WIN32) && !defined(FC_RENDERER_STANDALONE)
-        // Direct3D, opt-in for the same reason as Vulkan above: blit
-        // stands aside on any non-GL backend, so these render and
-        // capture without reaching the screen. They exist to be
-        // measured -- auto-selection would take D3D11 and never D3D12,
-        // so a backend comparison cannot be made without naming them.
-        // The stock pack now carries dxbc and dxil, so both have
-        // shaders to load; before that they would have drawn a
-        // substituted program rather than failing.
-        if (getenv("FC_BGFX_D3D11"))
-            typeMap["bgfx - Direct3D11"] = RendererType::Direct3D11;
+        // Direct3D 11 is the DEFAULT backend on Windows, and
+        // RenderParams::preferredType() is where that is said; this only
+        // makes it available. It used to be opt-in for the same reason
+        // as Vulkan above -- BGFXView::blit composites through a GL
+        // framebuffer and stands aside on anything else, so a D3D
+        // session rendered and captured without reaching the screen --
+        // and BGFXView::blitReadback closed that hole for every backend.
+        // What makes it the default rather than merely possible is that
+        // it was then measured, on a quiet box, against the other two
+        // with the composite live: docs/RenderEngine.md 7.10 ("The
+        // composite priced"). Submission is a three-way tie at 19.6-21.2
+        // ms, the readback costs D3D11 +2.17 ms a frame against +7.09 on
+        // D3D12 and +7.61 on Vulkan, and D3D11 therefore leads by 8% --
+        // on the composite, not on the API. All three beat GL, which
+        // spends about 8x what any of them spend to issue the same
+        // draws, and that separation is the one that survives every
+        // session.
+        //
+        // FC_BGFX_D3D11=0 opts back out, for a device where D3D11 will
+        // not come up: bgfx::init failing leaves the renderer null and
+        // Coin draws the viewport, which works but loses the engine.
+        //
+        // Direct3D 12 stays opt-in. It is here to be measured -- naming
+        // it registers it, and a benchmark leg then selects it by name
+        // through the Render/Type parameter (scripts/render-bench.py).
+        // The stock pack carries dxbc and dxil, so both have shaders to
+        // load; before that they would have drawn a substituted program
+        // rather than failing.
+        {
+            const char *d3d11 = getenv("FC_BGFX_D3D11");
+            if (!d3d11 || *d3d11 != '0')
+                typeMap["bgfx - Direct3D11"] = RendererType::Direct3D11;
+        }
         if (getenv("FC_BGFX_D3D12"))
             typeMap["bgfx - Direct3D12"] = RendererType::Direct3D12;
 #endif
