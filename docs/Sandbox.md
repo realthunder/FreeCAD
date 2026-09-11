@@ -47,7 +47,7 @@ pieces are frozen, not extended.**
     forms: dialogs, item views, ...  built       G3b: exec_(), the tree/list/table family as rows, containers, the file chooser; the 40-file harness (7.11)
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
-    the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 (measurement) sized
+    the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -5430,7 +5430,7 @@ of hidden bars is the declared order (3).
   returns maps; under `FreeCADCmd` `sys.executable` is FreeCAD, so the
   dump test finds a plain interpreter under `sys.base_prefix`.
 
-### 7.19 The panel mirror sized: the desktop's task panel as models, streamed **[sized 2026-09-10; M1 BUILT 2026-09-10; M2 BUILT 2026-09-10; M3 BUILT 2026-09-11]**
+### 7.19 The panel mirror sized: the desktop's task panel as models, streamed **[sized 2026-09-10; M1 BUILT 2026-09-10; M2 BUILT 2026-09-10; M3 BUILT 2026-09-11; M4 MEASURED 2026-09-11]**
 
 Asked 2026-09-10, after the question "do we need to modify external
 Python workbench code to hook their task panels to our widget
@@ -6065,6 +6065,67 @@ build settled:
   GUI's (Qt forbids it anyway); the ThinClient DOM's rendering of a
   `dialog:<n>` root (its side).
 
+**M4 measured 2026-09-11** (sec 8.4 has the table).  The mirror grew
+counters, nothing else: `PanelMirror::stats()` / `resetStats()` --
+flushes, widgets re-read, keys read through the meta-object, keys
+that differed and went out, the time in the reads, in the store
+writes (the fan-out included), in the walks and in the picture grabs
+-- read from Python as `FormWidgets.panelStats(reset=False)`; the
+wire is counted by the pushed log's JSON, byte-exact.  The rig is
+`src/Mod/Test/SandboxMirrorBench.py`, a GUI gate module NOT in the
+default list (a measurement, like the `DISABLED_` bench gtests; name
+it alone in `SANDBOX_GUI_GATE_MODULES`), two subscribers so that the
+wire a write costs is what the OTHER client gets (the store skips
+the writer).  What the numbers decide:
+
+- **The watch is cheap.**  A repaint burst with nothing changed
+  (every content widget's `update()`, the children painting with the
+  parent's region) re-reads 10 to 20 widgets, 150 to 350 keys, in
+  0.3 ms, writes no key and sends no byte -- on Pad, on OrthoArray,
+  on Sketcher's list alike; five spaced bursts cost five times that
+  and nothing on the wire.  At rest a panel sends nothing for two
+  seconds and re-reads nothing (Pad's first run showed four flushes
+  of three widgets in two seconds, the cursor blink, 0 bytes; the
+  second run none -- the field had no focus).  The sizing's
+  "microseconds per widget" holds: 15 to 25 us a widget.
+- **A keystroke is one update to each other client.**  A client's
+  write lands in the real widget, the writer is skipped, the others
+  get the changed keys: 71 B a keystroke on OrthoArray's count spin
+  box (`q_value`), 76 B on Pad's length field, plus 76 B back to the
+  writer when the field REFORMATS its text (`q_text` "10.5 mm"
+  differs from what the writer sent) -- ten keystrokes in 0.54 s are
+  1.5 KB to a watcher, 0.8 KB to the writer, 1.6 ms of re-reads and
+  0.3 ms of writes for Pad's recompute on each.
+- **The open is the cost.**  Pad's panel is 61 models, 64 messages,
+  46 KB, the walk 3.2 ms; OrthoArray 46 models, 48 messages, 35 KB,
+  2.5 ms; Sketcher's panel 29 models, 31 messages, 30 KB (48 rows in
+  the list's open), 4.1 ms -- 700 to 1000 B a model, the layout spec
+  and the whole bag.  The close is five messages under 500 B.
+- **Sketcher's refill is the one hot spot.**  A check toggled from a
+  client costs the other client ONE `item:set` of 107 B (the panel's
+  in-place update finds nothing else changed).  But a solve -- a
+  point moved, the sketch recomputed -- refills the list in place
+  and sends 162 item ops, 21 KB, to every client: two `clear`s, 32
+  `insert`s, 128 `set`s for 48 rows, 0.13 s end to end.  Dragging a
+  point at 60 Hz would be 1.3 MB/s per client.  That is the number
+  for coalescing per-row ops (the gap sec 13 lists): a refill should
+  go out as one `items` reset when the ops outnumber the rows, which
+  here they do 3:1.
+- **Against 7.18's tool bars.**  The tool bar subscription's open is
+  the biggest burst in the system: 202 messages, 178 KB (Draft's
+  bars, every command's bag with its icon name, tool tip and status
+  tip); at rest nothing; the selection timer (`testActive` every 150
+  ms) with a selection changing ten times in two seconds sends 110
+  updates, 10 KB, 4.6 KB/s -- the enabled flags of the commands that
+  care; a switch to Part is 67 messages, 51 KB (56 opens, 10 closes,
+  one order), back to Draft 15 messages, 10 KB (Part's bars stay
+  made; the close is cheap).  A panel costs a fifth of a tool bar
+  subscription to open and, typing, a third of what the selection
+  timer costs idle.
+- **Not measured**: a picture leaf's grab under a moving scene
+  (`grabUs` is counted, the bench has no picture); a non-native file
+  dialog's rows; the DOM client's own cost of applying an open.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -6151,6 +6212,58 @@ TopoShapePy at all); the CNC project contributes nearly all foreign
 references; scanner.FCStd holds the only sub-shape drill-down.
 Non-ASCII object names occur in real files.  Rig:
 `scripts/expr-phase0/`.
+
+### 8.4 The mirrors **[measured 2026-09-11, 7.19 M4]**
+
+Xvfb, `SandboxMirrorBench` (sec 9) named alone in
+`SANDBOX_GUI_GATE_MODULES`, two panel subscribers (7 writes, 8
+watches): `bytes` is what client 8 got, `toWrtr` what 7 got, both
+byte-exact from the pushed JSON; the counters are the mirror's own
+(`FormWidgets.panelStats`), the delta over the phase; `readUs` is the
+meta-object reads and the compare, `writeUs` the store writes with
+the fan-out, `walkUs` the walks.  "repaint" is every content widget's
+`update()` with nothing changed; "typing" ten client writes 40 ms
+apart into one field (Pad: `q_rawValue` of the length; OrthoArray:
+`q_value` of the X count); the tool bar rows are 7.18's mirror with
+one watching client and no counters.
+
+    scenario   phase         s    msgs  bytes     B/s toWrtr flush wRead kRead kWrit readUs writeUs walkUs models
+    pad        open       0.503    64   45942   91292  45942     1    20   359     2    286      30   3188     61
+    pad        rest 2s    2.106     0       0       0      0     0     0     0     0      0       0      0     61
+    pad        repaint    0.099     0       0       0      0     1    17   303     0    302       0      0     61
+    pad        repaint x5 0.443     0       0       0      0     5    85  1515     0   2146       0      0     61
+    pad        typing x10 0.540    20    1530    2833    760    10    30   570    10   1632     345      0     61
+    pad        close      0.151     5     450    2977    178     0     0     0     0      0       0      0      0
+    orthoarray open       0.534    48   35145   65760  35145     2    26   452     0    362       0   2508     46
+    orthoarray rest 2s    2.108     0       0       0      0     0     0     0     0      0       0      0     46
+    orthoarray repaint    0.100     0       0       0      0     1    10   170     0    376       0      0     46
+    orthoarray repaint x5 0.430     0       0       0      0     5    50   850     0    902       0      0     46
+    orthoarray typing x10 0.540    10     712    1318      0    10    10   200     0    579       0      0     46
+    orthoarray close      0.216     5     447    2069    178     0     0     0     0      0       0      0      0
+    sketcher   open 48    0.586    31   29739   50785  29739     1    11   188     0    189       0   4119     29
+    sketcher   rest 2s    2.091     0       0       0      0     0     0     0     0      0       0      0     29
+    sketcher   repaint    0.100     0       0       0      0     1     9   152     0    333       0      0     29
+    sketcher   check off  0.122     1     107     873      0     2    10   168     0    299       0    286     29
+    sketcher   check on   0.129     1     107     827      0     2    10   168     0    255       0    317     29
+    sketcher   move point 0.130   162   21086  162069  21086     2    10   168     0    292       0    294     29
+    sketcher   close      0.151     5     450    2987    178     0     0     0     0      0       0      0      0
+    toolbars   open       0.121   202  178352 1474161      0
+    toolbars   rest 2s    2.110     0       0       0      0
+    toolbars   select x5  2.180   110   10015    4594      0
+    toolbars   to Part    0.603    67   51045   84655      0
+    toolbars   to Draft   0.611    15    9878   16162      0
+
+By message: a panel's open is `open`s (one per model) and one or two
+`update`s (the list's layout, a key the post-open flush found
+changed); typing is `update`s only; the close is three `custom`s
+(the panel's own follow-up), one `close` and the list's `update`;
+Sketcher's move is `item:clear` 2, `item:insert` 32, `item:set` 128;
+the tool bar switch to Part is 56 `open`s, 10 `close`s, one order
+`update`.  What the numbers decide is under 7.19 "M4 measured".  The
+one hot spot is Sketcher's refill on a solve (162 ops, 21 KB per
+solve, three ops a row): the case for coalescing per-row ops into one
+`items` reset.  Everything else is under 1 ms of host time per burst
+and nothing on the wire unless a value changed.
 
 ## 9. Tests
 
@@ -6244,13 +6357,22 @@ Non-ASCII object names occur in real files.  Rig:
                                                           script, no guest needed
     src/Mod/Test/SandboxModelDump.py                 6    7.18 (c): the widget model dump
                                                           run on the tree; the Python suite
-    src/Mod/Test/SandboxPanelMirror.py               5    7.19 M1: Pad's C++ panel, Draft's
+    src/Mod/Test/SandboxPanelMirror.py               6    7.19 M1: Pad's C++ panel, Draft's
                                                           OrthoArray, a CAM op mirrored,
                                                           written, closed through the root;
                                                           M2: Sketcher's constraint list
                                                           reflected and checked from a
                                                           client, a QSvgWidget as a picture;
+                                                          M3: a slot's QMessageBox as a
+                                                          dialog root, its exec code;
                                                           the GUI gate script, no guest
+    src/Mod/Test/SandboxMirrorBench.py               4    7.19 M4, sec 8.4: the panel
+                                                          mirror's cost per repaint burst
+                                                          and per keystroke, Sketcher's
+                                                          refill, the tool bars as the
+                                                          baseline; NOT in the gate's
+                                                          default list (a measurement),
+                                                          named alone to run
     src/Mod/Spreadsheet/TestSpreadsheet*.py          --   run with routing ON for parity
 
 The acceptance harness opens a real saved-and-reopened `.FCStd` under a
@@ -6934,9 +7056,11 @@ sockets, any network for the reference image, a webview escape hatch.
   name to send and no image key to carry it; a panel that grows and
   shrinks a list one row at a time and re-reads every item on each
   change (Sketcher's constraint list) sends one op per row and per
-  changed cell, uncoalesced, which M4 measures; a row hidden by the
-  view is found on the view's next repaint, not at once; the re-read
-  cost per repaint burst is unmeasured (M4).  The watch has no
+  changed cell, uncoalesced -- measured (8.4): 162 ops, 21 KB per
+  solve on 48 rows, three ops a row, the case for one `items` reset
+  instead; a row hidden by the view is found on the view's next
+  repaint, not at once; the re-read cost per repaint burst is 0.3 ms
+  for 10 to 20 widgets and nothing on the wire (8.4).  The watch has no
   `Resize`: the bag carries no geometry.  A `QToolBox` is a
   `QTabWidget` to a client.  A dialog root (M3) costs the process an
   application-wide event filter while a `panels` subscriber is up
