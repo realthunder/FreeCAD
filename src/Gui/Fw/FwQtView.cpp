@@ -37,6 +37,7 @@
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QIcon>
+#include <QImage>
 #include <QItemSelectionModel>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -82,7 +83,9 @@
 #include "BitmapFactory.h"
 #include "Command.h"
 #include "FileDialog.h"
+#include "Fw/FwImage.h"
 #include "Fw/FwQtView.h"
+#include "Fw/FwStore.h"
 #include "Fw/FwWidgets.h"
 #include "InputField.h"
 #include "MainWindow.h"
@@ -193,6 +196,11 @@ struct View::Items
     QStandardItemModel* owned = nullptr;
     QHash<int, QPersistentModelIndex> byId;
     QHash<QPersistentModelIndex, int> ids;
+    /// reflect mode (docs/Sandbox.md 7.19 M2): the rows are the real
+    /// model's; `fromReal` while an op read from it goes into the model
+    bool reflect = false;
+    bool fromReal = false;
+    int nextId = 1;
     void forget(int id)
     {
         auto it = byId.find(id);
@@ -2089,6 +2097,10 @@ int View::idOf(const QModelIndex& index) const
 
 void View::itemsChanged(const QVariantMap& op)
 {
+    // an op read from the real model (reflect mode) is not applied
+    // back to it
+    if (_items && _items->fromReal)
+        return;
     applyItemOp(op);
 }
 
@@ -2142,6 +2154,32 @@ void View::initItems()
             });
     connect(_items->model, &QAbstractItemModel::dataChanged, this,
             [this](const QModelIndex& tl, const QModelIndex& br, const QList<int>&) {
+                if (_items->reflect) {
+                    // a client's set landed here through `applyItemOp`
+                    // (the model has the cell already: equal, skipped),
+                    // and a panel slot may have changed more in the
+                    // same call (different: sent)
+                    auto iv = qobject_cast<Fw::ItemView*>(_model);
+                    for (int r = tl.row(); r <= br.row(); ++r) {
+                        for (int c = tl.column(); c <= br.column(); ++c) {
+                            QModelIndex idx = tl.sibling(r, c);
+                            int id = idOf(idx);
+                            if (!id)
+                                continue;
+                            QVariantMap cell = readCell(idx);
+                            const Fw::ItemRow* row = iv ? iv->row(id) : nullptr;
+                            if (row && c < row->cells.size() && row->cells.at(c).toMap() == cell)
+                                continue;
+                            QVariantMap op;
+                            op.insert(QStringLiteral("item"), QStringLiteral("set"));
+                            op.insert(QStringLiteral("id"), id);
+                            op.insert(QStringLiteral("col"), c);
+                            op.insert(QStringLiteral("cell"), cell);
+                            emitReflected(op);
+                        }
+                    }
+                    return;
+                }
                 if (_applying)
                     return;
                 for (int r = tl.row(); r <= br.row(); ++r) {
@@ -2201,6 +2239,254 @@ void View::readBackItems()
             _model->setInitial(QStringLiteral("columnWidths"), widths);
         if (auto t = qobject_cast<QTableView*>(_items->view))
             _model->setInitial(QStringLiteral("headerHidden"), t->horizontalHeader()->isHidden());
+    }
+}
+
+// ---- reflect mode (docs/Sandbox.md 7.19 M2) -----------------------------------------
+
+bool View::isReflecting() const
+{
+    return _items && _items->reflect;
+}
+
+int View::mintRowId(const QModelIndex& index0)
+{
+    QPersistentModelIndex p(index0);
+    auto it = _items->ids.constFind(p);
+    if (it != _items->ids.constEnd())
+        return *it;
+    const int id = _items->nextId++;
+    _items->byId.insert(id, p);
+    _items->ids.insert(p, id);
+    return id;
+}
+
+bool View::rowHidden(const QModelIndex& index0) const
+{
+    if (auto tree = qobject_cast<QTreeView*>(_items->view))
+        return tree->isRowHidden(index0.row(), index0.parent());
+    if (auto table = qobject_cast<QTableView*>(_items->view))
+        return table->isRowHidden(index0.row());
+    if (auto list = qobject_cast<QListView*>(_items->view))
+        return list->isRowHidden(index0.row());
+    return false;
+}
+
+QVariantMap View::readCell(const QModelIndex& index) const
+{
+    QVariantMap cell;
+    QString text = index.data(Qt::DisplayRole).toString();
+    if (text.isEmpty()) {
+        // a `setItemWidget` cell reflects as its widget's text
+        if (QWidget* w = _items->view->indexWidget(index))
+            text = w->property("text").toString();
+    }
+    if (!text.isEmpty())
+        cell.insert(QStringLiteral("text"), text);
+    const QVariant deco = index.data(Qt::DecorationRole);
+    if (deco.isValid()) {
+        QSize size = _items->view->iconSize();
+        if (!size.isValid())
+            size = QSize(16, 16);
+        QString id;
+        if (deco.userType() == QMetaType::QIcon)
+            id = Fw::ImageStore::instance().ofIcon(deco.value<QIcon>(), size);
+        else if (deco.userType() == QMetaType::QPixmap)
+            id = Fw::ImageStore::instance().add(deco.value<QPixmap>());
+        else if (deco.userType() == QMetaType::QImage)
+            id = Fw::ImageStore::instance().add(deco.value<QImage>());
+        if (!id.isEmpty())
+            cell.insert(QStringLiteral("icon"), id);
+    }
+    const QString tip = index.data(Qt::ToolTipRole).toString();
+    if (!tip.isEmpty())
+        cell.insert(QStringLiteral("toolTip"), tip);
+    const QVariant check = index.data(Qt::CheckStateRole);
+    if (check.isValid())
+        cell.insert(QStringLiteral("check"), check.toInt());
+    auto color = [](const QVariant& v) -> QVariantList {
+        QColor c;
+        if (v.userType() == QMetaType::QBrush)
+            c = v.value<QBrush>().color();
+        else if (v.userType() == QMetaType::QColor)
+            c = v.value<QColor>();
+        return c.isValid() ? colorList(c) : QVariantList();
+    };
+    const QVariantList fg = color(index.data(Qt::ForegroundRole));
+    if (!fg.isEmpty())
+        cell.insert(QStringLiteral("fg"), fg);
+    const QVariantList bg = color(index.data(Qt::BackgroundRole));
+    if (!bg.isEmpty())
+        cell.insert(QStringLiteral("bg"), bg);
+    const QVariant font = index.data(Qt::FontRole);
+    if (font.userType() == QMetaType::QFont && font.value<QFont>().bold())
+        cell.insert(QStringLiteral("bold"), true);
+    const QVariant align = index.data(Qt::TextAlignmentRole);
+    if (align.isValid() && align.toInt())
+        cell.insert(QStringLiteral("align"), align.toInt());
+    if (index.column() > 0) {
+        // a cell whose flags differ from the row's (a table's read-only
+        // column) says so
+        const int flags = static_cast<int>(_items->model->flags(index));
+        if (flags != static_cast<int>(_items->model->flags(index.sibling(index.row(), 0))))
+            cell.insert(QStringLiteral("flags"), flags);
+    }
+    return cell;
+}
+
+QVariantMap View::readRow(const QModelIndex& index0)
+{
+    QAbstractItemModel* m = _items->model;
+    QVariantMap row;
+    row.insert(QStringLiteral("id"), mintRowId(index0));
+    QVariantList cells;
+    const int cols = m->columnCount(index0.parent());
+    for (int c = 0; c < cols; ++c)
+        cells.append(readCell(index0.sibling(index0.row(), c)));
+    row.insert(QStringLiteral("cells"), cells);
+    row.insert(QStringLiteral("flags"), static_cast<int>(m->flags(index0)));
+    if (rowHidden(index0))
+        row.insert(QStringLiteral("hidden"), true);
+    if (auto tree = qobject_cast<QTreeView*>(_items->view)) {
+        if (tree->isExpanded(index0))
+            row.insert(QStringLiteral("expanded"), true);
+    }
+    const int kids = m->rowCount(index0);
+    if (kids > 0)
+        row.insert(QStringLiteral("children"), readRows(index0, 0, kids - 1));
+    return row;
+}
+
+QVariantList View::readRows(const QModelIndex& parent, int first, int last)
+{
+    QVariantList rows;
+    for (int r = first; r <= last; ++r) {
+        QModelIndex idx0 = _items->model->index(r, 0, parent);
+        if (idx0.isValid())
+            rows.append(readRow(idx0));
+    }
+    return rows;
+}
+
+void View::emitReflected(const QVariantMap& op)
+{
+    auto iv = qobject_cast<Fw::ItemView*>(_model);
+    if (!iv)
+        return;
+    const bool was = _items->fromReal;
+    _items->fromReal = true;
+    // what the real model did is the desktop's fact, whoever caused it:
+    // a panel slot run by a client's own write refills its list inside
+    // that client's origin, and the writer must hear the refill too
+    Fw::Store::OriginScope scope(0);
+    iv->applyItemOp(op);
+    _items->fromReal = was;
+}
+
+void View::resyncReflected()
+{
+    _items->prune();
+    _items->byId.clear();
+    _items->ids.clear();
+    QVariantMap clear;
+    clear.insert(QStringLiteral("item"), QStringLiteral("clear"));
+    emitReflected(clear);
+    const int n = _items->model->rowCount();
+    if (n <= 0)
+        return;
+    QVariantMap op;
+    op.insert(QStringLiteral("item"), QStringLiteral("insert"));
+    op.insert(QStringLiteral("parent"), 0);
+    op.insert(QStringLiteral("index"), 0);
+    op.insert(QStringLiteral("rows"), readRows(QModelIndex(), 0, n - 1));
+    emitReflected(op);
+}
+
+void View::reflectItems()
+{
+    if (!_items || _items->reflect)
+        return;
+    auto iv = qobject_cast<Fw::ItemView*>(_model);
+    if (!iv)
+        return;
+    _items->reflect = true;
+    QAbstractItemModel* m = _items->model;
+    // the model's own rows (none for a mirrored view) give way to the
+    // real ones
+    resyncReflected();
+
+    connect(m, &QAbstractItemModel::rowsInserted, this,
+            [this](const QModelIndex& parent, int first, int last) {
+                if (_applying)
+                    return;  // a client's insert: the model has them
+                QVariantMap op;
+                op.insert(QStringLiteral("item"), QStringLiteral("insert"));
+                op.insert(QStringLiteral("parent"), parent.isValid() ? idOf(parent) : 0);
+                op.insert(QStringLiteral("index"), first);
+                op.insert(QStringLiteral("rows"), readRows(parent, first, last));
+                emitReflected(op);
+            });
+    connect(m, &QAbstractItemModel::rowsAboutToBeRemoved, this,
+            [this](const QModelIndex& parent, int first, int last) {
+                if (_applying)
+                    return;
+                for (int r = first; r <= last; ++r) {
+                    const int id = idOf(_items->model->index(r, 0, parent));
+                    if (!id)
+                        continue;
+                    QVariantMap op;
+                    op.insert(QStringLiteral("item"), QStringLiteral("remove"));
+                    op.insert(QStringLiteral("id"), id);
+                    emitReflected(op);
+                    _items->forget(id);
+                }
+            });
+    connect(m, &QAbstractItemModel::rowsRemoved, this, [this]() { _items->prune(); });
+    connect(m, &QAbstractItemModel::rowsMoved, this, [this]() {
+        if (!_applying)
+            resyncReflected();
+    });
+    connect(m, &QAbstractItemModel::modelReset, this, [this]() {
+        if (!_applying)
+            resyncReflected();
+    });
+    connect(m, &QAbstractItemModel::layoutChanged, this, [this]() {
+        if (!_applying)
+            resyncReflected();
+    });
+}
+
+void View::syncReflectedRows()
+{
+    if (!isReflecting())
+        return;
+    auto iv = qobject_cast<Fw::ItemView*>(_model);
+    if (!iv)
+        return;
+    auto tree = qobject_cast<QTreeView*>(_items->view);
+    // a snapshot of the ids: an op may rehash the model's rows
+    const QList<int> ids = _items->byId.keys();
+    for (int id : ids) {
+        QPersistentModelIndex p = _items->byId.value(id);
+        const Fw::ItemRow* row = iv->row(id);
+        if (!p.isValid() || !row)
+            continue;
+        QVariantMap r;
+        const bool hidden = rowHidden(p);
+        if (hidden != row->hidden)
+            r.insert(QStringLiteral("hidden"), hidden);
+        if (tree) {
+            const bool expanded = tree->isExpanded(p);
+            if (expanded != row->expanded)
+                r.insert(QStringLiteral("expanded"), expanded);
+        }
+        if (r.isEmpty())
+            continue;
+        QVariantMap op;
+        op.insert(QStringLiteral("item"), QStringLiteral("row"));
+        op.insert(QStringLiteral("id"), id);
+        op.insert(QStringLiteral("row"), r);
+        emitReflected(op);
     }
 }
 

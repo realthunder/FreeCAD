@@ -208,6 +208,12 @@ private:
     QSet<QString> _adopted;
     Sink _sink;
     Stats _stats;
+    /// an item op the guest's own comm is applying (not echoed to it)
+    bool _guestItemOp = false;
+    /// adopted quietly and not announced yet: nothing about such an
+    /// object goes out before its open (a mirror registers a whole
+    /// tree, then announces it in reference order)
+    QSet<QString> _pending;
 };
 
 }  // namespace Fw

@@ -26,6 +26,7 @@
 #include <QTimer>
 
 #include "BitmapFactory.h"
+#include "Fw/FwImage.h"
 #include "Fw/FwPanelMirror.h"
 #include "Fw/FwStore.h"
 #include "Fw/FwToolBarMirror.h"
@@ -243,6 +244,27 @@ void Gui::installSceneWidgetOps()
             reply[QLatin1String("data")] = QString::fromLatin1(data.toBase64());
             reply[QLatin1String("size")] = size > 0 ? size : 24;
         }
+        return reply;
+    });
+    // an image a mirrored widget carries by id (docs/Sandbox.md 7.19
+    // M2): a picture leaf's `pixmap`, a button's `icon`, a cell's
+    // `icon` -- `img:<sha1>`, the PNG fetched once
+    registerSceneControlOp(QStringLiteral("widgets.image"), false,
+                           [](const QJsonObject& req, const std::string&) {
+        const QJsonValue id = req.value(QLatin1String("id"));
+        const QString name = req.value(QLatin1String("name")).toString();
+        if (name.isEmpty())
+            return sceneControlError(id, "BadRequest", QStringLiteral("name required"));
+        int width = 0, height = 0;
+        const QByteArray data = Fw::ImageStore::instance().png(name, &width, &height);
+        if (data.isEmpty())
+            return sceneControlError(id, "UnknownImage", name);
+        QJsonObject reply = okReply(id);
+        reply[QLatin1String("name")] = name;
+        reply[QLatin1String("format")] = QStringLiteral("png");
+        reply[QLatin1String("data")] = QString::fromLatin1(data.toBase64());
+        reply[QLatin1String("width")] = width;
+        reply[QLatin1String("height")] = height;
         return reply;
     });
     registerSceneControlOp(QStringLiteral("widgets.update"), true,
