@@ -2433,7 +2433,18 @@ QStringList ExpressionCompleter::splitPath ( const QString & input ) const
                     if (l.size() && s[0] == '.')
                         str = QString::fromUtf8(s.c_str()+1);
                     else if (l.empty() && s.size()>1 && s[0] == '.') {
-                        l << QStringLiteral(".");
+                        // A member of the owner object comes back as the
+                        // shorthand ".Name" whether or not the owner was
+                        // named. Only a leading dot in the input is the
+                        // local root (the selection, with local objects
+                        // set); "Owner.Name" typed out stays under the
+                        // owner's own row.
+                        if (!path.empty() && path[0] == '.')
+                            l << QStringLiteral(".");
+                        else if (owner && owner->isAttachedToDocument())
+                            l << QString::fromUtf8(owner->getNameInDocument());
+                        else
+                            l << QStringLiteral(".");
                         str = QString::fromUtf8(s.c_str()+1);
                     } else
                         str = QString::fromUtf8(s.c_str());
