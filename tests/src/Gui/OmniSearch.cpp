@@ -110,6 +110,39 @@ private Q_SLOTS:
         QVERIFY(!resolveObject(QStringLiteral("GroupB"), nullptr, m));
     }
 
+    void test_resolveLocalProperty()  // NOLINT
+    {
+        auto a = doc->getObject("GroupA");
+        auto b = doc->getObject("GroupB");
+        ObjectMatch m;
+
+        // no locals: '.' is the owner, as in an expression
+        QVERIFY(resolveObject(QStringLiteral(".Label"), a, m));
+        QVERIFY(m.prop == &a->Label);
+        QCOMPARE(m.props.size(), size_t(1));
+
+        // locals given but empty: '.' names nothing
+        std::vector<App::DocumentObject*> none;
+        QVERIFY(!resolveObject(QStringLiteral(".Label"), a, m, &none));
+        // ... while a full path still resolves
+        QVERIFY(resolveObject(QStringLiteral("GroupB.Label"), a, m, &none));
+        QCOMPARE(m.props.size(), size_t(1));
+
+        // two locals: the property of both, owner first
+        std::vector<App::DocumentObject*> both{a, b};
+        QVERIFY(resolveObject(QStringLiteral(".Label"), a, m, &both));
+        QVERIFY(m.prop == &a->Label);
+        QCOMPARE(m.props.size(), size_t(2));
+        QVERIFY(m.props[0] == &a->Label);
+        QVERIFY(m.props[1] == &b->Label);
+
+        // a property only the owner has is edited alone
+        auto prop = a->addDynamicProperty("App::PropertyInteger", "OnlyA");
+        QVERIFY(prop);
+        QVERIFY(resolveObject(QStringLiteral(".OnlyA"), a, m, &both));
+        QCOMPARE(m.props.size(), size_t(1));
+    }
+
     void test_searchParams()  // NOLINT
     {
         auto hits = searchParams(QStringLiteral("preferences/document checkextension"));

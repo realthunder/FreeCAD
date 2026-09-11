@@ -47,6 +47,18 @@ until the row is picked. A change applies through the property item as a
 Python command; the edit is one undo step, and the document recomputes when
 the box closes. Enter in the editor closes the box.
 
+A leading dot is the selection: with objects selected when the box opens,
+`.` lists the properties every selected object has with the same name and
+type -- the expression completer's "member of this object" shorthand
+(`ExpressionCompleter::setLocalObjects()`), widened from one owner object
+to several -- and `.Height` edits that property on all of them at once, the
+way the property view edits a multi-selection (one `PropertyItem` over
+every property, one transaction, the panel titled "N objects . Height").
+The first selected object is also what full paths are parsed against.
+With nothing selected the dot lists nothing and resolves nothing. Where a
+label is the object's name the completer no longer offers the `<<name>>`
+row beside the name; a document behaves the same.
+
 **Commands.** Rows show the command's icon, title and shortcut and its
 tooltip as the description; inactive commands are greyed and inert. A group
 command (`Std_DrawStyle`, a workbench's tool groups) carries an arrow: click

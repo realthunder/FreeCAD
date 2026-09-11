@@ -247,7 +247,9 @@ public:
         return item && p == prop;
     }
 
-    void setProperty(App::Property *p, const App::SubObjectT &objT)
+    /// props: every property to edit together (prop first); empty means prop alone
+    void setProperty(App::Property *p, const App::SubObjectT &objT,
+                     const std::vector<App::Property*> &props = {})
     {
         if (isFor(p))
             return;
@@ -256,6 +258,10 @@ public:
         obj = objT;
         if (!prop)
             return;
+        std::vector<App::Property*> all = props;
+        if (all.empty())
+            all.push_back(prop);
+        count = all.size();
 
         const char *editorName = prop->getEditorName();
         if (!editorName || !editorName[0])
@@ -269,9 +275,11 @@ public:
             return;
         }
         item->setPropertyName(*prop);
-        item->setPropertyData({prop});
+        item->setPropertyData(all);
 
         QString title = QString::fromUtf8(obj.getSubObjectFullName().c_str());
+        if (count > 1)
+            title = tr("%1 objects").arg(count);
         label->setText(QStringLiteral("%1 . %2").arg(title, QString::fromUtf8(prop->getName())));
         label->setToolTip(QString::fromUtf8(prop->getDocumentation()));
 
@@ -434,7 +442,9 @@ private:
             return;
         std::ostringstream str;
         str << tr("Edit").toUtf8().constData() << ' ';
-        if (auto object = obj.getObject())
+        if (count > 1)
+            str << count << ' ' << tr("objects").toUtf8().constData();
+        else if (auto object = obj.getObject())
             str << object->Label.getValue();
         else
             str << tr("document").toUtf8().constData();
@@ -474,6 +484,7 @@ private:
     App::SubObjectT obj;
     App::DocumentT docT;
     int transactionID = 0;
+    size_t count = 0;
 };
 
 /// The editor of a chosen parameter, built from its proxy, applying as it changes
@@ -693,6 +704,7 @@ void OmniSearchEdit::setOwner(App::DocumentObject *owner)
     if (!owner)
         return;
     objCompleter = new ExpressionCompleter(owner, this, /*noProperty*/false, /*checkInList*/false);
+    objCompleter->setLocalObjects(localObjects());
     objCompleter->setWidget(this);
     objCompleter->popup()->setItemDelegate(new OmniItemDelegate(objCompleter->popup()));
     objCompleter->popup()->installEventFilter(this);
@@ -710,6 +722,27 @@ void OmniSearchEdit::setOwner(App::DocumentObject *owner)
 App::DocumentObject *OmniSearchEdit::owner() const
 {
     return ownerObj.getObject();
+}
+
+void OmniSearchEdit::setLocalObjects(const std::vector<App::DocumentObject*> &objs)
+{
+    localObjs.clear();
+    for (auto obj : objs) {
+        if (obj && obj->isAttachedToDocument())
+            localObjs.emplace_back(obj);
+    }
+    if (objCompleter)
+        objCompleter->setLocalObjects(objs);
+}
+
+std::vector<App::DocumentObject*> OmniSearchEdit::localObjects() const
+{
+    std::vector<App::DocumentObject*> objs;
+    for (auto &t : localObjs) {
+        if (auto obj = t.getObject())
+            objs.push_back(obj);
+    }
+    return objs;
 }
 
 void OmniSearchEdit::setInputText(const QString &text)
@@ -872,7 +905,8 @@ void OmniSearchEdit::runObjectQuery()
 void OmniSearchEdit::resolveObjectQuery()
 {
     ObjectMatch match;
-    if (owner() && resolveObject(input.query, owner(), match)) {
+    auto locals = localObjects();
+    if (owner() && resolveObject(input.query, owner(), match, &locals)) {
         resolvedProp = match.prop;
         resolvedObj = match.obj;
         Q_EMIT objectResolved(match);
@@ -918,7 +952,8 @@ void OmniSearchEdit::completeObject(const QString &completion)
 void OmniSearchEdit::activateObject()
 {
     ObjectMatch match;
-    if (owner() && resolveObject(input.query, owner(), match))
+    auto locals = localObjects();
+    if (owner() && resolveObject(input.query, owner(), match, &locals))
         Q_EMIT objectActivated(match);
 }
 
@@ -1124,7 +1159,20 @@ void OmniSearchBox::open()
                 owner = objs.front();
         }
     }
+    // The selection is what a leading '.' refers to, and its first object
+    // is the owner queries are parsed against; without one the owner is
+    // only a parsing context and '.' names nothing.
+    std::vector<App::DocumentObject*> selected;
+    for (const auto &sel : Selection().getSelectionT("*", ResolveMode::NoResolve)) {
+        auto obj = sel.getSubObject();
+        if (obj && obj->isAttachedToDocument()
+                && std::find(selected.begin(), selected.end(), obj) == selected.end())
+            selected.push_back(obj);
+    }
+    if (!selected.empty())
+        owner = selected.front();
     lineEdit->setOwner(owner);
+    lineEdit->setLocalObjects(selected);
 
     hidePanels();
     lineEdit->hidePopups();
@@ -1255,6 +1303,9 @@ void OmniSearchBox::onObjectResolved(const ObjectMatch &match)
     if (match.prop) {
         if (panelHost->isVisible() && !propertyPanel->isFor(match.prop))
             hidePanels();
+        // A ".Name" query is about the selection, which the tree shows already
+        if (lineEdit->currentInput().query.trimmed().startsWith(QLatin1Char('.')))
+            return;
         if (t) {
             t->resetItemSearch();
             if (auto item = TreeWidget::selectUp(match.obj, nullptr, false))
@@ -1279,7 +1330,7 @@ void OmniSearchBox::onObjectActivated(const ObjectMatch &match)
     if (!match.prop)
         return;
     if (!propertyPanel->isFor(match.prop)) {
-        propertyPanel->setProperty(match.prop, match.obj);
+        propertyPanel->setProperty(match.prop, match.obj, match.props);
         showPanel(propertyPanel);
     }
     propertyPanel->focusEditor();
@@ -1356,7 +1407,9 @@ void OmniSearchBox::onEnterPressed()
         break;
     case Mode::Object: {
         ObjectMatch match;
-        if (!lineEdit->owner() || !resolveObject(lineEdit->currentInput().query, lineEdit->owner(), match))
+        auto locals = lineEdit->localObjects();
+        if (!lineEdit->owner()
+                || !resolveObject(lineEdit->currentInput().query, lineEdit->owner(), match, &locals))
             break;
         if (match.prop)
             onObjectActivated(match);

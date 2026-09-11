@@ -23,6 +23,7 @@
 #ifndef GUI_OMNI_SEARCH_BOX_H
 #define GUI_OMNI_SEARCH_BOX_H
 
+#include <vector>
 #include <QFrame>
 #include <QLineEdit>
 #include <QPointer>
@@ -67,6 +68,15 @@ public:
     /// The object an object query is parsed against; null disables that mode
     void setOwner(App::DocumentObject *owner);
     App::DocumentObject *owner() const;
+
+    /** The objects a leading '.' refers to: the selection.
+     *
+     * The completer lists their common properties, and a ".Name" query
+     * resolves to that property on every one of them (ObjectMatch::props).
+     * Empty means '.' names nothing.
+     */
+    void setLocalObjects(const std::vector<App::DocumentObject*> &objs);
+    std::vector<App::DocumentObject*> localObjects() const;
 
     OmniSearch::Mode mode() const { return input.mode; }
     const OmniSearch::Input &currentInput() const { return input; }
@@ -125,6 +135,7 @@ private:
 
     OmniSearch::Input input;
     App::DocumentObjectT ownerObj;
+    std::vector<App::DocumentObjectT> localObjs;
 
     QCompleter *chooser = nullptr;
     ExpressionCompleter *objCompleter = nullptr;

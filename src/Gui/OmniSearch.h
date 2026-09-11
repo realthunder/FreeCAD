@@ -93,6 +93,10 @@ struct ObjectMatch {
     /// Set when the query named a property of the object
     App::Property *prop = nullptr;
     App::ObjectIdentifier path;
+    /** The properties to edit together: prop, then the same-named property
+     * of the same type on every other local object of a ".Name" query
+     */
+    std::vector<App::Property*> props;
 };
 
 /** Resolve an object query against an owner object.
@@ -102,8 +106,16 @@ struct ObjectMatch {
  * naming a real property yields a property match; otherwise the query
  * is taken as an object path, the way the tree's search box does it.
  * False when the text parses to neither.
+ *
+ * A query with a leading '.' names a member of the local objects -- the
+ * selection -- when locals is given: it resolves on the owner (which is
+ * expected to be the first of them) and ObjectMatch::props collects the
+ * property from every local object that has it with the same type; with
+ * an empty list such a query resolves to nothing. Without locals the
+ * owner is the local object, as in an expression.
  */
-GuiExport bool resolveObject(const QString &query, App::DocumentObject *owner, ObjectMatch &out);
+GuiExport bool resolveObject(const QString &query, App::DocumentObject *owner, ObjectMatch &out,
+                             const std::vector<App::DocumentObject*> *locals = nullptr);
 
 struct CommandMatch {
     QByteArray name;

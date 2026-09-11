@@ -34,6 +34,7 @@
 #include <App/ParamRegistry.h>
 #include <App/Property.h>
 #include <Base/Exception.h>
+#include <Base/Type.h>
 
 #include "OmniSearch.h"
 #include "Command.h"
@@ -89,12 +90,37 @@ OmniSearch::Input OmniSearch::parseInput(const QString &text)
 // ---------------------------------------------------------------------------
 // objects
 
-bool OmniSearch::resolveObject(const QString &query, App::DocumentObject *owner, ObjectMatch &out)
+// The property a ".Name" path names on one object, if it has it with the given type
+static App::Property *localProperty(App::DocumentObject *obj, const std::string &txt, const Base::Type &type)
+{
+    if (!obj || !obj->isAttachedToDocument())
+        return nullptr;
+    try {
+        auto path = App::ObjectIdentifier::parse(obj, txt);
+        auto prop = path.getProperty();
+        if (prop && !App::ObjectIdentifier::isPseudoProperty(prop)
+                && prop->getTypeId() == type && path.getDocumentObject() == obj)
+            return prop;
+    }
+    catch (Base::Exception &) {
+    }
+    catch (...) {
+    }
+    return nullptr;
+}
+
+bool OmniSearch::resolveObject(const QString &query, App::DocumentObject *owner, ObjectMatch &out,
+                               const std::vector<App::DocumentObject*> *locals)
 {
     if (!owner || !owner->isAttachedToDocument())
         return false;
     std::string txt = query.trimmed().toUtf8().constData();
     if (txt.empty())
+        return false;
+    out.props.clear();
+
+    bool local = txt[0] == '.';
+    if (local && locals && locals->empty())
         return false;
 
     // A property reference first: "Box.Length", "Part.Box.Placement".
@@ -107,6 +133,15 @@ bool OmniSearch::resolveObject(const QString &query, App::DocumentObject *owner,
                 out.obj = App::SubObjectT(obj, path.getSubObjectName().c_str());
                 out.prop = prop;
                 out.path = std::move(path);
+                out.props.push_back(prop);
+                if (local && locals) {
+                    for (auto other : *locals) {
+                        if (other == obj)
+                            continue;
+                        if (auto p = localProperty(other, txt, prop->getTypeId()))
+                            out.props.push_back(p);
+                    }
+                }
                 return true;
             }
         }

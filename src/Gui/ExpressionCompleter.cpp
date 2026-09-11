@@ -228,6 +228,29 @@ public:
         return res;
     }
 
+    // A name/label pair collapses to the name alone when the label is the
+    // name: rows[i] is index*2 for the name, index*2+1 for the label.
+    static bool labelDiffers(const App::DocumentObject *obj) {
+        return obj->Label.getStrValue() != obj->getNameInDocument();
+    }
+
+    static bool labelDiffers(const App::Document *doc) {
+        return doc->Label.getStrValue() != doc->getName();
+    }
+
+    template<class T>
+    static void buildNameRows(const std::vector<T*> &items, std::vector<int> &rows) {
+        rows.clear();
+        rows.reserve(items.size()*2);
+        int i = 0;
+        for(auto item : items) {
+            rows.push_back(i*2);
+            if(labelDiffers(item))
+                rows.push_back(i*2+1);
+            ++i;
+        }
+    }
+
     struct ObjInfo {
         QString name;
         QString label;
@@ -235,6 +258,8 @@ public:
         App::Document *doc;
         long objID;
         std::vector<std::string> outList;
+        // Rows over outList: index*2 the name, index*2+1 the label (when it differs)
+        std::vector<int> outRows;
         std::vector<std::string> propList;
         QStringList propNameList;
         std::vector<const char *> elementTypes;
@@ -267,8 +292,13 @@ public:
                 if(o && o->isAttachedToDocument() && outSet.insert(o).second) {
                     std::string sub(o->getNameInDocument());
                     sub += ".";
-                    if(obj->getSubObject(sub.c_str()) == o)
+                    if(obj->getSubObject(sub.c_str()) == o) {
+                        int i = (int)outList.size();
                         outList.push_back(std::move(sub));
+                        outRows.push_back(i*2);
+                        if(labelDiffers(o))
+                            outRows.push_back(i*2+1);
+                    }
                 }
             }
 
@@ -305,6 +335,38 @@ public:
             return *this;
         }
 
+        // Keep the properties every object of objs has, with the same
+        // type, and drop the sub-objects and elements: what several
+        // selected objects can be edited on together.
+        void keepCommonProperties(const std::vector<App::DocumentObject*> &objs) {
+            auto self = getObject();
+            if(!self || objs.size() < 2)
+                return;
+            for(size_t i=0; i<propList.size();) {
+                auto prop = self->getPropertyByName(propList[i].c_str());
+                bool common = prop != nullptr;
+                for(auto o : objs) {
+                    if(!common)
+                        break;
+                    if(o == self)
+                        continue;
+                    auto p = o->getPropertyByName(propList[i].c_str());
+                    common = p && p->getTypeId() == prop->getTypeId();
+                }
+                if(common) {
+                    ++i;
+                    continue;
+                }
+                propList.erase(propList.begin()+i);
+                propNameList.removeAt((int)i);
+            }
+            outList.clear();
+            outRows.clear();
+            elementTypes.clear();
+            elementCounts.clear();
+            elementCount = 0;
+        }
+
         App::DocumentObject *getObject() const {
             // make sure the document is still there
             if(!Gui::Application::Instance->getDocument(doc))
@@ -312,20 +374,24 @@ public:
             return doc->getObjectByID(objID);
         }
 
-        App::DocumentObject *getSubObject(int row, App::DocumentObject **pobj=nullptr) const {
+        App::DocumentObject *getSubObject(int row, App::DocumentObject **pobj=nullptr,
+                                          bool *label=nullptr) const {
             int propSize = (int)propList.size();
             if(row < propSize)
                 return nullptr;
 
             row -= propSize;
-            if(row < 0 || row >= (int)outList.size()*2)
+            if(row < 0 || row >= (int)outRows.size())
                 return nullptr;
             auto obj = getObject();
             if(!obj)
                 return nullptr;
             if(pobj)
                 *pobj = obj;
-            return obj->getSubObject(outList[row/2].c_str());
+            int r = outRows[row];
+            if(label)
+                *label = (r & 1) != 0;
+            return obj->getSubObject(outList[r/2].c_str());
         }
 
         std::pair<const char *, App::Property*> getProperty(int row,
@@ -352,9 +418,9 @@ public:
             }
             row -= (int)propList.size();
 
-            if(row < (int)outList.size()*2)
+            if(row < (int)outRows.size())
                 return res;
-            row -= (int)outList.size()*2;
+            row -= (int)outRows.size();
 
             if (root) {
                 if (row == 0) {
@@ -393,7 +459,7 @@ public:
             if(!elementCount || row < 0)
                 return nullptr;
 
-            int offset = (int)outList.size()*2 + (int)propList.size()
+            int offset = (int)outRows.size() + (int)propList.size()
                 + ObjectIdentifier::getPseudoProperties().size();
             if(row < offset)
                 return nullptr;
@@ -416,9 +482,9 @@ public:
 
         int childCount(bool root=false) const {
             if(propList.empty())
-                return outList.size()*2;
+                return (int)outRows.size();
 
-            return (int)outList.size()*2
+            return (int)outRows.size()
                 + (int)propList.size()
                 + (root ? 1 : 0)
                 + ObjectIdentifier::getPseudoProperties().size()
@@ -448,9 +514,9 @@ public:
             return static_cast<const ExpressionCompleterModel*>(mindex.model());
         }
 
-        static QString docName(App::Document *doc, int row, bool sep) {
+        static QString docName(App::Document *doc, bool label, bool sep) {
             QString res;
-            if(row & 1)
+            if(label)
                 res = QString::fromUtf8(quote(doc->Label.getStrValue()).c_str());
             else
                 res = QString::fromUtf8(doc->getName());
@@ -459,27 +525,27 @@ public:
             return res;
         }
 
-        static QString objName(App::DocumentObject *obj, int row, bool sep=true) {
+        static QString objName(App::DocumentObject *obj, bool label, bool sep=true) {
             QString res;
             if(!obj || !obj->isAttachedToDocument())
                 return res;
             if(sep)
                 res = QStringLiteral(".");
-            if(row & 1)
+            if(label)
                 res += QString::fromUtf8(quote(obj->Label.getStrValue()).c_str());
             else
                 res += QString::fromUtf8(obj->getNameInDocument());
             return res;
         }
 
-        static QVariant docData(App::Document *doc, int row, int role) {
+        static QVariant docData(App::Document *doc, bool label, int role) {
             static QIcon icon(Gui::BitmapFactory().pixmap("Document"));
             switch(role) {
             case Qt::UserRole:
             case Qt::EditRole:
-                return docName(doc, row, true);
+                return docName(doc, label, true);
             case Qt::DisplayRole:
-                return docName(doc, row, false);
+                return docName(doc, label, false);
             case Qt::DecorationRole:
                 return icon;
             default:
@@ -488,15 +554,15 @@ public:
         }
 
         QVariant objData(App::DocumentObject *obj,
-                int row, int role, bool local=false, bool sep=true) const
+                bool label, int role, bool local=false, bool sep=true) const
         {
             switch(role) {
             case Qt::UserRole:
-                return objName(obj, row, sep || local);
+                return objName(obj, label, sep || local);
             case Qt::EditRole:
-                return objName(obj, row, sep);
+                return objName(obj, label, sep);
             case Qt::DisplayRole: {
-                QString name = objName(obj, row, local);
+                QString name = objName(obj, label, local);
                 if(getModel()->inList.count(obj))
                     name += QObject::tr(" (Cyclic reference!)");
                 return name;
@@ -535,11 +601,11 @@ public:
         }
 
         QVariant sobjData(App::DocumentObject *obj, App::DocumentObject *sobj,
-                int row, int role, bool local=false) const
+                bool label, int role, bool local=false) const
         {
             if(obj && obj->isAttachedToDocument()
                     && sobj && sobj->isAttachedToDocument()
-                    && !(row & 1))
+                    && !label)
             {
                 if(role == Qt::EditRole)
                     return QStringLiteral("%1").arg(
@@ -554,7 +620,7 @@ public:
                             QString::fromUtf8(sobj->getNameInDocument()));
                 }
             }
-            return objData(sobj, row, role, local, false);
+            return objData(sobj, label, role, local, false);
         }
 
         QVariant propData(App::Property *prop, const QString &propName,
@@ -665,7 +731,8 @@ public:
                                  App::DocumentObject *&obj,
                                  App::DocumentObject *&sobj,
                                  App::Property *&prop,
-                                 QString &propName) const
+                                 QString &propName,
+                                 bool *label=nullptr) const
         {
             if(row<0)
                 return false;
@@ -675,9 +742,13 @@ public:
                 return false;
 
             const auto &docs = App::GetApplication().getDocuments();
-            int docSize = (int)docs.size()*2;
+            const auto &docRows = getModel()->documentRows();
+            int docSize = (int)docRows.size();
             if(row < docSize) {
-                doc = docs[row/2];
+                int r = docRows[row];
+                doc = docs[r/2];
+                if(label)
+                    *label = (r & 1) != 0;
                 return true;
             }
 
@@ -685,16 +756,20 @@ public:
             row -= docSize;
 
             const auto &objs = doc->getObjects();
-            int objSize = (int)objs.size()*2;
+            const auto &objRows = getModel()->objectRows(doc);
+            int objSize = (int)objRows.size();
             if(row < objSize) {
-                obj = objs[row/2];
+                int r = objRows[row];
+                obj = objs[r/2];
+                if(label)
+                    *label = (r & 1) != 0;
                 return true;
             }
             obj = currentObj;
             row -= objSize;
 
-            auto &objInfo = getModel()->getObjectInfo(currentObj);
-            sobj = objInfo.getSubObject(row);
+            auto &objInfo = getModel()->rootObjInfo();
+            sobj = objInfo.getSubObject(row, nullptr, label);
             if(sobj)
                 return true;
 
@@ -781,19 +856,20 @@ public:
             App::DocumentObject *sobj = nullptr;
             App::Property *prop = nullptr;
             QString propName;
-            if(!_childData(row, doc, obj, sobj, prop, propName))
+            bool label = false;
+            if(!_childData(row, doc, obj, sobj, prop, propName, &label))
                 return QVariant();
 
             if(prop)
                 return propData(prop, propName, row, role, true);
 
             if(sobj)
-                return sobjData(obj, sobj, row, role, true);
+                return sobjData(obj, sobj, label, role, true);
 
             if(obj)
-                return objData(obj, row, role, false, false);
+                return objData(obj, label, role, false, false);
 
-            return docData(doc, row, role);
+            return docData(doc, label, role);
         }
 
         virtual QModelIndex childIndex(int row) {
@@ -804,18 +880,16 @@ public:
         }
 
         int childCountWithoutUnit() const {
-            const auto &docs = App::GetApplication().getDocuments();
-            int docSize = (int)docs.size()*2;
+            int docSize = (int)getModel()->documentRows().size();
 
             auto currentObj = getModel()->currentObj.getObject();
             if(!currentObj)
                 return docSize;
 
-            const auto &objs = currentObj->getDocument()->getObjects();
-            int objSize = (int)objs.size()*2;
+            int objSize = (int)getModel()->objectRows(currentObj->getDocument()).size();
 
             return docSize + objSize
-                + getModel()->getObjectInfo(currentObj).childCount(true);
+                + getModel()->rootObjInfo().childCount(true);
         }
 
         virtual int childCount() {
@@ -846,7 +920,9 @@ public:
                                    App::Property *&prop,
                                    QString &propName,
                                    const char *&element,
-                                   int &eindex) const
+                                   int &eindex,
+                                   bool *label=nullptr,
+                                   bool localRoot=false) const
         {
             if(row < 0)
                 return -1;
@@ -856,8 +932,11 @@ public:
                 sobj = nullptr;
             }
 
-            auto objInfo = getModel()->getObjectInfo(obj);
-            sobj = objInfo.getSubObject(row);
+            // The children of the root's '.' row are the local objects'
+            // common members, not everything the owner has
+            const ObjInfo &objInfo = localRoot
+                ? getModel()->rootObjInfo() : getModel()->getObjectInfo(obj);
+            sobj = objInfo.getSubObject(row, nullptr, label);
             if(!sobj && !objInfo.getProperty(row, prop, propName)) {
                 element = objInfo.getElement(row, eindex);
                 if(!element)
@@ -874,7 +953,9 @@ public:
                       App::Property *&prop,
                       QString &propName,
                       const char *&element,
-                      int &eindex) const
+                      int &eindex,
+                      bool *label=nullptr,
+                      bool localRoot=false) const
         {
             if(row < 0)
                 return false;
@@ -885,18 +966,22 @@ public:
             }
 
             if(obj)
-                return _childObjData(row, obj, sobj, prop, propName, element, eindex)>=0;
+                return _childObjData(row, obj, sobj, prop, propName, element, eindex, label, localRoot)>=0;
 
             const auto &objs = doc->getObjects();
-            if(row >= (int)objs.size()*2)
+            const auto &objRows = getModel()->objectRows(doc);
+            if(row >= (int)objRows.size())
                 return false;
-            obj = objs[row/2];
+            int r = objRows[row];
+            obj = objs[r/2];
+            if(label)
+                *label = (r & 1) != 0;
             return true;
         }
 
         ModelData *getPropertyData(App::DocumentObject *obj, const QString &propName) const {
-            int offset = (int)GetApplication().getDocuments().size()*2
-                + obj->getDocument()->getObjects().size()*2;
+            int offset = (int)getModel()->documentRows().size()
+                + (int)getModel()->objectRows(obj->getDocument()).size();
             return getModel()->getPropertyData(getInfo(mindex),mindex.row(),obj,propName,offset);
         }
 
@@ -914,7 +999,8 @@ public:
             if(!RootData::_childData(mindex.row(), doc, obj, sobj, prop, propName))
                 return QVariant();
 
-            if (prop == &_FakeProp) {
+            bool localRoot = prop == &_FakeProp;
+            if (localRoot) {
                 prop = nullptr;
                 propName.clear();
             } else if (prop) {
@@ -924,7 +1010,8 @@ public:
                 return QVariant();
             }
 
-            if(!_childData(row, doc, obj, sobj, prop, propName, element, eindex))
+            bool label = false;
+            if(!_childData(row, doc, obj, sobj, prop, propName, element, eindex, &label, localRoot))
                 return QVariant();
 
             if(element)
@@ -934,9 +1021,9 @@ public:
                 return propData(prop, propName, row, role);
 
             if(sobj)
-                return sobjData(obj, sobj, row, role);
+                return sobjData(obj, sobj, label, role);
 
-            return objData(obj, row, role, false, false);
+            return objData(obj, label, role, false, false);
         }
 
         virtual QModelIndex childIndex(int row) {
@@ -976,7 +1063,8 @@ public:
             int eindex = 0;
             if(!RootData::_childData(mindex.row(), doc, obj, sobj, prop, propName))
                 return 0;
-            if (prop == &_FakeProp) {
+            bool localRoot = prop == &_FakeProp;
+            if (localRoot) {
                 prop = nullptr;
                 propName.clear();
             }
@@ -988,9 +1076,9 @@ public:
             }
 
             if(obj)
-                return _childObjData(0, obj, sobj, prop, propName, element, eindex);
+                return _childObjData(0, obj, sobj, prop, propName, element, eindex, nullptr, localRoot);
 
-            return (int)doc->getObjects().size()*2;
+            return (int)getModel()->objectRows(doc).size();
         }
 
         virtual const char *typeName() const {
@@ -1016,13 +1104,14 @@ public:
             if(!RootData::_childData(info.d.idx1, doc, obj, sobj, prop, propName))
                 return QVariant();
 
-            if (prop == &_FakeProp) {
+            bool localRoot = prop == &_FakeProp;
+            if (localRoot) {
                 prop = nullptr;
                 propName.clear();
             } else if(prop)
                 return QVariant();
 
-            if(!Level1Data::_childData(mindex.row(), doc, obj, sobj, prop, propName, element, eindex))
+            if(!Level1Data::_childData(mindex.row(), doc, obj, sobj, prop, propName, element, eindex, nullptr, localRoot))
                 return QVariant();
 
             if(element)
@@ -1037,7 +1126,8 @@ public:
                 return QVariant();
             }
 
-            if(_childObjData(row, obj, sobj, prop, propName, element, eindex) < 0)
+            bool label = false;
+            if(_childObjData(row, obj, sobj, prop, propName, element, eindex, &label) < 0)
                 return QVariant();
             if(element)
                 return elementData(role, element, eindex);
@@ -1046,7 +1136,7 @@ public:
                 return propData(prop, propName, row, role);
 
             if(sobj)
-                return sobjData(obj, sobj, row, role);
+                return sobjData(obj, sobj, label, role);
 
             return QVariant();
         }
@@ -1064,13 +1154,14 @@ public:
             if(!RootData::_childData(info.d.idx1, doc, obj, sobj, prop, propName))
                 return QModelIndex();
 
-            if (prop == &_FakeProp) {
+            bool localRoot = prop == &_FakeProp;
+            if (localRoot) {
                 prop = nullptr;
                 propName.clear();
             } else if(prop)
                 return QModelIndex();
 
-            if(!Level1Data::_childData(mindex.row(), doc, obj, sobj, prop, propName, element, eindex))
+            if(!Level1Data::_childData(mindex.row(), doc, obj, sobj, prop, propName, element, eindex, nullptr, localRoot))
                 return QModelIndex();
 
             if(element)
@@ -1102,13 +1193,14 @@ public:
             if(!RootData::_childData(info.d.idx1, doc, obj, sobj, prop, propName))
                 return 0;
 
-            if (prop == &_FakeProp) {
+            bool localRoot = prop == &_FakeProp;
+            if (localRoot) {
                 prop = nullptr;
                 propName.clear();
             } else if(prop)
                 return 0;
 
-            if(!Level1Data::_childData(mindex.row(), doc, obj, sobj, prop, propName, element, eindex))
+            if(!Level1Data::_childData(mindex.row(), doc, obj, sobj, prop, propName, element, eindex, nullptr, localRoot))
                 return 0;
 
             if(element)
@@ -1149,13 +1241,14 @@ public:
             if(!RootData::_childData(info.d.idx1, doc, obj, sobj, prop, propName))
                 return nullptr;
 
-            if (prop == &_FakeProp) {
+            bool localRoot = prop == &_FakeProp;
+            if (localRoot) {
                 prop = nullptr;
                 propName.clear();
             } else if(prop)
                 return nullptr;
 
-            if(!Level1Data::_childData(info.d.idx2, doc, obj, sobj, prop, propName, element, eindex))
+            if(!Level1Data::_childData(info.d.idx2, doc, obj, sobj, prop, propName, element, eindex, nullptr, localRoot))
                 return nullptr;
 
             if(prop || element)
@@ -1211,9 +1304,10 @@ public:
         virtual QVariant childData(int row, int role) const
         {
             App::DocumentObject *obj = nullptr;
-            auto sobj = objInfo.getSubObject(row, &obj);
+            bool label = false;
+            auto sobj = objInfo.getSubObject(row, &obj, &label);
             if(sobj)
-                return sobjData(obj, sobj, row, role);
+                return sobjData(obj, sobj, label, role);
             int eindex = 0;
             const char *element = objInfo.getElement(row, eindex);
             if(element)
@@ -1668,7 +1762,12 @@ public:
         // expression, which is the property reference
 
         auto obj = currentObj.getObject();
-        if(noProperty || !obj || l.isEmpty()) {
+        // A lone '.' would evaluate '._self' and list the owner's Python
+        // attributes; with local objects set it is their common members
+        // at the root instead.
+        bool localRoot = localObjsSet && !l.isEmpty() && l.last() == QStringLiteral(".")
+            && (l.size() == 1 || (l.size() == 2 && l.first().isEmpty()));
+        if(noProperty || !obj || l.isEmpty() || localRoot) {
             auto pathSize = currentPath.size();
             currentPath.clear();
             if(pathSize || pathIndex.isValid())
@@ -1772,10 +1871,70 @@ public:
         reset();
     }
 
+    // The objects a leading '.' refers to. Unset, it is the owner object;
+    // set, the root lists the properties every one of them has with the
+    // same type (none for an empty list), and no sub-objects or elements.
+    void setLocalObjects(const std::vector<App::DocumentObject*> &objs) {
+        localObjs.clear();
+        for(auto obj : objs) {
+            if(obj && obj->isAttachedToDocument())
+                localObjs.emplace_back(obj);
+        }
+        localObjsSet = true;
+        reset();
+    }
+
+    const ObjInfo &rootObjInfo() const {
+        if(!localObjsSet)
+            return getObjectInfo(currentObj.getObject());
+        if(!rootInfoValid) {
+            rootInfoValid = true;
+            rootInfo = ObjInfo();
+            std::vector<App::DocumentObject*> objs;
+            for(auto &t : localObjs) {
+                auto obj = t.getObject();
+                if(obj && obj->isAttachedToDocument()
+                        && std::find(objs.begin(), objs.end(), obj) == objs.end())
+                    objs.push_back(obj);
+            }
+            if(!objs.empty()) {
+                rootInfo = getObjectInfo(objs.front());
+                rootInfo.keepCommonProperties(objs);
+            }
+        }
+        return rootInfo;
+    }
+
+    // Root rows of the documents, and of the objects of a document: the
+    // name of each, and its label only when that differs. Cached until
+    // reset(), and rebuilt when the list changed size underneath.
+    const std::vector<int> &documentRows() const {
+        const auto &docs = App::GetApplication().getDocuments();
+        if(docRowsSource != docs.size() || (docRows.empty() && !docs.empty())) {
+            docRowsSource = docs.size();
+            buildNameRows(docs, docRows);
+        }
+        return docRows;
+    }
+
+    const std::vector<int> &objectRows(App::Document *doc) const {
+        const auto &objs = doc->getObjects();
+        auto &entry = objRowsMap[doc];
+        if(entry.first != objs.size() || (entry.second.empty() && !objs.empty())) {
+            entry.first = objs.size();
+            buildNameRows(objs, entry.second);
+        }
+        return entry.second;
+    }
+
     void reset(bool end=true) {
         beginResetModel();
         dataMap.clear();
         objMap.clear();
+        rootInfoValid = false;
+        docRows.clear();
+        docRowsSource = 0;
+        objRowsMap.clear();
         pathIndex = QModelIndex();
         {
             Base::PyGILStateLocker lock;
@@ -2071,6 +2230,17 @@ public:
     App::DocumentObjectT currentObj;
     bool noProperty;
     bool searchingUnit;
+
+    // setLocalObjects(): the objects a leading '.' refers to
+    std::vector<App::DocumentObjectT> localObjs;
+    bool localObjsSet = false;
+    mutable ObjInfo rootInfo;
+    mutable bool rootInfoValid = false;
+
+    // documentRows() / objectRows(): name and label rows, see buildNameRows()
+    mutable std::vector<int> docRows;
+    mutable size_t docRowsSource = 0;
+    mutable std::map<App::Document*, std::pair<size_t, std::vector<int>>> objRowsMap;
 };
 
 /**
@@ -2105,8 +2275,32 @@ void ExpressionCompleter::init() {
 
     auto m = new ExpressionCompleterModel(this,tokenizer.getNoProperty());
     m->setDocumentObject(currentObj.getObject(),checkInList);
+    if (localObjsSet)
+        m->setLocalObjects(localObjectPointers());
     m->setSearchUnit(tokenizer.getSearchUnit());
     setModel(m);
+}
+
+std::vector<App::DocumentObject*> ExpressionCompleter::localObjectPointers() const
+{
+    std::vector<App::DocumentObject*> objs;
+    for (auto &t : localObjs) {
+        if (auto obj = t.getObject())
+            objs.push_back(obj);
+    }
+    return objs;
+}
+
+void ExpressionCompleter::setLocalObjects(const std::vector<App::DocumentObject*> &objs)
+{
+    localObjs.clear();
+    for (auto obj : objs) {
+        if (obj && obj->isAttachedToDocument())
+            localObjs.emplace_back(obj);
+    }
+    localObjsSet = true;
+    if (auto m = model())
+        static_cast<ExpressionCompleterModel*>(m)->setLocalObjects(localObjectPointers());
 }
 
 void ExpressionCompleter::setDocumentObject(const App::DocumentObject *obj, bool _checkInList)
