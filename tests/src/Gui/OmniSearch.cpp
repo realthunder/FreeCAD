@@ -134,7 +134,7 @@ private Q_SLOTS:
         auto info = Gui::ParamListModel::infoOf(index);
         QVERIFY(info);
         QCOMPARE(info->name, "CheckExtension");
-        QCOMPARE(index.data(Qt::DisplayRole).toString(), QStringLiteral("App::DocumentParams::CheckExtension"));
+        QCOMPARE(index.data(Qt::DisplayRole).toString(), QStringLiteral("/Preferences/Document/CheckExtension"));
         QCOMPARE(index.data(ParamPathRole).toString(),
                  QStringLiteral("User parameter:BaseApp/Preferences/Document/CheckExtension"));
         QVERIFY(!index.data(ParamValueRole).toString().isEmpty());

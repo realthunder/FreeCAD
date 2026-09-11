@@ -28,6 +28,7 @@
 # include <QAbstractItemView>
 # include <QIcon>
 # include <QApplication>
+# include <QCheckBox>
 # include <QCompleter>
 # include <QHBoxLayout>
 # include <QKeyEvent>
@@ -102,11 +103,15 @@ public:
         return index.data(IsGroupRole).toBool();
     }
 
-    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &) const override
+    // A row without a description (the object completer's) is one line high
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
-        QFont small = option.font;
-        small.setPointSizeF(small.pointSizeF() * 0.9);
-        int text = QFontMetrics(option.font).height() + QFontMetrics(small).height();
+        int text = QFontMetrics(option.font).height();
+        if (!index.data(DescriptionRole).toString().isEmpty()) {
+            QFont small = option.font;
+            small.setPointSizeF(small.pointSizeF() * 0.9);
+            text += QFontMetrics(small).height();
+        }
         int h = std::max(text, IconSize) + 2 * Margin;
         return QSize(option.rect.width(), h);
     }
@@ -150,6 +155,12 @@ public:
         QPalette::ColorGroup cg = active ? QPalette::Normal : QPalette::Disabled;
         bool selected = opt.state & QStyle::State_Selected;
         QColor textColor = opt.palette.color(cg, selected ? QPalette::HighlightedText : QPalette::Text);
+        if (!selected) {
+            // The expression completer's model flags some rows by colour
+            QVariant fg = index.data(Qt::ForegroundRole);
+            if (fg.canConvert<QColor>() && fg.value<QColor>().isValid())
+                textColor = fg.value<QColor>();
+        }
         QColor dimColor = selected ? textColor : opt.palette.color(cg, QPalette::PlaceholderText);
         if (!dimColor.isValid())
             dimColor = textColor;
@@ -166,7 +177,7 @@ public:
         QFontMetrics titleFM(titleFont);
         QFontMetrics smallFM(smallFont);
 
-        int textHeight = titleFM.height() + smallFM.height();
+        int textHeight = titleFM.height() + (desc.isEmpty() ? 0 : smallFM.height());
         int top = r.top() + (r.height() - textHeight) / 2;
         QRect titleRect(r.left(), top, r.width(), titleFM.height());
         QRect descRect(r.left(), top + titleFM.height(), r.width(), smallFM.height());
@@ -503,11 +514,14 @@ public:
         info = p;
         if (!info)
             return;
-        label->setText(QString::fromUtf8(info->fullName().c_str()));
-        label->setToolTip(QCoreApplication::translate(info->className, info->doc));
-        pathLabel->setText(tr("%1    default: %2")
-                .arg(QString::fromUtf8(info->fullPath().c_str()),
-                     QString::fromUtf8(info->defaultValue.c_str())));
+        label->setText(QString::fromUtf8(info->displayPath().c_str()));
+        QString doc = QCoreApplication::translate(info->className, info->doc);
+        QString tip = QString::fromUtf8(info->fullPath().c_str());
+        if (!doc.isEmpty())
+            tip += QStringLiteral("\n\n") + doc;
+        label->setToolTip(tip);
+        QString title = QCoreApplication::translate(info->className, info->title);
+        QString def = QString::fromUtf8(info->defaultValue.c_str());
         editor = createParamEditor(*info, host);
         if (!editor) {
             editor = new QLabel(tr("No editor"), host);
@@ -516,6 +530,14 @@ public:
             // Save on every change: the effect is the point of editing here
             pref->initAutoSave(QVariant(), true);
         }
+        // A check box already carries the title as its text
+        if (auto check = qobject_cast<QCheckBox*>(editor)) {
+            if (check->text() == title)
+                title.clear();
+        }
+        pathLabel->setText(title.isEmpty()
+                ? tr("default: %1").arg(def)
+                : tr("%1    default: %2").arg(title, def));
         editor->installEventFilter(this);
         for (auto child : editor->findChildren<QWidget*>())
             child->installEventFilter(this);
@@ -613,6 +635,7 @@ void OmniSearchEdit::setupChooser()
     chooser->setFilterMode(Qt::MatchStartsWith);
     chooser->setCaseSensitivity(Qt::CaseInsensitive);
     chooser->popup()->setItemDelegate(new OmniItemDelegate(chooser->popup()));
+    chooser->popup()->installEventFilter(this);
     connect(chooser, qOverload<const QString&>(&QCompleter::activated),
             this, &OmniSearchEdit::setInputText);
 }
@@ -671,11 +694,17 @@ void OmniSearchEdit::setOwner(App::DocumentObject *owner)
         return;
     objCompleter = new ExpressionCompleter(owner, this, /*noProperty*/false, /*checkInList*/false);
     objCompleter->setWidget(this);
+    objCompleter->popup()->setItemDelegate(new OmniItemDelegate(objCompleter->popup()));
     objCompleter->popup()->installEventFilter(this);
-    connect(objCompleter, qOverload<const QString&>(&QCompleter::activated),
-            this, &OmniSearchEdit::completeObject);
+    // Moving through the list only completes the text; picking a row (a
+    // click here, Tab in the key handling) is what commits it.
     connect(objCompleter, qOverload<const QString&>(&QCompleter::highlighted),
             this, &OmniSearchEdit::completeObject);
+    connect(objCompleter, qOverload<const QString&>(&QCompleter::activated),
+            this, [this](const QString &completion) {
+                completeObject(completion);
+                activateObject();
+            });
 }
 
 App::DocumentObject *OmniSearchEdit::owner() const
@@ -828,8 +857,15 @@ void OmniSearchEdit::onTextEdited(const QString &text)
 
 void OmniSearchEdit::runObjectQuery()
 {
-    if (objCompleter)
+    if (objCompleter) {
         objCompleter->slotUpdate(input.query, cursorPosition() - input.offset);
+        // The completer's lazy init() re-sets its popup, which moves its
+        // own filter ahead of ours; ours must see Tab and Return first,
+        // as ExpressionCompleter turns Tab into Down and swallows it.
+        auto popup = objCompleter->popup();
+        popup->removeEventFilter(this);
+        popup->installEventFilter(this);
+    }
     resolveObjectQuery();
 }
 
@@ -859,6 +895,16 @@ void OmniSearchEdit::completeObject(const QString &completion)
     QString prefix(completion);
     objCompleter->getPrefixRange(prefix, start, end, offset);
     QString query = input.query;
+    // For a property or child of the owner object the model completes to
+    // the expression shorthand ".Name" (a member of "this" object). The
+    // owner here is only the document's first object, so keep what was
+    // typed in front of the dot: "Box.Len" -> "Box.Length", not ".Length".
+    if (prefix.startsWith(QLatin1Char('.'))) {
+        QString replaced = query.mid(start, end - start);
+        int dot = replaced.lastIndexOf(QLatin1Char('.'));
+        if (dot > 0)
+            prefix = replaced.left(dot) + prefix;
+    }
     QString before = query.left(start) + prefix;
     QString after = query.mid(end);
     QString full = text().left(input.offset) + before + after;
@@ -867,6 +913,47 @@ void OmniSearchEdit::completeObject(const QString &completion)
     objCompleter->updatePrefixEnd(before.length());
     input = parseInput(full);
     resolveObjectQuery();
+}
+
+void OmniSearchEdit::activateObject()
+{
+    ObjectMatch match;
+    if (owner() && resolveObject(input.query, owner(), match))
+        Q_EMIT objectActivated(match);
+}
+
+// Tab on a popup: take its current row (the first when none is), as a
+// click on it would.
+bool OmniSearchEdit::chooseCurrentRow()
+{
+    auto c = activeCompleter();
+    if (!c || !c->popup()->isVisible())
+        return false;
+    auto popup = c->popup();
+    QModelIndex index = popup->currentIndex();
+    if (!index.isValid() && popup->model() && popup->model()->rowCount())
+        index = popup->model()->index(0, 0);
+    if (!index.isValid())
+        return false;
+    popup->hide();
+    switch (input.mode) {
+    case Mode::Chooser:
+        setInputText(index.data(chooser->completionRole()).toString());
+        break;
+    case Mode::Object:
+        completeObject(index.data(objCompleter->completionRole()).toString());
+        activateObject();
+        break;
+    case Mode::Command:
+        if (index.data(IsActiveRole).toBool())
+            Q_EMIT commandChosen(index.data(CommandListModel::CommandNameRole).toByteArray());
+        break;
+    case Mode::Param:
+        if (auto info = ParamListModel::infoOf(index))
+            Q_EMIT paramChosen(info);
+        break;
+    }
+    return true;
 }
 
 bool OmniSearchEdit::expandGroupAt(const QModelIndex &index)
@@ -882,6 +969,23 @@ bool OmniSearchEdit::expandGroupAt(const QModelIndex &index)
 
 bool OmniSearchEdit::eventFilter(QObject *obj, QEvent *event)
 {
+    // Keys go to the popup while one is up, and the completers forward
+    // them to the edit's event() -- past any filter on the edit -- so the
+    // popups are filtered instead: Tab picks the current row, Shift+Tab
+    // moves up in it.
+    auto active = activeCompleter();
+    if (active && obj == active->popup() && event->type() == QEvent::KeyPress) {
+        auto ke = static_cast<QKeyEvent*>(event);
+        if (ke->key() == Qt::Key_Tab && ke->modifiers() == Qt::NoModifier) {
+            if (chooseCurrentRow())
+                return true;
+        }
+        else if (ke->key() == Qt::Key_Backtab) {
+            QKeyEvent up(QEvent::KeyPress, Qt::Key_Up, Qt::NoModifier);
+            QApplication::sendEvent(active->popup(), &up);
+            return true;
+        }
+    }
     // The command popup: the arrow of a group row expands it
     if (cmdCompleter && obj == cmdCompleter->popup()->viewport()
             && event->type() == QEvent::MouseButtonPress) {
@@ -918,19 +1022,6 @@ bool OmniSearchEdit::eventFilter(QObject *obj, QEvent *event)
 void OmniSearchEdit::keyPressEvent(QKeyEvent *event)
 {
     switch (event->key()) {
-    case Qt::Key_Tab:
-    case Qt::Key_Backtab:
-        if (auto c = activeCompleter()) {
-            if (c->popup()->isVisible()) {
-                QKeyEvent ke(QEvent::KeyPress,
-                             event->key() == Qt::Key_Tab ? Qt::Key_Down : Qt::Key_Up,
-                             Qt::NoModifier);
-                QApplication::sendEvent(c->popup(), &ke);
-                event->accept();
-                return;
-            }
-        }
-        break;
     case Qt::Key_Return:
     case Qt::Key_Enter:
         if (justActivated) {
@@ -989,7 +1080,9 @@ OmniSearchBox::OmniSearchBox(QWidget *parent)
     panelLayout = new QVBoxLayout(panelHost);
     panelLayout->setContentsMargins(0, 4, 0, 0);
     propertyPanel = new OmniPropertyPanel(panelHost);
+    propertyPanel->setObjectName(QStringLiteral("OmniPropertyPanel"));
     paramPanel = new OmniParamPanel(panelHost);
+    paramPanel->setObjectName(QStringLiteral("OmniParamPanel"));
     panelLayout->addWidget(propertyPanel);
     panelLayout->addWidget(paramPanel);
     propertyPanel->hide();
@@ -1000,6 +1093,7 @@ OmniSearchBox::OmniSearchBox(QWidget *parent)
     connect(lineEdit, &OmniSearchEdit::modeChanged, this, &OmniSearchBox::onModeChanged);
     connect(lineEdit, &OmniSearchEdit::objectResolved, this, &OmniSearchBox::onObjectResolved);
     connect(lineEdit, &OmniSearchEdit::objectUnresolved, this, &OmniSearchBox::onObjectUnresolved);
+    connect(lineEdit, &OmniSearchEdit::objectActivated, this, &OmniSearchBox::onObjectActivated);
     connect(lineEdit, &OmniSearchEdit::commandChosen, this, &OmniSearchBox::onCommandChosen);
     connect(lineEdit, &OmniSearchEdit::groupExpandRequested, this, &OmniSearchBox::onGroupExpandRequested);
     connect(lineEdit, &OmniSearchEdit::paramChosen, this, &OmniSearchBox::onParamChosen);
@@ -1130,16 +1224,12 @@ bool OmniSearchBox::event(QEvent *event)
     return QFrame::event(event);
 }
 
+// Esc with a popup up closes the popup (the completer takes it before the
+// edit); Esc here means there was none, and closes the box.
 void OmniSearchBox::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Escape) {
-        if (panelHost->isVisible()) {
-            hidePanels();
-            lineEdit->setFocus();
-        }
-        else {
-            dismiss();
-        }
+        dismiss();
         event->accept();
         return;
     }
@@ -1156,14 +1246,15 @@ void OmniSearchBox::onModeChanged(Mode mode)
     }
 }
 
+// The text names something: show it in the tree. The property editor waits
+// for the row to be picked (onObjectActivated) or for Enter -- not for a
+// keystroke or the highlight moving through the popup.
 void OmniSearchBox::onObjectResolved(const ObjectMatch &match)
 {
     auto t = tree();
     if (match.prop) {
-        if (!propertyPanel->isFor(match.prop)) {
-            propertyPanel->setProperty(match.prop, match.obj);
-            showPanel(propertyPanel);
-        }
+        if (panelHost->isVisible() && !propertyPanel->isFor(match.prop))
+            hidePanels();
         if (t) {
             t->resetItemSearch();
             if (auto item = TreeWidget::selectUp(match.obj, nullptr, false))
@@ -1181,6 +1272,17 @@ void OmniSearchBox::onObjectResolved(const ObjectMatch &match)
         hidePanels();
     if (t)
         t->itemSearch(lineEdit->currentInput().query, false);
+}
+
+void OmniSearchBox::onObjectActivated(const ObjectMatch &match)
+{
+    if (!match.prop)
+        return;
+    if (!propertyPanel->isFor(match.prop)) {
+        propertyPanel->setProperty(match.prop, match.obj);
+        showPanel(propertyPanel);
+    }
+    propertyPanel->focusEditor();
 }
 
 void OmniSearchBox::onObjectUnresolved()
@@ -1256,16 +1358,10 @@ void OmniSearchBox::onEnterPressed()
         ObjectMatch match;
         if (!lineEdit->owner() || !resolveObject(lineEdit->currentInput().query, lineEdit->owner(), match))
             break;
-        if (match.prop) {
-            if (!propertyPanel->isFor(match.prop)) {
-                propertyPanel->setProperty(match.prop, match.obj);
-                showPanel(propertyPanel);
-            }
-            propertyPanel->focusEditor();
-        }
-        else {
+        if (match.prop)
+            onObjectActivated(match);
+        else
             selectObject(match);
-        }
         break;
     }
     case Mode::Command:

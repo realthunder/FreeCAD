@@ -90,6 +90,8 @@ Q_SIGNALS:
     void objectResolved(const OmniSearch::ObjectMatch &match);
     /// The object query names nothing
     void objectUnresolved();
+    /// A row of the object popup was picked (click or Tab) and resolves
+    void objectActivated(const OmniSearch::ObjectMatch &match);
     /// A command row was chosen
     void commandChosen(const QByteArray &name);
     /// The arrow of a group command row was hit; rect is in global coordinates
@@ -115,6 +117,8 @@ private:
     void runObjectQuery();
     void resolveObjectQuery();
     void completeObject(const QString &completion);
+    void activateObject();
+    bool chooseCurrentRow();
     QRect popupRect() const;
     QCompleter *activeCompleter() const;
     bool expandGroupAt(const QModelIndex &index);
@@ -172,6 +176,7 @@ private Q_SLOTS:
     void onModeChanged(OmniSearch::Mode mode);
     void onObjectResolved(const OmniSearch::ObjectMatch &match);
     void onObjectUnresolved();
+    void onObjectActivated(const OmniSearch::ObjectMatch &match);
     void onCommandChosen(const QByteArray &name);
     void onGroupExpandRequested(const QByteArray &name, const QRect &rect);
     void onParamChosen(const App::ParamInfo *info);

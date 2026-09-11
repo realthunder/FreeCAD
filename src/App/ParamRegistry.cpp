@@ -27,6 +27,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <sstream>
 #endif
 
@@ -89,6 +90,34 @@ std::string ParamInfo::fullPath() const
 {
     std::string res(path);
     res += '/';
+    res += entry;
+    return res;
+}
+
+std::string ParamInfo::displayPath() const
+{
+    const char* p = path ? path : "";
+    for (const char* prefix : {"User parameter:", "System parameter:"}) {
+        auto len = std::strlen(prefix);
+        if (std::strncmp(p, prefix, len) == 0) {
+            p += len;
+            break;
+        }
+    }
+    while (*p == '/') {
+        ++p;
+    }
+    if (std::strncmp(p, "BaseApp", 7) == 0 && (p[7] == '/' || p[7] == '\0')) {
+        p += 7;
+        while (*p == '/') {
+            ++p;
+        }
+    }
+    std::string res("/");
+    res += p;
+    if (res.back() != '/') {
+        res += '/';
+    }
     res += entry;
     return res;
 }

@@ -41,9 +41,24 @@ TEST_F(ParamRegistryTest, populatedByGeneratedRegistrars)
     EXPECT_EQ(info->type, ParamInfo::Bool);
     EXPECT_EQ(info->fullName(), "App::DocumentParams::CheckExtension");
     EXPECT_EQ(info->fullPath(), std::string(DocumentPath) + "/CheckExtension");
+    EXPECT_EQ(info->displayPath(), "/Preferences/Document/CheckExtension");
 
     EXPECT_EQ(reg.find(DocumentPath, "NoSuchEntry"), nullptr);
     EXPECT_EQ(reg.find(nullptr, "CheckExtension"), nullptr);
+}
+
+TEST_F(ParamRegistryTest, displayPathDropsTheCommonRoot)
+{
+    ParamInfo a("T", "C", "User parameter:BaseApp/Preferences/View", "x", "x", ParamInfo::Bool, true);
+    EXPECT_EQ(a.displayPath(), "/Preferences/View/x");
+    ParamInfo b("T", "C", "User parameter:BaseApp", "x", "x", ParamInfo::Bool, true);
+    EXPECT_EQ(b.displayPath(), "/x");
+    ParamInfo c("T", "C", "System parameter:Other/Group", "x", "y", ParamInfo::Bool, true);
+    EXPECT_EQ(c.displayPath(), "/Other/Group/y");
+    ParamInfo d("T", "C", "BaseAppX/Group", "x", "x", ParamInfo::Bool, true);
+    EXPECT_EQ(d.displayPath(), "/BaseAppX/Group/x");
+    ParamInfo e("T", "C", "p", "x", "x", ParamInfo::Bool, true);
+    EXPECT_EQ(e.displayPath(), "/p/x");
 }
 
 TEST_F(ParamRegistryTest, defaultsAreFormattedByType)

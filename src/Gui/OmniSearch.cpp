@@ -385,7 +385,7 @@ QVariant ParamListModel::data(const QModelIndex &index, int role) const
     case Qt::DisplayRole:
     case Qt::EditRole:
     case OmniSearch::TitleRole:
-        return QString::fromUtf8(info->fullName().c_str());
+        return QString::fromUtf8(info->displayPath().c_str());
 
     case OmniSearch::DescriptionRole: {
         QString doc = firstLine(translateParamText(*info, info->doc));

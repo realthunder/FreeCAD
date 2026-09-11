@@ -26,19 +26,26 @@ of the active view with `/` already typed and three suggestions:
 Pick one (Enter, Tab or click) or type the prefix; the space ends it. Text
 that does not start with `/` is an object query as typed.
 
+In every popup, Up/Down and Shift+Tab move the highlight, and Tab or a click
+picks the highlighted row (the first one when none is); Enter picks it too
+except in the object popup, where Enter acts on the text as typed (below).
+
 **Objects.** The completer is the expression completer, so it offers
 documents, objects by name or `<<label>>`, sub-objects and properties as you
 type, with the same "Exact match / Case sensitive / Unfiltered" options in
 the context menu. While the text names an object the tree scrolls to it and
 preselects it, exactly as the tree's own search box does. Enter selects it
 and pops the hierarchy menu of `Std_SelUp` -- the document and the parents
-down to the object -- so the next step up or down is one click. While the
-text names a property (`Box.Length`, `Part.Box.Placement`) an editor for it
-appears under the line: the same editor the property view would show, built
-from the same `PropertyItem`, with an `f(x)` toggle to edit the expression
-instead when the property is bound. A change applies through the property
-item as a Python command; the edit is one undo step, and the document
-recomputes when the box closes. Enter in the editor closes the box.
+down to the object -- so the next step up or down is one click. When the
+text names a property (`Box.Length`, `Part.Box.Placement`) and the row is
+picked (Tab or click) or Enter is pressed, an editor for it appears under
+the line: the same editor the property view would show, built from the same
+`PropertyItem`, with an `f(x)` toggle to edit the expression instead when
+the property is bound. Moving the highlight through the popup only splices
+the completion into the text and tracks it in the tree; no editor is built
+until the row is picked. A change applies through the property item as a
+Python command; the edit is one undo step, and the document recomputes when
+the box closes. Enter in the editor closes the box.
 
 **Commands.** Rows show the command's icon, title and shortcut and its
 tooltip as the description; inactive commands are greyed and inert. A group
@@ -50,11 +57,14 @@ and records it in the command history (`Std_CmdHistory`). Matching is by
 keyword: every whitespace-separated word must occur, case-insensitively, in
 the title, internal name, shortcut or description.
 
-**Parameters.** Rows are `Namespace::Class::Name` with the parameter's title
-and documentation as the description and its current value on the right;
-the tooltip carries the full path. Keywords match the full path, the full
-name, the title and the documentation. Choosing a row shows the parameter's
-editor under the line, labelled with its path and default. The editor is the
+**Parameters.** Rows are the parameter's path with the `User parameter:`
+prefix and the `BaseApp` root every generated parameter shares dropped --
+`/Preferences/View/SyncSelect` (`App::ParamInfo::displayPath()`) -- with
+the parameter's title and documentation as the description and its current
+value on the right; the tooltip carries the full path. Keywords match the
+full path, the accessor's `Namespace::Class::Name`, the title and the
+documentation. Choosing a row shows the parameter's editor under the line,
+labelled with that path, its title and its default. The editor is the
 one its preference page uses -- a combo box with the same items, a colour
 button, a file chooser, a shortcut editor, a spin box with the same range --
 or, for a parameter whose page widget the registry cannot describe, a basic
@@ -62,9 +72,10 @@ one for its value type. Edits apply immediately (the generated observer
 classes refresh their caches, so the effect is visible at once); Reset
 removes the stored value so the default applies again.
 
-Esc closes a panel, then the box; a click elsewhere closes the box. The box
-undoes what it changed transiently -- the tree highlight, the preselection
--- when it closes.
+Esc and a click elsewhere work in two steps: with a popup up they close the
+popup and leave the box; without one they close the box, panel or no panel.
+The box undoes what it changed transiently -- the tree highlight, the
+preselection -- when it closes.
 
 ## 2. The pieces
 
@@ -108,9 +119,25 @@ over the command and parameter lists. `parseInput()` on every edit decides
 which one answers; at most one popup is up. The expression completer only
 ever sees the query, so its completions are spliced back with the prefix's
 offset (`completeObject()`, the eight lines of
-`ExpressionLineEdit::slotCompleteText()`). Its Return is taken by an event
-filter on its popup, because `ExpressionCompleter` hides the popup and lets
-the key fall into the list view where the box would never hear it.
+`ExpressionLineEdit::slotCompleteText()`, plus one fix-up: for a member of
+the owner object the model completes to the expression shorthand `.Length`,
+and since the owner is only the document's first object the splice keeps
+the typed object in front of the dot); its `highlighted` signal only
+splices, its `activated` signal (a click) splices and then commits
+(`activateObject()` -> `objectActivated`), which is what builds the
+property editor.
+
+Keys are handled on the popups, not on the edit: while a popup is up the
+key events go to it, and `QCompleter` forwards them to the edit's `event()`
+directly, past any filter installed on the edit. So `OmniSearchEdit` is an
+event filter on all four popups, and it re-installs itself on the object
+popup after every `slotUpdate()` because `ExpressionCompleter`'s lazy
+`init()` re-sets the popup and would otherwise move its own filter ahead
+(it turns Tab into Down and swallows it). The filter makes Tab pick the
+current row (`chooseCurrentRow()`, the first row when none is current) and
+Shift+Tab move up; on the object popup it also takes Return, because
+`ExpressionCompleter` hides the popup and lets the key fall into the list
+view where the box would never hear it.
 
 `OmniSearchBox` is a frameless `Qt::Tool` window over the main window. It
 holds the edit and two panels: `OmniPropertyPanel` builds the property
