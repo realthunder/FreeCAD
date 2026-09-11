@@ -121,13 +121,13 @@ int documentSeparator(const std::string &txt)
     return -1;
 }
 
-// The document "Doc" or "<<Label>>" names; the owner's for an empty name.
+// The document "Doc" or "<<Label>>" names; the default for an empty name.
 // An unquoted name is tried as a name first, then as a label, as
 // ObjectIdentifier does; an ambiguous label names nothing.
-App::Document *findDocument(const std::string &name, App::DocumentObject *owner)
+App::Document *findDocument(const std::string &name, App::Document *defaultDoc)
 {
     if (name.empty())
-        return owner->getDocument();
+        return defaultDoc;
     std::string label = name;
     if (name.size() >= 4 && boost::starts_with(name, "<<") && boost::ends_with(name, ">>"))
         label = name.substr(2, name.size() - 4);
@@ -203,11 +203,14 @@ bool resolveDocumentMember(App::Document *doc, const std::string &member, OmniSe
 {
     App::PropertyContainer *container = doc;
     std::string name = member;
+    std::string viewName;
     auto dot = member.find('.');
     if (dot != std::string::npos) {
-        container = viewNamed(doc, member.substr(0, dot));
-        if (!container)
+        auto view = viewNamed(doc, member.substr(0, dot));
+        if (!view)
             return false;
+        container = view;
+        viewName = view->getPersistentName();
         name = member.substr(dot + 1);
     }
     if (!isIdentifier(name))
@@ -216,6 +219,7 @@ bool resolveDocumentMember(App::Document *doc, const std::string &member, OmniSe
     if (!prop)
         return false;
     out.doc = doc;
+    out.view = viewName;
     out.prop = prop;
     out.props.push_back(prop);
     return true;
@@ -259,14 +263,11 @@ App::Property *pathProperty(App::DocumentObject *owner, const std::string &txt,
     return nullptr;
 }
 
-} // namespace
-
-bool OmniSearch::resolveObject(const QString &query, App::DocumentObject *owner, ObjectMatch &out,
-                               const std::vector<App::DocumentObject*> *locals)
+// resolveObject() and resolveInDocument() share this: defaultDoc is what
+// a bare '#' names, owner (possibly null) what the rest parses against
+bool resolveQuery(const QString &query, App::Document *defaultDoc, App::DocumentObject *owner,
+                  OmniSearch::ObjectMatch &out, const std::vector<App::DocumentObject*> *locals)
 {
-    out = ObjectMatch();
-    if (!owner || !owner->isAttachedToDocument())
-        return false;
     std::string txt = query.trimmed().toUtf8().constData();
     if (txt.empty())
         return false;
@@ -276,9 +277,11 @@ bool OmniSearch::resolveObject(const QString &query, App::DocumentObject *owner,
     // (the expression grammar only knows "Doc#Box").
     int sep = documentSeparator(txt);
     if (sep >= 0 && sep + 1 < static_cast<int>(txt.size()) && txt[sep + 1] == '.') {
-        auto doc = findDocument(txt.substr(0, sep), owner);
+        auto doc = findDocument(txt.substr(0, sep), defaultDoc);
         return doc && resolveDocumentMember(doc, txt.substr(sep + 2), out);
     }
+    if (!owner)
+        return false;
     if (sep == 0) {
         txt.erase(0, 1);
         if (txt.empty())
@@ -336,6 +339,48 @@ bool OmniSearch::resolveObject(const QString &query, App::DocumentObject *owner,
     return false;
 }
 
+} // namespace
+
+bool OmniSearch::resolveObject(const QString &query, App::DocumentObject *owner, ObjectMatch &out,
+                               const std::vector<App::DocumentObject*> *locals)
+{
+    out = ObjectMatch();
+    if (!owner || !owner->isAttachedToDocument())
+        return false;
+    return resolveQuery(query, owner->getDocument(), owner, out, locals);
+}
+
+bool OmniSearch::resolveInDocument(const QString &query, App::Document *doc, ObjectMatch &out)
+{
+    out = ObjectMatch();
+    if (!doc)
+        return false;
+    const auto &objs = doc->getObjects();
+    return resolveQuery(query, doc, objs.empty() ? nullptr : objs.front(), out, nullptr);
+}
+
+App::PropertyContainer *OmniSearch::documentView(App::Document *doc, const std::string &name)
+{
+    return doc ? viewNamed(doc, name) : nullptr;
+}
+
+std::vector<OmniSearch::ViewMatch> OmniSearch::documentViews(App::Document *doc)
+{
+    std::vector<ViewMatch> res;
+    if (!doc)
+        return res;
+    auto active = activeView(doc);
+    for (auto view : namedViews(doc)) {
+        ViewMatch m;
+        m.name = view->getPersistentName();
+        m.title = view->windowTitle();
+        m.title.remove(QLatin1String("[*]"));
+        m.active = view == active;
+        res.push_back(std::move(m));
+    }
+    return res;
+}
+
 std::vector<OmniSearch::MemberMatch> OmniSearch::documentMembers(const QString &head,
                                                                  App::DocumentObject *owner)
 {
@@ -346,7 +391,7 @@ std::vector<OmniSearch::MemberMatch> OmniSearch::documentMembers(const QString &
     int sep = documentSeparator(txt);
     if (sep < 0 || sep + 1 >= static_cast<int>(txt.size()) || txt[sep + 1] != '.')
         return res;
-    auto doc = findDocument(txt.substr(0, sep), owner);
+    auto doc = findDocument(txt.substr(0, sep), owner->getDocument());
     if (!doc)
         return res;
     App::PropertyContainer *container = doc;

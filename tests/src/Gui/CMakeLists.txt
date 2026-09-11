@@ -28,6 +28,10 @@ setup_qt_test(QuantitySpinBox)
 # preference widgets. Widgets, hence a QApplication, hence a Qt test.
 setup_qt_test(OmniSearch)
 
+# The omni search ops of the control channel (docs/OmniSearch.md sec 6),
+# through handleSceneControlRequest() without a socket or a Gui::Application.
+setup_qt_test(OmniControl)
+
 # The drain's walk over a live document (docs/DocumentLoad.md §13). The
 # cursor is header-only over App, and the claim being tested -- that the
 # walk survives objects coming and going between slices -- needs no window,

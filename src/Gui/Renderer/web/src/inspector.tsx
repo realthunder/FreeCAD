@@ -40,7 +40,7 @@ const ALL = '\u001Fall';  // sentinel that can't collide with a group name
 // treat this whole file as binary — no diffs, no blame, and grep skips
 // it unless asked for -a.
 
-function fmtValue(p: PropDescriptor): JSX.Element {
+export function fmtValue(p: PropDescriptor): JSX.Element {
   const v = p.value;
   switch (p.type) {
     case 'Bool':
@@ -102,7 +102,7 @@ function fmtValue(p: PropDescriptor): JSX.Element {
 /// inputs, commit on change (toggles/selects/color) or Enter/blur
 /// (number and text fields). Everything else falls back to the static
 /// rendering.
-function editValue(
+export function editValue(
   p: PropDescriptor,
   commit: (p: PropDescriptor, value: unknown) => void,
 ): JSX.Element {

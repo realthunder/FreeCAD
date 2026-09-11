@@ -96,6 +96,11 @@ struct ObjectMatch {
      * the document itself or of its active 3D view
      */
     App::Document *doc = nullptr;
+    /** The persistent name of the view a "#.View2.X" or "#.ActiveView.X"
+     * query addressed ("ActiveView" resolved to the view's own name);
+     * empty for a property of the document itself or of an object
+     */
+    std::string view;
     /// Set when the query named a property of the object
     App::Property *prop = nullptr;
     App::ObjectIdentifier path;
@@ -132,6 +137,35 @@ struct ObjectMatch {
  */
 GuiExport bool resolveObject(const QString &query, App::DocumentObject *owner, ObjectMatch &out,
                              const std::vector<App::DocumentObject*> *locals = nullptr);
+
+/** Resolve an object query against a document rather than an owner.
+ *
+ * The owner is the document's first object, so "Box.Length", "<<Label>>"
+ * and "Doc#Box" resolve as resolveObject() resolves them, without a
+ * selection to take the owner from -- the remote viewer's case. The
+ * "#." forms resolve on an empty document too. No local objects: a
+ * leading '.' is the owner's member, as in an expression.
+ */
+GuiExport bool resolveInDocument(const QString &query, App::Document *doc, ObjectMatch &out);
+
+/** The property container "ActiveView" or a view's persistent name
+ * ("View2") addresses in a document: the MDI view of that name, or the
+ * document's active 3D view. Null when there is none.
+ */
+GuiExport App::PropertyContainer *documentView(App::Document *doc, const std::string &name);
+
+/// One view a "#." can name
+struct ViewMatch {
+    /// The persistent name, "View2"
+    std::string name;
+    /// The window title
+    QString title;
+    /// Whether it is the document's active view
+    bool active = false;
+};
+
+/// The views of a document by persistent name, in MDI order; ViewArea containers left out
+GuiExport std::vector<ViewMatch> documentViews(App::Document *doc);
 
 /// A row the "#." completer offers
 struct MemberMatch {

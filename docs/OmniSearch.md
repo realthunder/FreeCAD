@@ -1,7 +1,7 @@
 # Omni search -- `/` over objects, commands and parameters
 
-Status: implemented on the desktop (2026-09-11). The browser mirror is planned;
-section 6 says what it will reuse.
+Status: implemented on the desktop (2026-09-11) and mirrored in the browser
+viewer (2026-09-12, section 6).
 
 FreeCAD had three places to find something by typing, none of them reachable
 from one key: the tree's search box (objects only, `Gui::ExpressionLineEdit`
@@ -135,6 +135,10 @@ Gui::ParamListModel, Gui::KeywordFilterModel                 (same file)
 Gui::CommandListModel         src/Gui/CommandCompleter.*     the command list, lifted out of the completer
 Gui::OmniSearchBox, Gui::OmniSearchEdit   src/Gui/OmniSearchBox.*   the floating box
 Std_OmniSearch                src/Gui/CommandStd.cpp, Workbench.cpp (Tools menu)
+Gui::OmniControl              src/Gui/OmniControl.*         the ops of the browser mirror (section 6)
+                              src/Gui/SceneControlP.h       the descriptor shared with SceneControl.cpp
+OmniBox                       src/Gui/Renderer/web/src/omni.tsx        the box in the viewer
+Catalog                       src/Gui/Renderer/web/src/omnicatalog.ts  the versioned lists
 ```
 
 ### 2.1 `Gui::OmniSearch` -- the search without the box
@@ -160,6 +164,13 @@ consume:
   leading `#` before an object name is dropped. The owner
   comes from `TreeWidget::startItemSearch()`, which also sets up the tree's
   search state.
+- `resolveInDocument(query, doc, match)`: the same over a document with no
+  selection to take the owner from -- the owner is the document's first
+  object, and the `#.` forms work on an empty document. The match names
+  the view (`ObjectMatch::view`, `ActiveView` resolved to its name) so a
+  consumer can address it again. `documentView(doc, name)` is the
+  container behind `ActiveView` or a persistent name, `documentViews(doc)`
+  the names a `#.` can offer.
 - `documentMembers(head, owner)` and `splitMemberQuery(query, head, tail)`:
   the rows behind a `#.` or `#.View2.` popup, and the split of a query
   into the head that names the container and the member typed so far.
@@ -300,31 +311,159 @@ The line endings in this repository are frozen (`.gitattributes`), so check
   filter, and `createParamEditor` for every proxy kind and every value type.
   There is no `Gui::Application` in it, so `ViewObject` and `ActiveView`
   are only checked to resolve to nothing there.
+- `tests/src/Gui/OmniControl.cpp` (`OmniControl_Tests_run`, a Qt test):
+  the ops of section 6 through `handleSceneControlRequest()` -- the
+  parameter catalog whole and by delta (a registered parameter is one
+  added row for a viewer on the old version, another session's version
+  is answered whole), `omni.rows`, `param.get/set/reset` and their
+  view-only refusal, `omni.objects` with sub-objects, and `omni.resolve`
+  for objects, labels, sub-object paths, properties, `#Name`, `#.`
+  members and an empty document. Without a `Gui::Application` the
+  command ops answer `NoGui` and views are absent, which is asserted.
 - Commands need a `Gui::Application`; they are exercised by hand: `/cmd
   draw` -> `Std_DrawStyle` with its arrow, `/cmd history` -> Enter runs
   `Std_CmdHistory` and it appears in the history.
 
-## 6. The browser mirror (planned)
+## 6. The browser mirror
 
-The viewer's control channel (`SceneControl.cpp`, `web/src/control.ts`
-`sendOp`, see `ThinClient.md` section 4.2) speaks id-correlated JSON ops and
-today knows `getProperties`, `setProperty` and the `cycles` ops. The mirror
-adds ops that call the same layer the box does, which is why that layer has
-no widgets in it:
+Implemented 2026-09-12. The viewer's DOM layer has the box too
+(`src/Gui/Renderer/web/src/omni.tsx`): `/` with the canvas focused, or
+"Search" in the viewer menu for a device without a keyboard. The grammar
+is the desktop's (`parseInput` is ported line for line), the three modes
+are the same, Tab and a click pick a row, Enter acts on the text as
+typed in object mode and on the row elsewhere, Esc closes the panel
+first and the box second. The desktop's widget-free layer answers it
+over the control channel: `SceneControl.cpp` dispatches, `OmniControl.cpp`
+implements the ops against `Gui::OmniSearch`, `App::ParamRegistry` and the
+command manager, and `SceneControlP.h` shares the property descriptor
+between the two. That layer was kept free of widgets for exactly this.
 
-| op                 | fields                    | calls                                        |
-|--------------------|---------------------------|----------------------------------------------|
-| `omni.search`      | `mode`, `query`           | `searchCommands`, `searchParams`, or the expression completer's model for objects |
-| `omni.resolve`     | `query`, `doc`            | `resolveObject` -> object/sub-object/property, or a document/view property (`#.`) |
-| `omni.members`      | `head`                    | `documentMembers` for a `#.` or `#.View2.` head |
-| `command.run`      | `name`                    | `CommandManager::runCommandByName`           |
-| `param.get/set/reset` | `path`, `entry`, `value` | `ParamRegistry::getValue`/`setValue`/`reset` |
+### 6.1 Nothing per keystroke
 
-`command.run` and `param.set` are mutating and refused on a view-only
-connection like `setProperty` is. The property editor of a resolved property
-is the browser inspector's existing `setProperty`. The parameter editor
-needs `ParamInfo` on the wire -- type, proxy, items, range -- which
-`omni.search` returns per row, so the page can build the same choice of
-control. The command list carries `group` per row; expanding one needs a
-`command.children` op over `ActionGroup::actions()`. None of this is
-implemented yet.
+The box re-filters on every keystroke, and a round trip per key over the
+WebSocket is what the design refuses. What crosses the wire, and when:
+
+- **The command and parameter lists are catalogs**, shipped whole once
+  and kept by version -- the scene stream's model (SceneStreaming.md
+  section 5) applied to two small lists. The viewer states the version it
+  holds and the session it came from; the backend answers with the rows
+  to add or replace and the keys to drop since then, merged last-wins
+  from a bounded history (64 versions), or with the whole list when the
+  session is another run's or the version has fallen out of the history.
+  The viewer keeps the rows in memory and in `localStorage`
+  (`fc.omni.commands`, `fc.omni.params`), so a reload costs a delta, and
+  a delta of nothing is about a hundred bytes. The backend's side is
+  `OmniControl.cpp`'s `Catalog`: a version bumps when the rows differ
+  from the last build, and the rows are rebuilt only when what they
+  come from moved -- the command manager's revision and the shortcut
+  manager's `shortcutChanged` for commands, the registry's entry count
+  for parameters. Every viewer is told `{"op":"omni.changed","list",
+  "session","version"}` when a version advances; the cues are a
+  workbench activation (commands registered, libraries with parameters
+  loaded) and a shortcut change, checked one event-loop turn later, and
+  any `omni.catalog` request also refreshes. The box syncs both
+  catalogs once when it opens, and filters locally from then on.
+  Measured over the live socket against a serving desktop (2026-09-12,
+  a dependency-free RFC 6455 client speaking the text lane): the
+  command catalog is 596 rows and 74 KB whole at start-up (679 rows and
+  86 KB with Draft loaded), the parameter catalog 531 rows and 282 KB
+  (the documentation strings are most of it); either answers in 6 to
+  10 ms on the loopback, and a "current" answer is 106 to 108 bytes in
+  under half a millisecond. Loading the Spreadsheet workbench through
+  the channel itself (`command.run` of a `Std_Workbench` row) produced
+  both pushes 220 ms later, and the deltas were exactly the new rows:
+  16 commands in 1.7 KB, 10 parameters in 3.7 KB. Both catalogs are one
+  fetch per browser, ever, until a version moves.
+- **A parameter's value and a command's active state are not in the
+  catalog**: they change without it. They ride `omni.rows` for the rows
+  on screen (at most 60), asked once the list has stood still for 120 ms
+  and again after every settle; a reply a later keystroke made stale is
+  dropped by a sequence number. The desktop shows the same value on the
+  row's right and greys inactive commands. Measured: 60 keys answer in
+  202 bytes and 0.6 ms.
+- **The document's objects** come once per opening (`omni.objects`:
+  name, label when it differs, type, sub-object names, and the views a
+  `#.` can name). Object rows, `Part.` sub-object rows and the `#.`
+  view rows filter locally.
+- **Property descriptors** come from the existing `getProperties`, one
+  fetch per container (an object with both scopes, the document, a
+  view) cached for the box's life; the rows after `Box.`,
+  `Box.ViewObject.`, `.`, `#.` and `#.View2.` filter locally and carry
+  the descriptor, so picking one opens the editor with no further round
+  trip.
+- **`omni.resolve`** runs the desktop grammar on the backend for the text
+  as typed -- Enter, or a click on an object row -- and answers an
+  object, or a property with its descriptor and the addressing
+  `setProperty` needs. It is the one op that sees the typed text, and
+  only when the user has stopped typing. Measured: 0.2 to 2.5 ms and
+  under 400 bytes, except the very first resolve of a process (411 ms,
+  the expression machinery's own warm-up).
+
+Everything is id-correlated (`control.ts` `sendOp`), an unsolicited
+`op` without an id goes to `onPush()` subscribers, and no op is
+retried: offline is reported, not queued.
+
+### 6.2 The ops
+
+| op                 | request                                | reply                                                    |
+|--------------------|----------------------------------------|----------------------------------------------------------|
+| `omni.catalog`     | `list` (`commands`/`params`), `session`, `version` | `session`, `version`, `full`, `add` rows, `remove` keys |
+| `omni.rows`        | `list`, `keys`                         | `rows`: key -> `{value, set}` or `{active}`              |
+| `omni.objects`     | `doc` (optional)                       | `doc`, `label`, `objects[{name,label,type,children}]`, `views[{name,title,served}]` |
+| `omni.resolve`     | `query`, `doc` (optional)              | `kind` `object` (`doc`,`obj`,`top`,`sub`,`label`,`type`) or `property` (`doc`,`obj`,`scope`,`view`,`prop`) |
+| `command.run`      | `name`, `child` (optional row index)   | ok; `Inactive`, `UnknownCommand`, `NotGroup`, `CommandFailed` |
+| `command.children` | `name`                                 | `exclusive`, `items[{index,text,tooltip,checkable,checked,enabled,visible,separator}]` |
+| `param.get`/`set`/`reset` | `key` (`ParamInfo::fullPath()`), `value` for set | `key`, `value`, `set`                        |
+| `omni.changed` (push) | --                                  | `list`, `session`, `version`                             |
+
+A command row is `{name, title, desc, shortcut, group}`; a parameter row
+is the desktop row plus the editor's recipe -- `{key, path, group, entry,
+name, title, doc, type, default, proxy, min, max, step, decimals,
+transparency, items[{text,tooltip,data}], dataIsString}` -- so the page
+builds the same choice of control `createParamEditor()` does: a select
+over the items (value the index, or the item data), a colour input for
+`Color` and every `Hex`, a number input with the spin box's range, a
+checkbox, a text field for the rest. Values travel in
+`ParamRegistry::getValue()` text form.
+
+`command.run`, `param.set` and `param.reset` are mutating and refused on
+a view-only connection like `setProperty` (`OmniControl::isMutating`).
+
+`getProperties` and `setProperty` with subject/target `view3d` take an
+optional `view`, a persistent view name, for `#.View2.DrawStyle`; without
+it they address the served view, which is also what `#.ActiveView.` means
+to a viewer -- the view it looks at, whichever MDI view the desktop has
+active. For a served document that is the serving container, the one
+whose `Render_*` knobs the inspector's "View" half shows, and it has no
+`DrawStyle`: `#.ActiveView.Render_AO` resolves there, `#.View1.DrawStyle`
+reaches the desktop's MDI view by name. `omni.objects` marks a named view
+`served` when it is that container, and `omni.resolve` leaves `view` out
+when the named view is the served one.
+
+### 6.3 Where the mirror differs from the desktop box
+
+- Enter on an object opens a card of that object's properties with
+  editors, in the box, instead of the tree's hierarchy menu: the viewer
+  has no tree, and the card is what a remote user can act on.
+- A leading `.` is the viewer's own selection (`fc:selection`): the
+  first selected object's properties are listed, and a commit issues one
+  `setProperty` per selected object -- the backend has no transaction
+  spanning them, and a failure on one is reported without undoing the
+  others.
+- A group command's arrow (or Right on the row) asks `command.children`
+  and shows the rows as a menu; a row runs `command.run` with its index,
+  which triggers the same `QAction` the desktop menu would.
+- No icons, no `<<label>>` rows: the label is the object row's
+  description, and `<<Label>>` still resolves when typed.
+- Building the web layer on the Windows box: `npm install` and `npm run
+  build` in WSL (`/mnt/d/works/sw/fcad/src/Gui/Renderer/web`); rollup's
+  native binding does not load there, so `npm install --no-save
+  rollup@npm:@rollup/wasm-node@4` first. The bundle lands in
+  `build/wasm/web`; the WASM viewer itself is not built on this box, so
+  the page is exercised on the Linux box, and the protocol here: a
+  serving desktop (`Gui.serveDocument(doc, port)` from a `-M` driver
+  module) and a plain-socket client. One trap for such a client: the
+  server recognises the hello, `resync`, `docs` and `switch` verbs by
+  the exact substring `"cmd":"hello"` -- a JSON encoder that puts a
+  space after the colon is not a viewer, gets no pushes, and the ops
+  still answer, so nothing says why.

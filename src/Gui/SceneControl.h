@@ -24,6 +24,8 @@
 
 #include <string>
 
+#include <FCGlobal.h>
+
 namespace Gui {
 
 /// The semantic control channel of the scene stream (docs/ThinClient.md
@@ -39,7 +41,7 @@ namespace Gui {
 /// unnamed document (docs/MultiDocServe.md §5). \a viewOnly refuses
 /// every mutating op with a ViewOnly error — the per-client mode the
 /// sharing host sets (docs/MultiDocServe.md §8); reads stay answered.
-std::string handleSceneControlRequest(const std::string &json,
+GuiExport std::string handleSceneControlRequest(const std::string &json,
                                       const std::string &boundDoc = {},
                                       bool viewOnly = false);
 
@@ -48,7 +50,7 @@ std::string handleSceneControlRequest(const std::string &json,
 /// Idempotent; safe to call whenever a serving renderer comes up.
 /// \a docName installs on that document's server group and binds the
 /// handler to it; empty installs on the default group, unbound.
-void installSceneControlHandler(const std::string &docName = {});
+GuiExport void installSceneControlHandler(const std::string &docName = {});
 
 } // namespace Gui
 

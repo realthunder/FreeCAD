@@ -297,7 +297,12 @@ JSON text frames. Request/response correlated by `id`. Minimal v0:
 
 **Beyond v0.** `{"op":"cycles",...}` and `{"op":"cycles.camera",...}` are the
 served viewport's ops -- the backend path traces this connection's view and
-streams the frame; docs/CyclesIntegration.md sec 7.1 spells them.
+streams the frame; docs/CyclesIntegration.md sec 7.1 spells them. The omni
+search box's ops -- `omni.catalog`, `omni.rows`, `omni.objects`,
+`omni.resolve`, `command.run`, `command.children`, `param.get/set/reset`,
+and the `omni.changed` push -- are docs/OmniSearch.md sec 6; `getProperties`
+and `setProperty` on `view3d` take an optional `view` name from the same
+work.
 
 **Subjects.** `getProperties` takes an optional `subject`: `object` (the default, and what
 every v0 client asks for by saying nothing), `view3d` — the session's 3D view, where the

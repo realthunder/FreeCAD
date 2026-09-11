@@ -904,6 +904,7 @@ SET(View3D_CPP_SRCS
     View3DInventorExamples.cpp
     View3DInventorSelection.cpp
     View3DInventorViewer.cpp
+    OmniControl.cpp
     SceneControl.cpp
     View3DInventorRiftViewer.cpp
     View3DSettings.cpp
@@ -934,7 +935,9 @@ SET(View3D_SRCS
     View3DInventorExamples.h
     View3DInventorSelection.h
     View3DInventorViewer.h
+    OmniControl.h
     SceneControl.h
+    SceneControlP.h
     View3DInventorRiftViewer.h
     View3DSettings.h
     CoinRiftWidget.h
