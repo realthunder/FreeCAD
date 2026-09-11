@@ -182,11 +182,32 @@ public:
     void releaseGesture(ViewerContext* view);
     //@}
 
+    /** @name The views of the session
+     *
+     * Every view showing through this root, initiator and joiners alike,
+     * in the order they bound it (ViewerContext::bindEditingRoot keeps
+     * it). A tool that changes what a VIEW does -- the External and
+     * CarbonCopy tools turn the view's own selection back on so a click
+     * reaches the object under the pointer -- has to do it to every view
+     * of the session, and this is the only list of them: the document
+     * knows its windows and the serving source its mirrors, and the tool
+     * state machine is shared by both.
+     */
+    //@{
+    const std::vector<ViewerContext*>& views() const
+    {
+        return viewList;
+    }
+    void attachView(ViewerContext* view);
+    void detachView(ViewerContext* view);
+    //@}
+
 private:
     SoSeparator* root {nullptr};
     SoTransform* transform {nullptr};
     Gui::Document* doc {nullptr};
     std::map<SoGroup*, int> parents;
+    std::vector<ViewerContext*> viewList;
     /// Whether reset has children to give back to a view provider, as
     /// opposed to a node someone handed setup.
     bool restore {false};
@@ -245,6 +266,19 @@ public:
     virtual double devicePixelRatio() const = 0;
     /// The mouse buttons this view last saw held down.
     virtual Qt::MouseButtons mouseButtons() const = 0;
+    /** The keyboard modifiers this view last saw.
+     *
+     * The application's for a desktop view. A mirror answers from its
+     * client's last replayed event, because a replayed event carries its
+     * own modifiers and the keyboard at the machine is somebody else's --
+     * the same rule as mouseButtons(). Code that decides something from
+     * a modifier while a pick is being resolved (a selection gate asking
+     * whether Alt is held) asks currentKeyboardModifiers().
+     */
+    virtual Qt::KeyboardModifiers keyboardModifiers() const;
+    /// The modifiers of the view whose input is being handled now, or the
+    /// application's when no view is (the desktop with no scope open).
+    static Qt::KeyboardModifiers currentKeyboardModifiers();
     /// Screen density, for the edit modes that size things in millimetres.
     virtual double logicalDotsPerInchX() const = 0;
     /// Whether any of them is.
@@ -278,6 +312,17 @@ public:
     virtual std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>& pnts) const = 0;
     /// The camera this view looks through, or null before one is stated.
     SoCamera* getCamera() const;
+    /** The graph a pick through this view is applied to.
+     *
+     * A ray pick has a view volume only after it has traversed a camera,
+     * so this is the graph with the camera in it, not the bare scene:
+     * the desktop's is its render manager's scene graph, a mirror's the
+     * per-client event root it replays through (its render manager holds
+     * no graph on purpose). What the unified selection root resolves a
+     * replayed click against (docs/ThinClient.md 8.11 item 3); null when
+     * the view has nothing to pick over.
+     */
+    virtual SoNode* getPickRoot() const;
     /** Whether the camera is a client's, stated over the wire.
      *
      * A desktop view owns its camera and an edit mode may turn it -- the

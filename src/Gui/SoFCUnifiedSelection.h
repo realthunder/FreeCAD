@@ -74,6 +74,7 @@ class Document;
 class ViewProviderDocumentObject;
 class SoFCRayPickAction;
 class View3DInventor;
+class ViewerContext;
 
 /**  Unified Selection node
  *  This is the new selection node for the 3D Viewer which will
@@ -139,6 +140,22 @@ public:
     //void GLRender(SoGLRenderAction * action) override;
 
     void handleEvent(SoHandleEventAction * action) override;
+    /** Run this root's hover and click logic for an event replayed in
+     * \a view, a root that has no viewer of its own.
+     *
+     * A served document's root is shared by every connected client and
+     * belongs to no view, so handleEvent() above leaves its own logic
+     * alone: it cannot pick (a pick needs a camera and a pick radius,
+     * which are a view's), and it must not select (into whose instance?).
+     * The view replaying the event answers both. It calls here ahead of
+     * its edit callback -- the order the desktop has by containment --
+     * and the logic runs only while that view's own selection is enabled,
+     * which is per view and not this root's field: the sketcher turns it
+     * off for every view of a session and the External and CarbonCopy
+     * tools turn it back on (docs/ThinClient.md 8.11 item 3). A view
+     * showing another graph, or a root that has a viewer, is refused.
+     */
+    void handleViewEvent(ViewerContext *view, SoHandleEventAction *action);
     void GLRenderBelowPath(SoGLRenderAction * action) override;
     void GLRenderInPath(SoGLRenderAction * action) override;
     //static  void turnOffCurrentHighlight(SoGLRenderAction * action);

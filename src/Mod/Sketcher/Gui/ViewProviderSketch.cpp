@@ -720,9 +720,37 @@ void ViewProviderSketch::purgeHandler(void)
     deactivateHandler();
     Gui::Selection().clearSelection();
 
-    if (edit && edit->viewer) {
-        edit->viewer->setSelectionEnabled(false);
+    setSessionSelectionEnabled(false);
+}
+
+void ViewProviderSketch::setSessionSelectionEnabled(bool on)
+{
+    if (!edit || !edit->viewer) {
+        return;
     }
+    if (Gui::EditingRoot* root = edit->viewer->editingRoot()) {
+        // A copy: setSelectionEnabled on a desktop view touches its root
+        // node, not the list.
+        const std::vector<Gui::ViewerContext*> views = root->views();
+        if (!views.empty()) {
+            for (Gui::ViewerContext* view : views) {
+                view->setSelectionEnabled(on);
+            }
+            return;
+        }
+    }
+    edit->viewer->setSelectionEnabled(on);
+}
+
+Gui::SelectionSingleton& ViewProviderSketch::sessionSelection() const
+{
+    if (edit && edit->viewer) {
+        if (Gui::SelectionSingleton* instance = edit->viewer->sessionSelectionInstance()) {
+            return *instance;
+        }
+        return Gui::SelectionRoom();
+    }
+    return Gui::Selection();
 }
 
 void ViewProviderSketch::setAxisPickStyle(bool on)
@@ -8538,7 +8566,7 @@ void ViewProviderSketch::generateContextMenu()
     if (Gui::Selection().hasPreselection()) {
         auto sel = Gui::Selection().getPreselection();
         if (!Gui::Selection().isSelected(sel.pDocName, sel.pObjectName, sel.pSubName, Gui::ResolveMode::NoResolve)) {
-            if (!(QApplication::queryKeyboardModifiers() & Qt::ShiftModifier))
+            if (!(Gui::ViewerContext::currentKeyboardModifiers() & Qt::ShiftModifier))
                 Gui::Selection().clearSelection();
             Gui::SelectionNoTopParentCheck guard;
             Gui::Selection().addSelection(sel.pDocName, sel.pObjectName, sel.pSubName);

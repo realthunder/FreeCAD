@@ -300,7 +300,8 @@ served viewport's ops -- the backend path traces this connection's view and
 streams the frame; docs/CyclesIntegration.md sec 7.1 spells them. `{"op":"edit"}`
 and `{"op":"resetEdit"}` are an edit session's two edges (sec 8.9 step 4);
 `{"op":"command","name":"Sketcher_CreateLine"}` starts a sketch tool, allowlisted
-for the reason sec 8.7 gives; `{"op":"onViewFocus","index":1}` moves the keys
+for the reason sec 8.7 gives (the `Sketcher_Create*` family, plus `Sketcher_External`
+and `Sketcher_CarbonCopy` since 8.11 item 3); `{"op":"onViewFocus","index":1}` moves the keys
 between that tool's on-view entry boxes, which the server states back on the
 `{"cmd":"onview"}` push (sec 8.7). `{"op":"undo"}` and `{"op":"redo"}` (an optional
 `steps`, default 1) are the document's transactions, everyone's under the shared
@@ -1106,7 +1107,8 @@ no use for.
 sketch tool at all: the sketcher's shortcuts are Qt shortcuts on a main window, and its
 `ShortcutListener` answers to Delete alone. The `command` op runs one by name, allowlisted
 to `Sketcher_Create*` -- exactly the family that drives a `DrawSketchHandler`, and so
-exactly the family this section is about. The narrowness is not taste: many commands open a
+exactly the family this section is about -- and, since 8.11 item 3, to `Sketcher_External`
+and `Sketcher_CarbonCopy`, which activate a handler the same way. The narrowness is not taste: many commands open a
 modal dialog, and a modal dialog on the GUI thread of a process serving several browsers
 stops serving all of them, with nobody at the machine to dismiss it. Widening the list is
 gated on an answer to modality, not on appetite.
@@ -1357,7 +1359,8 @@ Each step is a standalone landing with the desktop as its regression oracle.
 - The mirror answers `logicalDotsPerInchX()` with 96, the CSS reference, because it has no
   screen to ask and its client is a browser. Whether the edit modes that size things in
   millimetres want that or the client's real density is a stage 4 question.
-- **The `command` op admits `Sketcher_Create*` and nothing else** (8.7). The gate is
+- **The `command` op admits `Sketcher_Create*`, `Sketcher_External` and
+  `Sketcher_CarbonCopy`, and nothing else** (8.7, 8.11 item 3). The gate is
   modality, not authority: the connection may already set properties and enter edit modes,
   so it is not that a wider list would grant more power, it is that a command opening a
   modal dialog would stop the GUI thread of a process serving several browsers with nobody
@@ -1389,15 +1392,18 @@ Each step is a standalone landing with the desktop as its regression oracle.
   is being replayed -- `ViewerContext::current()` is already the right answer -- but the
   four things it asks a viewer for (the root path, the late-pick paths, the hidden-line
   config, `appendDetailPath`) are genuinely `View3DInventorViewer`-shaped, so it is a stage
-  of its own rather than a guard.
+  of its own rather than a guard. **Built as 8.11 item 3**: the pick path takes its view
+  per event, and the mirror runs the root's logic ahead of its edit callback.
 - `ViewProviderSketch` reads `QApplication::queryKeyboardModifiers()` when it turns a
   preselection into a selection -- the same class as the `mouseButtons()` leak below, and
-  the same answer: a replayed event carries its own modifiers.
+  the same answer: a replayed event carries its own modifiers. **Closed by 8.11 item 3**
+  (`ViewerContext::currentKeyboardModifiers()`, the two tools' gates included).
 - `SoFCUnifiedSelection::handleEvent` reads `QApplication::mouseButtons()` twice, and the
   served root is shared by every client. It is reached only from a mirror's replayed
   events, so it is a leak of the same class as the four 8.3 closed rather than a live
   defect, and `ViewerContext::mouseButtons()` is the answer it wants. (Its selection half
-  is no longer a leak: a replayed event selects in the mirror's instance.)
+  is no longer a leak: a replayed event selects in the mirror's instance.) **Closed by
+  8.11 item 3**: the root asks the view a pick runs in.
 - `MirrorViewer::setSelectionEnabled` records a flag; the desktop's toggles `selectionRole`
   on its own selection root. A mirror's root is the shared served one, so the honest version
   of that toggle is per document rather than per client -- consistent with one editor per
@@ -1840,6 +1846,64 @@ shortcut on a main window a mirror has none of -- and exposes `fcviewerUndo` /
 the two refusals that touch nothing, the undo answered with the stacks and the client
 told its selection is empty while the length is back and the room empty on the GUI
 thread, the redo forward again, and an undo deeper than the stack refused.
+
+**Built 2026-09-11 (item 3).** The External and CarbonCopy pick from a browser. Both
+tools work by the view's OWN selection: the unified selection root picks the other object
+under the pointer, preselects it through the tool's gate and, on the release, selects it
+into the instance the tool's observer listens on, where the selection becomes geometry. A
+served root has no viewer, and two things stood between it and a browser's click. First
+the pick path. `SoFCUnifiedSelection::Private::getPickedList` takes its view per event --
+the viewer that owns the root, or for a view-less root the view replaying the event
+(`ViewerContext::current()`) when that view shows this graph -- and asks it for what the
+desktop viewer used to be asked directly: `ViewerContext::getPickRoot()`, the camera-bearing
+graph the ray is applied to (the desktop's render manager scene, a mirror's per-client event
+root, whose render manager holds no graph on purpose), the pick radius, the mouse buttons.
+The on-top path starts at the pick root, the late pick goes through the root's own render
+cache manager, and what is genuinely desktop-shaped (`hasOnTopObject`, `getGroupOnTopPath`,
+`getLatePickPaths`, the viewer's view-provider set) stays behind the viewer, with a direct
+child of the root standing in for the last. A view-less root picks its preselect inline:
+the rate-limit timer fires with no view current, and its one position slot cannot belong to
+N clients whose moves interleave. Second the order. On the desktop the edit callback node
+is a child of the selection root, so the root's hover and click logic runs first and the
+tool sees only what the root left; a mirror's event root has the callback AHEAD of the
+served scene, so a tool claiming the release -- both do -- ended the traversal before the
+root ever saw it. The mirror restates the desktop's order: a probe node between its camera
+and its callback hands the event to `SoFCUnifiedSelection::handleViewEvent(view, action)`,
+which runs the logic only while that VIEW's own selection is enabled
+(`ViewerContext::isSelectionEnabled`, per view -- the shared root's `selectionRole` field is
+nobody's), and the root's own `handleEvent` stays out of it for a view-less root so nothing
+runs twice. The tools: `activated()` no longer reaches `activeDocument()->getActiveView()`
+(null in a serving process). `ViewProviderSketch::setSessionSelectionEnabled` turns the
+views' selection on for EVERY view of the session -- `EditingRoot::views()`, the list each
+view binds itself into -- and `purgeHandler` turns it off again; the gate goes on
+`ViewProviderSketch::sessionSelection()`, the session's instance where
+`attachSelectionToCurrent` put the observer (the room for a desktop-started session, the
+client's own for a browser-started one), remembered for the destructor. The modifier reads
+(Alt for a whole object, Ctrl and Ctrl+Alt for another body or an unaligned sketch) go
+through `ViewerContext::currentKeyboardModifiers()` -- the replaying view's, tracked per
+mirror from its events, the application's on the desktop -- which closes the two 8.10 leaks
+of that class. The `command` op admits `Sketcher_External` and `Sketcher_CarbonCopy` beside
+`Sketcher_Create*`: both activate a `DrawSketchHandler` and open nothing. The highlight a
+hover paints goes into the served root's render cache manager and so to every client, which
+is what "may paint the shared graph" meant. One limit stated rather than solved: a tool
+started from the desktop's own chrome in a BROWSER-started session runs with no scope open,
+so `sessionSelection()` is what puts its gate on the right instance -- the other tools'
+`Gui::Selection()` calls at activation are the room in that case, as before item 3.
+Verified: `tests/gui/serve-external-pick.py` (`GuiServeExternalPick_tests_run`: a box, a
+sketch and a second sketch beside a real window; the desktop enters, the client runs
+`Sketcher_External` through the op, a command outside the list is refused, and one move,
+press and release on the box's top edge add `(Box, Edge6)` to the sketch's external
+geometry; then the client enters, runs `Sketcher_CarbonCopy`, clicks the other sketch's
+line and the sketch gains one geometry); and five `ViewLessRootTest` cases plus three
+others in `tests/src/Gui/MirrorViewer.cpp` (a unified selection root with no viewer picks
+through the scope's mirror and nothing without one; its logic removes a preselection only
+for a view with selection enabled, runs ahead of an edit callback that handles every move,
+and one client's hover leaves another's preselection alone; the root lists the views of a
+session; a mirror's modifiers are its client's own; the pick root holds the camera ahead
+of the scene). Two guards on the way, for a process with no Gui or Qt application (that
+test binary): `SelectionSingleton::setPreselect` warms a view provider only when there is
+an application to ask, and `ToolTip::hideText` does nothing without one. Suites after:
+ctest 614/614, Python 2688 OK.
 
 ### 8.12 What per client would cost -- the multi-user roadmap
 

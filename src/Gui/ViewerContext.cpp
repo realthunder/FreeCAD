@@ -23,7 +23,10 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <algorithm>
 #include <cmath>
+
+#include <QApplication>
 
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/SoEventManager.h>
@@ -162,6 +165,18 @@ void EditingRoot::releaseGesture(ViewerContext* view)
     }
 }
 
+void EditingRoot::attachView(ViewerContext* view)
+{
+    if (view && std::find(viewList.begin(), viewList.end(), view) == viewList.end()) {
+        viewList.push_back(view);
+    }
+}
+
+void EditingRoot::detachView(ViewerContext* view)
+{
+    viewList.erase(std::remove(viewList.begin(), viewList.end(), view), viewList.end());
+}
+
 void EditingRoot::setTransform(const Base::Matrix4D& mat)
 {
     // NOLINTBEGIN
@@ -281,13 +296,36 @@ ViewerContext::~ViewerContext()
     // Not resetEditingViewProvider(): that reaches virtuals which by here
     // have no override left to reach. An implementation that can still be
     // in a session ends its half of it in its OWN destructor, while it is
-    // still itself.
+    // still itself. The session's view list is plain data, so a view that
+    // did not is at least not left in it.
+    if (editRoot && editRoot != ownEditRoot.get()) {
+        editRoot->detachView(this);
+    }
 }
 
 SoCamera* ViewerContext::getCamera() const
 {
     SoRenderManager* manager = getSoRenderManager();
     return manager ? manager->getCamera() : nullptr;
+}
+
+SoNode* ViewerContext::getPickRoot() const
+{
+    SoRenderManager* manager = getSoRenderManager();
+    return manager ? manager->getSceneGraph() : nullptr;
+}
+
+Qt::KeyboardModifiers ViewerContext::keyboardModifiers() const
+{
+    return QApplication::queryKeyboardModifiers();
+}
+
+Qt::KeyboardModifiers ViewerContext::currentKeyboardModifiers()
+{
+    if (ViewerContext* view = current()) {
+        return view->keyboardModifiers();
+    }
+    return QApplication::queryKeyboardModifiers();
 }
 
 void ViewerContext::getDimensions(float& fHeight, float& fWidth) const
@@ -353,6 +391,7 @@ void ViewerContext::bindEditingRoot(EditingRoot* root)
         // Leaving mid-gesture -- a client dropping with its button down --
         // must not leave every other view of the session locked out.
         editRoot->releaseGesture(this);
+        editRoot->detachView(this);
     }
     if (editRoot != ownEditRoot.get()) {
         hangEditingRoot(editRoot, false);
@@ -360,6 +399,7 @@ void ViewerContext::bindEditingRoot(EditingRoot* root)
     editRoot = root;
     pcEditingRoot = editRoot->node();
     pcEditingTransform = editRoot->transformNode();
+    editRoot->attachView(this);
     if (editRoot != ownEditRoot.get()) {
         hangEditingRoot(editRoot, true);
     }

@@ -63,6 +63,7 @@
 #include "InventorBase.h"
 #include "MirrorViewer.h"
 #include "Selection.h"
+#include "SoFCUnifiedSelection.h"
 #include "SoMouseWheelEvent.h"
 #include "Utilities.h"
 #include "ViewProvider.h"
@@ -150,6 +151,23 @@ public:
     SoSeparator* eventRoot = nullptr;
     SoEventCallback* eventCallback = nullptr;
     SoEventManager* eventManager = nullptr;
+    /** The served root's own selection logic, run ahead of the edit
+     * callback -- the desktop's order restated (docs/ThinClient.md 8.11
+     * item 3).
+     *
+     * On the desktop the edit callback node is a CHILD of the unified
+     * selection root, so the root's hover and click logic runs first and
+     * the edit mode sees only what it left unhandled; that is what the
+     * External and CarbonCopy tools rely on, since the root is what picks
+     * the other object under the pointer and selects it. Here the edit
+     * callback is a sibling ahead of the served scene, so a tool claiming
+     * the release would keep the root from ever seeing it. This node sits
+     * between the camera and the edit callback and hands the event to the
+     * root's logic first, as this view -- the root itself has no viewer
+     * and stays out of its own handleEvent, so nothing runs twice.
+     */
+    SoEventCallback* selectionProbe = nullptr;
+    SoFCUnifiedSelection* selectionRoot = nullptr;
 
     /// What the client's pointer and keyboard last said. Coin's events
     /// carry the modifier state on every event, and the button state is
@@ -207,6 +225,9 @@ public:
         }
         if (eventCallback) {
             eventCallback->unref();
+        }
+        if (selectionProbe) {
+            selectionProbe->unref();
         }
         if (camera) {
             camera->unref();
@@ -315,6 +336,20 @@ MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
     pimpl->eventRoot = new SoSeparator;
     pimpl->eventRoot->ref();
     pimpl->eventRoot->setName("MirrorEventRoot");
+    if (scene && scene->isOfType(SoFCUnifiedSelection::getClassTypeId())) {
+        pimpl->selectionRoot = static_cast<SoFCUnifiedSelection*>(scene);
+        pimpl->selectionProbe = new SoEventCallback;
+        pimpl->selectionProbe->ref();
+        pimpl->selectionProbe->setName("MirrorSelectionProbe");
+        pimpl->selectionProbe->addEventCallback(
+            SoEvent::getClassTypeId(),
+            [](void* data, SoEventCallback* node) {
+                auto* self = static_cast<MirrorViewer*>(data);
+                self->pimpl->selectionRoot->handleViewEvent(self, node->getAction());
+            },
+            this);
+        pimpl->eventRoot->addChild(pimpl->selectionProbe);
+    }
     pimpl->eventRoot->addChild(pimpl->eventCallback);
     if (scene) {
         pimpl->eventRoot->addChild(scene);
@@ -839,6 +874,25 @@ Qt::MouseButtons MirrorViewer::mouseButtons() const
     return pimpl->buttons;
 }
 
+Qt::KeyboardModifiers MirrorViewer::keyboardModifiers() const
+{
+    // The same rule for the keyboard: what this client's last replayed
+    // event carried. A selection gate deciding on Alt while a replayed
+    // click is resolved asks for these, not for the keys held at the
+    // machine.
+    Qt::KeyboardModifiers modifiers = Qt::NoModifier;
+    if (pimpl->shift) {
+        modifiers |= Qt::ShiftModifier;
+    }
+    if (pimpl->ctrl) {
+        modifiers |= Qt::ControlModifier;
+    }
+    if (pimpl->alt) {
+        modifiers |= Qt::AltModifier;
+    }
+    return modifiers;
+}
+
 double MirrorViewer::logicalDotsPerInchX() const
 {
     return kCssDotsPerInch;
@@ -1130,6 +1184,15 @@ void MirrorViewer::appendDetailPath(SoPath* path, ViewProvider* vp)
     // and is not the desktop's.
     (void)path;
     (void)vp;
+}
+
+SoNode* MirrorViewer::getPickRoot() const
+{
+    // The render manager holds no graph on purpose (see Private); the
+    // event root is the graph with this client's camera in it, and the
+    // served scene is its direct child, which is the shape the unified
+    // selection root's on-top pick path expects of a pick root.
+    return pimpl->eventRoot;
 }
 
 SelectionSingleton* MirrorViewer::selectionInstance() const

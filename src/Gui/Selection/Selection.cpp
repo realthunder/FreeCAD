@@ -938,7 +938,11 @@ SelectionSingleton::setPreselect(const char* pDocName, const char* pObjectName, 
 
     CurrentPreselection = Chng;
 
-    auto vp = Application::Instance->getViewProvider(Chng.Object.getObject());
+    // A process with no Gui application (a headless test over a mirror's
+    // instance) has no view providers to warm.
+    auto vp = Application::Instance
+        ? Application::Instance->getViewProvider(Chng.Object.getObject())
+        : nullptr;
     if (vp) {
         // Trigger populating bounding box cache. This also makes sure the
         // invisible object gets their geometry visual populated.

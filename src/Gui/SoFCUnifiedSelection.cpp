@@ -80,6 +80,7 @@
 #endif
 
 #include <algorithm>
+#include <optional>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <QApplication>
@@ -114,6 +115,7 @@
 #include "Selection.h"
 #include "SoMouseWheelEvent.h"
 #include "Tree.h"
+#include "ViewerContext.h"
 
 FC_LOG_LEVEL_INIT("SoFCUnifiedSelection",false,true)
 
@@ -211,6 +213,48 @@ public:
         }
         SoNode *root = vp->getRoot();
         return root && master->findChild(root) >= 0;
+    }
+
+    /// Whether \a vp is in this scene: the viewer's set, or, for a
+    /// view-less root, a direct child (the served root's shape).
+    bool hasViewProvider(ViewProvider *vp) const {
+        if (!vp)
+            return false;
+        if (this->pcViewer)
+            return this->pcViewer->hasViewProvider(vp);
+        SoNode *root = vp->getRoot();
+        return root && master->findChild(root) >= 0;
+    }
+
+    /// The viewer's prefix of a detail path, where there is a viewer;
+    /// a view-less root holds the provider's root directly.
+    void appendDetailPath(SoPath *path, ViewProvider *vp) const {
+        if (this->pcViewer)
+            this->pcViewer->appendDetailPath(path, vp);
+    }
+
+    /** The view a pick through this root runs in.
+     *
+     * The viewer that owns the root, or, for a view-less root, the view
+     * whose event is being replayed (ViewerContext::current(), opened by
+     * that view around the event) when that view shows this graph. Null
+     * means nothing to pick with: no camera, no pick radius, no instance
+     * to select into.
+     */
+    ViewerContext *pickView() const {
+        if (this->pcViewer)
+            return this->pcViewer;
+        ViewerContext *view = ViewerContext::current();
+        if (view && view->getSceneGraph() == master)
+            return view;
+        return nullptr;
+    }
+
+    /// The buttons of the view a pick runs in (see pickView).
+    Qt::MouseButtons viewMouseButtons() const {
+        if (ViewerContext *view = pickView())
+            return view->mouseButtons();
+        return QApplication::mouseButtons();
     }
 
     void touch() {
@@ -626,7 +670,23 @@ SoFCUnifiedSelection::Private::getPickedInfoOnTop(std::vector<PickedInfo> &ret,
     tmpPath.ref();
     tmpPath.truncate(0);
     if (useRenderer()) {
-        tmpPath.append(pcViewer->getRootPath());
+        // The path starts where the camera is traversed before this
+        // root: the viewer's root path, whose tail is this root's
+        // parent, or the replaying view's pick root when it is one.
+        if (pcViewer) {
+            tmpPath.append(pcViewer->getRootPath());
+        }
+        else {
+            ViewerContext *view = pickView();
+            SoNode *pickRoot = view ? view->getPickRoot() : nullptr;
+            if (!pickRoot || !pickRoot->isOfType(SoGroup::getClassTypeId())
+                    || static_cast<SoGroup*>(pickRoot)->findChild(master) < 0) {
+                tmpPath.truncate(0);
+                tmpPath.unrefNoDelete();
+                return;
+            }
+            tmpPath.append(pickRoot);
+        }
         tmpPath.append(master);
         int pathLength = tmpPath.getLength();
         SoState * state = this->rayPickAction.getState();
@@ -654,7 +714,7 @@ SoFCUnifiedSelection::Private::getPickedInfoOnTop(std::vector<PickedInfo> &ret,
         }
         SoFCSwitch::setOverrideSwitch(state, false);
     }
-    else {
+    else if (pcViewer) {
         const SoPath *path = pcViewer->getGroupOnTopPath();
         int pathLength = path->getLength();
         if(pathLength && path->getNodeFromTail(0)->isOfType(SoGroup::getClassTypeId())) {
@@ -691,32 +751,28 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
     std::vector<PickedInfo> ret;
     Filter filter;
 
-    // Everything below picks through a view: the on-top path starts at
-    // the viewer's root path, the late-pick paths come off its render
-    // action, and the fallback applies the ray to the graph the viewer
-    // holds. A view-less root -- the headless serve source's, whose one
-    // graph is shared by every connected client (SceneServeSource.cpp) --
-    // has none of those, and its clients do not pick here anyway: a
-    // browser's click arrives as a ray and is resolved against that
-    // client's own mirror (docs/ThinClient.md sec 8.3), which is the only
-    // place a per-client camera and pick radius exist.
-    //
-    // So this answers "nothing picked", which is what setHighlight and
-    // setSelection below already answer when they find no viewer. It has
-    // to be said HERE rather than left to them, because the way it used
-    // to be said was a null dereference: the preselect that a replayed
-    // pointer move triggers (handleEvent -> onPreselectTimer) walks
-    // straight into pcViewer->getRootPath(), and a browser hovering over
-    // a served document was all it took to reach it.
-    if (!pcViewer)
+    // Everything below picks through a view: the on-top path starts
+    // where the camera is, the fallback applies the ray to the graph the
+    // view holds, and the selection lands in the view's instance. The
+    // viewer that owns this root is that view on the desktop. A view-less
+    // root -- the headless serve source's, whose one graph is shared by
+    // every connected client (SceneServeSource.cpp) -- picks in the view
+    // replaying the event, the client's own mirror (docs/ThinClient.md
+    // 8.11 item 3), which is where that client's camera and pick radius
+    // are. With neither there is nothing to pick with, and this answers
+    // "nothing picked" -- said HERE rather than left to setHighlight and
+    // setSelection below, because the way it used to be said was a null
+    // dereference on a browser's first hover over a served document.
+    ViewerContext *view = pickView();
+    if (!view)
         return ret;
 
     FC_TIME_INIT(t);
 
-    if (pickBackFace && pcViewer->hasOnTopObject())
+    if (pickBackFace && pcViewer && pcViewer->hasOnTopObject())
         singlePick = false;
 
-    float radius = ViewParams::getPickRadius();
+    float radius = pcViewer ? ViewParams::getPickRadius() : view->getPickRadius();
     this->rayPickAction.setRadius(radius);
     this->rayPickAction.setViewportRegion(viewport);
     this->rayPickAction.setPoint(pos);
@@ -770,7 +826,11 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
             this->rayPickAction.setPickMode(SoFCRayPickAction::PickMode::FrontFace);
 
         auto backPick = [&]() {
-            if (auto paths = pcViewer->getLatePickPaths()) {
+            // The late-pick set is the render cache manager's under the
+            // renderer, and the viewer's render action's otherwise; a
+            // view-less root has only the former.
+            const SoPathList *paths = pcViewer ? pcViewer->getLatePickPaths() : nullptr;
+            if (paths || (useRenderer() && !pcViewer)) {
                 this->rayPickAction.setLatePicking(true);
                 if (useRenderer()) {
                     manager.doLatePick(&this->rayPickAction);
@@ -789,8 +849,8 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
             backPick();
         }
 
-        if (ret.empty() || !singlePick) {
-            this->rayPickAction.apply(pcViewer->getSoRenderManager()->getSceneGraph());
+        if ((ret.empty() || !singlePick) && view->getPickRoot()) {
+            this->rayPickAction.apply(view->getPickRoot());
             getPickedInfo(ret,this->rayPickAction.getPrioPickedPointList(),singlePick,false,filter);
         }
 
@@ -1217,7 +1277,7 @@ void SoFCUnifiedSelection::Private::onPreselectTimer() {
     if(preselTimer.isScheduled())
         preselTimer.unschedule();
 
-    if (QApplication::mouseButtons() != Qt::NoButton)
+    if (viewMouseButtons() != Qt::NoButton)
         return;
 
     auto infos = getPickedList(preselPos, preselViewport, true);
@@ -1314,7 +1374,7 @@ SoFCUnifiedSelection::Private::setHighlight(SoFullPath *path,
                 // to show other accompany nodes (points, lines, and faces) as well. So
                 // we re-obtain the path using getDetailPath() API.
                 detailPath->truncate(0);
-                pcViewer->appendDetailPath(detailPath, vpd);
+                appendDetailPath(detailPath, vpd);
                 if(vpd->getDetailPath(subname,detailPath,true,_det) && detailPath->getLength()) {
                     path = detailPath;
                     wholeontop = true;
@@ -1393,7 +1453,7 @@ SoFCUnifiedSelection::Private::setSelection(const std::vector<PickedInfo> &infos
 
     const auto &info = infos[0];
     auto vpd = info.vpd;
-    if(!vpd || !pcViewer || !pcViewer->hasViewProvider(vpd))
+    if(!vpd || !hasViewProvider(vpd))
         return false;
     if(!vpd->getObject()->isAttachedToDocument())
         return false;
@@ -1482,7 +1542,7 @@ SoFCUnifiedSelection::Private::setSelection(const std::vector<PickedInfo> &infos
             subName = nextsub;
             detailPath->truncate(0);
             if (useRenderer())
-                pcViewer->appendDetailPath(detailPath, vpd);
+                appendDetailPath(detailPath, vpd);
             if(vpd->getDetailPath(subName.c_str(),detailPath,true,detNext) &&
                detailPath->getLength())
             {
@@ -1503,7 +1563,7 @@ SoFCUnifiedSelection::Private::setSelection(const std::vector<PickedInfo> &infos
                 if (vpd) {
                     detailPath->truncate(0);
                     if (useRenderer())
-                        pcViewer->appendDetailPath(detailPath, vpd);
+                        appendDetailPath(detailPath, vpd);
                     if(vpd->getDetailPath("", detailPath,true,detNext)) {
                         if (!subSelected || subSelected[0] != 0) {
                             subName.clear();
@@ -1533,7 +1593,7 @@ SoFCUnifiedSelection::Private::setSelection(const std::vector<PickedInfo> &infos
                             std::string sub = treeSub.substr(0, pos + 1);
                             detailPath->truncate(0);
                             if (useRenderer())
-                                pcViewer->appendDetailPath(detailPath, vpd);
+                                appendDetailPath(detailPath, vpd);
                             if(vpd->getDetailPath(sub.c_str(),detailPath,true,detNext)) {
                                 if (!subSelected || sub != subSelected) {
                                     subName = sub;
@@ -1607,20 +1667,39 @@ SoFCUnifiedSelection::Private::setSelection(const std::vector<PickedInfo> &infos
 void
 SoFCUnifiedSelection::handleEvent(SoHandleEventAction * action)
 {
-    // A root with no viewer -- a served document's -- has no picking of
-    // its own: a browser's click arrives as a 'P' ray resolved on that
-    // client's mirror, and a replayed 'E' event belongs to the edit mode
-    // in the session (docs/ThinClient.md 8.11). Running the desktop's
-    // hover and click logic here would find nothing under the pointer
-    // every time and remove, from the instance the edit mode listens
-    // on, the preselection the mode had just made -- which is how a
-    // replayed click in a sketch selected nothing. The event still goes
-    // on to the children, for the draggers that live in the scene.
+    // A root with no viewer -- a served document's -- runs no hover or
+    // click logic of its own from here: a browser's click in view mode
+    // arrives as a 'P' ray resolved on that client's mirror, and a
+    // replayed 'E' event is handed to this logic by the view replaying
+    // it, through handleViewEvent below, AHEAD of that view's edit
+    // callback -- the desktop's order, where the callback node is a
+    // child of this root (docs/ThinClient.md 8.11 item 3). Running it
+    // here as well would run it twice, after the edit mode instead of
+    // before, and remove from the session's instance the preselection
+    // the mode had just made. The event still goes on to the children,
+    // for the draggers that live in the scene.
     if (selectionRole.getValue() && pimpl->pcViewer) {
         pimpl->handleEvent(action);
     }
 
     inherited::handleEvent(action);
+}
+
+void
+SoFCUnifiedSelection::handleViewEvent(ViewerContext *view, SoHandleEventAction *action)
+{
+    if (!view || !action || pimpl->pcViewer || !selectionRole.getValue()
+            || !view->isSelectionEnabled() || view->getSceneGraph() != this) {
+        return;
+    }
+    // The view's own scope, in case the caller did not open one: the pick
+    // resolves through ViewerContext::current() and selects into
+    // Gui::Selection(), and both have to be this view's.
+    std::optional<ViewerScope> scope;
+    if (ViewerContext::current() != view) {
+        scope.emplace(view);
+    }
+    pimpl->handleEvent(action);
 }
 
 void SoFCUnifiedSelection::notify(SoNotList * l)
@@ -1669,7 +1748,7 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
                     action->setHandled();
             }
             if (!skipMouseRelease) {
-                auto buttons = QApplication::mouseButtons();
+                auto buttons = viewMouseButtons();
                 int buttonCount = 0;
                 if (buttons & Qt::LeftButton)
                     ++buttonCount;
@@ -1711,7 +1790,7 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
     }
 
     if (skipMouseRelease) {
-        if (QApplication::mouseButtons() == Qt::NoButton)
+        if (viewMouseButtons() == Qt::NoButton)
             skipMouseRelease = false;
     }
 
@@ -1740,8 +1819,12 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
             preselPos = action->getEvent()->getPosition();
             preselViewport = action->getViewportRegion();
 
-            // Rate limit picking action
-            if(delay>0.0 && (SbTime::getTimeOfDay()-preselTime).getValue()<delay) {
+            // Rate limit picking action. Not for a view-less root: the
+            // timer fires with no view current (nothing to pick with),
+            // and its one position slot cannot belong to N clients whose
+            // moves interleave, so each replayed move picks inline -- the
+            // per-move cost an edit mode's own pick already pays there.
+            if(pcViewer && delay>0.0 && (SbTime::getTimeOfDay()-preselTime).getValue()<delay) {
                 if(!preselTimer.isScheduled()) {
                     preselTimer.setInterval(delay);
                     preselTimer.schedule();

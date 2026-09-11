@@ -255,6 +255,7 @@ public:
     float getPickRadius() const override;
     double devicePixelRatio() const override;
     Qt::MouseButtons mouseButtons() const override;
+    Qt::KeyboardModifiers keyboardModifiers() const override;
     double logicalDotsPerInchX() const override;
     //@}
 
@@ -282,6 +283,8 @@ public:
     SoPickedPoint* getPointOnRay(const SbVec3f& pos, const SbVec3f& dir,
                                  const ViewProvider* vp) const override;
     void appendDetailPath(SoPath* path, ViewProvider* vp) override;
+    /// The event root: the client's camera, then the served scene.
+    SoNode* getPickRoot() const override;
     //@}
 
     /** @name ViewerContext -- edit mode

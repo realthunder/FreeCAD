@@ -38,6 +38,8 @@
 #include "DrawSketchHandler.h"
 #include "GeometryCreationMode.h"
 #include "Utils.h"
+#include <Gui/ViewerContext.h>
+
 #include "ViewProviderSketch.h"
 
 
@@ -58,11 +60,12 @@ public:
         Q_UNUSED(sSubName);
 
         Sketcher::SketchObject* sketch = static_cast<Sketcher::SketchObject*>(object);
-        sketch->setAllowOtherBody(QApplication::keyboardModifiers() == Qt::ControlModifier
-                                  || QApplication::keyboardModifiers()
-                                      == (Qt::ControlModifier | Qt::AltModifier));
-        sketch->setAllowUnaligned(QApplication::keyboardModifiers()
-                                  == (Qt::ControlModifier | Qt::AltModifier));
+        // The modifiers of the view whose click is being resolved: a
+        // replayed event carries its own (docs/ThinClient.md 8.11).
+        const Qt::KeyboardModifiers modifiers = Gui::ViewerContext::currentKeyboardModifiers();
+        sketch->setAllowOtherBody(modifiers == Qt::ControlModifier
+                                  || modifiers == (Qt::ControlModifier | Qt::AltModifier));
+        sketch->setAllowUnaligned(modifiers == (Qt::ControlModifier | Qt::AltModifier));
 
         this->notAllowedReason = "";
         Sketcher::SketchObject::eReasonList msg;
@@ -121,13 +124,15 @@ public:
     DrawSketchHandlerCarbonCopy() = default;
     ~DrawSketchHandlerCarbonCopy() override
     {
-        Gui::Selection().rmvSelectionGate();
+        if (gateOn) {
+            gateOn->rmvSelectionGate();
+        }
     }
 
     void mouseMove(Base::Vector2d onSketchPos) override
     {
         Q_UNUSED(onSketchPos);
-        if (Gui::Selection().getPreselection().pObjectName) {
+        if (sketchgui->sessionSelection().getPreselection().pObjectName) {
             applyCursor();
         }
     }
@@ -176,7 +181,7 @@ public:
                     tryAutoRecomputeIfNotSolve(
                         static_cast<Sketcher::SketchObject*>(sketchgui->getObject()));
 
-                    Gui::Selection().clearSelection();
+                    sketchgui->sessionSelection().clearSelection();
                     /* this is ok not to call to purgeHandler
                      * in continuous creation mode because the
                      * handler is destroyed by the quit() method on pressing the
@@ -199,14 +204,18 @@ private:
     void activated() override
     {
         setAxisPickStyle(false);
-        Gui::MDIView* mdi = Gui::Application::Instance->activeDocument()->getActiveView();
-        Gui::View3DInventorViewer* viewer;
-        viewer = static_cast<Gui::View3DInventor*>(mdi)->getViewer();
-        viewer->setSelectionEnabled(true);
+        // The sketch under the pointer is picked by each view's own
+        // selection root, which the edit turned off: back on in every
+        // view of the session, and the gate on the instance the session
+        // selects into (docs/ThinClient.md 8.11 item 3). Not the active
+        // window's viewer, which a serving process does not have.
+        sketchgui->setSessionSelectionEnabled(true);
 
-        Gui::Selection().clearSelection();
-        Gui::Selection().rmvSelectionGate();
-        Gui::Selection().addSelectionGate(new CarbonCopySelection(sketchgui->getObject()));
+        Gui::SelectionSingleton& sel = sketchgui->sessionSelection();
+        sel.clearSelection();
+        sel.rmvSelectionGate();
+        sel.addSelectionGate(new CarbonCopySelection(sketchgui->getObject()));
+        gateOn = &sel;
     }
 
     QString getCrosshairCursorSVGName() const override
@@ -219,6 +228,9 @@ private:
         Q_UNUSED(sketchgui);
         setAxisPickStyle(true);
     }
+
+    /// The instance the gate went on (the session's), for the destructor.
+    Gui::SelectionSingleton* gateOn = nullptr;
 };
 
 }  // namespace SketcherGui

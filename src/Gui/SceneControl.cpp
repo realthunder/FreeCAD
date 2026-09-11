@@ -723,16 +723,20 @@ QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
 /// is not the same authority as a command on a desktop: many of them open a
 /// MODAL dialog, and a modal dialog on the GUI thread of a process serving
 /// several browsers stops serving all of them, with nobody at the machine to
-/// dismiss it. So this admits the Sketcher_Create* family and nothing else --
-/// which is exactly the family that drives a DrawSketchHandler, and so
-/// exactly the family this section is about. Widening it is gated on an
-/// answer to modality, not on taste.
+/// dismiss it. So this admits the Sketcher_Create* family -- which is exactly
+/// the family that drives a DrawSketchHandler, and so exactly the family this
+/// section is about -- plus the two pick tools of 8.11 item 3,
+/// Sketcher_External and Sketcher_CarbonCopy, which activate a handler the
+/// same way and open nothing. Widening it further is gated on an answer to
+/// modality, not on taste.
 QJsonObject runCommandOp(const QJsonObject &req, const std::string &boundDoc,
                          uint64_t client)
 {
     const QJsonValue id = req.value(QLatin1String("id"));
     const QString name = req.value(QLatin1String("name")).toString();
-    if (!name.startsWith(QLatin1String("Sketcher_Create")))
+    if (!name.startsWith(QLatin1String("Sketcher_Create"))
+            && name != QLatin1String("Sketcher_External")
+            && name != QLatin1String("Sketcher_CarbonCopy"))
         return errorReply(id, "CommandRefused", name);
 
     App::Document *doc = nullptr;

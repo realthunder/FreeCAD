@@ -199,6 +199,27 @@ public:
     void activateHandler(DrawSketchHandler *newHandler);
     /// removes the active handler
     void purgeHandler();
+    /** Turn the views' own selection on or off for the whole session.
+     *
+     * Entering the edit turns it off in every view (the initiator through
+     * setEditViewer, the joiners through joinEditing) so a click reaches
+     * the tool; the External and CarbonCopy tools need it back on, in
+     * EVERY view of the session and not the initiator's alone, because
+     * the object they pick is resolved by each view's own selection root
+     * (docs/ThinClient.md 8.11 item 3). purgeHandler turns it off again.
+     */
+    void setSessionSelectionEnabled(bool on);
+    /** The selection instance this edit session selects into.
+     *
+     * The initiator's: the room for a session the desktop started, the
+     * client's own for one a browser started (docs/ThinClient.md 8.11).
+     * It is where attachSelectionToCurrent put this provider's observer,
+     * so a tool's selection gate goes on it too -- Gui::Selection() at a
+     * tool's activation is whatever scope the command ran under, which
+     * is the same instance from a client and the room from the desktop
+     * chrome.
+     */
+    Gui::SelectionSingleton& sessionSelection() const;
     /// obtain the current active handler
     DrawSketchHandler *currentHandler() const;
     /// set the pick style of the sketch coordinate axes

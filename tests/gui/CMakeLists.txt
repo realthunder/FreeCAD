@@ -95,6 +95,16 @@ fc_add_gui_test(GuiServeSharedEdit_tests_run serve-shared-edit.py
 fc_add_gui_test(GuiServeUndoRedo_tests_run serve-undo-redo.py
                 --timeout 180)
 
+# The External and CarbonCopy pick from a browser (docs/ThinClient.md
+# 8.11 item 3): the served root's hover and click logic runs in the
+# client's own view, ahead of its edit callback, and selects into the
+# session's instance where the tool's observer listens -- so a click on
+# a box's edge from a browser adds external geometry to the sketch the
+# desktop is editing, and a click on another sketch's line carbon-copies
+# it into the one the browser is editing.
+fc_add_gui_test(GuiServeExternalPick_tests_run serve-external-pick.py
+                --timeout 240)
+
 # A sketch tool's on-view parameters reach a client and are typed into
 # (docs/ThinClient.md sec 8.7, stage 5): the allowlisted `command` op
 # that starts a tool at all, the entry boxes stated with a world anchor,

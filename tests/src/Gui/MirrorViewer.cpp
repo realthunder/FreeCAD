@@ -42,6 +42,7 @@
 #include <Inventor/SoDB.h>
 #include <Inventor/SoInteraction.h>
 #include <Inventor/SoPickedPoint.h>
+#include <Inventor/actions/SoHandleEventAction.h>
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/events/SoKeyboardEvent.h>
 #include <Inventor/events/SoLocation2Event.h>
@@ -49,17 +50,20 @@
 #include <Inventor/nodes/SoEventCallback.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoCoordinate3.h>
+#include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <Inventor/nodes/SoIndexedLineSet.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoTransform.h>
 
 #include <App/Application.h>
+#include <App/Document.h>
 #include <Base/Matrix.h>
 
 #include <Gui/MirrorViewer.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/SoFCDB.h>
+#include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/ViewProvider.h>
 #include <Gui/ViewerContext.h>
 
@@ -1214,4 +1218,201 @@ TEST_F(GestureArbitrationTest, aViewLeavingMidGestureReleasesTheHold)
     ASSERT_EQ(root->gestureHolder(), mirror.get());
     mirror->resetEditingViewProvider();
     EXPECT_EQ(root->gestureHolder(), nullptr);
+}
+
+/// The views of a session are listed on the root every one of them binds
+/// (docs/ThinClient.md 8.11 item 3): a tool that turns a view's own
+/// selection back on has to reach every view, and this is the only list.
+TEST_F(SharedEditingRootTest, theRootListsTheViewsOfTheSession)
+{
+    EXPECT_TRUE(root->views().empty());
+    mirror->setEditingViewProvider(vp.get(), 0, root.get());
+    ASSERT_EQ(root->views().size(), 1U);
+    EXPECT_EQ(root->views()[0], mirror.get());
+    other->joinEditing(vp.get(), root.get());
+    ASSERT_EQ(root->views().size(), 2U);
+    EXPECT_EQ(root->views()[1], other.get());
+    // Joining twice lists a view once.
+    other->joinEditing(vp.get(), root.get());
+    EXPECT_EQ(root->views().size(), 2U);
+    other->leaveEditing();
+    ASSERT_EQ(root->views().size(), 1U);
+    EXPECT_EQ(root->views()[0], mirror.get());
+    mirror->resetEditingViewProvider();
+    EXPECT_TRUE(root->views().empty());
+}
+
+TEST_F(MirrorViewerTest, theModifiersAreThisClientsOwn)
+{
+    // A replayed event carries its own modifiers, and a gate deciding on
+    // Alt while the click is resolved asks the view, not the keyboard at
+    // the machine (docs/ThinClient.md 8.11 item 3).
+    mirror->setCamera(perspectiveCamera(800, 600));
+    EXPECT_EQ(int(mirror->keyboardModifiers()), int(Qt::NoModifier));
+    Gui::MirrorViewer::Input input = moveTo(400, 300);
+    input.shift = true;
+    input.alt = true;
+    mirror->handleInput(input);
+    EXPECT_EQ(int(mirror->keyboardModifiers()), int(Qt::ShiftModifier | Qt::AltModifier));
+    {
+        Gui::ViewerScope scope(mirror.get());
+        EXPECT_EQ(int(Gui::ViewerContext::currentKeyboardModifiers()),
+                  int(Qt::ShiftModifier | Qt::AltModifier));
+    }
+
+    // Per client: another client's Ctrl is not this one's.
+    Gui::MirrorViewer other(nullptr, scene, nullptr, nullptr);
+    other.setCamera(perspectiveCamera(800, 600));
+    input.shift = false;
+    input.alt = false;
+    input.ctrl = true;
+    other.handleInput(input);
+    EXPECT_EQ(int(other.keyboardModifiers()), int(Qt::ControlModifier));
+    EXPECT_EQ(int(mirror->keyboardModifiers()), int(Qt::ShiftModifier | Qt::AltModifier));
+}
+
+TEST_F(MirrorViewerTest, thePickRootHoldsTheCameraAheadOfTheScene)
+{
+    // What a pick through this view is applied to: a ray pick has a view
+    // volume only after traversing a camera, and the served scene has to
+    // be a direct child for the selection root's on-top path to start
+    // there.
+    SoNode* pickRoot = mirror->getPickRoot();
+    ASSERT_NE(pickRoot, nullptr);
+    ASSERT_TRUE(pickRoot->isOfType(SoGroup::getClassTypeId()));
+    auto* group = static_cast<SoGroup*>(pickRoot);
+    EXPECT_GE(group->findChild(scene), 0);
+    EXPECT_EQ(mirror->getCamera(), nullptr);
+
+    mirror->setCamera(perspectiveCamera(800, 600));
+    ASSERT_GT(group->getNumChildren(), 1);
+    EXPECT_EQ(group->getChild(0), mirror->getCamera());
+    EXPECT_GT(group->findChild(scene), 0);
+}
+
+/// A served root has no viewer, and its hover and click logic -- what
+/// the External and CarbonCopy tools rely on to pick the OTHER object
+/// under the pointer -- runs in the view replaying the event, ahead of
+/// that view's edit callback, and only while that view's own selection
+/// is enabled (docs/ThinClient.md 8.11 item 3). No Gui::Document here,
+/// so nothing resolves to a view provider and a pick lands nowhere; what
+/// can be read is the desktop's other half of the hover, the removal of
+/// a preselection when nothing is under the pointer.
+class ViewLessRootTest: public SharedEditingRootTest
+{
+protected:
+    void SetUp() override
+    {
+        // The served graph's shape: a unified selection root with the
+        // geometry beneath it, and no viewer.
+        auto* unified = new Gui::SoFCUnifiedSelection;
+        unified->ref();
+        SoSeparator* quad = makeScene();
+        unified->addChild(quad);
+        quad->unref();
+        scene = unified;
+        mirror = std::make_unique<Gui::MirrorViewer>(nullptr, scene, nullptr, nullptr);
+        other = std::make_unique<Gui::MirrorViewer>(nullptr, scene, nullptr, nullptr);
+        vp = std::make_unique<Gui::ViewProvider>();
+        root = std::make_unique<Gui::EditingRoot>();
+        mirror->setCamera(perspectiveCamera(800, 600));
+        App::Document* doc = App::GetApplication().newDocument("ViewLessRoot", "test");
+        doc->addObject("App::FeaturePython", "Thing");
+    }
+    void TearDown() override
+    {
+        SharedEditingRootTest::TearDown();
+        App::GetApplication().closeDocument("ViewLessRoot");
+    }
+    void preselect()
+    {
+        Gui::ViewerScope scope(mirror.get());
+        Gui::Selection().setPreselect("ViewLessRoot", "Thing", "");
+        ASSERT_TRUE(Gui::Selection().hasPreselection());
+    }
+    bool preselected()
+    {
+        Gui::ViewerScope scope(mirror.get());
+        return Gui::Selection().hasPreselection();
+    }
+};
+
+TEST_F(ViewLessRootTest, aViewLessRootPicksThroughTheReplayingView)
+{
+    // The pick path itself, asked directly: under a scope on the mirror
+    // the root resolves a pixel through that view's camera and pick
+    // radius; with no view current it has nothing to pick with.
+    SoHandleEventAction action(mirror->getViewportRegion());
+    SoLocation2Event event;
+    event.setPosition(SbVec2s(400, 300));
+    action.setEvent(&event);
+    auto* root = static_cast<Gui::SoFCUnifiedSelection*>(scene);
+    {
+        Gui::ViewerScope scope(mirror.get());
+        SoPickedPoint* picked = root->getPickedPoint(&action);
+        ASSERT_NE(picked, nullptr);
+        EXPECT_NEAR(picked->getPoint()[0], 0.0F, 0.2F);
+        EXPECT_NEAR(picked->getPoint()[1], 0.0F, 0.2F);
+        delete picked;
+
+        event.setPosition(SbVec2s(20, 20));
+        EXPECT_EQ(root->getPickedPoint(&action), nullptr);
+    }
+    event.setPosition(SbVec2s(400, 300));
+    EXPECT_EQ(root->getPickedPoint(&action), nullptr);
+}
+
+TEST_F(ViewLessRootTest, theRootsLogicRunsInTheReplayingView)
+{
+    preselect();
+    // A move over empty canvas: the root picks nothing there, IN THIS
+    // VIEW, and removes the preselection from this view's instance --
+    // the desktop's hover, run for a root that has no viewer. Before
+    // item 3 the root answered "nothing to pick with" and the
+    // preselection stood.
+    mirror->handleInput(moveTo(20, 20));
+    EXPECT_FALSE(preselected());
+}
+
+TEST_F(ViewLessRootTest, aViewWithSelectionOffKeepsTheRootOut)
+{
+    // Enabled per VIEW, never through the shared root's field: the
+    // sketcher turns a view's selection off so a click reaches the tool,
+    // and the pick tools turn it back on.
+    preselect();
+    mirror->setSelectionEnabled(false);
+    mirror->handleInput(moveTo(20, 20));
+    EXPECT_TRUE(preselected());
+    mirror->setSelectionEnabled(true);
+    mirror->handleInput(moveTo(20, 20));
+    EXPECT_FALSE(preselected());
+}
+
+TEST_F(ViewLessRootTest, theRootsLogicRunsAheadOfTheEditCallback)
+{
+    // An edit mode that handles every move, as a sketch tool does. The
+    // desktop's containment puts the root's logic before the edit
+    // callback; a mirror's event root has the callback ahead of the
+    // scene, so were the logic left to the root's own traversal the
+    // handled move would end the traversal before it, and the
+    // preselection would stand.
+    CountingProvider counting;
+    mirror->setEditingViewProvider(&counting, 0, root.get());
+    preselect();
+    mirror->handleInput(moveTo(20, 20));
+    EXPECT_EQ(counting.moves, 1);
+    EXPECT_FALSE(preselected());
+    mirror->resetEditingViewProvider();
+}
+
+TEST_F(ViewLessRootTest, anotherViewOverTheSameRootIsNotThisOnes)
+{
+    // Two clients, one served root: a preselection in one client's
+    // instance is untouched by the other client's hover.
+    other->setCamera(perspectiveCamera(800, 600));
+    preselect();
+    other->handleInput(moveTo(20, 20));
+    EXPECT_TRUE(preselected());
+    mirror->handleInput(moveTo(20, 20));
+    EXPECT_FALSE(preselected());
 }
