@@ -24,7 +24,8 @@ SandboxPanels,SandboxDraftGui,SandboxSelection,SandboxSessionDoc,SandboxProxyImp
 SandboxCorpusGui,SandboxInitGui,SandboxToolBarMirror,SandboxPanelMirror;
 SandboxInitGui after the others: it takes the native Draft and BIM
 workbenches out of the session, and the two mirror gates run last and
-need no guest).
+need no guest).  SandboxMirrorBench is a measurement (docs/Sandbox.md
+8.4), not in the default list: name it alone to run it.
 """
 
 import faulthandler

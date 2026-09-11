@@ -469,6 +469,17 @@ PyObject* py_panelId(PyObject*, PyObject*)
     return PyUnicode_FromString(id.toUtf8().constData());
 }
 
+PyObject* py_panelStats(PyObject*, PyObject* args)
+{
+    int reset = 0;
+    if (!PyArg_ParseTuple(args, "|p", &reset))
+        return nullptr;
+    PyObject* out = variantToPy(PanelMirror::instance().stats());
+    if (reset)
+        PanelMirror::instance().resetStats();
+    return out;
+}
+
 PyObject* py_dialogIds(PyObject*, PyObject*)
 {
     const QStringList ids = PanelMirror::instance().dialogIds();
@@ -535,6 +546,10 @@ PyMethodDef Methods[] = {
     {"panelFlush", py_panelFlush, METH_NOARGS,
      "panelFlush() -> rebuild count: re-read the panel mirror's dirty widgets now"},
     {"panelId", py_panelId, METH_NOARGS, "panelId() -> the mirrored dialog's id, or None"},
+    {"panelStats", py_panelStats, METH_VARARGS,
+     "panelStats(reset=False) -> {flushes, widgetsRead, keysRead, keysWritten, readUs,"
+     " writeUs, rebuilds, walkUs, grabs, grabUs, models}: the panel mirror's counters"
+     " (docs/Sandbox.md 8.4); reset clears them after the read"},
     {"dialogIds", py_dialogIds, METH_NOARGS,
      "dialogIds() -> the mirrored top-level dialogs' ids, in show order (7.19 M3)"},
     {"mirrorFlush", py_mirrorFlush, METH_NOARGS,
