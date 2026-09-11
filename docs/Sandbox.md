@@ -47,7 +47,7 @@ pieces are frozen, not extended.**
     forms: dialogs, item views, ...  built       G3b: exec_(), the tree/list/table family as rows, containers, the file chooser; the 40-file harness (7.11)
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
-    the task panel mirror            M2 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3-M4 sized
+    the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 (measurement) sized
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -5430,7 +5430,7 @@ of hidden bars is the declared order (3).
   returns maps; under `FreeCADCmd` `sys.executable` is FreeCAD, so the
   dump test finds a plain interpreter under `sys.base_prefix`.
 
-### 7.19 The panel mirror sized: the desktop's task panel as models, streamed **[sized 2026-09-10; M1 BUILT 2026-09-10; M2 BUILT 2026-09-10]**
+### 7.19 The panel mirror sized: the desktop's task panel as models, streamed **[sized 2026-09-10; M1 BUILT 2026-09-10; M2 BUILT 2026-09-10; M3 BUILT 2026-09-11]**
 
 Asked 2026-09-10, after the question "do we need to modify external
 Python workbench code to hook their task panels to our widget
@@ -5982,6 +5982,88 @@ about 650 lines plus 450 of tests).  What the build settled:
 - **Not in M2**: mouse replay into a picture (M3), a box's header
   icon, coalescing per-row ops (M4 measures Sketcher's list first),
   nested modals (M3).
+
+**M3 built 2026-09-11** (`PanelMirror` grew the dialog roots and the
+replay, about 300 lines plus 350 of tests; no new file).  What the
+build settled:
+
+- **Dialog roots.**  A top-level `QDialog` shown while the mirror runs
+  -- a panel slot's `QMessageBox`, a non-native `QFileDialog`, a
+  workbench's own dialog, modal or not, whoever put it up -- is a root
+  `dialog:<n>` (n per process, never reused) in the `panel` list
+  beside `panel:<n>`, the list's layout re-sent with it appended in
+  show order.  Found by an application-wide event filter `start()`
+  installs (every event in the process passes the mirror's filter: a
+  widget it does not know costs one hash lookup, and only a Show on a
+  window that is a `QDialog` schedules anything); walked on the tick
+  after the Show, when the tree is complete and laid out (a message
+  box sets its layout up in `showEvent`), inside the `exec()` loop
+  when there is one (a nested loop serves timers and the socket).
+  The root IS the window's model -- a `QDialog` model bound by
+  `View::bind` to the real window, `qtClass` the real class,
+  `windowTitle`, `modal` and `visible` read -- and its content is the
+  window's real layout walked as any container's.  Qt names a message
+  box's content `qt_msgbox_label`, `qt_msgbox_informativelabel`,
+  `qt_msgboxex_icon_label` and `qt_msgbox_buttonbox`, which the
+  `qt_` rule of M1 skipped as machinery: `qt_msgbox*` is content
+  now.  The root goes on the window's Hide -- `done()`, a close, its
+  deletion -- as one close under origin 0, the subtree silent, the
+  list re-laid; the panel root and the other dialogs stay.  A dialog
+  already visible when `start()` runs is mirrored at once; the
+  `Preferences/Fw/PanelMirror` class list judges a dialog's class as
+  it judges a TaskDialog's; a window the store already carries as a
+  bound view's widget (a guest form realized by FwQt) is not mirrored
+  twice.  The picture cap of 32 is per process across the roots up.
+  The native file dialog is not a QWidget tree and stays the client's
+  own path picker (the `FileChooser` model), as sized.
+- **Requests on a dialog root.**  `accept`, `reject`, `done` and
+  `close` are the bound view's (it holds the real `QDialog`);
+  `clicked [flag]` and `helpRequested` are the mirror's, through the
+  window's `QDialogButtonBox` as the panel root has them.  On a
+  `QMessageBox` the button's click is its `done(button)`, so the
+  panel slot's `exec()` returns the standard button the client chose
+  -- the gate's condition.  The code itself is the caller's, not on
+  the wire: `QDialog::done` hides before it emits `finished`, so the
+  root's close is the last message about it.  `widgets.subscribe`'s
+  reply carries `dialogs` (the roots up, in show order) beside
+  `panel`; `FormWidgets.dialogIds()` on the Python side.
+- **Mouse replay into a picture.**  `custom {event: "mouse", args:
+  [type, x, y, button, buttons, modifiers]}` with `type` one of
+  `press`, `release`, `move`, `dblclick`, `enter`, `leave` (`button`
+  the one causing it, Left by default and none for a move; `buttons`
+  the state after it, by default the button on a press and none on a
+  release; `modifiers` a `Qt::KeyboardModifiers` int); `wheel` with
+  `[x, y, dx, dy, buttons, modifiers]` (`dx`, `dy` the angle delta).
+  `x`, `y` are the picture's pixels, scaled back to the widget's when
+  the grab was scaled past the side cap; replayed by
+  `QApplication::sendEvent` of a `QMouseEvent`, `QWheelEvent` or
+  `QEnterEvent` into the real widget, whose own handlers run; its
+  repaint is the next grab (rate-capped).  On a widget that is not a
+  picture the request is ignored with a log: a control has its own
+  ops.  Keys beyond Return and Escape are not replayed (as sized).
+- **Gates**: `FormWidgets.cpp` `test_panelMirrorDialogs` (22 cases
+  now: a `QDialog` shown beside a panel with a picture leaf -- the
+  root with its class, title, modal flag and parent, the label and
+  the Yes/No buttons by flag, every open with a parent and the root
+  last, the list re-laid; `clicked [Yes]` through the root accepting
+  it, one close, the widgets gone, the panel untouched; a
+  `QMessageBox` exec'd, inspected and answered No from a 50 ms timer
+  inside its loop, the exec code; the preference class list refusing
+  a dialog; press, move, release and wheel replayed into the picture
+  at its pixels and not into a box; stop with a dialog up closing it
+  and following nothing after).  `SandboxPanelMirror` gained
+  `test_nested_messagebox` (a Python panel whose button slot execs a
+  `QMessageBox` under the main window: a client's click on the
+  button blocks in the slot, a timer inside the loop finds
+  `dialog:<n>` with `qtClass` `QMessageBox`, `qt_msgbox_label`'s
+  text, the buttons, the opens with the root last, and clicks Yes
+  through the root; the slot gets 0x4000, the close reached the
+  writer, the panel is still up); `subscribe`'s reply checked for
+  `dialogs: []`.
+- **Not in M3**: the measurement (M4); a box's header icon;
+  coalescing per-row ops; a dialog shown from a thread other than the
+  GUI's (Qt forbids it anyway); the ThinClient DOM's rendering of a
+  `dialog:<n>` root (its side).
 
 ## 8. Measurements
 
@@ -6848,17 +6930,21 @@ sockets, any network for the reference image, a webview escape hatch.
   `command` op's `index` is behind that op's `Sketcher_Create*`
   allowlist until dialogs mirror (docs/ThinClient.md 8.11), the model
   path is the live one.
-- The panel mirror (7.19, M1 and M2): a box's header icon has no
-  name to send and no image key to carry it; a picture is display
-  only until M3's mouse replay; a panel that grows and shrinks a
-  list one row at a time and re-reads every item on each change
-  (Sketcher's constraint list) sends one op per row and per changed
-  cell, uncoalesced, which M4 measures; a row hidden by the
-  view is found on the view's next repaint, not at once; a nested
-  `exec()` dialog is invisible to the client (M3); the re-read cost
-  per repaint burst is unmeasured (M4).  The watch has no `Resize`:
-  the bag carries no geometry.  A `QToolBox` is a `QTabWidget` to a
-  client.
+- The panel mirror (7.19, M1 to M3): a box's header icon has no
+  name to send and no image key to carry it; a panel that grows and
+  shrinks a list one row at a time and re-reads every item on each
+  change (Sketcher's constraint list) sends one op per row and per
+  changed cell, uncoalesced, which M4 measures; a row hidden by the
+  view is found on the view's next repaint, not at once; the re-read
+  cost per repaint burst is unmeasured (M4).  The watch has no
+  `Resize`: the bag carries no geometry.  A `QToolBox` is a
+  `QTabWidget` to a client.  A dialog root (M3) costs the process an
+  application-wide event filter while a `panels` subscriber is up
+  (one hash lookup per event); a picture takes the mouse but no keys
+  beyond Return and Escape; the platform's native file dialog is not
+  mirrored (the client's own picker); a non-native `QFileDialog`'s
+  file views reflect every row the file system model shows,
+  uncoalesced and unmeasured.
 
 ## 14. Sources and what the audit found
 

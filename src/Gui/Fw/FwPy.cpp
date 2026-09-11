@@ -469,6 +469,15 @@ PyObject* py_panelId(PyObject*, PyObject*)
     return PyUnicode_FromString(id.toUtf8().constData());
 }
 
+PyObject* py_dialogIds(PyObject*, PyObject*)
+{
+    const QStringList ids = PanelMirror::instance().dialogIds();
+    PyObject* list = PyList_New(ids.size());
+    for (int i = 0; i < ids.size(); ++i)
+        PyList_SET_ITEM(list, i, PyUnicode_FromString(ids.at(i).toUtf8().constData()));
+    return list;
+}
+
 /// What the injected sender collected: [(client, json)].
 QVariantList& pushLog()
 {
@@ -526,6 +535,8 @@ PyMethodDef Methods[] = {
     {"panelFlush", py_panelFlush, METH_NOARGS,
      "panelFlush() -> rebuild count: re-read the panel mirror's dirty widgets now"},
     {"panelId", py_panelId, METH_NOARGS, "panelId() -> the mirrored dialog's id, or None"},
+    {"dialogIds", py_dialogIds, METH_NOARGS,
+     "dialogIds() -> the mirrored top-level dialogs' ids, in show order (7.19 M3)"},
     {"mirrorFlush", py_mirrorFlush, METH_NOARGS,
      "mirrorFlush() -> flush the mirror's coalesced state; the rebuild count"},
     {"control", py_control, METH_VARARGS,

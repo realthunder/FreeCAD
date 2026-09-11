@@ -66,6 +66,17 @@
  * device pixel ratio ignored, the longest side capped), a new id sent
  * only when the bytes changed, so many pictures per panel at most.
  * Button icons and label pixmaps travel the same way.
+ *
+ * M3: a top-level `QDialog` shown while the mirror runs -- a panel
+ * slot's `QMessageBox`, a non-native `QFileDialog`, a workbench's own
+ * dialog, modal or not -- is a further root `dialog:<n>` in the `panel`
+ * list, walked the same way from the real window (a message box's
+ * text and buttons are ordinary widgets), found by an application-wide
+ * event filter on the window's Show and closed on its Hide; the nested
+ * `exec()` loop keeps serving the socket and the tick.  A picture leaf
+ * takes mouse input back: a `mouse` request is replayed as a
+ * `QMouseEvent` at the picture's coordinates (scaled back when the grab
+ * was), `wheel` as a `QWheelEvent`.
  */
 
 #include <QDialogButtonBox>
@@ -116,8 +127,20 @@ public:
     {
         return QStringLiteral("panel");
     }
-    /// The id of the dialog root up now, or empty.
+    /// The id of the task panel's root up now, or empty.
     QString panelId() const;
+    /// The ids of the top-level dialogs mirrored now (M3), in show order.
+    QStringList dialogIds() const;
+    int dialogCount() const
+    {
+        return _roots.size();
+    }
+
+    /// Mirror a top-level dialog window now (what the application filter
+    /// does on the tick after its Show; a test calls it directly).
+    void showDialog(QWidget* window);
+    /// Close a dialog root (the root's close message, the subtree silent).
+    void hideDialog(QWidget* window);
 
     /// Mirror a dialog's content now: `dialogClass` the TaskDialog's
     /// class name, `contents` its boxes (what `getDialogContent` gives),
@@ -182,6 +205,18 @@ private:
     ~PanelMirror() override;
 
     struct Walk;
+    /// Whether anything is mirrored: the panel root or a dialog root.
+    bool active() const
+    {
+        return _root || !_roots.isEmpty();
+    }
+    /// Nothing left up: the timers stop, the picture state goes.
+    void idle();
+    void scheduleDialog(QWidget* window);
+    void closeRoot(QWidget* window, bool announce);
+    /// Release a model's descendants quietly and forget their widgets.
+    void releaseDescendants(Widget* model);
+    void replayMouse(QWidget* real, const QString& name, const QVariantList& args);
     void scheduleRebuild();
     void scheduleFlush();
     void markDirty(QWidget* widget);
@@ -206,10 +241,12 @@ private:
     void onModelWritten(QWidget* real, Widget* model, const QStringList& names, int source);
     void onModelRequest(QWidget* real, Widget* model, const QString& name,
                         const QVariantList& args);
-    void onRootRequest(const QString& name, const QVariantList& args);
+    void onPanelRequest(const QString& name, const QVariantList& args);
+    void onDialogRequest(QWidget* window, const QString& name, const QVariantList& args);
     void withoutBackends(const std::function<void()>& fn);
 
     bool _running = false;
+    bool _appFiltered = false;
     bool _walking = false;
     bool _relaying = false;
     bool _grabbing = false;
@@ -233,6 +270,12 @@ private:
     QPointer<Widget> _list;
     QPointer<Widget> _root;
     QString _rootId;
+    /// the top-level dialogs (M3): the windows waiting for their tick,
+    /// the roots up (window -> id) and their show order
+    QTimer _dialogTimer;
+    QList<QPointer<QWidget>> _pendingDialogs;
+    QHash<QWidget*, QString> _roots;
+    QList<QWidget*> _rootOrder;
     /// real widget -> its model
     QHash<QWidget*, QPointer<Widget>> _models;
     /// a container model -> the signature its layout was sent with

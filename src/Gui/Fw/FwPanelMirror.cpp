@@ -27,6 +27,7 @@
 #include <QBoxLayout>
 #include <QChildEvent>
 #include <QComboBox>
+#include <QDialog>
 #include <QEvent>
 #include <QFocusFrame>
 #include <QFormLayout>
@@ -34,6 +35,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
 #include <QMenu>
@@ -45,6 +47,9 @@
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QToolBox>
+#include <QWheelEvent>
+
+#include <algorithm>
 
 #include <App/Application.h>
 #include <Base/Console.h>
@@ -73,6 +78,12 @@ int& panelSerial()
 }
 
 int& widgetSerial()
+{
+    static int n = 0;
+    return n;
+}
+
+int& dialogSerial()
 {
     static int n = 0;
     return n;
@@ -117,13 +128,24 @@ QString tableClassOf(QWidget* w)
     return QStringLiteral("QWidget");
 }
 
-/// Qt's own machinery inside a widget, not the panel's content.
+/// Qt's own machinery inside a widget, not the panel's content.  A
+/// window is a root of its own (M3), never a child.  A message box
+/// names its text, icon and buttons `qt_msgbox*` (`qt_msgboxex_icon_label`
+/// among them): those ARE the content.
 bool internalChild(QWidget* c)
 {
     if (c->isWindow() || qobject_cast<::QMenu*>(c) || qobject_cast<QSizeGrip*>(c)
         || qobject_cast<QFocusFrame*>(c))
         return true;
-    return c->objectName().startsWith(QLatin1String("qt_"));
+    const QString name = c->objectName();
+    return name.startsWith(QLatin1String("qt_")) && !name.startsWith(QLatin1String("qt_msgbox"));
+}
+
+/// Whether a window is a top-level dialog the mirror follows (M3): a
+/// `QDialog` that is its own window.
+bool topLevelDialog(QWidget* w)
+{
+    return w && w->isWindow() && qobject_cast<::QDialog*>(w);
 }
 
 bool hasContentChildren(QWidget* w)
@@ -240,6 +262,17 @@ PanelMirror::PanelMirror()
         flush();
     });
     _clock.start();
+    _dialogTimer.setSingleShot(true);
+    _dialogTimer.setInterval(0);
+    connect(&_dialogTimer, &QTimer::timeout, this, [this]() {
+        // the tick after a top-level dialog's Show: its tree is complete
+        // and laid out (a message box sets its layout up in showEvent)
+        QList<QPointer<QWidget>> pending;
+        pending.swap(_pendingDialogs);
+        for (const auto& w : pending)
+            if (w && w->isVisible() && !_roots.contains(w.data()))
+                showDialog(w.data());
+    });
     _showTimer.setSingleShot(true);
     _showTimer.setInterval(0);
     connect(&_showTimer, &QTimer::timeout, this, [this]() {
@@ -260,12 +293,20 @@ PanelMirror::~PanelMirror() = default;
 bool PanelMirror::owns(const QString& id)
 {
     return id == listId() || id.startsWith(QLatin1String("panel:"))
-        || id.startsWith(QLatin1String("pw:"));
+        || id.startsWith(QLatin1String("pw:")) || id.startsWith(QLatin1String("dialog:"));
 }
 
 QString PanelMirror::panelId() const
 {
     return _root ? _rootId : QString();
+}
+
+QStringList PanelMirror::dialogIds() const
+{
+    QStringList ids;
+    for (QWidget* w : _rootOrder)
+        ids.append(_roots.value(w));
+    return ids;
 }
 
 Widget* PanelMirror::modelOf(QWidget* widget) const
@@ -284,6 +325,17 @@ void PanelMirror::start()
     _list->setInitial(QStringLiteral("objectName"), listId());
     new Layout(Layout::VBox, _list);
     Store::instance().adopt(listId(), _list);
+    // the top-level dialogs (M3): every Show in the application passes
+    // here, a window's is a root's
+    if (qApp && !_appFiltered) {
+        qApp->installEventFilter(this);
+        _appFiltered = true;
+    }
+    for (QWidget* w : QApplication::topLevelWidgets())
+        if (topLevelDialog(w) && w->isVisible())
+            _pendingDialogs.append(w);
+    if (!_pendingDialogs.isEmpty())
+        _dialogTimer.start();
     if (!getMainWindow())
         return;  // no task view to follow (a test drives `show` itself)
     _connShow = Control().signalShowDialog.connect(
@@ -313,7 +365,15 @@ void PanelMirror::stop()
     _showTimer.stop();
     _connShow.disconnect();
     _connRemove.disconnect();
+    _dialogTimer.stop();
+    _pendingDialogs.clear();
+    if (_appFiltered && qApp) {
+        qApp->removeEventFilter(this);
+        _appFiltered = false;
+    }
     hide();
+    while (!_rootOrder.isEmpty())
+        closeRoot(_rootOrder.last(), true);
     _running = false;
     _rebuildTimer.stop();
     _flushTimer.stop();
@@ -390,7 +450,7 @@ void PanelMirror::show(const QString& dialogClass, const QList<QWidget*>& conten
     _root->setInitial(QStringLiteral("visible"), true);
     _rootId = QStringLiteral("panel:%1").arg(++panelSerial());
     Store::instance().adopt(_rootId, _root, false);
-    connect(_root, &Widget::requested, this, &PanelMirror::onRootRequest);
+    connect(_root, &Widget::requested, this, &PanelMirror::onPanelRequest);
     rebuild();
 }
 
@@ -398,13 +458,6 @@ void PanelMirror::hide()
 {
     if (!_root)
         return;
-    _rebuildTimer.stop();
-    _flushTimer.stop();
-    _grabTimer.stop();
-    _pictures.clear();
-    _grabbedAt.clear();
-    _pendingGrabs.clear();
-    _pictureCapTold = false;
     Store& store = Store::instance();
     // a client's own request may have closed the dialog (its reject):
     // the close is the desktop's fact and must reach that client too
@@ -413,33 +466,101 @@ void PanelMirror::hide()
     // the root's close implies the subtree: one message, the children
     // released without one
     store.release(id, true);
-    for (auto it = _models.begin(); it != _models.end(); ++it) {
-        unwatchWidget(it.key());
-        if (it.value()) {
-            const QString wid = store.idOf(it.value());
-            if (!wid.isEmpty())
-                store.release(wid, false);
-        }
-    }
+    releaseDescendants(_root);
+    _signatures.remove(_root);
     if (_list && _list->layout())
         _list->layout()->removeWidget(_root);
     delete _root.data();  // the models are its descendants
     _root = nullptr;
     _rootId.clear();
-    _models.clear();
-    _signatures.clear();
-    _watched.clear();
-    _dirty.clear();
     _contents.clear();
     _buttons = nullptr;
     if (_list)
         store.notifyLayout(listId());
+    idle();
+    Q_EMIT hidden(id);
+}
+
+void PanelMirror::idle()
+{
+    if (active())
+        return;
+    _rebuildTimer.stop();
+    _flushTimer.stop();
+    _grabTimer.stop();
+    _pictures.clear();
+    _grabbedAt.clear();
+    _pendingGrabs.clear();
+    _pictureCapTold = false;
+    _dirty.clear();
+}
+
+// ---- the top-level dialogs (M3) --------------------------------------------------
+
+void PanelMirror::scheduleDialog(QWidget* window)
+{
+    if (_roots.contains(window))
+        return;
+    for (const auto& w : _pendingDialogs)
+        if (w == window)
+            return;
+    _pendingDialogs.append(window);
+    if (!_dialogTimer.isActive())
+        _dialogTimer.start();
+}
+
+void PanelMirror::showDialog(QWidget* window)
+{
+    if (!window || !topLevelDialog(window) || _roots.contains(window))
+        return;
+    if (!_running)
+        start();
+    const QString cls = QString::fromUtf8(window->metaObject()->className());
+    if (!allowed(cls)) {
+        Base::Console().Log("PanelMirror: %s not mirrored (Preferences/Fw/PanelMirror)\n",
+                            qPrintable(cls));
+        return;
+    }
+    // a dialog the store already carries as a bound view's widget (a
+    // guest form realized by FwQt) is in the store once
+    Store& store = Store::instance();
+    for (const QString& id : store.ids()) {
+        if (FwQt::widgetOf(store.object(id)) == window)
+            return;
+    }
+    _roots.insert(window, QStringLiteral("dialog:%1").arg(++dialogSerial()));
+    _rootOrder.append(window);
+    rebuild();
+}
+
+void PanelMirror::hideDialog(QWidget* window)
+{
+    if (_roots.contains(window))
+        closeRoot(window, true);
+}
+
+void PanelMirror::closeRoot(QWidget* window, bool announce)
+{
+    const QString id = _roots.take(window);
+    _rootOrder.removeAll(window);
+    if (id.isEmpty())
+        return;
+    // a client's own click may have dismissed it: the close is the
+    // desktop's fact and reaches that client too
+    Store::OriginScope scope(0);
+    Widget* model = _models.value(window).data();
+    if (model && _list && _list->layout())
+        _list->layout()->removeWidget(model);
+    releaseModel(window, announce);
+    if (_list)
+        Store::instance().notifyLayout(listId());
+    idle();
     Q_EMIT hidden(id);
 }
 
 void PanelMirror::scheduleRebuild()
 {
-    if (_root && !_walking && !_rebuildTimer.isActive())
+    if (active() && !_walking && !_rebuildTimer.isActive())
         _rebuildTimer.start();
 }
 
@@ -452,7 +573,7 @@ void PanelMirror::scheduleFlush()
 void PanelMirror::markDirty(QWidget* widget)
 {
     // a grab renders the widget, which paints: not evidence of a change
-    if (!_root || _walking || _grabbing || !_models.contains(widget))
+    if (!active() || _walking || _grabbing || !_models.contains(widget))
         return;
     _dirty.insert(widget);
     scheduleFlush();
@@ -467,8 +588,21 @@ bool PanelMirror::eventFilter(QObject* watched, QEvent* event)
         // a scroll area (an item view, a text edit) paints its viewport,
         // not itself: the viewport's paint is the view's evidence
         auto area = qobject_cast<QAbstractScrollArea*>(w->parentWidget());
-        if (area && area->viewport() == w && _models.contains(area))
+        if (area && area->viewport() == w && _models.contains(area)) {
             w = area;
+        }
+        else {
+            // the application filter (M3): a top-level dialog's Show
+            // makes a root on the next tick; everything else is not ours
+            if (event->type() == QEvent::Show && topLevelDialog(w))
+                scheduleDialog(w);
+            return QObject::eventFilter(watched, event);
+        }
+    }
+    if (event->type() == QEvent::Hide && _roots.contains(w)) {
+        // a dialog root going down (its done(), a close): the root's close
+        closeRoot(w, true);
+        return QObject::eventFilter(watched, event);
     }
     switch (event->type()) {
         case QEvent::Paint:
@@ -533,22 +667,25 @@ void PanelMirror::withoutBackends(const std::function<void()>& fn)
 
 void PanelMirror::rebuild()
 {
-    if (!_root)
+    if (!active())
         return;
     _walking = true;
     ++_rebuilds;
     Store& store = Store::instance();
     Store::OriginScope scope(0);  // the opens are the desktop's, whoever caused them
-    const bool rootNew = !_signatures.contains(_root);
+    const bool rootNew = _root && !_signatures.contains(_root);
     Walk w;
     withoutBackends([&]() { walk(w); });
 
     // the opens, referenced before referrer: the created list is in
     // post-order, and the root comes last
+    QStringList newDialogs;
     for (const auto& pair : w.created) {
         const QString id = store.idOf(pair.second);
         if (!id.isEmpty())
             store.announceOpen(id);
+        if (_roots.contains(pair.first))
+            newDialogs.append(_roots.value(pair.first));
     }
     if (rootNew)
         store.announceOpen(_rootId);
@@ -564,45 +701,57 @@ void PanelMirror::rebuild()
             gone.append(it.key());
     for (QWidget* real : gone)
         releaseModel(real, true);
-    if (rootNew) {
+    if (rootNew)
         _list->layout()->addWidget(_root);
-        store.notifyLayout(listId());
+    for (const auto& pair : w.created) {
+        if (_roots.contains(pair.first))
+            _list->layout()->addWidget(pair.second);
     }
+    if (rootNew || !newDialogs.isEmpty())
+        store.notifyLayout(listId());
     _walking = false;
     if (rootNew)
         Q_EMIT shown(_rootId);
+    for (const QString& id : newDialogs)
+        Q_EMIT shown(id);
     Q_EMIT rebuilt();
 }
 
 void PanelMirror::walk(Walk& w)
 {
-    QStringList signature;
-    auto lay = new Layout(Layout::VBox);
     bool isNew = false;
-    for (const auto& c : _contents) {
-        if (!c)
-            continue;
-        Widget* m = mirrorWidget(w, c.data(), _root, isNew);
-        lay->addWidget(m);
-        signature.append(QStringLiteral("box:") + ptrKey(m));
+    if (_root) {
+        QStringList signature;
+        auto lay = new Layout(Layout::VBox);
+        for (const auto& c : _contents) {
+            if (!c)
+                continue;
+            Widget* m = mirrorWidget(w, c.data(), _root, isNew);
+            lay->addWidget(m);
+            signature.append(QStringLiteral("box:") + ptrKey(m));
+        }
+        if (_buttons) {
+            Widget* m = mirrorWidget(w, _buttons.data(), _root, isNew);
+            lay->addWidget(m);
+            signature.append(QStringLiteral("buttons:") + ptrKey(m));
+        }
+        const bool rootNew = !_signatures.contains(_root);
+        if (rootNew || _signatures.value(_root) != signature) {
+            Layout* old = _root->layout();
+            _root->setLayout(lay);
+            delete old;
+            _signatures.insert(_root, signature);
+            if (!rootNew)
+                w.changed.append(_root);
+        }
+        else {
+            delete lay;
+        }
     }
-    if (_buttons) {
-        Widget* m = mirrorWidget(w, _buttons.data(), _root, isNew);
-        lay->addWidget(m);
-        signature.append(QStringLiteral("buttons:") + ptrKey(m));
-    }
-    const bool rootNew = !_signatures.contains(_root);
-    if (rootNew || _signatures.value(_root) != signature) {
-        Layout* old = _root->layout();
-        _root->setLayout(lay);
-        delete old;
-        _signatures.insert(_root, signature);
-        if (!rootNew)
-            w.changed.append(_root);
-    }
-    else {
-        delete lay;
-    }
+    // the top-level dialogs (M3): each a root walked from its window,
+    // whose real layout is the root's
+    for (QWidget* window : _rootOrder)
+        mirrorWidget(w, window, _list, isNew);
 }
 
 Widget* PanelMirror::newModel(QWidget* real, Widget* parentModel, bool picture)
@@ -654,7 +803,11 @@ Widget* PanelMirror::mirrorWidget(Walk& w, QWidget* real, Widget* parentModel, b
         }
         model = newModel(real, parentModel, picture);
         _models.insert(real, model);
-        Store::instance().adopt(QStringLiteral("pw:%1").arg(++widgetSerial()), model, false);
+        // a dialog root carries the id minted at its show (M3)
+        QString id = _roots.value(real);
+        if (id.isEmpty())
+            id = QStringLiteral("pw:%1").arg(++widgetSerial());
+        Store::instance().adopt(id, model, false);
     }
     else if (model->parentWidget() != parentModel) {
         // moved between containers: the model tree follows, silently
@@ -893,7 +1046,10 @@ void PanelMirror::watchWidget(QWidget* real)
         area->viewport()->installEventFilter(this);
     connect(real, &QObject::destroyed, this, [this, real]() {
         _watched.remove(real);
-        releaseModel(real, false);
+        if (_roots.contains(real))
+            closeRoot(real, true);  // a dialog deleted while up: its close
+        else
+            releaseModel(real, false);
         scheduleRebuild();
     });
     if (auto box = qobject_cast<Gui::TaskView::TaskBox*>(real))
@@ -929,6 +1085,16 @@ void PanelMirror::releaseModel(QWidget* real, bool announce)
     _signatures.remove(model.data());
     Store& store = Store::instance();
     // the descendants first, quietly: a client drops them with this one
+    releaseDescendants(model.data());
+    const QString id = store.idOf(model.data());
+    if (!id.isEmpty())
+        store.release(id, announce);
+    delete model.data();
+}
+
+void PanelMirror::releaseDescendants(Widget* model)
+{
+    Store& store = Store::instance();
     for (Widget* child : model->findChildren<Widget*>()) {
         const QString cid = store.idOf(child);
         if (!cid.isEmpty())
@@ -942,10 +1108,6 @@ void PanelMirror::releaseModel(QWidget* real, bool announce)
             unwatchWidget(childReal);
         }
     }
-    const QString id = store.idOf(model.data());
-    if (!id.isEmpty())
-        store.release(id, announce);
-    delete model.data();
 }
 
 QVariantMap PanelMirror::read(QWidget* real, Widget* model) const
@@ -1107,8 +1269,14 @@ void PanelMirror::onModelRequest(QWidget* real, Widget* model, const QString& na
                                  const QVariantList& args)
 {
     Q_UNUSED(model)
-    Q_UNUSED(args)
-    if (name == QLatin1String("click")) {
+    if (_roots.contains(real)) {
+        onDialogRequest(real, name, args);
+        return;
+    }
+    if (name == QLatin1String("mouse") || name == QLatin1String("wheel")) {
+        replayMouse(real, name, args);
+    }
+    else if (name == QLatin1String("click")) {
         if (auto b = qobject_cast<::QAbstractButton*>(real))
             b->click();
     }
@@ -1124,7 +1292,105 @@ void PanelMirror::onModelRequest(QWidget* real, Widget* model, const QString& na
     }
 }
 
-void PanelMirror::onRootRequest(const QString& name, const QVariantList& args)
+void PanelMirror::replayMouse(QWidget* real, const QString& name, const QVariantList& args)
+{
+    // a picture is display until here: the client's pointer, replayed
+    // into the real widget as the desktop's would arrive.  `mouse`:
+    // [type, x, y, button, buttons, modifiers] with type one of press,
+    // release, move, dblclick, enter, leave; `wheel`: [x, y, dx, dy,
+    // buttons, modifiers].  x, y are the picture's pixels.
+    if (!_pictures.contains(real)) {
+        Base::Console().Log("PanelMirror: %s replay ignored, %s is not a picture\n",
+                            qPrintable(name), qPrintable(real->objectName()));
+        return;
+    }
+    const bool wheel = name == QLatin1String("wheel");
+    const int at = wheel ? 0 : 1;
+    double x = args.value(at).toDouble();
+    double y = args.value(at + 1).toDouble();
+    // the grab was scaled down past the side cap: the picture's pixels
+    // back to the widget's
+    const int side = std::max(real->width(), real->height());
+    if (side > maxPictureSide()) {
+        const double factor = static_cast<double>(side) / maxPictureSide();
+        x *= factor;
+        y *= factor;
+    }
+    const QPointF local(x, y);
+    const QPointF global = real->mapToGlobal(local);
+    if (wheel) {
+        const QPoint delta(args.value(2).toInt(), args.value(3).toInt());
+        const auto buttons = static_cast<Qt::MouseButtons>(args.value(4).toInt());
+        const auto mods = static_cast<Qt::KeyboardModifiers>(args.value(5).toInt());
+        QWheelEvent ev(local, global, QPoint(), delta, buttons, mods, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(real, &ev);
+        return;
+    }
+    const QString type = args.value(0).toString();
+    const auto mods = static_cast<Qt::KeyboardModifiers>(args.value(5).toInt());
+    if (type == QLatin1String("enter")) {
+        QEnterEvent ev(local, local, global);
+        QApplication::sendEvent(real, &ev);
+        return;
+    }
+    if (type == QLatin1String("leave")) {
+        QEvent ev(QEvent::Leave);
+        QApplication::sendEvent(real, &ev);
+        return;
+    }
+    QEvent::Type kind = QEvent::None;
+    if (type == QLatin1String("press"))
+        kind = QEvent::MouseButtonPress;
+    else if (type == QLatin1String("release"))
+        kind = QEvent::MouseButtonRelease;
+    else if (type == QLatin1String("move"))
+        kind = QEvent::MouseMove;
+    else if (type == QLatin1String("dblclick"))
+        kind = QEvent::MouseButtonDblClick;
+    if (kind == QEvent::None)
+        return;
+    // the button that caused it (none for a move), the state after it
+    auto button = static_cast<Qt::MouseButton>(
+        args.value(3, static_cast<int>(Qt::LeftButton)).toInt());
+    if (kind == QEvent::MouseMove)
+        button = Qt::NoButton;
+    Qt::MouseButtons buttons;
+    if (args.size() > 4)
+        buttons = static_cast<Qt::MouseButtons>(args.value(4).toInt());
+    else if (kind == QEvent::MouseButtonRelease || kind == QEvent::MouseMove)
+        buttons = Qt::NoButton;
+    else
+        buttons = button;
+    QMouseEvent ev(kind, local, local, global, button, buttons, mods);
+    QApplication::sendEvent(real, &ev);
+}
+
+void PanelMirror::onDialogRequest(QWidget* window, const QString& name,
+                                  const QVariantList& args)
+{
+    // accept, reject, done and close are the bound view's (it holds the
+    // real QDialog); what it does not know is the button box's buttons
+    // by flag and role, as the panel root has them
+    auto box = window->findChild<::QDialogButtonBox*>();
+    if (!box)
+        return;
+    if (name == QLatin1String("clicked")) {
+        ::QAbstractButton* b = box->button(
+            static_cast<::QDialogButtonBox::StandardButton>(args.value(0).toInt()));
+        if (b)
+            b->click();
+    }
+    else if (name == QLatin1String("helpRequested")) {
+        for (::QAbstractButton* b : box->buttons()) {
+            if (box->buttonRole(b) == ::QDialogButtonBox::HelpRole) {
+                b->click();
+                return;
+            }
+        }
+    }
+}
+
+void PanelMirror::onPanelRequest(const QString& name, const QVariantList& args)
 {
     ::QDialogButtonBox* box = _buttons.data();
     auto clickRole = [box](::QDialogButtonBox::ButtonRole role) {
