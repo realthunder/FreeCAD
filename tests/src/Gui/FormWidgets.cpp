@@ -1685,8 +1685,12 @@ private Q_SLOTS:
             return out;
         };
         auto settle = [&mirror]() {
+            // a widget's repaint is not a posted event: it rides the
+            // platform window's update timer (about 5 ms in Qt 6), which
+            // no number of immediate processEvents() sees -- and a row
+            // hidden by the view is found only on that repaint
             QCoreApplication::processEvents();
-            QCoreApplication::processEvents();
+            QTest::qWait(50);
             mirror.flush();
         };
 
