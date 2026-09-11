@@ -59,6 +59,10 @@ pieces are frozen, not extended.**
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
+    the browser console              sized       7.20: pyodide in the client's page, the wire
+                                                 over the socket (JSPI), a client:<identity>
+                                                 principal, catalog v2; C1-C6, one to two weeks;
+                                                 RULED 2026-09-11 after the document program
     host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -6126,6 +6130,187 @@ the writer).  What the numbers decide:
   (`grabUs` is counted, the bench has no picture); a non-native file
   dialog's rows; the DOM client's own cost of applying an open.
 
+### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program]**
+
+The question, asked before the document program (7.17) was started:
+how far is a Python console in the browser tier -- pyodide running in
+the CLIENT's page, the desktop console's reach, under the sandbox's
+access control -- and what would it take.  Sized here; not built.
+**Ruled 2026-09-11: client-side pyodide is the target, and it comes
+after the document program.**
+
+**The short answer.**  The back end exists and runs on the desktop
+today; what is missing is moving the guest from the host's V8 into
+the page: the wire carried over the WebSocket, a principal for a
+remote client, and the panel.  One to two weeks to a first working
+version with access control, with one unproven piece (the suspending
+import inside pyodide's dynamic linker).
+
+**What is already built and reused as is.**
+
+- *The guest is a console back end.*  The session document (S1:
+  live `ActiveDocument`, `listDocuments`, `newDocument`, `save`,
+  picker-blessed `saveAs`), `Gui.doCommand` / `addModule` executing
+  inside the guest (S2), `Selection` with observers, `Control`,
+  `runCommand`, the `Command` list, the stock dialogs, 345 annotated
+  members across the generated facades (3.3) plus the `Part` and
+  `TechDraw` module facades.  The `exec` op runs statements as the
+  session principal (`FreeCAD.ExpressionSandbox.exec`).  That is the
+  desktop console's surface minus what the catalog denies by design.
+- *The wire is transport-neutral.*  Every op is CBOR bytes in, CBOR
+  bytes out (`FcxWire.h`); the host's dispatcher is a plain `BridgeFn`
+  of bytes to bytes (`ExpressionImageRuntime.h`), and host->guest is
+  `roundTrip(bytes)`.  Nothing in the protocol assumes in-process
+  transport except the per-transaction handle table.  The page already
+  has a CBOR codec and an image loader
+  (`src/Gui/Renderer/web/src/sandbox/`).
+- *Enforcement is host-side only and the guest is assumed hostile*
+  (2.4): principals, catalog, grants, audit, the per-op schema and
+  permission checks all sit on the host, and `check*` compiles to a
+  no-op inside the image.  A browser guest is untrusted by
+  construction, which is the assumption the model already makes.
+  Nothing in the security stack moves.
+- *The door exists.*  `SceneStreamServer` admits a connection through
+  the grant list (docs/ShareAccess.md sec 2), carries a verified
+  identity from the front door, a view-only flag and a stable
+  connection id on every control request (`SceneClientInfo`,
+  `dispatchControl`), and its HTTP endpoints sit behind the same gate.
+  docs/SandboxNetwork.md 9.6 already designs `/pyodide/...` and
+  `/packages/...` served by the serving FreeCAD.
+- *Pyodide 314.0.6 is pinned* (5.3), and that release ships
+  `pyodide.console.Console` (a REPL: incomplete-input detection,
+  completion, stream redirection, top-level await) and JSPI support
+  (`run_sync`, `enableRunUntilComplete` on by default).
+
+**The gaps, largest first.**
+
+1. *The bridge across the WebSocket.*  The guest's host call is a
+   synchronous wasm import (`fcx_host_call` / `fcx_host_fetch`, 4.1),
+   and in the page the host is at the far end of an asynchronous
+   socket -- why 4.3 leaves the bridge unattached.  Two ways to close
+   it:
+   - **JSPI** (JavaScript Promise Integration): wrap the import as a
+     `WebAssembly.Suspending` function that awaits the round trip.
+     Shipped in Chrome 137 and Firefox 139, on by default on every
+     Firefox platform from 153; the browser tier already requires
+     exnref (Firefox 131+, Chrome 137+), so this is a compatible
+     floor.  The unproven piece: the import is bound by pyodide's
+     dynamic linker when the side-module wheel loads, and the V8 host
+     already hooks that point (`Module.mergeLibSymbols` before the
+     wheel loads, 4.1) -- the same hook should take a suspending
+     function, but it has not been tried.  The two-call pattern (call
+     then fetch) collapses to one await.
+   - **A Worker with `SharedArrayBuffer` and `Atomics.wait`**: every
+     browser including Safari, which has no JSPI.  Costs cross-origin
+     isolation headers (COOP/COEP) on the served page, not set today,
+     and the guest in a Worker with the panel on the main thread.
+     The mobile tier includes iOS, so this path has to exist
+     eventually; JSPI is the faster first step.
+2. *A host-side session per remote guest.*  `ImageHost` is a
+   singleton: one guest, one handle table cleared per transaction, a
+   scope stack that holds for the whole synchronous call
+   (`Transaction`, `clearHandles`).  A remote statement spans many
+   round trips and the GUI thread cannot block on a socket.  The new
+   piece is a per-connection endpoint on the host: its own
+   `HandleTable` and principal, bridge ops arriving as binary control
+   frames, the `Runtime::Scope` pushed PER OP, dispatched into the
+   same `BridgeFn` the local runtime uses; the guest's release queue
+   ("r" on the next request) keeps the table bounded and a statement's
+   end clears it.  The durable document-object keys (3.2, `resolve`)
+   already tolerate the desktop mutating between two ops of one
+   statement.  The host's own document guest stays where it is and
+   keeps serving Proxy hooks, so the two guests coexist.  One new
+   edge: a remote guest reading `obj.Proxy` receives a `gproxy` tag
+   from the OTHER guest's registry, which it cannot resolve --
+   answer it as `unsafe.getattr` (DENY) or by value.
+3. *A principal for a client, and the grant UI.*  A remote user is a
+   fourth class, `client:<identity>` (the front door's verified
+   identity; the admitting grant's id when there is none), with its
+   own catalog column.  The mapping: `doc.read.self`, `app.query`
+   ALLOW; `doc.write.self` follows the connection's view-only flag;
+   `doc.foreign` follows the multi-document serve grant; `app.write`,
+   `gui`, `gui.doCommand`, `prefs.write` PROMPT on the desktop or
+   DENY; `unsafe.getattr` DENY; `fs.*` / `host.exec` DENY, not
+   promptable.  The catalog is frozen v1 and `grants.json` is schema
+   v1: this is v2.  The 7.14 chokepoints are designed, not built, and
+   must be built -- or `gui` must be a hard DENY for clients -- before
+   a remote user reaches `Gui.runCommand` (F1 was DROPPED in sec 11
+   as a session-only need; a remote client is the second guest with
+   that need).  The prompt appears on the DESKTOP (the owner
+   consents); `PermissionNeeded` fails fast as it does today, the
+   client sees the refusal, the owner grants, the client retries.
+4. *The console panel.*  `pyodide.console.Console` over a DOM panel
+   (the panel infrastructure of `web/src/panel.ts`), stdout and stderr
+   redirected into it, `Console.complete` for completion, history in
+   `localStorage`, the runtime, the `fcx_image` wheel and the bundled
+   widget wheels booted from the serving FreeCAD (9.6 source 1) or
+   jsDelivr for a static page.
+5. *Latency and memory, unmeasured.*  A desktop hop is ~7 us (8.1);
+   over a LAN it is a millisecond, through a Cloudflare tunnel 30 to
+   100 ms.  A statement touching a few dozen properties is fine; a
+   loop over a thousand edges is seconds.  The snapshot op that 8.1
+   keeps optional becomes necessary here, and the fixed layout for
+   the hot ops (`FcxWire.h`) buys nothing against RTT.  The guest is
+   335 MB at boot on the desktop (7.17); the page's figure, and a
+   phone's, are to be measured before the panel is offered there.
+
+**What a remote console would NOT have.**  Everything not annotated
+(absent means DENY), `unsafe.getattr`, and any view API:
+`ActiveView` is the mirror's on the desktop (G4), but in the browser
+the view is the CLIENT's own, so `fitAll` / `viewAxonometric` / the
+camera are a small LOCAL facade talking to the viewer in the page,
+not an op to the host.  The macro echo the desktop console shows
+(`ScriptToPyConsole`, `Macro.cpp`) would be a subscription to the
+macro manager's stream -- new, small.  A guest-built form from a
+client needs the widget layer's DOM backend (G7), not built: out of a
+first version.  Undo: the desktop console's `Gui.doCommand` opens no
+transaction of its own; whether a remote statement should wrap its
+writes in one (`openTransaction` is not in the facade today) is a
+decision for the build.  Under the shared session (docs/ThinClient.md
+8.11) a client's writes land in the one document every view shows.
+
+**Order and cost.**
+
+    step                                                          size
+    ------------------------------------------------------------  ----------
+    C1  serve pyodide and the wheels from SceneStreamServer,      ~1 day
+        boot the guest in the page, bridge unattached (the
+        9.6 flow; pyodide's own browser loader)
+    C2  the remote bridge: binary control frames, the             2-3 days
+        per-connection endpoint on the host, the JSPI wrap of
+        the import, a gate (a statement reading and writing a
+        served document from a page, the desktop seeing it)
+    C3  the client principal, catalog v2, view-only mapping,      1-2 days
+        the 7.14 chokepoints (or gui DENY for clients)
+    C4  the console panel                                         ~1 day
+    C5  measure hop latency (LAN, tunnel) and the page's memory;  1-2 days
+        the snapshot op if a typical statement is too slow
+    C6  the Worker + Atomics path for Safari; COOP/COEP on the    1-2 days
+        served page                                               (later)
+
+**The alternative, named because it changes the cost picture.**  Keep
+the guest on the HOST as a second V8 pyodide instance per client and
+stream only text: the security stack applies unchanged, latency
+disappears, the page needs a text panel and nothing else -- two to
+three days.  The price is 335 MB of host memory per connected client
+(the cost 7.17 ruled per-document guests out on) and no isolation of
+a runaway client's CPU from the desktop.  Client-side pyodide is the
+end state for those two reasons; the host-side variant is the cheap
+fallback if the JSPI wrap turns out to be a fight.
+
+**Gate `SandboxBrowserConsole`** (C2 and C3 together): a page's guest
+evaluates `FreeCAD.ActiveDocument.Objects` over the socket; a
+view-only client's `write_prop` is refused with the client principal
+in the audit line; an editing client's `Part.makeBox(10,10,10)` bound
+to a new object appears in the desktop's tree; `Gui.runCommand(
+"Std_RecentMacros")` from a client is refused, not promptable; a
+second client's statement interleaved with the first's is answered
+under its own principal; the desktop's own console is unchanged.
+
+Sources: Firefox's JSPI release bug (bugzilla 2044809), the V8 JSPI
+introduction (v8.dev/blog/jspi), Chromium's intent to ship, pyodide's
+JSPI post (blog.pyodide.org/posts/jspi) and changelog.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -6554,13 +6739,22 @@ push the user's call).
    backend.  Not a sandbox item; listed because the code is shared.
 6. **An authoring panel for the document library** (item 2's carrier),
    on the widget layer -- after 5.
+7. **The browser console** -- **SIZED 2026-09-11 as 7.20, RULED after
+   item 2**: pyodide in the client's page, the wire over the
+   WebSocket through a JSPI-suspending import (a Worker + Atomics
+   path later, for Safari), a per-connection endpoint on the host
+   pushing the scope per op, a `client:<identity>` principal with its
+   own catalog column (v2), the panel on `pyodide.console`; stages
+   C1-C6, one to two weeks.  Un-drops the 7.14 chokepoints (F1): a
+   remote client is the second guest that needs them, unless `gui`
+   is a hard DENY for clients.
 
 DROPPED 2026-09-08: G4 (7.16, sized), F1 (7.14: it closed a hole only
 a SESSION guest has), N1-N5 (network is a session need), G5, G6, rung
 1 and the App-core severance (1.3), the `Python/Runtime = pyodide`
 switch as a goal.  FROZEN: G2, G3, S1, S2, the InitGui runner (sec 7
 header).  The numbered list below is the HISTORY of what was built,
-kept as the record; its forward items are superseded by the six above.
+kept as the record; its forward items are superseded by the seven above.
 
 The history.  Done: Phase 0 audit (2026-08-30),
 Phase 1 image and router (2026-08-31), the pyodide runtime and budget
