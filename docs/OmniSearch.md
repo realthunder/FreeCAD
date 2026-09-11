@@ -59,6 +59,35 @@ With nothing selected the dot lists nothing and resolves nothing. Where a
 label is the object's name the completer no longer offers the `<<name>>`
 row beside the name; a document behaves the same.
 
+A `#` addresses a document, as in the expression grammar's `Doc#Box`,
+with two additions the grammar does not have. `#` alone is the document
+being searched, so `#Box.Length` is that document's `Box` (the same as
+`Box.Length`, but it survives a label that clashes with an object name in
+another document). And `#` followed by a dot names a member of the document
+itself: `#.Comment`, `Doc#.Comment`, `<<Label>>#.Comment` resolve to the
+`App::Document` property and open its editor exactly as an object property
+would, with `Doc#` as the title; `#.ActiveView.DrawStyle` is a property of
+the document's active 3D view (the `View3DInventor` is a property container
+of its own, with `DrawStyle`, `ShadingType`, `ShowNaviCube` and so on). After
+`#.` or `#.ActiveView.` the popup lists that container's properties -- name
+and documentation, hidden ones left out -- plus an `ActiveView.` row under a
+document that has a view; picking it opens the view's list. This popup is
+a keyword filter over `OmniSearch::documentMembers()`, not the expression
+completer, whose model has no row for a document's own properties, and the
+expression engine itself is unchanged: `#.Comment` is the box's grammar,
+not an expression.
+
+The view side of an object is its `ViewObject`, the Python name:
+`Box.ViewObject.ShapeColor`, `Part.Box.ViewObject.Visibility`, and
+`.ViewObject.Visibility` for every selected object at once. `ViewObject`
+is a new pseudo property of `App::ObjectIdentifier` (beside `_self`, `_shape`
+and the others), so the expression completer offers it under every object
+and, below it, the view provider's Python attributes -- the properties among
+them carry the property icon; the box resolves `ViewObject` followed by one
+name to the view provider's property through `Gui::Application`. In an
+expression `Box.ViewObject.Visibility` evaluates through Python, as `_self`
+does, and is `None` without a GUI.
+
 **Commands.** Rows show the command's icon, title and shortcut and its
 tooltip as the description; inactive commands are greyed and inert. A group
 command (`Std_DrawStyle`, a workbench's tool groups) carries an arrow: click
@@ -112,11 +141,21 @@ consume:
 - `parseInput(text)` -> `{mode, query, offset}`; `modePrefix(mode)`.
 - `resolveObject(query, owner, match)`: `App::ObjectIdentifier::parse()` of
   the query relative to `owner` (any object of the document to search). A
-  real, non-pseudo property resolves to a property match; otherwise the
-  tree's trick -- append `._self`, a pseudo property every object answers to,
-  and accept if the parse lands on it -- resolves an object path. The owner
+  real, non-pseudo property resolves to a property match (a pseudo property
+  parses to a stand-in, the object's `Label`, so the check is the `ptype`
+  out-parameter of `getProperty()`, not `isPseudoProperty()`); the pseudo
+  property `ViewObject` followed by one name resolves to the view provider's
+  property; otherwise the tree's trick -- append `._self`, a pseudo property
+  every object answers to, and accept if the parse lands on it -- resolves
+  an object path. Before any of that, a `#` outside a `<<label>>` is the
+  document separator: `#.X` and `Doc#.X` resolve on the document itself
+  (`ObjectMatch::doc` set, `obj` empty), `#.ActiveView.X` on its active
+  view, and a leading `#` before an object name is dropped. The owner
   comes from `TreeWidget::startItemSearch()`, which also sets up the tree's
   search state.
+- `documentMembers(head, owner)` and `splitMemberQuery(query, head, tail)`:
+  the rows behind a `#.` or `#.ActiveView.` popup, and the split of a query
+  into the head that names the container and the member typed so far.
 - `searchCommands(query)`, `searchParams(query)`: plain-data results.
 - `createParamEditor(info, parent)`: the `Gui::PrefWidget` for a parameter,
   bound (`setEntryName`, `setParamGrpPath`) and restored.
@@ -127,19 +166,25 @@ consume:
 
 ### 2.2 The box
 
-`OmniSearchEdit` is one `QLineEdit` with four completers -- the chooser,
-`Gui::ExpressionCompleter` for objects, and keyword-filtered `QCompleter`s
-over the command and parameter lists. `parseInput()` on every edit decides
-which one answers; at most one popup is up. The expression completer only
+`OmniSearchEdit` is one `QLineEdit` with five completers -- the chooser,
+`Gui::ExpressionCompleter` for objects, keyword-filtered `QCompleter`s
+over the command and parameter lists, and one more keyword-filtered list
+for the members after `#.` (rebuilt from `documentMembers()` on every
+edit). `parseInput()` on every edit decides which one answers; at most one
+popup is up. The expression completer only
 ever sees the query, so its completions are spliced back with the prefix's
 offset (`completeObject()`, the eight lines of
 `ExpressionLineEdit::slotCompleteText()`, plus one fix-up: for a member of
 the owner object the model completes to the expression shorthand `.Length`,
 and since the owner is only the document's first object the splice keeps
-the typed object in front of the dot); its `highlighted` signal only
+the typed object in front of the dot); it never sees the `#` of `#Box`
+either (`objectSkip()`), since the grammar only knows `Doc#Box`. Its
+`highlighted` signal only
 splices, its `activated` signal (a click) splices and then commits
 (`activateObject()` -> `objectActivated`), which is what builds the
-property editor.
+property editor. The member completer works the same way
+(`completeMember()`), except that picking the `ActiveView.` row re-runs
+the query to open the next level instead of committing.
 
 Keys are handled on the popups, not on the edit: while a popup is up the
 key events go to it, and `QCompleter` forwards them to the edit's `event()`
@@ -243,8 +288,11 @@ The line endings in this repository are frozen (`.gitattributes`), so check
   get/set/reset round trips through the parameter group.
 - `tests/src/Gui/OmniSearch.cpp` (`OmniSearch_Tests_run`, a Qt test): the
   grammar, `resolveObject` over a document (name, label, property, pseudo
-  property, misses), `searchParams`, the model and filter, and
-  `createParamEditor` for every proxy kind and every value type.
+  property, misses, the `#` forms over one and two documents),
+  `documentMembers` and `splitMemberQuery`, `searchParams`, the model and
+  filter, and `createParamEditor` for every proxy kind and every value type.
+  There is no `Gui::Application` in it, so `ViewObject` and `ActiveView`
+  are only checked to resolve to nothing there.
 - Commands need a `Gui::Application`; they are exercised by hand: `/cmd
   draw` -> `Std_DrawStyle` with its arrow, `/cmd history` -> Enter runs
   `Std_CmdHistory` and it appears in the history.
@@ -260,7 +308,8 @@ no widgets in it:
 | op                 | fields                    | calls                                        |
 |--------------------|---------------------------|----------------------------------------------|
 | `omni.search`      | `mode`, `query`           | `searchCommands`, `searchParams`, or the expression completer's model for objects |
-| `omni.resolve`     | `query`, `doc`            | `resolveObject` -> object/sub-object/property |
+| `omni.resolve`     | `query`, `doc`            | `resolveObject` -> object/sub-object/property, or a document/view property (`#.`) |
+| `omni.members`      | `head`                    | `documentMembers` for a `#.` or `#.ActiveView.` head |
 | `command.run`      | `name`                    | `CommandManager::runCommandByName`           |
 | `param.get/set/reset` | `path`, `entry`, `value` | `ParamRegistry::getValue`/`setValue`/`reset` |
 

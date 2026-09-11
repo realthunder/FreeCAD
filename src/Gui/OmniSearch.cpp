@@ -24,22 +24,31 @@
 
 #ifndef _PreComp_
 # include <climits>
+# include <cctype>
 # include <cstdlib>
 # include <cstring>
 # include <QCoreApplication>
 #endif
 
+#include <boost/algorithm/string/predicate.hpp>
+
 #include <App/Application.h>
+#include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ParamRegistry.h>
 #include <App/Property.h>
+#include <App/PropertyContainer.h>
 #include <Base/Exception.h>
 #include <Base/Type.h>
 
 #include "OmniSearch.h"
+#include "Application.h"
 #include "Command.h"
 #include "CommandCompleter.h"
+#include "Document.h"
+#include "MDIView.h"
 #include "PrefWidgets.h"
+#include "ViewProvider.h"
 
 using namespace Gui;
 using App::ParamInfo;
@@ -90,17 +99,129 @@ OmniSearch::Input OmniSearch::parseInput(const QString &text)
 // ---------------------------------------------------------------------------
 // objects
 
-// The property a ".Name" path names on one object, if it has it with the given type
-static App::Property *localProperty(App::DocumentObject *obj, const std::string &txt, const Base::Type &type)
+namespace {
+
+// The first '#' outside a <<...>> string: the document separator
+int documentSeparator(const std::string &txt)
 {
-    if (!obj || !obj->isAttachedToDocument())
+    bool quoted = false;
+    for (size_t i = 0; i < txt.size(); ++i) {
+        if (txt.compare(i, 2, "<<") == 0) {
+            quoted = true;
+            ++i;
+        }
+        else if (txt.compare(i, 2, ">>") == 0) {
+            quoted = false;
+            ++i;
+        }
+        else if (!quoted && txt[i] == '#')
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+// The document "Doc" or "<<Label>>" names; the owner's for an empty name.
+// An unquoted name is tried as a name first, then as a label, as
+// ObjectIdentifier does; an ambiguous label names nothing.
+App::Document *findDocument(const std::string &name, App::DocumentObject *owner)
+{
+    if (name.empty())
+        return owner->getDocument();
+    std::string label = name;
+    if (name.size() >= 4 && boost::starts_with(name, "<<") && boost::ends_with(name, ">>"))
+        label = name.substr(2, name.size() - 4);
+    else if (auto doc = App::GetApplication().getDocument(name.c_str()))
+        return doc;
+    App::Document *found = nullptr;
+    for (auto doc : App::GetApplication().getDocuments()) {
+        if (doc->Label.getStrValue() != label)
+            continue;
+        if (found)
+            return nullptr;
+        found = doc;
+    }
+    return found;
+}
+
+bool isIdentifier(const std::string &s)
+{
+    if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s[0])) || s[0] == '_'))
+        return false;
+    for (char c : s) {
+        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+            return false;
+    }
+    return true;
+}
+
+// The document's active 3D view, a property container of its own. The
+// active MDI view may be a ViewArea hosting it; activeSubView() is the
+// view inside.
+App::PropertyContainer *activeView(App::Document *doc)
+{
+    if (!Gui::Application::Instance)
         return nullptr;
+    auto gdoc = Gui::Application::Instance->getDocument(doc);
+    auto view = gdoc ? gdoc->getActiveView() : nullptr;
+    return view ? view->activeSubView() : nullptr;
+}
+
+// "Comment" or "ActiveView.DrawStyle" after "#.": a property of the
+// document itself, or of its active 3D view
+bool resolveDocumentMember(App::Document *doc, const std::string &member, OmniSearch::ObjectMatch &out)
+{
+    App::PropertyContainer *container = doc;
+    std::string name = member;
+    auto dot = member.find('.');
+    if (dot != std::string::npos) {
+        if (member.compare(0, dot, "ActiveView") != 0)
+            return false;
+        name = member.substr(dot + 1);
+        container = activeView(doc);
+        if (!container)
+            return false;
+    }
+    if (!isIdentifier(name))
+        return false;
+    auto prop = container->getPropertyByName(name.c_str());
+    if (!prop)
+        return false;
+    out.doc = doc;
+    out.prop = prop;
+    out.props.push_back(prop);
+    return true;
+}
+
+// The property a path names on its owner, with the (sub-)object it
+// belongs to. A pseudo property is no match, except ViewObject followed
+// by one name: the property of the object's view provider.
+App::Property *pathProperty(App::DocumentObject *owner, const std::string &txt,
+                            App::SubObjectT &objT, App::ObjectIdentifier &pathOut)
+{
     try {
-        auto path = App::ObjectIdentifier::parse(obj, txt);
-        auto prop = path.getProperty();
-        if (prop && !App::ObjectIdentifier::isPseudoProperty(prop)
-                && prop->getTypeId() == type && path.getDocumentObject() == obj)
-            return prop;
+        auto path = App::ObjectIdentifier::parse(owner, txt);
+        int ptype = 0;  // non-zero: a pseudo property, which resolves to a stand-in
+        auto prop = path.getProperty(&ptype);
+        auto obj = prop ? path.getDocumentObject() : nullptr;
+        if (!obj)
+            return nullptr;
+        const auto &sub = path.getSubObjectName();
+        if (ptype) {
+            if (path.getPropertyName() != "ViewObject" || path.numSubComponents() != 2)
+                return nullptr;
+            const auto &comp = path.getPropertyComponent(1);
+            if (!comp.isSimple())
+                return nullptr;
+            auto target = sub.empty() ? obj : obj->getSubObject(sub.c_str());
+            auto vp = (target && Gui::Application::Instance)
+                ? Gui::Application::Instance->getViewProvider(target) : nullptr;
+            prop = vp ? vp->getPropertyByName(comp.getName().c_str()) : nullptr;
+            if (!prop)
+                return nullptr;
+        }
+        objT = App::SubObjectT(obj, sub.c_str());
+        pathOut = std::move(path);
+        return prop;
     }
     catch (Base::Exception &) {
     }
@@ -109,46 +230,55 @@ static App::Property *localProperty(App::DocumentObject *obj, const std::string 
     return nullptr;
 }
 
+} // namespace
+
 bool OmniSearch::resolveObject(const QString &query, App::DocumentObject *owner, ObjectMatch &out,
                                const std::vector<App::DocumentObject*> *locals)
 {
+    out = ObjectMatch();
     if (!owner || !owner->isAttachedToDocument())
         return false;
     std::string txt = query.trimmed().toUtf8().constData();
     if (txt.empty())
         return false;
-    out.props.clear();
+
+    // '#' addresses a document: "#.Comment" and "Doc#.Comment" a member
+    // of the document itself, "#Box" an object of the owner's document
+    // (the expression grammar only knows "Doc#Box").
+    int sep = documentSeparator(txt);
+    if (sep >= 0 && sep + 1 < static_cast<int>(txt.size()) && txt[sep + 1] == '.') {
+        auto doc = findDocument(txt.substr(0, sep), owner);
+        return doc && resolveDocumentMember(doc, txt.substr(sep + 2), out);
+    }
+    if (sep == 0) {
+        txt.erase(0, 1);
+        if (txt.empty())
+            return false;
+    }
 
     bool local = txt[0] == '.';
     if (local && locals && locals->empty())
         return false;
 
-    // A property reference first: "Box.Length", "Part.Box.Placement".
-    try {
-        auto path = App::ObjectIdentifier::parse(owner, txt);
-        auto prop = path.getProperty();
-        if (prop && !App::ObjectIdentifier::isPseudoProperty(prop)) {
-            auto obj = path.getDocumentObject();
-            if (obj) {
-                out.obj = App::SubObjectT(obj, path.getSubObjectName().c_str());
-                out.prop = prop;
-                out.path = std::move(path);
-                out.props.push_back(prop);
-                if (local && locals) {
-                    for (auto other : *locals) {
-                        if (other == obj)
-                            continue;
-                        if (auto p = localProperty(other, txt, prop->getTypeId()))
-                            out.props.push_back(p);
-                    }
+    // A property reference first: "Box.Length", "Part.Box.Placement",
+    // "Box.ViewObject.ShapeColor".
+    if (auto prop = pathProperty(owner, txt, out.obj, out.path)) {
+        out.prop = prop;
+        out.props.push_back(prop);
+        if (local && locals) {
+            auto obj = out.obj.getObject();
+            for (auto other : *locals) {
+                if (other == obj || !other || !other->isAttachedToDocument())
+                    continue;
+                App::SubObjectT t;
+                App::ObjectIdentifier p;
+                if (auto pp = pathProperty(other, txt, t, p)) {
+                    if (t.getObject() == other && pp->getTypeId() == prop->getTypeId())
+                        out.props.push_back(pp);
                 }
-                return true;
             }
         }
-    }
-    catch (Base::Exception &) {
-    }
-    catch (...) {
+        return true;
     }
 
     // Else an object path, resolved the way the tree's search box does
@@ -175,6 +305,81 @@ bool OmniSearch::resolveObject(const QString &query, App::DocumentObject *owner,
     catch (...) {
     }
     return false;
+}
+
+std::vector<OmniSearch::MemberMatch> OmniSearch::documentMembers(const QString &head,
+                                                                 App::DocumentObject *owner)
+{
+    std::vector<MemberMatch> res;
+    if (!owner || !owner->isAttachedToDocument())
+        return res;
+    std::string txt = head.toUtf8().constData();
+    int sep = documentSeparator(txt);
+    if (sep < 0 || sep + 1 >= static_cast<int>(txt.size()) || txt[sep + 1] != '.')
+        return res;
+    auto doc = findDocument(txt.substr(0, sep), owner);
+    if (!doc)
+        return res;
+    App::PropertyContainer *container = doc;
+    std::string rest = txt.substr(sep + 2);
+    if (rest == "ActiveView.") {
+        container = activeView(doc);
+        if (!container)
+            return res;
+    }
+    else if (!rest.empty())
+        return res;
+
+    std::vector<std::pair<const char*, App::Property*>> props;
+    container->getPropertyNamedList(props);
+    for (auto &v : props) {
+        if (!v.second || v.second->testStatus(App::Property::Hidden))
+            continue;
+        MemberMatch m;
+        m.name = QString::fromUtf8(v.first);
+        const char *docu = v.second->getDocumentation();
+        m.description = QString::fromUtf8(docu ? docu : "");
+        res.push_back(std::move(m));
+    }
+    if (container == doc && activeView(doc)) {
+        MemberMatch m;
+        m.name = QStringLiteral("ActiveView.");
+        m.description = QCoreApplication::translate("Gui::OmniSearch", "The active 3D view's properties");
+        res.push_back(std::move(m));
+    }
+    return res;
+}
+
+bool OmniSearch::splitMemberQuery(const QString &query, QString &head, QString &tail)
+{
+    // The '#' outside a <<...>> string, as documentSeparator() finds it
+    int sep = -1;
+    bool quoted = false;
+    for (int i = 0; i < query.size(); ++i) {
+        if (query.mid(i, 2) == QLatin1String("<<")) {
+            quoted = true;
+            ++i;
+        }
+        else if (query.mid(i, 2) == QLatin1String(">>")) {
+            quoted = false;
+            ++i;
+        }
+        else if (!quoted && query[i] == QLatin1Char('#')) {
+            sep = i;
+            break;
+        }
+    }
+    if (sep < 0 || sep + 1 >= query.size() || query[sep + 1] != QLatin1Char('.'))
+        return false;
+    int start = sep + 2;
+    static const QString view = QStringLiteral("ActiveView.");
+    if (query.mid(start).startsWith(view))
+        start += view.size();
+    tail = query.mid(start);
+    if (tail.contains(QLatin1Char('.')))
+        return false;
+    head = query.left(start);
+    return true;
 }
 
 // ---------------------------------------------------------------------------

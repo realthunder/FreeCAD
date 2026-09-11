@@ -38,6 +38,7 @@
 class QWidget;
 
 namespace App {
+class Document;
 class DocumentObject;
 class Property;
 struct ParamInfo;
@@ -89,7 +90,12 @@ GuiExport Input parseInput(const QString &text);
 
 /// What an object query resolved to
 struct ObjectMatch {
+    /// The (sub-)object named; empty for a document member (doc is set then)
     App::SubObjectT obj;
+    /** The document a "#." query addressed: prop is then a property of
+     * the document itself or of its active 3D view
+     */
+    App::Document *doc = nullptr;
     /// Set when the query named a property of the object
     App::Property *prop = nullptr;
     App::ObjectIdentifier path;
@@ -113,9 +119,39 @@ struct ObjectMatch {
  * property from every local object that has it with the same type; with
  * an empty list such a query resolves to nothing. Without locals the
  * owner is the local object, as in an expression.
+ *
+ * A '#' addresses a document: "#" alone the owner's, "Doc#" or "<<Label>>#"
+ * a named one. "#.Comment" names a property of the document itself and
+ * "#.ActiveView.DrawStyle" one of its active 3D view (ObjectMatch::doc
+ * is set, obj empty); "#Box.Length" is Box of that document, as the
+ * expression grammar's "Doc#Box.Length". "Box.ViewObject.ShapeColor"
+ * names a property of the object's view provider (the pseudo property
+ * ViewObject followed by one name), for a sub-object and for ".ViewObject.X"
+ * on the selection alike.
  */
 GuiExport bool resolveObject(const QString &query, App::DocumentObject *owner, ObjectMatch &out,
                              const std::vector<App::DocumentObject*> *locals = nullptr);
+
+/// A row the "#." completer offers
+struct MemberMatch {
+    /// The property name, or "ActiveView." for the row that opens the view's members
+    QString name;
+    /// The property documentation
+    QString description;
+};
+
+/** The members a "#." head offers: for "#." or "Doc#." the document's
+ * properties plus "ActiveView." when the document has a 3D view; for
+ * "#.ActiveView." that view's properties. Hidden properties are left
+ * out. Empty when head is not of that form or names no document.
+ */
+GuiExport std::vector<MemberMatch> documentMembers(const QString &head, App::DocumentObject *owner);
+
+/** Split a "#." query for completion: head is "Doc#." or "Doc#.ActiveView."
+ * (what documentMembers() takes) and tail the member name typed so far.
+ * False for any other query, and once the tail has a dot of its own.
+ */
+GuiExport bool splitMemberQuery(const QString &query, QString &head, QString &tail);
 
 struct CommandMatch {
     QByteArray name;

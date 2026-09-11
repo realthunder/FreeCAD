@@ -35,6 +35,7 @@
 #include "OmniSearch.h"
 
 class QCompleter;
+class QStandardItemModel;
 class QVBoxLayout;
 
 namespace App {
@@ -124,9 +125,12 @@ private:
     void setupChooser();
     void setupCommands();
     void setupParams();
+    void setupMembers();
     void runObjectQuery();
     void resolveObjectQuery();
     void completeObject(const QString &completion);
+    void completeMember(const QString &name, bool advance);
+    int objectSkip() const;
     void activateObject();
     bool chooseCurrentRow();
     QRect popupRect() const;
@@ -145,6 +149,10 @@ private:
     QCompleter *paramCompleter = nullptr;
     ParamListModel *paramModel = nullptr;
     KeywordFilterModel *paramFilter = nullptr;
+    // The "#." tails: a document's or its view's members
+    QCompleter *memberCompleter = nullptr;
+    QStandardItemModel *memberModel = nullptr;
+    KeywordFilterModel *memberFilter = nullptr;
 
     bool completing = false;
     bool justActivated = false;

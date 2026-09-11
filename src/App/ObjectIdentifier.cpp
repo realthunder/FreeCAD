@@ -125,6 +125,7 @@ enum PseudoPropertyType {
     PseudoCollections,
     PseudoGui,
     PseudoCadquery,
+    PseudoViewObject,
     PseudoSubObject,
 };
 
@@ -1606,6 +1607,8 @@ const std::vector<std::pair<const char *, App::Property*> > &ObjectIdentifier::g
             props.emplace_back(name, prop);
         };
         addProp(dummy, pseudoProps,
+                "ViewObject", "Return the view object (view provider) of the (sub)object; None without a GUI", PseudoViewObject);
+        addProp(dummy, pseudoProps,
                 "_shape",  "Return a geometry shape of the (sub)object using Part.getShape()", PseudoShape); 
         addProp(dummy, pseudoProps,
                 "_pla",    "Return the accumulated placement of the (sub)object", PseudoPlacement);
@@ -2168,6 +2171,9 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
                 pyobj = Py::Matrix(mat);
             break;
         }
+        case PseudoViewObject:
+            pyobj = Py::Object(obj->getPyObject(),true).getAttr("ViewObject");
+            break;
         case PseudoSelf:
         case PseudoSubObject:
             pyobj = Py::Object(obj->getPyObject(),true);

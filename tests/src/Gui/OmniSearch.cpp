@@ -143,6 +143,86 @@ private Q_SLOTS:
         QCOMPARE(m.props.size(), size_t(1));
     }
 
+    void test_resolveDocumentMember()  // NOLINT
+    {
+        auto a = doc->getObject("GroupA");
+        ObjectMatch m;
+
+        // '#.' is the owner's document
+        QVERIFY(resolveObject(QStringLiteral("#.Comment"), a, m));
+        QVERIFY(m.doc == doc);
+        QVERIFY(m.prop == &doc->Comment);
+        QCOMPARE(m.props.size(), size_t(1));
+        QVERIFY(m.obj.getObject() == nullptr);
+
+        // by name and by label
+        doc->Label.setValue("Omni test");
+        QVERIFY(resolveObject(QStringLiteral("OmniSearchTest#.Comment"), a, m));
+        QVERIFY(m.prop == &doc->Comment);
+        QVERIFY(resolveObject(QStringLiteral("<<Omni test>>#.Comment"), a, m));
+        QVERIFY(m.prop == &doc->Comment);
+
+        // another document, while the owner stays in this one
+        auto other = App::GetApplication().newDocument("OmniSearchOther");
+        QVERIFY(resolveObject(QStringLiteral("OmniSearchOther#.Comment"), a, m));
+        QVERIFY(m.doc == other);
+        QVERIFY(m.prop == &other->Comment);
+        App::GetApplication().closeDocument(other->getName());
+
+        // '#Obj' is an object of the owner's document
+        QVERIFY(resolveObject(QStringLiteral("#GroupB"), a, m));
+        QVERIFY(m.obj.getObject() == doc->getObject("GroupB"));
+        QVERIFY(m.prop == nullptr);
+        QVERIFY(resolveObject(QStringLiteral("#GroupB.Label"), a, m));
+        QVERIFY(m.prop == &doc->getObject("GroupB")->Label);
+
+        // misses: no such document, property or view (no Gui here)
+        QVERIFY(!resolveObject(QStringLiteral("NoSuchDoc#.Comment"), a, m));
+        QVERIFY(!resolveObject(QStringLiteral("#.NoSuchProperty"), a, m));
+        QVERIFY(!resolveObject(QStringLiteral("#.ActiveView.DrawStyle"), a, m));
+        QVERIFY(!resolveObject(QStringLiteral("#"), a, m));
+        QVERIFY(!resolveObject(QStringLiteral("#."), a, m));
+
+        // a pseudo property is not a property: "_self" names the object, as
+        // in the tree search; ViewObject needs a view provider
+        QVERIFY(resolveObject(QStringLiteral("GroupB._self"), a, m));
+        QVERIFY(m.prop == nullptr);
+        QVERIFY(m.obj.getObject() == doc->getObject("GroupB"));
+        QVERIFY(!resolveObject(QStringLiteral("GroupB.ViewObject"), a, m));
+        QVERIFY(!resolveObject(QStringLiteral("GroupB.ViewObject.Visibility"), a, m));
+    }
+
+    void test_documentMembers()  // NOLINT
+    {
+        auto a = doc->getObject("GroupA");
+        auto members = documentMembers(QStringLiteral("#."), a);
+        QVERIFY(!members.empty());
+        bool comment = false;
+        for (auto &m : members) {
+            QVERIFY(!m.name.endsWith(QLatin1Char('.')));  // no view without a Gui
+            if (m.name == QStringLiteral("Comment"))
+                comment = true;
+        }
+        QVERIFY(comment);
+        QVERIFY(documentMembers(QStringLiteral("OmniSearchTest#."), a).size() == members.size());
+        QVERIFY(documentMembers(QStringLiteral("NoSuchDoc#."), a).empty());
+        QVERIFY(documentMembers(QStringLiteral("#.ActiveView."), a).empty());
+        QVERIFY(documentMembers(QStringLiteral("GroupB."), a).empty());
+
+        QString head, tail;
+        QVERIFY(splitMemberQuery(QStringLiteral("#.Com"), head, tail));
+        QCOMPARE(head, QStringLiteral("#."));
+        QCOMPARE(tail, QStringLiteral("Com"));
+        QVERIFY(splitMemberQuery(QStringLiteral("<<A#B>>#.ActiveView.Draw"), head, tail));
+        QCOMPARE(head, QStringLiteral("<<A#B>>#.ActiveView."));
+        QCOMPARE(tail, QStringLiteral("Draw"));
+        QVERIFY(splitMemberQuery(QStringLiteral("Doc#."), head, tail));
+        QCOMPARE(tail, QString());
+        QVERIFY(!splitMemberQuery(QStringLiteral("Doc#Box"), head, tail));
+        QVERIFY(!splitMemberQuery(QStringLiteral("#.Placement.Base"), head, tail));
+        QVERIFY(!splitMemberQuery(QStringLiteral("Box.Length"), head, tail));
+    }
+
     void test_searchParams()  // NOLINT
     {
         auto hits = searchParams(QStringLiteral("preferences/document checkextension"));

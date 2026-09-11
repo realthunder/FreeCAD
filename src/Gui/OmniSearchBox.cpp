@@ -57,6 +57,8 @@
 #include "OmniSearchBox.h"
 #include "Action.h"
 #include "Application.h"
+#include "BitmapFactory.h"
+#include "CallTips.h"
 #include "Command.h"
 #include "CommandCompleter.h"
 #include "Document.h"
@@ -277,9 +279,7 @@ public:
         item->setPropertyName(*prop);
         item->setPropertyData(all);
 
-        QString title = QString::fromUtf8(obj.getSubObjectFullName().c_str());
-        if (count > 1)
-            title = tr("%1 objects").arg(count);
+        QString title = count > 1 ? tr("%1 objects").arg(count) : containerTitle();
         label->setText(QStringLiteral("%1 . %2").arg(title, QString::fromUtf8(prop->getName())));
         label->setToolTip(QString::fromUtf8(prop->getDocumentation()));
 
@@ -413,6 +413,23 @@ private:
         editor->show();
     }
 
+    // What the property belongs to, spelled the way the box addresses it
+    QString containerTitle() const
+    {
+        auto parent = prop->getContainer();
+        if (auto doc = Base::freecad_dynamic_cast<App::Document>(parent))
+            return QString::fromUtf8(doc->getName()) + QStringLiteral("#");
+        if (auto view = Base::freecad_dynamic_cast<MDIView>(parent)) {
+            auto doc = view->getAppDocument();
+            return (doc ? QString::fromUtf8(doc->getName()) : QString())
+                + QStringLiteral("#.ActiveView");
+        }
+        QString title = QString::fromUtf8(obj.getSubObjectFullName().c_str());
+        if (Base::freecad_dynamic_cast<ViewProviderDocumentObject>(parent))
+            title += QStringLiteral(".ViewObject");
+        return title;
+    }
+
     App::Document *document() const
     {
         if (!prop)
@@ -420,6 +437,8 @@ private:
         auto parent = prop->getContainer();
         if (auto doc = Base::freecad_dynamic_cast<App::Document>(parent))
             return doc;
+        if (auto view = Base::freecad_dynamic_cast<MDIView>(parent))
+            return view->getAppDocument();
         App::DocumentObject *object = Base::freecad_dynamic_cast<App::DocumentObject>(parent);
         if (!object) {
             if (auto view = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(parent))
@@ -619,6 +638,7 @@ OmniSearchEdit::OmniSearchEdit(QWidget *parent)
     setupChooser();
     setupCommands();
     setupParams();
+    setupMembers();
     connect(this, &QLineEdit::textEdited, this, &OmniSearchEdit::onTextEdited);
 }
 
@@ -689,6 +709,32 @@ void OmniSearchEdit::setupParams()
                 justActivated = true;
                 if (auto info = ParamListModel::infoOf(index))
                     Q_EMIT paramChosen(info);
+            });
+}
+
+// The members of a document ("#.") or of its 3D view ("#.ActiveView."):
+// the expression completer's model has no row for either, so their tails
+// are completed from OmniSearch::documentMembers() instead.
+void OmniSearchEdit::setupMembers()
+{
+    memberModel = new QStandardItemModel(this);
+    memberFilter = new KeywordFilterModel(this);
+    memberFilter->setSourceModel(memberModel);
+    memberCompleter = new QCompleter(memberFilter, this);
+    memberCompleter->setWidget(this);
+    memberCompleter->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
+    memberCompleter->popup()->setItemDelegate(new OmniItemDelegate(memberCompleter->popup()));
+    memberCompleter->popup()->installEventFilter(this);
+    connect(memberCompleter, qOverload<const QModelIndex&>(&QCompleter::highlighted),
+            this, [this](const QModelIndex &index) {
+                completeMember(index.data(Qt::EditRole).toString(), false);
+            });
+    connect(memberCompleter, qOverload<const QModelIndex&>(&QCompleter::activated),
+            this, [this](const QModelIndex &index) {
+                QString name = index.data(Qt::EditRole).toString();
+                completeMember(name, true);
+                if (!name.endsWith(QLatin1Char('.')))
+                    activateObject();
             });
 }
 
@@ -783,6 +829,8 @@ QCompleter *OmniSearchEdit::activeCompleter() const
     case Mode::Chooser:
         return chooser;
     case Mode::Object:
+        if (memberCompleter->popup()->isVisible())
+            return memberCompleter;
         return objCompleter;
     case Mode::Command:
         return cmdCompleter;
@@ -794,7 +842,8 @@ QCompleter *OmniSearchEdit::activeCompleter() const
 
 bool OmniSearchEdit::popupVisible() const
 {
-    for (auto c : {chooser, static_cast<QCompleter*>(objCompleter), cmdCompleter, paramCompleter}) {
+    for (auto c : {chooser, static_cast<QCompleter*>(objCompleter), cmdCompleter, paramCompleter,
+                   memberCompleter}) {
         if (c && c->popup()->isVisible())
             return true;
     }
@@ -803,7 +852,8 @@ bool OmniSearchEdit::popupVisible() const
 
 void OmniSearchEdit::hidePopups()
 {
-    for (auto c : {chooser, static_cast<QCompleter*>(objCompleter), cmdCompleter, paramCompleter}) {
+    for (auto c : {chooser, static_cast<QCompleter*>(objCompleter), cmdCompleter, paramCompleter,
+                   memberCompleter}) {
         if (c)
             c->popup()->hide();
     }
@@ -888,10 +938,43 @@ void OmniSearchEdit::onTextEdited(const QString &text)
     }
 }
 
+// The '#' of "#Box": the expression completer only knows "Doc#Box", so
+// it never sees that one
+int OmniSearchEdit::objectSkip() const
+{
+    return input.query.startsWith(QLatin1Char('#'))
+        && !input.query.startsWith(QLatin1String("#.")) ? 1 : 0;
+}
+
 void OmniSearchEdit::runObjectQuery()
 {
+    QString head, tail;
+    if (splitMemberQuery(input.query, head, tail)) {
+        if (objCompleter)
+            objCompleter->popup()->hide();
+        memberModel->clear();
+        static QIcon docIcon(BitmapFactory().pixmap("Document"));
+        for (auto &m : documentMembers(head, owner())) {
+            auto item = new QStandardItem(m.name);
+            item->setData(m.name, TitleRole);
+            item->setData(m.description, DescriptionRole);
+            item->setData(m.name, SearchTextRole);
+            item->setIcon(m.name.endsWith(QLatin1Char('.'))
+                    ? docIcon : CallTipsList::iconOfType(CallTip::Property));
+            memberModel->appendRow(item);
+        }
+        memberFilter->setKeywords(tail);
+        if (memberFilter->rowCount())
+            showListPopup(memberCompleter, popupRect());
+        else
+            memberCompleter->popup()->hide();
+        resolveObjectQuery();
+        return;
+    }
+    memberCompleter->popup()->hide();
     if (objCompleter) {
-        objCompleter->slotUpdate(input.query, cursorPosition() - input.offset);
+        int skip = objectSkip();
+        objCompleter->slotUpdate(input.query.mid(skip), cursorPosition() - input.offset - skip);
         // The completer's lazy init() re-sets its popup, which moves its
         // own filter ahead of ours; ours must see Tab and Return first,
         // as ExpressionCompleter turns Tab into Down and swallows it.
@@ -928,7 +1011,8 @@ void OmniSearchEdit::completeObject(const QString &completion)
     int start, end, offset;
     QString prefix(completion);
     objCompleter->getPrefixRange(prefix, start, end, offset);
-    QString query = input.query;
+    int skip = objectSkip();
+    QString query = input.query.mid(skip);
     // For a property or child of the owner object the model completes to
     // the expression shorthand ".Name" (a member of "this" object). The
     // owner here is only the document's first object, so keep what was
@@ -941,11 +1025,31 @@ void OmniSearchEdit::completeObject(const QString &completion)
     }
     QString before = query.left(start) + prefix;
     QString after = query.mid(end);
-    QString full = text().left(input.offset) + before + after;
+    QString full = text().left(input.offset + skip) + before + after;
     setText(full);
-    setCursorPosition(input.offset + before.length() + offset);
+    setCursorPosition(input.offset + skip + before.length() + offset);
     objCompleter->updatePrefixEnd(before.length());
     input = parseInput(full);
+    resolveObjectQuery();
+}
+
+// A row of the member popup: the text becomes head + name. With advance,
+// a name ending in '.' ("ActiveView.") opens the next level's popup.
+void OmniSearchEdit::completeMember(const QString &name, bool advance)
+{
+    QString head, tail;
+    if (input.mode != Mode::Object || !splitMemberQuery(input.query, head, tail))
+        return;
+    Base::StateLocker guard(completing);
+    QString full = text().left(input.offset) + head + name;
+    setText(full);
+    setCursorPosition(full.size());
+    input = parseInput(full);
+    if (advance && name.endsWith(QLatin1Char('.'))) {
+        // Not from inside the popup's own activation
+        QTimer::singleShot(0, this, [this]() { runObjectQuery(); });
+        return;
+    }
     resolveObjectQuery();
 }
 
@@ -976,8 +1080,16 @@ bool OmniSearchEdit::chooseCurrentRow()
         setInputText(index.data(chooser->completionRole()).toString());
         break;
     case Mode::Object:
-        completeObject(index.data(objCompleter->completionRole()).toString());
-        activateObject();
+        if (c == memberCompleter) {
+            QString name = index.data(Qt::EditRole).toString();
+            completeMember(name, true);
+            if (!name.endsWith(QLatin1Char('.')))
+                activateObject();
+        }
+        else {
+            completeObject(index.data(objCompleter->completionRole()).toString());
+            activateObject();
+        }
         break;
     case Mode::Command:
         if (index.data(IsActiveRole).toBool())
@@ -1306,12 +1418,16 @@ void OmniSearchBox::onObjectResolved(const ObjectMatch &match)
         // A ".Name" query is about the selection, which the tree shows already
         if (lineEdit->currentInput().query.trimmed().startsWith(QLatin1Char('.')))
             return;
-        if (t) {
+        if (t)
             t->resetItemSearch();
+        auto obj = match.obj.getObject();
+        if (!obj)  // a document's or its view's member: nothing in the tree
+            return;
+        if (t) {
             if (auto item = TreeWidget::selectUp(match.obj, nullptr, false))
                 t->scrollToItem(item);
         }
-        if (auto obj = match.obj.getObject()) {
+        {
             SelectionNoTopParentCheck guard;
             Selection().setPreselect(obj->getDocument()->getName(), obj->getNameInDocument(),
                                      match.obj.getSubName().c_str(), 0, 0, 0,
