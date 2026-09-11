@@ -66,12 +66,17 @@ being searched, so `#Box.Length` is that document's `Box` (the same as
 another document). And `#` followed by a dot names a member of the document
 itself: `#.Comment`, `Doc#.Comment`, `<<Label>>#.Comment` resolve to the
 `App::Document` property and open its editor exactly as an object property
-would, with `Doc#` as the title; `#.ActiveView.DrawStyle` is a property of
-the document's active 3D view (the `View3DInventor` is a property container
-of its own, with `DrawStyle`, `ShadingType`, `ShowNaviCube` and so on). After
-`#.` or `#.ActiveView.` the popup lists that container's properties -- name
-and documentation, hidden ones left out -- plus an `ActiveView.` row under a
-document that has a view; picking it opens the view's list. This popup is
+would, with `Doc#` as the title; `#.View2.DrawStyle` is a property of the
+document's view `View2` -- every view carries a persistent name, `View1`,
+`View2`, ... (`BaseView::getPersistentName()`, the `Name` attribute in
+Python), and the `View3DInventor` is a property container of its own, with
+`DrawStyle`, `ShadingType`, `ShowNaviCube` and so on -- and
+`#.ActiveView.DrawStyle` the same on whichever view is active. After `#.`
+or `#.View2.` the popup lists that container's properties -- name and
+documentation, hidden ones left out -- and under the document one row per
+view, `ActiveView.` first, with the view's window title as the description;
+picking one opens that view's list. The `ViewArea` containers that host
+views are not listed. This popup is
 a keyword filter over `OmniSearch::documentMembers()`, not the expression
 completer, whose model has no row for a document's own properties, and the
 expression engine itself is unchanged: `#.Comment` is the box's grammar,
@@ -149,12 +154,14 @@ consume:
   every object answers to, and accept if the parse lands on it -- resolves
   an object path. Before any of that, a `#` outside a `<<label>>` is the
   document separator: `#.X` and `Doc#.X` resolve on the document itself
-  (`ObjectMatch::doc` set, `obj` empty), `#.ActiveView.X` on its active
-  view, and a leading `#` before an object name is dropped. The owner
+  (`ObjectMatch::doc` set, `obj` empty), `#.View2.X` on the view of that
+  persistent name and `#.ActiveView.X` on the active one (the active MDI
+  view may be a `ViewArea`; `activeSubView()` is the view inside), and a
+  leading `#` before an object name is dropped. The owner
   comes from `TreeWidget::startItemSearch()`, which also sets up the tree's
   search state.
 - `documentMembers(head, owner)` and `splitMemberQuery(query, head, tail)`:
-  the rows behind a `#.` or `#.ActiveView.` popup, and the split of a query
+  the rows behind a `#.` or `#.View2.` popup, and the split of a query
   into the head that names the container and the member typed so far.
 - `searchCommands(query)`, `searchParams(query)`: plain-data results.
 - `createParamEditor(info, parent)`: the `Gui::PrefWidget` for a parameter,
@@ -183,7 +190,7 @@ either (`objectSkip()`), since the grammar only knows `Doc#Box`. Its
 splices, its `activated` signal (a click) splices and then commits
 (`activateObject()` -> `objectActivated`), which is what builds the
 property editor. The member completer works the same way
-(`completeMember()`), except that picking the `ActiveView.` row re-runs
+(`completeMember()`), except that picking a view row (`View1.`) re-runs
 the query to open the next level instead of committing.
 
 Keys are handled on the popups, not on the edit: while a popup is up the
@@ -309,7 +316,7 @@ no widgets in it:
 |--------------------|---------------------------|----------------------------------------------|
 | `omni.search`      | `mode`, `query`           | `searchCommands`, `searchParams`, or the expression completer's model for objects |
 | `omni.resolve`     | `query`, `doc`            | `resolveObject` -> object/sub-object/property, or a document/view property (`#.`) |
-| `omni.members`      | `head`                    | `documentMembers` for a `#.` or `#.ActiveView.` head |
+| `omni.members`      | `head`                    | `documentMembers` for a `#.` or `#.View2.` head |
 | `command.run`      | `name`                    | `CommandManager::runCommandByName`           |
 | `param.get/set/reset` | `path`, `entry`, `value` | `ParamRegistry::getValue`/`setValue`/`reset` |
 

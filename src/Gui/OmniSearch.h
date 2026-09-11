@@ -121,9 +121,10 @@ struct ObjectMatch {
  * owner is the local object, as in an expression.
  *
  * A '#' addresses a document: "#" alone the owner's, "Doc#" or "<<Label>>#"
- * a named one. "#.Comment" names a property of the document itself and
- * "#.ActiveView.DrawStyle" one of its active 3D view (ObjectMatch::doc
- * is set, obj empty); "#Box.Length" is Box of that document, as the
+ * a named one. "#.Comment" names a property of the document itself,
+ * "#.View2.DrawStyle" one of its view View2 (the persistent name every
+ * view carries) and "#.ActiveView.DrawStyle" one of its active 3D view
+ * (ObjectMatch::doc is set, obj empty); "#Box.Length" is Box of that document, as the
  * expression grammar's "Doc#Box.Length". "Box.ViewObject.ShapeColor"
  * names a property of the object's view provider (the pseudo property
  * ViewObject followed by one name), for a sub-object and for ".ViewObject.X"
@@ -134,20 +135,22 @@ GuiExport bool resolveObject(const QString &query, App::DocumentObject *owner, O
 
 /// A row the "#." completer offers
 struct MemberMatch {
-    /// The property name, or "ActiveView." for the row that opens the view's members
+    /// The property name, or "View2." / "ActiveView." for a row that opens a view's members
     QString name;
-    /// The property documentation
+    /// The property documentation, or the view's window title
     QString description;
 };
 
 /** The members a "#." head offers: for "#." or "Doc#." the document's
- * properties plus "ActiveView." when the document has a 3D view; for
- * "#.ActiveView." that view's properties. Hidden properties are left
- * out. Empty when head is not of that form or names no document.
+ * properties plus one "Name." row per view of the document (its
+ * persistent name, "View1") and "ActiveView." for the active one; for
+ * "#.View1." or "#.ActiveView." that view's properties. Hidden properties
+ * are left out. Empty when head is not of that form or names no document
+ * or view.
  */
 GuiExport std::vector<MemberMatch> documentMembers(const QString &head, App::DocumentObject *owner);
 
-/** Split a "#." query for completion: head is "Doc#." or "Doc#.ActiveView."
+/** Split a "#." query for completion: head is "Doc#." or "Doc#.View1."
  * (what documentMembers() takes) and tail the member name typed so far.
  * False for any other query, and once the tail has a dot of its own.
  */

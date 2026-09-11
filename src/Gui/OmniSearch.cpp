@@ -47,6 +47,7 @@
 #include "CommandCompleter.h"
 #include "Document.h"
 #include "MDIView.h"
+#include "ViewArea.h"
 #include "PrefWidgets.h"
 #include "ViewProvider.h"
 
@@ -157,7 +158,7 @@ bool isIdentifier(const std::string &s)
 // The document's active 3D view, a property container of its own. The
 // active MDI view may be a ViewArea hosting it; activeSubView() is the
 // view inside.
-App::PropertyContainer *activeView(App::Document *doc)
+Gui::MDIView *activeView(App::Document *doc)
 {
     if (!Gui::Application::Instance)
         return nullptr;
@@ -166,20 +167,48 @@ App::PropertyContainer *activeView(App::Document *doc)
     return view ? view->activeSubView() : nullptr;
 }
 
-// "Comment" or "ActiveView.DrawStyle" after "#.": a property of the
-// document itself, or of its active 3D view
+// The document's views a "#." can name: every MDI view but the ViewArea
+// containers, which host views and have no properties of their own
+std::vector<Gui::MDIView*> namedViews(App::Document *doc)
+{
+    std::vector<Gui::MDIView*> res;
+    if (!Gui::Application::Instance)
+        return res;
+    auto gdoc = Gui::Application::Instance->getDocument(doc);
+    if (!gdoc)
+        return res;
+    for (auto view : gdoc->getMDIViews()) {
+        if (view && !view->isDerivedFrom(Gui::ViewArea::getClassTypeId())
+                && !view->getPersistentName().empty())
+            res.push_back(view);
+    }
+    return res;
+}
+
+// "ActiveView" or a view's persistent name ("View2")
+Gui::MDIView *viewNamed(App::Document *doc, const std::string &name)
+{
+    if (name == "ActiveView")
+        return activeView(doc);
+    for (auto view : namedViews(doc)) {
+        if (view->getPersistentName() == name)
+            return view;
+    }
+    return nullptr;
+}
+
+// "Comment", "ActiveView.DrawStyle" or "View2.DrawStyle" after "#.": a
+// property of the document itself, or of one of its views
 bool resolveDocumentMember(App::Document *doc, const std::string &member, OmniSearch::ObjectMatch &out)
 {
     App::PropertyContainer *container = doc;
     std::string name = member;
     auto dot = member.find('.');
     if (dot != std::string::npos) {
-        if (member.compare(0, dot, "ActiveView") != 0)
-            return false;
-        name = member.substr(dot + 1);
-        container = activeView(doc);
+        container = viewNamed(doc, member.substr(0, dot));
         if (!container)
             return false;
+        name = member.substr(dot + 1);
     }
     if (!isIdentifier(name))
         return false;
@@ -322,13 +351,13 @@ std::vector<OmniSearch::MemberMatch> OmniSearch::documentMembers(const QString &
         return res;
     App::PropertyContainer *container = doc;
     std::string rest = txt.substr(sep + 2);
-    if (rest == "ActiveView.") {
-        container = activeView(doc);
+    if (!rest.empty()) {
+        if (rest.back() != '.')
+            return res;
+        container = viewNamed(doc, rest.substr(0, rest.size() - 1));
         if (!container)
             return res;
     }
-    else if (!rest.empty())
-        return res;
 
     std::vector<std::pair<const char*, App::Property*>> props;
     container->getPropertyNamedList(props);
@@ -341,10 +370,24 @@ std::vector<OmniSearch::MemberMatch> OmniSearch::documentMembers(const QString &
         m.description = QString::fromUtf8(docu ? docu : "");
         res.push_back(std::move(m));
     }
-    if (container == doc && activeView(doc)) {
+    if (container != doc)
+        return res;
+    // The views, by their persistent name, the active one first under its alias
+    auto title = [](Gui::MDIView *view) {
+        QString t = view->windowTitle();
+        t.remove(QLatin1String("[*]"));
+        return t;
+    };
+    if (auto active = activeView(doc)) {
         MemberMatch m;
         m.name = QStringLiteral("ActiveView.");
-        m.description = QCoreApplication::translate("Gui::OmniSearch", "The active 3D view's properties");
+        m.description = QCoreApplication::translate("Gui::OmniSearch", "The active view, %1").arg(title(active));
+        res.push_back(std::move(m));
+    }
+    for (auto view : namedViews(doc)) {
+        MemberMatch m;
+        m.name = QString::fromUtf8(view->getPersistentName().c_str()) + QLatin1Char('.');
+        m.description = title(view);
         res.push_back(std::move(m));
     }
     return res;
@@ -372,9 +415,10 @@ bool OmniSearch::splitMemberQuery(const QString &query, QString &head, QString &
     if (sep < 0 || sep + 1 >= query.size() || query[sep + 1] != QLatin1Char('.'))
         return false;
     int start = sep + 2;
-    static const QString view = QStringLiteral("ActiveView.");
-    if (query.mid(start).startsWith(view))
-        start += view.size();
+    // "#.View2.Draw": the view's name is part of the head
+    int dot = query.indexOf(QLatin1Char('.'), start);
+    if (dot >= 0)
+        start = dot + 1;
     tail = query.mid(start);
     if (tail.contains(QLatin1Char('.')))
         return false;

@@ -180,6 +180,7 @@ private Q_SLOTS:
         QVERIFY(!resolveObject(QStringLiteral("NoSuchDoc#.Comment"), a, m));
         QVERIFY(!resolveObject(QStringLiteral("#.NoSuchProperty"), a, m));
         QVERIFY(!resolveObject(QStringLiteral("#.ActiveView.DrawStyle"), a, m));
+        QVERIFY(!resolveObject(QStringLiteral("#.View1.DrawStyle"), a, m));
         QVERIFY(!resolveObject(QStringLiteral("#"), a, m));
         QVERIFY(!resolveObject(QStringLiteral("#."), a, m));
 
@@ -207,6 +208,8 @@ private Q_SLOTS:
         QVERIFY(documentMembers(QStringLiteral("OmniSearchTest#."), a).size() == members.size());
         QVERIFY(documentMembers(QStringLiteral("NoSuchDoc#."), a).empty());
         QVERIFY(documentMembers(QStringLiteral("#.ActiveView."), a).empty());
+        QVERIFY(documentMembers(QStringLiteral("#.View1."), a).empty());
+        QVERIFY(documentMembers(QStringLiteral("#.Comment"), a).empty());
         QVERIFY(documentMembers(QStringLiteral("GroupB."), a).empty());
 
         QString head, tail;
@@ -216,10 +219,13 @@ private Q_SLOTS:
         QVERIFY(splitMemberQuery(QStringLiteral("<<A#B>>#.ActiveView.Draw"), head, tail));
         QCOMPARE(head, QStringLiteral("<<A#B>>#.ActiveView."));
         QCOMPARE(tail, QStringLiteral("Draw"));
+        QVERIFY(splitMemberQuery(QStringLiteral("#.View2."), head, tail));
+        QCOMPARE(head, QStringLiteral("#.View2."));
+        QCOMPARE(tail, QString());
         QVERIFY(splitMemberQuery(QStringLiteral("Doc#."), head, tail));
         QCOMPARE(tail, QString());
         QVERIFY(!splitMemberQuery(QStringLiteral("Doc#Box"), head, tail));
-        QVERIFY(!splitMemberQuery(QStringLiteral("#.Placement.Base"), head, tail));
+        QVERIFY(!splitMemberQuery(QStringLiteral("#.View2.Placement.Base"), head, tail));
         QVERIFY(!splitMemberQuery(QStringLiteral("Box.Length"), head, tail));
     }
 

@@ -421,8 +421,11 @@ private:
             return QString::fromUtf8(doc->getName()) + QStringLiteral("#");
         if (auto view = Base::freecad_dynamic_cast<MDIView>(parent)) {
             auto doc = view->getAppDocument();
+            std::string name = view->getPersistentName();
+            if (name.empty())
+                name = "ActiveView";
             return (doc ? QString::fromUtf8(doc->getName()) : QString())
-                + QStringLiteral("#.ActiveView");
+                + QStringLiteral("#.") + QString::fromUtf8(name.c_str());
         }
         QString title = QString::fromUtf8(obj.getSubObjectFullName().c_str());
         if (Base::freecad_dynamic_cast<ViewProviderDocumentObject>(parent))
@@ -712,7 +715,7 @@ void OmniSearchEdit::setupParams()
             });
 }
 
-// The members of a document ("#.") or of its 3D view ("#.ActiveView."):
+// The members of a document ("#.") or of one of its views ("#.View1."):
 // the expression completer's model has no row for either, so their tails
 // are completed from OmniSearch::documentMembers() instead.
 void OmniSearchEdit::setupMembers()
@@ -1034,7 +1037,7 @@ void OmniSearchEdit::completeObject(const QString &completion)
 }
 
 // A row of the member popup: the text becomes head + name. With advance,
-// a name ending in '.' ("ActiveView.") opens the next level's popup.
+// a name ending in '.' ("View1.") opens the next level's popup.
 void OmniSearchEdit::completeMember(const QString &name, bool advance)
 {
     QString head, tail;
