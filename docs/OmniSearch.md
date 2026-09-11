@@ -58,8 +58,10 @@ keyword: every whitespace-separated word must occur, case-insensitively, in
 the title, internal name, shortcut or description.
 
 **Parameters.** Rows are the parameter's path with the `User parameter:`
-prefix and the `BaseApp` root every generated parameter shares dropped --
-`/Preferences/View/SyncSelect` (`App::ParamInfo::displayPath()`) -- with
+prefix and the `BaseApp` root every generated parameter shares dropped,
+leading slash included -- `Preferences/View/SyncSelect`
+(`App::ParamInfo::displayPath()`; a path not under `BaseApp` keeps its
+leading `/`) -- with
 the parameter's title and documentation as the description and its current
 value on the right; the tooltip carries the full path. Keywords match the
 full path, the accessor's `Namespace::Class::Name`, the title and the

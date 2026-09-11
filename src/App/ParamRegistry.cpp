@@ -107,15 +107,20 @@ std::string ParamInfo::displayPath() const
     while (*p == '/') {
         ++p;
     }
+    // With the root dropped there is nothing for a leading '/' to be
+    // relative to, so it goes too; a path not under BaseApp keeps it.
+    std::string res;
     if (std::strncmp(p, "BaseApp", 7) == 0 && (p[7] == '/' || p[7] == '\0')) {
         p += 7;
         while (*p == '/') {
             ++p;
         }
     }
-    std::string res("/");
+    else {
+        res = "/";
+    }
     res += p;
-    if (res.back() != '/') {
+    if (!res.empty() && res.back() != '/') {
         res += '/';
     }
     res += entry;

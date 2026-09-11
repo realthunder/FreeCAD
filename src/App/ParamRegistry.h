@@ -184,11 +184,12 @@ struct AppExport ParamInfo
     std::string fullName() const;
     /// path + "/" + entry
     std::string fullPath() const;
-    /** fullPath() as shown to the user: "/Preferences/View/SyncSelect".
+    /** fullPath() as shown to the user: "Preferences/View/SyncSelect".
      *
      * The "User parameter:" / "System parameter:" prefix goes, and so does
-     * the "BaseApp" root every generated parameter sits under, so that the
-     * rows of a list differ where they differ.
+     * the "BaseApp" root every generated parameter sits under -- with its
+     * leading '/' -- so that the rows of a list differ where they differ.
+     * A path not under BaseApp keeps its leading '/'.
      */
     std::string displayPath() const;
     /// The text a keyword search runs over: fullPath, fullName, title and doc.
