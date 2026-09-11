@@ -153,6 +153,15 @@ public:
     void setSelectionSync(bool on);
     bool selectionSync() const;
 
+    /** Clear every client's own selection instance.
+     *
+     * What Gui::Document::undo does to the room, done to each mirror's
+     * instance, so that an undo from any view leaves no client holding a
+     * selection made in the state that is gone (docs/ThinClient.md 8.11
+     * item 2). Each client is told through its selection push.
+     */
+    void clearClientSelections();
+
     /// Traverse and publish now, on the calling thread. Returns false if
     /// nothing was published (invalid source, or the feeds had not
     /// changed).

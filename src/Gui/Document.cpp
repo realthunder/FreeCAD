@@ -4636,18 +4636,16 @@ std::vector<std::string> Document::getRedoVector() const
     return getDocument()->getAvailableRedoNames();
 }
 
-bool Document::checkTransactionID(bool undo, int iSteps) {
-    if(!iSteps)
-        return false;
-
+void Document::groupedTransactions(bool undo, int iSteps,
+                                   std::set<App::Document*>& prompts,
+                                   std::map<App::Document*, int>& dmap) const
+{
     std::vector<int> ids;
     for (int i=0;i<iSteps;i++) {
         int id = getDocument()->getTransactionID(undo,i);
         if(!id) break;
         ids.push_back(id);
     }
-    std::set<App::Document*> prompts;
-    std::map<App::Document*,int> dmap;
     for(auto doc : App::GetApplication().getDocuments()) {
         if(doc == getDocument())
             continue;
@@ -4661,6 +4659,25 @@ bool Document::checkTransactionID(bool undo, int iSteps) {
                 currentSteps = steps;
         }
     }
+}
+
+bool Document::undoRedoWouldPrompt(bool undo, int iSteps) const
+{
+    if (iSteps <= 0)
+        return false;
+    std::set<App::Document*> prompts;
+    std::map<App::Document*,int> dmap;
+    groupedTransactions(undo, iSteps, prompts, dmap);
+    return !prompts.empty();
+}
+
+bool Document::checkTransactionID(bool undo, int iSteps) {
+    if(!iSteps)
+        return false;
+
+    std::set<App::Document*> prompts;
+    std::map<App::Document*,int> dmap;
+    groupedTransactions(undo, iSteps, prompts, dmap);
     if(!prompts.empty()) {
         std::ostringstream str;
         int i=0;

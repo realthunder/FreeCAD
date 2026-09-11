@@ -317,6 +317,8 @@ public:
     bool doubleClicked() override;
     /// is called when the Provider is in edit and the mouse is moved
     bool mouseMove(const SbVec2s& pos, Gui::ViewerContext* viewer) override;
+    /// The active tool's sequence (DrawSketchHandler::inSequence).
+    bool isGestureInProgress() const override;
     /// is called when the Provider is in edit and a key event ocours. Only ESC ends edit.
     bool keyPressed(bool pressed, int key) override;
     /// is called when the Provider is in edit and the mouse is clicked

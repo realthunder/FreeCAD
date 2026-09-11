@@ -30,6 +30,7 @@
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/actions/SoHandleEventAction.h>
 #include <Inventor/events/SoEvent.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
 #include <Inventor/misc/SoChildList.h>
 #include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
@@ -122,6 +123,43 @@ int EditingRoot::hangCount(SoGroup* parent) const
 {
     auto it = parents.find(parent);
     return it == parents.end() ? 0 : it->second;
+}
+
+bool EditingRoot::admitInput(ViewerContext* view, const SoEvent* event, const ViewProvider* vp)
+{
+    if (!view || !event) {
+        return true;
+    }
+    if (holder && holder != view) {
+        // Another view's gesture: a button still down, or the tool between
+        // the clicks of a sequence that view's press started.
+        if (held != 0 || (vp && vp->isGestureInProgress())) {
+            return false;
+        }
+        // The hold outlived its gesture -- ended by the panel, an undo, a
+        // tool change -- and this event is the first to notice.
+        holder = nullptr;
+    }
+    if (event->isOfType(SoMouseButtonEvent::getClassTypeId())) {
+        const auto* button = static_cast<const SoMouseButtonEvent*>(event);
+        const unsigned bit = 1U << unsigned(button->getButton());
+        if (button->getState() == SoButtonEvent::DOWN) {
+            holder = view;
+            held |= bit;
+        }
+        else {
+            held &= ~bit;
+        }
+    }
+    return true;
+}
+
+void EditingRoot::releaseGesture(ViewerContext* view)
+{
+    if (holder == view) {
+        holder = nullptr;
+        held = 0;
+    }
 }
 
 void EditingRoot::setTransform(const Base::Matrix4D& mat)
@@ -310,6 +348,11 @@ void ViewerContext::bindEditingRoot(EditingRoot* root)
     }
     if (root == editRoot) {
         return;
+    }
+    if (editRoot) {
+        // Leaving mid-gesture -- a client dropping with its button down --
+        // must not leave every other view of the session locked out.
+        editRoot->releaseGesture(this);
     }
     if (editRoot != ownEditRoot.get()) {
         hangEditingRoot(editRoot, false);

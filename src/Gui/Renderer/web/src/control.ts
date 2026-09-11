@@ -29,6 +29,11 @@ declare global {
     /// not a handler. Returns false when there is no session to send to.
     fcviewerSendKey?: (down: boolean, key: string, text: string,
                        mods: number) => boolean;
+    /// The document's undo and redo (main.cpp fcviewer_undo_redo,
+    /// docs/ThinClient.md 8.11 item 2): one step each, everyone's stack.
+    /// The canvas answers Ctrl+Z / Ctrl+Y itself; these are for chrome.
+    fcviewerUndo?: () => boolean;
+    fcviewerRedo?: () => boolean;
     /// The on-view parameters the server last stated, mirrored for a
     /// panel that mounts after the push ('fc:onview' carries the same).
     fcviewerOnView?: unknown[];

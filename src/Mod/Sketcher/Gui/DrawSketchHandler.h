@@ -160,6 +160,18 @@ public:
     virtual bool allowExternalPick() const {return false;}
     virtual bool allowExternalDocument() const {return false;}
 
+    /** Whether the tool is between the clicks of a multi-click sequence.
+     *
+     * What ViewProviderSketch::isGestureInProgress answers with, so that
+     * while one view's click has a line waiting for its second point,
+     * another view's pointer does not move that point (docs/ThinClient.md
+     * 8.11). A one-click tool has no sequence.
+     */
+    virtual bool inSequence() const
+    {
+        return false;
+    }
+
     // Called when the corresponding tool button is pressed while this handler
     // is active 'next' is the new handler of the pressed button. Return true to
     // discard the 'next' handler and reuse the current handler.

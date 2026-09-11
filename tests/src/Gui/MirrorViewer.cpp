@@ -806,6 +806,58 @@ Gui::MirrorViewer::Input moveTo(int x, int y)
     input.time = 1.5;
     return input;
 }
+
+Gui::MirrorViewer::Input buttonAt(int x, int y, bool press, int code = 1)
+{
+    Gui::MirrorViewer::Input input;
+    input.kind = press ? Gui::MirrorViewer::Input::Press : Gui::MirrorViewer::Input::Release;
+    input.x = x;
+    input.y = y;
+    input.code = code;
+    input.time = 1.5;
+    return input;
+}
+
+/// A view provider that counts what reaches its edit-mode entry points,
+/// and answers the sequence question the way a multi-click tool would.
+class CountingProvider: public Gui::ViewProvider
+{
+public:
+    int moves = 0;
+    int presses = 0;
+    int releases = 0;
+    int keys = 0;
+    bool sequence = false;
+    Gui::ViewerContext* lastView = nullptr;
+
+    bool mouseMove(const SbVec2s&, Gui::ViewerContext* viewer) override
+    {
+        ++moves;
+        lastView = viewer;
+        return true;
+    }
+    bool mouseButtonPressed(int, bool pressed, const SbVec2s&,
+                            const Gui::ViewerContext* viewer) override
+    {
+        if (pressed) {
+            ++presses;
+        }
+        else {
+            ++releases;
+        }
+        lastView = const_cast<Gui::ViewerContext*>(viewer);
+        return true;
+    }
+    bool keyPressed(bool, int) override
+    {
+        ++keys;
+        return true;
+    }
+    bool isGestureInProgress() const override
+    {
+        return sequence;
+    }
+};
 }  // namespace
 
 TEST_F(MirrorViewerTest, aReplayedMoveReachesTheCallbackAtThatPixel)
@@ -1037,3 +1089,129 @@ TEST_F(MirrorViewerTest, whatOneClientSelectsIsNotWhatAnotherSees)
 }
 
 }  // namespace
+
+/// Two mice, one state machine (docs/ThinClient.md 8.11 item 2): while a
+/// gesture is in progress from one view, the other view's input is
+/// dropped at the session's root, before it reaches the tool.
+class GestureArbitrationTest: public SharedEditingRootTest
+{
+protected:
+    void SetUp() override
+    {
+        SharedEditingRootTest::SetUp();
+        counting = std::make_unique<CountingProvider>();
+        mirror->setCamera(perspectiveCamera(800, 600));
+        other->setCamera(perspectiveCamera(800, 600));
+        mirror->setEditingViewProvider(counting.get(), 0, root.get());
+        other->joinEditing(counting.get(), root.get());
+    }
+    void TearDown() override
+    {
+        mirror->resetEditingViewProvider();
+        other->leaveEditing();
+        counting.reset();
+        SharedEditingRootTest::TearDown();
+    }
+    std::unique_ptr<CountingProvider> counting;
+};
+
+TEST_F(GestureArbitrationTest, aHeldButtonDropsTheOtherViewsInput)
+{
+    // Idle: both views reach the tool.
+    mirror->handleInput(moveTo(400, 300));
+    other->handleInput(moveTo(410, 300));
+    EXPECT_EQ(counting->moves, 2);
+    EXPECT_EQ(root->gestureHolder(), nullptr);
+
+    // The initiator presses and holds: its own moves go on arriving, the
+    // joiner's move, press and key do not.
+    mirror->handleInput(buttonAt(400, 300, true));
+    EXPECT_EQ(counting->presses, 1);
+    EXPECT_EQ(root->gestureHolder(), mirror.get());
+    other->handleInput(moveTo(420, 300));
+    other->handleInput(buttonAt(420, 300, true));
+    Gui::MirrorViewer::Input key;
+    key.kind = Gui::MirrorViewer::Input::KeyDown;
+    key.code = 0x61;   // 'a'
+    key.time = 1.5;
+    other->handleInput(key);
+    EXPECT_EQ(counting->moves, 2);
+    EXPECT_EQ(counting->presses, 1);
+    EXPECT_EQ(counting->keys, 0);
+    mirror->handleInput(moveTo(430, 300));
+    EXPECT_EQ(counting->moves, 3);
+    EXPECT_EQ(counting->lastView, mirror.get());
+
+    // The release ends the hold; the joiner is heard again.
+    mirror->handleInput(buttonAt(430, 300, false));
+    EXPECT_EQ(counting->releases, 1);
+    other->handleInput(moveTo(440, 300));
+    EXPECT_EQ(counting->moves, 4);
+    EXPECT_EQ(counting->lastView, other.get());
+    EXPECT_EQ(root->gestureHolder(), nullptr);
+}
+
+TEST_F(GestureArbitrationTest, theHoldIsTheViewsNotTheInitiators)
+{
+    // A joiner's press holds against the initiator just the same.
+    other->handleInput(buttonAt(400, 300, true));
+    EXPECT_EQ(root->gestureHolder(), other.get());
+    mirror->handleInput(moveTo(410, 300));
+    mirror->handleInput(buttonAt(410, 300, true));
+    EXPECT_EQ(counting->moves, 0);
+    EXPECT_EQ(counting->presses, 1);
+    // Two buttons down, one up: still held.
+    other->handleInput(buttonAt(400, 300, true, 3));
+    other->handleInput(buttonAt(400, 300, false, 1));
+    EXPECT_EQ(root->heldButtons(), 1U << SoMouseButtonEvent::BUTTON3);
+    mirror->handleInput(moveTo(420, 300));
+    EXPECT_EQ(counting->moves, 0);
+    other->handleInput(buttonAt(400, 300, false, 3));
+    mirror->handleInput(moveTo(420, 300));
+    EXPECT_EQ(counting->moves, 1);
+}
+
+TEST_F(GestureArbitrationTest, aToolsSequenceHoldsPastTheRelease)
+{
+    // A multi-click tool: the first click is taken and released, and the
+    // tool now waits for the second point. The view that clicked keeps
+    // the session until the sequence ends.
+    counting->sequence = true;
+    mirror->handleInput(buttonAt(400, 300, true));
+    mirror->handleInput(buttonAt(400, 300, false));
+    EXPECT_EQ(root->heldButtons(), 0U);
+    other->handleInput(moveTo(420, 300));
+    EXPECT_EQ(counting->moves, 0);
+    mirror->handleInput(moveTo(420, 300));
+    EXPECT_EQ(counting->moves, 1);
+
+    // The sequence ends -- by the second click, by Escape from the panel,
+    // by an undo: whatever ended it, the next event from the other view
+    // finds the hold stale and is admitted.
+    counting->sequence = false;
+    other->handleInput(moveTo(430, 300));
+    EXPECT_EQ(counting->moves, 2);
+    EXPECT_EQ(counting->lastView, other.get());
+    EXPECT_EQ(root->gestureHolder(), nullptr);
+}
+
+TEST_F(GestureArbitrationTest, aViewLeavingMidGestureReleasesTheHold)
+{
+    // The joiner drops with its button down -- a browser closing mid
+    // drag. Its leaving releases the hold; the initiator is not locked
+    // out.
+    other->handleInput(buttonAt(400, 300, true));
+    ASSERT_EQ(root->gestureHolder(), other.get());
+    mirror->handleInput(moveTo(410, 300));
+    EXPECT_EQ(counting->moves, 0);
+    other->leaveEditing();
+    EXPECT_EQ(root->gestureHolder(), nullptr);
+    mirror->handleInput(moveTo(420, 300));
+    EXPECT_EQ(counting->moves, 1);
+
+    // And the initiator's own hold ends with its session.
+    mirror->handleInput(buttonAt(420, 300, true));
+    ASSERT_EQ(root->gestureHolder(), mirror.get());
+    mirror->resetEditingViewProvider();
+    EXPECT_EQ(root->gestureHolder(), nullptr);
+}

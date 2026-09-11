@@ -422,6 +422,13 @@ public:
         return true;
     }
 
+    /// Between the first seek and the end: a click has been taken and
+    /// the tool waits for the next one.
+    bool inSequence() const override
+    {
+        return !this->isFirstState() && !this->isLastState();
+    }
+
     void registerPressedKey(bool pressed, int key) override
     {
         if (key == SoKeyboardEvent::M && pressed && !this->isLastState()) {

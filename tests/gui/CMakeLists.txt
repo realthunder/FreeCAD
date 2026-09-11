@@ -86,6 +86,15 @@ fc_add_gui_test(GuiServeMirrorEdit_tests_run serve-mirror-edit.py
 fc_add_gui_test(GuiServeSharedEdit_tests_run serve-shared-edit.py
                 --timeout 240)
 
+# Undo and redo are two control ops on the served document
+# (docs/ThinClient.md 8.11 item 2): one session, one undo stack, so a
+# client's undo is the desktop's Ctrl+Z -- the room cleared as there,
+# every client's own instance cleared too and told, the stacks answered
+# by transaction name, and the refusals that keep a modal off a serving
+# process's GUI thread.
+fc_add_gui_test(GuiServeUndoRedo_tests_run serve-undo-redo.py
+                --timeout 180)
+
 # A sketch tool's on-view parameters reach a client and are typed into
 # (docs/ThinClient.md sec 8.7, stage 5): the allowlisted `command` op
 # that starts a tool at all, the entry boxes stated with a world anchor,

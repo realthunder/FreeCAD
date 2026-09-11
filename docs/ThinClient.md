@@ -302,7 +302,9 @@ and `{"op":"resetEdit"}` are an edit session's two edges (sec 8.9 step 4);
 `{"op":"command","name":"Sketcher_CreateLine"}` starts a sketch tool, allowlisted
 for the reason sec 8.7 gives; `{"op":"onViewFocus","index":1}` moves the keys
 between that tool's on-view entry boxes, which the server states back on the
-`{"cmd":"onview"}` push (sec 8.7).
+`{"cmd":"onview"}` push (sec 8.7). `{"op":"undo"}` and `{"op":"redo"}` (an optional
+`steps`, default 1) are the document's transactions, everyone's under the shared
+session; the reply carries the two stacks by name (8.11 item 2).
 
 **Subjects.** `getProperties` takes an optional `subject`: `object` (the default, and what
 every v0 client asks for by saying nothing), `view3d` — the session's 3D view, where the
@@ -1796,6 +1798,48 @@ graph with the sketch's geometry under it), then the client entering (the window
 the edit through its own viewer, no 3D view is created, the root and the geometry are in
 the window's graph, the task panel is up, the client's `resetEdit` takes the window out).
 Every earlier reading in `sketch-edit-root.py` and `serve-mirror-edit.py` still holds.
+
+**Built 2026-09-11 (item 2).** Two mice, one state machine: the rule lives on the
+object every view of the session shares, `Gui::EditingRoot`, and is applied at the one
+funnel every view's in-edit input passes through, `ViewProvider::eventCallback`, before
+the tool sees anything. `EditingRoot::admitInput(view, event, vp)`: a press takes the
+hold for the view it came from and records the button; while another view holds --
+a button still down, or the tool reporting a sequence -- the event is dropped, not
+marked handled (the view's own navigation may still take it, as it does for whatever the
+tool declines). The hold ends lazily: the next event from another view that finds no
+button held and no sequence releases it, so a sequence ended by the panel's Escape, an
+undo or a tool change never leaves a view locked out; a view leaving the session mid-drag
+(a browser closing with its button down) releases it in `bindEditingRoot`. The sequence
+half is the tool's to state: `ViewProvider::isGestureInProgress()` (false), which the
+sketcher answers from `DrawSketchHandler::inSequence()` -- a `DrawSketchDefaultHandler`
+between its first seek and its end, a line waiting for its second point. The drags of the
+sketch's own modes run between a press and a release and need no saying. Verified by
+`GestureArbitrationTest` (four cases in `tests/src/Gui/MirrorViewer.cpp`: a held button
+drops the other view's move, press and key and the release lets it back; the hold is the
+view's, not the initiator's, and outlasts one of two buttons; a tool's sequence holds past
+the release and a stale hold is released by the next foreign event; a view leaving
+mid-gesture releases it, and so does the initiator's reset).
+
+Undo and redo: `{"op":"undo"}` / `{"op":"redo"}` with an optional `steps` (default 1),
+mutating, on the bound document. What Ctrl+Z does on the desktop and nothing else --
+`Gui::Document::undo` with no scope open, so the room's selection is cleared as it is
+there; then every client's own instance is cleared too (`SceneServeSource::
+clearClientSelections`) and each is told through its selection push, since a selection
+made in the state being undone is as stale in one as in the other. The reply carries the
+two stacks after the op by transaction name (`undos`, `redos`) for a client's menu.
+Refused rather than prompted: `steps` below one (`BadRequest`), a stack shorter than
+`steps` (`NothingToUndo` / `NothingToRedo`), and the case where
+`Gui::Document::checkTransactionID` would put up its grouped-transactions QMessageBox
+(`GroupedTransactions`) -- a modal on the GUI thread of a serving process stops serving
+everyone; the scan behind that dialog is split out as `Gui::Document::
+undoRedoWouldPrompt` so the op can ask without asking the user. The browser viewer
+answers Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y (Cmd on a Mac) on the canvas itself, before the
+edit-key pipe -- the sketcher has no such shortcut off the desktop, where Ctrl+Z is a Qt
+shortcut on a main window a mirror has none of -- and exposes `fcviewerUndo` /
+`fcviewerRedo` for the chrome. Read by `tests/gui/serve-undo-redo.py`: a pick told back,
+the two refusals that touch nothing, the undo answered with the stacks and the client
+told its selection is empty while the length is back and the room empty on the GUI
+thread, the redo forward again, and an undo deeper than the stack refused.
 
 ### 8.12 What per client would cost -- the multi-user roadmap
 

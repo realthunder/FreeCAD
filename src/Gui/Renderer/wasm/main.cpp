@@ -547,6 +547,14 @@ EM_JS(void, fcviewer_install_control, (), {
     window.fcviewerResetEdit = function() {
         return !!_fcviewer_reset_edit();
     };
+    // The document's undo and redo (docs/ThinClient.md 8.11 item 2); the
+    // canvas answers Ctrl+Z / Ctrl+Y itself, this is for the chrome.
+    window.fcviewerUndo = function() {
+        return !!_fcviewer_undo_redo(0);
+    };
+    window.fcviewerRedo = function() {
+        return !!_fcviewer_undo_redo(1);
+    };
     // A keystroke from outside the canvas (docs/ThinClient.md sec 8.7).
     // An on-view entry box holds the DOM focus while it is being typed
     // into -- it has to, or a phone shows no keyboard -- and the canvas
@@ -3817,6 +3825,27 @@ extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_reset_edit()
                    s_ws, const_cast<char *>(msg.c_str())) >= 0 ? 1 : 0;
 }
 
+/// Undo or redo one step of the served document (docs/ThinClient.md 8.11
+/// item 2). A document op, not an edit-session one: valid whether or not
+/// this client is editing, and what it undoes is everyone's, since the
+/// session has one undo stack. The answer is a control reply like any
+/// other; the picture follows through the publish.
+extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_undo_redo(int redo)
+{
+    if (s_ws <= 0 || !s_wsOpen)
+        return 0;
+    std::string msg = redo ? "{\"op\":\"redo\",\"id\":" : "{\"op\":\"undo\",\"id\":";
+    msg += std::to_string(s_nextViewerReqId++);
+    if (!s_docName.empty()) {
+        msg += ",\"doc\":\"";
+        jsonEscapeTo(msg, s_docName);
+        msg += "\"";
+    }
+    msg += "}";
+    return emscripten_websocket_send_utf8_text(
+                   s_ws, const_cast<char *>(msg.c_str())) >= 0 ? 1 : 0;
+}
+
 /// What the chrome (and a test) reads to know which mode the viewer's
 /// input is in.
 extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_editing()
@@ -4437,6 +4466,21 @@ static EM_BOOL onKeyDown(int, const EmscriptenKeyboardEvent *e, void *)
 {
     if (fcviewer_dom_has_keyboard())
         return EM_FALSE;
+    // Undo and redo are document ops, in or out of an edit session, and
+    // the sketcher has no shortcut for them off the desktop (Ctrl+Z there
+    // is a Qt shortcut on the main window, which a mirror has none of):
+    // answered here, before the edit-key pipe. Cmd on a Mac.
+    if ((e->ctrlKey || e->metaKey) && !e->altKey) {
+        const char c = e->key[0];
+        if ((c == 'z' || c == 'Z') && e->key[1] == 0) {
+            fcviewer_undo_redo(e->shiftKey ? 1 : 0);
+            return EM_TRUE;
+        }
+        if ((c == 'y' || c == 'Y') && e->key[1] == 0) {
+            fcviewer_undo_redo(1);
+            return EM_TRUE;
+        }
+    }
     // An edit mode owns the keyboard: Escape ends a tool, Delete removes
     // what is selected, and the letters are its shortcuts. The viewer's
     // own [v] and [d] would otherwise shadow two of them.

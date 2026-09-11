@@ -823,6 +823,73 @@ QJsonObject onViewFocusOp(const QJsonObject &req, const std::string &boundDoc,
     return reply;
 }
 
+
+/// The `undo` and `redo` ops (docs/ThinClient.md 8.11 item 2): the
+/// document's transactions, which under the shared session are everyone's
+/// -- one document, one undo stack. What Ctrl+Z does on the desktop,
+/// through Gui::Document::undo, and nothing else: no scope is opened, so
+/// the room's selection is cleared as the desktop's is; then every
+/// client's own instance is cleared too, and told, since a selection
+/// made in the state being undone is as stale in one as in the other.
+///
+/// Refused, not prompted: Gui::Document::checkTransactionID asks through
+/// a QMessageBox when a grouped transaction in another document has
+/// others in front of it, and a modal on the GUI thread of a process
+/// serving several browsers stops serving all of them. The reply carries
+/// the stacks after the op, by transaction name, for a client's menu.
+QJsonObject undoRedoOp(const QJsonObject &req, const std::string &boundDoc, bool redo)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+
+    App::Document *doc = nullptr;
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    if (!docName.isEmpty())
+        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    else if (!boundDoc.empty())
+        doc = App::GetApplication().getDocument(boundDoc.c_str());
+    else
+        doc = App::GetApplication().getActiveDocument();
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+    Gui::Document *gdoc = Application::Instance->getDocument(doc);
+    if (!gdoc)
+        return errorReply(id, "UnknownDocument", QString::fromUtf8(doc->getName()));
+
+    const QJsonValue stepsValue = req.value(QLatin1String("steps"));
+    const int steps = stepsValue.isUndefined() ? 1 : stepsValue.toInt(0);
+    if (steps < 1)
+        return errorReply(id, "BadRequest", QStringLiteral("steps must be >= 1"));
+    const int available = redo ? doc->getAvailableRedos() : doc->getAvailableUndos();
+    if (available < steps)
+        return errorReply(id, redo ? "NothingToRedo" : "NothingToUndo",
+                          QStringLiteral("%1 of %2 available").arg(steps).arg(available));
+    if (gdoc->undoRedoWouldPrompt(!redo, steps))
+        return errorReply(id, "GroupedTransactions",
+                          QStringLiteral("grouped transactions in other documents "
+                                         "need the desktop user's answer"));
+
+    if (redo)
+        gdoc->redo(steps);
+    else
+        gdoc->undo(steps);
+    if (SceneServeSource *source = SceneServeSource::sourceFor(doc))
+        source->clearClientSelections();
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("doc")] = QString::fromUtf8(doc->getName());
+    QJsonArray undos;
+    for (const auto &name : gdoc->getUndoVector())
+        undos.append(QString::fromUtf8(name.c_str()));
+    QJsonArray redos;
+    for (const auto &name : gdoc->getRedoVector())
+        redos.append(QString::fromUtf8(name.c_str()));
+    reply[QLatin1String("undos")] = undos;
+    reply[QLatin1String("redos")] = redos;
+    return reply;
+}
+
 } // namespace
 
 void Gui::registerSceneControlOp(const QString &op, bool mutating,
@@ -868,6 +935,8 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             || op == QLatin1String("resetEdit")
             || op == QLatin1String("command")
             || op == QLatin1String("onViewFocus")
+            || op == QLatin1String("undo")
+            || op == QLatin1String("redo")
             || (registered != registeredOps().end() && registered->second.mutating);
         if (viewOnly && mutating)
             reply = errorReply(req.value(QLatin1String("id")), "ViewOnly",
@@ -888,6 +957,10 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             reply = runCommandOp(req, boundDoc, client);
         else if (op == QLatin1String("onViewFocus"))
             reply = onViewFocusOp(req, boundDoc, client);
+        else if (op == QLatin1String("undo"))
+            reply = undoRedoOp(req, boundDoc, false);
+        else if (op == QLatin1String("redo"))
+            reply = undoRedoOp(req, boundDoc, true);
         else
             reply = errorReply(req.value(QLatin1String("id")), "UnknownOp", op);
     }

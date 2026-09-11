@@ -26,6 +26,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <fastsignals/signal.h>
 #include <QString>
@@ -405,6 +406,15 @@ public:
     void undo(int iSteps);
     /// Will REDO one or more steps
     void redo(int iSteps) ;
+    /** Whether undo/redo of \a iSteps here would ask the user first.
+     *
+     * checkTransactionID puts up a QMessageBox when a grouped transaction
+     * in another document has other transactions in front of it. A
+     * caller with nobody at the machine to answer -- a control op in a
+     * serving process -- asks this and refuses instead (docs/ThinClient.md
+     * 8.11 item 2).
+     */
+    bool undoRedoWouldPrompt(bool undo, int iSteps) const;
     /** Check if the document is performing undo/redo transaction
      *
      * Unlike App::Document::isPerformingTransaction(), Gui::Document will
@@ -471,6 +481,12 @@ private:
 
     /// Check other documents for the same transaction ID
     bool checkTransactionID(bool undo, int iSteps);
+    /// The scan behind checkTransactionID: the other documents that hold
+    /// the same transaction ids, how many steps each, and which of them
+    /// would need the user asked.
+    void groupedTransactions(bool undo, int iSteps,
+                             std::set<App::Document*>& prompts,
+                             std::map<App::Document*, int>& dmap) const;
     /// Ask for user interaction if saving has failed
     bool askIfSavingFailed(const QString&);
 

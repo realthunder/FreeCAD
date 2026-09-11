@@ -249,6 +249,16 @@ void ViewProvider::eventCallback(void * ud, SoEventCallback * node)
     auto self = static_cast<ViewProvider*>(ud);
     assert(self);
 
+    // Two mice, one state machine (docs/ThinClient.md 8.11): every view
+    // of a session lands here, and the session's root is where the one
+    // rule lives. Dropped input is not marked handled -- the view's own
+    // navigation may still take it, as it does for anything the tool
+    // declines.
+    if (viewer && viewer->editingRoot()
+            && !viewer->editingRoot()->admitInput(viewer, ev, self)) {
+        return;
+    }
+
     try {
         // Keyboard events
         if (ev->getTypeId().isDerivedFrom(SoKeyboardEvent::getClassTypeId())) {

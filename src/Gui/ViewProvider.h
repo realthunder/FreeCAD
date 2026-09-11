@@ -585,6 +585,16 @@ public:
                                     const ViewerContext* viewer);
 
     virtual bool mouseWheelEvent(int delta, const SbVec2s &cursorPos, const ViewerContext* viewer);
+    /** Whether the edit mode is between the steps of a multi-click sequence.
+     *
+     * A button held is a gesture the session sees for itself; this is the
+     * other half -- a polyline between its clicks, a tool waiting for its
+     * second point -- which only the tool knows. While it answers true,
+     * input from a view other than the one that last pressed is dropped
+     * (EditingRoot::admitInput, docs/ThinClient.md 8.11). A tool with no
+     * sequence answers false, which is the default.
+     */
+    virtual bool isGestureInProgress() const { return false; }
     /// set up the context-menu with the supported edit modes
     virtual void setupContextMenu(QMenu*, QObject*, const char*);
     /** Called by tree on mouse event in a specific icon

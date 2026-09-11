@@ -49,6 +49,7 @@ class SoPickedPoint;
 class SoRenderManager;
 class SoEventManager;
 class SoEventCallback;  // NOLINT
+class SoEvent;
 class SoFCRenderCacheManager;
 class SoGroup;
 class SoSeparator;
@@ -72,6 +73,7 @@ namespace Gui {
 
 class Document;
 class ViewProvider;
+class ViewerContext;
 class GLGraphicsItem;
 class SelectionScope;
 class SelectionSingleton;
@@ -142,6 +144,44 @@ public:
     /// How many views hang this under \a parent (a test's question).
     int hangCount(SoGroup* parent) const;
 
+    /** @name Gesture arbitration (docs/ThinClient.md 8.11)
+     *
+     * Two mice, one state machine. Every view of the session delivers its
+     * events to the one view provider, and the rule that keeps its state
+     * machine coherent is stated here, once, because this is the object
+     * every view of the session shares: while a gesture is in progress
+     * from view A -- a button held, or the tool between the clicks of a
+     * multi-click sequence -- input from view B is dropped. A press takes
+     * the hold for the view it came from; the hold ends when that view
+     * holds no button and the tool reports no sequence. Lazily: the next
+     * event from another view finds the hold stale and releases it, so a
+     * sequence ended by the panel's Escape, an undo or a tool change never
+     * leaves a view locked out. This is the second expansion seam of 8.11
+     * -- per-client sessions would fork here.
+     */
+    //@{
+    /** Whether \a event from \a view may reach the view provider now.
+     *
+     * Records the press or release it admits. \a vp is asked
+     * ViewProvider::isGestureInProgress for the sequence half of the rule;
+     * null means no sequence.
+     */
+    bool admitInput(ViewerContext* view, const SoEvent* event, const ViewProvider* vp);
+    /// The view holding a gesture, or null.
+    ViewerContext* gestureHolder() const
+    {
+        return holder;
+    }
+    /// The buttons the holder still holds, as SoMouseButtonEvent bits.
+    unsigned heldButtons() const
+    {
+        return held;
+    }
+    /// Drop the hold if \a view has it: the view is leaving the session,
+    /// or being destroyed, with a button down.
+    void releaseGesture(ViewerContext* view);
+    //@}
+
 private:
     SoSeparator* root {nullptr};
     SoTransform* transform {nullptr};
@@ -150,6 +190,8 @@ private:
     /// Whether reset has children to give back to a view provider, as
     /// opposed to a node someone handed setup.
     bool restore {false};
+    ViewerContext* holder {nullptr};
+    unsigned held {0};
 };
 
 /** What an edit mode is allowed to ask of the view it is running in.

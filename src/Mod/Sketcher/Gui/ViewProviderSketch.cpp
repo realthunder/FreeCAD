@@ -1440,6 +1440,14 @@ bool ViewProviderSketch::getDetailPath(
     return inherited::getDetailPath(subname, pPath, append, det);
 }
 
+bool ViewProviderSketch::isGestureInProgress() const
+{
+    // The drags of the sketch's own modes run between a press and a
+    // release, which the session sees for itself; only a tool's sequence
+    // needs saying.
+    return edit && edit->sketchHandler && edit->sketchHandler->inSequence();
+}
+
 bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext *viewer)
 {
     if (!edit)

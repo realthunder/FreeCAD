@@ -1223,6 +1223,14 @@ bool SceneServeSource::selectionSync() const
     return pimpl->selectionSync;
 }
 
+void SceneServeSource::clearClientSelections()
+{
+    for (auto &entry : pimpl->mirrors) {
+        if (SelectionSingleton *instance = entry.second->selectionInstance())
+            instance->clearCompleteSelection();
+    }
+}
+
 namespace
 {
 /// The `selectionSync` control op: {"op":"selectionSync","on":bool} sets
