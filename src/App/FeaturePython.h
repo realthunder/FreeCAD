@@ -25,6 +25,7 @@
 #ifndef APP_FEATUREPYTHON_H
 #define APP_FEATUREPYTHON_H
 
+#include <App/FeaturePythonHook.h>
 #include <App/GeoFeature.h>
 #include <App/PropertyPythonObject.h>
 
@@ -34,18 +35,17 @@ namespace App
 
 class Property;
 
-// Helper class to hide implementation details
-class AppExport FeaturePythonImp
+/** The App-side hooks of a scripted object's Proxy
+ *
+ * One short body per hook over PyHookImp::callHook; the hook table itself is
+ * generated from FeaturePythonHooks.py (docs/ProxyChain.md sec 3).  ValueT and
+ * init() come from the base.
+ */
+class AppExport FeaturePythonImp: public PyHookImp
 {
 public:
-    enum ValueT {
-        NotImplemented = 0, // not handled
-        Accepted = 1, // handled and accepted
-        Rejected = 2  // handled and rejected
-    };
-
     explicit FeaturePythonImp(App::DocumentObject*);
-    ~FeaturePythonImp();
+    ~FeaturePythonImp() override;
 
     bool execute();
     bool mustExecute() const;
@@ -90,82 +90,11 @@ public:
 
     bool editProperty(const char *propName);
 
+protected:
+    Py::Object hookSelf(int hook) const override;
+
 private:
     App::DocumentObject* object;
-    bool has__object__{false};
-
-#define FC_PY_FEATURE_PYTHON \
-    FC_PY_ELEMENT(execute)\
-    FC_PY_ELEMENT(mustExecute)\
-    FC_PY_ELEMENT(skipRecompute)\
-    FC_PY_ELEMENT(onBeforeChange)\
-    FC_PY_ELEMENT(onBeforeChangeLabel)\
-    FC_PY_ELEMENT(onChanged)\
-    FC_PY_ELEMENT(onDocumentRestored)\
-    FC_PY_ELEMENT(unsetupObject)\
-    FC_PY_ELEMENT(getViewProviderName)\
-    FC_PY_ELEMENT(getSubObject)\
-    FC_PY_ELEMENT(getSubObjects)\
-    FC_PY_ELEMENT(getLinkedObject)\
-    FC_PY_ELEMENT(canLinkProperties)\
-    FC_PY_ELEMENT(allowDuplicateLabel)\
-    FC_PY_ELEMENT(redirectSubName)\
-    FC_PY_ELEMENT(canLoadPartial)\
-    FC_PY_ELEMENT(hasChildElement)\
-    FC_PY_ELEMENT(isElementVisible)\
-    FC_PY_ELEMENT(isElementVisibleEx)\
-    FC_PY_ELEMENT(setElementVisible)\
-    FC_PY_ELEMENT(getElementMapVersion)\
-    FC_PY_ELEMENT(editProperty)\
-
-#define FC_PY_ELEMENT_DEFINE(_name) \
-    Py::Object py_##_name;
-
-#define FC_PY_ELEMENT_INIT(_name) \
-    FC_PY_GetCallable(pyobj,#_name,py_##_name);\
-    if(!py_##_name.isNone()) {\
-        PyObject *pyRecursive = PyObject_GetAttrString(pyobj, \
-                "__allow_recursive_" #_name);\
-        if(!pyRecursive) {\
-            PyErr_Clear();\
-            _Flags.set(FlagAllowRecursive_##_name, false);\
-        }else{\
-            _Flags.set(FlagAllowRecursive_##_name, PyObject_IsTrue(pyRecursive));\
-            Py_DECREF(pyRecursive);\
-        }\
-    }
-
-#define FC_PY_ELEMENT_FLAG(_name) \
-    FlagCalling_##_name,\
-    FlagAllowRecursive_##_name,
-
-#define _FC_PY_CALL_CHECK(_name,_ret) \
-    if((!_Flags.test(FlagAllowRecursive_##_name) \
-                && _Flags.test(FlagCalling_##_name)) \
-        || py_##_name.isNone()) \
-    {\
-        _ret;\
-    }\
-    Base::BitsetLocker<Flags> guard(_Flags, FlagCalling_##_name);
-
-#undef FC_PY_ELEMENT
-#define FC_PY_ELEMENT(_name) FC_PY_ELEMENT_DEFINE(_name)
-
-    FC_PY_FEATURE_PYTHON
-
-#undef FC_PY_ELEMENT
-#define FC_PY_ELEMENT(_name) FC_PY_ELEMENT_FLAG(_name)
-
-    enum Flag {
-        FC_PY_FEATURE_PYTHON
-        FlagMax,
-    };
-
-    using Flags = std::bitset<FlagMax>;
-    mutable Flags _Flags;
-
-public:
-    void init(PyObject *pyobj);
 };
 
 /**

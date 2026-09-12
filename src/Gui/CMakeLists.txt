@@ -253,6 +253,11 @@ generate_from_xml(AbstractSplitViewPy)
 
 generate_embed_from_py(FreeCADGuiInit GuiInitScript.h)
 
+# The view-side FeaturePython hook table, from the same table in src/App.
+# The output lands in the build tree and is not committed.
+generate_from_cog(FeaturePythonHookView.cog.h FeaturePythonHookView.h
+                  "${CMAKE_SOURCE_DIR}/src/App/FeaturePythonHooks.py")
+
 # The XML files
 SET(FreeCADGui_XML_SRCS
     ViewProviderDocumentObjectPy.xml
@@ -1036,6 +1041,7 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderMeasureDistance.cpp
     ViewProviderPyImp.cpp
     ViewProviderFeaturePython.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/FeaturePythonHookView.h
     ViewProviderVRMLObject.cpp
     ViewProviderBuilder.cpp
     ViewProviderPlacement.cpp
@@ -1077,6 +1083,7 @@ SET(Viewprovider_SRCS
     ViewProviderInventorObject.h
     ViewProviderMeasureDistance.h
     ViewProviderFeaturePython.h
+    FeaturePythonHookView.cog.h
     ViewProviderPythonFeature.h
     ViewProviderVRMLObject.h
     ViewProviderBuilder.h

@@ -26,6 +26,7 @@
 #include <App/AutoTransaction.h>
 #include <App/PropertyPythonObject.h>
 #include <App/FeaturePython.h>
+#include <App/FeaturePythonHook.h>
 
 #include "ViewProviderGeometryObject.h"
 #include "Document.h"
@@ -37,19 +38,19 @@ class SoNode;
 
 namespace Gui {
 
-class GuiExport ViewProviderFeaturePythonImp
+/** The view-side hooks of a scripted object's view provider Proxy
+ *
+ * One short body per hook over App::PyHookImp::callHook; the hook table itself
+ * is generated from src/App/FeaturePythonHooks.py (docs/ProxyChain.md sec 3).
+ * ValueT and init() come from the base.
+ */
+class GuiExport ViewProviderFeaturePythonImp: public App::PyHookImp
 {
 public:
-    enum ValueT {
-        NotImplemented = 0, // not handled
-        Accepted = 1, // handled and accepted
-        Rejected = 2  // handled and rejected
-    };
-
     /// constructor.
     ViewProviderFeaturePythonImp(ViewProviderDocumentObject*, App::PropertyPythonObject &);
     /// destructor.
-    ~ViewProviderFeaturePythonImp();
+    ~ViewProviderFeaturePythonImp() override;
 
     // Returns the icon
     QIcon getIcon() const;
@@ -132,76 +133,12 @@ public:
 
     bool editProperty(const char *propName);
 
+protected:
+    Py::Object hookSelf(int hook) const override;
+
 private:
     ViewProviderDocumentObject* object;
     App::PropertyPythonObject &Proxy;
-    bool has__object__{false};
-
-#define FC_PY_VIEW_OBJECT \
-    FC_PY_ELEMENT(getIcon) \
-    FC_PY_ELEMENT(getExtraIcons) \
-    FC_PY_ELEMENT(getToolTip) \
-    FC_PY_ELEMENT(claimChildren) \
-    FC_PY_ELEMENT(useNewSelectionModel) \
-    FC_PY_ELEMENT(getElementPicked) \
-    FC_PY_ELEMENT(getElement) \
-    FC_PY_ELEMENT(getDetail) \
-    FC_PY_ELEMENT(getDetailPath) \
-    FC_PY_ELEMENT(getSelectionShape) \
-    FC_PY_ELEMENT(setEdit) \
-    FC_PY_ELEMENT(unsetEdit) \
-    FC_PY_ELEMENT(setEditViewer) \
-    FC_PY_ELEMENT(unsetEditViewer) \
-    FC_PY_ELEMENT(doubleClicked) \
-    FC_PY_ELEMENT(iconMouseEvent) \
-    FC_PY_ELEMENT(setupContextMenu) \
-    FC_PY_ELEMENT(attach) \
-    FC_PY_ELEMENT(updateData) \
-    FC_PY_ELEMENT(onChanged) \
-    FC_PY_ELEMENT(startRestoring) \
-    FC_PY_ELEMENT(finishRestoring) \
-    FC_PY_ELEMENT(onDelete) \
-    FC_PY_ELEMENT(canDelete) \
-    FC_PY_ELEMENT(isShow) \
-    FC_PY_ELEMENT(getDefaultDisplayMode) \
-    FC_PY_ELEMENT(getDisplayModes) \
-    FC_PY_ELEMENT(setDisplayMode) \
-    FC_PY_ELEMENT(canRemoveChildrenFromRoot) \
-    FC_PY_ELEMENT(canDragObjects) \
-    FC_PY_ELEMENT(canDragObject) \
-    FC_PY_ELEMENT(dragObject) \
-    FC_PY_ELEMENT(canDropObjects) \
-    FC_PY_ELEMENT(canDropObject) \
-    FC_PY_ELEMENT(dropObject) \
-    FC_PY_ELEMENT(canDragAndDropObject) \
-    FC_PY_ELEMENT(canDropObjectEx) \
-    FC_PY_ELEMENT(dropObjectEx) \
-    FC_PY_ELEMENT(canAddToSceneGraph) \
-    FC_PY_ELEMENT(getDropPrefix) \
-    FC_PY_ELEMENT(replaceObject) \
-    FC_PY_ELEMENT(canReplaceObject) \
-    FC_PY_ELEMENT(reorderObjects) \
-    FC_PY_ELEMENT(canReorderObject) \
-    FC_PY_ELEMENT(getLinkedViewProvider) \
-    FC_PY_ELEMENT(editProperty) \
-
-#undef FC_PY_ELEMENT
-#define FC_PY_ELEMENT(_name) FC_PY_ELEMENT_DEFINE(_name)
-
-    FC_PY_VIEW_OBJECT
-
-#undef FC_PY_ELEMENT
-#define FC_PY_ELEMENT(_name) FC_PY_ELEMENT_FLAG(_name)
-
-    enum Flag {
-        FC_PY_VIEW_OBJECT
-        FlagMax,
-    };
-    using Flags = std::bitset<FlagMax>;
-    mutable Flags _Flags;
-
-public:
-    void init(PyObject *pyobj);
 };
 
 template <class ViewProviderT>
