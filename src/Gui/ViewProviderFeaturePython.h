@@ -566,7 +566,7 @@ protected:
     }
 
     virtual bool canReorderObject(App::DocumentObject *obj, App::DocumentObject *before) override {
-        switch (imp->canReplaceObject(obj,before)) {
+        switch (imp->canReorderObject(obj,before)) {
         case ViewProviderFeaturePythonImp::Accepted:
             return true;
         case ViewProviderFeaturePythonImp::Rejected:

@@ -34,6 +34,7 @@ SET(Test_SRCS
     SandboxMirrorBench.py
     SandboxInitGui.py
     SandboxCorpusGui.py
+    ViewProviderHooks.py
 )
 
 SET(TestData_SRCS

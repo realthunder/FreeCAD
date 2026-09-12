@@ -21,8 +21,8 @@ FAILED`; judge by that file, not by the exit code (the GUI's exit is not
 clean on every box).  $SANDBOX_GUI_GATE_MODULES selects the modules
 (comma-separated, default SandboxGui,SandboxWidgets,SandboxForms,SandboxNative,
 SandboxPanels,SandboxDraftGui,SandboxSelection,SandboxSessionDoc,SandboxProxyImport,
-SandboxCorpusGui,SandboxInitGui,SandboxToolBarMirror,SandboxPanelMirror;
-SandboxInitGui after the others: it takes the native Draft and BIM
+ViewProviderHooks,SandboxCorpusGui,SandboxInitGui,SandboxToolBarMirror,
+SandboxPanelMirror; SandboxInitGui after the others: it takes the native Draft and BIM
 workbenches out of the session, and the two mirror gates run last and
 need no guest).  SandboxMirrorBench is a measurement (docs/Sandbox.md
 8.4), not in the default list: name it alone to run it.
@@ -73,6 +73,7 @@ class _EagerResult(unittest.TextTestResult):
 def main():
     default_modules = ("SandboxGui,SandboxWidgets,SandboxForms,SandboxNative,SandboxPanels,"
                        "SandboxDraftGui,SandboxSelection,SandboxSessionDoc,SandboxProxyImport,"
+                       "ViewProviderHooks,"
                        "SandboxCorpusGui,SandboxInitGui,SandboxToolBarMirror,"
                        "SandboxPanelMirror")
     modules = os.environ.get("SANDBOX_GUI_GATE_MODULES", default_modules).split(",")
