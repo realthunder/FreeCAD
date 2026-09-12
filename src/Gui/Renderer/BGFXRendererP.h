@@ -2514,13 +2514,23 @@ public:
     {
         if (!deviceName.empty())
             return;
-        std::string s = bgfx::getRendererName(bgfx::getRendererType());
-        // Only where a context is current -- this runs at the tail of
-        // prepare(), where the GL path has one and the others never do.
-        // Qt-side only: the standalone and browser builds have no
-        // QOpenGLContext at all, and the caps below answer them.
+        const bgfx::RendererType::Enum actual = bgfx::getRendererType();
+        std::string s = bgfx::getRendererName(actual);
+        // Only on a GL backend, because only there do those strings
+        // describe the device bgfx is running on. The gate used to be
+        // "is a context current", on the premise that the GL path has
+        // one and the others never do -- false on the Qt desktop path,
+        // where the QOpenGLWidget's own context is current whichever
+        // backend bgfx chose, so a Vulkan run on a discrete GPU
+        // reported the GL driver beside it: "Vulkan / llvmpipe ... /
+        // vendor 0x10de". The trailing ids were right and the name was
+        // wrong, in the one field that records which device blessed a
+        // golden. Qt-side only: the standalone and browser builds have
+        // no QOpenGLContext at all, and the caps below answer them.
 #ifndef FC_RENDERER_STANDALONE
-        if (auto *cur = QOpenGLContext::currentContext()) {
+        if (auto *cur = (actual == bgfx::RendererType::OpenGL
+                         || actual == bgfx::RendererType::OpenGLES)
+                        ? QOpenGLContext::currentContext() : nullptr) {
             if (auto *f = cur->functions()) {
                 for (GLenum e : {GL_RENDERER, GL_VERSION}) {
                     const auto *str = f->glGetString(e);
