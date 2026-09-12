@@ -93,37 +93,84 @@ drops out of the list, and an external file loads on demand and
 reports itself missing the way every XLink does.  A file saved before
 the property exists restores with an empty list.
 
-Two lists, one per side, exactly as `Proxy` is one per side **[RULED
-2026-09-12: "separate list just like separate Proxy for feature and
-view object"]**: `ProxyExp` on `FeaturePythonT` for the App hooks and
-`ProxyExp` on `ViewProviderFeaturePythonT` for the view hooks, the
-latter saved with the view provider in `GuiDocument.xml` as `Proxy`
-is.  The view list resolves the view hooks on ITS linked objects; the
-App list never serves a view hook.
+Two lists, BOTH on the App object **[RULED 2026-09-12, revised the
+same day: first "separate list just like separate Proxy for feature
+and view object", then "add another list property in App feature
+python to hold view side exp proxy"]**: `ProxyExp` for the App hooks
+and `ProxyExpView` for the view hooks, both on `FeaturePythonT`, both
+saved in `Document.xml`.  `ViewProviderFeaturePythonT` holds no list;
+it reads its object's `ProxyExpView` and resolves the view hooks on
+those linked objects.  The App list never serves a view hook and the
+view list never serves an App hook.
 
-**What the view list needs from the link classes.**  Every link
-property assumes a `DocumentObject` container: `PropertyLinkList::
+**Why on the App object, and what it avoids.**  Every link property
+class assumes a `DocumentObject` container (`PropertyLinkList::
 Restore` throws "Container is not a document object", `PropertyXLink::
 Restore` asserts it, `PropertyXLink::setValue` refuses with "invalid
-container" (`PropertyLinks.cpp:4013`), and the back-link bookkeeping
-casts after an `isDerivedFrom` guard.  No view provider in the tree
-holds a link property today (the colored-elements `PropertyLinkSub`
-of `ViewProviderPart` is the feature's).  So a view-side `ProxyExp`
-is a bounded change in `PropertyLinks.cpp`: an `ownerObject()` helper
-on `PropertyLinkBase` answering the container when it is a
-`DocumentObject` and `ViewProviderDocumentObject::getObject()` when
-it is a view provider, used by the ~12 owner lookups of the XLink
-classes (`:3978`, `:4013`, `:4077`, `:4264`, `:4280`, `:4332`, `:4474`,
-`:4545`, `:4574`, `:4884`, `:5747`-`:5976`) and the two Restore
-guards; back-links stay on document objects only (a view provider is
-not in the DAG, so a view-side link is a reference, not a dependency
--- the view provider already follows its object's recompute through
-`updateData`).  `ViewProviderDocumentObject` is in `Gui`, which `App`
-cannot see: the helper is a callback `App::PropertyLinkBase::
-setContainerObjectResolver` installed by `Gui::Application` at start,
-the pattern `Base::Interpreter`'s guards use.  About 60 lines; its
-gate is a view provider's XLinkList saved, reopened and resolving,
-external file included, in the P2 test.
+container", `PropertyLinks.cpp:4013`; no view provider in the tree
+holds a link property), so a list on the view provider would have
+meant teaching the link classes a view-provider owner (~60 lines and
+a Gui-installed resolver).  On the App object the list is an ordinary
+XLinkList: nothing in `PropertyLinks.cpp` changes.  Further: the
+definition survives a headless round trip (a view-provider property
+lives in `GuiDocument.xml`, written only when a Gui document exists);
+every view provider of the object -- the primary and the split-view
+secondaries this fork has (`SecondaryView`, docs/SplitViews.md) --
+reads one list instead of each carrying a copy; and a scripted
+`getViewProviderName` that picks a non-Python view provider simply
+leaves the list unread, which is the same silent outcome `Proxy`'s
+view hooks have today.
+
+**The problems it brings, and the answer to each.**
+
+1. *The dependency edge.*  An XLinkList on the App object makes its
+   targets DEPENDENCIES of the feature (out-list, back-links, the
+   recompute order).  For `ProxyExp` that is wanted: the type is
+   recomputed before its instances and an edit to a method recomputes
+   them.  For `ProxyExpView` it is wrong twice over: a change to an
+   icon method would mark the feature for a geometry recompute, and a
+   view-extension sheet that reads the feature by name in a cell (a
+   label from `Box.Length`) would close a cycle -- feature -> sheet
+   through the list, sheet -> feature through the cell -- and the
+   recompute refuses it.  The answer is the scope the link classes
+   already have: `LinkScope::Hidden`, which keeps a link out of the
+   out-list and the back-links (`PropertyLinks.cpp:861`, `:871`,
+   `:1295`; the guards at `:705`, `:917`, `:968`) while still saving,
+   restoring, loading an external file and breaking on delete.  A
+   view-side link is a reference, not a dependency; the view provider
+   already follows the object through `updateData`.  With Hidden
+   scope the same sheet may reference the feature freely.  The
+   Hidden scope is also why `copyObject` with dependencies does not
+   drag the view sheet along -- the type is not duplicated -- whereas
+   `ProxyExp`'s Global scope duplicates it as any dependency copy
+   does; that asymmetry is stated in the doc string.
+2. *A view-only change touching the feature.*  Setting or editing
+   `ProxyExpView` would touch the object and schedule a recompute.
+   `Prop_NoRecompute` (`PropertyContainer.h:55`) is the existing flag:
+   the property saves, undoes and notifies, and does not touch.
+3. *Telling the view provider.*  A change to `ProxyExpView` has to
+   rebuild the view chain and, when the view `Proxy` is None, run the
+   deferred attach (2.3).  No new signal is needed:
+   `ViewProviderDocumentObject::updateData(prop)` receives every App
+   property change (`ViewProviderDocumentObject.cpp:1386`), so the
+   template's `updateData` tests `prop == &obj->ProxyExpView` before
+   the chain runs, as its `onChanged` tests `&Proxy` today.  At
+   restore the App properties land before the view provider attaches,
+   so the view provider's own `attach`/`finishRestoring` sees the
+   restored list and attaches on it when the Proxy is None.  A view
+   provider created for an object whose list was set earlier (a
+   document opened in the GUI later, a secondary view) reads it at
+   attach for the same reason.
+4. *The invalidation of 2.4* gains one trigger on the view side:
+   `updateData(&ProxyExpView)`, beside the generation counter.
+5. *The property editor* shows both lists in the Data tab, where a
+   view-side list is unfamiliar; the doc string names its purpose,
+   and the group is "Base" beside `Proxy`.  Undo covers both lists
+   through the document transaction, which a view-provider property
+   would have reached through the Gui document's own recording.
+
+No problem was found that needs a change outside `FeaturePythonT`,
+`ViewProviderFeaturePythonT` and their Imps.
 
 ### 2.2 Resolution: what "exposes a method" means
 
@@ -396,13 +443,15 @@ macro one at a time later, their generated output leaving the tree.
         the chain restored; a link in another file (XLink), pinned
         by the file's own machinery; `ProxyExp` emptied returns the
         object to today's path.        one session
-    P2  the view side: ProxyExp on ViewProviderFeaturePythonT, the
-        link classes taking a view-provider container (2.1), the
-        same walk in the view hooks, expViewAttach at the deferred
-        attach.  Gate: getIcon, claimChildren, getToolTip and
-        onChanged from a sheet, in `FeaturePythonChain`'s GUI half;
-        the view list saved, reopened, an external file resolving.
-                                                        one session
+    P2  the view side: ProxyExpView on FeaturePythonT (Hidden scope,
+        Prop_NoRecompute), read by ViewProviderFeaturePythonT through
+        updateData, the same walk in the view hooks, expViewAttach
+        at the deferred attach.  Gate: getIcon, claimChildren,
+        getToolTip and onChanged from a sheet, in
+        `FeaturePythonChain`'s GUI half; a sheet in ProxyExpView
+        reading the feature by name in a cell (no cycle, no touch);
+        the list saved headless, reopened in the GUI, an external
+        file resolving.                                  one session
     P3  the sandbox: the P1 gate routed (needs 7.17 D1 for a `def`
         cell); the audit line names the linked object's document; a
         cross-file link's write prompts doc.foreign once.  Sits
@@ -412,8 +461,7 @@ Lines: P0 the template and decoders ~150, the table ~80, the two
 generated includes ~300 (in the build tree), the macro ~40, against
 ~900 lines of pattern bodies removed; P1 ~250 (the property, the
 resolver, the cache, the counter, three bump sites) plus ~200 of test;
-P2 ~180 (the view list, the container resolver in the link classes)
-plus ~100 of test.
+P2 ~120 (the view list and its updateData hook) plus ~100 of test.
 
 ## 5. The rulings (2026-09-12)
 
@@ -422,9 +470,9 @@ plus ~100 of test.
 2. Notification hooks: the status today is the table in 2.3; the
    rule proposed there (every element, a True stops before the
    Proxy, the base keeps its position) awaits the user's word.
-3. **Separate lists**, one on the feature and one on the view
-   provider, like `Proxy` -- "no" to a shared list; the link classes
-   take a view-provider container for it (2.1).
+3. **Separate lists**, `ProxyExp` and `ProxyExpView`, BOTH on the
+   App object (revised the same day); the view list Hidden scope and
+   Prop_NoRecompute, the problems and answers in 2.1.
 4. **Proxy first** on the linked object, then its own attributes --
    "like the rest".
 5. **Generated at build time** -- the first `generate_from_cog`
