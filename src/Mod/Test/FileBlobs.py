@@ -68,6 +68,7 @@ class BlobTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="fc_blob_test_")
         self.docs = []
+        self.sources = 0
 
     def tearDown(self):
         for name in list(self.docs):
@@ -100,7 +101,14 @@ class BlobTestCase(unittest.TestCase):
 
     def fileObject(self, doc, name, content=b"payload", saveName=None):
         obj = doc.addObject("App::DocumentObjectFileIncluded", name)
-        src = self.sourceFile(name + ".src", content)
+        # The source is numbered rather than named after the object: what
+        # the blob layer derives comes from the object and the property, not
+        # from this file, and an object name is only required to be a Python
+        # identifier. Named after the object, the cases that pass a name the
+        # file system refuses would need the fixture itself to write "CON.src"
+        # (the console, on Windows) or a path past MAX_PATH.
+        self.sources += 1
+        src = self.sourceFile("source%d.src" % self.sources, content)
         obj.File = (src, saveName) if saveName else src
         return obj
 
