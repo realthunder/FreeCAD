@@ -139,6 +139,102 @@ CMAKE_{C,CXX}_FLAGS_{DEBUG,RELEASE,MINSIZEREL,RELWITHDEBINFO}` and then
 configure, which lets CMake re-initialise them from the platform module.
 **Verify the compile line, not the cache**; both have been wrong here.
 
+### 2.2 `/Ob1` vs `/Ob2`: 5.3% off the submit loop, under 2% of the frame
+
+The last thing left from 2.1, measured 2026-09-13. `/O2` implies `/Ob2`,
+but CMake's stock `CMAKE_CXX_FLAGS_RELWITHDEBINFO` appends `/Ob1` and the
+later flag wins, so inlining sits at level 1 in every RelWithDebInfo
+build. Once the Cycles clobber was gone that was CMake's doing rather
+than the fork's, and it was the only remaining difference from a Release
+build. **It has NOT been changed; this section is the measurement.**
+
+Verified on the compile line, not the cache: 3990 lines at `/Ob1`, all
+3990 flipped by the reconfigure, both checked in `build.ninja` before
+each batch of legs.
+
+`boxes:17000` (33.8k draws, 1280x720) rather than MiSTerFlat, which
+costs 450-555 s per leg to open here against 123 s, and which has LESS
+of our own C++ in the frame. Three legs per cell, plus a fourth `/Ob1`
+OpenGL leg run after the restore as a check that the restored tree
+reproduces its own baseline.
+
+| column | OpenGL `/Ob1` -> `/Ob2` | Direct3D11 `/Ob1` -> `/Ob2` |
+|---|---|---|
+| `submitloop` | 20.96 -> 19.84 **-5.3%** | 21.50 -> 20.36 **-5.3%** |
+| `pre` | 29.30 -> 29.42 +0.4% | 29.98 -> 30.20 +0.7% |
+| `post` | 6.10 -> 6.10 0.0% | 7.13 -> 6.74 (not established) |
+| `submit` | 104.70 -> 107.23 (overlaps) | 10.72 -> 10.39 (one backend only) |
+| `frame` | 165.41 -> 166.70 +0.8% | 74.46 -> 73.26 -1.6% |
+
+**`submitloop` is the only term that moves, and it moves the same amount
+on both backends.** Every clean `/Ob2` leg is below every clean `/Ob1`
+leg -- OpenGL 19.84 and 20.12 against 20.96, 21.10, 21.30 and 22.46;
+Direct3D11 20.36 and 20.58 against 21.50 and 21.59 -- so the ranges do
+not overlap, and `/Ob1` has the extra leg, which biases a
+minimum-of-N comparison the other way. Mechanically it is the expected
+place: `submitloop` is our own per-draw submit loop run 33.8k times a
+frame, while `pre` is bulkier cache-walking work where a higher inline
+level has less to find.
+
+**It does not reach the frame.** 1.1-1.3 ms on a 74-165 ms frame is
+under 2%, which is inside the noise on the frame column itself. So the
+honest summary is that `/Ob2` makes the hot loop measurably faster and
+the user-visible frame no faster, on this workload.
+
+Binaries grow, by the amount that says the inlining happened:
+`FreeCADRenderer.dll` **+3.9%** (26.65 -> 27.70 MB), `FreeCADBase.dll`
++2.0%, `FreeCADApp.dll` +1.5%, `FreeCADGui.dll` +1.3%,
+`FreeCAD.exe` -0.1%. The renderer moving most, and most of the rest
+hardly moving, is the same localisation the timings show.
+
+**Reading rules, fixed before the `/Ob2` numbers existed**, because a
+5% effect on this box is within reach of its failure mode:
+
+- Compare **minima, not means.** Contamination here is one-sided: it
+  adds ~25% to a whole leg and never subtracts, so a mean is the one
+  statistic guaranteed to carry it.
+- A leg is contaminated when `submitloop`, `pre` and `post` are ALL more
+  than 10% above the cell's minimum. Those are our own C++ on three
+  different paths, and nothing a backend or a compiler flag does reaches
+  all three at once. Three of the twelve legs tripped it, one per cell
+  in three cells.
+- **Under 3% is no result.**
+- And minima alone are not enough: the rule flagged Direct3D11 `post` at
+  -5.5%, but the clean legs are 7.13, 7.13 against 6.74, 7.18, which
+  overlap. A minimum can be one low leg. Check that the RANGES separate
+  before believing a column; `submitloop` is the only one here that does.
+
+**Two traps from the restore, both worth knowing.**
+
+`cmake --build` failed once with `C1083: Cannot open compiler generated
+file ... Permission denied` on a single `.obj`, with no process holding
+it and the object simply absent -- the endpoint-security pathology of
+`DevEnvironment.md`, which here hits a compiler write rather than a
+process start. Re-running cleared it.
+
+What that left behind is the part to watch for. The cache and all 3990
+compile lines said `/Ob1` while every binary was still the `/Ob2` build,
+byte for byte -- a tree that had been told to be one thing and was still
+the other. It was caught only because the five binary sizes came back
+`+0.0%` against the `/Ob2` set, which is impossible for a real pair. So
+after a build that exits non-zero, **do not trust the flags to describe
+the artifacts**; compare something that must have changed.
+
+**Recommendation, not applied.** `/Ob2` costs nothing in correctness --
+unlike `/J` and the missing `NDEBUG` of 2.1, inline depth is not
+semantic and cannot produce an ODR mismatch -- and it is what `/O2`
+already asks for. It buys 5.3% of one frame term, no measurable frame
+time, and 1-4% of binary size. The case for setting it is tidiness (the
+build would do what `/O2` says) rather than performance. One line in the
+preset if it is ever wanted; nothing in this measurement argues that it
+is urgent.
+
+**Scope.** This is FreeCAD's own build only. OCCT and Coin are `/O2
+/Ob1 /DNDEBUG` in their own prefixes and their headers inline into our
+translation units, so nothing here says what a whole-stack `/Ob2` would
+do. That is a much larger job -- two dependency rebuilds -- and was not
+attempted.
+
 ## 3. Dependencies
 
 **"Vendor like bgfx" cannot mean "self-contained like bgfx".** bgfx has
