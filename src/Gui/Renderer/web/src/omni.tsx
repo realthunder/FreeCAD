@@ -348,14 +348,23 @@ export function OmniBox(props: {
       if (!view) {
         const rows = propRows(propsFor('document', doc, ''), 'document', tail, prefix,
                               { doc, obj: '', scope: 'document' });
-        if (has('ActiveView.', tail))
-          rows.push({ key: prefix + 'ActiveView.', kind: 'member', title: 'ActiveView.',
-                      desc: 'The view you are looking at', complete: prefix + 'ActiveView.' });
-        for (const v of objs.views) {
-          if (!has(v.name, tail)) continue;
-          rows.push({ key: prefix + v.name + '.', kind: 'member', title: v.name + '.',
-                      desc: v.title + (v.served ? ' (this view)' : ''),
-                      complete: prefix + v.name + '.' });
+        // The view rows are `objs`, which is THIS document's listing
+        // (omni.objects) -- so they are only an answer when the query
+        // names this document or names none. Offering them under
+        // another document's name showed the served view's own title
+        // beside a name that document may not even have, and the row
+        // could not be opened: reaching a view of another document is
+        // the reach rule's business (docs/OmniSearch.md sec 6.4).
+        if (!docName || doc === objs.doc || doc === objs.label) {
+          if (has('ActiveView.', tail))
+            rows.push({ key: prefix + 'ActiveView.', kind: 'member', title: 'ActiveView.',
+                        desc: 'The view you are looking at', complete: prefix + 'ActiveView.' });
+          for (const v of objs.views) {
+            if (!has(v.name, tail)) continue;
+            rows.push({ key: prefix + v.name + '.', kind: 'member', title: v.name + '.',
+                        desc: v.title + (v.served ? ' (this view)' : ''),
+                        complete: prefix + v.name + '.' });
+          }
         }
         return { rows, total: rows.length };
       }
