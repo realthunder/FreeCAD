@@ -21,7 +21,24 @@ script="$dir/strip-nonascii.py"
 # Each candidate is tried, not trusted: the Store stub is on PATH under both
 # usual names and answers nothing. "py -3" is the Windows launcher, which finds
 # a real installation where the aliases do not.
-for py in ${STRIP_NONASCII_PYTHON:-} python3 python "py -3"; do
+#
+# The repo's own conda env comes FIRST after the override, because on the
+# Windows box it is the only candidate that can succeed -- STRIP_NONASCII_PYTHON
+# unset, python3/python the Store stub and no "py -3" installed is a live
+# configuration there, and every commit printed SKIPPED while enforcing nothing.
+# It is the interpreter the build itself runs, so anyone with a build has it,
+# and trying it first also stops the Store stub from winning. Still PROVED like
+# every other candidate, so a checkout without that env costs one failed exec.
+# The repo root from GIT, not from $0. This script is INSTALLED as
+# .git/hooks/post-commit -- a copy, not a symlink -- so relative to $0
+# the parent is .git and the conda path below became .git/.conda/...,
+# which exists nowhere. The hook then still reported SKIPPED and the
+# fix looked like it had not worked.
+root=$(git rev-parse --show-toplevel 2>/dev/null) || root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+for py in ${STRIP_NONASCII_PYTHON:-} \
+        "$root/.conda/freecad/bin/python" \
+        "$root/.conda/freecad/python.exe" \
+        python3 python "py -3"; do
     [ -n "$py" ] || continue
     if $py -c "import sys" >/dev/null 2>&1; then
         exec $py "$script" "$@"

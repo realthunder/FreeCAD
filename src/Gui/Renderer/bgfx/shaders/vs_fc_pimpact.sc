@@ -47,6 +47,10 @@ void main()
 	               (row + 0.5) / max(u_pgrid.y, 1.0));
 	vec4 rec = texture2DLod(s_pimpsrc, uv, 0.0);
 
+	// if/else rather than an early `return;`: bgfx's HLSL translation
+	// gives main a struct return type, so a valueless return is
+	// "function must return a value" under both fxc and dxc, while
+	// every other profile accepts it. Same two branches either way.
 	if (rec.w <= 0.0)
 	{
 		// Nothing struck on this step. Park the quad outside the clip
@@ -54,20 +58,21 @@ void main()
 		// by far the step that started it.
 		v_color0 = vec4(0.0, 0.0, 0.0, 0.0);
 		gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-		return;
 	}
+	else
+	{
+		vec3 wp = mul(u_model[0], vec4(rec.xyz, 1.0)).xyz;
+		// The exact world position travels in the payload, not in the
+		// texel address: a cell is a bucket of places, and a ring drawn
+		// from the middle of its bucket would snap to a visible lattice.
+		v_color0 = vec4(wp.xy, u_impactNow.x, rec.w);
 
-	vec3 wp = mul(u_model[0], vec4(rec.xyz, 1.0)).xyz;
-	// The exact world position travels in the payload, not in the
-	// texel address: a cell is a bucket of places, and a ring drawn
-	// from the middle of its bucket would snap to a visible lattice.
-	v_color0 = vec4(wp.xy, u_impactNow.x, rec.w);
-
-	// Snap to the cell the hit lands in and cover exactly that texel:
-	// a record is about a cell, and half of one is not a smaller
-	// record, it is a torn one.
-	float res = max(u_impactFrame.w, 1.0);
-	vec2 cell = floor((wp.xy - u_impactFrame.xy) * u_impactFrame.z * res);
-	vec2 corner = (cell + a_position.yz) / res;
-	gl_Position = vec4(fc_uvToNdc(corner), 0.0, 1.0);
+		// Snap to the cell the hit lands in and cover exactly that
+		// texel: a record is about a cell, and half of one is not a
+		// smaller record, it is a torn one.
+		float res = max(u_impactFrame.w, 1.0);
+		vec2 cell = floor((wp.xy - u_impactFrame.xy) * u_impactFrame.z * res);
+		vec2 corner = (cell + a_position.yz) / res;
+		gl_Position = vec4(fc_uvToNdc(corner), 0.0, 1.0);
+	}
 }

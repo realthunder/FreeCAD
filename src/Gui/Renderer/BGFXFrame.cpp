@@ -21,6 +21,7 @@
  ****************************************************************************/
 
 #include "BGFXRendererP.h"
+#include "ClipConvention.h"
 
 /// Radical inverse of \a index in \a base -- the Halton sequence, used
 /// for the idle accumulation's subpixel offsets. Two coprime bases give
@@ -110,11 +111,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (projMatrix) {
         const bgfx::Caps *caps = bgfx::getCaps();
         if (caps && !caps->homogeneousDepth) {
-            const float *fed = reinterpret_cast<const float *>(projMatrix);
-            std::memcpy(projClip, fed, sizeof(projClip));
-            for (int c = 0; c < 4; ++c)
-                projClip[4 * c + 2] = 0.5f * (fed[4 * c + 2]
-                                              + fed[4 * c + 3]);
+            Render::projToZeroToOneDepth(
+                    reinterpret_cast<const float *>(projMatrix), projClip);
             projMatrix = projClip;
         }
     }
@@ -396,14 +394,49 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // As above: the scene colour's format is part of what the sized
     // targets ARE, so changing it is a rebuild like a resize.
     view->hdrWanted = outconf.transform != Render::OutputConfig::None;
-    if (progChanged
-            || _BGFXLib.viewWidth(widget) != int(view->width)
-            || _BGFXLib.viewHeight(widget) != int(view->height)
-            || (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
-            || _BGFXLib.effectResolution != view->effectScale
-            || _BGFXLib.ssaoResolution != view->ssaoScale
-            || view->hdrScene != view->hdrSceneWanted())
+    // WHICH of the seven asked for the rebuild, said once per rebuild
+    // under the timing switch. A rebuild is a destroy and re-create of
+    // every sized target, and one condition that never settles turns
+    // that into a per-frame cost -- measured at ~430ms of a 450ms
+    // frame on Windows/GL, where it read as "the renderer is slow on
+    // this scene" because nothing said an init had happened at all.
+    // The condition is the whole answer and none of them is derivable
+    // from the outside, so the reason is reported rather than left to
+    // be guessed from a `pre` that ate the frame.
+    const char *initWhy = nullptr;
+    if (progChanged)
+        initWhy = "programs (shader generation or MSAA)";
+    else if (_BGFXLib.viewWidth(widget) != int(view->width)
+             || _BGFXLib.viewHeight(widget) != int(view->height))
+        initWhy = "viewport size";
+    else if (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
+        initWhy = "no scene framebuffer";
+    else if (_BGFXLib.effectResolution != view->effectScale)
+        initWhy = "effect resolution";
+    else if (_BGFXLib.ssaoResolution != view->ssaoScale)
+        initWhy = "ssao resolution";
+    else if (view->hdrScene != view->hdrSceneWanted())
+        initWhy = "scene colour format (hdr)";
+    if (initWhy) {
+        if (debugconf.frameTiming)
+            FC_RENDER_MSG("render targets: rebuilt -- %s (%dx%d ->"
+                          " %dx%d, hdr %d -> %d)\n",
+                          initWhy, int(view->width), int(view->height),
+                          _BGFXLib.viewWidth(widget),
+                          _BGFXLib.viewHeight(widget),
+                          int(view->hdrScene),
+                          int(view->hdrSceneWanted()));
         view->init(!progChanged);
+        // Whether the rebuild answered. A rebuild that does not is
+        // what turns "rebuilt once" into "rebuilds forever", and the
+        // condition above cannot tell the two apart.
+        if (debugconf.frameTiming)
+            FC_RENDER_MSG("render targets: after rebuild fbo %s, "
+                          "targetsFailed %d\n",
+                          bgfx::isValid(view->bgfxFbo) ? "valid"
+                                                       : "INVALID",
+                          int(view->targetsFailed));
+    }
 
     if (!bgfx::isValid(view->bgfxFbo))
         return bailToHost();
@@ -6455,6 +6488,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // request cannot start a second readback meanwhile:
         // captureWanted requires captureReadyFrame to be clear.
     }
+    // The readback composite's copy (docs/DeviceAdoption.md section 2),
+    // queued for the same reason and in the same place as the capture
+    // above: it rides on ViewCapture, the last view id, so the frame
+    // boundary below is what executes it and what it copies is the
+    // finished image. This is the route to the screen for every backend
+    // whose frame is not a GL texture -- and, at FC_BGFX_READBACK=2, the
+    // measured alternative to the GL blit on a backend that has one.
+    const bool readbackComposite = view->readbackCompositeActive();
+    if (readbackComposite)
+        view->queueReadbackComposite();
     // The finished frame belongs in whatever framebuffer the caller had
     // bound when it asked for it: the widget's own for an on-screen
     // frame, a capture target for a screenshot (renderOffscreen).
@@ -6468,6 +6511,21 @@ bool BGFXRenderer::Private::render(const QColor &col,
     cpuMark(CpuCtxOut);
     frameNum = timedBgfxFrame();
     _BGFXLib.sweepUserCaches();
+    if (readbackComposite) {
+        // The blit queued above executes in the frame the boundary just
+        // returned, so that is what its latency is measured from.
+        view->noteReadbackFrame(frameNum);
+        // Benchmark only (FC_BGFX_READBACK_SYNC): spin until the copy
+        // has landed, which is the fully serialized route section 2
+        // costed. Off by default -- the pipelined form shows a frame
+        // that is one or two old and pays nothing for the wait.
+        //
+        // Above the phase clock's restart on purpose: those frames are
+        // bgfx's, not the context hand-off's, and charging them to
+        // CpuCtxIn would put a benchmark switch's cost inside a number
+        // that is supposed to be flat.
+        frameNum = view->syncReadback(frameNum);
+    }
     // bgfx::frame() has its own timer; restart the chain past it so
     // it is not counted twice.
     if (debugconf.frameTiming)
@@ -6511,12 +6569,20 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // this call is now the portable capture queued above -- which is
     // what lets a golden render test gate a backend that has no GL
     // framebuffer to read.
-    view->blit(&lastStats,
-               subCtx.active ? subCtx.x : 0,
-               subCtx.active ? subCtx.y : 0,
-               subCtx.active
-                   ? int(widget->height() * widget->devicePixelRatioF() + 0.5)
-                   : 0);
+    {
+        const int subX = subCtx.active ? subCtx.x : 0;
+        const int subY = subCtx.active ? subCtx.y : 0;
+        const int subH = subCtx.active
+            ? int(widget->height() * widget->devicePixelRatioF() + 0.5)
+            : 0;
+        // One composite or the other, never both: at
+        // FC_BGFX_READBACK=2 the GL blit is still available and would
+        // overwrite the very thing being measured.
+        if (readbackComposite)
+            view->blitReadback(frameNum, subX, subY, subH);
+        else
+            view->blit(&lastStats, subX, subY, subH);
+    }
     cpuMark(CpuBlit);
 #endif
 
@@ -6754,6 +6820,81 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     phaseMs[CpuBlit] / f, unattr / f, bgfxMs / f,
                     ourMs / f);
         }
+#ifndef FC_RENDERER_STANDALONE
+        // * What the readback composite costs, step by step
+        // (docs/DeviceAdoption.md section 2). Printed only when that
+        // route is the one reaching the screen, and drained here so the
+        // numbers are per frame of the same window as the lines above.
+        //
+        // `stale` is as much the answer as the milliseconds are: the
+        // pipelined form does not wait for the copy, so a stale frame
+        // is one where the screen showed an image older than the scene.
+        // FC_BGFX_READBACK_SYNC trades those away for `wait`.
+        if (due && view->readbackStats.frames) {
+            const BGFXView::ReadbackStats rb = view->readbackStats;
+            view->readbackStats.clear();
+            const double f = double(rb.frames);
+            FC_RENDER_MSG(
+                    "render readback composite (ms/frame): queue %.2f | "
+                    "wait %.2f | convert %.2f | upload %.2f | quad %.2f | "
+                    "total %.2f -- %u frames, %u landed, %u stale, "
+                    "mean latency %.1f frames\n",
+                    rb.queueMs / f, rb.waitMs / f, rb.convertMs / f,
+                    rb.uploadMs / f, rb.drawMs / f,
+                    (rb.queueMs + rb.waitMs + rb.convertMs + rb.uploadMs
+                     + rb.drawMs) / f,
+                    rb.frames, rb.landed, rb.stale,
+                    rb.landed ? double(rb.latencySum) / double(rb.landed)
+                              : 0.0);
+            // The verify states a VERDICT rather than leaving four
+            // percentages for a reader to combine, because the failure
+            // this instrument exists to catch is precisely the one that
+            // looks like a pass. Each branch names a different fault,
+            // and "blind" is a branch of its own: an instrument that
+            // cannot see must SAY so, not return a low number that
+            // reads as a broken composite.
+            if (rb.verifyProbes && rb.verifySamples) {
+                const double before = 100.0 * double(rb.verifyBeforeHits)
+                    / double(rb.verifySamples);
+                const double after = 100.0 * double(rb.verifyAfterHits)
+                    / double(rb.verifySamples);
+                const double flipped = 100.0 * double(rb.verifyFlipHits)
+                    / double(rb.verifySamples);
+                const double lit = 100.0 * double(rb.verifyAfterNonZero)
+                    / double(rb.verifySamples);
+                const char *verdict;
+                if (rb.verifyGLError)
+                    verdict = "INSTRUMENT BLIND -- glReadPixels failed";
+                else if (before > 5.0)
+                    verdict = "INSTRUMENT BLIND -- a nonce minted this"
+                              " frame was already on screen BEFORE the"
+                              " quad, so this is not reading the"
+                              " destination";
+                else if (after > 95.0)
+                    verdict = "COMPOSITE DRAWS";
+                else if (flipped > 95.0)
+                    verdict = "COMPOSITE DRAWS BUT THE ROWS ARE INVERTED"
+                              " -- the frame reaches the screen upside"
+                              " down; the flip belongs in the texture"
+                              " coordinates";
+                else if (lit < 1.0)
+                    verdict = "INSTRUMENT BLIND -- the destination read"
+                              " back black, which is not the same as the"
+                              " quad having drawn nothing";
+                else
+                    verdict = "COMPOSITE DID NOT DRAW";
+                FC_RENDER_MSG(
+                        "render readback composite verify: %s"
+                        " (%u probes, %lld texels: pattern on %.2f%%"
+                        " before the quad, %.2f%% after, %.2f%% after"
+                        " under the opposite row mapping, %.2f%% of the"
+                        " destination not black, glReadPixels err"
+                        " 0x%x)\n",
+                        verdict, rb.verifyProbes, rb.verifySamples,
+                        before, after, flipped, lit, rb.verifyGLError);
+            }
+        }
+#endif
         // * The other side of the same frame: what the *rest* of the
         // process spends between one backend frame and the next.
         // Natively this is the largest of the three terms and had no

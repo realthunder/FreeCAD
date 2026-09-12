@@ -13,8 +13,10 @@ as "the primary tree"; that was wrong.
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2688 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-10, after the RemoteEdit merge) |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **605 of 605 passing** (2026-09-10), 0 failures, 7 ctest entries disabled -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available" |
-| C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
-| C++ on macOS (`build/mac-relwithdebinfo-801`) | **478 of 478 passing** (2026-09-07), 1 disabled -- see "C++ on macOS" |
+| C++ on Windows (`build/win-relwithdebinfo-801`) | **487 of 487 passing** (2026-09-10; 477 on 2026-09-06/08, before TestLibraryPaths), 1 disabled -- see "C++ on Windows" |
+| C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
+| Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
+| Python on Windows | **2590 tests** (2026-09-07, re-verified 2026-09-08), 7 failures + 2 errors, 49 skipped, 6 expected failures -- three Windows-only defects, see "Python on Windows" |
 
 Two traps when running the suites (2026-09-09): give the Python suite and
 `Tests_run` **separate `FREECAD_USER_HOME`s** if they run at the same time
@@ -72,6 +74,16 @@ each out):
   level); they are pip-installed into `.conda/freecad` (2026-08-30) --
   pip, not conda, so nothing else in the env is re-solved.
 
+**That form is GNU `script`, and it fails on macOS.** BSD `script` has no `-c`
+and rejects it outright (`script: illegal option -- e`), so on the mac box the
+same run is:
+
+    cd build/mac-relwithdebinfo-801
+    script -q /dev/null ~/works/sw/fcad/.conda/run.sh ./bin/FreeCADCmd -t 0 > pytest.log
+
+Note the shape differs as well as the flags: BSD takes the output file first and
+then the command as plain arguments, not as one quoted string.
+
 A single module instead of everything: `FreeCADCmd -t TestPartApp`, or from
 the Python console `import Test; Test.runTestApp()`.
 
@@ -127,11 +139,13 @@ One binary directly, which is the fastest loop while working on a suite:
 
 ### C++ on macOS
 
-Green: **478 of 478** on 2026-09-07, 51.6 s with `-j 4`, one entry
+Green: **490 of 490** on 2026-09-10, 112 s with `-j 4`, one entry
 disabled -- the same `FeaturePartCommonTest.testHistory` as everywhere
 else -- on macOS 12.7.6 Intel with conda clang 23.1.0. That is measured
 on the tree merged with the Windows box's work, so the three platforms
-are green on the same source.
+are green on the same source. It was 478 of 478 on 2026-09-07; of the
+twelve added since, three arrived with the merges and nine are
+`TestLibraryPaths`.
 
 It took eleven fixes to build at all and four more to pass;
 `SceneServerPort.md` 7.7 has the whole bring-up. In short: two
@@ -159,6 +173,45 @@ are in `SceneServerPort.md` 7.7. The GUI tests do not register there for
 the same reason as on Windows: their guard looks for `xvfb-run`. Run by
 hand, `GuiServeSelectionEcho_tests_run` passes -- eight PASS lines and
 `DONE`, 2026-09-07; see "The GUI tests" below for the command.
+
+### Python on macOS
+
+**Run in full for the first time on 2026-09-10**, on
+`build/mac-relwithdebinfo-801`: **2680 tests in 126 s**, 2 failures and 1
+error, 49 skipped, 6 expected failures. Only `TestFemApp` had ever been run
+on this box before.
+
+The three that do not pass are the box, not the code, and all three are the
+same gap -- there is no mesher installed:
+
+- `test_GMSHTransfiniteAutomation` and `test_GMSHTransfiniteManual` fail with
+  "0 != 91" and "0 != 31" nodes. `/usr/local/bin/gmsh` is a **171-byte stub
+  from January 2022** whose shebang names a `FreeCAD.app` that no longer
+  exists, so FreeCAD finds a gmsh on PATH, runs it, and gets nothing back.
+  There is no real gmsh and no python `gmsh` module here.
+- `test_GMSHAdaptiv` errors with `FileNotFoundError: CalculiX binary not
+  found`. Not installed either.
+
+Installing either means adding to `.conda/freecad`, which is where the vtk
+pin lives -- ask before doing it.
+
+**The first run also found a real defect, and it is worth how it looked.**
+It came back with 18 errors, 17 of them `LookupError: Material not found`
+out of `TestMaterialCanonical`, `TestMaterialClipboard` and
+`TestShaderGraph` -- which reads exactly like a missing or unwritable user
+material library, an environment gap of the kind the other three are. It was
+not. A library strips a leading "/<its own name>" off any path it is given,
+with a plain `startsWith()`, so the library named **User** took the "/User"
+off the front of every absolute path under a macOS home and keyed each card
+at "s/someone/...". A card saved into the User library could not be read
+back at all: the file was on disk in the right place and the lookup said
+Material not found. Fixed in `af6f58a0d0` with `TestLibraryPaths` beside it;
+"/home/someone" and "C:/Users/someone" do not start with "/User", which is
+why only this platform ever saw it.
+
+Read that as the general lesson for this page: a failure in a suite that has
+never run on a platform is not evidence of an environment gap, however much
+it looks like one. Two of the three above are; the seventeen were not.
 
 ### C++ on Windows
 
@@ -250,6 +303,101 @@ argument, semicolons and all, which prepends `--modify` and the rest to `PATH`
 as though they were directories and leaves the real ones out -- and the tests
 that happen to need only their first directory still pass, so it looks like it
 works.
+
+**Reproduced on a second Windows box, 2026-09-07: 477 of 477 in 127 s with
+`-j 8`** -- but only after redirecting `TMP`. First run there, one entry timed
+out:
+
+    453 - DeferredLoad_tests_run (Timeout)
+
+Nothing was wrong with it. Every case *passed*; each merely took **85 to 106
+seconds** instead of milliseconds, and fifteen of those overrun ctest's 1500 s
+default. The cost is in the fixture's teardown, not in the code under test:
+`removeArchiveAndBackups()` has to find whatever a save left beside the
+archive, so it walks `getDirectoryContent()` of the archive's directory and
+stats every entry. The archive is a `getTempFileName()` path, so that
+directory is `%TEMP%` -- and that profile's `%TEMP%` held **63,167 files**. The
+suite is O(files in the temp directory), once per test.
+
+Pointing `TMP`/`TEMP` at an empty directory takes the same binary from a
+1500 s timeout to **3.11 s**. `ctest-fcad-cleantmp.cmd` is `ctest-fcad.cmd`
+with those two variables set; a temp sweep does just as well. Worth knowing
+generally: any suite that saves into `%TEMP%` and then looks for its backups
+inherits this, and it degrades gradually rather than failing, so it presents
+as "that test got slow".
+
+**It came back, on the FIRST Windows box, 2026-09-10.** `%TEMP%` there held
+**68,282** entries -- 66,885 loose `.tmp` files spanning 2024-03 to that day,
+accumulating about 2,400 a day -- and `DeferredLoad_tests_run` hit the 1500 s
+timeout again after 35 minutes. So this is periodic maintenance, not a
+one-time fix on one machine. Sweeping the loose files out of the top level
+(68,118 deleted, 206 MB; the 127 subdirectories left alone, and anything
+touched in the last hour or held open skipped) took the suite to **12.29 s**
+against the real `%TEMP%`.
+
+**Two things a sweep must not take with it, one of them learned the hard
+way.** `%TEMP%\claude` holds a live agent session's scratchpad and its
+background-task output files. And **`/tmp` in Git Bash IS `%TEMP%`**, so
+`/tmp/ssh-agent-<user>.sock` -- the fixed socket `D:\works\sw\ssh-load.sh`
+puts the unlocked key's agent on, which `~/.profile` attaches every shell to
+-- is a loose file in the top level and gets swept with the rest. The agent
+process survives and is then unreachable: the port and cookie it listens with
+existed only inside that file. Every `git push` over SSH fails with
+"Permission denied (publickey)" until someone re-runs `source ssh-load.sh`
+and re-enters the passphrase. Exclude `ssh-agent-*.sock`, or sweep only
+`*.tmp`, which is where all the growth actually is.
+
+### Python on Windows
+
+First run there is 2026-09-07, on `build/win-relwithdebinfo-801` with
+`BUILD_FEM=OFF`: **2590 tests, 7 failures and 2 errors**, 49 skipped, 6
+expected failures. Three things had to be true first.
+
+Re-run 2026-09-08 after a pull: **2590 tests in 384 s, the same 7 failures
+and 2 errors**, same 49 skipped and 6 expected failures. The nine are the
+same nine listed below, so that count is a stable baseline to diff against.
+
+**One run in two hung and never finished**, in
+`CAMTests.TestUpdateDocumentTools.test_both_presets_and_geometry_differing_is_one_row`
+-- 38 threads all in `Wait`, cumulative CPU flat, no output for nine
+minutes. It is *not* the endpoint-security stall of `DevEnvironment.md`
+(that is one thread and a process that never started; this one had been
+running for minutes and had 38). The module passes alone in 10.8 s
+(`FreeCADCmd -t CAMTests.TestUpdateDocumentTools`, 17 tests OK) and the
+immediate re-run of the whole suite completed, so it is an ordering
+interaction or a flake and not a defect in that test. `AssetManager.add`
+goes through `asyncio.run` on a ProactorEventLoop, which is where to look
+if it recurs. Recorded so the next person sees a known flake rather than a
+new hang; if it becomes reproducible it deserves its own entry.
+
+**A pseudo-console, which is what `script -qec` provides on Linux.** The same
+`CAMTests.TestCAMSanity` case named in section 1 leaves stdout closed here
+too; with a file or a pipe on the far end, the unittest runner's next
+`stream.flush()` raises `[Errno 9] Bad file descriptor` and the process dies
+with `0xC0000409` partway through. The Windows counterpart is a ConPTY:
+`tools\pty_run.py` spawns the command under one via `pywinpty` and tees it to
+a file, and `pytest-fcad-pty.cmd` is that wrapper around `FreeCADCmd -t 0`.
+Without it the run ends at 969 tests and still says `FAILED` rather than
+saying it stopped.
+
+**`pyyaml` and `ifcopenshell` in the env**, or `TestCAMApp` (1343 tests) and
+`TestArch` do not import at all -- see the two notes in
+`docs/DevEnvironment.md`. This is the checksum the top of this page describes,
+in its Windows form.
+
+**`TMP` redirected**, for the reason the C++ section above gives.
+
+The nine that remain are genuine and are Windows-only. None is a setup
+problem; all three groups are about text and paths rather than about geometry:
+
+| Group | Cases | What it is |
+|---|---|---|
+| `materialtests.TestMaterialClipboard`, `TestShaderGraph` | 6 | a `.mtlx` payload comes back with `\r\n` where it went in with `\n`, so the round trip through the material card's file blobs is going through a text-mode handle somewhere. The stored bytes carry the CRLF, so it is the write side |
+| `FileBlobs.BlobNamingCases` long names | 2 | a 250-character blob name under a temp path exceeds `MAX_PATH`, and `open()` fails with `FileNotFoundError`. Either the path needs the `\?\` prefix or the box needs long paths enabled |
+| `FileBlobs.BlobNamingCases.testANonAsciiNameIsKeptAsItIs` | 1 | a UTF-8 blob name (the test uses katakana) comes back from the directory listing as mojibake -- the name is written as UTF-8 bytes and read through a narrow/ANSI path |
+
+The Linux run has none of these, which is the point: they are the first thing
+this suite has ever said about the Windows file layer.
 
 ## 2. Why ctest says 453 and the binaries add up to 1305
 ## 2. Why ctest says 522 and the binaries add up to 1389
@@ -424,6 +572,35 @@ Windows build to be quietly wrong rather than loudly broken.
   Worth doing when a second Windows executable wants bgfx; today
   exactly one does, and it does not need to share.
 
+
+#### Which backends the Windows smokes can actually use
+
+Re-verified 2026-09-08 on the second Windows box (NVIDIA RTX 2000 Ada,
+driver 566.24, Intel RaptorLake-S iGPU). Both smokes pass on **Vulkan**
+and on **Direct3D 11**, band for band, at 51119 ink pixels -- one more
+than the 51118 recorded above, and the same on both backends, so it is
+a change in the scene and not a backend divergence.
+
+**`--renderer gl` is not usable headless on Windows.** It does not fail
+with a clean message: bgfx emits one `Failed to create OpenGL context.
+wglGetProcAddress(...)` fatal *per entry point* and keeps going, so the
+tool floods the console and looks like a hang. It is not one -- the
+process burns a full core throughout, which is how to tell it apart
+from this box's endpoint-security stall, where CPU stays at zero (see
+`DevEnvironment.md`). WGL needs a window and a pixel format, and there
+is no offscreen path to one the way Linux has with EGL. Use `vk`, or
+leave it on auto and get Direct3D 11. This is only about the *headless*
+tool: the interactive compositor takes its GL context from Qt, and that
+is a real window.
+
+Cycles on this box enumerates all three devices and renders on each --
+`CUDA` and `OPTIX` on the RTX 2000 Ada, `CPU` on the i7-13850HX -- via
+`Gui.cyclesDevices()` and `Gui.cyclesRenderTest(path, w, h, samples,
+device)`. Both need the **real** `FreeCADGui`: under `FreeCADCmd` the
+imported `FreeCADGui` is the console stub and carries neither method,
+and `setupWithoutGUI()` does not add them -- `Gui.showMainWindow()`
+does. Run it through `..\tools\run-cycles.cmd`, or `CUDA_BIN_PATH` is
+unset and the CUDA device silently does not appear at all.
 
 ### The GUI tests (`tests/gui/`)
 

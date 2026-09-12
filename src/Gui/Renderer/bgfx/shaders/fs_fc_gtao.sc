@@ -213,6 +213,16 @@ void main()
 				mip = clamp(log2(max(s01 * radiusPx * pxToFull, 1.0))
 				            - 3.3, 0.0, mipCount);
 
+			// Every tap below is texture2DLod, not texture2D. An
+			// implicit-derivative sample inside a loop whose trip
+			// count is a uniform forces fxc to unroll so it can
+			// compute gradients, and it then fails to ("unable to
+			// unroll loop ... 95 iterations", X3511) -- which is
+			// why this shader had no Direct3D 11 build. Each AO
+			// mip is its own single-level texture and the prepass
+			// is read at full res, so level 0 is what these taps
+			// always meant; the mip CHOICE is the sampler picked,
+			// not a LOD argument.
 			for (int side = 0; side < 2; ++side)
 			{
 				vec2 suv = side == 0 ? v_texcoord0 + off
@@ -227,7 +237,7 @@ void main()
 				{
 					// Near taps keep the full-precision prepass (exact
 					// fp32 depth + validity flag).
-					vec4 snz = texture2D(s_texNormalZ, suv);
+					vec4 snz = texture2DLod(s_texNormalZ, suv, 0.0);
 					if (snz.w < 0.5)
 						continue;   // background raises no horizon
 					sviewZ = snz.z;
@@ -235,17 +245,17 @@ void main()
 				else
 				{
 					if (mip < 1.5)
-						sviewZ = texture2D(s_texAOMip1, suv).x;
+						sviewZ = texture2DLod(s_texAOMip1, suv, 0.0).x;
 					else if (mip < 2.5)
-						sviewZ = texture2D(s_texAOMip2, suv).x;
+						sviewZ = texture2DLod(s_texAOMip2, suv, 0.0).x;
 					else if (mip < 3.5)
-						sviewZ = texture2D(s_texAOMip3, suv).x;
+						sviewZ = texture2DLod(s_texAOMip3, suv, 0.0).x;
 					else if (mip < 4.5)
-						sviewZ = texture2D(s_texAOMip4, suv).x;
+						sviewZ = texture2DLod(s_texAOMip4, suv, 0.0).x;
 					else if (mip < 5.5)
-						sviewZ = texture2D(s_texAOMip5, suv).x;
+						sviewZ = texture2DLod(s_texAOMip5, suv, 0.0).x;
 					else
-						sviewZ = texture2D(s_texAOMip6, suv).x;
+						sviewZ = texture2DLod(s_texAOMip6, suv, 0.0).x;
 					if (sviewZ < -1.0e4)
 						continue;   // background sentinel
 				}

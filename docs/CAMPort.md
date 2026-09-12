@@ -409,18 +409,133 @@ Two things worth knowing about running the suite:
   `libarea.so.0` was then removed. Leaving both sonames in place is the
   two-Clippers-in-one-process hazard the library split exists to prevent
   -- `CArea`'s tolerances are static mutable state both consumers write.
+- ~~**`boolean_subtraction_2d_using_area` has not been shown to run.**~~
+  **Closed 2026-09-07: it runs.** On Windows with the fork's packaged build
+  13, a wall carrying 202 blind pockets that **overlap their neighbours**
+  gives a different, deterministic result depending on the setting:
+
+  | `boolean-attempt-2d-area` | verts / faces | time |
+  |---|---|---|
+  | `False` | 1436 / 2868 | 1.78 - 3.17 s |
+  | `True`  | 1283 / 2562 | 0.74 - 0.90 s |
+
+  Six runs, interleaved `False,True,False,True,True,False` to cancel
+  ordering and warm-up. The geometry counts are stable to the vertex and
+  the area path is consistently about twice as fast, producing the *lower*
+  count -- it merges the overlapping contours into single outlines instead
+  of subtracting operand by operand. A setting that changes deterministic
+  output is the proof; nothing else here was.
+
+  **The trigger is overlapping contours, not operand count.** 202 pockets
+  laid out as a non-overlapping grid are handled entirely by the 2D
+  *builder* -- identical geometry and time with the setting either way, in
+  1.5 s. Space the same 202 so they intersect and the area path takes over.
+  That matches `boolean_utils_2d.cpp`'s own account of the builder's
+  failure mode, which is deriving contour nesting, not volume of work.
+
+  **Do not expect a log code to announce it.** `GEO404`, `GEO405`, `GEO406`
+  and `GEO410` are trouble reports -- operands outside the 2D domain, or a
+  result rejected -- so a clean run of the area path emits none of them, and
+  their absence means nothing on its own. All that appears in both columns
+  above is `GEO157` "Processing 202 operands as 3 slabs" and `GEO140`
+  "Processed fully in 2D".
+
+  The reproduction is a loop, not a facade model: wall 22.0 x 3.0 x 0.2,
+  pockets 0.30 x 0.45 at 0.18 / 0.30 spacing so they overlap in both
+  directions, depths alternating 0.08 / 0.12 so there are three slabs and
+  `max_slabs` is not tripped, each placed at `y = -0.05` with thickness
+  `depth + 0.05` so it starts outside the face and stops short of the far
+  one. Assert the count `GEO157` reports matches what was built -- a
+  mis-seated pocket is silently dropped, and at this scale that is
+  invisible.
+
+  The original finding, kept for the record:
+
 - **`boolean_subtraction_2d_using_area` has not been shown to run.** The
   symbol contract is proven exact (the kernel's undefined
   `CurveTo/FromClipperPath` carry `Clipper2Lib::Point<long>` and
   `libarea.so.1` defines those), the kernel loads, and a synthetic wall
   with an opening builds geometry -- but nothing confirmed that branch
-  was taken rather than the 3D kernel fallback. Closing it needs a real
-  IFC model with openings (none on this box) or a direct link-test
-  against the kernel.
-- `ifcopenshell-feedstock` still builds the **upstream 0.8.0 tarball**,
-  not the fork branch, and names no `libarea` dependency -- so the fork's
-  2D area path is in no released package. Rewiring it (source -> the
-  `LinkVibe` branch, add `libarea >=0.2.0`) is a separate job.
+  was taken rather than the 3D kernel fallback.
+
+  **Narrowed on 2026-09-07, on Windows with the fork's packaged build 13.**
+  What is now settled is that the path is *built and linked*:
+  `dumpbin /imports` on `ifcopenshell_geometry_kernel_opencascade.dll` shows
+  it importing `area.dll` and pulling `CArea::m_accuracy`, `m_units`,
+  `m_clipper_simple`, `m_clipper_clean_distance`, `m_fit_arcs` and
+  `m_fit_circles` from it, alongside `CArea::append`, `CCurve::Offset` and
+  the Clipper2 entry points. That answers "is it wired up". It does not
+  answer "is it taken".
+
+  **Two things not to mistake for evidence, both tried here.** First, the
+  Python surface is a *setting*, not a function -- `boolean-attempt-2d-area`
+  (default True) and `boolean-area-2d-fit-circles`, both fork-only. Testing
+  `hasattr(ifcopenshell.geom, 'boolean_subtraction_2d_using_area')` returns
+  False on a build that has the capability, so that check answers the wrong
+  question. Second, **toggling the setting proves nothing on a model the
+  path does not reach.** A 4.0 x 3.0 x 0.2 wall with a rectangular opening
+  gives identical geometry and identical time either way (16 verts / 32
+  faces; medians 0.0039 s to 0.0043 s over twelve interleaved iterations
+  each). Measure it single-shot and the first call's warm-up shows as a
+  10x difference that is not real.
+
+  **What the logger does show.** With `turn_on_detailed_logging()` and
+  verbosity at `LOG_NOTICE`, five cases -- interior hole, notch flush with
+  the far end, notch flush with the bottom, notches at both ends, and nine
+  flush operands at once -- all report `GEO136`/`GEO137` (operands are
+  extrusions), `GEO123` (intersecting boundaries) and `GEO140` **Processed
+  fully in 2D**, and none of them emits any diagnostic attributable to the
+  libarea branch. So the 2D specialisation is entered every time and
+  handles the work; the deliberate attempts to make the 2D *builder* fail
+  and fall through to the area path did not succeed.
+
+  **Which log codes actually discriminate.** `GEO140` "Processed fully in
+  2D" does **not**: `boolean_utils.cpp:1304` fires it whenever the 2D
+  specialisation left nothing for the 3D kernel, whichever of the builder or
+  the area path produced each face. It is the code you see in the good case
+  and it tells you nothing about which path ran. The ones that do are
+  `GEO404`, `GEO405`, `GEO406` and `GEO410` -- so it is the *absence* of
+  those alongside `GEO140` that shows the builder won.
+
+  **What "depth" means, since it is not what it sounds like.** `GEO157`
+  ("Processing N operands as M slabs") is guarded by `cuts.size() > 2` at
+  `boolean_utils.cpp:1140`, and `cuts` (1115-1127) collects only operand
+  interval endpoints that fall *strictly inside* A's own extrusion interval.
+  An opening that passes clean through the wall therefore contributes no
+  cut at all, however many there are and wherever they sit in elevation:
+  twelve through-openings at twelve different heights still give
+  `cuts.size() == 2`, one 2D problem, and no `GEO157`. The slab
+  decomposition exists for **blind pockets** -- the reveals and wall sweeps
+  the comment at 1099-1112 names, which stop short of the far face.
+  Confirmed here: through-openings never emit `GEO157`; pockets cut to a
+  fraction of the wall thickness immediately do ("Processing 1 operands as
+  2 slabs"). `GEO156` caps the whole thing at `max_slabs = 64`.
+
+  **And the slab path still is not the area path.** With `GEO157` firing,
+  the result is still `GEO140` with no `GEO404`/`405`/`406`/`410`, so the
+  builder handles the slabs too. Every route tried so far -- interior hole,
+  notches flush with the boundary, nine flush operands, twelve elevations,
+  and blind pockets at two and three depths -- ends the same way.
+
+  Closing this properly now needs the branch instrumented, or a model
+  chosen from the code rather than guessed at. Note the log-capture trap:
+  `logger.set_output()` wants C++ streams and rejects Python objects, and
+  `FMT_INMEMORY` + `get_log()` silently returns nothing -- a self-test
+  (emit a `notice()`, read it back) is worth doing before trusting a
+  silent log, because an empty log otherwise reads as "the branch did not
+  run" when it means "nothing was captured".
+- ~~`ifcopenshell-feedstock` still builds the **upstream 0.8.0 tarball**,
+  not the fork branch, and names no `libarea` dependency.~~ **Done
+  (2026-09-07).** It is rewired onto the `LinkVibe` branch and floors
+  `libarea >=0.3.2`; win-64 is published at 0.9.0alpha0 build 13 for
+  py311 through py314, and osx-64 is still failing on a `create_shape`
+  segfault through the alignment API. Three fixes were needed to build it
+  on Windows at all: the bare `friend class iterator;` in
+  `src/ifcgeom/element.h` that MSVC binds to `std::iterator` and rejects
+  (C2990, fixed in `dc04c32b2`); six `LNK2019`s against libarea's static
+  data members, which `WINDOWS_EXPORT_ALL_SYMBOLS` does not carry across
+  and which libarea 0.3.2 fixes by annotating them `LIBAREA_DATA`; and a
+  stream-offset bug in the mmap file reader (`01c11aa9a`, `3b0c07269`).
 - `Simplify` is now inert (Clipper2 has no StrictlySimple). It is kept
   and says so; removing it is a separate decision about document
   compatibility.

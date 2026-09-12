@@ -80,6 +80,65 @@ multi-GB Git-LFS payload. Verify this holds after the first init rather
 than trusting it.
 
 
+### 2.1 The fork set the whole tree's MSVC flags (fixed 2026-09-10)
+
+`src/cmake/configure_build.cmake` is Blender build code written for a
+top-level project, and its `elseif(MSVC)` branch did
+`set(CMAKE_CXX_FLAGS ... CACHE STRING ... FORCE)` on the GLOBAL flag
+variables. Added with `add_subdirectory()`, that set the compiler flags
+for **all of FreeCAD**, not for Cycles. It was not visible in any one
+place: the cache held Cycles' string, FreeCAD's own
+`SetGlobalCompilerAndLinkerSettings.cmake` appended to it on the next
+configure, and the result compiled.
+
+Three things it cost, none of them a preference:
+
+- **`/J`** -- plain `char` UNSIGNED -- on every translation unit in the
+  tree, while OCCT and Coin are built without it. Their headers inline
+  into ours, so the same inline function was compiled two ways. Verified
+  in their caches: OCCT's `CMAKE_CXX_FLAGS` is CMake's stock
+  `/DWIN32 /D_WINDOWS /W3 /GR /EHsc`.
+- **No `NDEBUG` in any configuration**, because Cycles' per-config
+  strings omitted it and they replaced CMake's, which carry it. Same ODR
+  mismatch, found first and fixed on its own (`193fa35dd`); measured
+  afterwards and worth no frame time, `docs/RenderEngine.md` 7.10.
+- **CMake's own `/DWIN32 /D_WINDOWS /GR` discarded.** Two `#ifdef WIN32`
+  blocks in FreeCAD therefore took their non-Windows branch on Windows:
+  `Main/MainGui.cpp` reopened the console streams with `freopen` instead
+  of `_wfreopen`, which cannot name a path outside the code page, and
+  `zipios++/ziphead.cpp` stamped every `.FCStd` central directory with
+  the Unix writer version.
+
+**The fix scopes rather than deletes.** Under `CYCLES_EMBEDDED` the same
+flags go through `add_compile_options()`, which reaches that directory
+and the subdirectories added after it and nothing else; the standalone
+branch is untouched, `/DNDEBUG` included. The per-configuration strings
+are not reproduced at all -- CMake's MSVC defaults match them term for
+term but for `/MD`, which comes from `CMAKE_MSVC_RUNTIME_LIBRARY`, and
+Cycles' own sources get `NDEBUG` from the per-config directory
+`COMPILE_DEFINITIONS` property its top-level `CMakeLists.txt` sets.
+
+**`/J` is not carried over even for Cycles.** Scoping it would move the
+mismatch rather than remove it: the host compiles its own Cycles
+translation units (`FreeCADRendererCycles`), which include these headers
+along with Qt's, OCCT's and FreeCAD's, so `/J` on them would hand
+unsigned `char` to a far larger surface than it fixed. Cycles cannot
+depend on it in any case -- it builds and runs on x86-64 Linux, where
+plain `char` is signed.
+
+**Two flags FreeCAD was getting only by accident** came back on its own
+terms in `SetGlobalCompilerAndLinkerSettings.cmake`: `/utf-8`, which is
+load-bearing (the sources are UTF-8 without a BOM, over a thousand
+tracked files carry non-ASCII, and the system code page here is 936),
+and `/nologo`, which is not.
+
+Reconfiguring is not enough by itself. `CACHE ... FORCE` wrote those ten
+entries into `CMakeCache.txt`, and removing the code that wrote them
+leaves them standing -- `cmake -U CMAKE_CXX_FLAGS -U CMAKE_C_FLAGS -U
+CMAKE_{C,CXX}_FLAGS_{DEBUG,RELEASE,MINSIZEREL,RELWITHDEBINFO}` and then
+configure, which lets CMake re-initialise them from the platform module.
+**Verify the compile line, not the cache**; both have been wrong here.
+
 ## 3. Dependencies
 
 **"Vendor like bgfx" cannot mean "self-contained like bgfx".** bgfx has
@@ -2993,3 +3052,6 @@ Each of these has already cost time somewhere in this tree:
 - A **slow AMD iGPU number** read as a broken HIP port. Section 4.2.
 - **A driver library's filename read as a capability**
   (`libnvoptix.so.1` on WSL2). Section 4.1.
+- **A vendored tree setting the HOST's compiler flags.** Blender build
+  code assumes it is the top-level project and `FORCE`s the global cache
+  variables. Section 2.1.

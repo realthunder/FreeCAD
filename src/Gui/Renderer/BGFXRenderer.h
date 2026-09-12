@@ -40,6 +40,14 @@ public:
             bool publishOnly = false) const override;
     virtual bool warmup(QOpenGLWidget *widget, const std::string &type,
                         WarmupTiming *timing = nullptr) override;
+    /// Route D (docs/DeviceAdoption.md): bring bgfx up on the device
+    /// Qt already owns, instead of letting it create one of its own.
+    /// bgfx adopts an external device through PlatformData::context on
+    /// Metal, Vulkan and D3D12 alike, and asks for no window handle to
+    /// do it -- its Metal backend traces "Headless." on a null nwh and
+    /// skips the swapchain, which is exactly the shape this needs.
+    virtual bool warmup(const AdoptedDevice &device, const std::string &type,
+                        WarmupTiming *timing = nullptr) override;
     virtual bool deviceSharesQtGL() const override;
     virtual bool deviceMakeCurrent() override;
     virtual void deviceDoneCurrent() override;

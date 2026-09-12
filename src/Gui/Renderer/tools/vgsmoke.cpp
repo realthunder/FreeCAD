@@ -24,8 +24,9 @@
 // vg-renderer into an offscreen frame buffer, reads the pixels back and
 // checks that every drawing primitive actually produced ink.
 //
-//   fcvgsmoke [--renderer gl|vk|auto] [--font /path/to/font.ttf]
+//   fcvgsmoke [--renderer gl|vk|d3d11|d3d12|auto] [--font /path/to/font.ttf]
 //             [--out /path/to/dump.ppm] [--size WxH] [--page2d]
+//             [--bench N] [--bench-frames N]
 //
 // Default mode is the M0 raw-vg scenario (paths + text, band ink checks).
 // --page2d runs the M1 scenario instead: a retained Page2D under pan,
@@ -359,7 +360,7 @@ static int runVgScenario(Offscreen& target, const char* fontPath,
 // the number the whole design argues about -- Qt raster repaints cost
 // 3-4 us/item every frame (doc sec 15); the retained page must make an
 // unchanged frame cheap. Informational, never fails.
-static void runBench(Offscreen& target, uint32_t count)
+static void runBench(Offscreen& target, uint32_t count, uint32_t frames)
 {
     using Render::Page2D;
     using Render::Vg2D;
@@ -386,20 +387,50 @@ static void runBench(Offscreen& target, uint32_t count)
     }
 
     Page2D::View view;
-    auto frameMs = [&](const char* what) {
+    // ! Two things this has to do that timing one bgfx::frame() does not.
+    //
+    // AVERAGE. A single frame is a sample, not a rate, and these bounce
+    // by 2x run to run -- a first attempt at ranking backends this way
+    // read D3D11 at 6.96 ms and 13.13 ms for the same case.
+    //
+    // And FORCE COMPLETION, which is the one that changes conclusions.
+    // bgfx::frame() returns after SUBMISSION, and how much a backend
+    // defers past that point is its own business, so wall clock around
+    // it ranks how much each driver postpones rather than how much it
+    // finishes. That is not hypothetical: it is what made Vulkan look 3x
+    // faster than Direct3D here while the readback probe -- which does
+    // force completion -- put the two within 4% on the same GPU.
+    // grab() is the barrier: it blits, reads back, and pumps frames
+    // until the read lands, so everything submitted in the batch above
+    // it has completed before the clock stops. Its own cost (a 640x480
+    // readback) is amortized over the batch and is well under a
+    // hundredth of a frame.
+    auto frameMs = [&](const char* what, bool average = true) {
         page.setView(view);
+        const uint32_t n = average ? frames : 1;
+        if (average) {
+            // One frame outside the clock: the view change above may
+            // re-record or re-tessellate, and that cost belongs to the
+            // "band crossing" case, not to every steady-state one.
+            page.render(0, target.width, target.height);
+            bgfx::touch(0);
+            bgfx::frame();
+        }
         auto t0 = clock_t_::now();
-        page.render(0, target.width, target.height);
-        bgfx::touch(0);
-        bgfx::frame();
+        for (uint32_t i = 0; i < n; ++i) {
+            page.render(0, target.width, target.height);
+            bgfx::touch(0);
+            bgfx::frame();
+        }
+        target.grab();
         double ms = std::chrono::duration<double, std::milli>(
-                        clock_t_::now() - t0).count();
-        printf("  %-28s %8.2f ms  (%.2f us/item)\n", what, ms,
-               ms * 1000.0 / count);
+                        clock_t_::now() - t0).count() / double(n);
+        printf("  %-28s %8.2f ms  (%.2f us/item, n=%u)\n", what, ms,
+               ms * 1000.0 / count, n);
     };
 
     printf("bench: %u stroke items\n", count);
-    frameMs("first frame (record all)");
+    frameMs("first frame (record all)", false);
     frameMs("unchanged frame (replay)");
     view.panX = 31.0f;
     view.panY = 17.0f;
@@ -407,7 +438,7 @@ static void runBench(Offscreen& target, uint32_t count)
     view.zoom = 1.31f;
     frameMs("in-band zoom (replay)");
     view.zoom = 2.7f;
-    frameMs("band crossing (re-tess)");
+    frameMs("band crossing (re-tess)", false);
     view.zoom = 2.71f;
     frameMs("post-crossing (replay)");
 
@@ -613,6 +644,10 @@ int main(int argc, char** argv)
     bgfx::RendererType::Enum type = bgfx::RendererType::Count; // auto
     bool page2d = false;
     uint32_t bench = 0;
+    // Frames per averaged bench case. Big enough that the one-off
+    // completion barrier at the end of a batch is noise, small
+    // enough that a run of every backend stays under a minute.
+    uint32_t benchFrames = 200;
 
     for (int i = 1; i < argc; ++i) {
         auto next = [&]() -> const char* {
@@ -624,6 +659,16 @@ int main(int argc, char** argv)
                 type = bgfx::RendererType::OpenGL;
             else if (!strcmp(r, "vk"))
                 type = bgfx::RendererType::Vulkan;
+            // The vg shader pack carries dxbc and dxil (docs/Testing.md,
+            // "The vg smokes on Windows"), so both Direct3D backends can
+            // be asked for by name. Auto-selection already picks D3D11
+            // on Windows; naming them is what makes a backend-against-
+            // backend comparison possible, D3D12 especially, which auto
+            // never chooses.
+            else if (!strcmp(r, "d3d11"))
+                type = bgfx::RendererType::Direct3D11;
+            else if (!strcmp(r, "d3d12"))
+                type = bgfx::RendererType::Direct3D12;
             else if (strcmp(r, "auto")) {
                 fprintf(stderr, "unknown renderer '%s'\n", r);
                 return 2;
@@ -635,6 +680,8 @@ int main(int argc, char** argv)
             outPath = next();
         else if (!strcmp(argv[i], "--page2d"))
             page2d = true;
+        else if (!strcmp(argv[i], "--bench-frames"))
+            benchFrames = (uint32_t)strtoul(next(), nullptr, 10);
         else if (!strcmp(argv[i], "--bench"))
             bench = (uint32_t)strtoul(next(), nullptr, 10);
         else if (!strcmp(argv[i], "--size")) {
@@ -687,7 +734,7 @@ int main(int argc, char** argv)
 
     int res = 0;
     if (bench)
-        runBench(target, bench);
+        runBench(target, bench, benchFrames);
     else if (page2d)
         res = runPage2DScenario(target, fontPath, outPath);
     else

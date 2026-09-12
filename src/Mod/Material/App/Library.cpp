@@ -119,6 +119,25 @@ void Library::setCaseSensitivity()
     }
 }
 
+bool Library::isPathPrefix(const QString& path,
+                           const QString& prefix,
+                           Qt::CaseSensitivity sensitivity)
+{
+    if (prefix.isEmpty()) {
+        // Nothing to take off, which is what startsWith() said too
+        return true;
+    }
+    if (!path.startsWith(prefix, sensitivity)) {
+        return false;
+    }
+
+    // The prefix has to end where a component ends. Without this the library
+    // named "User" takes the "/User" off "/Users/someone/...", and a library
+    // rooted at ".../Material" claims ".../Material2" as its own.
+    return path.length() == prefix.length() || path.at(prefix.length()) == QLatin1Char('/')
+        || prefix.endsWith(QLatin1Char('/'));
+}
+
 Qt::CaseSensitivity Library::caseSensitivity() const
 {
     return (_caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive);
@@ -162,7 +181,7 @@ QString Library::getLocalPath(const QString& path) const
 
     QString clean = QDir::cleanPath(path);
     QString prefix = QStringLiteral("/") + getName();
-    if (clean.startsWith(prefix)) {
+    if (isPathPrefix(clean, prefix)) {
         // Remove the library name from the path
         filePath += clean.right(clean.length() - prefix.length());
     }
@@ -185,7 +204,7 @@ QString Library::getRelativePath(const QString& path) const
     QString filePath;
     QString clean = QDir::cleanPath(path);
     QString prefix = QStringLiteral("/") + getName();
-    if (clean.startsWith(prefix)) {
+    if (isPathPrefix(clean, prefix)) {
         // Remove the library name from the path
         filePath = clean.right(clean.length() - prefix.length());
     }
@@ -194,7 +213,7 @@ QString Library::getRelativePath(const QString& path) const
     }
 
     prefix = getDirectoryPath();
-    if (filePath.startsWith(prefix, caseSensitivity())) {
+    if (isPathPrefix(filePath, prefix, caseSensitivity())) {
         // Remove the library root from the path
         filePath = filePath.right(filePath.length() - prefix.length());
     }

@@ -47,6 +47,6 @@ void main()
 	// the same depth over its whole span that the solid ground does,
 	// which is what a ground reflection depth-tests EQUAL against.
 	float k = clamp(dark * u_matColor.a, 0.0, 1.0);
-	vec3 pass = mix(vec3_splat(1.0), u_matColor.rgb * tint, k);
-	gl_FragColor = vec4(pass, 1.0);
+	vec3 transmitted = mix(vec3_splat(1.0), u_matColor.rgb * tint, k);
+	gl_FragColor = vec4(transmitted, 1.0);
 }

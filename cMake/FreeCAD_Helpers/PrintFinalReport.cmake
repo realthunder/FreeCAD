@@ -165,6 +165,10 @@ macro(PrintFinalReport)
     simple(OpenGLU_Incl [${OPENGL_INCLUDE_DIR}])
     simple(Coin3D "${COIN3D_VERSION} [${COIN3D_LIBRARIES}] [${COIN3D_INCLUDE_DIRS}]")
     simple(pivy ${PIVY_VERSION})
+    # Reported together because they are only meaningful together:
+    # a mismatch here is a build that succeeds and a FreeCAD whose
+    # Coin scripting is dead (SetupSwig.cmake says why).
+    simple(SWIG_runtime "${SWIG_RUNTIME_VERSION} (pivy: ${PIVY_SWIG_RUNTIME})")
     if (WIN32)
         #simple(SPNAV "not available yet for your OS") # FREECAD_USE_3DCONNEXION instead...
     else()

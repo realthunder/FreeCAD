@@ -30,6 +30,7 @@
 #include "FCConfig.h"
 #include "MaterialXSupport.h"
 #include "BGFXRenderer.h"
+#include "DeviceAdopt.h"
 #include "SceneDump.h"
 #include "MeshSource.h"
 #include "SceneLadder.h"
@@ -215,15 +216,15 @@ namespace
         funcs->glDeleteFramebuffers(1, &id);
     }
 
+    inline void freeTextureFunc(QOpenGLFunctions *funcs, GLuint id)
+    {
+        funcs->glDeleteTextures(1, &id);
+    }
+
     /*
     void freeRenderbufferFunc(QOpenGLFunctions *funcs, GLuint id)
     {
         funcs->glDeleteRenderbuffers(1, &id);
-    }
-
-    void freeTextureFunc(QOpenGLFunctions *funcs, GLuint id)
-    {
-        funcs->glDeleteTextures(1, &id);
     }
     */
 
@@ -1740,19 +1741,57 @@ class BGFXRendererLibP {
 public:
     BGFXRendererLibP() {
 #ifndef FC_RENDERER_STANDALONE
-        // Vulkan, opt-in for the same reason Metal is below: it renders
-        // and it CAPTURES, but it does not yet reach the screen.
+        // Vulkan, opt-in for the same reason Metal is below.
+        //
+        // ! The reason has CHANGED and the gate has not. It used to be
+        // that a non-GL backend could not reach the screen at all:
         // BGFXView::blit composites by wrapping bgfx's attachments in a
-        // GL framebuffer, so it stands aside on any non-GL backend and
-        // Coin draws the viewport -- a Vulkan session looks like a
-        // renderer that draws nothing. Frame capture is portable
-        // (bgfx::readTexture), which is what the golden render tests
-        // gate on, so the backend is verifiable without a viewport;
-        // offering it in the UI's backend list before the composite
-        // follows would read as a broken renderer rather than an
-        // unfinished one.
-        if (getenv("FC_BGFX_VULKAN"))
+        // GL framebuffer, which stands aside on anything but GL, so a
+        // Vulkan session looked like a renderer that draws nothing.
+        // BGFXView::blitReadback is now that missing composite
+        // (docs/DeviceAdoption.md section 2) and a Vulkan session does
+        // reach the screen. What has not happened is anyone verifying
+        // it on a Vulkan device, so the gate stays until someone has --
+        // an unverified default is a worse answer than an opt-in.
+        if (getenv("FC_BGFX_VULKAN") || getenv("FC_RENDER_RHI"))
             typeMap["bgfx - Vulkan"] = RendererType::Vulkan;
+#endif
+#if defined(FC_OS_WIN32) && !defined(FC_RENDERER_STANDALONE)
+        // Direct3D 11 is the DEFAULT backend on Windows, and
+        // RenderParams::preferredType() is where that is said; this only
+        // makes it available. It used to be opt-in for the same reason
+        // as Vulkan above -- BGFXView::blit composites through a GL
+        // framebuffer and stands aside on anything else, so a D3D
+        // session rendered and captured without reaching the screen --
+        // and BGFXView::blitReadback closed that hole for every backend.
+        // What makes it the default rather than merely possible is that
+        // it was then measured, on a quiet box, against the other two
+        // with the composite live: docs/RenderEngine.md 7.10 ("The
+        // composite priced"). Submission is a three-way tie at 19.6-21.2
+        // ms, the readback costs D3D11 +2.17 ms a frame against +7.09 on
+        // D3D12 and +7.61 on Vulkan, and D3D11 therefore leads by 8% --
+        // on the composite, not on the API. All three beat GL, which
+        // spends about 8x what any of them spend to issue the same
+        // draws, and that separation is the one that survives every
+        // session.
+        //
+        // FC_BGFX_D3D11=0 opts back out, for a device where D3D11 will
+        // not come up: bgfx::init failing leaves the renderer null and
+        // Coin draws the viewport, which works but loses the engine.
+        //
+        // Direct3D 12 stays opt-in. It is here to be measured -- naming
+        // it registers it, and a benchmark leg then selects it by name
+        // through the Render/Type parameter (scripts/render-bench.py).
+        // The stock pack carries dxbc and dxil, so both have shaders to
+        // load; before that they would have drawn a substituted program
+        // rather than failing.
+        {
+            const char *d3d11 = getenv("FC_BGFX_D3D11");
+            if (!d3d11 || *d3d11 != '0')
+                typeMap["bgfx - Direct3D11"] = RendererType::Direct3D11;
+        }
+        if (getenv("FC_BGFX_D3D12"))
+            typeMap["bgfx - Direct3D12"] = RendererType::Direct3D12;
 #endif
 #if defined(FC_OS_MACOSX) && !defined(FC_RENDERER_STANDALONE)
         // Metal is the only backend that can run this renderer on
@@ -1762,14 +1801,41 @@ public:
         // context has no fixed-function pipeline for Coin, and macOS
         // will not share across profiles.
         //
-        // Opt-in until the desktop composite follows: BGFXView::blit
-        // stands aside on Metal (its GL framebuffer cannot wrap an
-        // id<MTLTexture>), so a Metal session renders and captures but
-        // does not yet put its frame on screen -- Coin draws that.
-        // Offering it in the backend list would read as a broken
-        // renderer rather than an unfinished one. Frame CAPTURE is
-        // portable now, which is what the golden render tests gate on.
-        if (getenv("FC_BGFX_METAL"))
+        // DEFAULT here since 2026-09-10, where every other backend is
+        // opt-in, and the asymmetry is the point: on macOS the
+        // alternative is not another backend, it is no renderer at all.
+        //
+        // The gate this replaces asked for a session on this path to be
+        // "measured and looked at, rather than merely made possible".
+        // Both happened: the composite was confirmed on screen by eye
+        // 2026-09-09, then by the in-composite verify 2026-09-10 --
+        // COMPOSITE DRAWS, ~347 probes, 100% after the quad against 0%
+        // before and 0% under the opposite row mapping
+        // (docs/DeviceAdoption.md section 11) -- and it costs 0.33
+        // ms/frame at 1026x576 with the readback ring pipelining the
+        // copy (section 12).
+        //
+        // Registering it is the WHOLE change, because
+        // RenderParams::selectRenderPath() already decides the session's
+        // render path at startup (Application.cpp) and its
+        // preferredType() names "bgfx - Metal" first on macOS, skipping
+        // any name that did not register -- so Metal wins here the
+        // moment it exists. (Until 2026-09-10 preferredType() took the
+        // first registered "bgfx*" name and Metal won by sorting before
+        // "bgfx - OpenGL" in the map. Same outcome, but an alphabetical
+        // accident rather than a choice, which is why it is now stated.)
+        // That also means macOS was never a different POLICY from the
+        // other platforms -- they have defaulted to bgfx all along; this
+        // box was simply the one whose only registered backend could not
+        // run, falling back to Coin every session.
+        //
+        // ! Measured on ONE Mac: Intel Iris Pro 6200, macOS 12, Qt
+        // 6.11.1. Apple Silicon is untested here. The fallback that
+        // covers a device this does not suit is the same one every
+        // backend failure has always used -- prepare() fails, the
+        // renderer is null and Coin draws -- and FC_BGFX_METAL=0 turns
+        // it off outright, which restores exactly the old behaviour.
+        if (!getenv("FC_BGFX_METAL") || getenv("FC_BGFX_METAL")[0] != '0')
             typeMap["bgfx - Metal"] = RendererType::Metal;
 #endif
         for (auto &v : typeMap)
@@ -1882,6 +1948,7 @@ public:
     void makeCurrent() {}
     void doneCurrent() {}
     void freeFBO(int) {}
+    void freeTexture(unsigned) {}
     /// The standalone build owns its window, so there is no Qt context
     /// or surface to time -- but warmup() reports these unconditionally,
     /// and a zero is the true answer here rather than a placeholder.
@@ -1894,6 +1961,78 @@ public:
     /// time goes; a frame never looks at them.
     double msContext = 0;
     double msDevice = 0;
+
+    /// Route D (docs/DeviceAdoption.md): bring bgfx up on a device this
+    /// process did not create.
+    ///
+    /// This is prepare()'s device half and nothing else. The Qt GL
+    /// context and its offscreen surface are deliberately NOT built
+    /// here -- there is no widget yet to take a pixel format from, and
+    /// they are not what an adopted device needs. The first prepare()
+    /// that does get a widget builds them and skips the init below,
+    /// because currentType is no longer Noop by then.
+    ///
+    /// No window handle, on purpose. bgfx's Metal backend traces
+    /// "Headless." on a null nwh and creates no swapchain
+    /// (renderer_mtl.cpp), and PlatformData::context being set is what
+    /// keeps bgfx out of its own headless mode -- which would then
+    /// refuse a non-zero resolution. Nothing here presents: the frame
+    /// reaches the screen through the composite, and under Route D
+    /// proper it reaches it as a texture Qt imports.
+    bool prepareAdopted(const Render::AdoptedDevice &dev,
+                        RendererType::Enum type)
+    {
+        if (glUnsupported)
+            return false;
+        warnTypeLocked(type);
+        QElapsedTimer _warmClock;
+        _warmClock.start();
+        msContext = msDevice = 0;
+        // Already up. Saying true is right: the caller asked for a
+        // device to exist before the first 3D view and one does.
+        if (currentType != RendererType::Noop)
+            return true;
+        if (!dev.valid())
+            return false;
+        currentType = type;
+        bgfx::renderFrame();
+        bgfx::Init init;
+        init.type = currentType;
+        init.platformData.context = dev.device;
+        // The queue is backend-specific and bgfx says so in the code:
+        // PlatformData::queue is read by the D3D12 backend only. Metal
+        // makes its own unconditionally and Vulkan fetches queue 0 of
+        // the family, so handing either one here changes nothing and
+        // pretending otherwise would hide the synchronisation this
+        // route still owes (docs/DeviceAdoption.md, "The queue is
+        // backend-specific").
+        if (currentType == RendererType::Direct3D12)
+            init.platformData.queue = dev.queue;
+        init.resolution.width = 0;
+        init.resolution.height = 0;
+        init.resolution.reset = bgfxResetFlags();
+        // A startup option, for the same reason as the widget path:
+        // bgfx::init happens once per process.
+        init.limits.maxViews = uint32_t(
+                std::max(0, RendererFactory::maxViewIds()));
+        if (!bgfx::init(init)) {
+            currentType = RendererType::Noop;
+            RENDER_ERR("init failed on the adopted "
+                       << dev.apiName() << " device");
+            return false;
+        }
+        adoptActualRenderer();
+        resolveDeviceName();
+        adopted = dev;
+        msDevice = _warmClock.nsecsElapsed() / 1.0e6;
+        return true;
+    }
+
+    /// The device this session adopted, or a null one. Held so that
+    /// later stages -- importing the backend's render target as a
+    /// QRhiTexture, and the cross-queue synchronisation Metal always
+    /// needs -- have the handles without asking Qt again.
+    Render::AdoptedDevice adopted;
 
     bool prepare(QOpenGLWidget *widget, RendererType::Enum type)
     {
@@ -2078,6 +2217,15 @@ public:
     void freeFBO(GLint fbo)
     {
         pendingRemoves.emplace_back(fbo, freeFramebufferFunc);
+    }
+
+    /// Same deferral as freeFBO, for a texture: the readback
+    /// composite's upload target is created in the WIDGET's context but
+    /// released from wherever the view happens to die, which is often
+    /// no GL context at all.
+    void freeTexture(GLuint tex)
+    {
+        pendingRemoves.emplace_back(tex, freeTextureFunc);
     }
 #endif // !FC_RENDERER_STANDALONE
 
@@ -5246,6 +5394,12 @@ public:
     void destroySceneCaches();
     /// Everything sized by the viewport; the one set a plain resize drops.
     void destroyTargets();
+    /// Just the desktop composite's cached GL framebuffers, so the next
+    /// blit builds them again. What a blit that cannot wrap bgfx's
+    /// attachments gives up: it used to call destroy() there, which
+    /// took the targets, the uploaded scene and the programs with it
+    /// -- a whole-view reset per frame for a two-framebuffer cache.
+    void dropBlitCache();
     /// Programs, uniforms and stand-in textures: expensive to relink, so
     /// a resize keeps them.
     void destroyPrograms();
@@ -6193,6 +6347,168 @@ public:
     /// the last view id, so it copies the finished image.
     uint32_t readbackCapture(void *color, void *depth);
 
+#ifndef FC_RENDERER_STANDALONE
+    /// ---- The readback composite (docs/DeviceAdoption.md section 2) ----
+    ///
+    /// The other way to put a bgfx frame on screen. blit() below wraps
+    /// bgfx's own colour attachment in a GL framebuffer, which needs
+    /// the attachment to BE a GL texture -- true only while bgfx runs
+    /// on GL. This route makes no such demand: read the finished frame
+    /// back to the CPU, upload it into a GL texture of our own, draw
+    /// that as a quad. It is slower by construction and it is the only
+    /// thing that works everywhere, which is why Metal and Vulkan
+    /// sessions could render and capture but not show a frame.
+    ///
+    /// It is also the measurement Route D is weighed against, so every
+    /// step of it is timed (readbackStats).
+
+    /// One copy in flight: the CPU-readable staging texture, the buffer
+    /// bgfx writes into, and the frame at which it will have. A slot is
+    /// FREE when readyFrame is 0; while it is not, the buffer belongs to
+    /// bgfx's render thread and must not be resized, freed or read.
+    struct ReadbackSlot {
+        bgfx::TextureHandle tex = BGFX_INVALID_HANDLE;
+        std::vector<unsigned char> pixels;
+        uint32_t readyFrame = 0;
+        uint32_t queuedFrame = 0;
+    };
+    /// A RING, not a single buffer, and that is the difference between
+    /// a composite that shows every frame and one that shows every
+    /// third. bgfx fills a readback about two frames after the copy is
+    /// queued; with one slot the next copy cannot be queued until that
+    /// one has been consumed, so the cycle is queue-wait-wait-consume
+    /// and two frames in three redraw the previous image. Three slots
+    /// keep a copy in flight for every frame of that window, so one
+    /// lands every frame -- the image still trails the scene by about
+    /// two frames, which is this route's latency and is not removable,
+    /// but it stops stuttering at a third of the frame rate.
+    std::vector<ReadbackSlot> readbackSlots;
+    /// Where the next copy goes; only ever a hint, since a busy slot is
+    /// skipped.
+    int readbackNextSlot = 0;
+    /// The staging format, matched to whatever the frame finished in --
+    /// a bgfx blit requires source and destination formats to agree,
+    /// and the scene colour is RGBA16F while colour managed.
+    bgfx::TextureFormat::Enum readbackFormat = bgfx::TextureFormat::Count;
+    uint16_t readbackW = 0;
+    uint16_t readbackH = 0;
+    /// RGBA8 top-down image the upload takes, when the readback itself
+    /// is not already that (the HDR scene colour is half-float).
+    std::vector<unsigned char> readbackRGBA;
+    /// The GL texture the quad samples, in the WIDGET's context (the
+    /// composite runs after widget->makeCurrent(), like blit()). Kept
+    /// across frames and re-specified only on a resize, so the steady
+    /// state is one glTexSubImage2D.
+    GLuint readbackGLTex = 0;
+    uint16_t readbackGLW = 0;
+    uint16_t readbackGLH = 0;
+    /// Has the texture ever been filled? Until it has there is nothing
+    /// to draw and the quad is skipped rather than showing garbage.
+    bool readbackGLFilled = false;
+    /// FC_BGFX_READBACK_VERIFY: the nonce of the pattern uploaded THIS
+    /// frame, or 0 when this is not a probe frame. The verify derives
+    /// its expected texels from this number rather than from the buffer
+    /// that was uploaded, which is what makes the two sides of the
+    /// comparison independent.
+    uint32_t readbackProbeNonce = 0;
+    /// Scratch the probe pattern is generated into, uploaded in place
+    /// of the scene on a probe frame.
+    std::vector<unsigned char> readbackProbePixels;
+
+    /// Per-step cost of the composite, accumulated over the reporting
+    /// window and drained by the frame report. This exists to be
+    /// measured: docs/DeviceAdoption.md section 2 costs the route from
+    /// a standalone probe, and these are the same steps inside a real
+    /// frame.
+    struct ReadbackStats {
+        double queueMs = 0;    ///< bgfx::blit + bgfx::readTexture
+        double waitMs = 0;     ///< frames spun waiting, sync mode only
+        double convertMs = 0;  ///< half-float decode, HDR scene only
+        double uploadMs = 0;   ///< glTexSubImage2D
+        double drawMs = 0;     ///< the textured quad
+        uint32_t frames = 0;   ///< frames the composite ran at all
+        uint32_t landed = 0;   ///< frames a new image arrived in
+        uint32_t stale = 0;    ///< frames that redrew the previous one
+        uint32_t latencySum = 0; ///< sum of (ready - queued), in frames
+        /// FC_BGFX_READBACK_VERIFY, the synthetic-pattern probe. This
+        /// is the only instrument that can say the composite DREW --
+        /// readbackVerifyPeriod() records why every instrument outside
+        /// the process is blind to it, and why comparing the
+        /// destination against the uploaded IMAGE, which is what this
+        /// used to do, cannot answer it either.
+        ///
+        /// Every counter here is one a wrong answer can trip, which is
+        /// the property the previous version lacked:
+        ///   before  -- the pattern found BEFORE this frame's quad. A
+        ///              nonce minted this frame cannot already be on
+        ///              screen, so anything but ~0 means the sampler is
+        ///              not reading the destination at all.
+        ///   after   -- found AFTER it, in the row mapping we drew.
+        ///   flip    -- found AFTER it under the OPPOSITE row mapping.
+        ///              High here with `after` low is a composite that
+        ///              draws the frame upside down -- which a plain
+        ///              percentage-of-match reports as plain failure,
+        ///              naming neither the cause nor the fix.
+        ///   nonZero -- sampled texels that were not black. Separates
+        ///              "the quad drew nothing" from "the read came
+        ///              back empty", which otherwise look identical.
+        uint32_t verifyProbes = 0;
+        long long verifySamples = 0;
+        long long verifyBeforeHits = 0;
+        long long verifyAfterHits = 0;
+        long long verifyFlipHits = 0;
+        long long verifyAfterNonZero = 0;
+        /// Last glReadPixels error, 0 = none. A read that FAILED is not
+        /// a miss and must never be counted as one.
+        uint32_t verifyGLError = 0;
+        void clear() { *this = ReadbackStats(); }
+    } readbackStats;
+
+    /// Is the readback composite what this view uses to reach the
+    /// screen? Mode 1 (the default) says "wherever the GL blit cannot
+    /// run", which is every non-GL backend; mode 2 forces it on GL too,
+    /// which is the only way to compare the two routes on one box, one
+    /// scene and one camera.
+    bool readbackCompositeActive() const;
+    /// Size the staging texture and the CPU buffers to the view.
+    /// False = no composite this frame (the format is unusable, or an
+    /// allocation failed).
+    bool ensureReadbackTarget();
+    /// Queue the GPU->CPU copy. Must be called with the frame fully
+    /// submitted and BEFORE the frame boundary, exactly like
+    /// readbackCapture: the copy rides on a view id and the boundary is
+    /// what executes it.
+    void queueReadbackComposite();
+    /// Stamp the frame the copies queued this frame execute in. The
+    /// boundary is what returns that number and the queue runs before
+    /// it, so this is the caller's second half of queueing.
+    void noteReadbackFrame(uint32_t frameNum);
+    /// Is any copy still in flight? Nothing may resize or free a
+    /// staging buffer while bgfx still owes it a write.
+    bool readbackInFlight() const;
+    /// Spin frames until every copy in flight has landed, and return
+    /// the frame reached. Benchmark-only
+    /// (FC_BGFX_READBACK_SYNC): it converts the pipelined route into
+    /// the fully serialized one docs/DeviceAdoption.md section 2
+    /// measured, at the cost of the frames it spins.
+    uint32_t syncReadback(uint32_t frameNum);
+    /// Upload whatever has landed and draw it into the caller's bound
+    /// framebuffer. Same destination rect convention as blit().
+    void blitReadback(uint32_t frameNum, int dstX, int dstY, int dstH);
+    /// Read the destination framebuffer rect back and count how many
+    /// sampled texels carry the probe pattern of \a nonce -- in the
+    /// row mapping \a flip says we drew, and in the opposite one.
+    /// Called twice on a probe frame, before the quad and after it:
+    /// only the pair is evidence, because a check that reads the
+    /// destination only afterwards can agree with itself.
+    void readbackProbeSample(uint32_t nonce, bool flip, int dx0, int dy0,
+                             long long &hits, long long &flipHits,
+                             long long &nonZero, long long &samples);
+    /// Release the GL texture (deferred into the bgfx context, like
+    /// freeFBO) and the staging texture.
+    void freeReadbackTargets();
+#endif // !FC_RENDERER_STANDALONE
+
     /// Rasterize one scene triangle draw into the debug scene target
     /// (docs/RenderDebug.md): mode 6 accumulates a fragment count with
     /// the depth test off (additive blend — the overdraw heatmap
@@ -6723,8 +7039,9 @@ public:
     /// anything else: the destination is the QOpenGLWidget's own
     /// framebuffer, and what bgfx hands over is a GL texture name only
     /// while bgfx is running on GL. On any other backend this is a
-    /// no-op and Coin composites the view by itself -- which is why
-    /// capturing a frame no longer goes through here.
+    /// no-op -- which is why capturing a frame no longer goes through
+    /// here, and why blitReadback() exists to composite the frames this
+    /// cannot.
     void blit(Render::RenderStats *stats,
               int dstX = 0, int dstY = 0, int dstH = 0);
 #endif // !FC_RENDERER_STANDALONE

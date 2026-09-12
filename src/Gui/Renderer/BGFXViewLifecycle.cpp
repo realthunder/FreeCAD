@@ -20,6 +20,8 @@
  *                                                                          *
  ****************************************************************************/
 
+#include <cstdlib>
+
 #include "BGFXRendererP.h"
 
 namespace
@@ -70,6 +72,13 @@ BGFXView::~BGFXView()
         subBanks.clear();
     }
     destroy();
+#ifndef FC_RENDERER_STANDALONE
+    // The readback composite's own pair: a bgfx staging texture and a
+    // GL texture in the widget's context. Neither follows the viewport
+    // (ensureReadbackTarget re-creates on a size change), so this is
+    // the only place they go.
+    freeReadbackTargets();
+#endif
     for (auto &v : particles)
         v.second.destroy();
     particles.clear();
@@ -123,6 +132,17 @@ void BGFXView::destroySceneCaches()
 /// resize drops exactly this set and nothing else.
 void BGFXView::destroyTargets()
 {
+    // Who gave the targets back, when the question is why they keep
+    // going. FC_BGFX_TARGET_DEBUG=1, because a rebuild reported at the
+    // top of the frame says only that they were gone by then, and the
+    // destroy that made them gone can be anywhere between two frames.
+    static const bool targetDebug =
+        std::getenv("FC_BGFX_TARGET_DEBUG") != nullptr;
+    if (targetDebug)
+        std::printf("bgfx: destroyTargets view %p widget %p sub %d fbo %d %ux%u\n",
+                    (void *)this, (void *)widget,
+                    int(activeSub), int(bgfxFbo.idx),
+                    unsigned(width), unsigned(height));
     // The recreated moments texture starts empty, so the cached-map
     // hash resets with it (same for the AO/prepass cache and the
     // bulb shadow tiles).
@@ -157,13 +177,20 @@ void BGFXView::destroyTargets()
     // glass body sets it again.
     glassSeen = false;
 #ifndef FC_RENDERER_STANDALONE
-    if (hasFBO) {
-        _BGFXLib.freeFBO(fbo);
-        if (fboDepth)
-            _BGFXLib.freeFBO(fboDepth);
-        fboDepth = 0;
-        hasFBO = false;
-    }
+    dropBlitCache();
+#endif
+}
+
+void BGFXView::dropBlitCache()
+{
+#ifndef FC_RENDERER_STANDALONE
+    if (!hasFBO)
+        return;
+    _BGFXLib.freeFBO(fbo);
+    if (fboDepth)
+        _BGFXLib.freeFBO(fboDepth);
+    fboDepth = 0;
+    hasFBO = false;
 #endif
 }
 
@@ -1745,8 +1772,9 @@ void BGFXView::blit(Render::RenderStats *stats,
         GLuint depthBuffer = bgfx::getInternal(bgfxDepth);
         blitColorId = colorBuffer;
         std::printf("bgfx: blit cache create msaa %d color %u (isTex %d) "
-                    "depth %u\n", msaaSamples, colorBuffer,
-                    int(glIsTexture(colorBuffer)), depthBuffer);
+                    "depth %u (isTex %d)\n", msaaSamples, colorBuffer,
+                    int(glIsTexture(colorBuffer)), depthBuffer,
+                    int(glIsTexture(depthBuffer)));
         // The sampleable scene color is a texture (with MSAA it is
         // bgfx's single-sample resolve texture, resolved by the
         // frame-end framebuffer restore), while the write-only depth
@@ -1763,22 +1791,38 @@ void BGFXView::blit(Render::RenderStats *stats,
                                          GL_RENDERBUFFER, colorBuffer);
         if (!checkFramebufferStatus()) {
             f->glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
-            destroy();
+            dropBlitCache();
             return;
         }
         f->glGenFramebuffers(1, &fboDepth);
         f->glBindFramebuffer(GL_FRAMEBUFFER, fboDepth);
-        f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                                    GL_RENDERBUFFER, depthBuffer);
-        f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
-                                    GL_RENDERBUFFER, depthBuffer);
+        // Asked, not assumed -- the same question the colour attachment
+        // above already asks. bgfx backs a write-only D24S8 target with
+        // a renderbuffer on some drivers and a TEXTURE on others, and
+        // `glFramebufferRenderbuffer` handed a texture name attaches
+        // nothing: the framebuffer comes out "incomplete, missing
+        // attachment" and every frame took the failure path below.
+        // Measured on Windows/GL (RTX 2000 Ada, 2026-09-09), where
+        // that cost ~430ms of a 450ms frame and, on a 17k-object
+        // assembly, meant the scene never survived to be drawn at all.
+        if (glIsTexture(depthBuffer)) {
+            f->glFramebufferTexture2D(GL_FRAMEBUFFER,
+                                      GL_DEPTH_STENCIL_ATTACHMENT,
+                                      GL_TEXTURE_2D, depthBuffer, 0);
+        }
+        else {
+            f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                        GL_RENDERBUFFER, depthBuffer);
+            f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+                                        GL_RENDERBUFFER, depthBuffer);
+        }
         // No color attachment: complete only with the draw/read
         // buffers off.
         glDrawBuffer(GL_NONE);
         glReadBuffer(GL_NONE);
         if (!checkFramebufferStatus()) {
             f->glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
-            destroy();
+            dropBlitCache();
             return;
         }
     }
@@ -1814,4 +1858,700 @@ void BGFXView::blit(Render::RenderStats *stats,
 
     f->glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
 }
+#endif // !FC_RENDERER_STANDALONE
+
+// ---------------------------------------------------------------------
+// The readback composite (docs/DeviceAdoption.md section 2)
+//
+// blit() above is the fast route and it is also the narrow one: it can
+// only transfer a frame bgfx is holding as a GL texture, which is to
+// say a frame bgfx drew on GL. Everything below is the wide route --
+// read the finished frame back to the CPU, upload it into a GL texture,
+// draw that. Slower by construction, and the only thing that works on a
+// backend whose frame is an id<MTLTexture> or a VkImage.
+//
+// It is deliberately measurable step by step. Route D (Qt owns the
+// device, bgfx adopts it) is the destination, and the case for paying
+// its price -- a Qt private-API dependency -- rests on what this route
+// costs. A number taken from a standalone probe is an argument; a
+// number taken inside a real frame, on a real scene, is evidence.
+
+#ifndef FC_RENDERER_STANDALONE
+
+namespace
+{
+
+/// FC_BGFX_READBACK: 0 off, 1 (default) wherever the GL blit cannot
+/// run, 2 always -- including on GL, which is the only way to compare
+/// the two composites on one box, one scene and one camera.
+int readbackMode()
+{
+    static const int mode = [] {
+        const char *v = getenv("FC_BGFX_READBACK");
+        return (v && *v) ? std::atoi(v) : 1;
+    }();
+    return mode;
+}
+
+/// FC_BGFX_READBACK_SYNC: spin frames until the copy lands, turning the
+/// pipelined route into the fully serialized one section 2 measured.
+/// Benchmark only -- it costs the frames it spins.
+bool readbackSync()
+{
+    static const bool on = [] {
+        const char *v = getenv("FC_BGFX_READBACK_SYNC");
+        return v && *v && *v != '0';
+    }();
+    return on;
+}
+
+/// A ceiling on that spin. bgfx normally fills a readback two frames
+/// out; if it has not by here, something is wrong and a frame shown
+/// late beats an application that stops.
+const int kReadbackSyncMaxFrames = 8;
+
+/// FC_BGFX_READBACK_VERIFY: how often to replace the frame with a
+/// SYNTHETIC pattern and then go looking for that pattern in the
+/// destination framebuffer. The value is a period in landed frames --
+/// 1 probes every frame (the strongest form, and the screen shows
+/// noise), 30 probes one frame in thirty. 0 or unset is off.
+///
+/// This exists because every instrument OUTSIDE the process is blind to
+/// this composite. `QWidget::grab()` does not capture the 3D view's GL
+/// content (a plain-Coin control grabs blank too);
+/// `View3DInventorViewer::saveImage` is served by the backend's own
+/// portable frame dump, so it produces the same picture whether the
+/// composite runs or not; and a desktop screen capture needs a
+/// permission the terminal may not hold. Two of those three answer with
+/// a plausible PICTURE rather than with nothing, which is the more
+/// dangerous failure. A timing column cannot tell a quad that drew the
+/// scene from one that drew nothing either.
+///
+/// ! And the obvious in-process check cannot do it. Comparing the
+/// destination against the buffer that was UPLOADED -- the first form
+/// of this -- reported before and after both at 100.00% with a worst
+/// channel delta of 0, unchanged at 34 degrees of camera rotation per
+/// frame, which no real measurement of a framebuffer can do. Two
+/// reasons, and the fix has to answer both. The two samples shared one
+/// read path and one comparison source, so they could not disagree;
+/// and an image compared against itself matches wherever both sides are
+/// zero, which a failed glReadPixels guarantees, since it leaves the
+/// destination buffer as the zeros it was allocated with.
+///
+/// So the pattern is DERIVED from a per-frame nonce at compare time,
+/// never read back out of the buffer that was uploaded; nothing else in
+/// the pipeline can produce it; and no channel of it is ever zero, so a
+/// read that did not happen cannot match it.
+int readbackVerifyPeriod()
+{
+    static const int period = [] {
+        const char *v = getenv("FC_BGFX_READBACK_VERIFY");
+        if (!v || !*v || *v == '0')
+            return 0;
+        const int n = std::atoi(v);
+        return n > 0 ? n : 1;
+    }();
+    return period;
+}
+
+/// FC_BGFX_READBACK_DELAY: refuse to upload for the first N composite
+/// frames, holding the view in the state it has before any copy has
+/// landed. That state lasts about two frames in normal running, which
+/// is too short to photograph from outside the process -- and it is
+/// where a real defect lived: the composite returned without drawing
+/// AND without clearing, so the viewport kept whatever uninitialized
+/// content the widget's framebuffer happened to hold (black with a
+/// stale block, on Windows) until the first copy arrived.
+///
+/// Every other instrument here looks past that window by construction:
+/// the verify probes frames that LANDED, the timings average over a
+/// second, and the picture legs take their shot after 40 warm-up
+/// redraws. The defect was found by a person watching the window open.
+/// This knob is what makes it reproducible without one.
+int readbackDelayFrames()
+{
+    static const int n = [] {
+        const char *v = getenv("FC_BGFX_READBACK_DELAY");
+        return (v && *v) ? std::atoi(v) : 0;
+    }();
+    return n;
+}
+
+/// One texel of the probe pattern: a field keyed on (nonce, x, y), so
+/// that finding it in the destination cannot be explained by anything
+/// else having drawn there -- no scene, no clear, no stale frame.
+///
+/// Biased to 40..216 on every channel, which is not cosmetic. Black is
+/// what a failed read leaves behind and what an untouched framebuffer
+/// holds, and a pattern that is never black cannot be matched by
+/// either.
+inline void readbackProbeTexel(uint32_t nonce, int x, int y,
+                               unsigned char *out)
+{
+    uint32_t h = nonce * 2654435761u
+               ^ uint32_t(x) * 2246822519u
+               ^ uint32_t(y) * 3266489917u;
+    h ^= h >> 15;
+    h *= 2246822519u;
+    h ^= h >> 13;
+    out[0] = (unsigned char)(40 + (h & 0xffu) * 176u / 255u);
+    out[1] = (unsigned char)(40 + ((h >> 8) & 0xffu) * 176u / 255u);
+    out[2] = (unsigned char)(40 + ((h >> 16) & 0xffu) * 176u / 255u);
+    out[3] = 0xff;
+}
+
+/// FC_BGFX_READBACK_SLOTS: copies kept in flight. Three is the default
+/// because bgfx fills a readback about two frames after the copy is
+/// queued, so three keeps one landing every frame; one turns the ring
+/// back into the single buffer this started as, which is the shape to
+/// measure the latency penalty with.
+int readbackSlotCount()
+{
+    static const int slots = [] {
+        const char *v = getenv("FC_BGFX_READBACK_SLOTS");
+        const int n = (v && *v) ? std::atoi(v) : 3;
+        return n < 1 ? 1 : (n > 4 ? 4 : n);
+    }();
+    return slots;
+}
+
+}  // namespace
+
+bool BGFXView::readbackCompositeActive() const
+{
+    const int mode = readbackMode();
+    if (mode <= 0)
+        return false;
+    if (mode >= 2)
+        return true;
+    const bgfx::RendererType::Enum type = bgfx::getRendererType();
+    return type != bgfx::RendererType::OpenGL
+        && type != bgfx::RendererType::OpenGLES;
+}
+
+bool BGFXView::readbackInFlight() const
+{
+    for (const auto &slot : readbackSlots)
+        if (slot.readyFrame)
+            return true;
+    return false;
+}
+
+bool BGFXView::ensureReadbackTarget()
+{
+    if (width == 0 || height == 0)
+        return false;
+    // Same choice, and the same reason, as ensureCaptureTargets: a bgfx
+    // blit demands matching formats, so the staging textures take the
+    // format of whatever the frame actually finished in -- the encoded
+    // RGBA8 present output when a colour transform is on, the scene
+    // colour otherwise, and that is RGBA16F while colour managed.
+    const bool encoded = outputTransform != Render::OutputConfig::None
+        && bgfx::isValid(presentTex);
+    const bgfx::TextureFormat::Enum want = (!encoded && hdrScene)
+        ? bgfx::TextureFormat::RGBA16F : bgfx::TextureFormat::RGBA8;
+    const int slots = readbackSlotCount();
+    if (int(readbackSlots.size()) == slots && readbackW == width
+            && readbackH == height && readbackFormat == want)
+        return true;
+    // A copy in flight owns its buffer: bgfx writes into it from the
+    // render thread, at a frame that has not arrived. Resizing or
+    // freeing it here would hand that thread a dangling pointer. The
+    // frames that follow drain the ring and one of them rebuilds it.
+    if (readbackInFlight())
+        return false;
+    for (auto &slot : readbackSlots)
+        if (bgfx::isValid(slot.tex))
+            bgfx::destroy(slot.tex);
+    readbackSlots.clear();
+    readbackSlots.resize(size_t(slots));
+    const size_t texel = (want == bgfx::TextureFormat::RGBA16F) ? 8 : 4;
+    for (auto &slot : readbackSlots) {
+        slot.tex = bgfx::createTexture2D(width, height, false, 1, want,
+                BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
+        if (!bgfx::isValid(slot.tex)) {
+            RENDER_ERR("could not create the readback composite's staging"
+                       " texture; this backend cannot reach the screen");
+            readbackSlots.clear();
+            return false;
+        }
+        slot.pixels.assign(size_t(width) * height * texel, 0);
+    }
+    readbackNextSlot = 0;
+    readbackW = width;
+    readbackH = height;
+    readbackFormat = want;
+    // Not sized when it is not needed: with an RGBA8 readback the
+    // upload reads the slot's buffer directly and this stays empty.
+    if (texel == 4)
+        readbackRGBA.clear();
+    else
+        readbackRGBA.assign(size_t(width) * height * 4, 0);
+    return true;
+}
+
+void BGFXView::queueReadbackComposite()
+{
+    const int64_t t0 = bx::getHPCounter();
+    if (!ensureReadbackTarget())
+        return;
+    // A free slot, or none -- the ring is sized so that the steady
+    // state always has one, and a frame that finds it full simply does
+    // not queue rather than stalling to make room.
+    const int n = int(readbackSlots.size());
+    int pick = -1;
+    for (int i = 0; i < n; ++i) {
+        const int idx = (readbackNextSlot + i) % n;
+        if (!readbackSlots[size_t(idx)].readyFrame) {
+            pick = idx;
+            break;
+        }
+    }
+    if (pick < 0)
+        return;
+    const bool encoded = outputTransform != Render::OutputConfig::None
+        && bgfx::isValid(presentTex);
+    const bgfx::TextureHandle source = encoded ? presentTex : bgfxColor;
+    if (!bgfx::isValid(source))
+        return;
+    ReadbackSlot &slot = readbackSlots[size_t(pick)];
+    // ViewCapture is the last view id, so this copies the finished
+    // image -- present pass included -- and not a frame in progress.
+    bgfx::blit(vid(ViewCapture), slot.tex, 0, 0, source);
+    slot.readyFrame = bgfx::readTexture(slot.tex, slot.pixels.data());
+    if (!slot.readyFrame)
+        return;
+    // Stamped by noteReadbackFrame once the boundary has run: the frame
+    // this blit EXECUTES in is the one bgfx::frame() is about to
+    // return, and that is what the latency is measured from.
+    slot.queuedFrame = 0;
+    readbackNextSlot = (pick + 1) % n;
+    readbackStats.queueMs += 1000.0 * double(bx::getHPCounter() - t0)
+        / double(bx::getHPFrequency());
+}
+
+void BGFXView::noteReadbackFrame(uint32_t frameNum)
+{
+    for (auto &slot : readbackSlots)
+        if (slot.readyFrame && !slot.queuedFrame)
+            slot.queuedFrame = frameNum;
+}
+
+uint32_t BGFXView::syncReadback(uint32_t frameNum)
+{
+    if (!readbackSync())
+        return frameNum;
+    uint32_t want = 0;
+    for (const auto &slot : readbackSlots)
+        if (slot.readyFrame > want)
+            want = slot.readyFrame;
+    if (!want || frameNum >= want)
+        return frameNum;
+    const int64_t t0 = bx::getHPCounter();
+    for (int i = 0; i < kReadbackSyncMaxFrames && frameNum < want; ++i)
+        frameNum = bgfx::frame();
+    readbackStats.waitMs += 1000.0 * double(bx::getHPCounter() - t0)
+        / double(bx::getHPFrequency());
+    return frameNum;
+}
+
+void BGFXView::freeReadbackTargets()
+{
+    // ! A slot bgfx still owes a write to is NOT safe to drop here, and
+    // there is nothing this can do about it: the buffer is a member and
+    // it dies with the view. It is the same exposure the portable
+    // capture and the cull audit already carry, and the same mitigation
+    // -- teardown happens on the main thread with the frame loop
+    // stopped, so there is no frame in flight to land.
+    for (auto &slot : readbackSlots)
+        if (bgfx::isValid(slot.tex))
+            bgfx::destroy(slot.tex);
+    readbackSlots.clear();
+    readbackFormat = bgfx::TextureFormat::Count;
+    readbackW = readbackH = 0;
+    readbackNextSlot = 0;
+    if (readbackGLTex) {
+        _BGFXLib.freeTexture(readbackGLTex);
+        readbackGLTex = 0;
+    }
+    readbackGLW = readbackGLH = 0;
+    readbackGLFilled = false;
+}
+
+void BGFXView::readbackProbeSample(uint32_t nonce, bool flip,
+                                   int dx0, int dy0,
+                                   long long &hits, long long &flipHits,
+                                   long long &nonZero, long long &samples)
+{
+    std::vector<unsigned char> got(size_t(readbackGLW) * readbackGLH * 4);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    // Drain first, so the error this reads is this read's own.
+    while (glGetError() != GL_NO_ERROR) { }
+    glReadPixels(dx0, dy0, readbackGLW, readbackGLH,
+                 GL_RGBA, GL_UNSIGNED_BYTE, got.data());
+    const GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        // A read that failed is not a miss. Counting it as one would
+        // report "the composite drew nothing" for a broken instrument,
+        // which is the exact confusion this whole pass exists to end.
+        readbackStats.verifyGLError = uint32_t(err);
+        return;
+    }
+    unsigned char want[4], wantFlip[4];
+    for (int y = 0; y < readbackGLH; y += 4) {
+        // Row mapping, derived rather than guessed -- it was inverted
+        // once already and the verify then compared the mirror of what
+        // the quad drew, which reads exactly like "the composite drew
+        // nothing".
+        //
+        // The upload puts source row 0 at v=0; the quad gives its
+        // BOTTOM vertex v0; glReadPixels returns rows from the bottom
+        // up. So under flip the destination row y holds source row
+        // h-1-y, and without it, source row y.
+        //
+        // Both mappings are scored, because they cost one hash each and
+        // they turn the single most likely defect in this composite --
+        // an upside-down frame -- from an unexplained low score into a
+        // named one.
+        const int sy = flip ? (readbackGLH - 1 - y) : y;
+        const int sf = flip ? y : (readbackGLH - 1 - y);
+        const unsigned char *b = got.data() + size_t(y) * readbackGLW * 4;
+        for (int x = 0; x < readbackGLW; x += 4) {
+            readbackProbeTexel(nonce, x, sy, want);
+            readbackProbeTexel(nonce, x, sf, wantFlip);
+            int d = 0, df = 0;
+            for (int c = 0; c < 3; ++c) {
+                d = std::max(d, std::abs(int(b[x * 4 + c]) - int(want[c])));
+                df = std::max(df,
+                        std::abs(int(b[x * 4 + c]) - int(wantFlip[c])));
+            }
+            // 2, not 0: the destination may be a different bit depth or
+            // carry a colour transform. A tolerance this tight still
+            // cannot be met by an unrelated image.
+            if (d <= 2)
+                ++hits;
+            if (df <= 2)
+                ++flipHits;
+            if (b[x * 4] || b[x * 4 + 1] || b[x * 4 + 2])
+                ++nonZero;
+            ++samples;
+        }
+    }
+}
+
+void BGFXView::blitReadback(uint32_t frameNum, int dstX, int dstY,
+                            int dstH)
+{
+    ++readbackStats.frames;
+    // Cleared for the whole frame, not just where it is set. A STALE
+    // frame redraws the previous image -- which on the frame after a
+    // probe is the previous PATTERN -- and a nonce left standing from
+    // that probe would then be found by the `before` sample, since the
+    // previous frame's quad really did draw it. That reads as
+    // INSTRUMENT BLIND, condemning a composite that is working. A probe
+    // is only ever the frame that uploaded one.
+    readbackProbeNonce = 0;
+
+    // ---- has anything landed? ----
+    //
+    // bgfx says which frame will have filled each buffer, and until
+    // then it is being written from the render thread. Show the NEWEST
+    // that has landed and free every other landed one unread: an older
+    // copy is a picture of a camera the user has already turned past,
+    // and uploading it would put the frame backwards.
+    //
+    // A frame that finds nothing landed redraws the previous image
+    // rather than waiting. The route is pipelined, so what is on screen
+    // trails the scene by a frame or two, and that lag is as much its
+    // cost as the milliseconds are. FC_BGFX_READBACK_SYNC removes it,
+    // at the price section 2 quotes.
+    int fresh = -1;
+    for (int i = 0; i < int(readbackSlots.size()); ++i) {
+        ReadbackSlot &slot = readbackSlots[size_t(i)];
+        if (!slot.readyFrame || frameNum < slot.readyFrame)
+            continue;
+        if (fresh < 0
+                || slot.readyFrame > readbackSlots[size_t(fresh)].readyFrame)
+            fresh = i;
+    }
+    // The hold (FC_BGFX_READBACK_DELAY) pretends nothing has landed, so
+    // the not-yet-filled path below runs for as long as asked.
+    if (fresh >= 0 && readbackDelayFrames() > 0
+            && int(readbackStats.frames) <= readbackDelayFrames())
+        fresh = -1;
+    if (fresh >= 0) {
+        ++readbackStats.landed;
+        ReadbackSlot &slot = readbackSlots[size_t(fresh)];
+        if (slot.queuedFrame)
+            readbackStats.latencySum +=
+                uint32_t(slot.readyFrame - slot.queuedFrame);
+
+        const unsigned char *rgba = slot.pixels.data();
+        if (readbackFormat == bgfx::TextureFormat::RGBA16F) {
+            // The colour-managed case: the scene colour is linear
+            // half-float and no GL upload takes that. Decoding it here
+            // is the honest cost of running the composite without an
+            // output transform to do it on the GPU, and it is why the
+            // report prints convert separately -- it is not the route's
+            // cost, it is the configuration's.
+            const int64_t t0 = bx::getHPCounter();
+            const size_t n = size_t(readbackW) * readbackH * 4;
+            const uint16_t *src =
+                reinterpret_cast<const uint16_t *>(slot.pixels.data());
+            for (size_t i = 0; i < n; ++i) {
+                const float v = bx::halfToFloat(src[i]);
+                // NaN walks through min/max untouched and lround(NaN)
+                // is undefined -- the same trap the capture decode
+                // already paid for.
+                const float f = (v == v && v - v == 0.0f)
+                    ? std::min(std::max(v, 0.0f), 1.0f) : 0.0f;
+                readbackRGBA[i] = (unsigned char) std::lround(f * 255.0f);
+            }
+            rgba = readbackRGBA.data();
+            readbackStats.convertMs +=
+                1000.0 * double(bx::getHPCounter() - t0)
+                / double(bx::getHPFrequency());
+        }
+
+        // ---- the copy ----
+        //
+        // RGBA8 / UNSIGNED_BYTE deliberately, not BGRA: section 2
+        // measured RGBA 2.9x faster here and 3.5x on the discrete box,
+        // because BGRA falls off the driver's fast DMA route rather
+        // than merely costing a swizzle. bgfx hands back RGBA already,
+        // so there is nothing to trade away for it.
+        // ---- probe frames (FC_BGFX_READBACK_VERIFY) ----
+        //
+        // Every Nth landed frame uploads a synthetic pattern INSTEAD of
+        // the scene, and the verify below then asks whether that exact
+        // pattern reached the destination framebuffer. Replacing the
+        // real frame is the point: the pattern travels the whole path
+        // the frame travels -- this texture, this upload, this quad --
+        // so a pass means that path works, and nothing but this quad
+        // could have put those texels there.
+        //
+        // Generated before the upload timer starts: the hashing is the
+        // instrument's cost, not the composite's.
+        const int verifyPeriod = readbackVerifyPeriod();
+        if (verifyPeriod > 0
+                && (readbackStats.landed % uint32_t(verifyPeriod)) == 0) {
+            // Never 0 -- that is the "not a probe frame" value.
+            readbackProbeNonce = (readbackStats.landed << 1) | 1u;
+            readbackProbePixels.resize(size_t(readbackW) * readbackH * 4);
+            for (int y = 0; y < int(readbackH); ++y) {
+                unsigned char *row = readbackProbePixels.data()
+                    + size_t(y) * readbackW * 4;
+                for (int x = 0; x < int(readbackW); ++x)
+                    readbackProbeTexel(readbackProbeNonce, x, y, row + x * 4);
+            }
+            rgba = readbackProbePixels.data();
+        }
+
+        const int64_t t0 = bx::getHPCounter();
+        if (!readbackGLTex) {
+            glGenTextures(1, &readbackGLTex);
+            readbackGLW = readbackGLH = 0;
+            readbackGLFilled = false;
+        }
+        glBindTexture(GL_TEXTURE_2D, readbackGLTex);
+        if (readbackGLW != readbackW || readbackGLH != readbackH) {
+            // Re-specify only on a resize; the steady state below is a
+            // single glTexSubImage2D into storage that already exists.
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, readbackW, readbackH, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+            readbackGLW = readbackW;
+            readbackGLH = readbackH;
+        }
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, readbackW, readbackH,
+                        GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        readbackGLFilled = true;
+        readbackStats.uploadMs += 1000.0 * double(bx::getHPCounter() - t0)
+            / double(bx::getHPFrequency());
+    }
+    else {
+        ++readbackStats.stale;
+    }
+    // Every landed slot goes back to the ring, read or skipped.
+    for (auto &slot : readbackSlots) {
+        if (slot.readyFrame && frameNum >= slot.readyFrame) {
+            slot.readyFrame = 0;
+            slot.queuedFrame = 0;
+        }
+    }
+
+    if (!readbackGLFilled) {
+        // Nothing has landed YET -- the first frames of a pipelined
+        // route legitimately have no image to show. Returning here is
+        // what left the viewport holding uninitialized garbage until
+        // the first copy arrived: black with a stale block of whatever
+        // the framebuffer last contained, seen on Windows as a pink
+        // rectangle, and persisting until the user did something that
+        // forced a redraw.
+        //
+        // Nothing else was going to paint it. The viewer keys its own
+        // clear on whether the backend rendered
+        // (View3DInventorViewer::renderScene, `externalRendered`), and
+        // the backend DID render -- the frame simply has not reached
+        // the widget yet -- so the viewer skipped its clear; and at
+        // render cache mode 3 Coin emits no per-frame geometry to
+        // cover it either.
+        //
+        // So this route clears when it cannot draw. Exactly the
+        // argument the mandatory depth clear below already makes: this
+        // composite suppresses the viewer's clear, so this composite
+        // owns it. That reasoning covers colour just as much as depth,
+        // and the first version applied it to depth alone.
+        //
+        // Scissored to the destination rect, or a sub-view would clear
+        // its neighbours (docs/SplitViews.md) -- the same care the
+        // viewer's own canvas-residue fallback takes.
+        const int cx0 = dstX;
+        const int cy0 = dstH > 0 ? dstH - dstY - height : 0;
+        GLboolean hadScissor = glIsEnabled(GL_SCISSOR_TEST);
+        GLint oldBox[4];
+        glGetIntegerv(GL_SCISSOR_BOX, oldBox);
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(cx0, cy0, width, height);
+        // The frame's own background colour, so the view comes up in
+        // the colour it is about to be drawn in rather than flashing
+        // black. Alpha 0 matches the clear the viewer would have done
+        // itself had it not been told to stand aside.
+        const uint32_t c = bgFillColor;
+        glClearColor(float((c >> 24) & 0xff) / 255.0f,
+                     float((c >> 16) & 0xff) / 255.0f,
+                     float((c >> 8) & 0xff) / 255.0f,
+                     0.0f);
+        glDepthMask(GL_TRUE);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glScissor(oldBox[0], oldBox[1], oldBox[2], oldBox[3]);
+        if (!hadScissor)
+            glDisable(GL_SCISSOR_TEST);
+        checkGLError("readback composite first-frame clear");
+        return;
+    }
+
+    // ---- the quad ----
+    //
+    // Fixed function on purpose. The destination is the QOpenGLWidget's
+    // framebuffer, and that context is a COMPATIBILITY one in every
+    // build of this application -- Coin's drawing needs it, which on
+    // macOS is also what caps it at GL 2.1. So the one thing guaranteed
+    // to be there is GL 1.1, and a shader pipeline would have to be
+    // written twice to cover the same ground. glPushAttrib carries the
+    // whole state block back for Coin, which traverses next.
+    const int64_t t0 = bx::getHPCounter();
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    // A sub-view lands at its rect of the destination surface; the
+    // caller's y is top-left, GL's is bottom-left. Same arithmetic as
+    // blit(), so the two composites place a sub-view identically.
+    const int dx0 = dstX;
+    const int dy0 = dstH > 0 ? dstH - dstY - height : 0;
+    glViewport(dx0, dy0, readbackGLW, readbackGLH);
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_SCISSOR_TEST);
+    // The GL blit transfers depth as well as colour, so Coin's chrome
+    // depth-tests against the frame it draws over. This route cannot:
+    // reading depth back would double its cost and there is no portable
+    // upload for it. A CLEARED depth buffer is the honest substitute --
+    // chrome then draws over the frame unconditionally, which is what
+    // the overlay feeds want anyway. It is not optional: nothing else
+    // clears it, because a backend-rendered frame suppresses the
+    // viewer's own clear (View3DInventorViewer::renderScene), so
+    // without this Coin would test against whatever the last frame
+    // left. Scissor is already off above, or the clear would be
+    // clipped.
+    glDepthMask(GL_TRUE);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glDepthMask(GL_FALSE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, readbackGLTex);
+    // REPLACE, not the default MODULATE: whatever colour the previous
+    // traversal left current would otherwise tint the frame.
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+
+    // Declared here rather than at the draw below because the verify
+    // pass needs it too: it decides which destination row a source row
+    // should have landed on.
+    const bool flip = !bgfx::getCaps()->originBottomLeft;
+
+    // The flip lives in the texture coordinates rather than in the CPU
+    // buffer, where it would be a full image copy per frame. GL samples
+    // bottom-up; a backend whose own origin is top-left (Metal, D3D)
+    // read back its rows in that order and needs v inverted.
+    const float v0 = flip ? 1.0f : 0.0f;
+    const float v1 = flip ? 0.0f : 1.0f;
+    // The other half of the A/B (see the verify block below the quad):
+    // what the destination held BEFORE this quad drew.
+    if (readbackProbeNonce && readbackGLW > 0 && readbackGLH > 0) {
+        long long ignoredFlip = 0, ignoredNonZero = 0, ignoredSamples = 0;
+        readbackProbeSample(readbackProbeNonce, flip, dx0, dy0,
+                            readbackStats.verifyBeforeHits, ignoredFlip,
+                            ignoredNonZero, ignoredSamples);
+    }
+
+    glBegin(GL_TRIANGLE_STRIP);
+    glTexCoord2f(0.0f, v0); glVertex2f(-1.0f, -1.0f);
+    glTexCoord2f(1.0f, v0); glVertex2f( 1.0f, -1.0f);
+    glTexCoord2f(0.0f, v1); glVertex2f(-1.0f,  1.0f);
+    glTexCoord2f(1.0f, v1); glVertex2f( 1.0f,  1.0f);
+    glEnd();
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // Did those pixels actually land? Read the destination back and
+    // compare it with what was uploaded. Nothing outside the process
+    // can answer this on macOS (see readbackVerify), and "the composite
+    // cost 0.35 ms" is true of a quad that drew nothing at all.
+    //
+    // ! Measured BEFORE the quad as well as after, and that is the
+    // point rather than a refinement. A check that only reads the
+    // destination afterwards can agree with itself: if anything else
+    // had already put that image there, the comparison passes and
+    // proves nothing about this quad. Three separate instruments in
+    // this session returned a correct-looking answer for exactly that
+    // reason. `before` low and `after` high is the only pair that says
+    // the quad is what drew it -- and a `before` that is ALSO high is
+    // the instrument telling you it cannot see anything, which is rarer
+    // than it sounds: most instruments fail by returning a number, not
+    // by reporting that the number is meaningless.
+    //
+    // ! Do NOT delete the `before` sample once it has read low a
+    // hundred runs in a row. It will look redundant and it is the
+    // entire warrant for the other number.
+    if (readbackProbeNonce && readbackGLW > 0 && readbackGLH > 0) {
+        ++readbackStats.verifyProbes;
+        readbackProbeSample(readbackProbeNonce, flip, dx0, dy0,
+                            readbackStats.verifyAfterHits,
+                            readbackStats.verifyFlipHits,
+                            readbackStats.verifyAfterNonZero,
+                            readbackStats.verifySamples);
+    }
+
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glPopAttrib();
+    checkGLError("readback composite");
+    readbackStats.drawMs += 1000.0 * double(bx::getHPCounter() - t0)
+        / double(bx::getHPFrequency());
+}
+
 #endif // !FC_RENDERER_STANDALONE

@@ -1039,6 +1039,28 @@ leg does need a logged-in window server, so it cannot run over a bare ssh
 session. `--gpu` is a no-op there -- every macOS run is already on the
 device.
 
+WARNING: **On macOS the golden tests need somebody logged in, and the
+failure says nothing about it.** The registration gate runs
+`find_program(xvfb-run)` on Linux and lets **Darwin through
+unconditionally** -- there is no xvfb to find on macOS, because the
+capture draws on the window server of the logged-in session. So the
+gate asks whether a display *could* be raised and takes yes for an
+answer on Darwin. Run `ctest` on a Mac sitting at the login window and
+both golden legs register and then fail with
+
+```
+Cannot create window: no screens available
+Abort trap: 6
+CAPTURE FAILED (no DONE within 420s)
+```
+
+which looks exactly like real golden divergence. The three-way
+confirmation, since the error text is useless on its own: `who` prints
+nothing, `/dev/console` is owned by `root` rather than a user, and
+`launchctl managername` says **Background** rather than **Aqua**. Log in
+at the console and re-run; an ssh or background session cannot do it at
+all. This is the first thing a macOS CI runner would hit.
+
 `tests/render/CMakeLists.txt` requires `xvfb-run` **on Linux only**.
 Requiring it everywhere is why the golden tests on macOS did not merely
 skip: they were never registered, so a `ctest` run there was short two
@@ -1256,6 +1278,30 @@ of the projection at all. It was never evidence about clip space. A
 mask comparison that does not try `flipud` first can align two lobes of
 a symmetric silhouette and read as confirmation.
 
+WARNING: **Identical divergent-pixel counts across probes of unrelated
+quantities mean the probe is not reaching the quantity -- you are
+measuring the frame, not the value.** From the Vulkan NaN hunt
+(2026-09-08): three probes aimed at three different quantities returned
+4827/16513/4456, 4818/16493/4457 and 4826/16512/4456. Counts that close
+across unrelated subjects are not corroboration, they are the
+instrument describing itself, and four "eliminations" built on them
+were void -- two could not have produced a positive result even against
+a guilty subject, because the defect was a NaN and `0 * NaN = NaN`
+survives every gate that multiplies a suspect term out. Same species as
+the flip-before-shift warning above: a measurement that confirms
+whatever you point it at.
+
+The discipline that follows: **self-test the instrument before trusting
+a negative.** Light the classifier deliberately -- a `sqrt` of a
+negative from a uniform lit 85k pixels and made the negatives
+trustworthy -- and note that `(x-x)/(x-x)` does NOT work, the compiler
+folds it. A classifier that has not been shown to fire is not evidence.
+The same rule applies to a unit test: `ClipConvention_tests_run` was
+checked by injecting the regression it exists to catch (folding the w
+row alongside the z row), which failed 4 of its 7 cases -- and notably
+NOT the case that asserts the measured pair, which passed throughout.
+A test suite nobody has watched fail is a suite of unknown strength.
+
 **The containment check is `scripts/render_contain.py`** (added 2026-09-08;
 the diagnosis above was done with an ad-hoc script that was never committed).
 It builds the geometry mask from the depth stage -- mode 1 is the normalized
@@ -1404,7 +1450,7 @@ to intersect the divergent-pixel mask with the mode 1 geometry mask,
 and the answer was not close:
 
 ```
-frame            858 x 608 = 521664
+frame            858 x 608 = 521664   (Linux/OpenGL capture)
 geometry px      106114
 divergent px     41431
   on geometry    0
@@ -1438,6 +1484,43 @@ the artefact -- so the action is to re-bless `refs/raster`, on a box
 that records its device. It is an OpenGL set, so that box is the Linux
 one; macOS cannot produce a GL capture here at all (Apple caps the
 compatibility profile at 2.1).
+
+**And the 0.3527% Metal-vs-OpenGL beauty figure is NOT this defect**, which
+is worth stating because it was the obvious next thread and it is a dead
+one. Re-measured 2026-09-08, a fresh Metal capture against the
+**re-blessed** `refs/raster`: at the default tolerance it reproduces
+0.3527% of beauty pixels and 0.1248% of AO pixels **exactly**, the same
+figures recorded on 2026-09-07 against the stale reference -- because the
+stale background differed by at most 1 and tolerance 3 never saw it. The
+split settles it:
+
+```
+vs re-blessed refs/raster
+tol 0:  10673 px (2.0460%)   on geometry 6216   on background  4457
+tol 3:   1840 px (0.3527%)   on geometry 1840   on background     0
+vs the stale refs/raster (219a02e), same Metal capture
+tol 0:  46540 px (8.9215%)   on geometry 6216   on background 40324
+tol 3:   1840 px (0.3527%)   on geometry 1840   on background     0
+max channel delta 108
+```
+
+Every pixel of the 0.3527% is on geometry and none on background, so it is
+a genuine backend difference and always was. What the re-blessing did fix
+is visible at tolerance zero: for the same Metal capture, background
+divergence against the stale reference was 40324 px and against the
+re-blessed one is 4457. What remains is 1-LSB noise between two different
+backends, expected, and why `refs/*-metal` exists as a separate set.
+Geometry divergence is 6216 px against either reference, which is the
+consistency check -- re-blessing touched only background pixels, so the
+geometry figure must not move, and it does not.
+
+CAUTION: **the 41431 px above is the Linux/OpenGL capture, not this
+one.** Both are the same frame's background population sitting on the
+same rounding boundary against the same stale reference, so they land
+within a per-cent of each other -- 41431 on GL, 40324 on Metal -- and
+that closeness is exactly what makes them easy to quote
+interchangeably. An earlier draft of this section did precisely that.
+They are different measurements on different backends.
 
 And the point that costs nothing to state: **the `device` field would
 have answered this in one step instead of two sessions.** The four
@@ -2001,3 +2084,104 @@ now compare name-level identity.
 
 Phases 1+2 are the minimum end-to-end slice: set a mode from Python, capture
 a real-GPU frame with metadata, diff it.
+
+## 8. The "dotted far edges" investigation, closed to two causes
+
+Symptom as reported: eight `Part::Box` in a row, bgfx Metal, render cache 3 --
+the boxes draw their faces, but each box shows its two far-side edges DOTTED
+while the near three look solid.
+
+**It is two unrelated things stacked, and neither is a depth or shader bug.**
+
+### 8.1 `CoarseTessellation` withholds the real edge draws for ~0.5s
+
+For roughly half a second after the geometry appears, the per-object LINE and
+POINT draws are not submitted at all. The per-frame draw tally by material
+type goes
+
+    tri=41 line=4  point=0     held for ~15 frames
+    tri=41 line=12 point=8     from the frame the exact rung lands
+
+The eight new line draws are `w=2.000 segs=12` -- one per box, 12 segments for
+a box's 12 edges, and the width matches the objects' `ViewObject.LineWidth`
+of 2.0. Confirmed by varying the scene: one box gives `line=5`, eight give
+`line=12`.
+
+`CoarseTessellation` (RenderParams, default **2**) is the trigger, isolated by
+flipping one knob at a time and measuring black-edge pixels at t=0.0 and t=1.0:
+
+    CoarseTessellation = -1     2793 / 2793   <-- the only one that matters
+    CoarseDeferFaces   = -1       66 / 2793
+    LevelTolerance     = 0        66 / 2793
+    LevelScale         = 1        66 / 2793
+    GpuMemoryBudgetMB  = 1<<20    66 / 2793
+    BackgroundReleaseDelay = 0    66 / 2793
+    ProgressiveLoad    = false    66 / 2793
+
+Exact-up-front removes the WINDOW, not the end state -- both reach
+`line=12 point=8` eventually.
+
+**Still open.** The coarse rung's vertex caches DO carry the edge data:
+`line=24 point=8` captured per box, emitted with `ctxok=1`, and present in the
+depth-0 map handed over (`tri=8 line=8 point=8`). So this is not "the coarse
+mesh has no edges" -- it is edge data that exists in the published map and does
+not reach the DrawCall list. For a box, coarse and exact tessellation are
+identical anyway (planar faces, twelve straight edges), so suppressing its
+edges buys nothing. The next instrument belongs on the renderer's INGESTION,
+where a vcachemap becomes DrawCalls.
+
+### 8.2 The cavity effect supplies a convincing substitute
+
+`Cavity` (RenderParams, default **true**, CavityValley 1.0 / CavityRidge 0.5)
+is a screen-space crease detector. Diffed on against off inside the broken
+window it changes 1501 px, pulling the face from (160,160,181) to
+(124,124,140) -- a GREY mark sitting exactly on the box edges.
+
+    cavity ON,  real edges missing -> grey interior edges, silhouette bare
+                                      except a scatter of black pixels
+    cavity OFF, real edges missing -> a FLAT FEATURELESS HEXAGON
+    real edges present             -> all nine edges black
+
+**That asymmetry is the whole reported symptom.** Cavity darkens where two
+surfaces fold together (the interior "Y" edges) and produces NOTHING at a
+silhouette, where the surface folds against the background and there is no
+adjacent surface to crease against. So with the line draws missing, interior
+edges read SOLID and outer ones read DOTTED -- exactly "two far-side edges
+dotted, near three solid".
+
+### 8.3 What this retired
+
+- **The camera was never a variable.** `setCameraOrientation()` and `fitAll()`
+  ANIMATE; a script taking one redraw per shot photographs the animation in
+  flight. That is the whole of "edges draw at one camera and not another" and
+  of "the first capture in a process is always the worst". A settled
+  axonometric capture is correct: nine crisp black edges on all eight cubes.
+- **An earlier identification of the edge draw was the wrong draw.** A
+  `segs=144 w=1.500` line draw was taken for the box edges; it is scene
+  furniture, present from frame 2 and UNCHANGED by box count. A discard-shader
+  experiment therefore killed something that was never drawing the edges,
+  which is why the picture did not change.
+- Ruled out and not to be re-derived: temporal accumulation (`accumSamples=0`
+  in this configuration), the capture budget (`CaptureBudgetMS=0`, which
+  disables the deferral outright, changes nothing), `DisplayMode` (already
+  `Flat Lines` at t=0), `spliceFrom` (instrumented, never fires here),
+  `ProgressiveLoad`, `VisualFillOnPool`, `WorkerVertexCache`.
+
+### 8.4 Two instrument lessons, which cost more than the bug
+
+- **A threshold chosen for one feature silently answers a different
+  question.** A `dark = r,g,b < 60` pixel count is BLIND to the cavity edge,
+  which is grey at 124-145. Every "no edges at all" measured that way means
+  "no BLACK edges", not "nothing visible". Diff two RENDERS (effect on vs off)
+  rather than thresholding one.
+- **Identify a draw by VARYING THE SCENE, not by assuming.** Changing the box
+  count is what separated the per-object edge draws from the furniture. The
+  earlier session assumed the one dark line draw in the dump was the one it
+  was looking for, and reasoned from it for an afternoon.
+
+Repro: eight boxes at `Placement.Base = (i*10,0,0)`, resize 1200x900,
+`viewAxonometric()`, `updateGui()`, `fitAll()`, then shoot at real-time marks
+with `v.saveImage(p)` and NO size argument (a size sends the capture through
+`imageFromRenderer`'s scale step -- see section 4). Metric: pixels differing
+from the background column by more than 24, of which those under 60 in all
+channels are black edges. 66 = broken, ~2793 = correct.

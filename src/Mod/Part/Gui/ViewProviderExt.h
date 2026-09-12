@@ -560,6 +560,12 @@ protected:
     /// and is waiting its slice; a restore asks for the same visual more
     /// than once, and the flag keeps it queued only the first time.
     bool VisualDeferred = false;
+    /// This visual was parked because the shape had not arrived, not
+    /// because a progressive load asked for it. It bounds that park to
+    /// one attempt: if the shape is STILL missing when the slice runs,
+    /// the empty build stands rather than parking again, so a document
+    /// whose content never arrives cannot queue slices forever.
+    bool VisualShapePending = false;
 
     /** Park this shape's visual build instead of building it now.
      *
@@ -626,6 +632,18 @@ protected:
     void queueDecimationDescent();
 
     bool deferVisualForLoad();
+    /// Put this shape's visual build in the deferred queue and post a
+    /// slice for it. The policy half is the two callers: a progressive
+    /// load parks EVERY visual, and a shape whose restore has not
+    /// landed yet parks whatever the policy is, because building it
+    /// now would build nothing (see shapeMayStillArrive).
+    void parkVisualForLoad(App::Document *doc, App::DocumentObject *obj);
+    /// Whether this object's shape content may still be on its way --
+    /// a deferred archive entry, a shared-store position, a blob, or
+    /// simply a document whose file phase has not run yet. Such a
+    /// property reads as the null shape, which is indistinguishable
+    /// from an object that HAS no shape unless this is asked.
+    bool shapeMayStillArrive() const;
     /// Build one slice of the parked visuals, then reschedule if any remain.
     static void runDeferredVisualSlice();
     /// Post the next slice to the event loop (nothing if one is pending).

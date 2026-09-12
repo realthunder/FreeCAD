@@ -191,7 +191,11 @@ std::shared_ptr<Model> ModelManagerLocal::getModelByPath(const QString& path) co
     for (auto& library : *_libraryList) {
         if (library->isLocal()) {
             auto localLibrary = std::static_pointer_cast<Materials::ModelLibraryLocal> (library);
-            if (cleanPath.startsWith(localLibrary->getDirectory(), localLibrary->caseSensitivity())) {
+            // A whole component, or a library at ".../Model" answers for a
+            // path in ".../Models" and the real owner never gets asked
+            if (Library::isPathPrefix(cleanPath,
+                                      localLibrary->getDirectory(),
+                                      localLibrary->caseSensitivity())) {
                 return localLibrary->getModelByPath(cleanPath);
             }
         }

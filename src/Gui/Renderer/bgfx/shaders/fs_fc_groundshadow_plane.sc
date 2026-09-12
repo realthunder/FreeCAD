@@ -99,6 +99,6 @@ void main()
 	vec3 tint;
 	float dark = 1.0 - fcSceneShadow(vpos, gl_FragCoord.xy, tint);
 	float k = clamp(dark * u_matColor.a, 0.0, 1.0);
-	vec3 pass = mix(vec3_splat(1.0), u_matColor.rgb * tint, k);
-	gl_FragColor = vec4(pass, 1.0);
+	vec3 transmitted = mix(vec3_splat(1.0), u_matColor.rgb * tint, k);
+	gl_FragColor = vec4(transmitted, 1.0);
 }
