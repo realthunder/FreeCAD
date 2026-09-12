@@ -2557,6 +2557,105 @@ which the WinDbg package does not include, or the IFEO registry keys — both ad
 MSVC's ASan, `/fsanitize=address`, which is compatible with `/MD` and with
 RelWithDebInfo. Neither has been tried here yet.
 
+### The WASM viewer on Windows
+
+Set up 2026-09-12; before that the browser tier could only be built on
+the Linux box, and **that is how two compile breakages accumulated with
+nothing saying so** -- exactly the failure
+[SceneStreaming.md](./SceneStreaming.md) records from the last time this
+tier went unbuilt. Both are fixed (`5a7a202451`).
+
+**emsdk.** Clone it beside the other forks (mirroring the Linux box's
+`~/works/sw/emsdk`) and install 6.0.9:
+
+    git clone https://github.com/emscripten-core/emsdk.git D:\works\sw\emsdk
+
+`emsdk.bat` cannot be used to bootstrap here. It ignores `EMSDK_PY` --
+it *sets* that itself -- looks for a bundled python that the first
+install is what creates, and falls back to `python` on PATH, which on
+this box is the Microsoft Store stub. It fails with "Python was not
+found" and installs nothing. Drive `emsdk.py` with the conda python for
+the first install instead:
+
+    .conda\freecad\python.exe D:\works\sw\emsdk\emsdk.py install latest
+    .conda\freecad\python.exe D:\works\sw\emsdk\emsdk.py activate latest
+
+After that emsdk has its own python (3.13.3) and node (24.19.0), so
+`emsdk_env.bat` works normally. The download is about 720 MB and the
+tree about 2.5 GB; the 654 MB LLVM zip takes several minutes to unpack,
+during which the log says nothing -- watch the file count under
+`upstream`, not the log.
+
+**Node comes from emsdk** -- there is no separate node on this box, and
+none is needed. The viewer's DOM UI bundle builds with it natively in
+under a second, and **native rollup loads fine on Windows**, so the WSL
+detour and the `rollup@npm:@rollup/wasm-node` swap that
+[OmniSearch.md](./OmniSearch.md) sec 6.3 records for this box are not
+needed for the viewer build. `npm ci` leaves `package-lock.json`
+untouched, so the tree stays clean.
+
+**Configure and build.** cmake and ninja come from the conda env; the
+host `shaderc` the essl pack needs is already in the desktop build tree,
+so nothing extra is built for it. The `FCVIEWER_SHADERC` default in
+`src/Gui/Renderer/wasm/CMakeLists.txt` is a Linux `conda-debug` path, so
+it has to be given here, and so do the node paths, since neither is on
+PATH by default:
+
+    call D:\works\sw\emsdk\emsdk_env.bat
+    emcmake .conda\freecad\Library\bin\cmake.exe ^
+      -S src/Gui/Renderer/wasm -B build/wasm -G Ninja ^
+      -DCMAKE_MAKE_PROGRAM=.conda\freecad\Library\bin\ninja.exe ^
+      -DCMAKE_BUILD_TYPE=Release ^
+      -DFCVIEWER_SHADERC=build/win-relwithdebinfo-801/src/3rdParty/bgfx/cmake/bgfx/shaderc.exe ^
+      -DFCVIEWER_NPM=D:/works/sw/emsdk/node/24.19.0_64bit/npm.cmd ^
+      -DFCVIEWER_NODE=D:/works/sw/emsdk/node/24.19.0_64bit/node.exe
+    .conda\freecad\Library\bin\cmake.exe --build build/wasm
+
+214 targets, a few minutes. Output: `build/wasm/fcviewer.html`, `.js`,
+`.wasm`, `.data` and `.stamp`, 94 compiled essl shaders under
+`build/wasm/assets/shaders/essl`, and the DOM bundle in
+`build/wasm/web`.
+
+**The endpoint-security stall reaches this too** (see "When processes
+start and then never run" above): a freshly installed `clang.exe` sat in
+a zero-CPU wait inside a `try_compile`, so the first configure never
+finished. The remedy is the same watchdog -- kill the attempt, start
+again, because CMake keeps every completed test and ninja keeps every
+finished object. It cleared on the second attempt.
+
+**Serving the page.** Point the desktop at the bundle and one port
+carries the page, the scene stream and the blobs:
+
+    set FC_BGFX_VIEWER_BUILD=D:\works\sw\fcad\build\wasm
+    (then Gui.serveDocument(doc, 18765) from a -M driver module)
+    http://127.0.0.1:18765/fcviewer.html
+
+**Driving it in a browser.** Chrome is installed, and `puppeteer-core`
+against it is enough -- plain `puppeteer` would download a second
+Chrome. `scripts/wasm-chrome.js` is the Linux harness and its "real"
+tier is WSLg-specific, so on Windows use its headless shape:
+`--enable-unsafe-swiftshader --use-angle=swiftshader`. Two things that
+cost time here, both about software rendering rather than about the
+viewer:
+
+- **A populated scene starves the main thread.** Under swiftshader,
+  `page.mouse` / `page.keyboard` and even `page.evaluate` can wait
+  minutes for a slot -- the first attempt sat on a single
+  `page.mouse.click` for three minutes. Do the DOM interaction *before*
+  the scene lands, keep the viewport small, and pass `?msaa=0`. Wrap
+  every `evaluate` in a timeout, or a hung call is indistinguishable
+  from a hung page.
+- **Synthesize DOM events rather than using CDP input.** The omni box
+  opens on a `window` keydown listener (`main.tsx`), and its input is a
+  controlled solid-js input, so dispatching a `KeyboardEvent` and
+  setting `.value` plus an `input` event is the whole of driving it.
+
+Verified end to end on 2026-09-12 against a desktop serving one document
+with two others open: the page boots, WebGL2 comes up, the WebSocket
+connects, a snapshot applies (9 draws), the build stamp is read back,
+and the omni box answers objects, commands, parameters, object members
+and `Doc#.` document properties with no page errors.
+
 ### Current state / what is not done yet
 
 - OCCT `LinkVibe-801` and Coin `LinkVibe` build and install cleanly; both are on the

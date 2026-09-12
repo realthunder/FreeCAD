@@ -461,14 +461,19 @@ when the named view is the served one.
   which triggers the same `QAction` the desktop menu would.
 - No icons, no `<<label>>` rows: the label is the object row's
   description, and `<<Label>>` still resolves when typed.
-- Building the web layer on the Windows box: `npm install` and `npm run
-  build` in WSL (`/mnt/d/works/sw/fcad/src/Gui/Renderer/web`); rollup's
-  native binding does not load there, so `npm install --no-save
-  rollup@npm:@rollup/wasm-node@4` first. The bundle lands in
-  `build/wasm/web`; the WASM viewer itself is not built on this box, so
-  the page is exercised on the Linux box, and the protocol here: a
-  serving desktop (`Gui.serveDocument(doc, port)` from a `-M` driver
-  module) and a plain-socket client. One trap for such a client: the
+- ~~Building the web layer on the Windows box needs WSL and a
+  wasm-rollup swap, and the page can only be exercised on the Linux
+  box.~~ **Superseded 2026-09-12**: emsdk is installed on the Windows
+  box, the WASM viewer builds there, and the DOM bundle builds natively
+  with emsdk's own node -- native rollup loads, so no WSL and no
+  `@rollup/wasm-node`. The recipe is
+  [DevEnvironment.md](./DevEnvironment.md), "The WASM viewer on
+  Windows". The box has now been driven in a real browser against a
+  serving desktop: `/` opens it, the two catalogs arrive whole once and
+  answer "current" on the next ask, and objects, commands, parameters,
+  `Box.` members and `Doc#.` document properties all answer with no page
+  errors. A plain-socket client is still the way to test the ops
+  themselves. One trap for such a client: the
   server recognises the hello, `resync`, `docs` and `switch` verbs by
   the exact substring `"cmd":"hello"` -- a JSON encoder that puts a
   space after the colon is not a viewer, gets no pushes, and the ops

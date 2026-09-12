@@ -2826,6 +2826,13 @@ purpose, because the performance harnesses read those lines out of
 `--log-file` and only the console writes there -- and `std::printf` in
 the browser.
 
+SUPERSEDED AGAIN (2026-09-12): **the tier is built on the Windows box
+too**, and building it there for the first time found two more of
+exactly the breakage this section is about -- a `QOpenGLContext` and a
+`writeDumpImage()` that had reached code the standalone build compiles
+(`5a7a202451`). The Windows recipe is DevEnvironment.md, "The WASM
+viewer on Windows".
+
 SUPERSEDED (2026-08-15): **the tier is built on the development box
 now.** emsdk is installed at `~/works/sw/emsdk` (emcc 6.0.6, and it
 needs the conda python -- `EMSDK_PYTHON=.conda/freecad/bin/python3`),
