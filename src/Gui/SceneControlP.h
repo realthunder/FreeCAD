@@ -48,8 +48,25 @@ namespace SceneControlDetail {
 /// first-served source's container (SceneControl.cpp).
 App::PropertyContainer *sceneView(const std::string &boundDoc = {});
 
+/// The document a connection is scoped to: the one its group serves
+/// (\a boundDoc), else the active one. Null when there is none.
+App::Document *homeDocument(const std::string &boundDoc);
+
+/** Whether a connection bound to \a boundDoc may address \a doc at all.
+ *
+ * A control connection sees one document -- the one it is looking at --
+ * and the documents that one links out to, which are the external
+ * objects its own scene already shows. Anything else open in the same
+ * process is another user's business and is not reachable from here
+ * (docs/MultiDocServe.md sec 5.1, docs/OmniSearch.md sec 6.4).
+ */
+bool documentAllowed(App::Document *doc, const std::string &boundDoc);
+
 /// The document a request names ("doc"), else the bound one, else the
-/// active one; null when none of them exists.
+/// active one; null when none of them exists -- or when the named one
+/// is out of this connection's reach (documentAllowed()), which is
+/// reported the same way, so the channel is no oracle for what else
+/// the process has open.
 App::Document *requestDocument(const QJsonObject &req, const std::string &boundDoc);
 
 QJsonObject errorReply(const QJsonValue &id, const char *code, const QString &message = QString());

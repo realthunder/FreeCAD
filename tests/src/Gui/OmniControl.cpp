@@ -9,6 +9,7 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ParamRegistry.h>
+#include <App/PropertyLinks.h>
 #include <App/PropertyStandard.h>
 
 #include "Gui/OmniControl.h"
@@ -282,13 +283,71 @@ private Q_SLOTS:
         reply = ask(op("omni.resolve", {{"query", ""}}));
         QCOMPARE(reply.value("code").toString(), QStringLiteral("NoMatch"));
 
-        // The "#." members resolve on an empty document too
+        // Another document, named outright, is out of this connection's
+        // reach -- see test_documentReach
         auto empty = App::GetApplication().newDocument("OmniControlEmpty");
         QJsonObject req = op("omni.resolve", {{"query", "#.Label"}, {"doc", QString::fromUtf8(empty->getName())}});
         reply = ask(req);
-        QCOMPARE(reply.value("kind").toString(), QStringLiteral("property"));
-        QCOMPARE(reply.value("doc").toString(), QString::fromUtf8(empty->getName()));
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("UnknownDocument"));
         App::GetApplication().closeDocument(empty->getName());
+    }
+
+    /** A connection sees the document it is joined to and the documents
+     * that one links out to -- nothing else the process has open, and
+     * the refusal is the one a document that is not there at all gets
+     * (docs/OmniSearch.md sec 6.4).
+     */
+    void test_documentReach()  // NOLINT
+    {
+        auto other = App::GetApplication().newDocument("OmniControlOther");
+        auto thing = other->addObject("App::DocumentObjectGroup", "Thing");
+        thing->Label.setValue("Other thing");
+        other->recompute();
+        const QString name = QString::fromUtf8(other->getName());
+
+        auto reply = ask(op("omni.objects", {{"doc", name}}));
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("UnknownDocument"));
+        reply = ask(op("getProperties", {{"doc", name}, {"obj", "Thing"}}));
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("UnknownDocument"));
+        reply = ask(op("getProperties", {{"doc", name}, {"subject", "document"}}));
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("UnknownDocument"));
+        reply = ask(op("setProperty", {{"doc", name}, {"obj", "Thing"},
+                                       {"target", "object"}, {"name", "Label"},
+                                       {"value", "hijacked"}}));
+        QVERIFY(!reply.value("ok").toBool());
+        QCOMPARE(QString::fromUtf8(thing->Label.getValue()), QStringLiteral("Other thing"));
+        // The grammar reaches across documents; the answer does not
+        reply = ask(op("omni.resolve", {{"query", name + QStringLiteral("#.Comment")}}));
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("NoMatch"));
+        reply = ask(op("omni.resolve", {{"query", name + QStringLiteral("#Thing.Label")}}));
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("NoMatch"));
+        reply = ask(op("omni.resolve", {{"query", "NoSuchDocument#.Comment"}}));
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("NoMatch"));
+
+        // An external link puts it in reach: what the served scene
+        // already shows, a viewer may inspect. Unsaved on both sides,
+        // which is where a file-name-keyed dependency list says nothing.
+        auto link = doc->addObject("App::Link", "ExternalLink");
+        auto linked = dynamic_cast<App::PropertyXLink*>(
+                link->getPropertyByName("LinkedObject"));
+        QVERIFY(linked);
+        linked->setValue(thing);
+        doc->recompute();
+
+        reply = ask(op("omni.objects", {{"doc", name}}));
+        QVERIFY(reply.value("ok").toBool());
+        QCOMPARE(reply.value("doc").toString(), name);
+        reply = ask(op("omni.resolve", {{"query", name + QStringLiteral("#.Comment")}}));
+        QCOMPARE(reply.value("kind").toString(), QStringLiteral("property"));
+        QCOMPARE(reply.value("doc").toString(), name);
+        reply = ask(op("omni.resolve", {{"query", name + QStringLiteral("#Thing.Label")}}));
+        QCOMPARE(reply.value("kind").toString(), QStringLiteral("property"));
+        QCOMPARE(reply.value("prop").toObject().value("value").toString(),
+                 QStringLiteral("Other thing"));
+
+        linked->setValue(nullptr);
+        doc->removeObject(link->getNameInDocument());
+        App::GetApplication().closeDocument(other->getName());
     }
 
     void test_commandsWithoutGui()  // NOLINT

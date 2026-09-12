@@ -473,7 +473,12 @@ QJsonObject opResolve(const QJsonObject &req, const std::string &boundDoc)
         return errorReply(idOf(req), "NoMatch", query);
 
     if (match.doc) {
-        // A member of the document itself or of one of its views
+        // A member of the document itself or of one of its views. The
+        // grammar accepts "Other#.Comment", so what it landed on is
+        // checked against this connection's reach, not just what the
+        // request named.
+        if (!documentAllowed(match.doc, boundDoc))
+            return errorReply(idOf(req), "NoMatch", query);
         App::PropertyContainer *container = match.doc;
         const char *scope = "document";
         if (!match.view.empty()) {
@@ -500,6 +505,13 @@ QJsonObject opResolve(const QJsonObject &req, const std::string &boundDoc)
     auto obj = match.obj.getObject();
     auto target = match.obj.getSubObject();
     if (!obj || !target)
+        return errorReply(idOf(req), "NoMatch", query);
+    // "Other#Box.Length" parses the same way an in-document path does,
+    // so both ends of the resolved path are checked. A sub-object in
+    // another document is in reach when the served one links out to it,
+    // which is the case that has to keep working.
+    if (!documentAllowed(obj->getDocument(), boundDoc)
+            || !documentAllowed(target->getDocument(), boundDoc))
         return errorReply(idOf(req), "NoMatch", query);
     reply[QLatin1String("doc")] = QString::fromUtf8(target->getDocument()->getName());
     reply[QLatin1String("obj")] = QString::fromUtf8(target->getNameInDocument());

@@ -316,6 +316,13 @@ know the routing. A view property is the session's, not the model's, so it is as
 outside the `AutoTransaction` and answers `recomputed: false`; it is not undo history and
 there is nothing to recompute.
 
+**Which documents a connection may name.** The `doc` field is not a free
+choice. A connection reaches the document its group serves and the
+documents that one links out to; any other name is answered as an
+unknown document, which is also what a name belonging to nothing gets.
+The rule and its gaps are docs/OmniSearch.md sec 6.4, its place in
+multi-document serving docs/MultiDocServe.md sec 5.1.
+
 **Forward hook — preview/commit + supersedes.** When drag-driven ops arrive (§5), they reuse
 this channel at 5–10 Hz with a `"preview": true` flag and a final committed call. Two
 semantics to bake in early so the protocol doesn't need a breaking change: (a) a request may

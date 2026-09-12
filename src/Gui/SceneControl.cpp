@@ -21,6 +21,9 @@
 
 #include "PreCompiled.h"
 
+#include <set>
+#include <vector>
+
 #include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -88,18 +91,65 @@ App::PropertyContainer *sceneView(const std::string &boundDoc)
     return SceneServeSource::renderProperties();
 }
 
-App::Document *requestDocument(const QJsonObject &req, const std::string &boundDoc)
+App::Document *homeDocument(const std::string &boundDoc)
 {
     // An unnamed document means the one this connection's group serves
     // when the handler is bound (a headless backend has no meaningful
     // "active" document); the active document remains the windowed
     // fallback.
-    const QString docName = req.value(QLatin1String("doc")).toString();
-    if (!docName.isEmpty())
-        return App::GetApplication().getDocument(docName.toUtf8().constData());
     if (!boundDoc.empty())
         return App::GetApplication().getDocument(boundDoc.c_str());
     return App::GetApplication().getActiveDocument();
+}
+
+bool documentAllowed(App::Document *doc, const std::string &boundDoc)
+{
+    if (!doc)
+        return false;
+    auto home = homeDocument(boundDoc);
+    if (!home)
+        return false;   // nothing to scope to: nothing is in reach
+    if (doc == home)
+        return true;
+    // What the served scene already shows: the documents the home one
+    // links out to, transitively. Walked over the objects' own out-
+    // lists rather than PropertyXLink::getDocumentOutList(), which
+    // knows only links whose target document has a file name -- both
+    // documents unsaved and it would answer nothing, which is when a
+    // link is newest, not when it is least real. The out-lists are
+    // cached on the objects, so this is a walk over pointers.
+    //
+    // The in-list is deliberately not followed: that another document
+    // links *into* this one says nothing about whether this connection
+    // may read it.
+    std::set<App::Document*> seen {home};
+    std::vector<App::Document*> pending {home};
+    while (!pending.empty()) {
+        auto current = pending.back();
+        pending.pop_back();
+        for (auto obj : current->getObjects()) {
+            for (auto dep : obj->getOutList()) {
+                if (!dep || !dep->isAttachedToDocument())
+                    continue;
+                auto other = dep->getDocument();
+                if (!other || !seen.insert(other).second)
+                    continue;
+                if (other == doc)
+                    return true;
+                pending.push_back(other);
+            }
+        }
+    }
+    return false;
+}
+
+App::Document *requestDocument(const QJsonObject &req, const std::string &boundDoc)
+{
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    if (docName.isEmpty())
+        return homeDocument(boundDoc);
+    auto doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    return documentAllowed(doc, boundDoc) ? doc : nullptr;
 }
 
 /// The container a "view3d" subject or target names: the served view,

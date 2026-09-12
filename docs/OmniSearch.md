@@ -467,3 +467,76 @@ when the named view is the served one.
   the exact substring `"cmd":"hello"` -- a JSON encoder that puts a
   space after the colon is not a viewer, gets no pushes, and the ops
   still answer, so nothing says why.
+
+### 6.4 What a connection may reach
+
+Added 2026-09-12. Every op of the mirror that names a document -- and
+`getProperties`/`setProperty` with it -- resolves that name through one
+gate, `SceneControlDetail::documentAllowed()` in `SceneControl.cpp`. A
+connection may address:
+
+- **the document it is joined to**: the one its group serves
+  (`boundDoc`, docs/MultiDocServe.md sec 3), or the active document when
+  the handler is the desktop's unbound one;
+- **the documents that one links out to, transitively** -- the external
+  objects its own scene already shows, so inspecting a linked part in
+  the browser keeps working.
+
+Nothing else the process has open. That matters because the omni
+grammar crosses documents by design: `Other#.Comment` is a member of
+another document and `Other#Box.Length` parses through
+`ObjectIdentifier`, so before the gate a viewer joined to one served
+document could read -- and with `setProperty` write -- every other
+document in the same process, which is the whole premise of serving
+several documents to several people from one backend
+(docs/MultiDocServe.md sec 5.1 and sec 7). The check is on the **result** of the
+resolution, not only on the `doc` field, because the grammar reaches
+places the request never named.
+
+Two details worth keeping:
+
+- **The refusal is indistinguishable from "there is no such document"**
+  -- `UnknownDocument`, or `NoMatch` from `omni.resolve`. A separate
+  `Forbidden` would turn the channel into an oracle for what else the
+  backend has open, which is exactly what a shared-document host is
+  entitled not to publish.
+- **Reach is walked over the objects' own out-lists**, not
+  `PropertyXLink::getDocumentOutList()`, which
+  `Document::getDependentDocuments()` is built on. That map is keyed on the
+  target document's **file name**, so with either document unsaved it
+  knows nothing -- and a link is least saved when it is newest. The
+  out-lists are cached on the objects, so the walk is over pointers and
+  costs nothing worth measuring; it runs only when a request names a
+  document other than the home one.
+
+The in-list is deliberately not followed: that another document links
+*into* this one says nothing about whether this connection may read it.
+
+**What the gate is not.** It scopes a connection to the document it is
+*currently joined to*, and a viewer may re-join: `switch` moves it to
+any **served** document, which is by design and is the choke point
+`joinDocument()` already names as where a per-connection ACL would go
+(docs/MultiDocServe.md sec 4). So the gate keeps a viewer out of every
+document the process merely has **open**; keeping one viewer out of
+another *served* document is the grant work of docs/ShareAccess.md, not
+this.
+
+Verified over the live socket (2026-09-12) with a backend serving
+`Served` while `Secret` and `Library` were also open, `Served` holding
+an `App::Link` into `Library`, all three unsaved. `omni.objects`,
+`getProperties`, `setProperty` and both resolve forms named `Secret`
+and were refused with the answer a name belonging to no document gets;
+the same ops named `Library` and answered. `tests/src/Gui/OmniControl.cpp`
+`test_documentReach` is the same shape without a socket.
+
+**Still open, and the gate does not close it:** `command.run` and the
+parameter ops are not document-addressed. A command runs against
+whatever the desktop's own command layer considers active -- its active
+document and its selection -- and `param.set` writes a process-wide
+preference. So an *editing* connection joined to one served document can
+still act outside it through those two ops. Both are refused on a
+view-only connection (`OmniControl::isMutating`), which is the whole of
+the containment today. Scoping them properly means either making the
+command layer take a document (it takes none) or activating the served
+document around the call (which moves the desktop user's focus), and
+neither is a change to make in passing.
