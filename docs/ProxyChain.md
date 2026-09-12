@@ -1,6 +1,6 @@
 # The proxy chain: document programs extend native objects
 
-**[planned 2026-09-12, awaiting the user's review; nothing built]**
+**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; nothing built]**
 
 The user's design, stated 2026-09-12 after the document program (docs/
 Sandbox.md 7.17) was found lacking against the spreadsheet-as-object
@@ -93,24 +93,54 @@ drops out of the list, and an external file loads on demand and
 reports itself missing the way every XLink does.  A file saved before
 the property exists restores with an empty list.
 
-One list, on the App object.  The view provider has no list of its
-own: `ViewProviderFeaturePythonT` reads its object's `ProxyExp` and
-resolves the view hooks on the same linked objects.  The document
-carries the definition; a headless run and a GUI run see one list.
+Two lists, one per side, exactly as `Proxy` is one per side **[RULED
+2026-09-12: "separate list just like separate Proxy for feature and
+view object"]**: `ProxyExp` on `FeaturePythonT` for the App hooks and
+`ProxyExp` on `ViewProviderFeaturePythonT` for the view hooks, the
+latter saved with the view provider in `GuiDocument.xml` as `Proxy`
+is.  The view list resolves the view hooks on ITS linked objects; the
+App list never serves a view hook.
+
+**What the view list needs from the link classes.**  Every link
+property assumes a `DocumentObject` container: `PropertyLinkList::
+Restore` throws "Container is not a document object", `PropertyXLink::
+Restore` asserts it, `PropertyXLink::setValue` refuses with "invalid
+container" (`PropertyLinks.cpp:4013`), and the back-link bookkeeping
+casts after an `isDerivedFrom` guard.  No view provider in the tree
+holds a link property today (the colored-elements `PropertyLinkSub`
+of `ViewProviderPart` is the feature's).  So a view-side `ProxyExp`
+is a bounded change in `PropertyLinks.cpp`: an `ownerObject()` helper
+on `PropertyLinkBase` answering the container when it is a
+`DocumentObject` and `ViewProviderDocumentObject::getObject()` when
+it is a view provider, used by the ~12 owner lookups of the XLink
+classes (`:3978`, `:4013`, `:4077`, `:4264`, `:4280`, `:4332`, `:4474`,
+`:4545`, `:4574`, `:4884`, `:5747`-`:5976`) and the two Restore
+guards; back-links stay on document objects only (a view provider is
+not in the DAG, so a view-side link is a reference, not a dependency
+-- the view provider already follows its object's recompute through
+`updateData`).  `ViewProviderDocumentObject` is in `Gui`, which `App`
+cannot see: the helper is a callback `App::PropertyLinkBase::
+setContainerObjectResolver` installed by `Gui::Application` at start,
+the pattern `Base::Interpreter`'s guards use.  About 60 lines; its
+gate is a view provider's XLinkList saved, reopened and resolving,
+external file included, in the P2 test.
 
 ### 2.2 Resolution: what "exposes a method" means
 
-For a linked object `L` and a hook `H`, in this order:
+For a linked object `L` and a hook `H`, in this order **[RULED
+2026-09-12: "Proxy first, like the rest"]**:
 
-1. `getattr(L.pyobject, "exp" + Hook)` -- through the object's own
-   Python wrapper.  This finds a dynamic property (a **spreadsheet
+1. `getattr(L.Proxy, "exp" + Hook)` when `L` has a `Proxy` property
+   holding an object -- a Python-scripted object that chooses to
+   extend others, found the way `FeaturePythonImp::init` finds the
+   object's own hooks.
+2. else `getattr(L.pyobject, "exp" + Hook)` -- through the object's
+   own Python wrapper.  This finds a dynamic property (a **spreadsheet
    alias** whose cell is a `lambda` or `def`: `Sheet.cpp:797`
    `setObjectProperty` exposes it as a `PropertyPythonObject`), a
    function stored on the object at runtime (`L.expExecute = f`,
    bound to `L` by `FeaturePythonPyT::_setattr`), or any callable
    attribute a C++ type provides.
-2. else `getattr(L.Proxy, "exp" + Hook)` when `L` has a `Proxy` -- a
-   Python-scripted object that chooses to extend others.
 
 A non-callable is skipped.  `L`'s type is never inspected: a Sheet, a
 FeaturePython, an ExpressionLibrary (7.17 D2, once its module's
@@ -118,11 +148,28 @@ bindings are exposed as properties -- one small addition there), a
 guest stand-in (rung 2), or a plain C++ object with a
 `PropertyPythonObject` all qualify by the same rule.
 
-The names: `exp` + the hook's name with its first letter upper-cased
-for App hooks (`expExecute`, `expOnChanged`, `expGetSubObject`),
-`expView` + the same for view hooks (`expViewGetIcon`,
-`expViewClaimChildren`, `expViewOnChanged`).  Two prefixes because
-`onChanged`, `editProperty` and `attach` exist on both sides.
+**The names [elaborated 2026-09-12, decision 1].**  The property is
+`ProxyExp` on both sides, the user's name (read "the Proxy
+extensions"; it is a list of objects, not of expressions, and the
+doc string says so).  A method is the hook's name with its first
+letter upper-cased behind a prefix.  Two prefixes are needed even
+with two lists: a linked object is ONE Python namespace, and three
+hook names exist on both sides -- `onChanged` (a feature property
+changed / a view property changed), `editProperty` and `attach` (the
+view provider's `attach(vobj)` against `App::DocumentObject`'s
+`attach`, not a FeaturePython hook today but a name the App side may
+grow) -- so a sheet that extends both a feature and its view provider
+must be able to say which `onChanged` it means.  The rule is uniform
+rather than special-casing the three: App hooks are `exp` + Hook
+(`expExecute`, `expMustExecute`, `expOnChanged`, `expGetSubObject`),
+view hooks are `expView` + Hook (`expViewGetIcon`,
+`expViewClaimChildren`, `expViewOnChanged`, `expViewAttach`).  The
+alternative considered, a single `exp` prefix with the view side
+reading `expOnChanged` from the VIEW list and the App side from the
+APP list, would make the same object mean two things depending on
+which list it sits in; rejected for that reason.  The prefix strings
+are the one place the table of sec 3 spells them, so a rename later
+is one line.
 
 ### 2.3 The call and the return
 
@@ -145,13 +192,51 @@ objects in `ProxyExp` order, then the `Proxy`, then the C++ base.  A
 handled result stops the chain -- the multiple-inheritance effect the
 user asked for, method resolution left to right.
 
-Notification hooks (`onBeforeChange`, `onChanged`,
-`onDocumentRestored`, `unsetupObject`; view: `attach`, `updateData`,
-`onChanged`, `startRestoring`, `finishRestoring`) have no result to
-check natively.  Proposed: every element is called, links then Proxy,
-unless one returns True, which stops the chain (an explicit "consumed";
-None, the usual return, continues).  The base call always follows, as
-today.  **Decision for the user** (sec 5, item 2).
+**Notification hooks: the status today (decision 2, read 2026-09-12).**
+These are the hooks whose Proxy call has no result the C++ side
+checks.  Where the base call sits relative to the Proxy call, per
+hook, as the templates have it:
+
+    side  hook                 order today                 return    guard
+    ----  -------------------  --------------------------  --------  ------------
+    App   onBeforeChange       BASE first, then Proxy      ignored   isNone only
+    App   onChanged            Proxy, then base            ignored   isNone only
+    App   onDocumentRestored   Proxy, then base            ignored   FlagCalling
+    App   unsetupObject        Proxy, then base            ignored   FlagCalling
+    App   setupObject          base, then Imp (a no-op)    --        --
+    View  attach               deferred: the template only records
+                               pcObject; the first onChanged(&Proxy)
+                               with a Proxy set calls Proxy attach,
+                               then base attach, then touches Label,
+                               restates DisplayMode, updateView
+                                                           ignored   FlagCalling
+    View  updateData           Proxy, then base            ignored   isNone only
+    View  onChanged            (the Proxy-swap block), then
+                               Proxy, then base            ignored   isNone only
+    View  startRestoring       base, then Imp (a no-op)    --        --
+    View  finishRestoring      Proxy, then base; a None
+                               Proxy shows the object and
+                               sets Proxy = 1 instead      ignored   FlagCalling
+
+Two hooks look like notifications but are value hooks and stay in
+the value protocol: App `onBeforeChangeLabel` (a returned string is
+the new label and the base is skipped; None falls through) and App
+`getElementMapVersion` (the base computes, the Proxy may replace the
+string).  `execute` is a value hook (False or NotImplementedError
+means not handled).
+
+**The chain rule for notifications, proposed for the ruling:** every
+element is called in chain order -- the links, then the Proxy -- and
+a link returning True stops the chain before the Proxy (an explicit
+"consumed"; None, the usual return, continues).  The base call keeps
+its per-hook position from the table (before, for `onBeforeChange`;
+after, for the rest).  The view `attach` deferral stays as it is:
+the chain's `expViewAttach` calls happen where the Proxy's does, at
+the first `onChanged(&Proxy)`, and ALSO at the first `onChanged(
+&ProxyExp)` when the Proxy is None -- a view provider extended by a
+sheet and nothing else must still attach.  `finishRestoring`'s
+None-Proxy branch (show, `Proxy = 1`) runs only when the chain is
+empty too.
 
 Recursion guards: the per-hook `FlagCalling` bit covers the whole
 chain (one entry per hook, as now); `__allow_recursive_<hook>` is read
@@ -211,73 +296,92 @@ the piece the user had not found: the `ProxyExp` link IS the type --
 instances share the definition by linking to it, a cell added to the
 sheet reaches every instance, and a sheet may itself link onward.
 
-## 3. The cog refactor
+## 3. The refactor: functions first, cog for the table only
 
-### 3.1 Why and what
+**[RULED 2026-09-12: "do not abuse cog, only duplicate generated code
+if it cannot be efficiently done by a function"; "generated at build
+time, we'll migrate other cog generated param code in the future and
+this is a start"]**
+
+### 3.1 What a function can do
 
 Both Imp classes are one pattern per hook: call check, GIL lock, an
 args tuple with `obj` first, `pyCall`, a result mapping, the
-`NotImplementedError` catch, the error report.  The template overrides
-are a second pattern: call the Imp, dispatch on its return kind to the
-base.  The X-macros generate the declarations but every body is typed
-by hand -- 22 + 46 of them -- and the chain would mean touching every
-one.  cog is already the tree's generator for exactly this kind of
-table (`Mod/Part/App/PartParams.py` over `PartParams.h/.cpp`,
-`Tools/params_utils.py`; inline blocks in
-`Mod/Sketcher/App/SketchObjectPyImp.cpp`), with the generated output
-COMMITTED so the build never runs cog.
+`NotImplementedError` catch, the error report.  That pattern is a
+C++ template, not generated text:
 
-One spec, `src/App/FeaturePythonHooks.py`: a table of hooks, each
-with its C++ signature, its arguments and their Python converters
-(string, int, bool, object, matrix, ...), its return kind (`bool`
-handled/not, `ValueT`, `int` with a sentinel, `tuple` decoded by a
-custom body, `notify`), its default when not handled, the `__object__`
-form if it has one, and `side` App or View.  Hooks whose body is
-irregular are marked `custom` and keep their hand-written body outside
-the generated block: App `getSubObject`, `getSubObjects`,
-`getLinkedObject`, `getElementMapVersion`, `redirectSubName`; View
-`getIcon`, `getExtraIcons`, `getElement`, `getDetail`, `getDetailPath`,
-`getSelectionShape`, `setEdit`/`unsetEdit`/`setEditViewer`/
-`unsetEditViewer`, `iconMouseEvent`, `setupContextMenu`,
-`getDisplayModes`, `setDisplayMode`, `dropObjectEx`,
-`getLinkedViewProvider`, `getDropPrefix`.  Roughly 14 of 22 App hooks
-and 26 of 46 view hooks are regular.
+    // one entry per hook, in the Imp: the chain of resolved callables
+    // (links in ProxyExp order, then the Proxy's), the two flags
+    struct HookSlot { std::vector<Py::Object> chain; Py::Object proxy; ... };
 
-Generated, inside `[[[cog ... ]]]` blocks in the four existing files
-(no new source files; the diff stays reviewable in place):
+    // the call: marshal C++ arguments to a tuple (toPy overloads for
+    // const char*, int, bool, double, DocumentObject*, Matrix4D, a
+    // vector of strings), walk the chain, decode each result with
+    // `decode` (returns "handled" or not), report or rethrow per the
+    // hook's exception policy
+    template <class Decode, class... Args>
+    bool callHook(Hook hook, Decode&& decode, Args&&... args) const;
 
-- the Imp declarations for the regular hooks, the `py_<hook>` members
-  and the flags enum (replacing the three X-macro expansions), the
-  destructor's release, `init()`;
-- the regular Imp bodies, each with the chain walk of 2.3 at its one
-  call site;
-- for the custom hooks, the chain walk only, as a helper the
-  hand-written body calls (`callChain(hook, args, decode)`), so the
-  chain is in one place for every hook;
-- the template overrides, from the return kind.
+with a handful of decoders shared by many hooks (`decodeHandledBool`,
+`decodeValueT`, `decodeIntSentinel(-2)`, `decodeNotify`) and the
+irregular hooks (`getSubObject`'s tuple, `getIcon`'s pixmap,
+`getDetailPath`, `dropObjectEx`, ...) passing their own lambda.  The
+`has__object__` form is a flag `callHook` reads to drop `obj` from
+the tuple for the Proxy element only.  The regular Imp bodies become
+one line each; the irregular ones keep their decoding and lose their
+boilerplate; the template overrides in the two headers stay
+hand-written -- they are the C++ signatures, and a function cannot
+write a signature.
 
-Kept exactly: `has__object__`, `__allow_recursive_`, the bitset
-guards, the one GIL lock per call, the per-hook `Py::Object` cache,
-`FeaturePythonPyT` untouched but for the generation bump.
+What stays as it is: the per-hook cache (now the slot's `chain` plus
+the Proxy's `Py::Object`), the bitset guards, one GIL lock per call,
+`__allow_recursive_`, `FeaturePythonPyT` (untouched but for the
+generation bump of 2.4).
 
-### 3.2 Tooling
+### 3.2 What only a generator can do
 
-`cogapp` is in neither `.conda/freecad` nor the system Python (checked
-2026-09-12): `pip install cogapp` into the env, and the generated
-output committed as PartParams does.  `scripts/cog-check.sh` runs
-`python -m cogapp --check` over the four files (plus the Params files
-already in the tree) so a stale generation fails loudly; the doc
-header in each block names the regenerate command, as PartParams.h
-does.
+The hook TABLE: the enum of hooks, the flag bits, the `py_` /
+`HookSlot` members, the Proxy attribute names and the two prefixed
+extension names per hook (`"execute"`, `"expExecute"`;
+`"getIcon"`, `"expViewGetIcon"`), and `init()`'s resolution loop
+over them.  Today that is the `FC_PY_ELEMENT` X-macro expanded three
+times; a generator emits it once from `src/App/FeaturePythonHooks.py`
+(the table: name, side, the `__object__` form, the exception policy)
+into a small include per side, and NOTHING else.  Rough size: the
+table ~80 lines, the two generated includes ~150 lines each, against
+~900 lines of pattern bodies that become ~150 lines of template.
+
+### 3.3 Build-time generation, the first of its kind
+
+Generated in the build tree, never committed, as `generate_from_xml`
+does (`cMake/FreeCadMacros.cmake:177`): a macro `generate_from_cog(
+<template> <output>)` beside it that runs `${PYTHON_EXECUTABLE} -m
+cogapp -d -o <build>/<output> <template>` as a custom command with
+the template and the `.py` table as dependencies, plus the
+`execute_process` at configure time that assures the file exists
+before the first build.  The template is a `.cog.h` file holding the
+`[[[cog ]]]` block; the generated header lands in
+`${CMAKE_CURRENT_BINARY_DIR}` and the hand-written headers include
+it by name.  `cogapp` becomes a configure-time requirement: `find`
+it with `${PYTHON_EXECUTABLE} -c "import cogapp"` and fail the
+configure with the install line when missing (`pip install cogapp`
+into `.conda/freecad`; it is in neither Python on this box today).
+The feedstocks (`freecad-rt-feedstock`, and the Windows build) add
+`cogapp` to their build requirements.  This is the start of the
+migration the user named: the 47 files with in-place `[[[cog`
+blocks (`PartParams`, `SketchObjectPyImp`, ...) move to the same
+macro one at a time later, their generated output leaving the tree.
 
 ## 4. Stages
 
-    P0  the cog scaffold: FeaturePythonHooks.py, the blocks replacing
-        the X-macros and the regular bodies in the four files, the
-        custom bodies untouched, no ProxyExp yet.  Gate: both suites
-        green; a diff of the preprocessed Imp against HEAD's shows
-        the same calls in the same order (a scratch check, not kept).
-                                                        one session
+    P0  the refactor: callHook and the decoders (3.1), the regular
+        bodies collapsed onto it, the irregular bodies on it with
+        their own decoders; the hook table and generate_from_cog
+        (3.2, 3.3) replacing the X-macros, cogapp installed in the
+        env and required by the configure; no ProxyExp yet.  Gate:
+        both suites green; a scratch diff of the calls each hook
+        makes (a Python Proxy logging every hook, native, before and
+        after) identical.                       one session
     P1  ProxyExp and the chain on the App side: the property, the
         resolution of 2.2, the walk of 2.3 in every App hook, the
         cache and the generation counter of 2.4.  Gate: a new Test
@@ -292,36 +396,40 @@ does.
         the chain restored; a link in another file (XLink), pinned
         by the file's own machinery; `ProxyExp` emptied returns the
         object to today's path.        one session
-    P2  the view side: expView* on the object's list, the same walk in
-        the view hooks.  Gate: getIcon, claimChildren, getToolTip and
-        onChanged from a sheet, in `FeaturePythonChain`'s GUI half.
+    P2  the view side: ProxyExp on ViewProviderFeaturePythonT, the
+        link classes taking a view-provider container (2.1), the
+        same walk in the view hooks, expViewAttach at the deferred
+        attach.  Gate: getIcon, claimChildren, getToolTip and
+        onChanged from a sheet, in `FeaturePythonChain`'s GUI half;
+        the view list saved, reopened, an external file resolving.
                                                         one session
     P3  the sandbox: the P1 gate routed (needs 7.17 D1 for a `def`
         cell); the audit line names the linked object's document; a
         cross-file link's write prompts doc.foreign once.  Sits
         inside 7.17's build, not before it.
 
-Lines: P0 the spec ~200, the generated output replacing ~900 lines of
-bodies with ~900 generated ones (the win is the single table and the
-single chain site, not the count); P1 ~250 (the property, the
+Lines: P0 the template and decoders ~150, the table ~80, the two
+generated includes ~300 (in the build tree), the macro ~40, against
+~900 lines of pattern bodies removed; P1 ~250 (the property, the
 resolver, the cache, the counter, three bump sites) plus ~200 of test;
-P2 ~120 plus ~100 of test.
+P2 ~180 (the view list, the container resolver in the link classes)
+plus ~100 of test.
 
-## 5. Decisions for the user
+## 5. The rulings (2026-09-12)
 
-1. The property name `ProxyExp` and the prefixes `exp` (App) /
-   `expView` (view provider) -- or one prefix with a rule for the
-   three colliding names.
-2. Notification hooks: call every element and let a True stop the
-   chain (proposed), or first-found only like the value hooks.
-3. One list on the App object shared by the view provider (proposed),
-   or a second list on the view provider for view-only overrides.
-4. Resolution order: the object's own attribute (alias, stored
-   function, C++ attribute) before its `Proxy` (proposed), or Proxy
-   first.
-5. Generated code committed, with the check script (proposed, the
-   Params precedent), or generated at build time (would make cogapp a
-   build dependency for every platform, including the feedstocks).
+1. `ProxyExp` on both sides; `exp` + Hook for App hooks, `expView` +
+   Hook for view hooks -- elaborated in 2.2.
+2. Notification hooks: the status today is the table in 2.3; the
+   rule proposed there (every element, a True stops before the
+   Proxy, the base keeps its position) awaits the user's word.
+3. **Separate lists**, one on the feature and one on the view
+   provider, like `Proxy` -- "no" to a shared list; the link classes
+   take a view-provider container for it (2.1).
+4. **Proxy first** on the linked object, then its own attributes --
+   "like the rest".
+5. **Generated at build time** -- the first `generate_from_cog`
+   user; the in-place cog files migrate later (3.3).  And cog is for
+   the table only; the bodies are a function (3.1).
 
 ## 6. What this changes in docs/Sandbox.md 7.17
 
