@@ -533,9 +533,8 @@ Three pre-existing oddities were preserved rather than fixed, since the gate
 is "nothing observable changes": `getExtraIcons` still drops a bare
 `(tag, pixmap)` pair on the floor (it fills a local and returns without
 assigning); `getDetailPath` still deletes a null pointer on one branch; and
-`ViewProviderFeaturePythonT::canReorderObject` still calls
-`imp->canReplaceObject`, so a Proxy's `canReorderObject` is never consulted.
-The last is a real bug and belongs in its own commit.
+`ViewProviderFeaturePythonT::canReorderObject` called `imp->canReplaceObject`.
+The last was a real bug and got its own commit, below.
 
 **The gate.**  Python 2688 tests OK (0 failures, 0 errors, 50 skipped, 6
 expected failures) and C++ 605/605, both matching the pre-change baseline of
@@ -547,6 +546,44 @@ obj)`, `dropObjectEx(vobj, obj, owner, subname, elements)`,
 `canDropObjectEx(obj, owner, subname, elements)`, `getDisplayModes(vobj)` and
 `updateData(obj, prop)` with the document object.  The App half was checked
 the same way under `FreeCADCmd`.
+
+### 4.2 The reorder query asked the wrong hook (fixed 2026-09-12)
+
+`ViewProviderFeaturePythonT::canReorderObject` switched on
+`imp->canReplaceObject(obj, before)`, a copy-paste from the
+`canReplaceObject` override directly above it. It arrived with 638f3bbf20
+(2021-12-05), the commit that added drag-and-drop reordering, so it had
+never worked.
+
+Two consequences, and the second is worse than the first. A scripted view
+provider's `canReorderObject` was dead: the Imp method is fully implemented
+and resolved on the Proxy at init, and nothing called it. And
+`canReplaceObject` answered in its place, with a reorder's arguments -- a
+Proxy answering true there silently authorised reorders it was never asked
+about, false blocked them.
+
+It guards the real operation, not only the drag preview: `Tree.cpp:3279`
+asks it to decide whether a drag lands as a reorder, and
+`ViewProvider::reorderObjects` (`ViewProvider.cpp:877`) loops over it as the
+precondition before performing one. Note the asymmetry that hid it -- the
+verb was wired correctly, `reorderObjects` does call `imp->reorderObjects`,
+so only the permission question was misrouted.
+
+Nothing in the tree could see it. No bundled Python view provider defines
+either hook, so the Imp returned NotImplemented either way and the C++ base
+answered, which is what a correct call also produces. It was live only for
+out-of-tree workbenches and addons, which is presumably why it sat four
+years.
+
+The fix is one identifier. The cover is new: `src/Mod/Test/ViewProviderHooks.py`,
+run through `scripts/sandbox-gui-gate.py` (docs/Testing.md sec 1), which is
+the first test in the tree to touch `ViewProviderFeaturePythonImp` at all --
+both suites are headless and reach none of it. Eight cases: three on the
+reorder and replace queries, five pinning the three `PyHookSelf` forms of
+sec 4.1, including `updateData`'s document object. Verified against a build
+with the bug restored: the two reorder cases fail there (the query returns
+false, and a `canReplaceObject`-only Proxy answers true) and the other six
+pass, so the module guards the refactor as well as the fix.
 
 Lines: P0 the template and decoders ~150, the table ~80, the two
 generated includes ~300 (in the build tree), the macro ~40, against

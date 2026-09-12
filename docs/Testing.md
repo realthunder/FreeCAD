@@ -100,6 +100,33 @@ for m in ("pivy", "typing_extensions", "ply", "yaml", "requests",
 out.close()
 ```
 
+### Python that needs the GUI
+
+`FreeCADCmd -t 0` above is headless, and the Gui binary has no `-t` mode, so
+a unittest module that needs a real view provider or a real widget cannot run
+in either. Those modules run from `scripts/sandbox-gui-gate.py`, which the GUI
+executes at startup; `$SANDBOX_GUI_GATE_MODULES` selects them and the verdict
+is the last line of `$SANDBOX_GUI_GATE_RESULT`, not the exit code.
+
+    cd build/conda-relwithdebinfo-801
+    QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome2 \
+      SANDBOX_GUI_GATE_MODULES=ViewProviderHooks \
+      SANDBOX_GUI_GATE_RESULT=/tmp/gate.txt \
+      timeout -k 5 300 ~/works/sw/fcad/.conda/run.sh \
+      ./bin/FreeCAD ~/works/sw/fcad/scripts/sandbox-gui-gate.py
+
+Most of the default module list is the sandbox gates of `docs/Sandbox.md` 7.9,
+which need `xcb` under Xvfb and a guest runtime. `ViewProviderHooks` is the
+exception and runs on `offscreen` with neither: it is the only cover the tree
+has for `ViewProviderFeaturePythonImp`, every hook of which is invisible to
+both suites above. It pins which hook each view query reaches and what
+arguments the Proxy is handed, per the table in `docs/ProxyChain.md` sec 3.
+
+**Editing a test module means copying it into the build tree.** The modules
+are installed, not read from `src/`, so an edit to `src/Mod/Test/<M>.py` does
+nothing until `cmake --build` copies it, or you copy it yourself into
+`build/<tree>/Mod/Test/`.
+
 ### C++
 
 The suites are built only when `ENABLE_DEVELOPER_TESTS` is on:
