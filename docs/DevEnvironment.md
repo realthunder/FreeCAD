@@ -1122,6 +1122,7 @@ absolute root is written down.
 | FreeCAD fork | `.` (branch `LinkVibe`) |
 | OCCT fork | `..\occt` (branch `LinkVibe-801`) |
 | Coin fork | `..\coin` (branch `LinkVibe`) |
+| pivy fork | `..\pivy` (branch `rt-0.6.10`) |
 | OCCT install | `..\occt\install\win-relwithdebinfo-801` |
 | Coin install | `..\install\coin-win-relwithdebinfo` |
 | FreeCAD build | `build\win-relwithdebinfo-801` |
@@ -1839,7 +1840,7 @@ covered in the next section.
 | `mcp_run.py <script.py>` | run Python inside the *running* FreeCAD over MCP |
 | `run-cycles.cmd` | `run.cmd` plus the two variables Cycles' GPU devices need |
 | `build-occt.cmd` / `build-coin.cmd` | the dependency recipes above, with the suffixes and prefixes filled in |
-| `build-libarea.cmd` / `build-pivy.cmd` | the two from-source packages, with the swig-421 prefix wired in |
+| `build-libarea.cmd` / `build-pivy.cmd` | the two from-source packages. pivy builds on the env's own SWIG -- do not pin it |
 | `configure-fcad.ps1` / `build-fcad.ps1` | the stall-watchdog forms, for a box with the endpoint-security problem |
 | `ctest-fcad.cmd` | `cd` to the build tree and `ctest` through `run.cmd` |
 | `ctest-fcad-cleantmp.cmd` / `pytest-fcad-pty.cmd` | the same with `TMP` redirected, and the Python suite under a ConPTY -- see `docs/Testing.md` |
@@ -2173,18 +2174,34 @@ target, so `ctest` works from the build directory with nothing added;
 
 Draft and Arch import `pivy.coin` at load time, so without pivy those workbenches
 fail to register. There is no pivy source checkout in the layout table by default —
-clone one beside the others:
+clone one beside the others, **from the fork, on `rt-0.6.10`**:
 
 ```bat
-git clone --depth 1 --branch 0.6.10 https://github.com/coin3d/pivy.git ..\pivy
+git clone --branch rt-0.6.10 https://github.com/realthunder/pivy.git ..\pivy
 ```
 
-0.6.10 is the version `pivy-feedstock` packages. The feedstock's two patches do not
-both apply here: `extend_install_rpath.patch` is meaningless on Windows, while
-`windows_cmake_install_path_fix.patch` (upstream `fc622b3b`, one
-`file(TO_CMAKE_PATH ...)` on `PIVY_Python_SITEARCH`) **is** needed — `Python_SITEARCH`
-comes back with backslashes and the `install(DESTINATION)` that consumes it is not
-path-normalised. Apply it to the checkout.
+**Why from source and not the channel's `pivy-rt`:** this box cannot reach
+`conda.anaconda.org`, where that channel lives -- 443 hangs and times out,
+re-checked 2026-09-12, while `github.com` answers fine (see the "No
+anaconda.org" material in this section). Anything that channel publishes has
+to arrive over GitHub the way the fork's `ifcopenshell` did, and
+`realthunder/pivy-feedstock` currently has no releases and no tags, so there
+is no asset to fetch. If a `pivy-rt` win-64 build is ever attached to one,
+**prefer it**: it would carry a `conda-meta` record, and the hand-placed
+source build is the reason a mismatched pivy could sit here unnoticed in the
+first place. Whichever way it arrives it has to be generation 5 -- the
+feedstock pins `swig >=4.5,<4.6`, which is the pairing below.
+
+That branch is 0.6.10 -- the version `pivy-feedstock` packages -- plus what the
+other boxes needed, so nothing has to be patched into the checkout by hand any
+more. It carries the Windows site-packages path normalisation (upstream
+`fc622b3b`, one `file(TO_CMAKE_PATH ...)`: `Python_SITEARCH` comes back with
+backslashes and the `install(DESTINATION)` that consumes it is not
+path-normalised), the RPATH extension, a `.gitignore` for the headers the build
+generates into the source tree, and **"Drop Python 2"**, which is what lets the
+env's own SWIG build it (below). Of the feedstock's two patches,
+`extend_install_rpath.patch` is meaningless on Windows and the path fix is in
+the branch.
 
 ```bat
 .conda\run.cmd cmake -G Ninja -B ..\pivy\build\win-relwithdebinfo ^
@@ -2211,30 +2228,67 @@ Two things differ from the feedstock's `bld.bat`:
 - **SoQt is not built here**, so `find_package(SoQt CONFIG)` (not `REQUIRED`) misses
   and `pivy.gui.soqt` is skipped. FreeCAD only ever imports `pivy.coin`, so this
   costs nothing; `PIVY_USE_QT6` is irrelevant while SoQt is absent.
-- **SWIG has to be older than 4.3, and it cannot be the env's.** pivy's
-  typemaps still use the Python 2 spellings -- `PyInt_FromLong`,
-  `PyInt_AsLong`, `PyString_Check` -- which SWIG defined as macros over the
-  Python 3 API in `pyhead.swg` until **4.3.0 dropped Python 2 support and
-  removed them**. Against a newer SWIG the generated `coinPYTHON_wrap.cxx`
-  compiles into a wall of `error C3861: 'PyInt_FromLong': identifier not
-  found`, which reads as a broken checkout rather than a tool version. The env
-  carries 4.5.0, and a downgrade in place is not available -- swig 4.2.1 wants
-  a `pcre2` older than `qt6-main` 6.11.2 allows, so the solve fails outright.
-  Give it its own prefix and name it explicitly, the way `CUDA_BIN_PATH` gets
-  its own:
+- **SWIG is the env's own, and has to be** -- 4.5.0 here, the same one
+  FreeCAD configures against. *** **This is the opposite of what this section
+  said until 2026-09-12, and the old advice had grown teeth.** SWIG shares its
+  type registry through a module in the live interpreter named
+  `swig_runtime_data<GENERATION>`; pivy registers Coin's types into the module
+  ITS swig named and FreeCAD looks them up in the module OURS names. Two
+  generations never meet, and nothing says so until a Coin pointer crosses the
+  boundary at run time and fails with **"No SWIG wrapped library loaded"**,
+  which reads as "pivy is missing" when both are present and healthy.
 
-  ```bat
-  conda create -y -p D:\works\sw\fcad\.conda\swig-421 ^
-      --override-channels -c https://prefix.dev/conda-forge swig=4.2.1
-  :: then add to the configure line
-  ::   -DSWIG_EXECUTABLE=D:/works/sw/fcad/.conda/swig-421/Library/bin/swig.exe
+  The reason a mismatch was ever tolerated here is that pivy's typemaps used
+  the Python 2 spellings -- `PyInt_FromLong`, `PyInt_AsLong`,
+  `PyString_Check` -- which SWIG defined as macros over the Python 3 API in
+  `pyhead.swg` until **4.3.0 dropped Python 2 support and removed them**.
+  Against a newer SWIG the generated `coinPYTHON_wrap.cxx` compiled into a
+  wall of `error C3861: 'PyInt_FromLong': identifier not found`, so this box
+  built pivy with a `swig=4.2.1` in its own `.conda\swig-421` prefix and then
+  pinned FreeCAD's own configure to the same file to match it. **The fork's
+  `rt-0.6.10` removes the cause** (the macOS section below has the commit), so
+  neither half is needed: build pivy with no `-DSWIG_EXECUTABLE` at all, and
+  leave FreeCAD's configure alone. **That prefix was deleted 2026-09-12** --
+  there is nothing left to point a pin at, and recreating it would be a
+  mistake, not a fallback.
+
+  *** **Deleting a conda prefix can fail on files it does not own alone.**
+  `swig-421`'s `zlib.dll` and `libbz2.dll` were hardlinks into the package
+  cache, and so the SAME file as the ones in `.conda\freecad` -- which a
+  `ctest` run had mapped. Windows refuses to unlink a mapped image by any of
+  its names, and reports it as "Access to the path ... is denied", which reads
+  like a permissions problem and is not. Nothing had `swig-421` on its `PATH`;
+  the answer is to stop whatever is using the OTHER prefix and try again.
+
+  *** **`src/Base/swigpyrun.cpp` being checked in does NOT mean the tree never
+  runs SWIG** -- this section used to say so, and that sentence is what made
+  the pin look harmless. `src/Base/CMakeLists.txt` runs
+  `${SWIG_EXECUTABLE} -python -external-runtime` at CONFIGURE time to generate
+  `swigpyrun.h` beside it, and that file is what fixes FreeCAD's generation.
+  Whatever `find_package(SWIG)` resolves to therefore decides one half of the
+  pairing.
+
+  `cMake/FreeCAD_Helpers/SetupSwig.cmake` now derives both halves at configure
+  time -- ours by asking the chosen SWIG for its runtime, pivy's by importing
+  it in the interpreter that will load it -- and FATAL_ERRORs on a mismatch
+  rather than letting the build succeed. The configure summary prints the pair:
+
+  ```
+  -- SWIG:                        4.5.0
+  -- SWIG_runtime:                5 (pivy: 5)
   ```
 
-  Nothing else in the tree runs SWIG -- `src/Base/swigpyrun.cpp` is checked in
-  -- so the env's own copy exists only to satisfy the `find_package(SWIG)` in
-  the configure summary, and its version does not matter.
+  If those two numbers ever differ, rebuild pivy (`..\tools\build-pivy.cmd`)
+  rather than pinning SWIG back down. A standing build tree keeps whatever
+  `SWIG_EXECUTABLE` it was first given, so unpin an existing one explicitly:
 
-`_coin.pyd` links `Coin4.lib` and needs `Coin4.dll` at runtime, which is the same
+  ```bat
+  .conda\run.cmd cmake -U SWIG_EXECUTABLE -U SWIG_DIR -U SWIG_VERSION ^
+      build\win-relwithdebinfo-801
+  ```
+
+`_coin.pyd` links `CoinRT4.lib` and needs `CoinRT4.dll` at runtime (the fork's
+Coin renames the library), which is the same
 no-rpath problem as everything else — the `.pth` in the section below already covers
 it, and `run.cmd`'s `PATH` covers a plain `python -c "from pivy import coin"`.
 
@@ -2892,7 +2946,9 @@ meant (`PyLong_*`, and `PyBytes_Check` for the one `PyString_Check` in
 `SbImage.i`), `interfaces/coin2.i` and `soqt2.i` -- the Python 2 module
 variants -- deleted, and `setup.py` always passing `-py3`. It builds
 clean on swig 4.5.1 and is what the other boxes should take when their
-swig moves.
+swig moves. **Windows took it 2026-09-12** and deleted the `swig-421`
+prefix it had been building pivy with; see the SWIG bullet under
+"Building pivy" for what that pin had cost.
 
 *** **ninja does not re-run swig when an interface file changes.** The
 dependency is not tracked, so an edit to `interfaces/*.i` recompiles the
