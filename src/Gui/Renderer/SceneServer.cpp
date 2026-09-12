@@ -1689,6 +1689,15 @@ public:
             type = "application/json";
         else if (ext == "data" || ext == "bin")
             type = "application/octet-stream";
+        else if (ext == "stamp")
+            // fcviewer.stamp, which the page fetches to learn its own
+            // build and report it in the hello. Without it here the
+            // whole stale-bundle reload path is dead when the backend
+            // serves the page itself (the only place it is served over
+            // one hostname, docs/ShareAccess.md sec 5): the viewer
+            // reports no build, so pushReloadIfStale() returns early
+            // and a rebuild never reaches an open page.
+            type = "text/plain; charset=utf-8";
         if (!type)
             return false;
         std::FILE *f = std::fopen((std::string(dir) + path).c_str(), "rb");
