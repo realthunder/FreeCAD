@@ -1734,7 +1734,15 @@ public:
             conn.queueText(msg);
             conn.reloadPushed = expected;
         }
-        std::printf("fcviewer server: viewer build stale, reload pushed\n");
+        // stderr with an explicit flush, like every other diagnostic in
+        // this file: stdout is block-buffered once it is redirected to a
+        // file, which is how a serving session is always run, so the one
+        // server-side instrument this feature has was never observable
+        // while the process lived -- the reload fired and the line did
+        // not appear. Verified 2026-09-12 against a real rebuild.
+        std::fprintf(stderr,
+                     "fcviewer server: viewer build stale, reload pushed\n");
+        std::fflush(stderr);
     }
 
     void dispatchPick(DocGroup &g, const ScenePickRequest &req)

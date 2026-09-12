@@ -802,6 +802,53 @@ itself when the served build changes:
   from anyone. The viewer refuses a second reload for the same version
   string, so a bad build can't cause a reload loop.
 
+**Driven end to end, 2026-09-12** (Windows, headless Chrome against the
+installed browser, `omnimod2` serving `Served` on 18765, viewer bundle at
+`build/wasm`). It works, and two things about it were not what this section
+said.
+
+The run: the page loads, fetches `fcviewer.stamp` and reports it in the
+hello (`fcviewer: build 2de287f9659be5ad`); a WASM rebuild lands under the
+open page and rewrites the stamp; the backend notices and pushes; the page
+re-navigates and comes back on the new bundle.
+
+    16:04:13  armed: page reports build 2de287f9659be5ad
+    16:05:09  PAGE fcviewer: reload requested (bust '53a2ad72811cd25d')
+    16:05:09  NAV  ...fcviewer.html?msaa=0&bust=53a2ad72811cd25d
+    16:05:10  PAGE fcviewer: build 53a2ad72811cd25d
+
+Push to live is under 1.5 s. Two runs, in opposite directions over the same
+pair of bundles, both clean.
+
+**"On its next message" is wrong, and it matters.** An already-connected
+page is not waiting for traffic: the per-connection tick checks the stamp
+every 25 ticks of `kTickMs` = **5 s** (`Tick`, SceneServer.cpp), and
+`pushReloadIfStale` also runs at the hello. So an idle page with nothing
+being published still follows a rebuild, within about five seconds. That is
+a stronger guarantee than the prose claimed and worth stating as the one it
+actually offers.
+
+**The one server-side instrument this feature had did not work**, and the
+reload firing correctly is exactly why nobody noticed. `pushReloadIfStale`
+announced itself with the only `std::printf` in `SceneServer.cpp` -- every
+other diagnostic in that file goes to `stderr` with an explicit
+`std::fflush`. A serving session always has its output redirected to a
+file, where stdout is block-buffered, so the line never appeared while the
+process lived: the reload fired, the page reloaded, and the log said
+nothing. Now `fprintf(stderr)` + `fflush`, in the file's own convention,
+and `fcviewer server: viewer build stale, reload pushed` shows up live.
+Until this was fixed the page-side console line was the only evidence
+either half of the handshake had run.
+
+**The stamp is not reproducible across rebuilds, and should not be read as
+a content identity.** It is a SHA-1 over the three linked artifacts
+(`wasm/stamp.cmake`), and relinking identical sources does not reproduce
+it: a bundle built from source S stamped `2de4e3a3015034fb`, a probe edit
+took it to `2de287f9659be5ad`, and reverting that edit back to S gave
+`53a2ad72811cd25d` rather than the original. For the feature this is
+harmless and arguably the point -- ANY rebuild is detected, which is what
+the comment in `stamp.cmake` promises -- but it means the stamp answers
+"is this the bundle I am serving" and never "is this the same code".
 ---
 
 ## 5. The verification harness (consumer of all of the above)
