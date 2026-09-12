@@ -144,12 +144,19 @@ int FeaturePythonPyT<FeaturePyT>::_setattr(const char *attr, PyObject *value)
                 dict_item = PyMethod_New(value, this);
                 returnValue = PyDict_SetItemString(dict_methods, attr, dict_item);
                 Py_XDECREF(dict_item);
+                if (returnValue == 0) {
+                    // the function just stored may be a hook some feature's
+                    // ProxyExp chain resolved; docs/ProxyChain.md sec 2.4
+                    App::ProxyChain::bump();
+                }
             }
         }
         else {
             // delete
             PyErr_Clear();
             returnValue = PyDict_DelItemString(dict_methods, attr);
+            if (returnValue == 0)
+                App::ProxyChain::bump();
             if (returnValue < 0 && PyErr_ExceptionMatches(PyExc_KeyError))
                 PyErr_SetString(PyExc_AttributeError, attr);
         }

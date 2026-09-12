@@ -31,10 +31,10 @@ ERR_THROW = "Throw"                # Base::PyException::ThrowException()
 
 
 class Hook:
-    """One hook: the Proxy attribute name, plus the three generated facts."""
+    """One hook: the Proxy attribute name, plus the four generated facts."""
 
     def __init__(self, name, self_arg=SELF_MODERN, guarded=True, error=ERR_REPORT,
-                 note=None):
+                 notify=False, note=None):
         self.name = name
         self.self_arg = self_arg
         # guarded=False is the hook whose only check today is "is the callable
@@ -43,6 +43,11 @@ class Hook:
         # would silently drop the nested call.
         self.guarded = guarded
         self.error = error
+        # notify=True is a hook whose result nothing reads: the chain calls
+        # EVERY element rather than stopping at the first that answers, and
+        # only an explicit True from a ProxyExp element stops it before the
+        # Proxy.  docs/ProxyChain.md sec 2.3.
+        self.notify = notify
         self.note = note
 
     def enumerator(self, prefix="Hook"):
@@ -71,12 +76,12 @@ APP_HOOKS = [
     Hook("mustExecute", SELF_MODERN),
     Hook("skipRecompute", SELF_MODERN, error=ERR_THROW,
          note="absent means true -- the base decides alone"),
-    Hook("onBeforeChange", SELF_MODERN, guarded=False),
+    Hook("onBeforeChange", SELF_MODERN, guarded=False, notify=True),
     Hook("onBeforeChangeLabel", SELF_ALWAYS, guarded=False,
          note="a returned string replaces the label and skips the base"),
-    Hook("onChanged", SELF_MODERN, guarded=False),
-    Hook("onDocumentRestored", SELF_MODERN),
-    Hook("unsetupObject", SELF_MODERN),
+    Hook("onChanged", SELF_MODERN, guarded=False, notify=True),
+    Hook("onDocumentRestored", SELF_MODERN, notify=True),
+    Hook("unsetupObject", SELF_MODERN, notify=True),
     Hook("getViewProviderName", SELF_ALWAYS),
     Hook("getSubObject", SELF_ALWAYS),
     Hook("getSubObjects", SELF_ALWAYS),
@@ -120,13 +125,13 @@ VIEW_HOOKS = [
     Hook("doubleClicked", SELF_MODERN),
     Hook("iconMouseEvent", SELF_NONE),
     Hook("setupContextMenu", SELF_MODERN),
-    Hook("attach", SELF_MODERN),
-    Hook("updateData", SELF_MODERN, guarded=False,
+    Hook("attach", SELF_MODERN, notify=True),
+    Hook("updateData", SELF_MODERN, guarded=False, notify=True,
          note="the owner here is the DOCUMENT OBJECT, not the view provider"),
-    Hook("onChanged", SELF_MODERN, guarded=False),
-    Hook("startRestoring", SELF_NONE,
+    Hook("onChanged", SELF_MODERN, guarded=False, notify=True),
+    Hook("startRestoring", SELF_NONE, notify=True,
          note="declared and resolved, never called"),
-    Hook("finishRestoring", SELF_NONE),
+    Hook("finishRestoring", SELF_NONE, notify=True),
     Hook("onDelete", SELF_MODERN),
     Hook("canDelete", SELF_NONE),
     Hook("isShow", SELF_NONE),
@@ -169,9 +174,10 @@ def emit(cog, hooks, prefix, enum_name, table_name, side):
     cog.outl("")
     cog.outl("static const App::PyHookDef %s[] = {" % table_name)
     for hook in hooks:
-        cog.outl('    {"%s", "%s", App::PyHookSelf::%s, %s, App::PyHookError::%s},'
+        cog.outl('    {"%s", "%s", App::PyHookSelf::%s, %s, %s, App::PyHookError::%s},'
                  % (hook.name, hook.exp_name(prefix), hook.self_arg,
-                    "true" if hook.guarded else "false", hook.error))
+                    "true" if hook.guarded else "false",
+                    "true" if hook.notify else "false", hook.error))
     cog.outl("};")
     cog.outl("")
     cog.outl("static_assert(sizeof(%s) / sizeof(%s[0]) == HookCount,"

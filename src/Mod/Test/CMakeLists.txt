@@ -35,6 +35,7 @@ SET(Test_SRCS
     SandboxInitGui.py
     SandboxCorpusGui.py
     ViewProviderHooks.py
+    FeaturePythonChain.py
 )
 
 SET(TestData_SRCS

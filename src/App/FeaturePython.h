@@ -27,6 +27,7 @@
 
 #include <App/FeaturePythonHook.h>
 #include <App/GeoFeature.h>
+#include <App/PropertyLinks.h>
 #include <App/PropertyPythonObject.h>
 
 
@@ -110,6 +111,18 @@ class FeaturePythonT : public FeatureT
 public:
     FeaturePythonT() {
         ADD_PROPERTY(Proxy,(Py::Object()));
+        ADD_PROPERTY_TYPE(ProxyExp,(nullptr),"Base",App::Prop_None,
+                "Objects extending this object's Proxy hooks.  Each is asked, in\n"
+                "order and before the Proxy, for a method named after the hook --\n"
+                "expExecute(obj), expOnChanged(obj, prop), ... -- and the first\n"
+                "that answers stops the chain.  A linked object's own Proxy is\n"
+                "asked first, then the object itself, so a spreadsheet whose\n"
+                "alias cells are lambdas extends this object as readily as a\n"
+                "scripted one does.  The links are dependencies: an extension is\n"
+                "recomputed before what it extends, and a copy with dependencies\n"
+                "takes it along.");
+        // a linked object may live in another file
+        ProxyExp.setScope(LinkScope::Global);
         // cannot move this to the initializer list to avoid warning
         imp = new FeaturePythonImp(this);
     }
@@ -291,10 +304,14 @@ protected:
     void onChanged(const Property* prop) override {
         if(prop == &Proxy)
             imp->init(Proxy.getValue().ptr());
+        else if(prop == &ProxyExp)
+            imp->setHookExtensions(ProxyExp.getValues());
         imp->onChanged(prop);
         FeatureT::onChanged(prop);
     }
     void onDocumentRestored() override {
+        // the links resolve late, so the list only means anything now
+        imp->setHookExtensions(ProxyExp.getValues());
         imp->onDocumentRestored();
         FeatureT::onDocumentRestored();
     }
@@ -316,6 +333,8 @@ public:
 private:
     FeaturePythonImp* imp;
     PropertyPythonObject Proxy;
+    /// the chain of docs/ProxyChain.md: objects whose methods extend this one
+    PropertyXLinkList ProxyExp;
     mutable std::string viewProviderName;
 };
 

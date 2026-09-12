@@ -293,7 +293,7 @@ FeaturePythonImp::hasChildElement() const
 int FeaturePythonImp::isElementVisible(const char *element) const
 {
     int ret = -2;
-    if (callHook(HookIsElementVisible, pyHookDecodeInt(ret), element) == PyHookState::Failed) {
+    if (callHook(HookIsElementVisible, pyHookDecodeInt(ret, -2), element) == PyHookState::Failed) {
         return -1;
     }
     return ret;
@@ -302,7 +302,7 @@ int FeaturePythonImp::isElementVisible(const char *element) const
 int FeaturePythonImp::isElementVisibleEx(const char *subname, int reason) const
 {
     int ret = -2;
-    if (callHook(HookIsElementVisibleEx, pyHookDecodeInt(ret), subname, reason)
+    if (callHook(HookIsElementVisibleEx, pyHookDecodeInt(ret, -2), subname, reason)
         == PyHookState::Failed) {
         return -1;
     }
@@ -312,7 +312,7 @@ int FeaturePythonImp::isElementVisibleEx(const char *subname, int reason) const
 int FeaturePythonImp::setElementVisible(const char *element, bool visible)
 {
     int ret = -2;
-    if (callHook(HookSetElementVisible, pyHookDecodeInt(ret), element, visible)
+    if (callHook(HookSetElementVisible, pyHookDecodeInt(ret, -2), element, visible)
         == PyHookState::Failed) {
         return -1;
     }
@@ -352,7 +352,7 @@ FeaturePythonImp::allowDuplicateLabel() const
 int FeaturePythonImp::canLoadPartial() const
 {
     int ret = -1;
-    if (callHook(HookCanLoadPartial, pyHookDecodeInt(ret)) == PyHookState::Failed) {
+    if (callHook(HookCanLoadPartial, pyHookDecodeInt(ret, -1)) == PyHookState::Failed) {
         return 0;
     }
     return ret;

@@ -37,6 +37,7 @@
 #include <App/ExpressionEvaluator.h>
 #include <App/ExpressionParser.h>
 #include <App/ExpressionVisitors.h>
+#include <App/FeaturePythonHook.h>
 #include <App/Property.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
@@ -1764,6 +1765,11 @@ void PropertySheet::recomputeDependencies(CellAddress key)
 
 void PropertySheet::hasSetValue()
 {
+    // A cell of this sheet may be a method some feature's ProxyExp chain
+    // resolved; re-typing it is a definition change nothing else reports.
+    // docs/ProxyChain.md sec 2.4.
+    App::ProxyChain::bump();
+
     if (updateCount == 0 || !owner || !owner->isAttachedToDocument() || owner->isRestoring()
         || this != &owner->cells || testFlag(LinkDetached)) {
         PropertyExpressionContainer::hasSetValue();

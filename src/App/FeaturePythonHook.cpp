@@ -24,8 +24,27 @@
 
 #include "DocumentObject.h"
 #include "FeaturePythonHook.h"
+#include "PropertyPythonObject.h"
 
 using namespace App;
+
+namespace
+{
+/// docs/ProxyChain.md sec 2.4.  Bumped from the three places a hook definition
+/// can change under a feature that itself did not change; never wraps in any
+/// run a human could sit through, and a wrap would only force one rebuild.
+unsigned long _proxyChainGeneration = 1;
+}  // namespace
+
+unsigned long App::ProxyChain::generation()
+{
+    return _proxyChainGeneration;
+}
+
+void App::ProxyChain::bump()
+{
+    ++_proxyChainGeneration;
+}
 
 Py::Object App::pyHookArg(App::DocumentObject* arg)
 {
@@ -54,6 +73,9 @@ PyHookImp::~PyHookImp()
     try {
         for (auto& slot : _hooks) {
             slot.proxy = Py::None();
+            // under the lock: the chain holds references too, and a vector
+            // destroyed with the rest of the object would drop them without it
+            slot.chain.clear();
         }
     }
     catch (Py::Exception& e) {
@@ -87,13 +109,119 @@ void PyHookImp::init(PyObject* pyobj)
     }
 }
 
+void PyHookImp::setHookExtensions(std::vector<App::DocumentObject*> objs)
+{
+    _expObjects = std::move(objs);
+    // drop every resolved chain; each hook rebuilds its own on its next call
+    Base::PyGILStateLocker lock;
+    for (auto& slot : _hooks) {
+        slot.chain.clear();
+        slot.chainValid = false;
+    }
+    _chainGeneration = ProxyChain::generation();
+}
+
+void PyHookImp::ensureChain(int hook) const
+{
+    if (_chainGeneration != ProxyChain::generation()) {
+        _chainGeneration = ProxyChain::generation();
+        Base::PyGILStateLocker lock;
+        for (auto& slot : _hooks) {
+            slot.chain.clear();
+            slot.chainValid = false;
+        }
+    }
+    HookSlot& slot = _hooks[hook];
+    if (!slot.chainValid) {
+        // before resolving, not after: resolution runs Python, which may reach
+        // this hook again, and one unresolved pass is better than no bottom
+        slot.chainValid = true;
+        resolveChain(hook, slot);
+    }
+}
+
+void PyHookImp::resolveChain(int hook, HookSlot& slot) const
+{
+    const char* name = _hookTable[hook].expName;
+    std::string recursive("__allow_recursive_");
+    recursive += name;
+
+    Base::PyGILStateLocker lock;
+    for (auto* obj : _expObjects) {
+        if (!obj || !obj->isAttachedToDocument()) {
+            // an XLink whose file is not loaded, or an object on its way out
+            continue;
+        }
+        Py::Object callable;
+        Py::Object owner;
+        try {
+            // 1. the linked object's own Proxy, if it holds one -- a scripted
+            //    object that chooses to extend others.  Proxy first, as it is
+            //    everywhere else.
+            auto* prop = freecad_dynamic_cast<PropertyPythonObject>(
+                obj->getPropertyByName("Proxy"));
+            if (prop) {
+                Py::Object proxy = prop->getValue();
+                if (!proxy.isNone()) {
+                    FC_PY_GetCallable(proxy.ptr(), name, callable);
+                    if (!callable.isNone()) {
+                        owner = proxy;
+                    }
+                }
+            }
+            // 2. else the object itself: a spreadsheet alias whose cell is a
+            //    lambda, a function stored on it at runtime, or any callable
+            //    attribute a C++ type provides.  The type is never inspected.
+            if (callable.isNone()) {
+                Py::Object pyobj(obj->getPyObject(), true);
+                FC_PY_GetCallable(pyobj.ptr(), name, callable);
+                if (!callable.isNone()) {
+                    owner = pyobj;
+                }
+            }
+            if (callable.isNone()) {
+                continue;
+            }
+            ChainEntry entry;
+            entry.callable = callable;
+            PyObject* pyRecursive = PyObject_GetAttrString(owner.ptr(), recursive.c_str());
+            if (!pyRecursive) {
+                PyErr_Clear();
+            }
+            else {
+                entry.allowRecursive = PyObject_IsTrue(pyRecursive) != 0;
+                Py_DECREF(pyRecursive);
+            }
+            slot.chain.push_back(std::move(entry));
+        }
+        catch (Py::Exception&) {
+            // a property getter of the linked object raising is that object's
+            // problem; it simply does not extend this hook
+            Base::PyException e;
+            e.ReportException();
+        }
+        catch (const Base::Exception& e) {
+            e.ReportException();
+        }
+    }
+}
+
 bool PyHookImp::canCallHook(int hook) const
 {
+    if (!_expObjects.empty()) {
+        ensureChain(hook);
+    }
     const HookSlot& slot = _hooks[hook];
+    const bool nested = _hookTable[hook].guarded && slot.calling;
+    for (const auto& entry : slot.chain) {
+        if (!nested || entry.allowRecursive) {
+            return true;
+        }
+    }
     if (slot.proxy.isNone()) {
         return false;
     }
-    return !(_hookTable[hook].guarded && slot.calling && !slot.allowRecursive);
+    return !(nested && !slot.allowRecursive);
 }
 
 void PyHookImp::reportHookError(const PyHookDef& def)

@@ -71,8 +71,31 @@ struct PyHookDef
     /// a nested call is the normal case for these (a property set inside
     /// onChanged), and guarding them would silently drop it.
     bool guarded;
+    /// true: nothing reads the result, so the chain calls EVERY element
+    /// instead of stopping at the first that answers; only an explicit True
+    /// from a ProxyExp element stops it before the Proxy.
+    bool notify;
     PyHookError error;
 };
+
+/** The generation of the hook definitions in this process
+ *
+ * A ProxyExp element's definition can change under a feature that does not:
+ * a cell re-typed on a sheet, a Proxy replaced on the linked object, a
+ * function stored on it.  No signal reaches the feature for those, and an
+ * observer per feature on every linked object would be far too heavy, so the
+ * three places a definition can change bump one process-wide counter and a
+ * resolved chain remembers what it was built against.  A hook call then
+ * compares one integer.  docs/ProxyChain.md sec 2.4.
+ */
+namespace ProxyChain
+{
+/// The current generation.
+AppExport unsigned long generation();
+/// A hook definition somewhere may have changed: every resolved chain in the
+/// process rebuilds on its next use.
+AppExport void bump();
+}  // namespace ProxyChain
 
 /// What one hook call came to.
 enum class PyHookState : signed char
@@ -123,6 +146,13 @@ AppExport Py::Object pyHookArg(const std::vector<std::string>& arg);
  * decoder.  The cache is what it always was: init() resolves every hook once
  * when the Proxy changes, so a call is an isNone() test, a flag test, a GIL
  * lock and the pyCall.
+ *
+ * Beside the Proxy sits the CHAIN: the objects of the owner's ProxyExp list,
+ * each resolved for the hook's `exp` name and called before the Proxy, the
+ * first that answers stopping the walk -- an effect like multiple
+ * inheritance, method resolution left to right.  The list is empty for nearly
+ * every object in a document, and the whole of it then costs one empty()
+ * test.  docs/ProxyChain.md sec 2.
  */
 class AppExport PyHookImp
 {
@@ -136,6 +166,21 @@ public:
 
     /// Resolve every hook on pyobj.  Called when the Proxy changes.
     void init(PyObject* pyobj);
+
+    /** The objects extending this Proxy's hooks, in chain order
+     *
+     * The owner hands over its ProxyExp list: when it changes, when the
+     * document is restored (the links resolve late), and at construction.
+     * Every resolved chain is dropped; the next call to a hook rebuilds that
+     * hook's, and only that hook's.
+     */
+    void setHookExtensions(std::vector<App::DocumentObject*> objs);
+
+    /// Whether anything extends this Proxy at all.
+    bool hasHookExtensions() const
+    {
+        return !_expObjects.empty();
+    }
 
 protected:
     PyHookImp(const PyHookDef* table, std::size_t count);
@@ -158,43 +203,62 @@ protected:
      * @param args: the hook's own arguments, the owner excluded -- callHook
      *              places that itself, per the table's PyHookSelf.
      *
-     * Handled stops here.  NotHandled is the caller's cue to fall through to
-     * the C++ base.  Failed means a Python error was reported and the caller
-     * should answer with whatever this hook says an error means -- which is
-     * not always what "not handled" means.
+     * Handled stops the chain.  NotHandled is the caller's cue to fall
+     * through to the C++ base.  Failed means a Python error was reported and
+     * the caller should answer with whatever this hook says an error means --
+     * which is not always what "not handled" means.
+     *
+     * A notify hook (the table's flag) is the exception to "the first that
+     * answers wins": nothing reads its result, so every element is called,
+     * and only an explicit True from a chain element stops the walk before
+     * the Proxy.
      */
     template<class Decode, class... Args>
     PyHookState callHook(int hook, Decode&& decode, Args&&... args) const
     {
         const PyHookDef& def = _hookTable[hook];
         HookSlot& slot = _hooks[hook];
-        if (slot.proxy.isNone()) {
+        if (!_expObjects.empty()) {
+            ensureChain(hook);
+        }
+        if (slot.chain.empty() && slot.proxy.isNone()) {
             return PyHookState::NotHandled;
         }
-        if (def.guarded && slot.calling && !slot.allowRecursive) {
-            return PyHookState::NotHandled;
-        }
+        // The guard is one flag per hook and covers the whole chain, as it
+        // covered the one Proxy call before; an element opts out of it with
+        // __allow_recursive_<name> on the object its callable was found on.
+        const bool nested = def.guarded && slot.calling;
         CallGuard guard(slot.calling);
 
         Base::PyGILStateLocker lock;
-        try {
-            Py::Object res = callProxy(hook, def, slot, std::forward<Args>(args)...);
-            return decode(res) ? PyHookState::Handled : PyHookState::NotHandled;
-        }
-        catch (Py::Exception&) {
-            if (PyErr_ExceptionMatches(PyExc_NotImplementedError)) {
-                PyErr_Clear();
-                return PyHookState::NotHandled;
+        PyHookState state = PyHookState::NotHandled;
+        // By index, with the entry copied: a callable is free to do anything,
+        // including something that rebuilds this very chain underneath us.  A
+        // copy is one reference count against a Python call.
+        for (std::size_t i = 0; i < slot.chain.size(); ++i) {
+            const ChainEntry entry = slot.chain[i];
+            if (nested && !entry.allowRecursive) {
+                continue;
             }
-            reportHookError(def);
-            return PyHookState::Failed;
+            bool stop = false;
+            PyHookState one = callOne(hook, def, entry.callable, false, stop, decode, args...);
+            if (one != PyHookState::NotHandled) {
+                state = one;
+            }
+            if (one == PyHookState::Failed || stop
+                || (!def.notify && one == PyHookState::Handled)) {
+                return state;
+            }
         }
-        catch (const Base::Exception& e) {
-            // The pivy conversions of the view side throw this rather than a
-            // Python error; every hook that can see it reported and carried on.
-            e.ReportException();
-            return PyHookState::Failed;
+        if (!slot.proxy.isNone() && !(nested && !slot.allowRecursive)) {
+            const Py::Object proxy = slot.proxy;
+            bool stop = false;
+            PyHookState one = callOne(hook, def, proxy, true, stop, decode, args...);
+            if (one != PyHookState::NotHandled) {
+                state = one;
+            }
         }
+        return state;
     }
 
     /// Whether the Proxy is one of the old ones, carrying __object__ and so
@@ -211,9 +275,20 @@ protected:
     bool canCallHook(int hook) const;
 
 private:
+    /// One resolved ProxyExp element for one hook.
+    struct ChainEntry
+    {
+        Py::Object callable;
+        /// __allow_recursive_<expName>, read from the object the callable was
+        /// found on -- the linked object's Proxy, or the object itself.
+        bool allowRecursive {false};
+    };
+
     struct HookSlot
     {
         Py::Object proxy;            ///< the callable found on the Proxy
+        std::vector<ChainEntry> chain;  ///< the ProxyExp elements, in order
+        bool chainValid {false};     ///< the chain is resolved and current
         bool calling {false};        ///< inside a call, for the recursion guard
         bool allowRecursive {false}; ///< __allow_recursive_<hook> said so
     };
@@ -241,15 +316,53 @@ private:
         bool _old;
     };
 
-    template<class... Args>
-    Py::Object callProxy(int hook, const PyHookDef& def, const HookSlot& slot,
-                         Args&&... args) const
+    /// One element of the chain, or the Proxy itself: the call, the decode and
+    /// the error policy.  Arguments are passed as lvalues, never forwarded --
+    /// the same pack serves every element of the chain.
+    template<class Decode, class... Args>
+    PyHookState callOne(int hook, const PyHookDef& def, const Py::Object& callable,
+                        bool isProxy, bool& stop, Decode& decode, Args&... args) const
     {
-        const bool withSelf = def.self == PyHookSelf::Always
+        try {
+            Py::Object res = callPy(hook, def, callable, isProxy, args...);
+            if (def.notify) {
+                // an element saying True has consumed the notification; the
+                // Proxy is last, so its own answer decides nothing
+                stop = !isProxy && res.isTrue();
+                decode(res);
+                return PyHookState::Handled;
+            }
+            return decode(res) ? PyHookState::Handled : PyHookState::NotHandled;
+        }
+        catch (Py::Exception&) {
+            if (PyErr_ExceptionMatches(PyExc_NotImplementedError)) {
+                PyErr_Clear();
+                return PyHookState::NotHandled;
+            }
+            reportHookError(def);
+            return PyHookState::Failed;
+        }
+        catch (const Base::Exception& e) {
+            // The pivy conversions of the view side throw this rather than a
+            // Python error; every hook that can see it reported and carried on.
+            e.ReportException();
+            return PyHookState::Failed;
+        }
+    }
+
+    template<class... Args>
+    Py::Object callPy(int hook, const PyHookDef& def, const Py::Object& callable,
+                      bool isProxy, Args&... args) const
+    {
+        // A chain element is a separate object serving possibly many features,
+        // so it is always told which one it is extending -- even for the hooks
+        // whose Proxy method is passed nothing, its own self being the proxy.
+        // The __object__ form is the Proxy's alone.
+        const bool withSelf = !isProxy || def.self == PyHookSelf::Always
             || (def.self == PyHookSelf::Modern && !_has__object__);
         const std::size_t count = sizeof...(Args) + (withSelf ? 1U : 0U);
         if (count == 0) {
-            return Base::pyCall(slot.proxy.ptr());
+            return Base::pyCall(callable.ptr());
         }
         Py::Tuple tuple(count);
         std::size_t i = 0;
@@ -257,16 +370,27 @@ private:
             tuple.setItem(i++, hookSelf(hook));
         }
         // a comma fold: left to right, which is the argument order
-        ((void)tuple.setItem(i++, pyHookArg(std::forward<Args>(args))), ...);
-        return Base::pyCall(slot.proxy.ptr(), tuple.ptr());
+        ((void)tuple.setItem(i++, pyHookArg(args)), ...);
+        return Base::pyCall(callable.ptr(), tuple.ptr());
     }
 
     /// Report, rethrow or throw, per the hook's error policy.  Out of line so
     /// callHook stays small at every instantiation.
     static void reportHookError(const PyHookDef& def);
 
+    /// Bring one hook's chain up to date: rebuild everything if a definition
+    /// changed anywhere in the process (the generation counter), then resolve
+    /// this hook if it has not been resolved yet.  Out of line -- it runs once
+    /// per hook per edit, against thousands of calls.
+    void ensureChain(int hook) const;
+    void resolveChain(int hook, HookSlot& slot) const;
+
     const PyHookDef* _hookTable;
     mutable std::vector<HookSlot> _hooks;
+    /// The ProxyExp list, in order.  Empty for nearly every object.
+    std::vector<App::DocumentObject*> _expObjects;
+    /// What ProxyChain::generation() was when the chains were last resolved.
+    mutable unsigned long _chainGeneration {0};
     bool _has__object__ {false};
 };
 
@@ -288,14 +412,19 @@ inline auto pyHookDecodeValueT(PyHookImp::ValueT& out)
     };
 }
 
-/// An integer result; always handled.  The hook's own "not handled" value
-/// (-2 for the element-visibility hooks, -1 for canLoadPartial) travels back
-/// as an ordinary integer, exactly as it did.
-inline auto pyHookDecodeInt(int& out)
+/** An integer result, with the hook's own value for "not handled"
+ *
+ * These hooks answer "not mine" with a number rather than with an exception:
+ * -2 for the element-visibility hooks, -1 for canLoadPartial.  The number
+ * travels back to the caller as an ordinary integer, exactly as it did -- and
+ * it is also what moves the chain on to the next element, which is why the
+ * sentinel has to be named here rather than only at the caller.
+ */
+inline auto pyHookDecodeInt(int& out, int notHandled)
 {
-    return [&out](const Py::Object& res) {
+    return [&out, notHandled](const Py::Object& res) {
         out = static_cast<int>(Py::Int(res));
-        return true;
+        return out != notHandled;
     };
 }
 

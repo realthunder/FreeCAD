@@ -41,6 +41,7 @@
 #include "DocumentObjectPy.h"
 #include "Application.h"
 #include "DocumentObject.h"
+#include "FeaturePythonHook.h"
 #ifdef FC_EXPR_IMAGE_HOST
 #include "ExpressionEvaluator.h"
 #include "ExpressionGuestProxy.h"
@@ -567,4 +568,14 @@ bool PropertyPythonObject::isSame(const Property &_other) const
     if(res < 0) 
         PyErr_Clear();
     return false;
+}
+
+void PropertyPythonObject::hasSetValue()
+{
+    // A ProxyExp chain may have resolved a callable out of this very object --
+    // a scripted object's Proxy, a spreadsheet cell now holding a lambda -- and
+    // no signal reaches the features that linked to it.  One counter for the
+    // whole process; the chains compare it and rebuild.  docs/ProxyChain.md 2.4
+    ProxyChain::bump();
+    Property::hasSetValue();
 }
