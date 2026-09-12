@@ -174,6 +174,48 @@ function(fc_sweep_orphan_bindings)
     endif()
 endfunction(fc_sweep_orphan_bindings)
 
+# Generate <OUTPUT_NAME> in the build tree from <TEMPLATE_NAME>, a .cog.h file
+# in the current source directory holding a [[[cog ]]] block. Extra arguments
+# are further dependencies -- the Python module the template imports its table
+# from, typically.
+#
+# The generated file is a build artifact and is never committed, the way
+# generate_from_xml's bindings are not. That is the point of the macro: the 47
+# files that carry in-place [[[cog blocks today keep their generated output in
+# the tree, and are meant to migrate here one at a time (docs/ProxyChain.md
+# sec 3.3, docs/DevEnvironment.md).
+#
+# Add "${CMAKE_CURRENT_BINARY_DIR}/<OUTPUT_NAME>" to the target's source list,
+# or nothing will ask ninja to run the command.
+macro(generate_from_cog TEMPLATE_NAME OUTPUT_NAME)
+    set(COG_TEMPLATE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${TEMPLATE_NAME}")
+    set(COG_OUTPUT_PATH "${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_NAME}")
+
+    GET_FILENAME_COMPONENT(COG_OUTPUT_DIR "${COG_OUTPUT_PATH}" PATH)
+    file(MAKE_DIRECTORY "${COG_OUTPUT_DIR}")
+
+    if(NOT EXISTS "${COG_OUTPUT_PATH}")
+        # assures the file exists before the first build, as generate_from_xml does
+        execute_process(COMMAND "${PYTHON_EXECUTABLE}" -m cogapp -d
+                                -o "${COG_OUTPUT_PATH}" "${COG_TEMPLATE_PATH}"
+                        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                        RESULT_VARIABLE COG_RESULT)
+        if(NOT COG_RESULT EQUAL 0)
+            message(FATAL_ERROR "cog failed on ${COG_TEMPLATE_PATH}")
+        endif()
+    endif()
+
+    add_custom_command(
+        OUTPUT "${COG_OUTPUT_PATH}"
+        COMMAND "${PYTHON_EXECUTABLE}" -m cogapp -d
+                -o "${COG_OUTPUT_PATH}" "${COG_TEMPLATE_PATH}"
+        MAIN_DEPENDENCY "${COG_TEMPLATE_PATH}"
+        DEPENDS ${ARGN}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Building ${OUTPUT_NAME} out of ${TEMPLATE_NAME}"
+    )
+endmacro(generate_from_cog)
+
 macro(generate_from_xml BASE_NAME)
     set(TOOL_PATH "${CMAKE_SOURCE_DIR}/src/Tools/bindings/generate.py")
     file(TO_NATIVE_PATH "${TOOL_PATH}" TOOL_NATIVE_PATH)
