@@ -227,16 +227,17 @@ struct TextureImage {
     }
 
     std::vector<uint8_t> pixels;
-    /// The file \ref pixels were decoded from, as authored -- a JPEG or
-    /// a PNG (ImageDecode.h says which), kept beside the pixels by a
-    /// producer that read one. Consumers read \ref pixels; this is for
-    /// the TRANSPORT, which ships it instead of the pixels when it is
-    /// here: a 2k map is a few hundred kilobytes as a file and sixteen
-    /// megabytes decoded, and a document's worth of maps is the
+    /// The file \ref pixels were decoded from, as authored -- a JPEG, a
+    /// PNG or a Radiance picture (ImageDecode.h says which), kept beside
+    /// the pixels by a producer that read one. Consumers read
+    /// \ref pixels; this is for the TRANSPORT, which ships it instead of
+    /// the pixels when it is here: a 2k map is a few hundred kilobytes
+    /// as a file and sixteen megabytes decoded, a 2k environment six
+    /// megabytes and twenty-four, and a document's worth of maps is the
     /// difference between a scene that streams and one that does not
-    /// (docs/MaterialStorage.md sec 17.23). The content key is then the
-    /// key of these bytes. Empty for a texture nobody read from such a
-    /// file -- a Coin texture, a rendered palette, a Radiance picture.
+    /// (docs/MaterialStorage.md sec 17.23, 17.26). The content key is
+    /// then the key of these bytes. Empty for a texture nobody read
+    /// from such a file -- a Coin texture, a rendered palette.
     std::vector<uint8_t> encoded;
 
     enum Wrap : uint8_t { Repeat, Clamp };

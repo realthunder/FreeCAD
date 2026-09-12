@@ -2345,10 +2345,15 @@ decodeParamImage(const std::string &path, bool keepGray)
         for (int y = 0; y < img.height(); ++y)
             std::memcpy(tex->pixels.data() + size_t(y) * rowLen,
                         img.constScanLine(y), rowLen);
-        // The file itself, when it is one every tier can decode: the
-        // transport ships it in place of the pixels (SceneDump v75,
-        // docs/MaterialStorage.md sec 17.23). Decided by what is in the
-        // file, like the Radiance test above, not by its name.
+    }
+    // The file itself, when it is one every tier can decode: the
+    // transport ships it in place of the pixels (SceneDump v75,
+    // docs/MaterialStorage.md sec 17.23). Decided by what is in the
+    // file, like the Radiance test above, not by its name -- and asked
+    // of BOTH branches, because a Radiance environment is the one map
+    // where the saving is measured in tens of megabytes: 2048x1024 of
+    // RGBE is a few megabytes as a file and 24 decoded.
+    if (tex) {
         QFile file(qpath);
         if (file.open(QIODevice::ReadOnly)) {
             QByteArray bytes = file.readAll();
