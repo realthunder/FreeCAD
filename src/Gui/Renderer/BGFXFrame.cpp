@@ -6672,24 +6672,32 @@ bool BGFXRenderer::Private::render(const QColor &col,
         lastStats.avgColor[1] = ng ? float(g) / float(ng) : -1.0f;
         lastStats.avgColor[2] = ng ? float(b) / float(ng) : -1.0f;
         lastStats.valid = true;
-        static const char *const envDump =
-            getenv("FC_BGFX_DEBUG_DUMP_FRAME");
-        if (getenv("FC_BGFX_DEBUG_READBACK")) {
+        if (getenv("FC_BGFX_DEBUG_READBACK"))
             fprintf(stderr,
                     "bgfx capture %dx%d: %ld geometry pixels,"
                     " avg color %ld,%ld,%ld\n",
                     int(capturePixW), int(capturePixH), ng,
                     ng ? r/ng : -1, ng ? g/ng : -1, ng ? b/ng : -1);
-            if (envDump && *envDump)
-                BGFXView::writeDumpImage(envDump, rgba.data(),
-                                         capturePixW, capturePixH);
-        }
+#ifndef FC_RENDERER_STANDALONE
+        // Writing the pixels to a FILE is the desktop's dump path:
+        // writeDumpImage() is Qt's image writers, and the standalone
+        // tier has neither those nor a filesystem worth writing to. A
+        // browser viewer answers a dumpFrame by reading its own canvas
+        // back in-page instead (docs/RenderDebug.md sec 4.4), so the
+        // request below still completes there; only the file does not
+        // appear.
+        static const char *const envDump =
+            getenv("FC_BGFX_DEBUG_DUMP_FRAME");
+        if (envDump && *envDump && getenv("FC_BGFX_DEBUG_READBACK"))
+            BGFXView::writeDumpImage(envDump, rgba.data(),
+                                     capturePixW, capturePixH);
         if (captureIsDump && !captureRequest.path.empty()
                 && !BGFXView::writeDumpImage(captureRequest.path,
                                              rgba.data(),
                                              capturePixW, capturePixH))
             fprintf(stderr, "bgfx: frame dump write failed: %s\n",
                     captureRequest.path.c_str());
+#endif
         captureReadyFrame = 0;
         dumpHeld = false;
         if (captureIsDump) {

@@ -2635,8 +2635,12 @@ public:
         if (!deviceName.empty())
             return;
         std::string s = bgfx::getRendererName(bgfx::getRendererType());
+#ifndef FC_RENDERER_STANDALONE
         // Only where a context is current -- this runs at the tail of
         // prepare(), where the GL path has one and the others never do.
+        // Qt's, hence not in the standalone tier: the browser has no
+        // QOpenGLContext to ask and no GL headers of its own here, so
+        // there the name is the backend plus the caps ids below.
         if (auto *cur = QOpenGLContext::currentContext()) {
             if (auto *f = cur->functions()) {
                 for (GLenum e : {GL_RENDERER, GL_VERSION}) {
@@ -2647,6 +2651,7 @@ public:
                 }
             }
         }
+#endif
         if (const bgfx::Caps *caps = bgfx::getCaps()) {
             char ids[64];
             std::snprintf(ids, sizeof(ids),
