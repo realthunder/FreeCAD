@@ -525,6 +525,53 @@ Sources still carry `OCC_VERSION_HEX` guards (features that need the 8.0.1 fork
 change to a guarded path is not compile-checked here. `Mod/Part` could not build
 on 7.7.2 even before the prefixes were deleted.
 
+### Generated code: cog, and the two ways it runs
+
+`cogapp` is a **configure-time requirement** as of 2026-09-12. `SetupPython`
+runs `python -c "import cogapp"` and fails the configure with the install line
+when it is missing, because some generated sources are not in the tree:
+
+```sh
+~/works/sw/fcad/.conda/run.sh python -m pip install cogapp
+```
+
+It is not in either Python on this box by default, and it is not a conda-forge
+dependency of anything FreeCAD pulls in, so a fresh env needs that line. The
+feedstocks that build distribution images (`freecad-rt-feedstock`, and the
+Windows build) need `cogapp` among their build requirements for the same
+reason.
+
+Cog runs two different ways in this tree, and they are not interchangeable:
+
+- **In place, the older way.** 47 files carry a `[[[cog ... ]]] ... [[[end]]]`
+  block with the generated text written back into the same file, committed.
+  `PartParams.h`, `SketchObjectPyImp.cpp` and the other parameter tables are
+  this form. Nothing in the build regenerates them; the author runs cog by hand
+  after editing the block and commits the result.
+- **Into the build tree, the new way.** `generate_from_cog(<template> <output>
+  [deps...])` in `cMake/FreeCadMacros.cmake` takes a `.cog.h` template holding
+  the cog block and writes `<output>` into `${CMAKE_CURRENT_BINARY_DIR}`, never
+  into the source tree. It is modelled on `generate_from_xml` next to it, down
+  to the `execute_process` at configure time that assures the file exists before
+  the first build, and it needs the same two things from the caller: add
+  `${CMAKE_CURRENT_BINARY_DIR}/<output>` to the target's source list, or ninja
+  is never asked to run the command, and pass the Python module the template
+  imports as an extra dependency, or an edit to the table does not rebuild.
+
+The second form arrived with the FeaturePython hook tables
+(`src/App/FeaturePythonHooks.py` -> `FeaturePythonHookApp.h` and
+`src/Gui/.../FeaturePythonHookView.h`), and the in-place files are meant to
+migrate to it one at a time -- `docs/ProxyChain.md` sec 3.3 has the reasoning.
+A generated header is a build artifact: it does not appear in `git status`, it
+does not need a `.gitignore` entry because it is not under the source tree at
+all, and deleting the build directory is how you force it to be rebuilt.
+
+**A template that imports a module from another directory** does its own
+`sys.path` work inside the cog block, off `cog.inFile`; the view-side template
+in `src/Gui` reaches the table in `src/App` that way. Cog's working directory
+is the caller's `CMAKE_CURRENT_SOURCE_DIR`, which is not the template's
+directory for every caller, so do not rely on it.
+
 ### `BUILD_WEB` defaults OFF (2026-09-08)
 
 `BUILD_WEB` used to default ON, which is a distro assumption: it takes Qt

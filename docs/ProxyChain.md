@@ -1,6 +1,6 @@
 # The proxy chain: document programs extend native objects
 
-**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; RULED "write the document first, start coding in next session" -- nothing built, P0 is the next session's first item]**
+**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4 -- the refactor and the generator landed, both suites green, no `ProxyExp` yet; P1 is the next session's first item]**
 
 The user's design, stated 2026-09-12 after the document program (docs/
 Sandbox.md 7.17) was found lacking against the spreadsheet-as-object
@@ -431,7 +431,7 @@ macro one at a time later, their generated output leaving the tree.
         env and required by the configure; no ProxyExp yet.  Gate:
         both suites green; a scratch diff of the calls each hook
         makes (a Python Proxy logging every hook, native, before and
-        after) identical.                       one session
+        after) identical.                  DONE 2026-09-12, sec 4.1
     P1  ProxyExp and the chain on the App side: the property, the
         resolution of 2.2, the walk of 2.3 in every App hook, the
         cache and the generation counter of 2.4.  Gate: a new Test
@@ -459,6 +459,94 @@ macro one at a time later, their generated output leaving the tree.
         cell); the audit line names the linked object's document; a
         cross-file link's write prompts doc.foreign once.  Sits
         inside 7.17's build, not before it.
+
+### 4.1 P0 as built (2026-09-12)
+
+The shape the plan asked for, with four things the audit of the 68 bodies
+turned up that the plan had not anticipated.
+
+**The files.**  `src/App/FeaturePythonHooks.py` is the table (22 App hooks,
+46 view hooks, four facts each).  `src/App/FeaturePythonHook.h/.cpp` is the
+machinery: `App::PyHookImp`, the base both Imps now derive from, holding the
+resolved slots, `init()`, `canCallHook()` and the `callHook()` template, plus
+the `pyHookArg` marshalling overloads and three shared decoders
+(`pyHookDecodeNotify`, `pyHookDecodeValueT`, `pyHookDecodeInt`).  The two
+templates `FeaturePythonHookApp.cog.h` and `src/Gui/FeaturePythonHookView.cog.h`
+emit the hook enum and the `PyHookDef` table into the BUILD tree; nothing
+generated is committed.  `generate_from_cog()` sits beside `generate_from_xml`
+in `cMake/FreeCadMacros.cmake`, and `SetupPython` now fails the configure when
+`cogapp` is missing.
+
+Net: `FeaturePython.cpp` 708 -> 440 lines, `ViewProviderFeaturePython.cpp`
+1483 -> 887, against ~330 lines of new machinery and ~170 of table -- and the
+two headers lost the X-macro blocks (`FC_PY_ELEMENT_DEFINE`,
+`FC_PY_ELEMENT_INIT`, `FC_PY_ELEMENT_FLAG`, `_FC_PY_CALL_CHECK` are gone from
+the tree; `SelectionObserverPython.h` defines its own `FC_PY_ELEMENT` and was
+never a user of these).
+
+**Four facts the table had to carry that sec 3.2 did not list.**
+
+1. *Where the owner goes* is not one rule but three, and the view side is the
+   irregular one.  `PyHookSelf::None` -- the callable never receives the owner
+   -- covers 28 of the 46 view hooks (`getIcon`, `claimChildren`, `isShow`,
+   `canDropObjectEx`, ...), because a view Proxy method's own `self` IS the
+   proxy and upstream never settled on passing `vobj` as well.  `Modern` is
+   the familiar "owner first, dropped in the `__object__` form".  `Always`
+   passes it in both forms.  The App side has one `None` hook, `editProperty`,
+   which takes only the property name.
+2. *Not every hook is recursion-guarded, and guarding them all would be a
+   bug.*  Five hooks -- App `onBeforeChange`, `onBeforeChangeLabel`,
+   `onChanged`, view `updateData`, `onChanged` -- check only whether the
+   callable is absent.  They have no `FlagCalling` bit because a nested call
+   is their normal case: setting property B inside `onChanged(A)` re-enters
+   `onChanged`, and a guard would silently drop it.  The table carries a
+   `guarded` flag for this and `callHook` honours it.
+3. *"Failed" is a third answer, not a shade of "not handled".*  A reported
+   Python error means something different per hook from what
+   NotImplementedError means: `getSubObject` answers "handled, with a null
+   object", `isElementVisible` answers -1 where "not handled" is -2,
+   `canLoadPartial` 0 against -1, `useNewSelectionModel` and
+   `canAddToSceneGraph` answer Accepted where absence answers NotImplemented.
+   So `callHook` returns `PyHookState{NotHandled, Handled, Failed}` and the
+   body maps Failed itself.  Three error policies ride in the table:
+   `Report` (48 App + 43 view hooks), `ReportThrow` (App `execute`, view
+   `canDropObjectEx`) and `Throw` (App `skipRecompute`, view `dropObject`,
+   `dropObjectEx`).
+4. *One hook's owner is a different object.*  View `updateData` passes the
+   DOCUMENT OBJECT as its first argument, not the view provider.  That is why
+   `hookSelf(int hook)` is a virtual taking the hook rather than a stored
+   object: the Gui override answers with `object->getObject()` for that one
+   enumerator and the view provider for the rest.
+
+**Two behaviour changes, both deliberate.**
+
+- `iconMouseEvent` was broken and now works.  It built a one-element tuple and
+  then wrote a second item into it, so every call raised IndexError, was
+  reported, and returned Rejected -- the hook had never reached a Python view
+  provider.  It is now the two arguments it always meant: `(event, tag)`.
+- `mustExecute` no longer reports a NotImplementedError.  It was the one hook
+  without the NotImplementedError catch, so raising it there printed an error;
+  `callHook` treats NotImplementedError as "not handled" everywhere, which is
+  the protocol sec 2.3 states.  The answer the caller gets is unchanged.
+
+Three pre-existing oddities were preserved rather than fixed, since the gate
+is "nothing observable changes": `getExtraIcons` still drops a bare
+`(tag, pixmap)` pair on the floor (it fills a local and returns without
+assigning); `getDetailPath` still deletes a null pointer on one branch; and
+`ViewProviderFeaturePythonT::canReorderObject` still calls
+`imp->canReplaceObject`, so a Proxy's `canReorderObject` is never consulted.
+The last is a real bug and belongs in its own commit.
+
+**The gate.**  Python 2688 tests OK (0 failures, 0 errors, 50 skipped, 6
+expected failures) and C++ 605/605, both matching the pre-change baseline of
+`docs/Testing.md`.  The suites run headless, so they do not touch the view
+side at all; the view half was checked with a scratch Gui session
+(`QT_QPA_PLATFORM=offscreen`) driving a view Proxy that logs every hook, which
+confirmed the argument shape of each: `getIcon()` with none, `dragObject(vobj,
+obj)`, `dropObjectEx(vobj, obj, owner, subname, elements)`,
+`canDropObjectEx(obj, owner, subname, elements)`, `getDisplayModes(vobj)` and
+`updateData(obj, prop)` with the document object.  The App half was checked
+the same way under `FreeCADCmd`.
 
 Lines: P0 the template and decoders ~150, the table ~80, the two
 generated includes ~300 (in the build tree), the macro ~40, against
