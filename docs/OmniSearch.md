@@ -374,6 +374,12 @@ WebSocket is what the design refuses. What crosses the wire, and when:
   both pushes 220 ms later, and the deltas were exactly the new rows:
   16 commands in 1.7 KB, 10 parameters in 3.7 KB. Both catalogs are one
   fetch per browser, ever, until a version moves.
+  **Compressed on the wire since 2026-09-12**: the scene socket
+  negotiates permessage-deflate and uses it on the text lane, so those
+  74 KB and 282 KB leave as 17 KB and 61 KB -- 356 KB of first-connect
+  traffic down to 78 KB. Nothing about the catalog changed; the
+  transport did. docs/SceneServerPort.md sec 7.8 has the settings, the
+  table and why the binary lane is left alone.
 - **A parameter's value and a command's active state are not in the
   catalog**: they change without it. They ride `omni.rows` for the rows
   on screen (at most 60), asked once the list has stood still for 120 ms

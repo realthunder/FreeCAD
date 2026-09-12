@@ -2487,6 +2487,35 @@ public:
         return t;
     }
 
+    /** permessage-deflate (RFC 7692), offered to every viewer that asks
+     * for it -- and used on the **text lane only** (docs/SceneServerPort.md
+     * sec 7.8). The text lane carries JSON: the control channel's replies,
+     * and with them the omni search catalogs, which are the largest
+     * static thing the server ever sends (docs/OmniSearch.md sec 6.1).
+     * The binary lane carries scene snapshots -- quantized vertex and
+     * index data that deflate barely shrinks and would cost a
+     * compression pass per connected viewer, per frame -- so the writer
+     * turns compression off for it message by message (`ws.compress()`,
+     * the same per-message switch as `ws.text()`).
+     *
+     * Context takeover is kept: the control channel sends many similar
+     * small JSON objects, and a shared window is most of the win on
+     * them. That costs about 140 KB of deflate state per connection at
+     * these settings, which is why the window is not widened further.
+     * Level 6 is zlib's own default; 8 buys a few percent for
+     * noticeably more CPU on a 300 KB catalog. Messages under the
+     * threshold go out raw -- an ack is smaller than the win.
+     */
+    static boost::beast::websocket::permessage_deflate wsDeflate()
+    {
+        boost::beast::websocket::permessage_deflate pmd;
+        pmd.server_enable = true;
+        pmd.compLevel = 6;
+        pmd.memLevel = 6;
+        pmd.msg_size_threshold = 512;
+        return pmd;
+    }
+
     struct Session;
 
     /// One accepted socket for its whole life: the HTTP exchange, and
@@ -2752,6 +2781,10 @@ public:
                     // tcp_stream's would fire under it.
                     c.ws.next_layer().expires_never();
                     c.ws.set_option(wsTimeouts());
+                    // Before the handshake: the extension is negotiated
+                    // in it, and a client that does not offer it gets
+                    // exactly what it got before.
+                    c.ws.set_option(wsDeflate());
                     yield c.ws.async_accept(c.parser.get(), *this);
                     if (ec) {
                         c.finishHttp();
@@ -2824,7 +2857,10 @@ public:
                                 *this);
                         break;
                     }
+                    // Text is JSON and compresses; a scene snapshot is
+                    // not worth a deflate pass per viewer (wsDeflate())
                     c.ws.text(c.outItem.kind == Outgoing::Text);
+                    c.ws.compress(c.outItem.kind == Outgoing::Text);
                     yield c.ws.async_write(
                             boost::asio::buffer(c.outItem.data), *this);
                     if (ec)
