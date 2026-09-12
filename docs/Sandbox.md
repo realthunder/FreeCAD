@@ -59,6 +59,11 @@ pieces are frozen, not extended.**
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
+    the proxy chain                  planned     7.21 -> docs/ProxyChain.md: ProxyExp, an
+                                                 XLinkList of objects asked for exp<Hook>
+                                                 methods before the Proxy; cog regenerates
+                                                 FeaturePython/ViewProviderFeaturePython;
+                                                 P0-P3, awaiting review 2026-09-12
     the browser console              sized       7.20: pyodide in the client's page, the wire
                                                  over the socket (JSPI), a client:<identity>
                                                  principal, catalog v2; C1-C6, one to two weeks;
@@ -6310,6 +6315,28 @@ under its own principal; the desktop's own console is unchanged.
 Sources: Firefox's JSPI release bug (bugzilla 2044809), the V8 JSPI
 introduction (v8.dev/blog/jspi), Chromium's intent to ship, pyodide's
 JSPI post (blog.pyodide.org/posts/jspi) and changelog.
+
+### 7.21 The proxy chain: document programs extend native objects **[planned 2026-09-12, see docs/ProxyChain.md]**
+
+The user's answer to 7.17's gap against the spreadsheet-as-object
+model (2026-09-11: cells as attributes and methods, aliases as the
+interface, a copy as an instance, typing missing): extend
+`FeaturePythonT` / `ViewProviderFeaturePythonT` with a plain
+`PropertyXLinkList`, `ProxyExp`, whose linked objects are asked at
+runtime for overriding methods by name and signature
+(`expExecute(self, obj)`, the linked object as `self`, the feature as
+`obj`), a "not handled" return passing to the next link and finally
+to the real `Proxy` -- multiple inheritance by chain, agnostic to what
+the linked object is (a sheet whose alias'd cells are callables, a
+Python-scripted object, a library, a guest stand-in; static or at
+runtime).  With it, the boilerplate of both classes is regenerated
+from one hook table with cog, keeping the per-hook callable cache and
+the recursion guards.  The plan, the stages P0-P3, the decisions
+awaiting the user, and what it changes in 7.17 (D1 stands; D2's
+carrier is one of several; the typed-sheet discussion is subsumed:
+`ProxyExp` is the type link, the chain is the delegation) are in
+docs/ProxyChain.md.  The variant Link idea recorded the same day is
+docs/VariantLink.md, a parallel thread for later.
 
 ## 8. Measurements
 
