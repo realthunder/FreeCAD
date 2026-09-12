@@ -479,6 +479,35 @@ when the named view is the served one.
   space after the colon is not a viewer, gets no pushes, and the ops
   still answer, so nothing says why.
 
+**The write side, driven 2026-09-12.** Everything the mirror can change
+has now been exercised from a real browser against a serving desktop,
+with a probe in the serving process reading each effect back rather than
+the page being believed:
+
+| what | how it was driven | what the serving process saw |
+|------|-------------------|------------------------------|
+| a property edit from the box | `Box.Height`, Enter, the panel's number editor | 10 -> 25, and the document recomputed behind it |
+| the object card | `Cylinder`, Enter, three of its editors | `Radius` 2 -> 7 (Quantity), `Label` -> a new string, `Visibility` -> false (a view-scope Bool) |
+| `command.run` | `/cmd fit all`, click the row | the box closed, which is how a viewer sees an ok -- `run()` closes on the reply |
+| a group command's child | `/cmd draw style`, the row's arrow, then Wireframe | the menu came back with its radio tick on As Is; the DESKTOP view's draw style became Wireframe |
+| `param.set` / `param.reset` | `/param sync selection`, the checkbox, then Reset | stored false, then the stored value removed and the default back; the Reset button's own disabled state tracks whether anything is stored |
+| the leading-dot selection | two objects selected, `.Height`, one commit | BOTH objects went to 33 -- one `setProperty` each |
+
+The **Hex colour editor**, the corner these notes called the one most
+likely to be wrong, is right: the picker's `#123456` is stored as
+`0x123456FF` -- the alpha byte the picker has none of is preserved --
+and Reset puts back `0xCCCCE6FF`. And the documented failure of a mixed
+selection behaves as documented: `.Length` over a box and a cylinder
+sets the box and reports `Failed: UnknownProperty`, with the box's edit
+standing.
+
+One thing a headless browser cannot be made to do here is the PICK
+itself: under swiftshader a populated scene starves the main thread, so
+the selection was synthesized by dispatching the same `fc:selection`
+CustomEvent the wasm module dispatches (`wasm/main.cpp`,
+`fcviewer_selection_event`). Everything after that -- the resolve, the
+panel, the per-object commits -- was the page's own code.
+
 ### 6.4 What a connection may reach
 
 Added 2026-09-12. Every op of the mirror that names a document -- and
