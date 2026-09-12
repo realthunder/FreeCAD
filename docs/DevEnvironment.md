@@ -2180,17 +2180,40 @@ clone one beside the others, **from the fork, on `rt-0.6.10`**:
 git clone --branch rt-0.6.10 https://github.com/realthunder/pivy.git ..\pivy
 ```
 
-**Why from source and not the channel's `pivy-rt`:** this box cannot reach
-`conda.anaconda.org`, where that channel lives -- 443 hangs and times out,
-re-checked 2026-09-12, while `github.com` answers fine (see the "No
-anaconda.org" material in this section). Anything that channel publishes has
-to arrive over GitHub the way the fork's `ifcopenshell` did, and
-`realthunder/pivy-feedstock` currently has no releases and no tags, so there
-is no asset to fetch. If a `pivy-rt` win-64 build is ever attached to one,
-**prefer it**: it would carry a `conda-meta` record, and the hand-placed
-source build is the reason a mismatched pivy could sit here unnoticed in the
-first place. Whichever way it arrives it has to be generation 5 -- the
-feedstock pins `swig >=4.5,<4.6`, which is the pairing below.
+**Why from source and not the channel's `pivy-rt`** (asked and checked
+2026-09-12). Not for want of reach: `conda.anaconda.org` is still refused
+here -- 443 times out at 25 s while `github.com` answers 200 -- but the Linode
+relay in the [libarea section](#packages-from-the-realthunder-channel) works
+from this box and the channel answers 200 through it. `realthunder/win-64`
+does carry `pivy-rt`. **The published variants are what rule it out:**
+
+| published | this env |
+|---|---|
+| `pivy-rt-0.6.10-py311qt5hb8a8493_3` -- and `_2`, `_1`, all `py311qt5` | python **3.12.14**, qt6 |
+| `python_abi 3.11.* *_cp311`, `qt-main >=5.15.8`, `soqt-rt` | a `cp311` `_coin.pyd` will not import under 3.12, and the Qt5 deps do not belong in a Qt6 env |
+
+`pivy-feedstock` on `LinkVibe` has already fixed the recipe -- the fork's
+`rt-0.6.10` as the source, `swig >=4.5,<4.6` (generation 5, the pairing
+below), Qt and SoQt dropped -- but **nothing has been built from it**: the
+newest artifact on the channel is still build `_3` of the old `py311qt5`
+recipe, while the fixed one starts again at `number: 0`. And when it is
+built it will be **3.13 only** (`skip: true  # [py != 313]`), which this
+3.12 env still cannot install.
+
+So: source here, and revisit when the matrix and this env's python meet. A
+package would be the better answer when they do -- it carries a `conda-meta`
+record, and an untracked hand-placed pivy is exactly why a mismatched one
+could sit here unnoticed.
+
+*** **The two feedstocks are not in step, and `pivy-feedstock`'s own comment
+says they must be.** Read off `LinkVibe` on 2026-09-12:
+`freecad-rt-feedstock` still carries `skip: true  # [py>311]` inside the
+`{% else %}` (Qt5) arm of its Qt switch -- and a conda selector is evaluated
+on the RAW TEXT before jinja removes the branch, so it caps the Qt6 build at
+py311 too -- while `pivy-feedstock` is py313-only. Those two can never
+resolve together. `freecad-rt-feedstock` also leaves `swig` unpinned where
+`pivy-feedstock` pins `>=4.5,<4.6`, which is the same generation hazard this
+section is about, one layer up.
 
 That branch is 0.6.10 -- the version `pivy-feedstock` packages -- plus what the
 other boxes needed, so nothing has to be patched into the checkout by hand any
