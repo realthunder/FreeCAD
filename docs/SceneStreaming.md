@@ -968,6 +968,21 @@ reconstructs a large scene from a small root delta plus local reads.
 8. A bundled capture is self-contained: chunking is a property of the transport,
    never of the format (as v26 already establishes for textures).
 9. Content keys are computed once per distinct content, never per publish (§10).
+10. **A payload named by a CONFIG is deferred exactly like one named by a
+    draw, and every reader of it has to say so.** Invariant 4 is about draws,
+    and it left a hole: `PBRConfig::envImage` is a texture the config names, so
+    it arrives key-only like any other and is filled in place when its blob
+    lands -- but nothing holds the config back while it is outstanding. The
+    environment sampler tested the image's dimensions rather than its bytes,
+    read past the end of an empty `pixels` vector, and baked a cubemap of NaN;
+    with PBR active that cubemap is the only light there is, so every lit
+    surface drew black and only the unlit line and point draws kept their
+    colour (found 2026-09-12 against a serving desktop, with a 25 MB
+    equirectangular environment still in flight). The test is
+    `TextureImage::hasPixels()` -- the same one `GpuTextureArray::usable`
+    already made for the upload path -- and the answer to "not yet" is the
+    built-in preset, with a rebuild when the payload lands, because filling a
+    texture in place is not a change of image and nothing else would notice.
 
 ## 10. The producer-side requirement (main risk)
 

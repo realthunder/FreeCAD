@@ -3989,11 +3989,7 @@ struct GpuTextureArray
     /// (GpuTexture::upload refuses both the same way).
     static bool usable(const Render::TextureImage &tex)
     {
-        return tex.sample != Render::TextureImage::F32
-            && tex.width > 0 && tex.height > 0
-            && tex.numComponents > 0
-            && tex.pixels.size() >= size_t(tex.width) * tex.height
-                   * size_t(tex.numComponents) * tex.sampleSize();
+        return tex.sample != Render::TextureImage::F32 && tex.hasPixels();
     }
 };
 
@@ -7392,6 +7388,12 @@ public:
     int m_envPreset = 0;
     bool m_envBuilt = false;   // build attempted (m_envTex may still be
                                // invalid when the caps disallow it)
+    /// The build fell back to the procedural environment because the
+    /// image it was given had no pixels yet (a streamed texture is
+    /// named before it is fetched). Its payload landing is not a change
+    /// of image -- the fill writes the same object in place -- so
+    /// without this the fallback would be permanent.
+    bool m_envImagePending = false;
     bool pbrFrame = false;     // PBR active for the frame being submitted
     // Matcap shading for the frame being submitted: a global shading
     // mode, so it rides the view rather than the per-draw material.

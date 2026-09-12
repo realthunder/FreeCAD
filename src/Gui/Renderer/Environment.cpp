@@ -388,8 +388,10 @@ void envRadianceProcedural(int preset, const float d[3], float out[3])
 
 void envRadiance(const PBRConfig &pbr, const float d[3], float out[3], bool managed)
 {
-    if (pbr.envImage && pbr.envImage->width > 0 && pbr.envImage->height > 0
-            && pbr.envImage->numComponents > 0) {
+    // hasPixels, not the dimensions: a streamed image is named before
+    // it is fetched, and the built-in preset is what stands in until it
+    // lands (and after, if it never does).
+    if (pbr.envImage && pbr.envImage->hasPixels()) {
         sampleEnvImage(*pbr.envImage, d, out, managed);
         return;
     }

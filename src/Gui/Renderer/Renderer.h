@@ -200,6 +200,22 @@ struct TextureImage {
     uint8_t sample = U8;
     /// Bytes per component of \ref pixels.
     size_t sampleSize() const { return sample == F32 ? 4u : 1u; }
+    /// Whether \ref pixels actually holds this image.
+    ///
+    /// A streamed texture arrives key-only (\ref deferred) and is
+    /// filled in place when its payload lands, so between the two it
+    /// has a width and a height and no bytes. A reader that tests only
+    /// the dimensions -- which is what the environment sampler did --
+    /// then reads past the end of an empty vector: the environment
+    /// baked out of the garbage came back NaN, and with PBR active the
+    /// NaN cubemap was the only light in the scene, so every lit
+    /// surface drew black while the unlit line and point draws kept
+    /// their colour.
+    bool hasPixels() const {
+        return width > 0 && height > 0 && numComponents > 0
+            && pixels.size() >= size_t(width) * size_t(height)
+                                * size_t(numComponents) * sampleSize();
+    }
     /// Read one component as linear light, whatever it is stored as.
     float component(size_t index) const {
         if (sample == F32) {

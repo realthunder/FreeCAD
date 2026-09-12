@@ -150,8 +150,7 @@ struct EnvChain {
 
 void BGFXView::envRadiance(const float d[3], float out[3]) const
 {
-    if (m_envImage && m_envImage->width > 0 && m_envImage->height > 0
-            && m_envImage->numComponents > 0) {
+    if (m_envImage && m_envImage->hasPixels()) {
         sampleEnvImage(*m_envImage, d, out, colorManaged());
         return;
     }
@@ -252,6 +251,7 @@ void BGFXView::ensureEnvironment()
     if (m_envBuilt)
         return;
     m_envBuilt = true;
+    m_envImagePending = m_envImage && !m_envImage->hasPixels();
     if (bgfx::isValid(m_envTex)) {
         bgfx::destroy(m_envTex);
         m_envTex = BGFX_INVALID_HANDLE;
