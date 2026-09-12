@@ -455,6 +455,82 @@ def open_scene():
     return doc, v, load_s
 
 
+def settle_scene(doc, v):
+    """Wait until the document's visuals actually exist.
+
+    A RESTORED document does not have them when openDocument() returns.
+    Measured on a 17800-object STEP assembly: 0 view providers at that
+    moment, all 17800 about five seconds later -- and they arrive only
+    while the Qt event loop runs. waitFrameComplete() does not service
+    that build (it blocks on the renderer), so staging straight into the
+    timed loop measured an empty viewport: 54 draws and 0.5% coverage of
+    a model that covers 10.5% once it has arrived. The guard at the end
+    of bench() reports that after the fact; this is what prevents it.
+
+    Two stages, because they finish at different times. The view
+    providers are a countable, exact condition. The geometry they then
+    push to the backend is not, so that half settles on the frame's own
+    draw count holding still.
+
+    Without it the script staged by LUCK: waitFrameComplete() pumps the
+    event loop itself (it loops on processEvents until one frame lands),
+    so each of the 30 warmup frames donates one frame-time of drain --
+    about 6.6 s on a 221 ms GL frame but only 2.7 s at 90 ms. Whether
+    that covers the drain is a race between frame time and load, which
+    is why the same document staged on one leg and not the next, and why
+    the faster backend was the likelier to come up empty.
+
+    FC_BENCH_SETTLE=0 skips it (a scene built in session needs none);
+    the value is the seconds cap, not a sleep -- it returns as soon as
+    the scene stops growing.
+    """
+    cap = float(os.environ.get("FC_BENCH_SETTLE", "120"))
+    if cap <= 0:
+        return
+    t0 = time.perf_counter()
+    total = len(doc.Objects)
+    while time.perf_counter() - t0 < cap:
+        FreeCADGui.updateGui()
+        if sum(1 for o in doc.Objects if o.ViewObject is not None) >= total:
+            break
+    built = time.perf_counter() - t0
+    # Now the drawables. `geometryPixels` is the covered-pixel count the
+    # end-of-run guard already reads -- the draw count on the report
+    # line is not available here, that one is parsed out of the engine's
+    # console output. getRenderStats() can exceed its capture budget on
+    # a frame this size, which says nothing about the document, so a
+    # failed read is a retry rather than an answer.
+    #
+    # ! Stability is measured in CONTINUOUS SECONDS, not in consecutive
+    # reads. The pixel count plateaus early and briefly -- the handful
+    # of objects already built draw the same frame several times while
+    # the rest are still arriving -- and a three-reads rule exits on
+    # that plateau. Two runs of this leg settled at 4557 px and at
+    # 53350 px from the identical document, which is the shape of a
+    # convergence test that is really a race.
+    quiet = float(os.environ.get("FC_BENCH_SETTLE_QUIET", "5"))
+    floor = float(os.environ.get("FC_BENCH_SETTLE_MIN", "8"))
+    last, changed = -1, time.perf_counter()
+    while True:
+        now = time.perf_counter()
+        if now - t0 >= cap:
+            break
+        if now - t0 >= floor and now - changed >= quiet and last > 0:
+            break
+        FreeCADGui.updateGui()
+        v.redraw()
+        try:
+            v.waitFrameComplete()
+            px = int(v.getRenderStats().get("geometryPixels", -1))
+        except Exception:
+            continue
+        if px != last:
+            changed = time.perf_counter()
+        last = px
+    say("  settle  view providers %.1fs | scene %.1fs | geometry px %d"
+        % (built, time.perf_counter() - t0, last))
+
+
 def bench():
     doc, v, load_s = open_scene()
     # Before any fit: an animated fit is a nested event loop lasting as
@@ -471,9 +547,18 @@ def bench():
     v.setCameraOrientation((0.4247, 0.1759, 0.3389, 0.8226))
     v.fitAll()
     # Let the deferred shapes settle, or the first timed frames measure
-    # geometry ARRIVING rather than drawing. With ProgressiveLoad off
-    # there should be none left, which is the point of turning it off.
+    # geometry ARRIVING rather than drawing.
+    #
+    # ! This used to say "with ProgressiveLoad off there should be none
+    # left, which is the point of turning it off". That stopped being
+    # true with the 2026-09-09 null-shape fix: a visual built during a
+    # restore parks on the deferred queue whenever shapeMayStillArrive()
+    # (ViewProviderExt.cpp), and that is true for
+    # `Restoring || hasDeferredFiles()` -- i.e. for ANY restored
+    # document, whatever the preference says. So a restored scene always
+    # arrives after the open, and the six knobs above do not change it.
     v.waitFrameComplete()
+    settle_scene(doc, v)
 
     # setCameraOrientation, not the Coin camera node: getCameraNode()
     # hands back a SWIG object and raises "No SWIG wrapped library
