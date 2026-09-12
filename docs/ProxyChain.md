@@ -1,6 +1,6 @@
 # The proxy chain: document programs extend native objects
 
-**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; nothing built]**
+**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; RULED "write the document first, start coding in next session" -- nothing built, P0 is the next session's first item]**
 
 The user's design, stated 2026-09-12 after the document program (docs/
 Sandbox.md 7.17) was found lacking against the spreadsheet-as-object
@@ -97,11 +97,14 @@ Two lists, BOTH on the App object **[RULED 2026-09-12, revised the
 same day: first "separate list just like separate Proxy for feature
 and view object", then "add another list property in App feature
 python to hold view side exp proxy"]**: `ProxyExp` for the App hooks
-and `ProxyExpView` for the view hooks, both on `FeaturePythonT`, both
+and `ViewProxyExp` for the view hooks, both on `FeaturePythonT`, both
 saved in `Document.xml`.  `ViewProviderFeaturePythonT` holds no list;
-it reads its object's `ProxyExpView` and resolves the view hooks on
+it reads its object's `ViewProxyExp` and resolves the view hooks on
 those linked objects.  The App list never serves a view hook and the
 view list never serves an App hook.
+
+The names: `ProxyExp` for the App hooks, `ViewProxyExp` for the view
+hooks **[RULED 2026-09-12: "Make the name ViewProxyExp"]**.
 
 **Why on the App object, and what it avoids.**  Every link property
 class assumes a `DocumentObject` container (`PropertyLinkList::
@@ -127,7 +130,7 @@ view hooks have today.
    targets DEPENDENCIES of the feature (out-list, back-links, the
    recompute order).  For `ProxyExp` that is wanted: the type is
    recomputed before its instances and an edit to a method recomputes
-   them.  For `ProxyExpView` it is wrong twice over: a change to an
+   them.  For `ViewProxyExp` it is wrong twice over: a change to an
    icon method would mark the feature for a geometry recompute, and a
    view-extension sheet that reads the feature by name in a cell (a
    label from `Box.Length`) would close a cycle -- feature -> sheet
@@ -145,15 +148,15 @@ view hooks have today.
    `ProxyExp`'s Global scope duplicates it as any dependency copy
    does; that asymmetry is stated in the doc string.
 2. *A view-only change touching the feature.*  Setting or editing
-   `ProxyExpView` would touch the object and schedule a recompute.
+   `ViewProxyExp` would touch the object and schedule a recompute.
    `Prop_NoRecompute` (`PropertyContainer.h:55`) is the existing flag:
    the property saves, undoes and notifies, and does not touch.
-3. *Telling the view provider.*  A change to `ProxyExpView` has to
+3. *Telling the view provider.*  A change to `ViewProxyExp` has to
    rebuild the view chain and, when the view `Proxy` is None, run the
    deferred attach (2.3).  No new signal is needed:
    `ViewProviderDocumentObject::updateData(prop)` receives every App
    property change (`ViewProviderDocumentObject.cpp:1386`), so the
-   template's `updateData` tests `prop == &obj->ProxyExpView` before
+   template's `updateData` tests `prop == &obj->ViewProxyExp` before
    the chain runs, as its `onChanged` tests `&Proxy` today.  At
    restore the App properties land before the view provider attaches,
    so the view provider's own `attach`/`finishRestoring` sees the
@@ -162,7 +165,7 @@ view hooks have today.
    document opened in the GUI later, a secondary view) reads it at
    attach for the same reason.
 4. *The invalidation of 2.4* gains one trigger on the view side:
-   `updateData(&ProxyExpView)`, beside the generation counter.
+   `updateData(&ViewProxyExp)`, beside the generation counter.
 5. *The property editor* shows both lists in the Data tab, where a
    view-side list is unfamiliar; the doc string names its purpose,
    and the group is "Base" beside `Proxy`.  Undo covers both lists
@@ -443,12 +446,12 @@ macro one at a time later, their generated output leaving the tree.
         the chain restored; a link in another file (XLink), pinned
         by the file's own machinery; `ProxyExp` emptied returns the
         object to today's path.        one session
-    P2  the view side: ProxyExpView on FeaturePythonT (Hidden scope,
+    P2  the view side: ViewProxyExp on FeaturePythonT (Hidden scope,
         Prop_NoRecompute), read by ViewProviderFeaturePythonT through
         updateData, the same walk in the view hooks, expViewAttach
         at the deferred attach.  Gate: getIcon, claimChildren,
         getToolTip and onChanged from a sheet, in
-        `FeaturePythonChain`'s GUI half; a sheet in ProxyExpView
+        `FeaturePythonChain`'s GUI half; a sheet in ViewProxyExp
         reading the feature by name in a cell (no cycle, no touch);
         the list saved headless, reopened in the GUI, an external
         file resolving.                                  one session
@@ -469,8 +472,9 @@ P2 ~120 (the view list and its updateData hook) plus ~100 of test.
    Hook for view hooks -- elaborated in 2.2.
 2. Notification hooks: the status today is the table in 2.3; the
    rule proposed there (every element, a True stops before the
-   Proxy, the base keeps its position) awaits the user's word.
-3. **Separate lists**, `ProxyExp` and `ProxyExpView`, BOTH on the
+   Proxy, the base keeps its position) is the plan's default, not
+   overruled when the document was closed for coding.
+3. **Separate lists**, `ProxyExp` and `ViewProxyExp`, BOTH on the
    App object (revised the same day); the view list Hidden scope and
    Prop_NoRecompute, the problems and answers in 2.1.
 4. **Proxy first** on the linked object, then its own attributes --

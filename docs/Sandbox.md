@@ -59,11 +59,12 @@ pieces are frozen, not extended.**
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
-    the proxy chain                  planned     7.21 -> docs/ProxyChain.md: ProxyExp, an
-                                                 XLinkList of objects asked for exp<Hook>
-                                                 methods before the Proxy; cog regenerates
-                                                 FeaturePython/ViewProviderFeaturePython;
-                                                 P0-P3, awaiting review 2026-09-12
+    the proxy chain                  ruled       7.21 -> docs/ProxyChain.md: ProxyExp and
+                                                 ViewProxyExp, XLinkLists of objects asked
+                                                 for exp<Hook> / expView<Hook> before the
+                                                 Proxy; the hook bodies one template, cog
+                                                 for the table at build time; P0-P3, coding
+                                                 from the next session (2026-09-12)
     the browser console              sized       7.20: pyodide in the client's page, the wire
                                                  over the socket (JSPI), a client:<identity>
                                                  principal, catalog v2; C1-C6, one to two weeks;
@@ -6316,7 +6317,7 @@ Sources: Firefox's JSPI release bug (bugzilla 2044809), the V8 JSPI
 introduction (v8.dev/blog/jspi), Chromium's intent to ship, pyodide's
 JSPI post (blog.pyodide.org/posts/jspi) and changelog.
 
-### 7.21 The proxy chain: document programs extend native objects **[planned 2026-09-12, see docs/ProxyChain.md]**
+### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; coding starts the next session]**
 
 The user's answer to 7.17's gap against the spreadsheet-as-object
 model (2026-09-11: cells as attributes and methods, aliases as the
@@ -6329,13 +6330,15 @@ runtime for overriding methods by name and signature
 to the real `Proxy` -- multiple inheritance by chain, agnostic to what
 the linked object is (a sheet whose alias'd cells are callables, a
 Python-scripted object, a library, a guest stand-in; static or at
-runtime).  With it, the boilerplate of both classes is regenerated
-from one hook table with cog, keeping the per-hook callable cache and
-the recursion guards.  The plan, the stages P0-P3, the decisions
-awaiting the user, and what it changes in 7.17 (D1 stands; D2's
-carrier is one of several; the typed-sheet discussion is subsumed:
-`ProxyExp` is the type link, the chain is the delegation) are in
-docs/ProxyChain.md.  The variant Link idea recorded the same day is
+runtime).  Two lists, both on the App object: `ProxyExp` for the
+App hooks (a dependency, Global scope) and `ViewProxyExp` for the
+view hooks (Hidden scope, Prop_NoRecompute, read by the view provider
+through updateData).  The per-hook bodies collapse onto one C++
+template; cog generates the hook table only, at build time, the first
+`generate_from_cog` user.  The plan, the stages P0-P3, the rulings,
+and what it changes in 7.17 (D1 stands; D2's carrier is one of
+several; the typed-sheet discussion is subsumed: `ProxyExp` is the
+type link, the chain is the delegation) are in docs/ProxyChain.md.  The variant Link idea recorded the same day is
 docs/VariantLink.md, a parallel thread for later.
 
 ## 8. Measurements
