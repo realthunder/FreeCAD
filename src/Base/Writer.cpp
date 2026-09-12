@@ -496,7 +496,8 @@ void FileWriter::putNextEntry(const char* file, const char *obj)
     this->FileStream.close();
 
     std::string fileName = DirName + "/" + file;
-    this->FileStream.open(fileName.c_str(), std::ios::out | std::ios::binary | std::ios::trunc);
+    this->FileStream.open(Base::FileInfo(fileName),
+                          std::ios::out | std::ios::binary | std::ios::trunc);
     this->FileStream << std::setprecision(std::numeric_limits<double>::digits10 + 1);
 }
 

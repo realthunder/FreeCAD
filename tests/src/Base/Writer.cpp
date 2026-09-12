@@ -3,7 +3,11 @@
 #include "gtest/gtest.h"
 
 #include "Base/Exception.h"
+#include "Base/FileInfo.h"
+#include "Base/Stream.h"
 #include "Base/Writer.h"
+#include <src/TempDirectory.h>
+#include <sstream>
 
 // Writer is designed to be a base class, so for testing we actually instantiate a StringWriter,
 // which is derived from it
@@ -128,4 +132,74 @@ TEST_F(WriterTest, charStreamBase64Encoded)
     // Assert
     // Conversion done using https://www.base64encode.org for testing purposes
     EXPECT_EQ(std::string("RnJlZUNBRCByb2NrcyEg8J+qqPCfqqjwn6qo\n"), _writer.getString());
+}
+
+// ---------------------------------------------------------------------------
+// FileWriter writes real files, so these do not share the StringWriter fixture
+// above. Both cases are about the path rather than the content: on Windows a
+// narrow path is converted with the ANSI code page and stops at MAX_PATH, and
+// FileWriter was the last narrow-path stream in Base.
+// ---------------------------------------------------------------------------
+
+class FileWriterTest: public ::testing::Test
+{
+protected:
+    /// What is on disk under \a path, read back through Base::FileInfo -- the
+    /// wide path on Windows, so a name this finds is the name the entry really
+    /// has there rather than the one it was asked for.
+    static std::string readEntry(const std::string& path)
+    {
+        Base::FileInfo info(path);
+        Base::ifstream from(info, std::ios::in | std::ios::binary);
+        std::ostringstream out;
+        out << from.rdbuf();
+        return out.str();
+    }
+
+    std::string entryPath(const std::string& name) const
+    {
+        return _dir.string() + "/" + name;
+    }
+
+    tests::TempDirectory _dir {"fcFileWriterTest"};
+};
+
+/// An entry is named after the object and property that own it, and an object
+/// name only has to be a script identifier -- so the name reaches the writer as
+/// UTF-8 and has to survive as itself. Converted with the ANSI code page it
+/// lands on disk as mojibake, which nothing can then find by name again.
+TEST_F(FileWriterTest, entryNameIsNotAscii)
+{
+    // Arrange: katakana, escaped because the sources here are ASCII.
+    const std::string name {"\xe3\x83\x91\xe3\x83\xbc\xe3\x83\x84.txt"};
+    Base::FileWriter writer(_dir.string().c_str());
+
+    // Act
+    writer.putNextEntry(name.c_str());
+    writer.Stream() << "payload";
+    writer.close();
+
+    // Assert
+    EXPECT_EQ("payload", readEntry(entryPath(name)));
+}
+
+/// The same names admit any length, so the path an entry lands on can pass the
+/// 260 characters Windows stops at unless the process and the call both ask for
+/// more. Each component stays inside the 255 bytes a file system takes.
+TEST_F(FileWriterTest, entryPathPastMaxPath)
+{
+    // Arrange
+    const std::string directory(150, 'd');
+    const std::string name = directory + "/" + std::string(150, 'e') + ".txt";
+    ASSERT_TRUE(Base::FileInfo(entryPath(directory)).createDirectory());
+    ASSERT_GT(entryPath(name).size(), 260U);
+    Base::FileWriter writer(_dir.string().c_str());
+
+    // Act
+    writer.putNextEntry(name.c_str());
+    writer.Stream() << "payload";
+    writer.close();
+
+    // Assert
+    EXPECT_EQ("payload", readEntry(entryPath(name)));
 }
