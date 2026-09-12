@@ -122,6 +122,7 @@ containing `nonascii-ok` is left alone; `NO_STRIP_NONASCII=1` skips a commit. Us
 The hook is a backstop, not a licence to be sloppy -- write ASCII in the first place.
 
 ## Gotchas
+- **A killed background job is not a failed job.** Claude Code has terminated long-running background commands here reporting a **memory limit that was not actually reached** -- the box has 62 GB and was nowhere near it. That kill is a harness event, not a build or test result. Before concluding anything, check the artifact: does the binary or the generated file exist and is it newer than its inputs, what do the last lines of the log say, what exit code did the output file record. Then re-run the job; do not report a build or suite as broken on the strength of a kill. The same trap with a self-inflicted cause: wrapping a long build in `timeout N` makes exit 143 at the deadline look like a failure when nothing failed -- run it detached instead and wait on the result.
 - `Auto` Qt detection picks Qt5 when present — always force `-DFREECAD_QT_VERSION=6`.
 - Never hand-edit generated `*Py.cpp`; change the `.xml`/`PyImp.cpp`.
 - The bgfx renderer only runs when render-cache mode is set to the "renderer" (3) mode; otherwise the renderer is null and only Coin draws.
