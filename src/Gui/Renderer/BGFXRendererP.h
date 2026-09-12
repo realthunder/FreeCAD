@@ -387,8 +387,17 @@ struct FrameStatsAccum {
     uint32_t frames = 0;
     double frameMs = 0.0;    ///< between two bgfx::frame calls
     double submitMs = 0.0;   ///< the render thread issuing draw commands
-    double waitSubmitMs = 0.0;
-    double waitRenderMs = 0.0;
+    // No waitSubmit/waitRender here on purpose. bgfx assigns those two
+    // Stats fields only inside renderSemWait()/apiSemWait(), both of which
+    // are guarded by `if (!m_singleThreaded)`, and this renderer asks for
+    // single-threaded mode deliberately -- bgfx::renderFrame() before
+    // bgfx::init(), because the GL context belongs to the main thread
+    // (BGFXRenderer.cpp, prepare()). Frame's constructor initialises its
+    // own m_waitSubmit/m_waitRender but not m_perfStats, so the two Stats
+    // fields are indeterminate for the whole life of the process: they
+    // read 0.00 on Windows, which looks exactly like a real 'no wait',
+    // and 110229624705.26ms on a WSLg box. Summing them produced two
+    // columns of the frame report that were never measurements.
     uint64_t draws = 0;
     uint64_t prims = 0;
     /// The GPU half is counted separately, and only when the frame it
@@ -466,8 +475,6 @@ static void accumulateFrameStats(FrameStatsAccum &acc, uint16_t sceneWidth,
     ++acc.frames;
     acc.frameMs += double(s->cpuTimeFrame) * toMs;
     acc.submitMs += double(s->cpuTimeEnd - s->cpuTimeBegin) * toMs;
-    acc.waitSubmitMs += double(s->waitSubmit) * toMs;
-    acc.waitRenderMs += double(s->waitRender) * toMs;
     acc.draws += s->numDraw;
     for (int i = 0; i < bgfx::Topology::Count; ++i)
         acc.prims += s->numPrims[i];
@@ -551,13 +558,12 @@ static void reportFrameStats(FrameStatsAccum &acc)
     char buf[640];
     snprintf(buf, sizeof(buf),
              "render frame: frames:%u %ux%u frame %.2fms submit %.2fms gpu %s | "
-             "draws %.0f prims %.0f (%.0f/draw) | per-draw %s | wait submit %.2fms "
-             "render %.2fms | cpu ours %.2fms (bgfx::frame %.2fms) outside %.2fms\n",
+             "draws %.0f prims %.0f (%.0f/draw) | per-draw %s "
+             "| cpu ours %.2fms (bgfx::frame %.2fms) outside %.2fms\n",
              acc.frames, unsigned(acc.width), unsigned(acc.height),
              acc.frameMs / frames, submitMs, gpuText, drawsPerFrame,
              primsPerFrame, drawsPerFrame > 0.0 ? primsPerFrame / drawsPerFrame : 0.0,
-             perDraw, acc.waitSubmitMs / frames, acc.waitRenderMs / frames,
-             renderMs, acc.bgfxFrameMs / frames, outsideMs);
+             perDraw, renderMs, acc.bgfxFrameMs / frames, outsideMs);
 #ifdef FC_RENDERER_STANDALONE
     std::printf("%s", buf);
 #else
