@@ -349,6 +349,42 @@ still compares identical, so the normalization is what is doing the work; one ad
 reported as exactly one object and three draws; and a recolour is reported on the materials
 alone, geometry matching to the vertex.
 
+## 4.2 The lights the seed state does not have
+
+Found on 2026-09-12, driving the browser viewer against a serving desktop
+on Windows: every lit surface of the published scene drew BLACK, while the
+edges and vertices -- unlit draws -- kept their colours, so the model
+arrived as a black silhouette with a wireframe on it.
+
+The config push of sec 3.3 runs against the seed state that
+`SoFCRenderCacheManager::traverse` builds from a bare `SoCallbackAction`,
+and `translateViewLightConfig` used to set `ViewLightConfig::fed`
+unconditionally. That flag does not mean "a light config was computed"; it
+means **a viewport resolved the lighting**, and it is what separates "there
+is no light and that is the answer" from "nobody filled this in". Backends
+substitute their own white headlight for the second and draw the first
+dark -- honouring `EnableHeadlight` off is the whole reason the flag
+exists.
+
+A publisher has no viewport. The headlight and the backlight are
+`SoDirectionalLight`s a `View3DInventorViewer` hangs at the root, before
+the camera; nothing hangs them here, so the seed state's light list is
+empty -- not because the view is dark but because there is no view.
+Publishing that as `fed` told every consumer the scene was deliberately
+unlit, their fallback headlight stayed down, and the only term left was
+the global ambient. Hence black.
+
+The fix is one bit of honesty: `translateViewLightConfig` takes whether
+its state came from a viewport, `pushExternalConfigs` threads it through,
+the render path passes true and the headless seed passes false. Nothing
+changes for a real view. A consumer -- which IS a viewport -- then lights
+the publish with its own headlight, which is also the right answer for a
+streamed viewer whose camera is not the producer's
+(`ViewLight::eyeSpace`, and `relightForCamera` in the browser viewer).
+
+`fcscenediff` could not see this: it compares serving against serving, and
+both sides published the same wrong flag. What does see it is a picture.
+
 ## 5. What this does not do
 
 The source publishes; it does not render. There is deliberately no offscreen-image path here —
