@@ -1,6 +1,6 @@
 # The proxy chain: document programs extend native objects
 
-**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4 -- the refactor and the generator landed, both suites green, no `ProxyExp` yet; P1 is the next session's first item]**
+**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; P2, the view side, is next]**
 
 The user's design, stated 2026-09-12 after the document program (docs/
 Sandbox.md 7.17) was found lacking against the spreadsheet-as-object
@@ -445,7 +445,7 @@ macro one at a time later, their generated output leaving the tree.
         the next recompute (the generation counter); save, reopen,
         the chain restored; a link in another file (XLink), pinned
         by the file's own machinery; `ProxyExp` emptied returns the
-        object to today's path.        one session
+        object to today's path.            DONE 2026-09-12, sec 4.3
     P2  the view side: ViewProxyExp on FeaturePythonT (Hidden scope,
         Prop_NoRecompute), read by ViewProviderFeaturePythonT through
         updateData, the same walk in the view hooks, expViewAttach
@@ -584,6 +584,99 @@ sec 4.1, including `updateData`'s document object. Verified against a build
 with the bug restored: the two reorder cases fail there (the query returns
 false, and a `canReplaceObject`-only Proxy answers true) and the other six
 pass, so the module guards the refactor as well as the fix.
+
+### 4.3 P1 as built (2026-09-12)
+
+The App-side chain, and five things the build had to settle that sec 2 left
+open.
+
+**The files.**  `src/App/FeaturePython.h`: `ProxyExp`, an
+`App::PropertyXLinkList` beside `Proxy`, Global scope, group "Base", its doc
+string naming the naming convention and the dependency it creates; the
+template hands the list to the Imp from `onChanged(&ProxyExp)` and again from
+`onDocumentRestored` (the links resolve late, so the list means nothing
+before that).  `src/App/FeaturePythonHook.h/.cpp`: the chain itself --
+`HookSlot` grew a `std::vector<ChainEntry>`, `setHookExtensions()` takes the
+list, `resolveChain()` is the resolution of sec 2.2 and `ensureChain()` the
+invalidation of sec 2.4, and `callHook` walks the chain before the Proxy.
+`App::ProxyChain::generation()` / `bump()` is the process-wide counter, bumped
+from the three places sec 2.4 named: `PropertyPythonObject::hasSetValue` (new
+override), `PropertySheet::hasSetValue` (one line at the top) and
+`FeaturePythonPyT::_setattr` where it stores into or deletes from
+`dict_methods`.
+
+Net: ~190 lines of machinery, ~20 of property and wiring, 3 bump sites, and
+`src/Mod/Test/FeaturePythonChain.py` (~380) for the gate.
+
+**The gate.**  `FreeCADCmd -t FeaturePythonChain`, 17 cases, every item P1
+asked for: the property and its dependency edge; a scripted object's Proxy,
+a function stored on a plain object and a spreadsheet whose alias cells are
+lambdas, all resolving through the one rule (and the Proxy asked first when
+an object offers both); two links with the first declining and the second
+handling, the Proxy spared; every link declining and the Proxy answering; a
+value hook's sentinel reaching the C++ base; a notification reaching every
+element; the generation counter through a replaced Proxy, a replaced stored
+function and a re-typed cell, and through a cleared cell, whose property is
+removed rather than set (that one rides on `PropertySheet::hasSetValue`); a
+deleted link dropping out; save and reopen; an XLink into another file; and
+`ProxyExp` emptied returning the object to the P0 path.  Both suites stay at
+their `docs/Testing.md` baseline.
+
+**Five things sec 2 left open.**
+
+1. *The notification rule needs a fifth generated fact.*  Sec 2.3's rule --
+   every element called, a True stopping the chain before the Proxy -- cannot
+   be carried by the decoder, which is where the protocol lives for every
+   other hook.  `pyHookDecodeNotify` is used by three hooks that are NOT
+   notifications and whose callers DO read the answer: view `attach` (a call
+   means "touch Label"), `dragObject` and `dropObject` (a call means
+   Accepted).  Teaching that decoder to answer "not handled" would have
+   changed all three.  So the table carries `notify`, true for the nine hooks
+   of sec 2.3's table (App `onBeforeChange`, `onChanged`,
+   `onDocumentRestored`, `unsetupObject`; view `attach`, `updateData`,
+   `onChanged`, `startRestoring`, `finishRestoring`), and `callHook` reads it:
+   those walk every element and stop only on an explicit True from a link.
+   With an empty chain a notify hook behaves exactly as it did.
+2. *A chain element is always told which object it is extending.*  Sec 2.3
+   says the callable receives `(obj, *hook_args)`, but 29 of the 68 hooks are
+   `PyHookSelf::None` -- their Proxy method is passed nothing, its own `self`
+   being the proxy.  A ProxyExp element is not the proxy: it is a separate
+   object serving possibly many features, and without the owner it cannot do
+   anything at all.  So `callHook` passes the owner to every chain element
+   regardless of the hook's `self` rule, and honours `PyHookSelf` (and the
+   `__object__` form) for the Proxy element only.  On the App side this
+   affects one hook, `editProperty`, whose extension form is therefore
+   `expEditProperty(obj, propName)` against the Proxy's
+   `editProperty(propName)`; on the view side it will be the difference
+   between `getIcon()` and `expViewGetIcon(vobj)`.
+3. *The walk has to survive what it calls.*  A hook's callable may do
+   anything, including something that rebuilds the very chain it is walking
+   (store a function on a linked object, re-type a cell -- both bump the
+   generation).  The walk therefore indexes rather than iterates and copies
+   the entry before the call, which is one reference count against a Python
+   call; and `~PyHookImp` clears the chains under the GIL, beside the Proxy
+   slots, because a vector of `Py::Object` destroyed with the rest of the
+   object would drop its references without it.
+4. *`canCallHook` had to learn the chain.*  The bodies with work to do before
+   a call -- a matrix, a pivy pointer, a property name -- ask it first, and it
+   answered from the Proxy alone; an object extended by a sheet and carrying
+   no Proxy would have been turned away before the chain was ever consulted.
+   It now resolves the chain and reports whether any element is callable.
+5. *A sentinel "not handled" has to be known by the decoder, not only by the
+   caller.*  Four App hooks answer "not mine" with a number rather than an
+   exception -- `isElementVisible`, `isElementVisibleEx`, `setElementVisible`
+   with -2, `canLoadPartial` with -1 -- and the templates in
+   `FeaturePython.h` are what read it.  Inside a chain that is too late: the
+   shared `pyHookDecodeInt` reported every integer as handled, so the FIRST
+   link returning -2 stopped the walk and the hook fell to the C++ base with
+   a later link never asked.  The gate case caught it.  `pyHookDecodeInt(out,
+   notHandled)` now takes the sentinel and the caller keeps reading the
+   number, unchanged.
+
+**The cost of not using it.**  An object with an empty `ProxyExp` -- which is
+every scripted object in every existing file -- pays one `empty()` test per
+hook call, then runs the P0 path unchanged.  Nothing is resolved, no
+generation is compared, and no vector is touched.
 
 Lines: P0 the template and decoders ~150, the table ~80, the two
 generated includes ~300 (in the build tree), the macro ~40, against
