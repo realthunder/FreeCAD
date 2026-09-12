@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Merged into the linker's own manifest for FreeCAD.exe and FreeCADCmd.exe
+  (/MANIFESTINPUT, see src/Main/CMakeLists.txt).
+
+  longPathAware is what lets a process reach a path past MAX_PATH with the
+  plain wide Win32 calls, which is what Base::FileInfo and Python's open()
+  both make. Without it, a save into a deep directory loses an included
+  file to a bare FileNotFoundError once the object names are long, and an
+  object name only has to be a Python identifier. The machine also needs
+  HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled set to
+  1; the two are required together.
+
+  Note for editors: an XML comment may not contain two hyphens in a row, so
+  this file cannot use the usual dash punctuation.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings xmlns:ws2="http://schemas.microsoft.com/SMI/2016/WindowsSettings">
+      <ws2:longPathAware>true</ws2:longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>

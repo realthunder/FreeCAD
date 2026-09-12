@@ -14,6 +14,10 @@
 *.exp
 *.dep
 *.manifest
+# ...but not the one that is ours. The pattern above is for the manifests
+# the linker generates; this one is a source, linked into the Windows
+# executables to declare longPathAware (src/Main/CMakeLists.txt).
+!src/Main/res/FreeCAD.manifest
 *.o
 *.orig
 *.output

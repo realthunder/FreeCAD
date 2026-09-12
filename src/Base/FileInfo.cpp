@@ -86,6 +86,63 @@ std::wstring ConvertToWideString(const std::string& string)
     wideCharString = NULL;
     return wideString;
 }
+
+/// The long-path form of \a path, when the path is long enough to need it.
+///
+/// Past MAX_PATH the ordinary wide calls need two things to be true at once:
+/// this process declares longPathAware (src/Main/res/FreeCAD.manifest) and the
+/// machine has LongPathsEnabled set. The \\?\ prefix needs neither -- it goes
+/// straight to the file system -- but it also turns path normalisation off, so
+/// it is applied only where the alternative is a call that fails outright, and
+/// only to a fully qualified path that needs no normalising.
+static std::wstring toLongPath(std::wstring path)
+{
+    // MAX_PATH - 12, not MAX_PATH: CreateDirectoryW stops there, because it has
+    // to leave room for an 8.3 name inside the directory it makes.
+    if (path.size() < static_cast<std::size_t>(MAX_PATH) - 12
+        || path.compare(0, 4, L"\\\\?\\") == 0) {
+        return path;
+    }
+
+    const auto separator = [](wchar_t c) {
+        return c == L'/' || c == L'\\';
+    };
+    const bool unc = path.size() > 2 && separator(path[0]) && separator(path[1]);
+    const auto letter = [](wchar_t c) {
+        return (c >= L'A' && c <= L'Z') || (c >= L'a' && c <= L'z');
+    };
+    const bool drive =
+        path.size() > 2 && letter(path[0]) && path[1] == L':' && separator(path[2]);
+    if (!unc && !drive) {
+        // Relative, or a form this does not claim to understand. The prefix
+        // only accepts a fully qualified path.
+        return path;
+    }
+
+    std::replace(path.begin(), path.end(), L'/', L'\\');
+    const std::size_t rootEnd = unc ? 2 : 3;
+    while (path.size() > rootEnd && path.back() == L'\\') {
+        path.pop_back();
+    }
+
+    // Behind the prefix "." and ".." are names rather than instructions, and an
+    // empty component is an error -- so a path that still needs normalising is
+    // handed back unchanged for the ordinary call to deal with.
+    for (std::size_t at = rootEnd; at <= path.size();) {
+        const std::size_t end = path.find(L'\\', at);
+        const std::wstring part = path.substr(at, end == std::wstring::npos ? end : end - at);
+        if (part.empty() || part == L"." || part == L"..") {
+            return path;
+        }
+        if (end == std::wstring::npos) {
+            break;
+        }
+        at = end + 1;
+    }
+
+    // A UNC path keeps one of its leading separators: \\?\UNC\server\share.
+    return unc ? L"\\\\?\\UNC" + path.substr(1) : L"\\\\?\\" + path;
+}
 #endif
 
 
@@ -312,7 +369,7 @@ std::wstring FileInfo::toStdWString() const
     // As FileName is UTF-8 is encoded we have to convert it
     // for Windows because the path names are UTF-16 encoded.
 #ifdef FC_OS_WIN32
-    return ConvertToWideString(FileName);
+    return toLongPath(ConvertToWideString(FileName));
 #else
     // On other platforms it's discouraged to use wchar_t for file names
     THROWM(Base::FileException, "Cannot use FileInfo::toStdWString() on this platform")
@@ -552,7 +609,7 @@ bool FileInfo::renameFile(const char* NewName)
     bool res {};
 #if defined(FC_OS_WIN32)
     std::wstring oldname = toStdWString();
-    std::wstring newname = ConvertToWideString(NewName);
+    std::wstring newname = toLongPath(ConvertToWideString(NewName));
     res = ::_wrename(oldname.c_str(), newname.c_str()) == 0;
 #elif defined(FC_OS_LINUX) || defined(FC_OS_CYGWIN) || defined(FC_OS_MACOSX) || defined(FC_OS_BSD)
     res = ::rename(FileName.c_str(), NewName) == 0;
@@ -574,7 +631,7 @@ bool FileInfo::copyTo(const char* NewName) const
 {
 #if defined(FC_OS_WIN32)
     std::wstring oldname = toStdWString();
-    std::wstring newname = ConvertToWideString(NewName);
+    std::wstring newname = toLongPath(ConvertToWideString(NewName));
     return CopyFileW(oldname.c_str(), newname.c_str(), true) != 0;
 #elif defined(FC_OS_LINUX) || defined(FC_OS_CYGWIN) || defined(FC_OS_MACOSX) || defined(FC_OS_BSD)
     FileInfo fi1(FileName);
