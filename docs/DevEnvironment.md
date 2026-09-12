@@ -2353,6 +2353,43 @@ Unfixed, noticed in passing: `AppPartPy.cpp:380` formats a `size_t` hash with `%
 truncating it on any 64-bit target (`C4477`). Equally wrong on Linux; changing it
 would alter generated feature labels on both platforms, so it is left alone.
 
+### Long paths, and the two things that have to be true
+
+A path past `MAX_PATH` (260 characters) is reachable from the plain wide Win32
+calls only when **both** of these hold, and each is silent about the other:
+
+1. The machine has
+   `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled` set to
+   1. This box does; a stock Windows 10/11 install does not.
+2. The **process** declares `longPathAware` in its manifest.
+
+Point 2 was missing until 2026-09-12, and the way it showed up is worth
+remembering, because it looks like a code bug: the conda env's `python.exe`
+wrote a 281-character path happily while `FreeCADCmd.exe` raised
+`FileNotFoundError` on the same string. `python.exe` ships the manifest;
+FreeCAD's executables had none, and the linker's default manifest does not
+include the setting. `src/Main/res/FreeCAD.manifest` now supplies it, listed
+as a **source file** on `FreeCADMain` and `FreeCADMainCmd` -- not as
+`/MANIFEST:EMBED` + `/MANIFESTINPUT:`, which collides with the mt.exe step
+CMake already runs between its two link passes (`CVT1100: duplicate
+resource`). Two further traps: an XML comment may not contain two hyphens in a
+row, which this tree's prose style puts everywhere and which mt.exe rejects
+the whole file for (`c1010070`); and `.gitignore` has `*.manifest` for the
+generated ones, so the shipped one needs its own negation or it is invisible
+to `git status`.
+
+Because point 1 is a machine setting and not something a released build can
+rely on, `Base::FileInfo::toStdWString()` also rewrites an over-long path into
+its `\\?\` form, which needs neither the registry key nor the manifest. It is
+applied only to a fully qualified path that needs no normalising, and only
+past `MAX_PATH - 12` (where `CreateDirectoryW` stops, not `MAX_PATH`) --
+behind that prefix Windows does no normalisation at all, so `.` and `..`
+would become literal names.
+
+What found all of this was the Python suite: `FileBlobs.BlobNamingCases`, two
+cases about a 250-character blob name. `docs/Testing.md`, "Python on Windows",
+has the account of that and the two other Windows-only defects beside it.
+
 ### Python cannot find the OCCT/Coin DLLs — `PATH` is not enough
 
 `run.cmd` puts the OCCT and Coin binary directories on `PATH`, which is what
