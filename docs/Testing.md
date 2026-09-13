@@ -11,7 +11,7 @@ as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
-| Python (`FreeCADCmd -t 0`) | **2705 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-12, after `FeaturePythonChain`'s 17; 2688 on 2026-09-10) |
+| Python (`FreeCADCmd -t 0`) | **2706 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-13, after `FeaturePythonChain`'s 18; 2688 on 2026-09-10) |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **605 of 605 passing** (2026-09-12), 0 failures, 7 ctest entries disabled -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available" |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **478 of 478 passing** (2026-09-07), 1 disabled -- see "C++ on macOS" |
@@ -110,17 +110,22 @@ is the last line of `$SANDBOX_GUI_GATE_RESULT`, not the exit code.
 
     cd build/conda-relwithdebinfo-801
     QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome2 \
-      SANDBOX_GUI_GATE_MODULES=ViewProviderHooks \
+      SANDBOX_GUI_GATE_MODULES=ViewProviderHooks,ViewProviderChain \
       SANDBOX_GUI_GATE_RESULT=/tmp/gate.txt \
       timeout -k 5 300 ~/works/sw/fcad/.conda/run.sh \
       ./bin/FreeCAD ~/works/sw/fcad/scripts/sandbox-gui-gate.py
 
 Most of the default module list is the sandbox gates of `docs/Sandbox.md` 7.9,
-which need `xcb` under Xvfb and a guest runtime. `ViewProviderHooks` is the
-exception and runs on `offscreen` with neither: it is the only cover the tree
-has for `ViewProviderFeaturePythonImp`, every hook of which is invisible to
-both suites above. It pins which hook each view query reaches and what
-arguments the Proxy is handed, per the table in `docs/ProxyChain.md` sec 3.
+which need `xcb` under Xvfb and a guest runtime. `ViewProviderHooks` and
+`ViewProviderChain` are the exceptions and run on `offscreen` with neither:
+between them they are the only cover the tree has for
+`ViewProviderFeaturePythonImp`, every hook of which is invisible to both
+suites above. `ViewProviderHooks` (8 cases) pins which hook each view query
+reaches and what arguments the Proxy is handed, per the table in
+`docs/ProxyChain.md` sec 3; `ViewProviderChain` (17) is the view half of the
+proxy chain -- `ViewProxyExp`, the walk, the deferred attach and a
+spreadsheet as an extension (`docs/ProxyChain.md` sec 4.4). Its App-side twin,
+`FeaturePythonChain`, is headless and rides the Python suite.
 
 **Editing a test module means copying it into the build tree.** The modules
 are installed, not read from `src/`, so an edit to `src/Mod/Test/<M>.py` does

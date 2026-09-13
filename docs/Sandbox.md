@@ -65,7 +65,9 @@ pieces are frozen, not extended.**
                                                  Proxy; the hook bodies one template, cog
                                                  for the table at build time; P0 and P1
                                                  BUILT 2026-09-12 (the refactor, then the
-                                                 App-side chain); P2 the view side next
+                                                 App-side chain), P2 BUILT 2026-09-13 (the
+                                                 view side); P3, the sandbox, sits inside
+                                                 7.17's build
     the browser console              sized       7.20: pyodide in the client's page, the wire
                                                  over the socket (JSPI), a client:<identity>
                                                  principal, catalog v2; C1-C6, one to two weeks;
@@ -6318,7 +6320,7 @@ Sources: Firefox's JSPI release bug (bugzilla 2044809), the V8 JSPI
 introduction (v8.dev/blog/jspi), Chromium's intent to ship, pyodide's
 JSPI post (blog.pyodide.org/posts/jspi) and changelog.
 
-### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2, the view side, is next]**
+### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; P3, the sandbox, sits inside 7.17's build]**
 
 The user's answer to 7.17's gap against the spreadsheet-as-object
 model (2026-09-11: cells as attributes and methods, aliases as the

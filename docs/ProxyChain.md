@@ -1,6 +1,6 @@
 # The proxy chain: document programs extend native objects
 
-**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; P2, the view side, is next]**
+**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; **P2 BUILT 2026-09-13**, sec 4.4 -- `ViewProxyExp` and the view-side chain, 17 gate cases in `src/Mod/Test/ViewProviderChain.py`; P3, the sandbox, sits inside 7.17's build]**
 
 The user's design, stated 2026-09-12 after the document program (docs/
 Sandbox.md 7.17) was found lacking against the spreadsheet-as-object
@@ -454,7 +454,7 @@ macro one at a time later, their generated output leaving the tree.
         `FeaturePythonChain`'s GUI half; a sheet in ViewProxyExp
         reading the feature by name in a cell (no cycle, no touch);
         the list saved headless, reopened in the GUI, an external
-        file resolving.                                  one session
+        file resolving.                     DONE 2026-09-13, sec 4.4
     P3  the sandbox: the P1 gate routed (needs 7.17 D1 for a `def`
         cell); the audit line names the linked object's document; a
         cross-file link's write prompts doc.foreign once.  Sits
@@ -678,11 +678,130 @@ every scripted object in every existing file -- pays one `empty()` test per
 hook call, then runs the P0 path unchanged.  Nothing is resolved, no
 generation is compared, and no vector is touched.
 
+### 4.4 P2 as built (2026-09-13)
+
+The view-side chain, and five things the build had to settle -- two of them
+latent bugs in code older than this work.
+
+**The files.**  `src/App/FeaturePython.h`: `ViewProxyExp`, a second
+`App::PropertyXLinkList` beside `ProxyExp`, group "Base",
+`App::Prop_NoRecompute`, `LinkScope::Hidden`, its doc string naming the
+`expView` convention and the asymmetry with `ProxyExp` (a reference, not a
+dependency; a copy with dependencies does not take it along).  The App
+template does nothing else with it -- the view provider hears about it the
+way it hears about every other App property.
+`src/Gui/ViewProviderFeaturePython.h/.cpp`: `readHookExtensions()` on the Imp
+reads the list off the object and hands it to `PyHookImp::setHookExtensions`,
+`isHookExtensionProperty()` answers whether a property IS that list, and the
+template pulls at the three moments the list can become real -- `attach`
+(the object may already carry one: a document opened in the GUI, a secondary
+view), `updateData` when the property is the list, and `finishRestoring`
+(the links resolve late).  The deferred attach came out of `onChanged(&Proxy)`
+into `attachDeferred()` and now has a second caller.
+`src/App/PropertyLinks.cpp`: finding 2 below.
+
+Net: ~20 lines of property, ~45 of view-provider machinery, 16 in
+`PropertyLinks.cpp`, and `src/Mod/Test/ViewProviderChain.py` (~390) plus one
+headless case in `FeaturePythonChain.py`.
+
+**The gate.**  17 cases in `ViewProviderChain`, run with `ViewProviderHooks`
+through `scripts/sandbox-gui-gate.py` (`RESULT OK`, 25 of 25): the property
+and the two things Hidden scope buys (no edge either way, no touch); an icon,
+a list, a string and a notification hook answered from an extension, each
+told which view provider it is extending; chain order with the first element
+declining; every element declining and the view Proxy answering; the empty
+list running the P0 path; `ProxyExp` never answering a view hook; the
+deferred attach for an object with no view Proxy at all, pinned by
+`expViewAttach`; save and reopen; an XLink into another file; and a
+spreadsheet whose alias cell is a lambda, re-typed and picked up through the
+generation counter, plus one reading the feature back by name in a cell --
+the case Hidden scope exists for.  Both suites are at their `docs/Testing.md`
+baseline: Python 2706 OK (2705 plus the new headless case), C++ 605 of 605.
+
+**Five things the build had to settle.**
+
+1. *`Prop_NoRecompute` does not stop the touch.*  Sec 2.1 problem 2 reads it
+   as "the property saves, undoes and notifies, and does not touch", and that
+   is not what the flag does: `DocumentObject::onChanged` (`:1057`) tests it
+   only to withhold `ObjectStatus::Enforce`, several lines after it has
+   already set `ObjectStatus::Touch`.  For a `FeaturePythonT` that is the
+   whole game -- its `mustExecute()` answers 1 on `isTouched()` -- so an edit
+   to the icon list would have recomputed the geometry after all.  The flag
+   that withholds the touch is the `Property::Output` STATUS, and
+   `DocumentObject` already answers this exact question that way for
+   `Visibility` (`DocumentObject.cpp:101`).  `ViewProxyExp` carries both: the
+   type flag says what it is, the status makes it so.
+
+2. *Hidden scope did not reach the elements of a list.*  `LinkScope::Hidden`
+   is read by the element, not by the list: `PropertyXLinkSubList` keeps a
+   `PropertyXLinkSub` per link, and `setValue`, `restoreLink` and `resetLink`
+   each consult their OWN `_pcScope` before adding the back-link.  Children
+   are built with `new PropertyXLinkSub(allowPartial, this)` and the
+   constructor copied only the container, so a Hidden list still left the
+   feature in every extension's `InList` -- and `Document::recompute`
+   (`Document.cpp:4388`) walks exactly that list to set `Enforce` on
+   everything referencing what it just rebuilt.  The dependency the Hidden
+   scope was chosen to avoid would have arrived by the back door.  The fix is
+   in the child constructor and inherits Hidden alone (Local against Global
+   on a child is read by nothing, and copying it would be a change with no
+   caller).  Nothing in the tree could have seen this: no `PropertyXLinkSubList`
+   or `PropertyXLinkList` had ever been given a non-default scope -- the four
+   Hidden links that exist are single `PropertyXLink`s, and
+   `PropertyXLinkContainer` sets Hidden on each of its child xlinks by hand
+   (`PropertyLinks.cpp:5876`), which is the same lesson written out the long
+   way.
+
+3. *A Hidden list reads back EMPTY through `getValues()`.*  `PropertyXLinkSubList::
+   getValues()` is `getLinks(objs)` with `all` defaulted to false, and false
+   is precisely the argument Hidden scope answers with nothing.  So the first
+   build resolved a chain of zero elements for every object while Python
+   showed the list correctly -- the Python getter takes another path -- and
+   every view hook fell through to the Proxy as if nothing had been linked.
+   The read is `getLinks(objs, true)`; `ProxyExp` is Global and never had the
+   problem.  This is the trap for anyone who gives a link list Hidden scope
+   next.
+
+4. *An element is always passed the owner -- and for `updateData` the owner is
+   the document object.*  Sec 4.3 finding 2 made the chain pass the owner even
+   for the 28 view hooks whose Proxy method is passed nothing, so the view
+   forms are `expViewGetIcon(vobj)`, `expViewClaimChildren(vobj)`,
+   `expViewGetDropPrefix(vobj)` against the Proxy's no-argument `getIcon()`.
+   `hookSelf` decides what that owner is, and it is not overridden for the
+   chain: `expViewUpdateData` receives the DOCUMENT object, exactly where the
+   Proxy's `updateData` receives it (sec 4.1 finding 4).  An element gets what
+   the Proxy would get in that position, which is the rule that keeps the two
+   forms readable side by side.
+
+5. *The attach the template defers needed a second trigger, and
+   `finishRestoring` had to stand down.*  A view provider with no Proxy never
+   attaches: `attach(obj)` only records the object and the real attach waits
+   for the first `onChanged(&Proxy)`.  An object extended by a sheet alone has
+   no Proxy to wait for, so `attachDeferred()` also runs from
+   `updateData(&ViewProxyExp)` once the list is non-empty.  And
+   `finishRestoring`'s None-Proxy branch -- show the object, set `Proxy = 1`,
+   which pokes `onChanged` into attaching -- would have invented a Proxy for
+   an object that deliberately has none; it now runs only when the chain is
+   empty, and the template attaches such an object itself.  Restore is where
+   this matters, and the fork restores view providers lazily (the drain in
+   `Gui/Document.cpp`), so a reopened document has no view provider at all
+   until the event loop turns: the two persistence cases call
+   `FreeCADGui.updateGui()`, and it is `finishRestoring` that then supplies
+   the chain.
+
+**Two notes for the next reader.**  `getToolTip`, the string hook the plan
+named for the gate, is not reachable from Python -- no `ViewProviderPy`
+method exposes it -- so the gate pins the string protocol through
+`getDropPrefix`, which is the same decoder and is exposed as `DropPrefix`.
+And an extension added to a view provider that has ALREADY attached does not
+receive `expViewAttach`: re-running the attach would run the Proxy's a second
+time.  Set the list with, or before, the Proxy.
+
 Lines: P0 the template and decoders ~150, the table ~80, the two
 generated includes ~300 (in the build tree), the macro ~40, against
 ~900 lines of pattern bodies removed; P1 ~250 (the property, the
 resolver, the cache, the counter, three bump sites) plus ~200 of test;
-P2 ~120 (the view list and its updateData hook) plus ~100 of test.
+P2 ~80 (the view list, the view provider's pull, the deferred attach)
+and 16 in PropertyLinks.cpp, plus ~400 of test.
 
 ## 5. The rulings (2026-09-12)
 
