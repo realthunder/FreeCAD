@@ -3225,13 +3225,8 @@ TEST_F(ExpressionRoutingTest, librariesLinkUnresolvedFailsBothWays)
     ASSERT_NE(source->lib, nullptr);
     auto link = addLink(doc, "LibB", "brk", source->lib);
     ASSERT_NE(link, nullptr);
-    // Saved first: closing a linked document under a consumer that has never
-    // been saved leaves PropertyXLink holding the deleted object -- any
-    // XLink, not this one (docs/Sandbox.md sec 12).
-    const std::string consumerPath = Base::FileInfo::getTempPath() + doc->getName() + ".FCStd";
-    doc->saveAs(consumerPath.c_str());
+    // the consumer never saved: no DocInfo watches the source for its link
     source.reset();
-    Base::FileInfo(consumerPath).deleteFile();
     ASSERT_EQ(link->getHolder(), nullptr);
     Base::PyGILStateLocker lock;
     std::string nerr, rerr;

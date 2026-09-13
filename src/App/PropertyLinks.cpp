@@ -3328,6 +3328,70 @@ public:
     App::Document *pcDoc{nullptr};
     std::set<PropertyXLink*> links;
 
+    /** Cross-document links made while the owner or the linked document
+     * had no file: setValue() delays their DocInfo till Save(), so no
+     * DocInfo watches the linked document for them, and closing that
+     * document used to leave _pcLink pointing at a deleted object.  They
+     * are kept here until a DocInfo takes over or the link lets go.
+     */
+    static std::set<PropertyXLink*> &untrackedLinks() {
+        static std::set<PropertyXLink*> untracked;
+        return untracked;
+    }
+
+    static void trackUntracked(PropertyXLink *l, bool on) {
+        if (!on) {
+            untrackedLinks().erase(l);
+            return;
+        }
+        static bool connected;
+        if (!connected) {
+            connected = true;
+            // never disconnected: the set outlives every document
+            App::GetApplication().signalDeleteDocument.connect(&DocInfo::slotDeleteUntracked);
+        }
+        untrackedLinks().insert(l);
+    }
+
+    /// slotDeleteDocument for the links no DocInfo holds
+    static void slotDeleteUntracked(const App::Document &doc) {
+        std::map<App::PropertyLinkBase*,std::vector<App::PropertyXLink*> > parentLinks;
+        auto &untracked = untrackedLinks();
+        for (auto it = untracked.begin(); it != untracked.end();) {
+            auto link = *it;
+            auto owner = dynamic_cast<DocumentObject*>(link->getContainer());
+            if (owner && owner->getDocument() == &doc) {
+                // the owner goes with the document, and its link with it
+                it = untracked.erase(it);
+                continue;
+            }
+            if (link->_pcLink && link->_pcLink->getDocument() == &doc) {
+                it = untracked.erase(it);
+                link->setFlag(PropertyLinkBase::LinkDetached);
+                parentLinks[link->parentProp].push_back(link);
+                continue;
+            }
+            ++it;
+        }
+        for (auto &v : parentLinks) {
+            if (v.first) {
+                v.first->setFlag(PropertyLinkBase::LinkDetached);
+                v.first->aboutToSetValue();
+            }
+            for (auto l : v.second) {
+                // detach() without the DocInfo: the object name stays
+                l->aboutToSetValue();
+                l->resetLink();
+                l->updateElementReference(nullptr);
+                l->hasSetValue();
+            }
+            if (v.first) {
+                v.first->hasSetValue();
+                v.first->setFlag(PropertyLinkBase::LinkDetached, false);
+            }
+        }
+    }
+
     struct PathInfo {
         QDir dir;
         QString postfix;
@@ -3899,6 +3963,7 @@ void PropertyXLink::setSyncSubObject(bool enable)
 }
 
 void PropertyXLink::unlink() {
+    DocInfo::trackUntracked(this, false);
     if(docInfo) {
         docInfo->remove(this);
         docInfo.reset();
@@ -4003,6 +4068,7 @@ void PropertyXLink::restoreLink(App::DocumentObject *lValue) {
         lValue->_addBackLink(owner);
 #endif
     _pcLink=lValue;
+    DocInfo::trackUntracked(this, false);
     updateElementReference(nullptr);
     hasSetValue();
     setFlag(LinkRestoring,false);
@@ -4075,6 +4141,8 @@ void PropertyXLink::setValue(App::DocumentObject *lValue,
     if(!docInfo)
         filePath.clear();
     _pcLink=lValue;
+    DocInfo::trackUntracked(this,
+            lValue && !docInfo && lValue->getDocument() != owner->getDocument());
     if(docInfo && docInfo->pcDoc)
         stamp=docInfo->pcDoc->LastModifiedDate.getValue();
     objectName = name;
@@ -4114,6 +4182,7 @@ void PropertyXLink::setValue(std::string &&filename, std::string &&name,
         _pcLink->_removeBackLink(owner);
 #endif
     _pcLink = nullptr;
+    DocInfo::trackUntracked(this, false);
     if(docInfo!=info) {
         unlink();
         docInfo = info;
@@ -4364,6 +4433,7 @@ void PropertyXLink::Save (Base::Writer &writer) const {
             } else {
                 auto self = const_cast<PropertyXLink*>(this);
                 self->docInfo = DocInfo::get(filename,owner->getDocument(),self,_pcLink->getNameInDocument());
+                DocInfo::trackUntracked(self, false);
                 self->stamp = docInfo->pcDoc->LastModifiedDate.getValue();
             }
         }

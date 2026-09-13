@@ -6,8 +6,10 @@
 #include "App/Application.h"
 #include "App/Document.h"
 #include "App/DocumentObject.h"
+#include "App/PropertyLinks.h"
 #include "App/StringHasher.h"
 #include "Base/Exception.h"
+#include "Base/FileInfo.h"
 #include "Base/Writer.h"
 #include <src/App/InitApplication.h>
 
@@ -125,6 +127,42 @@ TEST_F(DocumentTest, liveImportUserEditExemptsTreeRankByIdentity)
     // import itself.
     EXPECT_NO_THROW(obj->Label.setValue("filled"));
     doc()->setStatus(App::Document::LiveImport, false);
+}
+
+
+// A cross-document link made while a document has no file gets its DocInfo
+// only at Save(), so nothing watched the linked document for it: closing
+// that document left the link holding the deleted object, and the next read
+// crashed.  Both the linked document saved and not, the consumer never saved.
+TEST_F(DocumentTest, xlinkOfAnUnsavedDocumentDetachesWhenTheTargetCloses)
+{
+    for (bool saveTarget : {true, false}) {
+        auto& app = App::GetApplication();
+        const std::string targetName = app.getUniqueDocumentName("xlinkTarget");
+        App::Document* target = app.newDocument(targetName.c_str(), "testUser");
+        App::DocumentObject* linked = target->addObject("App::FeaturePython", "Linked");
+        ASSERT_NE(linked, nullptr);
+        std::string path;
+        if (saveTarget) {
+            path = Base::FileInfo::getTempPath() + targetName + ".FCStd";
+            target->saveAs(path.c_str());
+        }
+
+        App::DocumentObject* owner = doc()->addObject("App::FeaturePython", "Owner");
+        auto link = dynamic_cast<App::PropertyXLink*>(
+            owner->addDynamicProperty("App::PropertyXLink", "Link"));
+        ASSERT_NE(link, nullptr);
+        link->setValue(linked);
+        ASSERT_EQ(link->getValue(), linked);
+
+        app.closeDocument(targetName.c_str());
+        EXPECT_EQ(link->getValue(), nullptr) << "saveTarget " << saveTarget;
+        EXPECT_STREQ(link->getObjectName(), "Linked");
+        if (!path.empty()) {
+            Base::FileInfo(path).deleteFile();
+        }
+        doc()->removeObject(owner->getNameInDocument());
+    }
 }
 
 // NOLINTEND(readability-magic-numbers)
