@@ -4272,8 +4272,12 @@ VarInfo CallableExpression::getVarInfo(bool mustExist) const {
 }
 
 void CallableExpression::_toString(std::ostream &ss, bool persistent,int) const {
+    // The callee with its parentheses when it needs them: a printed
+    // `(lambda k: k * k)(i)` that lost them re-parsed as another program
+    // -- in a saved document, and in every routed evaluation, which ships
+    // the printed form (docs/Sandbox.md 7.17 D1).
     if(expr)
-        ss << expr->toStr(persistent);
+        ss << expr->toStr(persistent, true);
     else 
         ss << name;
     ss << '(';
@@ -6513,6 +6517,16 @@ void LambdaExpression::_toString(std::ostream &ss, bool persistent, int) const {
         }
     }
     ss << " : " << body->toStr(persistent);
+}
+
+int LambdaExpression::priority() const
+{
+    return 0;
+}
+
+int FunctionStatement::priority() const
+{
+    return Expression::priority();
 }
 
 bool LambdaExpression::isTouched() const

@@ -1175,6 +1175,10 @@ public:
             StringList &&names=StringList(), ExpressionList &&args=ExpressionList());
 
     bool isTouched() const override;
+    /// Below every operator: `(lambda k: k * k)(i)` must keep its
+    /// parentheses when it is printed, or it re-parses as a lambda whose
+    /// body is `k * k(i)`.
+    int priority() const override;
 
 protected:
     explicit LambdaExpression(const App::DocumentObject *_owner):Expression(_owner) {}
@@ -1194,6 +1198,10 @@ protected:
 
 class AppExport FunctionStatement : public LambdaExpression {
     EXPR_TYPESYSTEM_HEADER();
+
+public:
+    /// A statement, never parenthesized (LambdaExpression lowers it).
+    int priority() const override;
 
 public:
     static ExpressionPtr create(const App::DocumentObject *owner, std::string &&name, 
