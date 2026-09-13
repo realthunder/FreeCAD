@@ -3856,8 +3856,23 @@ PropertyXLink::PropertyXLink(bool _allowPartial, PropertyLinkBase *parent)
     setAllowPartial(_allowPartial);
     setAllowExternal(true);
     setSyncSubObject(true);
-    if(parent)
+    if(parent) {
         setContainer(parent->getContainer());
+        if (parent->getScope() == LinkScope::Hidden) {
+            // A Hidden list has to be hidden through its elements too.  The
+            // back-link is the CHILD's business (setValue, restoreLink and
+            // resetLink all read their own _pcScope), so a child left at its
+            // own default puts the container back into the linked object's
+            // InList -- and Document::recompute walks that list to enforce a
+            // recompute on everything referencing what it just rebuilt, which
+            // is exactly what a Hidden link is asking not to be.  Only Hidden
+            // is inherited: Local against Global on a child is read by
+            // nothing, and copying it would be a change with no caller.  Set
+            // the scope BEFORE the values -- an element that already exists is
+            // not revisited.
+            setScope(LinkScope::Hidden);
+        }
+    }
 }
 
 PropertyXLink::~PropertyXLink() {
