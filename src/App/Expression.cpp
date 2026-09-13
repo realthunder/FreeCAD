@@ -6160,12 +6160,16 @@ Py::Object WhileStatement::_getPyValue(int *jumpCode) const {
                 // fall through
             case JUMP_NONE:
                 res = Py::Object();
-                if(limit>0 && (++count % limit)==0)
+                if(limit>0 && (++count % limit)==0) {
 #ifndef FC_EXPR_IMAGE
                     // In-image the runaway-loop backstop is wasmtime
-                    // fuel/epochs, strictly stronger (seam S10).
+                    // fuel/epochs, strictly stronger (seam S10).  The
+                    // braces matter: without them the image build made
+                    // this `if` govern the `continue` below, and every
+                    // while loop in the image ran exactly once.
                     Base::Sequencer().checkAbort();
 #endif
+                }
                 continue;
             default:
                 assert(0);
