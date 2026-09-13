@@ -61,7 +61,12 @@ pieces are frozen, not extended.**
                                                  expression routed = native to the BRep byte, the
                                                  surface annotated and versioned; a function value
                                                  still cannot LEAVE a routed evaluation (P3's
-                                                 problem); per-document guests OUT (335 MB, 2.5 s)
+                                                 problem); per-document guests OUT (335 MB, 2.5 s);
+                                                 D2's library half BUILT 2026-09-13:
+                                                 App::ExpressionLibrary imported by the document's
+                                                 own expressions, routed = native, the guest keeping
+                                                 one module per principal; NEXT the linked library
+                                                 (Source/Pinned/Snapshot) and P3
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
@@ -5320,6 +5325,112 @@ ABOVE the 290-490 sized, though 223 of the added are the tests, which
 the sizing's D1 row did not count, and 29 are the two old bugs; about
 320 lines of the feature itself.
 
+**D2's library half, BUILT 2026-09-13.**  `App::ExpressionLibrary`
+(`src/App/ExpressionLibrary.h/.cpp`): a `TextDocument` with `Module` and
+`Surface`, the native module, the guest registry with `lib.source` and
+the drops, the dependency edge, the principal hash, `libraries(doc)` --
+for a library of the importer's OWN document.  The linked library
+(`Source`, `Pinned`, `Snapshot`) and P3 are the rest of D2.  Six things
+the build found that the sizing did not.
+
+1. *The engine's functions are dynamically scoped*, so "the frame's
+   bindings become a module object" was one step short.  A function
+   captures nothing (`makeFunc` copies the body) and a free name is
+   looked up through every frame on the stack at call time, which means
+   a library function would see each CONSUMER's locals and not its own
+   module's `hole_d` or the helper defined below it.  A library's
+   functions carry the module's dict (`CallableExpression::setGlobals`,
+   attached by `makeFunc` while a module builds or while one of its
+   functions runs) and are called on an evaluation stack of their own
+   whose base frame holds that dict (`EvalStackSwap`).  The build is
+   isolated the same way: a module's statements see nothing of the
+   evaluation that imported it.  Every other function keeps the old
+   rule.  Sec 12.
+2. *The default module name cannot be the Name.*  `Lib.f` parses as a
+   property of the object `Lib` before any frame is asked, so a module
+   named like its object is unreachable with a dot.  An empty `Module`
+   answers to the Name with its first letter lower-cased.  Sec 12.
+3. *A library importing a library.*  Dropping `brackets` clears its
+   dict, and `more`, which bound `brackets` at its own build, would go
+   on holding the empty module.  Each built module records which BUILD
+   of each library it imported and rebuilds after any of them does --
+   natively on `ExpressionLibrary`, in the guest on the registry entry.
+   And the edge is transitive: `importedModules()` parses a library's
+   text once per revision and the consumer depends on every library
+   reached, so an edit to `brackets` recomputes a consumer that only
+   names `more`.  Found writing these notes, before any test did.
+4. *A kept module outlives the evaluation D1's functions were tied to.*
+   A D1 function records its transaction and its owner IS that
+   transaction's adapter object, so a module cached across evaluations
+   would hold dead owners.  A guest module gets an adapter document and
+   object of its own, and a serial that stays alive while the guest
+   keeps the module and some evaluation is running
+   (`EvalTransaction::setLibraryAlive`, `LibraryBuild`).  A replaced or
+   dropped module is retired, not freed -- a function of it may be on
+   the stack of the evaluation that replaced it -- and retired modules
+   are swept, their dicts cleared and serials killed, at the next
+   top-level request; the kept owners' cached pack properties are
+   forgotten there too, since every evaluation brings a new pack.
+5. *The registry is asked through the request, not on every import
+   miss.*  The sizing had the guest send `lib.source` for any module it
+   could not find, which would be a round trip for every `import Part`.
+   An evaluation owned by a document that holds libraries carries
+   `libs: {module: [key, revision]}`; an import naming no library never
+   crosses, and `lib.source` is sent on a module's first use and after
+   its revision moves.  `ld: [[key, module]]` rides the next request
+   after a text change or a removal.  Measured in the gtest: three
+   evaluations, one `lib.source`; an edit, one more; `import math`,
+   none.  The key is the principal of the document whose text it is;
+   since the text is part of that hash, an edit moves the key as well as
+   the revision.
+6. *A comment-only line is a syntax error* outside python mode, a
+   lexer rule older than any of this (sec 12).  A library cannot open
+   with a comment block until the committed lexer is regenerated.
+
+Where it sits.  `ImportModules::getModule` asks for a library FIRST --
+before the permission check, which would read `brackets` as a host
+import, and outside the process-wide import cache, where two documents'
+`brackets` would meet (`ExpressionLibrary::importModule` natively,
+`FcxImage::libraryModule` in the guest).  `ImportStatement` and
+`FromStatement` gain `_getIdentifiers`: `Text` and `Module` of every
+library reached, so a rename recomputes the consumer too, which then
+fails as it should.  The bindings pack skips those identifiers -- the
+text crosses through `lib.source` once per revision, never per
+evaluation.  The principal gains the text through `addScript`, and the
+cached principal is voided on a `Text` or `Module` change as on an
+expression's.  `Surface` is written at each text edit; a lower integer
+is warned once at open.  `execute()` parses the text, so a syntax error
+shows on the library rather than first on some consumer.
+
+Limits of this half, stated.  In the guest a library's module-level
+code and its functions see no document identifiers: the pack is the
+consumer's, and a library is meant to be handed its inputs.  Natively
+they resolve against the library object, so the parity rig stays on
+programs that take their inputs as arguments.  A duplicated module
+name: the first library in object order wins, silently.  A library is
+reached only from its own document until `Source` lands.
+
+Gate: `SandboxProgram`, a new Python module in the default list, 19
+native cases -- import and from-import, the default name, a function
+resolving its module and refusing its caller's names, blank lines and a
+trailing comment, a comment-only line refused on the library, a library
+importing a library and following an edit to it, a circular import, a
+syntax error on the library, two documents with the same module name,
+the edge (and none for `import math`), a text edit and a rename
+recomputing, save and reopen, `libraries()`, the principal moving with
+the text, the surface stamp.  And five gtests routed = native
+(`ExpressionRoutingTest.libraries*`): import, from, a constant, a call
+in a comprehension, and the caller's names refused both ways; one
+`lib.source` per revision and none for a plain import; two documents
+keeping their own module; an imported library following an edit; the
+bracket library's shape BRep byte-identical.  Suites green at the
+build: C++ 615/615 (offscreen), Python 2734 OK, `FeaturePythonChain` 27
+OK, the view gate (`ViewProviderHooks`, `ViewProviderChain`) 25 OK.
+Code: b34eb7ca59.  The cost: 968 lines added
+and 5 removed in the feature, 439 in tests, against 500-730 sized for
+these rows -- the overrun is the scoping of (1), the kept modules of
+(4) and the transitive rebuild of (3), none of them in the sizing.
+
 **Stages.**
 
     D1  function objects in the image (ExpressionPy into
@@ -5342,9 +5453,13 @@ the sizing's D1 row did not count, and 29 are the two old bugs; about
         included.
         Then App::ExpressionLibrary, the registry and lib.source /
         lib.drop, the dependency edge, the principal hash, the
-        native twin, libraries(); the XLink Source, Pinned and
-        Snapshot, the cross-link edge.  Gate: SandboxProgram's
-        library half, the cross-file pair included.  The library is
+        native twin, libraries() -- **BUILT 2026-09-13** for a
+        library of the importer's own document, above ("D2's
+        library half"): lib.drop became the "ld" field, the registry
+        is named on the eval request, library functions resolve
+        their module, the edge is transitive.  NEXT: the XLink
+        Source, Pinned and Snapshot, the cross-link edge.  Gate:
+        SandboxProgram's library half, the cross-file pair included.  The library is
         no longer the only carrier (the sheet is one today), so its
         own value is the module namespace, the import statement and
         the pinned snapshot -- and P3 of ProxyChain.md rides here:
@@ -7604,6 +7719,38 @@ sockets, any network for the reference image, a webview escape hatch.
   and the compare therefore says "touched", costing one extra
   recompute.  Real undefined behaviour, no observable consequence, and
   the Python `Revision` attribute unreadable for anything.
+- **An engine function resolves a free name through its CALLER's
+  frames** (read 2026-09-13, 7.17 D2).  `makeFunc` captures nothing --
+  the function is a copy of its body -- and `EvalFrame::getVar`'s
+  `BindQuery` walks every frame on `_EvalStack` when the name is used.
+  So a `def` sees whatever the code that calls it has bound: dynamic
+  scoping, true of every cell and binding since the language existed.
+  For a library that is wrong twice over -- its functions would not see
+  the module's own names (`hole_d`, a helper defined below), and would
+  see each consumer's locals instead.  A library's functions therefore
+  carry the module's dict and run on an evaluation stack of their own
+  whose base frame holds it (`CallableExpression::setGlobals`,
+  `EvalStackSwap`, Expression.cpp); every other function keeps the old
+  rule.  Gate: `SandboxProgram.testFunctionDoesNotSeeItsCaller`.
+- **A module named exactly like a document object is unreachable with
+  a dot** (probed 2026-09-13, 7.17 D2).  `import Shapes; Shapes.f(1)`
+  in a document holding an object `Shapes` fails "Property 'f' not
+  found in 'Shapes.f'": the identifier is resolved as that object when
+  it is parsed, and the frame is asked only for an identifier that
+  names no object.  `from Shapes import f` works.  This is why an
+  `App::ExpressionLibrary` with an empty `Module` answers to its Name
+  with the first letter lower-cased (`Shapes` -> `shapes`), never to
+  the Name itself -- which would shadow itself every time.
+- **A line holding only a comment is a syntax error outside python
+  mode** (probed 2026-09-13).  `ExpressionParser.l:258` takes `# text`
+  up to, but not including, the newline, so a comment after code works
+  (`hole_d = 4  # sizes`) and a comment-only line leaves a bare NEWLINE
+  where a statement must start: "syntax error, unexpected NEWLINE".
+  Only an EMPTY `#` line has a rule of its own (`:262`); python mode
+  has the full one (`:256`).  A library text therefore cannot open
+  with a comment block today.  The lexer output is committed
+  (`lex.ExpressionParser.c`) and regenerated by hand, so the fix is a
+  flex run of its own, not a side effect of anything here.
 
 ## 13. Known gaps and open questions
 
