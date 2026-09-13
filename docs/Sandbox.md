@@ -4775,34 +4775,59 @@ natively, and D1 is what lets those methods run under enforcement.
 reopen, a link into another file -- is the link property's, built and
 gated already (`FeaturePythonChain`, `ViewProviderChain`).
 
-**One thing the chain does not yet deliver.**  ProxyChain.md 2.1
-says an edit to a method recomputes the instances.  It does not.  The
-DAG edge is real (`Sheet.InList` is `[Flange]`, the sheet recomputes
-first, a document observer sees `Flange` signalled after it), but
-`Flange`'s `execute` is never called -- an instrumented method, a
-counter incremented in the cell, proves it stays put.  The cause is
-the recompute optimization in `Document::_recomputeFeature`
-(`Document.cpp:4673`): a feature not in error, with
-`_enforceRecompute` false, is skipped unless one of ITS OWN
-properties carries `Property::Touched`.  The propagation loop sets
-`ObjectStatus::Enforce` and `Touch` on the in-list
-(`Document.cpp:4388`) and deliberately does NOT call
-`enforceRecompute()` -- the comment there says why -- so `Enforce`
-only makes `mustRecompute()` true, which gets the object as far as
-`_recomputeFeature` and no further.  For an ordinary dependency that
-is right: what changed reaches the dependent as a property change.
-For `ProxyExp` nothing of the instance changed; the CODE did.
-Turning `OptimizeRecompute` off makes the edit propagate, which is
-the proof.  The fix is the counter the chain already keeps
-(`App::ProxyChain::generation()`, ProxyChain.md 2.4):
-`FeaturePythonT::mustExecute()` answers 1 when the generation has
-moved since its last execute.  Coarse -- one bump recomputes every
-chained object once -- but exact where it matters and free where it
-does not, since an object with an empty `ProxyExp` never asks.  The
-finer alternative, storing each linked object's `_revision` at
-execute and comparing, costs a walk per `mustExecute` and buys
-precision only for a file with many unrelated types.  It is a build
-item of D2 below, not a re-design.
+**One thing the chain does not yet deliver.**  ProxyChain.md 2.1 says
+an edit to a method recomputes the instances.  Sometimes it does.
+`Flange`'s `execute` is never called after the cell is re-typed -- an
+instrumented method, a counter incremented in the cell, proves it
+stays put -- and the reason is worth getting right, because the first
+reading of it was wrong.
+
+The link DOES propagate, and the mechanism is REVISIONS.  Every
+`DocumentObject` carries `_revision`, bumped in `DocumentObject::
+onChanged` (`DocumentObject.cpp:1045`) when a non-`Output` property of
+it is touched.  A link property reports itself touched by comparing:
+`PropertyLink::isTouched()` and `PropertyLinkList::isTouched()`
+(`PropertyLinks.cpp:789`, `:1107`) are `linkRevision(target) !=
+_revision`, the revision each stored at its last `purgeTouched()`.
+`Property::testStatus(bits, mask)` substitutes that VIRTUAL
+`isTouched()` whenever `Touched` is in the bits or the mask, and
+`Document::_recomputeFeature`'s recompute optimization
+(`Document.cpp:4673`) asks exactly `testPropertyStatus(Property::
+Touched, mask)`.  So a `ProxyExp` change reaches its instances the
+moment the linked object's revision moves -- probed: replace the
+linked object's `Proxy` and every instance recomputes.
+
+It fails for exactly the two definition changes that move no
+revision.  (1) **A `Spreadsheet::Sheet` pins its revision**:
+`Sheet::getRevision()` is `return 0`, a literal (`Sheet.h:91`,
+"Fix the object revision to reduce effect of recomputation time"),
+so no link of ANY kind sees a sheet change -- probed with a plain
+`PropertyLink` and an ordinary `PropertyXLinkList` to a sheet, both
+equally blind.  This is not a `ProxyExp` problem; it is the
+spreadsheet's deliberate bargain, that its consumers are driven by
+the expression engine's own cell dependencies rather than by the
+link, and a method in a cell is a consumer the bargain did not
+foresee.  (2) **A function stored on the linked object from Python**
+(`L.expExecute = f`) lands in `dict_methods` through
+`FeaturePythonPyT::_setattr`, not in a Property, so nothing is
+touched and no revision moves.
+
+Those two are, precisely, two of the three places ProxyChain.md 2.4
+bumps the chain's generation counter; the third,
+`PropertyPythonObject::hasSetValue`, is the one that already
+propagates.  The counter therefore enumerates exactly the definition
+changes the link cannot report, which is why the fix is the counter:
+`FeaturePythonT::mustExecute()` stores
+`App::ProxyChain::generation()` at each execute and answers 1 when it
+has moved.  Coarse -- one bump anywhere recomputes every chained
+object once -- but exact where it matters and free where it does not,
+since an object with an empty `ProxyExp` never reaches the test.  A
+build item of D2 below, not a re-design.  Rejected alternatives:
+making `Sheet::getRevision()` real would recompute every consumer of
+every sheet on every cell edit, which is the cost that comment was
+avoiding; giving `ProxyExp` its own `isTouched()` override would work
+for the sheet and not for the stored function, which no property
+sees at all.
 
 **Three language facts the probe turned up**, all of them traps for
 anyone writing these programs (sec 12).  A comma straight after a
@@ -7370,16 +7395,34 @@ sockets, any network for the reference image, a webview escape hatch.
   so a headless gate must grant it.  A grant is keyed by the
   document's CONTENT hash, so editing an expression voids it: re-grant
   after every edit, or the next evaluation fails as unpermitted.
-- **A `ProxyExp` edit does not recompute the instances** (probed
-  2026-09-13, 7.17's re-sizing): the DAG edge is right and the sheet
-  recomputes first, but `Document::_recomputeFeature`'s recompute
-  optimization skips a feature none of whose OWN properties is
-  touched, and the propagation loop sets `ObjectStatus::Enforce`
-  rather than calling `enforceRecompute()` on purpose
-  (`Document.cpp:4388`, `:4673`).  A dependency whose effect is on
-  CODE rather than on a property is invisible to that test.  Until the
-  `mustExecute` fix of 7.17 D2, an edited method reaches its instances
-  only through an explicit `touch()`.
+- **A link to a `Spreadsheet::Sheet` never reports the sheet as
+  changed** (probed 2026-09-13, 7.17's re-sizing).  `Sheet::getRevision()`
+  is a literal `return 0` (`Sheet.h:91`), and a link property reports
+  itself touched by comparing the target's revision
+  (`PropertyLinks.cpp:789`, `:1107`), which
+  `Document::_recomputeFeature`'s recompute optimization then reads
+  through `Property::testStatus`.  So a plain `PropertyLink`, an
+  `PropertyXLinkList` and `ProxyExp` alike are blind to a cell edit --
+  by design, because a sheet's consumers are meant to be driven by the
+  expression engine's cell dependencies.  A method carried in a cell
+  is not, hence the `mustExecute` fix of 7.17 D2.  The same blindness
+  covers a function stored on a linked object from Python
+  (`L.expExecute = f`), which is no Property at all.  Until the fix,
+  an edited method reaches its instances only through an explicit
+  `touch()`.
+- **`OptimizeRecompute` is a PERSISTED parameter.**  Flipping it from
+  a probe (`ParamGet("User parameter:BaseApp/Preferences/Document").
+  SetBool("OptimizeRecompute", False)`) writes `user.cfg` and silently
+  changes every later run on the box -- which is how the first reading
+  of the trap above came out wrong, every probe after the "proof"
+  running with the optimization off.  Any parameter a probe sets has
+  to be removed again (`RemBool`), and a result that contradicts an
+  earlier one is a reason to check `user.cfg` before believing either.
+- **`DocumentObject::_revision` is uninitialised** (`DocumentObject.h:853`,
+  no constructor sets it): a fresh object's `Revision` is whatever the
+  heap held (538976296 observed).  Harmless, since it is only compared
+  against a snapshot of itself, but it is undefined behaviour and the
+  Python attribute cannot be read for anything.
 
 ## 13. Known gaps and open questions
 

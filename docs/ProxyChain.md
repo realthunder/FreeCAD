@@ -821,34 +821,68 @@ the cell) shows the instance's `execute` is never entered.
 The edge is not the problem.  `Sheet.InList` is `[Flange]`, a document
 observer reports `Sheet` recomputed and then `Flange`, and the sheet's cell
 does hold the new function object by then -- calling it by hand from Python
-builds the new shape.  The problem is what happens inside
-`Document::_recomputeFeature` (`Document.cpp:4673`): with
-`DocumentParams::getOptimizeRecompute()` on -- the default -- a feature that
-is not in error and whose `_enforceRecompute` is false is skipped unless one
-of ITS OWN properties carries `Property::Touched`.  The propagation loop that
-runs after a dependency rebuilds sets `ObjectStatus::Enforce` and `Touch` on
-the in-list and deliberately does NOT call `enforceRecompute()`
-(`Document.cpp:4388`, and the comment there says why: to keep the
-optimization).  `Enforce` only makes `mustRecompute()` true, which carries the
-object as far as `_recomputeFeature` and no further.  Turning
-`OptimizeRecompute` off makes the edit propagate, which is the proof.
+builds the new shape.
 
-For every ordinary dependency the test is right: what changed reaches the
-dependent as a property change -- a link property, an expression-bound value.
-`ProxyExp` is the first dependency whose effect is on CODE, and no property of
-the instance moves when the code does.  `touch()` works because it sets
-`_enforceRecompute` directly; nothing in the recompute path does.
+**How a link propagates at all, since that is what this turns on.**  Every
+`DocumentObject` carries `_revision`, bumped in `DocumentObject::onChanged`
+(`DocumentObject.cpp:1045`) whenever a non-`Output` property of it is touched.
+A link property reports ITSELF touched by comparing revisions:
+`PropertyLink::isTouched()` and `PropertyLinkList::isTouched()`
+(`PropertyLinks.cpp:789`, `:1107`) are `linkRevision(target) != _revision`,
+against the revision each stored at its last `purgeTouched()`.
+`PropertyXLinkSubList::isTouched()` (`:5269`), which is what `ProxyExp`
+inherits, aggregates its children's revision checks -- and returns false
+outright for a Hidden scope, so `ViewProxyExp` reports nothing by
+construction, which is correct for a list that is a reference and not a
+dependency.  `Property::testStatus(bits, mask)` substitutes that VIRTUAL
+`isTouched()` whenever `Touched` appears in the bits or the mask, and the
+recompute optimization in `Document::_recomputeFeature` (`Document.cpp:4673`)
+-- a feature not in error, `_enforceRecompute` false, `OptimizeRecompute` on,
+skipped unless one of its own properties is touched -- asks exactly
+`testPropertyStatus(Property::Touched, mask)`.  So the chain's dependency is
+carried by the link's revision check, and it works: probed, replacing the
+linked object's `Proxy` recomputes every instance that links it.
 
-The fix is the counter the chain already keeps.  `App::ProxyChain::
-generation()` (2.4) is bumped from the three places a definition can change,
-and the cache stores it; `FeaturePythonT::mustExecute()` stores the generation
-at each execute and answers 1 when it has moved.  Coarse -- one bump elsewhere
-in the process recomputes every chained object once -- but exact where it
-matters, and free for the objects that do not use the feature, which is nearly
-all of them: an empty `ProxyExp` never reaches the test.  The finer
-alternative, keeping each linked object's `_revision` at execute and comparing
-the list, costs a walk per `mustExecute` call and buys precision only in a file
-carrying many unrelated types.
+**The two definition changes that move no revision.**
+
+1. *A `Spreadsheet::Sheet` pins its revision.*  `Sheet::getRevision()` is
+   `return 0`, a literal, with the comment "Fix the object revision to reduce
+   effect of recomputation time" (`Sheet.h:91`).  So NO link of any kind ever
+   sees a sheet change -- probed with a plain `PropertyLink` and with an
+   ordinary `PropertyXLinkList`, both as blind as `ProxyExp`.  It is the
+   spreadsheet's deliberate bargain: a sheet is recomputed on every cell edit,
+   and its consumers are meant to be driven by the expression engine's own
+   cell dependencies rather than by the link.  A method in a cell is a
+   consumer that bargain did not foresee.
+2. *A function stored on the linked object from Python.*  `L.expExecute = f`
+   lands in `dict_methods` through `FeaturePythonPyT::_setattr`; it is not a
+   Property, nothing is touched, no revision moves.
+
+Those two are precisely two of the three places sec 2.4 bumps the generation
+counter from.  The third, `PropertyPythonObject::hasSetValue` -- a `Proxy`
+replaced on the linked object -- is the one that already propagates, because
+it IS a property change.  The counter, written for the cache, turns out to
+enumerate exactly the definition changes the link cannot report.
+
+**The fix**, therefore, is the counter: `FeaturePythonT::mustExecute()` stores
+`App::ProxyChain::generation()` at each execute and answers 1 when it has
+moved.  Coarse -- one bump anywhere in the process recomputes every chained
+object once -- but exact where it matters, and free for the objects that do
+not use the feature, which is nearly all of them: an empty `ProxyExp` never
+reaches the test.  Rejected: making `Sheet::getRevision()` real, which
+recomputes every consumer of every sheet on every cell edit, the cost that
+comment was avoiding; and an `isTouched()` override on `ProxyExp`, which could
+answer for the sheet but not for the stored function, which no property sees.
+
+**Two things found beside it.**  `DocumentObject::_revision` is declared
+`int _revision;` (`DocumentObject.h:853`) and set by no constructor, so a
+fresh object's revision is indeterminate -- harmless in practice, since it is
+only ever compared against a snapshot of itself, but it is undefined
+behaviour and it makes the Python `Revision` attribute unreadable (observed
+values like 538976296).  One initialiser fixes it.  And `OptimizeRecompute`
+is a PERSISTED user parameter: setting it False from a probe writes
+`user.cfg` and silently changes every later run on the box, which is how the
+first reading of this bug came to be wrong.
 
 Sized as a build item of 7.17 D2 (docs/Sandbox.md), with the gate case named
 there: the method edited in the cell, a plain `doc.recompute()`, both
