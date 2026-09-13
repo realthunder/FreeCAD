@@ -2621,7 +2621,7 @@ and says nothing about fill or vertex throughput. And every backend but
 GL renders without reaching the screen (`BGFXView::blit` stands aside),
 so the composite is not in any of these numbers.
 
-### Two defects the harness found, both fixed
+### Three defects the harness found, all fixed
 
 **The blit's depth attachment, fixed 2026-09-09.**
 `BGFXView::blit()` wrapped bgfx's depth attachment with
@@ -2680,16 +2680,43 @@ settle reports `0 px when it stopped moving | stationary`, which is the
 harness correctly saying the drain has finished and is empty, not that
 it ran out of patience. The 2026-09-09 table therefore straddled the
 fix: its Hier row was measured after it and its Hier2 row before, and
-the pair is one defect seen twice, not two. `MiSTer.FCStd` was NOT
-re-run (22 MB, and this box takes 450-555 s to open it against 6.6 s on
-the Linux box), so its 0.0% row is unexplained by measurement rather
-than explained -- the same straddle is the obvious candidate.
+the pair is one defect seen twice, not two. `MiSTer.FCStd` is NOT that
+straddle, though: it was re-run, it still drew nothing, and it turned
+out to be the third defect below.
 
 One claim that table was used for is dead and should not be repeated:
 `zz-flatten.py`'s header says "the container is what a restored document
 will not draw". `GroupOnly.FCStd` (200 shapes in one `App::Part`) drew
 403, `LinkOnly.FCStd` drew 399, `Hier` drew 1721. Container-versus-link
 was never isolated.
+
+
+**The park the restore spent before the drain ran, fixed 2026-09-13.**
+`MiSTer.FCStd` -- 17800 objects, 628 links, 378-491 s to open on this
+box -- still came up empty on a current tree: 14 draws, 0.0% covered,
+and the settle pass above said `0 px when it stopped moving |
+stationary`, i.e. the drain had finished and left nothing. Reading
+`obj.Shape` from Python repaired it one object at a time (1 shape read,
+4 px; 1500 read, 68471 px), which is the tell: that read serves the
+deferred content and notifies, and the notification is the rebuild the
+drain should have done.
+
+The park above is bounded to one attempt, so content that never arrives
+cannot queue slices forever. A restore asks for the same visual more
+than once -- this document reported **34116 visual builds over 17058
+objects, exactly two each** -- and the second build found
+`VisualShapePending` already set, fell through to the empty install and
+cleared `VisualTouched` with it. The drain then popped a full queue,
+found nothing touched, and built none of it: `progressive load MiSTer: 0
+visuals in 1 slices`. The bound was being spent by the pass the park
+exists to outlive.
+
+So a rebuild that finds the visual already queued (`VisualDeferred`)
+leaves it queued; the slice clears that flag before it rebuilds, so the
+drain itself never takes the path. MiSTer goes from 14 draws to **45867
+draws, 18.2M primitives, 7.5% covered**. The small documents gain too,
+which says more than the 17k case was losing visuals this way: Hier
+1721 -> 2015 draws, GroupOnly 403 -> 415, LinkOnly 399 -> 455.
 
 ### The assembly table, all four backends (2026-09-09)
 
