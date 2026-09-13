@@ -249,15 +249,19 @@ void ToolBarMirror::watchAction(::QAction* real)
         _watched.remove(real);
         _dirty.remove(real);
         _commands.remove(real);
-        auto it = _models.find(real);
-        if (it != _models.end()) {
-            if (it.value()) {
-                Store::instance().release(Store::instance().idOf(it.value()));
-                delete it.value().data();
-            }
-            _models.erase(it);
+        // Out of the table BEFORE the release: the release announces a
+        // close, a subscriber whose push fails is dropped, and the last one
+        // out stops this mirror -- which clears _models and deletes every
+        // model while we are still in here. An iterator held across that
+        // read a freed bucket at exit, when every push fails (a served
+        // desktop quitting with a browser subscribed).
+        QPointer<Fw::QAction> model = _models.take(real);
+        if (model) {
+            Store::instance().release(Store::instance().idOf(model));
+            delete model.data();  // null if stop() got to it first
         }
-        scheduleRebuild();
+        if (_running)
+            scheduleRebuild();
     });
 }
 
