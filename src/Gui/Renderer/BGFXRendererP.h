@@ -111,7 +111,6 @@
 #include <QOpenGLExtraFunctions>
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
-#include <QWindow>
 #include <QDebug>
 #include <Base/Console.h>
 #endif
@@ -145,11 +144,6 @@
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #   include <QtGui/qopenglcontext_platform.h>
-// The display a non-GL backend's surface is created against, reached
-// through the application rather than the context. Forward declarations
-// only -- it does not drag X11's or Wayland's headers (and their macros)
-// into this one.
-#   include <QtGui/qguiapplication_platform.h>
 #elif defined FC_OS_LINUX
 #   include <QtPlatformHeaders/QGLXNativeContext>
 typedef QGLXNativeContext OpenGLContext;
@@ -2024,6 +2018,8 @@ public:
         adoptActualRenderer();
         resolveDeviceName();
         adopted = dev;
+        // No nwh here either, so no swap chain on any backend.
+        noBackbuffer = true;
         msDevice = _warmClock.nsecsElapsed() / 1.0e6;
         return true;
     }
@@ -2129,61 +2125,43 @@ public:
                 init.platformData.context = qvariant_cast<OpenGLContext>(
                     context->nativeHandle()).context();
 #endif
-            } else {
-                window = new QWindow();
-                window->setObjectName(QStringLiteral("bgfxScreenSurface"));
-                // d->offscreenWindow->setSurfaceType(QWindow::OpenGLSurface);
-                // d->offscreenWindow->setFormat(d->requestedFormat);
-                window->setGeometry(0, 0, widget->width(), widget->height());
-                window->create();
-                // winId() is an NSView* on macOS, an HWND on Windows and an X11
-                // Window elsewhere. bgfx takes all three: its Metal backend does its
-                // own isKindOfClass: dispatch over NSView/NSWindow/CAMetalLayer
-                // (renderer_mtl.cpp), so no Objective-C++ unwrapping is needed here.
-                init.platformData.nwh = reinterpret_cast<void*>(window->winId());
-#if defined(FC_OS_LINUX) && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-                // A window alone is not a surface here. bgfx builds the
-                // Vulkan surface itself and hands ndt straight to
-                // vkCreateXlibSurfaceKHR as the Display* -- a null one
-                // fails instantly -- while the Wayland path needs the
-                // wl_display AND to be told the handle is a wl_surface,
-                // which no pointer says about itself. Qt's winId() is
-                // already the right handle on both (an X11 Window, a
-                // wl_surface), so only the display side is missing.
-                // The GL path above needs none of this: bgfx is handed
-                // a context that already owns its surface.
-#   if QT_CONFIG(wayland)
-                if (auto *wl = qGuiApp->nativeInterface<
-                        QNativeInterface::QWaylandApplication>()) {
-                    init.platformData.ndt = wl->display();
-                    init.platformData.type =
-                        bgfx::NativeWindowHandleType::Wayland;
-                }
-                else
-#   endif
-#   if QT_CONFIG(xcb)
-                if (auto *x11 = qGuiApp->nativeInterface<
-                        QNativeInterface::QX11Application>())
-                    init.platformData.ndt = x11->display();
-                else
-#   endif
-                    RENDER_ERR("no native display handle; a non-GL backend"
-                               " cannot create its surface");
-#endif
             }
-            // bgfx treats an all-null PlatformData as a request for a headless device, and
-            // then rejects a non-zero resolution ("resolution of non-existing backbuffer
-            // can't be larger than 0x0") - which surfaces only as init() returning false.
-            // In the OpenGL path platformData.context is the sole field we set, so if the
-            // native handle did not come through, say which step failed rather than letting
-            // bgfx report a headless-mode error that has nothing to do with the real cause.
-            if (currentType == RendererType::OpenGL && !init.platformData.context) {
+            // Every other backend runs HEADLESS: all-null PlatformData and
+            // a 0x0 backbuffer, so bgfx builds no swapchain and presents
+            // nowhere. Nothing here needs one. The frame reaches the widget
+            // through the readback composite, which copies a target this
+            // view owns (bgfxColor, or presentTex under an output
+            // transform), and every view that still binds the backbuffer is
+            // blit-only or the trailing MSAA-resolve anchor. The anchor
+            // keeps working: bgfx resolves the framebuffer it is LEAVING
+            // before it looks at the one being bound (setFrameBuffer in
+            // renderer_vk.cpp, likewise d3d11/d3d12/mtl).
+            //
+            // This used to hand bgfx the winId() of a QWindow that was
+            // created and never shown, purely so there was an nwh. That
+            // window was worse than useless. On Qt Wayland it is a
+            // wl_surface with no role, never mapped, so the compositor sends
+            // it no frame callbacks -- and Mesa's Wayland WSI in FIFO mode
+            // waits for one before each present, with no timeout. The GUI
+            // froze at zero CPU inside SwapChainVK::present, and before it
+            // froze outright the same wait showed up as 40-135 s "first
+            // frames". On macOS it presented into a CAMetalLayer detached
+            // from every view (docs/DeviceAdoption.md section 6).
+            //
+            // bgfx refuses a non-zero resolution in headless mode, and says
+            // so only as init() returning false -- hence the 0x0. The GL
+            // path is NOT headless, platformData.context is set, so if that
+            // handle did not come through, say which step failed rather
+            // than let bgfx report a headless-mode error that has nothing
+            // to do with the real cause.
+            const bool headless = currentType != RendererType::OpenGL;
+            if (!headless && !init.platformData.context) {
                 currentType = RendererType::Noop;
                 RENDER_ERR("no native GL context handle; bgfx would fall back to headless");
                 return false;
             }
-            init.resolution.width = framebufferWidth(widget);
-            init.resolution.height = framebufferHeight(widget);
+            init.resolution.width = headless ? 0 : framebufferWidth(widget);
+            init.resolution.height = headless ? 0 : framebufferHeight(widget);
             init.resolution.reset = bgfxResetFlags();
             // See the standalone path above: a startup option, because
             // bgfx::init happens once per process.
@@ -2196,6 +2174,7 @@ public:
             }
             adoptActualRenderer();
             resolveDeviceName();
+            noBackbuffer = headless;
             msDevice = _warmClock.nsecsElapsed() / 1.0e6;
         }
         return true;
@@ -2703,11 +2682,16 @@ public:
     /// shader pack needs: there is nothing to retry, and a frame asks
     /// every time.
     bool glUnsupported = false;
+    /// bgfx was brought up with no backbuffer: every non-GL backend on the
+    /// desktop and the adopted-device route run headless (prepare()). A
+    /// view left on BGFX_INVALID_HANDLE then targets a framebuffer that
+    /// does not exist, so the frame parks its draw-nothing anchor views on
+    /// an owned target instead (BGFXFrame.cpp, anchorView).
+    bool noBackbuffer = false;
     RendererType::Enum currentType = RendererType::Noop;
     std::string name = "bgfx";
     std::set<BGFXRenderer::Private *> renderers;
 #ifndef FC_RENDERER_STANDALONE
-    QWindow *window = nullptr;
     bool quitHooked = false;
 #endif
 };
