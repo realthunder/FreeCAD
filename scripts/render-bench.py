@@ -53,6 +53,12 @@
 # and none of them reaches the screen -- they render and capture, and
 # Coin draws the viewport. That does not affect what is measured here.
 #
+# On Linux run a non-GL leg under QT_QPA_PLATFORM=xcb. On Qt Wayland the
+# never-shown window bgfx presents into is an unmapped wl_surface, and
+# Mesa's Wayland WSI in FIFO mode waits forever for a frame callback it
+# will never get -- the GUI freezes at zero CPU inside present. An
+# unmapped X11 window completes the present as skipped.
+#
 # One leg, on Windows:
 #
 #   FC_BGFX_NO_VSYNC=1 FC_BGFX_D3D11=1 \
@@ -450,8 +456,15 @@ def open_scene():
     gdoc = FreeCADGui.getDocument(doc.Name)
     FreeCADGui.ActiveDocument = gdoc
     v = gdoc.ActiveView
-    if v is None:
-        v = gdoc.createView("Gui::View3DInventor")
+    # ActiveView answers for whatever MDI window has focus, which at
+    # startup can be the Start page: one leg failed on
+    # "'Gui.MDIView' object has no attribute 'setAnimationEnabled'"
+    # before timing a frame. Ask for the document's 3D views instead.
+    if v is None or not hasattr(v, "setAnimationEnabled"):
+        views = gdoc.mdiViewsOfType("Gui::View3DInventor")
+        v = views[0] if views else gdoc.createView("Gui::View3DInventor")
+        if hasattr(gdoc, "setActiveView"):
+            gdoc.setActiveView(v)
     return doc, v, load_s
 
 
