@@ -1023,6 +1023,107 @@ it calls the hook directly after the recompute rather than relying on the
 recompute to call it.  Case 4 is the regression that matters most: it is not
 about the chain at all, and it is the one a future coarse "fix" would trip.
 
+### 4.6 The recompute as built (2026-09-13)
+
+Built to 4.5's design, and it holds.  27 cases in `FeaturePythonChain` (the
+eight of 4.5 plus the existing nineteen), 2715 Python OK, ctest 605/605
+offscreen, the view gate 25/25.
+
+**Where the code went.**  `ChainEntry` gains an `identity` beside its
+`callable`, filled in `resolveChain()`: `__func__` where the attribute has
+one, else the callable itself.  `HookSlot` gains a `snapshot` -- the identity
+vector as of the last run, its generation, and a valid flag -- kept BESIDE the
+chain and not in it, because a generation bump clears the chain and the
+snapshot is what the rebuilt chain is compared against.  Two members on
+`PyHookImp`: `snapshotChain(hook)`, which `FeaturePythonImp::execute()` calls
+after every run, and `chainDefinitionChanged(hook)`, which answers empty ->
+false, generation equal -> false, else re-resolve and compare pointers.  On a
+comparison that finds nothing moved, the snapshot's generation is advanced so
+the next query is one integer again; on one that finds a change, it is
+deliberately NOT advanced -- the answer has to stay the same until the run
+that acts on it, and it is that run which records the new definition.
+
+The first look at a chain seeds the baseline and answers "unchanged".
+Answering "changed" there would recompute every chained feature once on load,
+and the restore already forces the recompute that is really needed.
+
+**The correction to 4.5's step 3: `mustExecute()` is not the gate that
+matters.**  4.5 put the whole answer in `FeaturePythonT::mustExecute()`.  That
+is necessary but not sufficient, and for the sheet case -- the case the whole
+section is about -- it is not even the one that fires.  `Document::recompute`
+sets `ObjectStatus::Enforce` on every object in the InList of anything it
+recomputed (`Document.cpp:4396`), and the carrier is in the instance's InList.
+So the sheet's own recompute pushes the instance into `_recomputeFeature`
+regardless of what `mustExecute()` said, and it is stopped one level further
+in, by the optimization at `Document.cpp:4673`: not in error, `_enforceRecompute`
+false (a DIFFERENT flag from `ObjectStatus::Enforce`), no touched property --
+`ProxyExp.isTouched()` is false because the sheet's revision is pinned -- and
+then `skipRecompute()` returning its default true.  **That is the gate the
+edit has to pass**, so `FeaturePythonT::skipRecompute()` asks
+`chainExecuteChanged()` first and returns false when the definition moved.
+
+`mustExecute()` still earns its line: it is the gate for the change that
+recomputes NOTHING first, `L.expExecute = f` from Python, where no Enforce bit
+is ever set and `mustRecompute()` is the only thing asked.  Both are cheap and
+both are needed; neither alone passes the eight cases.
+
+**Why `__func__` alone is enough, though it cannot see a replaced Proxy
+INSTANCE.**  `MarkerProxy(1).expExecute` and `MarkerProxy(2).expExecute` share
+one `__func__`, so the comparison calls them equal while the behaviour
+differs.  That is not a hole: a Proxy is a `PropertyPythonObject`, replacing it
+is a property change on the carrier, the carrier's `_revision` moves, and
+`ProxyExp.isTouched()` reports it -- `doRecompute` is already true before
+`skipRecompute()` is asked.  The comparison only has to cover what the link
+cannot report, and the two things the link cannot report -- a cell re-typed,
+a function stored from Python -- both change the function itself.  Comparing
+`__self__` as well would be strictly more precise and buy nothing.
+
+**What the tests needed, and four things learned writing them.**
+
+1. *A `def` in a cell aliases the cell to the function's own name.*
+   `=def expExecute(obj): obj.Marker = 10` needs no `setAlias` at all, and
+   a `setAlias` to something else is overwritten the next time the cell is
+   set.  That is the idiom for the tutorial: the hook name is stated once,
+   where the method is.
+2. *A cell `def` needs a trailing newline.*  The grammar's `suite` is
+   `simple_stmt NEWLINE` (`ExpressionParser.y:378`), so `=def m(obj): ...`
+   without one is not an expression at all -- the sheet keeps it as a plain
+   string and the attribute is not callable.  `lambda` has no such need.
+3. *A method cannot call back into Python to record itself.*
+   `=lambda obj: obj.Proxy.record(obj)` is refused with "Permission denied:
+   unsafe.getattr", which is the sandbox doing its job.  `=lambda obj: 1 == 2`
+   does return a real Python `False`, which is the protocol's "not mine", so
+   an element can decline and let the one behind it run.
+4. *A counter written on the feature cannot measure a NON-recompute.*  Writing
+   a property to record the call is itself a touch, and the next recompute
+   then follows from that rather than from what the case is testing -- two
+   cases failed exactly this way on the first run, reading 10 where they had
+   just written 0.  Nor is `doc.recompute()`'s return usable: `++objectCount`
+   happens before `_recomputeFeature` (`Document.cpp:4364`), which then skips,
+   so a skipped object is counted.  What works is a chain element in FRONT of
+   the one under test that records the call and returns False -- an execute
+   counter that writes nothing.
+
+**Gate, all eight cases green with `OptimizeRecompute` at its default ON** (the
+cases force it and put it back exactly as found -- it is a PERSISTED user
+parameter): the method re-typed rebuilds the instance; two instances on one
+carrier rebuild with their own inputs; an unrelated cell of the same sheet
+recomputes no instance, and the negative is shown not to be vacuous by
+re-typing the method cell in the same test; the plain-spreadsheet regression,
+no ProxyExp anywhere, follows its own cell only; the carrier's Proxy replaced
+and a function re-stored from Python both rebuild; an `expViewGetIcon`
+re-typed on the same sheet rebuilds nothing; the method cell cleared shortens
+the chain in one recompute and then settles; an empty `ProxyExp` is untouched
+by a generation bump from elsewhere in the process.
+
+**One thing about running the gate.**  `ctest` with no `QT_QPA_PLATFORM` picks
+up `xcb` from `DISPLAY` on this box, and `FormWidgets_Tests_run`'s
+`test_panelMirror` and `test_panelMirrorItems` then fail: the mirror waits for
+the platform's repaint (7.19 M2) and the window is never exposed under WSLg's
+X server.  `QT_QPA_PLATFORM=offscreen`, which docs/Testing.md already
+prescribes, is 605/605.  Nothing to do with the chain -- but it looks exactly
+like a regression if the variable is forgotten.
+
 ## 5. The rulings (2026-09-12)
 
 1. `ProxyExp` on both sides; `exp` + Hook for App hooks, `expView` +

@@ -4831,8 +4831,11 @@ own -- the counter stays as the cheap "something moved somewhere"
 gate, and only when it moves does the chain re-resolve and compare the
 resolved callable against the one last executed, recomputing only when
 THIS feature's definition changed.  The full design, the measurements
-and the eight gate cases are ProxyChain.md 4.5; it is D2's first item
-and the next session builds it.
+and the eight gate cases are ProxyChain.md 4.5; it was D2's first item
+and is **BUILT 2026-09-13** -- with one correction, that
+`skipRecompute()` and not `mustExecute()` is the gate the sheet edit
+has to pass, the carrier's recompute having set `ObjectStatus::Enforce`
+on the instance already.  ProxyChain.md 4.6.
 
 **THE TRAP, and it is the spreadsheet's, not the chain's.**  **A
 function body's identifiers are NOT dependencies, and the body reads
@@ -5239,15 +5242,17 @@ and its sheet cases are what P3 re-runs routed.
         expression routed = native.  Unchanged by the re-sizing, and
         now the precondition for BOTH carriers -- a sheet's method is
         a function object too.
-    D2  the chain's recompute, RULED 2026-09-13 and built next
-        session: the generation counter as the cheap gate, then a
+    D2  the chain's recompute -- **BUILT 2026-09-13**, ProxyChain.md
+        4.6: the generation counter as the cheap gate, then a
         comparison of each chain element's resolved callable against
         the one last executed, so a method edited on a linked object
         rebuilds its instances and an UNRELATED cell of the same sheet
-        does not.  Design and the eight gate cases: ProxyChain.md 4.5.
-        Gate: those cases, OptimizeRecompute ON, plus the plain
-        spreadsheet regression (an unrelated cell touched leaves other
-        cells' consumers alone).
+        does not.  Design: ProxyChain.md 4.5; the gate that the sheet
+        edit actually has to pass turned out to be `skipRecompute()`,
+        not `mustExecute()` alone.  All eight cases green with
+        OptimizeRecompute ON, the plain spreadsheet regression (an
+        unrelated cell touched leaves other cells' consumers alone)
+        included.
         Then App::ExpressionLibrary, the registry and lib.source /
         lib.drop, the dependency edge, the principal hash, the
         native twin, libraries(); the XLink Source, Pinned and
@@ -5273,8 +5278,9 @@ and its sheet cases are what P3 re-runs routed.
         annotations (14 + 3 XML lines, 13 table entries)                  ~40
         the version: generator, both .inc, surfaceVersion(), the
           library and document records, the open-time log            150-250
-    D2  the chain's recompute (mustExecute, the generation stored
-          at execute) and its gate case                                 40-80
+    D2  the chain's recompute (mustExecute and skipRecompute, the
+          generation and identities stored at execute) and its
+          eight gate cases                        BUILT: 130 + 250 test
         the object (App + Gui registration, icon)                    100-150
         the guest registry and module build                          100-150
         lib.source / lib.drop, the host side                         100-150
@@ -7014,8 +7020,8 @@ push the user's call).
    feature's `ProxyExp` is a second carrier and runs the flange
    natively today at the speed of a host-Python `Proxy`; D1 becomes
    the precondition of BOTH carriers; P3 of docs/ProxyChain.md folds
-   into D2, whose first item is now the `mustExecute` fix of
-   ProxyChain.md 4.5): a
+   into D2, whose first item was the recompute fix of
+   ProxyChain.md 4.5 -- BUILT 2026-09-13, ProxyChain.md 4.6): a
    statement program bound to a `Part::Feature`'s `Shape` already
    recomputes routed (the probe's bracket and stair); the one guest
    gap is function objects (`ExpressionPy` into the image); the
@@ -7456,10 +7462,12 @@ sockets, any network for the reference image, a webview escape hatch.
   `PropertyXLinkList` and `ProxyExp` alike are blind to a cell edit --
   by design, because a sheet's consumers are meant to be driven by the
   expression engine's cell dependencies.  A method carried in a cell
-  is not, hence the `mustExecute` fix of 7.17 D2.  The same blindness
+  is not, hence the recompute fix of 7.17 D2 (BUILT; the gate is
+  `skipRecompute()` as well as `mustExecute()`, ProxyChain.md 4.6).
+  The same blindness
   covers a function stored on a linked object from Python
-  (`L.expExecute = f`), which is no Property at all.  Until the fix,
-  an edited method reaches its instances only through an explicit
+  (`L.expExecute = f`), which is no Property at all.  Before the fix,
+  an edited method reached its instances only through an explicit
   `touch()`.
 - **`OptimizeRecompute` is a PERSISTED parameter.**  Flipping it from
   a probe (`ParamGet("User parameter:BaseApp/Preferences/Document").
