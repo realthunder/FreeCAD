@@ -52,14 +52,16 @@ pieces are frozen, not extended.**
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
                                                  confined to the Mod roots, both containers
-    the document program             re-sized    7.17: a Part::Feature's Shape expression is the
-                                                 program (runs today); RE-SIZED 2026-09-13 against
-                                                 the proxy chain -- a Sheet in ProxyExp is a second
-                                                 carrier and runs the flange natively at the speed
-                                                 of a host-Python Proxy (19.6 vs 21.3 ms); function
-                                                 objects in the image the one gap, now the
-                                                 precondition of BOTH carriers; per-document guests
-                                                 OUT (335 MB, 2.5 s each)
+    the document program             D1 built    7.17: a Part::Feature's Shape expression is the
+                                                 program; RE-SIZED 2026-09-13 against the proxy
+                                                 chain -- a Sheet in ProxyExp is a second carrier,
+                                                 the flange natively at the speed of a host-Python
+                                                 Proxy (19.6 vs 21.3 ms); D1 BUILT 2026-09-13:
+                                                 function objects in the image, the flange as one
+                                                 expression routed = native to the BRep byte, the
+                                                 surface annotated and versioned; a function value
+                                                 still cannot LEAVE a routed evaluation (P3's
+                                                 problem); per-document guests OUT (335 MB, 2.5 s)
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
@@ -940,6 +942,14 @@ from the host as natively).  And a facade is verified only by real
 guest Python on a real object
 (`ExpressionImageEvalTest.partSurfaceOnHandles`), never by reading
 the XML.
+
+7.17 D1 (2026-09-13) grew the set to 362 members across 57 facades --
+the solid constructors and shape operations a document program builds
+with -- and VERSIONED it: `FCX_SURFACE_VERSION` in the generator, bumped
+by hand when a member is removed or changes meaning, and the sha256 of
+the annotated set beside it, both generated into `FcxDispatch.inc` and
+`FcxFacades.inc`; `surfaceVersion(True)` compares the guest's copy with
+the host's (7.17 D1).
 
 ### 3.4 The evaluation seam
 
@@ -4650,7 +4660,7 @@ pivy wheel rebuild); 900 in the wheel (the walker 300, the host node,
 camera, event and view shims 400, the view provider glue and the MDI
 shim 200); 600 of gate.  G4a is the larger half.
 
-### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed]**
+### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed; D1 BUILT 2026-09-13]**
 
 Sec 11 item 2, the re-aim's one target (1.2): a program a DOCUMENT
 carries, written in the expression engine's language, generating
@@ -5232,15 +5242,93 @@ passes for the wrong reason.  The
 `FeaturePythonChain` gate of ProxyChain.md stays green beside it,
 and its sheet cases are what P3 re-runs routed.
 
+**D1, BUILT 2026-09-13.**  What landed, and what the gate found that
+the sizing did not.
+
+`ExpressionPyImp.cpp` is in `ImageSources.cmake` and both throws are
+gone (`makeFunc`, the FUNC value path).  In the image a function
+object cannot hold its owner's Python face the way the host's does:
+the owner is the adapter object of ONE `EvalTransaction`, whose
+`getPyObject()` is a handle proxy, not a `PyObjectBase`.  So it records
+the transaction's serial, and `ownerAlive()` asks
+`EvalTransaction::alive()`, which walks the nesting chain -- a
+transaction now restores the one it interrupted, where it used to
+clear `_current` under an evaluation still running.  Called after its
+evaluation (kept in a guest global), it raises the host's own "Owner
+document object expired".
+
+As a FINAL value it is still refused -- "result of type
+'App.Expression' does not marshal by value" -- which is right for this
+stage and is precisely P3's problem: a sheet cell whose value is a
+`def`, evaluated routed, is a function that cannot leave the cell's
+evaluation, so the chain's sheet form under routing needs the method
+either to cross as a guest reference (the `gmethod` shape of 3.2) or to
+run inside an evaluation of its own.  That is D2, with P3, not D1.
+Probed: natively a cell `=def m(obj): ...` holds `<Function m>` and
+`=m(1)` beside it gives 6; routed, the first reads the marshal error
+and the second "Expects Python callable".
+
+The pack now carries what a function body reads
+(`App::FunctionBodyIdentifiers` around `getIdentifiers()`,
+ExpressionImageHost.cpp).  Those names are still NOT dependencies --
+the trap of sec 12 stands untouched, dependency tracking never sees the
+bodies -- but a body reading `HoleDia`, which nothing outside the body
+reads, found no binding in the guest and failed to resolve.  Natively
+the body resolves it live; the guest has only the pack.
+
+The surface (b): 14 `call` and 3 `handle` annotations on `TopoShapePy`
+and 13 constructors in `MODULE_FACADES["Part"]`, as listed; 362
+members across 57 facades.  The stamp: `FCX_SURFACE_VERSION = 1` in
+the generator and the sha256 of the sorted set (type key, member,
+kind, tier; module, name, kind, permission -- a `Methode` declares no
+argument list in the XML, so that is all the signature the table
+has), written into BOTH `.inc` files.
+`FreeCAD.ExpressionSandbox.surfaceVersion()` returns the host's;
+`surfaceVersion(True)` boots the guest and adds its `_fcx.surface()`
+-- a mismatch is a wheel built from other annotations, which nothing
+else would notice until a member failed to cross.  The document
+record: `Meta["ExpressionSurface"]`, set at `signalStartSaveDocument`
+on a document carrying at least one expression and never on one
+carrying none; at `signalFinishRestoreDocument` a lower integer is a
+one-line warning.  Connected in `Application::initApplication()` after
+the singleton exists (`initPyModule` runs inside the constructor).  The
+library's own `Surface` record waits for the library (D2).
+
+Two bugs older than any of this, both found by the flange gate and both
+in sec 12.  Every `while` loop in the image ran exactly ONCE -- a
+compiled-out single-statement `if` took the `continue` as its body --
+so the routed flange came back with one bolt hole of six (5 faces,
+19880 mm3).  And a called lambda printed without its parentheses:
+`(lambda k: k * k)(i)` printed as a lambda whose body is `k * k(i)`,
+natively on save and on every routed evaluation, which ships the
+printed form.
+
+Gate, in `tests/src/App/ExpressionImageHost.cpp`: `programs` (six
+programs routed = native -- a def called, a function passed as a
+value, a lambda in a comprehension, a body-only identifier, defaults
+and keywords, a list of lambdas); `programsFunctionValueStaysInTheGuest`;
+`programsFlangeMatchesNative` (routed under enforcement, native with
+enforcement off: a Compound, 10 faces, equal `Volume`, and
+`exportBrepToString()` BYTE-IDENTICAL -- the guest's `cos` and `sin`
+gave the host's doubles for these six angles);
+`programsSurfaceStampMatchesHost`; `programsSurfaceRecordedAtSave`.
+`partModuleFacade`'s undeclared-name example moved from `makeSphere`,
+now declared, to `read`, which never will be.  Suites green at the
+build: C++ 610/610 (offscreen), Python 2715 OK, `FeaturePythonChain`
+27 OK.  The cost: 573 lines added and 39 removed across 18 files --
+ABOVE the 290-490 sized, though 223 of the added are the tests, which
+the sizing's D1 row did not count, and 29 are the two old bugs; about
+320 lines of the feature itself.
+
 **Stages.**
 
     D1  function objects in the image (ExpressionPy into
         ImageSources.cmake, the two throws removed, the FUNC value
         path); the surface annotations; the version stamp and
         surfaceVersion().  Gate: the gtest; the flange as an
-        expression routed = native.  Unchanged by the re-sizing, and
-        now the precondition for BOTH carriers -- a sheet's method is
-        a function object too.
+        expression routed = native.  **BUILT 2026-09-13**, above; a
+        function as the FINAL value of a routed evaluation still does
+        not cross, which is the sheet carrier's routed case (P3).
     D2  the chain's recompute -- **BUILT 2026-09-13**, ProxyChain.md
         4.6: the generation counter as the cheap gate, then a
         comparison of each chain element's resolved callable against
@@ -6777,7 +6865,10 @@ and nothing on the wire unless a value changed.
     --------------------------------------------  -----   ----------------------------------
     tests/src/App/ExpressionSecurity.cpp            11    catalog, hash, grant store
     tests/src/App/ExpressionSecurityRuntime.cpp      9    resolve, scopes, pending, audit
-    tests/src/App/ExpressionImageHost.cpp           67    acceptance 6, bench 6 (disabled),
+    tests/src/App/ExpressionImageHost.cpp           81    programs 5 (7.17 D1: function
+                                                          objects routed = native, the
+                                                          flange, the surface stamp and
+                                                          record), acceptance 6, bench 6 (disabled),
                                                           bridge 8, budget 4, eval 25 (the
                                                           G1a-G1d gates among them, the
                                                           Draft and BIM corpus gates, the
@@ -7023,7 +7114,8 @@ push the user's call).
    ProxyChain.md 4.5 -- BUILT 2026-09-13, ProxyChain.md 4.6): a
    statement program bound to a `Part::Feature`'s `Shape` already
    recomputes routed (the probe's bracket and stair); the one guest
-   gap is function objects (`ExpressionPy` into the image); the
+   gap was function objects (`ExpressionPy` into the image, D1 BUILT
+   2026-09-13: the flange routed = native to the BRep byte); the
    carrier is `App::ExpressionLibrary` on `App::TextDocument`, served
    into the guest through the import miss, namespaced per principal,
    with a dependency edge from `import` and the source in the
@@ -7431,6 +7523,29 @@ sockets, any network for the reference image, a webview escape hatch.
   so a headless gate must grant it.  A grant is keyed by the
   document's CONTENT hash, so editing an expression voids it: re-grant
   after every edit, or the next evaluation fails as unpermitted.
+- **A statement compiled out of an unbraced `if` leaves the `if` the
+  NEXT statement** (found 2026-09-13, 7.17 D1).  `WhileStatement::
+  _getPyValue` read `if(limit>0 && (++count % limit)==0)` over
+  `#ifndef FC_EXPR_IMAGE` / `Base::Sequencer().checkAbort();` /
+  `#endif`, then `continue;`.  The host compiled what it reads; the
+  image build made the `if` govern the `continue`, the `switch` fell
+  out to its `break`, and every `while` in the image ran exactly ONCE
+  -- silently, returning the first iteration's state: the routed
+  flange had one bolt hole of six.  `for` has no such block.  The
+  2026-09-10 probe table records `while` as working routed, which holds
+  only for a loop that needed one pass.  Any `#ifdef` inside a
+  brace-less body is this bug.
+- **A printed expression must re-parse to the SAME program, and a
+  called lambda did not** (found 2026-09-13, 7.17 D1).
+  `CallableExpression::_toString` printed its callee without the
+  priority check, and `LambdaExpression` had the default priority, so
+  `(lambda k: k * k)(i)` printed as `lambda k : k * k(i)` -- a lambda
+  whose body calls `k`.  The printed form is what a document saves and
+  what the router ships to the guest, so the program changed on save
+  natively, and on every routed evaluation.  Fixed: a lambda's priority
+  is 0, a `def` keeps 20, the callee prints with the check.  When a
+  routed result differs from native, round-trip the expression through
+  `toString()` natively before suspecting the guest.
 - **A FUNCTION BODY'S IDENTIFIERS ARE NOT DEPENDENCIES, AND THE BODY
   READS THEM LIVE** (probed 2026-09-13).  `VariableExpression::
   _getIdentifiers` returns early while `_FunctionDepth` is non-zero

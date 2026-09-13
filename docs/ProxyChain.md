@@ -336,6 +336,14 @@ does for a library's module), a same-document write to `obj` is
 `doc.write.self` (3.2's same-origin rule), a cross-file one is the
 `doc.foreign` prompt, once.  Routed evaluation of a `def` cell needs
 7.17 D1 (function objects in the image); natively it works today.
+**D1 BUILT 2026-09-13, and it is not enough for the cell**: the function
+now evaluates in the guest, but a cell's VALUE is the function, and a
+function cannot leave its routed evaluation.  Probed: natively
+`=def m(obj): ...` holds `<Function m>` and `=m(1)` beside it gives 6;
+routed the first cell reads "result of type 'App.Expression' does not
+marshal by value" and the second "Expects Python callable".  So P3
+needs the method to cross as a guest reference (the `gmethod` shape)
+or to run inside an evaluation of its own.
 
 This is how "the document program extends objects" lands without a
 class in the expression language: a sheet, or a library, carries the
@@ -456,9 +464,10 @@ macro one at a time later, their generated output leaving the tree.
         the list saved headless, reopened in the GUI, an external
         file resolving.                     DONE 2026-09-13, sec 4.4
     P3  the sandbox: the P1 gate routed (needs 7.17 D1 for a `def`
-        cell); the audit line names the linked object's document; a
-        cross-file link's write prompts doc.foreign once.  Sits
-        inside 7.17's build, not before it.
+        cell -- BUILT 2026-09-13, but a function as a cell's VALUE
+        still does not cross, sec 2.5); the audit line names the
+        linked object's document; a cross-file link's write prompts
+        doc.foreign once.  Sits inside 7.17's build, not before it.
 
 ### 4.1 P0 as built (2026-09-12)
 
