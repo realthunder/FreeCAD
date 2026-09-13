@@ -406,6 +406,34 @@ public:
 
     static EvalTransaction *current();
 
+    /// The owner document's expression libraries, the request's "libs"
+    /// (docs/Sandbox.md 7.17 (c)): import name -> (key, revision).
+    void addLibrary(const std::string &module, const std::string &key, uint64_t rev)
+    {
+        libraries_[module] = std::make_pair(key, rev);
+    }
+    const std::pair<std::string, uint64_t> *library(const std::string &module) const
+    {
+        auto it = libraries_.find(module);
+        return it == libraries_.end() ? nullptr : &it->second;
+    }
+
+    /// A serial no evaluation has used, for a library module.
+    static uint64_t nextSerial();
+
+    /** A library module outlives the evaluation that built it, and so do
+     * its functions: they record the MODULE's serial, alive while the
+     * guest keeps the module and an evaluation is running to call them
+     * in.  While one builds, a function made records its serial. */
+    static void setLibraryAlive(uint64_t serial, bool alive);
+    static uint64_t libraryBuild();
+    struct LibraryBuild
+    {
+        uint64_t saved;
+        explicit LibraryBuild(uint64_t serial);
+        ~LibraryBuild();
+    };
+
     /// Unique for the life of the image: what a function object made in
     /// this evaluation records (ExpressionPyImp.cpp).
     uint64_t serial() const
@@ -429,6 +457,7 @@ private:
     std::string ownerFacade_;
     std::map<std::string, Py::Object> bindings_;
     std::map<std::string, std::pair<std::string, std::string>> bindErrors_;
+    std::map<std::string, std::pair<std::string, uint64_t>> libraries_;
 };
 
 /// One-time Base::Type registrations for the classes above plus the

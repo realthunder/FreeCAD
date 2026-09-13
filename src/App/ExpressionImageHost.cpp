@@ -41,6 +41,7 @@
 #include "ExpressionImageBridge.h"
 #include "ExpressionImageHost.h"
 #include "ExpressionImageRuntime.h"
+#include "ExpressionLibrary.h"
 #include "ExpressionParser.h"
 #include "ExpressionSecurityRuntime.h"
 
@@ -176,6 +177,8 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     std::vector<std::function<void(int)>> bootListeners;
     /// stand-ins that died since the last request (FcxWire "pd")
     std::vector<uint64_t> proxyDrops;
+    /// library modules gone stale since the last request (FcxWire "ld")
+    std::vector<std::pair<std::string, std::string>> libraryDrops;
 
     /** One host->guest call, possibly NESTED inside a bridge op of an
      * outer one: a guest execute() writing a property runs the host's
@@ -243,6 +246,13 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     /// Dead stand-ins ride the next request, whatever its op.
     void attachDrops(json& req)
     {
+        if (!libraryDrops.empty()) {
+            json ld = json::array();
+            for (const auto& drop : libraryDrops)
+                ld.push_back(json::array({drop.first, drop.second}));
+            req["ld"] = std::move(ld);
+            libraryDrops.clear();
+        }
         if (proxyDrops.empty())
             return;
         req["pd"] = proxyDrops;
@@ -257,6 +267,7 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         live = false;
         // the drops queued for this guest name nothing in the next one
         proxyDrops.clear();
+        libraryDrops.clear();
     }
 
     /// The guest's paths as the selected runtime resolves them.
@@ -859,6 +870,21 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
         ctx["doc"] = owner->getDocument() ? owner->getDocument()->getName() : "";
         ctx["obj"] = owner->getNameInDocument() ? owner->getNameInDocument() : "";
         req["ctx"] = std::move(ctx);
+        // The document's expression libraries by import name, so the
+        // guest asks for a text only when an import names one and keeps
+        // the module it built while the revision stands (7.17 (c)).
+        auto libs = App::ExpressionLibrary::libraries(owner->getDocument());
+        if (!libs.empty()) {
+            const std::string key =
+                ExpressionSecurity::Runtime::instance().documentPrincipal(owner->getDocument());
+            json table = json::object();
+            for (auto lib : libs) {
+                const std::string module = lib->getModuleName();
+                if (!table.contains(module))
+                    table[module] = json::array({key, lib->getLibraryRevision()});
+            }
+            req["libs"] = std::move(table);
+        }
     }
 
     // The evaluation's principal, for the pack step AND the round trip:
@@ -921,6 +947,15 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
                         continue;
                 }
                 try {
+                    // an import's edge to a library is a dependency, not a
+                    // value the evaluation reads: the guest asks for the
+                    // text when it builds the module
+                    if (auto prop = id.getProperty()) {
+                        auto lib = Base::freecad_dynamic_cast<App::ExpressionLibrary>(
+                            prop->getContainer());
+                        if (lib && (prop == &lib->Text || prop == &lib->Module))
+                            continue;
+                    }
                     Py::Object value = id.getPyValue(true);
                     bindings[id.toString()] =
                         encodeHostValue(d->handles, value.ptr());
@@ -1121,6 +1156,13 @@ void ImageHost::dropProxy(uint64_t id, int boot)
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     if (boot == d->boots)
         d->proxyDrops.push_back(id);
+}
+
+void ImageHost::dropLibrary(const std::string& key, const std::string& module)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    if (d->live)
+        d->libraryDrops.emplace_back(key, module);
 }
 
 }  // namespace ExpressionSandbox

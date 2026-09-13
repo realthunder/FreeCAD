@@ -6,11 +6,15 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <map>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include <Base/BoundBoxPy.h>
+#include <Base/Exception.h>
 #include <Base/Interpreter.h>
 #include <Base/PyObjectBase.h>
 #include <Base/MatrixPy.h>
@@ -21,6 +25,7 @@
 #include <Base/VectorPy.h>
 
 #include <App/Expression.h>
+#include <App/ExpressionParser.h>
 
 #include "FcxDocument.h"
 #include "FcxWire.h"
@@ -440,6 +445,172 @@ std::string FcxImage::missingImportOffer(const std::string &module)
     return offer;
 }
 
+namespace
+{
+
+/// One expression library module the guest keeps (docs/Sandbox.md 7.17
+/// (c)).  Its owner is an adapter object of its own, not an evaluation's:
+/// the module's functions are called from later evaluations.
+struct LibraryModule
+{
+    std::string key;
+    std::string module;
+    uint64_t rev = 0;
+    uint64_t serial = 0;
+    bool building = false;
+    App::Document doc;
+    App::DocumentObject owner;
+    Py::Object mod;
+    /// the libraries the module imported, each with the build it got
+    std::vector<std::pair<std::string, uint64_t>> imports;
+};
+
+std::map<std::pair<std::string, std::string>, std::unique_ptr<LibraryModule>> g_libraries;
+/// Replaced or dropped while an evaluation may still hold their functions.
+std::vector<std::unique_ptr<LibraryModule>> g_retiredLibraries;
+/// The builds in progress, innermost last.
+std::vector<LibraryModule*> g_buildingLibraries;
+
+void retireLibrary(decltype(g_libraries)::iterator it)
+{
+    g_retiredLibraries.push_back(std::move(it->second));
+    g_libraries.erase(it);
+}
+
+/// Between evaluations only: free what was retired, and forget the pack
+/// properties a kept owner cached -- the next evaluation has a new pack.
+void sweepLibraries()
+{
+    if (Fcx::EvalTransaction::current())
+        return;
+    for (auto& lib : g_retiredLibraries) {
+        Fcx::EvalTransaction::setLibraryAlive(lib->serial, false);
+        if (lib->mod.ptr() && PyModule_Check(lib->mod.ptr()))
+            PyDict_Clear(PyModule_GetDict(lib->mod.ptr()));
+    }
+    g_retiredLibraries.clear();
+    for (auto& v : g_libraries)
+        v.second->owner.props_.clear();
+}
+
+/// "ld": libraries whose text changed on the host since the last request.
+void applyLibraryDrops(const json& req)
+{
+    auto ld = req.find("ld");
+    if (ld == req.end() || !ld->is_array())
+        return;
+    for (const auto& item : *ld) {
+        if (!item.is_array() || item.size() != 2 || !item[0].is_string() || !item[1].is_string())
+            continue;
+        auto it = g_libraries.find(
+            std::make_pair(item[0].get<std::string>(), item[1].get<std::string>()));
+        if (it != g_libraries.end() && !it->second->building)
+            retireLibrary(it);
+    }
+}
+
+/// The module an import returns; a build in progress records which build
+/// of it it got.
+PyObject* noteImport(const std::string& name, LibraryModule& lib)
+{
+    if (!g_buildingLibraries.empty() && g_buildingLibraries.back() != &lib)
+        g_buildingLibraries.back()->imports.emplace_back(name, lib.serial);
+    return Py::new_reference_to(lib.mod);
+}
+
+/// Whether every library `lib` imported is still the build it got.  An
+/// imported library rebuilt since was retired, and its dict clears with it,
+/// so the importer must rebuild -- after it, to bind the new one.
+bool importsCurrent(const LibraryModule& lib)
+{
+    auto tx = Fcx::EvalTransaction::current();
+    for (const auto& imported : lib.imports) {
+        PyObject* mod = FcxImage::libraryModule(imported.first);
+        if (!mod)
+            return false;
+        Py_DECREF(mod);
+        const auto* wanted = tx ? tx->library(imported.first) : nullptr;
+        auto it = wanted ? g_libraries.find(std::make_pair(wanted->first, imported.first))
+                         : g_libraries.end();
+        if (it == g_libraries.end() || it->second->serial != imported.second)
+            return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+PyObject* FcxImage::libraryModule(const std::string& name)
+{
+    auto tx = Fcx::EvalTransaction::current();
+    const auto* wanted = tx ? tx->library(name) : nullptr;
+    if (!wanted)
+        return nullptr;
+    const auto slotWanted = std::make_pair(wanted->first, name);
+    auto it = g_libraries.find(slotWanted);
+    if (it != g_libraries.end()) {
+        if (it->second->building)
+            throw Base::ImportError("circular import of library '" + name + "'");
+        const bool current = it->second->rev == wanted->second && importsCurrent(*it->second);
+        it = g_libraries.find(slotWanted);  // the check may have built others
+        if (it != g_libraries.end()) {
+            if (current)
+                return noteImport(name, *it->second);
+            retireLibrary(it);
+        }
+    }
+
+    PyObject* fcx = PyImport_ImportModule("_fcx");
+    PyObject* answer = fcx ? PyObject_CallMethod(fcx, "op", "sKs", FcxWire::OpLibSource,
+                                                 (unsigned long long)0, name.c_str())
+                           : nullptr;
+    Py_XDECREF(fcx);
+    if (!answer)
+        throw Base::PyException();
+    Py::Object reply(answer, true);
+    if (reply.isNone())
+        return nullptr;
+    if (!PyDict_Check(reply.ptr()))
+        throw Base::RuntimeError("lib.source: malformed reply");
+    Py::Dict d(reply);
+    auto lib = std::make_unique<LibraryModule>();
+    lib->key = Py::String(d.getItem("key")).as_std_string("utf-8");
+    lib->module = name;
+    lib->rev = static_cast<uint64_t>(Py::Long(d.getItem("rev")).as_unsigned_long_long());
+    const std::string text = Py::String(d.getItem("text")).as_std_string("utf-8");
+    const std::string objName = Py::String(d.getItem("obj")).as_std_string("utf-8");
+    App::Document* ownerDoc = tx->owner()->getDocument();
+    lib->doc.name_ = ownerDoc ? ownerDoc->name_ : std::string("sandbox");
+    lib->doc.Label.str_ = lib->doc.name_;
+    lib->owner.name_ = objName;
+    lib->owner.document_ = &lib->doc;
+    lib->owner.Label.str_ = objName;
+    lib->serial = Fcx::EvalTransaction::nextSerial();
+    Fcx::EvalTransaction::setLibraryAlive(lib->serial, true);
+
+    auto slot = std::make_pair(lib->key, name);
+    auto existing = g_libraries.find(slot);
+    if (existing != g_libraries.end())
+        retireLibrary(existing);
+    LibraryModule& ref = *lib;
+    auto pos = g_libraries.emplace(slot, std::move(lib)).first;
+    ref.building = true;
+    g_buildingLibraries.push_back(&ref);
+    try {
+        Fcx::EvalTransaction::LibraryBuild build(ref.serial);
+        ref.mod = App::ExpressionParser::buildLibraryModule(&ref.owner, name, text.c_str());
+    }
+    catch (...) {
+        g_buildingLibraries.pop_back();
+        ref.building = false;
+        retireLibrary(pos);
+        throw;
+    }
+    g_buildingLibraries.pop_back();
+    ref.building = false;
+    return noteImport(name, ref);
+}
+
 static json errorReply()
 {
     json r;
@@ -576,6 +747,14 @@ static json dispatchEvalExpr(const json &req, const std::string &src)
             tx.addBindingError(it.key(),
                                it.value().value("exc", "RuntimeError"),
                                it.value().value("msg", ""));
+        }
+    }
+    auto libs = req.find("libs");
+    if (libs != req.end() && libs->is_object()) {
+        for (auto it = libs->begin(); it != libs->end(); ++it) {
+            const json& v = it.value();
+            if (v.is_array() && v.size() == 2 && v[0].is_string() && v[1].is_number_unsigned())
+                tx.addLibrary(it.key(), v[0].get<std::string>(), v[1].get<uint64_t>());
         }
     }
 
@@ -895,6 +1074,8 @@ json dispatch(const json &req)
 {
     json reply;
     applyProxyDrops(req);
+    applyLibraryDrops(req);
+    sweepLibraries();
     auto op = req.find("op");
     if (op == req.end() || !op->is_string())
         reply = protocolError("request without op");

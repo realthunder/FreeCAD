@@ -41,6 +41,15 @@ nlohmann::json dispatch(const nlohmann::json& req);
  */
 std::string missingImportOffer(const std::string& module);
 
+/** The module an `import <name>` binds when the evaluation's document
+ * holds an expression library of that name (docs/Sandbox.md 7.17 (c)):
+ * built from the text the host serves (`lib.source`) on first use and
+ * kept, keyed by the principal whose text it is, until the text changes.
+ * A NEW reference; nullptr with no error set when the name is no library.
+ * Throws the build's error.
+ */
+PyObject* libraryModule(const std::string& name);
+
 /// CBOR request bytes -> CBOR reply bytes.
 std::vector<uint8_t> dispatchCbor(const uint8_t* req, size_t len);
 }  // namespace FcxImage

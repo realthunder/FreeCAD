@@ -74,7 +74,8 @@ int ExpressionPy::initialization() {
         Type.tp_call = ExpressionPy_Call;
 #ifdef FC_EXPR_IMAGE
     auto tx = Fcx::EvalTransaction::current();
-    evalSerial = tx ? tx->serial() : 0;
+    const uint64_t library = Fcx::EvalTransaction::libraryBuild();
+    evalSerial = library ? library : (tx ? tx->serial() : 0);
 #else
     pyOwner = static_cast<PyObjectBase*>(getExpressionPtr()->getOwner()->getPyObject());
 #endif

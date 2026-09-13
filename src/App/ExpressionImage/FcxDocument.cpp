@@ -5,6 +5,7 @@
 #include "FcxDocument.h"
 
 #include <cstring>
+#include <set>
 
 #include <nlohmann/json.hpp>
 
@@ -252,6 +253,9 @@ namespace Fcx
 {
 
 static EvalTransaction *_current;
+static uint64_t _lastSerial;
+static uint64_t _libraryBuild;
+static std::set<uint64_t> _liveLibraries;
 
 EvalTransaction::EvalTransaction(const std::string &docName,
                                  const std::string &objName,
@@ -265,8 +269,7 @@ EvalTransaction::EvalTransaction(const std::string &docName,
     owner_.name_ = objName.empty() ? "owner" : objName;
     owner_.document_ = &doc_;
     owner_.Label.str_ = owner_.name_;
-    static uint64_t lastSerial;
-    serial_ = ++lastSerial;
+    serial_ = ++_lastSerial;
     prev_ = _current;
     _current = this;
 }
@@ -290,7 +293,36 @@ bool EvalTransaction::alive(uint64_t serial)
         if (tx->serial_ == serial)
             return true;
     }
-    return false;
+    return _current && _liveLibraries.count(serial) > 0;
+}
+
+uint64_t EvalTransaction::nextSerial()
+{
+    return ++_lastSerial;
+}
+
+void EvalTransaction::setLibraryAlive(uint64_t serial, bool alive)
+{
+    if (alive)
+        _liveLibraries.insert(serial);
+    else
+        _liveLibraries.erase(serial);
+}
+
+uint64_t EvalTransaction::libraryBuild()
+{
+    return _libraryBuild;
+}
+
+EvalTransaction::LibraryBuild::LibraryBuild(uint64_t serial)
+    : saved(_libraryBuild)
+{
+    _libraryBuild = serial;
+}
+
+EvalTransaction::LibraryBuild::~LibraryBuild()
+{
+    _libraryBuild = saved;
 }
 
 void EvalTransaction::addBinding(const std::string &key, PyObject *value)

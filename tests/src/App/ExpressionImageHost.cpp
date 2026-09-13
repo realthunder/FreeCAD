@@ -17,6 +17,7 @@
 #include <App/Expression.h>
 #include <App/ExpressionEvaluator.h>
 #include <App/ExpressionImageBridge.h>
+#include <App/ExpressionLibrary.h>
 #include <Base/FileInfo.h>
 
 #include "InitApplication.h"
@@ -2870,6 +2871,213 @@ TEST_F(ExpressionRoutingTest, programsFlangeMatchesNative)
     ASSERT_NE(faces, nullptr);
     EXPECT_EQ(PySequence_Size(faces), 10);
     Py_DECREF(faces);
+    PyObject* rb = PyObject_CallMethod(routed, "exportBrepToString", nullptr);
+    PyObject* nb = PyObject_CallMethod(native, "exportBrepToString", nullptr);
+    ASSERT_NE(rb, nullptr);
+    ASSERT_NE(nb, nullptr);
+    EXPECT_TRUE(PyUnicode_Compare(rb, nb) == 0) << "the BRep is not byte-identical";
+    Py_DECREF(rb);
+    Py_DECREF(nb);
+    Py_DECREF(routed);
+    Py_DECREF(native);
+    ImageHost::instance().clearHandles();
+}
+
+// ---- docs/Sandbox.md 7.17 D2: expression libraries ----
+
+namespace
+{
+const char* bracketsText = "k = 3\n"
+                           "def triple(x):\n"
+                           "    return x * k\n"
+                           "def viaLater(x):\n"
+                           "    return later(x) + 1\n"
+                           "def later(x):\n"
+                           "    return x * 2\n"
+                           "def leak():\n"
+                           "    return secret\n";
+
+App::ExpressionLibrary*
+addLibrary(App::Document* doc, const char* name, const char* module, const char* text)
+{
+    auto lib = Base::freecad_dynamic_cast<App::ExpressionLibrary>(
+        doc->addObject("App::ExpressionLibrary", name));
+    if (lib) {
+        lib->Module.setValue(module);
+        lib->Text.setValue(text);
+    }
+    return lib;
+}
+
+std::size_t libSourceOps()
+{
+    auto s = ImageHost::instance().stats();
+    auto it = s.ops.find("lib.source");
+    return it == s.ops.end() ? 0 : it->second;
+}
+
+/// routed = native for one program, as the repr of each
+void expectRoutedMatchesNative(App::DocumentObject* owner, const char* src)
+{
+    std::string nerr, rerr;
+    PyObject* native = evalProgram(owner, src, false, nerr);
+    ASSERT_NE(native, nullptr) << src << "\nnative: " << nerr;
+    PyObject* routed = evalProgram(owner, src, true, rerr);
+    EXPECT_NE(routed, nullptr) << src << "\nrouted: " << rerr;
+    EXPECT_EQ(reprOf(routed), reprOf(native)) << src;
+    Py_XDECREF(native);
+    Py_XDECREF(routed);
+    ImageHost::instance().clearHandles();
+}
+}  // namespace
+
+TEST_F(ExpressionRoutingTest, librariesMatchNative)
+{
+    // A module's constant, its functions by `import` and by `from`, a
+    // function calling one defined after it (the module's names, resolved
+    // when called), and a call inside a comprehension.
+    ASSERT_NE(addLibrary(doc, "Lib", "brackets", bracketsText), nullptr);
+    const char* cases[] = {
+        "import brackets\nbrackets.triple(Width)",
+        "from brackets import triple, viaLater\n[triple(1), viaLater(Width)]",
+        "import brackets\nbrackets.k",
+        "from brackets import triple\n[triple(i) for i in [1, 2, 3]]",
+    };
+    Base::PyGILStateLocker lock;
+    for (const char* src : cases)
+        expectRoutedMatchesNative(obj, src);
+
+    // and a function does not see its caller's names, either way
+    const char* leak = "secret = 5\nimport brackets\nbrackets.leak()";
+    std::string nerr, rerr;
+    PyObject* native = evalProgram(obj, leak, false, nerr);
+    PyObject* routed = evalProgram(obj, leak, true, rerr);
+    EXPECT_EQ(native, nullptr) << reprOf(native);
+    EXPECT_EQ(routed, nullptr) << reprOf(routed);
+    Py_XDECREF(native);
+    Py_XDECREF(routed);
+    ImageHost::instance().clearHandles();
+}
+
+TEST_F(ExpressionRoutingTest, librariesGuestKeepsTheModule)
+{
+    // The guest asks for a library's text once and keeps the module while
+    // its revision stands; an edit drops it, and the next import asks
+    // again and runs the new text.
+    auto lib = addLibrary(doc, "Lib", "brackets", bracketsText);
+    ASSERT_NE(lib, nullptr);
+    auto& host = ImageHost::instance();
+    Base::PyGILStateLocker lock;
+    host.resetStats();
+    const char* src = "import brackets\nbrackets.triple(Width)";
+    for (int i = 0; i < 3; ++i)
+        expectRoutedMatchesNative(obj, src);
+    EXPECT_EQ(libSourceOps(), 1u);
+
+    lib->Text.setValue("k = 4\ndef triple(x):\n    return x * k\n");
+    expectRoutedMatchesNative(obj, src);
+    EXPECT_EQ(libSourceOps(), 2u);
+
+    // a plain import is no library and never asks
+    expectRoutedMatchesNative(obj, "import math\nmath.sqrt(Width)");
+    EXPECT_EQ(libSourceOps(), 2u);
+}
+
+TEST_F(ExpressionRoutingTest, librariesImportedLibraryFollowsAnEdit)
+{
+    // `more` imports `brackets`: an edit to brackets rebuilds more's module
+    // in the guest, as natively, rather than leave it holding a module whose
+    // dict was cleared when brackets was dropped.
+    auto lib = addLibrary(doc, "Lib", "brackets", bracketsText);
+    ASSERT_NE(lib, nullptr);
+    ASSERT_NE(addLibrary(doc,
+                         "More",
+                         "more",
+                         "import brackets\ndef sixfold(x):\n    return brackets.triple(x) * 2\n"),
+              nullptr);
+    Base::PyGILStateLocker lock;
+    const char* src = "import more\nmore.sixfold(Width)";
+    expectRoutedMatchesNative(obj, src);
+    lib->Text.setValue("k = 4\ndef triple(x):\n    return x * k\n");
+    expectRoutedMatchesNative(obj, src);
+    std::string err;
+    PyObject* v = evalProgram(obj, src, true, err);
+    ASSERT_NE(v, nullptr) << err;
+    EXPECT_EQ(PyFloat_AsDouble(v), 21.0 * 4 * 2) << reprOf(v);
+    Py_DECREF(v);
+    ImageHost::instance().clearHandles();
+}
+
+TEST_F(ExpressionRoutingTest, librariesTwoDocumentsDoNotMeet)
+{
+    // The same module name in two documents: the guest keeps one module per
+    // principal, so neither sees the other's.
+    ASSERT_NE(addLibrary(doc, "Lib", "brackets", bracketsText), nullptr);
+    auto other = App::GetApplication().newDocument("FcxEvalOther", "testUser");
+    auto otherObj = other->addObject("App::FeaturePython", "Obj");
+    ASSERT_NE(addLibrary(other, "Lib", "brackets", "k = 7\ndef triple(x):\n    return x * k\n"),
+              nullptr);
+    {
+        Base::PyGILStateLocker lock;
+        const char* src = "import brackets\nbrackets.triple(2)";
+        std::string err;
+        PyObject* first = evalProgram(obj, src, true, err);
+        ASSERT_NE(first, nullptr) << err;
+        PyObject* second = evalProgram(otherObj, src, true, err);
+        ASSERT_NE(second, nullptr) << err;
+        EXPECT_NE(reprOf(first), reprOf(second));
+        EXPECT_EQ(PyFloat_AsDouble(first) * 7, PyFloat_AsDouble(second) * 3)
+            << reprOf(first) << " " << reprOf(second);
+        Py_DECREF(first);
+        Py_DECREF(second);
+        ImageHost::instance().clearHandles();
+        expectRoutedMatchesNative(otherObj, src);
+    }
+    App::GetApplication().closeDocument(other->getName());
+}
+
+TEST_F(ExpressionRoutingTest, librariesBracketMatchesNative)
+{
+    // The bracket of docs/Sandbox.md 7.17 as a library and a consumer:
+    // routed under enforcement, native with enforcement off (natively
+    // `import Part` is host.import), the BRep byte-identical.
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* part = PyImport_ImportModule("Part");
+        if (!part) {
+            PyErr_Clear();
+            GTEST_SKIP() << "the Part module is not importable in this test binary";
+        }
+        Py_DECREF(part);
+    }
+    ASSERT_NE(addLibrary(doc,
+                         "Lib",
+                         "brackets",
+                         "import Part\n"
+                         "\n"
+                         "def bracket(L, W, T):\n"
+                         "    base = Part.makeBox(L, W, T)\n"
+                         "    wall = Part.makeBox(T, W, L)\n"
+                         "    return base.fuse(wall).removeSplitter()\n"),
+              nullptr);
+    const char* src = "from brackets import bracket\nbracket(Width * 2, Width, 5mm)";
+
+    Base::PyGILStateLocker lock;
+    std::string rerr, nerr;
+    PyObject* routed = evalProgram(obj, src, true, rerr);
+    ASSERT_NE(routed, nullptr) << rerr;
+    auto security = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Security");
+    security->SetBool("Enforce", false);
+    PyObject* native = evalProgram(obj, src, false, nerr);
+    security->RemoveBool("Enforce");
+    ASSERT_NE(native, nullptr) << nerr;
+
+    PyObject* rv = PyObject_GetAttrString(routed, "Volume");
+    PyObject* nv = PyObject_GetAttrString(native, "Volume");
+    EXPECT_EQ(reprOf(rv), reprOf(nv));
+    Py_XDECREF(rv);
+    Py_XDECREF(nv);
     PyObject* rb = PyObject_CallMethod(routed, "exportBrepToString", nullptr);
     PyObject* nb = PyObject_CallMethod(native, "exportBrepToString", nullptr);
     ASSERT_NE(rb, nullptr);

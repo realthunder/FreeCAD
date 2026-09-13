@@ -134,6 +134,7 @@
 #include "StringHasherPy.h"
 #include "StringIDPy.h"
 #include "TextDocument.h"
+#include "ExpressionLibrary.h"
 #include "Transactions.h"
 #include "VRMLObject.h"
 
@@ -2464,6 +2465,7 @@ void Application::initTypes()
     App::MaterialObject            ::init();
     App::MaterialObjectPython      ::init();
     App::TextDocument              ::init();
+    App::ExpressionLibrary         ::init();
     App::Placement                 ::init();
     App::PlacementPython           ::init();
     App::OriginFeature             ::init();

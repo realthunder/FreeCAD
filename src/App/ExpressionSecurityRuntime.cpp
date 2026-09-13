@@ -38,6 +38,7 @@
 #include "DocumentObjectPy.h"
 #include "DocumentPy.h"
 #include "Expression.h"
+#include "ExpressionLibrary.h"
 #include "ExpressionSecurityRuntime.h"
 #include "ObjectIdentifier.h"
 #include "PropertyExpressionEngine.h"
@@ -207,7 +208,11 @@ Runtime::Runtime()
     // code strings, so it must follow every edit).
     app.signalChangedObject.connect(
         [this](const App::DocumentObject &obj, const App::Property &prop) {
-            if (!prop.isDerivedFrom(PropertyExpressionContainer::getClassTypeId()))
+            // ... and a library's text is code of the document the same way
+            auto lib = freecad_dynamic_cast<const ExpressionLibrary>(&obj);
+            bool libraryCode = lib && (&prop == &lib->Text || &prop == &lib->Module);
+            if (!libraryCode
+                    && !prop.isDerivedFrom(PropertyExpressionContainer::getClassTypeId()))
                 return;
             std::lock_guard<std::recursive_mutex> guard(mutex);
             docPrincipals.erase(obj.getDocument());
@@ -319,6 +324,11 @@ std::string Runtime::documentPrincipal(const App::Document *doc)
         // toString() of an embedded Python-object constant may touch Python
         Base::PyGILStateLocker lock;
         for (auto obj : doc->getObjects()) {
+            // an expression library is the document's code (7.17 (c)):
+            // a tampered library voids the grants as a tampered expression does
+            if (auto lib = freecad_dynamic_cast<ExpressionLibrary>(obj))
+                builder.addScript("App::ExpressionLibrary:" + lib->getModuleName(),
+                                  lib->Text.getValue());
             std::vector<App::Property *> props;
             obj->getPropertyList(props);
             for (auto prop : props) {

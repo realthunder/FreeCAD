@@ -475,6 +475,7 @@ SET(Document_CPP_SRCS
     MergeDocuments.cpp
     ShaderObject.cpp
     TextDocument.cpp
+    ExpressionLibrary.cpp
     Link.cpp
     LinkParams.cpp
     LinkBaseExtensionPyImp.cpp
@@ -542,6 +543,7 @@ SET(Document_HPP_SRCS
     MergeDocuments.h
     ShaderObject.h
     TextDocument.h
+    ExpressionLibrary.h
     Link.h
     SavedView.h
 )

@@ -37,6 +37,7 @@ SET(Test_SRCS
     ViewProviderHooks.py
     ViewProviderChain.py
     FeaturePythonChain.py
+    SandboxProgram.py
 )
 
 SET(TestData_SRCS

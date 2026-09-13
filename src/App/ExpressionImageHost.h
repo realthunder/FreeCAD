@@ -204,6 +204,12 @@ public:
     /// proxies with it.
     void dropProxy(uint64_t id, int boot);
 
+    /** The guest's module of an expression library is stale: the text
+     * changed, or the library went away (docs/Sandbox.md 7.17 (c)).
+     * Rides the next request as "ld"; nothing to do for a guest that
+     * never built it, or one that has reset since. */
+    void dropLibrary(const std::string& key, const std::string& module);
+
     /** Decode the value of a successful result into a new host PyObject
      * reference (nullptr on failure).  Handles in the reply resolve
      * against the live table, so call this BEFORE clearHandles().  The

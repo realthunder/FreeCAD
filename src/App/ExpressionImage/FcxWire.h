@@ -150,6 +150,14 @@ inline const char* const OpStr = "str";
 // 9.3).  "a" = the import name; the reply value is "" (unknown) or the
 // message the finder raises (offer / installed).
 inline const char* const OpPkgMissing = "pkg.missing";
+// No handle: an expression library of the evaluation owner's document
+// (docs/Sandbox.md 7.17 (c)).  "a" = the import name; the reply value is
+// null (no such library) or {text, rev, key, obj}: the source, its
+// revision, the principal key the guest keeps the module under, and the
+// library object's name.  An eval request names the document's libraries
+// in "libs" ({module: [key, rev]}), so an import that is no library never
+// asks; a changed library rides the next request as "ld" ([[key, module]]).
+inline const char* const OpLibSource = "lib.source";
 
 // ---- fixed layout for the hot ops (step 7 of the coding order) ----
 // A read_prop / get_attr with a name and nothing else is by far the

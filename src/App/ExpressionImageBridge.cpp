@@ -42,6 +42,7 @@
 #include "Document.h"
 #include "ExpressionGuestProxy.h"
 #include "ExpressionImageBridge.h"
+#include "ExpressionLibrary.h"
 #include "ExpressionSecurityRuntime.h"
 #include "Extension.h"
 #include "ExtensionContainer.h"
@@ -1346,6 +1347,29 @@ json dispatchHostOp(HandleTable& table, const json& req)
 #else
             return okReply(json(""));
 #endif
+        }
+        if (op == FcxWire::OpLibSource) {
+            // The text of an expression library of the evaluation owner's
+            // document (docs/Sandbox.md 7.17 (c)): the document's own code,
+            // read under doc.read.self, and keyed by that document's
+            // principal so two documents' modules never meet in the guest.
+            auto a = req.find("a");
+            if (a == req.end() || !a->is_string())
+                return errReply("ProtocolError", "lib.source without a name");
+            App::Document* doc = documentOf(table.owner());
+            auto* lib = doc ? App::ExpressionLibrary::find(doc, a->get_ref<const std::string&>())
+                            : nullptr;
+            if (!lib)
+                return okReply(json());
+            ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::DocReadSelf);
+            const std::string key = ExpressionSecurity::Runtime::instance().documentPrincipal(doc);
+            lib->noteServed(key);
+            json v = json::object();
+            v["text"] = lib->Text.getStrValue();
+            v["rev"] = lib->getLibraryRevision();
+            v["key"] = key;
+            v["obj"] = lib->getNameInDocument();
+            return okReply(v);
         }
         if (op == FcxWire::OpAppDocs || op == FcxWire::OpAppDoc || op == FcxWire::OpAppNewDoc
             || op == FcxWire::OpAppCloseDoc || op == FcxWire::OpAppSetActiveDoc)

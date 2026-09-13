@@ -750,6 +750,13 @@ public:
 
     static void securityCheck(PyObject *pyobj, PyObject *attr);
 
+    /** The namespace a library module's function resolves free names in
+     * (docs/Sandbox.md 7.17 (c)): the module's dict, held.  Null for every
+     * other function, which resolves them through its caller's frames. */
+    void setGlobals(PyObject *dict);
+
+    ~CallableExpression() override;
+
 protected:
     explicit CallableExpression(const App::DocumentObject *_owner):FunctionExpression(_owner) {}
 
@@ -765,6 +772,7 @@ protected:
     ExpressionPtr expr;
     std::string name;
     StringList names;
+    PyObject *globals = nullptr;
 };
 
 class AppExport RangeExpression : public App::Expression {
@@ -1324,10 +1332,13 @@ public:
 
     void add(std::string &&module, std::string &&name = std::string());
 
+    const StringList &getModules() const {return modules;}
+
 protected:
     explicit ImportStatement(const App::DocumentObject *_owner):BaseStatement(_owner) {}
 
     void _toString(std::ostream &ss, bool persistent, int indent) const override;
+    void _getIdentifiers(std::map<App::ObjectIdentifier,bool> &) const override;
     ExpressionPtr _copy() const override;
     Py::Object _getPyValue(int *jumpCode=nullptr) const override;
 
@@ -1347,10 +1358,13 @@ public:
 
     void add(std::string &&tail, std::string &&name = std::string());
 
+    const std::string &getModule() const {return module;}
+
 protected:
     explicit FromStatement(const App::DocumentObject *_owner):BaseStatement(_owner) {}
 
     void _toString(std::ostream &ss, bool persistent, int indent) const override;
+    void _getIdentifiers(std::map<App::ObjectIdentifier,bool> &) const override;
     ExpressionPtr _copy() const override;
     Py::Object _getPyValue(int *jumpCode=nullptr) const override;
 
@@ -1402,6 +1416,18 @@ public:
 };
 
 AppExport bool isModuleImported(PyObject *);
+
+/** Run a library's text once, in a frame and an evaluation stack of its
+ * own, and return a module named `name` holding what the run left bound
+ * (docs/Sandbox.md 7.17 (c)).  The functions it defines resolve the
+ * module's names when called.  Throws the parse or evaluation error.
+ */
+AppExport Py::Object buildLibraryModule(const App::DocumentObject *owner,
+        const std::string &name, const char *text);
+
+/// The module names the import statements of `expr` name, at any depth,
+/// in order and without repeats.
+AppExport std::vector<std::string> importedModules(const App::Expression *expr);
 
 } // end of namespace ExpressionParser
 } // end of namespace App

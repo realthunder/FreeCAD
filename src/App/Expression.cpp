@@ -30,6 +30,7 @@
 # pragma clang diagnostic ignored "-Wdelete-non-virtual-dtor"
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <boost/algorithm/string.hpp>
 #include <boost/intrusive/list.hpp>
@@ -54,6 +55,7 @@
 #else
 #include <App/Application.h>
 #include <App/DocumentObject.h>
+#include <App/ExpressionLibrary.h>
 #endif
 #include <App/ObjectIdentifier.h>
 #ifndef FC_EXPR_IMAGE
@@ -2370,6 +2372,20 @@ public:
     ImportModules() = default;
 
     Py::Object getModule(const std::string &name, const Expression *e) {
+        // A library of the owner's document (docs/Sandbox.md 7.17 (c)) is
+        // the document's own code, not a host import: it resolves before
+        // the permission check and never enters the process-wide cache,
+        // which would let two documents' `brackets` meet.
+#ifdef FC_EXPR_IMAGE
+        if (PyObject *lib = FcxImage::libraryModule(name))
+            return Py::asObject(lib);
+#else
+        if (e) {
+            Py::Object lib = ExpressionLibrary::importModule(e->getOwner(), name);
+            if (!lib.isNone())
+                return lib;
+        }
+#endif
         try {
             ExpressionSecurity::checkModuleImport(name);
         } catch (ExpressionSecurity::PermissionNeededException &) {
@@ -4414,12 +4430,156 @@ enum JumpType {
     JUMP_RAISE,
 };
 
+// A library module (docs/Sandbox.md 7.17 (c)).  The engine's functions
+// capture nothing: a body resolves a free name through the frames of
+// whoever called it.  A library's function must see its MODULE instead, so
+// it carries the module's dict and runs on an evaluation stack of its own
+// whose base frame holds the dict's names.
+static PyObject *_LibraryGlobals;      // the dict a function made now resolves in
+static PyObject *_LibraryBuildDict;    // the dict of the module being built ...
+static EvalFrame *_LibraryBuildFrame;  // ... and the frame its statements bind in
+
+namespace {
+
+/// The evaluation stack replaced for a scope: empty, or one base frame
+/// that is not pushed (it pops nothing when it dies).
+struct EvalStackSwap {
+    std::vector<EvalFrame*> saved;
+    EvalFrame *savedCallFrame;
+    explicit EvalStackSwap(EvalFrame *base)
+        : savedCallFrame(_EvalCallFrame)
+    {
+        saved.swap(_EvalStack);
+        if (base)
+            _EvalStack.push_back(base);
+        _EvalCallFrame = nullptr;
+    }
+    ~EvalStackSwap() {
+        _EvalStack.swap(saved);
+        _EvalCallFrame = savedCallFrame;
+    }
+};
+
+struct LibraryGlobalsScope {
+    PyObject *savedGlobals;
+    PyObject *savedDict;
+    EvalFrame *savedFrame;
+    LibraryGlobalsScope(PyObject *globals, PyObject *buildDict=nullptr, EvalFrame *buildFrame=nullptr)
+        : savedGlobals(_LibraryGlobals), savedDict(_LibraryBuildDict), savedFrame(_LibraryBuildFrame)
+    {
+        _LibraryGlobals = globals;
+        if (buildDict) {
+            _LibraryBuildDict = buildDict;
+            _LibraryBuildFrame = buildFrame;
+        }
+    }
+    ~LibraryGlobalsScope() {
+        _LibraryGlobals = savedGlobals;
+        _LibraryBuildDict = savedDict;
+        _LibraryBuildFrame = savedFrame;
+    }
+};
+
+} // anonymous namespace
+
+void CallableExpression::setGlobals(PyObject *dict) {
+    Py_XINCREF(dict);
+    Py_XDECREF(globals);
+    globals = dict;
+}
+
+CallableExpression::~CallableExpression() {
+    if (globals) {
+        Base::PyGILStateLocker lock;
+        Py_DECREF(globals);
+    }
+}
+
+Py::Object ExpressionParser::buildLibraryModule(const App::DocumentObject *owner,
+        const std::string &name, const char *text)
+{
+    Base::PyGILStateLocker lock;
+    PyObject *pymod = PyModule_New(name.c_str());
+    if (!pymod)
+        Base::PyException::ThrowException();
+    Py::Object mod(pymod, true);
+    if (!text || !text[0])
+        return mod;
+    ExpressionPtr expr = parse(owner, text);
+    if (!expr)
+        return mod;
+    PyObject *dict = PyModule_GetDict(pymod);
+    // nothing of the evaluation that imported the module is visible to it
+    EvalStackSwap stack(nullptr);
+    EvalFrame frame("<module>");
+    frame.push();
+    {
+        LibraryGlobalsScope scope(dict, dict, &frame);
+        int jumpCode = 0;
+        expr->getPyValue(0, &jumpCode);
+    }
+    for (auto &v : frame.vars) {
+        if (v.second && v.second->obj.ptr()
+                && PyDict_SetItemString(dict, v.first.c_str(), v.second->obj.ptr()) < 0)
+            Base::PyException::ThrowException();
+    }
+    return mod;
+}
+
+std::vector<std::string> ExpressionParser::importedModules(const App::Expression *expr)
+{
+    struct Collector : ExpressionVisitor {
+        std::vector<std::string> names;
+        void add(const std::string &name) {
+            if (std::find(names.begin(), names.end(), name) == names.end())
+                names.push_back(name);
+        }
+        void visit(Expression &e) override {
+            if (auto s = freecad_dynamic_cast<ImportStatement>(&e)) {
+                for (auto &module : s->getModules())
+                    add(module);
+            }
+            else if (auto s = freecad_dynamic_cast<FromStatement>(&e))
+                add(s->getModule());
+        }
+    } collector;
+    if (expr)
+        const_cast<Expression*>(expr)->visit(collector);
+    return collector.names;
+}
+
 Py::Object CallableExpression::evaluate(PyObject *pyargs, PyObject *pykwds) {
 
     if(ftype != FUNC_PARSED)
         PY_THROW("Unexpected callable expression type: " << ftype);
     if(!expr)
         PY_THROW("Invalid callable expression");
+
+    std::unique_ptr<EvalFrame> moduleFrame;
+    std::unique_ptr<EvalStackSwap> moduleStack;
+    std::unique_ptr<LibraryGlobalsScope> moduleScope;
+    if (globals) {
+        EvalFrame *base;
+        if (globals == _LibraryBuildDict && _LibraryBuildFrame) {
+            // called while its module is still being built: the dict is
+            // filled only when the build ends, the frame already binds
+            base = _LibraryBuildFrame;
+        }
+        else {
+            moduleFrame.reset(new EvalFrame);
+            PyObject *key, *value;
+            Py_ssize_t pos = 0;
+            while (PyDict_Next(globals, &pos, &key, &value)) {
+                if (PyUnicode_Check(key))
+                    *moduleFrame->getVar(this, PyUnicode_AsUTF8(key), BindLocalOnly) =
+                        Py::Object(value);
+            }
+            base = moduleFrame.get();
+        }
+        moduleStack.reset(new EvalStackSwap(base));
+        // a def run inside the call belongs to the same module
+        moduleScope.reset(new LibraryGlobalsScope(globals));
+    }
 
     EvalFrame frame(name.c_str(),getOwner());
 
@@ -4758,6 +4918,10 @@ ExpressionPtr CallableExpression::_copy() const {
     copy_vector(res->args,args);
     res->name = name;
     res->ftype = ftype;
+    if (globals) {
+        Base::PyGILStateLocker lock;
+        res->setGlobals(globals);
+    }
     return _res;
 }
 
@@ -6580,6 +6744,8 @@ static Py::Object makeFunc(const Expression *owner,
                                           FunctionExpression::FUNC_PARSED,
                                           std::string(name?name:""),
                                           false);
+    if (_LibraryGlobals)
+        static_cast<CallableExpression*>(res.get())->setGlobals(_LibraryGlobals);
     Py::Object pyobj(new ExpressionPy(res.release()),false);
     if(name && _EvalStack.size()) {
         auto var = _EvalStack.back()->getVar(owner,name,BindLocalOnly);
@@ -6940,6 +7106,48 @@ void ImportStatement::_toString(std::ostream &ss, bool, int) const {
     }
 }
 
+#ifndef FC_EXPR_IMAGE
+/// Importing a library of the owner's document depends on its text and on
+/// the name it answers to (docs/Sandbox.md 7.17 (c)): the DAG orders the
+/// library first, an edit recomputes the consumer, and so does a rename,
+/// after which the import fails as it should.  What the library imports
+/// in turn is followed too: an edit there changes this library's module.
+/// Any other module name adds nothing.
+static void addLibraryIdentifier(const Expression *e, const std::string &module,
+                                 std::map<App::ObjectIdentifier,bool> &deps,
+                                 std::set<const ExpressionLibrary*> *visited = nullptr)
+{
+    auto owner = e->getOwner();
+    if (!owner || !owner->isAttachedToDocument())
+        return;
+    auto lib = ExpressionLibrary::find(owner->getDocument(), module);
+    if (!lib || lib == owner)
+        return;
+    std::set<const ExpressionLibrary*> seen;
+    if (!visited)
+        visited = &seen;
+    if (!visited->insert(lib).second)
+        return;
+    for (const char *prop : {"Text", "Module"}) {
+        ObjectIdentifier id(owner);
+        id.setDocumentObjectName(lib, true);
+        id << ObjectIdentifier::SimpleComponent(prop);
+        deps.emplace(std::move(id), false);
+    }
+    for (auto &name : lib->importedModules())
+        addLibraryIdentifier(e, name, deps, visited);
+}
+#endif
+
+void ImportStatement::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const {
+#ifndef FC_EXPR_IMAGE
+    for (auto &module : modules)
+        addLibraryIdentifier(this, module, deps);
+#else
+    (void)deps;
+#endif
+}
+
 ExpressionPtr ImportStatement::_copy() const {
     _EXPR_NEW(res,ImportStatement,owner);
     res->names = names;
@@ -6998,6 +7206,14 @@ void FromStatement::_toString(std::ostream &ss, bool, int) const {
         if(name.size())
             ss << " as " << name;
     }
+}
+
+void FromStatement::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const {
+#ifndef FC_EXPR_IMAGE
+    addLibraryIdentifier(this, module, deps);
+#else
+    (void)deps;
+#endif
 }
 
 ExpressionPtr FromStatement::_copy() const {
