@@ -39,12 +39,15 @@
 # waits for frames nothing is pumping. Same reason and same shape as
 # scripts/render-test-chess.py.
 #
-# Two things it must do that a naive loop does not:
+# Three things it must do that a naive loop does not:
 #   - force completion per frame. redraw() only schedules, and
 #     bgfx::frame() returns after SUBMISSION, so timing around it ranks
 #     how much a driver postpones rather than what it finishes.
 #     waitFrameComplete() blocks until completeFrames() advances.
 #   - move the camera every frame, so nothing is an unchanged replay.
+#   - wait for the scene to arrive before timing anything. A restored
+#     document parks its visuals on the deferred drain and they land
+#     over seconds of event loop; see settle() and the SETTLE_ vars.
 #
 # Set FC_BGFX_NO_VSYNC for every leg or each returns the refresh
 # interval whatever the scene costs. Name the backend with
@@ -88,6 +91,26 @@ MAXSEC = float(os.environ.get("FC_BENCH_MAX_SECONDS", "60"))
 # only comparable against another leg that came up the same.
 SIZE = os.environ.get("FC_BENCH_SIZE", "1280x720")
 OUT = os.environ.get("FC_BENCH_OUT", "")
+# How long the covered-pixel count must hold STILL before the timed run
+# starts, and how long to wait for that at all. A restored document parks
+# every visual on the deferred drain (Part/Gui/ViewProviderExt.cpp, the
+# shapeMayStillArrive() park), and that drain runs off a QTimer: the
+# geometry arrives over seconds of event loop, not with the open. Frames
+# timed before it lands measure geometry ARRIVING, and an empty viewport
+# is reported as a result.
+#
+# CONTINUOUS seconds, not consecutive equal reads. The count plateaus
+# early and briefly while the handful already built is redrawn, so a
+# "three equal reads" test answered 4557 px on a document that settles
+# at 53350.
+SETTLE_STABLE = float(os.environ.get("FC_BENCH_SETTLE_STABLE", "3"))
+SETTLE_MAX = float(os.environ.get("FC_BENCH_SETTLE_MAX", "120"))
+# FC_BENCH_SETTLE=0 skips the wait entirely and times whatever is on
+# screen one frame after the fit, which is what this harness did before
+# the settle existed. It is there so a pre-settle row can be reproduced
+# against a current binary -- the A/B that tells a harness race apart
+# from a defect in the tree. It is not a configuration to measure in.
+SETTLE = os.environ.get("FC_BENCH_SETTLE", "1") != "0"
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(REPO, "src/3rdParty/MaterialX/resources")
@@ -455,6 +478,63 @@ def open_scene():
     return doc, v, load_s
 
 
+def settle(doc, v):
+    """Pump the event loop until the scene has stopped arriving.
+
+    Two gates, in this order. First every object has a view provider --
+    an object without one has nothing that could draw, and the deferred
+    drain only carries ones that do. Then the covered-pixel count holds
+    still for SETTLE_STABLE continuous seconds.
+
+    Returns (seconds, pixels, frames, why, first_s). `why` is what ended
+    it, so a run that gave up waiting is distinguishable in the output
+    from one that settled -- the difference between "this document draws
+    nothing" and "this harness did not wait long enough" is the whole of
+    the Hier2 question, and it is not visible in any timing number.
+    `first_s` is when the first pixel of geometry appeared, which says
+    the same thing from the other side: a document that draws at once
+    needed no wait, and one that took seconds was arriving, not broken.
+    """
+    t0 = time.perf_counter()
+
+    def pump():
+        # updateGui() as well as the frame wait: the drain's slices run
+        # from a QTimer, so a loop that only waits on frames advances it
+        # one posted event at a time, if at all.
+        v.redraw()
+        v.waitFrameComplete()
+        FreeCADGui.updateGui()
+
+    def covered():
+        try:
+            return int(v.getRenderStats()["geometryPixels"])
+        except Exception:
+            return -1
+
+    while time.perf_counter() - t0 < SETTLE_MAX:
+        if not any(o.ViewObject is None for o in doc.Objects):
+            break
+        pump()
+
+    last, since, frames, first = None, t0, 0, None
+    why = "stationary"
+    while True:
+        pump()
+        frames += 1
+        now = time.perf_counter()
+        px = covered()
+        if first is None and px > 0:
+            first = now - t0
+        if px != last:
+            last, since = px, now
+        elif now - since >= SETTLE_STABLE:
+            break
+        if now - t0 >= SETTLE_MAX:
+            why = "GAVE UP at %.0fs, still moving" % SETTLE_MAX
+            break
+    return time.perf_counter() - t0, last, frames, why, first
+
+
 def bench():
     doc, v, load_s = open_scene()
     # Before any fit: an animated fit is a nested event loop lasting as
@@ -471,9 +551,26 @@ def bench():
     v.setCameraOrientation((0.4247, 0.1759, 0.3389, 0.8226))
     v.fitAll()
     # Let the deferred shapes settle, or the first timed frames measure
-    # geometry ARRIVING rather than drawing. With ProgressiveLoad off
-    # there should be none left, which is the point of turning it off.
-    v.waitFrameComplete()
+    # geometry ARRIVING rather than drawing -- and a document whose
+    # visuals have not landed at all times an EMPTY viewport and reports
+    # it as a result. Turning ProgressiveLoad off does not avoid this: a
+    # restore parks its visuals on the deferred drain whatever that
+    # preference says (shapeMayStillArrive() is true for `Restoring ||
+    # hasDeferredFiles`), so the wait is needed on every restored
+    # document and not only on a progressive load.
+    if SETTLE:
+        settle_s, settle_px, settle_n, settle_why, settle_first =             settle(doc, v)
+        # Fit AGAIN. The first fitAll framed whatever had arrived by
+        # then, which for a restored document is routinely nothing at
+        # all, and a camera staged against an empty scene can leave the
+        # settled geometry off screen -- which reads exactly like a
+        # scene that never drew.
+        v.fitAll()
+        v.waitFrameComplete()
+    else:
+        v.waitFrameComplete()
+        settle_s, settle_px, settle_n = 0.0, -1, 0
+        settle_first, settle_why = None, "OFF (FC_BENCH_SETTLE=0)"
 
     # setCameraOrientation, not the Coin camera node: getCameraNode()
     # hands back a SWIG object and raises "No SWIG wrapped library
@@ -559,6 +656,11 @@ def bench():
             % (rep.complanded, rep.compstale,
                100.0 * rep.compstale / rep.compframes,
                fmt(rep.compmean("latency"), "%.1f")))
+    say("  settle  %.1fs %d frames | first px at %s | %d px when it "
+        "stopped moving | %s"
+        % (settle_s, settle_n,
+           "never" if settle_first is None else "%.1fs" % settle_first,
+           settle_px, settle_why))
     say("  run     frames %d windows %d load %.1fs %s"
         % (n, max(0, rep.windows - 1), load_s,
            os.path.basename(DOC) if DOC else "chess"))

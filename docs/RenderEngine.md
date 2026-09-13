@@ -2562,6 +2562,25 @@ the clock: it attaches a Python console observer
 is what made a 3D table possible on Windows, where a GUI-subsystem
 binary sends none of that to a pipe.
 
+**It also waits for the scene to arrive before timing anything (the
+settle pass, 2026-09-13).** A restored document parks every visual on
+the deferred drain -- `shapeMayStillArrive()` is true while the document
+is `Restoring` or still holds deferred files, whatever
+`Render_ProgressiveLoad` says -- and that drain runs off a `QTimer`, so
+the geometry lands over seconds of event loop and not with the open.
+`settle()` pumps `redraw()` / `waitFrameComplete()` / `updateGui()`
+until every object has a view provider and then until the covered-pixel
+count has held still for `FC_BENCH_SETTLE_STABLE` seconds (3 by
+default), refits, and prints what it waited for: `settle 3.1s 75 frames
+| first px at 0.0s | 51569 px when it stopped moving | stationary`.
+**Continuous seconds, not consecutive equal reads** -- the count
+plateaus early and briefly while the handful already built is redrawn,
+and a three-equal-reads test answered 4557 px on a document that settles
+at 53350. A run that runs out of patience says `GAVE UP`, so "this model
+draws nothing" is distinguishable in the output from "this harness did
+not wait long enough"; `FC_BENCH_SETTLE=0` restores the pre-settle
+behaviour, for reproducing an old row against a current binary.
+
 Windows box (RTX 2000 Ada, GL 4.6 / Vulkan 1.3, driver as of
 2026-09-09), 17000 `Part::Box` objects built in session -- **33.7k
 draws, 877k primitives**, 1280x720, vsync off, one completion barrier
