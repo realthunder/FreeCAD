@@ -11,6 +11,7 @@ import { LoupeOverlay } from './loupe';
 import { OnViewParams } from './onview';
 import type { OnViewParam, OnViewPlace } from './onview';
 import { SplitOverlay } from './splitview';
+import { OmniBox } from './omni';
 import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
 import { sendOp } from './control';
@@ -143,6 +144,22 @@ const askName = () => {
   setClientName(name);
 };
 
+// The omni search box (docs/OmniSearch.md sec 6): '/' with the canvas
+// focused, as on the desktop, and a menu row for a device without a
+// keyboard. The key is read here rather than in the viewer's own
+// handler so that it works before the WASM module is up, and so an
+// input that has the keyboard keeps its slash.
+const [omniOpen, setOmniOpen] = createSignal(false);
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (e.key !== '/' || e.ctrlKey || e.altKey || e.metaKey) return;
+  const el = document.activeElement as HTMLElement | null;
+  const tag = el?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable)
+    return;
+  e.preventDefault();
+  setOmniOpen(true);
+});
+
 // The menu opens the property card on a subject; the counter is what
 // makes asking twice work (see Inspector's request prop).
 const [request, setRequest] = createSignal<{ subject: Subject; n: number }
@@ -260,6 +277,8 @@ render(() => (
                onCardOpen={setCardOpen} viewOnly={viewOnly} />
     <SheetPanel open={sheetOpen} onClose={() => setSheetOpen(false)}
                 viewOnly={viewOnly} doc={() => docs().current} />
+    <OmniBox open={omniOpen} onClose={() => setOmniOpen(false)}
+             selection={selection} viewOnly={viewOnly} />
     <LoupeOverlay mark={loupe} />
     <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
@@ -269,6 +288,7 @@ render(() => (
         ...docItems(),
         { label: 'View & document properties',
           onSelect: () => openCard('viewdoc') },
+        { label: 'Search  /', onSelect: () => setOmniOpen(true) },
         { label: clientName() ? `Name: ${clientName()}` : 'Set name…',
           onSelect: askName },
         { label: 'Spreadsheet',

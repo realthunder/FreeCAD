@@ -102,7 +102,11 @@ public:
   /// a frame does. \a state supplies the three that are read from the
   /// traversal (hidden line, light, autozoom); a headless caller passes
   /// the same GL-free state it traverses with.
-  void pushExternalConfigs(SoState * state);
+  /// Push the per-frame configs into the external backend. \a viewport
+  /// says whether \a state is a viewport's own traversal state; a
+  /// GL-free publish seeds one instead and has no viewer lights in it
+  /// (see RendererBridge::translateViewLightConfig).
+  void pushExternalConfigs(SoState * state, bool viewport);
 
   void setScene(const Gui::CoinPtr<SoFCRenderCache> & cache);
 

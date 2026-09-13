@@ -99,7 +99,10 @@ class ShaderGraphTestCases(unittest.TestCase):
         os.makedirs(picked, exist_ok=True)
         mtlx = os.path.join(picked, "checker.mtlx")
         png = os.path.join(picked, "checker.png")
-        with open(mtlx, "w", encoding="utf-8") as f:
+        # newline="": text mode would write CRLF for every LF on Windows,
+        # and the store keeps the bytes it was handed -- so the graph would
+        # come back carrying the endings the fixture added, not GRAPH.
+        with open(mtlx, "w", encoding="utf-8", newline="") as f:
             f.write(GRAPH)
         with open(png, "wb") as f:
             f.write(PIXELS)

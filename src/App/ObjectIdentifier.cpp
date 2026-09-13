@@ -131,6 +131,7 @@ enum PseudoPropertyType {
     PseudoCollections,
     PseudoGui,
     PseudoCadquery,
+    PseudoViewObject,
     PseudoSubObject,
 };
 
@@ -1548,6 +1549,8 @@ Property *ObjectIdentifier::getProperty(int *ptype) const
 }
 
 static constexpr ObjectIdentifier::PseudoPropertyInfo _pseudoPropertyInfos[] = {
+    {"ViewObject", PseudoViewObject,
+        "Return the view object (view provider) of the (sub)object; None without a GUI"},
     {"_shape",  PseudoShape,
         "Return a geometry shape of the (sub)object using Part.getShape()"},
     {"_pla",    PseudoPlacement,
@@ -2148,6 +2151,9 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
                 pyobj = Py::Matrix(mat);
             break;
         }
+        case PseudoViewObject:
+            pyobj = Py::Object(obj->getPyObject(),true).getAttr("ViewObject");
+            break;
         case PseudoSelf:
         case PseudoSubObject:
             pyobj = Py::Object(obj->getPyObject(),true);

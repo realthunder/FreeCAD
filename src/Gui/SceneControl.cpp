@@ -23,6 +23,9 @@
 
 #include <map>
 
+#include <set>
+#include <vector>
+
 #include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -45,8 +48,11 @@
 #include "Command.h"
 #include "Document.h"
 #include "MirrorViewer.h"
+#include "OmniControl.h"
+#include "OmniSearch.h"
 #include "SceneControl.h"
 #include "SceneWidgets.h"
+#include "SceneControlP.h"
 #include "SceneServeSource.h"
 #include "Selection.h"
 #include "View3DInventor.h"
@@ -57,7 +63,8 @@
 
 using namespace Gui;
 
-namespace {
+namespace Gui {
+namespace SceneControlDetail {
 
 /// The 3D view whose properties the client edits. A request bound to a
 /// served document (\a boundDoc, the group the connection is joined to)
@@ -68,7 +75,7 @@ namespace {
 /// windowed session means it, then the active document's first 3D view,
 /// then the first-served source's container -- the headless case where
 /// nothing was ever activated by a user.
-App::PropertyContainer *sceneView(const std::string &boundDoc = {})
+App::PropertyContainer *sceneView(const std::string &boundDoc)
 {
     if (!boundDoc.empty()) {
         if (auto *doc =
@@ -77,6 +84,8 @@ App::PropertyContainer *sceneView(const std::string &boundDoc = {})
                 return props;
         }
     }
+    if (!Application::Instance)   // a test, or a console session
+        return SceneServeSource::renderProperties();
     if (auto v = dynamic_cast<View3DInventor *>(
                 Application::Instance->activeView()))
         return v;
@@ -105,8 +114,92 @@ std::map<QString, RegisteredOp> &registeredOps()
     return ops;
 }
 
+App::Document *homeDocument(const std::string &boundDoc)
+{
+    // An unnamed document means the one this connection's group serves
+    // when the handler is bound (a headless backend has no meaningful
+    // "active" document); the active document remains the windowed
+    // fallback.
+    if (!boundDoc.empty())
+        return App::GetApplication().getDocument(boundDoc.c_str());
+    return App::GetApplication().getActiveDocument();
+}
+
+bool documentAllowed(App::Document *doc, const std::string &boundDoc)
+{
+    if (!doc)
+        return false;
+    auto home = homeDocument(boundDoc);
+    if (!home)
+        return false;   // nothing to scope to: nothing is in reach
+    if (doc == home)
+        return true;
+    // What the served scene already shows: the documents the home one
+    // links out to, transitively. Walked over the objects' own out-
+    // lists rather than PropertyXLink::getDocumentOutList(), which
+    // knows only links whose target document has a file name -- both
+    // documents unsaved and it would answer nothing, which is when a
+    // link is newest, not when it is least real. The out-lists are
+    // cached on the objects, so this is a walk over pointers.
+    //
+    // The in-list is deliberately not followed: that another document
+    // links *into* this one says nothing about whether this connection
+    // may read it.
+    std::set<App::Document*> seen {home};
+    std::vector<App::Document*> pending {home};
+    while (!pending.empty()) {
+        auto current = pending.back();
+        pending.pop_back();
+        for (auto obj : current->getObjects()) {
+            for (auto dep : obj->getOutList()) {
+                if (!dep || !dep->isAttachedToDocument())
+                    continue;
+                auto other = dep->getDocument();
+                if (!other || !seen.insert(other).second)
+                    continue;
+                if (other == doc)
+                    return true;
+                pending.push_back(other);
+            }
+        }
+    }
+    return false;
+}
+
+App::Document *requestDocument(const QJsonObject &req, const std::string &boundDoc)
+{
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    if (docName.isEmpty())
+        return homeDocument(boundDoc);
+    auto doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    return documentAllowed(doc, boundDoc) ? doc : nullptr;
+}
+
+/// The container a "view3d" subject or target names: the served view,
+/// or with \a req naming a "view" ("View2") that view of the request's
+/// document (docs/OmniSearch.md sec 6). Null with \a code set when
+/// there is none.
+App::PropertyContainer *requestView(const QJsonObject &req, const std::string &boundDoc,
+                                    QString &viewName, const char *&code)
+{
+    viewName = req.value(QLatin1String("view")).toString();
+    code = nullptr;
+    if (viewName.isEmpty() || viewName == QLatin1String("ActiveView")) {
+        viewName.clear();
+        auto view = sceneView(boundDoc);
+        if (!view)
+            code = "no 3D view";
+        return view;
+    }
+    auto doc = requestDocument(req, boundDoc);
+    auto view = doc ? OmniSearch::documentView(doc, viewName.toUtf8().constData()) : nullptr;
+    if (!view)
+        code = "no such view";
+    return view;
+}
+
 QJsonObject errorReply(const QJsonValue &id, const char *code,
-                       const QString &message = QString())
+                       const QString &message)
 {
     QJsonObject reply;
     if (!id.isUndefined())
@@ -280,6 +373,13 @@ void describeContainer(const App::PropertyContainer *container,
     }
 }
 
+} // namespace SceneControlDetail
+} // namespace Gui
+
+namespace {
+
+using namespace Gui::SceneControlDetail;
+
 QJsonObject getProperties(const QJsonObject &req,
                           const std::string &boundDoc)
 {
@@ -291,16 +391,21 @@ QJsonObject getProperties(const QJsonObject &req,
     const QString subject = req.value(QLatin1String("subject")).toString();
 
     if (subject == QLatin1String("view3d")) {
-        auto view = sceneView(boundDoc);
+        QString viewName;
+        const char *why = nullptr;
+        auto view = requestView(req, boundDoc, viewName, why);
         if (!view)
-            return errorReply(id, "UnknownObject", QStringLiteral("no 3D view"));
+            return errorReply(id, "UnknownObject", QString::fromUtf8(why));
         QJsonObject reply;
         reply[QLatin1String("id")] = id;
         reply[QLatin1String("ok")] = true;
         reply[QLatin1String("doc")] = QString();
         reply[QLatin1String("obj")] = QString();
         reply[QLatin1String("subject")] = subject;
-        reply[QLatin1String("label")] = QStringLiteral("3D view");
+        if (!viewName.isEmpty())
+            reply[QLatin1String("view")] = viewName;
+        reply[QLatin1String("label")] = viewName.isEmpty()
+            ? QStringLiteral("3D view") : viewName;
         reply[QLatin1String("type")] =
             QString::fromUtf8(view->getTypeId().getName());
         QJsonArray props;
@@ -309,20 +414,10 @@ QJsonObject getProperties(const QJsonObject &req,
         return reply;
     }
 
-    App::Document *doc = nullptr;
-    const QString docName = req.value(QLatin1String("doc")).toString();
-    // An unnamed document means the one this connection's group serves
-    // when the handler is bound (a headless backend has no meaningful
-    // "active" document); the active document remains the windowed
-    // fallback.
-    if (!docName.isEmpty())
-        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
-    else if (!boundDoc.empty())
-        doc = App::GetApplication().getDocument(boundDoc.c_str());
-    else
-        doc = App::GetApplication().getActiveDocument();
+    App::Document *doc = requestDocument(req, boundDoc);
     if (!doc)
-        return errorReply(id, "UnknownDocument", docName);
+        return errorReply(id, "UnknownDocument",
+                          req.value(QLatin1String("doc")).toString());
 
     if (subject == QLatin1String("document")) {
         QJsonObject reply;
@@ -377,6 +472,11 @@ QJsonObject getProperties(const QJsonObject &req,
     reply[QLatin1String("props")] = props;
     return reply;
 }
+
+} // namespace
+
+namespace Gui {
+namespace SceneControlDetail {
 
 /// Assign \a value to \a prop, mirroring describeProperty's type set.
 /// Returns an error code, or null on success.
@@ -485,6 +585,11 @@ const char *assignProperty(App::Property *prop, const QJsonValue &value)
     return nullptr;
 }
 
+} // namespace SceneControlDetail
+} // namespace Gui
+
+namespace {
+
 QJsonObject setProperty(const QJsonObject &req,
                         const std::string &boundDoc)
 {
@@ -495,11 +600,14 @@ QJsonObject setProperty(const QJsonObject &req,
     // the same property. The 3D view is the one container with no
     // document behind it: its properties are the session's, not the
     // model's, which is also why they are outside the transaction and
-    // the recompute below.
+    // the recompute below. A named "view" is another view of the
+    // request's document, addressed the same way.
     if (target == QLatin1String("view3d")) {
-        auto view = sceneView(boundDoc);
+        QString viewName;
+        const char *why = nullptr;
+        auto view = requestView(req, boundDoc, viewName, why);
         if (!view)
-            return errorReply(id, "UnknownObject", QStringLiteral("no 3D view"));
+            return errorReply(id, "UnknownObject", QString::fromUtf8(why));
         const QByteArray vname =
             req.value(QLatin1String("name")).toString().toUtf8();
         App::Property *vprop = view->getPropertyByName(vname.constData());
@@ -519,20 +627,10 @@ QJsonObject setProperty(const QJsonObject &req,
         return reply;
     }
 
-    App::Document *doc = nullptr;
-    const QString docName = req.value(QLatin1String("doc")).toString();
-    // An unnamed document means the one this connection's group serves
-    // when the handler is bound (a headless backend has no meaningful
-    // "active" document); the active document remains the windowed
-    // fallback.
-    if (!docName.isEmpty())
-        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
-    else if (!boundDoc.empty())
-        doc = App::GetApplication().getDocument(boundDoc.c_str());
-    else
-        doc = App::GetApplication().getActiveDocument();
+    App::Document *doc = requestDocument(req, boundDoc);
     if (!doc)
-        return errorReply(id, "UnknownDocument", docName);
+        return errorReply(id, "UnknownDocument",
+                          req.value(QLatin1String("doc")).toString());
 
     App::PropertyContainer *container = nullptr;
     if (target == QLatin1String("document"))
@@ -919,6 +1017,12 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
                                            bool viewOnly,
                                            uint64_t client)
 {
+    // The catalogs the omni search mirror keeps announce themselves
+    // when they change (docs/OmniSearch.md sec 6). Hooked from here,
+    // not only from installSceneControlHandler(): a served document
+    // routes its requests through its own handler (SceneServeSource),
+    // and the first request is early enough.
+    OmniControl::install();
     QJsonParseError err;
     QJsonDocument parsed = QJsonDocument::fromJson(
             QByteArray(json.data(), int(json.size())), &err);
@@ -941,7 +1045,8 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             || op == QLatin1String("onViewFocus")
             || op == QLatin1String("undo")
             || op == QLatin1String("redo")
-            || (registered != registeredOps().end() && registered->second.mutating);
+            || (registered != registeredOps().end() && registered->second.mutating)
+            || OmniControl::isMutating(op);
         if (viewOnly && mutating)
             reply = errorReply(req.value(QLatin1String("id")), "ViewOnly",
                                QStringLiteral("this connection may not edit"));
@@ -965,6 +1070,8 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             reply = undoRedoOp(req, boundDoc, false);
         else if (op == QLatin1String("redo"))
             reply = undoRedoOp(req, boundDoc, true);
+        else if (OmniControl::handle(op, req, boundDoc, reply))
+            ;
         else
             reply = errorReply(req.value(QLatin1String("id")), "UnknownOp", op);
     }
@@ -977,6 +1084,7 @@ void Gui::installSceneControlHandler(const std::string &docName)
 {
     // the widget stream's ops ride this channel (docs/Sandbox.md 7.18)
     installSceneWidgetOps();
+    OmniControl::install();
     // Installed on the named document's group (empty = the default
     // group). The document is bound by NAME and re-resolved per request
     // on the GUI thread: a queued request must not carry a pointer

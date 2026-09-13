@@ -861,6 +861,85 @@ measured on the tree merged with the Windows box's work. The four:
 
 So macOS joins Linux and Windows: three platforms green on one source.
 
+### 7.8 Compression: permessage-deflate, on the text lane only
+
+Added 2026-09-12. The transport offered no compression at all, which is
+right for the binary lane and wrong for the text one: the control
+channel ships JSON, and the largest JSON it ships is static -- the omni
+search catalogs, which every viewer fetches whole once per session
+(docs/OmniSearch.md sec 6.1).
+
+`wsDeflate()` sets `websocket::permessage_deflate` before
+`ws.async_accept()`, so the extension is negotiated in the handshake
+and a client that does not offer it gets byte-for-byte what it got
+before. Browsers offer it unasked, so the WASM viewer needed no change
+-- it speaks the browser's own `WebSocket`, and the browser inflates.
+
+**Why the text lane only.** Beast's `ws.compress(bool)` is a per-message
+switch, the same shape as `ws.text(bool)`, and the writer already set
+one of those per outbox item. It now sets both from the same test:
+
+```cpp
+c.ws.text(c.outItem.kind == Outgoing::Text);
+c.ws.compress(c.outItem.kind == Outgoing::Text);
+```
+
+A scene snapshot is quantized vertex and index data. Deflate finds
+little in it, and what it would find costs a compression pass **per
+connected viewer, per frame** -- the deflate stream is per connection,
+so five viewers of one document is five passes over the same bytes. The
+catalogs are the opposite case: large, textual, sent once per viewer.
+Compressing what is worth compressing and nothing else took one line,
+so there is no knob to get wrong.
+
+**Measured** over the live socket against a serving desktop
+(2026-09-12, the same dependency-free client as
+docs/OmniSearch.md sec 6.1, extended to speak RFC 7692), Windows box,
+loopback:
+
+| answer | JSON | on the wire | ratio |
+|---|---|---|---|
+| commands catalog, whole (595 rows) | 74,111 | 16,980 | 4.4x |
+| parameter catalog, whole (531 rows) | 281,870 | 60,617 | 4.7x |
+| `getProperties` of one object | 11,934 | 2,524 | 4.7x |
+| either catalog, "current" | 105-107 | 105-107 | raw |
+| `omni.rows`, one key | 44 | 44 | raw |
+
+So the two catalogs a fresh browser fetches fall from 356 KB to 78 KB.
+The same run with the extension not offered returned every one of those
+answers at its full size, unchanged. A binary scene frame arrived with
+RSV1 clear, which is the text-only rule holding.
+
+The cost is on the serving side and is paid once per viewer: the
+parameter catalog answered in 4.1 ms raw and 19.5 ms compressed
+round-trip on loopback, so roughly 15 ms of deflate for 282 KB. Level 6
+is zlib's own default; Beast's 8 buys a few percent for noticeably more
+of that. Memory level 6 and the full 15-bit window put about 140 KB of
+deflate state on each connection, which is the price of keeping
+**context takeover** -- the channel sends many similar small JSON
+objects and a shared window is most of the win on those.
+`msg_size_threshold` of 512 leaves short answers raw, since an ack is
+smaller than the framing the extension would add.
+
+**What is still uncompressed.** The HTTP side sends no
+`Content-Encoding`: the viewer bundle (`serveViewerFile`, env-gated to a
+dev build) and the blob endpoint. The wasm bundle is the largest single
+transfer a browser client makes and is very compressible. Doing it
+means gzipping a response body, and Beast's vendored zlib is raw
+deflate, so it needs either the real zlib (already in the tree) or a
+gzip wrapper by hand. Worth doing; not done here.
+
+**A larger win on the same traffic that is not compression.** The
+viewer caches both catalogs in `localStorage`, keyed by a session id
+that is **a fresh random number per backend process**
+(`OmniControl::sessionId()`). So every restart of the backend throws
+that cache away and resends both lists whole, even though their content
+is almost always identical across restarts. Keying the cache on a
+digest of the catalog content instead -- or letting the request carry
+one the server can compare -- turns a reconnect after a restart into
+the 106-byte "current" answer. That saves more than compressing the
+resend does, and the two compose.
+
 ## 8. Open questions for next session
 
 1. **Where do Windows and macOS get tested?** No Windows or macOS box is

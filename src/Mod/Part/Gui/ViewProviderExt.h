@@ -560,12 +560,14 @@ protected:
     /// and is waiting its slice; a restore asks for the same visual more
     /// than once, and the flag keeps it queued only the first time.
     bool VisualDeferred = false;
-    /// This visual was parked because the shape had not arrived, not
-    /// because a progressive load asked for it. It bounds that park to
-    /// one attempt: if the shape is STILL missing when the slice runs,
-    /// the empty build stands rather than parking again, so a document
-    /// whose content never arrives cannot queue slices forever.
-    bool VisualShapePending = false;
+
+    /// The shape had not arrived when this visual was last asked for, so
+    /// nothing was built and VisualTouched was left standing for the ask
+    /// that lands the content -- finishRestoring(), or the serve that
+    /// announces it. On-demand builders skip it meanwhile: a touched
+    /// visual is what the bounding-box hook builds, and a restore
+    /// traverses the scene many times over.
+    bool VisualShapeMissing = false;
 
     /** Park this shape's visual build instead of building it now.
      *

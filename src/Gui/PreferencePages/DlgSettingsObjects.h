@@ -28,10 +28,10 @@ import DlgSettingsObjects
 DlgSettingsObjects.declare()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:516)
+// Auto generated code (Tools/params_utils.py:544)
 #include <Gui/PropertyPage.h>
 #include <Gui/PrefWidgets.h>
-// Auto generated code (Tools/params_utils.py:523)
+// Auto generated code (Tools/params_utils.py:551)
 class QLabel;
 class QGroupBox;
 
@@ -68,7 +68,7 @@ protected:
 
 private:
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupGroupobjects = nullptr;
     Gui::PrefCheckBox *ClaimAllChildren = nullptr;
     Gui::PrefCheckBox *KeepHiddenChildren = nullptr;
@@ -79,10 +79,10 @@ private:
     Gui::PrefCheckBox *GeoGroupAllowCrossLink = nullptr;
     Gui::PrefCheckBox *CreateGroupInGroup = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupAppLink = nullptr;
     Gui::PrefCheckBox *ShowElement = nullptr;
-// Auto generated code (Tools/params_utils.py:570)
+// Auto generated code (Tools/params_utils.py:598)
 };
 } // namespace Dialog
 } // namespace Gui

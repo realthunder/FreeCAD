@@ -24,6 +24,7 @@
 #ifndef EXPRESSIONCOMPLETER_H
 #define EXPRESSIONCOMPLETER_H
 
+#include <vector>
 #include <QCompleter>
 #include <QLineEdit>
 #include <QObject>
@@ -64,6 +65,16 @@ public:
 
     void setDocumentObject(const App::DocumentObject*, bool checkInList=true);
 
+    /** The objects a leading '.' refers to.
+     *
+     * By default that is the owner object of setDocumentObject(). Set,
+     * the root of the completion lists the properties every one of the
+     * objects has with the same type -- none for an empty list -- and no
+     * sub-objects or elements; a selection of several objects edited
+     * together. The owner object stays what paths are parsed against.
+     */
+    void setLocalObjects(const std::vector<App::DocumentObject*> &objs);
+
     void setNoProperty(bool enabled=true);
 
     void setSearchUnit(bool enabled=true);
@@ -89,6 +100,7 @@ Q_SIGNALS:
 
 private:
     void init();
+    std::vector<App::DocumentObject*> localObjectPointers() const;
     QString pathFromIndex ( const QModelIndex & index ) const override;
     QStringList splitPath ( const QString & path ) const override;
     void showPopup(bool show);
@@ -97,6 +109,8 @@ private:
 
     App::DocumentObjectT currentObj;
     bool checkInList = true;
+    std::vector<App::DocumentObjectT> localObjs;
+    bool localObjsSet = false;
 };
 
 class GuiExport ExpressionLineEdit : public QLineEdit {

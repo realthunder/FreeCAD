@@ -58,10 +58,11 @@ PartGuiParams.define()
 #include <unordered_map>
 #include <App/Application.h>
 #include <App/DynamicProperty.h>
+#include <App/ParamRegistry.h>
 #include "PartParams.h"
 using namespace PartGui;
 
-// Auto generated code (Tools/params_utils.py:209)
+// Auto generated code (Tools/params_utils.py:210)
 namespace {
 class PartParamsP: public ParameterGrp::ObserverType {
 public:
@@ -95,7 +96,7 @@ public:
     long SelectionPickThreshold2;
     bool SelectionPickRTree;
 
-    // Auto generated code (Tools/params_utils.py:253)
+    // Auto generated code (Tools/params_utils.py:254)
     PartParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part");
         handle->Attach(this);
@@ -156,33 +157,29 @@ public:
         funcs["SelectionPickRTree"] = &PartParamsP::updateSelectionPickRTree;
     }
 
-    // Auto generated code (Tools/params_utils.py:283)
-    ~PartParamsP() {
-    }
+    // Auto generated code (Tools/params_utils.py:284)
+    ~PartParamsP() override = default;
 
-    // Auto generated code (Tools/params_utils.py:290)
-    void OnChange(Base::Subject<const char*> &param, const char* sReason) {
-        (void)param;
+    // Auto generated code (Tools/params_utils.py:297)
+    void OnChange(Base::Subject<const char*> &, const char* sReason) override {
         if(!sReason)
             return;
         auto it = funcs.find(sReason);
         if(it == funcs.end())
             return;
         it->second(this);
-        
-        
     }
 
 
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateNormalsFromUVNodes(PartParamsP *self) {
         self->NormalsFromUVNodes = self->handle->GetBool("NormalsFromUVNodes", true);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateTwoSideRendering(PartParamsP *self) {
         self->TwoSideRendering = self->handle->GetBool("TwoSideRendering", true);
     }
-    // Auto generated code (Tools/params_utils.py:318)
+    // Auto generated code (Tools/params_utils.py:322)
     static void updateMinimumDeviation(PartParamsP *self) {
         auto v = self->handle->GetFloat("MinimumDeviation", 0.05);
         if (self->MinimumDeviation != v) {
@@ -190,7 +187,7 @@ public:
             PartParams::onMinimumDeviationChanged();
         }
     }
-    // Auto generated code (Tools/params_utils.py:318)
+    // Auto generated code (Tools/params_utils.py:322)
     static void updateMeshDeviation(PartParamsP *self) {
         auto v = self->handle->GetFloat("MeshDeviation", 0.2);
         if (self->MeshDeviation != v) {
@@ -198,7 +195,7 @@ public:
             PartParams::onMeshDeviationChanged();
         }
     }
-    // Auto generated code (Tools/params_utils.py:318)
+    // Auto generated code (Tools/params_utils.py:322)
     static void updateMeshAngularDeflection(PartParamsP *self) {
         auto v = self->handle->GetFloat("MeshAngularDeflection", 28.65);
         if (self->MeshAngularDeflection != v) {
@@ -206,7 +203,7 @@ public:
             PartParams::onMeshAngularDeflectionChanged();
         }
     }
-    // Auto generated code (Tools/params_utils.py:318)
+    // Auto generated code (Tools/params_utils.py:322)
     static void updateMinimumAngularDeflection(PartParamsP *self) {
         auto v = self->handle->GetFloat("MinimumAngularDeflection", 5.0);
         if (self->MinimumAngularDeflection != v) {
@@ -214,7 +211,7 @@ public:
             PartParams::onMinimumAngularDeflectionChanged();
         }
     }
-    // Auto generated code (Tools/params_utils.py:318)
+    // Auto generated code (Tools/params_utils.py:322)
     static void updateOverrideTessellation(PartParamsP *self) {
         auto v = self->handle->GetBool("OverrideTessellation", false);
         if (self->OverrideTessellation != v) {
@@ -222,67 +219,67 @@ public:
             PartParams::onOverrideTessellationChanged();
         }
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateMapFaceColor(PartParamsP *self) {
         self->MapFaceColor = self->handle->GetBool("MapFaceColor", true);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateMapLineColor(PartParamsP *self) {
         self->MapLineColor = self->handle->GetBool("MapLineColor", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateMapPointColor(PartParamsP *self) {
         self->MapPointColor = self->handle->GetBool("MapPointColor", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateMapTransparency(PartParamsP *self) {
         self->MapTransparency = self->handle->GetBool("MapTransparency", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateAutoGridScale(PartParamsP *self) {
         self->AutoGridScale = self->handle->GetBool("AutoGridScale", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updatePreviewAddColor(PartParamsP *self) {
         self->PreviewAddColor = self->handle->GetUnsigned("PreviewAddColor", 0x64FFFF30);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updatePreviewSubColor(PartParamsP *self) {
         self->PreviewSubColor = self->handle->GetUnsigned("PreviewSubColor", 0xFF646430);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updatePreviewDressColor(PartParamsP *self) {
         self->PreviewDressColor = self->handle->GetUnsigned("PreviewDressColor", 0xFF64FF30);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updatePreviewIntersectColor(PartParamsP *self) {
         self->PreviewIntersectColor = self->handle->GetUnsigned("PreviewIntersectColor", 0x6464FF30);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updatePreviewOnEdit(PartParamsP *self) {
         self->PreviewOnEdit = self->handle->GetBool("PreviewOnEdit", true);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updatePreviewWithTransparency(PartParamsP *self) {
         self->PreviewWithTransparency = self->handle->GetBool("PreviewWithTransparency", true);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateEditOnTop(PartParamsP *self) {
         self->EditOnTop = self->handle->GetBool("EditOnTop", false);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateEditRecomputeWait(PartParamsP *self) {
         self->EditRecomputeWait = self->handle->GetInt("EditRecomputeWait", 300);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateAdjustCameraForNewFeature(PartParamsP *self) {
         self->AdjustCameraForNewFeature = self->handle->GetBool("AdjustCameraForNewFeature", true);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateDefaultDatumColor(PartParamsP *self) {
         self->DefaultDatumColor = self->handle->GetUnsigned("DefaultDatumColor", 0xFFD70066);
     }
-    // Auto generated code (Tools/params_utils.py:318)
+    // Auto generated code (Tools/params_utils.py:322)
     static void updateRespectSystemDPI(PartParamsP *self) {
         auto v = self->handle->GetBool("RespectSystemDPI", false);
         if (self->RespectSystemDPI != v) {
@@ -290,7 +287,7 @@ public:
             PartParams::onRespectSystemDPIChanged();
         }
     }
-    // Auto generated code (Tools/params_utils.py:318)
+    // Auto generated code (Tools/params_utils.py:322)
     static void updateShapeInstancing(PartParamsP *self) {
         auto v = self->handle->GetBool("ShapeInstancing", true);
         if (self->ShapeInstancing != v) {
@@ -298,21 +295,21 @@ public:
             PartParams::onShapeInstancingChanged();
         }
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateSelectionPickThreshold(PartParamsP *self) {
         self->SelectionPickThreshold = self->handle->GetInt("SelectionPickThreshold", 1000);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateSelectionPickThreshold2(PartParamsP *self) {
         self->SelectionPickThreshold2 = self->handle->GetInt("SelectionPickThreshold2", 500);
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateSelectionPickRTree(PartParamsP *self) {
         self->SelectionPickRTree = self->handle->GetBool("SelectionPickRTree", true);
     }
 };
 
-// Auto generated code (Tools/params_utils.py:332)
+// Auto generated code (Tools/params_utils.py:336)
 PartParamsP *instance() {
     static PartParamsP *inst = new PartParamsP;
     return inst;
@@ -320,633 +317,722 @@ PartParamsP *instance() {
 
 } // Anonymous namespace
 
-// Auto generated code (Tools/params_utils.py:343)
+// Auto generated code (Tools/params_utils.py:352)
+static const App::ParamRegistry::Registrar _PartParamsRegistrar({
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "NormalsFromUVNodes", "NormalsFromUVNodes", App::ParamInfo::Bool, true)
+        .setTitle("Normals From UV Nodes"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "TwoSideRendering", "TwoSideRendering", App::ParamInfo::Bool, true)
+        .setTitle("Two Side Rendering"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MinimumDeviation", "MinimumDeviation", App::ParamInfo::Float, 0.05)
+        .setTitle("Minimum Deviation")
+        .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MeshDeviation", "MeshDeviation", App::ParamInfo::Float, 0.2)
+        .setTitle("Mesh Deviation")
+        .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MeshAngularDeflection", "MeshAngularDeflection", App::ParamInfo::Float, 28.65)
+        .setTitle("Mesh Angular Deflection")
+        .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MinimumAngularDeflection", "MinimumAngularDeflection", App::ParamInfo::Float, 5.0)
+        .setTitle("Minimum Angular Deflection")
+        .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "OverrideTessellation", "OverrideTessellation", App::ParamInfo::Bool, false)
+        .setTitle("Override Tessellation")
+        .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapFaceColor", "MapFaceColor", App::ParamInfo::Bool, true)
+        .setTitle("Map Face Color"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapLineColor", "MapLineColor", App::ParamInfo::Bool, false)
+        .setTitle("Map Line Color"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapPointColor", "MapPointColor", App::ParamInfo::Bool, false)
+        .setTitle("Map Point Color"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "MapTransparency", "MapTransparency", App::ParamInfo::Bool, false)
+        .setTitle("Map Transparency"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "AutoGridScale", "AutoGridScale", App::ParamInfo::Bool, false)
+        .setTitle("Auto Grid Scale"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewAddColor", "PreviewAddColor", App::ParamInfo::Hex, 0x64FFFF30)
+        .setTitle("Preview Add Color")
+        .setProxy("Color")
+        .setTransparency(true),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewSubColor", "PreviewSubColor", App::ParamInfo::Hex, 0xFF646430)
+        .setTitle("Preview Sub Color")
+        .setProxy("Color")
+        .setTransparency(true),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewDressColor", "PreviewDressColor", App::ParamInfo::Hex, 0xFF64FF30)
+        .setTitle("Preview Dress Color")
+        .setProxy("Color")
+        .setTransparency(true),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewIntersectColor", "PreviewIntersectColor", App::ParamInfo::Hex, 0x6464FF30)
+        .setTitle("Preview Intersect Color")
+        .setProxy("Color")
+        .setTransparency(true),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewOnEdit", "PreviewOnEdit", App::ParamInfo::Bool, true)
+        .setTitle("Preview On Edit"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "PreviewWithTransparency", "PreviewWithTransparency", App::ParamInfo::Bool, true)
+        .setTitle("Preview With Transparency"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "EditOnTop", "EditOnTop", App::ParamInfo::Bool, false)
+        .setTitle("Edit On Top"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "EditRecomputeWait", "EditRecomputeWait", App::ParamInfo::Int, 300)
+        .setTitle("Edit Recompute Wait"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "AdjustCameraForNewFeature", "AdjustCameraForNewFeature", App::ParamInfo::Bool, true)
+        .setTitle("Adjust Camera For New Feature"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DefaultDatumColor", "DefaultDatumColor", App::ParamInfo::Hex, 0xFFD70066)
+        .setTitle("Default Datum Color")
+        .setProxy("Color")
+        .setTransparency(true),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "RespectSystemDPI", "RespectSystemDPI", App::ParamInfo::Bool, false)
+        .setTitle("Respect System DP I")
+        .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "ShapeInstancing", "ShapeInstancing", App::ParamInfo::Bool, true)
+        .setTitle("Shape Instancing")
+        .setDoc("Share the tessellation of repeated sub-shapes (same TopoDS_TShape)\n"
+"inside a compound and render them as GPU instances. Only takes\n"
+"effect when the renderer supports instanced draws; otherwise the\n"
+"geometry is flattened as before.")
+        .setOnChange(),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "SelectionPickThreshold", "SelectionPickThreshold", App::ParamInfo::Int, 1000)
+        .setTitle("Selection Pick Threshold"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "SelectionPickThreshold2", "SelectionPickThreshold2", App::ParamInfo::Int, 500)
+        .setTitle("Selection Pick Threshold2"),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "SelectionPickRTree", "SelectionPickRTree", App::ParamInfo::Bool, true)
+        .setTitle("Selection Pick RTree")
+        .setDoc("Pick with a per-triangle R-tree instead of walking every\n"
+"triangle of a part. Without it the only spatial filter is the\n"
+"per-part bounding box, so a ray that reaches a dense part\n"
+"sends all of its triangles through Coin's primitive callbacks:\n"
+"on an imported mesh (one part carrying everything) a selecting\n"
+"click cost 116 ms, and 18 ms with this on. The tree is built\n"
+"lazily, per part, on the first pick that reaches it -- that\n"
+"first pick pays about 15 ms more, every one after it is the\n"
+"cheap one. Parts smaller than SelectionPickThreshold2 are\n"
+"picked directly either way."),
+});
+
+// Auto generated code (Tools/params_utils.py:368)
 ParameterGrp::handle PartParams::getHandle() {
     return instance()->handle;
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docNormalsFromUVNodes() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getNormalsFromUVNodes() {
     return instance()->NormalsFromUVNodes;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultNormalsFromUVNodes() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setNormalsFromUVNodes(const bool &v) {
     instance()->handle->SetBool("NormalsFromUVNodes",v);
     instance()->NormalsFromUVNodes = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeNormalsFromUVNodes() {
     instance()->handle->RemoveBool("NormalsFromUVNodes");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docTwoSideRendering() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getTwoSideRendering() {
     return instance()->TwoSideRendering;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultTwoSideRendering() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setTwoSideRendering(const bool &v) {
     instance()->handle->SetBool("TwoSideRendering",v);
     instance()->TwoSideRendering = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeTwoSideRendering() {
     instance()->handle->RemoveBool("TwoSideRendering");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMinimumDeviation() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const double & PartParams::getMinimumDeviation() {
     return instance()->MinimumDeviation;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const double & PartParams::defaultMinimumDeviation() {
     const static double def = 0.05;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMinimumDeviation(const double &v) {
     instance()->handle->SetFloat("MinimumDeviation",v);
     instance()->MinimumDeviation = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMinimumDeviation() {
     instance()->handle->RemoveFloat("MinimumDeviation");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMeshDeviation() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const double & PartParams::getMeshDeviation() {
     return instance()->MeshDeviation;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const double & PartParams::defaultMeshDeviation() {
     const static double def = 0.2;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMeshDeviation(const double &v) {
     instance()->handle->SetFloat("MeshDeviation",v);
     instance()->MeshDeviation = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMeshDeviation() {
     instance()->handle->RemoveFloat("MeshDeviation");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMeshAngularDeflection() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const double & PartParams::getMeshAngularDeflection() {
     return instance()->MeshAngularDeflection;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const double & PartParams::defaultMeshAngularDeflection() {
     const static double def = 28.65;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMeshAngularDeflection(const double &v) {
     instance()->handle->SetFloat("MeshAngularDeflection",v);
     instance()->MeshAngularDeflection = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMeshAngularDeflection() {
     instance()->handle->RemoveFloat("MeshAngularDeflection");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMinimumAngularDeflection() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const double & PartParams::getMinimumAngularDeflection() {
     return instance()->MinimumAngularDeflection;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const double & PartParams::defaultMinimumAngularDeflection() {
     const static double def = 5.0;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMinimumAngularDeflection(const double &v) {
     instance()->handle->SetFloat("MinimumAngularDeflection",v);
     instance()->MinimumAngularDeflection = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMinimumAngularDeflection() {
     instance()->handle->RemoveFloat("MinimumAngularDeflection");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docOverrideTessellation() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getOverrideTessellation() {
     return instance()->OverrideTessellation;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultOverrideTessellation() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setOverrideTessellation(const bool &v) {
     instance()->handle->SetBool("OverrideTessellation",v);
     instance()->OverrideTessellation = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeOverrideTessellation() {
     instance()->handle->RemoveBool("OverrideTessellation");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMapFaceColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getMapFaceColor() {
     return instance()->MapFaceColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultMapFaceColor() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMapFaceColor(const bool &v) {
     instance()->handle->SetBool("MapFaceColor",v);
     instance()->MapFaceColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMapFaceColor() {
     instance()->handle->RemoveBool("MapFaceColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMapLineColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getMapLineColor() {
     return instance()->MapLineColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultMapLineColor() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMapLineColor(const bool &v) {
     instance()->handle->SetBool("MapLineColor",v);
     instance()->MapLineColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMapLineColor() {
     instance()->handle->RemoveBool("MapLineColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMapPointColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getMapPointColor() {
     return instance()->MapPointColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultMapPointColor() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMapPointColor(const bool &v) {
     instance()->handle->SetBool("MapPointColor",v);
     instance()->MapPointColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMapPointColor() {
     instance()->handle->RemoveBool("MapPointColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docMapTransparency() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getMapTransparency() {
     return instance()->MapTransparency;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultMapTransparency() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setMapTransparency(const bool &v) {
     instance()->handle->SetBool("MapTransparency",v);
     instance()->MapTransparency = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeMapTransparency() {
     instance()->handle->RemoveBool("MapTransparency");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docAutoGridScale() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getAutoGridScale() {
     return instance()->AutoGridScale;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultAutoGridScale() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setAutoGridScale(const bool &v) {
     instance()->handle->SetBool("AutoGridScale",v);
     instance()->AutoGridScale = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeAutoGridScale() {
     instance()->handle->RemoveBool("AutoGridScale");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewAddColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const unsigned long & PartParams::getPreviewAddColor() {
     return instance()->PreviewAddColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const unsigned long & PartParams::defaultPreviewAddColor() {
     const static unsigned long def = 0x64FFFF30;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setPreviewAddColor(const unsigned long &v) {
     instance()->handle->SetUnsigned("PreviewAddColor",v);
     instance()->PreviewAddColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removePreviewAddColor() {
     instance()->handle->RemoveUnsigned("PreviewAddColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewSubColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const unsigned long & PartParams::getPreviewSubColor() {
     return instance()->PreviewSubColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const unsigned long & PartParams::defaultPreviewSubColor() {
     const static unsigned long def = 0xFF646430;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setPreviewSubColor(const unsigned long &v) {
     instance()->handle->SetUnsigned("PreviewSubColor",v);
     instance()->PreviewSubColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removePreviewSubColor() {
     instance()->handle->RemoveUnsigned("PreviewSubColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewDressColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const unsigned long & PartParams::getPreviewDressColor() {
     return instance()->PreviewDressColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const unsigned long & PartParams::defaultPreviewDressColor() {
     const static unsigned long def = 0xFF64FF30;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setPreviewDressColor(const unsigned long &v) {
     instance()->handle->SetUnsigned("PreviewDressColor",v);
     instance()->PreviewDressColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removePreviewDressColor() {
     instance()->handle->RemoveUnsigned("PreviewDressColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewIntersectColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const unsigned long & PartParams::getPreviewIntersectColor() {
     return instance()->PreviewIntersectColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const unsigned long & PartParams::defaultPreviewIntersectColor() {
     const static unsigned long def = 0x6464FF30;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setPreviewIntersectColor(const unsigned long &v) {
     instance()->handle->SetUnsigned("PreviewIntersectColor",v);
     instance()->PreviewIntersectColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removePreviewIntersectColor() {
     instance()->handle->RemoveUnsigned("PreviewIntersectColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewOnEdit() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getPreviewOnEdit() {
     return instance()->PreviewOnEdit;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultPreviewOnEdit() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setPreviewOnEdit(const bool &v) {
     instance()->handle->SetBool("PreviewOnEdit",v);
     instance()->PreviewOnEdit = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removePreviewOnEdit() {
     instance()->handle->RemoveBool("PreviewOnEdit");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docPreviewWithTransparency() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getPreviewWithTransparency() {
     return instance()->PreviewWithTransparency;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultPreviewWithTransparency() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setPreviewWithTransparency(const bool &v) {
     instance()->handle->SetBool("PreviewWithTransparency",v);
     instance()->PreviewWithTransparency = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removePreviewWithTransparency() {
     instance()->handle->RemoveBool("PreviewWithTransparency");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docEditOnTop() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getEditOnTop() {
     return instance()->EditOnTop;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultEditOnTop() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setEditOnTop(const bool &v) {
     instance()->handle->SetBool("EditOnTop",v);
     instance()->EditOnTop = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeEditOnTop() {
     instance()->handle->RemoveBool("EditOnTop");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docEditRecomputeWait() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const long & PartParams::getEditRecomputeWait() {
     return instance()->EditRecomputeWait;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const long & PartParams::defaultEditRecomputeWait() {
     const static long def = 300;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setEditRecomputeWait(const long &v) {
     instance()->handle->SetInt("EditRecomputeWait",v);
     instance()->EditRecomputeWait = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeEditRecomputeWait() {
     instance()->handle->RemoveInt("EditRecomputeWait");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docAdjustCameraForNewFeature() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getAdjustCameraForNewFeature() {
     return instance()->AdjustCameraForNewFeature;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultAdjustCameraForNewFeature() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setAdjustCameraForNewFeature(const bool &v) {
     instance()->handle->SetBool("AdjustCameraForNewFeature",v);
     instance()->AdjustCameraForNewFeature = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeAdjustCameraForNewFeature() {
     instance()->handle->RemoveBool("AdjustCameraForNewFeature");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docDefaultDatumColor() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const unsigned long & PartParams::getDefaultDatumColor() {
     return instance()->DefaultDatumColor;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const unsigned long & PartParams::defaultDefaultDatumColor() {
     const static unsigned long def = 0xFFD70066;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setDefaultDatumColor(const unsigned long &v) {
     instance()->handle->SetUnsigned("DefaultDatumColor",v);
     instance()->DefaultDatumColor = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeDefaultDatumColor() {
     instance()->handle->RemoveUnsigned("DefaultDatumColor");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docRespectSystemDPI() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getRespectSystemDPI() {
     return instance()->RespectSystemDPI;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultRespectSystemDPI() {
     const static bool def = false;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setRespectSystemDPI(const bool &v) {
     instance()->handle->SetBool("RespectSystemDPI",v);
     instance()->RespectSystemDPI = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeRespectSystemDPI() {
     instance()->handle->RemoveBool("RespectSystemDPI");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docShapeInstancing() {
     return QT_TRANSLATE_NOOP("PartParams",
 "Share the tessellation of repeated sub-shapes (same TopoDS_TShape)\n"
@@ -955,83 +1041,83 @@ const char *PartParams::docShapeInstancing() {
 "geometry is flattened as before.");
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getShapeInstancing() {
     return instance()->ShapeInstancing;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultShapeInstancing() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setShapeInstancing(const bool &v) {
     instance()->handle->SetBool("ShapeInstancing",v);
     instance()->ShapeInstancing = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeShapeInstancing() {
     instance()->handle->RemoveBool("ShapeInstancing");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docSelectionPickThreshold() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const long & PartParams::getSelectionPickThreshold() {
     return instance()->SelectionPickThreshold;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const long & PartParams::defaultSelectionPickThreshold() {
     const static long def = 1000;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setSelectionPickThreshold(const long &v) {
     instance()->handle->SetInt("SelectionPickThreshold",v);
     instance()->SelectionPickThreshold = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeSelectionPickThreshold() {
     instance()->handle->RemoveInt("SelectionPickThreshold");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docSelectionPickThreshold2() {
     return "";
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const long & PartParams::getSelectionPickThreshold2() {
     return instance()->SelectionPickThreshold2;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const long & PartParams::defaultSelectionPickThreshold2() {
     const static long def = 500;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setSelectionPickThreshold2(const long &v) {
     instance()->handle->SetInt("SelectionPickThreshold2",v);
     instance()->SelectionPickThreshold2 = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeSelectionPickThreshold2() {
     instance()->handle->RemoveInt("SelectionPickThreshold2");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docSelectionPickRTree() {
     return QT_TRANSLATE_NOOP("PartParams",
 "Pick with a per-triangle R-tree instead of walking every\n"
@@ -1046,24 +1132,24 @@ const char *PartParams::docSelectionPickRTree() {
 "picked directly either way.");
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const bool & PartParams::getSelectionPickRTree() {
     return instance()->SelectionPickRTree;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultSelectionPickRTree() {
     const static bool def = true;
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void PartParams::setSelectionPickRTree(const bool &v) {
     instance()->handle->SetBool("SelectionPickRTree",v);
     instance()->SelectionPickRTree = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeSelectionPickRTree() {
     instance()->handle->RemoveBool("SelectionPickRTree");
 }

@@ -424,6 +424,8 @@ SET(Command_CPP_SRCS
     CommandPyImp.cpp
     ShortcutManager.cpp
     CommandCompleter.cpp
+    OmniSearch.cpp
+    OmniSearchBox.cpp
     FileDialogPyImp.cpp
     CommandActionPy.cpp
 )
@@ -435,6 +437,8 @@ SET(Command_SRCS
     CommandT.h
     ShortcutManager.h
     CommandCompleter.h
+    OmniSearch.h
+    OmniSearchBox.h
     CommandActionPy.h
     SandboxGui.h
 )
@@ -945,6 +949,7 @@ SET(View3D_CPP_SRCS
     View3DInventorViewer.cpp
     ViewerContext.cpp
     MirrorViewer.cpp
+    OmniControl.cpp
     SceneControl.cpp
     SceneWidgets.cpp
     View3DInventorRiftViewer.cpp
@@ -978,8 +983,10 @@ SET(View3D_SRCS
     View3DInventorViewer.h
     ViewerContext.h
     MirrorViewer.h
+    OmniControl.h
     SceneControl.h
     SceneWidgets.h
+    SceneControlP.h
     View3DInventorRiftViewer.h
     View3DSettings.h
     CoinRiftWidget.h

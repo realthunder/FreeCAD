@@ -168,6 +168,24 @@ The consumers re-key from "is the server running" to "is *this* document served"
   its container**; a desktop view of the same document reads, but remote edits land on the
   serving container so the republish hook always fires.
 
+### 5.1 A connection sees one document, and what it links out to
+
+Added 2026-09-12. Keying the sources and the containers per document is
+only half of the isolation: the semantic control channel resolves
+whatever document name a request carries, and the omni search grammar
+crosses documents on purpose (`Other#.Comment`,
+`Other#Box.Length`). Until now a viewer joined to one served document
+could read and write every other document the backend had open, which
+makes serving several documents to several people a fiction.
+
+`SceneControlDetail::documentAllowed()` is the gate. A connection
+reaches the document its group serves and, transitively, the documents
+that one links out to -- the external objects its own scene already
+shows -- and nothing else. A name outside that set is answered exactly
+as a name that belongs to no document at all, so the channel says
+nothing about what else is open. The rule, what it costs and what it
+does **not** cover are in [OmniSearch.md](./OmniSearch.md) sec 6.4.
+
 ## 6. The viewer
 
 - `?doc=<name>` in the page URL becomes the hello's `doc`.

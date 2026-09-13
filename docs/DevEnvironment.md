@@ -1552,6 +1552,7 @@ absolute root is written down.
 | FreeCAD fork | `.` (branch `LinkVibe`) |
 | OCCT fork | `..\occt` (branch `LinkVibe-801`) |
 | Coin fork | `..\coin` (branch `LinkVibe`) |
+| pivy fork | `..\pivy` (branch `rt-0.6.10`) |
 | OCCT install | `..\occt\install\win-relwithdebinfo-801` |
 | Coin install | `..\install\coin-win-relwithdebinfo` |
 | FreeCAD build | `build\win-relwithdebinfo-801` |
@@ -2269,7 +2270,7 @@ covered in the next section.
 | `mcp_run.py <script.py>` | run Python inside the *running* FreeCAD over MCP |
 | `run-cycles.cmd` | `run.cmd` plus the two variables Cycles' GPU devices need |
 | `build-occt.cmd` / `build-coin.cmd` | the dependency recipes above, with the suffixes and prefixes filled in |
-| `build-libarea.cmd` / `build-pivy.cmd` | the two from-source packages, with the swig-421 prefix wired in |
+| `build-libarea.cmd` / `build-pivy.cmd` | the two from-source packages. pivy builds on the env's own SWIG -- do not pin it |
 | `configure-fcad.ps1` / `build-fcad.ps1` | the stall-watchdog forms, for a box with the endpoint-security problem |
 | `ctest-fcad.cmd` | `cd` to the build tree and `ctest` through `run.cmd` |
 | `ctest-fcad-cleantmp.cmd` / `pytest-fcad-pty.cmd` | the same with `TMP` redirected, and the Python suite under a ConPTY -- see `docs/Testing.md` |
@@ -2603,18 +2604,57 @@ target, so `ctest` works from the build directory with nothing added;
 
 Draft and Arch import `pivy.coin` at load time, so without pivy those workbenches
 fail to register. There is no pivy source checkout in the layout table by default —
-clone one beside the others:
+clone one beside the others, **from the fork, on `rt-0.6.10`**:
 
 ```bat
-git clone --depth 1 --branch 0.6.10 https://github.com/coin3d/pivy.git ..\pivy
+git clone --branch rt-0.6.10 https://github.com/realthunder/pivy.git ..\pivy
 ```
 
-0.6.10 is the version `pivy-feedstock` packages. The feedstock's two patches do not
-both apply here: `extend_install_rpath.patch` is meaningless on Windows, while
-`windows_cmake_install_path_fix.patch` (upstream `fc622b3b`, one
-`file(TO_CMAKE_PATH ...)` on `PIVY_Python_SITEARCH`) **is** needed — `Python_SITEARCH`
-comes back with backslashes and the `install(DESTINATION)` that consumes it is not
-path-normalised. Apply it to the checkout.
+**Why from source and not the channel's `pivy-rt`** (asked and checked
+2026-09-12). Not for want of reach: `conda.anaconda.org` is still refused
+here -- 443 times out at 25 s while `github.com` answers 200 -- but the Linode
+relay in the [libarea section](#packages-from-the-realthunder-channel) works
+from this box and the channel answers 200 through it. `realthunder/win-64`
+does carry `pivy-rt`. **The published variants are what rule it out:**
+
+| published | this env |
+|---|---|
+| `pivy-rt-0.6.10-py311qt5hb8a8493_3` -- and `_2`, `_1`, all `py311qt5` | python **3.12.14**, qt6 |
+| `python_abi 3.11.* *_cp311`, `qt-main >=5.15.8`, `soqt-rt` | a `cp311` `_coin.pyd` will not import under 3.12, and the Qt5 deps do not belong in a Qt6 env |
+
+`pivy-feedstock` on `LinkVibe` has already fixed the recipe -- the fork's
+`rt-0.6.10` as the source, `swig >=4.5,<4.6` (generation 5, the pairing
+below), Qt and SoQt dropped -- but **nothing has been built from it**: the
+newest artifact on the channel is still build `_3` of the old `py311qt5`
+recipe, while the fixed one starts again at `number: 0`. And when it is
+built it will be **3.13 only** (`skip: true  # [py != 313]`), which this
+3.12 env still cannot install.
+
+So: source here, and revisit when the matrix and this env's python meet. A
+package would be the better answer when they do -- it carries a `conda-meta`
+record, and an untracked hand-placed pivy is exactly why a mismatched one
+could sit here unnoticed.
+
+*** **The two feedstocks are not in step, and `pivy-feedstock`'s own comment
+says they must be.** Read off `LinkVibe` on 2026-09-12:
+`freecad-rt-feedstock` still carries `skip: true  # [py>311]` inside the
+`{% else %}` (Qt5) arm of its Qt switch -- and a conda selector is evaluated
+on the RAW TEXT before jinja removes the branch, so it caps the Qt6 build at
+py311 too -- while `pivy-feedstock` is py313-only. Those two can never
+resolve together. `freecad-rt-feedstock` also leaves `swig` unpinned where
+`pivy-feedstock` pins `>=4.5,<4.6`, which is the same generation hazard this
+section is about, one layer up.
+
+That branch is 0.6.10 -- the version `pivy-feedstock` packages -- plus what the
+other boxes needed, so nothing has to be patched into the checkout by hand any
+more. It carries the Windows site-packages path normalisation (upstream
+`fc622b3b`, one `file(TO_CMAKE_PATH ...)`: `Python_SITEARCH` comes back with
+backslashes and the `install(DESTINATION)` that consumes it is not
+path-normalised), the RPATH extension, a `.gitignore` for the headers the build
+generates into the source tree, and **"Drop Python 2"**, which is what lets the
+env's own SWIG build it (below). Of the feedstock's two patches,
+`extend_install_rpath.patch` is meaningless on Windows and the path fix is in
+the branch.
 
 ```bat
 .conda\run.cmd cmake -G Ninja -B ..\pivy\build\win-relwithdebinfo ^
@@ -2641,30 +2681,67 @@ Two things differ from the feedstock's `bld.bat`:
 - **SoQt is not built here**, so `find_package(SoQt CONFIG)` (not `REQUIRED`) misses
   and `pivy.gui.soqt` is skipped. FreeCAD only ever imports `pivy.coin`, so this
   costs nothing; `PIVY_USE_QT6` is irrelevant while SoQt is absent.
-- **SWIG has to be older than 4.3, and it cannot be the env's.** pivy's
-  typemaps still use the Python 2 spellings -- `PyInt_FromLong`,
-  `PyInt_AsLong`, `PyString_Check` -- which SWIG defined as macros over the
-  Python 3 API in `pyhead.swg` until **4.3.0 dropped Python 2 support and
-  removed them**. Against a newer SWIG the generated `coinPYTHON_wrap.cxx`
-  compiles into a wall of `error C3861: 'PyInt_FromLong': identifier not
-  found`, which reads as a broken checkout rather than a tool version. The env
-  carries 4.5.0, and a downgrade in place is not available -- swig 4.2.1 wants
-  a `pcre2` older than `qt6-main` 6.11.2 allows, so the solve fails outright.
-  Give it its own prefix and name it explicitly, the way `CUDA_BIN_PATH` gets
-  its own:
+- **SWIG is the env's own, and has to be** -- 4.5.0 here, the same one
+  FreeCAD configures against. *** **This is the opposite of what this section
+  said until 2026-09-12, and the old advice had grown teeth.** SWIG shares its
+  type registry through a module in the live interpreter named
+  `swig_runtime_data<GENERATION>`; pivy registers Coin's types into the module
+  ITS swig named and FreeCAD looks them up in the module OURS names. Two
+  generations never meet, and nothing says so until a Coin pointer crosses the
+  boundary at run time and fails with **"No SWIG wrapped library loaded"**,
+  which reads as "pivy is missing" when both are present and healthy.
 
-  ```bat
-  conda create -y -p D:\works\sw\fcad\.conda\swig-421 ^
-      --override-channels -c https://prefix.dev/conda-forge swig=4.2.1
-  :: then add to the configure line
-  ::   -DSWIG_EXECUTABLE=D:/works/sw/fcad/.conda/swig-421/Library/bin/swig.exe
+  The reason a mismatch was ever tolerated here is that pivy's typemaps used
+  the Python 2 spellings -- `PyInt_FromLong`, `PyInt_AsLong`,
+  `PyString_Check` -- which SWIG defined as macros over the Python 3 API in
+  `pyhead.swg` until **4.3.0 dropped Python 2 support and removed them**.
+  Against a newer SWIG the generated `coinPYTHON_wrap.cxx` compiled into a
+  wall of `error C3861: 'PyInt_FromLong': identifier not found`, so this box
+  built pivy with a `swig=4.2.1` in its own `.conda\swig-421` prefix and then
+  pinned FreeCAD's own configure to the same file to match it. **The fork's
+  `rt-0.6.10` removes the cause** (the macOS section below has the commit), so
+  neither half is needed: build pivy with no `-DSWIG_EXECUTABLE` at all, and
+  leave FreeCAD's configure alone. **That prefix was deleted 2026-09-12** --
+  there is nothing left to point a pin at, and recreating it would be a
+  mistake, not a fallback.
+
+  *** **Deleting a conda prefix can fail on files it does not own alone.**
+  `swig-421`'s `zlib.dll` and `libbz2.dll` were hardlinks into the package
+  cache, and so the SAME file as the ones in `.conda\freecad` -- which a
+  `ctest` run had mapped. Windows refuses to unlink a mapped image by any of
+  its names, and reports it as "Access to the path ... is denied", which reads
+  like a permissions problem and is not. Nothing had `swig-421` on its `PATH`;
+  the answer is to stop whatever is using the OTHER prefix and try again.
+
+  *** **`src/Base/swigpyrun.cpp` being checked in does NOT mean the tree never
+  runs SWIG** -- this section used to say so, and that sentence is what made
+  the pin look harmless. `src/Base/CMakeLists.txt` runs
+  `${SWIG_EXECUTABLE} -python -external-runtime` at CONFIGURE time to generate
+  `swigpyrun.h` beside it, and that file is what fixes FreeCAD's generation.
+  Whatever `find_package(SWIG)` resolves to therefore decides one half of the
+  pairing.
+
+  `cMake/FreeCAD_Helpers/SetupSwig.cmake` now derives both halves at configure
+  time -- ours by asking the chosen SWIG for its runtime, pivy's by importing
+  it in the interpreter that will load it -- and FATAL_ERRORs on a mismatch
+  rather than letting the build succeed. The configure summary prints the pair:
+
+  ```
+  -- SWIG:                        4.5.0
+  -- SWIG_runtime:                5 (pivy: 5)
   ```
 
-  Nothing else in the tree runs SWIG -- `src/Base/swigpyrun.cpp` is checked in
-  -- so the env's own copy exists only to satisfy the `find_package(SWIG)` in
-  the configure summary, and its version does not matter.
+  If those two numbers ever differ, rebuild pivy (`..\tools\build-pivy.cmd`)
+  rather than pinning SWIG back down. A standing build tree keeps whatever
+  `SWIG_EXECUTABLE` it was first given, so unpin an existing one explicitly:
 
-`_coin.pyd` links `Coin4.lib` and needs `Coin4.dll` at runtime, which is the same
+  ```bat
+  .conda\run.cmd cmake -U SWIG_EXECUTABLE -U SWIG_DIR -U SWIG_VERSION ^
+      build\win-relwithdebinfo-801
+  ```
+
+`_coin.pyd` links `CoinRT4.lib` and needs `CoinRT4.dll` at runtime (the fork's
+Coin renames the library), which is the same
 no-rpath problem as everything else — the `.pth` in the section below already covers
 it, and `run.cmd`'s `PATH` covers a plain `python -c "from pivy import coin"`.
 
@@ -2705,6 +2782,43 @@ In the FreeCAD tree (all committed since; the list is kept for the reasoning):
 Unfixed, noticed in passing: `AppPartPy.cpp:380` formats a `size_t` hash with `%x`,
 truncating it on any 64-bit target (`C4477`). Equally wrong on Linux; changing it
 would alter generated feature labels on both platforms, so it is left alone.
+
+### Long paths, and the two things that have to be true
+
+A path past `MAX_PATH` (260 characters) is reachable from the plain wide Win32
+calls only when **both** of these hold, and each is silent about the other:
+
+1. The machine has
+   `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled` set to
+   1. This box does; a stock Windows 10/11 install does not.
+2. The **process** declares `longPathAware` in its manifest.
+
+Point 2 was missing until 2026-09-12, and the way it showed up is worth
+remembering, because it looks like a code bug: the conda env's `python.exe`
+wrote a 281-character path happily while `FreeCADCmd.exe` raised
+`FileNotFoundError` on the same string. `python.exe` ships the manifest;
+FreeCAD's executables had none, and the linker's default manifest does not
+include the setting. `src/Main/res/FreeCAD.manifest` now supplies it, listed
+as a **source file** on `FreeCADMain` and `FreeCADMainCmd` -- not as
+`/MANIFEST:EMBED` + `/MANIFESTINPUT:`, which collides with the mt.exe step
+CMake already runs between its two link passes (`CVT1100: duplicate
+resource`). Two further traps: an XML comment may not contain two hyphens in a
+row, which this tree's prose style puts everywhere and which mt.exe rejects
+the whole file for (`c1010070`); and `.gitignore` has `*.manifest` for the
+generated ones, so the shipped one needs its own negation or it is invisible
+to `git status`.
+
+Because point 1 is a machine setting and not something a released build can
+rely on, `Base::FileInfo::toStdWString()` also rewrites an over-long path into
+its `\\?\` form, which needs neither the registry key nor the manifest. It is
+applied only to a fully qualified path that needs no normalising, and only
+past `MAX_PATH - 12` (where `CreateDirectoryW` stops, not `MAX_PATH`) --
+behind that prefix Windows does no normalisation at all, so `.` and `..`
+would become literal names.
+
+What found all of this was the Python suite: `FileBlobs.BlobNamingCases`, two
+cases about a 250-character blob name. `docs/Testing.md`, "Python on Windows",
+has the account of that and the two other Windows-only defects beside it.
 
 ### Python cannot find the OCCT/Coin DLLs — `PATH` is not enough
 
@@ -2987,6 +3101,105 @@ which the WinDbg package does not include, or the IFEO registry keys — both ad
 MSVC's ASan, `/fsanitize=address`, which is compatible with `/MD` and with
 RelWithDebInfo. Neither has been tried here yet.
 
+### The WASM viewer on Windows
+
+Set up 2026-09-12; before that the browser tier could only be built on
+the Linux box, and **that is how two compile breakages accumulated with
+nothing saying so** -- exactly the failure
+[SceneStreaming.md](./SceneStreaming.md) records from the last time this
+tier went unbuilt. Both are fixed (`5a7a202451`).
+
+**emsdk.** Clone it beside the other forks (mirroring the Linux box's
+`~/works/sw/emsdk`) and install 6.0.9:
+
+    git clone https://github.com/emscripten-core/emsdk.git D:\works\sw\emsdk
+
+`emsdk.bat` cannot be used to bootstrap here. It ignores `EMSDK_PY` --
+it *sets* that itself -- looks for a bundled python that the first
+install is what creates, and falls back to `python` on PATH, which on
+this box is the Microsoft Store stub. It fails with "Python was not
+found" and installs nothing. Drive `emsdk.py` with the conda python for
+the first install instead:
+
+    .conda\freecad\python.exe D:\works\sw\emsdk\emsdk.py install latest
+    .conda\freecad\python.exe D:\works\sw\emsdk\emsdk.py activate latest
+
+After that emsdk has its own python (3.13.3) and node (24.19.0), so
+`emsdk_env.bat` works normally. The download is about 720 MB and the
+tree about 2.5 GB; the 654 MB LLVM zip takes several minutes to unpack,
+during which the log says nothing -- watch the file count under
+`upstream`, not the log.
+
+**Node comes from emsdk** -- there is no separate node on this box, and
+none is needed. The viewer's DOM UI bundle builds with it natively in
+under a second, and **native rollup loads fine on Windows**, so the WSL
+detour and the `rollup@npm:@rollup/wasm-node` swap that
+[OmniSearch.md](./OmniSearch.md) sec 6.3 records for this box are not
+needed for the viewer build. `npm ci` leaves `package-lock.json`
+untouched, so the tree stays clean.
+
+**Configure and build.** cmake and ninja come from the conda env; the
+host `shaderc` the essl pack needs is already in the desktop build tree,
+so nothing extra is built for it. The `FCVIEWER_SHADERC` default in
+`src/Gui/Renderer/wasm/CMakeLists.txt` is a Linux `conda-debug` path, so
+it has to be given here, and so do the node paths, since neither is on
+PATH by default:
+
+    call D:\works\sw\emsdk\emsdk_env.bat
+    emcmake .conda\freecad\Library\bin\cmake.exe ^
+      -S src/Gui/Renderer/wasm -B build/wasm -G Ninja ^
+      -DCMAKE_MAKE_PROGRAM=.conda\freecad\Library\bin\ninja.exe ^
+      -DCMAKE_BUILD_TYPE=Release ^
+      -DFCVIEWER_SHADERC=build/win-relwithdebinfo-801/src/3rdParty/bgfx/cmake/bgfx/shaderc.exe ^
+      -DFCVIEWER_NPM=D:/works/sw/emsdk/node/24.19.0_64bit/npm.cmd ^
+      -DFCVIEWER_NODE=D:/works/sw/emsdk/node/24.19.0_64bit/node.exe
+    .conda\freecad\Library\bin\cmake.exe --build build/wasm
+
+214 targets, a few minutes. Output: `build/wasm/fcviewer.html`, `.js`,
+`.wasm`, `.data` and `.stamp`, 94 compiled essl shaders under
+`build/wasm/assets/shaders/essl`, and the DOM bundle in
+`build/wasm/web`.
+
+**The endpoint-security stall reaches this too** (see "When processes
+start and then never run" above): a freshly installed `clang.exe` sat in
+a zero-CPU wait inside a `try_compile`, so the first configure never
+finished. The remedy is the same watchdog -- kill the attempt, start
+again, because CMake keeps every completed test and ninja keeps every
+finished object. It cleared on the second attempt.
+
+**Serving the page.** Point the desktop at the bundle and one port
+carries the page, the scene stream and the blobs:
+
+    set FC_BGFX_VIEWER_BUILD=D:\works\sw\fcad\build\wasm
+    (then Gui.serveDocument(doc, 18765) from a -M driver module)
+    http://127.0.0.1:18765/fcviewer.html
+
+**Driving it in a browser.** Chrome is installed, and `puppeteer-core`
+against it is enough -- plain `puppeteer` would download a second
+Chrome. `scripts/wasm-chrome.js` is the Linux harness and its "real"
+tier is WSLg-specific, so on Windows use its headless shape:
+`--enable-unsafe-swiftshader --use-angle=swiftshader`. Two things that
+cost time here, both about software rendering rather than about the
+viewer:
+
+- **A populated scene starves the main thread.** Under swiftshader,
+  `page.mouse` / `page.keyboard` and even `page.evaluate` can wait
+  minutes for a slot -- the first attempt sat on a single
+  `page.mouse.click` for three minutes. Do the DOM interaction *before*
+  the scene lands, keep the viewport small, and pass `?msaa=0`. Wrap
+  every `evaluate` in a timeout, or a hung call is indistinguishable
+  from a hung page.
+- **Synthesize DOM events rather than using CDP input.** The omni box
+  opens on a `window` keydown listener (`main.tsx`), and its input is a
+  controlled solid-js input, so dispatching a `KeyboardEvent` and
+  setting `.value` plus an `input` event is the whole of driving it.
+
+Verified end to end on 2026-09-12 against a desktop serving one document
+with two others open: the page boots, WebGL2 comes up, the WebSocket
+connects, a snapshot applies (9 draws), the build stamp is read back,
+and the omni box answers objects, commands, parameters, object members
+and `Doc#.` document properties with no page errors.
+
 ### Current state / what is not done yet
 
 - OCCT `LinkVibe-801` and Coin `LinkVibe` build and install cleanly; both are on the
@@ -3223,7 +3436,9 @@ meant (`PyLong_*`, and `PyBytes_Check` for the one `PyString_Check` in
 `SbImage.i`), `interfaces/coin2.i` and `soqt2.i` -- the Python 2 module
 variants -- deleted, and `setup.py` always passing `-py3`. It builds
 clean on swig 4.5.1 and is what the other boxes should take when their
-swig moves.
+swig moves. **Windows took it 2026-09-12** and deleted the `swig-421`
+prefix it had been building pivy with; see the SWIG bullet under
+"Building pivy" for what that pin had cost.
 
 *** **ninja does not re-run swig when an interface file changes.** The
 dependency is not tracked, so an edit to `interfaces/*.i` recompiles the

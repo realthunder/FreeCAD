@@ -151,7 +151,7 @@ protected:
     SheetParams.declare_edit_modes_actions()
     ]]]*/
 
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:197)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:217)
     QAction *actionEditNormal;
     QAction *actionEditButton;
     QAction *actionEditCombo;

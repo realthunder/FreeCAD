@@ -167,7 +167,7 @@ public:
     SheetParams.declare_edit_modes()
     ]]]*/
 
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:96)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:116)
     enum EditMode {
         EditNormal = 0,
         EditButton = 1,
@@ -181,7 +181,7 @@ public:
         EditModeMax,
     };
 
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:105)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:125)
     static const char *editModeName(EditMode mode);
     static const char *editModeLabel(EditMode mode);
     static const char *editModeToolTips(EditMode mode);

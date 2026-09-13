@@ -100,6 +100,15 @@ class ParamTargetCombo(ParamProxy):
             cog.out(f"""
     hint{param.name}->setText(QObject::tr("{self.hint}"));""")
 
+    # To the registry this is a plain combo box whose stored value is the
+    # item data, so an editor built from it writes the word too.
+    RegistryName = "ComboBox"
+
+    def registry_fields(self, param):
+        items = ', '.join(f'{{"{text}", "", "{value}"}}' for value, text in self.items)
+        return (super().registry_fields(param)
+                + '\n        .setItems({' + items + '}, true, true)')
+
 
 Params = [
     ParamString('DocumentTarget', "Tab", title="New documents open in",

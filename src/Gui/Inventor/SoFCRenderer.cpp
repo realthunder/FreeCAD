@@ -2721,7 +2721,7 @@ SoFCRendererP::renderTransparency(SoGLRenderAction * action,
 }
 
 void
-SoFCRenderer::pushExternalConfigs(SoState * state)
+SoFCRenderer::pushExternalConfigs(SoState * state, bool viewport)
 {
   // The hidden-line draw style configuration lives in the traversal state
   // and is resolved per render; mirror it to the external backend (which
@@ -2754,7 +2754,7 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
         RendererBridge::translateLightConfig(state,
                                              PRIVATE(this)->externalview));
     PRIVATE(this)->external->setViewLightConfig(
-        RendererBridge::translateViewLightConfig(state));
+        RendererBridge::translateViewLightConfig(state, viewport));
     PRIVATE(this)->external->setVolumetricConfig(
         RendererBridge::translateVolumetricConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setWaterConfig(
@@ -2860,7 +2860,7 @@ SoFCRenderer::render(SoGLRenderAction * action)
   // Drawing the frame from the state the stages above produced.
   Gui::RenderTiming::Scope timing(Gui::RenderTiming::Submit);
 
-  pushExternalConfigs(action->getState());
+  pushExternalConfigs(action->getState(), true);
 
   // When an external backend has rendered the current scene (it draws into
   // the framebuffer before the Coin traversal), skip the internal

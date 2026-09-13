@@ -24,11 +24,58 @@
 #define GUI_COMMAND_COMPLETER_H
 
 #include <FCGlobal.h>
+#include <QAbstractListModel>
 #include <QCompleter>
 
 class QLineEdit;
 
 namespace Gui {
+
+class Command;
+
+/** A flat model of every registered command.
+ *
+ * One row per command, in command-name order. The list is shared by every
+ * instance and rebuilt when the command manager's revision changes or a
+ * shortcut is reassigned; call update() before showing it. Rows carry
+ * the title, the internal name and the shortcut in their display text --
+ * what the command completer matches on -- and the extra roles a richer
+ * presentation needs.
+ */
+class GuiExport CommandListModel : public QAbstractListModel
+{
+    Q_OBJECT
+public:
+    enum Roles {
+        /// QByteArray, the internal command name
+        CommandNameRole = Qt::UserRole,
+        /// QString, the menu title without mnemonic
+        TitleRole,
+        /// QString, the translated tool tip text
+        DescriptionRole,
+        /// QString, the shortcut in native text, empty when none
+        ShortcutRole,
+        /// bool, whether the command owns a group of child actions
+        IsGroupRole,
+        /// bool, Command::isActive() at the time of asking
+        IsActiveRole,
+        /// QString, title + name + shortcut + description, for keyword filters
+        SearchTextRole,
+    };
+
+    explicit CommandListModel(QObject *parent = nullptr);
+
+    /// Rebuild the rows if the command manager or a shortcut has changed
+    void update();
+
+    Command *command(const QModelIndex &index) const;
+
+    QVariant data(const QModelIndex &index, int role) const override;
+    int rowCount(const QModelIndex &parent = QModelIndex()) const override;
+
+private:
+    int revision = 0;
+};
 
 /**
  * Command name auto completer.

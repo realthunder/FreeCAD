@@ -50,7 +50,7 @@ namespace Gui {
 /// \a client is the connection the request arrived on, which the ops
 /// that need a view -- entering an edit mode -- resolve to that
 /// client's mirror viewer (docs/ThinClient.md sec 8.9 step 4).
-std::string handleSceneControlRequest(const std::string &json,
+GuiExport std::string handleSceneControlRequest(const std::string &json,
                                       const std::string &boundDoc = {},
                                       bool viewOnly = false,
                                       uint64_t client = 0);
@@ -94,7 +94,7 @@ GuiExport QJsonObject sceneControlError(const QJsonValue &id,
 /// Idempotent; safe to call whenever a serving renderer comes up.
 /// \a docName installs on that document's server group and binds the
 /// handler to it; empty installs on the default group, unbound.
-void installSceneControlHandler(const std::string &docName = {});
+GuiExport void installSceneControlHandler(const std::string &docName = {});
 
 } // namespace Gui
 

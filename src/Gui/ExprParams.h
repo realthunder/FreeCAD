@@ -28,11 +28,11 @@ import ExprParams
 ExprParams.declare()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:68)
+// Auto generated code (Tools/params_utils.py:82)
 #include <Base/Parameter.h>
 
 
-// Auto generated code (Tools/params_utils.py:74)
+// Auto generated code (Tools/params_utils.py:90)
 namespace Gui {
 /** Convenient class to obtain expression related parameters
 
@@ -68,7 +68,7 @@ class GuiExport ExprParams {
 public:
     static ParameterGrp::handle getHandle();
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CompleterCaseSensitive
     ///
@@ -80,7 +80,7 @@ public:
     static const char *docCompleterCaseSensitive();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CompleterMatchExact
     ///
@@ -92,7 +92,7 @@ public:
     static const char *docCompleterMatchExact();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CompleterUnfiltered
     ///
@@ -104,7 +104,7 @@ public:
     static const char *docCompleterUnfiltered();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter NoSystemBackground
     ///
@@ -116,7 +116,7 @@ public:
     static const char *docNoSystemBackground();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditorTrigger
     ///
@@ -128,7 +128,7 @@ public:
     static const char *docEditorTrigger();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoHideEditorIcon
     ///
@@ -140,7 +140,7 @@ public:
     static const char *docAutoHideEditorIcon();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AllowReturn
     ///
@@ -152,7 +152,7 @@ public:
     static const char *docAllowReturn();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EvalFuncOnEdit
     ///
@@ -164,7 +164,7 @@ public:
     static const char *docEvalFuncOnEdit();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditDialogWidth
     static const long & getEditDialogWidth();
@@ -174,7 +174,7 @@ public:
     static const char *docEditDialogWidth();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditDialogHeight
     static const long & getEditDialogHeight();
@@ -184,7 +184,7 @@ public:
     static const char *docEditDialogHeight();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditDialogTextHeight
     static const long & getEditDialogTextHeight();
@@ -194,7 +194,7 @@ public:
     static const char *docEditDialogTextHeight();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:118)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditDialogBGAlpha
     ///
@@ -206,7 +206,7 @@ public:
     static const char *docEditDialogBGAlpha();
     //@}
 
-// Auto generated code (Tools/params_utils.py:146)
+// Auto generated code (Tools/params_utils.py:179)
 }; // class ExprParams
 } // namespace Gui
 //[[[end]]]

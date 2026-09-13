@@ -39,12 +39,15 @@
 # waits for frames nothing is pumping. Same reason and same shape as
 # scripts/render-test-chess.py.
 #
-# Two things it must do that a naive loop does not:
+# Three things it must do that a naive loop does not:
 #   - force completion per frame. redraw() only schedules, and
 #     bgfx::frame() returns after SUBMISSION, so timing around it ranks
 #     how much a driver postpones rather than what it finishes.
 #     waitFrameComplete() blocks until completeFrames() advances.
 #   - move the camera every frame, so nothing is an unchanged replay.
+#   - wait for the scene to arrive before timing anything. A restored
+#     document parks its visuals on the deferred drain and they land
+#     over seconds of event loop; see settle() and the SETTLE_ vars.
 #
 # Set FC_BGFX_NO_VSYNC for every leg or each returns the refresh
 # interval whatever the scene costs. Name the backend with
@@ -53,11 +56,12 @@
 # and none of them reaches the screen -- they render and capture, and
 # Coin draws the viewport. That does not affect what is measured here.
 #
-# On Linux run a non-GL leg under QT_QPA_PLATFORM=xcb. On Qt Wayland the
-# never-shown window bgfx presents into is an unmapped wl_surface, and
-# Mesa's Wayland WSI in FIFO mode waits forever for a frame callback it
-# will never get -- the GUI freezes at zero CPU inside present. An
-# unmapped X11 window completes the present as skipped.
+# Any Qt platform plugin works for a non-GL leg on Linux since RemoteEdit
+# e08ebea685 made those backends headless. Before it such a leg had to run
+# under QT_QPA_PLATFORM=xcb: on Qt Wayland the never-shown window bgfx
+# presented into was an unmapped wl_surface, and Mesa's WSI waited forever
+# in FIFO mode for a frame callback that never came -- the GUI froze at
+# zero CPU inside present (607fc43a19).
 #
 # One leg, on Windows:
 #
@@ -94,6 +98,32 @@ MAXSEC = float(os.environ.get("FC_BENCH_MAX_SECONDS", "60"))
 # only comparable against another leg that came up the same.
 SIZE = os.environ.get("FC_BENCH_SIZE", "1280x720")
 OUT = os.environ.get("FC_BENCH_OUT", "")
+# How long the covered-pixel count must hold STILL before the timed run
+# starts, and how long to wait for that at all. A restored document parks
+# every visual on the deferred drain (Part/Gui/ViewProviderExt.cpp, the
+# shapeMayStillArrive() park), and that drain runs off a QTimer: the
+# geometry arrives over seconds of event loop, not with the open. Frames
+# timed before it lands measure geometry ARRIVING, and an empty viewport
+# is reported as a result.
+#
+# CONTINUOUS seconds, not consecutive equal reads. The count plateaus
+# early and briefly while the handful already built is redrawn, so a
+# "three equal reads" test answered 4557 px on a document that settles
+# at 53350.
+# The names and the semantics are shared with the settle pass written
+# independently on RemoteEdit (515a9e8482), so a merge gets one settle
+# and not two: FC_BENCH_SETTLE is the SECONDS CAP, and 0 turns the wait
+# off altogether; QUIET is how long the covered-pixel count must hold
+# still; MIN is the floor it may not exit before.
+SETTLE_MAX = float(os.environ.get("FC_BENCH_SETTLE", "120"))
+SETTLE_STABLE = float(os.environ.get("FC_BENCH_SETTLE_QUIET", "5"))
+SETTLE_MIN = float(os.environ.get("FC_BENCH_SETTLE_MIN", "8"))
+# FC_BENCH_SETTLE=0 skips the wait entirely and times whatever is on
+# screen one frame after the fit, which is what this harness did before
+# the settle existed. It is there so a pre-settle row can be reproduced
+# against a current binary -- the A/B that tells a harness race apart
+# from a defect in the tree. It is not a configuration to measure in.
+SETTLE = SETTLE_MAX > 0
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(REPO, "src/3rdParty/MaterialX/resources")
@@ -457,9 +487,10 @@ def open_scene():
     FreeCADGui.ActiveDocument = gdoc
     v = gdoc.ActiveView
     # ActiveView answers for whatever MDI window has focus, which at
-    # startup can be the Start page: one leg failed on
+    # startup can be the Start page: a leg on RemoteEdit failed on
     # "'Gui.MDIView' object has no attribute 'setAnimationEnabled'"
-    # before timing a frame. Ask for the document's 3D views instead.
+    # before timing a frame (607fc43a19). Ask for the document's own 3D
+    # views instead.
     if v is None or not hasattr(v, "setAnimationEnabled"):
         views = gdoc.mdiViewsOfType("Gui::View3DInventor")
         v = views[0] if views else gdoc.createView("Gui::View3DInventor")
@@ -468,80 +499,85 @@ def open_scene():
     return doc, v, load_s
 
 
-def settle_scene(doc, v):
-    """Wait until the document's visuals actually exist.
+def settle(doc, v):
+    """Pump the event loop until the scene has stopped arriving.
 
-    A RESTORED document does not have them when openDocument() returns.
-    Measured on a 17800-object STEP assembly: 0 view providers at that
-    moment, all 17800 about five seconds later -- and they arrive only
-    while the Qt event loop runs. waitFrameComplete() does not service
-    that build (it blocks on the renderer), so staging straight into the
-    timed loop measured an empty viewport: 54 draws and 0.5% coverage of
-    a model that covers 10.5% once it has arrived. The guard at the end
-    of bench() reports that after the fact; this is what prevents it.
+    Three gates. First every object has a view provider -- an object
+    without one has nothing that could draw, and the deferred drain only
+    carries ones that do. Then the covered-pixel count holds still for
+    SETTLE_STABLE continuous seconds, AND the drain says it has stopped
+    building: a count stationary at ZERO reads the same whether the
+    drain has finished and the scene is empty or the drain has not
+    produced anything yet, which on a 17k-object assembly is minutes of
+    difference (MiSTer.FCStd loads in 378 s on this box).
 
-    Two stages, because they finish at different times. The view
-    providers are a countable, exact condition. The geometry they then
-    push to the backend is not, so that half settles on the frame's own
-    draw count holding still.
-
-    Without it the script staged by LUCK: waitFrameComplete() pumps the
-    event loop itself (it loops on processEvents until one frame lands),
-    so each of the 30 warmup frames donates one frame-time of drain --
-    about 6.6 s on a 221 ms GL frame but only 2.7 s at 90 ms. Whether
-    that covers the drain is a race between frame time and load, which
-    is why the same document staged on one leg and not the next, and why
-    the faster backend was the likelier to come up empty.
-
-    FC_BENCH_SETTLE=0 skips it (a scene built in session needs none);
-    the value is the seconds cap, not a sleep -- it returns as soon as
-    the scene stops growing.
+    Returns (seconds, pixels, frames, why, first_s). `why` is what ended
+    it, so a run that gave up waiting is distinguishable in the output
+    from one that settled -- the difference between "this document draws
+    nothing" and "this harness did not wait long enough" is the whole of
+    the Hier2 question, and it is not visible in any timing number.
+    `first_s` is when the first pixel of geometry appeared, which says
+    the same thing from the other side: a document that draws at once
+    needed no wait, and one that took seconds was arriving, not broken.
     """
-    cap = float(os.environ.get("FC_BENCH_SETTLE", "120"))
-    if cap <= 0:
-        return
     t0 = time.perf_counter()
-    total = len(doc.Objects)
-    while time.perf_counter() - t0 < cap:
-        FreeCADGui.updateGui()
-        if sum(1 for o in doc.Objects if o.ViewObject is not None) >= total:
-            break
-    built = time.perf_counter() - t0
-    # Now the drawables. `geometryPixels` is the covered-pixel count the
-    # end-of-run guard already reads -- the draw count on the report
-    # line is not available here, that one is parsed out of the engine's
-    # console output. getRenderStats() can exceed its capture budget on
-    # a frame this size, which says nothing about the document, so a
-    # failed read is a retry rather than an answer.
-    #
-    # ! Stability is measured in CONTINUOUS SECONDS, not in consecutive
-    # reads. The pixel count plateaus early and briefly -- the handful
-    # of objects already built draw the same frame several times while
-    # the rest are still arriving -- and a three-reads rule exits on
-    # that plateau. Two runs of this leg settled at 4557 px and at
-    # 53350 px from the identical document, which is the shape of a
-    # convergence test that is really a race.
-    quiet = float(os.environ.get("FC_BENCH_SETTLE_QUIET", "5"))
-    floor = float(os.environ.get("FC_BENCH_SETTLE_MIN", "8"))
-    last, changed = -1, time.perf_counter()
-    while True:
-        now = time.perf_counter()
-        if now - t0 >= cap:
-            break
-        if now - t0 >= floor and now - changed >= quiet and last > 0:
-            break
-        FreeCADGui.updateGui()
+
+    def pump():
+        # updateGui() as well as the frame wait: the drain's slices run
+        # from a QTimer, so a loop that only waits on frames advances it
+        # one posted event at a time, if at all.
         v.redraw()
+        v.waitFrameComplete()
+        FreeCADGui.updateGui()
+
+    said = []
+
+    def building():
+        # Gui.isBuildingVisuals(): the deferred drain's queue being
+        # non-empty. Guarded, so this script still runs against a binary
+        # built before that call existed -- it then falls back to the
+        # pixel count alone, which is what it had, and says so rather
+        # than quietly measuring with one gate fewer.
         try:
-            v.waitFrameComplete()
-            px = int(v.getRenderStats().get("geometryPixels", -1))
+            return bool(FreeCADGui.isBuildingVisuals())
+        except AttributeError:
+            if not said:
+                said.append(1)
+                say("  !! Gui.isBuildingVisuals() is missing from this "
+                    "build -- the settle has only the pixel count, which "
+                    "cannot tell an empty scene from an arriving one")
+            return False
+
+    def covered():
+        try:
+            return int(v.getRenderStats()["geometryPixels"])
         except Exception:
-            continue
-        if px != last:
-            changed = time.perf_counter()
-        last = px
-    say("  settle  view providers %.1fs | scene %.1fs | geometry px %d"
-        % (built, time.perf_counter() - t0, last))
+            return -1
+
+    while time.perf_counter() - t0 < SETTLE_MAX:
+        if not any(o.ViewObject is None for o in doc.Objects):
+            break
+        pump()
+
+    last, since, frames, first = None, t0, 0, None
+    why = "stationary"
+    while True:
+        pump()
+        frames += 1
+        now = time.perf_counter()
+        px = covered()
+        if first is None and px > 0:
+            first = now - t0
+        busy = building()
+        if px != last or busy:
+            last, since = px, now
+        elif now - since >= SETTLE_STABLE and now - t0 >= SETTLE_MIN:
+            break
+        if now - t0 >= SETTLE_MAX:
+            why = ("GAVE UP at %.0fs, still building" if busy
+                   else "GAVE UP at %.0fs, still moving") % SETTLE_MAX
+            break
+    return time.perf_counter() - t0, last, frames, why, first
 
 
 def bench():
@@ -560,18 +596,26 @@ def bench():
     v.setCameraOrientation((0.4247, 0.1759, 0.3389, 0.8226))
     v.fitAll()
     # Let the deferred shapes settle, or the first timed frames measure
-    # geometry ARRIVING rather than drawing.
-    #
-    # ! This used to say "with ProgressiveLoad off there should be none
-    # left, which is the point of turning it off". That stopped being
-    # true with the 2026-09-09 null-shape fix: a visual built during a
-    # restore parks on the deferred queue whenever shapeMayStillArrive()
-    # (ViewProviderExt.cpp), and that is true for
-    # `Restoring || hasDeferredFiles()` -- i.e. for ANY restored
-    # document, whatever the preference says. So a restored scene always
-    # arrives after the open, and the six knobs above do not change it.
-    v.waitFrameComplete()
-    settle_scene(doc, v)
+    # geometry ARRIVING rather than drawing -- and a document whose
+    # visuals have not landed at all times an EMPTY viewport and reports
+    # it as a result. Turning ProgressiveLoad off does not avoid this: a
+    # restore parks its visuals on the deferred drain whatever that
+    # preference says (shapeMayStillArrive() is true for `Restoring ||
+    # hasDeferredFiles`), so the wait is needed on every restored
+    # document and not only on a progressive load.
+    if SETTLE:
+        settle_s, settle_px, settle_n, settle_why, settle_first =             settle(doc, v)
+        # Fit AGAIN. The first fitAll framed whatever had arrived by
+        # then, which for a restored document is routinely nothing at
+        # all, and a camera staged against an empty scene can leave the
+        # settled geometry off screen -- which reads exactly like a
+        # scene that never drew.
+        v.fitAll()
+        v.waitFrameComplete()
+    else:
+        v.waitFrameComplete()
+        settle_s, settle_px, settle_n = 0.0, -1, 0
+        settle_first, settle_why = None, "OFF (FC_BENCH_SETTLE=0)"
 
     # setCameraOrientation, not the Coin camera node: getCameraNode()
     # hands back a SWIG object and raises "No SWIG wrapped library
@@ -657,6 +701,11 @@ def bench():
             % (rep.complanded, rep.compstale,
                100.0 * rep.compstale / rep.compframes,
                fmt(rep.compmean("latency"), "%.1f")))
+    say("  settle  %.1fs %d frames | first px at %s | %d px when it "
+        "stopped moving | %s"
+        % (settle_s, settle_n,
+           "never" if settle_first is None else "%.1fs" % settle_first,
+           settle_px, settle_why))
     say("  run     frames %d windows %d load %.1fs %s"
         % (n, max(0, rep.windows - 1), load_s,
            os.path.basename(DOC) if DOC else "chess"))

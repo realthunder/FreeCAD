@@ -41,6 +41,7 @@
 #include <zipios++/meta-iostreams.h>
 
 #include "FileInfo.h"
+#include "Stream.h"
 #include "Type.h"
 
 
@@ -409,7 +410,11 @@ public:
 protected:
     // NOLINTBEGIN
     std::string DirName;
-    std::ofstream FileStream;
+    /// Base::ofstream, not std::ofstream: on Windows the narrow overload
+    /// converts the path with the ANSI code page, so a UTF-8 entry name
+    /// lands on disk as mojibake, and a path past MAX_PATH is not opened
+    /// at all. Base::ofstream goes through FileInfo's wide form.
+    Base::ofstream FileStream;
     // NOLINTEND
 };
 

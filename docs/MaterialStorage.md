@@ -3110,7 +3110,7 @@ What this leaves open on the viewer tier: a document's maps decode at
 `kDecodeMaxSide` is where a per-device policy would go. And a scene
 whose maps are PNGs with alpha or greyscale files travels them as
 files too, but a Radiance environment still travels as floats -- a 2k
-HDR is the one 12 MB blob left in the request log.
+HDR is the one 12 MB blob left in the request log. (Closed in 17.26.)
 
 ### 17.24 The raster's constant 1.07x was the specular lobe's edge (fixed, 2026-09-03)
 
@@ -3229,3 +3229,84 @@ methods, and it edits one `mx::Document` in place with XML in and out
 - A one-day spike (ImGui version skew; a focus-taking bgfx widget
   beside the 3D views) precedes the port. Coding starts in the next
   session.
+
+### 17.26 The Radiance environment travels as its file (2026-09-12)
+
+The one payload 17.23 left on the wire as raw pixels, and the largest
+single thing a served scene sent. `SceneDump` v75 ships a texture's
+authored FILE in place of its pixels when the producer kept one
+(`TextureImage::encoded`); an environment never took that path, so this
+box's embedded 2048x1024 float map went out as **24 MB of decoded F32**
+(`2048*1024*3*4`). It arrived and everything resolved -- measured at
+~45 s over loopback -- but it is not a payload to send a phone.
+
+**Why it was exempt**, three independent reasons, all of them
+"JPEG or PNG" written into a different file:
+
+- The producer never kept the bytes. `decodeParamImage`
+  (`SoFCRendererBridge.cpp`) tries `loadRadianceImage(path)` first and
+  returns through the "already loaded" branch; only the Qt branch below
+  it read the file back into `tex->encoded`.
+- `Render::isEncodedImage` recognised two signatures, and it is the
+  producer's gate on keeping `encoded` at all.
+- `Render::decodeImage` was stb 8-bit only, so a consumer could not
+  have read a Radiance payload even if one had reached it.
+
+**What it is now.** `isEncodedImage` answers yes to `#?RADIANCE\n` and
+`#?RGBE\n` -- the exact two signatures the decoder accepts, not the
+looser `#?` the producer's own reader takes, so the gate never keeps a
+file that would travel and then fail to decode. `decodeImage` takes
+`floatSamples` and runs `stbi_loadf_from_memory` (`STBI_ONLY_HDR`)
+under it, which flips like the byte path and decodes RGBE with the same
+`ldexp(1, e - 136)` the producer's own reader uses, so the two tiers
+agree pixel for pixel. The box halver is one function over both sample
+types now. `decodeInto` passes the texture's own sample kind, which
+came over the wire ahead of the payload. And the keep-the-file block in
+`decodeParamImage` moved out of the Qt branch to cover both.
+
+**The size cap now covers the environment**, which is what it was for:
+the browser tier's `kDecodeMaxSide` of 1024 halves the map to 1024x512
+as it decodes, so the heap holds 6 MB where it held 24.
+
+**v76, for the reader and not for the layout.** Nothing moved on the
+wire -- v75 already carries the encoded flag. The bump is so a v75
+build, which has no float decoder, refuses the snapshot outright
+instead of failing the one texture and drawing the scene under the
+stand-in preset with a line in the log.
+
+**Watch:** the content key is the key of whatever bytes travel, so an
+environment that switches from pixels to file changes its key. That is
+content addressing working as designed; it means a client's stored blob
+for the old form is orphaned, not reused. And the producer now holds
+the file beside the pixels in `loadParamImage`'s cache whether or not
+anything is serving -- 5.9 MB for the map below. That is the same
+bargain v75 already struck for every JPEG a document uses, and it is
+the price of the transport not having to re-read and re-decide at
+publish time.
+
+#### Verification
+
+The box's own default environment
+(`src/3rdParty/MaterialX/resources/Lights/san_giuseppe_bridge.hdr`,
+2048x1024 RGBE, 5 931 873 bytes) served out of a freshly built
+`build/wasm` to a real Chrome, the driver document of two solids and a
+link, forty-five seconds after load:
+
+    largest blob   total fetched   picture
+    5.66 MB        9.76 MB         lit, and the last session's frame
+
+The environment was 24 MiB before -- `2048*1024*3*4`, which is what the
+request log of the session that found this showed -- so it fell to a
+quarter of its wire cost and took the page's whole transfer down with
+it. The frame is the one the black-box fix left: the sky's blue on the
+top face, the bridge's warm wall on the right, the edges dark. The two
+PNGs differ in their bytes, as a bake from a half-resolution source
+must, and not in what they show. Nothing in the viewer's console
+reported a payload that would not decode, which is what a failed float
+decode says before the preset stands in.
+
+Tests: `SceneDump_tests_run` 45 (two new -- a Radiance environment
+travels as its file and decodes back to the same F32 rows, bottom-up,
+through the manifest layout and inline through the bundled one; and a
+float map halves to the size cap, which is the browser tier's path and
+not the desktop's).

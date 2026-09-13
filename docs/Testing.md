@@ -13,10 +13,10 @@ as "the primary tree"; that was wrong.
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2688 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-10, after the RemoteEdit merge) |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **605 of 605 passing** (2026-09-10), 0 failures, 7 ctest entries disabled -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available" |
-| C++ on Windows (`build/win-relwithdebinfo-801`) | **487 of 487 passing** (2026-09-10; 477 on 2026-09-06/08, before TestLibraryPaths), 1 disabled -- see "C++ on Windows" |
+| C++ on Windows (`build/win-relwithdebinfo-801`) | **497 of 497 passing** (2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
 | Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
-| Python on Windows | **2590 tests** (2026-09-07, re-verified 2026-09-08), 7 failures + 2 errors, 49 skipped, 6 expected failures -- three Windows-only defects, see "Python on Windows" |
+| Python on Windows | **2590 tests, OK** (2026-09-12) -- 0 failures, 0 errors, 49 skipped, 6 expected failures. The nine Windows-only failures it carried from 2026-09-07 are fixed; see "Python on Windows" |
 
 Two traps when running the suites (2026-09-09): give the Python suite and
 `Tests_run` **separate `FREECAD_USER_HOME`s** if they run at the same time
@@ -349,13 +349,12 @@ and re-enters the passphrase. Exclude `ssh-agent-*.sock`, or sweep only
 
 ### Python on Windows
 
-First run there is 2026-09-07, on `build/win-relwithdebinfo-801` with
-`BUILD_FEM=OFF`: **2590 tests, 7 failures and 2 errors**, 49 skipped, 6
-expected failures. Three things had to be true first.
-
-Re-run 2026-09-08 after a pull: **2590 tests in 384 s, the same 7 failures
-and 2 errors**, same 49 skipped and 6 expected failures. The nine are the
-same nine listed below, so that count is a stable baseline to diff against.
+Green: **2590 tests, OK** on 2026-09-12, on `build/win-relwithdebinfo-801`
+with `BUILD_FEM=OFF`; 49 skipped, 6 expected failures, 402 s. That is the
+same 2590 the first run counted on 2026-09-07 and the re-run on 2026-09-08,
+so the count still works as the checksum the top of this page describes --
+what changed is that the nine failures it used to carry are fixed. Three
+things had to be true before the suite would run at all, and they still do.
 
 **One run in two hung and never finished**, in
 `CAMTests.TestUpdateDocumentTools.test_both_presets_and_geometry_differing_is_one_row`
@@ -387,17 +386,38 @@ in its Windows form.
 
 **`TMP` redirected**, for the reason the C++ section above gives.
 
-The nine that remain are genuine and are Windows-only. None is a setup
-problem; all three groups are about text and paths rather than about geometry:
+#### The nine that were red, and what each of them actually was
 
-| Group | Cases | What it is |
+Fixed 2026-09-12. They were the only red left in either suite on any
+platform, they were Windows-only, and none of them was a setup problem --
+all three were about text and paths rather than about geometry. Worth
+reading as a set, because two were in the fixtures and one was in the tree,
+and the failure they each produced did not say which:
+
+| Cases | Diagnosis on 2026-09-07 | What it was |
 |---|---|---|
-| `materialtests.TestMaterialClipboard`, `TestShaderGraph` | 6 | a `.mtlx` payload comes back with `\r\n` where it went in with `\n`, so the round trip through the material card's file blobs is going through a text-mode handle somewhere. The stored bytes carry the CRLF, so it is the write side |
-| `FileBlobs.BlobNamingCases` long names | 2 | a 250-character blob name under a temp path exceeds `MAX_PATH`, and `open()` fails with `FileNotFoundError`. Either the path needs the `\?\` prefix or the box needs long paths enabled |
-| `FileBlobs.BlobNamingCases.testANonAsciiNameIsKeptAsItIs` | 1 | a UTF-8 blob name (the test uses katakana) comes back from the directory listing as mojibake -- the name is written as UTF-8 bytes and read through a narrow/ANSI path |
+| `materialtests.TestMaterialClipboard`, `TestShaderGraph`, 6 | "a `.mtlx` payload comes back with CRLF where it went in with LF. The stored bytes carry it, so it is the write side" | right, and the write side was the fixture's own. `TestShaderGraph.pickedFiles()` wrote the graph through a Python **text-mode** handle, so the file an author supposedly picked had CRLF in it before the store ever saw it. The store kept the bytes it was handed, which is what it is for. `newline=""` on that one `open()` |
+| `FileBlobs.BlobNamingCases` long names, 2 | "a 250-character blob name under a temp path exceeds `MAX_PATH`; either the path needs the `\\?\` prefix or the box needs long paths enabled" | neither, on its own: this box already had `LongPathsEnabled` set, and a process **also** has to declare `longPathAware` in its manifest. `python.exe` carries one and wrote a 281-character path happily; `FreeCADCmd.exe` had none and could not. `src/Main/res/FreeCAD.manifest` now supplies it to both executables, and `Base::FileInfo` reaches an over-long path through the `\\?\` form as well, so the tree no longer depends on the registry key being set |
+| `FileBlobs.BlobNamingCases.testANonAsciiNameIsKeptAsItIs`, 1 | "written as UTF-8 bytes and read through a narrow/ANSI path" | the write side again, and this one *was* a tree defect: `Base::FileWriter::FileStream` was a plain `std::ofstream`, the last narrow-path stream in `src/Base`, and MSVC converts a `const char*` path with the ANSI code page. A directory project's entry named in katakana landed on disk as mojibake. It is a `Base::ofstream` now, opened through `Base::FileInfo` |
 
-The Linux run has none of these, which is the point: they are the first thing
-this suite has ever said about the Windows file layer.
+Fixing the manifest then unmasked a second fixture bug that the `MAX_PATH`
+error had been hiding: `FileBlobs.fileObject()` named the external source
+file after the object, so the case that deliberately passes a name the file
+system refuses had the *fixture* trying to write `CON.src` -- the console,
+not a file. The source is numbered now. Nothing the blob layer derives comes
+from that file's name, so nothing else moved.
+
+Two traps are worth carrying forward for anyone adding to the manifest. An
+XML comment may not contain two hyphens in a row, which this tree's prose
+style otherwise puts everywhere, and mt.exe rejects the whole file with
+`c1010070` when it does. And `/MANIFEST:EMBED` with `/MANIFESTINPUT:` is the
+wrong mechanism under CMake: CMake links MSVC targets in two passes and runs
+mt.exe between them, so the linker's own embed collides with CMake's and the
+link dies on `CVT1100: duplicate resource`. Listing the `.manifest` as a
+**source file** is what hands it to that step.
+
+The Linux run had none of these, which was the point: they were the first
+thing this suite had ever said about the Windows file layer.
 
 ## 2. Why ctest says 453 and the binaries add up to 1305
 ## 2. Why ctest says 522 and the binaries add up to 1389
@@ -424,7 +444,7 @@ Counting individual test cases instead, across all 32 binaries, gives
 
 | Binary | Cases | Notes |
 |---|---|---|
-| `Tests_run` | 393 | The legacy suite: Base and App (incl. the ExpressionSecurity contract cases and the ExpressionImageHost suite; +6 disabled benches, section 4) |
+| `Tests_run` | 457 | The legacy suite: Base and App (incl. the ExpressionSecurity contract cases and the ExpressionImageHost suite; +6 disabled benches, section 4); +5 `ParamRegistry*` since 2026-09-11 (docs/OmniSearch.md) |
 | `src/App/Toponaming_tests_run` | 256 | Element map, MappedName, IndexedName |
 | `src/App/PropertyMaterialList_tests_run` | 103 | |
 | `src/Mod/Part/TopoShapeEx_tests_run` | 86 | +3 disabled, section 4 |
@@ -455,6 +475,7 @@ Counting individual test cases instead, across all 32 binaries, gives
 | `src/Base/PyObjectTracking_tests_run` | 5 | |
 | `src/Gui/PublishOnly_tests_run` | 5 | |
 | `src/Gui/QuantitySpinBox_Tests_run` | 5 | QtTest, +3 skipped, section 4 |
+| `src/Gui/OmniSearch_Tests_run` | 6 | QtTest: the omni search layer without its box (docs/OmniSearch.md) |
 | `Points_tests_run` | 1 | |
 
 ### The render tests (`tests/render/`)

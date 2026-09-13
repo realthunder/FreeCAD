@@ -31,10 +31,11 @@ OpenViewParams.define()
 #include <unordered_map>
 #include <App/Application.h>
 #include <App/DynamicProperty.h>
+#include <App/ParamRegistry.h>
 #include "OpenViewParams.h"
 using namespace Gui;
 
-// Auto generated code (Tools/params_utils.py:209)
+// Auto generated code (Tools/params_utils.py:210)
 namespace {
 class OpenViewParamsP: public ParameterGrp::ObserverType {
 public:
@@ -45,7 +46,7 @@ public:
     std::string UtilityTarget;
     std::string SplitDirection;
 
-    // Auto generated code (Tools/params_utils.py:253)
+    // Auto generated code (Tools/params_utils.py:254)
     OpenViewParamsP() {
         handle = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View/OpenView");
         handle->Attach(this);
@@ -60,43 +61,39 @@ public:
         funcs["SplitDirection"] = &OpenViewParamsP::updateSplitDirection;
     }
 
-    // Auto generated code (Tools/params_utils.py:283)
-    ~OpenViewParamsP() {
-    }
+    // Auto generated code (Tools/params_utils.py:284)
+    ~OpenViewParamsP() override = default;
 
-    // Auto generated code (Tools/params_utils.py:290)
-    void OnChange(Base::Subject<const char*> &param, const char* sReason) {
-        (void)param;
+    // Auto generated code (Tools/params_utils.py:297)
+    void OnChange(Base::Subject<const char*> &, const char* sReason) override {
         if(!sReason)
             return;
         auto it = funcs.find(sReason);
         if(it == funcs.end())
             return;
         it->second(this);
-        
-        
     }
 
 
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateDocumentTarget(OpenViewParamsP *self) {
         self->DocumentTarget = self->handle->GetASCII("DocumentTarget", "Tab");
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateDocViewTarget(OpenViewParamsP *self) {
         self->DocViewTarget = self->handle->GetASCII("DocViewTarget", "Split");
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateUtilityTarget(OpenViewParamsP *self) {
         self->UtilityTarget = self->handle->GetASCII("UtilityTarget", "Tab");
     }
-    // Auto generated code (Tools/params_utils.py:310)
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateSplitDirection(OpenViewParamsP *self) {
         self->SplitDirection = self->handle->GetASCII("SplitDirection", "Auto");
     }
 };
 
-// Auto generated code (Tools/params_utils.py:332)
+// Auto generated code (Tools/params_utils.py:336)
 OpenViewParamsP *instance() {
     static OpenViewParamsP *inst = new OpenViewParamsP;
     return inst;
@@ -104,121 +101,147 @@ OpenViewParamsP *instance() {
 
 } // Anonymous namespace
 
-// Auto generated code (Tools/params_utils.py:343)
+// Auto generated code (Tools/params_utils.py:352)
+static const App::ParamRegistry::Registrar _OpenViewParamsRegistrar({
+    App::ParamInfo("Gui", "OpenViewParams", "User parameter:BaseApp/Preferences/View/OpenView", "DocumentTarget", "DocumentTarget", App::ParamInfo::String, "Tab")
+        .setTitle("New documents open in")
+        .setDoc("Where the first view of a newly opened document lands")
+        .setProxy("ComboBox")
+        .setItems({{"Their own tab", "", "Tab"}, {"A split beside the current view", "", "Split"}, {"A floating window", "", "Floating"}}, true, true),
+    App::ParamInfo("Gui", "OpenViewParams", "User parameter:BaseApp/Preferences/View/OpenView", "DocViewTarget", "DocViewTarget", App::ParamInfo::String, "Split")
+        .setTitle("Additional views of a document open in")
+        .setDoc("Where a second 3D view, a drawing page, a spreadsheet or the\n"
+"CAM simulator of an already open document lands")
+        .setProxy("ComboBox")
+        .setItems({{"Their own tab", "", "Tab"}, {"A split beside the current view", "", "Split"}, {"A new split, never reusing a cell", "", "NewSplit"}, {"A floating window", "", "Floating"}}, true, true),
+    App::ParamInfo("Gui", "OpenViewParams", "User parameter:BaseApp/Preferences/View/OpenView", "UtilityTarget", "UtilityTarget", App::ParamInfo::String, "Tab")
+        .setTitle("Utility windows open in")
+        .setDoc("Where a window that shows no document data lands, such as the\n"
+"dependency graph")
+        .setProxy("ComboBox")
+        .setItems({{"Their own tab", "", "Tab"}, {"A split beside the current view", "", "Split"}, {"A floating window", "", "Floating"}}, true, true),
+    App::ParamInfo("Gui", "OpenViewParams", "User parameter:BaseApp/Preferences/View/OpenView", "SplitDirection", "SplitDirection", App::ParamInfo::String, "Auto")
+        .setTitle("New splits go")
+        .setDoc("Which way a cell is divided when a view opens in a split")
+        .setProxy("ComboBox")
+        .setItems({{"Along the longer side", "", "Auto"}, {"To the right", "", "Right"}, {"Below", "", "Down"}}, true, true),
+});
+
+// Auto generated code (Tools/params_utils.py:368)
 ParameterGrp::handle OpenViewParams::getHandle() {
     return instance()->handle;
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *OpenViewParams::docDocumentTarget() {
     return QT_TRANSLATE_NOOP("OpenViewParams",
 "Where the first view of a newly opened document lands");
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & OpenViewParams::getDocumentTarget() {
     return instance()->DocumentTarget;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & OpenViewParams::defaultDocumentTarget() {
     const static std::string def = "Tab";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void OpenViewParams::setDocumentTarget(const std::string &v) {
     instance()->handle->SetASCII("DocumentTarget",v);
     instance()->DocumentTarget = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void OpenViewParams::removeDocumentTarget() {
     instance()->handle->RemoveASCII("DocumentTarget");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *OpenViewParams::docDocViewTarget() {
     return QT_TRANSLATE_NOOP("OpenViewParams",
 "Where a second 3D view, a drawing page, a spreadsheet or the\n"
 "CAM simulator of an already open document lands");
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & OpenViewParams::getDocViewTarget() {
     return instance()->DocViewTarget;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & OpenViewParams::defaultDocViewTarget() {
     const static std::string def = "Split";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void OpenViewParams::setDocViewTarget(const std::string &v) {
     instance()->handle->SetASCII("DocViewTarget",v);
     instance()->DocViewTarget = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void OpenViewParams::removeDocViewTarget() {
     instance()->handle->RemoveASCII("DocViewTarget");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *OpenViewParams::docUtilityTarget() {
     return QT_TRANSLATE_NOOP("OpenViewParams",
 "Where a window that shows no document data lands, such as the\n"
 "dependency graph");
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & OpenViewParams::getUtilityTarget() {
     return instance()->UtilityTarget;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & OpenViewParams::defaultUtilityTarget() {
     const static std::string def = "Tab";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void OpenViewParams::setUtilityTarget(const std::string &v) {
     instance()->handle->SetASCII("UtilityTarget",v);
     instance()->UtilityTarget = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void OpenViewParams::removeUtilityTarget() {
     instance()->handle->RemoveASCII("UtilityTarget");
 }
 
-// Auto generated code (Tools/params_utils.py:372)
+// Auto generated code (Tools/params_utils.py:397)
 const char *OpenViewParams::docSplitDirection() {
     return QT_TRANSLATE_NOOP("OpenViewParams",
 "Which way a cell is divided when a view opens in a split");
 }
 
-// Auto generated code (Tools/params_utils.py:380)
+// Auto generated code (Tools/params_utils.py:405)
 const std::string & OpenViewParams::getSplitDirection() {
     return instance()->SplitDirection;
 }
 
-// Auto generated code (Tools/params_utils.py:388)
+// Auto generated code (Tools/params_utils.py:413)
 const std::string & OpenViewParams::defaultSplitDirection() {
     const static std::string def = "Auto";
     return def;
 }
 
-// Auto generated code (Tools/params_utils.py:397)
+// Auto generated code (Tools/params_utils.py:422)
 void OpenViewParams::setSplitDirection(const std::string &v) {
     instance()->handle->SetASCII("SplitDirection",v);
     instance()->SplitDirection = v;
 }
 
-// Auto generated code (Tools/params_utils.py:406)
+// Auto generated code (Tools/params_utils.py:431)
 void OpenViewParams::removeSplitDirection() {
     instance()->handle->RemoveASCII("SplitDirection");
 }

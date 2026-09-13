@@ -2562,6 +2562,34 @@ the clock: it attaches a Python console observer
 is what made a 3D table possible on Windows, where a GUI-subsystem
 binary sends none of that to a pipe.
 
+**It also waits for the scene to arrive before timing anything (the
+settle pass, 2026-09-13).** A restored document parks every visual on
+the deferred drain -- `shapeMayStillArrive()` is true while the document
+is `Restoring` or still holds deferred files, whatever
+`Render_ProgressiveLoad` says -- and that drain runs off a `QTimer`, so
+the geometry lands over seconds of event loop and not with the open.
+`settle()` pumps `redraw()` / `waitFrameComplete()` / `updateGui()`
+until every object has a view provider, and then until the covered-pixel
+count has held still for `FC_BENCH_SETTLE_QUIET` seconds (5 by default,
+never exiting before `FC_BENCH_SETTLE_MIN`, and capped by
+`FC_BENCH_SETTLE` itself, which at 0 turns the wait off) AND
+`Gui.isBuildingVisuals()` says the drain has stopped building. The
+drain's vote is not redundant: a pixel count stationary at ZERO reads
+the same while the drain is still working as it does once the drain has
+finished and the scene is genuinely empty, which on a 17k-object
+assembly is minutes of difference. Then it refits and prints what it
+waited for: `settle 3.1s 75 frames | first px at 0.0s | 51569 px when it
+stopped moving | stationary`.
+**Continuous seconds, not consecutive equal reads** -- the count
+plateaus early and briefly while the handful already built is redrawn,
+and a three-equal-reads test answered 4557 px on a document that settles
+at 53350. A run that runs out of patience says `GAVE UP`, so "this model
+draws nothing" is distinguishable in the output from "this harness did
+not wait long enough"; `FC_BENCH_SETTLE=0` restores the pre-settle
+behaviour, for reproducing an old row against a current binary. The
+names and their semantics are shared with the settle pass written
+independently on `RemoteEdit` (`515a9e8482`), so the two merge into one.
+
 Windows box (RTX 2000 Ada, GL 4.6 / Vulkan 1.3, driver as of
 2026-09-09), 17000 `Part::Box` objects built in session -- **33.7k
 draws, 877k primitives**, 1280x720, vsync off, one completion barrier
@@ -2597,7 +2625,7 @@ and says nothing about fill or vertex throughput. And every backend but
 GL renders without reaching the screen (`BGFXView::blit` stands aside),
 so the composite is not in any of these numbers.
 
-### Two defects the harness found, one fixed
+### Three defects the harness found, all fixed
 
 **The blit's depth attachment, fixed 2026-09-09.**
 `BGFXView::blit()` wrapped bgfx's depth attachment with
@@ -2633,6 +2661,84 @@ drain whatever the preference says (`ViewProviderPartExt::updateVisual`,
 `shapeMayStillArrive`). Note the property's own `isRestorePending` is
 NOT sufficient: the plain addFile branch marks nothing, which is why a
 first fix worked at 200 shapes and did nothing at 17000.
+
+**And NOT a third, measured 2026-09-13.** The bench table taken the same
+day appeared to hold a second, unfixed case: `Hier.FCStd` (5 `App::Part`
+of 40 `Part::Feature` each plus 20 `App::Link`) drew 1721 draws, while
+`Hier2.FCStd` -- the same document reopened in the GUI and saved again,
+so the ONLY difference is that it carries a `GuiDocument.xml` -- drew 14
+draws and covered 0.0% of the viewport. `MiSTer.FCStd` read the same
+way. That suggested either a second defect keyed on the
+`GuiDocument.xml` or a harness race, since before the settle pass above
+nothing pumped the deferred drain but `waitFrameComplete()`, one frame
+at a time.
+
+It is neither. On today's tree both documents draw **1721 draws, ~50k
+px, 5.4% covered, indistinguishable from each other** -- and they do so
+with the settle pass turned OFF (`FC_BENCH_SETTLE=0`), i.e. under the
+very harness that produced the 0.0% row. So the variable was never the
+`GuiDocument.xml` and never the pumping. With the fix above reverted
+locally and `PartGui` rebuilt, **BOTH documents drop to 14 draws and 0
+px** -- Hier as much as Hier2 -- with the settle on and off alike; the
+settle reports `0 px when it stopped moving | stationary`, which is the
+harness correctly saying the drain has finished and is empty, not that
+it ran out of patience. The 2026-09-09 table therefore straddled the
+fix: its Hier row was measured after it and its Hier2 row before, and
+the pair is one defect seen twice, not two. `MiSTer.FCStd` is NOT that
+straddle, though: it was re-run, it still drew nothing, and it turned
+out to be the third defect below.
+
+One claim that table was used for is dead and should not be repeated:
+`zz-flatten.py`'s header says "the container is what a restored document
+will not draw". `GroupOnly.FCStd` (200 shapes in one `App::Part`) drew
+403, `LinkOnly.FCStd` drew 399, `Hier` drew 1721. Container-versus-link
+was never isolated.
+
+
+**The park the restore spent before the drain ran, fixed 2026-09-13.**
+`MiSTer.FCStd` -- 17800 objects, 628 links, 378-491 s to open on this
+box -- still came up empty on a current tree: 14 draws, 0.0% covered,
+and the settle pass above said `0 px when it stopped moving |
+stationary`, i.e. the drain had finished and left nothing. Reading
+`obj.Shape` from Python repaired it one object at a time (1 shape read,
+4 px; 1500 read, 68471 px), which is the tell: that read serves the
+deferred content and notifies, and the notification is the rebuild the
+drain should have done.
+
+The park above is bounded to one attempt, so content that never arrives
+cannot queue slices forever. A restore asks for the same visual more
+than once -- this document reported **34116 visual builds over 17058
+objects, exactly two each** -- and the second build found
+`VisualShapePending` already set, fell through to the empty install and
+cleared `VisualTouched` with it. The drain then popped a full queue,
+found nothing touched, and built none of it: `progressive load MiSTer: 0
+visuals in 1 slices`. The bound was being spent by the pass the park
+exists to outlive.
+
+MiSTer goes from 14 draws to **45867 draws, 18.2M primitives, 7.5%
+covered**. The small documents gain too, which says more than the 17k
+case was losing visuals this way: Hier 1721 -> 2015 draws, GroupOnly
+403 -> 415, LinkOnly 399 -> 455.
+
+**And the park itself went, 2026-09-13.** The queue was never needed for
+this: `finishRestoring()` runs for every restored object after the file
+phase, it rebuilds whenever `VisualTouched` is set, and reading the
+property through `getShape()` is itself what faults the lazy content in.
+All the null build has to do is not clear the flag. So it does not --
+while `shapeMayStillArrive()` it returns having touched nothing -- and
+the park, `VisualShapePending` and the one-attempt bound are gone with
+it. With `Render_ProgressiveLoad` off the drain is now not involved in a
+load at all (Hier parked all 200 of its visuals there before, and parks
+none now), which is what that preference being off should have meant.
+
+One flag has to stay, and it is why the park was shaped that way:
+`VisualDeferred` also told `SoFCCoordinate3::getBoundingBox`'s
+on-demand build to leave a visual alone. A touched visual is exactly
+what that hook builds and a restore traverses the scene many times, so
+"stay touched" without an equivalent marker re-enters the build for
+every object on every traversal -- MEASURED at 25 minutes of pegged CPU
+on MiSTer against 8. `VisualShapeMissing` is that marker. Every number
+above is unchanged by the simplification, and `ctest` is 497 of 497.
 
 ### The assembly table, all four backends (2026-09-09)
 

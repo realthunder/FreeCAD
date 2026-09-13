@@ -180,7 +180,16 @@ public:
         // the first repaint after a load traverses the whole scene, and
         // building on demand here would hand back the very stall the queue
         // exists to break up. It contributes nothing until its slice comes.
-        if (vp && vp->VisualTouched && !vp->VisualDeferred) {
+        //
+        // Same for one whose shape has not arrived (VisualShapeMissing):
+        // it stays touched so the restore builds it once the content is
+        // there, and a touched visual is exactly what this hook builds.
+        // A restore traverses the scene many times, so without the test
+        // every traversal re-enters the build for every object and the
+        // open livelocks -- MEASURED on the 17058-solid MiSTer assembly:
+        // 25 minutes of pegged CPU and still loading, against 8.
+        if (vp && vp->VisualTouched && !vp->VisualDeferred
+                && !vp->VisualShapeMissing) {
             // Named under the level debug flag: this on-demand build
             // runs inside whatever traversal asked for the bbox, and
             // the 1.8s giant rebuilds attributed to "the drain" turned
@@ -844,6 +853,7 @@ struct DeferredVisualQueue {
     std::deque<App::DocumentObjectT> pending;
     /// Counted per drain, for the one line the queue reports itself with.
     std::size_t built = 0;
+    std::size_t popped = 0;
     std::size_t slices = 0;
     std::chrono::duration<double> spent {0};
 };
@@ -5567,6 +5577,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         while (!queue.pending.empty()) {
             auto obj = queue.pending.front().getObject();
             queue.pending.pop_front();
+            ++queue.popped;
             if (visuals.seq)
                 visuals.seq->next();
             auto vp = obj ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
@@ -5597,8 +5608,8 @@ void ViewProviderPartExt::runDeferredVisualSlice()
             continue;
         }
         FC_LOG("progressive load " << it->first << ": " << queue.built
-                << " visuals in " << queue.slices << " slices, "
-                << queue.spent.count() << 's');
+                << " of " << queue.popped << " visuals in " << queue.slices
+                << " slices, " << queue.spent.count() << 's');
         it = visuals.docs.erase(it);
     }
 
@@ -5869,37 +5880,45 @@ void ViewProviderPartExt::updateVisual()
     // mirrors arrays this rebuild is about to replace.
     ++meshLadder.visualFillSeq;
     pendingVCache.reset();
+    if (!cachedShape.isNull())
+        VisualShapeMissing = false;
     if (cachedShape.isNull()) {
         // A shape that has not ARRIVED is not a shape that is empty, and
-        // the difference is the whole of the picture. A restore parks its
-        // shape content -- a deferred archive entry, a shared-store
-        // position, a blob -- and serves it with the archive's files,
-        // AFTER the XML pass that created the object. The visual built
-        // from that window reads the null shape, and marking it done
-        // below is what makes the emptiness permanent: nothing replays a
-        // change notification when the content lands (Document.cpp's
-        // restoreDeferredFile says so in as many words, on the ground
-        // that the serve runs before the visual fill -- which is true of
-        // the progressive drain and of nothing else).
+        // the difference is the whole of the picture. A restore registers
+        // its shape content during the XML pass -- a deferred archive
+        // entry, a shared-store position, a blob -- and materializes it
+        // on FIRST REAL USE, which for a document being restored is
+        // later than this. Two asks get here before it: the Visibility
+        // change as the view provider is restored, and the bounding-box
+        // hook building a touched visual on demand. Both read null, and
+        // clearing VisualTouched below is what would make the emptiness
+        // permanent -- nothing replays a change notification when the
+        // content lands, because the lazy path assigns no value and so
+        // announces nothing (PropertyPartShape::assignRestoredBlob).
         //
-        // MEASURED: with Render_ProgressiveLoad off, every 200-shape
-        // document restored this way came up with an empty 3D view, on
-        // the bgfx renderer and on plain Coin alike, while the same
-        // objects built in session drew. So park it on the drain that
-        // serves the content first, whatever the progressive-load
-        // preference says -- that queue exists for exactly this
-        // ordering. Bounded to one attempt (VisualShapePending), so
-        // content that never arrives costs one extra slice and not a
-        // loop.
-        if (!VisualShapePending && shapeMayStillArrive()) {
-            if (auto obj = getObject()) {
-                if (auto doc = obj->getDocument()) {
-                    VisualShapePending = true;
-                    parkVisualForLoad(doc, obj);
-                    return;
-                }
-            }
+        // So stay touched and build nothing. finishRestoring() is the ask
+        // that lands the shape: it runs for every restored object after
+        // the file phase, and reading the property through getShape() is
+        // itself what faults the content in. An object that is not
+        // visible keeps the flag until it is shown, where the ordinary
+        // path builds it.
+        //
+        // MEASURED, and the reason this is a return rather than a queue:
+        // on Hier.FCStd all 200 visuals are asked for inside that window,
+        // and on the 17058-solid MiSTer assembly every one of them is.
+        // The first arrangement parked them on the progressive-load drain
+        // instead, bounded to one attempt -- and a second ask in the same
+        // window spent the bound, so the drain popped a full queue and
+        // built none of it, and the document came up empty.
+        if (shapeMayStillArrive()) {
+            VisualTouched = true;
+            // ...and the on-demand builders leave it alone until it is:
+            // a touched visual is what the bounding-box hook builds, and
+            // a restore traverses the scene over and over.
+            VisualShapeMissing = true;
+            return;
         }
+        VisualShapeMissing = false;
         coords  ->point      .setNum(0);
         pcoords ->point      .setNum(0);
         norm    ->vector     .setNum(0);
@@ -5912,9 +5931,6 @@ void ViewProviderPartExt::updateVisual()
         VisualTouched = false;
         return;
     }
-    // The shape is here; a later null is a different story from this
-    // one and gets its own park.
-    VisualShapePending = false;
 
     // Progressive import of an oversized part (sec 13): even the coarse
     // build of a many-face shape (or many-leaf compound) stalls the

@@ -47,111 +47,124 @@ struct CmdInfo {
 };
 std::vector<CmdInfo> _Commands;
 int _CommandRevision;
-const int CommandNameRole = Qt::UserRole;
 bool _ShortcutSignalConnected = false;
 
-class CommandModel : public QAbstractItemModel
-{
-    int revision = 0;
-
-public:
-    explicit CommandModel(QObject* parent)
-        : QAbstractItemModel(parent)
-    {
-        update();
-        if (!_ShortcutSignalConnected) {
-            _ShortcutSignalConnected = true;
-            QObject::connect(ShortcutManager::instance(), &ShortcutManager::shortcutChanged, []{_CommandRevision = 0;});
-        }
-    }
-
-    void update()
-    {
-        auto &manager = Application::Instance->commandManager();
-        if (revision == _CommandRevision  && _CommandRevision == manager.getRevision())
-            return;
-        beginResetModel();
-        revision = manager.getRevision();
-        if (revision != _CommandRevision) {
-            _CommandRevision = revision;
-            _CommandRevision = manager.getRevision();
-            _Commands.clear();
-            for (auto &v : manager.getCommands()) {
-                _Commands.emplace_back();
-                auto &info = _Commands.back();
-                info.cmd = v.second;
-            }
-        }
-        endResetModel();
-    }
-
-    QModelIndex parent(const QModelIndex &) const override
-    {
-        return {};
-    }
-
-    QVariant data(const QModelIndex & index, int role) const override
-    {
-        if (index.row() < 0 || index.row() >= (int)_Commands.size())
-            return {};
-
-        auto &info = _Commands[index.row()];
-
-        switch(role) {
-        case Qt::DisplayRole:
-        case Qt::EditRole: {
-            QString title = QStringLiteral("%1 (%2)").arg(
-                    Action::commandMenuText(info.cmd),
-                    QString::fromUtf8(info.cmd->getName()));
-            QString shortcut = info.cmd->getShortcut();
-            if (!shortcut.isEmpty())
-                title += QStringLiteral(" (%1)").arg(shortcut);
-            return title;
-        }
-        case Qt::ToolTipRole:
-            return Action::commandToolTip(info.cmd);
-
-        case Qt::DecorationRole:
-            if (!info.iconChecked) {
-                info.iconChecked = true;
-                if(info.cmd->getPixmap())
-                    info.icon = BitmapFactory().iconFromTheme(info.cmd->getPixmap());
-            }
-            return info.icon;
-
-        case CommandNameRole:
-            return QByteArray(info.cmd->getName());
-
-        default:
-            break;
-        }
-        return {};
-    }
-
-    QModelIndex index(int row, int, const QModelIndex &) const override
-    {
-        return this->createIndex(row, 0);
-    }
-
-    int rowCount(const QModelIndex &) const override
-    {
-        return (int)(_Commands.size());
-    }
-
-    int columnCount(const QModelIndex &) const override
-    {
-        return 1;
-    }
-};
-
 } // anonymous namespace
+
+CommandListModel::CommandListModel(QObject* parent)
+    : QAbstractListModel(parent)
+{
+    update();
+    if (!_ShortcutSignalConnected) {
+        _ShortcutSignalConnected = true;
+        QObject::connect(ShortcutManager::instance(), &ShortcutManager::shortcutChanged, []{_CommandRevision = 0;});
+    }
+}
+
+void CommandListModel::update()
+{
+    auto &manager = Application::Instance->commandManager();
+    if (revision == _CommandRevision  && _CommandRevision == manager.getRevision())
+        return;
+    beginResetModel();
+    revision = manager.getRevision();
+    if (revision != _CommandRevision) {
+        _CommandRevision = revision;
+        _Commands.clear();
+        for (auto &v : manager.getCommands()) {
+            _Commands.emplace_back();
+            auto &info = _Commands.back();
+            info.cmd = v.second;
+        }
+    }
+    endResetModel();
+}
+
+Command *CommandListModel::command(const QModelIndex &index) const
+{
+    if (index.row() < 0 || index.row() >= (int)_Commands.size())
+        return nullptr;
+    return _Commands[index.row()].cmd;
+}
+
+QVariant CommandListModel::data(const QModelIndex & index, int role) const
+{
+    if (index.row() < 0 || index.row() >= (int)_Commands.size())
+        return {};
+
+    auto &info = _Commands[index.row()];
+
+    switch(role) {
+    case Qt::DisplayRole:
+    case Qt::EditRole: {
+        QString title = QStringLiteral("%1 (%2)").arg(
+                Action::commandMenuText(info.cmd),
+                QString::fromUtf8(info.cmd->getName()));
+        QString shortcut = info.cmd->getShortcut();
+        if (!shortcut.isEmpty())
+            title += QStringLiteral(" (%1)").arg(shortcut);
+        return title;
+    }
+    case Qt::ToolTipRole:
+        return Action::commandToolTip(info.cmd);
+
+    case Qt::DecorationRole:
+        if (!info.iconChecked) {
+            info.iconChecked = true;
+            if(info.cmd->getPixmap())
+                info.icon = BitmapFactory().iconFromTheme(info.cmd->getPixmap());
+        }
+        return info.icon;
+
+    case CommandNameRole:
+        return QByteArray(info.cmd->getName());
+
+    case TitleRole:
+        return Action::commandMenuText(info.cmd);
+
+    case DescriptionRole:
+        return Action::commandToolTip(info.cmd, false);
+
+    case ShortcutRole:
+        return info.cmd->getShortcut();
+
+    case IsGroupRole:
+        // Without forcing the action into being: a command that has been
+        // added to a widget carries its ActionGroup, one that has not is
+        // a group only if it is one by class.
+        if (auto action = info.cmd->getAction())
+            return qobject_cast<ActionGroup*>(action) != nullptr;
+        return dynamic_cast<GroupCommand*>(info.cmd) != nullptr;
+
+    case IsActiveRole:
+        return info.cmd->isActive();
+
+    case SearchTextRole:
+        return QStringLiteral("%1 %2 %3 %4").arg(
+                Action::commandMenuText(info.cmd),
+                QString::fromUtf8(info.cmd->getName()),
+                info.cmd->getShortcut(),
+                Action::commandToolTip(info.cmd, false));
+
+    default:
+        break;
+    }
+    return {};
+}
+
+int CommandListModel::rowCount(const QModelIndex &parent) const
+{
+    if (parent.isValid())
+        return 0;
+    return (int)(_Commands.size());
+}
 
 // --------------------------------------------------------------------
 
 CommandCompleter::CommandCompleter(QLineEdit *lineedit, QObject *parent)
     : QCompleter(parent)
 {
-    this->setModel(new CommandModel(this));
+    this->setModel(new CommandListModel(this));
     this->setFilterMode(Qt::MatchContains);
     this->setCaseSensitivity(Qt::CaseInsensitive);
     this->setCompletionMode(QCompleter::PopupCompletion);
@@ -218,7 +231,7 @@ bool CommandCompleter::eventFilter(QObject *o, QEvent *ev)
 
 void CommandCompleter::onCommandActivated(const QModelIndex &index)
 {
-    QByteArray name = completionModel()->data(index, CommandNameRole).toByteArray();
+    QByteArray name = completionModel()->data(index, CommandListModel::CommandNameRole).toByteArray();
     Q_EMIT commandActivated(name);
 }
 
@@ -229,7 +242,7 @@ void CommandCompleter::onTextChanged(const QString &txt)
     if (txt.size() < 3 || !widget())
         return;
 
-    static_cast<CommandModel*>(this->model())->update();
+    static_cast<CommandListModel*>(this->model())->update();
 
     this->setCompletionPrefix(txt);
     QRect rect = widget()->rect();

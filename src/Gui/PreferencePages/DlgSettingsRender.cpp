@@ -27,7 +27,7 @@ import DlgSettingsRender
 DlgSettingsRender.define()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:605)
+// Auto generated code (Tools/params_utils.py:630)
 #ifndef _PreComp_
 #   include <QApplication>
 #   include <QLabel>
@@ -37,12 +37,12 @@ DlgSettingsRender.define()
 #   include <QHBoxLayout>
 #endif
 #include <Gui/RenderParams.h>
-// Auto generated code (Tools/params_utils.py:627)
+// Auto generated code (Tools/params_utils.py:652)
 #include "Gui/PreferencePages/DlgSettingsRender.h"
 using namespace Gui::Dialog;
 /* TRANSLATOR Gui::Dialog::DlgSettingsRender */
 
-// Auto generated code (Tools/params_utils.py:636)
+// Auto generated code (Tools/params_utils.py:661)
 DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     : PreferencePage( parent )
 {
@@ -51,7 +51,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     auto layout = new QVBoxLayout(this);
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupGeneral = new QGroupBox(this);
     layout->addWidget(groupGeneral);
     auto layoutHorizGeneral = new QHBoxLayout(groupGeneral);
@@ -59,10 +59,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizGeneral->addLayout(layoutGeneral);
     layoutHorizGeneral->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutGeneral->addLayout(layoutRow);
     labelType = new QLabel(this);
     layoutRow->addWidget(labelType);
@@ -72,10 +72,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     Type->setEntryName("Type");
     Type->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutGeneral->addLayout(layoutRow);
     labelOutputTransform = new QLabel(this);
     layoutRow->addWidget(labelOutputTransform);
@@ -83,14 +83,14 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(OutputTransform);
     OutputTransform->setEntryName("OutputTransform");
     OutputTransform->setParamGrpPath("View/Render");
-    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1141)
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1230)
         OutputTransform->addItem(QString());
     OutputTransform->setCurrentIndex(Gui::RenderParams::defaultOutputTransform());
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutGeneral->addLayout(layoutRow);
     labelExposure = new QLabel(this);
     layoutRow->addWidget(labelExposure);
@@ -101,7 +101,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     Exposure->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupIdlerefinement = new QGroupBox(this);
     layout->addWidget(groupIdlerefinement);
     auto layoutHorizIdlerefinement = new QHBoxLayout(groupIdlerefinement);
@@ -109,10 +109,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizIdlerefinement->addLayout(layoutIdlerefinement);
     layoutHorizIdlerefinement->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutIdlerefinement->addLayout(layoutRow);
     TemporalAccum = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(TemporalAccum);
@@ -120,10 +120,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     TemporalAccum->setEntryName("TemporalAccum");
     TemporalAccum->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutIdlerefinement->addLayout(layoutRow);
     labelTemporalAccumSamples = new QLabel(this);
     layoutRow->addWidget(labelTemporalAccumSamples);
@@ -134,7 +134,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     TemporalAccumSamples->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupScenestreaming = new QGroupBox(this);
     layout->addWidget(groupScenestreaming);
     auto layoutHorizScenestreaming = new QHBoxLayout(groupScenestreaming);
@@ -142,10 +142,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizScenestreaming->addLayout(layoutScenestreaming);
     layoutHorizScenestreaming->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutScenestreaming->addLayout(layoutRow);
     labelCoarseTessellation = new QLabel(this);
     layoutRow->addWidget(labelCoarseTessellation);
@@ -155,10 +155,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CoarseTessellation->setEntryName("CoarseTessellation");
     CoarseTessellation->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutScenestreaming->addLayout(layoutRow);
     labelLevelTolerance = new QLabel(this);
     layoutRow->addWidget(labelLevelTolerance);
@@ -168,10 +168,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     LevelTolerance->setEntryName("LevelTolerance");
     LevelTolerance->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutScenestreaming->addLayout(layoutRow);
     labelLevelThreads = new QLabel(this);
     layoutRow->addWidget(labelLevelThreads);
@@ -181,10 +181,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     LevelThreads->setEntryName("LevelThreads");
     LevelThreads->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutScenestreaming->addLayout(layoutRow);
     labelLevelMemoryFloorMB = new QLabel(this);
     layoutRow->addWidget(labelLevelMemoryFloorMB);
@@ -194,10 +194,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     LevelMemoryFloorMB->setEntryName("LevelMemoryFloorMB");
     LevelMemoryFloorMB->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutScenestreaming->addLayout(layoutRow);
     labelGpuMemoryBudgetMB = new QLabel(this);
     layoutRow->addWidget(labelGpuMemoryBudgetMB);
@@ -208,7 +208,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     GpuMemoryBudgetMB->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupAmbientocclusion = new QGroupBox(this);
     layout->addWidget(groupAmbientocclusion);
     auto layoutHorizAmbientocclusion = new QHBoxLayout(groupAmbientocclusion);
@@ -216,10 +216,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizAmbientocclusion->addLayout(layoutAmbientocclusion);
     layoutHorizAmbientocclusion->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutAmbientocclusion->addLayout(layoutRow);
     AO = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(AO);
@@ -227,10 +227,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     AO->setEntryName("AO");
     AO->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutAmbientocclusion->addLayout(layoutRow);
     labelAOMethod = new QLabel(this);
     layoutRow->addWidget(labelAOMethod);
@@ -238,14 +238,14 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(AOMethod);
     AOMethod->setEntryName("AOMethod");
     AOMethod->setParamGrpPath("View/Render");
-    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1141)
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1230)
         AOMethod->addItem(QString());
     AOMethod->setCurrentIndex(Gui::RenderParams::defaultAOMethod());
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutAmbientocclusion->addLayout(layoutRow);
     labelAOSlices = new QLabel(this);
     layoutRow->addWidget(labelAOSlices);
@@ -255,10 +255,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     AOSlices->setEntryName("AOSlices");
     AOSlices->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutAmbientocclusion->addLayout(layoutRow);
     labelAOSteps = new QLabel(this);
     layoutRow->addWidget(labelAOSteps);
@@ -268,10 +268,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     AOSteps->setEntryName("AOSteps");
     AOSteps->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutAmbientocclusion->addLayout(layoutRow);
     labelAORadius = new QLabel(this);
     layoutRow->addWidget(labelAORadius);
@@ -281,10 +281,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     AORadius->setEntryName("AORadius");
     AORadius->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutAmbientocclusion->addLayout(layoutRow);
     labelAOIntensity = new QLabel(this);
     layoutRow->addWidget(labelAOIntensity);
@@ -295,7 +295,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     AOIntensity->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupPhysicallybasedshading = new QGroupBox(this);
     layout->addWidget(groupPhysicallybasedshading);
     auto layoutHorizPhysicallybasedshading = new QHBoxLayout(groupPhysicallybasedshading);
@@ -303,10 +303,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizPhysicallybasedshading->addLayout(layoutPhysicallybasedshading);
     layoutHorizPhysicallybasedshading->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPhysicallybasedshading->addLayout(layoutRow);
     PBR = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(PBR);
@@ -314,10 +314,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     PBR->setEntryName("PBR");
     PBR->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPhysicallybasedshading->addLayout(layoutRow);
     labelPBRMetallic = new QLabel(this);
     layoutRow->addWidget(labelPBRMetallic);
@@ -327,10 +327,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     PBRMetallic->setEntryName("PBRMetallic");
     PBRMetallic->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPhysicallybasedshading->addLayout(layoutRow);
     labelPBRRoughness = new QLabel(this);
     layoutRow->addWidget(labelPBRRoughness);
@@ -340,10 +340,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     PBRRoughness->setEntryName("PBRRoughness");
     PBRRoughness->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPhysicallybasedshading->addLayout(layoutRow);
     PBRFromSpecular = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(PBRFromSpecular);
@@ -351,10 +351,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     PBRFromSpecular->setEntryName("PBRFromSpecular");
     PBRFromSpecular->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPhysicallybasedshading->addLayout(layoutRow);
     labelShininessMapping = new QLabel(this);
     layoutRow->addWidget(labelShininessMapping);
@@ -362,14 +362,14 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(ShininessMapping);
     ShininessMapping->setEntryName("ShininessMapping");
     ShininessMapping->setParamGrpPath("View/Render");
-    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1141)
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1230)
         ShininessMapping->addItem(QString());
     ShininessMapping->setCurrentIndex(Gui::RenderParams::defaultShininessMapping());
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutPhysicallybasedshading->addLayout(layoutRow);
     labelPBREnvIntensity = new QLabel(this);
     layoutRow->addWidget(labelPBREnvIntensity);
@@ -380,7 +380,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     PBREnvIntensity->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupBumpmapping = new QGroupBox(this);
     layout->addWidget(groupBumpmapping);
     auto layoutHorizBumpmapping = new QHBoxLayout(groupBumpmapping);
@@ -388,10 +388,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizBumpmapping->addLayout(layoutBumpmapping);
     layoutHorizBumpmapping->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutBumpmapping->addLayout(layoutRow);
     labelBumpScale = new QLabel(this);
     layoutRow->addWidget(labelBumpScale);
@@ -401,10 +401,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     BumpScale->setEntryName("BumpScale");
     BumpScale->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutBumpmapping->addLayout(layoutRow);
     Parallax = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(Parallax);
@@ -413,7 +413,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     Parallax->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupVolumetriclighting = new QGroupBox(this);
     layout->addWidget(groupVolumetriclighting);
     auto layoutHorizVolumetriclighting = new QHBoxLayout(groupVolumetriclighting);
@@ -421,10 +421,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizVolumetriclighting->addLayout(layoutVolumetriclighting);
     layoutHorizVolumetriclighting->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutVolumetriclighting->addLayout(layoutRow);
     Volumetric = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(Volumetric);
@@ -432,10 +432,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     Volumetric->setEntryName("Volumetric");
     Volumetric->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutVolumetriclighting->addLayout(layoutRow);
     labelVolumetricIntensity = new QLabel(this);
     layoutRow->addWidget(labelVolumetricIntensity);
@@ -445,10 +445,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     VolumetricIntensity->setEntryName("VolumetricIntensity");
     VolumetricIntensity->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutVolumetriclighting->addLayout(layoutRow);
     labelVolumetricDensity = new QLabel(this);
     layoutRow->addWidget(labelVolumetricDensity);
@@ -458,10 +458,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     VolumetricDensity->setEntryName("VolumetricDensity");
     VolumetricDensity->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutVolumetriclighting->addLayout(layoutRow);
     Caustics = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(Caustics);
@@ -469,10 +469,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     Caustics->setEntryName("Caustics");
     Caustics->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutVolumetriclighting->addLayout(layoutRow);
     labelCausticsIntensity = new QLabel(this);
     layoutRow->addWidget(labelCausticsIntensity);
@@ -482,10 +482,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CausticsIntensity->setEntryName("CausticsIntensity");
     CausticsIntensity->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutVolumetriclighting->addLayout(layoutRow);
     labelCausticsScale = new QLabel(this);
     layoutRow->addWidget(labelCausticsScale);
@@ -495,10 +495,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CausticsScale->setEntryName("CausticsScale");
     CausticsScale->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutVolumetriclighting->addLayout(layoutRow);
     labelCausticsSpeed = new QLabel(this);
     layoutRow->addWidget(labelCausticsSpeed);
@@ -509,7 +509,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CausticsSpeed->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupWatersurface = new QGroupBox(this);
     layout->addWidget(groupWatersurface);
     auto layoutHorizWatersurface = new QHBoxLayout(groupWatersurface);
@@ -517,10 +517,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizWatersurface->addLayout(layoutWatersurface);
     layoutHorizWatersurface->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutWatersurface->addLayout(layoutRow);
     WaterSurface = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(WaterSurface);
@@ -528,10 +528,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     WaterSurface->setEntryName("WaterSurface");
     WaterSurface->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutWatersurface->addLayout(layoutRow);
     labelWaterWaveStrength = new QLabel(this);
     layoutRow->addWidget(labelWaterWaveStrength);
@@ -541,10 +541,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     WaterWaveStrength->setEntryName("WaterWaveStrength");
     WaterWaveStrength->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutWatersurface->addLayout(layoutRow);
     labelWaterWaveScale = new QLabel(this);
     layoutRow->addWidget(labelWaterWaveScale);
@@ -554,10 +554,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     WaterWaveScale->setEntryName("WaterWaveScale");
     WaterWaveScale->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutWatersurface->addLayout(layoutRow);
     labelWaterWaveSpeed = new QLabel(this);
     layoutRow->addWidget(labelWaterWaveSpeed);
@@ -568,7 +568,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     WaterWaveSpeed->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupBloom = new QGroupBox(this);
     layout->addWidget(groupBloom);
     auto layoutHorizBloom = new QHBoxLayout(groupBloom);
@@ -576,10 +576,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizBloom->addLayout(layoutBloom);
     layoutHorizBloom->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutBloom->addLayout(layoutRow);
     Bloom = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(Bloom);
@@ -587,10 +587,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     Bloom->setEntryName("Bloom");
     Bloom->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutBloom->addLayout(layoutRow);
     labelBloomThreshold = new QLabel(this);
     layoutRow->addWidget(labelBloomThreshold);
@@ -600,10 +600,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     BloomThreshold->setEntryName("BloomThreshold");
     BloomThreshold->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutBloom->addLayout(layoutRow);
     labelBloomIntensity = new QLabel(this);
     layoutRow->addWidget(labelBloomIntensity);
@@ -613,10 +613,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     BloomIntensity->setEntryName("BloomIntensity");
     BloomIntensity->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutBloom->addLayout(layoutRow);
     labelBloomRadius = new QLabel(this);
     layoutRow->addWidget(labelBloomRadius);
@@ -627,7 +627,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     BloomRadius->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupScenelightextras = new QGroupBox(this);
     layout->addWidget(groupScenelightextras);
     auto layoutHorizScenelightextras = new QHBoxLayout(groupScenelightextras);
@@ -635,10 +635,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizScenelightextras->addLayout(layoutScenelightextras);
     layoutHorizScenelightextras->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutScenelightextras->addLayout(layoutRow);
     SunDisc = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(SunDisc);
@@ -646,10 +646,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     SunDisc->setEntryName("SunDisc");
     SunDisc->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutScenelightextras->addLayout(layoutRow);
     labelSunDiscSize = new QLabel(this);
     layoutRow->addWidget(labelSunDiscSize);
@@ -660,7 +660,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     SunDiscSize->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupGroundreflection = new QGroupBox(this);
     layout->addWidget(groupGroundreflection);
     auto layoutHorizGroundreflection = new QHBoxLayout(groupGroundreflection);
@@ -668,10 +668,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizGroundreflection->addLayout(layoutGroundreflection);
     layoutHorizGroundreflection->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutGroundreflection->addLayout(layoutRow);
     GroundReflection = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(GroundReflection);
@@ -679,10 +679,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     GroundReflection->setEntryName("GroundReflection");
     GroundReflection->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutGroundreflection->addLayout(layoutRow);
     labelGroundReflectionIntensity = new QLabel(this);
     layoutRow->addWidget(labelGroundReflectionIntensity);
@@ -693,7 +693,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     GroundReflectionIntensity->setParamGrpPath("View/Render");
 
 
-    // Auto generated code (Tools/params_utils.py:448)
+    // Auto generated code (Tools/params_utils.py:473)
     groupExternalshadingCycles = new QGroupBox(this);
     layout->addWidget(groupExternalshadingCycles);
     auto layoutHorizExternalshadingCycles = new QHBoxLayout(groupExternalshadingCycles);
@@ -701,10 +701,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutHorizExternalshadingCycles->addLayout(layoutExternalshadingCycles);
     layoutHorizExternalshadingCycles->addStretch();
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutExternalshadingCycles->addLayout(layoutRow);
     labelCyclesDevice = new QLabel(this);
     layoutRow->addWidget(labelCyclesDevice);
@@ -714,10 +714,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CyclesDevice->setEntryName("CyclesDevice");
     CyclesDevice->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutExternalshadingCycles->addLayout(layoutRow);
     labelCyclesSamples = new QLabel(this);
     layoutRow->addWidget(labelCyclesSamples);
@@ -727,10 +727,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CyclesSamples->setEntryName("CyclesSamples");
     CyclesSamples->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutExternalshadingCycles->addLayout(layoutRow);
     labelCyclesTimeLimit = new QLabel(this);
     layoutRow->addWidget(labelCyclesTimeLimit);
@@ -740,10 +740,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CyclesTimeLimit->setEntryName("CyclesTimeLimit");
     CyclesTimeLimit->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutExternalshadingCycles->addLayout(layoutRow);
     CyclesDenoise = new Gui::PrefCheckBox(this);
     layoutRow->addWidget(CyclesDenoise);
@@ -751,10 +751,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CyclesDenoise->setEntryName("CyclesDenoise");
     CyclesDenoise->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutExternalshadingCycles->addLayout(layoutRow);
     labelCyclesPixelSize = new QLabel(this);
     layoutRow->addWidget(labelCyclesPixelSize);
@@ -764,10 +764,10 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CyclesPixelSize->setEntryName("CyclesPixelSize");
     CyclesPixelSize->setParamGrpPath("View/Render");
 
-    // Auto generated code (Tools/params_utils.py:461)
+    // Auto generated code (Tools/params_utils.py:486)
     layoutRow = new QHBoxLayout();
 
-    // Auto generated code (Tools/params_utils.py:467)
+    // Auto generated code (Tools/params_utils.py:492)
     layoutExternalshadingCycles->addLayout(layoutRow);
     labelCyclesMaxStreams = new QLabel(this);
     layoutRow->addWidget(labelCyclesMaxStreams);
@@ -778,20 +778,20 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CyclesMaxStreams->setParamGrpPath("View/Render");
     layout->addItem(new QSpacerItem(40, 20, QSizePolicy::Fixed, QSizePolicy::Expanding));
     retranslateUi();
-    // Auto generated code (Tools/params_utils.py:645)
+    // Auto generated code (Tools/params_utils.py:670)
     
 }
 
-// Auto generated code (Tools/params_utils.py:652)
+// Auto generated code (Tools/params_utils.py:677)
 DlgSettingsRender::~DlgSettingsRender()
 {
     
 }
 
-// Auto generated code (Tools/params_utils.py:661)
+// Auto generated code (Tools/params_utils.py:686)
 void DlgSettingsRender::saveSettings()
 {
-    // Auto generated code (Tools/params_utils.py:497)
+    // Auto generated code (Tools/params_utils.py:522)
     Type->onSave();
     OutputTransform->onSave();
     Exposure->onSave();
@@ -843,10 +843,10 @@ void DlgSettingsRender::saveSettings()
     CyclesMaxStreams->onSave();
 }
 
-// Auto generated code (Tools/params_utils.py:670)
+// Auto generated code (Tools/params_utils.py:695)
 void DlgSettingsRender::loadSettings()
 {
-    // Auto generated code (Tools/params_utils.py:484)
+    // Auto generated code (Tools/params_utils.py:509)
     Type->onRestore();
     OutputTransform->onRestore();
     Exposure->onRestore();
@@ -898,7 +898,7 @@ void DlgSettingsRender::loadSettings()
     CyclesMaxStreams->onRestore();
 }
 
-// Auto generated code (Tools/params_utils.py:679)
+// Auto generated code (Tools/params_utils.py:704)
 void DlgSettingsRender::retranslateUi()
 {
     setWindowTitle(QObject::tr("Render engine"));
@@ -909,7 +909,7 @@ void DlgSettingsRender::retranslateUi()
     OutputTransform->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docOutputTransform()));
     labelOutputTransform->setText(QObject::tr("Output colour transform"));
     labelOutputTransform->setToolTip(OutputTransform->toolTip());
-    // Auto generated code (Tools/params_utils.py:1166)
+    // Auto generated code (Tools/params_utils.py:1255)
     OutputTransform->setItemText(0, QObject::tr("Off"));
     OutputTransform->setItemText(1, QObject::tr("sRGB"));
     Exposure->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docExposure()));
@@ -943,7 +943,7 @@ void DlgSettingsRender::retranslateUi()
     AOMethod->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOMethod()));
     labelAOMethod->setText(QObject::tr("AO method"));
     labelAOMethod->setToolTip(AOMethod->toolTip());
-    // Auto generated code (Tools/params_utils.py:1166)
+    // Auto generated code (Tools/params_utils.py:1255)
     AOMethod->setItemText(0, QObject::tr("SSAO (hemisphere)"));
     AOMethod->setItemText(1, QObject::tr("GTAO (horizon)"));
     AOSlices->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOSlices()));
@@ -972,7 +972,7 @@ void DlgSettingsRender::retranslateUi()
     ShininessMapping->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docShininessMapping()));
     labelShininessMapping->setText(QObject::tr("Shininess mapping"));
     labelShininessMapping->setToolTip(ShininessMapping->toolTip());
-    // Auto generated code (Tools/params_utils.py:1166)
+    // Auto generated code (Tools/params_utils.py:1255)
     ShininessMapping->setItemText(0, QObject::tr("GL exponent"));
     ShininessMapping->setItemText(1, QObject::tr("Full range"));
     PBREnvIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBREnvIntensity()));
@@ -1060,7 +1060,7 @@ void DlgSettingsRender::retranslateUi()
     labelCyclesMaxStreams->setToolTip(CyclesMaxStreams->toolTip());
 }
 
-// Auto generated code (Tools/params_utils.py:697)
+// Auto generated code (Tools/params_utils.py:722)
 void DlgSettingsRender::changeEvent(QEvent *e)
 {
     if (e->type() == QEvent::LanguageChange) {
@@ -1069,6 +1069,6 @@ void DlgSettingsRender::changeEvent(QEvent *e)
     QWidget::changeEvent(e);
 }
 
-// Auto generated code (Tools/params_utils.py:710)
+// Auto generated code (Tools/params_utils.py:735)
 #include "moc_DlgSettingsRender.cpp"
 //[[[end]]]

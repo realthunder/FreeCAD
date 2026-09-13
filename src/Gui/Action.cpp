@@ -772,6 +772,11 @@ static inline QToolButton *setupMenuToolButton(QWidget *w)
 /**
  * Adds this action to widget \a w.
  */
+void ActionGroup::populateMenu(QMenu *menu) const
+{
+    fillGroupMenu(menu, actions(), isExclusive());
+}
+
 void ActionGroup::addTo(QWidget *widget)
 {
     // When adding an action that has defined a menu then shortcuts

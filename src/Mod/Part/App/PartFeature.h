@@ -231,7 +231,7 @@ public:
     PartParams.declare_properties()
     ]]]*/
 
-    // Auto generated code (Tools/params_utils.py:1012)
+    // Auto generated code (Tools/params_utils.py:1437)
     App::PropertyLinkList *getShapeContentsProperty(bool force=false);
     App::PropertyBool *getShapeContentSuppressedProperty(bool force=false);
     App::PropertyLinkHidden *getShapeContentReplacementProperty(bool force=false);

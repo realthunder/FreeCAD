@@ -186,7 +186,20 @@ GuiExport Render::LightConfig translateLightConfig(SoState * state,
 /// complement of translateLightConfig: the shadow-capable node types it
 /// claims for the scene light are the ones skipped here, so no light is
 /// counted twice and none is dropped.
-GuiExport Render::ViewLightConfig translateViewLightConfig(SoState * state);
+///
+/// \a viewport says whether \a state came from a viewport's own
+/// traversal, and it is what the returned config's `fed` means: a
+/// viewport is where the headlight and the backlight hang, so only a
+/// viewport can report that the lighting was resolved and came to
+/// nothing. A GL-free publish (SoFCRenderCacheManager::traverse) seeds
+/// its state from a bare SoCallbackAction and has no lights in it at
+/// all -- not because the view is dark but because there is no view --
+/// and saying `fed` there tells every consumer the scene was
+/// deliberately left unlit, which suppresses the fallback headlight
+/// they would otherwise draw and shades the whole publish black
+/// (docs/HeadlessServe.md).
+GuiExport Render::ViewLightConfig translateViewLightConfig(SoState * state,
+                                                           bool viewport);
 
 /// Resolve the per-frame autozoom scale from the traversal state's view
 /// volume (the exact SoAutoZoomTranslation::getScaleFactor math with a

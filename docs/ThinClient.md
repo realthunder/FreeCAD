@@ -306,6 +306,12 @@ between that tool's on-view entry boxes, which the server states back on the
 `{"cmd":"onview"}` push (sec 8.7). `{"op":"undo"}` and `{"op":"redo"}` (an optional
 `steps`, default 1) are the document's transactions, everyone's under the shared
 session; the reply carries the two stacks by name (8.11 item 2).
+streams the frame; docs/CyclesIntegration.md sec 7.1 spells them. The omni
+search box's ops -- `omni.catalog`, `omni.rows`, `omni.objects`,
+`omni.resolve`, `command.run`, `command.children`, `param.get/set/reset`,
+and the `omni.changed` push -- are docs/OmniSearch.md sec 6; `getProperties`
+and `setProperty` on `view3d` take an optional `view` name from the same
+work.
 
 **Subjects.** `getProperties` takes an optional `subject`: `object` (the default, and what
 every v0 client asks for by saying nothing), `view3d` — the session's 3D view, where the
@@ -318,6 +324,13 @@ select geometry. Each descriptor carries the container it came from in `scope`
 know the routing. A view property is the session's, not the model's, so it is assigned
 outside the `AutoTransaction` and answers `recomputed: false`; it is not undo history and
 there is nothing to recompute.
+
+**Which documents a connection may name.** The `doc` field is not a free
+choice. A connection reaches the document its group serves and the
+documents that one links out to; any other name is answered as an
+unknown document, which is also what a name belonging to nothing gets.
+The rule and its gaps are docs/OmniSearch.md sec 6.4, its place in
+multi-document serving docs/MultiDocServe.md sec 5.1.
 
 **Forward hook — preview/commit + supersedes.** When drag-driven ops arrive (§5), they reuse
 this channel at 5–10 Hz with a `"preview": true` flag and a final committed call. Two

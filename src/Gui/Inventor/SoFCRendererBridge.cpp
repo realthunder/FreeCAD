@@ -2345,10 +2345,15 @@ decodeParamImage(const std::string &path, bool keepGray)
         for (int y = 0; y < img.height(); ++y)
             std::memcpy(tex->pixels.data() + size_t(y) * rowLen,
                         img.constScanLine(y), rowLen);
-        // The file itself, when it is one every tier can decode: the
-        // transport ships it in place of the pixels (SceneDump v75,
-        // docs/MaterialStorage.md sec 17.23). Decided by what is in the
-        // file, like the Radiance test above, not by its name.
+    }
+    // The file itself, when it is one every tier can decode: the
+    // transport ships it in place of the pixels (SceneDump v75,
+    // docs/MaterialStorage.md sec 17.23). Decided by what is in the
+    // file, like the Radiance test above, not by its name -- and asked
+    // of BOTH branches, because a Radiance environment is the one map
+    // where the saving is measured in tens of megabytes: 2048x1024 of
+    // RGBE is a few megabytes as a file and 24 decoded.
+    if (tex) {
         QFile file(qpath);
         if (file.open(QIODevice::ReadOnly)) {
             QByteArray bytes = file.readAll();
@@ -2725,7 +2730,7 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
 }
 
 Render::ViewLightConfig
-RendererBridge::translateViewLightConfig(SoState * state)
+RendererBridge::translateViewLightConfig(SoState * state, bool viewport)
 {
     // The ordinary lights of the traversal. The viewer's headlight and
     // backlight are plain SoDirectionalLights sitting in the root
@@ -2747,7 +2752,11 @@ RendererBridge::translateViewLightConfig(SoState * state)
     // filter, so the two agree without either seeing the other.
     bool sceneLightTaken = false;
     Render::ViewLightConfig res;
-    res.fed = true;
+    // Only a viewport can say the lighting resolved to nothing; see the
+    // header. A publisher with no viewport leaves this false, and the
+    // consumer -- which IS a viewport -- lights the scene with its own
+    // headlight the way it does for a dump older than this config.
+    res.fed = viewport;
     // GL's LIGHT_MODEL_AMBIENT, which Coin drives from SoEnvironment
     // (default 0.2 grey). A surface's ambient term is this times the
     // material's own ambient colour.

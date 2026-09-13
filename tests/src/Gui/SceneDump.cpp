@@ -17,6 +17,7 @@
 
 #include <cstring>
 
+#include <Gui/Renderer/ImageDecode.h>
 #include <Gui/Renderer/MeshSource.h>
 #include <Gui/Renderer/SceneDump.h>
 #include <Gui/Renderer/SceneLadder.h>
@@ -670,6 +671,124 @@ TEST(SceneDump, anEncodedTextureTravelsAsItsFile)
     ASSERT_EQ(back.scene.size(), 1u);
     ASSERT_TRUE(back.scene.front().material.texture);
     EXPECT_EQ(back.scene.front().material.texture->pixels, kPng2x2Pixels);
+}
+
+/// A Radiance environment travels as its file too (v76). It is the
+/// biggest texture a scene carries and the only one whose pixels are
+/// floats -- 2048x1024 of RGBE is a few megabytes as a file and 24
+/// decoded -- and until v76 it was the one payload the encoded path
+/// did not recognise (docs/MaterialStorage.md sec 17.23). Flat
+/// scanlines, since the decoder reads a picture under eight wide that
+/// way; exponent 136 scales by exactly one, so every expected float is
+/// its own mantissa byte.
+static const uint8_t kHdr2x2[] = {
+    0x23, 0x3f, 0x52, 0x41, 0x44, 0x49, 0x41, 0x4e, 0x43, 0x45, 0x0a, 0x46,
+    0x4f, 0x52, 0x4d, 0x41, 0x54, 0x3d, 0x33, 0x32, 0x2d, 0x62, 0x69, 0x74,
+    0x5f, 0x72, 0x6c, 0x65, 0x5f, 0x72, 0x67, 0x62, 0x65, 0x0a, 0x0a, 0x2d,
+    0x59, 0x20, 0x32, 0x20, 0x2b, 0x58, 0x20, 0x32, 0x0a, 0x01, 0x02, 0x03,
+    0x88, 0x04, 0x05, 0x06, 0x88, 0x07, 0x08, 0x09, 0x88, 0x0a, 0x0b, 0x0c,
+    0x88};
+// Rows bottom-up like GL: the file's top row (1,2,3 / 4,5,6) is second.
+static const std::vector<float> kHdr2x2Pixels = {7.0f,  8.0f,  9.0f,
+                                                 10.0f, 11.0f, 12.0f,
+                                                 1.0f,  2.0f,  3.0f,
+                                                 4.0f,  5.0f,  6.0f};
+
+std::vector<float> floatsOf(const std::vector<uint8_t>& bytes)
+{
+    std::vector<float> out(bytes.size() / sizeof(float));
+    if (!out.empty()) {
+        std::memcpy(out.data(), bytes.data(), bytes.size());
+    }
+    return out;
+}
+
+std::shared_ptr<Render::TextureImage> makeRadianceTexture(int id)
+{
+    auto tex = std::make_shared<Render::TextureImage>();
+    tex->textureId = uint64_t(id);
+    tex->width = 2;
+    tex->height = 2;
+    tex->numComponents = 3;
+    tex->sample = Render::TextureImage::F32;
+    tex->pixels.resize(kHdr2x2Pixels.size() * sizeof(float));
+    std::memcpy(tex->pixels.data(), kHdr2x2Pixels.data(), tex->pixels.size());
+    tex->encoded.assign(kHdr2x2, kHdr2x2 + sizeof(kHdr2x2));
+    return tex;
+}
+
+TEST(SceneDump, aRadianceEnvironmentTravelsAsItsFile)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    auto mesh = makeMesh(4, 8);
+    snap.scene.push_back(makeDraw(0x6666, mesh, 0xffffffff));
+    snap.pbrconf.enabled = true;
+    auto env = makeRadianceTexture(31);
+    snap.pbrconf.envImage = env;
+    snap.width = 64;
+    snap.height = 64;
+    attachSinks(snap, store);
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    ASSERT_EQ(env->contentKey.size(), 40u);
+    auto it = store.blobs.find(env->contentKey);
+    ASSERT_NE(it, store.blobs.end());
+    EXPECT_EQ(it->second.size(), sizeof(kHdr2x2))
+        << "the blob is the Radiance file, not the 48 bytes it decodes to";
+    EXPECT_EQ(floatsOf(env->pixels), kHdr2x2Pixels)
+        << "the producer's copy is untouched";
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+    ASSERT_TRUE(loaded.pbrconf.envImage);
+    const auto& got = *loaded.pbrconf.envImage;
+    EXPECT_FALSE(got.deferred);
+    EXPECT_EQ(got.width, 2);
+    EXPECT_EQ(got.height, 2);
+    EXPECT_EQ(got.numComponents, 3);
+    EXPECT_EQ(got.sample, Render::TextureImage::F32)
+        << "a float map decoded back to bytes would draw as a black sky";
+    EXPECT_EQ(floatsOf(got.pixels), kHdr2x2Pixels);
+
+    // Bundled: the file rides inline and is decoded on read.
+    Render::SceneSnapshot bundled;
+    bundled.scene.push_back(makeDraw(0x6666, mesh, 0xffffffff));
+    bundled.pbrconf.enabled = true;
+    bundled.pbrconf.envImage = makeRadianceTexture(32);
+    bundled.width = 64;
+    bundled.height = 64;
+    std::vector<uint8_t> file;
+    ASSERT_TRUE(Render::saveSceneSnapshot(file, bundled));
+    Render::SceneSnapshot back;
+    ASSERT_TRUE(Render::loadSceneSnapshot(file.data(), file.size(), back));
+    ASSERT_TRUE(back.pbrconf.envImage);
+    EXPECT_EQ(floatsOf(back.pbrconf.envImage->pixels), kHdr2x2Pixels);
+}
+
+/// The size cap the browser tier decodes under (`kDecodeMaxSide`, 1024
+/// there and none on the desktop) now covers the environment, which is
+/// the texture it exists for: 2048x1024 of F32 is 24 MB in that heap
+/// and 6 at half. Halving floats is its own path -- the byte one
+/// rounds -- so it is exercised directly rather than only through a
+/// wire whose desktop cap is zero. One step to 1x1 averages all four
+/// pixels: (1+4+7+10)/4 and its neighbours.
+TEST(SceneDump, aFloatMapHalvesToTheSizeCap)
+{
+    EXPECT_TRUE(Render::isEncodedImage(kHdr2x2, sizeof(kHdr2x2)))
+        << "the producer's gate has to recognise what the decoder reads";
+    int w = 0;
+    int h = 0;
+    std::vector<uint8_t> pixels;
+    ASSERT_TRUE(Render::decodeImage(kHdr2x2, sizeof(kHdr2x2), 3, 1, w, h,
+                                    pixels, true));
+    EXPECT_EQ(w, 1);
+    EXPECT_EQ(h, 1);
+    EXPECT_EQ(floatsOf(pixels), (std::vector<float> {5.5f, 6.5f, 7.5f}));
 }
 
 /// A texture in flight when the next publish lands is filled where the

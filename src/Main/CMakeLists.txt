@@ -3,6 +3,18 @@ configure_file(freecad.rc.cmake ${CMAKE_CURRENT_BINARY_DIR}/freecad.rc)
 configure_file(freecadCmd.rc.cmake ${CMAKE_CURRENT_BINARY_DIR}/freecadCmd.rc)
 file(COPY icon.ico DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
+# The longPathAware manifest. Listed as a source rather than passed as a link
+# option: CMake links MSVC targets in two passes and runs mt.exe between them,
+# so it collects .manifest sources itself and hands them to that step
+# (/MANIFEST:EMBED on top of it is a duplicate resource and fails the link).
+# Both executables host a Python interpreter, so this reaches script code as
+# well as Base::FileInfo -- see res/FreeCAD.manifest for what it buys.
+if(MSVC)
+    set(FREECAD_MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/res/FreeCAD.manifest)
+else(MSVC)
+    set(FREECAD_MANIFEST)
+endif(MSVC)
+
 if(BUILD_GUI)
     include_directories(
         ${Boost_INCLUDE_DIRS}
@@ -29,6 +41,7 @@ if(BUILD_GUI)
 
     SET(FreeCAD_SRCS
         ${CMAKE_CURRENT_BINARY_DIR}/freecad.rc
+        ${FREECAD_MANIFEST}
         icon.ico
         MainGui.cpp
     )
@@ -75,6 +88,7 @@ endif(BUILD_GUI)
 
 SET(FreeCADMainCmd_SRCS
     ${CMAKE_CURRENT_BINARY_DIR}/freecadCmd.rc
+    ${FREECAD_MANIFEST}
     icon.ico
     MainCmd.cpp
 )

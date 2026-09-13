@@ -1928,7 +1928,7 @@ import PartParams
 PartParams.define_properties()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:990)
+// Auto generated code (Tools/params_utils.py:1410)
 App::PropertyLinkList *Part::Feature::getShapeContentsProperty(bool force)
 {
     auto obj = this;
@@ -1946,7 +1946,7 @@ App::PropertyLinkList *Part::Feature::getShapeContentsProperty(bool force)
     App::Prop_None));
 }
 
-// Auto generated code (Tools/params_utils.py:990)
+// Auto generated code (Tools/params_utils.py:1410)
 App::PropertyBool *Part::Feature::getShapeContentSuppressedProperty(bool force)
 {
     auto obj = this;
@@ -1964,7 +1964,7 @@ App::PropertyBool *Part::Feature::getShapeContentSuppressedProperty(bool force)
     App::Prop_None));
 }
 
-// Auto generated code (Tools/params_utils.py:990)
+// Auto generated code (Tools/params_utils.py:1410)
 App::PropertyLinkHidden *Part::Feature::getShapeContentReplacementProperty(bool force)
 {
     auto obj = this;
@@ -1982,7 +1982,7 @@ App::PropertyLinkHidden *Part::Feature::getShapeContentReplacementProperty(bool 
     App::Prop_None));
 }
 
-// Auto generated code (Tools/params_utils.py:990)
+// Auto generated code (Tools/params_utils.py:1410)
 App::PropertyBool *Part::Feature::getShapeContentReplacementSuppressedProperty(bool force)
 {
     auto obj = this;
@@ -2000,7 +2000,7 @@ App::PropertyBool *Part::Feature::getShapeContentReplacementSuppressedProperty(b
     App::Prop_None));
 }
 
-// Auto generated code (Tools/params_utils.py:990)
+// Auto generated code (Tools/params_utils.py:1410)
 App::PropertyBool *Part::Feature::getShapeContentDetachedProperty(bool force)
 {
     auto obj = this;
@@ -2018,7 +2018,7 @@ App::PropertyBool *Part::Feature::getShapeContentDetachedProperty(bool force)
     App::Prop_None));
 }
 
-// Auto generated code (Tools/params_utils.py:990)
+// Auto generated code (Tools/params_utils.py:1410)
 App::PropertyLinkHidden *Part::Feature::get_ShapeContentOwnerProperty(bool force)
 {
     auto obj = this;

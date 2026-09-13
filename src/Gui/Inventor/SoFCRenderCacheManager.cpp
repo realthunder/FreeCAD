@@ -1743,7 +1743,12 @@ SoFCRenderCacheManager::traverse(SoNode * root, const SbViewportRegion & viewpor
   // scene looks (AO, water, hidden line, ...) and an edit to one of them
   // moves no node id at all, so gating them on the graph having changed
   // would drop exactly the republish a remote property edit asks for.
-  PRIVATE(this)->renderer->pushExternalConfigs(state);
+  // false: this is a seed state, not a viewport's. Nothing hangs a
+  // headlight here -- there is no viewer to hang one -- so the light
+  // feed must not claim to have resolved the lighting, or every
+  // consumer draws the publish unlit (see
+  // RendererBridge::translateViewLightConfig).
+  PRIVATE(this)->renderer->pushExternalConfigs(state, false);
 
   if (PRIVATE(this)->sceneid == root->getNodeId())
     return;

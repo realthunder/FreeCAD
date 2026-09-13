@@ -312,7 +312,16 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     (docs/MaterialStorage.md sec 17.23). An older snapshot carries
 //     pixels only, and reads as before. Every chunk that inlines a
 //     texture header moves with it, so kChunkVersion moves.
-const uint32_t kVersion = 75;
+// 76: that encoded payload may be a RADIANCE picture, decoded to F32
+//     on arrival. Nothing moved on the wire -- v75 already carries the
+//     flag -- but an environment is the biggest texture a scene has and
+//     the only one whose pixels are floats, so a 2k map was 24 MB of
+//     decoded F32 where the file is a few (docs/MaterialStorage.md sec
+//     17.23). The bump is for the reader: a v75 build has no float
+//     decoder, and handed one it would fail the texture and draw the
+//     scene under the stand-in preset with one line in the log. Refused
+//     outright is the better answer.
+const uint32_t kVersion = 76;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -1243,8 +1252,11 @@ static void decodeInto(TextureImage &tex, const uint8_t *bytes, size_t size)
 {
     int w = 0, h = 0;
     std::vector<uint8_t> pixels;
+    // The sample kind came over the wire ahead of the payload, which is
+    // what says whether these bytes decode to floats -- a Radiance
+    // environment -- or to the bytes everything else is.
     if (decodeImage(bytes, size, tex.numComponents, kDecodeMaxSide, w, h,
-                    pixels)) {
+                    pixels, tex.sample == TextureImage::F32)) {
         tex.width = w;
         tex.height = h;
         tex.pixels.swap(pixels);

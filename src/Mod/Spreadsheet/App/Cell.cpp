@@ -1220,7 +1220,7 @@ import SheetParams
 SheetParams.define_edit_modes()
 ]]]*/
 
-// Auto generated code (Mod/Spreadsheet/App/SheetParams.py:114)
+// Auto generated code (Mod/Spreadsheet/App/SheetParams.py:134)
 const char *Cell::editModeName(EditMode mode)
 {
     switch(mode) {
@@ -1247,7 +1247,7 @@ const char *Cell::editModeName(EditMode mode)
     }
 }
 
-// Auto generated code (Mod/Spreadsheet/App/SheetParams.py:131)
+// Auto generated code (Mod/Spreadsheet/App/SheetParams.py:151)
 const char *Cell::editModeLabel(EditMode mode)
 {
     switch(mode) {
@@ -1274,7 +1274,7 @@ const char *Cell::editModeLabel(EditMode mode)
     }
 }
 
-// Auto generated code (Mod/Spreadsheet/App/SheetParams.py:148)
+// Auto generated code (Mod/Spreadsheet/App/SheetParams.py:168)
 const char *Cell::editModeToolTips(EditMode mode)
 {
     switch(mode) {
@@ -1342,7 +1342,7 @@ const char *Cell::editModeToolTips(EditMode mode)
     }
 }
 
-// Auto generated code (Mod/Spreadsheet/App/SheetParams.py:166)
+// Auto generated code (Mod/Spreadsheet/App/SheetParams.py:186)
 bool Cell::setEditMode(const char *name, bool silent)
 {
     EditMode mode;

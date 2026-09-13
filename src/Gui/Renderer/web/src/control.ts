@@ -244,8 +244,140 @@ export function setProperty(
   target: PropScope,
   name: string,
   value: unknown,
+  /// For target 'view3d': a view of the document by persistent name
+  /// ("View2"); absent = the served view (docs/OmniSearch.md sec 6).
+  view?: string,
 ): Promise<any> {
-  return sendOp('setProperty', { doc, obj, target, name, value });
+  const fields: Record<string, unknown> = { doc, obj, target, name, value };
+  if (view) fields.view = view;
+  return sendOp('setProperty', fields);
+}
+
+/// The two containers nothing in the scene stands for, one at a time:
+/// the document's properties, or a view's -- the served view, or a
+/// named one of the document.
+export function getContainerProperties(
+  subject: 'document' | 'view3d',
+  doc = '',
+  view?: string,
+): Promise<PropertiesReply> {
+  const fields: Record<string, unknown> = { doc, obj: '', subject };
+  if (view) fields.view = view;
+  return sendOp('getProperties', fields);
+}
+
+// ---- The omni search box (docs/OmniSearch.md sec 6) -------------------
+
+/// A catalog answer: the rows to add or replace and the keys to drop
+/// since the version the request named, or the whole list (`full`).
+export interface CatalogReply {
+  list: string;
+  session: string;
+  version: number;
+  full: boolean;
+  add: any[];
+  remove: string[];
+}
+
+export function omniCatalog(list: string, session: string, version: number):
+    Promise<CatalogReply> {
+  return sendOp('omni.catalog', { list, session, version });
+}
+
+/// The volatile detail of the rows on screen: a parameter's value and
+/// whether it is stored, a command's active state.
+export function omniRows(list: string, keys: string[]):
+    Promise<{ rows: Record<string, { value?: string; set?: boolean; active?: boolean }> }> {
+  return sendOp('omni.rows', { list, keys });
+}
+
+export interface ObjectEntry {
+  name: string;
+  /// Absent when it equals the name
+  label?: string;
+  type: string;
+  /// Sub-object names, for "Part.Box"
+  children?: string[];
+}
+
+export interface ViewEntry {
+  /// The persistent name, "View2"
+  name: string;
+  title: string;
+  /// The view this connection is served from
+  served?: boolean;
+}
+
+export interface ObjectsReply {
+  doc: string;
+  label: string;
+  objects: ObjectEntry[];
+  views: ViewEntry[];
+}
+
+export function omniObjects(doc = ''): Promise<ObjectsReply> {
+  return sendOp('omni.objects', { doc });
+}
+
+/// What the typed text names, in the box's grammar: an object, or a
+/// property with the descriptor and the addressing setProperty needs.
+export interface ResolveReply {
+  kind: 'object' | 'property';
+  doc: string;
+  /// The object the property belongs to, or the resolved sub-object
+  obj: string;
+  /// For an object: the top-level object and the sub-object path
+  top?: string;
+  sub?: string;
+  label?: string;
+  type?: string;
+  scope?: PropScope;
+  /// A named view, when scope is 'view3d' and it is not the served one
+  view?: string;
+  prop?: PropDescriptor;
+}
+
+export function omniResolve(query: string, doc = ''): Promise<ResolveReply> {
+  return sendOp('omni.resolve', { query, doc });
+}
+
+/// Run a command, or row `child` of a group command's menu
+export function runCommand(name: string, child?: number): Promise<any> {
+  const fields: Record<string, unknown> = { name };
+  if (typeof child === 'number') fields.child = child;
+  return sendOp('command.run', fields, 60000);
+}
+
+export interface CommandChild {
+  index: number;
+  text?: string;
+  tooltip?: string;
+  checkable?: boolean;
+  checked?: boolean;
+  enabled?: boolean;
+  visible?: boolean;
+  separator?: boolean;
+}
+
+export function commandChildren(name: string):
+    Promise<{ exclusive: boolean; items: CommandChild[] }> {
+  return sendOp('command.children', { name });
+}
+
+export interface ParamState { key: string; value: string; set: boolean }
+
+export function paramGet(key: string): Promise<ParamState> {
+  return sendOp('param.get', { key });
+}
+
+/// `value` in the registry's text form: true/false, a decimal, 0x-hex
+/// for a Hex, or the string
+export function paramSet(key: string, value: string): Promise<ParamState> {
+  return sendOp('param.set', { key, value });
+}
+
+export function paramReset(key: string): Promise<ParamState> {
+  return sendOp('param.reset', { key });
 }
 
 // ---------------------------------------------------------------------------

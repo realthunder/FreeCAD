@@ -242,55 +242,55 @@ void SheetTableView::buildContextMenu()
     SheetParams.init_edit_modes_actions()
     ]]]*/
 
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:188)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:208)
     actionEditNormal = new QAction(QApplication::translate("Spreadsheet", Cell::editModeLabel(Cell::EditNormal)), this);
     actionEditNormal->setData(QVariant((int)Cell::EditNormal));
     actionEditNormal->setCheckable(true);
     actionEditNormal->setToolTip(QApplication::translate("Spreadsheet", Cell::editModeToolTips(Cell::EditNormal)));
     editGroup->addAction(actionEditNormal);
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:188)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:208)
     actionEditButton = new QAction(QApplication::translate("Spreadsheet", Cell::editModeLabel(Cell::EditButton)), this);
     actionEditButton->setData(QVariant((int)Cell::EditButton));
     actionEditButton->setCheckable(true);
     actionEditButton->setToolTip(QApplication::translate("Spreadsheet", Cell::editModeToolTips(Cell::EditButton)));
     editGroup->addAction(actionEditButton);
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:188)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:208)
     actionEditCombo = new QAction(QApplication::translate("Spreadsheet", Cell::editModeLabel(Cell::EditCombo)), this);
     actionEditCombo->setData(QVariant((int)Cell::EditCombo));
     actionEditCombo->setCheckable(true);
     actionEditCombo->setToolTip(QApplication::translate("Spreadsheet", Cell::editModeToolTips(Cell::EditCombo)));
     editGroup->addAction(actionEditCombo);
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:188)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:208)
     actionEditLabel = new QAction(QApplication::translate("Spreadsheet", Cell::editModeLabel(Cell::EditLabel)), this);
     actionEditLabel->setData(QVariant((int)Cell::EditLabel));
     actionEditLabel->setCheckable(true);
     actionEditLabel->setToolTip(QApplication::translate("Spreadsheet", Cell::editModeToolTips(Cell::EditLabel)));
     editGroup->addAction(actionEditLabel);
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:188)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:208)
     actionEditQuantity = new QAction(QApplication::translate("Spreadsheet", Cell::editModeLabel(Cell::EditQuantity)), this);
     actionEditQuantity->setData(QVariant((int)Cell::EditQuantity));
     actionEditQuantity->setCheckable(true);
     actionEditQuantity->setToolTip(QApplication::translate("Spreadsheet", Cell::editModeToolTips(Cell::EditQuantity)));
     editGroup->addAction(actionEditQuantity);
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:188)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:208)
     actionEditCheckBox = new QAction(QApplication::translate("Spreadsheet", Cell::editModeLabel(Cell::EditCheckBox)), this);
     actionEditCheckBox->setData(QVariant((int)Cell::EditCheckBox));
     actionEditCheckBox->setCheckable(true);
     actionEditCheckBox->setToolTip(QApplication::translate("Spreadsheet", Cell::editModeToolTips(Cell::EditCheckBox)));
     editGroup->addAction(actionEditCheckBox);
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:188)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:208)
     actionEditAutoAlias = new QAction(QApplication::translate("Spreadsheet", Cell::editModeLabel(Cell::EditAutoAlias)), this);
     actionEditAutoAlias->setData(QVariant((int)Cell::EditAutoAlias));
     actionEditAutoAlias->setCheckable(true);
     actionEditAutoAlias->setToolTip(QApplication::translate("Spreadsheet", Cell::editModeToolTips(Cell::EditAutoAlias)));
     editGroup->addAction(actionEditAutoAlias);
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:188)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:208)
     actionEditAutoAliasV = new QAction(QApplication::translate("Spreadsheet", Cell::editModeLabel(Cell::EditAutoAliasV)), this);
     actionEditAutoAliasV->setData(QVariant((int)Cell::EditAutoAliasV));
     actionEditAutoAliasV->setCheckable(true);
     actionEditAutoAliasV->setToolTip(QApplication::translate("Spreadsheet", Cell::editModeToolTips(Cell::EditAutoAliasV)));
     editGroup->addAction(actionEditAutoAliasV);
-    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:188)
+    // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:208)
     actionEditColor = new QAction(QApplication::translate("Spreadsheet", Cell::editModeLabel(Cell::EditColor)), this);
     actionEditColor->setData(QVariant((int)Cell::EditColor));
     actionEditColor->setCheckable(true);
@@ -1490,7 +1490,7 @@ void SheetTableView::contextMenuEvent(QContextMenuEvent *) {
             SheetParams.pick_edit_mode_action()
             ]]]*/
 
-            // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:204)
+            // Auto generated code (Mod/Spreadsheet/App/SheetParams.py:224)
             switch(cell->getEditMode()) {
             case Cell::EditNormal:
                 action = actionEditNormal;

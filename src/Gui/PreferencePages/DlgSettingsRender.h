@@ -28,10 +28,10 @@ import DlgSettingsRender
 DlgSettingsRender.declare()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:519)
+// Auto generated code (Tools/params_utils.py:544)
 #include <Gui/PropertyPage.h>
 #include <Gui/PrefWidgets.h>
-// Auto generated code (Tools/params_utils.py:526)
+// Auto generated code (Tools/params_utils.py:551)
 class QLabel;
 class QGroupBox;
 
@@ -68,7 +68,7 @@ protected:
 
 private:
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupGeneral = nullptr;
     QLabel *labelType = nullptr;
     Gui::PrefLineEdit *Type = nullptr;
@@ -77,13 +77,13 @@ private:
     QLabel *labelExposure = nullptr;
     Gui::PrefDoubleSpinBox *Exposure = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupIdlerefinement = nullptr;
     Gui::PrefCheckBox *TemporalAccum = nullptr;
     QLabel *labelTemporalAccumSamples = nullptr;
     Gui::PrefSpinBox *TemporalAccumSamples = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupScenestreaming = nullptr;
     QLabel *labelCoarseTessellation = nullptr;
     Gui::PrefSpinBox *CoarseTessellation = nullptr;
@@ -96,7 +96,7 @@ private:
     QLabel *labelGpuMemoryBudgetMB = nullptr;
     Gui::PrefSpinBox *GpuMemoryBudgetMB = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupAmbientocclusion = nullptr;
     Gui::PrefCheckBox *AO = nullptr;
     QLabel *labelAOMethod = nullptr;
@@ -110,7 +110,7 @@ private:
     QLabel *labelAOIntensity = nullptr;
     Gui::PrefDoubleSpinBox *AOIntensity = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupPhysicallybasedshading = nullptr;
     Gui::PrefCheckBox *PBR = nullptr;
     QLabel *labelPBRMetallic = nullptr;
@@ -123,13 +123,13 @@ private:
     QLabel *labelPBREnvIntensity = nullptr;
     Gui::PrefDoubleSpinBox *PBREnvIntensity = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupBumpmapping = nullptr;
     QLabel *labelBumpScale = nullptr;
     Gui::PrefDoubleSpinBox *BumpScale = nullptr;
     Gui::PrefCheckBox *Parallax = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupVolumetriclighting = nullptr;
     Gui::PrefCheckBox *Volumetric = nullptr;
     QLabel *labelVolumetricIntensity = nullptr;
@@ -144,7 +144,7 @@ private:
     QLabel *labelCausticsSpeed = nullptr;
     Gui::PrefDoubleSpinBox *CausticsSpeed = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupWatersurface = nullptr;
     Gui::PrefCheckBox *WaterSurface = nullptr;
     QLabel *labelWaterWaveStrength = nullptr;
@@ -154,7 +154,7 @@ private:
     QLabel *labelWaterWaveSpeed = nullptr;
     Gui::PrefDoubleSpinBox *WaterWaveSpeed = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupBloom = nullptr;
     Gui::PrefCheckBox *Bloom = nullptr;
     QLabel *labelBloomThreshold = nullptr;
@@ -164,19 +164,19 @@ private:
     QLabel *labelBloomRadius = nullptr;
     Gui::PrefDoubleSpinBox *BloomRadius = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupScenelightextras = nullptr;
     Gui::PrefCheckBox *SunDisc = nullptr;
     QLabel *labelSunDiscSize = nullptr;
     Gui::PrefDoubleSpinBox *SunDiscSize = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupGroundreflection = nullptr;
     Gui::PrefCheckBox *GroundReflection = nullptr;
     QLabel *labelGroundReflectionIntensity = nullptr;
     Gui::PrefDoubleSpinBox *GroundReflectionIntensity = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:426)
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupExternalshadingCycles = nullptr;
     QLabel *labelCyclesDevice = nullptr;
     Gui::PrefLineEdit *CyclesDevice = nullptr;
@@ -189,7 +189,7 @@ private:
     Gui::PrefSpinBox *CyclesPixelSize = nullptr;
     QLabel *labelCyclesMaxStreams = nullptr;
     Gui::PrefSpinBox *CyclesMaxStreams = nullptr;
-// Auto generated code (Tools/params_utils.py:573)
+// Auto generated code (Tools/params_utils.py:598)
 };
 } // namespace Dialog
 } // namespace Gui

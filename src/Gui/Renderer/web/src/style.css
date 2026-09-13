@@ -876,3 +876,195 @@
   border-color: #7fb6ff;
   box-shadow: 0 0 0 2px rgba(127, 182, 255, 0.35);
 }
+
+/* The omni search box (docs/OmniSearch.md sec 6): the desktop's
+ * floating box at the top centre, one line and a list under it, and a
+ * panel below the list once a row is picked. Same surface as the other
+ * panels. */
+.fc-omni {
+  pointer-events: auto;
+  touch-action: pan-y;
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px - env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 30, 34, 0.94);
+  color: #e8e8ea;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .fc-omni {
+    top: 8px;
+    width: calc(100vw - 16px);
+    max-height: 60vh;
+  }
+}
+.fc-omni-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 6px;
+}
+.fc-omni-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 14px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+}
+.fc-omni-input:focus { outline: 1px solid #6aa9ff; }
+.fc-omni-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  max-height: 42vh;
+  padding: 0 4px 4px;
+}
+.fc-omni-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  min-height: 34px;
+  cursor: pointer;
+}
+.fc-omni-row:hover { background: rgba(255, 255, 255, 0.05); }
+.fc-omni-hi { background: rgba(106, 169, 255, 0.18); }
+.fc-omni-hi:hover { background: rgba(106, 169, 255, 0.24); }
+.fc-omni-inactive { opacity: 0.45; }
+.fc-omni-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.fc-omni-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-omni-title mark {
+  background: rgba(255, 214, 90, 0.35);
+  color: inherit;
+}
+.fc-omni-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #9aa0a6;
+}
+.fc-omni-right {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #c6c9cd;
+  font-variant-numeric: tabular-nums;
+}
+.fc-omni-arrow {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #c6c9cd;
+  font: inherit;
+  cursor: pointer;
+}
+.fc-omni-arrow:hover { background: rgba(255, 255, 255, 0.1); }
+.fc-omni-panel {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 12px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  max-height: 40vh;
+}
+.fc-omni-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.fc-omni-panel-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.fc-omni-panel-sub { font-size: 11px; color: #9aa0a6; }
+.fc-omni-panel-doc {
+  font-size: 12px;
+  color: #9aa0a6;
+  margin-bottom: 6px;
+  white-space: pre-wrap;
+}
+.fc-omni-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+.fc-omni-panel-row .fc-name { flex: 1; }
+.fc-omni-btn {
+  touch-action: manipulation;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fc-omni-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.fc-omni-btn:disabled { opacity: 0.45; cursor: default; }
+.fc-omni-status {
+  padding: 4px 12px 8px;
+  font-size: 12px;
+  color: #9aa0a6;
+}
+.fc-omni-status.fc-err { color: #ff8a80; }
+.fc-omni-menu-item {
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #e8e8ea;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fc-omni-menu-item:hover { background: rgba(255, 255, 255, 0.08); }
+.fc-omni-menu-item:disabled { opacity: 0.45; cursor: default; }
+.fc-omni-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: rgba(255, 255, 255, 0.12);
+}

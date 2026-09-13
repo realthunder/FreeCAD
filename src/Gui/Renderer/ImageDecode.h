@@ -31,22 +31,30 @@
 
 namespace Render {
 
-/// Whether \a bytes start like a picture this decoder reads: a JPEG or
-/// a PNG, by signature. What the producer keeps beside its decoded
-/// pixels (TextureImage::encoded) has to be something every tier can
-/// open, and this is the test the producer applies before keeping it.
+/// Whether \a bytes start like a picture this decoder reads: a JPEG, a
+/// PNG or a Radiance picture, by signature. What the producer keeps
+/// beside its decoded pixels (TextureImage::encoded) has to be
+/// something every tier can open, and this is the test the producer
+/// applies before keeping it. The Radiance signatures are the exact two
+/// the decoder below accepts, so the producer never keeps a file this
+/// cannot read back.
 RendererExport bool isEncodedImage(const uint8_t *bytes, size_t size);
 
-/// Decode a JPEG or PNG into tightly packed 8-bit rows, bottom-up like
-/// GL, with \a components channels (1, 3 or 4 -- the count the
-/// producer's own decode reported, so the two tiers agree on what a
-/// texel is). With a positive \a maxSide the picture is halved, box
-/// filtered, until neither side exceeds it: the browser tier's memory
-/// is what asks for that. Returns false on anything unreadable; the
-/// outputs are then untouched.
+/// Decode a JPEG, PNG or Radiance picture into tightly packed rows,
+/// bottom-up like GL, with \a components channels (1, 3 or 4 -- the
+/// count the producer's own decode reported, so the two tiers agree on
+/// what a texel is). \a floatSamples asks for a channel a float rather
+/// than a byte, which is what an environment is (TextureImage::F32):
+/// pass what the texture's own sample kind says, since a Radiance file
+/// is the one payload whose pixels are not bytes. With a positive
+/// \a maxSide the picture is halved, box filtered, until neither side
+/// exceeds it: the browser tier's memory is what asks for that, and an
+/// environment map is the texture that wants it most. Returns false on
+/// anything unreadable; the outputs are then untouched.
 RendererExport bool decodeImage(const uint8_t *bytes, size_t size,
                                 int components, int maxSide, int &width,
-                                int &height, std::vector<uint8_t> &pixels);
+                                int &height, std::vector<uint8_t> &pixels,
+                                bool floatSamples = false);
 
 } // namespace Render
 

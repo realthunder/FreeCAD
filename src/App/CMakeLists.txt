@@ -598,6 +598,7 @@ SET(FreeCADApp_CPP_SRCS
     MaterialListPyImp.cpp
     Metadata.cpp
     MetadataPyImp.cpp
+    ParamRegistry.cpp
     ElementNamingUtils.cpp
     StringHasher.cpp
     StringHasherPyImp.cpp
@@ -623,6 +624,7 @@ SET(FreeCADApp_HPP_SRCS
     MaterialXDocument.h
     AppearanceList.h
     Metadata.h
+    ParamRegistry.h
     ElementNamingUtils.h
     StringHasher.h
 )
