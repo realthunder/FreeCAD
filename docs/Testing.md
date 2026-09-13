@@ -11,8 +11,8 @@ as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
-| Python (`FreeCADCmd -t 0`) | **2688 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-10, after the RemoteEdit merge) |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **605 of 605 passing** (2026-09-10), 0 failures, 7 ctest entries disabled -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available" |
+| Python (`FreeCADCmd -t 0`) | **2688 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-13, after the LinkVibe merge) |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **634 of 634 passing** (2026-09-13, after the LinkVibe merge), 0 failures, 7 ctest entries disabled -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available" |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **497 of 497 passing** (2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
 | Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
@@ -451,7 +451,7 @@ Counting individual test cases instead, across all 32 binaries, gives
 | `src/Gui/SceneLadder_tests_run` | 64 | |
 | `src/Base/InventorBuilder_Tests_run` | 48 | QtTest |
 | `src/Gui/MaskedOcclusion_tests_run` | 41 | |
-| `src/Gui/SceneDump_tests_run` | 39 | |
+| `src/Gui/SceneDump_tests_run` | 46 | |
 | `Part_tests_run` | 38 | +1 disabled, section 4 |
 | `Material_tests_run` | 39 | |
 | `src/Gui/MeshSimplify_tests_run` | 33 | |

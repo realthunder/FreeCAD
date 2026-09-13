@@ -291,6 +291,21 @@ if(Renderer_QtRhi_DEFS)
         COMPILE_DEFINITIONS "${Renderer_QtRhi_DEFS}")
 endif()
 
+# gcc 15.2 at -O2 miscompiles stb_image's flat-scanline Radiance loop: jump
+# threading mishandles the `main_decode_loop:` label the RLE branch reaches
+# by goto, so only the FIRST scanline of an uncompressed .hdr is written and
+# the rest of the buffer is whatever was there. Run-length encoded files are
+# unaffected. -O1, -O2 -fno-thread-jumps, gcc 13.3 and MSVC all decode it
+# correctly, and upstream stb (v2.30) has the same loop, so there is nothing
+# to take from there. Scoped to the one file that compiles stb, on GCC only
+# (not version-gated: 14 is untested and the cost is nil). Guarded by
+# SceneDump.aFloatMapHalvesToTheSizeCap (under eight wide) and
+# SceneDump.anUncompressedRadianceFileDecodesEveryScanline (the goto entry).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set_source_files_properties(ImageDecode.cpp PROPERTIES
+        COMPILE_OPTIONS "-fno-thread-jumps")
+endif()
+
 source_group("source" FILES ${Renderer_CPP_SRCS})
 source_group("include" FILES ${Renderer_HPP_SRCS})
 source_group("interface" FILES ${Renderer_Headers})
