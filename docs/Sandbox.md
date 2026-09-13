@@ -7419,10 +7419,18 @@ sockets, any network for the reference image, a webview escape hatch.
   to be removed again (`RemBool`), and a result that contradicts an
   earlier one is a reason to check `user.cfg` before believing either.
 - **`DocumentObject::_revision` is uninitialised** (`DocumentObject.h:853`,
-  no constructor sets it): a fresh object's `Revision` is whatever the
-  heap held (538976296 observed).  Harmless, since it is only compared
-  against a snapshot of itself, but it is undefined behaviour and the
-  Python attribute cannot be read for anything.
+  no constructor sets it -- the link properties DO initialise theirs,
+  `PropertyLinks.h:701`).  Twelve fresh `App::FeaturePython` objects in
+  one document read `[37, 0, 32374, 0, 32374, ...]` where an
+  initialised member gives twelve zeroes.  It has never surfaced
+  because the number is never used as a number: never serialized,
+  never ordered, never compared against a constant, only
+  `linkRevision(target) != stored` against a snapshot of that same
+  object.  The one read of the initial value -- a link's first
+  `isTouched()` -- fails safe, because the link's side is a defined 0
+  and the compare therefore says "touched", costing one extra
+  recompute.  Real undefined behaviour, no observable consequence, and
+  the Python `Revision` attribute unreadable for anything.
 
 ## 13. Known gaps and open questions
 

@@ -874,15 +874,38 @@ recomputes every consumer of every sheet on every cell edit, the cost that
 comment was avoiding; and an `isTouched()` override on `ProxyExp`, which could
 answer for the sheet but not for the stored function, which no property sees.
 
-**Two things found beside it.**  `DocumentObject::_revision` is declared
-`int _revision;` (`DocumentObject.h:853`) and set by no constructor, so a
-fresh object's revision is indeterminate -- harmless in practice, since it is
-only ever compared against a snapshot of itself, but it is undefined
-behaviour and it makes the Python `Revision` attribute unreadable (observed
-values like 538976296).  One initialiser fixes it.  And `OptimizeRecompute`
-is a PERSISTED user parameter: setting it False from a probe writes
-`user.cfg` and silently changes every later run on the box, which is how the
-first reading of this bug came to be wrong.
+**Two things found beside it.**
+
+`DocumentObject::_revision` is declared `int _revision;`
+(`DocumentObject.h:853`) and set by no constructor -- the body of
+`DocumentObject::DocumentObject()` registers properties and nothing else --
+so a fresh object's revision is indeterminate.  Twelve `App::FeaturePython`
+objects created in one document read `[37, 0, 32374, 0, 32374, 32374, 32374,
+0, 0, 0, 0, 0]`: three distinct values tracking heap reuse, where an
+initialised member would give twelve zeroes.  The link properties do
+initialise theirs (`int _revision{0}`, `PropertyLinks.h:701`, `:976`), so
+this is an inconsistency rather than a design.
+
+It has never surfaced because the number is never used AS a number.  It is
+never serialized, never ordered, never compared against a constant: the only
+comparison in the tree is `linkRevision(target) != stored`, where `stored`
+was captured from that same object by `purgeTouched()`.  Stable garbage
+compares exactly as well as zero.  And the one moment the initial value is
+read -- a link's first `isTouched()`, before any `purgeTouched()` has
+snapshotted -- fails SAFE: the link's own `_revision` is a defined 0, the
+target's is garbage, so the compare says "touched" and the dependent
+recomputes once more than it needed to.  A missed recompute would need the
+garbage to be exactly 0 with the target already changed, and `purgeTouched()`
+closes that window at the end of the first recompute.  So: real undefined
+behaviour, no observable consequence, and the Python `Revision` attribute
+unreadable for anything (which is how it was spotted).  One initialiser fixes
+it, but `DocumentObject.h` is included nearly everywhere -- carry it in the
+D2 build, which touches `FeaturePython.h` anyway, rather than paying a
+whole-tree rebuild for a cosmetic correction.
+
+`OptimizeRecompute` is a PERSISTED user parameter: setting it False from a
+probe writes `user.cfg` and silently changes every later run on the box,
+which is how the first reading of this bug came to be wrong.
 
 Sized as a build item of 7.17 D2 (docs/Sandbox.md), with the gate case named
 there: the method edited in the cell, a plain `doc.recompute()`, both
