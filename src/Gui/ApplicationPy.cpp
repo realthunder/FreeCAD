@@ -216,6 +216,22 @@ PyMethodDef Application::Methods[] = {
    "For code that is worth skipping while one runs. Selecting each\n"
    "created object, for one, costs a selection round trip and a tree\n"
    "expand and scroll that nobody can act on until the import ends."},
+  {"isBuildingVisuals",       (PyCFunction) Application::sIsBuildingVisuals, METH_VARARGS,
+   "isBuildingVisuals() -> bool\n"
+   "\n"
+   "Whether geometry is still being built into the views.\n"
+   "\n"
+   "A restored document does NOT have its scene when openDocument()\n"
+   "returns: every visual whose shape had not arrived yet is parked\n"
+   "on the deferred drain, which runs off a timer for as long as it\n"
+   "takes. That drain is the only phase in which geometry reaches a\n"
+   "renderer at all, so a script that waits on the restore alone is\n"
+   "told the load is over exactly when the drawing starts.\n"
+   "\n"
+   "Watching pixels instead does not separate the two either: a\n"
+   "covered-pixel count sitting at zero reads the same while the\n"
+   "drain is still working as it does once the drain has finished\n"
+   "and the scene is genuinely empty. This says which."},
   {"cyclesDevices",           (PyCFunction) Application::sCyclesDevices, METH_VARARGS,
    "cyclesDevices() -> list\n"
    "\n"
@@ -1063,6 +1079,15 @@ PyObject* Application::sIsLiveImport(PyObject * /*self*/, PyObject *args)
         return nullptr;
 
     return Py::new_reference_to(Py::Boolean(liveImportNavigable != nullptr));
+}
+
+PyObject* Application::sIsBuildingVisuals(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    return Py::new_reference_to(Py::Boolean(
+        Instance && Instance->isBuildingVisuals()));
 }
 
 PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)
