@@ -67,7 +67,10 @@ pieces are frozen, not extended.**
                                                  own expressions, routed = native, the guest keeping
                                                  one module per principal; the linked library
                                                  (Source/Pinned/Snapshot) BUILT the same day, a
-                                                 live link sharing the source's module; NEXT P3
+                                                 live link sharing the source's module; P3 BUILT
+                                                 the same day: a routed function crosses as a
+                                                 stand-in, the chain's call runs as the feature's
+                                                 file (RULED); NEXT D3
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
@@ -81,7 +84,7 @@ pieces are frozen, not extended.**
                                                  view side); the edited-method recompute
                                                  BUILT 2026-09-13 (ProxyChain.md 4.5, 4.6),
                                                  fine-grained per-cell, 8 gate cases; P3, the
-                                                 sandbox, sits inside 7.17's build
+                                                 sandbox, BUILT 2026-09-13 inside 7.17's D2
     the browser console              sized       7.20: pyodide in the client's page, the wire
                                                  over the socket (JSPI), a client:<identity>
                                                  principal, catalog v2; C1-C6, one to two weeks;
@@ -4666,7 +4669,7 @@ pivy wheel rebuild); 900 in the wheel (the walker 300, the host node,
 camera, event and view shims 400, the view provider glue and the MDI
 shim 200); 600 of gate.  G4a is the larger half.
 
-### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed; D1 BUILT 2026-09-13; D2's library half and the linked library BUILT 2026-09-13, P3 next]**
+### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed; D1 BUILT 2026-09-13; D2's library half and the linked library BUILT 2026-09-13; P3 BUILT 2026-09-13]**
 
 Sec 11 item 2, the re-aim's one target (1.2): a program a DOCUMENT
 carries, written in the expression engine's language, generating
@@ -5272,7 +5275,8 @@ either to cross as a guest reference (the `gmethod` shape of 3.2) or to
 run inside an evaluation of its own.  That is D2, with P3, not D1.
 Probed: natively a cell `=def m(obj): ...` holds `<Function m>` and
 `=m(1)` beside it gives 6; routed, the first reads the marshal error
-and the second "Expects Python callable".
+and the second "Expects Python callable".  (Lifted by P3, 2026-09-13,
+below: the function crosses as a stand-in.)
 
 The pack now carries what a function body reads
 (`App::FunctionBodyIdentifiers` around `getIdentifiers()`,
@@ -5511,6 +5515,108 @@ cost: about 445 lines of the feature and 370 of tests, against 150-250
 sized -- the overrun is (1), the source document's import table in the
 guest and the host, which the sizing never saw.
 
+**P3, BUILT 2026-09-13.**  A function value leaves a routed evaluation,
+and the proxy chain calls it -- the sheet carrier routed.  Five things it
+settled, one ruling it rests on, and an older bug it had to fix first.
+
+1. *A function crosses as a stand-in, and a call is an evaluation of
+   its own* -- the design leaning, taken.  The guest answers a function
+   as the WHOLE value of an evaluation with `{"t":"gfunc", "n":name}`
+   instead of the marshal refusal, and the host builds a
+   `FreeCAD.ExpressionSandbox.RoutedFunction` holding the evaluation's
+   owner (its Python face, held as a native `ExpressionPy` holds it),
+   the source the router shipped and the eval options
+   (`makeRoutedFunction`, `ExpressionGuestProxy.cpp`).  Calling it is
+   `ImageHost::callFunction`: the same eval request with `call: {a, k}`,
+   the guest evaluating the source again inside that transaction and
+   calling the value, the result by value.  So the body reads what is
+   current at the call, as natively (the trap of sec 12 is untouched:
+   still no dependency); the stand-in holds no guest state and survives
+   a reset; its repr is native's `<Function name>`.  The price is one
+   round trip and one evaluation of the cell's source per call -- for a
+   `def` cell that source is the definition, not the body.
+2. *Another evaluation calls it over `fcall`.*  A stand-in reaching the
+   guest as a binding is `{"t":"gfunc", "id", "n"}`, decoded to a
+   `HostFunction` whose call is one `fcall` hop; the host calls the
+   stand-in behind the handle and refuses `fcall` on anything else -- a
+   handle is not a licence to call the host object behind it.  So
+   `=triple(5)` beside `=def triple(x): return x * 3` is routed = native.
+   The nested call is a nested evaluation, and its handles live in the
+   outer transaction's table.
+3. *The chain's call runs as the feature's file* **[RULED 2026-09-13,
+   on the P3 cross-file write: "Run as the feature's file"]**.
+   `PyHookImp::resolveChain` binds a stand-in it resolves to the object
+   the chain extends (`bindRoutedFunction`, a `RoutedChainFunction`; for
+   a view hook the object the view provider shows, not gated by a view
+   case yet).  A bound call makes that object the one the guest may
+   write (`HandleTable::setOwner`) and pushes its document's principal
+   for the round trip WHATEVER scope is active (`Runtime::Scope(runAs,
+   via)`), so a method linked from another file writing `obj` is a
+   same-file write under the feature's grants -- 1.5's taint rule
+   loosened for chain calls, knowingly, where the plan had the
+   `doc.foreign` prompt.  The pack is NOT the feature's: it is the
+   definition's own frame (the sheet's cells a body reads), resolved
+   under the sheet as it was when the function was made; only the round
+   trip -- every bridge op the body makes -- runs as the feature.  And
+   only the chain's call: the same function called from another cell or
+   the console runs as its own file, where a feature of another document
+   is out of reach, a PermissionError (gated).
+4. *The audit line names where the code came from.*  A denial or prompt
+   under a bound call logs `<doc>:<feature> via <doc>#<sheet>`
+   (`scopeContext`) -- the plan's "the audit line names the linked
+   object's document", in the shape the ruling left it: the principal is
+   the feature's, the code is the sheet's.  Probed: a method calling
+   `FreeCAD.newDocument` is refused (`app.write`, DENY for a document)
+   and `audit.log` records `"context":"AuditInstance:Feature via
+   AuditType#Type"` under the instance document's principal.
+5. *The recompute of ProxyChain.md 4.6 needs nothing.*  The chain keeps
+   the UNBOUND stand-in as its identity; a re-evaluated cell holds a new
+   one and an untouched cell the one it had, so an edited method rebuilds
+   its instances and an unrelated cell rebuilds none, routed as natively
+   -- the eight cases, re-run.
+
+Found first, older than any of it, FIXED the same day (sec 12): an
+expression that is one compound statement with its body on the same
+line -- `def f(obj): obj.Marker = 10`, `if x: y` -- printed without its
+line end and did not parse again.  Every routed one-line method cell
+failed on it, since the router ships the printed form, and natively such
+a sheet cell saved to a file failed on reopen.
+
+Limits, stated.  A call's result crosses by value: a function returning
+a function (a curried lambda) is refused as before, and so is a function
+NESTED in a value (`[lambda x: x]`) -- only the whole value crosses.  A
+stand-in made while routing was on calls routed after routing is
+switched off, until its cell is evaluated again.  A stand-in kept in a
+guest global outlives its handle and fails as a stale handle does.
+Natively a chain call is unchanged -- it runs under whatever scope the
+evaluation entry pushes, the sheet's -- since the ruling concerns the
+enforced path, and natively a document program is fail-closed on its
+imports anyway (fact (1)).
+
+Gate.  gtests, routed: `ExpressionRoutingTest.
+programsFunctionValueCrossesAsAStandIn` (replacing D1's
+`programsFunctionValueStaysInTheGuest`: the repr, a call made after the
+evaluation's handles are gone, one evaluation per call, a body reading
+`Width` changed after the function was made -- both a lambda and a def),
+`programsStandInCalledFromAnotherEvaluation` (one `fcall`, and refused on
+a handle that is no function), `programsChainCallRunsAsTheObjectItExtends`
+(unbound: PermissionError and nothing written; bound: the other
+document's object written); `ExpressionStatementPrint.
+oneLineCompoundStatementParsesAgain`.  `FeaturePythonChain` 27 -> 44 OK:
+`RoutedSheetChainCases` and `RoutedChainRecomputeCases` (the sheet cases
+and the eight recompute cases, routing on, skipped with no guest),
+`RoutedChainCases` (the method a `RoutedFunction` and the recompute
+crossing; a method in another file running as the feature's file and
+refused when called directly; the sheet flange of the worked example
+routed = native, BRep byte-identical), and
+`SheetChainCases.testCellCallsAFunctionCell`, native and routed.
+Suites green at the build: C++ 624/624 (offscreen), Python 2763 OK,
+`SandboxProgram` 31 OK, the view gate (`ViewProviderHooks`,
+`ViewProviderChain`) 25 OK.  The cost: about 550 lines of the feature (the printer fix 19
+of them) and 385 of tests, against 80-150 sized -- the overrun is the two
+stand-in types and the call path through the host, which the row did not
+see; the row sized only the tests.
+
 **Stages.**
 
     D1  function objects in the image (ExpressionPy into
@@ -5539,7 +5645,9 @@ guest and the host, which the sizing never saw.
         is named on the eval request, library functions resolve
         their module, the edge is transitive.  The linked
         library -- Source, Pinned, Snapshot, the edge through the
-        links -- **BUILT 2026-09-13**, above.  NEXT: P3.  Gate:
+        links -- **BUILT 2026-09-13**, above.  P3 -- **BUILT
+        2026-09-13**, above; the cross-file write RULED to run as the
+        feature's file, not to prompt.  NEXT: D3.  Gate:
         SandboxProgram's library half, the cross-file pair included.  The library is
         no longer the only carrier (the sheet is one today), so its
         own value is the module namespace, the import statement and
@@ -5574,6 +5682,7 @@ guest and the host, which the sizing never saw.
         the linked library: Source, Pinned, Snapshot, the cross-link
           edge, the relabel, the missing-file report                  150-250
         P3: the chain's sheet cases routed, the audit line            80-150
+          BUILT: 550 + 385 test
     D3  the three programs, twice each, plus the sheet flange           ~200
         SandboxProgram, the gtest, the corpus list                    400-550
     D4  the ceiling and the measurement                               200-400
@@ -6892,7 +7001,7 @@ Sources: Firefox's JSPI release bug (bugzilla 2044809), the V8 JSPI
 introduction (v8.dev/blog/jspi), Chromium's intent to ship, pyodide's
 JSPI post (blog.pyodide.org/posts/jspi) and changelog.
 
-### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, sits inside 7.17's build]**
+### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, BUILT 2026-09-13 inside 7.17's D2]**
 
 The user's answer to 7.17's gap against the spreadsheet-as-object
 model (2026-09-11: cells as attributes and methods, aliases as the
@@ -7742,6 +7851,23 @@ sockets, any network for the reference image, a webview escape hatch.
   is 0, a `def` keeps 20, the callee prints with the check.  When a
   routed result differs from native, round-trip the expression through
   `toString()` natively before suspecting the guest.
+- **A one-line compound statement printed without its line end did not
+  parse again** (found 2026-09-13 by 7.17 P3, older than it; FIXED the
+  same day).  The grammar's `suite` is `simple_stmt NEWLINE`, and the
+  lexer supplies no NEWLINE at the end of a one-line text, so an
+  expression that is ONE compound statement with its body on the same
+  line -- `if 1: 2`, `while 0: 1`, `for i in [1]: i`, `def f(): return
+  1` -- parsed from `...\n` but printed without it, and the print was a
+  syntax error ("unexpected end of input, expecting NEWLINE").  A sheet
+  cell `=def m(obj): obj.Marker = 10` saved to a file failed on reopen
+  natively, and every routed evaluation of one failed at once, the
+  router shipping the printed form.  Text that already spans lines
+  parses as printed (`x = 1\nif x: 2`, a multi-line `def`).  Fixed in
+  `Expression::toString`: a whole expression whose last statement needs
+  a line end and whose print has no newline gets one; nested printing
+  goes through the stream form and is unchanged, so no text that parsed
+  before prints differently.  Gate: `ExpressionStatementPrint.
+  oneLineCompoundStatementParsesAgain`.
 - **A FUNCTION BODY'S IDENTIFIERS ARE NOT DEPENDENCIES, AND THE BODY
   READS THEM LIVE** (probed 2026-09-13).  `VariableExpression::
   _getIdentifiers` returns early while `_FunctionDepth` is non-zero

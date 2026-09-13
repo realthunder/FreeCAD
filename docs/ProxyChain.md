@@ -1,6 +1,6 @@
 # The proxy chain: document programs extend native objects
 
-**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; **P2 BUILT 2026-09-13**, sec 4.4 -- `ViewProxyExp` and the view-side chain, 17 gate cases in `src/Mod/Test/ViewProviderChain.py`; **sec 4.5, 2026-09-13** -- what P1 does not deliver: an edited method does not recompute its instances; RULED the same day (fine-grained per-cell, never the coarse counter), with the function-body dependency trap recorded there; **BUILT 2026-09-13**, sec 4.6, as 7.17 D2's first item, 8 gate cases; P3, the sandbox, sits inside 7.17's build]**
+**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; **P2 BUILT 2026-09-13**, sec 4.4 -- `ViewProxyExp` and the view-side chain, 17 gate cases in `src/Mod/Test/ViewProviderChain.py`; **sec 4.5, 2026-09-13** -- what P1 does not deliver: an edited method does not recompute its instances; RULED the same day (fine-grained per-cell, never the coarse counter), with the function-body dependency trap recorded there; **BUILT 2026-09-13**, sec 4.6, as 7.17 D2's first item, 8 gate cases; **P3 BUILT 2026-09-13**, sec 4.7, inside 7.17's D2 -- a routed cell's function crosses as a stand-in, and the chain's call runs as the feature's file (RULED the same day, sec 5 item 6)]**
 
 The user's design, stated 2026-09-12 after the document program (docs/
 Sandbox.md 7.17) was found lacking against the spreadsheet-as-object
@@ -344,6 +344,12 @@ routed the first cell reads "result of type 'App.Expression' does not
 marshal by value" and the second "Expects Python callable".  So P3
 needs the method to cross as a guest reference (the `gmethod` shape)
 or to run inside an evaluation of its own.
+**BUILT 2026-09-13 as the second (sec 4.7)**, and one sentence above no
+longer holds: a cross-file chain method's write to `obj` is not the
+`doc.foreign` prompt.  RULED the same day, "Run as the feature's file"
+-- the chain's call runs under the FEATURE document's principal with the
+feature as its write owner, so the linked code gets that file's grants,
+1.5's taint rule loosened for chain calls, knowingly.
 
 This is how "the document program extends objects" lands without a
 class in the expression language: a sheet, or a library, carries the
@@ -468,6 +474,10 @@ macro one at a time later, their generated output leaving the tree.
         still does not cross, sec 2.5); the audit line names the
         linked object's document; a cross-file link's write prompts
         doc.foreign once.  Sits inside 7.17's build, not before it.
+                                            DONE 2026-09-13, sec 4.7
+        -- the cross-file write RULED otherwise: the call runs as the
+        feature's file, no prompt; the audit line names the code's
+        object after "via".
 
 ### 4.1 P0 as built (2026-09-12)
 
@@ -1133,6 +1143,49 @@ X server.  `QT_QPA_PLATFORM=offscreen`, which docs/Testing.md already
 prescribes, is 605/605.  Nothing to do with the chain -- but it looks exactly
 like a regression if the variable is forgotten.
 
+### 4.7 P3 as built (2026-09-13)
+
+The sandbox half of the chain: a spreadsheet method routed.  The full
+record, with the limits, is docs/Sandbox.md 7.17 ("P3, BUILT
+2026-09-13"); what the chain itself gained is three things.
+
+**The callable a routed cell holds.**  Routed, a cell whose value is a
+`def` or `lambda` holds a host stand-in, `FreeCAD.ExpressionSandbox.
+RoutedFunction`, where natively it holds the `ExpressionPy`.  Resolution
+(2.2) needs nothing: the stand-in is callable and sits on the sheet's
+alias property exactly as the native function does.  A call is an
+evaluation of its own -- the cell's printed source evaluated again in the
+guest and the value called there -- so the body reads what is current,
+as the native body does (the trap of 4.5 is unchanged: still no
+dependency).
+
+**The binding.**  `resolveChain` wraps a stand-in it resolves in
+`bindRoutedFunction(callable, hookSelf(hook))`, a `RoutedChainFunction`
+that runs the call AS the object the chain extends (for a view hook, the
+object the view provider shows -- the path exists, no view case gates
+it yet).  The chain entry's `identity` stays the unbound stand-in, so the
+comparison of 4.5 sees what it saw natively: a re-evaluated cell holds a
+new stand-in, an untouched cell keeps the one it had.
+
+**Whose file.**  RULED 2026-09-13 (sec 5 item 6).  A bound call makes
+the feature the one object the guest may write and pushes the feature
+document's principal for the round trip, whatever scope is active; the
+pack -- the sheet's own frame the body reads -- stays resolved under the
+sheet, as it was when the function was made.  Only the chain's call is
+bound: the same function called from another cell or from the console
+runs as its own file, where a feature of another document is out of
+reach (a PermissionError, gated).  A denial or prompt under the binding
+logs `<feature doc>:<feature> via <sheet doc>#<sheet>`.
+
+Gate: `FeaturePythonChain` 27 -> 44 OK -- `RoutedSheetChainCases` and
+`RoutedChainRecomputeCases` re-run the sheet cases and the eight
+recompute cases with routing on (skipped with no guest);
+`RoutedChainCases`: the method is a `RoutedFunction` and a recompute
+crosses, a method in another file runs as the feature's file and is
+refused when called directly, the sheet flange routed = native to the
+BRep byte; `SheetChainCases.testCellCallsAFunctionCell`, native and
+routed.
+
 ## 5. The rulings (2026-09-12)
 
 1. `ProxyExp` on both sides; `exp` + Hook for App hooks, `expView` +
@@ -1149,6 +1202,12 @@ like a regression if the variable is forgotten.
 5. **Generated at build time** -- the first `generate_from_cog`
    user; the in-place cog files migrate later (3.3).  And cog is for
    the table only; the bodies are a function (3.1).
+6. **Run as the feature's file** (2026-09-13, on P3's cross-file
+   write).  A chain method runs under the FEATURE document's principal
+   with the feature as its write owner, so its write to `obj` is a
+   same-file write and the linked code gets that file's grants -- the
+   taint rule loosened for chain calls, knowingly.  Not the
+   `doc.foreign` prompt, and not a same-file-only P3.  Built, 4.7.
 
 ## 6. What this changes in docs/Sandbox.md 7.17
 
