@@ -71,8 +71,9 @@ pieces are frozen, not extended.**
                                                  BUILT 2026-09-12 (the refactor, then the
                                                  App-side chain), P2 BUILT 2026-09-13 (the
                                                  view side); an edited method does NOT yet
-                                                 recompute its instances (ProxyChain.md 4.5),
-                                                 fixed as 7.17 D2's first item; P3, the
+                                                 recompute its instances (ProxyChain.md 4.5)
+                                                 -- RULED 2026-09-13 and BUILT NEXT SESSION,
+                                                 fine-grained per-cell, 8 gate cases; P3, the
                                                  sandbox, sits inside 7.17's build
     the browser console              sized       7.20: pyodide in the client's page, the wire
                                                  over the socket (JSPI), a client:<identity>
@@ -4815,19 +4816,41 @@ touched and no revision moves.
 Those two are, precisely, two of the three places ProxyChain.md 2.4
 bumps the chain's generation counter; the third,
 `PropertyPythonObject::hasSetValue`, is the one that already
-propagates.  The counter therefore enumerates exactly the definition
-changes the link cannot report, which is why the fix is the counter:
-`FeaturePythonT::mustExecute()` stores
-`App::ProxyChain::generation()` at each execute and answers 1 when it
-has moved.  Coarse -- one bump anywhere recomputes every chained
-object once -- but exact where it matters and free where it does not,
-since an object with an empty `ProxyExp` never reaches the test.  A
-build item of D2 below, not a re-design.  Rejected alternatives:
-making `Sheet::getRevision()` real would recompute every consumer of
-every sheet on every cell edit, which is the cost that comment was
-avoiding; giving `ProxyExp` its own `isTouched()` override would work
-for the sheet and not for the stored function, which no property
-sees at all.
+propagates.
+
+**The fix, RULED 2026-09-13, is NOT the counter on its own.**  Every
+coarse answer -- a real `Sheet::getRevision()`, a walk of the carrier's
+in-list touching each owner, or `mustExecute()` answered straight from
+the process-wide counter -- recomputes every instance when ANY cell of
+the sheet moves, because `PropertySheet::hasSetValue()` carries no cell
+identity.  That is the cost the pin exists to avoid, and the contract
+it protects is `ObjectIdentifier::isTouched()` ->
+`resolvedProperty->isTouched()`: a dependency on a sheet is a
+dependency on ONE CELL.  So the chain gets a fine-grained test of its
+own -- the counter stays as the cheap "something moved somewhere"
+gate, and only when it moves does the chain re-resolve and compare the
+resolved callable against the one last executed, recomputing only when
+THIS feature's definition changed.  The full design, the measurements
+and the eight gate cases are ProxyChain.md 4.5; it is D2's first item
+and the next session builds it.
+
+**THE TRAP, and it is the spreadsheet's, not the chain's.**  **A
+function body's identifiers are NOT dependencies, and the body reads
+them LIVE at call time.**  `VariableExpression::_getIdentifiers`
+returns early under `_FunctionDepth` (`Expression.cpp:4163`), raised by
+`LambdaExpression::_visit` around the body (`:6529`).  Measured: a cell
+`=def m(obj): return r * 2` returns 10; `r`'s cell is changed to 9; the
+cell is NOT re-evaluated, the function object is the SAME object, and
+it now returns 18.  **A method that reads sibling cells therefore
+changes behaviour with nothing observable changing -- no revision, no
+touched property, no new function object -- and no mechanism in the
+engine can see it.**  It is deliberate and it predates the chain (it is
+true of any spreadsheet function), so **the idiom is that a method's
+inputs come through `obj`, the instance's own properties, never
+through the sheet's frame** -- which is what the chain hands every
+element anyway.  A shared constant that must live in a cell is bound on
+the INSTANCE with an ordinary expression (`obj.Pitch = Sheet.pitch`),
+and that IS tracked.
 
 **Three language facts the probe turned up**, all of them traps for
 anyone writing these programs (sec 12).  A comma straight after a
@@ -5197,9 +5220,13 @@ whose `Shape` is BRep-identical to the library form's and to the
 native run; two instances on one sheet, each with its own
 parameters, both correct; and the case the probe failed -- the
 method edited in the cell, then a plain `doc.recompute()`, with both
-instances rebuilt.  That last one is the gate for the `mustExecute`
-fix of D2, and it must run with `OptimizeRecompute` at its default
-ON, because with it off the case passes for the wrong reason.  The
+instances rebuilt; and beside it the negative that the ruling turns
+on -- an UNRELATED cell of the same sheet edited, no instance
+recomputing -- with the plain-spreadsheet regression that no
+`ProxyExp` is involved in at all: an unrelated cell touched leaves
+the other cells' consumers alone.  All of it must run with
+`OptimizeRecompute` at its default ON, because with it off every case
+passes for the wrong reason.  The
 `FeaturePythonChain` gate of ProxyChain.md stays green beside it,
 and its sheet cases are what P3 re-runs routed.
 
@@ -5212,11 +5239,15 @@ and its sheet cases are what P3 re-runs routed.
         expression routed = native.  Unchanged by the re-sizing, and
         now the precondition for BOTH carriers -- a sheet's method is
         a function object too.
-    D2  the chain's recompute: FeaturePythonT::mustExecute() answers
-        1 when App::ProxyChain::generation() has moved since the last
-        execute, so a method edited on a linked object rebuilds its
-        instances through the recompute optimization.  Gate: the
-        edited-method case of (e), OptimizeRecompute ON.
+    D2  the chain's recompute, RULED 2026-09-13 and built next
+        session: the generation counter as the cheap gate, then a
+        comparison of each chain element's resolved callable against
+        the one last executed, so a method edited on a linked object
+        rebuilds its instances and an UNRELATED cell of the same sheet
+        does not.  Design and the eight gate cases: ProxyChain.md 4.5.
+        Gate: those cases, OptimizeRecompute ON, plus the plain
+        spreadsheet regression (an unrelated cell touched leaves other
+        cells' consumers alone).
         Then App::ExpressionLibrary, the registry and lib.source /
         lib.drop, the dependency edge, the principal hash, the
         native twin, libraries(); the XLink Source, Pinned and
@@ -6572,7 +6603,7 @@ Sources: Firefox's JSPI release bug (bugzilla 2044809), the V8 JSPI
 introduction (v8.dev/blog/jspi), Chromium's intent to ship, pyodide's
 JSPI post (blog.pyodide.org/posts/jspi) and changelog.
 
-### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver; P3, the sandbox, sits inside 7.17's build]**
+### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED 2026-09-13 and built next session; P3, the sandbox, sits inside 7.17's build]**
 
 The user's answer to 7.17's gap against the spreadsheet-as-object
 model (2026-09-11: cells as attributes and methods, aliases as the
@@ -7395,6 +7426,26 @@ sockets, any network for the reference image, a webview escape hatch.
   so a headless gate must grant it.  A grant is keyed by the
   document's CONTENT hash, so editing an expression voids it: re-grant
   after every edit, or the next evaluation fails as unpermitted.
+- **A FUNCTION BODY'S IDENTIFIERS ARE NOT DEPENDENCIES, AND THE BODY
+  READS THEM LIVE** (probed 2026-09-13).  `VariableExpression::
+  _getIdentifiers` returns early while `_FunctionDepth` is non-zero
+  (`Expression.cpp:4163`), and `LambdaExpression::_visit` raises that
+  depth around the body (`:6529`), so nothing a `def` or `lambda` body
+  references is a dependency of the cell holding it -- while the body
+  still resolves those names against the sheet's live frame when it
+  runs.  A cell `=def m(obj): return r * 2` returns 10; change `r`'s
+  cell to 9; the cell is NOT re-evaluated, the function object is the
+  SAME object, and it returns 18.  **Behaviour changed with nothing
+  observable changing: no revision, no touched property, no new
+  function object.  Nothing in the engine can see it, and nothing
+  built on top of the engine can either.**  It is deliberate -- a
+  body's names may be its own parameters, and registering them would
+  hang spurious dependencies and cycles off the cell -- and it is
+  older than any of this work, true of every spreadsheet function.
+  **The idiom: a method's inputs come through the object it is handed,
+  never through the sheet's frame.**  A shared constant that must live
+  in a cell is bound on the consumer with an ordinary expression,
+  which IS tracked.  See docs/ProxyChain.md 4.5.
 - **A link to a `Spreadsheet::Sheet` never reports the sheet as
   changed** (probed 2026-09-13, 7.17's re-sizing).  `Sheet::getRevision()`
   is a literal `return 0` (`Sheet.h:91`), and a link property reports

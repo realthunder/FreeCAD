@@ -1,6 +1,6 @@
 # The proxy chain: document programs extend native objects
 
-**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; **P2 BUILT 2026-09-13**, sec 4.4 -- `ViewProxyExp` and the view-side chain, 17 gate cases in `src/Mod/Test/ViewProviderChain.py`; **sec 4.5, 2026-09-13** -- what P1 does not deliver: an edited method does not recompute its instances, fix sized into 7.17 D2; P3, the sandbox, sits inside 7.17's build]**
+**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; **P2 BUILT 2026-09-13**, sec 4.4 -- `ViewProxyExp` and the view-side chain, 17 gate cases in `src/Mod/Test/ViewProviderChain.py`; **sec 4.5, 2026-09-13** -- what P1 does not deliver: an edited method does not recompute its instances; RULED the same day (fine-grained per-cell, never the coarse counter) and BUILT NEXT SESSION as 7.17 D2's first item, with the function-body dependency trap recorded there; P3, the sandbox, sits inside 7.17's build]**
 
 The user's design, stated 2026-09-12 after the document program (docs/
 Sandbox.md 7.17) was found lacking against the spreadsheet-as-object
@@ -864,15 +864,104 @@ replaced on the linked object -- is the one that already propagates, because
 it IS a property change.  The counter, written for the cache, turns out to
 enumerate exactly the definition changes the link cannot report.
 
-**The fix**, therefore, is the counter: `FeaturePythonT::mustExecute()` stores
-`App::ProxyChain::generation()` at each execute and answers 1 when it has
-moved.  Coarse -- one bump anywhere in the process recomputes every chained
-object once -- but exact where it matters, and free for the objects that do
-not use the feature, which is nearly all of them: an empty `ProxyExp` never
-reaches the test.  Rejected: making `Sheet::getRevision()` real, which
-recomputes every consumer of every sheet on every cell edit, the cost that
-comment was avoiding; and an `isTouched()` override on `ProxyExp`, which could
-answer for the sheet but not for the stored function, which no property sees.
+**The fix as RULED (2026-09-13).**  Three coarse answers present themselves
+and all three are the same mistake: make `Sheet::getRevision()` real; walk the
+carrier's `getInList()` from `ProxyChain::bump()` and touch each `ProxyExp`
+owner; or answer `mustExecute()` straight from the process-wide generation
+counter.  Every one of them recomputes EVERY instance when ANY cell of the
+sheet moves, because `PropertySheet::hasSetValue()` is the sheet's property
+notification and carries no cell identity -- and the counter is coarser still,
+a process-wide integer that an unrelated document's `obj.Proxy = ...` bumps.
+That is exactly the cost `Sheet::getRevision()` was pinned to 0 to avoid
+**[RULED by the user: "there is a reason sheet does that ... an unrelated cell
+change will cause the proxied feature get recomputed.  The assumption is the
+deps with sheet needs fine grained property level dependency, which is what
+expression engine does"]**.
+
+The contract the pin enforces is `ObjectIdentifier::isTouched()`:
+`result.resolvedProperty->isTouched()`.  A dependency on a sheet is a
+dependency on ONE CELL's property, and the object-level revision shortcut is
+disabled so that nothing can bypass the finer test.  A sheet is one object
+holding thousands of independent values; the object is the wrong unit.  The
+chain's dependency is likewise not "the sheet" but "the value of the attribute
+`expExecute`", which is one cell's property.
+
+So: a value-level comparison, gated by the counter -- the shape the engine
+already uses, where `Enforce` gets an object into `_recomputeFeature` and only
+a value that really moved goes further.
+
+1. `ChainEntry` gains an IDENTITY beside its `callable`: `__func__` when the
+   attribute has one, else the callable itself.  `FC_PY_GetCallable` is
+   `PyObject_GetAttrString`, so the Proxy path hands back a freshly built
+   bound method on every access and raw identity would differ forever
+   (measured: two `getattr`s give different objects, the same `__func__`);
+   the sheet path returns the cell property's stored `ExpressionPy` and is
+   already stable.
+2. `FeaturePythonT::execute()` snapshots, after a successful run, the
+   generation and the identity vector of the `execute` hook's chain.
+3. `FeaturePythonT::mustExecute()` answers: empty `ProxyExp` -> 0, as today and
+   free; generation equal to the snapshot -> 0, one integer, the common case;
+   otherwise re-resolve (which `ensureChain` was going to do anyway) and
+   compare identities, 1 only if THIS feature's definition moved.
+
+Only the `execute` hook is watched.  An `expViewGetIcon` or an `expOnChanged`
+re-typed on the same sheet must not rebuild geometry.
+
+Why that is per-cell, measured 2026-09-13: `Sheet::execute()` recomputes
+`cells.getDirty()` and their transitive dependents only (`Sheet.cpp:1154`,
+`:1165-1190`), so an unrelated cell edit never re-evaluates the method cell and
+its `PropertyPythonObject` still holds the SAME function object -- identities
+compare equal, nothing recomputes.  Re-type the method cell and it is dirty,
+re-evaluated into a new `ExpressionPy`, and the instances follow.
+
+Rejected with it: the property-level form -- recording the source `Property*`
+and asking `prop->isTouched()`, literally what `ObjectIdentifier` does.
+ORDERING kills it: the carrier recomputes first and `Document::recompute`
+calls `obj->purgeTouched()` immediately after, clearing its property flags
+before the instance's `mustExecute` is ever asked; the engine does not hit
+this because it never consults the flag at recompute time, it re-evaluates and
+compares values.  COVERAGE kills it too: a function stored from Python lives
+in `dict_methods` and is backed by no property at all.
+
+**THE TRAP THIS LEAVES, AND IT IS NOT OURS TO CLOSE.**  **A function body's
+identifiers are NOT dependencies, and the body reads them LIVE when it runs.**
+`VariableExpression::_getIdentifiers` returns early while `_FunctionDepth` is
+non-zero (`Expression.cpp:4163`), and `LambdaExpression::_visit` raises that
+depth around `body->visit(v)` (`:6529`) -- so nothing a `def` or `lambda` body
+references is registered as a dependency of the cell holding it.  Yet
+`LambdaExpression::isTouched()` descends into the body with no such guard, and
+the body resolves its names against the sheet's live frame at CALL time.
+Measured: a cell `=def m(obj): return r * 2` with `r` = A1 returns 10, A1 is
+changed to 9, the cell is NOT re-evaluated, the function object is the SAME
+object -- and it now returns 18.  **So a method that reads sibling cells
+changes behaviour with nothing observable changing: no revision, no touched
+property, no new function object.  No mechanism in the engine can see it, and
+the identity comparison above will not either.**
+
+This is deliberate and it predates the chain: it is true of ANY spreadsheet
+function, called from any cell, and a body's names may be its own parameters
+or locals, so registering them would hang spurious dependencies -- and cycles
+-- off the cell.  Widening it would be the same class of mistake as
+un-pinning `getRevision()`.  The adjacent published statement is the `href()`
+passage in the Assembly3 wiki (*Expression and Spreadsheet*): a reference
+deliberately hidden from dependency checking, "may result in unstable
+recomputing order, and thus given unexpected result", safe as a rule of thumb
+only when it refers to something the user edits rather than something the
+object calculates.  The rationale for the function-body case is not written
+anywhere -- the wiki was searched, all 85 revisions, and `_FunctionDepth`
+arrived inside `3008b30596` ("Expression: refactor for better performance",
+2018-11-05) with no note.
+
+**The idiom that follows, and it belongs in the tutorial.**  **A method's
+inputs come through `obj` -- the instance's own properties -- never through
+the sheet's frame.**  The chain already hands every element the owner (4.3
+finding 2), so the method has everything it needs.  A shared constant that
+genuinely wants to live in a cell is bound on the INSTANCE with an ordinary
+expression (`obj.Pitch = Sheet.pitch`), which IS dependency-tracked -- measured:
+a plain cell `=r * 2` follows A1 correctly while the `def` cells do not.
+Parameters kept in the type's own sheet are a shared mutable global with no
+working dependency, so the 7.17 probe case that put them there is the
+ANTI-PATTERN, not the model.
 
 **Two things found beside it.**
 
@@ -907,12 +996,32 @@ whole-tree rebuild for a cosmetic correction.
 probe writes `user.cfg` and silently changes every later run on the box,
 which is how the first reading of this bug came to be wrong.
 
-Sized as a build item of 7.17 D2 (docs/Sandbox.md), with the gate case named
-there: the method edited in the cell, a plain `doc.recompute()`, both
-instances rebuilt, run with `OptimizeRecompute` at its default ON -- with it
-off the case passes for the wrong reason.  `FeaturePythonChain`'s existing
-sheet case does not catch this because it calls the hook directly after the
-recompute rather than relying on the recompute to call it.
+Sized as a build item of 7.17 D2 (docs/Sandbox.md).  **NEXT SESSION builds it**
+[approved 2026-09-13: "implement it in next session, with tests"].  The gate,
+all of it with `OptimizeRecompute` at its default ON -- with it off every case
+passes for the wrong reason:
+
+    1  the method re-typed in its cell, a plain doc.recompute(), every
+       instance rebuilt
+    2  two instances on one carrier, both rebuilt, each with its own
+       parameters
+    3  an UNRELATED cell of the same sheet edited -> no instance recomputes
+       (the whole point of the ruling)
+    4  a plain spreadsheet regression, no ProxyExp anywhere: an unrelated
+       cell touched leaves the other cells' consumers alone -- the property-
+       level dependency the sheet's pinned revision exists to protect, and
+       what a coarse fix would have broken
+    5  the carrier's Proxy replaced, and a function re-stored from Python
+       (L.expExecute = f) -- the two non-sheet definition changes
+    6  an expViewGetIcon re-typed on the same sheet -> NO geometry recompute
+    7  the method cell cleared (the dynamic property is REMOVED, 4.3) ->
+       one recompute, the chain shortens, no crash
+    8  an empty ProxyExp -> the P0 path, nothing resolved, nothing compared
+
+`FeaturePythonChain`'s existing sheet case does not catch any of this because
+it calls the hook directly after the recompute rather than relying on the
+recompute to call it.  Case 4 is the regression that matters most: it is not
+about the chain at all, and it is the one a future coarse "fix" would trip.
 
 ## 5. The rulings (2026-09-12)
 
