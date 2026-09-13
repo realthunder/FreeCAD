@@ -1516,7 +1516,27 @@ bool Expression::isSame(const Expression &other, bool checkComment) const {
 std::string Expression::toString(bool persistent, bool checkPriority, int indent) const {
     std::ostringstream ss;
     toString(ss,persistent,checkPriority,indent);
-    return ss.str();
+    std::string text = ss.str();
+    // A compound statement that is the whole expression, its body on the
+    // same line -- `if x: y`, `def f(): return 1` -- ends at a line end in
+    // the grammar (suite: simple_stmt NEWLINE), and the lexer supplies none
+    // at the end of a one-line text.  Printed without it, the text did not
+    // parse again: a sheet cell saved so failed on reopen, and the sandbox
+    // router, which ships the printed form, failed at once.  Nested printing
+    // goes through the stream form and is untouched, and so is any text that
+    // already spans lines, which parses as it is.  The statement may still
+    // wear the wrappers the grammar's stmt rule makes, one inside another
+    // when nothing reduced them.  A C++ cast, not the type system's: this
+    // runs where no type is registered.
+    const Expression *last = this;
+    while(auto stmt = dynamic_cast<const SimpleStatement*>(last)) {
+        if(!stmt->getSize())
+            break;
+        last = stmt->getExpr(stmt->getSize() - 1);
+    }
+    if(indent == 0 && last->needLineEnd() && text.find('\n') == std::string::npos)
+        text += '\n';
+    return text;
 }
 
 FC_STATIC std::vector<ExpressionNode*> _ExpressionNodeStack;
