@@ -56,6 +56,12 @@
 # and none of them reaches the screen -- they render and capture, and
 # Coin draws the viewport. That does not affect what is measured here.
 #
+# On Linux run a non-GL leg under QT_QPA_PLATFORM=xcb. On Qt Wayland the
+# never-shown window bgfx presented into is an unmapped wl_surface and
+# Mesa's WSI waits forever in FIFO mode for a frame callback that never
+# comes -- the GUI freezes at zero CPU inside present (RemoteEdit
+# 607fc43a19; e08ebea685 then made the non-GL backends headless).
+#
 # One leg, on Windows:
 #
 #   FC_BGFX_NO_VSYNC=1 FC_BGFX_D3D11=1 \
@@ -103,14 +109,20 @@ OUT = os.environ.get("FC_BENCH_OUT", "")
 # early and briefly while the handful already built is redrawn, so a
 # "three equal reads" test answered 4557 px on a document that settles
 # at 53350.
-SETTLE_STABLE = float(os.environ.get("FC_BENCH_SETTLE_STABLE", "3"))
-SETTLE_MAX = float(os.environ.get("FC_BENCH_SETTLE_MAX", "120"))
+# The names and the semantics are shared with the settle pass written
+# independently on RemoteEdit (515a9e8482), so a merge gets one settle
+# and not two: FC_BENCH_SETTLE is the SECONDS CAP, and 0 turns the wait
+# off altogether; QUIET is how long the covered-pixel count must hold
+# still; MIN is the floor it may not exit before.
+SETTLE_MAX = float(os.environ.get("FC_BENCH_SETTLE", "120"))
+SETTLE_STABLE = float(os.environ.get("FC_BENCH_SETTLE_QUIET", "5"))
+SETTLE_MIN = float(os.environ.get("FC_BENCH_SETTLE_MIN", "8"))
 # FC_BENCH_SETTLE=0 skips the wait entirely and times whatever is on
 # screen one frame after the fit, which is what this harness did before
 # the settle existed. It is there so a pre-settle row can be reproduced
 # against a current binary -- the A/B that tells a harness race apart
 # from a defect in the tree. It is not a configuration to measure in.
-SETTLE = os.environ.get("FC_BENCH_SETTLE", "1") != "0"
+SETTLE = SETTLE_MAX > 0
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(REPO, "src/3rdParty/MaterialX/resources")
@@ -473,8 +485,16 @@ def open_scene():
     gdoc = FreeCADGui.getDocument(doc.Name)
     FreeCADGui.ActiveDocument = gdoc
     v = gdoc.ActiveView
-    if v is None:
-        v = gdoc.createView("Gui::View3DInventor")
+    # ActiveView answers for whatever MDI window has focus, which at
+    # startup can be the Start page: a leg on RemoteEdit failed on
+    # "'Gui.MDIView' object has no attribute 'setAnimationEnabled'"
+    # before timing a frame (607fc43a19). Ask for the document's own 3D
+    # views instead.
+    if v is None or not hasattr(v, "setAnimationEnabled"):
+        views = gdoc.mdiViewsOfType("Gui::View3DInventor")
+        v = views[0] if views else gdoc.createView("Gui::View3DInventor")
+        if hasattr(gdoc, "setActiveView"):
+            gdoc.setActiveView(v)
     return doc, v, load_s
 
 
@@ -550,7 +570,7 @@ def settle(doc, v):
         busy = building()
         if px != last or busy:
             last, since = px, now
-        elif now - since >= SETTLE_STABLE:
+        elif now - since >= SETTLE_STABLE and now - t0 >= SETTLE_MIN:
             break
         if now - t0 >= SETTLE_MAX:
             why = ("GAVE UP at %.0fs, still building" if busy

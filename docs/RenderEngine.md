@@ -2570,8 +2570,10 @@ is `Restoring` or still holds deferred files, whatever
 the geometry lands over seconds of event loop and not with the open.
 `settle()` pumps `redraw()` / `waitFrameComplete()` / `updateGui()`
 until every object has a view provider, and then until the covered-pixel
-count has held still for `FC_BENCH_SETTLE_STABLE` seconds (3 by default)
-AND `Gui.isBuildingVisuals()` says the drain has stopped building. The
+count has held still for `FC_BENCH_SETTLE_QUIET` seconds (5 by default,
+never exiting before `FC_BENCH_SETTLE_MIN`, and capped by
+`FC_BENCH_SETTLE` itself, which at 0 turns the wait off) AND
+`Gui.isBuildingVisuals()` says the drain has stopped building. The
 drain's vote is not redundant: a pixel count stationary at ZERO reads
 the same while the drain is still working as it does once the drain has
 finished and the scene is genuinely empty, which on a 17k-object
@@ -2584,7 +2586,9 @@ and a three-equal-reads test answered 4557 px on a document that settles
 at 53350. A run that runs out of patience says `GAVE UP`, so "this model
 draws nothing" is distinguishable in the output from "this harness did
 not wait long enough"; `FC_BENCH_SETTLE=0` restores the pre-settle
-behaviour, for reproducing an old row against a current binary.
+behaviour, for reproducing an old row against a current binary. The
+names and their semantics are shared with the settle pass written
+independently on `RemoteEdit` (`515a9e8482`), so the two merge into one.
 
 Windows box (RTX 2000 Ada, GL 4.6 / Vulkan 1.3, driver as of
 2026-09-09), 17000 `Part::Box` objects built in session -- **33.7k
