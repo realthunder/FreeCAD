@@ -2715,12 +2715,30 @@ found nothing touched, and built none of it: `progressive load MiSTer: 0
 visuals in 1 slices`. The bound was being spent by the pass the park
 exists to outlive.
 
-So a rebuild that finds the visual already queued (`VisualDeferred`)
-leaves it queued; the slice clears that flag before it rebuilds, so the
-drain itself never takes the path. MiSTer goes from 14 draws to **45867
-draws, 18.2M primitives, 7.5% covered**. The small documents gain too,
-which says more than the 17k case was losing visuals this way: Hier
-1721 -> 2015 draws, GroupOnly 403 -> 415, LinkOnly 399 -> 455.
+MiSTer goes from 14 draws to **45867 draws, 18.2M primitives, 7.5%
+covered**. The small documents gain too, which says more than the 17k
+case was losing visuals this way: Hier 1721 -> 2015 draws, GroupOnly
+403 -> 415, LinkOnly 399 -> 455.
+
+**And the park itself went, 2026-09-13.** The queue was never needed for
+this: `finishRestoring()` runs for every restored object after the file
+phase, it rebuilds whenever `VisualTouched` is set, and reading the
+property through `getShape()` is itself what faults the lazy content in.
+All the null build has to do is not clear the flag. So it does not --
+while `shapeMayStillArrive()` it returns having touched nothing -- and
+the park, `VisualShapePending` and the one-attempt bound are gone with
+it. With `Render_ProgressiveLoad` off the drain is now not involved in a
+load at all (Hier parked all 200 of its visuals there before, and parks
+none now), which is what that preference being off should have meant.
+
+One flag has to stay, and it is why the park was shaped that way:
+`VisualDeferred` also told `SoFCCoordinate3::getBoundingBox`'s
+on-demand build to leave a visual alone. A touched visual is exactly
+what that hook builds and a restore traverses the scene many times, so
+"stay touched" without an equivalent marker re-enters the build for
+every object on every traversal -- MEASURED at 25 minutes of pegged CPU
+on MiSTer against 8. `VisualShapeMissing` is that marker. Every number
+above is unchanged by the simplification, and `ctest` is 497 of 497.
 
 ### The assembly table, all four backends (2026-09-09)
 
