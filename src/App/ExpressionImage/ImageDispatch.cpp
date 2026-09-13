@@ -463,6 +463,10 @@ struct LibraryModule
     Py::Object mod;
     /// the libraries the module imported, each with the build it got
     std::vector<std::pair<std::string, uint64_t>> imports;
+    /// the document whose text it is, and that document's import table:
+    /// what an import made by the module's own code resolves against
+    std::string home;
+    std::map<std::string, std::pair<std::string, uint64_t>> libs;
 };
 
 std::map<std::pair<std::string, std::string>, std::unique_ptr<LibraryModule>> g_libraries;
@@ -509,6 +513,44 @@ void applyLibraryDrops(const json& req)
     }
 }
 
+/// The kept module whose adapter object is `owner`: the importer, when
+/// the import is made by a module's own code.
+LibraryModule* moduleOwning(const App::DocumentObject* owner)
+{
+    if (!owner)
+        return nullptr;
+    for (auto& v : g_libraries) {
+        if (&v.second->owner == owner)
+            return v.second.get();
+    }
+    for (auto& lib : g_retiredLibraries) {
+        if (&lib->owner == owner)
+            return lib.get();
+    }
+    return nullptr;
+}
+
+/// What `name` names for an import made by `from` (nullptr: by the
+/// evaluation itself).  A module whose text is another document's
+/// resolves in that document's table, and `home` names it for the host.
+const std::pair<std::string, uint64_t>*
+wantedLibrary(const LibraryModule* from, const std::string& name, std::string& home)
+{
+    home.clear();
+    auto tx = Fcx::EvalTransaction::current();
+    if (!tx)
+        return nullptr;
+    App::Document* txDoc = tx->owner() ? tx->owner()->getDocument() : nullptr;
+    if (from && (!txDoc || from->home != txDoc->name_)) {
+        home = from->home;
+        auto it = from->libs.find(name);
+        return it == from->libs.end() ? nullptr : &it->second;
+    }
+    return tx->library(name);
+}
+
+PyObject* libraryModuleFrom(LibraryModule* from, const std::string& name);
+
 /// The module an import returns; a build in progress records which build
 /// of it it got.
 PyObject* noteImport(const std::string& name, LibraryModule& lib)
@@ -521,15 +563,15 @@ PyObject* noteImport(const std::string& name, LibraryModule& lib)
 /// Whether every library `lib` imported is still the build it got.  An
 /// imported library rebuilt since was retired, and its dict clears with it,
 /// so the importer must rebuild -- after it, to bind the new one.
-bool importsCurrent(const LibraryModule& lib)
+bool importsCurrent(LibraryModule& lib)
 {
-    auto tx = Fcx::EvalTransaction::current();
     for (const auto& imported : lib.imports) {
-        PyObject* mod = FcxImage::libraryModule(imported.first);
+        PyObject* mod = libraryModuleFrom(&lib, imported.first);
         if (!mod)
             return false;
         Py_DECREF(mod);
-        const auto* wanted = tx ? tx->library(imported.first) : nullptr;
+        std::string home;
+        const auto* wanted = wantedLibrary(&lib, imported.first, home);
         auto it = wanted ? g_libraries.find(std::make_pair(wanted->first, imported.first))
                          : g_libraries.end();
         if (it == g_libraries.end() || it->second->serial != imported.second)
@@ -540,10 +582,19 @@ bool importsCurrent(const LibraryModule& lib)
 
 }  // namespace
 
-PyObject* FcxImage::libraryModule(const std::string& name)
+PyObject* FcxImage::libraryModule(const std::string& name, const App::DocumentObject* owner)
+{
+    return libraryModuleFrom(moduleOwning(owner), name);
+}
+
+namespace
+{
+
+PyObject* libraryModuleFrom(LibraryModule* from, const std::string& name)
 {
     auto tx = Fcx::EvalTransaction::current();
-    const auto* wanted = tx ? tx->library(name) : nullptr;
+    std::string home;
+    const auto* wanted = wantedLibrary(from, name, home);
     if (!wanted)
         return nullptr;
     const auto slotWanted = std::make_pair(wanted->first, name);
@@ -561,9 +612,13 @@ PyObject* FcxImage::libraryModule(const std::string& name)
     }
 
     PyObject* fcx = PyImport_ImportModule("_fcx");
-    PyObject* answer = fcx ? PyObject_CallMethod(fcx, "op", "sKs", FcxWire::OpLibSource,
-                                                 (unsigned long long)0, name.c_str())
-                           : nullptr;
+    PyObject* answer = nullptr;
+    if (fcx && home.empty())
+        answer = PyObject_CallMethod(fcx, "op", "sKs", FcxWire::OpLibSource,
+                                     (unsigned long long)0, name.c_str());
+    else if (fcx)
+        answer = PyObject_CallMethod(fcx, "op", "sKss", FcxWire::OpLibSource,
+                                     (unsigned long long)0, name.c_str(), home.c_str());
     Py_XDECREF(fcx);
     if (!answer)
         throw Base::PyException();
@@ -580,7 +635,20 @@ PyObject* FcxImage::libraryModule(const std::string& name)
     const std::string text = Py::String(d.getItem("text")).as_std_string("utf-8");
     const std::string objName = Py::String(d.getItem("obj")).as_std_string("utf-8");
     App::Document* ownerDoc = tx->owner()->getDocument();
-    lib->doc.name_ = ownerDoc ? ownerDoc->name_ : std::string("sandbox");
+    lib->home = d.hasKey("doc") ? Py::String(d.getItem("doc")).as_std_string("utf-8")
+                                : (ownerDoc ? ownerDoc->name_ : std::string("sandbox"));
+    if (d.hasKey("libs") && PyList_Check(d.getItem("libs").ptr())) {
+        Py::List table(d.getItem("libs"));
+        for (auto item : table) {
+            if (!PyList_Check(item.ptr()) || PyList_Size(item.ptr()) != 3)
+                continue;
+            Py::List entry(item);
+            lib->libs[Py::String(entry[0]).as_std_string("utf-8")] = std::make_pair(
+                Py::String(entry[1]).as_std_string("utf-8"),
+                static_cast<uint64_t>(Py::Long(entry[2]).as_unsigned_long_long()));
+        }
+    }
+    lib->doc.name_ = lib->home;
     lib->doc.Label.str_ = lib->doc.name_;
     lib->owner.name_ = objName;
     lib->owner.document_ = &lib->doc;
@@ -610,6 +678,8 @@ PyObject* FcxImage::libraryModule(const std::string& name)
     ref.building = false;
     return noteImport(name, ref);
 }
+
+}  // namespace
 
 static json errorReply()
 {

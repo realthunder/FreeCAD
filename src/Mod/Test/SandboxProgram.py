@@ -227,3 +227,218 @@ class SandboxProgramLibraryCases(unittest.TestCase):
             self.skipTest("this build has no sandbox surface")
         lib = self.makeLibrary()
         self.assertEqual(lib.Surface, str(version))
+
+
+class SandboxProgramLinkedCases(unittest.TestCase):
+    """A library in one file, its consumers in another: Source, Pinned, Snapshot.
+
+    docs/Sandbox.md 7.17 (c), "Across files".  A linked library takes its
+    text from the library its Source reaches, under a module name of its
+    own; live it is the source's module, pinned it is the snapshot taken at
+    the pin, which serves with the source file gone.
+    """
+
+    def setUp(self):
+        self.directory = tempfile.mkdtemp()
+        self.source = FreeCAD.newDocument("LibSource")
+        self.lib = self.source.addObject("App::ExpressionLibrary", "Lib")
+        self.lib.Module = "brackets"
+        self.lib.Text = BRACKETS
+        self.source.recompute()
+        self.sourcePath = os.path.join(self.directory, "source.FCStd")
+        self.source.saveAs(self.sourcePath)
+        self.doc = FreeCAD.newDocument("LibConsumer")
+
+    def tearDown(self):
+        for name in list(FreeCAD.listDocuments()):
+            FreeCAD.closeDocument(name)
+        shutil.rmtree(self.directory, ignore_errors=True)
+
+    def link(self, module="brk", pinned=False, name="LibB"):
+        lib = self.doc.addObject("App::ExpressionLibrary", name)
+        lib.Module = module
+        lib.Source = self.lib
+        if pinned:
+            lib.Pinned = True
+        return lib
+
+    def consumer(self, expression, name="Consumer"):
+        obj = self.doc.addObject("App::FeaturePython", name)
+        obj.addProperty("App::PropertyFloat", "Out")
+        obj.setExpression("Out", expression)
+        return obj
+
+    def saveConsumerAndCloseAll(self):
+        path = os.path.join(self.directory, "consumer.FCStd")
+        self.doc.saveAs(path)
+        for name in list(FreeCAD.listDocuments()):
+            FreeCAD.closeDocument(name)
+        return path
+
+    # -- live ----------------------------------------------------------------
+
+    def testLiveLinkImports(self):
+        link = self.link()
+        obj = self.consumer("import brk\nbrk.triple(2)")
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 6.0)
+        self.assertIn(link, obj.OutList)
+        self.assertEqual(FreeCAD.ExpressionSandbox.libraries(self.doc), {"brk": link})
+
+    def testLiveLinkFollowsAnEdit(self):
+        # the source's edit reaches the consumer whether or not the source's
+        # document recomputed first
+        self.link()
+        obj = self.consumer("from brk import triple\ntriple(2)")
+        self.doc.recompute()
+        self.lib.Text = BRACKETS.replace("k = 3", "k = 4")
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 8.0)
+        self.lib.Text = BRACKETS.replace("k = 3", "k = 5")
+        self.source.recompute()
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 10.0)
+
+    def testModuleNameIsTheConsumers(self):
+        # the relabel is local: the source renaming its own module changes
+        # nothing for a consumer that named the link
+        self.link(module="mine")
+        obj = self.consumer("import mine\nmine.triple(1)")
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 3.0)
+        self.lib.Module = "renamed"
+        self.source.recompute()
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 3.0)
+        self.assertNotIn("Invalid", obj.State)
+
+    def testLinkedLibraryImportsInItsOwnFile(self):
+        # the source's text imports a library of the SOURCE's document, which
+        # the consumer's document does not hold; an edit there follows too
+        helper = self.source.addObject("App::ExpressionLibrary", "Helper")
+        helper.Module = "helpers"
+        helper.Text = "def double(x):\n    return x * 2\n"
+        self.lib.Text = (
+            BRACKETS + "import helpers\ndef quad(x):\n    return helpers.double(x) * 2\n"
+        )
+        self.source.recompute()
+        self.link()
+        obj = self.consumer("import brk\nbrk.quad(3)")
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 12.0)
+        helper.Text = "def double(x):\n    return x * 3\n"
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 18.0)
+
+    def testTwoLinksShareOneModule(self):
+        # ten consumers of one source build the module once
+        first = self.link()
+        second = self.link(module="other", name="LibC")
+        obj = self.consumer("import brk\nimport other\nbrk.triple(1) + other.triple(1)")
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 6.0)
+        del first, second
+
+    def testSourceThatIsNoLibrary(self):
+        plain = self.source.addObject("App::FeaturePython", "Plain")
+        link = self.doc.addObject("App::ExpressionLibrary", "LibB")
+        link.Module = "brk"
+        link.Source = plain
+        obj = self.consumer("import brk\nbrk.triple(2)")
+        self.doc.recompute()
+        self.assertIn("Invalid", link.State)
+        # a consumer of a failed library waits, as for a syntax error
+        self.assertIn("Touched", obj.State)
+        self.assertNotEqual(obj.Out, 6.0)
+
+    def testReopenLoadsTheSource(self):
+        self.link()
+        self.consumer("import brk\nbrk.triple(4)")
+        self.doc.recompute()
+        path = self.saveConsumerAndCloseAll()
+        self.doc = FreeCAD.openDocument(path)
+        # a reopened file's document is named after the file
+        loaded = [
+            d
+            for d in FreeCAD.listDocuments().values()
+            if os.path.normcase(d.FileName) == os.path.normcase(self.sourcePath)
+        ]
+        self.assertEqual(len(loaded), 1, "the link did not load the source file")
+        self.source = loaded[0]
+        obj = self.doc.getObject("Consumer")
+        self.source.getObject("Lib").Text = BRACKETS.replace("k = 3", "k = 5")
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 20.0)
+
+    def testLiveWithoutTheSourceFails(self):
+        self.link()
+        self.consumer("import brk\nbrk.triple(4)")
+        self.doc.recompute()
+        path = self.saveConsumerAndCloseAll()
+        os.remove(self.sourcePath)
+        self.doc = FreeCAD.openDocument(path)
+        obj = self.doc.getObject("Consumer")
+        obj.setExpression("Out", "import brk\nbrk.triple(5)")
+        self.doc.recompute()
+        self.assertIn("Invalid", self.doc.getObject("LibB").State)
+        # a consumer of a failed library waits, as for a syntax error
+        self.assertIn("Touched", obj.State)
+        self.assertNotEqual(obj.Out, 15.0)
+
+    # -- pinned --------------------------------------------------------------
+
+    def testPinTakesTheSnapshot(self):
+        link = self.link(pinned=True)
+        self.assertEqual(link.Snapshot, BRACKETS)
+        self.assertEqual(link.Surface, self.lib.Surface)
+        obj = self.consumer("import brk\nbrk.triple(2)")
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 6.0)
+        self.lib.Text = BRACKETS.replace("k = 3", "k = 4")
+        self.source.recompute()
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 6.0)
+
+    def testUnpinFollowsTheSourceAgain(self):
+        link = self.link(pinned=True)
+        obj = self.consumer("import brk\nbrk.triple(2)")
+        self.doc.recompute()
+        self.lib.Text = BRACKETS.replace("k = 3", "k = 4")
+        self.source.recompute()
+        link.Pinned = False
+        self.assertEqual(link.Snapshot, "")
+        self.doc.recompute()
+        self.assertEqual(obj.Out, 8.0)
+
+    def testPinnedOpensWithoutTheSource(self):
+        self.link(pinned=True)
+        self.consumer("import brk\nbrk.triple(4)")
+        self.doc.recompute()
+        path = self.saveConsumerAndCloseAll()
+        os.remove(self.sourcePath)
+        self.doc = FreeCAD.openDocument(path)
+        obj = self.doc.getObject("Consumer")
+        obj.setExpression("Out", "import brk\nbrk.triple(5)")
+        self.doc.recompute()
+        self.assertNotIn("Invalid", obj.State)
+        self.assertEqual(obj.Out, 15.0)
+
+    # -- the principal -------------------------------------------------------
+
+    def testPrincipalHoldsTheLinkNotTheText(self):
+        link = self.link()
+        principalOf = FreeCAD.ExpressionSecurity.principalOf
+        live = principalOf(self.doc.Name)
+        # the text is the source document's code, not this one's
+        self.lib.Text = BRACKETS.replace("k = 3", "k = 9")
+        self.assertEqual(principalOf(self.doc.Name), live)
+        # a pinned snapshot is this document's code
+        link.Pinned = True
+        pinned = principalOf(self.doc.Name)
+        self.assertNotEqual(pinned, live)
+        # and retargeting the link is a change of this document's code
+        link.Pinned = False
+        other = self.source.addObject("App::ExpressionLibrary", "Other")
+        other.Text = BRACKETS
+        link.Source = other
+        self.assertNotEqual(principalOf(self.doc.Name), live)

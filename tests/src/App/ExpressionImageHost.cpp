@@ -3090,6 +3090,162 @@ TEST_F(ExpressionRoutingTest, librariesBracketMatchesNative)
     ImageHost::instance().clearHandles();
 }
 
+// ---- docs/Sandbox.md 7.17 D2: a library linked from another file ----
+
+namespace
+{
+/// A second document holding the brackets library, saved: a link names a file.
+struct SourceDocument
+{
+    std::string name;
+    std::string path;
+    App::Document* doc = nullptr;
+    App::ExpressionLibrary* lib = nullptr;
+
+    explicit SourceDocument(const char* docName, const char* text = bracketsText)
+        : name(docName)
+    {
+        doc = App::GetApplication().newDocument(docName, "testUser");
+        name = doc->getName();
+        lib = addLibrary(doc, "Lib", "brackets", text);
+        path = Base::FileInfo::getTempPath() + name + ".FCStd";
+        doc->saveAs(path.c_str());
+    }
+    ~SourceDocument()
+    {
+        if (App::GetApplication().getDocument(name.c_str()))
+            App::GetApplication().closeDocument(name.c_str());
+        Base::FileInfo(path).deleteFile();
+    }
+};
+
+App::ExpressionLibrary* addLink(App::Document* doc,
+                                const char* name,
+                                const char* module,
+                                App::ExpressionLibrary* source,
+                                bool pinned = false)
+{
+    auto lib = Base::freecad_dynamic_cast<App::ExpressionLibrary>(
+        doc->addObject("App::ExpressionLibrary", name));
+    if (lib) {
+        lib->Module.setValue(module);
+        lib->Source.setValue(source);
+        if (pinned)
+            lib->Pinned.setValue(true);
+    }
+    return lib;
+}
+
+double routedNumber(App::DocumentObject* owner, const char* src)
+{
+    std::string err;
+    PyObject* v = evalProgram(owner, src, true, err);
+    EXPECT_NE(v, nullptr) << src << "\n" << err;
+    double res = v ? PyFloat_AsDouble(v) : -1.0;
+    Py_XDECREF(v);
+    ImageHost::instance().clearHandles();
+    return res;
+}
+}  // namespace
+
+TEST_F(ExpressionRoutingTest, librariesLinkedLiveMatchesNative)
+{
+    // The source's module under the consumer's name, routed = native, and
+    // an edit in the source followed.
+    SourceDocument source("FcxLibSource");
+    ASSERT_NE(source.lib, nullptr);
+    ASSERT_NE(addLink(doc, "LibB", "brk", source.lib), nullptr);
+    Base::PyGILStateLocker lock;
+    expectRoutedMatchesNative(obj, "import brk\nbrk.triple(Width)");
+    expectRoutedMatchesNative(obj, "from brk import viaLater\nviaLater(Width)");
+    source.lib->Text.setValue("k = 4\ndef triple(x):\n    return x * k\n");
+    expectRoutedMatchesNative(obj, "import brk\nbrk.triple(2)");
+    EXPECT_EQ(routedNumber(obj, "import brk\nbrk.triple(2)"), 8.0);
+}
+
+TEST_F(ExpressionRoutingTest, librariesLinkedConsumersShareOneModule)
+{
+    // Two documents linking one source under the same name: the guest keys
+    // the module by the source's principal and builds it once.
+    SourceDocument source("FcxLibShared");
+    ASSERT_NE(source.lib, nullptr);
+    auto other = App::GetApplication().newDocument("FcxLibConsumer", "testUser");
+    auto otherObj = other->addObject("App::FeaturePython", "Obj");
+    EXPECT_NE(addLink(doc, "LibB", "brk", source.lib), nullptr);
+    EXPECT_NE(addLink(other, "LibB", "brk", source.lib), nullptr);
+    {
+        Base::PyGILStateLocker lock;
+        ImageHost::instance().resetStats();
+        EXPECT_EQ(routedNumber(obj, "import brk\nbrk.triple(2)"), 6.0);
+        EXPECT_EQ(routedNumber(otherObj, "import brk\nbrk.triple(2)"), 6.0);
+        EXPECT_EQ(libSourceOps(), 1u);
+    }
+    App::GetApplication().closeDocument(other->getName());
+}
+
+TEST_F(ExpressionRoutingTest, librariesLinkedImportsInItsOwnFile)
+{
+    // The source's text imports a library of the SOURCE's document, which
+    // the consumer's does not hold: routed, the nested lib.source names
+    // that document, and an edit there is followed.
+    SourceDocument source("FcxLibHome",
+                          "import helpers\ndef quad(x):\n    return helpers.double(x) * 2\n");
+    ASSERT_NE(source.lib, nullptr);
+    auto helper = addLibrary(source.doc, "Helper", "helpers", "def double(x):\n    return x * 2\n");
+    ASSERT_NE(helper, nullptr);
+    ASSERT_NE(addLink(doc, "LibB", "brk", source.lib), nullptr);
+    EXPECT_EQ(App::ExpressionLibrary::find(doc, "helpers"), nullptr);
+    Base::PyGILStateLocker lock;
+    expectRoutedMatchesNative(obj, "import brk\nbrk.quad(Width)");
+    EXPECT_EQ(routedNumber(obj, "import brk\nbrk.quad(2)"), 8.0);
+    helper->Text.setValue("def double(x):\n    return x * 3\n");
+    expectRoutedMatchesNative(obj, "import brk\nbrk.quad(Width)");
+    EXPECT_EQ(routedNumber(obj, "import brk\nbrk.quad(2)"), 12.0);
+}
+
+TEST_F(ExpressionRoutingTest, librariesPinnedMatchesNative)
+{
+    // Pinned: the snapshot taken at the pin, whatever the source does after.
+    SourceDocument source("FcxLibPinned");
+    ASSERT_NE(source.lib, nullptr);
+    auto link = addLink(doc, "LibB", "brk", source.lib, true);
+    ASSERT_NE(link, nullptr);
+    EXPECT_STREQ(link->Snapshot.getValue(), bracketsText);
+    source.lib->Text.setValue("k = 4\ndef triple(x):\n    return x * k\n");
+    Base::PyGILStateLocker lock;
+    expectRoutedMatchesNative(obj, "import brk\nbrk.triple(2)");
+    EXPECT_EQ(routedNumber(obj, "import brk\nbrk.triple(2)"), 6.0);
+}
+
+TEST_F(ExpressionRoutingTest, librariesLinkUnresolvedFailsBothWays)
+{
+    // The source document gone, the link unpinned: the import fails with
+    // the link's reason, natively and routed.
+    auto source = std::make_unique<SourceDocument>("FcxLibGone");
+    ASSERT_NE(source->lib, nullptr);
+    auto link = addLink(doc, "LibB", "brk", source->lib);
+    ASSERT_NE(link, nullptr);
+    // Saved first: closing a linked document under a consumer that has never
+    // been saved leaves PropertyXLink holding the deleted object -- any
+    // XLink, not this one (docs/Sandbox.md sec 12).
+    const std::string consumerPath = Base::FileInfo::getTempPath() + doc->getName() + ".FCStd";
+    doc->saveAs(consumerPath.c_str());
+    source.reset();
+    Base::FileInfo(consumerPath).deleteFile();
+    ASSERT_EQ(link->getHolder(), nullptr);
+    Base::PyGILStateLocker lock;
+    std::string nerr, rerr;
+    PyObject* native = evalProgram(obj, "import brk\nbrk.k", false, nerr);
+    PyObject* routed = evalProgram(obj, "import brk\nbrk.k", true, rerr);
+    EXPECT_EQ(native, nullptr) << reprOf(native);
+    EXPECT_EQ(routed, nullptr) << reprOf(routed);
+    EXPECT_NE(nerr.find("Source not found"), std::string::npos) << nerr;
+    EXPECT_NE(rerr.find("Source not found"), std::string::npos) << rerr;
+    Py_XDECREF(native);
+    Py_XDECREF(routed);
+    ImageHost::instance().clearHandles();
+}
+
 TEST_F(ExpressionImageEvalTest, programsSurfaceStampMatchesHost)
 {
     // The guest's copy of the surface stamp is the host's.  A wheel built

@@ -2377,7 +2377,7 @@ public:
         // the permission check and never enters the process-wide cache,
         // which would let two documents' `brackets` meet.
 #ifdef FC_EXPR_IMAGE
-        if (PyObject *lib = FcxImage::libraryModule(name))
+        if (PyObject *lib = FcxImage::libraryModule(name, e ? e->getOwner() : nullptr))
             return Py::asObject(lib);
 #else
         if (e) {
@@ -7113,14 +7113,20 @@ void ImportStatement::_toString(std::ostream &ss, bool, int) const {
 /// after which the import fails as it should.  What the library imports
 /// in turn is followed too: an edit there changes this library's module.
 /// Any other module name adds nothing.
-static void addLibraryIdentifier(const Expression *e, const std::string &module,
+///
+/// A linked library (Source) depends through every link to the text it
+/// reaches: each library on the way contributes its name, its link, its pin
+/// and its text, and what the text imports resolves in the document holding
+/// the text.  A pinned library ends the walk -- its text is its Snapshot.
+static void addLibraryIdentifier(const Expression *e, const App::Document *doc,
+                                 const std::string &module,
                                  std::map<App::ObjectIdentifier,bool> &deps,
                                  std::set<const ExpressionLibrary*> *visited = nullptr)
 {
     auto owner = e->getOwner();
     if (!owner || !owner->isAttachedToDocument())
         return;
-    auto lib = ExpressionLibrary::find(owner->getDocument(), module);
+    auto lib = ExpressionLibrary::find(doc, module);
     if (!lib || lib == owner)
         return;
     std::set<const ExpressionLibrary*> seen;
@@ -7128,21 +7134,32 @@ static void addLibraryIdentifier(const Expression *e, const std::string &module,
         visited = &seen;
     if (!visited->insert(lib).second)
         return;
-    for (const char *prop : {"Text", "Module"}) {
-        ObjectIdentifier id(owner);
-        id.setDocumentObjectName(lib, true);
-        id << ObjectIdentifier::SimpleComponent(prop);
-        deps.emplace(std::move(id), false);
+    std::set<const ExpressionLibrary*> chain;
+    for (auto cur = lib; cur && chain.insert(cur).second;) {
+        for (const char *prop : {"Text", "Module", "Source", "Pinned", "Snapshot"}) {
+            ObjectIdentifier id(owner);
+            id.setDocumentObjectName(cur, true);
+            id << ObjectIdentifier::SimpleComponent(prop);
+            deps.emplace(std::move(id), false);
+        }
+        if (!cur->isLiveLink())
+            break;
+        cur = freecad_dynamic_cast<ExpressionLibrary>(cur->Source.getValue());
     }
-    for (auto &name : lib->importedModules())
-        addLibraryIdentifier(e, name, deps, visited);
+    auto holder = lib->getHolder();
+    if (!holder)
+        return;
+    for (auto &name : holder->importedModules())
+        addLibraryIdentifier(e, holder->getDocument(), name, deps, visited);
 }
 #endif
 
 void ImportStatement::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const {
 #ifndef FC_EXPR_IMAGE
-    for (auto &module : modules)
-        addLibraryIdentifier(this, module, deps);
+    for (auto &module : modules) {
+        if (owner && owner->isAttachedToDocument())
+            addLibraryIdentifier(this, owner->getDocument(), module, deps);
+    }
 #else
     (void)deps;
 #endif
@@ -7210,7 +7227,8 @@ void FromStatement::_toString(std::ostream &ss, bool, int) const {
 
 void FromStatement::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const {
 #ifndef FC_EXPR_IMAGE
-    addLibraryIdentifier(this, module, deps);
+    if (owner && owner->isAttachedToDocument())
+        addLibraryIdentifier(this, owner->getDocument(), module, deps);
 #else
     (void)deps;
 #endif

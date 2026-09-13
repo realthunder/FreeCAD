@@ -151,10 +151,14 @@ inline const char* const OpStr = "str";
 // message the finder raises (offer / installed).
 inline const char* const OpPkgMissing = "pkg.missing";
 // No handle: an expression library of the evaluation owner's document
-// (docs/Sandbox.md 7.17 (c)).  "a" = the import name; the reply value is
-// null (no such library) or {text, rev, key, obj}: the source, its
-// revision, the principal key the guest keeps the module under, and the
-// library object's name.  An eval request names the document's libraries
+// (docs/Sandbox.md 7.17 (c)).  "a" = the import name, "k" = the document to
+// look in when the import is made by a kept module whose text is another
+// document's (a linked library); the reply value is null (no such library)
+// or {text, rev, key, obj, doc, libs}: the source, its revision, the
+// principal key the guest keeps the module under, the object and document
+// holding the text, and that document's import table as [module, key,
+// rev] triples (a map would decode as a tagged value for a module named
+// like the tag key).  An eval request names the document's libraries
 // in "libs" ({module: [key, rev]}), so an import that is no library never
 // asks; a changed library rides the next request as "ld" ([[key, module]]).
 inline const char* const OpLibSource = "lib.source";

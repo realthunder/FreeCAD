@@ -45,10 +45,13 @@ std::string missingImportOffer(const std::string& module);
  * holds an expression library of that name (docs/Sandbox.md 7.17 (c)):
  * built from the text the host serves (`lib.source`) on first use and
  * kept, keyed by the principal whose text it is, until the text changes.
+ * `owner` is the importing expression's: when it is a kept module's own
+ * adapter object, the import resolves in THAT module's document -- a
+ * library linked from another file imports what its own file holds.
  * A NEW reference; nullptr with no error set when the name is no library.
  * Throws the build's error.
  */
-PyObject* libraryModule(const std::string& name);
+PyObject* libraryModule(const std::string& name, const App::DocumentObject* owner);
 
 /// CBOR request bytes -> CBOR reply bytes.
 std::vector<uint8_t> dispatchCbor(const uint8_t* req, size_t len);

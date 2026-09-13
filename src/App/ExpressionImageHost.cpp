@@ -873,16 +873,13 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
         // The document's expression libraries by import name, so the
         // guest asks for a text only when an import names one and keeps
         // the module it built while the revision stands (7.17 (c)).
-        auto libs = App::ExpressionLibrary::libraries(owner->getDocument());
+        // A linked library names the principal of the document holding
+        // its text, so every consumer of one source shares one module.
+        auto libs = App::ExpressionLibrary::importTable(owner->getDocument());
         if (!libs.empty()) {
-            const std::string key =
-                ExpressionSecurity::Runtime::instance().documentPrincipal(owner->getDocument());
             json table = json::object();
-            for (auto lib : libs) {
-                const std::string module = lib->getModuleName();
-                if (!table.contains(module))
-                    table[module] = json::array({key, lib->getLibraryRevision()});
-            }
+            for (const auto& entry : libs)
+                table[entry.module] = json::array({entry.key, entry.rev});
             req["libs"] = std::move(table);
         }
     }
@@ -953,7 +950,10 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
                     if (auto prop = id.getProperty()) {
                         auto lib = Base::freecad_dynamic_cast<App::ExpressionLibrary>(
                             prop->getContainer());
-                        if (lib && (prop == &lib->Text || prop == &lib->Module))
+                        if (lib
+                            && (prop == &lib->Text || prop == &lib->Module
+                                || prop == &lib->Source || prop == &lib->Pinned
+                                || prop == &lib->Snapshot))
                             continue;
                     }
                     Py::Object value = id.getPyValue(true);

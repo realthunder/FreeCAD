@@ -210,7 +210,9 @@ Runtime::Runtime()
         [this](const App::DocumentObject &obj, const App::Property &prop) {
             // ... and a library's text is code of the document the same way
             auto lib = freecad_dynamic_cast<const ExpressionLibrary>(&obj);
-            bool libraryCode = lib && (&prop == &lib->Text || &prop == &lib->Module);
+            bool libraryCode = lib
+                    && (&prop == &lib->Text || &prop == &lib->Module || &prop == &lib->Source
+                        || &prop == &lib->Pinned || &prop == &lib->Snapshot);
             if (!libraryCode
                     && !prop.isDerivedFrom(PropertyExpressionContainer::getClassTypeId()))
                 return;
@@ -325,10 +327,12 @@ std::string Runtime::documentPrincipal(const App::Document *doc)
         Base::PyGILStateLocker lock;
         for (auto obj : doc->getObjects()) {
             // an expression library is the document's code (7.17 (c)):
-            // a tampered library voids the grants as a tampered expression does
+            // a tampered library voids the grants as a tampered expression
+            // does.  A pinned one's code is its snapshot; a live link's is
+            // the link, the text being the source document's
             if (auto lib = freecad_dynamic_cast<ExpressionLibrary>(obj))
                 builder.addScript("App::ExpressionLibrary:" + lib->getModuleName(),
-                                  lib->Text.getValue());
+                                  lib->getPrincipalCode());
             std::vector<App::Property *> props;
             obj->getPropertyList(props);
             for (auto prop : props) {

@@ -1353,22 +1353,57 @@ json dispatchHostOp(HandleTable& table, const json& req)
             // document (docs/Sandbox.md 7.17 (c)): the document's own code,
             // read under doc.read.self, and keyed by that document's
             // principal so two documents' modules never meet in the guest.
+            //
+            // A library linked from another file (Source) serves the text it
+            // reaches, under the principal of the document holding it; "k"
+            // names that document when the import is made by such a
+            // module's own code, which resolves in its own file.  Only a
+            // document a live link reaches from the owner's is served --
+            // the link was the one doc.foreign question, when it was made.
             auto a = req.find("a");
             if (a == req.end() || !a->is_string())
                 return errReply("ProtocolError", "lib.source without a name");
-            App::Document* doc = documentOf(table.owner());
-            auto* lib = doc ? App::ExpressionLibrary::find(doc, a->get_ref<const std::string&>())
-                            : nullptr;
+            const std::string& name = a->get_ref<const std::string&>();
+            App::Document* ownerDoc = documentOf(table.owner());
+            App::Document* doc = ownerDoc;
+            auto k = req.find("k");
+            if (k != req.end() && k->is_string()) {
+                const std::string& home = k->get_ref<const std::string&>();
+                doc = App::GetApplication().getDocument(home.c_str());
+                if (!doc || !App::ExpressionLibrary::reachesHome(ownerDoc, doc))
+                    return errReply("PermissionError",
+                                    "lib.source: no library link reaches document '" + home + "'");
+            }
+            auto* lib = doc ? App::ExpressionLibrary::find(doc, name) : nullptr;
             if (!lib)
                 return okReply(json());
+            std::string why;
+            auto* holder = lib->getHolder(&why);
+            if (!holder)
+                return errReply("ImportError", "library '" + name + "': " + why);
             ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::DocReadSelf);
-            const std::string key = ExpressionSecurity::Runtime::instance().documentPrincipal(doc);
-            lib->noteServed(key);
+            App::Document* holderDoc = holder->getDocument();
+            const std::string key =
+                ExpressionSecurity::Runtime::instance().documentPrincipal(holderDoc);
+            // every library on the way drops the guest's module when it changes
+            for (App::ExpressionLibrary* cur = lib; cur;) {
+                cur->noteServed(key, name);
+                if (cur == holder)
+                    break;
+                cur = Base::freecad_dynamic_cast<App::ExpressionLibrary>(cur->Source.getValue());
+            }
             json v = json::object();
-            v["text"] = lib->Text.getStrValue();
+            v["text"] = lib->getLibraryText();
             v["rev"] = lib->getLibraryRevision();
             v["key"] = key;
-            v["obj"] = lib->getNameInDocument();
+            v["obj"] = holder->getNameInDocument();
+            v["doc"] = holderDoc->getName();
+            // triples, not a map: a reply value is decoded as a wire value,
+            // where a module named like the tag key would read as a type
+            json libs = json::array();
+            for (const auto& entry : App::ExpressionLibrary::importTable(holderDoc))
+                libs.push_back(json::array({entry.module, entry.key, entry.rev}));
+            v["libs"] = std::move(libs);
             return okReply(v);
         }
         if (op == FcxWire::OpAppDocs || op == FcxWire::OpAppDoc || op == FcxWire::OpAppNewDoc
