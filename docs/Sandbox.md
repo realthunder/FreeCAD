@@ -65,8 +65,9 @@ pieces are frozen, not extended.**
                                                  D2's library half BUILT 2026-09-13:
                                                  App::ExpressionLibrary imported by the document's
                                                  own expressions, routed = native, the guest keeping
-                                                 one module per principal; NEXT the linked library
-                                                 (Source/Pinned/Snapshot) and P3
+                                                 one module per principal; the linked library
+                                                 (Source/Pinned/Snapshot) BUILT the same day, a
+                                                 live link sharing the source's module; NEXT P3
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
@@ -4665,7 +4666,7 @@ pivy wheel rebuild); 900 in the wheel (the walker 300, the host node,
 camera, event and view shims 400, the view provider glue and the MDI
 shim 200); 600 of gate.  G4a is the larger half.
 
-### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed; D1 BUILT 2026-09-13]**
+### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed; D1 BUILT 2026-09-13; D2's library half and the linked library BUILT 2026-09-13, P3 next]**
 
 Sec 11 item 2, the re-aim's one target (1.2): a program a DOCUMENT
 carries, written in the expression engine's language, generating
@@ -5431,6 +5432,87 @@ and 5 removed in the feature, 439 in tests, against 500-730 sized for
 these rows -- the overrun is the scoping of (1), the kept modules of
 (4) and the transitive rebuild of (3), none of them in the sizing.
 
+**The linked library, BUILT 2026-09-13.**  `Source` (an
+`App::PropertyXLink`), `Pinned` and `Snapshot` on
+`App::ExpressionLibrary`.  The HOLDER is the library whose text is
+used: the object itself when unlinked or pinned, else the end of its
+live links (`getHolder()`, which names its reason for a link that does
+not resolve, one that is no library, or a cycle).  Five things the
+build settled that the design had left open.
+
+1. *A live link is the source's module, and its imports resolve in the
+   source's file.*  Natively a linked library hands `getModule()` to
+   the holder, so every consumer of one source shares one build, and
+   the holder's text builds with the holder as owner: an `import
+   helpers` inside it finds the SOURCE document's `helpers`, which the
+   consumer's document need not hold.  Routed, the same.  The guest keys
+   the module by the holder document's principal -- two documents
+   linking one source under one name ask `lib.source` once, measured --
+   and a kept module remembers its home document and that document's
+   import table, both from the `lib.source` reply.  An import made by
+   the module's own code resolves in that table and names the home as
+   `k` on its `lib.source`, which the host serves only for a document a
+   live link reaches from the owner's (`reachesHome`).  A pinned
+   snapshot's imports resolve in the CONSUMER's document, since the
+   source may be absent: pinning a library that imports a library means
+   the consumer holds that one too.
+2. *The import table rides as triples.*  A `lib.source` reply is decoded
+   as a wire value, where a map keyed by module name would read a module
+   named `t` -- the tag key -- as a typed value.
+3. *The edge walks the links.*  An import depends on `Text`, `Module`,
+   `Source`, `Pinned` and `Snapshot` of every library from the one named
+   to the holder (cross-document identifiers for the source's), and on
+   what the holder's text imports, resolved in the holder's document.
+   Probed both ways: the source edited with only the consumer's document
+   recomputed, and with the source's recomputed first; the consumer
+   follows in both.
+4. *The principal holds the link, not the text.*  An unlinked library
+   contributes its `Text`, a pinned one its `Snapshot`, a live link the
+   link as stored (`link:<file>#<object>`).  The text is the source
+   document's code and joins that hash only, so an edit in the source
+   leaves the consumer's grants alone, while retargeting the link, or
+   pinning, is a change of the consumer's own code and voids them.  A
+   source changing under a live link is the supply-chain case the pin
+   answers (the ruling above), not a wall.
+5. *A missing source fails on the library.*  `execute()` reports
+   "Source not found: <file>#<object>"; the import raises the same
+   reason natively and routed; the consumer waits Touched, as it does
+   behind any failed dependency, rather than turning Invalid itself.
+
+The relabel is local by construction: `Module` is the consumer's, and
+the source renaming its own module changes nothing downstream.  Pinning
+takes the holder's text and its `Surface`; unpinning clears `Snapshot`
+and follows the source again; a new `Source` while pinned re-takes the
+snapshot, and a pin with nothing to take from keeps the snapshot it has
+-- the copied-in library.  `Text` is read-only while linked or pinned.
+NOT done: the editor's diff at unpin (a GUI item), and the text editor
+still shows the object's own `Text` rather than the holder's.
+
+Found on the way, older than any of it (sec 12): closing a document an
+XLink points into, while the LINKING document has never been saved,
+leaves the link holding the deleted object.  Any `PropertyXLink` -- a
+plain dynamic one reproduces it; saved before or after the link is made,
+the link detaches and reads None.
+
+Gate: `SandboxProgram` gains 12 native cases (`SandboxProgramLinkedCases`):
+the live import and the listing, an edit followed in both recompute
+orders, the consumer's module name surviving the source's rename,
+imports resolving in the source's file and following an edit there, two
+links sharing one module, a `Source` that is no library, a reopen
+loading the source file, live with the source file deleted, the pin's
+snapshot and surface, unpin following the source, pinned opening
+without the source, and the principal (a source edit moves nothing;
+pinning and retargeting do).  Five gtests routed = native
+(`ExpressionRoutingTest.librariesLinked*`, `librariesPinnedMatchesNative`,
+`librariesLinkUnresolvedFailsBothWays`): live with an edit, two
+documents and one `lib.source`, imports in the source's file with an
+edit there, pinned, and the unresolved link failing with its reason
+both ways.  Suites green at the build: C++ 620/620 (offscreen), Python
+2746 OK, `SandboxProgram` 31 OK, `FeaturePythonChain` 27 OK.  The
+cost: about 445 lines of the feature and 370 of tests, against 150-250
+sized -- the overrun is (1), the source document's import table in the
+guest and the host, which the sizing never saw.
+
 **Stages.**
 
     D1  function objects in the image (ExpressionPy into
@@ -5457,8 +5539,9 @@ these rows -- the overrun is the scoping of (1), the kept modules of
         library of the importer's own document, above ("D2's
         library half"): lib.drop became the "ld" field, the registry
         is named on the eval request, library functions resolve
-        their module, the edge is transitive.  NEXT: the XLink
-        Source, Pinned and Snapshot, the cross-link edge.  Gate:
+        their module, the edge is transitive.  The linked
+        library -- Source, Pinned, Snapshot, the edge through the
+        links -- **BUILT 2026-09-13**, above.  NEXT: P3.  Gate:
         SandboxProgram's library half, the cross-file pair included.  The library is
         no longer the only carrier (the sheet is one today), so its
         own value is the module namespace, the import statement and
@@ -7751,6 +7834,24 @@ sockets, any network for the reference image, a webview escape hatch.
   with a comment block today.  The lexer output is committed
   (`lex.ExpressionParser.c`) and regenerated by hand, so the fix is a
   flex run of its own, not a side effect of anything here.
+- **Closing a linked document under a never-saved consumer leaves the
+  XLink dangling** (probed 2026-09-13, 7.17 D2's linked library; older
+  than it).  Document B, never saved, holds any `PropertyXLink` -- a
+  plain dynamic property reproduces it -- to an object of a saved
+  document A; `closeDocument(A)`; the next read of the link
+  dereferences the deleted object and segfaults
+  (`PropertyXLink::getPyObject`, or `ExpressionLibrary::getHolder`
+  through `Source.getValue()`).  Save B before OR after the link is made
+  and the link detaches on close and reads None, so the gap is the
+  `DocInfo` bookkeeping of a link whose owner has no file path
+  (`PropertyLinks.cpp`, `DocInfo::slotDeleteDocument`).  Not fixed here;
+  the gtest `librariesLinkUnresolvedFailsBothWays` saves its consumer
+  first, and says why.
+- **A consumer of a failed library waits Touched, it does not turn
+  Invalid** (7.17 D2).  A library whose text does not parse, whose
+  `Source` does not resolve or is no library, fails its own recompute,
+  and the document skips what depends on it: the consumer keeps its old
+  value and the Touched mark.  Look for the reason on the library.
 
 ## 13. Known gaps and open questions
 
