@@ -25,6 +25,9 @@
 #include "DocumentObject.h"
 #include "FeaturePythonHook.h"
 #include "PropertyPythonObject.h"
+#ifdef FC_EXPR_IMAGE_HOST
+#include "ExpressionGuestProxy.h"
+#endif
 
 using namespace App;
 
@@ -200,6 +203,20 @@ void PyHookImp::resolveChain(int hook, HookSlot& slot) const
             else {
                 PyErr_Clear();
             }
+#ifdef FC_EXPR_IMAGE_HOST
+            // A function a routed cell left (docs/ProxyChain.md P3): called by
+            // the chain it runs as THIS object's file -- the object it extends
+            // is its write owner and that document its principal (RULED
+            // 2026-09-13).  The identity stays the unbound function.
+            if (ExpressionSandbox::isRoutedFunction(callable.ptr())) {
+                PyObject* bound =
+                    ExpressionSandbox::bindRoutedFunction(callable.ptr(), hookSelf(hook).ptr());
+                if (!bound) {
+                    throw Py::Exception();
+                }
+                entry.callable = Py::asObject(bound);
+            }
+#endif
             PyObject* pyRecursive = PyObject_GetAttrString(owner.ptr(), recursive.c_str());
             if (!pyRecursive) {
                 PyErr_Clear();

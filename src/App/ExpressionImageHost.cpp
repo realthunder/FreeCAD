@@ -37,6 +37,7 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "Expression.h"
+#include "ExpressionGuestProxy.h"
 #include "ExpressionImage/FcxWire.h"
 #include "ExpressionImageBridge.h"
 #include "ExpressionImageHost.h"
@@ -663,6 +664,17 @@ PyObject* ImageHost::decodeResult(const ImageResult& result)
         return nullptr;
     try {
         json v = json::from_cbor(result.value.begin(), result.value.end());
+        if (result.owner && v.is_object()) {
+            // a function the evaluation left: the stand-in that calls it
+            auto t = v.find(FcxWire::TagKey);
+            if (t != v.end() && t->is_string()
+                && t->get_ref<const std::string&>() == FcxWire::TagGuestFunction) {
+                auto n = v.find("n");
+                return makeRoutedFunction(result.owner, result.source, result.options,
+                                          n != v.end() && n->is_string() ? n->get<std::string>()
+                                                                         : std::string());
+            }
+        }
         return decodeHostValue(d->handles, v);
     }
     catch (const json::exception& e) {
@@ -842,8 +854,36 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
                                       const App::Expression* parsed,
                                       int options)
 {
+    return evalExpressionImpl(owner, source, parsed, options, false, nullptr, nullptr, nullptr);
+}
+
+ImageResult ImageHost::callFunction(const App::DocumentObject* owner,
+                                    const std::string& source,
+                                    int options,
+                                    PyObject* args,
+                                    PyObject* kwargs,
+                                    const App::DocumentObject* runAs)
+{
+    return evalExpressionImpl(owner, source, nullptr, options, true, args, kwargs, runAs);
+}
+
+ImageResult ImageHost::evalExpressionImpl(const App::DocumentObject* owner,
+                                          const std::string& source,
+                                          const App::Expression* parsed,
+                                          int options,
+                                          bool isCall,
+                                          PyObject* callArgs,
+                                          PyObject* callKwargs,
+                                          const App::DocumentObject* runAs)
+{
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     ImageResult res;
+    if (!isCall && owner) {
+        // a function value in the reply is made again from these
+        res.owner = owner;
+        res.source = source;
+        res.options = options;
+    }
     if (!d->initialize()) {
         res.excType = "ImageUnavailable";
         res.message = "expression sandbox image is not available";
@@ -1005,6 +1045,32 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
     catch (Base::Exception&) {
         // host-side parse failure: ship as-is, the image parses the
         // same source with the same parser and raises the same error
+    }
+
+    // A routed function called: the arguments ride with the request, and
+    // a chain call runs as the object it extends -- the write owner and,
+    // for the round trip only, the principal.  The pack above was the
+    // definition's own frame, resolved under its owner.
+    std::optional<ExpressionSecurity::Runtime::Scope> runScope;
+    if (isCall) {
+        Base::PyGILStateLocker lock;
+        json call;
+        json args = json::array();
+        if (callArgs && PyTuple_Check(callArgs))
+            for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(callArgs); ++i)
+                args.push_back(encodeHostValue(d->handles, PyTuple_GET_ITEM(callArgs, i)));
+        call["a"] = std::move(args);
+        if (callKwargs && PyDict_Check(callKwargs) && PyDict_Size(callKwargs) > 0)
+            call["k"] = encodeHostValue(d->handles, callKwargs);
+        req["call"] = std::move(call);
+        if (runAs) {
+            // borrowed: the object keeps its Python face, and the handle
+            // the arguments exported is this same object
+            PyObject* runPy = const_cast<App::DocumentObject*>(runAs)->getPyObject();
+            Py_DECREF(runPy);
+            d->handles.setOwner(runPy);
+            runScope.emplace(runAs, owner);
+        }
     }
 
     json reply;

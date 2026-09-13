@@ -688,6 +688,12 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
         if (allStringKeys)
             return map;
     }
+    // a function a routed evaluation left: callable in the guest over
+    // fcall, the call itself made here (FcxWire OpFunctionCall)
+    else if (isRoutedFunction(obj))
+        return {{FcxWire::TagKey, FcxWire::TagGuestFunction},
+                {"id", table.add(obj)},
+                {"n", routedFunctionName(obj)}};
     // a Proxy that lives in the guest: its stand-in crosses back as the
     // guest's own instance, never as a handle on the stand-in
     else if (isGuestProxy(obj))
@@ -1464,6 +1470,18 @@ json dispatchHostOp(HandleTable& table, const json& req)
         PyObject* base = table.get(id);
         if (!base)
             return errReply("ReferenceError", "stale host handle");
+
+        if (op == FcxWire::OpFunctionCall) {
+            // A routed function's stand-in and nothing else: a handle is
+            // not a licence to call the host object behind it.  The call
+            // is an evaluation of its own, nested in this one.
+            if (!isRoutedFunction(base))
+                return errReply("ProtocolError",
+                                std::string("fcall on a '") + Py_TYPE(base)->tp_name
+                                    + "', which is no routed function");
+            Py_INCREF(base);
+            return callWithWireArgs(table, base, req);
+        }
 
         if (op == FcxWire::OpGetAttr) {
             auto a = req.find("a");

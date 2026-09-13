@@ -67,6 +67,13 @@ struct ImageResult
     /// failed execute(), so a failure inside a guest Proxy is not just
     /// its last line.
     std::string traceback;
+    /** What a function value in the reply is made again from (FcxWire
+     * TagGuestFunction, docs/Sandbox.md 7.17 P3): the owner, source and
+     * options of the evaluation, set by evalExpression and read by
+     * decodeResult.  Unset for every other op, a call included. */
+    const App::DocumentObject* owner = nullptr;
+    std::string source;
+    int options = 0;
 };
 
 class AppExport ImageHost
@@ -144,6 +151,26 @@ public:
                                const std::string& source,
                                const App::Expression* parsed = nullptr,
                                int options = 0);
+
+    /** Call a function a routed evaluation left as its value (FcxWire
+     * OpFunctionCall; the host stand-in of ExpressionGuestProxy.h).  The
+     * function cannot outlive its evaluation, so this is one of its own:
+     * `source` evaluated again for `owner` exactly as evalExpression does
+     * -- its pack resolved under the owner's principal, the definition's
+     * own frame -- and the value called in the guest with `args` and
+     * `kwargs` (a document object crosses as a handle); the result comes
+     * back by value.  With `runAs` the call runs as that object's file
+     * (docs/ProxyChain.md 2.5, RULED 2026-09-13): `runAs` is the one
+     * object writes may touch and its document the principal of the
+     * round trip, whatever scope is active, with `owner` named on the
+     * audit line.  Without it, `owner` is both, as for an evaluation.
+     */
+    ImageResult callFunction(const App::DocumentObject* owner,
+                             const std::string& source,
+                             int options,
+                             PyObject* args,
+                             PyObject* kwargs,
+                             const App::DocumentObject* runAs = nullptr);
 
     /** Run statements in the guest (FcxWire::OpExec).  With `module`
      * the source becomes a module of that name in the guest's
@@ -295,6 +322,14 @@ public:
 
 private:
     ImageHost();
+    ImageResult evalExpressionImpl(const App::DocumentObject* owner,
+                                   const std::string& source,
+                                   const App::Expression* parsed,
+                                   int options,
+                                   bool isCall,
+                                   PyObject* callArgs,
+                                   PyObject* callKwargs,
+                                   const App::DocumentObject* runAs);
     struct Private;
     std::unique_ptr<Private> d;
 };

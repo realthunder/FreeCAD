@@ -26,6 +26,7 @@
 
 #include <App/Expression.h>
 #include <App/ExpressionParser.h>
+#include <App/ExpressionPy.h>
 
 #include "FcxDocument.h"
 #include "FcxWire.h"
@@ -771,6 +772,9 @@ static json protocolError(const char *what)
  * and OptionPythonMode changes BOTH the lexer start state and the
  * name-binding rule, so it has to reach the parse as well as the walk.
  */
+static PyObject *decodeArgs(const json &req, const char *key);
+static PyObject *decodeKwargs(const json &req);
+
 static json dispatchEvalExpr(const json &req, const std::string &src)
 {
     std::string docName;
@@ -837,6 +841,44 @@ static json dispatchEvalExpr(const json &req, const std::string &src)
         Py::Object result = expr->getPyValue(options);
 
         json reply;
+        auto call = req.find("call");
+        if (call != req.end() && call->is_object()) {
+            // A host stand-in called (FcxWire OpFunctionCall): the source
+            // evaluated again, in this transaction, so the function is
+            // alive to be called and its body reads what the pack carries
+            // NOW -- natively the body reads live at call time too.
+            if (!PyCallable_Check(result.ptr())) {
+                PyErr_Format(PyExc_TypeError,
+                             "a routed function's source now evaluates to '%s', not a function",
+                             Py_TYPE(result.ptr())->tp_name);
+                return errorReply();
+            }
+            PyObject *args = decodeArgs(*call, "a");
+            if (!args)
+                return errorReply();
+            PyObject *kwargs = decodeKwargs(*call);
+            if (!kwargs) {
+                Py_DECREF(args);
+                return errorReply();
+            }
+            PyObject *called = PyObject_Call(result.ptr(), args, kwargs);
+            Py_DECREF(args);
+            Py_DECREF(kwargs);
+            if (!called)
+                return errorReply();
+            result = Py::asObject(called);
+        }
+        else if (PyObject_TypeCheck(result.ptr(), &App::ExpressionPy::Type)) {
+            // the function itself cannot leave this evaluation; the host
+            // keeps the source and owner that make it again
+            auto fn = dynamic_cast<App::CallableExpression *>(
+                static_cast<App::ExpressionPy *>(result.ptr())->getExpressionPtr());
+            reply["ok"] = true;
+            reply["val"] = {{FcxWire::TagKey, FcxWire::TagGuestFunction},
+                            {"n", fn ? fn->getName() : std::string()}};
+            return reply;
+        }
+
         json value;
         std::string err;
         if (!FcxImage::encodeValue(result.ptr(), value, err)) {

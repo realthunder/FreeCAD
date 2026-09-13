@@ -490,5 +490,238 @@ PyObject* restoreGuestProxy(const std::string& module,
     return standIn;
 }
 
+// ---- a function a routed evaluation left (docs/Sandbox.md 7.17 P3) ----
+
+namespace
+{
+
+struct RoutedFunctionObject
+{
+    PyObject_HEAD
+    /// the evaluation owner's Python face, held as native ExpressionPy
+    /// holds its owner's
+    PyObject* owner;
+    std::string* source;
+    std::string* name;
+    int options;
+};
+
+/// bindRoutedFunction's callable: the function and the object it runs as.
+struct RunAsObject
+{
+    PyObject_HEAD
+    PyObject* func;
+    PyObject* self;
+};
+
+PyObject* routedFunctionType = nullptr;
+PyObject* runAsType = nullptr;
+
+/// The document object behind a Python face, while it still has one.
+const App::DocumentObject* liveObject(PyObject* py)
+{
+    if (!py || !PyObject_TypeCheck(py, &DocumentObjectPy::Type))
+        return nullptr;
+    // the Python face's own isValid(), which DocumentObjectPy's method hides
+    auto* face = static_cast<DocumentObjectPy*>(py);
+    if (!static_cast<Base::PyObjectBase*>(face)->isValid())
+        return nullptr;
+    const App::DocumentObject* obj = face->getDocumentObjectPtr();
+    return obj && obj->getDocument() ? obj : nullptr;
+}
+
+PyObject* callRouted(RoutedFunctionObject* fn,
+                     const App::DocumentObject* runAs,
+                     PyObject* args,
+                     PyObject* kwargs)
+{
+    const App::DocumentObject* owner = liveObject(fn->owner);
+    if (!owner || !fn->source) {
+        PyErr_SetString(PyExc_ReferenceError, "Owner document object expired");
+        return nullptr;
+    }
+    auto& host = ImageHost::instance();
+    ImageResult r =
+        host.callFunction(owner, *fn->source, fn->options, args, kwargs, runAs);
+    // decoded before the handles go: a host object in the result resolves
+    // against the live table
+    PyObject* value = r.ok ? host.decodeResult(r) : nullptr;
+    host.clearHandles();
+    if (!r.ok) {
+        raiseGuestError(r);
+        return nullptr;
+    }
+    if (!value && !PyErr_Occurred())
+        PyErr_SetString(PyExc_RuntimeError,
+                        "a routed function returned a value the host cannot decode");
+    return value;
+}
+
+PyObject* routedFunctionCall(PyObject* self, PyObject* args, PyObject* kwargs)
+{
+    return callRouted(reinterpret_cast<RoutedFunctionObject*>(self), nullptr, args, kwargs);
+}
+
+PyObject* functionRepr(const std::string* name)
+{
+    if (!name || name->empty())
+        return PyUnicode_FromString("<Function>");
+    return PyUnicode_FromFormat("<Function %s>", name->c_str());
+}
+
+PyObject* routedFunctionRepr(PyObject* self)
+{
+    return functionRepr(reinterpret_cast<RoutedFunctionObject*>(self)->name);
+}
+
+void routedFunctionDealloc(PyObject* self)
+{
+    auto* fn = reinterpret_cast<RoutedFunctionObject*>(self);
+    Py_CLEAR(fn->owner);
+    delete fn->source;
+    fn->source = nullptr;
+    delete fn->name;
+    fn->name = nullptr;
+    PyTypeObject* type = Py_TYPE(self);
+    type->tp_free(self);
+    Py_DECREF(type);
+}
+
+PyType_Slot RoutedFunctionSlots[] = {
+    {Py_tp_dealloc, reinterpret_cast<void*>(routedFunctionDealloc)},
+    {Py_tp_repr, reinterpret_cast<void*>(routedFunctionRepr)},
+    {Py_tp_call, reinterpret_cast<void*>(routedFunctionCall)},
+    {Py_tp_doc, const_cast<char*>("A function a sandboxed evaluation returned: a call evaluates"
+                                  " its source again in the sandbox guest and calls it there.")},
+    {0, nullptr},
+};
+
+PyType_Spec RoutedFunctionSpec = {
+    "FreeCAD.ExpressionSandbox.RoutedFunction",
+    sizeof(RoutedFunctionObject),
+    0,
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION,
+    RoutedFunctionSlots,
+};
+
+PyObject* runAsCall(PyObject* self, PyObject* args, PyObject* kwargs)
+{
+    auto* bound = reinterpret_cast<RunAsObject*>(self);
+    const App::DocumentObject* runAs = liveObject(bound->self);
+    if (!runAs && bound->self) {
+        // a view provider's chain: the object it shows
+        if (PyObject* shown = PyObject_GetAttrString(bound->self, "Object")) {
+            runAs = liveObject(shown);
+            Py_DECREF(shown);
+        }
+        else {
+            PyErr_Clear();
+        }
+    }
+    if (!runAs) {
+        PyErr_SetString(PyExc_ReferenceError,
+                        "the object a chain method runs as has expired");
+        return nullptr;
+    }
+    return callRouted(reinterpret_cast<RoutedFunctionObject*>(bound->func), runAs, args, kwargs);
+}
+
+PyObject* runAsRepr(PyObject* self)
+{
+    auto* bound = reinterpret_cast<RunAsObject*>(self);
+    return functionRepr(reinterpret_cast<RoutedFunctionObject*>(bound->func)->name);
+}
+
+void runAsDealloc(PyObject* self)
+{
+    auto* bound = reinterpret_cast<RunAsObject*>(self);
+    Py_CLEAR(bound->func);
+    Py_CLEAR(bound->self);
+    PyTypeObject* type = Py_TYPE(self);
+    type->tp_free(self);
+    Py_DECREF(type);
+}
+
+PyType_Slot RunAsSlots[] = {
+    {Py_tp_dealloc, reinterpret_cast<void*>(runAsDealloc)},
+    {Py_tp_repr, reinterpret_cast<void*>(runAsRepr)},
+    {Py_tp_call, reinterpret_cast<void*>(runAsCall)},
+    {Py_tp_doc, const_cast<char*>("A sandboxed function a ProxyExp chain resolved: it runs as the"
+                                  " object the chain extends.")},
+    {0, nullptr},
+};
+
+PyType_Spec RunAsSpec = {
+    "FreeCAD.ExpressionSandbox.RoutedChainFunction",
+    sizeof(RunAsObject),
+    0,
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION,
+    RunAsSlots,
+};
+
+bool isType(PyObject* obj, PyObject* type)
+{
+    return obj && type && PyObject_TypeCheck(obj, reinterpret_cast<PyTypeObject*>(type));
+}
+
+}  // namespace
+
+PyObject* makeRoutedFunction(const App::DocumentObject* owner,
+                             const std::string& source,
+                             int options,
+                             const std::string& name)
+{
+    if (!owner) {
+        PyErr_SetString(PyExc_ValueError, "a routed function needs the evaluation's owner");
+        return nullptr;
+    }
+    if (!routedFunctionType && !(routedFunctionType = PyType_FromSpec(&RoutedFunctionSpec)))
+        return nullptr;
+    PyObject* self = PyType_GenericAlloc(reinterpret_cast<PyTypeObject*>(routedFunctionType), 0);
+    if (!self)
+        return nullptr;
+    auto* fn = reinterpret_cast<RoutedFunctionObject*>(self);
+    fn->owner = const_cast<App::DocumentObject*>(owner)->getPyObject();
+    fn->source = new std::string(source);
+    fn->name = new std::string(name);
+    fn->options = options;
+    return self;
+}
+
+bool isRoutedFunction(PyObject* obj)
+{
+    return isType(obj, routedFunctionType) || isType(obj, runAsType);
+}
+
+std::string routedFunctionName(PyObject* obj)
+{
+    if (isType(obj, runAsType))
+        obj = reinterpret_cast<RunAsObject*>(obj)->func;
+    if (!isType(obj, routedFunctionType))
+        return {};
+    auto* fn = reinterpret_cast<RoutedFunctionObject*>(obj);
+    return fn->name ? *fn->name : std::string();
+}
+
+PyObject* bindRoutedFunction(PyObject* func, PyObject* self)
+{
+    if (isType(func, runAsType))
+        func = reinterpret_cast<RunAsObject*>(func)->func;
+    if (!isType(func, routedFunctionType) || !self) {
+        PyErr_SetString(PyExc_TypeError, "bindRoutedFunction: a routed function and an object");
+        return nullptr;
+    }
+    if (!runAsType && !(runAsType = PyType_FromSpec(&RunAsSpec)))
+        return nullptr;
+    PyObject* bound = PyType_GenericAlloc(reinterpret_cast<PyTypeObject*>(runAsType), 0);
+    if (!bound)
+        return nullptr;
+    Py_INCREF(func);
+    Py_INCREF(self);
+    reinterpret_cast<RunAsObject*>(bound)->func = func;
+    reinterpret_cast<RunAsObject*>(bound)->self = self;
+    return bound;
+}
+
 }  // namespace ExpressionSandbox
 }  // namespace App

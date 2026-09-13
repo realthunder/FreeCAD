@@ -104,6 +104,38 @@ AppExport PyObject* constructGuestProxy(PyObject* cls, PyObject* args, PyObject*
  */
 AppExport PyObject* makeGuestMethod(uint64_t id, const std::string& name);
 
+/** A function a routed evaluation left as its value (docs/Sandbox.md
+ * 7.17 P3; FcxWire TagGuestFunction).  The function itself cannot leave
+ * the guest -- its owner is that one evaluation -- so the stand-in keeps
+ * what makes it again: the evaluation's `owner`, its `source` and eval
+ * `options`.  Calling it is ImageHost::callFunction, an evaluation of its
+ * own, so the body reads what is current at call time, as natively.  It
+ * depends on no guest state and survives a reset.  `name` is the def's
+ * (empty for a lambda), for the repr native gives.  New reference;
+ * nullptr with a Python error set.  Caller holds the GIL.
+ */
+AppExport PyObject* makeRoutedFunction(const App::DocumentObject* owner,
+                                       const std::string& source,
+                                       int options,
+                                       const std::string& name);
+
+/// True for a routed function's stand-in, bound or not.
+AppExport bool isRoutedFunction(PyObject* obj);
+
+/// The def's name of a routed function; empty for a lambda or a non-stand-in.
+AppExport std::string routedFunctionName(PyObject* obj);
+
+/** The chain's binding (docs/ProxyChain.md 2.5, RULED 2026-09-13: "Run as
+ * the feature's file"): a callable that calls routed function `func`
+ * with its own arguments unchanged, running as the document object
+ * `self` is -- or, for a view provider, the object it shows.  That object
+ * is the one the call may write and its document the principal, so a
+ * method linked from another file writes the feature as a same-file
+ * write, with that file's grants.  New reference; nullptr with a Python
+ * error set.  Caller holds the GIL.
+ */
+AppExport PyObject* bindRoutedFunction(PyObject* func, PyObject* self);
+
 }  // namespace ExpressionSandbox
 }  // namespace App
 

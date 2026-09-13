@@ -84,6 +84,7 @@ public:
     class Scope {
     public:
         explicit Scope(const App::DocumentObject *) {}
+        Scope(const App::DocumentObject *, const App::DocumentObject *) {}
         explicit Scope(const char *) {}
         Scope(const Scope &) = delete;
         Scope &operator=(const Scope &) = delete;
@@ -174,6 +175,13 @@ public:
          * when the stack is empty, so an outer explicit scope wins.
          */
         explicit Scope(const App::DocumentObject *owner);
+        /** A chain method's call (docs/ProxyChain.md 2.5, RULED
+         * 2026-09-13, "Run as the feature's file"): the document
+         * principal of `runAs`, pushed WHATEVER scope is active -- the
+         * method gets that file's grants, knowingly -- with `via`, the
+         * object whose code it is, named on the audit line.
+         */
+        Scope(const App::DocumentObject *runAs, const App::DocumentObject *via);
         /// Explicit principal id: "session" or "addon:<name>".
         explicit Scope(const char *principalId);
         ~Scope();

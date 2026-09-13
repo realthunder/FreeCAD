@@ -162,6 +162,17 @@ inline const char* const OpPkgMissing = "pkg.missing";
 // in "libs" ({module: [key, rev]}), so an import that is no library never
 // asks; a changed library rides the next request as "ld" ([[key, module]]).
 inline const char* const OpLibSource = "lib.source";
+// A function a routed evaluation left as its value (docs/Sandbox.md 7.17,
+// ProxyChain.md P3).  It cannot leave the guest -- its owner is that one
+// evaluation -- so it crosses as TagGuestFunction below and the host keeps
+// a stand-in holding the evaluation's source and owner.  Calling the
+// stand-in is an evaluation of its own: the same eval request with
+// "call": {a:[args], k?:{kwargs}}, where the guest evaluates the source and
+// calls the value, replying with the call's result by value.  A stand-in
+// reaching the guest as a binding is {"t":"gfunc", id, n}, a callable
+// whose call is {op:"fcall", h, a:[args], k?}: the host calls the stand-in
+// behind handle `h`, and nothing else behind a handle is callable that way.
+inline const char* const OpFunctionCall = "fcall";
 
 // ---- fixed layout for the hot ops (step 7 of the coding order) ----
 // A read_prop / get_attr with a name and nothing else is by far the
@@ -214,6 +225,11 @@ inline const char* const TagGuestProxy = "gproxy";
 // host binds it into a forwarder (proxy_call on the read), the same
 // object a hook attribute is.
 inline const char* const TagGuestMethod = "gmethod";
+// A function value (OpFunctionCall above).  Guest -> host, only as the
+// whole value of an eval reply: {"t":"gfunc", "n":name}.  Host -> guest,
+// a stand-in as a binding or an argument: {"t":"gfunc", "id":handle,
+// "n":name}.
+inline const char* const TagGuestFunction = "gfunc";
 // A tuple is NOT a list: the expression engine hands tuples to Enum
 // properties and to tuple(), and collapsing them to lists on the wire
 // loses type identity the same way bool-as-long would (Phase 0 sec

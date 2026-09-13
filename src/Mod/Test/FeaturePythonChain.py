@@ -406,6 +406,17 @@ class SheetChainCases(unittest.TestCase):
         self.doc.recompute()
         self.assertEqual(obj.isElementVisible("Edge1"), -1)
 
+    def testCellCallsAFunctionCell(self):
+        """A cell's function called from another cell, beside the chain."""
+        sheet = self.makeSheet({"A1": ("expIsElementVisible", "=lambda obj, element: 1")})
+        sheet.set("A2", "=def triple(x): return x * 3\n")
+        sheet.set("B1", "=triple(5)")
+        sheet.set("B2", "=expIsElementVisible(0, 0) + 1")
+        self.doc.recompute()
+        self.assertEqual(sheet.B1, 15)
+        self.assertEqual(sheet.B2, 2)
+        self.assertEqual(repr(sheet.triple), "<Function triple>")
+
 
 class MarkerProxy:
     """A carrier Proxy whose expExecute writes a value the case can read back."""
@@ -701,3 +712,189 @@ class ChainRecomputeCases(unittest.TestCase):
         other.Proxy = MarkerProxy(1)
         self.doc.recompute()
         self.assertEqual(hooks("P", "execute"), [])
+
+
+# -- P3: the same chain with every evaluation in the sandbox guest --------
+
+SANDBOX = "User parameter:BaseApp/Preferences/Expression/Sandbox"
+SECURITY = "User parameter:BaseApp/Preferences/Expression/Security"
+
+
+def requireGuest(case):
+    """Skip before a case sets anything: a skip raised in setUp runs no tearDown."""
+    if not FreeCAD.ExpressionSandbox.available():
+        case.skipTest("no sandbox guest in this build")
+
+
+def routeEvaluations(case):
+    """Every evaluation of the case crosses into the guest.
+
+    The preference is PERSISTED, so it is removed again rather than set back
+    to False, exactly as the gtests leave it.
+    """
+    FreeCAD.ExpressionSandbox.setRouting(True)
+    case.addCleanup(lambda: FreeCAD.ParamGet(SANDBOX).RemBool("Evaluate"))
+
+
+class RoutedSheetChainCases(SheetChainCases):
+    """SheetChainCases routed: a cell's function is a guest function.
+
+    docs/ProxyChain.md P3.  A function cannot leave its routed evaluation, so
+    the cell holds a host stand-in and a call is an evaluation of its own.
+    """
+
+    def setUp(self):
+        requireGuest(self)
+        super().setUp()
+        routeEvaluations(self)
+
+
+class RoutedChainRecomputeCases(ChainRecomputeCases):
+    """ChainRecomputeCases routed: the edited method, and the unrelated cell.
+
+    Routed, a re-evaluated cell holds a NEW stand-in and an untouched one
+    keeps the one it has -- the identity the comparison of sec 4.5 reads.
+    """
+
+    def setUp(self):
+        requireGuest(self)
+        super().setUp()
+        routeEvaluations(self)
+
+
+FLANGE = (
+    "=def expExecute(obj):\n"
+    "    import Part\n"
+    "    body = Part.makeCylinder(obj.Dia / 2, obj.Thick)\n"
+    "    body = body.cut(Part.makeCylinder(obj.Bore / 2, obj.Thick * 3,"
+    " vector(0, 0, -obj.Thick)))\n"
+    "    i = 0\n"
+    "    while i < obj.Bolts:\n"
+    "        a = i * 360deg / obj.Bolts\n"
+    "        body = body.cut(Part.makeCylinder(obj.HoleDia / 2, obj.Thick * 3,"
+    " vector(obj.Pcd / 2 * cos(a), obj.Pcd / 2 * sin(a), -obj.Thick)))\n"
+    "        i = i + 1\n"
+    "    obj.Shape = body\n"
+    "    return True\n"
+)
+
+
+class RoutedChainCases(unittest.TestCase):
+    """What only the routed chain has: the stand-in, and whose file a call runs as.
+
+    RULED 2026-09-13, "Run as the feature's file": a chain method runs under
+    the principal of the FEATURE's document with the feature as its write
+    owner, so a method linked from another file writing `obj` is a same-file
+    write with that file's grants.  Only the chain's call is bound so; the
+    same function called any other way runs as its own file.
+    """
+
+    def setUp(self):
+        requireGuest(self)
+        try:
+            import Spreadsheet  # noqa: F401
+        except ImportError:
+            self.skipTest("the Spreadsheet module is not in this build")
+        self.doc = FreeCAD.newDocument("ProxyChainRouted")
+        self.tempdirs = []
+        routeEvaluations(self)
+
+    def tearDown(self):
+        for name in list(FreeCAD.listDocuments()):
+            FreeCAD.closeDocument(name)
+        for directory in self.tempdirs:
+            for entry in os.listdir(directory):
+                os.remove(os.path.join(directory, entry))
+            os.rmdir(directory)
+
+    def tempfile(self, name):
+        directory = tempfile.mkdtemp()
+        self.tempdirs.append(directory)
+        return os.path.join(directory, name)
+
+    def makeFeature(self, carrier, doc=None, type="App::FeaturePython"):
+        doc = doc or self.doc
+        obj = doc.addObject(type, "Feature")
+        obj.addProperty("App::PropertyInteger", "Marker")
+        obj.addProperty("App::PropertyInteger", "Scale").Scale = 3
+        obj.ProxyExp = [carrier]
+        return obj
+
+    def testMethodIsAStandInAndTheCallCrosses(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Sheet")
+        sheet.set("A1", "=def expExecute(obj): obj.Marker = obj.Scale * 2\n")
+        self.doc.recompute()
+        self.assertEqual(repr(sheet.expExecute), "<Function expExecute>")
+        self.assertEqual(type(sheet.expExecute).__name__, "RoutedFunction")
+
+        obj = self.makeFeature(sheet)
+        before = FreeCAD.ExpressionSandbox.evalCount()
+        self.doc.recompute()
+        self.assertEqual(obj.Marker, 6)
+        self.assertNotIn("Invalid", obj.State)
+        self.assertGreater(FreeCAD.ExpressionSandbox.evalCount(), before)
+
+    def testMethodFromAnotherFileRunsAsTheFeaturesFile(self):
+        extdoc = FreeCAD.newDocument("ProxyChainRoutedExt")
+        sheet = extdoc.addObject("Spreadsheet::Sheet", "Type")
+        sheet.set("A1", "=def expExecute(obj): obj.Marker = obj.Scale * 2\n")
+        extdoc.recompute()
+        extdoc.saveAs(self.tempfile("type.FCStd"))
+
+        obj = self.makeFeature(sheet)
+        self.doc.saveAs(self.tempfile("instance.FCStd"))
+        self.doc.recompute()
+        # a write to another file's object would be refused; this one is the
+        # feature's own, under the feature's document
+        self.assertEqual(obj.Marker, 6)
+        self.assertNotIn("Invalid", obj.State)
+
+        # the same function NOT called by the chain runs as its own file,
+        # where the feature is another document's object
+        with self.assertRaises(PermissionError):
+            sheet.expExecute(obj)
+
+    def testFlangeRoutedMatchesNative(self):
+        """The sheet flange of docs/Sandbox.md 7.17: routed = native, BRep and all."""
+        try:
+            import Part  # noqa: F401
+        except ImportError:
+            self.skipTest("the Part module is not in this build")
+
+        def build():
+            doc = FreeCAD.newDocument("Flange")
+            sheet = doc.addObject("Spreadsheet::Sheet", "Type")
+            sheet.set("A1", FLANGE)
+            obj = doc.addObject("Part::FeaturePython", "Flange")
+            for name, value in (("Dia", 60), ("Thick", 8), ("Bore", 20), ("Pcd", 44),
+                                ("HoleDia", 6)):
+                obj.addProperty("App::PropertyLength", name)
+                setattr(obj, name, value)
+            obj.addProperty("App::PropertyInteger", "Bolts").Bolts = 6
+            obj.ProxyExp = [sheet]
+            doc.recompute()
+            self.assertNotIn("Invalid", obj.State)
+            shape = obj.Shape
+            FreeCAD.closeDocument(doc.Name)
+            return shape
+
+        routed = build()
+
+        # the native twin runs with enforcement off, as the corpus rig does:
+        # natively `import Part` is host.import, PROMPT for a document
+        FreeCAD.ParamGet(SANDBOX).RemBool("Evaluate")
+        params = FreeCAD.ParamGet(SECURITY)
+        hadEnforce = "Enforce" in params.GetBools()
+        oldEnforce = params.GetBool("Enforce", True)
+        params.SetBool("Enforce", False)
+        try:
+            native = build()
+        finally:
+            if hadEnforce:
+                params.SetBool("Enforce", oldEnforce)
+            else:
+                params.RemBool("Enforce")
+
+        self.assertEqual(len(routed.Faces), 10)
+        self.assertAlmostEqual(routed.Volume, native.Volume, places=6)
+        self.assertEqual(routed.exportBrepToString(), native.exportBrepToString())

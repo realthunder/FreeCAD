@@ -2457,7 +2457,9 @@ TEST_F(ExpressionImageBenchTest, DISABLED_BenchTransportFloor)
 // ---- image failure fails the evaluation rather than falling back ----
 
 #include <App/ExpressionEvaluator.h>
+#include <App/ExpressionGuestProxy.h>
 #include <App/PropertyExpressionEngine.h>
+#include <App/PropertyPythonObject.h>
 #include <App/PropertyUnits.h>
 
 class ExpressionRoutingTest: public ExpressionImageEvalTest
@@ -2786,23 +2788,152 @@ TEST_F(ExpressionRoutingTest, programs)
     }
 }
 
-TEST_F(ExpressionRoutingTest, programsFunctionValueStaysInTheGuest)
+namespace
 {
-    // Natively a lambda's value is an ExpressionPy the host can call
-    // later.  Routed it cannot leave the evaluation -- the owner it points
-    // at is the guest's adapter of that ONE evaluation -- and it is
-    // refused as any value outside the by-value set is.
+/// repr() of a borrowed reference; "<null>" for nullptr.
+std::string valueRepr(PyObject* value)
+{
+    if (!value)
+        return "<null>";
+    PyObject* r = PyObject_Repr(value);
+    std::string s = r && PyUnicode_Check(r) ? PyUnicode_AsUTF8(r) : "<unprintable>";
+    Py_XDECREF(r);
+    if (PyErr_Occurred())
+        PyErr_Clear();
+    return s;
+}
+
+/// Call with one argument; the result's repr, or the exception's type name.
+std::string callRepr(PyObject* fn, PyObject* arg)
+{
+    PyObject* res = PyObject_CallOneArg(fn, arg);
+    if (!res) {
+        PyObject* type = PyErr_Occurred();
+        std::string name = type ? std::string("raised ") + ((PyTypeObject*)type)->tp_name : "?";
+        PyErr_Clear();
+        return name;
+    }
+    std::string s = valueRepr(res);
+    Py_DECREF(res);
+    return s;
+}
+}  // namespace
+
+TEST_F(ExpressionRoutingTest, programsFunctionValueCrossesAsAStandIn)
+{
+    // docs/Sandbox.md 7.17 P3.  A function cannot leave its routed
+    // evaluation -- its owner is the guest's adapter of that ONE evaluation
+    // -- so what leaves is a host stand-in holding the source and the owner,
+    // and a call is an evaluation of its own.  Routed = native: the repr,
+    // a call made after the evaluation's handles are gone, and a body that
+    // reads what is current when it is called.
     Base::PyGILStateLocker lock;
-    std::string nerr, rerr;
-    PyObject* native = evalProgram(obj, "lambda x: x * Width", false, nerr);
-    ASSERT_NE(native, nullptr) << nerr;
-    EXPECT_TRUE(PyCallable_Check(native));
-    Py_DECREF(native);
-    PyObject* routed = evalProgram(obj, "lambda x: x * Width", true, rerr);
-    EXPECT_EQ(routed, nullptr);
-    EXPECT_NE(rerr.find("does not marshal by value"), std::string::npos) << rerr;
-    Py_XDECREF(routed);
-    ImageHost::instance().clearHandles();
+    auto& host = ImageHost::instance();
+    auto* width = Base::freecad_dynamic_cast<App::PropertyFloat>(obj->getPropertyByName("Width"));
+    ASSERT_NE(width, nullptr);
+    const char* sources[] = {"lambda x: x * Width", "def f(x):\n    return x * Width\nf"};
+    for (const char* src : sources) {
+        width->setValue(21.0);
+        std::string nerr, rerr;
+        PyObject* native = evalProgram(obj, src, false, nerr);
+        ASSERT_NE(native, nullptr) << nerr;
+        PyObject* routed = evalProgram(obj, src, true, rerr);
+        ASSERT_NE(routed, nullptr) << rerr;
+        EXPECT_TRUE(App::ExpressionSandbox::isRoutedFunction(routed)) << src;
+        EXPECT_EQ(valueRepr(routed), valueRepr(native)) << src;
+        EXPECT_EQ(host.handleCount(), 0u);
+
+        PyObject* two = PyLong_FromLong(2);
+        const std::size_t before = host.evalCount();
+        EXPECT_EQ(callRepr(routed, two), callRepr(native, two)) << src;
+        EXPECT_EQ(host.evalCount(), before + 1) << "one call, one evaluation";
+
+        // the body reads Width when called, natively and routed
+        width->setValue(10.0);
+        EXPECT_EQ(callRepr(routed, two), callRepr(native, two)) << src;
+        Py_DECREF(two);
+        Py_DECREF(native);
+        Py_DECREF(routed);
+    }
+    host.clearHandles();
+}
+
+TEST_F(ExpressionRoutingTest, programsStandInCalledFromAnotherEvaluation)
+{
+    // A stand-in held in a property and called by a later routed evaluation
+    // crosses as a guest callable whose call is one fcall hop -- the call a
+    // nested evaluation on the host.  Natively the same property holds the
+    // ExpressionPy.
+    Base::PyGILStateLocker lock;
+    auto& host = ImageHost::instance();
+    auto* fn = Base::freecad_dynamic_cast<App::PropertyPythonObject>(
+        obj->addDynamicProperty("App::PropertyPythonObject", "Fn"));
+    ASSERT_NE(fn, nullptr);
+    const char* def = "def f(x):\n    return x * Width + 1\nf";
+
+    std::string err;
+    PyObject* native = evalProgram(obj, def, false, err);
+    ASSERT_NE(native, nullptr) << err;
+    fn->setValue(Py::Object(native, true));
+    PyObject* nres = evalProgram(obj, "Fn(4)", false, err);
+    ASSERT_NE(nres, nullptr) << err;
+
+    PyObject* routed = evalProgram(obj, def, true, err);
+    ASSERT_NE(routed, nullptr) << err;
+    fn->setValue(Py::Object(routed, true));
+    host.resetStats();
+    PyObject* rres = evalProgram(obj, "Fn(4)", true, err);
+    ASSERT_NE(rres, nullptr) << err;
+    EXPECT_EQ(valueRepr(rres), valueRepr(nres));
+    EXPECT_EQ(host.stats().ops["fcall"], 1u);
+    Py_DECREF(rres);
+    Py_DECREF(nres);
+    host.clearHandles();
+
+    // fcall calls a routed function and nothing else behind a handle
+    fn->setValue(Py::Long(3));
+    PyObject* refused = evalProgram(obj, "Fn(4)", true, err);
+    EXPECT_EQ(refused, nullptr);
+    Py_XDECREF(refused);
+    host.clearHandles();
+}
+
+TEST_F(ExpressionRoutingTest, programsChainCallRunsAsTheObjectItExtends)
+{
+    // docs/ProxyChain.md 2.5, RULED 2026-09-13, "Run as the feature's file".
+    // A function defined by an object of THIS document writes an object of
+    // another.  Called plainly it runs as its own file, and the target is
+    // out of reach; bound the way the chain binds it, it runs as the target
+    // and the write is the target's own.
+    Base::PyGILStateLocker lock;
+    auto& host = ImageHost::instance();
+    App::Document* doc2 = App::GetApplication().newDocument("FcxRunAsTarget", "testUser");
+    App::DocumentObject* target = doc2->addObject("App::FeaturePython", "Target");
+    auto* marker = Base::freecad_dynamic_cast<App::PropertyInteger>(
+        target->addDynamicProperty("App::PropertyInteger", "Marker"));
+    ASSERT_NE(marker, nullptr);
+
+    std::string err;
+    PyObject* routed = evalProgram(obj, "def w(o):\n    o.Marker = 7\n    return True\nw", true, err);
+    ASSERT_NE(routed, nullptr) << err;
+    host.clearHandles();
+    PyObject* targetPy = target->getPyObject();
+
+    EXPECT_EQ(callRepr(routed, targetPy), "raised PermissionError");
+    EXPECT_EQ(marker->getValue(), 0);
+    host.clearHandles();
+
+    PyObject* bound = App::ExpressionSandbox::bindRoutedFunction(routed, targetPy);
+    ASSERT_NE(bound, nullptr);
+    EXPECT_TRUE(App::ExpressionSandbox::isRoutedFunction(bound));
+    EXPECT_EQ(callRepr(bound, targetPy), "True");
+    EXPECT_EQ(marker->getValue(), 7);
+    host.clearHandles();
+
+    Py_DECREF(bound);
+    Py_DECREF(targetPy);
+    Py_DECREF(routed);
+    App::GetApplication().closeDocument(doc2->getName());
 }
 
 TEST_F(ExpressionRoutingTest, programsFlangeMatchesNative)
