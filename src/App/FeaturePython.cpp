@@ -61,12 +61,25 @@ Py::Object FeaturePythonImp::hookSelf(int) const
  */
 bool FeaturePythonImp::execute()
 {
-    return callHook(HookExecute,
-                    [](const Py::Object& res) {
-                        // False means "not mine"; anything else is handled
-                        return !(res.isBoolean() && !res.isTrue());
-                    })
+    const bool handled = callHook(HookExecute,
+                                  [](const Py::Object& res) {
+                                      // False means "not mine"; anything else
+                                      // is handled
+                                      return !(res.isBoolean() && !res.isTrue());
+                                  })
         == PyHookState::Handled;
+    // What this feature was built against, for chainExecuteChanged() below.
+    // Taken whether or not the chain answered: a run that failed leaves the
+    // object in error, and isError() is its own reason to recompute again.
+    snapshotChain(HookExecute);
+    return handled;
+}
+
+bool FeaturePythonImp::chainExecuteChanged() const
+{
+    // Only execute.  An expViewGetIcon or an expOnChanged re-typed on the same
+    // sheet must not rebuild geometry.  docs/ProxyChain.md sec 4.5.
+    return chainDefinitionChanged(HookExecute);
 }
 
 bool FeaturePythonImp::mustExecute() const

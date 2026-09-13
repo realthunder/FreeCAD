@@ -274,11 +274,47 @@ protected:
     /// way the retired FC_PY_CALL_CHECK macro did.
     bool canCallHook(int hook) const;
 
+    /** Record what this hook's chain resolves to now
+     *
+     * Called by the side that WATCHES a hook, right after it has run it, so
+     * that chainDefinitionChanged() below has something to compare against.
+     * Only App's execute is watched: an expViewGetIcon re-typed on the same
+     * sheet must not rebuild geometry.  docs/ProxyChain.md sec 4.5.
+     */
+    void snapshotChain(int hook) const;
+
+    /** Whether THIS feature's definition of the hook has moved since then
+     *
+     * A chain element's definition can change with nothing on the feature
+     * touched and no revision moving anywhere: a Spreadsheet::Sheet pins
+     * getRevision() to 0 on purpose, and a function stored from Python is no
+     * property at all.  So a value comparison, gated by the generation
+     * counter, in the shape the expression engine already uses -- a cheap
+     * "something moved somewhere" test first, and only then the fine one.
+     *
+     * Empty ProxyExp: one empty() test, which is nearly every object.
+     * Generation unchanged: one integer.  Otherwise the chain is re-resolved
+     * -- which the next call was going to do anyway -- and the resolved
+     * callables are compared by identity against the snapshot, so that an
+     * UNRELATED cell of the same sheet moves nothing.  docs/ProxyChain.md 4.5.
+     */
+    bool chainDefinitionChanged(int hook) const;
+
 private:
     /// One resolved ProxyExp element for one hook.
     struct ChainEntry
     {
         Py::Object callable;
+        /** What the callable IS, for comparing one resolution against the next
+         *
+         * `__func__` where the attribute has one, else the callable itself.
+         * FC_PY_GetCallable is PyObject_GetAttrString, so the Proxy path hands
+         * back a freshly built bound method on every access and raw identity
+         * would differ forever; the underlying function is the stable thing.
+         * The sheet path returns the cell's stored callable and is already
+         * stable.  docs/ProxyChain.md sec 4.5.
+         */
+        Py::Object identity;
         /// __allow_recursive_<expName>, read from the object the callable was
         /// found on -- the linked object's Proxy, or the object itself.
         bool allowRecursive {false};
@@ -291,6 +327,13 @@ private:
         bool chainValid {false};     ///< the chain is resolved and current
         bool calling {false};        ///< inside a call, for the recursion guard
         bool allowRecursive {false}; ///< __allow_recursive_<hook> said so
+        /// The chain's identities as of the last snapshotChain(); only a
+        /// watched hook ever carries one.  Kept beside the chain rather than
+        /// in it because a generation bump clears the chain and this has to
+        /// survive that -- it is what the rebuilt chain is compared against.
+        std::vector<Py::Object> snapshot;
+        unsigned long snapshotGeneration {0};
+        bool snapshotValid {false};
     };
 
     /// Sets a bool for the scope of a call, the way Base::BitsetLocker did for
@@ -384,6 +427,8 @@ private:
     /// per hook per edit, against thousands of calls.
     void ensureChain(int hook) const;
     void resolveChain(int hook, HookSlot& slot) const;
+    /// The snapshot itself, with the GIL already held.
+    void takeSnapshot(HookSlot& slot) const;
 
     const PyHookDef* _hookTable;
     mutable std::vector<HookSlot> _hooks;

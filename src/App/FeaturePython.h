@@ -50,6 +50,16 @@ public:
 
     bool execute();
     bool mustExecute() const;
+    /** Whether a chain element's execute has been redefined under this feature
+     *
+     * The link that carries the chain cannot report it: a Spreadsheet::Sheet
+     * pins its revision to 0 so that its consumers are driven by the
+     * expression engine's per-cell dependencies, and a function stored from
+     * Python is no property at all.  So the recompute decision asks this,
+     * which is a value comparison gated by a counter -- and answers no for an
+     * unrelated cell of the same sheet.  docs/ProxyChain.md sec 4.5.
+     */
+    bool chainExecuteChanged() const;
     bool skipRecompute();
     void onBeforeChange(const Property* prop);
     bool onBeforeChangeLabel(std::string &newLabel);
@@ -156,6 +166,10 @@ public:
             return 1;
         auto ret = FeatureT::mustExecute();
         if(ret) return ret;
+        // before the Python call: it is an empty() test for nearly every
+        // object, and an integer compare for the rest
+        if (imp->chainExecuteChanged())
+            return 1;
         return imp->mustExecute()?1:0;
     }
     /// recalculate the Feature
@@ -171,6 +185,13 @@ public:
         return DocumentObject::StdReturn;
     }
     bool skipRecompute() override {
+        // mustExecute() alone is not enough to get here: the carrier is in
+        // this object's InList, so recomputing it sets ObjectStatus::Enforce
+        // and Document::_recomputeFeature is entered either way -- and then
+        // skipped, because no property of this object is touched.  This is the
+        // gate that edit has to pass.  docs/ProxyChain.md sec 4.5.
+        if (imp->chainExecuteChanged())
+            return false;
         return imp->skipRecompute() && FeatureT::skipRecompute();
     }
     /// recalculate the Feature

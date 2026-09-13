@@ -73,9 +73,11 @@ PyHookImp::~PyHookImp()
     try {
         for (auto& slot : _hooks) {
             slot.proxy = Py::None();
-            // under the lock: the chain holds references too, and a vector
-            // destroyed with the rest of the object would drop them without it
+            // under the lock: the chain and the snapshot hold references
+            // too, and a vector destroyed with the rest of the object would
+            // drop them without it
             slot.chain.clear();
+            slot.snapshot.clear();
         }
     }
     catch (Py::Exception& e) {
@@ -117,6 +119,11 @@ void PyHookImp::setHookExtensions(std::vector<App::DocumentObject*> objs)
     for (auto& slot : _hooks) {
         slot.chain.clear();
         slot.chainValid = false;
+        // the list itself moved, so there is nothing left to compare against;
+        // the next look re-seeds.  A list change is a property change and
+        // touches the owner, so the recompute it deserves comes from there.
+        slot.snapshot.clear();
+        slot.snapshotValid = false;
     }
     _chainGeneration = ProxyChain::generation();
 }
@@ -184,6 +191,15 @@ void PyHookImp::resolveChain(int hook, HookSlot& slot) const
             }
             ChainEntry entry;
             entry.callable = callable;
+            entry.identity = callable;
+            // a bound method is rebuilt on every getattr; the function under
+            // it is not.  docs/ProxyChain.md sec 4.5
+            if (PyObject* func = PyObject_GetAttrString(callable.ptr(), "__func__")) {
+                entry.identity = Py::Object(func, true);
+            }
+            else {
+                PyErr_Clear();
+            }
             PyObject* pyRecursive = PyObject_GetAttrString(owner.ptr(), recursive.c_str());
             if (!pyRecursive) {
                 PyErr_Clear();
@@ -204,6 +220,70 @@ void PyHookImp::resolveChain(int hook, HookSlot& slot) const
             e.ReportException();
         }
     }
+}
+
+void PyHookImp::takeSnapshot(HookSlot& slot) const
+{
+    slot.snapshot.clear();
+    slot.snapshot.reserve(slot.chain.size());
+    for (const auto& entry : slot.chain) {
+        slot.snapshot.push_back(entry.identity);
+    }
+    slot.snapshotGeneration = ProxyChain::generation();
+    slot.snapshotValid = true;
+}
+
+void PyHookImp::snapshotChain(int hook) const
+{
+    if (_expObjects.empty()) {
+        return;
+    }
+    // the call this follows resolved the chain already; a callable free to do
+    // anything may have bumped the generation while it ran, and then what we
+    // want on record is what the chain resolves to NOW
+    ensureChain(hook);
+    Base::PyGILStateLocker lock;
+    takeSnapshot(_hooks[hook]);
+}
+
+bool PyHookImp::chainDefinitionChanged(int hook) const
+{
+    if (_expObjects.empty()) {
+        return false;
+    }
+    HookSlot& slot = _hooks[hook];
+    if (slot.snapshotValid && slot.snapshotGeneration == ProxyChain::generation()) {
+        return false;
+    }
+    ensureChain(hook);
+    Base::PyGILStateLocker lock;
+    if (!slot.snapshotValid) {
+        // The first look is the baseline, not a change: nothing has run yet to
+        // compare against, and answering "changed" here would recompute every
+        // chained feature once on load, where the restore already forces the
+        // recompute that is actually needed.
+        takeSnapshot(slot);
+        return false;
+    }
+    if (slot.snapshot.size() == slot.chain.size()) {
+        std::size_t i = 0;
+        for (; i < slot.chain.size(); ++i) {
+            if (slot.snapshot[i].ptr() != slot.chain[i].identity.ptr()) {
+                break;
+            }
+        }
+        if (i == slot.chain.size()) {
+            // whatever moved in the process was not ours -- an unrelated cell
+            // of the same sheet, another document's Proxy.  Charge the next
+            // query one integer rather than another resolution.
+            slot.snapshotGeneration = ProxyChain::generation();
+            return false;
+        }
+    }
+    // Deliberately NOT re-snapshotting here: the answer has to stay the same
+    // until the run that acts on it, and it is that run which records the new
+    // definition.
+    return true;
 }
 
 bool PyHookImp::canCallHook(int hook) const

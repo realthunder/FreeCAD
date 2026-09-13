@@ -405,3 +405,299 @@ class SheetChainCases(unittest.TestCase):
         sheet.clear("A1")
         self.doc.recompute()
         self.assertEqual(obj.isElementVisible("Edge1"), -1)
+
+
+class MarkerProxy:
+    """A carrier Proxy whose expExecute writes a value the case can read back."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def expExecute(self, obj):
+        obj.Marker = self.value
+        return True
+
+
+class OwnProxy:
+    """The extended object's own Proxy, reached only when the chain declines."""
+
+    def execute(self, obj):
+        obj.Marker = 99
+        return True
+
+
+def storedMarker(value):
+    """A plain function to store on a carrier: L.expExecute = storedMarker(n)."""
+
+    def expExecute(self, obj):
+        obj.Marker = value
+        return True
+
+    return expExecute
+
+
+def recordingDecline(self, obj):
+    """A chain element that records the call and then declines it.
+
+    Returning False is the protocol's "not mine", so whatever stands behind
+    this element still runs -- which makes it an execute counter that writes
+    nothing.  Nothing is the point: a counter kept on the feature itself
+    cannot be used here, because writing a property to record the call is
+    itself a touch, and the NEXT recompute would then follow from that rather
+    than from what the case is testing.
+    """
+    CALLS.append((self.Name, "expExecute", obj.Name))
+    return False
+
+
+class ChainRecomputeCases(unittest.TestCase):
+    """The recompute of docs/ProxyChain.md sec 4.5: an EDITED method.
+
+    A chain element's definition can change with nothing on the feature
+    touched and no revision moving anywhere -- a Spreadsheet::Sheet pins
+    getRevision() to 0 on purpose, and a function stored from Python is no
+    property at all.  So the recompute decision compares what the chain
+    resolves to against what the last run was built against, gated by the
+    process-wide generation counter.
+
+    Every case here needs OptimizeRecompute ON, which is its default: with it
+    off, Document::_recomputeFeature never reaches the skip these cases are
+    about and they all pass for the wrong reason.
+
+    The method cells are written as `=def expExecute(obj): ...` -- a def in a
+    cell aliases the cell to the function's own name, so the hook name is
+    stated once.  Their inputs come through `obj`, never through the sheet's
+    frame, which is the idiom sec 4.5 settles on: a function body's
+    identifiers are not dependencies of its cell, so a method reading a
+    sibling cell would change behaviour with nothing observable changing.
+    """
+
+    PARAMS = "User parameter:BaseApp/Preferences/Document"
+
+    def setUp(self):
+        try:
+            import Spreadsheet  # noqa: F401
+        except ImportError:
+            self.skipTest("the Spreadsheet module is not in this build")
+        del CALLS[:]
+        # forced rather than assumed, and put back exactly as it was found:
+        # this one is a PERSISTED user parameter, so a case that left it set
+        # would silently change every later run on the box
+        params = FreeCAD.ParamGet(self.PARAMS)
+        self.hadOptimize = "OptimizeRecompute" in params.GetBools()
+        self.oldOptimize = params.GetBool("OptimizeRecompute", True)
+        params.SetBool("OptimizeRecompute", True)
+        self.doc = FreeCAD.newDocument("ProxyChainRecompute")
+
+    def tearDown(self):
+        params = FreeCAD.ParamGet(self.PARAMS)
+        if self.hadOptimize:
+            params.SetBool("OptimizeRecompute", self.oldOptimize)
+        else:
+            params.RemBool("OptimizeRecompute")
+        for name in list(FreeCAD.listDocuments()):
+            FreeCAD.closeDocument(name)
+        del CALLS[:]
+
+    def makeSheet(self, marker, doc=None):
+        """A sheet whose A1 is the execute method and whose B1 is unrelated."""
+        doc = doc or self.doc
+        sheet = doc.addObject("Spreadsheet::Sheet", "Sheet")
+        sheet.set("A1", "=def expExecute(obj): obj.Marker = %s\n" % marker)
+        sheet.set("B1", "=1")
+        doc.recompute()
+        return sheet
+
+    def makeRecorder(self, doc=None):
+        """First in the chain, so every execute of the feature is recorded."""
+        doc = doc or self.doc
+        recorder = doc.addObject("App::FeaturePython", "Recorder")
+        recorder.expExecute = recordingDecline
+        return recorder
+
+    def makeFeature(self, carrier, name="Feature", doc=None, recorder=None):
+        doc = doc or self.doc
+        obj = doc.addObject("App::FeaturePython", name)
+        obj.addProperty("App::PropertyInteger", "Marker")
+        obj.ProxyExp = [recorder, carrier] if recorder else [carrier]
+        doc.recompute()
+        return obj
+
+    def executeCount(self, name="Recorder"):
+        return len(hooks(name, "expExecute"))
+
+    # 1 -- the method re-typed in its cell, a plain recompute, instances rebuilt
+
+    def testRetypedMethodRebuildsTheInstance(self):
+        sheet = self.makeSheet("10")
+        obj = self.makeFeature(sheet, recorder=self.makeRecorder())
+        self.assertEqual(obj.Marker, 10)
+        del CALLS[:]
+
+        sheet.set("A1", "=def expExecute(obj): obj.Marker = 20\n")
+        self.doc.recompute()
+        self.assertEqual(obj.Marker, 20)
+        self.assertEqual(self.executeCount(), 1)
+
+    # 2 -- two instances on one carrier, both rebuilt, each with its own input
+
+    def testBothInstancesRebuildWithTheirOwnInput(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Sheet")
+        sheet.set("A1", "=def expExecute(obj): obj.Marker = obj.Scale * 2\n")
+        self.doc.recompute()
+
+        instances = []
+        for i, scale in enumerate((3, 5)):
+            obj = self.doc.addObject("App::FeaturePython", "Feature%d" % i)
+            obj.addProperty("App::PropertyInteger", "Marker")
+            obj.addProperty("App::PropertyInteger", "Scale").Scale = scale
+            obj.ProxyExp = [sheet]
+            instances.append(obj)
+        self.doc.recompute()
+        self.assertEqual([o.Marker for o in instances], [6, 10])
+
+        sheet.set("A1", "=def expExecute(obj): obj.Marker = obj.Scale * 10\n")
+        self.doc.recompute()
+        self.assertEqual([o.Marker for o in instances], [30, 50])
+
+    # 3 -- an unrelated cell of the same sheet recomputes no instance
+
+    def testUnrelatedCellRecomputesNoInstance(self):
+        sheet = self.makeSheet("10")
+        obj = self.makeFeature(sheet, recorder=self.makeRecorder())
+        self.assertEqual(obj.Marker, 10)
+        del CALLS[:]
+
+        # the method cell is not dirty, so Sheet::execute does not re-evaluate
+        # it and it still holds the SAME callable -- which is what the
+        # comparison sees, and why this costs nothing
+        sheet.set("B1", "=2")
+        self.doc.recompute()
+        self.assertEqual(self.executeCount(), 0)
+
+        # and the negative is not vacuous: the counter DID move on that edit
+        # -- PropertySheet::hasSetValue bumps it for any cell -- so the zero
+        # above is the identity comparison answering, not a path never taken.
+        # The same recompute with the method cell dirty rebuilds.
+        sheet.set("A1", "=def expExecute(obj): obj.Marker = 11\n")
+        self.doc.recompute()
+        self.assertEqual(self.executeCount(), 1)
+        self.assertEqual(obj.Marker, 11)
+
+    # 4 -- the plain-spreadsheet regression, no ProxyExp anywhere
+
+    def testPlainSheetConsumerFollowsItsOwnCellOnly(self):
+        """The property-level dependency Sheet::getRevision()==0 protects.
+
+        Not about the chain at all: it is what a coarse fix -- a real sheet
+        revision, or touching the carrier's InList -- would have broken.
+        """
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Sheet")
+        sheet.set("A1", "=2")
+        sheet.setAlias("A1", "mine")
+        sheet.set("B1", "=7")
+        sheet.setAlias("B1", "theirs")
+        self.doc.recompute()
+
+        obj = self.doc.addObject("App::FeaturePython", "Consumer")
+        obj.addProperty("App::PropertyInteger", "Marker")
+        obj.setExpression("Marker", "Sheet.mine")
+        obj.Proxy = FeatureProxy()
+        self.doc.recompute()
+        self.assertEqual(obj.Marker, 2)
+        del CALLS[:]
+
+        # the cell it does NOT read moves: nothing about this object changed
+        sheet.set("B1", "=8")
+        self.doc.recompute()
+        self.assertEqual(hooks("P", "execute"), [])
+
+        # the cell it does read moves: it follows
+        sheet.set("A1", "=3")
+        self.doc.recompute()
+        self.assertEqual(obj.Marker, 3)
+        self.assertEqual(len(hooks("P", "execute")), 1)
+
+    # 5 -- the two non-sheet definition changes
+
+    def testCarrierProxyReplacedRebuilds(self):
+        carrier = self.doc.addObject("App::FeaturePython", "Carrier")
+        carrier.Proxy = MarkerProxy(1)
+        obj = self.makeFeature(carrier)
+        self.assertEqual(obj.Marker, 1)
+
+        # a property change on the carrier: its revision moves and the link
+        # reports itself touched, so this one never needed the comparison
+        carrier.Proxy = MarkerProxy(2)
+        self.doc.recompute()
+        self.assertEqual(obj.Marker, 2)
+
+    def testStoredFunctionReplacedRebuilds(self):
+        carrier = self.doc.addObject("App::FeaturePython", "Carrier")
+        carrier.expExecute = storedMarker(1)
+        obj = self.makeFeature(carrier)
+        self.assertEqual(obj.Marker, 1)
+
+        # no property, no revision, nothing touched anywhere: the comparison
+        # is the only thing that can see this
+        carrier.expExecute = storedMarker(2)
+        self.doc.recompute()
+        self.assertEqual(obj.Marker, 2)
+
+    # 6 -- a view hook re-typed on the same sheet rebuilds no geometry
+
+    def testRetypedViewHookRebuildsNothing(self):
+        sheet = self.makeSheet("10")
+        sheet.set("A2", "=def expViewGetIcon(vobj): 1\n")
+        self.doc.recompute()
+        obj = self.makeFeature(sheet, recorder=self.makeRecorder())
+        self.assertEqual(obj.Marker, 10)
+        del CALLS[:]
+
+        # the same sheet, a definition that really did move -- but not this
+        # hook's.  Only execute is watched.
+        sheet.set("A2", "=def expViewGetIcon(vobj): 2\n")
+        self.doc.recompute()
+        self.assertEqual(self.executeCount(), 0)
+
+    # 7 -- the method cell cleared: the chain shortens, once
+
+    def testClearedMethodCellShortensTheChain(self):
+        sheet = self.makeSheet("10")
+        recorder = self.makeRecorder()
+        obj = self.doc.addObject("App::FeaturePython", "Feature")
+        obj.addProperty("App::PropertyInteger", "Marker")
+        obj.Proxy = OwnProxy()
+        obj.ProxyExp = [recorder, sheet]
+        self.doc.recompute()
+        # the sheet handled it and the Proxy behind it was never reached
+        self.assertEqual(obj.Marker, 10)
+        del CALLS[:]
+
+        # the cell is gone, so the dynamic property behind the alias is
+        # REMOVED: the chain is one element shorter and the Proxy answers
+        sheet.clear("A1")
+        self.doc.recompute()
+        self.assertEqual(obj.Marker, 99)
+        self.assertEqual(self.executeCount(), 1)
+
+        # and it settles: nothing keeps recomputing on the shortened chain
+        del CALLS[:]
+        self.doc.recompute()
+        self.assertEqual(self.executeCount(), 0)
+
+    # 8 -- an empty ProxyExp is the P0 path, and stays out of all of this
+
+    def testEmptyListIsNotRecomputedByAGenerationBump(self):
+        obj = self.doc.addObject("App::FeaturePython", "Feature")
+        obj.Proxy = FeatureProxy()
+        self.doc.recompute()
+        self.assertEqual(obj.ProxyExp, [])
+        del CALLS[:]
+
+        # a Proxy assigned anywhere in the process bumps the counter; an
+        # object with no chain must not even look
+        other = self.doc.addObject("App::FeaturePython", "Other")
+        other.Proxy = MarkerProxy(1)
+        self.doc.recompute()
+        self.assertEqual(hooks("P", "execute"), [])
