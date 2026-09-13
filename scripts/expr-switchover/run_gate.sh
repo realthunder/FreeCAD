@@ -16,12 +16,15 @@ TMO=${3:-180}
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 FCCMD=$REPO/build/conda-relwithdebinfo-801/bin/FreeCADCmd
 RIG=$REPO/scripts/expr-switchover/corpus_regression.py
+# the memory limiter wrapper, when this box has one
+LIMIT=$REPO/.conda/limited.sh
+[ -x "$LIMIT" ] || LIMIT=
 mkdir -p "$OUT"
 export QT_QPA_PLATFORM=offscreen
 export FREECAD_USER_HOME=${FREECAD_USER_HOME:-$OUT/fchome}
 mkdir -p "$FREECAD_USER_HOME"
 
-"$REPO/.conda/limited.sh" "$REPO/.conda/run.sh" "$FCCMD" -c \
+$LIMIT "$REPO/.conda/run.sh" "$FCCMD" -c \
     "import sys; sys.argv=['gate','--max-mb','$MAXMB','--list-only','$OUT/files.txt']; exec(open('$RIG').read())" \
     > "$OUT/list.log" 2>&1
 total=$(wc -l < "$OUT/files.txt")
@@ -38,7 +41,7 @@ while IFS=$'\t' read -r idx size path; do
     # real corpus paths contain quotes and backslashes
     # (.../FREE|\'CAD_CNC/...), which would end the Python literal.
     rm -f "$OUT/one.jsonl" "$OUT/one.jsonl.summary"
-    FCX_GATE_ONLY="$path" timeout "$TMO" "$REPO/.conda/limited.sh" \
+    FCX_GATE_ONLY="$path" timeout "$TMO" $LIMIT \
         "$REPO/.conda/run.sh" "$FCCMD" -c \
         "import sys; sys.argv=['gate','--max-mb','$MAXMB','--out','$OUT/one.jsonl']; exec(open('$RIG').read())" \
         > "$OUT/one.log" 2>&1
