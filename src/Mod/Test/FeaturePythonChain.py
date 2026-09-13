@@ -128,6 +128,32 @@ class FeaturePythonChainCases(unittest.TestCase):
         self.assertIn(obj, link.InList)
         self.assertIn(link, obj.OutList)
 
+    def testViewListIsHeadlessAndHidden(self):
+        """ViewProxyExp is an App property, so it exists, saves and restores
+        with no GUI in sight -- but it is Hidden scope, which is what keeps it
+        out of the dependency graph, and it does not touch its object.
+
+        What the linked objects then DO is the view side, docs/ProxyChain.md
+        P2, covered by ViewProviderChain under the GUI gate.
+        """
+        obj = self.doc.addObject("App::FeaturePython", "Feature")
+        self.assertIn("ViewProxyExp", obj.PropertiesList)
+        self.assertEqual(obj.ViewProxyExp, [])
+        link = self.makeLink("Link")
+        self.doc.recompute()
+        self.assertNotIn("Touched", obj.State)
+        obj.ViewProxyExp = [link]
+        self.assertNotIn("Touched", obj.State)
+        self.assertNotIn(link, obj.OutList)
+        self.assertNotIn(obj, link.InList)
+
+        path = self.tempfile("viewchain.FCStd")
+        self.doc.saveAs(path)
+        FreeCAD.closeDocument(self.doc.Name)
+        doc = FreeCAD.openDocument(path)
+        self.assertEqual([o.Name for o in doc.getObject("Feature").ViewProxyExp],
+                         ["Link"])
+
     def testEmptyListIsTodaysPath(self):
         """With nothing linked, the object is exactly what it always was."""
         obj = self.doc.addObject("App::FeaturePython", "Feature")

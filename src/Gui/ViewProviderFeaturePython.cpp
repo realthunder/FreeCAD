@@ -70,6 +70,47 @@ ViewProviderFeaturePythonImp::ViewProviderFeaturePythonImp(
 
 ViewProviderFeaturePythonImp::~ViewProviderFeaturePythonImp() = default;
 
+namespace
+{
+/** The object's view-side extension list, or nothing
+ *
+ * ViewProxyExp lives on the APP object (docs/ProxyChain.md sec 2.1): a link
+ * property wants a document object to live in, one list serves the primary
+ * view provider and every secondary one, and the definition then survives a
+ * headless round trip.  It is found by name, so the view provider never has
+ * to know its object's C++ type -- an object that carries the property is
+ * extended, whatever supplies it.
+ */
+const App::PropertyXLinkList* viewProxyExpProperty(const ViewProviderDocumentObject* vp)
+{
+    const App::DocumentObject* obj = vp ? vp->getObject() : nullptr;
+    if (!obj) {
+        return nullptr;
+    }
+    return freecad_dynamic_cast<App::PropertyXLinkList>(
+            obj->getPropertyByName("ViewProxyExp"));
+}
+}  // namespace
+
+void ViewProviderFeaturePythonImp::readHookExtensions()
+{
+    expProp = viewProxyExpProperty(object);
+    if (!expProp) {
+        if (hasHookExtensions()) {
+            setHookExtensions({});
+        }
+        return;
+    }
+    // getLinks with all=true, NOT getValues(): getValues() is getLinks(false)
+    // and that is exactly the call Hidden scope answers with nothing, so a
+    // Hidden list reads back empty through it.  The Python getter takes
+    // another path, which is why the list looks right from a script while the
+    // C++ side sees none of it.
+    std::vector<App::DocumentObject*> objs;
+    expProp->getLinks(objs, true);
+    setHookExtensions(std::move(objs));
+}
+
 Py::Object ViewProviderFeaturePythonImp::hookSelf(int hook) const
 {
     if (hook == HookUpdateData) {
@@ -568,7 +609,11 @@ void ViewProviderFeaturePythonImp::startRestoring()
 
 void ViewProviderFeaturePythonImp::finishRestoring()
 {
-    {
+    // The None-Proxy branch pokes Proxy so that the template's onChanged runs
+    // the deferred attach; an object extended through ViewProxyExp alone has
+    // no Proxy to poke and does not want one invented, so its attach is the
+    // template's own (docs/ProxyChain.md sec 2.3) and the branch stands down.
+    if (!hasHookExtensions()) {
         Base::PyGILStateLocker lock;
         try {
             Py::Object vp = Proxy.getValue();

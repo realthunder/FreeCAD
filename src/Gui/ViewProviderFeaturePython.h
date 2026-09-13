@@ -133,12 +133,31 @@ public:
 
     bool editProperty(const char *propName);
 
+    /** Read the object's ViewProxyExp list into the hook chain
+     *
+     * The view-side extension list lives on the APP object (docs/ProxyChain.md
+     * sec 2.1), so the view provider pulls it: at attach, when the list itself
+     * changes, and again when the document has finished restoring, which is
+     * when its links have resolved.
+     */
+    void readHookExtensions();
+    /// Whether prop IS that list -- how a change to it reaches the view
+    /// provider is the App object's updateData, so the template has to ask.
+    /// A pointer compare: updateData runs on every property change of every
+    /// scripted object, and a lookup by name there would be felt.
+    bool isHookExtensionProperty(const App::Property* prop) const
+    {
+        return prop && prop == expProp;
+    }
+
 protected:
     Py::Object hookSelf(int hook) const override;
 
 private:
     ViewProviderDocumentObject* object;
     App::PropertyPythonObject &Proxy;
+    /// the object's ViewProxyExp, found by name once the object is known
+    const App::PropertyXLinkList* expProp {nullptr};
 };
 
 template <class ViewProviderT>
@@ -249,8 +268,18 @@ public:
         // delay loading of the actual attach() method because the Python
         // view provider class is not attached yet
         ViewProviderT::pcObject = obj;
+        // the view-side extension list lives on the object, so it may already
+        // be there -- a document opened in the GUI, or a secondary view
+        imp->readHookExtensions();
     }
     void updateData(const App::Property* prop) override {
+        if (imp->isHookExtensionProperty(prop)) {
+            // ViewProxyExp is an App property, so this is the only signal a
+            // view-side list change gives.  docs/ProxyChain.md sec 2.1.
+            imp->readHookExtensions();
+            if (imp->hasHookExtensions())
+                attachDeferred();
+        }
         imp->updateData(prop);
         ViewProviderT::updateData(prop);
     }
@@ -286,6 +315,10 @@ public:
         imp->startRestoring();
     }
     void finishRestoring() override {
+        // the links resolve late, so the list only means anything now
+        imp->readHookExtensions();
+        if (imp->hasHookExtensions())
+            attachDeferred();
         imp->finishRestoring();
         ViewProviderT::finishRestoring();
     }
@@ -456,36 +489,48 @@ public:
     }
 
 protected:
+    /** The attach this template defers, and everything that follows it
+     *
+     * attach(obj) only records the object: the Python view provider class is
+     * not there yet.  The real attach waits for whatever supplies the hooks --
+     * the first Proxy, or, for an object extended through ViewProxyExp and
+     * carrying no Proxy at all, the first non-empty view list.
+     * docs/ProxyChain.md sec 2.3.
+     */
+    void attachDeferred() {
+        if (!ViewProviderT::pcObject)
+            return;
+        if (!_attached) {
+            _attached = true;
+            imp->attach(ViewProviderT::pcObject);
+            ViewProviderT::attach(ViewProviderT::pcObject);
+            // needed to load the right display mode after they're known now
+            ViewProviderT::DisplayMode.touch();
+            ViewProviderT::setOverrideMode(viewerMode);
+        }
+        else {
+            // Hooks arriving after attach -- a proxy swapped in by
+            // document migration for a richer class, or an extension
+            // added to ViewProxyExp -- can bring new display modes,
+            // and attach() is the only place the enum is stated.
+            // Restate it, or the new modes are registered mask modes
+            // the DisplayMode property refuses to select.
+            ViewProviderT::DisplayMode.setEnumVector(
+                this->getDisplayModes());
+        }
+        if(!this->testStatus(Gui::isRestoring) && 
+            ViewProviderT::canAddToSceneGraph()!=this->canAddToSceneGraph())
+        {
+            this->getDocument()->toggleInSceneGraph(this);
+        }
+        ViewProviderT::updateView();
+    }
+
     void onChanged(const App::Property* prop) override {
         if (prop == &Proxy) {
             imp->init(Proxy.getValue().ptr());
-            if (ViewProviderT::pcObject && !Proxy.getValue().is(Py::_None())) {
-                if (!_attached) {
-                    _attached = true;
-                    imp->attach(ViewProviderT::pcObject);
-                    ViewProviderT::attach(ViewProviderT::pcObject);
-                    // needed to load the right display mode after they're known now
-                    ViewProviderT::DisplayMode.touch();
-                    ViewProviderT::setOverrideMode(viewerMode);
-                }
-                else {
-                    // A proxy swapped in after attach -- document
-                    // migration replacing a restored proxy with a
-                    // richer class -- can bring new display modes,
-                    // and attach() is the only place the enum is
-                    // stated. Restate it, or the new modes are
-                    // registered mask modes the DisplayMode
-                    // property refuses to select.
-                    ViewProviderT::DisplayMode.setEnumVector(
-                        this->getDisplayModes());
-                }
-                if(!this->testStatus(Gui::isRestoring) && 
-                    ViewProviderT::canAddToSceneGraph()!=this->canAddToSceneGraph())
-                {
-                    this->getDocument()->toggleInSceneGraph(this);
-                }
-                ViewProviderT::updateView();
-            }
+            if (!Proxy.getValue().is(Py::_None()))
+                attachDeferred();
         }
 
         imp->onChanged(prop);

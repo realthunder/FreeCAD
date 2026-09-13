@@ -123,6 +123,25 @@ public:
                 "takes it along.");
         // a linked object may live in another file
         ProxyExp.setScope(LinkScope::Global);
+        ADD_PROPERTY_TYPE(ViewProxyExp,(nullptr),"Base",App::Prop_NoRecompute,
+                "Objects extending this object's VIEW PROVIDER Proxy hooks.  Each\n"
+                "is asked, in order and before the view Proxy, for a method named\n"
+                "after the hook -- expViewGetIcon(vobj), expViewClaimChildren(vobj),\n"
+                "... -- and the first that answers stops the chain.  The list sits\n"
+                "on the object rather than on the view provider because a link\n"
+                "property needs a document object to live in, and because one list\n"
+                "then serves every view of the object.  Its links are Hidden scope:\n"
+                "a reference, not a dependency, so an extension may read this object\n"
+                "back without closing a cycle -- and, unlike ProxyExp, a copy with\n"
+                "dependencies does not take the extension along.");
+        // a reference, not a dependency: out of the out-list and the
+        // back-links, but still saved, restored and broken on delete
+        ViewProxyExp.setScope(LinkScope::Hidden);
+        // Prop_NoRecompute only spares the object the Enforce bit; the touch
+        // itself is what a view-side edit must not do, and Property::Output is
+        // how DocumentObject::onChanged is told so -- the same answer
+        // DocumentObject gives for Visibility.
+        ViewProxyExp.setStatus(Property::Output, true);
         // cannot move this to the initializer list to avoid warning
         imp = new FeaturePythonImp(this);
     }
@@ -335,6 +354,9 @@ private:
     PropertyPythonObject Proxy;
     /// the chain of docs/ProxyChain.md: objects whose methods extend this one
     PropertyXLinkList ProxyExp;
+    /// the same, for the hooks of this object's VIEW PROVIDER; read by
+    /// Gui::ViewProviderFeaturePythonT, which holds no list of its own
+    PropertyXLinkList ViewProxyExp;
     mutable std::string viewProviderName;
 };
 
