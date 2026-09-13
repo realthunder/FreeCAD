@@ -161,6 +161,22 @@ public:
 };
 
 /// Helper class to block access of from expression
+/** Expression::getIdentifiers() leaves out what a function body reads:
+ * those are not dependencies, the body reading them live when it is
+ * called.  While one of these lives, getIdentifiers() includes them -- for
+ * a caller that must RESOLVE everything an evaluation may read (the
+ * sandbox's bindings pack, ExpressionImageHost.cpp), never for dependency
+ * tracking.  A process-wide counter, as the function depth it overrides.
+ */
+class AppExport FunctionBodyIdentifiers
+{
+public:
+    FunctionBodyIdentifiers();
+    ~FunctionBodyIdentifiers();
+    FunctionBodyIdentifiers(const FunctionBodyIdentifiers&) = delete;
+    FunctionBodyIdentifiers& operator=(const FunctionBodyIdentifiers&) = delete;
+};
+
 class AppExport ExpressionBlocker
 {
 public:

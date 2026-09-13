@@ -1039,4 +1039,9 @@ bool encodeValue(PyObject* obj, json& out, std::string& err)
     return false;
 }
 
+PyObject* surfaceStamp()
+{
+    return Py_BuildValue("(is)", FcxSurfaceVersion, FcxSurfaceHash);
+}
+
 }  // namespace FcxImage

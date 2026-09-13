@@ -406,7 +406,23 @@ public:
 
     static EvalTransaction *current();
 
+    /// Unique for the life of the image: what a function object made in
+    /// this evaluation records (ExpressionPyImp.cpp).
+    uint64_t serial() const
+    {
+        return serial_;
+    }
+
+    /// Whether the evaluation with this serial is still running -- the
+    /// current one or one it is nested in.  Its owner_ dies with it, and
+    /// a function object kept past it (a guest global) must not call.
+    static bool alive(uint64_t serial);
+
 private:
+    /// the evaluation this one is nested in: a round trip can evaluate
+    /// again inside a pending one, which must find itself after it
+    EvalTransaction *prev_ = nullptr;
+    uint64_t serial_ = 0;
     App::Document doc_;
     App::DocumentObject owner_;
     uint64_t ownerHandle_ = 0;

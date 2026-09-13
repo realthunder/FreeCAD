@@ -265,18 +265,32 @@ EvalTransaction::EvalTransaction(const std::string &docName,
     owner_.name_ = objName.empty() ? "owner" : objName;
     owner_.document_ = &doc_;
     owner_.Label.str_ = owner_.name_;
+    static uint64_t lastSerial;
+    serial_ = ++lastSerial;
+    prev_ = _current;
     _current = this;
 }
 
 EvalTransaction::~EvalTransaction()
 {
     if (_current == this)
-        _current = nullptr;
+        _current = prev_;
 }
 
 EvalTransaction *EvalTransaction::current()
 {
     return _current;
+}
+
+bool EvalTransaction::alive(uint64_t serial)
+{
+    if (!serial)
+        return false;
+    for (auto tx = _current; tx; tx = tx->prev_) {
+        if (tx->serial_ == serial)
+            return true;
+    }
+    return false;
 }
 
 void EvalTransaction::addBinding(const std::string &key, PyObject *value)

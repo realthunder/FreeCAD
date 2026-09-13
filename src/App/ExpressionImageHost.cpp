@@ -41,6 +41,7 @@
 #include "ExpressionImageBridge.h"
 #include "ExpressionImageHost.h"
 #include "ExpressionImageRuntime.h"
+#include "ExpressionParser.h"
 #include "ExpressionSecurityRuntime.h"
 
 using json = nlohmann::json;
@@ -897,7 +898,15 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
             json bindings = json::object();
             json bindErrors = json::object();
             std::map<App::ObjectIdentifier, bool> ids;
-            expr->getIdentifiers(ids);
+            {
+                // What a function body reads too: no dependency, but the
+                // body reads it when called, and in the guest a name the
+                // pack does not carry does not resolve at all (the flange
+                // of docs/Sandbox.md 7.17, whose hole pattern reads
+                // HoleDia and Pcd only inside its def).
+                App::FunctionBodyIdentifiers withBodies;
+                expr->getIdentifiers(ids);
+            }
             for (auto& v : ids) {
                 const auto& id = v.first;
                 // Ring 0 pseudo-modules live IN the image (docs/

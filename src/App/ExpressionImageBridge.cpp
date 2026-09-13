@@ -37,6 +37,8 @@
 
 #include "ExpressionImage/FcxWire.h"
 #include "Application.h"
+#include <Base/Console.h>
+
 #include "Document.h"
 #include "ExpressionGuestProxy.h"
 #include "ExpressionImageBridge.h"
@@ -47,6 +49,8 @@
 #include "DocumentPy.h"
 #include "ExtensionContainerPy.h"
 #include "PropertyContainerPy.h"
+#include "ObjectIdentifier.h"
+#include "PropertyExpressionEngine.h"
 #ifdef FC_EXPR_PYODIDE_HOST
 #include "ExpressionPyodide.h"
 #endif
@@ -62,6 +66,57 @@ namespace ExpressionSandbox
 // ---- annotations; docs/ExpressionSandbox.md sec 7.5) ----
 
 #include "FcxDispatch.inc"
+
+int surfaceVersion()
+{
+    return FcxSurfaceVersion;
+}
+
+const char* surfaceHash()
+{
+    return FcxSurfaceHash;
+}
+
+static bool carriesExpressions(const App::Document& doc)
+{
+    for (auto obj : doc.getObjects()) {
+        std::vector<App::Property*> props;
+        obj->getPropertyList(props);
+        for (auto prop : props) {
+            auto container = Base::freecad_dynamic_cast<PropertyExpressionContainer>(prop);
+            if (container && !container->getExpressions().empty())
+                return true;
+        }
+    }
+    return false;
+}
+
+void connectSurfaceRecord()
+{
+    static bool connected;
+    if (connected)
+        return;
+    connected = true;
+    auto& app = App::GetApplication();
+    app.signalStartSaveDocument.connect([](const App::Document& doc, const std::string&) {
+        if (!carriesExpressions(doc))
+            return;
+        std::string version = std::to_string(FcxSurfaceVersion);
+        const char* have = doc.Meta.getValue("ExpressionSurface");
+        if (have && version == have)
+            return;
+        // Document::saveToFile raises this before it writes the document
+        const_cast<App::Document&>(doc).Meta.setValue("ExpressionSurface", version.c_str());
+    });
+    app.signalFinishRestoreDocument.connect([](const App::Document& doc) {
+        const char* have = doc.Meta.getValue("ExpressionSurface");
+        int written = have ? std::atoi(have) : 0;
+        if (written > 0 && written < FcxSurfaceVersion)
+            Base::Console().Warning(
+                "Document '%s' was written against expression surface %d, this build is %d\n",
+                doc.getName(), written, FcxSurfaceVersion);
+    });
+}
 
 using MemberIndex =
     std::unordered_map<std::string, std::unordered_map<std::string, const FacadeMember*>>;

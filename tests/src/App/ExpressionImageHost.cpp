@@ -14,6 +14,9 @@
 #include <nlohmann/json.hpp>
 
 #include <App/ExpressionImageHost.h>
+#include <App/Expression.h>
+#include <App/ExpressionEvaluator.h>
+#include <App/ExpressionImageBridge.h>
 #include <Base/FileInfo.h>
 
 #include "InitApplication.h"
@@ -1009,8 +1012,9 @@ TEST_F(ExpressionImageEvalTest, partModuleFacade)
     EXPECT_GT(st.ops["mod_call"], 0u);
     EXPECT_EQ(st.ops["mod_get"], 1u) << "the constant is read once, then cached";
 
-    // an undeclared name does not exist in the guest's module
-    auto r = host.eval("__import__('Part').makeSphere(1.0)", pack());
+    // an undeclared name does not exist in the guest's module: file I/O,
+    // which the surface leaves out on purpose (docs/Sandbox.md 7.17 (b))
+    auto r = host.eval("__import__('Part').read('/etc/passwd')", pack());
     EXPECT_FALSE(r.ok);
     EXPECT_EQ(r.excType, "AttributeError") << r.message;
 
@@ -2453,6 +2457,7 @@ TEST_F(ExpressionImageBenchTest, DISABLED_BenchTransportFloor)
 
 #include <App/ExpressionEvaluator.h>
 #include <App/PropertyExpressionEngine.h>
+#include <App/PropertyUnits.h>
 
 class ExpressionRoutingTest: public ExpressionImageEvalTest
 {
@@ -2707,6 +2712,222 @@ TEST_F(ExpressionRoutingTest, unresolvableLocalNameIsNotShippedAsAnError)
 // ---- wire type identity: a tuple is not a list (the corpus gate found
 // ---- this -- an Enum property fed from a cell range came back as a
 // ---- list, changing the stored value's type) ----
+
+// ---- docs/Sandbox.md 7.17 D1: function objects in the image ----
+
+namespace
+{
+std::string reprOf(PyObject* v)
+{
+    if (!v)
+        return "<null>";
+    PyObject* rep = PyObject_Repr(v);
+    std::string s = rep ? PyUnicode_AsUTF8(rep) : "<repr failed>";
+    Py_XDECREF(rep);
+    return s;
+}
+
+/// Evaluate `src` under a call frame, routed through the image or
+/// in-process, as a new reference; a failure comes back as nullptr with
+/// its message in `err`.
+PyObject* evalProgram(App::DocumentObject* owner, const char* src, bool routed, std::string& err)
+{
+    auto expr = App::Expression::parse(owner, src);
+    if (!expr) {
+        err = "parse produced nothing";
+        return nullptr;
+    }
+    try {
+        if (routed)
+            return App::ExpressionSandbox::evaluatePy(expr.get(),
+                                                      App::Expression::OptionCallFrame);
+        return Py::new_reference_to(expr->getPyValue(App::Expression::OptionCallFrame));
+    }
+    catch (Py::Exception&) {
+        Base::PyException e;
+        err = e.what();
+    }
+    catch (Base::Exception& e) {
+        err = e.what();
+    }
+    if (PyErr_Occurred())
+        PyErr_Clear();
+    return nullptr;
+}
+}  // namespace
+
+TEST_F(ExpressionRoutingTest, programs)
+{
+    // A def evaluated routed and called, a function passed as a value, a
+    // lambda in a comprehension, defaults and keywords, a list of
+    // functions, and a body reading an identifier nothing outside it
+    // reads -- not a dependency, so the pack must still carry it.  Each
+    // equal to the native answer.
+    const char* cases[] = {
+        "def f(x):\n    return x * 3\nf(Width)",
+        "def twice(g, x):\n    return g(g(x))\ntwice(lambda y: y + 1, Width)",
+        "[(lambda k: k * k)(i) for i in [1, 2, 3]]",
+        "def g():\n    return Width + 1\ng()",
+        "def h(a, b=2):\n    return a * b\nh(b=5, a=Width)",
+        "fs = [lambda v: v + 1, lambda v: v * 2]\n[fn(Width) for fn in fs]",
+    };
+    Base::PyGILStateLocker lock;
+    for (const char* src : cases) {
+        std::string nerr, rerr;
+        PyObject* native = evalProgram(obj, src, false, nerr);
+        ASSERT_NE(native, nullptr) << src << "\nnative: " << nerr;
+        PyObject* routed = evalProgram(obj, src, true, rerr);
+        EXPECT_NE(routed, nullptr) << src << "\nrouted: " << rerr;
+        EXPECT_EQ(reprOf(routed), reprOf(native)) << src;
+        Py_XDECREF(native);
+        Py_XDECREF(routed);
+        ImageHost::instance().clearHandles();
+    }
+}
+
+TEST_F(ExpressionRoutingTest, programsFunctionValueStaysInTheGuest)
+{
+    // Natively a lambda's value is an ExpressionPy the host can call
+    // later.  Routed it cannot leave the evaluation -- the owner it points
+    // at is the guest's adapter of that ONE evaluation -- and it is
+    // refused as any value outside the by-value set is.
+    Base::PyGILStateLocker lock;
+    std::string nerr, rerr;
+    PyObject* native = evalProgram(obj, "lambda x: x * Width", false, nerr);
+    ASSERT_NE(native, nullptr) << nerr;
+    EXPECT_TRUE(PyCallable_Check(native));
+    Py_DECREF(native);
+    PyObject* routed = evalProgram(obj, "lambda x: x * Width", true, rerr);
+    EXPECT_EQ(routed, nullptr);
+    EXPECT_NE(rerr.find("does not marshal by value"), std::string::npos) << rerr;
+    Py_XDECREF(routed);
+    ImageHost::instance().clearHandles();
+}
+
+TEST_F(ExpressionRoutingTest, programsFlangeMatchesNative)
+{
+    // The D1 gate: the flange of docs/Sandbox.md 7.17 as one expression,
+    // routed = native.  A body cut by a bore and a bolt circle, the hole a
+    // def reading HoleDia and Pcd only inside itself.  Routed runs under
+    // enforcement, where `import Part` is the guest's facade; the native
+    // twin runs with enforcement off, as the corpus rig does, since
+    // natively `import Part` is host.import, PROMPT for a document.
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* part = PyImport_ImportModule("Part");
+        if (!part) {
+            PyErr_Clear();
+            GTEST_SKIP() << "the Part module is not importable in this test binary";
+        }
+        Py_DECREF(part);
+    }
+    const std::pair<const char*, double> lengths[] = {
+        {"Dia", 60.0}, {"Thick", 8.0}, {"Bore", 20.0}, {"Pcd", 44.0}, {"HoleDia", 6.0}};
+    for (const auto& l : lengths) {
+        auto p = Base::freecad_dynamic_cast<App::PropertyLength>(
+            obj->addDynamicProperty("App::PropertyLength", l.first));
+        ASSERT_NE(p, nullptr) << l.first;
+        p->setValue(l.second);
+    }
+    auto bolts = Base::freecad_dynamic_cast<App::PropertyInteger>(
+        obj->addDynamicProperty("App::PropertyInteger", "Bolts"));
+    ASSERT_NE(bolts, nullptr);
+    bolts->setValue(6);
+
+    const char* src = "import Part\n"
+                      "def hole(a):\n"
+                      "    return Part.makeCylinder(HoleDia / 2, Thick * 3,"
+                      " vector(Pcd / 2 * cos(a), Pcd / 2 * sin(a), -Thick))\n"
+                      "body = Part.makeCylinder(Dia / 2, Thick)\n"
+                      "body = body.cut(Part.makeCylinder(Bore / 2, Thick * 3, vector(0, 0, -Thick)))\n"
+                      "i = 0\n"
+                      "while i < Bolts:\n"
+                      "    body = body.cut(hole(i * 360deg / Bolts))\n"
+                      "    i = i + 1\n"
+                      "body\n";
+
+    Base::PyGILStateLocker lock;
+    std::string rerr, nerr;
+    PyObject* routed = evalProgram(obj, src, true, rerr);
+    ASSERT_NE(routed, nullptr) << rerr;
+
+    auto security = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Security");
+    security->SetBool("Enforce", false);
+    PyObject* native = evalProgram(obj, src, false, nerr);
+    security->RemoveBool("Enforce");
+    ASSERT_NE(native, nullptr) << nerr;
+
+    auto attr = [](PyObject* shape, const char* name) {
+        PyObject* v = PyObject_GetAttrString(shape, name);
+        std::string s = reprOf(v);
+        Py_XDECREF(v);
+        return s;
+    };
+    EXPECT_EQ(attr(routed, "ShapeType"), "'Compound'");
+    EXPECT_EQ(attr(routed, "Volume"), attr(native, "Volume"));
+    PyObject* faces = PyObject_GetAttrString(routed, "Faces");
+    ASSERT_NE(faces, nullptr);
+    EXPECT_EQ(PySequence_Size(faces), 10);
+    Py_DECREF(faces);
+    PyObject* rb = PyObject_CallMethod(routed, "exportBrepToString", nullptr);
+    PyObject* nb = PyObject_CallMethod(native, "exportBrepToString", nullptr);
+    ASSERT_NE(rb, nullptr);
+    ASSERT_NE(nb, nullptr);
+    EXPECT_TRUE(PyUnicode_Compare(rb, nb) == 0) << "the BRep is not byte-identical";
+    Py_DECREF(rb);
+    Py_DECREF(nb);
+    Py_DECREF(routed);
+    Py_DECREF(native);
+    ImageHost::instance().clearHandles();
+}
+
+TEST_F(ExpressionImageEvalTest, programsSurfaceStampMatchesHost)
+{
+    // The guest's copy of the surface stamp is the host's.  A wheel built
+    // from other annotations is a guest whose facades are not the host's
+    // dispatch table, which nothing else would notice until a member
+    // failed to cross.
+    auto& host = ImageHost::instance();
+    auto res = host.eval("__import__('_fcx').surface()", {});
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    Base::PyGILStateLocker lock;
+    PyObject* v = host.decodeResult(res);
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(PyTuple_Check(v) && PyTuple_GET_SIZE(v) == 2) << reprOf(v);
+    EXPECT_EQ(PyLong_AsLong(PyTuple_GET_ITEM(v, 0)), App::ExpressionSandbox::surfaceVersion());
+    EXPECT_STREQ(PyUnicode_AsUTF8(PyTuple_GET_ITEM(v, 1)), App::ExpressionSandbox::surfaceHash());
+    Py_DECREF(v);
+    EXPECT_GE(App::ExpressionSandbox::surfaceVersion(), 1);
+    EXPECT_EQ(std::strlen(App::ExpressionSandbox::surfaceHash()), 64u);
+}
+
+TEST_F(ExpressionImageEvalTest, programsSurfaceRecordedAtSave)
+{
+    // Meta["ExpressionSurface"] is written as a document that carries an
+    // expression saves, and not on one that carries none.
+    auto out = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        obj->addDynamicProperty("App::PropertyFloat", "Out"));
+    ASSERT_NE(out, nullptr);
+    App::ObjectIdentifier path(*obj->getPropertyByName("Out"));
+    obj->ExpressionEngine.setValue(
+        path,
+        std::shared_ptr<App::Expression>(App::Expression::parse(obj, "Width * 2").release()));
+    std::string file = Base::FileInfo::getTempFileName() + ".FCStd";
+    ASSERT_TRUE(doc->saveAs(file.c_str()));
+    const char* stamp = doc->Meta.getValue("ExpressionSurface");
+    ASSERT_NE(stamp, nullptr);
+    EXPECT_EQ(std::string(stamp), std::to_string(App::ExpressionSandbox::surfaceVersion()));
+
+    auto plain = App::GetApplication().newDocument("FcxSurfacePlain", "plain");
+    plain->addObject("App::FeaturePython", "Nothing");
+    std::string plainFile = Base::FileInfo::getTempFileName() + ".FCStd";
+    ASSERT_TRUE(plain->saveAs(plainFile.c_str()));
+    EXPECT_EQ(plain->Meta.getValue("ExpressionSurface"), nullptr);
+    App::GetApplication().closeDocument(plain->getName());
+    Base::FileInfo(file).deleteFile();
+    Base::FileInfo(plainFile).deleteFile();
+}
 
 TEST_F(ExpressionImageEvalTest, tupleCrossesBackAsTuple)
 {

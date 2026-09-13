@@ -307,12 +307,19 @@ static PyObject *fcx_track(PyObject *, PyObject *args)
     return value;
 }
 
+static PyObject *fcx_surface(PyObject *, PyObject *)
+{
+    return FcxImage::surfaceStamp();
+}
+
 static PyMethodDef FcxMethods[] = {
     {"op", fcx_op, METH_VARARGS, "One image->host bridge op."},
     {"track", fcx_track, METH_VARARGS,
      "Stamp a value as an attribute of its handle proxy, for the write-back."},
     {"release_later", fcx_release_later, METH_O,
      "Queue a handle release to ride the next request or reply."},
+    {"surface", fcx_surface, METH_NOARGS,
+     "(version, sha256) of the annotated surface this guest was generated from."},
     {nullptr, nullptr, 0, nullptr},
 };
 

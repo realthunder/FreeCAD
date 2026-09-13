@@ -52,6 +52,11 @@ PyObject* guestExceptionType(const char* name);
 /// nullptr with a Python error set.
 PyObject* preludeFunction(const char* name);
 
+/// (version, sha256) of the surface this guest was generated from --
+/// FcxFacades.inc's copy of the stamp, which the host compares with its
+/// own (docs/Sandbox.md 7.17 (b)).  A new reference.
+PyObject* surfaceStamp();
+
 }  // namespace FcxImage
 
 #endif  // APP_FCX_IMAGE_MARSHAL_H

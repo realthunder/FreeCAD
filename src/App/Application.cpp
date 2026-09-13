@@ -101,6 +101,9 @@
 #include "ExpressionParser.h"
 #include "ExpressionEvaluator.h"
 #include "ExpressionSecurityRuntime.h"
+#ifdef FC_EXPR_IMAGE_HOST
+#include "ExpressionImageBridge.h"
+#endif
 #include "FeatureTest.h"
 #include "FeaturePython.h"
 #include "GeoFeature.h"
@@ -3154,6 +3157,11 @@ void Application::initApplication()
     if (!(mConfig["Verbose"] == "Strict"))
         Base::Console().Log("Create Application\n");
     Application::_pcSingleton = new Application(mConfig);
+#ifdef FC_EXPR_IMAGE_HOST
+    // the expression surface's record on save and open (docs/Sandbox.md
+    // 7.17 (b)); it connects application signals, so not before this
+    ExpressionSandbox::connectSurfaceRecord();
+#endif
 
     // The module roots a type string in a document may import from
     // (Base::Type::importModule): the same Mod directories FreeCADInit

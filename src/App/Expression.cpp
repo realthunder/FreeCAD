@@ -74,8 +74,8 @@
 #include "ExpressionParser.h"
 #include "ExpressionSecurityRuntime.h"
 #include "ExpressionVisitors.h"
+#include <App/ExpressionPy.h>
 #ifndef FC_EXPR_IMAGE
-#include "ExpressionPy.h"
 #include "DocumentObjectPy.h"
 #endif
 
@@ -91,22 +91,20 @@ namespace bi = boost::intrusive;
 FC_LOG_LEVEL_INIT("Expression", true, true)
 
 // Host Python bindings of the document world are absent in the sandbox
-// image; there, no Python object ever IS one of these types.
+// image; there, no Python object ever IS a DocumentObjectPy.  ExpressionPy,
+// the function object, is compiled into the image (docs/Sandbox.md 7.17 D1).
 #ifdef FC_EXPR_IMAGE
 static inline bool _isDocumentObjectPy(PyObject *) {
-    return false;
-}
-static inline bool _isExpressionPy(PyObject *) {
     return false;
 }
 #else
 static inline bool _isDocumentObjectPy(PyObject *o) {
     return PyObject_TypeCheck(o, &DocumentObjectPy::Type);
 }
+#endif
 static inline bool _isExpressionPy(PyObject *o) {
     return PyObject_TypeCheck(o, &ExpressionPy::Type);
 }
-#endif
 
 #ifndef M_PI
 #define M_PI       3.14159265358979323846
@@ -4148,6 +4146,18 @@ void VariableExpression::setVarInfo(VarInfo &info, bool mustExist, bool noassign
 
 // To disable dependency tracking inside function statement
 static int _FunctionDepth;
+// ... unless the caller asked for what a body reads as well
+static int _FunctionBodyIdentifiers;
+
+FunctionBodyIdentifiers::FunctionBodyIdentifiers()
+{
+    ++_FunctionBodyIdentifiers;
+}
+
+FunctionBodyIdentifiers::~FunctionBodyIdentifiers()
+{
+    --_FunctionBodyIdentifiers;
+}
 class FunctionDepth {
 public:
     FunctionDepth() {
@@ -4160,7 +4170,7 @@ public:
 
 void VariableExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const
 {
-    if(_FunctionDepth)
+    if(_FunctionDepth && !_FunctionBodyIdentifiers)
         return;
     bool hidden = HiddenReference::isHidden();
     auto res = deps.insert(std::make_pair(var,hidden));
@@ -4645,14 +4655,7 @@ Py::Object CallableExpression::_getPyValue(int *) const {
                     res->args.push_back(PyObjectExpression::create(owner,*v.second->obj));
                 }
             }
-#ifdef FC_EXPR_IMAGE
-            // Function objects escape the evaluation as ExpressionPy
-            // wrappers -- a host binding.  Nothing in the corpus stores
-            // one as a final value (Phase 0 sec 3.2 reverse audit).
-            EXPR_THROW("function objects are not supported in the sandbox image");
-#else
             return Py::Object(new ExpressionPy(_res.release()));
-#endif
 
         } case IMPORT_PY: {
             Py::Object value(args[0]->getPyValue());
@@ -5239,7 +5242,7 @@ ExpressionPtr RangeExpression::_copy() const
 
 void RangeExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const
 {
-    if(_FunctionDepth)
+    if(_FunctionDepth && !_FunctionBodyIdentifiers)
         return;
 
     bool hidden = HiddenReference::isHidden();
@@ -6577,18 +6580,12 @@ static Py::Object makeFunc(const Expression *owner,
                                           FunctionExpression::FUNC_PARSED,
                                           std::string(name?name:""),
                                           false);
-#ifdef FC_EXPR_IMAGE
-    // Same host-binding gap as the FUNC/FUNC_D value path above.
-    (void)res;
-    _EXPR_THROW("function objects are not supported in the sandbox image", owner);
-#else
     Py::Object pyobj(new ExpressionPy(res.release()),false);
     if(name && _EvalStack.size()) {
         auto var = _EvalStack.back()->getVar(owner,name,BindLocalOnly);
         *var = pyobj;
     }
     return pyobj;
-#endif
 }
 
 Py::Object LambdaExpression::_getPyValue(int *) const {
