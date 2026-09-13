@@ -150,7 +150,6 @@ void Writer::insertAsciiFile(const char* FileName)
 {
     Base::FileInfo fi(FileName);
     Base::ifstream from(fi, std::ios::in | std::ios::binary);
-    if (!from)
     if (!from) {
         THROWM(Base::FileException, "Writer::insertAsciiFile() Could not open file!")
     }
