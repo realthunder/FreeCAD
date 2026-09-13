@@ -2569,10 +2569,15 @@ is `Restoring` or still holds deferred files, whatever
 `Render_ProgressiveLoad` says -- and that drain runs off a `QTimer`, so
 the geometry lands over seconds of event loop and not with the open.
 `settle()` pumps `redraw()` / `waitFrameComplete()` / `updateGui()`
-until every object has a view provider and then until the covered-pixel
-count has held still for `FC_BENCH_SETTLE_STABLE` seconds (3 by
-default), refits, and prints what it waited for: `settle 3.1s 75 frames
-| first px at 0.0s | 51569 px when it stopped moving | stationary`.
+until every object has a view provider, and then until the covered-pixel
+count has held still for `FC_BENCH_SETTLE_STABLE` seconds (3 by default)
+AND `Gui.isBuildingVisuals()` says the drain has stopped building. The
+drain's vote is not redundant: a pixel count stationary at ZERO reads
+the same while the drain is still working as it does once the drain has
+finished and the scene is genuinely empty, which on a 17k-object
+assembly is minutes of difference. Then it refits and prints what it
+waited for: `settle 3.1s 75 frames | first px at 0.0s | 51569 px when it
+stopped moving | stationary`.
 **Continuous seconds, not consecutive equal reads** -- the count
 plateaus early and briefly while the handful already built is redrawn,
 and a three-equal-reads test answered 4557 px on a document that settles

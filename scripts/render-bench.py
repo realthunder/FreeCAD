@@ -481,10 +481,14 @@ def open_scene():
 def settle(doc, v):
     """Pump the event loop until the scene has stopped arriving.
 
-    Two gates, in this order. First every object has a view provider --
-    an object without one has nothing that could draw, and the deferred
-    drain only carries ones that do. Then the covered-pixel count holds
-    still for SETTLE_STABLE continuous seconds.
+    Three gates. First every object has a view provider -- an object
+    without one has nothing that could draw, and the deferred drain only
+    carries ones that do. Then the covered-pixel count holds still for
+    SETTLE_STABLE continuous seconds, AND the drain says it has stopped
+    building: a count stationary at ZERO reads the same whether the
+    drain has finished and the scene is empty or the drain has not
+    produced anything yet, which on a 17k-object assembly is minutes of
+    difference (MiSTer.FCStd loads in 378 s on this box).
 
     Returns (seconds, pixels, frames, why, first_s). `why` is what ended
     it, so a run that gave up waiting is distinguishable in the output
@@ -504,6 +508,24 @@ def settle(doc, v):
         v.redraw()
         v.waitFrameComplete()
         FreeCADGui.updateGui()
+
+    said = []
+
+    def building():
+        # Gui.isBuildingVisuals(): the deferred drain's queue being
+        # non-empty. Guarded, so this script still runs against a binary
+        # built before that call existed -- it then falls back to the
+        # pixel count alone, which is what it had, and says so rather
+        # than quietly measuring with one gate fewer.
+        try:
+            return bool(FreeCADGui.isBuildingVisuals())
+        except AttributeError:
+            if not said:
+                said.append(1)
+                say("  !! Gui.isBuildingVisuals() is missing from this "
+                    "build -- the settle has only the pixel count, which "
+                    "cannot tell an empty scene from an arriving one")
+            return False
 
     def covered():
         try:
@@ -525,12 +547,14 @@ def settle(doc, v):
         px = covered()
         if first is None and px > 0:
             first = now - t0
-        if px != last:
+        busy = building()
+        if px != last or busy:
             last, since = px, now
         elif now - since >= SETTLE_STABLE:
             break
         if now - t0 >= SETTLE_MAX:
-            why = "GAVE UP at %.0fs, still moving" % SETTLE_MAX
+            why = ("GAVE UP at %.0fs, still building" if busy
+                   else "GAVE UP at %.0fs, still moving") % SETTLE_MAX
             break
     return time.perf_counter() - t0, last, frames, why, first
 
