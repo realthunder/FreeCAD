@@ -844,7 +844,17 @@ struct DeferredVisualQueue {
     std::deque<App::DocumentObjectT> pending;
     /// Counted per drain, for the one line the queue reports itself with.
     std::size_t built = 0;
+    std::size_t popped = 0;
     std::size_t slices = 0;
+    /// How many of these were parked because the shape had not ARRIVED
+    /// rather than because a progressive load asked for them, and how
+    /// many of those the restore asked for again before the drain ran.
+    /// Both are here because the line used to say "0 visuals in 1
+    /// slices" over a queue of 17058 and that read like an empty queue:
+    /// built against popped is what named the park being consumed by
+    /// the restore's second pass.
+    std::size_t shapeParked = 0;
+    std::size_t reasked = 0;
     std::chrono::duration<double> spent {0};
 };
 
@@ -5567,6 +5577,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         while (!queue.pending.empty()) {
             auto obj = queue.pending.front().getObject();
             queue.pending.pop_front();
+            ++queue.popped;
             if (visuals.seq)
                 visuals.seq->next();
             auto vp = obj ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
@@ -5597,8 +5608,11 @@ void ViewProviderPartExt::runDeferredVisualSlice()
             continue;
         }
         FC_LOG("progressive load " << it->first << ": " << queue.built
-                << " visuals in " << queue.slices << " slices, "
-                << queue.spent.count() << 's');
+                << " of " << queue.popped << " visuals in " << queue.slices
+                << " slices, " << queue.spent.count() << "s ("
+                << queue.shapeParked << " parked for a shape that had not"
+                   " arrived, " << queue.reasked << " of those re-asked"
+                   " before the drain ran)");
         it = visuals.docs.erase(it);
     }
 
@@ -5908,6 +5922,10 @@ void ViewProviderPartExt::updateVisual()
         // the same rebuild.
         if (VisualDeferred) {
             VisualTouched = true;
+            if (auto obj = getObject()) {
+                if (auto doc = obj->getDocument())
+                    ++deferredVisuals().docs[doc->getName()].reasked;
+            }
             return;
         }
         if (!VisualShapePending && shapeMayStillArrive()) {
@@ -5915,6 +5933,7 @@ void ViewProviderPartExt::updateVisual()
                 if (auto doc = obj->getDocument()) {
                     VisualShapePending = true;
                     parkVisualForLoad(doc, obj);
+                    ++deferredVisuals().docs[doc->getName()].shapeParked;
                     return;
                 }
             }
