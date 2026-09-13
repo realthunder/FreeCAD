@@ -2698,6 +2698,57 @@ TEST_F(ExpressionRoutingTest, foreignDocErrorTextMatchesNative)
     App::GetApplication().closeDocument(doc2->getName());
 }
 
+TEST_F(ExpressionRoutingTest, localMemberInALongNamedDocumentStaysLocal)
+{
+    // A document name past the short-string limit (15 characters) turned a
+    // program's local `v.x` into a foreign-document reference: the check
+    // read the name through a reference into a temporary String, and the
+    // host's own failure to resolve `v` was shipped as the answer --
+    // "Property 'v' not found".  Found by the 7.17 D3 fixtures, whose files
+    // are named longer than any test document was.
+    struct LongDocument
+    {
+        App::Document* doc =
+            App::GetApplication().newDocument("FcxEvalTestLongDocumentName", "testUser");
+        ~LongDocument()
+        {
+            App::GetApplication().closeDocument(doc->getName());
+        }
+    } longDoc;
+    ASSERT_GT(std::strlen(longDoc.doc->getName()), 15u);
+    auto owner = longDoc.doc->addObject("App::FeaturePython", "Obj");
+    ASSERT_NE(owner, nullptr);
+
+    const std::pair<const char*, double> cases[] = {
+        {"v = vector(1, 2, 3)\nv.x", 1.0},
+        {"base = 2\nbase * 3", 6.0},
+    };
+    Base::PyGILStateLocker lock;
+    for (const auto& c : cases) {
+        auto expr = App::Expression::parse(owner, c.first);
+        ASSERT_NE(expr, nullptr) << c.first;
+        PyObject* value = nullptr;
+        try {
+            value = App::ExpressionSandbox::evaluatePy(expr.get(),
+                                                       App::Expression::OptionCallFrame);
+        }
+        catch (Base::Exception& e) {
+            ADD_FAILURE() << c.first << ": " << e.what();
+        }
+        catch (Py::Exception&) {
+            Base::PyException e;
+            ADD_FAILURE() << c.first << ": " << e.what();
+        }
+        if (value) {
+            EXPECT_DOUBLE_EQ(PyFloat_AsDouble(value), c.second) << c.first;
+            if (PyErr_Occurred())
+                PyErr_Clear();
+            Py_DECREF(value);
+        }
+        ImageHost::instance().clearHandles();
+    }
+}
+
 TEST_F(ExpressionRoutingTest, unresolvableLocalNameIsNotShippedAsAnError)
 {
     // The narrow scope of the fix above matters: a name the host cannot

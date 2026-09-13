@@ -819,7 +819,11 @@ namespace
 bool referencesForeignDocument(const App::ObjectIdentifier& id,
                                const App::DocumentObject* owner)
 {
-    const std::string& docName = id.getDocumentName().getString();
+    // a copy: getDocumentName() returns its String by value, and a reference
+    // into that temporary dangled -- past the short-string limit of 15
+    // characters the freed bytes read as a foreign document name, and a
+    // program's local `v.x` came back as the host's "Property 'v' not found"
+    const std::string docName = id.getDocumentName().getString();
     if (docName.empty())
         return false;
     const App::Document* doc = owner ? owner->getDocument() : nullptr;
