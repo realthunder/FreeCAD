@@ -5891,6 +5891,25 @@ void ViewProviderPartExt::updateVisual()
         // ordering. Bounded to one attempt (VisualShapePending), so
         // content that never arrives costs one extra slice and not a
         // loop.
+        // A rebuild that finds this visual ALREADY queued is the restore
+        // asking for it a second time, not the drain taking its turn --
+        // the slice clears VisualDeferred before it rebuilds, so the
+        // drain never arrives here. Falling through would clear the
+        // nodes and VisualTouched with them, which is the park being
+        // consumed by the very pass it was meant to outlive.
+        //
+        // MEASURED on the 17058-solid MiSTer assembly: its restore built
+        // every visual TWICE (34116 builds over 17058 objects), so every
+        // park was undone before the first slice ran, and the drain
+        // reported "0 visuals in 1 slices" over a full queue. The
+        // document came up with an empty 3D view that only a later
+        // property read -- which serves the shape and notifies -- could
+        // repair. One park, one rebuild: this return is what keeps them
+        // the same rebuild.
+        if (VisualDeferred) {
+            VisualTouched = true;
+            return;
+        }
         if (!VisualShapePending && shapeMayStillArrive()) {
             if (auto obj = getObject()) {
                 if (auto doc = obj->getDocument()) {
