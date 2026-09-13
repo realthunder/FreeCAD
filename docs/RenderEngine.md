@@ -2731,14 +2731,23 @@ it. With `Render_ProgressiveLoad` off the drain is now not involved in a
 load at all (Hier parked all 200 of its visuals there before, and parks
 none now), which is what that preference being off should have meant.
 
-One flag has to stay, and it is why the park was shaped that way:
-`VisualDeferred` also told `SoFCCoordinate3::getBoundingBox`'s
-on-demand build to leave a visual alone. A touched visual is exactly
-what that hook builds and a restore traverses the scene many times, so
-"stay touched" without an equivalent marker re-enters the build for
-every object on every traversal -- MEASURED at 25 minutes of pegged CPU
-on MiSTer against 8. `VisualShapeMissing` is that marker. Every number
-above is unchanged by the simplification, and `ctest` is 497 of 497.
+That first cost 25 minutes of pegged CPU on MiSTer against 8, because
+`VisualDeferred` had also been telling
+`SoFCCoordinate3::getBoundingBox`'s on-demand build to leave a visual
+alone -- a touched visual is exactly what that hook builds, and a
+restore traverses the scene many times over. The cure was not another
+marker but **asking the question first**: "the shape has not arrived"
+is now decided at the top of `updateVisual()`, before three timers,
+seven Coin action traversals, a `removeAllChildren` over the instanced
+roots, a `getShape()` copy and a shape re-registration -- all of which
+touch nodes, inside a traversal whose caches those touches invalidate.
+With the question asked first the call touches nothing, and the hook's
+guard measures as unnecessary: MiSTer opens in 504.7 s without it
+against 501.4 s with it, 45867 draws either way. It also stops a
+non-build being counted as one -- Hier reports 400 visual builds where
+it reported 607. Every number above is unchanged, `ctest` is 497 of
+497, and with progressive load ON (the default) MiSTer draws 94783 px
+and Hier still drains 200 of 200 visuals in one slice.
 
 ### The assembly table, all four backends (2026-09-09)
 
