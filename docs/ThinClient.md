@@ -1918,6 +1918,59 @@ test binary): `SelectionSingleton::setPreselect` warms a view provider only when
 an application to ask, and `ToolTip::hideText` does nothing without one. Suites after:
 ctest 614/614, Python 2688 OK.
 
+**Built 2026-09-14 (item 4).** The desktop's tool bars in a browser. The server half was
+there since `docs/Sandbox.md` 7.18 (the `QToolBar`/`QAction` models and the `widgets.*`
+ops); the client is `web/src/toolbar.tsx`. It subscribes by itself (`widgets.subscribe
+{"toolbars": true}`) and keeps the models in a Solid store fed by the `widgets` pushes --
+open, a `q_*` diff or a `layoutSpec` as update, close -- and draws the bars of the
+`toolbars` order object: visible ones only, the status bar's and the menu bar corners'
+skipped, the top area's first and the other areas after them on the one strip. Embedded
+widgets (the workbench chooser) are not drawn. Icons come by name through `widgets.icon`,
+cached per (theme, name, pixel size) as `data:` URLs in an `<img>`, never markup; an action
+without an icon shows its text. A group with a drop-down is its default member's face plus
+a caret opening the live member models. Desktop: one strip along the top, wrapping before
+the NaviCube's corner, and the panels anchored to the top edge move down by its height
+(`--fc-top` on `#fc-ui`); narrow: one row above the launcher that scrolls sideways. A
+"Toolbars" switch in the launcher, remembered per browser, on by default where there is
+room and a fine pointer, off on a phone; off unsubscribes. A view-only connection gets none
+(the server refuses the subscription). A reconnect re-subscribes: the viewer now dispatches
+`fc:connection` on every open and drop (`window.fcviewerConnected`), because a subscription
+belongs to one connection.
+
+**A click is the `command` op, not the model's `trigger`.** The trigger fires the real
+`QAction` outside any `ViewerScope` -- a sketch tool would start in the desktop's view --
+and outside the allowlist. The op runs the tool in this client's view; the page states its
+camera first (`window.fcviewerStateCamera`, the frame `fcviewer_edit` also forces), and a
+group's face sends its default member's index. Until item 5 only the allowlisted commands
+are enabled; every other button is drawn disabled with a tool tip saying it runs from the
+desktop until dialogs are mirrored. One more rule the models forced: `q_enabled` is the
+DESKTOP's answer, taken against the desktop's active document, and for a sketch a browser
+edits in a document the desktop is not looking at every sketch tool reads disabled there
+while it runs here -- so an allowlisted tool is also enabled while this client is editing.
+Checkable buttons flip locally on a click and the stream's next update confirms them.
+
+Four server defects surfaced on the way, none visible to the synthetic gate. The
+`widgets.*` ops were registered only by the default group's handler install, so on a served
+document -- whose requests go through `SceneServeSource`'s own handler -- every one answered
+`UnknownOp`; `handleSceneControlRequest` installs them now (`OmniControl_Tests_run`
+`test_widgetOpsOnTheServedPath`). The op's `index` path only moved a group's default:
+`invoke(index - 1, TriggerChildAction)` is the group's half of a member click and runs
+nothing, so it now runs the member's command and then moves the default. And the allowlist
+judged the name it was given, which for a member is the group's (`Sketcher_CompCreateArc`)
+-- it judges the member now (`isBrowserSafeCommand`). And a served desktop quitting with a
+browser subscribed crashed: every mirrored action's `destroyed` handler releases its model,
+the release's close push fails at exit, the stream drops the last subscriber and stops the
+mirror -- which cleared the model table under the handler's iterator. The handler takes the
+model out of the table before the release now. Verified: `tests/gui/serve-toolbar-browser.py`
+driving `scripts/toolbar-drive.js` in headless Chrome against a served sketch: bars drawn by
+the page alone and equal to the desktop mirror's order, icons, the refusal of a non-sketch
+group member and of a plain command, the bars following the switch into the sketch, every
+enabled button one the server runs and the rest disabled with the reason, a group's face
+starting its tool in the browser's view (its on-view parameters arrive), a drop-down member
+running and the face following the moved default, and the switch off (strip gone, panels
+back up, remembered, a desktop change pushing nothing) and on again (a fresh snapshot), and
+FreeCAD exiting cleanly with the page still subscribed. Like the other browser tests it needs Chrome and is not in ctest.
+
 ### 8.12 What per client would cost -- the multi-user roadmap
 
 Everything below is what 8.11 shares, listed from the view outward to the data, with what

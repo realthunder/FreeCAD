@@ -5409,6 +5409,32 @@ of hidden bars is the declared order (3).
   the rest of it; the model path (`widgets.custom` with `trigger` on
   the member) is the one the gate exercises, and it moves the default
   the desktop's way.
+- **Amended 2026-09-14 (docs/ThinClient.md 8.11 item 4, the browser
+  client).** Two defects the gate could not see, both found by the first
+  browser on a served document. (1) The five ops were registered only by
+  `installSceneControlHandler`, the default group's install; a served
+  document routes through `SceneServeSource`'s own handler into
+  `handleSceneControlRequest`, so every `widgets.*` op there answered
+  `UnknownOp` -- the gate drives the ops through `FormWidgets.control`,
+  which registers them itself. `handleSceneControlRequest` installs them
+  now, beside `OmniControl::install()`; `OmniControl_Tests_run` holds it.
+  (2) The `command` op's `index` path only MOVED the default:
+  `invoke(index - 1, TriggerChildAction)` is the group's half of a
+  member click, and a group's `activated()` runs nothing on that trigger
+  -- on the desktop the member's own action runs its command. The op
+  runs the member's command under the client's `ViewerScope`, then moves
+  the default. Its allowlist now judges the member it runs (the
+  Sketcher's create tools sit in `Sketcher_Comp*` groups), and a group
+  named without an index by the group's own name, which none passes. The
+  browser clicks through this op, not the model path: the model's
+  `trigger` runs outside any `ViewerScope` and outside the allowlist.
+  (3) A desktop quitting with a subscriber crashed in
+  `ToolBarMirror::watchAction`'s `destroyed` handler: the model's release
+  announces a close, the push fails at exit, `SceneWidgetStream` drops the
+  last subscriber and stops the mirror, and `stop()` cleared `_models`
+  under the handler's iterator. The handler takes the model out first and
+  deletes it through a `QPointer`. The gate stops the mirror before it
+  exits, which is why it never saw this.
 - **(c)** `src/Tools/bindings/dumpWidgetModels.py`, the
   `WidgetModelsJson` target writing `<build>/share/Pyodide/
   widget-models.json` (39 classes, 54 Qt names), a base that is no
