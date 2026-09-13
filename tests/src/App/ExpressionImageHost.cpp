@@ -2987,6 +2987,56 @@ TEST_F(ExpressionRoutingTest, programsChainCallRunsAsTheObjectItExtends)
     App::GetApplication().closeDocument(doc2->getName());
 }
 
+namespace
+{
+/// The flange of docs/Sandbox.md 7.17 as one expression, the text of
+/// SandboxProgramFixtures.FLANGE_EXPRESSION.
+const char* flangeProgram = "import Part\n"
+                            "def hole(a):\n"
+                            "    return Part.makeCylinder(HoleDia / 2, Thick * 3,"
+                            " vector(Pcd / 2 * cos(a), Pcd / 2 * sin(a), -Thick))\n"
+                            "body = Part.makeCylinder(Dia / 2, Thick)\n"
+                            "body = body.cut(Part.makeCylinder(Bore / 2, Thick * 3,"
+                            " vector(0, 0, -Thick)))\n"
+                            "i = 0\n"
+                            "while i < Bolts:\n"
+                            "    body = body.cut(hole(i * 360deg / Bolts))\n"
+                            "    i = i + 1\n"
+                            "body\n";
+
+/// The flange's six parameters on `owner`; false if one could not be added.
+bool addFlangeParameters(App::DocumentObject* owner)
+{
+    const std::pair<const char*, double> lengths[] = {
+        {"Dia", 60.0}, {"Thick", 8.0}, {"Bore", 20.0}, {"Pcd", 44.0}, {"HoleDia", 6.0}};
+    for (const auto& l : lengths) {
+        auto p = Base::freecad_dynamic_cast<App::PropertyLength>(
+            owner->addDynamicProperty("App::PropertyLength", l.first));
+        if (!p)
+            return false;
+        p->setValue(l.second);
+    }
+    auto bolts = Base::freecad_dynamic_cast<App::PropertyInteger>(
+        owner->addDynamicProperty("App::PropertyInteger", "Bolts"));
+    if (!bolts)
+        return false;
+    bolts->setValue(6);
+    return true;
+}
+
+bool partImportable()
+{
+    Base::PyGILStateLocker lock;
+    PyObject* part = PyImport_ImportModule("Part");
+    if (!part) {
+        PyErr_Clear();
+        return false;
+    }
+    Py_DECREF(part);
+    return true;
+}
+}  // namespace
+
 TEST_F(ExpressionRoutingTest, programsFlangeMatchesNative)
 {
     // The D1 gate: the flange of docs/Sandbox.md 7.17 as one expression,
@@ -2995,39 +3045,10 @@ TEST_F(ExpressionRoutingTest, programsFlangeMatchesNative)
     // enforcement, where `import Part` is the guest's facade; the native
     // twin runs with enforcement off, as the corpus rig does, since
     // natively `import Part` is host.import, PROMPT for a document.
-    {
-        Base::PyGILStateLocker lock;
-        PyObject* part = PyImport_ImportModule("Part");
-        if (!part) {
-            PyErr_Clear();
-            GTEST_SKIP() << "the Part module is not importable in this test binary";
-        }
-        Py_DECREF(part);
-    }
-    const std::pair<const char*, double> lengths[] = {
-        {"Dia", 60.0}, {"Thick", 8.0}, {"Bore", 20.0}, {"Pcd", 44.0}, {"HoleDia", 6.0}};
-    for (const auto& l : lengths) {
-        auto p = Base::freecad_dynamic_cast<App::PropertyLength>(
-            obj->addDynamicProperty("App::PropertyLength", l.first));
-        ASSERT_NE(p, nullptr) << l.first;
-        p->setValue(l.second);
-    }
-    auto bolts = Base::freecad_dynamic_cast<App::PropertyInteger>(
-        obj->addDynamicProperty("App::PropertyInteger", "Bolts"));
-    ASSERT_NE(bolts, nullptr);
-    bolts->setValue(6);
-
-    const char* src = "import Part\n"
-                      "def hole(a):\n"
-                      "    return Part.makeCylinder(HoleDia / 2, Thick * 3,"
-                      " vector(Pcd / 2 * cos(a), Pcd / 2 * sin(a), -Thick))\n"
-                      "body = Part.makeCylinder(Dia / 2, Thick)\n"
-                      "body = body.cut(Part.makeCylinder(Bore / 2, Thick * 3, vector(0, 0, -Thick)))\n"
-                      "i = 0\n"
-                      "while i < Bolts:\n"
-                      "    body = body.cut(hole(i * 360deg / Bolts))\n"
-                      "    i = i + 1\n"
-                      "body\n";
+    if (!partImportable())
+        GTEST_SKIP() << "the Part module is not importable in this test binary";
+    ASSERT_TRUE(addFlangeParameters(obj));
+    const char* src = flangeProgram;
 
     Base::PyGILStateLocker lock;
     std::string rerr, nerr;
@@ -3063,6 +3084,55 @@ TEST_F(ExpressionRoutingTest, programsFlangeMatchesNative)
     Py_DECREF(routed);
     Py_DECREF(native);
     ImageHost::instance().clearHandles();
+}
+
+// ---- docs/Sandbox.md sec 11 item 4: one shape program routed against
+// ---- native.  The flange above, evaluated whole each iteration: routed
+// ---- under enforcement (the guest runs the program, every Part call a
+// ---- geom.call into the host), native with enforcement off.  Both pay the
+// ---- same OCCT booleans; the difference is what routing costs a program.
+
+TEST_F(ExpressionImageBenchTest, DISABLED_BenchFlangeProgram)
+{
+    if (!partImportable())
+        GTEST_SKIP() << "the Part module is not importable in this test binary";
+    ASSERT_TRUE(addFlangeParameters(obj));
+    auto sandbox = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    auto security = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Security");
+    const int iters = 40;
+    auto opsTotal = [] {
+        std::size_t n = 0;
+        for (const auto& op : ImageHost::instance().stats().ops)
+            n += op.second;
+        return n;
+    };
+
+    Base::PyGILStateLocker lock;
+    auto evalOnce = [&](bool routed) {
+        std::string err;
+        PyObject* v = evalProgram(obj, flangeProgram, routed, err);
+        EXPECT_NE(v, nullptr) << err;
+        Py_XDECREF(v);
+        ImageHost::instance().clearHandles();
+    };
+
+    sandbox->SetBool("Evaluate", true);
+    evalOnce(true);
+    std::size_t before = opsTotal();
+    evalOnce(true);
+    std::size_t ops = opsTotal() - before;
+    double routed = benchUs("flange program routed", iters, [&] { evalOnce(true); });
+    sandbox->RemoveBool("Evaluate");
+
+    security->SetBool("Enforce", false);
+    double native = benchUs("flange program native", iters, [&] { evalOnce(false); });
+    security->RemoveBool("Enforce");
+
+    std::cout << "BENCH flange program: " << ops << " bridge ops per evaluation, routed "
+              << routed / native << "x native, +" << (routed - native) / 1000.0 << " ms"
+              << std::endl;
 }
 
 // ---- docs/Sandbox.md 7.17 D2: expression libraries ----
