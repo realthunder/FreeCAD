@@ -1,6 +1,6 @@
 # The proxy chain: document programs extend native objects
 
-**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; **P2 BUILT 2026-09-13**, sec 4.4 -- `ViewProxyExp` and the view-side chain, 17 gate cases in `src/Mod/Test/ViewProviderChain.py`; **sec 4.5, 2026-09-13** -- what P1 does not deliver: an edited method does not recompute its instances; RULED the same day (fine-grained per-cell, never the coarse counter) and BUILT NEXT SESSION as 7.17 D2's first item, with the function-body dependency trap recorded there; P3, the sandbox, sits inside 7.17's build]**
+**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; **P2 BUILT 2026-09-13**, sec 4.4 -- `ViewProxyExp` and the view-side chain, 17 gate cases in `src/Mod/Test/ViewProviderChain.py`; **sec 4.5, 2026-09-13** -- what P1 does not deliver: an edited method does not recompute its instances; RULED the same day (fine-grained per-cell, never the coarse counter), with the function-body dependency trap recorded there; **BUILT 2026-09-13**, sec 4.6, as 7.17 D2's first item, 8 gate cases; P3, the sandbox, sits inside 7.17's build]**
 
 The user's design, stated 2026-09-12 after the document program (docs/
 Sandbox.md 7.17) was found lacking against the spreadsheet-as-object
@@ -996,7 +996,7 @@ whole-tree rebuild for a cosmetic correction.
 probe writes `user.cfg` and silently changes every later run on the box,
 which is how the first reading of this bug came to be wrong.
 
-Sized as a build item of 7.17 D2 (docs/Sandbox.md).  **NEXT SESSION builds it**
+Sized as a build item of 7.17 D2 (docs/Sandbox.md).  **BUILT 2026-09-13, sec 4.6**
 [approved 2026-09-13: "implement it in next session, with tests"].  The gate,
 all of it with `OptimizeRecompute` at its default ON -- with it off every case
 passes for the wrong reason:

@@ -70,9 +70,8 @@ pieces are frozen, not extended.**
                                                  for the table at build time; P0 and P1
                                                  BUILT 2026-09-12 (the refactor, then the
                                                  App-side chain), P2 BUILT 2026-09-13 (the
-                                                 view side); an edited method does NOT yet
-                                                 recompute its instances (ProxyChain.md 4.5)
-                                                 -- RULED 2026-09-13 and BUILT NEXT SESSION,
+                                                 view side); the edited-method recompute
+                                                 BUILT 2026-09-13 (ProxyChain.md 4.5, 4.6),
                                                  fine-grained per-cell, 8 gate cases; P3, the
                                                  sandbox, sits inside 7.17's build
     the browser console              sized       7.20: pyodide in the client's page, the wire
@@ -6609,7 +6608,7 @@ Sources: Firefox's JSPI release bug (bugzilla 2044809), the V8 JSPI
 introduction (v8.dev/blog/jspi), Chromium's intent to ship, pyodide's
 JSPI post (blog.pyodide.org/posts/jspi) and changelog.
 
-### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED 2026-09-13 and built next session; P3, the sandbox, sits inside 7.17's build]**
+### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, sits inside 7.17's build]**
 
 The user's answer to 7.17's gap against the spreadsheet-as-object
 model (2026-09-11: cells as attributes and methods, aliases as the
