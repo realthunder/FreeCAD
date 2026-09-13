@@ -70,7 +70,10 @@ pieces are frozen, not extended.**
                                                  live link sharing the source's module; P3 BUILT
                                                  the same day: a routed function crosses as a
                                                  stand-in, the chain's call runs as the feature's
-                                                 file (RULED); NEXT D3
+                                                 file (RULED); D3 BUILT 2026-09-14: the five
+                                                 fixtures (six files) open routed = native, the
+                                                 flange bench 1.12x native, the tutorial in
+                                                 docs/DocumentPrograms.md; NEXT D4 (memory)
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
@@ -4669,7 +4672,7 @@ pivy wheel rebuild); 900 in the wheel (the walker 300, the host node,
 camera, event and view shims 400, the view provider glue and the MDI
 shim 200); 600 of gate.  G4a is the larger half.
 
-### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed; D1 BUILT 2026-09-13; D2's library half and the linked library BUILT 2026-09-13; P3 BUILT 2026-09-13]**
+### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed; D1 BUILT 2026-09-13; D2's library half and the linked library BUILT 2026-09-13; P3 BUILT 2026-09-13; D3 BUILT 2026-09-14]**
 
 Sec 11 item 2, the re-aim's one target (1.2): a program a DOCUMENT
 carries, written in the expression engine's language, generating
@@ -5617,6 +5620,90 @@ of them) and 385 of tests, against 80-150 sized -- the overrun is the two
 stand-in types and the call path through the host, which the row did not
 see; the row sized only the tests.
 
+**D3, BUILT 2026-09-14.**  The fixtures, the gate completed around them,
+the corpus list, the bench of sec 11 item 4 and the tutorial
+(docs/DocumentPrograms.md).  Four things it found, two of them older than
+7.17.
+
+The fixtures are `src/Mod/Test/TestData/SandboxProgram`, six files written
+by `SandboxProgramFixtures.writeFixtures()` from the texts that module
+holds -- the one source; the tutorial quotes them and a native gate case
+checks the committed files still carry them.  `ProgramBracket` (the library
+`brackets`, `BracketExpr` with the program on its `Shape`, `BracketLib`
+importing it), `ProgramStair` (the same pair for the stair), `ProgramFlange`
+(the flange as one expression), `ProgramBracketsSource` and
+`ProgramBracketsConsumer` (the pair of the sizing's fourth fixture, the link
+stored relative so the two move together), `ProgramFlangeSheet` (the sheet
+`Type` and two instances, `Flange` and `Flange2`, with their own numbers).
+They install as a directory of their own, since the consumer names its source
+beside it.
+
+1. *A routed local read through a dot failed in a document named longer
+   than 15 characters* -- a reference into a temporary `String`, so the
+   freed name read as a foreign document and the host's failure to resolve
+   the local was shipped as the answer.  Every test document before had a
+   short name; `ProgramFlangeSheet` and a re-saved `saved-ProgramBracket`
+   did not, and every sheet case and every save-and-reopen failed routed on
+   it.  FIXED (`referencesForeignDocument`, ExpressionImageHost.cpp); sec 12.
+2. *Routed = native to the byte was the angles' luck.*  The guest's `sin`
+   rounds differently from the host's for some arguments, one ULP;
+   `sin(240deg)` is the one D1's flange never met at a 44 mm bolt circle and
+   meets at 40 mm.  The committed fixtures are held to the byte, a parameter
+   change to 4 ULPs (`assertSameGeometry`); sec 12.
+3. *The two forms are the same solid, not always the same bytes.*  The
+   bracket's and the stair's expression and library forms are
+   byte-identical -- once the stair's library starts from a plain box, since
+   a `translated(vector(0, 0, 0))` step leaves a location record of its own.
+   The flange's are not: the method writes `obj.Shape` on a
+   `Part::FeaturePython`, whose placement leaves a location record the
+   expression's `Shape` does not carry.  Every vertex and the volume agree
+   exactly, and that is what the case asserts.
+4. *The corpus rig had never compared a spreadsheet cell.*  It asked
+   `obj.cells.getUsedCells()`, which `PropertySheet` does not have, and its
+   `except` made every sheet contribute nothing -- since the rig's first
+   commit (`07d5134793`).  And it compared a shape by its repr, which carries
+   an address, and a function by its type's name, which is a stand-in's
+   routed.  FIXED: the sheet's own `getUsedCells()`, a shape as its type and
+   the sha1 of its BRep, a function as its repr.  `run_gate.sh` no longer
+   requires `.conda/limited.sh`, which this box no longer has.  Sec 8.2.
+
+The gate.  `SandboxProgram` 31 -> 46 OK.  `SandboxProgramFixtureTextCases`
+(3, native): the committed files carry the module's texts, the programs
+compared as printed, the libraries verbatim, the sheet's cell, the
+parameters and the pair's link.  `SandboxProgramFixtureCases` (12, routed,
+skipped without a guest), every one on a copy of the fixtures with
+`OptimizeRecompute` forced ON: the four program files routed = native byte
+for byte; the linked pair likewise, and equal to the bracket; the two forms
+agreeing, with the faces and volumes pinned; a parameter change per file
+routed = native within 4 ULPs, and really changing the shape; save and
+reopen equal, the pair included; the library's `Text` edited recomputing
+its consumer and leaving the expression form alone; the library tampered in
+`Document.xml` on disk giving a new principal with none of the file's
+grants -- natively under enforcement an `always` grant of `host.import` Part
+lets the programs run, and the tampered file's programs are refused; the
+live pair following an edit in the source; pinned, opening and recomputing
+with the source file deleted; unpinning taking the source's edited text;
+on the sheet, an unrelated cell rebuilding neither instance and an edited
+method rebuilding both, each with its own numbers; and the plain
+spreadsheet regression on the same sheet.  gtests:
+`ExpressionRoutingTest.localMemberInALongNamedDocumentStaysLocal`, and
+`ExpressionImageBenchTest.DISABLED_BenchFlangeProgram` (sec 8.1: 22.0 ms
+routed, 19.6 ms native); the flange's text and parameters are helpers shared
+with `programsFlangeMatchesNative`.  The corpus rig over the fixtures: 6
+files, 7 expressions, 7 same.  NOT done: the editor's diff at unpin, a GUI
+item, as the linked library's note says; the unpin case checks the text
+taken.
+
+Suites green at the build: C++ 625/625 (offscreen, 8 disabled), Python 2778
+OK, `SandboxProgram` 46 OK, `FeaturePythonChain` 44 OK, the view gate
+(`ViewProviderHooks`, `ViewProviderChain`) 25 OK.  The cost: about 950 lines of
+tests and fixtures (`SandboxProgram` +540, the fixtures module 256, the
+gtests +150), 6 lines of feature code (the fix), 24 in the rig and its
+driver, 23 of CMake and the 296-line tutorial, against 600-750 sized for
+the D3 rows -- the overrun is the fixture-text check and the routed linked,
+pinned and tamper cases, which the sizing counted as one gate.
+Code: 8a0d5c30b4 (the fix), 0cc8c7ad79 (the rig), 1bae4bdf25 (D3).
+
 **Stages.**
 
     D1  function objects in the image (ExpressionPy into
@@ -5647,7 +5734,7 @@ see; the row sized only the tests.
         library -- Source, Pinned, Snapshot, the edge through the
         links -- **BUILT 2026-09-13**, above.  P3 -- **BUILT
         2026-09-13**, above; the cross-file write RULED to run as the
-        feature's file, not to prompt.  NEXT: D3.  Gate:
+        feature's file, not to prompt.  D3 BUILT 2026-09-14.  Gate:
         SandboxProgram's library half, the cross-file pair included.  The library is
         no longer the only carrier (the sheet is one today), so its
         own value is the module namespace, the import statement and
@@ -5656,7 +5743,8 @@ see; the row sized only the tests.
         the linked object's document, a cross-file link's write
         prompting doc.foreign once.
     D3  the five fixtures, SandboxProgram complete, the corpus list,
-        the bench, the tutorial text in docs.
+        the bench, the tutorial text in docs.  **BUILT 2026-09-14**,
+        above; NEXT: D4.
     D4  memory: a ceiling per guest (V8's ResourceConstraints on the
         isolate, pyodide's MAXIMUM_MEMORY at wheel build) with the
         outcome a budget-style refusal, and the reset retention
@@ -7078,6 +7166,16 @@ recompute projects to 0.25-0.31 s from 0.13 s today.  Every number
 taken before the Release fix (2026-08-31) was 3 to 6x too slow; the
 browser 140 us figure is one of those and was never re-taken.
 
+The shape program (7.17 D3, 2026-09-14, `DISABLED_BenchFlangeProgram`):
+the flange of 7.17 evaluated whole, 40 iterations after a warm-up --
+**22.0 ms routed** under enforcement against **19.6 ms native** with
+enforcement off, 1.12x, +2.3 ms, over 15 bridge ops per evaluation.  The
+OCCT booleans are most of both numbers; what routing adds is the guest's
+parse and evaluation, the pack and the handle traffic of fifteen
+`geom.call`s, all together about an eighth of the solid.  This is sec 11
+item 4's "bench of one shape program routed against native", and the
+program side asks nothing more of it.
+
 ### 8.2 The corpus gate
 
 `scripts/expr-switchover/{corpus_regression.py, run_gate.sh,
@@ -7094,6 +7192,19 @@ compared, 0 differ, 2 both-error with matching text, 2 timed out;
 out -- the same result set.  Two parity gaps the gate could not see
 (literals crossing at 15 digits, error text) were found and closed on
 2026-09-02 (`f062e51e80`).
+
+**Re-run 2026-09-14** (7.17 D3, pyodide), after the rig was found never to
+have compared a spreadsheet cell -- it asked `obj.cells.getUsedCells()`,
+which `PropertySheet` does not have, and the `except` made every sheet
+contribute nothing, from the rig's first commit -- and to compare a shape by
+a repr carrying its address.  Every total above therefore counts expression
+BINDINGS only.  Fixed, the gate: 95 files under `~/works` (the corpus has
+moved since 8.3), 94 compared, **195 expressions, 195 same**, 0 differ, no
+error on either side, 1 timed out (`issue474_fillet_edit_crash.FCStd`, an
+OCCT regression model, at 180 s).  The D3 fixtures are in the list --
+`src/Mod/Test/TestData/SandboxProgram` lies under the root, while the build
+and install copies are skipped -- and their seven expressions (five `Shape`
+programs, the linked consumer's, the sheet's method cell) are all the same.
 
 ### 8.3 The corpus
 
@@ -7979,6 +8090,33 @@ sockets, any network for the reference image, a webview escape hatch.
   `Source` does not resolve or is no library, fails its own recompute,
   and the document skips what depends on it: the consumer keeps its old
   value and the Touched mark.  Look for the reason on the library.
+- **A routed program's local read through a dot failed in a document
+  named longer than 15 characters** (found 2026-09-14 by 7.17 D3's
+  fixtures, older than them; FIXED the same day).  `v = vector(1, 2,
+  3); v.x` in a document named `Abcdefghijklmnop` came back "Property
+  'v' not found"; in `Abcdefghijklmno` it gave 1.0, and natively both
+  did.  The bindings pack asks `referencesForeignDocument` whether an
+  identifier it could not resolve reaches another document, and that
+  read the name as `const std::string& docName =
+  id.getDocumentName().getString()` -- a reference into the `String`
+  that `getDocumentName()` returns BY VALUE, destroyed at the end of the
+  line.  Up to 15 characters the dead bytes sit in the short-string
+  buffer and read back intact; past it they are freed heap, the empty
+  name reads as a foreign one, and the host's own failure to resolve the
+  local is shipped for the guest to raise verbatim.  Every test document
+  before D3 had a short name; `ProgramFlangeSheet` and a re-saved
+  `saved-ProgramBracket` did not.  Gate:
+  `ExpressionRoutingTest.localMemberInALongNamedDocumentStaysLocal`.
+- **The guest's `sin` and `cos` are not the host's** (measured
+  2026-09-14, 7.17 D3).  `sin(240deg)` is -0.8660254037844384 natively
+  and -0.8660254037844385 routed -- one ULP -- while `cos(240deg)` and
+  the degree arithmetic agree; the guest links its own libm.  So a
+  routed shape program is byte-identical to native only where every
+  trigonometric result happens to round the same way: D1's flange at a
+  44 mm bolt circle is, the same flange at 40 or 50 mm is one ULP off in
+  two vertices.  `SandboxProgram` holds the committed fixtures to the
+  byte and a parameter change to 4 ULPs, the bar `SandboxCorpusGui`
+  already uses.
 
 ## 13. Known gaps and open questions
 

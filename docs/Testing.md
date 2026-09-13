@@ -11,8 +11,8 @@ as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
-| Python (`FreeCADCmd -t 0`) | **2706 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-13, after `FeaturePythonChain`'s 18; 2688 on 2026-09-10) |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **605 of 605 passing** (2026-09-12), 0 failures, 7 ctest entries disabled -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available" |
+| Python (`FreeCADCmd -t 0`) | **2778 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-14, after `SandboxProgram`'s fixture cases, docs/Sandbox.md 7.17 D3; 2706 on 2026-09-13) |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **625 of 625 passing** (2026-09-14; 605 on 2026-09-12), 0 failures, 8 ctest entries disabled -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available" |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **477 of 477 passing** (2026-09-06), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **478 of 478 passing** (2026-09-07), 1 disabled -- see "C++ on macOS" |
 
