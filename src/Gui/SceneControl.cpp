@@ -44,6 +44,7 @@
 #include <Base/Rotation.h>
 #include <Base/Vector3D.h>
 
+#include "Action.h"
 #include "Application.h"
 #include "Command.h"
 #include "Document.h"
@@ -811,6 +812,33 @@ QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
     return reply;
 }
 
+/// The `command` op's allowlist (the rationale is on runCommandOp below).
+/// The web client keeps a copy to draw a button disabled rather than let
+/// it be refused (web/src/control.ts); this one decides.
+bool isBrowserSafeCommand(const QString &name)
+{
+    return name.startsWith(QLatin1String("Sketcher_Create"))
+        || name == QLatin1String("Sketcher_External")
+        || name == QLatin1String("Sketcher_CarbonCopy");
+}
+
+/// The command a group's member `index` (1-based) runs, by the route the
+/// tool bar mirror names it: the member action's owning Action. Empty when
+/// `group` is no group or the member is a separator or out of range.
+QString groupMemberCommand(Command *group, int index)
+{
+    group->initAction();
+    auto actions = qobject_cast<ActionGroup *>(group->getAction());
+    if (!actions)
+        return {};
+    const QList<QAction *> members = actions->actions();
+    if (index < 1 || index > members.size())
+        return {};
+    auto owner = qobject_cast<Action *>(members.at(index - 1)->parent());
+    Command *cmd = owner ? owner->command() : nullptr;
+    return cmd ? QString::fromUtf8(cmd->getName()) : QString();
+}
+
 /// Run a sketch tool in this client's view (docs/ThinClient.md sec 8.7).
 ///
 /// A tool is what puts on-view parameters on the screen, and a browser has
@@ -832,9 +860,26 @@ QJsonObject runCommandOp(const QJsonObject &req, const std::string &boundDoc,
 {
     const QJsonValue id = req.value(QLatin1String("id"));
     const QString name = req.value(QLatin1String("name")).toString();
-    if (!name.startsWith(QLatin1String("Sketcher_Create"))
-            && name != QLatin1String("Sketcher_External")
-            && name != QLatin1String("Sketcher_CarbonCopy"))
+    // "index": a group command's member, 1-based as the widget layer's
+    // `commandIndex` counts (docs/Sandbox.md 7.18). The allowlist judges
+    // what will RUN: a member of a group -- the Sketcher's create tools
+    // sit in Sketcher_Comp* groups on its tool bars -- is admitted by its
+    // own name, and a group named without an index by the group's, which
+    // no group passes (the default member is the caller's to name).
+    const int index = req.value(QLatin1String("index")).toInt(0);
+    QByteArray cmd = name.toUtf8();
+    QString member;
+    if (index > 0) {
+        Command *group = Application::Instance->commandManager()
+                             .getCommandByName(cmd.constData());
+        if (!group)
+            return errorReply(id, "UnknownCommand", name);
+        member = groupMemberCommand(group, index);
+        if (!isBrowserSafeCommand(member))
+            return errorReply(id, "CommandRefused",
+                              member.isEmpty() ? name : member);
+    }
+    else if (!isBrowserSafeCommand(name))
         return errorReply(id, "CommandRefused", name);
 
     App::Document *doc = nullptr;
@@ -859,18 +904,18 @@ QJsonObject runCommandOp(const QJsonObject &req, const std::string &boundDoc,
     // for the editing root, and every one of those questions has a wrong
     // answer in a process with several browsers connected.
     ViewerScope scope(viewer);
-    const QByteArray cmd = name.toUtf8();
-    // "index": a group command's member, 1-based as the widget layer's
-    // `commandIndex` counts (docs/Sandbox.md 7.18) -- the desktop's own
-    // path for a click on a member: the default moves with it
-    const int index = req.value(QLatin1String("index")).toInt(0);
     try {
         if (index > 0) {
-            Command *group = Application::Instance->commandManager()
-                                 .getCommandByName(cmd.constData());
-            if (!group)
-                return errorReply(id, "UnknownCommand", name);
-            group->invoke(index - 1, Command::TriggerChildAction);
+            // A click on a member is two things on the desktop: the
+            // member's own action runs its command, and the group's
+            // ActionGroup::onActivated moves the default with
+            // invoke(index, TriggerChildAction) -- which ONLY moves it, a
+            // group's activated() runs nothing on that trigger. Both, then,
+            // or the default moves and no tool starts.
+            auto &manager = Application::Instance->commandManager();
+            manager.runCommandByName(member.toUtf8().constData());
+            if (Command *group = manager.getCommandByName(cmd.constData()))
+                group->invoke(index - 1, Command::TriggerChildAction);
         }
         else
             Application::Instance->commandManager().runCommandByName(cmd.constData());
