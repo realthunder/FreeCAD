@@ -2616,7 +2616,7 @@ and says nothing about fill or vertex throughput. And every backend but
 GL renders without reaching the screen (`BGFXView::blit` stands aside),
 so the composite is not in any of these numbers.
 
-### Two defects the harness found, one fixed
+### Two defects the harness found, both fixed
 
 **The blit's depth attachment, fixed 2026-09-09.**
 `BGFXView::blit()` wrapped bgfx's depth attachment with
@@ -2652,6 +2652,39 @@ drain whatever the preference says (`ViewProviderPartExt::updateVisual`,
 `shapeMayStillArrive`). Note the property's own `isRestorePending` is
 NOT sufficient: the plain addFile branch marks nothing, which is why a
 first fix worked at 200 shapes and did nothing at 17000.
+
+**And NOT a third, measured 2026-09-13.** The bench table taken the same
+day appeared to hold a second, unfixed case: `Hier.FCStd` (5 `App::Part`
+of 40 `Part::Feature` each plus 20 `App::Link`) drew 1721 draws, while
+`Hier2.FCStd` -- the same document reopened in the GUI and saved again,
+so the ONLY difference is that it carries a `GuiDocument.xml` -- drew 14
+draws and covered 0.0% of the viewport. `MiSTer.FCStd` read the same
+way. That suggested either a second defect keyed on the
+`GuiDocument.xml` or a harness race, since before the settle pass above
+nothing pumped the deferred drain but `waitFrameComplete()`, one frame
+at a time.
+
+It is neither. On today's tree both documents draw **1721 draws, ~50k
+px, 5.4% covered, indistinguishable from each other** -- and they do so
+with the settle pass turned OFF (`FC_BENCH_SETTLE=0`), i.e. under the
+very harness that produced the 0.0% row. So the variable was never the
+`GuiDocument.xml` and never the pumping. With the fix above reverted
+locally and `PartGui` rebuilt, **BOTH documents drop to 14 draws and 0
+px** -- Hier as much as Hier2 -- with the settle on and off alike; the
+settle reports `0 px when it stopped moving | stationary`, which is the
+harness correctly saying the drain has finished and is empty, not that
+it ran out of patience. The 2026-09-09 table therefore straddled the
+fix: its Hier row was measured after it and its Hier2 row before, and
+the pair is one defect seen twice, not two. `MiSTer.FCStd` was NOT
+re-run (22 MB, and this box takes 450-555 s to open it against 6.6 s on
+the Linux box), so its 0.0% row is unexplained by measurement rather
+than explained -- the same straddle is the obvious candidate.
+
+One claim that table was used for is dead and should not be repeated:
+`zz-flatten.py`'s header says "the container is what a restored document
+will not draw". `GroupOnly.FCStd` (200 shapes in one `App::Part`) drew
+403, `LinkOnly.FCStd` drew 399, `Hier` drew 1721. Container-versus-link
+was never isolated.
 
 ### The assembly table, all four backends (2026-09-09)
 
