@@ -1021,8 +1021,12 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
     // when they change (docs/OmniSearch.md sec 6). Hooked from here,
     // not only from installSceneControlHandler(): a served document
     // routes its requests through its own handler (SceneServeSource),
-    // and the first request is early enough.
+    // and the first request is early enough. The widget stream's ops
+    // likewise (docs/Sandbox.md 7.18): registered only by the default
+    // group's handler, every widgets.* op on a served document was an
+    // UnknownOp, and the tool bars never reached a browser.
     OmniControl::install();
+    installSceneWidgetOps();
     QJsonParseError err;
     QJsonDocument parsed = QJsonDocument::fromJson(
             QByteArray(json.data(), int(json.size())), &err);

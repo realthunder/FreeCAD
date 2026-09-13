@@ -74,6 +74,20 @@ private Q_SLOTS:
         return req;
     }
 
+    /// The widget stream's ops (docs/Sandbox.md 7.18) ride the same
+    /// handler. A served document calls it directly, and its ops used to
+    /// be registered only by the default group's install: every widgets.*
+    /// op on a served document answered UnknownOp.
+    void test_widgetOpsOnTheServedPath()  // NOLINT
+    {
+        auto reply = ask(op("widgets.unsubscribe"));
+        QVERIFY2(reply.value("ok").toBool(),
+                 QJsonDocument(reply).toJson(QJsonDocument::Compact).constData());
+        // mutating: refused by mode, which needs the op to be known first
+        reply = ask(op("widgets.subscribe", {{"toolbars", true}}), true);
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("ViewOnly"));
+    }
+
     void test_paramCatalog()  // NOLINT
     {
         auto reply = ask(op("omni.catalog", {{"list", "params"}}));

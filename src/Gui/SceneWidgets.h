@@ -34,8 +34,9 @@
  *   widgets.unsubscribe                                 -> ok
  *   widgets.icon        {"name", "size"} -> "format" ("svg" | "png"),
  *                       "data" (SVG text, or base64 PNG), "size"
- *   widgets.update      {"id", "state": {"q_...": v}}   -> ok
- *   widgets.custom      {"id", "content": {"event", "args"}} -> ok
+ *   widgets.update      {"target", "state": {"q_...": v}} -> ok
+ *   widgets.custom      {"target", "content": {"event", "args"}} -> ok
+ *                       ("target" names the object; "id" is the request's)
  * Pushes: {"op": "widgets", "method": "open" | "update" | "custom" |
  * "close", "id", ... the snapshot's keys for open, "content" otherwise}.
  *
