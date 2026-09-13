@@ -419,7 +419,6 @@ link dies on `CVT1100: duplicate resource`. Listing the `.manifest` as a
 The Linux run had none of these, which was the point: they were the first
 thing this suite had ever said about the Windows file layer.
 
-## 2. Why ctest says 453 and the binaries add up to 1305
 ## 2. Why ctest says 522 and the binaries add up to 1389
 
 Both numbers are right; they count different things.
