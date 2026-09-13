@@ -63,6 +63,17 @@ declare global {
     /// asked (also an 'fc:cyclesdevices' event) for the split chrome's
     /// per-cell control.
     fcviewerCyclesDevices?: CyclesDevice[];
+    /// Whether the scene socket is up; changes arrive as 'fc:connection'
+    /// events (main.cpp fcviewer_connection_event). A new connection has
+    /// none of the old one's subscriptions, which is what the event is for.
+    fcviewerConnected?: boolean;
+    /// State this client's camera to the server now, moved or not
+    /// (main.cpp fcviewer_state_camera): an op that runs in the client's
+    /// view is refused for a client that has never stated one.
+    fcviewerStateCamera?: () => boolean;
+    /// The object this client's edit session is on, or null (main.cpp
+    /// fcviewer_edit_event); changes arrive as 'fc:edit' events.
+    fcviewerEditing?: string | null;
   }
 }
 
@@ -447,4 +458,36 @@ export function onSheetChanged(
   fn: (msg: { doc: string; obj: string; version: number }) => void,
 ): () => void {
   return onPush('sheet.changed', fn);
+}
+
+// ---- The streamed desktop tool bars (docs/ThinClient.md 8.11 item 4) ----
+
+/// Listen for the scene socket going up or down. Returns the unsubscribe.
+export function onConnection(fn: (up: boolean) => void): () => void {
+  const listener = (e: Event) => fn(!!(e as CustomEvent).detail);
+  window.addEventListener('fc:connection', listener);
+  return () => window.removeEventListener('fc:connection', listener);
+}
+
+/// Force a camera frame up, for an op that runs in this client's view.
+export function stateCamera(): boolean {
+  return !!window.fcviewerStateCamera?.();
+}
+
+/// Run a tool in this client's view: the `command` op, which the server
+/// allowlists (docs/ThinClient.md 8.7). `index` is a group member, 1-based
+/// as the widget models count it; the group's default moves with it.
+export function runTool(name: string, index?: number): Promise<any> {
+  const fields: Record<string, unknown> = { name };
+  if (typeof index === 'number' && index > 0) fields.index = index;
+  return sendOp('command', fields, 60000);
+}
+
+/// The `command` op's allowlist as the server has it (SceneControl.cpp
+/// isBrowserSafeCommand), for drawing a button disabled rather than
+/// letting it be refused. The server's copy is the one that decides.
+export function isBrowserSafeCommand(name: string): boolean {
+  return name.startsWith('Sketcher_Create')
+    || name === 'Sketcher_External'
+    || name === 'Sketcher_CarbonCopy';
 }

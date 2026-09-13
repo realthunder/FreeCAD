@@ -442,6 +442,15 @@ EM_JS(void, fcviewer_viewonly_event, (int viewOnly), {
                                          { detail: !!viewOnly }));
 });
 
+// The scene socket went up or down (docs/ThinClient.md 8.11 item 4). A
+// subscription belongs to one connection -- the streamed tool bars are --
+// so the DOM layer re-asks on every open. Mirrored on window for a panel
+// that mounts after the event.
+EM_JS(void, fcviewer_connection_event, (int up), {
+    window.fcviewerConnected = !!up;
+    window.dispatchEvent(new CustomEvent('fc:connection', { detail: !!up }));
+});
+
 // This client's edit session, as the server last said it stands
 // (docs/ThinClient.md sec 8.9 step 4). The chrome reads it to offer
 // "finish editing" instead of "edit", and to keep a panel from asking
@@ -546,6 +555,11 @@ EM_JS(void, fcviewer_install_control, (), {
     };
     window.fcviewerResetEdit = function() {
         return !!_fcviewer_reset_edit();
+    };
+    // State the camera now, for an op the server runs in this client's
+    // view -- a tool bar's tool (docs/ThinClient.md 8.11 item 4).
+    window.fcviewerStateCamera = function() {
+        return !!_fcviewer_state_camera();
     };
     // The document's undo and redo (docs/ThinClient.md 8.11 item 2); the
     // canvas answers Ctrl+Z / Ctrl+Y itself, this is for the chrome.
@@ -3769,6 +3783,16 @@ static void setEditing(bool on, const char *obj)
     fcviewer_edit_event(on ? 1 : 0, s_editObj.c_str());
     fcviewer_status(on ? "Editing \xe2\x80\x94 Escape to finish" : nullptr,
                     0.0, on ? -1.0 : 0.0);
+}
+
+/// State the camera to the server, moved or not (docs/ThinClient.md 8.11
+/// item 4). The `command` op runs a tool in the view this connection
+/// stated, and under the default uplink policy (sec 8.10b) a page nobody
+/// has clicked in has stated none -- the same refusal fcviewer_edit
+/// forces a frame to avoid, for an op the DOM layer sends itself.
+extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_state_camera()
+{
+    return sendCameraFrame(/*force*/ true) ? 1 : 0;
 }
 
 /// Ask the server to enter an edit mode on \a obj (docs/ThinClient.md
@@ -8758,6 +8782,8 @@ static EM_BOOL onWsOpen(int, const EmscriptenWebSocketOpenEvent *, void *)
     // — ask once, so the menu has its document section from the start.
     static const char docs[] = "{\"cmd\":\"docs\"}";
     emscripten_websocket_send_utf8_text(s_ws, const_cast<char *>(docs));
+    // After the hello: an op the DOM layer sends on this must not race it.
+    fcviewer_connection_event(1);
     return EM_TRUE;
 }
 
@@ -8793,8 +8819,10 @@ static void onWsDown()
         startPolling();
         return;
     }
-    if (wasOpen)
+    if (wasOpen) {
         std::printf("fcviewer: scene stream lost\n");
+        fcviewer_connection_event(0);
+    }
     if (s_reconnectLimit >= 0 && s_reconnectAttempts >= s_reconnectLimit) {
         std::printf("fcviewer: giving up after %ld reconnect attempts\n",
                     s_reconnectAttempts);

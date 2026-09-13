@@ -12,6 +12,7 @@ import { OnViewParams } from './onview';
 import type { OnViewParam, OnViewPlace } from './onview';
 import { SplitOverlay } from './splitview';
 import { OmniBox } from './omni';
+import { ToolbarStrip } from './toolbar';
 import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
 import { sendOp } from './control';
@@ -266,13 +267,39 @@ const cyclesItems = () => {
   ];
 };
 
+// The desktop's tool bars, streamed (docs/ThinClient.md 8.11 item 4). A
+// switch in the launcher, remembered per browser; the default is on where
+// there is room and a fine pointer, off on a phone, where a row of desktop
+// icons costs the view more than it gives.
+const TOOLBARS_KEY = 'fcviewer.toolbars';
+const [narrow, setNarrow] = createSignal(window.innerWidth <= NARROW);
+window.addEventListener('resize', () => setNarrow(window.innerWidth <= NARROW));
+const [toolbarsOn, setToolbarsOn] = createSignal((() => {
+  try {
+    const v = localStorage.getItem(TOOLBARS_KEY);
+    if (v === '1' || v === '0') return v === '1';
+  }
+  catch { /* no memory: the default */ }
+  return window.innerWidth > NARROW && !window.matchMedia('(pointer: coarse)').matches;
+})());
+const toggleToolbars = () => {
+  const on = !toolbarsOn();
+  setToolbarsOn(on);
+  try { localStorage.setItem(TOOLBARS_KEY, on ? '1' : '0'); }
+  catch { /* this session only */ }
+};
+
 const host = document.createElement('div');
 host.id = 'fc-ui';
 document.body.appendChild(host);
+// How far the top-anchored panels move down to clear the strip.
+const setTopInset = (px: number) => host.style.setProperty('--fc-top', `${px}px`);
 
 render(() => (
   <>
     <SplitOverlay />
+    <ToolbarStrip enabled={toolbarsOn} viewOnly={viewOnly} narrow={narrow}
+                  onTopInset={setTopInset} />
     <Inspector selection={selection} request={request}
                onCardOpen={setCardOpen} viewOnly={viewOnly} />
     <SheetPanel open={sheetOpen} onClose={() => setSheetOpen(false)}
@@ -294,6 +321,9 @@ render(() => (
         { label: 'Spreadsheet',
           checked: () => sheetOpen(),
           onSelect: () => setSheetOpen(!sheetOpen()) },
+        { label: 'Toolbars',
+          checked: () => toolbarsOn(),
+          onSelect: toggleToolbars },
         { label: 'HUD',
           checked: () => hud() !== null,
           onSelect: () => window.fcviewerSetHud?.(hud() === null) },

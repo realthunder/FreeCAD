@@ -21,7 +21,7 @@
   pointer-events: auto;
   touch-action: pan-y;
   position: absolute;
-  top: 12px;
+  top: calc(12px + var(--fc-top, 0px));
   /* Left, like the pill it grows out of — and the right belongs to the
    * NaviCube. Drag it anywhere; this is only where it starts. */
   left: calc(12px + env(safe-area-inset-left));
@@ -252,7 +252,7 @@
   pointer-events: auto;
   touch-action: manipulation;
   position: absolute;
-  top: 12px;
+  top: calc(12px + var(--fc-top, 0px));
   left: calc(12px + env(safe-area-inset-left));
   max-width: min(420px, calc(100vw - 24px));
   display: flex;
@@ -480,7 +480,7 @@
   /* Right, clear of the property card — and below the NaviCube and its
    * rotate arrows, which own that corner down to about 160px. Drag it
    * anywhere; this is only where it starts. */
-  top: 176px;
+  top: calc(176px + var(--fc-top, 0px));
   right: calc(12px + env(safe-area-inset-right));
   max-width: calc(100vw - 24px);
   display: flex;
@@ -885,7 +885,7 @@
   pointer-events: auto;
   touch-action: pan-y;
   position: absolute;
-  top: 12px;
+  top: calc(12px + var(--fc-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: min(520px, calc(100vw - 24px));
@@ -1067,4 +1067,148 @@
   height: 1px;
   margin: 4px 8px;
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* The desktop's tool bars, streamed (docs/ThinClient.md 8.11 item 4).
+ * One strip along the top, each bar a group of its own, wrapping before
+ * the NaviCube's corner; the panels anchored to the top edge move down
+ * by its height (--fc-top, set on #fc-ui while it is shown). Narrow: one
+ * row along the bottom, above the launcher, that scrolls sideways. */
+.fc-toolbars {
+  pointer-events: none;
+  position: absolute;
+  top: 6px;
+  left: calc(6px + env(safe-area-inset-left));
+  right: 150px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px;
+}
+.fc-toolbars-narrow {
+  top: auto;
+  right: 0;
+  left: 0;
+  bottom: calc(108px + env(safe-area-inset-bottom));
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 0 6px;
+  scrollbar-width: none;
+  pointer-events: auto;
+  touch-action: pan-x;
+}
+.fc-toolbars-narrow::-webkit-scrollbar { display: none; }
+
+.fc-tb-bar {
+  pointer-events: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  background: rgba(28, 30, 34, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.fc-tb-item { display: flex; align-items: stretch; }
+
+.fc-tb-btn, .fc-tb-caret {
+  touch-action: manipulation;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #e8e8ea;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fc-toolbars-narrow .fc-tb-btn { min-width: 40px; min-height: 40px; }
+.fc-tb-caret { min-width: 12px; padding: 0 1px; color: #9aa0a6; }
+.fc-tb-btn:hover:not(:disabled), .fc-tb-caret:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.fc-tb-on {
+  background: rgba(106, 169, 255, 0.18);
+  border-color: rgba(106, 169, 255, 0.45);
+}
+/* Disabled on the desktop, or not runnable from here: both dimmed, and
+ * the tool tip says which. */
+.fc-tb-btn:disabled { opacity: 0.38; cursor: default; }
+
+.fc-tb-icon { display: block; pointer-events: none; }
+.fc-tb-blank { display: block; }
+.fc-tb-text { padding: 0 4px; white-space: nowrap; }
+
+.fc-tb-sep {
+  flex: none;
+  align-self: stretch;
+  width: 1px;
+  margin: 3px 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.fc-tb-menu {
+  pointer-events: auto;
+  position: fixed;
+  z-index: 20;
+  min-width: 180px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 30, 34, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+}
+.fc-tb-menu-item {
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #e8e8ea;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fc-tb-menu-item:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.fc-tb-menu-item:disabled { opacity: 0.4; cursor: default; }
+.fc-tb-menu-sep {
+  height: 1px;
+  margin: 3px 6px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.fc-tb-error {
+  pointer-events: none;
+  flex-basis: 100%;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(60, 24, 24, 0.92);
+  color: #ffb4ab;
+  font-size: 12px;
+}
+.fc-toolbars-narrow .fc-tb-error {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: calc(160px + env(safe-area-inset-bottom));
 }
