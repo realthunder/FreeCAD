@@ -52,10 +52,14 @@ pieces are frozen, not extended.**
     routing ON by default            not yet     preference Expression/Sandbox:Evaluate
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
                                                  confined to the Mod roots, both containers
-    the document program             sized       7.17: a Part::Feature's Shape expression is the
-                                                 program (runs today); App::ExpressionLibrary the
-                                                 carrier; function objects in the image the one gap;
-                                                 per-document guests OUT (335 MB, 2.5 s each)
+    the document program             re-sized    7.17: a Part::Feature's Shape expression is the
+                                                 program (runs today); RE-SIZED 2026-09-13 against
+                                                 the proxy chain -- a Sheet in ProxyExp is a second
+                                                 carrier and runs the flange natively at the speed
+                                                 of a host-Python Proxy (19.6 vs 21.3 ms); function
+                                                 objects in the image the one gap, now the
+                                                 precondition of BOTH carriers; per-document guests
+                                                 OUT (335 MB, 2.5 s each)
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
@@ -66,8 +70,10 @@ pieces are frozen, not extended.**
                                                  for the table at build time; P0 and P1
                                                  BUILT 2026-09-12 (the refactor, then the
                                                  App-side chain), P2 BUILT 2026-09-13 (the
-                                                 view side); P3, the sandbox, sits inside
-                                                 7.17's build
+                                                 view side); an edited method does NOT yet
+                                                 recompute its instances (ProxyChain.md 4.5),
+                                                 fixed as 7.17 D2's first item; P3, the
+                                                 sandbox, sits inside 7.17's build
     the browser console              sized       7.20: pyodide in the client's page, the wire
                                                  over the socket (JSPI), a client:<identity>
                                                  principal, catalog v2; C1-C6, one to two weeks;
@@ -4644,7 +4650,7 @@ pivy wheel rebuild); 900 in the wheel (the walker 300, the host node,
 camera, event and view shims 400, the view provider glue and the MDI
 shim 200); 600 of gate.  G4a is the larger half.
 
-### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10]**
+### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed]**
 
 Sec 11 item 2, the re-aim's one target (1.2): a program a DOCUMENT
 carries, written in the expression engine's language, generating
@@ -4728,15 +4734,111 @@ holes are a list, below.  (4) A guest is 2.5 s and 335 MB, and a
 reset does not give the memory back (about 100 MB retained per
 reset, decelerating).
 
-**(a) The example set.**  Three programs, each also the tutorial's
-text: the **bracket** (two boxes fused and cleaned, three
-parameters; runs today), the **stair** (a `for` over `range`, boxes
-translated and fused; runs today), the **flange** (a polygon face
-extruded, bolt holes cut from `makeCylinder`, edges filleted, a
+**THE RE-SIZING (2026-09-13), after the proxy chain.**  docs/
+ProxyChain.md P1 and P2 are built, and they change what this section
+sizes.  A document no longer needs a new carrier class to give an
+object CODE: a `Part::FeaturePython` with a `Spreadsheet::Sheet` in
+its `ProxyExp` runs that sheet's alias'd cell as its `execute`,
+today, with nothing from this section added.  Probed 2026-09-13
+(`FreeCADCmd`, this box) -- the flange of (a) written that way,
+against the same flange written as a host-Python `Proxy`:
+
+    the flange: six parameters, six bolt holes    native     routed
+    --------------------------------------------  ---------  -----------
+    first build (Compound, 18749 mm3, 10 faces)   22.0 ms    --
+    per parameter change (median of 8)            19.6 ms    --
+    a second instance on the same sheet           29.9 ms    --
+    the same flange as a host-Python Proxy        21.9 ms    --
+      its per parameter change                    21.3 ms    --
+    the cell's def evaluated                      works      "function
+                                                             objects are
+                                                             not supported
+                                                             in the
+                                                             sandbox image"
+    save, reopen, ProxyExp restored, a
+      parameter changed, recomputed               works      --
+    a method edited on the sheet                  the instances do NOT
+                                                  follow (below)
+
+Three things come off it.  (1) **The engine language costs what host
+Python costs** -- 19.6 ms against 21.3 ms for the same solid -- because
+both spend the time in the same OCCT calls.  The language is not the
+price; the kernel is, which is (1.2)'s "the host always recomputes"
+seen from the other side.  (2) **D1 is now the gate for BOTH forms.**
+The cell's `def` is a function object, and routed it meets the same
+refusal a library's would (fact (2) above): the one language gap of
+the image is now the chain's gap too, which promotes D1 from this
+section's first stage to the precondition of the whole "document
+program" idea -- the chain gives a document a way to carry methods
+natively, and D1 is what lets those methods run under enforcement.
+(3) Everything else the form needs -- the dependency edge, save and
+reopen, a link into another file -- is the link property's, built and
+gated already (`FeaturePythonChain`, `ViewProviderChain`).
+
+**One thing the chain does not yet deliver.**  ProxyChain.md 2.1
+says an edit to a method recomputes the instances.  It does not.  The
+DAG edge is real (`Sheet.InList` is `[Flange]`, the sheet recomputes
+first, a document observer sees `Flange` signalled after it), but
+`Flange`'s `execute` is never called -- an instrumented method, a
+counter incremented in the cell, proves it stays put.  The cause is
+the recompute optimization in `Document::_recomputeFeature`
+(`Document.cpp:4673`): a feature not in error, with
+`_enforceRecompute` false, is skipped unless one of ITS OWN
+properties carries `Property::Touched`.  The propagation loop sets
+`ObjectStatus::Enforce` and `Touch` on the in-list
+(`Document.cpp:4388`) and deliberately does NOT call
+`enforceRecompute()` -- the comment there says why -- so `Enforce`
+only makes `mustRecompute()` true, which gets the object as far as
+`_recomputeFeature` and no further.  For an ordinary dependency that
+is right: what changed reaches the dependent as a property change.
+For `ProxyExp` nothing of the instance changed; the CODE did.
+Turning `OptimizeRecompute` off makes the edit propagate, which is
+the proof.  The fix is the counter the chain already keeps
+(`App::ProxyChain::generation()`, ProxyChain.md 2.4):
+`FeaturePythonT::mustExecute()` answers 1 when the generation has
+moved since its last execute.  Coarse -- one bump recomputes every
+chained object once -- but exact where it matters and free where it
+does not, since an object with an empty `ProxyExp` never asks.  The
+finer alternative, storing each linked object's `_revision` at
+execute and comparing, costs a walk per `mustExecute` and buys
+precision only for a file with many unrelated types.  It is a build
+item of D2 below, not a re-design.
+
+**Three language facts the probe turned up**, all of them traps for
+anyone writing these programs (sec 12).  A comma straight after a
+digit is part of the NUMBER: `min(1,2)` evaluates to **1.2**, and
+`vector(1,2,3)` is a syntax error -- a space after each comma is not
+style, it is required.  That one is a lexer rule, the European
+decimal comma: `ExpressionParser.l:381`,
+`<INITIAL>{DIGIT}*","{DIGIT}+{EXPO}?`, which swallows the separator
+before the grammar ever sees an argument list (and being `<INITIAL>`
+it does not apply inside python mode).  `range` is NOT a builtin of
+the engine language; `for ... in range(...)` works ROUTED, where the
+guest is Python and `range` is Python's, and natively the same
+program must count with a `while` -- the one place the native twin of
+(e) is not a twin, so the corpus rig writes its loops the native way.
+And `pi` is a CONSTANT token, so `math.pi` is a syntax error where
+`math.sqrt(4)` is 2.0.
+
+**What it does NOT change.**  (b) stands entire -- the surface audit
+and the version stamp are what a method may CALL, and a sheet's
+method calls the same surface a library's does.  (d) stands: the
+shared guest, one principal per document.  (c) is narrowed, not
+dropped, below.
+
+**(a) The example set** [re-sized 2026-09-13].  Three programs, each
+also the tutorial's text: the **bracket** (two boxes fused and
+cleaned, three parameters; runs today), the **stair** (boxes
+translated and fused in a loop -- written with a `while`, not `for
+... in range`, which the native twin does not have; runs today), the
+**flange** (a body cut by a bore and a bolt circle, six parameters, a
 `def` per hole pattern -- needs (b) and the function objects).  Each
-is written twice: as the expression on a `Part::Feature`'s `Shape`,
-and as a library (c) with the feature's expression a one-line call.
-About 150 lines of engine code, saved as `.FCStd` fixtures for (e).
+is written TWICE, and the second form is no longer one thing: as the
+expression on a `Part::Feature`'s `Shape`, and as a METHOD on a
+linked object -- a library module (c) for the bracket and the stair,
+a **sheet in `ProxyExp`** for the flange, so the set covers both
+carriers and the gate compares them.  About 200 lines of engine code,
+saved as `.FCStd` fixtures for (e).
 
 **(b) The surface audit, and the version.**  To annotate, one XML
 line each, `<Sandbox tier="call"/>`: on `TopoShapePy` `makeFillet`,
@@ -4764,7 +4866,20 @@ a promise the host cannot keep for OCCT's own behaviour, so ours is a
 record and a warning.  The sizing declined a per-file pinned facade
 set: it would mean shipping every past surface.
 
-**(c) The carrier.**  `App::ExpressionLibrary`, a subclass of
+**(c) The carrier** -- **narrowed 2026-09-13**: no longer "the"
+carrier but the NAMED one.  A sheet in `ProxyExp` already carries
+methods (the worked example below), so what the library is still for
+is the three things a sheet is not: a MODULE namespace reached by
+`import` from any expression of the document rather than by a link
+from one object; module-level state computed once and shared (the
+`hole_d` of the example, a table of sizes) instead of re-evaluated
+per cell; and the pinned SNAPSHOT, a definition that survives its
+source file's absence.  A sheet gets the live cross-file case free
+(`ProxyExp` is a Global-scope XLink list) and the pinned one not at
+all.  Both carriers are behind D1 for routing, and both feed the
+same surface of (b).  The design below stands as written.
+
+`App::ExpressionLibrary`, a subclass of
 `App::TextDocument` (`Text` inherited: the source; the view provider
 and its `TextDocumentEditorView` inherited: the authoring editor,
 which closes sec 11 item 6 for the library half), plus `Module`
@@ -4868,6 +4983,11 @@ editor shows when the object is double-clicked):
                                                 vector(10mm + i * pitch, 10mm, 0)))
         return shape
 
+(`range` there is the GUEST's -- Python's builtin, visible because the
+guest is Python.  The engine has no `range` of its own, so the native
+twin the parity rig runs counts with a `while`; probed 2026-09-13, and
+in sec 12.)
+
 How it is stored.  A property, nothing else: in the file's
 `Document.xml`, the object's `Text` is a `PropertyString` holding
 the source verbatim, beside `Module`, `Surface` (the version stamp
@@ -4954,6 +5074,68 @@ it is found.  Live or pinned, the guest keys the module by the
 principal whose text it is, so the assembly and the source document
 share one built module when both are open on a live link.
 
+**The same thing without a library: a sheet as the type** [probed
+2026-09-13, it runs].  The flange, in one file, in two objects.
+
+`Type`, a `Spreadsheet::Sheet`.  One cell, `A1`, aliased
+`expExecute`; its CONTENT is this text behind a leading `=`, and its
+VALUE, once the sheet recomputes, is the function object `build`:
+
+    def build(obj):
+        import Part
+        body = Part.makeCylinder(obj.Dia / 2, obj.Thick)
+        body = body.cut(Part.makeCylinder(obj.Bore / 2, obj.Thick * 3,
+                                          vector(0, 0, -obj.Thick)))
+        i = 0
+        while i < obj.Bolts:
+            a = i * 360deg / obj.Bolts
+            body = body.cut(Part.makeCylinder(
+                    obj.HoleDia / 2, obj.Thick * 3,
+                    vector(obj.Pcd / 2 * cos(a),
+                           obj.Pcd / 2 * sin(a), -obj.Thick)))
+            i = i + 1
+        obj.Shape = body
+        return True
+
+    build
+
+`Flange`, a `Part::FeaturePython` with six properties the user added
+(`Dia` 60 mm, `Thick` 8 mm, `Bore` 20 mm, `Pcd` 44 mm, `HoleDia`
+6 mm, `Bolts` 6), `Proxy` unset, and `ProxyExp = [Type]`.  That is
+the whole construction: no Python class, no module, no import
+anywhere but inside the method.  On recompute the chain resolves
+`Type.expExecute` (ProxyChain.md 2.2, path 2 -- the alias is an
+ordinary attribute of the sheet), calls it with the feature, the
+method writes `obj.Shape`, returns True, and the chain stops before
+the C++ base.  A second `Part::FeaturePython` linking the same sheet
+with different numbers is a second instance of the same type; the
+sheet is the type, and `ProxyExp` is the type link (ProxyChain.md
+2.5).
+
+Four differences from the library form, none of them accidental.
+The method WRITES `obj.Shape` where the expression form RETURNS a
+shape the engine lands on the bound property -- a document write,
+classified `doc.write.self` at the assignment itself
+(`ObjectIdentifier.cpp:2041`, ALLOW for the owning document by 3.2's
+same-origin rule and the `doc.foreign` prompt across files), and
+natively it logs
+"Object property assignment may break dependency tracking"
+(`Expression.cpp:1303`) once per assignment per recompute, which is
+the honest warning that the engine cannot see through an assignment
+to what the feature now depends on.  The method form reaches the
+WHOLE hook surface -- `expOnChanged`, `expMustExecute`, and through
+`ViewProxyExp` the icon and the tree -- where the expression form
+reaches one property's value.  Its parameters are the INSTANCE's own
+properties, per-instance state the type does not own, where the
+library's are the caller's arguments.  And sharing across files
+needs nothing new: `ProxyExp` is an `App::PropertyXLinkList` of
+Global scope, so a sheet in another document is linked the way any
+external link is -- which is (c)'s `Source`/`Pinned`/`Snapshot`
+machinery arriving free for the method case, and NOT arriving for
+the pinned-snapshot case, where a consumer wants the definition to
+survive the source file's absence.
+
+
 **(d) Per-document guests: NO.**  335 MB and 2.5 s per guest against
 the 1.5 s the item expected, and a reset that keeps about 100 MB:
 ten open documents would be 3 GB.  The shared guest stays, with the
@@ -4984,19 +5166,44 @@ gate stays green with the three fixtures added to its list.  The
 bench of sec 11 item 4 runs the flange routed against native as its
 one shape program.
 
+Added by the re-sizing: a fifth fixture, the flange as a
+sheet-extended `Part::FeaturePython` (the worked example above),
+whose `Shape` is BRep-identical to the library form's and to the
+native run; two instances on one sheet, each with its own
+parameters, both correct; and the case the probe failed -- the
+method edited in the cell, then a plain `doc.recompute()`, with both
+instances rebuilt.  That last one is the gate for the `mustExecute`
+fix of D2, and it must run with `OptimizeRecompute` at its default
+ON, because with it off the case passes for the wrong reason.  The
+`FeaturePythonChain` gate of ProxyChain.md stays green beside it,
+and its sheet cases are what P3 re-runs routed.
+
 **Stages.**
 
     D1  function objects in the image (ExpressionPy into
         ImageSources.cmake, the two throws removed, the FUNC value
         path); the surface annotations; the version stamp and
         surfaceVersion().  Gate: the gtest; the flange as an
-        expression routed = native.
-    D2  App::ExpressionLibrary, the registry and lib.source /
+        expression routed = native.  Unchanged by the re-sizing, and
+        now the precondition for BOTH carriers -- a sheet's method is
+        a function object too.
+    D2  the chain's recompute: FeaturePythonT::mustExecute() answers
+        1 when App::ProxyChain::generation() has moved since the last
+        execute, so a method edited on a linked object rebuilds its
+        instances through the recompute optimization.  Gate: the
+        edited-method case of (e), OptimizeRecompute ON.
+        Then App::ExpressionLibrary, the registry and lib.source /
         lib.drop, the dependency edge, the principal hash, the
         native twin, libraries(); the XLink Source, Pinned and
         Snapshot, the cross-link edge.  Gate: SandboxProgram's
-        library half, the cross-file pair included.
-    D3  the three fixtures, SandboxProgram complete, the corpus list,
+        library half, the cross-file pair included.  The library is
+        no longer the only carrier (the sheet is one today), so its
+        own value is the module namespace, the import statement and
+        the pinned snapshot -- and P3 of ProxyChain.md rides here:
+        the chain's sheet cases re-run routed, the audit line naming
+        the linked object's document, a cross-file link's write
+        prompting doc.foreign once.
+    D3  the five fixtures, SandboxProgram complete, the corpus list,
         the bench, the tutorial text in docs.
     D4  memory: a ceiling per guest (V8's ResourceConstraints on the
         isolate, pyodide's MAXIMUM_MEMORY at wheel build) with the
@@ -5010,7 +5217,9 @@ one shape program.
         annotations (14 + 3 XML lines, 13 table entries)                  ~40
         the version: generator, both .inc, surfaceVersion(), the
           library and document records, the open-time log            150-250
-    D2  the object (App + Gui registration, icon)                    100-150
+    D2  the chain's recompute (mustExecute, the generation stored
+          at execute) and its gate case                                 40-80
+        the object (App + Gui registration, icon)                    100-150
         the guest registry and module build                          100-150
         lib.source / lib.drop, the host side                         100-150
         the dependency edge (ImportStatement, FromStatement)           60-100
@@ -5019,14 +5228,16 @@ one shape program.
         libraries(), Python                                               ~40
         the linked library: Source, Pinned, Snapshot, the cross-link
           edge, the relabel, the missing-file report                  150-250
-    D3  the three programs, twice each                                  ~150
-        SandboxProgram, the gtest, the corpus list                    350-500
+        P3: the chain's sheet cases routed, the audit line            80-150
+    D3  the three programs, twice each, plus the sheet flange           ~200
+        SandboxProgram, the gtest, the corpus list                    400-550
     D4  the ceiling and the measurement                               200-400
-    total                                                             1.7-2.5k
+    total                                                             1.9-2.8k
 
-At sec 7's pace: D1 one session, D2 one to two, D3 one, D4 one.
+At sec 7's pace: D1 one session, D2 two, D3 one, D4 one.
 
-**Limits, stated.**  The budget interrupts the GUEST; an OCCT call
+**Limits, stated** (and the re-sizing adds two, marked).  The budget
+interrupts the GUEST; an OCCT call
 the guest asked for runs on the host to completion, so a fillet that
 takes a minute takes a minute -- the cost side of "the host always
 recomputes" (1.2), and the multi-process direction's to bound.
@@ -5039,7 +5250,23 @@ and what the identifiers resolve; it does not create document
 objects (the catalog has no such row, and 1.5's prior art has no
 such need).  The shared guest means one document's slow program
 delays another's evaluation -- the same queue expressions share
-today.
+today.  **New:** a method on a linked object WRITES its result into
+the feature and the engine warns it cannot track the dependency
+(`Expression.cpp:1303`), so a method that reads an object the
+expression engine was never told about goes stale silently -- the
+expression-on-`Shape` form has no such hole, and that is the reason
+to keep both forms in the example set rather than retiring one.
+**New:** a `ProxyExp` link is a real dependency (Global scope), so a
+sheet that is a feature's type must not read that feature back in a
+cell.  Probed: the sheet's in- and out-lists both become `[F]`, the
+document logs "The graph must be a DAG" (`Document.cpp:4077`), and
+the feature is left permanently Touched -- the cell still evaluates
+and the sheet still reports Up-to-date, so the failure is quiet
+where it matters.  `ViewProxyExp` has Hidden scope and the same cell
+is fine there (no edge either way, both objects Up-to-date), which
+is what that scope was chosen for (ProxyChain.md 4.4).  A type that
+wants to see its instance reads it through the method's `obj`, which
+is what every chain element is handed.
 
 
 ### 7.18 The tool bar mirror sized: the desktop's tool bars as models, streamed **[sized 2026-09-10; BUILT 2026-09-10]**
@@ -6320,7 +6547,7 @@ Sources: Firefox's JSPI release bug (bugzilla 2044809), the V8 JSPI
 introduction (v8.dev/blog/jspi), Chromium's intent to ship, pyodide's
 JSPI post (blog.pyodide.org/posts/jspi) and changelog.
 
-### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; P3, the sandbox, sits inside 7.17's build]**
+### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver; P3, the sandbox, sits inside 7.17's build]**
 
 The user's answer to 7.17's gap against the spreadsheet-as-object
 model (2026-09-11: cells as attributes and methods, aliases as the
@@ -6726,7 +6953,13 @@ push the user's call).
    in the GUI gate (a saved document whose view provider names a module
    outside every root reopens without that Proxy and without the
    import; one under the user's `Mod` restores).
-2. **The document program** -- **SIZED 2026-09-10 as 7.17**: a
+2. **The document program** -- **SIZED 2026-09-10 as 7.17, RE-SIZED
+   2026-09-13 against the proxy chain** (a `Spreadsheet::Sheet` in a
+   feature's `ProxyExp` is a second carrier and runs the flange
+   natively today at the speed of a host-Python `Proxy`; D1 becomes
+   the precondition of BOTH carriers; P3 of docs/ProxyChain.md folds
+   into D2, whose first item is now the `mustExecute` fix of
+   ProxyChain.md 4.5): a
    statement program bound to a `Part::Feature`'s `Shape` already
    recomputes routed (the probe's bracket and stair); the one guest
    gap is function objects (`ExpressionPy` into the image); the
@@ -7119,6 +7352,34 @@ sockets, any network for the reference image, a webview escape hatch.
   and the read prompts for `host.import` -- make a fresh document for
   the reads.  And a document's `Name` after `closeDocument` raises
   natively too: keep the name before closing.
+- **A comma straight after a digit belongs to the NUMBER** (probed
+  2026-09-13): `min(1,2)` is `1.2`, not the smaller of two arguments,
+  and `vector(1,2,3)` and `[1,2,3]` are syntax errors.  A space after
+  every comma is required, not style.  It bites hardest where it is
+  silent -- a two-argument call that quietly became a one-argument one.
+  The rule is the European decimal comma, `ExpressionParser.l:381`
+  (`<INITIAL>` only, so python mode is exempt).
+- **`range` is not a builtin of the engine language.**  `for ... in
+  range(...)` works ROUTED, where the guest is Python and `range` is
+  Python's; the same program run natively (the parity twin of 7.17
+  (e), the corpus rig) must count with a `while`.  `pi` is a CONSTANT
+  token, so `math.pi` is a syntax error where `math.sqrt(4)` is 2.0.
+  And a module name is not in scope by itself: `Part.makeBox(...)`
+  raises "Property 'Part' not found" until an `import Part` in the
+  same program -- which is `host.import:Part`, PROMPT for a document,
+  so a headless gate must grant it.  A grant is keyed by the
+  document's CONTENT hash, so editing an expression voids it: re-grant
+  after every edit, or the next evaluation fails as unpermitted.
+- **A `ProxyExp` edit does not recompute the instances** (probed
+  2026-09-13, 7.17's re-sizing): the DAG edge is right and the sheet
+  recomputes first, but `Document::_recomputeFeature`'s recompute
+  optimization skips a feature none of whose OWN properties is
+  touched, and the propagation loop sets `ObjectStatus::Enforce`
+  rather than calling `enforceRecompute()` on purpose
+  (`Document.cpp:4388`, `:4673`).  A dependency whose effect is on
+  CODE rather than on a property is invisible to that test.  Until the
+  `mustExecute` fix of 7.17 D2, an edited method reaches its instances
+  only through an explicit `touch()`.
 
 ## 13. Known gaps and open questions
 

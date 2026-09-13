@@ -1,6 +1,6 @@
 # The proxy chain: document programs extend native objects
 
-**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; **P2 BUILT 2026-09-13**, sec 4.4 -- `ViewProxyExp` and the view-side chain, 17 gate cases in `src/Mod/Test/ViewProviderChain.py`; P3, the sandbox, sits inside 7.17's build]**
+**[planned 2026-09-12; RULED 2026-09-12 on the five decisions, sec 5; the view list named `ViewProxyExp`; **P0 BUILT 2026-09-12**, sec 4.1 -- the refactor and the generator; **P1 BUILT 2026-09-12**, sec 4.3 -- `ProxyExp` and the App-side chain, 17 gate cases in `src/Mod/Test/FeaturePythonChain.py`; **P2 BUILT 2026-09-13**, sec 4.4 -- `ViewProxyExp` and the view-side chain, 17 gate cases in `src/Mod/Test/ViewProviderChain.py`; **sec 4.5, 2026-09-13** -- what P1 does not deliver: an edited method does not recompute its instances, fix sized into 7.17 D2; P3, the sandbox, sits inside 7.17's build]**
 
 The user's design, stated 2026-09-12 after the document program (docs/
 Sandbox.md 7.17) was found lacking against the spreadsheet-as-object
@@ -803,6 +803,60 @@ resolver, the cache, the counter, three bump sites) plus ~200 of test;
 P2 ~80 (the view list, the view provider's pull, the deferred attach)
 and 16 in PropertyLinks.cpp, plus ~400 of test.
 
+### 4.5 What P1 does not deliver: the edited method (found 2026-09-13)
+
+Sec 2.1 problem 1 says of `ProxyExp`'s Global scope: "the type is recomputed
+before its instances and an edit to a method recomputes them."  Half of that
+is true.  Found while probing the sheet-extended flange for docs/Sandbox.md
+7.17's re-sizing, on the build of P2.
+
+A `Part::FeaturePython` with a `Spreadsheet::Sheet` in `ProxyExp`, the
+sheet's alias'd `expExecute` cell holding a `def` that writes `obj.Shape`:
+the shape builds, two instances share one sheet, save and reopen work, and a
+parameter change rebuilds -- all as designed.  Then the METHOD is edited in
+the cell and the document recomputed, and the instances do not move.  Not
+stale-by-one, not a cache: an instrumented method (a counter incremented in
+the cell) shows the instance's `execute` is never entered.
+
+The edge is not the problem.  `Sheet.InList` is `[Flange]`, a document
+observer reports `Sheet` recomputed and then `Flange`, and the sheet's cell
+does hold the new function object by then -- calling it by hand from Python
+builds the new shape.  The problem is what happens inside
+`Document::_recomputeFeature` (`Document.cpp:4673`): with
+`DocumentParams::getOptimizeRecompute()` on -- the default -- a feature that
+is not in error and whose `_enforceRecompute` is false is skipped unless one
+of ITS OWN properties carries `Property::Touched`.  The propagation loop that
+runs after a dependency rebuilds sets `ObjectStatus::Enforce` and `Touch` on
+the in-list and deliberately does NOT call `enforceRecompute()`
+(`Document.cpp:4388`, and the comment there says why: to keep the
+optimization).  `Enforce` only makes `mustRecompute()` true, which carries the
+object as far as `_recomputeFeature` and no further.  Turning
+`OptimizeRecompute` off makes the edit propagate, which is the proof.
+
+For every ordinary dependency the test is right: what changed reaches the
+dependent as a property change -- a link property, an expression-bound value.
+`ProxyExp` is the first dependency whose effect is on CODE, and no property of
+the instance moves when the code does.  `touch()` works because it sets
+`_enforceRecompute` directly; nothing in the recompute path does.
+
+The fix is the counter the chain already keeps.  `App::ProxyChain::
+generation()` (2.4) is bumped from the three places a definition can change,
+and the cache stores it; `FeaturePythonT::mustExecute()` stores the generation
+at each execute and answers 1 when it has moved.  Coarse -- one bump elsewhere
+in the process recomputes every chained object once -- but exact where it
+matters, and free for the objects that do not use the feature, which is nearly
+all of them: an empty `ProxyExp` never reaches the test.  The finer
+alternative, keeping each linked object's `_revision` at execute and comparing
+the list, costs a walk per `mustExecute` call and buys precision only in a file
+carrying many unrelated types.
+
+Sized as a build item of 7.17 D2 (docs/Sandbox.md), with the gate case named
+there: the method edited in the cell, a plain `doc.recompute()`, both
+instances rebuilt, run with `OptimizeRecompute` at its default ON -- with it
+off the case passes for the wrong reason.  `FeaturePythonChain`'s existing
+sheet case does not catch this because it calls the hook directly after the
+recompute rather than relying on the recompute to call it.
+
 ## 5. The rulings (2026-09-12)
 
 1. `ProxyExp` on both sides; `exp` + Hook for App hooks, `expView` +
@@ -827,6 +881,15 @@ is no longer the only way a document supplies methods: a sheet with
 alias'd callables is one today, natively, and the chain makes it an
 object's extension.  The typed-sheet discussion of 2026-09-11 (a
 `Type` link and prototype delegation) is subsumed: `ProxyExp` is that
-link, and delegation is the chain.  7.17 is re-sized after P1, with
-the flange example written as a sheet-extended `Part::Feature` beside
-the library form.
+link, and delegation is the chain.
+
+**DONE 2026-09-13**: 7.17 is re-sized, with the flange written as a
+sheet-extended `Part::FeaturePython` beside the library form and
+probed against it (19.6 ms per parameter change, against 21.3 ms for
+the same flange as a host-Python `Proxy` -- the engine language costs
+what host Python costs, because both wait on the same OCCT calls).
+The re-sizing promotes D1 from that section's first stage to the
+precondition of both carriers (a cell's `def` is a function object
+and meets the image's refusal exactly as a library's would), folds
+P3 into D2, and adds the `mustExecute` fix of sec 4.5 as D2's first
+item.
