@@ -398,7 +398,8 @@ TEST_F(ExpressionImageMemoryTest, arrayBufferPastTheCeilingIsRefused)
                           << after.message;
 }
 
-// A wasm memory made from JavaScript asks for its initial size.
+// A wasm memory made from JavaScript after boot is refused, whatever its
+// size (the compile gate, below).
 TEST_F(ExpressionImageMemoryTest, memoryConstructedPastTheCeilingIsRefused)
 {
     auto res = ImageHost::instance().eval(
@@ -407,6 +408,75 @@ TEST_F(ExpressionImageMemoryTest, memoryConstructedPastTheCeilingIsRefused)
         {});
     ASSERT_FALSE(res.ok) << "a 500 MB memory under a 256 MB ceiling";
     EXPECT_NE(res.message.find("memory budget"), std::string::npos) << res.message;
+}
+
+// ---- the compile gate (host_shim.js): after boot no module may define
+// ---- a memory of its own, and no memory may be made from JavaScript ----
+
+// A memory section with an entry, behind a custom section the walk has
+// to skip: refused, counted, and the guest keeps going.
+TEST_F(ExpressionImageMemoryTest, moduleDefiningAMemoryIsRefused)
+{
+    mark();
+    auto res = ImageHost::instance().eval(
+        R"py(__import__('js').WebAssembly.Module.new(__import__('pyodide').ffi.to_js()py"
+        R"py(b'\x00asm\x01\x00\x00\x00\x00\x03\x01ab\x05\x03\x01\x00\x01')))py",
+        {});
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "JsException") << res.message;
+    EXPECT_NE(res.message.find("defines its own memory"), std::string::npos) << res.message;
+    EXPECT_GT(ImageHost::instance().memoryInfo().refusals, 0u);
+    auto after = readMark();
+    ASSERT_TRUE(after.ok) << "a refused module dropped the instance: " << after.excType << ": "
+                          << after.message;
+}
+
+// The shape pyodide's own modules have: a memory IMPORTED, and an empty
+// memory section is no memory.  Compiles, and the statics still answer.
+TEST_F(ExpressionImageMemoryTest, moduleImportingItsMemoryCompiles)
+{
+    auto res = ImageHost::instance().eval(
+        R"py(__import__('js').WebAssembly.Module.imports(__import__('js').WebAssembly.Module.new()py"
+        R"py(__import__('pyodide').ffi.to_js()py"
+        R"py(b'\x00asm\x01\x00\x00\x00\x02\x08\x01\x01e\x01m\x02\x00\x01\x05\x01\x00'))).length)py",
+        {});
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    EXPECT_EQ(value(res).get<int64_t>(), 1);
+}
+
+TEST_F(ExpressionImageMemoryTest, memoryAfterBootIsRefused)
+{
+    auto res = ImageHost::instance().eval(
+        "__import__('js').WebAssembly.Memory.new(__import__('pyodide').ffi.to_js("
+        "{'initial': 1}, dict_converter=__import__('js').Object.fromEntries))",
+        {});
+    ASSERT_FALSE(res.ok) << "a one-page memory made after boot";
+    EXPECT_NE(res.message.find("no new memory after boot"), std::string::npos) << res.message;
+}
+
+// The guest reaches the shim's realm: replacing Reflect.construct must not
+// hand it the native constructor, and a typed array lying about its length
+// must not hide a memory section from the walk.
+TEST_F(ExpressionImageMemoryTest, tamperedIntrinsicsDoNotOpenTheGate)
+{
+    auto res = ImageHost::instance().eval(
+        R"py(__import__('js').eval("(function () {)py"
+        R"py( var P = Object.getPrototypeOf(Uint8Array.prototype);)py"
+        R"py( var saved = Object.getOwnPropertyDescriptor(P, 'length');)py"
+        R"py( var construct = Reflect.construct; var leaked = null; var out = 'compiled';)py"
+        R"py( Reflect.construct = function (t, a, n) { leaked = t; return construct(t, a, n); };)py"
+        R"py( try { new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); })py"
+        R"py( finally { Reflect.construct = construct; })py"
+        R"py( var bytes = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 3, 1, 0, 1]);)py"
+        R"py( Object.defineProperty(P, 'length', { get: function () { return 8; }, configurable: true });)py"
+        R"py( try { new WebAssembly.Module(bytes); } catch (e) { out = String(e); })py"
+        R"py( finally { Object.defineProperty(P, 'length', saved); })py"
+        R"py( return (leaked ? 'LEAKED ' : 'sealed ') + out; })()"))py",
+        {});
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    const std::string out = value(res).get<std::string>();
+    EXPECT_EQ(out.rfind("sealed ", 0), 0u) << out;
+    EXPECT_NE(out.find("defines its own memory"), std::string::npos) << out;
 }
 
 // The engine's own heap cannot refuse; its limit stops the guest.

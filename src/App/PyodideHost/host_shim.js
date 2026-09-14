@@ -13,6 +13,7 @@
 //   now() -> double ms                monotonic
 //   print(kind, text)                 kind is "out" or "err"
 //   memoryGrow(bytes, pages) -> bool  may a wasm memory grow
+//   memoryRefused()                   a new memory refused after boot
 // This file turns those into the shape pyodide reads, and removes
 // `__fcx_host` from the global when it is done.
 (function (host) {
@@ -292,39 +293,223 @@
   // in Python, the refusal travelling the ordinary path.  The host holds
   // the ceiling, counts the refusal and remembers the size it allowed,
   // so a growth that did not come through here shows after the trip.
-  // A memory made from JavaScript asks for its initial size the same way.
-  // The originals are reachable from this closure only.  A module that
-  // DEFINES its memory and grows it from wasm never passes here: that is
-  // the post-trip check's.
-  var refused = "refused by the sandbox memory budget";
-  var NativeMemory = WebAssembly.Memory;
-  var grow = NativeMemory.prototype.grow;
-  Object.defineProperty(NativeMemory.prototype, "grow", {
-    value: function (delta) {
-      if (!host.memoryGrow(this.buffer.byteLength, Number(delta)))
+  //
+  // Once the guest has booted (__fcx_sealWasm, called by the glue) there
+  // is no second memory: a memory made from JavaScript is refused, and so
+  // is a module whose own memory section has entries.  The only memory a
+  // module may have is an imported one -- pyodide's -- which is the shape
+  // of every module pyodide builds after boot (side modules, function
+  // wrappers, its trampoline).  Still open: a module importing pyodide's
+  // memory and growing it from wasm, found only after the trip.
+  //
+  // Every intrinsic used here is taken NOW, before any guest code runs.
+  // The guest reaches this realm through pyodide's `js` module and can
+  // replace Reflect.construct, Function.prototype.call or a prototype's
+  // getter; a check calling those at call time would hand a native to the
+  // guest's replacement, or read the guest's lie about a size.  An
+  // argument is converted once and the converted value is what the native
+  // receives.  The standalone probe (PyodideProbe.cc) installs no
+  // memoryGrow and gets no ceiling.
+  if (typeof host.memoryGrow === "function") {
+    var apply = Reflect.apply;
+    var construct = Reflect.construct;
+    var getter = function (proto, name) {
+      return Object.getOwnPropertyDescriptor(proto, name).get;
+    };
+    var fix = function (target, name, value) {
+      Object.defineProperty(target, name,
+                            { value: value, writable: false, enumerable: false, configurable: false });
+    };
+    var U8 = Uint8Array;
+    var TypedArrayProto = Object.getPrototypeOf(U8.prototype);
+    var taBuffer = getter(TypedArrayProto, "buffer");
+    var taOffset = getter(TypedArrayProto, "byteOffset");
+    var taBytes = getter(TypedArrayProto, "byteLength");
+    var taLength = getter(TypedArrayProto, "length");
+    var dvBuffer = getter(DataView.prototype, "buffer");
+    var dvOffset = getter(DataView.prototype, "byteOffset");
+    var dvBytes = getter(DataView.prototype, "byteLength");
+    var abBytes = getter(ArrayBuffer.prototype, "byteLength");
+    var sabBytes = typeof SharedArrayBuffer === "function"
+      ? getter(SharedArrayBuffer.prototype, "byteLength") : null;
+    var NativePromise = Promise;
+    var promiseReject = Promise.reject;
+    var W = WebAssembly;
+    var NativeMemory = W.Memory;
+    var NativeModule = W.Module;
+    var nativeCompile = W.compile;
+    var nativeInstantiate = W.instantiate;
+    var memoryBuffer = getter(NativeMemory.prototype, "buffer");
+    var nativeGrow = NativeMemory.prototype.grow;
+    var refused = "refused by the sandbox memory budget";
+    var sealed = false;
+
+    var rejected = function (error) {
+      return apply(promiseReject, NativePromise, [error]);
+    };
+
+    // A buffer's length from its internal slot, plain or shared; -1 for
+    // anything that is not a buffer.
+    var bufferBytes = function (buffer) {
+      try {
+        return apply(abBytes, buffer, []);
+      } catch (e) {}
+      if (sabBytes) {
+        try {
+          return apply(sabBytes, buffer, []);
+        } catch (e) {}
+      }
+      return -1;
+    };
+
+    fix(NativeMemory.prototype, "grow", function (delta) {
+      var pages = +delta;
+      if (!host.memoryGrow(bufferBytes(apply(memoryBuffer, this, [])), pages))
         throw new RangeError("WebAssembly.Memory.grow: " + refused);
-      return grow.call(this, delta);
-    },
-    writable: false,
-    enumerable: false,
-    configurable: false,
-  });
-  // Named Memory for its .name; inside, that name is this function, so
-  // the native constructor is NativeMemory.
-  var CheckedMemory = function Memory(descriptor) {
-    if (!new.target) throw new TypeError("WebAssembly.Memory must be invoked with 'new'");
-    var initial = descriptor ? Number(descriptor.initial) : NaN;
-    if (!host.memoryGrow(0, initial))
-      throw new RangeError("WebAssembly.Memory: " + refused);
-    return Reflect.construct(NativeMemory, [descriptor], new.target);
-  };
-  CheckedMemory.prototype = NativeMemory.prototype;
-  Object.defineProperty(NativeMemory.prototype, "constructor", {
-    value: CheckedMemory, writable: false, enumerable: false, configurable: false,
-  });
-  Object.defineProperty(WebAssembly, "Memory", {
-    value: CheckedMemory, writable: false, enumerable: false, configurable: false,
-  });
+      return apply(nativeGrow, this, [pages]);
+    });
+
+    // Named Memory for its .name; inside, that name is this function, so
+    // the native constructor is NativeMemory.  Before the seal only the
+    // loader runs, and a memory asks for its initial size.
+    var CheckedMemory = function Memory(descriptor) {
+      if (!new.target) throw new TypeError("WebAssembly.Memory must be invoked with 'new'");
+      if (sealed) {
+        host.memoryRefused();
+        throw new RangeError("WebAssembly.Memory: " + refused + " (no new memory after boot)");
+      }
+      if (!host.memoryGrow(0, descriptor ? +descriptor.initial : NaN))
+        throw new RangeError("WebAssembly.Memory: " + refused);
+      return construct(NativeMemory, [descriptor], new.target);
+    };
+    CheckedMemory.prototype = NativeMemory.prototype;
+    fix(NativeMemory.prototype, "constructor", CheckedMemory);
+    fix(W, "Memory", CheckedMemory);
+
+    // The bytes of a BufferSource, copied through the internal slots, so
+    // what is checked is what is compiled; null when `source` holds no
+    // bytes (a compiled Module, or what the engine rejects itself).
+    var copyBytes = function (source) {
+      var buffer, offset, length;
+      try {
+        buffer = apply(taBuffer, source, []);
+        offset = apply(taOffset, source, []);
+        length = apply(taBytes, source, []);
+      } catch (e) {
+        try {
+          buffer = apply(dvBuffer, source, []);
+          offset = apply(dvOffset, source, []);
+          length = apply(dvBytes, source, []);
+        } catch (e2) {
+          buffer = source;
+          offset = 0;
+          length = bufferBytes(source);
+          if (length < 0) return null;
+        }
+      }
+      return new U8(new U8(buffer, offset, length));
+    };
+
+    // Why a module may not be compiled after boot, or null.  The walk is
+    // the binary format's own framing -- a section id byte, a u32 LEB
+    // size -- so a section the engine accepts is a section seen here.
+    // Nothing is called on the bytes but indexing, which cannot be
+    // intercepted.  What is not a module is the engine's to reject.
+    var refusal = function (bytes) {
+      var n = apply(taLength, bytes, []);
+      var at = 8;
+      var u32 = function () {
+        var value = 0, scale = 1, byte;
+        do {
+          if (at >= n || scale > 268435456) throw 0;
+          byte = bytes[at++];
+          value += (byte & 127) * scale;
+          scale *= 128;
+        } while (byte & 128);
+        return value;
+      };
+      if (n < 8 || bytes[0] !== 0 || bytes[1] !== 97 || bytes[2] !== 115 || bytes[3] !== 109)
+        return null;
+      try {
+        while (at < n) {
+          var id = bytes[at++];
+          var end = u32();
+          end += at;
+          if (end > n) return null;
+          if (id === 5 && u32() > 0) return "a module that defines its own memory";
+          at = end;
+        }
+      } catch (e) {
+        return "a module that does not parse";
+      }
+      return null;
+    };
+
+    var checked = function (what, source) {
+      if (!sealed) return source;
+      var bytes = copyBytes(source);
+      if (bytes === null) return source;
+      var why = refusal(bytes);
+      if (why !== null) {
+        host.memoryRefused();
+        throw new RangeError(what + ": " + refused + " (" + why + ")");
+      }
+      return bytes;
+    };
+
+    var CheckedModule = function Module(bytes, options) {
+      if (!new.target) throw new TypeError("WebAssembly.Module must be invoked with 'new'");
+      var source = checked("WebAssembly.Module", bytes);
+      return construct(NativeModule, arguments.length > 1 ? [source, options] : [source], new.target);
+    };
+    CheckedModule.prototype = NativeModule.prototype;
+    fix(NativeModule.prototype, "constructor", CheckedModule);
+    fix(CheckedModule, "customSections", NativeModule.customSections);
+    fix(CheckedModule, "exports", NativeModule.exports);
+    fix(CheckedModule, "imports", NativeModule.imports);
+    fix(W, "Module", CheckedModule);
+
+    fix(W, "compile", function compile(bytes, options) {
+      var source;
+      try {
+        source = checked("WebAssembly.compile", bytes);
+      } catch (e) {
+        return rejected(e);
+      }
+      return apply(nativeCompile, W, arguments.length > 1 ? [source, options] : [source]);
+    });
+
+    // A compiled Module passed its check when it was compiled; copyBytes
+    // answers null for it by its slots, whatever its prototype claims.
+    fix(W, "instantiate", function instantiate(source, imports, options) {
+      var checkedSource;
+      try {
+        checkedSource = checked("WebAssembly.instantiate", source);
+      } catch (e) {
+        return rejected(e);
+      }
+      var args = arguments.length > 2 ? [checkedSource, imports, options]
+        : arguments.length > 1 ? [checkedSource, imports] : [checkedSource];
+      return apply(nativeInstantiate, W, args);
+    });
+
+    // A stream's bytes cannot be looked at before the engine takes them.
+    var streaming = function (name) {
+      var original = W[name];
+      if (typeof original !== "function") return;
+      fix(W, name, function () {
+        if (sealed)
+          return rejected(new TypeError("WebAssembly." + name + ": not available after boot"));
+        return apply(original, W, arguments);
+      });
+    };
+    streaming("compileStreaming");
+    streaming("instantiateStreaming");
+
+    globalThis.__fcx_sealWasm = function () {
+      sealed = true;
+    };
+  }
 
   // ------------------------------------------------------------ housekeeping
   // Not a Web platform, but pyodide reads it in a few places.

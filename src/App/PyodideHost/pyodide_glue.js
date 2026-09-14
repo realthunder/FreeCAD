@@ -103,6 +103,13 @@
       call: exports.fcx_call,
       module: py._module,
     };
+    // From here on no module may define a memory of its own and no memory
+    // may be made from JavaScript (host_shim.js, the memory ceiling):
+    // pyodide's is the guest's only memory.  Fail closed without it.
+    if (typeof globalThis.__fcx_sealWasm !== "function")
+      throw new Error("the shim left no wasm seal");
+    globalThis.__fcx_sealWasm();
+    delete globalThis.__fcx_sealWasm;
     return "booted";
   };
 

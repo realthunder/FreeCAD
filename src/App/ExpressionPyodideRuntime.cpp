@@ -417,6 +417,7 @@ public:
         put(h, "now", hostNow);
         put(h, "print", hostPrint);
         put(h, "memoryGrow", hostMemoryGrow);
+        put(h, "memoryRefused", hostMemoryRefused);
         ctx->Global()->Set(ctx, str(isolate, "__fcx_host"), h).Check();
         if (!run(std::string(reinterpret_cast<const char*>(kPyodideShim), kPyodideShim_len),
                  "host_shim.js")) {
@@ -961,6 +962,16 @@ private:
         if (wanted > static_cast<double>(rt->linearAllowed))
             rt->linearAllowed = static_cast<size_t>(wanted);
         info.GetReturnValue().Set(true);
+    }
+
+    /// The shim's refusal of a new wasm memory after boot -- a module
+    /// defining one, or one made from JavaScript: counted with the
+    /// ceiling's refusals.
+    static void hostMemoryRefused(const v8::FunctionCallbackInfo<v8::Value>& info)
+    {
+        PyodideRuntime* rt = self(info);
+        ++rt->refusals;
+        rt->refusedInTrip = true;
     }
 
     /// V8 at the engine heap's limit (7.17 D4): stop the guest from
