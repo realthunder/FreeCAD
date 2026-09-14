@@ -283,10 +283,31 @@ void ExpressionSyntaxHighlighter::highlightBlock(const QString& text)
                 }
             }
             // The unit written against the number: 5mm, 360deg.
+            int digitsEnd = j;
             while (j < len && text.at(j).isLetter()) {
                 ++j;
             }
             setFormat(i, j - i, colorByType(SyntaxHighlighter::Number));
+            // Or after a blank, which is how the expression printer writes
+            // it: 40 mm. Following a number, a name that is not a keyword
+            // can only be its unit ('2 if a else 3' keeps its keywords).
+            if (j == digitsEnd) {
+                int k = j;
+                while (k < len && (text.at(k) == QLatin1Char(' ') || text.at(k) == QLatin1Char('\t'))) {
+                    ++k;
+                }
+                if (k > j && k < len && text.at(k).isLetter()) {
+                    int end = k;
+                    while (end < len
+                           && (text.at(end).isLetterOrNumber() || text.at(end) == QLatin1Char('_'))) {
+                        ++end;
+                    }
+                    if (!d->keywords.contains(text.mid(k, end - k))) {
+                        setFormat(k, end - k, colorByType(SyntaxHighlighter::Number));
+                        j = end;
+                    }
+                }
+            }
             i = j;
             continue;
         }

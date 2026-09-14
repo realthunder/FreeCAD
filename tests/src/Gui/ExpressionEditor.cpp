@@ -140,6 +140,22 @@ TEST_F(ExpressionEditorTest, numbersCarryTheirUnit)
     EXPECT_EQ(h.at(0, 19), kNumber);
 }
 
+TEST_F(ExpressionEditorTest, aUnitAfterABlankIsColoredButNotAKeyword)
+{
+    // As the printer writes quantities: a blank between number and unit.
+    Highlighted h("40 mm * 2 if a else 3 in b");
+    EXPECT_EQ(h.at(0, 0), kNumber);
+    EXPECT_EQ(h.at(0, 3), kNumber);
+    EXPECT_EQ(h.at(0, 4), kNumber);
+    EXPECT_EQ(h.at(0, 8), kNumber);
+    EXPECT_EQ(h.at(0, 10), kKeyword);
+    EXPECT_EQ(h.at(0, 13), kText);
+    EXPECT_EQ(h.at(0, 15), kKeyword);
+    EXPECT_EQ(h.at(0, 20), kNumber);
+    EXPECT_EQ(h.at(0, 22), kKeyword);
+    EXPECT_EQ(h.at(0, 25), kText);
+}
+
 TEST_F(ExpressionEditorTest, angleBracketsAreAString)
 {
     Highlighted h("<<My Label>>.Length");

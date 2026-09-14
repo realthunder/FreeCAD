@@ -96,7 +96,9 @@ rather than Python, and uses the Editor preference colors:
 - `#@pybegin` ... `#@pyend` switches to Python rules, where every `#` is a
   comment.
 - `<<...>>` is a string; triple-quoted strings span lines.
-- A number carries the unit written against it: `5mm`, `360deg`.
+- A number carries its unit, written against it (`5mm`, `360deg`) or after a
+  blank as the expression printer writes it (`40 mm`); a keyword after a number
+  stays a keyword (`2 if a else 3`).
 - Keywords are the lexer's (no `class`, `with`, `yield`); a builtin function
   called by name (`cos(`) takes the class-name color, a `def` name the
   define-name color.
