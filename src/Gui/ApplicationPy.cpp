@@ -222,11 +222,13 @@ PyMethodDef Application::Methods[] = {
    "Whether geometry is still being built into the views.\n"
    "\n"
    "A restored document does NOT have its scene when openDocument()\n"
-   "returns: every visual whose shape had not arrived yet is parked\n"
-   "on the deferred drain, which runs off a timer for as long as it\n"
-   "takes. That drain is the only phase in which geometry reaches a\n"
-   "renderer at all, so a script that waits on the restore alone is\n"
-   "told the load is over exactly when the drawing starts.\n"
+   "returns. With a progressive load the view providers themselves\n"
+   "are parked and built in slices; whatever is left, a visual whose\n"
+   "shape had not arrived yet is parked on the deferred visual drain,\n"
+   "which runs off a timer for as long as it takes. Both are counted\n"
+   "here, because either one running means the scene is still filling\n"
+   "-- and a script that waits on the restore alone is told the load\n"
+   "is over exactly when the drawing starts.\n"
    "\n"
    "Watching pixels instead does not separate the two either: a\n"
    "covered-pixel count sitting at zero reads the same while the\n"
@@ -1089,8 +1091,25 @@ PyObject* Application::sIsBuildingVisuals(PyObject * /*self*/, PyObject *args)
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
 
-    return Py::new_reference_to(Py::Boolean(
-        Instance && Instance->isBuildingVisuals()));
+    bool building = Instance && Instance->isBuildingVisuals();
+    // The view-provider drain counts as building too, and it has to: a
+    // progressive load parks the view providers THEMSELVES, so while
+    // that drain runs there is nothing on the visual queue to raise the
+    // flag above -- the geometry has not begun to arrive rather than
+    // finished arriving. A script that watched only the flag was told
+    // "not building" over an empty viewport five seconds into a 17800-
+    // object load, which is the exact reading this call exists to
+    // prevent.
+    if (!building && Instance) {
+        for (auto doc : App::GetApplication().getDocuments()) {
+            auto guiDoc = Instance->getDocument(doc);
+            if (guiDoc && guiDoc->isRestoringViewProviders()) {
+                building = true;
+                break;
+            }
+        }
+    }
+    return Py::new_reference_to(Py::Boolean(building));
 }
 
 PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)

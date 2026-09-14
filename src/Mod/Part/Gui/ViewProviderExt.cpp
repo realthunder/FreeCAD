@@ -181,15 +181,12 @@ public:
         // building on demand here would hand back the very stall the queue
         // exists to break up. It contributes nothing until its slice comes.
         //
-        // Same for one whose shape has not arrived (VisualShapeMissing):
-        // it stays touched so the restore builds it once the content is
-        // there, and a touched visual is exactly what this hook builds.
-        // A restore traverses the scene many times, so without the test
-        // every traversal re-enters the build for every object and the
-        // open livelocks -- MEASURED on the 17058-solid MiSTer assembly:
-        // 25 minutes of pegged CPU and still loading, against 8.
-        if (vp && vp->VisualTouched && !vp->VisualDeferred
-                && !vp->VisualShapeMissing) {
+        // A visual whose shape has not arrived needs no test here: it
+        // returns from the top of updateVisual() without touching a
+        // node, which is what makes calling it from inside a bounding-
+        // box traversal free. It cost 25 minutes of pegged CPU on the
+        // 17058-solid MiSTer assembly, against 8, when it did not.
+        if (vp && vp->VisualTouched && !vp->VisualDeferred) {
             // Named under the level debug flag: this on-demand build
             // runs inside whatever traversal asked for the bbox, and
             // the 1.8s giant rebuilds attributed to "the drain" turned
@@ -2422,6 +2419,26 @@ std::vector<std::string> ViewProviderPartExt::getDisplayModes() const
     StrList.emplace_back("Points");
 
     return StrList;
+}
+
+/// Whether this visual has nothing to build because the shape has not
+/// arrived yet -- as against being empty, which is a shape.
+///
+/// Asked at the TOP of updateVisual(), before anything is touched. The
+/// property, not getShape(): getValue() serves whatever the restore
+/// parked and hands back a reference, which is the same fault-in a
+/// build would do without the TopoShape copy and the cache init that
+/// getShape() adds around it.
+bool ViewProviderPartExt::shapeStillMissing() const
+{
+    if (!shapeMayStillArrive())
+        return false;
+    if (!isAttachedToDocument() || !getObject())
+        return false;
+    if (auto prop = Base::freecad_dynamic_cast<Part::PropertyPartShape>(
+                getObject()->getPropertyByName(getShapePropertyName())))
+        return prop->getValue().IsNull();
+    return Part::Feature::getTopoShape(getObject()).getShape().IsNull();
 }
 
 Part::TopoShape ViewProviderPartExt::getShape() const
@@ -5756,6 +5773,27 @@ void ViewProviderPartExt::updateVisual()
     if (deferVisualForLoad())
         return;
 
+    // Nothing to build, and nothing to clear either: the shape has not
+    // ARRIVED. Stay touched -- finishRestoring() is the ask that lands
+    // it, and reading the property is itself the fault-in -- and get out
+    // before the prologue.
+    //
+    // BEFORE it, because "there is nothing to do" was costing seven Coin
+    // action traversals (the VBO, selection and highlight actions over
+    // the three drawables), a removeAllChildren over the instanced roots,
+    // a shape re-registration and a fill-sequence bump -- all of which
+    // touch nodes, and all of which ran from SoFCCoordinate3::
+    // getBoundingBox's on-demand build, i.e. from inside a bounding-box
+    // traversal whose caches those touches then invalidate. That is a
+    // restore re-entering the build for every object on every traversal:
+    // MEASURED at 25 minutes of pegged CPU on a 17058-solid document
+    // against 8. It also stops a non-build being counted as one, which
+    // is most of what "visual build 607" over 200 features was.
+    if (shapeStillMissing()) {
+        VisualTouched = true;
+        return;
+    }
+
     // A giant rebuild called from a pump item is deferred into its OWN
     // pump item (Render_VisualFillOnPool): the landing that called this
     // -- a climb's transfer, a demote's rung drop -- stays cheap, and
@@ -5880,8 +5918,6 @@ void ViewProviderPartExt::updateVisual()
     // mirrors arrays this rebuild is about to replace.
     ++meshLadder.visualFillSeq;
     pendingVCache.reset();
-    if (!cachedShape.isNull())
-        VisualShapeMissing = false;
     if (cachedShape.isNull()) {
         // A shape that has not ARRIVED is not a shape that is empty, and
         // the difference is the whole of the picture. A restore registers
@@ -5912,13 +5948,8 @@ void ViewProviderPartExt::updateVisual()
         // built none of it, and the document came up empty.
         if (shapeMayStillArrive()) {
             VisualTouched = true;
-            // ...and the on-demand builders leave it alone until it is:
-            // a touched visual is what the bounding-box hook builds, and
-            // a restore traverses the scene over and over.
-            VisualShapeMissing = true;
             return;
         }
-        VisualShapeMissing = false;
         coords  ->point      .setNum(0);
         pcoords ->point      .setNum(0);
         norm    ->vector     .setNum(0);

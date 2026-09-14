@@ -561,14 +561,6 @@ protected:
     /// than once, and the flag keeps it queued only the first time.
     bool VisualDeferred = false;
 
-    /// The shape had not arrived when this visual was last asked for, so
-    /// nothing was built and VisualTouched was left standing for the ask
-    /// that lands the content -- finishRestoring(), or the serve that
-    /// announces it. On-demand builders skip it meanwhile: a touched
-    /// visual is what the bounding-box hook builds, and a restore
-    /// traverses the scene many times over.
-    bool VisualShapeMissing = false;
-
     /** Park this shape's visual build instead of building it now.
      *
      * A document restore asks for the visual of every shape it brings back,
@@ -646,6 +638,10 @@ protected:
     /// property reads as the null shape, which is indistinguishable
     /// from an object that HAS no shape unless this is asked.
     bool shapeMayStillArrive() const;
+
+    /// Whether there is nothing to build because the shape has not
+    /// arrived yet. Asked before updateVisual() touches anything.
+    bool shapeStillMissing() const;
     /// Build one slice of the parked visuals, then reschedule if any remain.
     static void runDeferredVisualSlice();
     /// Post the next slice to the event loop (nothing if one is pending).
