@@ -484,7 +484,7 @@ sandbox guest in a page served by FreeCAD (docs/Sandbox.md 7.20, C1; its
 endpoints without a browser are the registered `GuiSandboxConsoleServe`), and
 `sandbox-bridge-browser.py` has that guest read and write the served document
 over the socket (C2; the same wire without a browser is the registered
-`GuiSandboxBridgeServe`), so
+`GuiSandboxBridgeServe`, which also carries C3's client principal), so
 they need what this repository does not carry -- `build/wasm` (for the console
 page only the web bundle, `npm run build` in `src/Gui/Renderer/web`), a
 `puppeteer-core` install, and a Chrome binary -- and they skip rather than fail

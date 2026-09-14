@@ -102,8 +102,10 @@ pieces are frozen, not extended.**
                                                  host import suspends mid-statement; C2 BUILT
                                                  2026-09-15: the page's statements read and
                                                  write the served document over the socket
-                                                 (per-connection endpoint, the document's
-                                                 principal until C3)
+                                                 (per-connection endpoint); C3 BUILT
+                                                 2026-09-15: a client:<identity> principal,
+                                                 catalog v2's column, view-only = read-only
+                                                 bridge, gui a hard DENY for clients
     host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -7073,7 +7075,7 @@ the writer).  What the numbers decide:
   (`grabUs` is counted, the bench has no picture); a non-native file
   dialog's rows; the DOM client's own cost of applying an open.
 
-### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket]**
+### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket; C3 BUILT 2026-09-15, the client principal]**
 
 The question, asked before the document program (7.17) was started:
 how far is a Python console in the browser tier -- pyodide running in
@@ -7412,6 +7414,127 @@ view-only client and an audit line naming the client (C3); the viewer
 page's own socket carrying the bridge -- that socket belongs to the wasm
 viewer, and `attach` is the hook -- and the panel (C4); the cost of the
 scene payload a console-only socket is pushed, unmeasured.
+
+**C3, BUILT 2026-09-15.**  A page's guest acts as the remote USER, not
+as the document it is served.
+
+*The principal* (`clientPrincipalId`, ExpressionSecurity.h), made from
+what the door knows of the connection at the frame -- SceneServer copies
+it onto every `SceneBridgeRequest`:
+
+    client:id:<identity>    a trusted front door's verified identity
+    client:grant:<n>        none: the grant that admitted the connection
+    client:conn:<n>         neither: the legacy single-token door
+
+Three prefixes, not the `client:<identity>` of the sizing: an identity
+is a front door's text, and one reading `grant:3` must not become the
+grant's principal.  An identity carrying a control character falls to
+the next form rather than being rewritten, which could make two people
+one principal.  Only the first form names a person across runs: a grant
+id is assigned per run and a connection id per connection, so a grant
+for either is refused scope "always" (`isPersistablePrincipal`) -- else
+tomorrow's grant 3 inherits today's answers.
+
+*Catalog v2, the client column* (`catalogDefault`, `isPromptable`, and
+a new `isGrantable`):
+
+    permission        client    promptable  grantable
+    ----------------  --------  ----------  ---------
+    doc.read.self     ALLOW
+    doc.write.self    ALLOW                 yes       DENY (np) on a view-only connection
+    doc.foreign       DENY      no          yes
+    geom.call         ALLOW
+    app.query         ALLOW
+    prefs.read        ALLOW
+    prefs.write       DENY      no          yes
+    app.write         DENY      no          yes
+    gui               DENY      no          NO
+    gui.doCommand     DENY      no          yes
+    host.import       PROMPT    yes         yes       the OWNER is asked, on the desktop
+    unsafe.getattr    DENY      no          NO
+    pkg.install       PROMPT    yes         yes
+
+The sizing left three choices open, decided here.  `gui` is a hard DENY,
+not a prompt: the 7.14 chokepoints are not built, so `Gui.runCommand`
+reaches `Std_RecentMacros` and a macro file runs as host Python.  "Not
+grantable" is new and means no grant of any kind lifts it -- not a panel
+answer, not grants.json, not a process `--grant` (`Runtime::resolve`
+answers DENY before any of them, and `grant()` raises); it holds for
+`gui` and `unsafe.getattr`, the two cells that run host code, until 7.14
+lands.  `doc.foreign` is DENY because the multi-document serve grant IS
+the switch (docs/MultiDocServe.md sec 4): a connection that wants another
+document joins it, the door judges that, and the switch starts a fresh
+table.  `app.write` and `prefs.write` are DENY rather than prompts: a
+remote user has no business creating or closing the owner's documents
+or rewriting the owner's preferences, and an owner who decides otherwise
+grants it explicitly.
+
+*View-only* is the scope's flag (`RemoteClient::readOnly`), not a
+catalog cell: a view-only connection's `doc.write.self` is DENY, not
+promptable, before any grant is consulted -- the door's access is the
+owner's decision on the sharing roster, and a permission grant must not
+be a second way around it.  The flag is read per frame, so a roster flip
+takes effect at the client's next op.  The bridge is otherwise whole: a
+view-only guest reads the document.
+
+*Reach.*  A client is confined to its owner's document exactly as a
+document principal is (`principalIsConfined`, the renamed
+`principalIsDocument`) -- without it, a client would have fallen through
+to the session's reach of every open document.  Three client-only edges:
+a `gproxy` tag is refused both ways -- its id names an instance in the
+DESKTOP guest's registry, which the sizing's item 2 flagged; reading one
+is `unsafe.getattr` and a client passing one (or a `gmethod`) is a
+PermissionError, since binding it would hand another object's Proxy to
+this one -- and `saveAs` is refused outright, because the blessed-path
+set is global and belongs to the desktop guest's pickers.  An `fcall` on
+a routed function is left as it is: the call runs as its feature's file
+(docs/ProxyChain.md 2.5), which is what that document's own code does on
+a recompute.
+
+*The store.*  grants.json stays schema version 1 on disk.  A v1 reader
+already skips a grant whose principal form it does not know, which is
+exactly the forward compatibility a client grant needs; writing version
+2 would make every older build refuse the WHOLE store.
+
+*The audit line* names the client twice over: the principal, and the
+context `<Doc>: client #<conn> '<label>' @<address>`, with ` view-only`
+appended on such a connection.  The label and the address are what the
+client or a proxy declared, so the log's JSON dump now replaces bytes
+that are not UTF-8 instead of throwing on the way to a refusal.
+
+*The panel.*  A client's pending request (only `host.import` prompts)
+lists under the served document with the raw principal.  Granting it
+"always" on a run-local id, or granting a client `gui`, now raises; the
+panel's grant action catches that and says why instead of letting it out
+of a Qt slot.
+
+*Gates*: `ExpressionSecurity.clientPrincipals` and the client rows of
+`catalogDefaults` and `principalClasses`;
+`ExpressionSecurityRuntimeTest.clientScope` (the client form pushes over
+an active scope, "this client" in the message, a view-only write refused
+through a session grant, the ungrantable cells refused and resolved DENY,
+"always" refused for `client:conn:`, a null document still pushing);
+`GuiSandboxBridgeServe` rewritten to 33 PASS (from 17): refusals now
+the client's and not promptable (`app.new_doc`, `gui.cmd.run
+Std_RecentMacros`, `saveAs`), `Part.makeBox` bound to a new
+`Part::Feature` that the desktop's tree carries (volume 1000), a
+view-only connection that reads and is refused its write, two clients
+under different grants interleaved on the wire and refused under their
+own principals, a client vouched for by `X-Forwarded-Email` with
+`FC_SERVE_TRUST_PROXY=1` audited as `client:id:carol@example.com`, the
+audit lines' principals and contexts, and a host call after the run
+under no scope.  `wsclient.WS` takes extra upgrade headers for that.
+The page leg, `tests/gui/sandbox-bridge-browser.py`, re-run over the
+client principal: 15 PASS unchanged (80 ops, 3.3 ms worst).  Suites:
+ExpressionSecurity* 22 OK, ExpressionImage*/ExpressionRouting* 98 OK,
+ctest 641/641, SandboxProgram 46 OK, FeaturePythonChain 44 OK.
+
+*Not in C3*: the panel (C4); the sizing's gate `SandboxBrowserConsole`
+is covered item by item on the plain-socket gate, and the page leg
+re-run over the new principal, but there is no page-side console yet;
+the permissions panel shows a client's request but has no roster-aware
+UI for identities; the 7.14 chokepoints, which would let `gui` become a
+grantable row for clients; the latency and memory of C5.
 
 ### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, BUILT 2026-09-13 inside 7.17's D2]**
 
@@ -7914,8 +8037,8 @@ push the user's call).
    own catalog column (v2), the panel on `pyodide.console`; stages
    C1-C6, one to two weeks.  Un-drops the 7.14 chokepoints (F1): a
    remote client is the second guest that needs them, unless `gui`
-   is a hard DENY for clients.  C1 BUILT 2026-09-14, C2 BUILT
-   2026-09-15; next C3.  C6 (Safari) only if necessary (ruled
+   is a hard DENY for clients -- which C3 chose.  C1 BUILT 2026-09-14,
+   C2 and C3 BUILT 2026-09-15; next C4, the panel.  C6 (Safari) only if necessary (ruled
    2026-09-15).
 
 DROPPED 2026-09-08: G4 (7.16, sized), F1 (7.14: it closed a hole only
