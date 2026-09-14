@@ -16,7 +16,7 @@ as "the primary tree"; that was wrong.
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **497 of 497 passing** (2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
 | Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
-| Python on Windows | **2590 tests, OK** (2026-09-12) -- 0 failures, 0 errors, 49 skipped, 6 expected failures. The nine Windows-only failures it carried from 2026-09-07 are fixed; see "Python on Windows" |
+| Python on Windows | **2600 tests, OK** (2026-09-15; 2590 on 2026-09-12, the ten new are `FileBlobs.BlobArchiveStoreCases`) -- 0 failures, 0 errors, 49 skipped, 6 expected failures. The nine Windows-only failures it carried from 2026-09-07 are fixed; see "Python on Windows" |
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -317,7 +317,9 @@ and re-enters the passphrase. Exclude `ssh-agent-*.sock`, or sweep only
 
 ### Python on Windows
 
-Green: **2590 tests, OK** on 2026-09-12, on `build/win-relwithdebinfo-801`
+Green: **2600 tests, OK** on 2026-09-15 (342 s), ten more than before because
+`FileBlobs` gained `BlobArchiveStoreCases` (`docs/FileBlobsManager.md` sec 14).
+Before that: **2590 tests, OK** on 2026-09-12, on `build/win-relwithdebinfo-801`
 with `BUILD_FEM=OFF`; 49 skipped, 6 expected failures, 402 s. That is the
 same 2590 the first run counted on 2026-09-07 and the re-run on 2026-09-08,
 so the count still works as the checksum the top of this page describes --

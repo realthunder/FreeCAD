@@ -827,6 +827,19 @@ the copy (0.05 s) and inflating and hashing all 5400 entries (0.24 s). The
 3.7 s the premature ingest added to the open is gone from it, and reappears
 in the parse, where it belongs.
 
+In the GUI, with the settings the 2026-09-13/14 runs used (`scripts/render-bench.py`,
+`bgfx - OpenGL`, 1280x720, no vsync, settle 900 s / quiet 5 s):
+
+| store | load | settle | frame | scene |
+| --- | --- | --- | --- | --- |
+| a file per entry, staged (2026-09-14) | 504.7 s | 9.1 s | 252.8 ms | 45867 draws, 18.16 M prims |
+| archive copy (as built) | **97.3 s** | 8.7 s | 220.3 ms | 45867 draws, 18.16 M prims |
+
+The same scene, drawn as fast, and 407 s -- the file phase -- off the load.
+What is left of the 97 s is not the store: the headless open plus a parse of
+every shape is 25 s, so the other ~70 s is the GUI side building 17058
+visuals, and that is the next thing to chase for this document.
+
 (The 54 s of sec 14.1 and the 40.4 s here are the same code on different
 runs; this box's file-create cost varies run to run.) The parse is faster out
 of the copy too: one open handle, where the files cost an open each.
