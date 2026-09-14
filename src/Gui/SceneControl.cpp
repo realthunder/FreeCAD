@@ -21,6 +21,7 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
 #include <map>
 
 #include <set>
@@ -1038,9 +1039,43 @@ App::Document *Gui::sceneControlDocument(const QJsonObject &req,
     return requestDocument(req, boundDoc);
 }
 
+namespace {
+
+/// The access of the request being answered (sceneControlAccess). GUI
+/// thread only, like the dispatch; a scope puts the outer value back, as
+/// an op may run a nested event loop that answers another request.
+Render::ClientAccess &currentAccess()
+{
+    static Render::ClientAccess access = Render::ClientAccess::Host;
+    return access;
+}
+
+struct AccessScope
+{
+    explicit AccessScope(Render::ClientAccess access)
+        : saved(currentAccess())
+    {
+        currentAccess() = access;
+    }
+    ~AccessScope()
+    {
+        currentAccess() = saved;
+    }
+    AccessScope(const AccessScope &) = delete;
+    AccessScope &operator=(const AccessScope &) = delete;
+    Render::ClientAccess saved;
+};
+
+} // namespace
+
+Render::ClientAccess Gui::sceneControlAccess()
+{
+    return currentAccess();
+}
+
 std::string Gui::handleSceneControlRequest(const std::string &json,
                                            const std::string &boundDoc,
-                                           bool viewOnly,
+                                           Render::ClientAccess access,
                                            uint64_t client)
 {
     // The catalogs the omni search mirror keeps announce themselves
@@ -1075,11 +1110,19 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             || op == QLatin1String("onViewFocus")
             || op == QLatin1String("undo")
             || op == QLatin1String("redo")
-            || (registered != registeredOps().end() && registered->second.mutating)
-            || OmniControl::isMutating(op);
-        if (viewOnly && mutating)
+            || (registered != registeredOps().end() && registered->second.mutating);
+        // The few that reach beyond the document -- the host's
+        // preferences -- need a host (docs/ShareAccess.md sec 2.2)
+        const Render::ClientAccess required =
+            std::max(mutating ? Render::ClientAccess::Edit : Render::ClientAccess::View,
+                     OmniControl::requiredAccess(op));
+        AccessScope scope(access);
+        if (access < required && access == Render::ClientAccess::View)
             reply = errorReply(req.value(QLatin1String("id")), "ViewOnly",
                                QStringLiteral("this connection may not edit"));
+        else if (access < required)
+            reply = errorReply(req.value(QLatin1String("id")), "Forbidden",
+                               QStringLiteral("this connection may not act on the host"));
         else if (op == QLatin1String("getProperties"))
             reply = getProperties(req, boundDoc);
         else if (op == QLatin1String("setProperty"))
@@ -1131,7 +1174,7 @@ void Gui::installSceneControlHandler(const std::string &docName)
                     shared->reply(
                             handleSceneControlRequest(shared->json,
                                                       docName,
-                                                      shared->viewOnly,
+                                                      shared->access,
                                                       shared->client));
                 }, Qt::QueuedConnection);
             }, docName);

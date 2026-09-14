@@ -56,10 +56,10 @@ private Q_SLOTS:
         doc = nullptr;
     }
 
-    QJsonObject ask(const QJsonObject &req, bool viewOnly = false)
+    QJsonObject ask(const QJsonObject &req, Render::ClientAccess access = Render::ClientAccess::Host)
     {
         std::string json = QJsonDocument(req).toJson(QJsonDocument::Compact).toStdString();
-        std::string answer = Gui::handleSceneControlRequest(json, doc->getName(), viewOnly);
+        std::string answer = Gui::handleSceneControlRequest(json, doc->getName(), access);
         lastBytes = answer.size();
         return QJsonDocument::fromJson(QByteArray::fromStdString(answer)).object();
     }
@@ -84,7 +84,7 @@ private Q_SLOTS:
         QVERIFY2(reply.value("ok").toBool(),
                  QJsonDocument(reply).toJson(QJsonDocument::Compact).constData());
         // mutating: refused by mode, which needs the op to be known first
-        reply = ask(op("widgets.subscribe", {{"toolbars", true}}), true);
+        reply = ask(op("widgets.subscribe", {{"toolbars", true}}), Render::ClientAccess::View);
         QCOMPARE(reply.value("code").toString(), QStringLiteral("ViewOnly"));
     }
 
@@ -205,13 +205,23 @@ private Q_SLOTS:
         QCOMPARE(reply.value("code").toString(), QStringLiteral("UnknownParam"));
 
         // Writes are refused on a view-only connection, reads answered
-        reply = ask(op("param.set", {{"key", key}, {"value", flipped}}), true);
+        reply = ask(op("param.set", {{"key", key}, {"value", flipped}}), Render::ClientAccess::View);
         QCOMPARE(reply.value("code").toString(), QStringLiteral("ViewOnly"));
-        reply = ask(op("param.reset", {{"key", key}}), true);
+        reply = ask(op("param.reset", {{"key", key}}), Render::ClientAccess::View);
         QCOMPARE(reply.value("code").toString(), QStringLiteral("ViewOnly"));
-        reply = ask(op("param.get", {{"key", key}}), true);
+        // and on an editing one, since they change the host's preferences for
+        // everyone the process serves (docs/ShareAccess.md sec 2.2): a host
+        // connection is the desktop's own reach
+        reply = ask(op("param.set", {{"key", key}, {"value", flipped}}), Render::ClientAccess::Edit);
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("Forbidden"));
+        QVERIFY(!ParamRegistry::instance().isSet(*info));
+        reply = ask(op("param.reset", {{"key", key}}), Render::ClientAccess::Edit);
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("Forbidden"));
+        reply = ask(op("param.get", {{"key", key}}), Render::ClientAccess::Edit);
         QVERIFY(reply.value("ok").toBool());
-        reply = ask(op("omni.catalog", {{"list", "params"}}), true);
+        reply = ask(op("param.get", {{"key", key}}), Render::ClientAccess::View);
+        QVERIFY(reply.value("ok").toBool());
+        reply = ask(op("omni.catalog", {{"list", "params"}}), Render::ClientAccess::View);
         QVERIFY(reply.value("ok").toBool());
     }
 
@@ -412,7 +422,7 @@ private Q_SLOTS:
         QCOMPARE(reply.value("code").toString(), QStringLiteral("NoGui"));
         reply = ask(op("command.children", {{"name", "Std_DrawStyle"}}));
         QCOMPARE(reply.value("code").toString(), QStringLiteral("NoGui"));
-        reply = ask(op("command.run", {{"name", "Std_New"}}), true);
+        reply = ask(op("command.run", {{"name", "Std_New"}}), Render::ClientAccess::View);
         QCOMPARE(reply.value("code").toString(), QStringLiteral("ViewOnly"));
         reply = ask(op("omni.rows", {{"list", "commands"}, {"keys", QJsonArray{QStringLiteral("Std_New")}}}));
         QVERIFY(reply.value("ok").toBool());

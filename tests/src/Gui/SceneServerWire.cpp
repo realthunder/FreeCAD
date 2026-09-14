@@ -524,7 +524,7 @@ TEST_F(SceneServerWire, handshakeThenHelloThenSnapshot)
     Render::SceneClientInfo info;
     ASSERT_TRUE(waitFor([&] { return findClient("wire-snapshot", info); }));
     EXPECT_TRUE(info.viewer) << "a hello makes a viewer";
-    EXPECT_FALSE(info.viewOnly);
+    EXPECT_EQ(info.access, Render::ClientAccess::Edit);
     EXPECT_NE(info.peer.find("127.0.0.1:"), std::string::npos);
     EXPECT_EQ(info.address, info.peer) << "no proxy, so the judged address is the peer";
     EXPECT_FALSE(info.proxied);
@@ -578,13 +578,13 @@ TEST_F(SceneServerWire, controlOpReachesTheHandlerAndItsReplyComesBack)
     std::mutex mutex;
     std::vector<std::string> seen;
     uint64_t from = 0;
-    bool viewOnly = true;
+    Render::ClientAccess access = Render::ClientAccess::View;
     server.setControlHandler([&](Render::SceneControlRequest&& req) {
         {
             std::lock_guard<std::mutex> guard(mutex);
             seen.push_back(req.json);
             from = req.client;
-            viewOnly = req.viewOnly;
+            access = req.access;
         }
         req.reply("{\"id\":7,\"ok\":true,\"echo\":\"answered\"}");
     });
@@ -603,7 +603,7 @@ TEST_F(SceneServerWire, controlOpReachesTheHandlerAndItsReplyComesBack)
         std::lock_guard<std::mutex> guard(mutex);
         ASSERT_EQ(seen.size(), 1u);
         EXPECT_EQ(seen[0], "{\"op\":\"probe\",\"id\":7}");
-        EXPECT_FALSE(viewOnly);
+        EXPECT_EQ(access, Render::ClientAccess::Edit);
     }
     Render::SceneClientInfo info;
     ASSERT_TRUE(findClient("wire-op", info));
@@ -611,10 +611,10 @@ TEST_F(SceneServerWire, controlOpReachesTheHandlerAndItsReplyComesBack)
 
     // A mode change is announced to the client, and then carried on
     // every request, for the layer that knows which ops write.
-    ASSERT_TRUE(server.setClientViewOnly(info.id, true));
+    ASSERT_TRUE(server.setClientAccess(info.id, Render::ClientAccess::View));
     m = c.read();
     ASSERT_TRUE(m.ok) << m.ec.message();
-    EXPECT_EQ(m.data, "{\"cmd\":\"config\",\"viewOnly\":true}");
+    EXPECT_EQ(m.data, "{\"cmd\":\"config\",\"viewOnly\":true,\"access\":\"view\"}");
     c.sendText("{\"op\":\"probe\",\"id\":8}");
     m = c.read();
     ASSERT_TRUE(m.ok) << m.ec.message();
@@ -622,7 +622,7 @@ TEST_F(SceneServerWire, controlOpReachesTheHandlerAndItsReplyComesBack)
     {
         std::lock_guard<std::mutex> guard(mutex);
         ASSERT_EQ(seen.size(), 2u);
-        EXPECT_TRUE(viewOnly);
+        EXPECT_EQ(access, Render::ClientAccess::View);
     }
 
     // No handler: a structured refusal correlated on the id, never
@@ -730,7 +730,7 @@ TEST_F(SceneServerWire, fragmentedMessagesAreReassembled)
     // A view-only connection's picks are dropped, not refused.
     Render::SceneClientInfo info;
     ASSERT_TRUE(findClient("wire-frag", info));
-    ASSERT_TRUE(server.setClientViewOnly(info.id, true));
+    ASSERT_TRUE(server.setClientAccess(info.id, Render::ClientAccess::View));
     m = c.read();
     ASSERT_TRUE(m.ok) << m.ec.message();
     EXPECT_TRUE(has(m.data, "\"viewOnly\":true")) << m.data;
@@ -1036,6 +1036,90 @@ TEST_F(SceneServerWire, anOversizeControlFrameEndsTheConnection)
     EXPECT_NE(m.ec, net::error::timed_out) << "closed, not merely quiet";
 }
 
+/// A host grant (access 3) makes a host only of the verified identity it
+/// names literally; on a pattern it admits editors, a hand promotion needs
+/// a verified identity too, and a grant change re-judges and says so
+/// (docs/ShareAccess.md sec 2.2).
+TEST_F(SceneServerWire, aHostGrantMakesAHostOnlyOfTheIdentityItNames)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    server.setTrustProxy(true);
+    struct Restore
+    {
+        ~Restore()
+        {
+            auto& s = Render::SceneStreamServer::instance();
+            s.setGrants({});
+            s.setTrustProxy(false);
+        }
+    } restore;
+    auto grant = [](const char* identity, int access) {
+        Render::SceneGrant g;
+        g.identity = identity;
+        g.access = access;
+        return g;
+    };
+    server.setGrants({grant("owner@example.test", 3), grant("*@example.test", 3), grant("", 0)});
+
+    auto open = [&](const char* email, const char* label) {
+        WsClient::Headers h {{"X-Forwarded-For", "203.0.113.9"}};
+        if (email) {
+            h.emplace_back("X-Forwarded-Email", email);
+        }
+        auto c = std::make_unique<WsClient>(port, "/scene", h);
+        c->hello(label);
+        return c;
+    };
+    // The mode a connection was told next, empty when none came within
+    // the wait. Binary frames are passed over: the snapshot a hello gets
+    // may come after its config or before it.
+    auto told = [&](WsClient& c) -> std::string {
+        for (int i = 0; i < 6; ++i) {
+            WsClient::Msg m = c.read(2000);
+            if (!m.ok) {
+                return {};
+            }
+            if (!m.text) {
+                continue;
+            }
+            if (has(m.data, "\"cmd\":\"config\"")) {
+                return m.data;
+            }
+        }
+        return {};
+    };
+    Render::SceneClientInfo info;
+
+    auto owner = open("owner@example.test", "host-owner");
+    EXPECT_TRUE(has(told(*owner), "\"access\":\"host\"")) << "a host is told at once";
+    ASSERT_TRUE(waitFor([&] { return findClient("host-owner", info); }));
+    EXPECT_EQ(info.access, Render::ClientAccess::Host);
+
+    auto guest = open("guest@example.test", "host-guest");
+    EXPECT_EQ(told(*guest), "") << "a host grant on a pattern admits an editor";
+    ASSERT_TRUE(waitFor([&] { return findClient("host-guest", info); }));
+    EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+    const uint64_t guestId = info.id;
+
+    auto anon = open(nullptr, "host-anon");
+    EXPECT_EQ(told(*anon), "");
+    ASSERT_TRUE(waitFor([&] { return findClient("host-anon", info); }));
+    EXPECT_FALSE(server.setClientAccess(info.id, Render::ClientAccess::Host))
+        << "a chosen name is never a host";
+    ASSERT_TRUE(findClient("host-anon", info));
+    EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+
+    EXPECT_TRUE(server.setClientAccess(guestId, Render::ClientAccess::Host))
+        << "by hand, for a verified identity";
+    EXPECT_TRUE(has(told(*guest), "\"access\":\"host\""));
+
+    // Demoted by the grant list: re-judged, and told
+    server.setGrants({grant("owner@example.test", 0), grant("", 0)});
+    EXPECT_TRUE(has(told(*owner), "\"access\":\"edit\""));
+    ASSERT_TRUE(findClient("host-owner", info));
+    EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+}
+
 TEST_F(SceneServerWire, theCapCountsUsersNotAddresses)
 {
     auto& server = Render::SceneStreamServer::instance();
@@ -1212,7 +1296,7 @@ TEST_F(SceneServerWire, aDroppedPickIsStillCountedAsUplink)
     ASSERT_TRUE(m.ok) << m.ec.message();
     Render::SceneClientInfo info;
     ASSERT_TRUE(waitFor([&] { return findClient("wire-uplink-viewonly", info); }));
-    ASSERT_TRUE(server.setClientViewOnly(info.id, true));
+    ASSERT_TRUE(server.setClientAccess(info.id, Render::ClientAccess::View));
     m = c.read();
     ASSERT_TRUE(m.ok) << m.ec.message();
 
@@ -1453,7 +1537,7 @@ TEST_F(SceneServerWire, aViewOnlyConnectionSendsNoInput)
     ASSERT_TRUE(m.ok) << m.ec.message();
     Render::SceneClientInfo info;
     ASSERT_TRUE(waitFor([&] { return findClient("wire-input-viewonly", info); }));
-    ASSERT_TRUE(server.setClientViewOnly(info.id, true));
+    ASSERT_TRUE(server.setClientAccess(info.id, Render::ClientAccess::View));
 
     const std::vector<uint8_t> frame = inputFrame(0, 11, 13);
     c.sendBinary(frame);

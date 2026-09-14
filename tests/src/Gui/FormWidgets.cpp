@@ -1232,8 +1232,11 @@ private Q_SLOTS:
         });
         auto control = [](const char* json, uint64_t client, bool viewOnly = false) {
             return QJsonDocument::fromJson(QByteArray(
-                                               Gui::handleSceneControlRequest(json, std::string(),
-                                                                              viewOnly, client)
+                                               Gui::handleSceneControlRequest(
+                                                   json, std::string(),
+                                                   viewOnly ? Render::ClientAccess::View
+                                                            : Render::ClientAccess::Host,
+                                                   client)
                                                    .c_str()))
                 .object();
         };
@@ -1942,7 +1945,7 @@ private Q_SLOTS:
         auto control = [](const QString& json) {
             return QJsonDocument::fromJson(QByteArray(Gui::handleSceneControlRequest(
                                                           json.toStdString(), std::string(),
-                                                          false, 7)
+                                                          Render::ClientAccess::Edit, 7)
                                                           .c_str()))
                 .object();
         };

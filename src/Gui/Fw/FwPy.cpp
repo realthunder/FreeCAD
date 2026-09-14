@@ -504,11 +504,20 @@ PyObject* py_control(PyObject*, PyObject* args)
     const char* json = nullptr;
     unsigned long long client = 1;
     int viewOnly = 0;
-    if (!PyArg_ParseTuple(args, "s|Kp", &json, &client, &viewOnly))
+    const char* level = nullptr;
+    if (!PyArg_ParseTuple(args, "s|Kpz", &json, &client, &viewOnly, &level))
         return nullptr;
+    // A caller in this process is the desktop's own, so a host -- unless
+    // it stands in for a connection of a narrower access
+    Render::ClientAccess access =
+        viewOnly ? Render::ClientAccess::View : Render::ClientAccess::Host;
+    if (level && *level && !Render::clientAccessFromName(level, access)) {
+        PyErr_Format(PyExc_ValueError, "access is 'view', 'edit' or 'host', not '%s'", level);
+        return nullptr;
+    }
     pushLog();
     installSceneWidgetOps();
-    std::string reply = handleSceneControlRequest(json, std::string(), viewOnly != 0, client);
+    std::string reply = handleSceneControlRequest(json, std::string(), access, client);
     return PyUnicode_FromString(reply.c_str());
 }
 
@@ -540,7 +549,9 @@ PyMethodDef Methods[] = {
     {"mirrorFlush", py_mirrorFlush, METH_NOARGS,
      "mirrorFlush() -> flush the mirror's coalesced state; the rebuild count"},
     {"control", py_control, METH_VARARGS,
-     "control(json, client=1, viewOnly=False) -> the reply: a scene control request,"
+     "control(json, client=1, viewOnly=False, access=None) -> the reply: a scene control"
+     " request as connection `client` of that access ('view', 'edit', 'host'; host when"
+     " neither is given, view with viewOnly),"
      " the widget stream's pushes collected for pushed() (a client above 1000 is gone)"},
     {"pushed", py_pushed, METH_NOARGS, "pushed() -> [{client, json}] since the last call"},
     {"ids", py_ids, METH_NOARGS, "ids() -> the comm ids of the store's objects"},

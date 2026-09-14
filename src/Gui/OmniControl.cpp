@@ -690,11 +690,13 @@ uint64_t OmniControl::catalogVersion(const QString &list)
     return catalog->version;
 }
 
-bool OmniControl::isMutating(const QString &op)
+Render::ClientAccess OmniControl::requiredAccess(const QString &op)
 {
-    return op == QLatin1String("command.run")
-        || op == QLatin1String("param.set")
-        || op == QLatin1String("param.reset");
+    if (op == QLatin1String("param.set") || op == QLatin1String("param.reset"))
+        return Render::ClientAccess::Host;
+    if (op == QLatin1String("command.run"))
+        return Render::ClientAccess::Edit;
+    return Render::ClientAccess::View;
 }
 
 bool OmniControl::handle(const QString &op, const QJsonObject &req, const std::string &boundDoc,

@@ -1501,7 +1501,7 @@ void SceneServeSource::installHandlers()
                     return;
                 }
                 shared->reply(handleSceneControlRequest(shared->json, docName,
-                                                        shared->viewOnly,
+                                                        shared->access,
                                                         shared->client));
             }, Qt::QueuedConnection);
         }, docName);

@@ -391,9 +391,31 @@ public:
     /// The door's answer for one presentation.
     struct Judgement {
         bool admitted = false;
-        bool viewOnly = false;
+        ClientAccess access = ClientAccess::Edit;
         uint64_t grant = 0;   ///< admitting grant id; 0 = legacy door
     };
+
+    /// Whether a host grant's identity pattern makes \a identity a host
+    /// (docs/ShareAccess.md sec 2.2): only a literal naming the verified
+    /// identity itself. A pattern admits a crowd, and a crowd does not
+    /// get the desktop user's reach; a connection with no verified
+    /// identity has only a name it chose.
+    static bool hostIdentity(const std::string &pattern,
+                             const std::string &identity)
+    {
+        return !identity.empty() && !pattern.empty()
+            && pattern.find_first_of("*?") == std::string::npos
+            && patternMatches(pattern, identity);
+    }
+
+    /// What a connection is told its access with: `viewOnly` for the
+    /// viewers that predate the levels, `access` by name.
+    static std::string configJson(ClientAccess access)
+    {
+        return std::string("{\"cmd\":\"config\",\"viewOnly\":")
+            + (access == ClientAccess::View ? "true" : "false")
+            + ",\"access\":\"" + clientAccessName(access) + "\"}";
+    }
 
     /// Judge a presentation against a grant list (docs/ShareAccess.md
     /// §2): the most specific matching grant decides, and no match —
@@ -430,7 +452,10 @@ public:
         if (!best || best->access == 2)
             return out;
         out.admitted = true;
-        out.viewOnly = best->access == 1;
+        out.access = best->access == 1 ? ClientAccess::View
+            : best->access == 3 && hostIdentity(best->identity, identity)
+                ? ClientAccess::Host
+                : ClientAccess::Edit;
         out.grant = best->id;
         return out;
     }
@@ -1165,9 +1190,10 @@ public:
         /// then no payload is pushed and no verb but the hello works.
         /// Owner-thread-only, like group.
         bool authorized = true;
-        /// View-only (guarded by connMutex, the host flips it from the
-        /// GUI thread): picks dropped, mutating ops refused.
-        bool viewOnly = false;
+        /// What this connection may do (guarded by connMutex, the host
+        /// changes it from the GUI thread): View drops picks and refuses
+        /// mutating ops, Host may act beyond the document.
+        ClientAccess access = ClientAccess::Edit;
         /// The host asked this connection closed (guarded by
         /// connMutex): its farewell is on the outbox, and its own loop
         /// sends that and hangs up. Set only through kick().
@@ -1349,7 +1375,9 @@ public:
         g.liveOnly = true;
         {
             std::lock_guard<std::mutex> guard(connMutex);
-            g.access = conn.viewOnly ? 1 : 0;
+            // Never host: an easing is keyed on a name, and a name is
+            // only what the client chose (docs/ShareAccess.md sec 2.2)
+            g.access = conn.access == ClientAccess::View ? 1 : 0;
         }
         {
             std::lock_guard<std::mutex> guard(tokenMutex);
@@ -1406,9 +1434,10 @@ public:
                     changed = true;
                 }
                 else {
-                    if (!list.empty()
-                            && conn->viewOnly != entry.viewOnly) {
-                        conn->viewOnly = entry.viewOnly;
+                    if (!list.empty() && conn->access != entry.access) {
+                        conn->access = entry.access;
+                        // told, as a mode set by hand is
+                        conn->queueText(configJson(entry.access));
                         changed = true;
                     }
                     conn->grant = entry.grant;
@@ -1436,7 +1465,7 @@ public:
             info.identity = conn->identity;
             info.grant = conn->grant;
             info.viewer = conn->viewer;
-            info.viewOnly = conn->viewOnly;
+            info.access = conn->access;
             info.connectedMs = uint64_t(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - conn->since).count());
@@ -1454,19 +1483,19 @@ public:
         return int(out.size());
     }
 
-    bool setClientViewOnly(uint64_t id, bool viewOnly)
+    bool setClientAccess(uint64_t id, ClientAccess access)
     {
         bool found = false;
         {
             std::lock_guard<std::mutex> guard(connMutex);
             for (Conn *conn : conns) {
                 if (conn->id == id) {
-                    conn->viewOnly = viewOnly;
+                    // A host is a verified person, never a chosen name
+                    if (access == ClientAccess::Host && conn->identity.empty())
+                        return false;
+                    conn->access = access;
                     // Tell the client its mode, so its UI can say so.
-                    conn->queueText(
-                        viewOnly
-                            ? "{\"cmd\":\"config\",\"viewOnly\":true}"
-                            : "{\"cmd\":\"config\",\"viewOnly\":false}");
+                    conn->queueText(configJson(access));
                     found = true;
                     break;
                 }
@@ -1830,7 +1859,7 @@ public:
             // The semantic layer refuses mutations for a view-only
             // connection; only it knows which ops write.
             std::lock_guard<std::mutex> guard(connMutex);
-            req.viewOnly = conn.viewOnly;
+            req.access = conn.access;
         }
         const uint64_t connId = conn.id;
         req.client = connId;
@@ -2290,7 +2319,7 @@ public:
         conn.sent = boot.held;
         conn.authorized = boot.entry.admitted;
         conn.admitted = boot.entry.admitted;
-        conn.viewOnly = boot.entry.viewOnly;
+        conn.access = boot.entry.access;
         conn.grant = boot.entry.grant;
         conn.presentedToken = boot.presentedToken;
         conn.addr = boot.addr;
@@ -3240,8 +3269,13 @@ public:
                     conn.admitted = true;
                     conn.presentedToken = offered;
                     conn.grant = entry.grant;
-                    if (grants)
-                        conn.viewOnly = entry.viewOnly;
+                    if (grants) {
+                        conn.access = entry.access;
+                        // Said at once, so the page offers only what
+                        // this connection may do
+                        if (entry.access != ClientAccess::Edit)
+                            conn.queueText(configJson(entry.access));
+                    }
                     // The user is known only now when the grant or the
                     // name decided it (sec 7.4).
                     if (!admitUser(conn)) {
@@ -3620,7 +3654,7 @@ public:
         // (docs/MultiDocServe.md §8).
         {
             std::lock_guard<std::mutex> guard(connMutex);
-            if (conn.viewOnly)
+            if (conn.access == ClientAccess::View)
                 return;
         }
         // Input event: an edit mode's pointer and keyboard stream
@@ -3843,9 +3877,9 @@ int SceneStreamServer::clients(std::vector<SceneClientInfo> &out)
     return ensure()->clients(out);
 }
 
-bool SceneStreamServer::setClientViewOnly(uint64_t id, bool viewOnly)
+bool SceneStreamServer::setClientAccess(uint64_t id, ClientAccess access)
 {
-    return pimpl ? pimpl->setClientViewOnly(id, viewOnly) : false;
+    return pimpl ? pimpl->setClientAccess(id, access) : false;
 }
 
 bool SceneStreamServer::kickClient(uint64_t id)

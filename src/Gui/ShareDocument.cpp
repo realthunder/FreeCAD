@@ -618,7 +618,8 @@ public:
             // the row was first built, and the row must follow it.
             sig.emplace_back(c.id
                 ^ (uint64_t(qHash(QString::fromUtf8(c.client.c_str())))
-                   << 20), c.viewOnly);
+                   << 20) + (uint64_t(c.access) << 61),
+                c.access == Render::ClientAccess::View);
         }
         for (const auto &g : grants) {
             sig.emplace_back((uint64_t(qHash(g.token + g.identity + g.name
@@ -668,7 +669,7 @@ public:
             auto *mode = new QComboBox(tree);
             mode->addItem(tr("Can edit"));
             mode->addItem(tr("View only"));
-            mode->setCurrentIndex(c.viewOnly ? 1 : 0);
+            mode->setCurrentIndex(c.access == Render::ClientAccess::View ? 1 : 0);
             mode->setToolTip(tr(
                 "This connection alone, for this session. A durable "
                 "decision is a grant — the rows below."));
@@ -676,7 +677,8 @@ public:
             connect(mode, qOverload<int>(&QComboBox::currentIndexChanged),
                     this, [id](int index) {
                         Render::SceneStreamServer::instance()
-                            .setClientViewOnly(id, index == 1);
+                            .setClientAccess(id, index == 1 ? Render::ClientAccess::View
+                                                            : Render::ClientAccess::Edit);
                     });
             tree->setItemWidget(item, 4, mode);
 

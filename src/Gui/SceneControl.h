@@ -31,6 +31,7 @@
 #include <QString>
 
 #include <FCGlobal.h>
+#include <Gui/Renderer/ClientAccess.h>
 
 namespace App {
 class Document;
@@ -43,21 +44,24 @@ namespace Gui {
 /// against the live document. getProperties today; setProperty and
 /// modeling operations grow here.
 
-/// Answer one control request. GUI thread only — callers on any other
+/// Answer one control request. GUI thread only -- callers on any other
 /// thread marshal first (installSceneControlHandler does). \a boundDoc
 /// names the served document the request's connection is joined to
 /// (empty = unbound, windowed behavior): it resolves the "view3d"
 /// subject to that document's serving container and stands in for an
-/// unnamed document (docs/MultiDocServe.md §5). \a viewOnly refuses
-/// every mutating op with a ViewOnly error — the per-client mode the
-/// sharing host sets (docs/MultiDocServe.md §8); reads stay answered.
-/// \a client is the connection the request arrived on, which the ops
-/// that need a view -- entering an edit mode -- resolve to that
-/// client's mirror viewer (docs/ThinClient.md sec 8.9 step 4).
+/// unnamed document (docs/MultiDocServe.md sec 5). \a access is what the
+/// connection may do: an op needing more is refused before it runs --
+/// ViewOnly for a view-only connection, Forbidden for an editing one
+/// asking for a host op (docs/ShareAccess.md sec 2.2) -- and reads stay
+/// answered. The default is Host: a caller in this process is the
+/// desktop's own. \a client is the connection the request arrived on,
+/// which the ops that need a view -- entering an edit mode -- resolve to
+/// that client's mirror viewer (docs/ThinClient.md sec 8.9 step 4).
 GuiExport std::string handleSceneControlRequest(const std::string &json,
-                                      const std::string &boundDoc = {},
-                                      bool viewOnly = false,
-                                      uint64_t client = 0);
+                                                const std::string &boundDoc = {},
+                                                Render::ClientAccess access =
+                                                    Render::ClientAccess::Host,
+                                                uint64_t client = 0);
 
 /// One control op implemented outside core Gui. \a req is the parsed
 /// request (its "id" must be echoed in the reply, which
@@ -101,6 +105,12 @@ GuiExport QJsonObject sceneControlError(const QJsonValue &id,
 /// gets, so the channel is no oracle for what else the process has open.
 GuiExport App::Document *sceneControlDocument(const QJsonObject &req,
                                               const std::string &boundDoc);
+
+/// What the connection whose request is being answered may do, for an
+/// op whose answer depends on what it touches -- a command outside the
+/// browser allowlist, a tool bar action's state (docs/ShareAccess.md
+/// sec 2.2). Host outside a request: the desktop's own call.
+GuiExport Render::ClientAccess sceneControlAccess();
 
 /// Route the scene stream server's control requests ("op" JSON text
 /// frames) through handleSceneControlRequest on the GUI thread.

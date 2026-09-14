@@ -432,8 +432,11 @@ over the items (value the index, or the item data), a colour input for
 checkbox, a text field for the rest. Values travel in
 `ParamRegistry::getValue()` text form.
 
-`command.run`, `param.set` and `param.reset` are mutating and refused on
-a view-only connection like `setProperty` (`OmniControl::isMutating`).
+`command.run` is mutating and refused on a view-only connection like
+`setProperty`. `param.set` and `param.reset` change the host's preferences for
+everyone the process serves, so they need a host connection
+(docs/ShareAccess.md sec 2.2) and an editing one is answered `Forbidden`
+(`OmniControl::requiredAccess`).
 
 `getProperties` and `setProperty` with subject/target `view3d` take an
 optional `view`, a persistent view name, for `#.View2.DrawStyle`; without
@@ -585,8 +588,8 @@ whatever the desktop's own command layer considers active -- its active
 document and its selection -- and `param.set` writes a process-wide
 preference. So an *editing* connection joined to one served document can
 still act outside it through those two ops. Both are refused on a
-view-only connection (`OmniControl::isMutating`), which is the whole of
-the containment today. Scoping them properly means either making the
+view-only connection, and since 2026-09-14 the parameter writes need a host
+connection as well (docs/ShareAccess.md sec 2.2). Scoping them properly means either making the
 command layer take a document (it takes none) or activating the served
 document around the call (which moves the desktop user's focus), and
 neither is a change to make in passing.

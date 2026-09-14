@@ -52,6 +52,7 @@
 #include <string>
 #include <vector>
 
+#include "ClientAccess.h"
 #include "Renderer.h"
 #include "SceneDump.h"
 
@@ -158,11 +159,12 @@ struct SceneInputFrame {
 /// answer a timeout, never a mixup).
 struct SceneControlRequest {
     std::string json;
-    /// The connection is view-only (docs/MultiDocServe.md §8): the
-    /// handler must refuse anything that mutates the document. Carried
-    /// on the request rather than enforced here because only the
-    /// semantic layer knows which ops write.
-    bool viewOnly = false;
+    /// What the connection may do (ClientAccess): a view-only one must
+    /// be refused anything that mutates the document, and only a host
+    /// one may act beyond it. Carried on the request rather than
+    /// enforced here because only the semantic layer knows which ops
+    /// write (docs/MultiDocServe.md sec 8, docs/ShareAccess.md sec 2.2).
+    ClientAccess access = ClientAccess::Edit;
     /// The connection it arrived on (SceneClientInfo::id), for a
     /// handler that keeps per-connection state -- a served viewport
     /// (docs/CyclesIntegration.md sec 7.1) -- and answers it later
@@ -191,7 +193,11 @@ struct SceneGrant {
     std::string identity;  ///< pattern on the verified identity
     std::string client;    ///< pattern on the self-declared name
     std::string address;   ///< pattern on the address, matched portless
-    int access = 0;        ///< 0 = edit, 1 = view-only, 2 = banned
+    /// 0 = edit, 1 = view-only, 2 = banned, 3 = host (full control),
+    /// which admits as host only a connection whose verified identity
+    /// the grant names literally, and as edit anything else it matches
+    /// (docs/ShareAccess.md sec 2.2)
+    int access = 0;
     /// Exists only in this run and is never persisted — the rename
     /// easings of docs/ShareAccess.md §2, minted by the server itself
     /// so a renamed client can reconnect; the panel shows them apart,
@@ -221,7 +227,9 @@ struct SceneClientInfo {
     /// self-declared \a client label is all there is.
     std::string identity;
     bool viewer = false;      ///< sent a hello (a probe may not)
-    bool viewOnly = false;    ///< picks and mutating ops refused
+    /// View: picks and mutating ops refused; Host: may act beyond the
+    /// document (ClientAccess)
+    ClientAccess access = ClientAccess::Edit;
     uint64_t connectedMs = 0; ///< how long this connection has been up
     /// The grant that admitted this connection (SceneGrant::id), 0
     /// under the legacy single-token door or while unauthorized.
@@ -368,11 +376,15 @@ public:
     /// The connected clients, for the sharing roster. Returns how many.
     int clients(std::vector<SceneClientInfo> &out);
 
-    /// Make the identified connection view-only (or full again):
+    /// Set the identified connection's access for this session:
     /// view-only clients still receive every publish, but their picks
     /// are dropped and their mutating control ops answered with a
-    /// ViewOnly error. False when the connection is gone.
-    bool setClientViewOnly(uint64_t id, bool viewOnly);
+    /// ViewOnly error; a host one may act beyond its document. The
+    /// client is told ({"cmd":"config",...}). False when the connection
+    /// is gone -- or when Host is asked for a connection no front door
+    /// verified an identity for, since a name is only what it says. A
+    /// later change of the grant list re-judges it like any other.
+    bool setClientAccess(uint64_t id, ClientAccess access);
 
     /// Disconnect the identified client: it is told
     /// {"cmd":"error","code":"Kicked"} and closed by its own loop. Not
