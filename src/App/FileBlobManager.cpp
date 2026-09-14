@@ -849,6 +849,45 @@ void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry
         return;
     }
 
+    const std::string ext = Base::FileInfo(name).extension();
+
+    // ***Read, not extracted.*** sgetn() takes the bytes as they are, where
+    // an `entry >> ...` extraction is formatted and its sentry skips leading
+    // whitespace: content beginning with any would arrive short, and ASCII
+    // BRep begins with a newline. Content addressing turned that from a quiet
+    // corruption into a blob whose hash no longer matched what the document
+    // referred to (sec 13.7 of docs/FileBlobsManager.md).
+    //
+    // Held in memory rather than staged in a file, because the bytes are what
+    // decides whether anything has to be written at all: an entry the store
+    // already holds now costs no file operation, and a new one costs exactly
+    // the write. Staging cost a second file create, a read back to hash it, a
+    // rename and two permission changes for every entry -- on Windows 61 ms
+    // of the 85 an entry took, all of it filesystem round trips.
+    constexpr std::size_t inMemoryCap = 16u * 1024u * 1024u;
+    std::streambuf* source = entry.rdbuf();
+    std::vector<char> chunk(64u * 1024u);
+    std::string bytes;
+    std::streamsize got = 0;
+    while (bytes.size() <= inMemoryCap
+           && (got = source->sgetn(chunk.data(),
+                                   static_cast<std::streamsize>(chunk.size()))) > 0) {
+        bytes.append(chunk.data(), static_cast<std::size_t>(got));
+    }
+
+    if (bytes.size() <= inMemoryCap) {
+        auto blob = adoptBytes(bytes, ext.c_str());
+        FC_TRACE("blob entry " << name << " -> " << (blob ? blob->hash() : std::string("(none)")));
+        hold(std::move(blob));
+        return;
+    }
+
+    // An included file may be any size, so one too large to hold takes the
+    // old path: what was read goes out first and the rest streams after it,
+    // then adoptFile() hashes the file and moves it into place. The entry name
+    // is still never trusted for anything but the extension -- what the
+    // archive claims and what it holds are checked against each other by the
+    // hash either way.
     const std::string staging = uniquePath("blob.part");
     {
         Base::ofstream to(Base::FileInfo(staging), std::ios::out | std::ios::binary | std::ios::trunc);
@@ -857,22 +896,10 @@ void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry
             str << "FileBlobManager: cannot create " << staging;
             THROWM(Base::FileSystemError, str.str())
         }
-        // ***Written, not extracted.*** `entry >> to.rdbuf()` is a formatted
-        // extraction: its sentry skips leading whitespace, so content that
-        // begins with any would arrive one or more bytes short. Content
-        // addressing turns that from a quiet corruption into a blob whose
-        // hash no longer matches the one the document refers to, and the
-        // referrer is served nothing at all -- which is exactly what ASCII
-        // BRep, whose first byte is a newline, hit.
-        to << entry.rdbuf();
+        to.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        to << source;
     }
-
-    // adoptFile() hashes the content and relocates it, so the entry name is
-    // never trusted for anything but the extension: what the archive claims
-    // and what it holds are checked against each other by construction. It
-    // also drops content that is already stored, which is what makes
-    // reopening a document cheap.
-    auto blob = adoptFile(staging.c_str(), Base::FileInfo(name).extension().c_str());
+    auto blob = adoptFile(staging.c_str(), ext.c_str());
     FC_TRACE("blob entry " << name << " -> " << (blob ? blob->hash() : std::string("(none)")));
     hold(std::move(blob));
 }
@@ -1176,6 +1203,50 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* extensio
 
     fi.setPermissions(Base::FileInfo::ReadOnly);
     return make(hash, fi.filePath(), fileSize(fi.filePath().c_str()));
+}
+
+FileBlobHandle FileBlobManager::adoptBytes(const std::string& bytes, const char* extension)
+{
+    const std::string hash = hashBytes(bytes);
+
+    std::lock_guard<std::mutex> guard(_mutex);
+    auto it = _blobs.find(hash);
+    if (it != _blobs.end()) {
+        if (auto existing = it->second.lock()) {
+            // Content already stored: the bytes were the whole price, and the
+            // filesystem is not touched at all.
+            return existing;
+        }
+    }
+
+    // Written straight to its place in the store: there is nothing to adopt
+    // from, so there is no staging path to move and no reason to hash a file
+    // that was just written from bytes already hashed here.
+    std::string ext = extension ? extension : "";
+    if (!ext.empty() && ext[0] != '.') {
+        ext.insert(ext.begin(), '.');
+    }
+    const std::string dst = newBlobPath(ext.empty() ? nullptr : ext.c_str());
+    {
+        Base::ofstream to(Base::FileInfo(dst), std::ios::out | std::ios::binary | std::ios::trunc);
+        if (!to) {
+            std::stringstream str;
+            str << "FileBlobManager: cannot create " << dst;
+            THROWM(Base::FileSystemError, str.str())
+        }
+        if (!bytes.empty()) {
+            to.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        }
+        if (!to) {
+            std::stringstream str;
+            str << "FileBlobManager: cannot write " << dst;
+            THROWM(Base::FileSystemError, str.str())
+        }
+    }
+
+    Base::FileInfo fi(dst);
+    fi.setPermissions(Base::FileInfo::ReadOnly);
+    return make(hash, fi.filePath(), bytes.size());
 }
 
 std::vector<FileBlobHandle> FileBlobManager::blobs() const

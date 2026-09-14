@@ -249,6 +249,20 @@ public:
      */
     FileBlobHandle adoptFile(const char* path, const char* extension = nullptr);
 
+    /** Store bytes already held in memory, writing them only if the content
+     * is new.
+     *
+     * The hash is of the bytes, so whether anything has to be written is known
+     * before any file exists: content the store already holds costs no file
+     * operation at all, and new content costs one write. This is the restore
+     * path's route -- it reads an archive entry rather than staging it -- which
+     * leaves adoptFile() to the callers that really do have a file to move.
+     *
+     * The extension is the one the content should be stored under; null or
+     * empty stores it without one.
+     */
+    FileBlobHandle adoptBytes(const std::string& bytes, const char* extension = nullptr);
+
     /// Existing blob for a content hash, or null. Never creates.
     FileBlobHandle find(const std::string& hash) const;
 
