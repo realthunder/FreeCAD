@@ -45,6 +45,7 @@ also get a shortcut or go on another tool bar.
 | `Std_ExpressionDiff` | Toggles between the text and a line diff of it against the text last loaded (added lines green, removed red). |
 | `Std_ExpressionRevert` | Puts back the text last loaded. Ctrl+Z brings the edit back. |
 | `Std_ExpressionRefresh` | Reloads from the documents -- for changes made elsewhere since. Asks first when the text has unapplied edits. |
+| `Std_ExpressionFoldAll` | Folds every block; when every block is already folded, unfolds them all. |
 | `Std_ExpressionUnbind` | Turns the block at the cursor, or every block the selection touches, into an unbinding block (`#`). Nothing changes in the document until Apply. |
 
 "Last loaded" is the last open, Apply or Refresh.
@@ -60,7 +61,7 @@ Closing an editor with unapplied edits asks Apply / Discard / Cancel.
 ## 3. Folding
 
 Each block folds under its first header line: click the arrow in the line
-number margin. A folded block shows `...` after its header. Moving the cursor
+number margin, or fold and unfold them all with `Std_ExpressionFoldAll`. A folded block shows `...` after its header. Moving the cursor
 into a folded block unfolds it. Folds survive Apply, Revert, Refresh and
 Unbind, matched by the header line's text -- a renamed label unfolds its
 block.

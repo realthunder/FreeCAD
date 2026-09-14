@@ -144,7 +144,8 @@ GuiExport std::vector<DiffLine> diffLines(const QStringList& from, const QString
  * edit, Refresh reloads from the documents, and Unbind turns the blocks
  * under the cursor into unbinding blocks. Each is a command, and their
  * tool bar is shown only while an expression editor is the active view.
- * Each block folds under its first header line.
+ * Each block folds under its first header line, and Fold all folds or
+ * unfolds them together.
  */
 class GuiExport ExpressionEditorView: public MDIView
 {
@@ -185,6 +186,8 @@ public:
     void revert();
     bool refresh(bool ask = true);
     void unbindSelected();
+    /// Fold every block when one is unfolded, else unfold them all.
+    void toggleFoldAll();
 
     static const char* toolBarName();
     /// Show the tool bar while an expression editor is the active view.

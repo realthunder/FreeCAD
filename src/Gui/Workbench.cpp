@@ -413,7 +413,8 @@ void Workbench::addPermanentToolBars(ToolBarItem* root) const
     auto bar = new ToolBarItem(root, ToolBarItem::DefaultVisibility::Unavailable);
     bar->setCommand(ExpressionEditorView::toolBarName());
     *bar << "Std_ExpressionApply" << "Std_ExpressionDiff" << "Std_ExpressionRevert"
-         << "Std_ExpressionRefresh" << "Separator" << "Std_ExpressionUnbind";
+         << "Std_ExpressionRefresh" << "Separator" << "Std_ExpressionFoldAll"
+         << "Std_ExpressionUnbind";
 }
 
 void Workbench::activated()

@@ -522,6 +522,38 @@ public:
         }
     }
 
+    /// Some block can still fold.
+    bool hasUnfolded() const
+    {
+        for (QTextBlock block = document()->begin(); block.isValid(); block = block.next()) {
+            if (isHeader(block) && !isFolded(block)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void foldAll()
+    {
+        bool changed = false;
+        for (QTextBlock block = document()->begin(); block.isValid(); block = block.next()) {
+            if (isHeader(block) && !isFolded(block)) {
+                hide(block, true);
+                changed = true;
+            }
+        }
+        if (changed) {
+            relayout(document()->begin(), document()->lastBlock());
+            if (!textCursor().block().isVisible()) {
+                QTextBlock header = textCursor().block();
+                while (header.isValid() && !isHeader(header)) {
+                    header = header.previous();
+                }
+                setTextCursor(QTextCursor(header.isValid() ? header : document()->begin()));
+            }
+        }
+    }
+
     void unfoldAll()
     {
         bool changed = false;
@@ -1161,6 +1193,17 @@ std::vector<ExpressionText::Block> ExpressionEditorView::selectedBlocks() const
     return res;
 }
 
+void ExpressionEditorView::toggleFoldAll()
+{
+    showDiff(false);
+    if (editor->hasUnfolded()) {
+        editor->foldAll();
+    }
+    else {
+        editor->unfoldAll();
+    }
+}
+
 void ExpressionEditorView::unbindSelected()
 {
     showDiff(false);
@@ -1231,6 +1274,10 @@ bool ExpressionEditorView::onMsg(const char* msg, const char** /*ppReturn*/)
         unbindSelected();
         return true;
     }
+    if (strcmp(msg, "ExpressionFoldAll") == 0) {
+        toggleFoldAll();
+        return true;
+    }
     if (strcmp(msg, "Cut") == 0) {
         currentEditor()->cut();
         return true;
@@ -1268,6 +1315,9 @@ bool ExpressionEditorView::onHasMsg(const char* msg) const
     }
     if (strcmp(msg, "ExpressionDiff") == 0 || strcmp(msg, "ExpressionRefresh") == 0) {
         return true;
+    }
+    if (strcmp(msg, "ExpressionFoldAll") == 0) {
+        return !isShowingDiff() && !editor->document()->isEmpty();
     }
     if (strcmp(msg, "ExpressionUnbind") == 0) {
         // Cheap on purpose, it is polled; the command finds the blocks.

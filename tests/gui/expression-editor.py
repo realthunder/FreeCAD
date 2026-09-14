@@ -248,6 +248,37 @@ def steps():
         click(markers[0], 4, y)
         check("a second click unfolds", document.findBlockByNumber(1).isVisible())
 
+        headers = [
+            i for i in range(document.blockCount())
+            if document.findBlockByNumber(i).text().startswith("##@@ ")
+        ]
+        check("Fold all is enabled", command_active("Std_ExpressionFoldAll"))
+        FreeCADGui.runCommand("Std_ExpressionFoldAll")
+        pump()
+        check(
+            "Fold all folds every block",
+            all(not document.findBlockByNumber(i + 1).isVisible() for i in headers),
+            len(headers),
+        )
+        check("Fold all keeps every header", all(document.findBlockByNumber(i).isVisible() for i in headers))
+        FreeCADGui.runCommand("Std_ExpressionFoldAll")
+        pump()
+        check(
+            "Fold all again unfolds every block",
+            all(document.findBlockByNumber(i).isVisible() for i in range(document.blockCount())),
+        )
+        # One block open: the button folds, it does not unfold.
+        FreeCADGui.runCommand("Std_ExpressionFoldAll")
+        click(markers[0], 4, y)
+        FreeCADGui.runCommand("Std_ExpressionFoldAll")
+        pump()
+        check(
+            "with one block open, Fold all folds",
+            all(not document.findBlockByNumber(i + 1).isVisible() for i in headers),
+        )
+        FreeCADGui.runCommand("Std_ExpressionFoldAll")
+        pump()
+
     # --- Apply ---------------------------------------------------------
     check("edit found", replace(editor, "B.Integer + 1", "B.Integer + 5"))
     check("an edit enables Apply", command_active("Std_ExpressionApply"))

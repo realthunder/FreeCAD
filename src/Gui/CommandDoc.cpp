@@ -2027,6 +2027,11 @@ void CreateDocCommands()
         QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Refresh expressions"),
         QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Reload the expressions from the documents"),
         "view-refresh"));
+    rcCmdMgr.addCommand(new StdCmdExpressionEditor("Std_ExpressionFoldAll", "ExpressionFoldAll",
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Fold or unfold all"),
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor",
+                          "Fold every expression block, or unfold them all when all are folded"),
+        "tree-doc-collapse"));
     rcCmdMgr.addCommand(new StdCmdExpressionEditor("Std_ExpressionUnbind", "ExpressionUnbind",
         QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Unbind expressions"),
         QT_TRANSLATE_NOOP("StdCmdExpressionEditor",
