@@ -251,7 +251,9 @@ class SandboxToolBarMirrorTest(unittest.TestCase):
         write a tool bar model, which is the desktop's real action, fire
         one, or run a command outside the browser allowlist -- a group row
         judged by what it runs. An editing connection is refused before
-        anything runs, and before it learns whether the command is active."""
+        anything runs (Forbidden ahead of Inactive -- an ordering of codes,
+        not a secret: omni.rows already reports active). A group's rows carry
+        the command each runs, so a client can draw a refused one disabled."""
         state = self.FW.snapshot("cmd:Std_Copy")["state"]
         enabled = state["q_enabled"]
         reply = self.control({"op": "widgets.update", "target": "cmd:Std_Copy",
@@ -271,6 +273,16 @@ class SandboxToolBarMirrorTest(unittest.TestCase):
         self.assertEqual(reply.get("code"), "Forbidden", reply)
         reply = self.control({"op": "command.run", "name": "Std_DrawStyle", "child": 0}, 7, "edit")
         self.assertEqual(reply.get("code"), "Forbidden", reply)
+        # each row of a group names what it runs, and the row the refusal
+        # judged is the row command.children reports at that index
+        children = self.control({"op": "command.children", "name": "Std_DrawStyle"}, 7, "edit")
+        self.assertTrue(children.get("ok"), children)
+        rows = [i for i in children["items"] if not i.get("separator")]
+        self.assertTrue(rows, children)
+        for row in rows:
+            self.assertTrue(row.get("command", "").startswith("Std_DrawStyle"), row)
+            self.assertNotEqual(row.get("command"), "Std_DrawStyle", row)
+        self.assertEqual(children["items"][0].get("command"), reply.get("message"), (children, reply))
         reply = self.control({"op": "command", "name": "Std_Copy"}, 7, "edit")
         self.assertEqual(reply.get("code"), "CommandRefused", reply)
         # the allowlist still answers an editor

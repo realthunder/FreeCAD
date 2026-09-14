@@ -555,9 +555,10 @@ QJsonObject opCommandRun(const QJsonObject &req)
     const QJsonValue child = req.value(QLatin1String("child"));
     // What will RUN is judged, not the name asked for: a row of a group
     // runs its member's command. An editing connection is held to the
-    // browser allowlist and a host is not (docs/ShareAccess.md sec 2.2) --
-    // and the refusal comes before whether the command is active, which is
-    // the desktop's state, not the catalog's.
+    // browser allowlist and a host is not (docs/ShareAccess.md sec 2.2).
+    // The refusal comes first so a refused command answers Forbidden, not
+    // Inactive; it hides nothing, omni.rows and command.children already
+    // report active/enabled.
     if (sceneControlAccess() < Render::ClientAccess::Host) {
         const QString runs = child.isDouble()
             ? groupMemberCommand(cmd, int(child.toDouble()) + 1)
@@ -627,6 +628,12 @@ QJsonObject opCommandChildren(const QJsonObject &req)
         QString text = action->text();
         text.remove(QLatin1Char('&'));
         o[QLatin1String("text")] = text;
+        // The command a click on this row runs (index is 1-based by now),
+        // so a client can draw a member off its allowlist disabled.
+        // command.run still decides.
+        const QString runs = groupMemberCommand(cmd, index);
+        if (!runs.isEmpty())
+            o[QLatin1String("command")] = runs;
         const QString tip = action->toolTip();
         if (!tip.isEmpty() && tip != text)
             o[QLatin1String("tooltip")] = tip;

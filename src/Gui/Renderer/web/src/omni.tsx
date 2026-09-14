@@ -505,9 +505,14 @@ export function OmniBox(props: {
     row.kind === 'command' && detail()[row.key]?.active === false;
   /// A command the server will not run for this connection: anything off
   /// the browser allowlist unless it is a host (docs/ShareAccess.md sec
-  /// 2.2). A group's rows are judged by the server when one is picked.
+  /// 2.2). A group row is not judged here: what it runs is only known once
+  /// its children are fetched, and each child is judged by its `command`.
   const refused = (row: Row) =>
     row.kind === 'command' && !row.group && !props.host?.() && !isBrowserSafeCommand(row.key);
+  /// The same for one row of a group's menu, by the member it runs. An
+  /// unnamed row (a recent file, say) is refused too, as the server does.
+  const refusedChild = (item: CommandChild) =>
+    !props.host?.() && !isBrowserSafeCommand(item.command ?? '');
 
   // ---- actions
 
@@ -792,8 +797,10 @@ export function OmniBox(props: {
             </div>
             <For each={pn.items.filter((i) => i.visible !== false)}>
               {(item) => item.separator ? <div class="fc-omni-sep" /> : (
-                <button class="fc-omni-menu-item" disabled={item.enabled === false}
-                        title={item.tooltip ?? ''}
+                <button class="fc-omni-menu-item"
+                        disabled={item.enabled === false || refusedChild(item)}
+                        title={refusedChild(item) ? 'Runs only for the desktop\'s owner'
+                                                  : (item.tooltip ?? '')}
                         onClick={() => run(pn.name, item.index)}>
                   <span class="fc-menu-tick">
                     {item.checkable ? (item.checked ? (pn.exclusive ? '\u25CF' : '\u2713') : '') : ''}

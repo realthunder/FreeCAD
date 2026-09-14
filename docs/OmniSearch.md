@@ -418,7 +418,7 @@ retried: offline is reported, not queued.
 | `omni.objects`     | `doc` (optional)                       | `doc`, `label`, `objects[{name,label,type,children}]`, `views[{name,title,served}]` |
 | `omni.resolve`     | `query`, `doc` (optional)              | `kind` `object` (`doc`,`obj`,`top`,`sub`,`label`,`type`) or `property` (`doc`,`obj`,`scope`,`view`,`prop`) |
 | `command.run`      | `name`, `child` (optional row index)   | ok; `Forbidden`, `Inactive`, `UnknownCommand`, `NotGroup`, `CommandFailed` |
-| `command.children` | `name`                                 | `exclusive`, `items[{index,text,tooltip,checkable,checked,enabled,visible,separator}]` |
+| `command.children` | `name`                                 | `exclusive`, `items[{index,text,command,tooltip,checkable,checked,enabled,visible,separator}]` (`command`: what the row runs, absent when unnamed) |
 | `param.get`/`set`/`reset` | `key` (`ParamInfo::fullPath()`), `value` for set | `key`, `value`, `set`                        |
 | `omni.changed` (push) | --                                  | `list`, `session`, `version`                             |
 
@@ -600,7 +600,10 @@ view-only connection, and since 2026-09-14 both need more of an editing one
 (docs/ShareAccess.md sec 2.2): the parameter writes need a host connection, and
 `command.run` holds a connection that is not a host to the browser allowlist the
 `command` op keeps, judged on what will run -- a group row by its member -- and
-answered `Forbidden` before whether the command is active. So the hazards below are
+answered `Forbidden` ahead of `Inactive` (an ordering of error codes only: whether a
+command is active is already public through `omni.rows` and `command.children`). A
+group's member rows carry the `command` they run, so the browser draws a refused one
+disabled; the server still decides. So the hazards below are
 a host's, who is the desktop's owner. Scoping them properly means either making the
 command layer take a document (it takes none) or activating the served
 document around the call (which moves the desktop user's focus), and

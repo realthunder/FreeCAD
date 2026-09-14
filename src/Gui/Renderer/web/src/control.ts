@@ -366,6 +366,8 @@ export function runCommand(name: string, child?: number): Promise<any> {
 export interface CommandChild {
   index: number;
   text?: string;
+  /// The command a click on the row runs; absent for an unnamed row
+  command?: string;
   tooltip?: string;
   checkable?: boolean;
   checked?: boolean;
