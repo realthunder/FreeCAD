@@ -76,6 +76,15 @@ public:
 
     bool isSame(const Property &other) const override;
 
+    /** Bump the proxy-chain generation, then notify as usual
+     *
+     * A ProxyExp element's methods may be attributes of this kind -- a Proxy
+     * replaced on the linked object, a spreadsheet cell re-typed to a lambda
+     * -- and nothing else tells a feature that its chain went stale.
+     * docs/ProxyChain.md sec 2.4.
+     */
+    void hasSetValue() override;
+
 private:
     void saveObject(Base::Writer &writer) const;
     void restoreObject(Base::XMLReader &reader);

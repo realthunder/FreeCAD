@@ -162,8 +162,11 @@ def collect_expressions(doc, sandbox):
                     opts |= python_mode
             except Exception:
                 pass
+            # the SHEET's method: PropertySheet has none, and the
+            # AttributeError below used to make every sheet contribute
+            # nothing -- no cell was ever compared before 2026-09-14
             try:
-                cells = obj.cells.getUsedCells()
+                cells = obj.getUsedCells()
             except Exception:
                 cells = []
             for addr in cells:
@@ -194,6 +197,21 @@ def describe(value):
             return "vector:%.12g,%.12g,%.12g" % (value.x, value.y, value.z)
     except Exception:
         pass
+    # a document program's value (docs/Sandbox.md 7.17): a shape compares by
+    # its BRep, whose repr carries an address; a function by its repr, since
+    # routed it is a host stand-in of another type printing the same
+    # "<Function name>"
+    brep = getattr(value, "exportBrepToString", None)
+    if callable(brep):
+        try:
+            import hashlib
+            return "shape:%s:%s" % (value.ShapeType,
+                                    hashlib.sha1(brep().encode()).hexdigest())
+        except Exception:
+            pass
+    text = repr(value)
+    if text.startswith("<Function "):
+        return "function:%s" % text
     return "%s:%s" % (type(value).__name__, repr(value)[:120])
 
 

@@ -13,6 +13,10 @@ set(FCX_CORE_SLICE
     ${FC_SRC}/App/Expression.cpp
     ${FC_SRC}/App/ObjectIdentifier.cpp
     ${FC_SRC}/App/Range.cpp
+    # the function object a def or lambda evaluates to (docs/Sandbox.md
+    # 7.17 D1); its generated ExpressionPy.cpp comes from
+    # FREECAD_GENERATED_DIR like the Base bindings'
+    ${FC_SRC}/App/ExpressionPyImp.cpp
     ${FC_SRC}/App/ExpressionImage/FcxDocument.cpp
 )
 

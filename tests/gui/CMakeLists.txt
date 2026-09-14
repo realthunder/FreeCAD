@@ -113,3 +113,11 @@ fc_add_gui_test(GuiServeExternalPick_tests_run serve-external-pick.py
 # QuantitySpinBox the desktop uses with nothing to paint it on.
 fc_add_gui_test(GuiServeOnViewParams_tests_run serve-onview-params.py
                 --timeout 200)
+
+# The expression editor on a live desktop (docs/ExpressionEditor.md): its
+# tool bar shown only while an editor is the active view, the split that
+# does not evict the spreadsheet being edited, folding from the margin,
+# Apply/Diff/Revert/Refresh/Unbind driven as commands, and the one
+# question for deleted blocks.
+fc_add_gui_test(GuiExpressionEditor_tests_run expression-editor.py
+                --timeout 180)

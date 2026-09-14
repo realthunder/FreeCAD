@@ -88,6 +88,7 @@
 #include <QSet>
 #include <QStringList>
 #include <QTimer>
+#include <QVariantMap>
 
 #include <functional>
 
@@ -192,6 +193,17 @@ public:
         return _grabs;
     }
 
+    /// The counters behind sec 8's measurement (M4): what the watch
+    /// cost since `start` or the last `resetStats`.  Keys: `flushes`
+    /// (re-read bursts), `widgetsRead` (dirty widgets re-read),
+    /// `keysRead` (bag keys read through the meta-object), `keysWritten`
+    /// (keys that differed and went out), `readUs` (in the reads and the
+    /// compare), `writeUs` (in the store writes, the fan-out included),
+    /// `rebuilds`, `walkUs` (in the walks), `grabs`, `grabUs` (in the
+    /// picture grabs, PNG encoding included).
+    QVariantMap stats() const;
+    void resetStats();
+
 Q_SIGNALS:
     void shown(const QString& id);
     void hidden(const QString& id);
@@ -253,6 +265,20 @@ private:
     bool _pictureCapTold = false;
     int _rebuilds = 0;
     int _grabs = 0;
+    struct Stats
+    {
+        qint64 flushes = 0;
+        qint64 widgetsRead = 0;
+        qint64 keysRead = 0;
+        qint64 keysWritten = 0;
+        qint64 readNs = 0;
+        qint64 writeNs = 0;
+        qint64 rebuilds = 0;
+        qint64 walkNs = 0;
+        qint64 grabs = 0;
+        qint64 grabNs = 0;
+    };
+    Stats _stats;
     QTimer _rebuildTimer;
     QTimer _flushTimer;
     QTimer _showTimer;

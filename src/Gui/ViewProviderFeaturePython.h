@@ -26,6 +26,7 @@
 #include <App/AutoTransaction.h>
 #include <App/PropertyPythonObject.h>
 #include <App/FeaturePython.h>
+#include <App/FeaturePythonHook.h>
 
 #include "ViewProviderGeometryObject.h"
 #include "Document.h"
@@ -37,19 +38,19 @@ class SoNode;
 
 namespace Gui {
 
-class GuiExport ViewProviderFeaturePythonImp
+/** The view-side hooks of a scripted object's view provider Proxy
+ *
+ * One short body per hook over App::PyHookImp::callHook; the hook table itself
+ * is generated from src/App/FeaturePythonHooks.py (docs/ProxyChain.md sec 3).
+ * ValueT and init() come from the base.
+ */
+class GuiExport ViewProviderFeaturePythonImp: public App::PyHookImp
 {
 public:
-    enum ValueT {
-        NotImplemented = 0, // not handled
-        Accepted = 1, // handled and accepted
-        Rejected = 2  // handled and rejected
-    };
-
     /// constructor.
     ViewProviderFeaturePythonImp(ViewProviderDocumentObject*, App::PropertyPythonObject &);
     /// destructor.
-    ~ViewProviderFeaturePythonImp();
+    ~ViewProviderFeaturePythonImp() override;
 
     // Returns the icon
     QIcon getIcon() const;
@@ -132,76 +133,31 @@ public:
 
     bool editProperty(const char *propName);
 
+    /** Read the object's ViewProxyExp list into the hook chain
+     *
+     * The view-side extension list lives on the APP object (docs/ProxyChain.md
+     * sec 2.1), so the view provider pulls it: at attach, when the list itself
+     * changes, and again when the document has finished restoring, which is
+     * when its links have resolved.
+     */
+    void readHookExtensions();
+    /// Whether prop IS that list -- how a change to it reaches the view
+    /// provider is the App object's updateData, so the template has to ask.
+    /// A pointer compare: updateData runs on every property change of every
+    /// scripted object, and a lookup by name there would be felt.
+    bool isHookExtensionProperty(const App::Property* prop) const
+    {
+        return prop && prop == expProp;
+    }
+
+protected:
+    Py::Object hookSelf(int hook) const override;
+
 private:
     ViewProviderDocumentObject* object;
     App::PropertyPythonObject &Proxy;
-    bool has__object__{false};
-
-#define FC_PY_VIEW_OBJECT \
-    FC_PY_ELEMENT(getIcon) \
-    FC_PY_ELEMENT(getExtraIcons) \
-    FC_PY_ELEMENT(getToolTip) \
-    FC_PY_ELEMENT(claimChildren) \
-    FC_PY_ELEMENT(useNewSelectionModel) \
-    FC_PY_ELEMENT(getElementPicked) \
-    FC_PY_ELEMENT(getElement) \
-    FC_PY_ELEMENT(getDetail) \
-    FC_PY_ELEMENT(getDetailPath) \
-    FC_PY_ELEMENT(getSelectionShape) \
-    FC_PY_ELEMENT(setEdit) \
-    FC_PY_ELEMENT(unsetEdit) \
-    FC_PY_ELEMENT(setEditViewer) \
-    FC_PY_ELEMENT(unsetEditViewer) \
-    FC_PY_ELEMENT(doubleClicked) \
-    FC_PY_ELEMENT(iconMouseEvent) \
-    FC_PY_ELEMENT(setupContextMenu) \
-    FC_PY_ELEMENT(attach) \
-    FC_PY_ELEMENT(updateData) \
-    FC_PY_ELEMENT(onChanged) \
-    FC_PY_ELEMENT(startRestoring) \
-    FC_PY_ELEMENT(finishRestoring) \
-    FC_PY_ELEMENT(onDelete) \
-    FC_PY_ELEMENT(canDelete) \
-    FC_PY_ELEMENT(isShow) \
-    FC_PY_ELEMENT(getDefaultDisplayMode) \
-    FC_PY_ELEMENT(getDisplayModes) \
-    FC_PY_ELEMENT(setDisplayMode) \
-    FC_PY_ELEMENT(canRemoveChildrenFromRoot) \
-    FC_PY_ELEMENT(canDragObjects) \
-    FC_PY_ELEMENT(canDragObject) \
-    FC_PY_ELEMENT(dragObject) \
-    FC_PY_ELEMENT(canDropObjects) \
-    FC_PY_ELEMENT(canDropObject) \
-    FC_PY_ELEMENT(dropObject) \
-    FC_PY_ELEMENT(canDragAndDropObject) \
-    FC_PY_ELEMENT(canDropObjectEx) \
-    FC_PY_ELEMENT(dropObjectEx) \
-    FC_PY_ELEMENT(canAddToSceneGraph) \
-    FC_PY_ELEMENT(getDropPrefix) \
-    FC_PY_ELEMENT(replaceObject) \
-    FC_PY_ELEMENT(canReplaceObject) \
-    FC_PY_ELEMENT(reorderObjects) \
-    FC_PY_ELEMENT(canReorderObject) \
-    FC_PY_ELEMENT(getLinkedViewProvider) \
-    FC_PY_ELEMENT(editProperty) \
-
-#undef FC_PY_ELEMENT
-#define FC_PY_ELEMENT(_name) FC_PY_ELEMENT_DEFINE(_name)
-
-    FC_PY_VIEW_OBJECT
-
-#undef FC_PY_ELEMENT
-#define FC_PY_ELEMENT(_name) FC_PY_ELEMENT_FLAG(_name)
-
-    enum Flag {
-        FC_PY_VIEW_OBJECT
-        FlagMax,
-    };
-    using Flags = std::bitset<FlagMax>;
-    mutable Flags _Flags;
-
-public:
-    void init(PyObject *pyobj);
+    /// the object's ViewProxyExp, found by name once the object is known
+    const App::PropertyXLinkList* expProp {nullptr};
 };
 
 template <class ViewProviderT>
@@ -312,8 +268,18 @@ public:
         // delay loading of the actual attach() method because the Python
         // view provider class is not attached yet
         ViewProviderT::pcObject = obj;
+        // the view-side extension list lives on the object, so it may already
+        // be there -- a document opened in the GUI, or a secondary view
+        imp->readHookExtensions();
     }
     void updateData(const App::Property* prop) override {
+        if (imp->isHookExtensionProperty(prop)) {
+            // ViewProxyExp is an App property, so this is the only signal a
+            // view-side list change gives.  docs/ProxyChain.md sec 2.1.
+            imp->readHookExtensions();
+            if (imp->hasHookExtensions())
+                attachDeferred();
+        }
         imp->updateData(prop);
         ViewProviderT::updateData(prop);
     }
@@ -349,6 +315,10 @@ public:
         imp->startRestoring();
     }
     void finishRestoring() override {
+        // the links resolve late, so the list only means anything now
+        imp->readHookExtensions();
+        if (imp->hasHookExtensions())
+            attachDeferred();
         imp->finishRestoring();
         ViewProviderT::finishRestoring();
     }
@@ -519,36 +489,48 @@ public:
     }
 
 protected:
+    /** The attach this template defers, and everything that follows it
+     *
+     * attach(obj) only records the object: the Python view provider class is
+     * not there yet.  The real attach waits for whatever supplies the hooks --
+     * the first Proxy, or, for an object extended through ViewProxyExp and
+     * carrying no Proxy at all, the first non-empty view list.
+     * docs/ProxyChain.md sec 2.3.
+     */
+    void attachDeferred() {
+        if (!ViewProviderT::pcObject)
+            return;
+        if (!_attached) {
+            _attached = true;
+            imp->attach(ViewProviderT::pcObject);
+            ViewProviderT::attach(ViewProviderT::pcObject);
+            // needed to load the right display mode after they're known now
+            ViewProviderT::DisplayMode.touch();
+            ViewProviderT::setOverrideMode(viewerMode);
+        }
+        else {
+            // Hooks arriving after attach -- a proxy swapped in by
+            // document migration for a richer class, or an extension
+            // added to ViewProxyExp -- can bring new display modes,
+            // and attach() is the only place the enum is stated.
+            // Restate it, or the new modes are registered mask modes
+            // the DisplayMode property refuses to select.
+            ViewProviderT::DisplayMode.setEnumVector(
+                this->getDisplayModes());
+        }
+        if(!this->testStatus(Gui::isRestoring) && 
+            ViewProviderT::canAddToSceneGraph()!=this->canAddToSceneGraph())
+        {
+            this->getDocument()->toggleInSceneGraph(this);
+        }
+        ViewProviderT::updateView();
+    }
+
     void onChanged(const App::Property* prop) override {
         if (prop == &Proxy) {
             imp->init(Proxy.getValue().ptr());
-            if (ViewProviderT::pcObject && !Proxy.getValue().is(Py::_None())) {
-                if (!_attached) {
-                    _attached = true;
-                    imp->attach(ViewProviderT::pcObject);
-                    ViewProviderT::attach(ViewProviderT::pcObject);
-                    // needed to load the right display mode after they're known now
-                    ViewProviderT::DisplayMode.touch();
-                    ViewProviderT::setOverrideMode(viewerMode);
-                }
-                else {
-                    // A proxy swapped in after attach -- document
-                    // migration replacing a restored proxy with a
-                    // richer class -- can bring new display modes,
-                    // and attach() is the only place the enum is
-                    // stated. Restate it, or the new modes are
-                    // registered mask modes the DisplayMode
-                    // property refuses to select.
-                    ViewProviderT::DisplayMode.setEnumVector(
-                        this->getDisplayModes());
-                }
-                if(!this->testStatus(Gui::isRestoring) && 
-                    ViewProviderT::canAddToSceneGraph()!=this->canAddToSceneGraph())
-                {
-                    this->getDocument()->toggleInSceneGraph(this);
-                }
-                ViewProviderT::updateView();
-            }
+            if (!Proxy.getValue().is(Py::_None()))
+                attachDeferred();
         }
 
         imp->onChanged(prop);
@@ -629,7 +611,7 @@ protected:
     }
 
     virtual bool canReorderObject(App::DocumentObject *obj, App::DocumentObject *before) override {
-        switch (imp->canReplaceObject(obj,before)) {
+        switch (imp->canReorderObject(obj,before)) {
         case ViewProviderFeaturePythonImp::Accepted:
             return true;
         case ViewProviderFeaturePythonImp::Rejected:

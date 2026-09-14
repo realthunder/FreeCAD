@@ -374,6 +374,11 @@ generate_from_xml(MaterialListPy)
 generate_embed_from_py(FreeCADInit InitScript.h)
 generate_embed_from_py(FreeCADTest TestScript.h)
 
+# The FeaturePython hook table -- the first generate_from_cog user; the output
+# lands in the build tree and is not committed. docs/ProxyChain.md sec 3.3.
+generate_from_cog(FeaturePythonHookApp.cog.h FeaturePythonHookApp.h
+                  "${CMAKE_CURRENT_SOURCE_DIR}/FeaturePythonHooks.py")
+
 set(CMAKE_ADD_CUSTOM_COMMAND_DEPENDS_EXPLICIT_ONLY OFF)
 
 SET(FreeCADApp_XML_SRCS
@@ -440,6 +445,8 @@ SET(Document_CPP_SRCS
     ExpressionTokenizer.cpp
     ${ExpressionImageHost_SRC}
     FeaturePython.cpp
+    FeaturePythonHook.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/FeaturePythonHookApp.h
     FeatureTest.cpp
     GeoFeature.cpp
     GeoFeatureGroupExtensionPyImp.cpp
@@ -468,6 +475,7 @@ SET(Document_CPP_SRCS
     MergeDocuments.cpp
     ShaderObject.cpp
     TextDocument.cpp
+    ExpressionLibrary.cpp
     Link.cpp
     LinkParams.cpp
     LinkBaseExtensionPyImp.cpp
@@ -505,6 +513,9 @@ SET(Document_HPP_SRCS
     ExpressionVisitors.h
     FeatureCustom.h
     FeaturePython.h
+    FeaturePythonHook.h
+    FeaturePythonHookApp.cog.h
+    FeaturePythonHooks.py
     FeaturePythonPyImp.h
     FeaturePythonPyImp.inl
     FeatureTest.h
@@ -532,6 +543,7 @@ SET(Document_HPP_SRCS
     MergeDocuments.h
     ShaderObject.h
     TextDocument.h
+    ExpressionLibrary.h
     Link.h
     SavedView.h
 )

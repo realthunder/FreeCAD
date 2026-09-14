@@ -32,11 +32,14 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "DocumentObjectPy.h"
+#include "DocumentPy.h"
+#include "ExpressionLibrary.h"
 #include "Expression.h"
 #include "ExpressionEvaluator.h"
 
 #ifdef FC_EXPR_IMAGE_HOST
 #include "ExpressionGuestProxy.h"
+#include "ExpressionImageBridge.h"
 #include "ExpressionImageHost.h"
 #endif
 #ifdef FC_EXPR_PYODIDE_HOST
@@ -436,6 +439,60 @@ PyObject* pyodideAbiFunc(PyObject*, PyObject* args)
 #endif
 }
 
+PyObject* librariesFunc(PyObject*, PyObject* args)
+{
+    PyObject* pydoc = nullptr;
+    if (!PyArg_ParseTuple(args, "O!", &App::DocumentPy::Type, &pydoc))
+        return nullptr;
+    PY_TRY
+    {
+        Py::Dict d;
+        auto doc = static_cast<App::DocumentPy*>(pydoc)->getDocumentPtr();
+        for (auto lib : App::ExpressionLibrary::libraries(doc)) {
+            const std::string module = lib->getModuleName();
+            if (!d.hasKey(module))
+                d.setItem(module, Py::asObject(lib->getPyObject()));
+        }
+        return Py::new_reference_to(d);
+    }
+    PY_CATCH
+}
+
+PyObject* surfaceVersionFunc(PyObject*, PyObject* args)
+{
+    PyObject* guest = Py_False;
+    if (!PyArg_ParseTuple(args, "|O", &guest))
+        return nullptr;
+    PY_TRY
+    {
+        Py::Dict d;
+#ifdef FC_EXPR_IMAGE_HOST
+        d.setItem("version", Py::Long(ExpressionSandbox::surfaceVersion()));
+        d.setItem("hash", Py::String(ExpressionSandbox::surfaceHash()));
+        if (PyObject_IsTrue(guest)) {
+            auto& host = ExpressionSandbox::ImageHost::instance();
+            auto res = host.eval("__import__('_fcx').surface()", {});
+            if (!res.ok) {
+                PyErr_Format(PyExc_RuntimeError, "%s: %s", res.excType.c_str(),
+                             res.message.c_str());
+                return nullptr;
+            }
+            PyObject* stamp = host.decodeResult(res);
+            if (!stamp)
+                return nullptr;
+            Py::Tuple t(stamp, true);
+            d.setItem("guest_version", t[0]);
+            d.setItem("guest_hash", t[1]);
+        }
+#else
+        d.setItem("version", Py::Long(0));
+        d.setItem("hash", Py::String(""));
+#endif
+        return Py::new_reference_to(d);
+    }
+    PY_CATCH
+}
+
 PyMethodDef Methods[] = {
     {"routed", routedFunc, METH_NOARGS,
      "routed() -> bool -- whether evaluation is currently routed through"
@@ -515,6 +572,16 @@ PyMethodDef Methods[] = {
     {"pyodideAbi", pyodideAbiFunc, METH_VARARGS,
      "pyodideAbi(dir) -> str -- the ABI tag of a runtime directory"
      " ('2026_0'), from the pinned table or its lock file."},
+    {"libraries", librariesFunc, METH_VARARGS,
+     "libraries(doc) -> dict -- the document's expression libraries by import"
+     " name (the first object wins a duplicated name).  docs/Sandbox.md 7.17 (c)."},
+    {"surfaceVersion", surfaceVersionFunc, METH_VARARGS,
+     "surfaceVersion(guest=False) -> dict -- the curated surface this build"
+     " exposes to the guest: 'version', the integer bumped when a member is"
+     " removed or changes meaning, and 'hash', the sha256 of the annotated"
+     " set.  With guest=True also the guest's own stamp ('guest_version',"
+     " 'guest_hash'), booting it: a mismatch is an fcx_image wheel built"
+     " from other annotations.  docs/Sandbox.md 7.17 (b)."},
     {nullptr, nullptr, 0, nullptr},
 };
 

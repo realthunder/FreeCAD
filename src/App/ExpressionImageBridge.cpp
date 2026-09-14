@@ -37,9 +37,12 @@
 
 #include "ExpressionImage/FcxWire.h"
 #include "Application.h"
+#include <Base/Console.h>
+
 #include "Document.h"
 #include "ExpressionGuestProxy.h"
 #include "ExpressionImageBridge.h"
+#include "ExpressionLibrary.h"
 #include "ExpressionSecurityRuntime.h"
 #include "Extension.h"
 #include "ExtensionContainer.h"
@@ -47,6 +50,8 @@
 #include "DocumentPy.h"
 #include "ExtensionContainerPy.h"
 #include "PropertyContainerPy.h"
+#include "ObjectIdentifier.h"
+#include "PropertyExpressionEngine.h"
 #ifdef FC_EXPR_PYODIDE_HOST
 #include "ExpressionPyodide.h"
 #endif
@@ -62,6 +67,57 @@ namespace ExpressionSandbox
 // ---- annotations; docs/ExpressionSandbox.md sec 7.5) ----
 
 #include "FcxDispatch.inc"
+
+int surfaceVersion()
+{
+    return FcxSurfaceVersion;
+}
+
+const char* surfaceHash()
+{
+    return FcxSurfaceHash;
+}
+
+static bool carriesExpressions(const App::Document& doc)
+{
+    for (auto obj : doc.getObjects()) {
+        std::vector<App::Property*> props;
+        obj->getPropertyList(props);
+        for (auto prop : props) {
+            auto container = Base::freecad_dynamic_cast<PropertyExpressionContainer>(prop);
+            if (container && !container->getExpressions().empty())
+                return true;
+        }
+    }
+    return false;
+}
+
+void connectSurfaceRecord()
+{
+    static bool connected;
+    if (connected)
+        return;
+    connected = true;
+    auto& app = App::GetApplication();
+    app.signalStartSaveDocument.connect([](const App::Document& doc, const std::string&) {
+        if (!carriesExpressions(doc))
+            return;
+        std::string version = std::to_string(FcxSurfaceVersion);
+        const char* have = doc.Meta.getValue("ExpressionSurface");
+        if (have && version == have)
+            return;
+        // Document::saveToFile raises this before it writes the document
+        const_cast<App::Document&>(doc).Meta.setValue("ExpressionSurface", version.c_str());
+    });
+    app.signalFinishRestoreDocument.connect([](const App::Document& doc) {
+        const char* have = doc.Meta.getValue("ExpressionSurface");
+        int written = have ? std::atoi(have) : 0;
+        if (written > 0 && written < FcxSurfaceVersion)
+            Base::Console().Warning(
+                "Document '%s' was written against expression surface %d, this build is %d\n",
+                doc.getName(), written, FcxSurfaceVersion);
+    });
+}
 
 using MemberIndex =
     std::unordered_map<std::string, std::unordered_map<std::string, const FacadeMember*>>;
@@ -632,6 +688,12 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
         if (allStringKeys)
             return map;
     }
+    // a function a routed evaluation left: callable in the guest over
+    // fcall, the call itself made here (FcxWire OpFunctionCall)
+    else if (isRoutedFunction(obj))
+        return {{FcxWire::TagKey, FcxWire::TagGuestFunction},
+                {"id", table.add(obj)},
+                {"n", routedFunctionName(obj)}};
     // a Proxy that lives in the guest: its stand-in crosses back as the
     // guest's own instance, never as a handle on the stand-in
     else if (isGuestProxy(obj))
@@ -1292,6 +1354,64 @@ json dispatchHostOp(HandleTable& table, const json& req)
             return okReply(json(""));
 #endif
         }
+        if (op == FcxWire::OpLibSource) {
+            // The text of an expression library of the evaluation owner's
+            // document (docs/Sandbox.md 7.17 (c)): the document's own code,
+            // read under doc.read.self, and keyed by that document's
+            // principal so two documents' modules never meet in the guest.
+            //
+            // A library linked from another file (Source) serves the text it
+            // reaches, under the principal of the document holding it; "k"
+            // names that document when the import is made by such a
+            // module's own code, which resolves in its own file.  Only a
+            // document a live link reaches from the owner's is served --
+            // the link was the one doc.foreign question, when it was made.
+            auto a = req.find("a");
+            if (a == req.end() || !a->is_string())
+                return errReply("ProtocolError", "lib.source without a name");
+            const std::string& name = a->get_ref<const std::string&>();
+            App::Document* ownerDoc = documentOf(table.owner());
+            App::Document* doc = ownerDoc;
+            auto k = req.find("k");
+            if (k != req.end() && k->is_string()) {
+                const std::string& home = k->get_ref<const std::string&>();
+                doc = App::GetApplication().getDocument(home.c_str());
+                if (!doc || !App::ExpressionLibrary::reachesHome(ownerDoc, doc))
+                    return errReply("PermissionError",
+                                    "lib.source: no library link reaches document '" + home + "'");
+            }
+            auto* lib = doc ? App::ExpressionLibrary::find(doc, name) : nullptr;
+            if (!lib)
+                return okReply(json());
+            std::string why;
+            auto* holder = lib->getHolder(&why);
+            if (!holder)
+                return errReply("ImportError", "library '" + name + "': " + why);
+            ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::DocReadSelf);
+            App::Document* holderDoc = holder->getDocument();
+            const std::string key =
+                ExpressionSecurity::Runtime::instance().documentPrincipal(holderDoc);
+            // every library on the way drops the guest's module when it changes
+            for (App::ExpressionLibrary* cur = lib; cur;) {
+                cur->noteServed(key, name);
+                if (cur == holder)
+                    break;
+                cur = Base::freecad_dynamic_cast<App::ExpressionLibrary>(cur->Source.getValue());
+            }
+            json v = json::object();
+            v["text"] = lib->getLibraryText();
+            v["rev"] = lib->getLibraryRevision();
+            v["key"] = key;
+            v["obj"] = holder->getNameInDocument();
+            v["doc"] = holderDoc->getName();
+            // triples, not a map: a reply value is decoded as a wire value,
+            // where a module named like the tag key would read as a type
+            json libs = json::array();
+            for (const auto& entry : App::ExpressionLibrary::importTable(holderDoc))
+                libs.push_back(json::array({entry.module, entry.key, entry.rev}));
+            v["libs"] = std::move(libs);
+            return okReply(v);
+        }
         if (op == FcxWire::OpAppDocs || op == FcxWire::OpAppDoc || op == FcxWire::OpAppNewDoc
             || op == FcxWire::OpAppCloseDoc || op == FcxWire::OpAppSetActiveDoc)
             return applicationOp(table, op, req);
@@ -1350,6 +1470,18 @@ json dispatchHostOp(HandleTable& table, const json& req)
         PyObject* base = table.get(id);
         if (!base)
             return errReply("ReferenceError", "stale host handle");
+
+        if (op == FcxWire::OpFunctionCall) {
+            // A routed function's stand-in and nothing else: a handle is
+            // not a licence to call the host object behind it.  The call
+            // is an evaluation of its own, nested in this one.
+            if (!isRoutedFunction(base))
+                return errReply("ProtocolError",
+                                std::string("fcall on a '") + Py_TYPE(base)->tp_name
+                                    + "', which is no routed function");
+            Py_INCREF(base);
+            return callWithWireArgs(table, base, req);
+        }
 
         if (op == FcxWire::OpGetAttr) {
             auto a = req.find("a");

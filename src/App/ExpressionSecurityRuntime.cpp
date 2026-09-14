@@ -38,6 +38,7 @@
 #include "DocumentObjectPy.h"
 #include "DocumentPy.h"
 #include "Expression.h"
+#include "ExpressionLibrary.h"
 #include "ExpressionSecurityRuntime.h"
 #include "ObjectIdentifier.h"
 #include "PropertyExpressionEngine.h"
@@ -101,6 +102,8 @@ PyObject *PermissionNeededException::getPyExceptionType() const
 struct ScopeEntry {
     const App::DocumentObject *owner = nullptr;
     const App::Document *doc = nullptr;
+    /// a chain method's call: the object whose code runs as `owner`
+    const App::DocumentObject *via = nullptr;
     std::string principal;  // empty for a document scope until first use
 };
 
@@ -119,6 +122,35 @@ Runtime::Scope::Scope(const App::DocumentObject *owner)
         entry.principal = "session";
     _ScopeStack.push_back(std::move(entry));
     pushed = true;
+}
+
+Runtime::Scope::Scope(const App::DocumentObject *runAs, const App::DocumentObject *via)
+{
+    ScopeEntry entry;
+    entry.owner = runAs;
+    entry.doc = runAs ? runAs->getDocument() : nullptr;
+    entry.via = via;
+    if (!entry.doc)
+        entry.principal = "session";
+    _ScopeStack.push_back(std::move(entry));
+    pushed = true;
+}
+
+/// The audit context of a scope: "Doc:Obj" of its owner, and for a chain
+/// method's call the object whose code it is, " via Doc#Obj".
+static std::string scopeContext(const ScopeEntry &top)
+{
+    std::string docName = top.doc ? top.doc->getName() : std::string();
+    std::string objName;
+    if (top.owner && top.owner->getNameInDocument())
+        objName = top.owner->getNameInDocument();
+    std::string context = docName.empty() ? objName : docName + ":" + objName;
+    if (top.via && top.via != top.owner && top.via->getNameInDocument()) {
+        const App::Document *viaDoc = top.via->getDocument();
+        context += std::string(" via ") + (viaDoc ? viaDoc->getName() : "") + "#"
+            + top.via->getNameInDocument();
+    }
+    return context;
 }
 
 Runtime::Scope::Scope(const char *principalId)
@@ -207,7 +239,13 @@ Runtime::Runtime()
     // code strings, so it must follow every edit).
     app.signalChangedObject.connect(
         [this](const App::DocumentObject &obj, const App::Property &prop) {
-            if (!prop.isDerivedFrom(PropertyExpressionContainer::getClassTypeId()))
+            // ... and a library's text is code of the document the same way
+            auto lib = freecad_dynamic_cast<const ExpressionLibrary>(&obj);
+            bool libraryCode = lib
+                    && (&prop == &lib->Text || &prop == &lib->Module || &prop == &lib->Source
+                        || &prop == &lib->Pinned || &prop == &lib->Snapshot);
+            if (!libraryCode
+                    && !prop.isDerivedFrom(PropertyExpressionContainer::getClassTypeId()))
                 return;
             std::lock_guard<std::recursive_mutex> guard(mutex);
             docPrincipals.erase(obj.getDocument());
@@ -319,6 +357,13 @@ std::string Runtime::documentPrincipal(const App::Document *doc)
         // toString() of an embedded Python-object constant may touch Python
         Base::PyGILStateLocker lock;
         for (auto obj : doc->getObjects()) {
+            // an expression library is the document's code (7.17 (c)):
+            // a tampered library voids the grants as a tampered expression
+            // does.  A pinned one's code is its snapshot; a live link's is
+            // the link, the text being the source document's
+            if (auto lib = freecad_dynamic_cast<ExpressionLibrary>(obj))
+                builder.addScript("App::ExpressionLibrary:" + lib->getModuleName(),
+                                  lib->getPrincipalCode());
             std::vector<App::Property *> props;
             obj->getPropertyList(props);
             for (auto prop : props) {
@@ -442,7 +487,7 @@ void Runtime::check(Permission perm, const std::string &target)
             pendingChanged = addPending(principal, perm, target, docName, objName);
         audit(principal, perm, target,
                 promptable ? Decision::Prompt : Decision::Deny,
-                docName.empty() ? objName : docName + ":" + objName);
+                scopeContext(top));
     }
     if (pendingChanged)
         signalPendingChanged();
@@ -489,6 +534,7 @@ void Runtime::requestPending(Permission perm, const std::string &target)
     std::string principal = "session";
     std::string docName;
     std::string objName;
+    std::string context;
     if (!_ScopeStack.empty()) {
         principal = currentPrincipal();
         auto &top = _ScopeStack.back();
@@ -496,13 +542,13 @@ void Runtime::requestPending(Permission perm, const std::string &target)
             docName = top.doc->getName();
         if (top.owner && top.owner->getNameInDocument())
             objName = top.owner->getNameInDocument();
+        context = scopeContext(top);
     }
     bool pendingChanged = false;
     {
         std::lock_guard<std::recursive_mutex> guard(mutex);
         pendingChanged = addPending(principal, perm, target, docName, objName);
-        audit(principal, perm, target, Decision::Prompt,
-                docName.empty() ? objName : docName + ":" + objName);
+        audit(principal, perm, target, Decision::Prompt, context);
     }
     if (pendingChanged)
         signalPendingChanged();

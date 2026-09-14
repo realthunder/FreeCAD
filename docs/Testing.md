@@ -11,8 +11,8 @@ as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
-| Python (`FreeCADCmd -t 0`) | **2688 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-13, after the LinkVibe merge) |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **634 of 634 passing** (2026-09-13, after the LinkVibe merge), 0 failures, 7 ctest entries disabled -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available" |
+| Python (`FreeCADCmd -t 0`) | **not yet run on the merged tree** (2026-09-14, the SecurePython merge). Before it: SecurePython **2778 tests, OK** (2026-09-14, after `SandboxProgram`'s fixture cases, docs/Sandbox.md 7.17 D3; 2706 on 2026-09-13); RemoteEdit **2688 tests, OK** (2026-09-13, after the LinkVibe merge) -- each 0 failures, 0 errors, 50 skipped, 6 expected failures |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **not yet run on the merged tree** (2026-09-14, the SecurePython merge). Before it: SecurePython **625 of 625 passing**, 8 ctest entries disabled (2026-09-14; 605 on 2026-09-12); RemoteEdit **634 of 634 passing**, 7 disabled (2026-09-13, after the LinkVibe merge) -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available" |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **497 of 497 passing** (2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
 | Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
@@ -111,6 +111,38 @@ for m in ("pivy", "typing_extensions", "ply", "yaml", "requests",
         out.write("MISSING %-20s (%s)\n" % (m, e))
 out.close()
 ```
+
+### Python that needs the GUI
+
+`FreeCADCmd -t 0` above is headless, and the Gui binary has no `-t` mode, so
+a unittest module that needs a real view provider or a real widget cannot run
+in either. Those modules run from `scripts/sandbox-gui-gate.py`, which the GUI
+executes at startup; `$SANDBOX_GUI_GATE_MODULES` selects them and the verdict
+is the last line of `$SANDBOX_GUI_GATE_RESULT`, not the exit code.
+
+    cd build/conda-relwithdebinfo-801
+    QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome2 \
+      SANDBOX_GUI_GATE_MODULES=ViewProviderHooks,ViewProviderChain \
+      SANDBOX_GUI_GATE_RESULT=/tmp/gate.txt \
+      timeout -k 5 300 ~/works/sw/fcad/.conda/run.sh \
+      ./bin/FreeCAD ~/works/sw/fcad/scripts/sandbox-gui-gate.py
+
+Most of the default module list is the sandbox gates of `docs/Sandbox.md` 7.9,
+which need `xcb` under Xvfb and a guest runtime. `ViewProviderHooks` and
+`ViewProviderChain` are the exceptions and run on `offscreen` with neither:
+between them they are the only cover the tree has for
+`ViewProviderFeaturePythonImp`, every hook of which is invisible to both
+suites above. `ViewProviderHooks` (8 cases) pins which hook each view query
+reaches and what arguments the Proxy is handed, per the table in
+`docs/ProxyChain.md` sec 3; `ViewProviderChain` (17) is the view half of the
+proxy chain -- `ViewProxyExp`, the walk, the deferred attach and a
+spreadsheet as an extension (`docs/ProxyChain.md` sec 4.4). Its App-side twin,
+`FeaturePythonChain`, is headless and rides the Python suite.
+
+**Editing a test module means copying it into the build tree.** The modules
+are installed, not read from `src/`, so an edit to `src/Mod/Test/<M>.py` does
+nothing until `cmake --build` copies it, or you copy it yourself into
+`build/<tree>/Mod/Test/`.
 
 ### C++
 

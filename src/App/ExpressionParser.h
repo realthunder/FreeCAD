@@ -161,6 +161,22 @@ public:
 };
 
 /// Helper class to block access of from expression
+/** Expression::getIdentifiers() leaves out what a function body reads:
+ * those are not dependencies, the body reading them live when it is
+ * called.  While one of these lives, getIdentifiers() includes them -- for
+ * a caller that must RESOLVE everything an evaluation may read (the
+ * sandbox's bindings pack, ExpressionImageHost.cpp), never for dependency
+ * tracking.  A process-wide counter, as the function depth it overrides.
+ */
+class AppExport FunctionBodyIdentifiers
+{
+public:
+    FunctionBodyIdentifiers();
+    ~FunctionBodyIdentifiers();
+    FunctionBodyIdentifiers(const FunctionBodyIdentifiers&) = delete;
+    FunctionBodyIdentifiers& operator=(const FunctionBodyIdentifiers&) = delete;
+};
+
 class AppExport ExpressionBlocker
 {
 public:
@@ -734,6 +750,13 @@ public:
 
     static void securityCheck(PyObject *pyobj, PyObject *attr);
 
+    /** The namespace a library module's function resolves free names in
+     * (docs/Sandbox.md 7.17 (c)): the module's dict, held.  Null for every
+     * other function, which resolves them through its caller's frames. */
+    void setGlobals(PyObject *dict);
+
+    ~CallableExpression() override;
+
 protected:
     explicit CallableExpression(const App::DocumentObject *_owner):FunctionExpression(_owner) {}
 
@@ -749,6 +772,7 @@ protected:
     ExpressionPtr expr;
     std::string name;
     StringList names;
+    PyObject *globals = nullptr;
 };
 
 class AppExport RangeExpression : public App::Expression {
@@ -1175,6 +1199,10 @@ public:
             StringList &&names=StringList(), ExpressionList &&args=ExpressionList());
 
     bool isTouched() const override;
+    /// Below every operator: `(lambda k: k * k)(i)` must keep its
+    /// parentheses when it is printed, or it re-parses as a lambda whose
+    /// body is `k * k(i)`.
+    int priority() const override;
 
 protected:
     explicit LambdaExpression(const App::DocumentObject *_owner):Expression(_owner) {}
@@ -1194,6 +1222,10 @@ protected:
 
 class AppExport FunctionStatement : public LambdaExpression {
     EXPR_TYPESYSTEM_HEADER();
+
+public:
+    /// A statement, never parenthesized (LambdaExpression lowers it).
+    int priority() const override;
 
 public:
     static ExpressionPtr create(const App::DocumentObject *owner, std::string &&name, 
@@ -1300,10 +1332,13 @@ public:
 
     void add(std::string &&module, std::string &&name = std::string());
 
+    const StringList &getModules() const {return modules;}
+
 protected:
     explicit ImportStatement(const App::DocumentObject *_owner):BaseStatement(_owner) {}
 
     void _toString(std::ostream &ss, bool persistent, int indent) const override;
+    void _getIdentifiers(std::map<App::ObjectIdentifier,bool> &) const override;
     ExpressionPtr _copy() const override;
     Py::Object _getPyValue(int *jumpCode=nullptr) const override;
 
@@ -1323,10 +1358,13 @@ public:
 
     void add(std::string &&tail, std::string &&name = std::string());
 
+    const std::string &getModule() const {return module;}
+
 protected:
     explicit FromStatement(const App::DocumentObject *_owner):BaseStatement(_owner) {}
 
     void _toString(std::ostream &ss, bool persistent, int indent) const override;
+    void _getIdentifiers(std::map<App::ObjectIdentifier,bool> &) const override;
     ExpressionPtr _copy() const override;
     Py::Object _getPyValue(int *jumpCode=nullptr) const override;
 
@@ -1378,6 +1416,18 @@ public:
 };
 
 AppExport bool isModuleImported(PyObject *);
+
+/** Run a library's text once, in a frame and an evaluation stack of its
+ * own, and return a module named `name` holding what the run left bound
+ * (docs/Sandbox.md 7.17 (c)).  The functions it defines resolve the
+ * module's names when called.  Throws the parse or evaluation error.
+ */
+AppExport Py::Object buildLibraryModule(const App::DocumentObject *owner,
+        const std::string &name, const char *text);
+
+/// The module names the import statements of `expr` name, at any depth,
+/// in order and without repeats.
+AppExport std::vector<std::string> importedModules(const App::Expression *expr);
 
 } // end of namespace ExpressionParser
 } // end of namespace App

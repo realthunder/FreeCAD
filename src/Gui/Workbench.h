@@ -126,6 +126,7 @@ protected:
     virtual void setupContextMenu(const char* recipient,MenuItem*) const;
     /** Add permanent menu items to the structure */
     void addPermanentMenuItems(MenuItem*) const;
+    void addPermanentToolBars(ToolBarItem*) const;
 
 private:
     /**

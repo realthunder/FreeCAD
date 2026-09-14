@@ -46,6 +46,7 @@
 #include <App/PropertyLinks.h>
 #include <Base/Tools.h>
 #include "ExpressionCompleter.h"
+#include "ExpressionSyntaxHighlighter.h"
 #include "Application.h"
 #include "ViewProvider.h"
 #include "BitmapFactory.h"
@@ -2776,6 +2777,9 @@ ExpressionTextEdit::ExpressionTextEdit(QWidget *parent, char lead)
 {
     connect(this, SIGNAL(textChanged()), this, SLOT(slotTextChanged()));
     LineEditStyle::setup(this);
+    auto highlighter = new ExpressionSyntaxHighlighter(this);
+    highlighter->loadEditorColors();
+    highlighter->setDocument(document());
 }
 
 void ExpressionTextEdit::setLeadChar(char lead)

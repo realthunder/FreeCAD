@@ -23,6 +23,7 @@
 #ifndef APP_FEATUREPYTHONPYIMP_H
 #define APP_FEATUREPYTHONPYIMP_H
 
+#include <App/FeaturePythonHook.h>
 #include <Base/BaseClass.h>
 #include <Base/Interpreter.h>
 #include <Base/PyObjectBase.h>

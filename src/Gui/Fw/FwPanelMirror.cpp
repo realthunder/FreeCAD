@@ -192,8 +192,10 @@ QString posKey(const QVariantList& pos)
 
 /// Write the keys of `values` that differ from the bag as native code
 /// would, WITHOUT the backend hearing it: the values come from the real
-/// widget, and the bound view would only write them back.
-void writeDiff(Widget* model, const QVariantMap& values)
+/// widget, and the bound view would only write them back.  Returns how
+/// many keys went out; `writeNs` grows by the time the write took (the
+/// store's fan-out included).
+int writeDiff(Widget* model, const QVariantMap& values, qint64& writeNs)
 {
     QVariantMap diff;
     for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
@@ -201,11 +203,15 @@ void writeDiff(Widget* model, const QVariantMap& values)
             diff.insert(it.key(), it.value());
     }
     if (diff.isEmpty())
-        return;
+        return 0;
+    QElapsedTimer clock;
+    clock.start();
     Backend* backend = model->backend();
     model->setBackend(nullptr);
     model->setProperties(diff, Source::Native);
     model->setBackend(backend);
+    writeNs += clock.nsecsElapsed();
+    return diff.size();
 }
 
 void replayKey(QWidget* w, int key)
@@ -638,11 +644,38 @@ void PanelMirror::flush()
 {
     QSet<QWidget*> dirty;
     dirty.swap(_dirty);
+    if (dirty.isEmpty())
+        return;
+    ++_stats.flushes;
     for (QWidget* w : dirty) {
         auto it = _models.find(w);
-        if (it != _models.end() && it.value())
+        if (it != _models.end() && it.value()) {
+            ++_stats.widgetsRead;
             refresh(w, it.value(), false);
+        }
     }
+}
+
+QVariantMap PanelMirror::stats() const
+{
+    QVariantMap m;
+    m.insert(QStringLiteral("flushes"), _stats.flushes);
+    m.insert(QStringLiteral("widgetsRead"), _stats.widgetsRead);
+    m.insert(QStringLiteral("keysRead"), _stats.keysRead);
+    m.insert(QStringLiteral("keysWritten"), _stats.keysWritten);
+    m.insert(QStringLiteral("readUs"), _stats.readNs / 1000);
+    m.insert(QStringLiteral("writeUs"), _stats.writeNs / 1000);
+    m.insert(QStringLiteral("rebuilds"), _stats.rebuilds);
+    m.insert(QStringLiteral("walkUs"), _stats.walkNs / 1000);
+    m.insert(QStringLiteral("grabs"), _stats.grabs);
+    m.insert(QStringLiteral("grabUs"), _stats.grabNs / 1000);
+    m.insert(QStringLiteral("models"), static_cast<qint64>(_models.size()));
+    return m;
+}
+
+void PanelMirror::resetStats()
+{
+    _stats = Stats();
 }
 
 // ---- the walk --------------------------------------------------------------------
@@ -671,11 +704,15 @@ void PanelMirror::rebuild()
         return;
     _walking = true;
     ++_rebuilds;
+    ++_stats.rebuilds;
     Store& store = Store::instance();
     Store::OriginScope scope(0);  // the opens are the desktop's, whoever caused them
     const bool rootNew = _root && !_signatures.contains(_root);
     Walk w;
+    QElapsedTimer walkClock;
+    walkClock.start();
     withoutBackends([&]() { walk(w); });
+    _stats.walkNs += walkClock.nsecsElapsed();
 
     // the opens, referenced before referrer: the created list is in
     // post-order, and the root comes last
@@ -1184,6 +1221,9 @@ QString PanelMirror::grabPicture(QWidget* real)
     }
     _grabbedAt.insert(real, now);
     ++_grabs;
+    ++_stats.grabs;
+    QElapsedTimer grabClock;
+    grabClock.start();
     // at 1x whatever the screen's ratio; the size capped
     QPixmap pixmap(real->size());
     pixmap.fill(Qt::transparent);
@@ -1193,7 +1233,9 @@ QString PanelMirror::grabPicture(QWidget* real)
     if (pixmap.width() > maxPictureSide() || pixmap.height() > maxPictureSide())
         pixmap = pixmap.scaled(maxPictureSide(), maxPictureSide(), Qt::KeepAspectRatio,
                                Qt::SmoothTransformation);
-    return ImageStore::instance().add(pixmap);
+    const QString id = ImageStore::instance().add(pixmap);
+    _stats.grabNs += grabClock.nsecsElapsed();
+    return id;
 }
 
 void PanelMirror::forgetPicture(QWidget* real)
@@ -1205,6 +1247,12 @@ void PanelMirror::forgetPicture(QWidget* real)
 
 void PanelMirror::refresh(QWidget* real, Widget* model, bool initial)
 {
+    // the re-read's own time: the whole refresh less the grab and the
+    // write, which are counted on their own
+    const qint64 grabBefore = _stats.grabNs;
+    const qint64 writeBefore = _stats.writeNs;
+    QElapsedTimer clock;
+    clock.start();
     QVariantMap v = read(real, model);
     // what has no name to send and travels by image id (M2)
     if (_pictures.contains(real)) {
@@ -1233,7 +1281,10 @@ void PanelMirror::refresh(QWidget* real, Widget* model, bool initial)
             model->setInitial(it.key(), it.value());
     }
     else {
-        writeDiff(model, v);
+        _stats.keysRead += v.size();
+        _stats.keysWritten += writeDiff(model, v, _stats.writeNs);
+        _stats.readNs += clock.nsecsElapsed() - (_stats.writeNs - writeBefore)
+            - (_stats.grabNs - grabBefore);
     }
 }
 

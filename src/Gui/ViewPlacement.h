@@ -23,6 +23,8 @@
 #ifndef GUI_VIEWPLACEMENT_H
 #define GUI_VIEWPLACEMENT_H
 
+#include <functional>
+
 #include <FCGlobal.h>
 
 namespace Gui {
@@ -52,6 +54,12 @@ enum class Category {
  * reuses the last-used non-3D cell, everything else splits.
  */
 GuiExport void place(MDIView *view, Category cat, Gui::Document *doc);
+/// As above, and \a keep names the views that must stay where they are:
+/// the reuse step of a Split never replaces one of them (it splits instead).
+/// An overload rather than a default argument, so that modules built
+/// against the three-argument form keep linking.
+GuiExport void place(MDIView *view, Category cat, Gui::Document *doc,
+                     const std::function<bool(MDIView *)> &keep);
 
 /** Host \a view in a new MDI tab unconditionally, without activating
  * it -- the pre-policy behavior, kept for document restore, which must

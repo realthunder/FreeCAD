@@ -26,18 +26,35 @@
 # include <sstream>
 #endif
 
-#include "Application.h"
+#ifdef FC_EXPR_IMAGE
+// The sandbox image (docs/Sandbox.md 7.17 D1): the owner is the adapter
+// object of ONE evaluation, not a host binding, so a function object
+// records that evaluation where the host holds the owner's Python face,
+// and is dead once the evaluation has returned.
+# include <App/ExpressionImage/FcxDocument.h>
+#else
+# include "Application.h"
+# include <App/DocumentObject.h>
+#endif
 #include <App/ExpressionParser.h>
 #include <App/ExpressionPy.h>
 #include <App/ExpressionPy.cpp>
-#include <App/DocumentObject.h>
 
 using namespace App;
+
+bool ExpressionPy::ownerAlive() const
+{
+#ifdef FC_EXPR_IMAGE
+    return Fcx::EvalTransaction::alive(evalSerial);
+#else
+    return pyOwner->isValid();
+#endif
+}
 
 // returns a string which represent the object e.g. when printed in python
 std::string ExpressionPy::representation(void) const
 {
-    if (!pyOwner->isValid()){
+    if (!ownerAlive()){
         PyErr_Format(PyExc_ReferenceError, "Owner document object expired");
         return NULL;
     }
@@ -55,18 +72,26 @@ static PyObject *ExpressionPy_Call( PyObject *self, PyObject *args, PyObject *kw
 int ExpressionPy::initialization() {
     if(!Type.tp_call) 
         Type.tp_call = ExpressionPy_Call;
+#ifdef FC_EXPR_IMAGE
+    auto tx = Fcx::EvalTransaction::current();
+    const uint64_t library = Fcx::EvalTransaction::libraryBuild();
+    evalSerial = library ? library : (tx ? tx->serial() : 0);
+#else
     pyOwner = static_cast<PyObjectBase*>(getExpressionPtr()->getOwner()->getPyObject());
+#endif
     return 1;
 }
 
 int ExpressionPy::finalization() {
+#ifndef FC_EXPR_IMAGE
     Py_DECREF(pyOwner);
+#endif
     delete getExpressionPtr();
     return 1;
 }
 
 PyObject *ExpressionPy::__call__(PyObject *args, PyObject *kwds) const{
-    if (!pyOwner->isValid()){
+    if (!ownerAlive()){
         PyErr_Format(PyExc_ReferenceError, "Owner document object expired");
         return NULL;
     }

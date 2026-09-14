@@ -25,7 +25,9 @@
 #ifndef APP_FEATUREPYTHON_H
 #define APP_FEATUREPYTHON_H
 
+#include <App/FeaturePythonHook.h>
 #include <App/GeoFeature.h>
+#include <App/PropertyLinks.h>
 #include <App/PropertyPythonObject.h>
 
 
@@ -34,21 +36,30 @@ namespace App
 
 class Property;
 
-// Helper class to hide implementation details
-class AppExport FeaturePythonImp
+/** The App-side hooks of a scripted object's Proxy
+ *
+ * One short body per hook over PyHookImp::callHook; the hook table itself is
+ * generated from FeaturePythonHooks.py (docs/ProxyChain.md sec 3).  ValueT and
+ * init() come from the base.
+ */
+class AppExport FeaturePythonImp: public PyHookImp
 {
 public:
-    enum ValueT {
-        NotImplemented = 0, // not handled
-        Accepted = 1, // handled and accepted
-        Rejected = 2  // handled and rejected
-    };
-
     explicit FeaturePythonImp(App::DocumentObject*);
-    ~FeaturePythonImp();
+    ~FeaturePythonImp() override;
 
     bool execute();
     bool mustExecute() const;
+    /** Whether a chain element's execute has been redefined under this feature
+     *
+     * The link that carries the chain cannot report it: a Spreadsheet::Sheet
+     * pins its revision to 0 so that its consumers are driven by the
+     * expression engine's per-cell dependencies, and a function stored from
+     * Python is no property at all.  So the recompute decision asks this,
+     * which is a value comparison gated by a counter -- and answers no for an
+     * unrelated cell of the same sheet.  docs/ProxyChain.md sec 4.5.
+     */
+    bool chainExecuteChanged() const;
     bool skipRecompute();
     void onBeforeChange(const Property* prop);
     bool onBeforeChangeLabel(std::string &newLabel);
@@ -90,82 +101,11 @@ public:
 
     bool editProperty(const char *propName);
 
+protected:
+    Py::Object hookSelf(int hook) const override;
+
 private:
     App::DocumentObject* object;
-    bool has__object__{false};
-
-#define FC_PY_FEATURE_PYTHON \
-    FC_PY_ELEMENT(execute)\
-    FC_PY_ELEMENT(mustExecute)\
-    FC_PY_ELEMENT(skipRecompute)\
-    FC_PY_ELEMENT(onBeforeChange)\
-    FC_PY_ELEMENT(onBeforeChangeLabel)\
-    FC_PY_ELEMENT(onChanged)\
-    FC_PY_ELEMENT(onDocumentRestored)\
-    FC_PY_ELEMENT(unsetupObject)\
-    FC_PY_ELEMENT(getViewProviderName)\
-    FC_PY_ELEMENT(getSubObject)\
-    FC_PY_ELEMENT(getSubObjects)\
-    FC_PY_ELEMENT(getLinkedObject)\
-    FC_PY_ELEMENT(canLinkProperties)\
-    FC_PY_ELEMENT(allowDuplicateLabel)\
-    FC_PY_ELEMENT(redirectSubName)\
-    FC_PY_ELEMENT(canLoadPartial)\
-    FC_PY_ELEMENT(hasChildElement)\
-    FC_PY_ELEMENT(isElementVisible)\
-    FC_PY_ELEMENT(isElementVisibleEx)\
-    FC_PY_ELEMENT(setElementVisible)\
-    FC_PY_ELEMENT(getElementMapVersion)\
-    FC_PY_ELEMENT(editProperty)\
-
-#define FC_PY_ELEMENT_DEFINE(_name) \
-    Py::Object py_##_name;
-
-#define FC_PY_ELEMENT_INIT(_name) \
-    FC_PY_GetCallable(pyobj,#_name,py_##_name);\
-    if(!py_##_name.isNone()) {\
-        PyObject *pyRecursive = PyObject_GetAttrString(pyobj, \
-                "__allow_recursive_" #_name);\
-        if(!pyRecursive) {\
-            PyErr_Clear();\
-            _Flags.set(FlagAllowRecursive_##_name, false);\
-        }else{\
-            _Flags.set(FlagAllowRecursive_##_name, PyObject_IsTrue(pyRecursive));\
-            Py_DECREF(pyRecursive);\
-        }\
-    }
-
-#define FC_PY_ELEMENT_FLAG(_name) \
-    FlagCalling_##_name,\
-    FlagAllowRecursive_##_name,
-
-#define _FC_PY_CALL_CHECK(_name,_ret) \
-    if((!_Flags.test(FlagAllowRecursive_##_name) \
-                && _Flags.test(FlagCalling_##_name)) \
-        || py_##_name.isNone()) \
-    {\
-        _ret;\
-    }\
-    Base::BitsetLocker<Flags> guard(_Flags, FlagCalling_##_name);
-
-#undef FC_PY_ELEMENT
-#define FC_PY_ELEMENT(_name) FC_PY_ELEMENT_DEFINE(_name)
-
-    FC_PY_FEATURE_PYTHON
-
-#undef FC_PY_ELEMENT
-#define FC_PY_ELEMENT(_name) FC_PY_ELEMENT_FLAG(_name)
-
-    enum Flag {
-        FC_PY_FEATURE_PYTHON
-        FlagMax,
-    };
-
-    using Flags = std::bitset<FlagMax>;
-    mutable Flags _Flags;
-
-public:
-    void init(PyObject *pyobj);
 };
 
 /**
@@ -181,6 +121,37 @@ class FeaturePythonT : public FeatureT
 public:
     FeaturePythonT() {
         ADD_PROPERTY(Proxy,(Py::Object()));
+        ADD_PROPERTY_TYPE(ProxyExp,(nullptr),"Base",App::Prop_None,
+                "Objects extending this object's Proxy hooks.  Each is asked, in\n"
+                "order and before the Proxy, for a method named after the hook --\n"
+                "expExecute(obj), expOnChanged(obj, prop), ... -- and the first\n"
+                "that answers stops the chain.  A linked object's own Proxy is\n"
+                "asked first, then the object itself, so a spreadsheet whose\n"
+                "alias cells are lambdas extends this object as readily as a\n"
+                "scripted one does.  The links are dependencies: an extension is\n"
+                "recomputed before what it extends, and a copy with dependencies\n"
+                "takes it along.");
+        // a linked object may live in another file
+        ProxyExp.setScope(LinkScope::Global);
+        ADD_PROPERTY_TYPE(ViewProxyExp,(nullptr),"Base",App::Prop_NoRecompute,
+                "Objects extending this object's VIEW PROVIDER Proxy hooks.  Each\n"
+                "is asked, in order and before the view Proxy, for a method named\n"
+                "after the hook -- expViewGetIcon(vobj), expViewClaimChildren(vobj),\n"
+                "... -- and the first that answers stops the chain.  The list sits\n"
+                "on the object rather than on the view provider because a link\n"
+                "property needs a document object to live in, and because one list\n"
+                "then serves every view of the object.  Its links are Hidden scope:\n"
+                "a reference, not a dependency, so an extension may read this object\n"
+                "back without closing a cycle -- and, unlike ProxyExp, a copy with\n"
+                "dependencies does not take the extension along.");
+        // a reference, not a dependency: out of the out-list and the
+        // back-links, but still saved, restored and broken on delete
+        ViewProxyExp.setScope(LinkScope::Hidden);
+        // Prop_NoRecompute only spares the object the Enforce bit; the touch
+        // itself is what a view-side edit must not do, and Property::Output is
+        // how DocumentObject::onChanged is told so -- the same answer
+        // DocumentObject gives for Visibility.
+        ViewProxyExp.setStatus(Property::Output, true);
         // cannot move this to the initializer list to avoid warning
         imp = new FeaturePythonImp(this);
     }
@@ -195,6 +166,10 @@ public:
             return 1;
         auto ret = FeatureT::mustExecute();
         if(ret) return ret;
+        // before the Python call: it is an empty() test for nearly every
+        // object, and an integer compare for the rest
+        if (imp->chainExecuteChanged())
+            return 1;
         return imp->mustExecute()?1:0;
     }
     /// recalculate the Feature
@@ -210,6 +185,13 @@ public:
         return DocumentObject::StdReturn;
     }
     bool skipRecompute() override {
+        // mustExecute() alone is not enough to get here: the carrier is in
+        // this object's InList, so recomputing it sets ObjectStatus::Enforce
+        // and Document::_recomputeFeature is entered either way -- and then
+        // skipped, because no property of this object is touched.  This is the
+        // gate that edit has to pass.  docs/ProxyChain.md sec 4.5.
+        if (imp->chainExecuteChanged())
+            return false;
         return imp->skipRecompute() && FeatureT::skipRecompute();
     }
     /// recalculate the Feature
@@ -362,10 +344,14 @@ protected:
     void onChanged(const Property* prop) override {
         if(prop == &Proxy)
             imp->init(Proxy.getValue().ptr());
+        else if(prop == &ProxyExp)
+            imp->setHookExtensions(ProxyExp.getValues());
         imp->onChanged(prop);
         FeatureT::onChanged(prop);
     }
     void onDocumentRestored() override {
+        // the links resolve late, so the list only means anything now
+        imp->setHookExtensions(ProxyExp.getValues());
         imp->onDocumentRestored();
         FeatureT::onDocumentRestored();
     }
@@ -387,6 +373,11 @@ public:
 private:
     FeaturePythonImp* imp;
     PropertyPythonObject Proxy;
+    /// the chain of docs/ProxyChain.md: objects whose methods extend this one
+    PropertyXLinkList ProxyExp;
+    /// the same, for the hooks of this object's VIEW PROVIDER; read by
+    /// Gui::ViewProviderFeaturePythonT, which holds no list of its own
+    PropertyXLinkList ViewProxyExp;
     mutable std::string viewProviderName;
 };
 

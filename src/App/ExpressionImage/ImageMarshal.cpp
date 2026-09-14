@@ -102,6 +102,25 @@ static const char ProxyPrelude[] =
     "            _fcx.release_later(self._id)\n"
     "        except Exception:\n"
     "            pass\n"
+    // A host stand-in for a function a routed evaluation left (FcxWire
+    // OpFunctionCall): calling it is one hop, the call an evaluation of
+    // its own on the host side
+    "class HostFunction:\n"
+    "    __slots__ = ('_id', '_n')\n"
+    "    def __call__(self, *args, **kw):\n"
+    "        return _fcx.op('fcall', self._id, args, kw)\n"
+    "    def __repr__(self):\n"
+    "        return '<Function %s>' % self._n if self._n else '<Function>'\n"
+    "    def __del__(self):\n"
+    "        try:\n"
+    "            _fcx.release_later(self._id)\n"
+    "        except Exception:\n"
+    "            pass\n"
+    "def _host_function(hid, name):\n"
+    "    f = HostFunction()\n"
+    "    f._id = hid\n"
+    "    f._n = name\n"
+    "    return f\n"
     "def _attr(name):\n"
     "    def get(self):\n"
     "        return _fcx.track(_hop(self, 'get_attr', name), self, name)\n"
@@ -825,6 +844,14 @@ PyObject* decodeValue(const json& v)
         if (fn && id != v.end() && id->is_number_integer())
             return PyObject_CallFunction(fn, "K", (unsigned long long)id->get<uint64_t>());
     }
+    else if (t == FcxWire::TagGuestFunction) {
+        // a host stand-in for a routed function value: callable over fcall
+        auto id = v.find("id");
+        PyObject* fn = preludeFunction("_host_function");
+        if (fn && id != v.end() && id->is_number_integer())
+            return PyObject_CallFunction(fn, "Ks", (unsigned long long)id->get<uint64_t>(),
+                                         v.value("n", std::string()).c_str());
+    }
 bad:
     PyErr_SetString(PyExc_ValueError, "malformed typed wire value");
     return nullptr;
@@ -1037,6 +1064,11 @@ bool encodeValue(PyObject* obj, json& out, std::string& err)
     err = std::string("result of type '") + Py_TYPE(obj)->tp_name
         + "' does not marshal by value";
     return false;
+}
+
+PyObject* surfaceStamp()
+{
+    return Py_BuildValue("(is)", FcxSurfaceVersion, FcxSurfaceHash);
 }
 
 }  // namespace FcxImage

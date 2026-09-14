@@ -850,7 +850,12 @@ private:
     mutable bool _outListCached = false;
 
     bool _enforceRecompute = false;
-    int _revision;
+    // Only ever compared for inequality against a snapshot of itself (a link
+    // property's stored revision, PropertyLinks.cpp), so an indeterminate
+    // start never gave a wrong answer -- but it is undefined behaviour, and
+    // it made the Python Revision attribute read heap garbage. The link
+    // properties have always initialised theirs; this matches them.
+    int _revision {0};
 
     // Borrowed for the duration of one save, see setSaveDefaults().
     const SharedDefaults *_saveDefaults{nullptr};

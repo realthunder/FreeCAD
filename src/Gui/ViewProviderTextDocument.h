@@ -46,6 +46,7 @@ public:
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
     bool isShow() const override { return true; }
 
+    void attach(App::DocumentObject* pcObject) override;
     void onChanged(const App::Property* prop) override;
 
     MDIView *getMDIView() const override;

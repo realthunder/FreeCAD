@@ -37,10 +37,13 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "Expression.h"
+#include "ExpressionGuestProxy.h"
 #include "ExpressionImage/FcxWire.h"
 #include "ExpressionImageBridge.h"
 #include "ExpressionImageHost.h"
 #include "ExpressionImageRuntime.h"
+#include "ExpressionLibrary.h"
+#include "ExpressionParser.h"
 #include "ExpressionSecurityRuntime.h"
 
 using json = nlohmann::json;
@@ -175,6 +178,8 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     std::vector<std::function<void(int)>> bootListeners;
     /// stand-ins that died since the last request (FcxWire "pd")
     std::vector<uint64_t> proxyDrops;
+    /// library modules gone stale since the last request (FcxWire "ld")
+    std::vector<std::pair<std::string, std::string>> libraryDrops;
 
     /** One host->guest call, possibly NESTED inside a bridge op of an
      * outer one: a guest execute() writing a property runs the host's
@@ -242,6 +247,13 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     /// Dead stand-ins ride the next request, whatever its op.
     void attachDrops(json& req)
     {
+        if (!libraryDrops.empty()) {
+            json ld = json::array();
+            for (const auto& drop : libraryDrops)
+                ld.push_back(json::array({drop.first, drop.second}));
+            req["ld"] = std::move(ld);
+            libraryDrops.clear();
+        }
         if (proxyDrops.empty())
             return;
         req["pd"] = proxyDrops;
@@ -256,6 +268,7 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         live = false;
         // the drops queued for this guest name nothing in the next one
         proxyDrops.clear();
+        libraryDrops.clear();
     }
 
     /// The guest's paths as the selected runtime resolves them.
@@ -651,6 +664,17 @@ PyObject* ImageHost::decodeResult(const ImageResult& result)
         return nullptr;
     try {
         json v = json::from_cbor(result.value.begin(), result.value.end());
+        if (result.owner && v.is_object()) {
+            // a function the evaluation left: the stand-in that calls it
+            auto t = v.find(FcxWire::TagKey);
+            if (t != v.end() && t->is_string()
+                && t->get_ref<const std::string&>() == FcxWire::TagGuestFunction) {
+                auto n = v.find("n");
+                return makeRoutedFunction(result.owner, result.source, result.options,
+                                          n != v.end() && n->is_string() ? n->get<std::string>()
+                                                                         : std::string());
+            }
+        }
         return decodeHostValue(d->handles, v);
     }
     catch (const json::exception& e) {
@@ -795,7 +819,11 @@ namespace
 bool referencesForeignDocument(const App::ObjectIdentifier& id,
                                const App::DocumentObject* owner)
 {
-    const std::string& docName = id.getDocumentName().getString();
+    // a copy: getDocumentName() returns its String by value, and a reference
+    // into that temporary dangled -- past the short-string limit of 15
+    // characters the freed bytes read as a foreign document name, and a
+    // program's local `v.x` came back as the host's "Property 'v' not found"
+    const std::string docName = id.getDocumentName().getString();
     if (docName.empty())
         return false;
     const App::Document* doc = owner ? owner->getDocument() : nullptr;
@@ -830,8 +858,36 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
                                       const App::Expression* parsed,
                                       int options)
 {
+    return evalExpressionImpl(owner, source, parsed, options, false, nullptr, nullptr, nullptr);
+}
+
+ImageResult ImageHost::callFunction(const App::DocumentObject* owner,
+                                    const std::string& source,
+                                    int options,
+                                    PyObject* args,
+                                    PyObject* kwargs,
+                                    const App::DocumentObject* runAs)
+{
+    return evalExpressionImpl(owner, source, nullptr, options, true, args, kwargs, runAs);
+}
+
+ImageResult ImageHost::evalExpressionImpl(const App::DocumentObject* owner,
+                                          const std::string& source,
+                                          const App::Expression* parsed,
+                                          int options,
+                                          bool isCall,
+                                          PyObject* callArgs,
+                                          PyObject* callKwargs,
+                                          const App::DocumentObject* runAs)
+{
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     ImageResult res;
+    if (!isCall && owner) {
+        // a function value in the reply is made again from these
+        res.owner = owner;
+        res.source = source;
+        res.options = options;
+    }
     if (!d->initialize()) {
         res.excType = "ImageUnavailable";
         res.message = "expression sandbox image is not available";
@@ -858,6 +914,18 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
         ctx["doc"] = owner->getDocument() ? owner->getDocument()->getName() : "";
         ctx["obj"] = owner->getNameInDocument() ? owner->getNameInDocument() : "";
         req["ctx"] = std::move(ctx);
+        // The document's expression libraries by import name, so the
+        // guest asks for a text only when an import names one and keeps
+        // the module it built while the revision stands (7.17 (c)).
+        // A linked library names the principal of the document holding
+        // its text, so every consumer of one source shares one module.
+        auto libs = App::ExpressionLibrary::importTable(owner->getDocument());
+        if (!libs.empty()) {
+            json table = json::object();
+            for (const auto& entry : libs)
+                table[entry.module] = json::array({entry.key, entry.rev});
+            req["libs"] = std::move(table);
+        }
     }
 
     // The evaluation's principal, for the pack step AND the round trip:
@@ -897,7 +965,15 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
             json bindings = json::object();
             json bindErrors = json::object();
             std::map<App::ObjectIdentifier, bool> ids;
-            expr->getIdentifiers(ids);
+            {
+                // What a function body reads too: no dependency, but the
+                // body reads it when called, and in the guest a name the
+                // pack does not carry does not resolve at all (the flange
+                // of docs/Sandbox.md 7.17, whose hole pattern reads
+                // HoleDia and Pcd only inside its def).
+                App::FunctionBodyIdentifiers withBodies;
+                expr->getIdentifiers(ids);
+            }
             for (auto& v : ids) {
                 const auto& id = v.first;
                 // Ring 0 pseudo-modules live IN the image (docs/
@@ -912,6 +988,18 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
                         continue;
                 }
                 try {
+                    // an import's edge to a library is a dependency, not a
+                    // value the evaluation reads: the guest asks for the
+                    // text when it builds the module
+                    if (auto prop = id.getProperty()) {
+                        auto lib = Base::freecad_dynamic_cast<App::ExpressionLibrary>(
+                            prop->getContainer());
+                        if (lib
+                            && (prop == &lib->Text || prop == &lib->Module
+                                || prop == &lib->Source || prop == &lib->Pinned
+                                || prop == &lib->Snapshot))
+                            continue;
+                    }
                     Py::Object value = id.getPyValue(true);
                     bindings[id.toString()] =
                         encodeHostValue(d->handles, value.ptr());
@@ -961,6 +1049,32 @@ ImageResult ImageHost::evalExpression(const App::DocumentObject* owner,
     catch (Base::Exception&) {
         // host-side parse failure: ship as-is, the image parses the
         // same source with the same parser and raises the same error
+    }
+
+    // A routed function called: the arguments ride with the request, and
+    // a chain call runs as the object it extends -- the write owner and,
+    // for the round trip only, the principal.  The pack above was the
+    // definition's own frame, resolved under its owner.
+    std::optional<ExpressionSecurity::Runtime::Scope> runScope;
+    if (isCall) {
+        Base::PyGILStateLocker lock;
+        json call;
+        json args = json::array();
+        if (callArgs && PyTuple_Check(callArgs))
+            for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(callArgs); ++i)
+                args.push_back(encodeHostValue(d->handles, PyTuple_GET_ITEM(callArgs, i)));
+        call["a"] = std::move(args);
+        if (callKwargs && PyDict_Check(callKwargs) && PyDict_Size(callKwargs) > 0)
+            call["k"] = encodeHostValue(d->handles, callKwargs);
+        req["call"] = std::move(call);
+        if (runAs) {
+            // borrowed: the object keeps its Python face, and the handle
+            // the arguments exported is this same object
+            PyObject* runPy = const_cast<App::DocumentObject*>(runAs)->getPyObject();
+            Py_DECREF(runPy);
+            d->handles.setOwner(runPy);
+            runScope.emplace(runAs, owner);
+        }
     }
 
     json reply;
@@ -1112,6 +1226,13 @@ void ImageHost::dropProxy(uint64_t id, int boot)
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
     if (boot == d->boots)
         d->proxyDrops.push_back(id);
+}
+
+void ImageHost::dropLibrary(const std::string& key, const std::string& module)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    if (d->live)
+        d->libraryDrops.emplace_back(key, module);
 }
 
 }  // namespace ExpressionSandbox

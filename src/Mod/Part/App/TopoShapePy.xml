@@ -177,6 +177,7 @@ check([runBopCheck = False])
 This is a more detailed check as done in isValid().
 if runBopCheck is True, a BOPCheck analysis is also performed.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="fuse" Const="true" Keyword="true">
       <Documentation>
@@ -262,12 +263,14 @@ OCC 6.9.0 or later is required.</UserDocu>
 slices(direction, distancesList) --> Wires
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="slice" Const="true">
       <Documentation>
         <UserDocu>Make single slice of this shape.
 slice(direction, distance) --> Wires</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="cut" Const="true">
       <Documentation>
@@ -314,6 +317,7 @@ Parallelization of Boolean Operations algorithm
 OCC 6.9.0 or later is required.
 </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="sewShape">
       <Documentation>
@@ -335,6 +339,7 @@ childShapes([cumOri=True, cumLoc=True]) -> list
    each sub-shape the transformation that is associated with this shape.
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="ancestorsOfType" Const="true">
       <Documentation>
@@ -350,6 +355,7 @@ ancestorsOfType(shape, shape type) -> list
 removeInternalWires(minimalArea) -> bool
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="mirror" Const="true">
       <Documentation>
@@ -358,6 +364,7 @@ mirror(base, norm) -> Shape
 --
 The plane is given with its base point and its normal direction.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="transformGeometry" Const="true">
       <Documentation>
@@ -416,6 +423,7 @@ translate(vector)
 translated(vector) -> shape
          </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="rotate">
       <Documentation>
@@ -433,6 +441,7 @@ Shp.rotate(App.Vector(0,0,0),App.Vector(0,0,1),180) - rotate the shape around th
 rotated(base,dir,degree) -> shape
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="scale">
       <Documentation>
@@ -448,6 +457,7 @@ scale(factor,[base=App.Vector(0,0,0)])
 scaled(factor,[base=App.Vector(0,0,0)]) -> shape
           </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="makeFillet" Const="true">
       <Documentation>
@@ -457,6 +467,7 @@ or
 makeFillet(radius1,radius2,edgeList) -> Shape
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="makeChamfer" Const="true">
       <Documentation>
@@ -465,6 +476,7 @@ makeChamfer(radius,edgeList) -> Shape
 or
 makeChamfer(radius1,radius2,edgeList) -> Shape</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="makeThickness" Const="true">
       <Documentation>
@@ -475,6 +487,7 @@ A hollowed solid is built from an initial solid and a set of faces on this solid
 which are to be removed. The remaining faces of the solid become the walls of
 the hollowed solid, their thickness defined at the time of construction.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="makeOffsetShape" Const="true"  Keyword="true">
       <Documentation>
@@ -535,6 +548,7 @@ collectively).
 Returns: result of offsetting (wire or face or compound of those). Compounding
 structure follows that of source shape.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="makeEvolved" Const="true" Keyword="true">
         <Documentation>
@@ -1112,6 +1126,7 @@ builds a face only when one is asked for.</UserDocu>
               <UserDocu>The shells of this shape, as a lazy Part.ShapeList.</UserDocu>
           </Documentation>
           <Parameter Name="Shells" Type="Object"/>
+          <Sandbox tier="handle"/>
       </Attribute>
       <Attribute Name="Solids" ReadOnly="true">
           <Documentation>
@@ -1125,6 +1140,7 @@ builds a face only when one is asked for.</UserDocu>
           <UserDocu>The compsolids of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
       <Parameter Name="CompSolids" Type="Object"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="Edges" ReadOnly="true">
       <Documentation>
@@ -1145,6 +1161,7 @@ builds a face only when one is asked for.</UserDocu>
         <UserDocu>The compounds of this shape, as a lazy Part.ShapeList.</UserDocu>
       </Documentation>
       <Parameter Name="Compounds" Type="Object"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="SubShapes" ReadOnly="true">
       <Documentation>

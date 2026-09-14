@@ -14,6 +14,10 @@
 #include <nlohmann/json.hpp>
 
 #include <App/ExpressionImageHost.h>
+#include <App/Expression.h>
+#include <App/ExpressionEvaluator.h>
+#include <App/ExpressionImageBridge.h>
+#include <App/ExpressionLibrary.h>
 #include <Base/FileInfo.h>
 
 #include "InitApplication.h"
@@ -1009,8 +1013,9 @@ TEST_F(ExpressionImageEvalTest, partModuleFacade)
     EXPECT_GT(st.ops["mod_call"], 0u);
     EXPECT_EQ(st.ops["mod_get"], 1u) << "the constant is read once, then cached";
 
-    // an undeclared name does not exist in the guest's module
-    auto r = host.eval("__import__('Part').makeSphere(1.0)", pack());
+    // an undeclared name does not exist in the guest's module: file I/O,
+    // which the surface leaves out on purpose (docs/Sandbox.md 7.17 (b))
+    auto r = host.eval("__import__('Part').read('/etc/passwd')", pack());
     EXPECT_FALSE(r.ok);
     EXPECT_EQ(r.excType, "AttributeError") << r.message;
 
@@ -2452,7 +2457,10 @@ TEST_F(ExpressionImageBenchTest, DISABLED_BenchTransportFloor)
 // ---- image failure fails the evaluation rather than falling back ----
 
 #include <App/ExpressionEvaluator.h>
+#include <App/ExpressionGuestProxy.h>
 #include <App/PropertyExpressionEngine.h>
+#include <App/PropertyPythonObject.h>
+#include <App/PropertyUnits.h>
 
 class ExpressionRoutingTest: public ExpressionImageEvalTest
 {
@@ -2690,6 +2698,57 @@ TEST_F(ExpressionRoutingTest, foreignDocErrorTextMatchesNative)
     App::GetApplication().closeDocument(doc2->getName());
 }
 
+TEST_F(ExpressionRoutingTest, localMemberInALongNamedDocumentStaysLocal)
+{
+    // A document name past the short-string limit (15 characters) turned a
+    // program's local `v.x` into a foreign-document reference: the check
+    // read the name through a reference into a temporary String, and the
+    // host's own failure to resolve `v` was shipped as the answer --
+    // "Property 'v' not found".  Found by the 7.17 D3 fixtures, whose files
+    // are named longer than any test document was.
+    struct LongDocument
+    {
+        App::Document* doc =
+            App::GetApplication().newDocument("FcxEvalTestLongDocumentName", "testUser");
+        ~LongDocument()
+        {
+            App::GetApplication().closeDocument(doc->getName());
+        }
+    } longDoc;
+    ASSERT_GT(std::strlen(longDoc.doc->getName()), 15u);
+    auto owner = longDoc.doc->addObject("App::FeaturePython", "Obj");
+    ASSERT_NE(owner, nullptr);
+
+    const std::pair<const char*, double> cases[] = {
+        {"v = vector(1, 2, 3)\nv.x", 1.0},
+        {"base = 2\nbase * 3", 6.0},
+    };
+    Base::PyGILStateLocker lock;
+    for (const auto& c : cases) {
+        auto expr = App::Expression::parse(owner, c.first);
+        ASSERT_NE(expr, nullptr) << c.first;
+        PyObject* value = nullptr;
+        try {
+            value = App::ExpressionSandbox::evaluatePy(expr.get(),
+                                                       App::Expression::OptionCallFrame);
+        }
+        catch (Base::Exception& e) {
+            ADD_FAILURE() << c.first << ": " << e.what();
+        }
+        catch (Py::Exception&) {
+            Base::PyException e;
+            ADD_FAILURE() << c.first << ": " << e.what();
+        }
+        if (value) {
+            EXPECT_DOUBLE_EQ(PyFloat_AsDouble(value), c.second) << c.first;
+            if (PyErr_Occurred())
+                PyErr_Clear();
+            Py_DECREF(value);
+        }
+        ImageHost::instance().clearHandles();
+    }
+}
+
 TEST_F(ExpressionRoutingTest, unresolvableLocalNameIsNotShippedAsAnError)
 {
     // The narrow scope of the fix above matters: a name the host cannot
@@ -2707,6 +2766,779 @@ TEST_F(ExpressionRoutingTest, unresolvableLocalNameIsNotShippedAsAnError)
 // ---- wire type identity: a tuple is not a list (the corpus gate found
 // ---- this -- an Enum property fed from a cell range came back as a
 // ---- list, changing the stored value's type) ----
+
+// ---- docs/Sandbox.md 7.17 D1: function objects in the image ----
+
+namespace
+{
+std::string reprOf(PyObject* v)
+{
+    if (!v)
+        return "<null>";
+    PyObject* rep = PyObject_Repr(v);
+    std::string s = rep ? PyUnicode_AsUTF8(rep) : "<repr failed>";
+    Py_XDECREF(rep);
+    return s;
+}
+
+/// Evaluate `src` under a call frame, routed through the image or
+/// in-process, as a new reference; a failure comes back as nullptr with
+/// its message in `err`.
+PyObject* evalProgram(App::DocumentObject* owner, const char* src, bool routed, std::string& err)
+{
+    auto expr = App::Expression::parse(owner, src);
+    if (!expr) {
+        err = "parse produced nothing";
+        return nullptr;
+    }
+    try {
+        if (routed)
+            return App::ExpressionSandbox::evaluatePy(expr.get(),
+                                                      App::Expression::OptionCallFrame);
+        return Py::new_reference_to(expr->getPyValue(App::Expression::OptionCallFrame));
+    }
+    catch (Py::Exception&) {
+        Base::PyException e;
+        err = e.what();
+    }
+    catch (Base::Exception& e) {
+        err = e.what();
+    }
+    if (PyErr_Occurred())
+        PyErr_Clear();
+    return nullptr;
+}
+}  // namespace
+
+TEST_F(ExpressionRoutingTest, programs)
+{
+    // A def evaluated routed and called, a function passed as a value, a
+    // lambda in a comprehension, defaults and keywords, a list of
+    // functions, and a body reading an identifier nothing outside it
+    // reads -- not a dependency, so the pack must still carry it.  Each
+    // equal to the native answer.
+    const char* cases[] = {
+        "def f(x):\n    return x * 3\nf(Width)",
+        "def twice(g, x):\n    return g(g(x))\ntwice(lambda y: y + 1, Width)",
+        "[(lambda k: k * k)(i) for i in [1, 2, 3]]",
+        "def g():\n    return Width + 1\ng()",
+        "def h(a, b=2):\n    return a * b\nh(b=5, a=Width)",
+        "fs = [lambda v: v + 1, lambda v: v * 2]\n[fn(Width) for fn in fs]",
+    };
+    Base::PyGILStateLocker lock;
+    for (const char* src : cases) {
+        std::string nerr, rerr;
+        PyObject* native = evalProgram(obj, src, false, nerr);
+        ASSERT_NE(native, nullptr) << src << "\nnative: " << nerr;
+        PyObject* routed = evalProgram(obj, src, true, rerr);
+        EXPECT_NE(routed, nullptr) << src << "\nrouted: " << rerr;
+        EXPECT_EQ(reprOf(routed), reprOf(native)) << src;
+        Py_XDECREF(native);
+        Py_XDECREF(routed);
+        ImageHost::instance().clearHandles();
+    }
+}
+
+namespace
+{
+/// repr() of a borrowed reference; "<null>" for nullptr.
+std::string valueRepr(PyObject* value)
+{
+    if (!value)
+        return "<null>";
+    PyObject* r = PyObject_Repr(value);
+    std::string s = r && PyUnicode_Check(r) ? PyUnicode_AsUTF8(r) : "<unprintable>";
+    Py_XDECREF(r);
+    if (PyErr_Occurred())
+        PyErr_Clear();
+    return s;
+}
+
+/// Call with one argument; the result's repr, or the exception's type name.
+std::string callRepr(PyObject* fn, PyObject* arg)
+{
+    PyObject* res = PyObject_CallOneArg(fn, arg);
+    if (!res) {
+        PyObject* type = PyErr_Occurred();
+        std::string name = type ? std::string("raised ") + ((PyTypeObject*)type)->tp_name : "?";
+        PyErr_Clear();
+        return name;
+    }
+    std::string s = valueRepr(res);
+    Py_DECREF(res);
+    return s;
+}
+}  // namespace
+
+TEST_F(ExpressionRoutingTest, programsFunctionValueCrossesAsAStandIn)
+{
+    // docs/Sandbox.md 7.17 P3.  A function cannot leave its routed
+    // evaluation -- its owner is the guest's adapter of that ONE evaluation
+    // -- so what leaves is a host stand-in holding the source and the owner,
+    // and a call is an evaluation of its own.  Routed = native: the repr,
+    // a call made after the evaluation's handles are gone, and a body that
+    // reads what is current when it is called.
+    Base::PyGILStateLocker lock;
+    auto& host = ImageHost::instance();
+    auto* width = Base::freecad_dynamic_cast<App::PropertyFloat>(obj->getPropertyByName("Width"));
+    ASSERT_NE(width, nullptr);
+    const char* sources[] = {"lambda x: x * Width", "def f(x):\n    return x * Width\nf"};
+    for (const char* src : sources) {
+        width->setValue(21.0);
+        std::string nerr, rerr;
+        PyObject* native = evalProgram(obj, src, false, nerr);
+        ASSERT_NE(native, nullptr) << nerr;
+        PyObject* routed = evalProgram(obj, src, true, rerr);
+        ASSERT_NE(routed, nullptr) << rerr;
+        EXPECT_TRUE(App::ExpressionSandbox::isRoutedFunction(routed)) << src;
+        EXPECT_EQ(valueRepr(routed), valueRepr(native)) << src;
+        EXPECT_EQ(host.handleCount(), 0u);
+
+        PyObject* two = PyLong_FromLong(2);
+        const std::size_t before = host.evalCount();
+        EXPECT_EQ(callRepr(routed, two), callRepr(native, two)) << src;
+        EXPECT_EQ(host.evalCount(), before + 1) << "one call, one evaluation";
+
+        // the body reads Width when called, natively and routed
+        width->setValue(10.0);
+        EXPECT_EQ(callRepr(routed, two), callRepr(native, two)) << src;
+        Py_DECREF(two);
+        Py_DECREF(native);
+        Py_DECREF(routed);
+    }
+    host.clearHandles();
+}
+
+TEST_F(ExpressionRoutingTest, programsStandInCalledFromAnotherEvaluation)
+{
+    // A stand-in held in a property and called by a later routed evaluation
+    // crosses as a guest callable whose call is one fcall hop -- the call a
+    // nested evaluation on the host.  Natively the same property holds the
+    // ExpressionPy.
+    Base::PyGILStateLocker lock;
+    auto& host = ImageHost::instance();
+    auto* fn = Base::freecad_dynamic_cast<App::PropertyPythonObject>(
+        obj->addDynamicProperty("App::PropertyPythonObject", "Fn"));
+    ASSERT_NE(fn, nullptr);
+    const char* def = "def f(x):\n    return x * Width + 1\nf";
+
+    std::string err;
+    PyObject* native = evalProgram(obj, def, false, err);
+    ASSERT_NE(native, nullptr) << err;
+    fn->setValue(Py::Object(native, true));
+    PyObject* nres = evalProgram(obj, "Fn(4)", false, err);
+    ASSERT_NE(nres, nullptr) << err;
+
+    PyObject* routed = evalProgram(obj, def, true, err);
+    ASSERT_NE(routed, nullptr) << err;
+    fn->setValue(Py::Object(routed, true));
+    host.resetStats();
+    PyObject* rres = evalProgram(obj, "Fn(4)", true, err);
+    ASSERT_NE(rres, nullptr) << err;
+    EXPECT_EQ(valueRepr(rres), valueRepr(nres));
+    EXPECT_EQ(host.stats().ops["fcall"], 1u);
+    Py_DECREF(rres);
+    Py_DECREF(nres);
+    host.clearHandles();
+
+    // fcall calls a routed function and nothing else behind a handle
+    fn->setValue(Py::Long(3));
+    PyObject* refused = evalProgram(obj, "Fn(4)", true, err);
+    EXPECT_EQ(refused, nullptr);
+    Py_XDECREF(refused);
+    host.clearHandles();
+}
+
+TEST_F(ExpressionRoutingTest, programsChainCallRunsAsTheObjectItExtends)
+{
+    // docs/ProxyChain.md 2.5, RULED 2026-09-13, "Run as the feature's file".
+    // A function defined by an object of THIS document writes an object of
+    // another.  Called plainly it runs as its own file, and the target is
+    // out of reach; bound the way the chain binds it, it runs as the target
+    // and the write is the target's own.
+    Base::PyGILStateLocker lock;
+    auto& host = ImageHost::instance();
+    App::Document* doc2 = App::GetApplication().newDocument("FcxRunAsTarget", "testUser");
+    App::DocumentObject* target = doc2->addObject("App::FeaturePython", "Target");
+    auto* marker = Base::freecad_dynamic_cast<App::PropertyInteger>(
+        target->addDynamicProperty("App::PropertyInteger", "Marker"));
+    ASSERT_NE(marker, nullptr);
+
+    std::string err;
+    PyObject* routed = evalProgram(obj, "def w(o):\n    o.Marker = 7\n    return True\nw", true, err);
+    ASSERT_NE(routed, nullptr) << err;
+    host.clearHandles();
+    PyObject* targetPy = target->getPyObject();
+
+    EXPECT_EQ(callRepr(routed, targetPy), "raised PermissionError");
+    EXPECT_EQ(marker->getValue(), 0);
+    host.clearHandles();
+
+    PyObject* bound = App::ExpressionSandbox::bindRoutedFunction(routed, targetPy);
+    ASSERT_NE(bound, nullptr);
+    EXPECT_TRUE(App::ExpressionSandbox::isRoutedFunction(bound));
+    EXPECT_EQ(callRepr(bound, targetPy), "True");
+    EXPECT_EQ(marker->getValue(), 7);
+    host.clearHandles();
+
+    Py_DECREF(bound);
+    Py_DECREF(targetPy);
+    Py_DECREF(routed);
+    App::GetApplication().closeDocument(doc2->getName());
+}
+
+namespace
+{
+/// The flange of docs/Sandbox.md 7.17 as one expression, the text of
+/// SandboxProgramFixtures.FLANGE_EXPRESSION.
+const char* flangeProgram = "import Part\n"
+                            "def hole(a):\n"
+                            "    return Part.makeCylinder(HoleDia / 2, Thick * 3,"
+                            " vector(Pcd / 2 * cos(a), Pcd / 2 * sin(a), -Thick))\n"
+                            "body = Part.makeCylinder(Dia / 2, Thick)\n"
+                            "body = body.cut(Part.makeCylinder(Bore / 2, Thick * 3,"
+                            " vector(0, 0, -Thick)))\n"
+                            "i = 0\n"
+                            "while i < Bolts:\n"
+                            "    body = body.cut(hole(i * 360deg / Bolts))\n"
+                            "    i = i + 1\n"
+                            "body\n";
+
+/// The flange's six parameters on `owner`; false if one could not be added.
+bool addFlangeParameters(App::DocumentObject* owner)
+{
+    const std::pair<const char*, double> lengths[] = {
+        {"Dia", 60.0}, {"Thick", 8.0}, {"Bore", 20.0}, {"Pcd", 44.0}, {"HoleDia", 6.0}};
+    for (const auto& l : lengths) {
+        auto p = Base::freecad_dynamic_cast<App::PropertyLength>(
+            owner->addDynamicProperty("App::PropertyLength", l.first));
+        if (!p)
+            return false;
+        p->setValue(l.second);
+    }
+    auto bolts = Base::freecad_dynamic_cast<App::PropertyInteger>(
+        owner->addDynamicProperty("App::PropertyInteger", "Bolts"));
+    if (!bolts)
+        return false;
+    bolts->setValue(6);
+    return true;
+}
+
+bool partImportable()
+{
+    Base::PyGILStateLocker lock;
+    PyObject* part = PyImport_ImportModule("Part");
+    if (!part) {
+        PyErr_Clear();
+        return false;
+    }
+    Py_DECREF(part);
+    return true;
+}
+}  // namespace
+
+TEST_F(ExpressionRoutingTest, programsFlangeMatchesNative)
+{
+    // The D1 gate: the flange of docs/Sandbox.md 7.17 as one expression,
+    // routed = native.  A body cut by a bore and a bolt circle, the hole a
+    // def reading HoleDia and Pcd only inside itself.  Routed runs under
+    // enforcement, where `import Part` is the guest's facade; the native
+    // twin runs with enforcement off, as the corpus rig does, since
+    // natively `import Part` is host.import, PROMPT for a document.
+    if (!partImportable())
+        GTEST_SKIP() << "the Part module is not importable in this test binary";
+    ASSERT_TRUE(addFlangeParameters(obj));
+    const char* src = flangeProgram;
+
+    Base::PyGILStateLocker lock;
+    std::string rerr, nerr;
+    PyObject* routed = evalProgram(obj, src, true, rerr);
+    ASSERT_NE(routed, nullptr) << rerr;
+
+    auto security = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Security");
+    security->SetBool("Enforce", false);
+    PyObject* native = evalProgram(obj, src, false, nerr);
+    security->RemoveBool("Enforce");
+    ASSERT_NE(native, nullptr) << nerr;
+
+    auto attr = [](PyObject* shape, const char* name) {
+        PyObject* v = PyObject_GetAttrString(shape, name);
+        std::string s = reprOf(v);
+        Py_XDECREF(v);
+        return s;
+    };
+    EXPECT_EQ(attr(routed, "ShapeType"), "'Compound'");
+    EXPECT_EQ(attr(routed, "Volume"), attr(native, "Volume"));
+    PyObject* faces = PyObject_GetAttrString(routed, "Faces");
+    ASSERT_NE(faces, nullptr);
+    EXPECT_EQ(PySequence_Size(faces), 10);
+    Py_DECREF(faces);
+    PyObject* rb = PyObject_CallMethod(routed, "exportBrepToString", nullptr);
+    PyObject* nb = PyObject_CallMethod(native, "exportBrepToString", nullptr);
+    ASSERT_NE(rb, nullptr);
+    ASSERT_NE(nb, nullptr);
+    EXPECT_TRUE(PyUnicode_Compare(rb, nb) == 0) << "the BRep is not byte-identical";
+    Py_DECREF(rb);
+    Py_DECREF(nb);
+    Py_DECREF(routed);
+    Py_DECREF(native);
+    ImageHost::instance().clearHandles();
+}
+
+// ---- docs/Sandbox.md sec 11 item 4: one shape program routed against
+// ---- native.  The flange above, evaluated whole each iteration: routed
+// ---- under enforcement (the guest runs the program, every Part call a
+// ---- geom.call into the host), native with enforcement off.  Both pay the
+// ---- same OCCT booleans; the difference is what routing costs a program.
+
+TEST_F(ExpressionImageBenchTest, DISABLED_BenchFlangeProgram)
+{
+    if (!partImportable())
+        GTEST_SKIP() << "the Part module is not importable in this test binary";
+    ASSERT_TRUE(addFlangeParameters(obj));
+    auto sandbox = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    auto security = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Security");
+    const int iters = 40;
+    auto opsTotal = [] {
+        std::size_t n = 0;
+        for (const auto& op : ImageHost::instance().stats().ops)
+            n += op.second;
+        return n;
+    };
+
+    Base::PyGILStateLocker lock;
+    auto evalOnce = [&](bool routed) {
+        std::string err;
+        PyObject* v = evalProgram(obj, flangeProgram, routed, err);
+        EXPECT_NE(v, nullptr) << err;
+        Py_XDECREF(v);
+        ImageHost::instance().clearHandles();
+    };
+
+    sandbox->SetBool("Evaluate", true);
+    evalOnce(true);
+    std::size_t before = opsTotal();
+    evalOnce(true);
+    std::size_t ops = opsTotal() - before;
+    double routed = benchUs("flange program routed", iters, [&] { evalOnce(true); });
+    sandbox->RemoveBool("Evaluate");
+
+    security->SetBool("Enforce", false);
+    double native = benchUs("flange program native", iters, [&] { evalOnce(false); });
+    security->RemoveBool("Enforce");
+
+    std::cout << "BENCH flange program: " << ops << " bridge ops per evaluation, routed "
+              << routed / native << "x native, +" << (routed - native) / 1000.0 << " ms"
+              << std::endl;
+}
+
+// ---- docs/Sandbox.md 7.17 D2: expression libraries ----
+
+namespace
+{
+const char* bracketsText = "k = 3\n"
+                           "def triple(x):\n"
+                           "    return x * k\n"
+                           "def viaLater(x):\n"
+                           "    return later(x) + 1\n"
+                           "def later(x):\n"
+                           "    return x * 2\n"
+                           "def leak():\n"
+                           "    return secret\n";
+
+App::ExpressionLibrary*
+addLibrary(App::Document* doc, const char* name, const char* module, const char* text)
+{
+    auto lib = Base::freecad_dynamic_cast<App::ExpressionLibrary>(
+        doc->addObject("App::ExpressionLibrary", name));
+    if (lib) {
+        lib->Module.setValue(module);
+        lib->Text.setValue(text);
+    }
+    return lib;
+}
+
+std::size_t libSourceOps()
+{
+    auto s = ImageHost::instance().stats();
+    auto it = s.ops.find("lib.source");
+    return it == s.ops.end() ? 0 : it->second;
+}
+
+/// routed = native for one program, as the repr of each
+void expectRoutedMatchesNative(App::DocumentObject* owner, const char* src)
+{
+    std::string nerr, rerr;
+    PyObject* native = evalProgram(owner, src, false, nerr);
+    ASSERT_NE(native, nullptr) << src << "\nnative: " << nerr;
+    PyObject* routed = evalProgram(owner, src, true, rerr);
+    EXPECT_NE(routed, nullptr) << src << "\nrouted: " << rerr;
+    EXPECT_EQ(reprOf(routed), reprOf(native)) << src;
+    Py_XDECREF(native);
+    Py_XDECREF(routed);
+    ImageHost::instance().clearHandles();
+}
+}  // namespace
+
+TEST_F(ExpressionRoutingTest, librariesMatchNative)
+{
+    // A module's constant, its functions by `import` and by `from`, a
+    // function calling one defined after it (the module's names, resolved
+    // when called), and a call inside a comprehension.
+    ASSERT_NE(addLibrary(doc, "Lib", "brackets", bracketsText), nullptr);
+    const char* cases[] = {
+        "import brackets\nbrackets.triple(Width)",
+        "from brackets import triple, viaLater\n[triple(1), viaLater(Width)]",
+        "import brackets\nbrackets.k",
+        "from brackets import triple\n[triple(i) for i in [1, 2, 3]]",
+    };
+    Base::PyGILStateLocker lock;
+    for (const char* src : cases)
+        expectRoutedMatchesNative(obj, src);
+
+    // and a function does not see its caller's names, either way
+    const char* leak = "secret = 5\nimport brackets\nbrackets.leak()";
+    std::string nerr, rerr;
+    PyObject* native = evalProgram(obj, leak, false, nerr);
+    PyObject* routed = evalProgram(obj, leak, true, rerr);
+    EXPECT_EQ(native, nullptr) << reprOf(native);
+    EXPECT_EQ(routed, nullptr) << reprOf(routed);
+    Py_XDECREF(native);
+    Py_XDECREF(routed);
+    ImageHost::instance().clearHandles();
+}
+
+TEST_F(ExpressionRoutingTest, librariesGuestKeepsTheModule)
+{
+    // The guest asks for a library's text once and keeps the module while
+    // its revision stands; an edit drops it, and the next import asks
+    // again and runs the new text.
+    auto lib = addLibrary(doc, "Lib", "brackets", bracketsText);
+    ASSERT_NE(lib, nullptr);
+    auto& host = ImageHost::instance();
+    Base::PyGILStateLocker lock;
+    host.resetStats();
+    const char* src = "import brackets\nbrackets.triple(Width)";
+    for (int i = 0; i < 3; ++i)
+        expectRoutedMatchesNative(obj, src);
+    EXPECT_EQ(libSourceOps(), 1u);
+
+    lib->Text.setValue("k = 4\ndef triple(x):\n    return x * k\n");
+    expectRoutedMatchesNative(obj, src);
+    EXPECT_EQ(libSourceOps(), 2u);
+
+    // a plain import is no library and never asks
+    expectRoutedMatchesNative(obj, "import math\nmath.sqrt(Width)");
+    EXPECT_EQ(libSourceOps(), 2u);
+}
+
+TEST_F(ExpressionRoutingTest, librariesImportedLibraryFollowsAnEdit)
+{
+    // `more` imports `brackets`: an edit to brackets rebuilds more's module
+    // in the guest, as natively, rather than leave it holding a module whose
+    // dict was cleared when brackets was dropped.
+    auto lib = addLibrary(doc, "Lib", "brackets", bracketsText);
+    ASSERT_NE(lib, nullptr);
+    ASSERT_NE(addLibrary(doc,
+                         "More",
+                         "more",
+                         "import brackets\ndef sixfold(x):\n    return brackets.triple(x) * 2\n"),
+              nullptr);
+    Base::PyGILStateLocker lock;
+    const char* src = "import more\nmore.sixfold(Width)";
+    expectRoutedMatchesNative(obj, src);
+    lib->Text.setValue("k = 4\ndef triple(x):\n    return x * k\n");
+    expectRoutedMatchesNative(obj, src);
+    std::string err;
+    PyObject* v = evalProgram(obj, src, true, err);
+    ASSERT_NE(v, nullptr) << err;
+    EXPECT_EQ(PyFloat_AsDouble(v), 21.0 * 4 * 2) << reprOf(v);
+    Py_DECREF(v);
+    ImageHost::instance().clearHandles();
+}
+
+TEST_F(ExpressionRoutingTest, librariesTwoDocumentsDoNotMeet)
+{
+    // The same module name in two documents: the guest keeps one module per
+    // principal, so neither sees the other's.
+    ASSERT_NE(addLibrary(doc, "Lib", "brackets", bracketsText), nullptr);
+    auto other = App::GetApplication().newDocument("FcxEvalOther", "testUser");
+    auto otherObj = other->addObject("App::FeaturePython", "Obj");
+    ASSERT_NE(addLibrary(other, "Lib", "brackets", "k = 7\ndef triple(x):\n    return x * k\n"),
+              nullptr);
+    {
+        Base::PyGILStateLocker lock;
+        const char* src = "import brackets\nbrackets.triple(2)";
+        std::string err;
+        PyObject* first = evalProgram(obj, src, true, err);
+        ASSERT_NE(first, nullptr) << err;
+        PyObject* second = evalProgram(otherObj, src, true, err);
+        ASSERT_NE(second, nullptr) << err;
+        EXPECT_NE(reprOf(first), reprOf(second));
+        EXPECT_EQ(PyFloat_AsDouble(first) * 7, PyFloat_AsDouble(second) * 3)
+            << reprOf(first) << " " << reprOf(second);
+        Py_DECREF(first);
+        Py_DECREF(second);
+        ImageHost::instance().clearHandles();
+        expectRoutedMatchesNative(otherObj, src);
+    }
+    App::GetApplication().closeDocument(other->getName());
+}
+
+TEST_F(ExpressionRoutingTest, librariesBracketMatchesNative)
+{
+    // The bracket of docs/Sandbox.md 7.17 as a library and a consumer:
+    // routed under enforcement, native with enforcement off (natively
+    // `import Part` is host.import), the BRep byte-identical.
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* part = PyImport_ImportModule("Part");
+        if (!part) {
+            PyErr_Clear();
+            GTEST_SKIP() << "the Part module is not importable in this test binary";
+        }
+        Py_DECREF(part);
+    }
+    ASSERT_NE(addLibrary(doc,
+                         "Lib",
+                         "brackets",
+                         "import Part\n"
+                         "\n"
+                         "def bracket(L, W, T):\n"
+                         "    base = Part.makeBox(L, W, T)\n"
+                         "    wall = Part.makeBox(T, W, L)\n"
+                         "    return base.fuse(wall).removeSplitter()\n"),
+              nullptr);
+    const char* src = "from brackets import bracket\nbracket(Width * 2, Width, 5mm)";
+
+    Base::PyGILStateLocker lock;
+    std::string rerr, nerr;
+    PyObject* routed = evalProgram(obj, src, true, rerr);
+    ASSERT_NE(routed, nullptr) << rerr;
+    auto security = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Security");
+    security->SetBool("Enforce", false);
+    PyObject* native = evalProgram(obj, src, false, nerr);
+    security->RemoveBool("Enforce");
+    ASSERT_NE(native, nullptr) << nerr;
+
+    PyObject* rv = PyObject_GetAttrString(routed, "Volume");
+    PyObject* nv = PyObject_GetAttrString(native, "Volume");
+    EXPECT_EQ(reprOf(rv), reprOf(nv));
+    Py_XDECREF(rv);
+    Py_XDECREF(nv);
+    PyObject* rb = PyObject_CallMethod(routed, "exportBrepToString", nullptr);
+    PyObject* nb = PyObject_CallMethod(native, "exportBrepToString", nullptr);
+    ASSERT_NE(rb, nullptr);
+    ASSERT_NE(nb, nullptr);
+    EXPECT_TRUE(PyUnicode_Compare(rb, nb) == 0) << "the BRep is not byte-identical";
+    Py_DECREF(rb);
+    Py_DECREF(nb);
+    Py_DECREF(routed);
+    Py_DECREF(native);
+    ImageHost::instance().clearHandles();
+}
+
+// ---- docs/Sandbox.md 7.17 D2: a library linked from another file ----
+
+namespace
+{
+/// A second document holding the brackets library, saved: a link names a file.
+struct SourceDocument
+{
+    std::string name;
+    std::string path;
+    App::Document* doc = nullptr;
+    App::ExpressionLibrary* lib = nullptr;
+
+    explicit SourceDocument(const char* docName, const char* text = bracketsText)
+        : name(docName)
+    {
+        doc = App::GetApplication().newDocument(docName, "testUser");
+        name = doc->getName();
+        lib = addLibrary(doc, "Lib", "brackets", text);
+        path = Base::FileInfo::getTempPath() + name + ".FCStd";
+        doc->saveAs(path.c_str());
+    }
+    ~SourceDocument()
+    {
+        if (App::GetApplication().getDocument(name.c_str()))
+            App::GetApplication().closeDocument(name.c_str());
+        Base::FileInfo(path).deleteFile();
+    }
+};
+
+App::ExpressionLibrary* addLink(App::Document* doc,
+                                const char* name,
+                                const char* module,
+                                App::ExpressionLibrary* source,
+                                bool pinned = false)
+{
+    auto lib = Base::freecad_dynamic_cast<App::ExpressionLibrary>(
+        doc->addObject("App::ExpressionLibrary", name));
+    if (lib) {
+        lib->Module.setValue(module);
+        lib->Source.setValue(source);
+        if (pinned)
+            lib->Pinned.setValue(true);
+    }
+    return lib;
+}
+
+double routedNumber(App::DocumentObject* owner, const char* src)
+{
+    std::string err;
+    PyObject* v = evalProgram(owner, src, true, err);
+    EXPECT_NE(v, nullptr) << src << "\n" << err;
+    double res = v ? PyFloat_AsDouble(v) : -1.0;
+    Py_XDECREF(v);
+    ImageHost::instance().clearHandles();
+    return res;
+}
+}  // namespace
+
+TEST_F(ExpressionRoutingTest, librariesLinkedLiveMatchesNative)
+{
+    // The source's module under the consumer's name, routed = native, and
+    // an edit in the source followed.
+    SourceDocument source("FcxLibSource");
+    ASSERT_NE(source.lib, nullptr);
+    ASSERT_NE(addLink(doc, "LibB", "brk", source.lib), nullptr);
+    Base::PyGILStateLocker lock;
+    expectRoutedMatchesNative(obj, "import brk\nbrk.triple(Width)");
+    expectRoutedMatchesNative(obj, "from brk import viaLater\nviaLater(Width)");
+    source.lib->Text.setValue("k = 4\ndef triple(x):\n    return x * k\n");
+    expectRoutedMatchesNative(obj, "import brk\nbrk.triple(2)");
+    EXPECT_EQ(routedNumber(obj, "import brk\nbrk.triple(2)"), 8.0);
+}
+
+TEST_F(ExpressionRoutingTest, librariesLinkedConsumersShareOneModule)
+{
+    // Two documents linking one source under the same name: the guest keys
+    // the module by the source's principal and builds it once.
+    SourceDocument source("FcxLibShared");
+    ASSERT_NE(source.lib, nullptr);
+    auto other = App::GetApplication().newDocument("FcxLibConsumer", "testUser");
+    auto otherObj = other->addObject("App::FeaturePython", "Obj");
+    EXPECT_NE(addLink(doc, "LibB", "brk", source.lib), nullptr);
+    EXPECT_NE(addLink(other, "LibB", "brk", source.lib), nullptr);
+    {
+        Base::PyGILStateLocker lock;
+        ImageHost::instance().resetStats();
+        EXPECT_EQ(routedNumber(obj, "import brk\nbrk.triple(2)"), 6.0);
+        EXPECT_EQ(routedNumber(otherObj, "import brk\nbrk.triple(2)"), 6.0);
+        EXPECT_EQ(libSourceOps(), 1u);
+    }
+    App::GetApplication().closeDocument(other->getName());
+}
+
+TEST_F(ExpressionRoutingTest, librariesLinkedImportsInItsOwnFile)
+{
+    // The source's text imports a library of the SOURCE's document, which
+    // the consumer's does not hold: routed, the nested lib.source names
+    // that document, and an edit there is followed.
+    SourceDocument source("FcxLibHome",
+                          "import helpers\ndef quad(x):\n    return helpers.double(x) * 2\n");
+    ASSERT_NE(source.lib, nullptr);
+    auto helper = addLibrary(source.doc, "Helper", "helpers", "def double(x):\n    return x * 2\n");
+    ASSERT_NE(helper, nullptr);
+    ASSERT_NE(addLink(doc, "LibB", "brk", source.lib), nullptr);
+    EXPECT_EQ(App::ExpressionLibrary::find(doc, "helpers"), nullptr);
+    Base::PyGILStateLocker lock;
+    expectRoutedMatchesNative(obj, "import brk\nbrk.quad(Width)");
+    EXPECT_EQ(routedNumber(obj, "import brk\nbrk.quad(2)"), 8.0);
+    helper->Text.setValue("def double(x):\n    return x * 3\n");
+    expectRoutedMatchesNative(obj, "import brk\nbrk.quad(Width)");
+    EXPECT_EQ(routedNumber(obj, "import brk\nbrk.quad(2)"), 12.0);
+}
+
+TEST_F(ExpressionRoutingTest, librariesPinnedMatchesNative)
+{
+    // Pinned: the snapshot taken at the pin, whatever the source does after.
+    SourceDocument source("FcxLibPinned");
+    ASSERT_NE(source.lib, nullptr);
+    auto link = addLink(doc, "LibB", "brk", source.lib, true);
+    ASSERT_NE(link, nullptr);
+    EXPECT_STREQ(link->Snapshot.getValue(), bracketsText);
+    source.lib->Text.setValue("k = 4\ndef triple(x):\n    return x * k\n");
+    Base::PyGILStateLocker lock;
+    expectRoutedMatchesNative(obj, "import brk\nbrk.triple(2)");
+    EXPECT_EQ(routedNumber(obj, "import brk\nbrk.triple(2)"), 6.0);
+}
+
+TEST_F(ExpressionRoutingTest, librariesLinkUnresolvedFailsBothWays)
+{
+    // The source document gone, the link unpinned: the import fails with
+    // the link's reason, natively and routed.
+    auto source = std::make_unique<SourceDocument>("FcxLibGone");
+    ASSERT_NE(source->lib, nullptr);
+    auto link = addLink(doc, "LibB", "brk", source->lib);
+    ASSERT_NE(link, nullptr);
+    // the consumer never saved: no DocInfo watches the source for its link
+    source.reset();
+    ASSERT_EQ(link->getHolder(), nullptr);
+    Base::PyGILStateLocker lock;
+    std::string nerr, rerr;
+    PyObject* native = evalProgram(obj, "import brk\nbrk.k", false, nerr);
+    PyObject* routed = evalProgram(obj, "import brk\nbrk.k", true, rerr);
+    EXPECT_EQ(native, nullptr) << reprOf(native);
+    EXPECT_EQ(routed, nullptr) << reprOf(routed);
+    EXPECT_NE(nerr.find("Source not found"), std::string::npos) << nerr;
+    EXPECT_NE(rerr.find("Source not found"), std::string::npos) << rerr;
+    Py_XDECREF(native);
+    Py_XDECREF(routed);
+    ImageHost::instance().clearHandles();
+}
+
+TEST_F(ExpressionImageEvalTest, programsSurfaceStampMatchesHost)
+{
+    // The guest's copy of the surface stamp is the host's.  A wheel built
+    // from other annotations is a guest whose facades are not the host's
+    // dispatch table, which nothing else would notice until a member
+    // failed to cross.
+    auto& host = ImageHost::instance();
+    auto res = host.eval("__import__('_fcx').surface()", {});
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    Base::PyGILStateLocker lock;
+    PyObject* v = host.decodeResult(res);
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(PyTuple_Check(v) && PyTuple_GET_SIZE(v) == 2) << reprOf(v);
+    EXPECT_EQ(PyLong_AsLong(PyTuple_GET_ITEM(v, 0)), App::ExpressionSandbox::surfaceVersion());
+    EXPECT_STREQ(PyUnicode_AsUTF8(PyTuple_GET_ITEM(v, 1)), App::ExpressionSandbox::surfaceHash());
+    Py_DECREF(v);
+    EXPECT_GE(App::ExpressionSandbox::surfaceVersion(), 1);
+    EXPECT_EQ(std::strlen(App::ExpressionSandbox::surfaceHash()), 64u);
+}
+
+TEST_F(ExpressionImageEvalTest, programsSurfaceRecordedAtSave)
+{
+    // Meta["ExpressionSurface"] is written as a document that carries an
+    // expression saves, and not on one that carries none.
+    auto out = Base::freecad_dynamic_cast<App::PropertyFloat>(
+        obj->addDynamicProperty("App::PropertyFloat", "Out"));
+    ASSERT_NE(out, nullptr);
+    App::ObjectIdentifier path(*obj->getPropertyByName("Out"));
+    obj->ExpressionEngine.setValue(
+        path,
+        std::shared_ptr<App::Expression>(App::Expression::parse(obj, "Width * 2").release()));
+    std::string file = Base::FileInfo::getTempFileName() + ".FCStd";
+    ASSERT_TRUE(doc->saveAs(file.c_str()));
+    const char* stamp = doc->Meta.getValue("ExpressionSurface");
+    ASSERT_NE(stamp, nullptr);
+    EXPECT_EQ(std::string(stamp), std::to_string(App::ExpressionSandbox::surfaceVersion()));
+
+    auto plain = App::GetApplication().newDocument("FcxSurfacePlain", "plain");
+    plain->addObject("App::FeaturePython", "Nothing");
+    std::string plainFile = Base::FileInfo::getTempFileName() + ".FCStd";
+    ASSERT_TRUE(plain->saveAs(plainFile.c_str()));
+    EXPECT_EQ(plain->Meta.getValue("ExpressionSurface"), nullptr);
+    App::GetApplication().closeDocument(plain->getName());
+    Base::FileInfo(file).deleteFile();
+    Base::FileInfo(plainFile).deleteFile();
+}
 
 TEST_F(ExpressionImageEvalTest, tupleCrossesBackAsTuple)
 {

@@ -110,6 +110,21 @@ AppExport const ModuleMember* moduleMemberLookup(const std::string& qualified);
  */
 AppExport const char* facadeKeyFor(PyTypeObject* type);
 
+/** The surface's version (docs/Sandbox.md 7.17 (b)): FCX_SURFACE_VERSION
+ * and the sha256 of the annotated set, as generated into FcxDispatch.inc.
+ * The guest carries its own copy (`_fcx.surface()`); the two differ only
+ * when the fcx_image wheel was built from other annotations.
+ */
+AppExport int surfaceVersion();
+AppExport const char* surfaceHash();
+
+/** Record the surface version on a document that carries expressions
+ * as it is saved (Meta["ExpressionSurface"]), and log it once when a
+ * document written against a lower version opens.  Never refuses: the
+ * stamp is a record, since OCCT's own behaviour moves under any pin.
+ */
+AppExport void connectSurfaceRecord();
+
 /** Declared-member lookup along `type`'s mro; nullptr when the member
  * is not annotated anywhere in the chain.  Caller holds the GIL.
  */
