@@ -57,6 +57,7 @@
 #include <Base/Console.h>
 
 #include "SceneServeSource.h"
+#include "SandboxServe.h"
 
 #include "Document.h"
 #include "Inventor/SoFCRenderCache.h"
@@ -1421,6 +1422,11 @@ SceneServeSource *SceneServeSource::serve(Document *doc, int port)
 {
     if (!doc)
         return nullptr;
+
+    // The browser console's guest files ride the same server
+    // (docs/Sandbox.md 7.20, C1); re-resolved on every serve, so a
+    // runtime installed since is picked up.
+    SandboxServe::install();
 
     auto &sources = servedDocuments();
     auto it = sources.find(doc);

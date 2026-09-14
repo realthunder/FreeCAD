@@ -1731,6 +1731,48 @@ public:
         return true;
     }
 
+    /// The HTTP mounts (SceneServer.h, setHttpMount). Their own mutex,
+    /// held only to copy the list, never across a provider call.
+    struct HttpMount {
+        std::string prefix;
+        std::function<bool(const std::string &, SceneHttpFile &)> provider;
+        bool gated = false;
+    };
+    std::mutex mountMutex;
+    std::vector<HttpMount> mounts;
+
+    /// A GET answered by a mount of the given gating, when one claims
+    /// it. The path gets the bundle's checks before a provider sees it.
+    bool serveMount(const HttpRequest &req, bool gated, HttpReply &reply)
+    {
+        if (req.method != "GET")
+            return false;
+        const std::string &path = req.path;
+        if (path.find("..") != std::string::npos)
+            return false;
+        for (char c : path)
+            if (!std::isalnum(static_cast<unsigned char>(c))
+                    && !std::strchr("/._+-", c))
+                return false;
+        std::vector<HttpMount> claim;
+        {
+            std::lock_guard<std::mutex> guard(mountMutex);
+            for (const auto &m : mounts)
+                if (m.gated == gated
+                        && path.compare(0, m.prefix.size(), m.prefix) == 0)
+                    claim.push_back(m);
+        }
+        for (const auto &m : claim) {
+            SceneHttpFile file;
+            if (!m.provider(path.substr(m.prefix.size()), file))
+                continue;
+            reply.set(file.status, file.contentType, file.cacheControl);
+            reply.body = std::move(file.body);
+            return true;
+        }
+        return false;
+    }
+
     /// Queue a cache-busting reload for a viewer whose reported bundle
     /// build no longer matches the on-disk stamp (once per stamp; the
     /// page-side bust-parameter guard also refuses repeats). Caller
@@ -2017,6 +2059,10 @@ public:
         // scene data.
         if (wsKey.empty() && serveViewerFile(path, reply))
             return Route::Reply;
+        // An ungated mount (SceneServer.h, setHttpMount): published code
+        // for the same page, under the same reasoning.
+        if (wsKey.empty() && serveMount(req, false, reply))
+            return Route::Reply;
 
         std::string presentedToken = queryValue(query, "token");
         Judgement entry = judge(presentedToken, identity,
@@ -2027,6 +2073,11 @@ public:
             reply.status = 403;
             return Route::Reply;
         }
+
+        // A gated mount (SceneServer.h, setHttpMount): behind the door,
+        // ahead of the scene routes, which share no prefix with one.
+        if (wsKey.empty() && serveMount(req, true, reply))
+            return Route::Reply;
 
         // /blob?key=<content key>: one out-of-band texture payload
         // (SceneDump.h, v26). Content addressed and immutable, so the
@@ -3703,6 +3754,23 @@ std::string SceneStreamServer::identityHeader()
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->tokenMutex);
     return p->identityHeaderName;
+}
+
+void SceneStreamServer::setHttpMount(
+        const std::string &prefix,
+        std::function<bool(const std::string &, SceneHttpFile &)> provider,
+        bool gated)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->mountMutex);
+    auto &list = p->mounts;
+    list.erase(std::remove_if(list.begin(), list.end(),
+                              [&](const Private::HttpMount &m) {
+                                  return m.prefix == prefix;
+                              }),
+               list.end());
+    if (provider)
+        list.push_back({prefix, std::move(provider), gated});
 }
 
 void SceneStreamServer::setGrants(const std::vector<SceneGrant> &list)

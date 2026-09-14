@@ -475,6 +475,11 @@ SOURCE_GROUP("Fw" FILES ${Fw_SRCS})
 if(BUILD_EXPR_IMAGE_HOST)
     set_source_files_properties(SandboxGui.cpp PROPERTIES COMPILE_DEFINITIONS FC_EXPR_IMAGE_HOST)
 endif()
+# the browser console's file mount (docs/Sandbox.md 7.20): only a pyodide
+# host has the runtime a page's guest boots from
+if(BUILD_EXPR_IMAGE_HOST AND BUILD_EXPR_PYODIDE_HOST)
+    set_source_files_properties(SandboxServe.cpp PROPERTIES COMPILE_DEFINITIONS FC_EXPR_PYODIDE_HOST)
+endif()
 
 # The style parameter evaluator (upstream's theme parameter model)
 SET(StyleParameters_SRCS
@@ -1155,6 +1160,7 @@ SET(Inventor_CPP_SRCS
     SoFCSelection.cpp
     ObjectMetaFeed.cpp
     SceneServeSource.cpp
+    SandboxServe.cpp
     ShareDocument.cpp
     SoFCUnifiedSelection.cpp
     SoFCSelectionContext.cpp
@@ -1220,6 +1226,7 @@ SET(Inventor_SRCS
     SoFCSelection.h
     ObjectMetaFeed.h
     SceneServeSource.h
+    SandboxServe.h
     ShareDocument.h
     SoFCUnifiedSelection.h
     SoFCSelectionContext.h

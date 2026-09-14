@@ -13,16 +13,19 @@ export default defineConfig({
     cssCodeSplit: false,
     sourcemap: true,
     rollupOptions: {
-      // The viewer chrome plus two harness pages: the sandbox acceptance
+      // The viewer chrome plus three harness pages: the sandbox acceptance
       // page (public/sandbox-test.html, docs/ExpressionImage.md "The
-      // browser tier") and the spreadsheet panel harness
-      // (public/sheet-test.html, docs/SpreadsheetRemote.md sec 5).  The
+      // browser tier"), the spreadsheet panel harness
+      // (public/sheet-test.html, docs/SpreadsheetRemote.md sec 5) and the
+      // console guest's boot gate (public/console-test.html,
+      // docs/Sandbox.md 7.20).  The
       // chrome keeps its historical inspector.js name because shell.html
       // loads it by that name.
       input: {
         inspector: resolve(__dirname, 'src/main.tsx'),
         sandboxtest: resolve(__dirname, 'src/sandbox/testmain.ts'),
         sheetharness: resolve(__dirname, 'src/sheetharness.ts'),
+        consoletest: resolve(__dirname, 'src/sandbox/consolemain.ts'),
       },
       output: {
         format: 'es',

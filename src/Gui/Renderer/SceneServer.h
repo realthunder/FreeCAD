@@ -267,6 +267,15 @@ struct ViewerFrameDump {
     std::string meta;            ///< viewer-supplied JSON (may be empty)
 };
 
+/// One answer of an HTTP mount (SceneStreamServer::setHttpMount).
+struct SceneHttpFile {
+    int status = 200;
+    std::vector<uint8_t> body;
+    /// Static strings: the reply keeps the pointers, not copies.
+    const char *contentType = "application/octet-stream";
+    const char *cacheControl = "no-store";
+};
+
 class RendererExport SceneStreamServer {
 public:
     static SceneStreamServer &instance();
@@ -364,6 +373,23 @@ public:
     /// re-judged — which is the "ban = drop live, disable stored" move
     /// of docs/ShareAccess.md §2. False when the id is unknown.
     bool removeGrant(uint64_t id);
+
+    /// Answer GET <prefix><rest> from \a provider: files served next to
+    /// the scene that the renderer layer cannot find by itself -- the
+    /// pyodide runtime and wheels of the browser console
+    /// (docs/Sandbox.md 7.20, C1). \a gated puts the mount behind the
+    /// door like every scene route; ungated it answers before the door,
+    /// as the viewer bundle does, which is only for published code a
+    /// page fetches without the link's ?token= tail. The provider runs
+    /// on a server thread and returns false for a path it does not
+    /// serve; the request then falls through to the other routes (and
+    /// 404s). The path has passed the bundle's checks first: no "..",
+    /// nothing outside [A-Za-z0-9/._+-]. Installing a prefix again
+    /// replaces its provider; a null provider removes the mount.
+    void setHttpMount(const std::string &prefix,
+                      std::function<bool(const std::string &rest,
+                                         SceneHttpFile &file)> provider,
+                      bool gated);
 
     /// The connected clients, for the sharing roster. Returns how many.
     int clients(std::vector<SceneClientInfo> &out);
