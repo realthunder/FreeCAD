@@ -48,6 +48,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 #include <vector>
 #endif
 
@@ -282,6 +283,9 @@ public:
     /// document rename mid-serve keeps the stream's identity.
     std::string groupName;
     SoFCUnifiedSelection *root = nullptr;
+    /// The view providers whose root hangs under \a root: the viewer's
+    /// _ViewProviderSet, so a new object is one insert, not a findChild.
+    std::unordered_set<const ViewProviderDocumentObject *> attached;
     SoOrthographicCamera *camera = nullptr;
     /*!
      * Where the Render_* overrides live with no 3D view to hold them
@@ -679,25 +683,57 @@ public:
     }
 
     /// Hang every view provider of the document under the root, the way
-    /// View3DInventorViewer::addViewProvider does for a real view.
+    /// View3DInventorViewer::addViewProvider does for a real view. Once,
+    /// at construction; after that each object comes and goes on its own
+    /// signal -- a sweep per new object was O(N^2) for each, O(N^3) for a
+    /// load drained into a served document.
     void attachViewProviders()
     {
         if (!doc || !root)
             return;
         for (auto *vp : doc->getViewProvidersOfType(
-                 ViewProviderDocumentObject::getClassTypeId())) {
-            auto *vpd = static_cast<ViewProviderDocumentObject *>(vp);
-            SoSeparator *vproot = vpd->getRoot();
-            if (!vproot || doc->isClaimed3D(vpd) || !vpd->canAddToSceneGraph())
-                continue;
-            // Only the physical objects. A real viewer puts the rest in
-            // its nonObjectGroup, which is view furniture — the same
-            // reason the overlays are not published either.
-            if (!vpd->isPartOfPhysicalObject())
-                continue;
-            if (root->findChild(vproot) < 0)
-                root->addChild(vproot);
+                 ViewProviderDocumentObject::getClassTypeId()))
+            addViewProvider(static_cast<ViewProviderDocumentObject &>(*vp));
+    }
+
+    void addViewProvider(const ViewProviderDocumentObject &vp)
+    {
+        auto &vpd = const_cast<ViewProviderDocumentObject &>(vp);
+        SoSeparator *vproot = vpd.getRoot();
+        if (!doc || !root || !vproot || attached.count(&vp)
+            || doc->isClaimed3D(&vpd) || !vpd.canAddToSceneGraph())
+            return;
+        // Only the physical objects. A real viewer puts the rest in
+        // its nonObjectGroup, which is view furniture -- the same
+        // reason the overlays are not published either.
+        if (!vpd.isPartOfPhysicalObject())
+            return;
+        attached.insert(&vp);
+        root->addChild(vproot);
+    }
+
+    void removeViewProvider(const ViewProviderDocumentObject &vp)
+    {
+        if (!attached.erase(&vp) || !root)
+            return;
+        if (SoSeparator *vproot = vp.getRoot()) {
+            int index = root->findChild(vproot);
+            if (index >= 0)
+                root->removeChild(index);
         }
+    }
+
+    /// View3DInventorViewer::toggleViewProvider: a claim on \a vp was
+    /// made or dropped, or it stopped (or started) being addable. Without
+    /// this an object put into a group keeps drawing at the top level too,
+    /// with none of the group's placement.
+    void toggleViewProvider(const ViewProviderDocumentObject &vp)
+    {
+        auto &vpd = const_cast<ViewProviderDocumentObject &>(vp);
+        if (!attached.count(&vp))
+            addViewProvider(vp);
+        else if (doc->isClaimed3D(&vpd) || !vpd.canAddToSceneGraph())
+            removeViewProvider(vp);
     }
 
     /// Frame the synthetic camera on the scene, and hand back the
@@ -1318,8 +1354,8 @@ SceneServeSource::SceneServeSource(Document *doc)
 
     if (doc) {
         pimpl->connections.emplace_back(doc->signalNewObject.connect(
-            [this](const ViewProviderDocumentObject &) {
-                pimpl->attachViewProviders();
+            [this](const ViewProviderDocumentObject &vp) {
+                pimpl->addViewProvider(vp);
                 schedulePublish();
             }));
         pimpl->connections.emplace_back(doc->signalDeletedObject.connect(
@@ -1328,11 +1364,12 @@ SceneServeSource::SceneServeSource(Document *doc)
                 // with no view, the root's own child ref would keep the
                 // deleted object's geometry in every later publish -- a
                 // ghost no viewer can get rid of.
-                if (SoSeparator *vproot = vp.getRoot(); vproot && pimpl->root) {
-                    int index = pimpl->root->findChild(vproot);
-                    if (index >= 0)
-                        pimpl->root->removeChild(index);
-                }
+                pimpl->removeViewProvider(vp);
+                schedulePublish();
+            }));
+        pimpl->connections.emplace_back(doc->signalToggleInSceneGraph.connect(
+            [this](const ViewProviderDocumentObject &vp) {
+                pimpl->toggleViewProvider(vp);
                 schedulePublish();
             }));
         pimpl->connections.emplace_back(doc->signalChangedObject.connect(

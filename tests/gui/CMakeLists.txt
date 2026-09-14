@@ -121,3 +121,10 @@ fc_add_gui_test(GuiServeOnViewParams_tests_run serve-onview-params.py
 # question for deleted blocks.
 fc_add_gui_test(GuiExpressionEditor_tests_run expression-editor.py
                 --timeout 180)
+
+# A served document's scene follows claims made while it is served
+# (Gui::Document::signalToggleInSceneGraph): a box put into an offset
+# App::Part is picked through the part and not also at the top level, and
+# taken back out it is picked at the top level and not in the part.
+fc_add_gui_test(GuiServeClaimChildren_tests_run serve-claim-children.py
+                --timeout 180)

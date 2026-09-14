@@ -4856,6 +4856,7 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
                 foreachView<View3DInventor>([=](View3DInventor* view){
                     view->getViewer()->toggleViewProvider(vp);
                 });
+                signalToggleInSceneGraph(*vp);
             }
         }
 
@@ -4882,6 +4883,11 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
                 view->getViewer()->toggleViewProvider(vpd);
         }
     });
+    for(auto vpd : oldChildren) {
+        auto obj = vpd->getObject();
+        if(obj && obj->getNameInDocument())
+            signalToggleInSceneGraph(*vpd);
+    }
 }
 
 bool Document::isClaimed3D(ViewProvider *vp) const {
@@ -4892,6 +4898,8 @@ void Document::toggleInSceneGraph(ViewProvider *vp) {
     foreachView<View3DInventor>([&](View3DInventor *view) {
         view->getViewer()->toggleViewProvider(vp);
     });
+    if (auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(vp))
+        signalToggleInSceneGraph(*vpd);
 }
 
 void Document::slotChangePropertyEditor(const App::Document &doc, const App::Property &Prop) {

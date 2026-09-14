@@ -117,6 +117,11 @@ public:
         of the referenced document object, not of the view provider */
     mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&,
                                           const App::Property&)>                   signalChangedObject;
+    /** signal where every 3D view is told to toggle the object in its
+        scene graph (View3DInventorViewer::toggleViewProvider): a claim on
+        it was made or dropped, or canAddToSceneGraph() changed. For a
+        scene with no view to keep in step, e.g. a served document. */
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalToggleInSceneGraph;
     /// signal on renamed Object
     mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalRelabelObject;
     /// signal on activated Object
