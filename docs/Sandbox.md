@@ -99,7 +99,11 @@ pieces are frozen, not extended.**
                                                  C1 BUILT 2026-09-14: the guest boots in a page
                                                  from the serving FreeCAD (/pyodide/, boot.json
                                                  behind the door), and JSPI is proven -- the
-                                                 host import suspends mid-statement
+                                                 host import suspends mid-statement; C2 BUILT
+                                                 2026-09-15: the page's statements read and
+                                                 write the served document over the socket
+                                                 (per-connection endpoint, the document's
+                                                 principal until C3)
     host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -7069,7 +7073,7 @@ the writer).  What the numbers decide:
   (`grabUs` is counted, the bench has no picture); a non-native file
   dialog's rows; the DOM client's own cost of applying an open.
 
-### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven]**
+### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket]**
 
 The question, asked before the document program (7.17) was started:
 how far is a Python console in the browser tier -- pyodide running in
@@ -7324,6 +7328,90 @@ symlink it needs.
 (jsDelivr, docs/SandboxNetwork.md 9.6 source 2) and the Cache API
 persistence are not
 built; a remote client's `ActiveView` facade is C4's.
+
+**C2, BUILT 2026-09-15.**  A guest in the page reads and writes the
+served document over the socket, and the desktop sees it.
+
+*The wire* (`SceneBridgeRequest`, src/Gui/Renderer/SceneServer.h):
+
+    up    'S', kind u8, seq u32 LE, the request bytes as the guest wrote them
+            kind 0  one bridge op, answered with the same seq
+            kind 1  the end of a statement: no payload, no answer
+    down  'FCSB', seq u32 LE, the reply bytes
+
+The bridge protocol itself is unchanged -- CBOR or the fixed layout,
+carried rather than translated.  An EMPTY reply means nothing serves the
+bridge (no handler on the connection's group, or no sandbox host in the
+build) and the guest raises "host bridge unavailable" at once instead of
+waiting.  The server forwards in the connection's order and never
+coalesces an answer: a new outbox kind, since a streamed frame replaces
+the one still queued and an answer must not.  A connection with 64 ops
+unanswered is kicked -- a guest waits on every answer, so one that far
+ahead is not a guest.
+
+*The endpoint* (src/Gui/SandboxRemote.cpp): one per connection, a
+`HandleTable` of its own.  SceneServeSource installs the handler on the
+document's group next to the control channel; every frame hops to the
+GUI thread in arrival order and is dispatched by `dispatchHostBytes`,
+the bytes-level entry ImageHost's own bridge now calls too, so the
+desktop's guest and a page's run one dispatcher.  Each op runs under
+`Runtime::Scope(const App::Document*)`, a new form: the served
+document's principal with no owner object, pushed per op.  The document
+itself is the table's owner, and nothing else needed to learn about
+remote guests -- reach, the write gate and `resolve` already key on the
+owner's document (`documentOf` takes a Document), and `active_doc`
+answers an owner that is a document with itself.  An End clears the
+table; what the guest keeps across statements re-resolves by its
+durable key (3.2), which the page exercises.  A connection that
+switches documents starts from an empty table, and one that closes
+drops its endpoint (the group's closed handler).
+
+*The principal, until C3.*  The document's own, not a client's.  A
+connection admitted with edit access can already change the document
+through the control channel, so this is no wider than what the door
+gave it, and the catalog holds the rest: `app.write` and `gui` DENY and
+not promptable, `app.query` and `doc.foreign` PROMPT, which the client
+sees as a PermissionError.  What it conflates, both C3's: grants the
+owner gave the document's own code apply to the client too, and the
+audit line names the document, not the client.  A view-only connection
+gets NO bridge -- every op a PermissionError -- until C3 maps its flag
+onto `doc.write.self`.
+
+*The page* (`web/src/sandbox/remote.ts`, `RemoteBridge`):
+`connect(server, {token, doc})` opens a /scene socket of its own and
+ignores the scene payload it is pushed; `attach(socket)` takes one
+already open, the viewer's.  It implements `HostBridge` --
+`roundTrip(bytes)` to a promise of bytes, and `endStatement()` -- which
+is what guest.ts's `bridge` option now takes: transport-shaped, so C6
+changes only the waiting side.  `BrowserGuest` ends a statement after
+every call, and gains `exec()` for statements.
+
+*Measured* (headless Chrome 153 on loopback, the browser leg): 80
+bridge ops over 9 statements, 0.61 ms mean round trip, 3.8 ms worst;
+2976 bytes up, 6276 down.  Twenty host calls inside one generator
+expression each suspended and resumed.  The LAN and tunnel figures are
+C5's.
+
+*Gates*: `GuiSandboxBridgeServe` (registered, 17 PASS: the wire
+from a plain socket client on a worker thread, no guest --
+`active_doc` as the owner, a fixed-layout answer in the fixed layout,
+call / write_prop / read_prop, three ops back to back answered in
+order, the End releasing the handles and `resolve` after it,
+`app.new_doc` and another open document refused, an undecodable request
+a ProtocolError, a view-only connection refused in both layouts, a
+connection joined to no served document answered empty, the desktop
+carrying the write); `tests/gui/sandbox-bridge-browser.py` (not
+registered, docs/Testing.md; 15 PASS -- the page's guest reads
+`ActiveDocument` and its objects, writes `Box.Length`, adds an object,
+keeps one across statements, runs twenty host calls in one expression,
+is refused `newDocument`; the desktop sees the write and the object).
+C1's browser leg, re-run over the changed guest.ts, still passes.
+
+*Not in C2*: the client principal, catalog v2, a read-only bridge for a
+view-only client and an audit line naming the client (C3); the viewer
+page's own socket carrying the bridge -- that socket belongs to the wasm
+viewer, and `attach` is the hook -- and the panel (C4); the cost of the
+scene payload a console-only socket is pushed, unmeasured.
 
 ### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, BUILT 2026-09-13 inside 7.17's D2]**
 
@@ -7826,7 +7914,9 @@ push the user's call).
    own catalog column (v2), the panel on `pyodide.console`; stages
    C1-C6, one to two weeks.  Un-drops the 7.14 chokepoints (F1): a
    remote client is the second guest that needs them, unless `gui`
-   is a hard DENY for clients.
+   is a hard DENY for clients.  C1 BUILT 2026-09-14, C2 BUILT
+   2026-09-15; next C3.  C6 (Safari) only if necessary (ruled
+   2026-09-15).
 
 DROPPED 2026-09-08: G4 (7.16, sized), F1 (7.14: it closed a hole only
 a SESSION guest has), N1-N5 (network is a session need), G5, G6, rung
