@@ -57,6 +57,7 @@
 #include <Base/Console.h>
 
 #include "SceneServeSource.h"
+#include "SandboxRemote.h"
 #include "SandboxServe.h"
 
 #include "Document.h"
@@ -1156,10 +1157,23 @@ void SceneServeSource::installHandlers()
             }, Qt::QueuedConnection);
         }, docName);
 
+    // A sandbox guest in a viewer's page reaches back through its own
+    // socket (docs/Sandbox.md 7.20, C2). Every frame hops to the GUI
+    // thread -- a bridge op touches the document -- in the order the
+    // connection sent them, and runs against THIS document.
+    server.setBridgeHandler([self](Render::SceneBridgeRequest &&req) {
+        auto shared = std::make_shared<Render::SceneBridgeRequest>(std::move(req));
+        QMetaObject::invokeMethod(qApp, [self, shared]() {
+            Document *gdoc = self ? self->document() : nullptr;
+            SandboxRemote::handle(gdoc ? gdoc->getDocument() : nullptr, *shared);
+        }, Qt::QueuedConnection);
+    }, docName);
+
     // A viewer that leaves takes its served viewport and its mirror with
     // it -- the session is the expensive part, and nobody is looking.
     server.setClientClosedHandler([self, streams](uint64_t client) {
         QMetaObject::invokeMethod(qApp, [self, streams, client]() {
+            SandboxRemote::drop(client);
             auto gone = streams->take(client, -1);
             gone.clear();
             if (self)

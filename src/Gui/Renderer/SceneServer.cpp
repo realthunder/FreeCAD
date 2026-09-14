@@ -536,6 +536,7 @@ public:
         std::function<void(const SceneCameraFrame &)> cameraHandler;
         std::function<void(const SceneInputFrame &)> inputHandler;
         std::function<void(SceneControlRequest &&)> controlHandler;
+        std::function<void(SceneBridgeRequest &&)> bridgeHandler;
         std::function<void()> workNotifier;
         std::function<void(uint64_t)> clientClosedHandler;
 
@@ -1086,6 +1087,7 @@ public:
             Text,    ///< a control JSON: a text frame
             Scene,   ///< the versioned scene bytes: a binary frame
             Frame,   ///< a streamed frame (sendBinary): a binary frame
+            Bridge,  ///< a sandbox bridge answer (sendBridge): binary, never replaced
             Close    ///< the end: a close frame, then hang up
         };
         Kind kind = Text;
@@ -1172,6 +1174,9 @@ public:
         /// connMutex): its farewell is on the outbox, and its own loop
         /// sends that and hangs up. Set only through kick().
         bool kicked = false;
+        /// Sandbox bridge ops forwarded and not yet answered
+        /// (SceneBridgeRequest). connMutex.
+        int bridgeInFlight = 0;
         /// The stamp a reload was already pushed for — one push per
         /// bundle generation, no loops.
         std::string reloadPushed;
@@ -1226,6 +1231,17 @@ public:
             Outgoing item;
             item.kind = Outgoing::Scene;
             item.data = std::move(body);
+            outbox.push_back(std::move(item));
+            nudge();
+        }
+
+        /// Queue a sandbox bridge answer, in order and never replaced:
+        /// the guest is waiting on every one. connMutex held.
+        void queueBridge(std::vector<uint8_t> &&data)
+        {
+            Outgoing item;
+            item.kind = Outgoing::Bridge;
+            item.data = std::move(data);
             outbox.push_back(std::move(item));
             nudge();
         }
@@ -3417,6 +3433,10 @@ public:
         }
         if (!conn.authorized)
             return;
+        if (size > 0 && bytes[0] == 'S') {
+            handleBridge(conn, bytes, size);
+            return;
+        }
         if (size > 0 && bytes[0] == 'D') {
             handleFrameDump(conn, bytes, size);
             return;
@@ -3445,6 +3465,62 @@ public:
         }
         std::vector<uint8_t> data(bytes, bytes + size);
         handleEvent(conn, data);
+    }
+
+    /// A guest waits for each bridge answer before it asks again, so a
+    /// connection this far ahead of its answers is not a guest.
+    static constexpr int kBridgeInFlightMax = 64;
+
+    /// The downlink of a bridge answer (SceneBridgeRequest): `FCSB`, the
+    /// seq as u32 LE, the reply bytes.
+    static std::vector<uint8_t> bridgeFrame(uint32_t seq,
+                                            const std::vector<uint8_t> &reply)
+    {
+        std::vector<uint8_t> frame = {'F', 'C', 'S', 'B'};
+        for (int i = 0; i < 4; ++i)
+            frame.push_back(uint8_t(seq >> (8 * i)));
+        frame.insert(frame.end(), reply.begin(), reply.end());
+        return frame;
+    }
+
+    /// A sandbox bridge frame (SceneBridgeRequest): 'S', kind u8, seq
+    /// u32 LE, payload. Forwarded in the order it came; an Op no handler
+    /// takes is answered empty at once, so the guest fails fast rather
+    /// than waiting on an answer nobody will send.
+    void handleBridge(Conn &conn, const uint8_t *bytes, size_t size)
+    {
+        if (size < 6 || bytes[1] > SceneBridgeRequest::End)
+            return;
+        SceneBridgeRequest req;
+        req.kind = bytes[1];
+        for (int i = 3; i >= 0; --i)
+            req.seq = (req.seq << 8) | bytes[2 + i];
+        req.payload.assign(bytes + 6, bytes + size);
+        req.client = conn.id;
+        std::function<void(SceneBridgeRequest &&)> handler;
+        if (conn.group) {
+            std::lock_guard<std::mutex> guard(handlerMutex);
+            handler = conn.group->bridgeHandler;
+        }
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            req.viewOnly = conn.viewOnly;
+            if (req.kind == SceneBridgeRequest::Op) {
+                if (!handler) {
+                    conn.queueBridge(bridgeFrame(req.seq, {}));
+                    return;
+                }
+                if (conn.bridgeInFlight >= kBridgeInFlightMax) {
+                    conn.queueText(
+                        "{\"cmd\":\"error\",\"code\":\"BridgeFlood\"}");
+                    conn.kick();
+                    return;
+                }
+                ++conn.bridgeInFlight;
+            }
+        }
+        if (handler)
+            handler(std::move(req));
     }
 
     /// A viewer's dumpFrame answer: 'D', u32 request id, u32 metadata
@@ -4063,6 +4139,20 @@ void SceneStreamServer::setControlHandler(
     g->controlHandler = std::move(handler);
 }
 
+void SceneStreamServer::setBridgeHandler(
+        std::function<void(SceneBridgeRequest &&)> handler,
+        const std::string &doc)
+{
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->group(doc);
+    }
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    g->bridgeHandler = std::move(handler);
+}
+
 void SceneStreamServer::setWorkNotifier(std::function<void()> notifier,
                                         const std::string &doc)
 {
@@ -4109,6 +4199,23 @@ bool SceneStreamServer::sendBinary(uint64_t client, std::vector<uint8_t> &&data)
     for (Private::Conn *conn : p->conns) {
         if (conn->id == client) {
             conn->queueFrame(std::move(data));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SceneStreamServer::sendBridge(uint64_t client, uint32_t seq,
+                                   std::vector<uint8_t> &&reply)
+{
+    Private *p = ensure();
+    std::vector<uint8_t> frame = Private::bridgeFrame(seq, reply);
+    std::lock_guard<std::mutex> guard(p->connMutex);
+    for (Private::Conn *conn : p->conns) {
+        if (conn->id == client) {
+            if (conn->bridgeInFlight > 0)
+                --conn->bridgeInFlight;
+            conn->queueBridge(std::move(frame));
             return true;
         }
     }
@@ -4177,6 +4284,7 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
         g->cameraHandler = nullptr;
         g->inputHandler = nullptr;
         g->controlHandler = nullptr;
+        g->bridgeHandler = nullptr;
         g->workNotifier = nullptr;
         g->clientClosedHandler = nullptr;
     }

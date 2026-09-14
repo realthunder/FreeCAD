@@ -39,7 +39,10 @@
 /// message -- a 'C' frame verbatim followed by a 'P' frame verbatim --
 /// for a client that states its camera only when it clicks
 /// (docs/ThinClient.md sec 8.10a): one frame instead of two, and the
-/// pairing is atomic rather than merely ordered.
+/// pairing is atomic rather than merely ordered. 'S' is a sandbox
+/// guest in the viewer's page reaching back to this process
+/// (SceneBridgeRequest, docs/Sandbox.md 7.20 C2); its answer is a
+/// binary frame starting `FCSB`.
 ///
 /// Fallback transport: plain HTTP polling. GET /scene?v=<last-seen>
 /// answers 204 while unchanged, else 200 with the same version-prefixed
@@ -169,6 +172,38 @@ struct SceneControlRequest {
     /// through sendControl/sendBinary.
     uint64_t client = 0;
     std::function<void(const std::string &)> reply;
+};
+
+/** One sandbox bridge frame from a guest in a viewer's page
+ * (docs/Sandbox.md 7.20, C2): the guest's host call, carried over this
+ * connection instead of a wasm import.
+ *
+ * Uplink, a binary message:  'S', kind u8, seq u32 LE, payload.
+ *   kind 0  one bridge op; the payload is the request bytes exactly as
+ *           the guest wrote them (FcxWire.h: CBOR, or the fixed layout).
+ *           Answered by sendBridge with the same seq.
+ *   kind 1  the end of a statement: the endpoint drops the handles the
+ *           statement minted.  No payload, no answer.
+ * Downlink, a binary message:  `FCSB`, seq u32 LE, reply bytes.  An
+ * EMPTY reply means no bridge answers here (no handler, no host), and
+ * the guest raises "host bridge unavailable".  A scene payload starts
+ * with its 64-bit version and a streamed frame with `FCCY`; no version
+ * reaches `FCSB` either.
+ *
+ * The server knows nothing of what the bytes mean: it forwards, keeps
+ * the order of one connection, and caps the ops in flight -- a guest
+ * waits for each answer, so a connection past the cap is not a guest
+ * and is kicked.
+ */
+struct SceneBridgeRequest {
+    enum Kind : uint8_t { Op = 0, End = 1 };
+    uint8_t kind = Op;
+    uint32_t seq = 0;
+    std::vector<uint8_t> payload;
+    /// The connection is view-only (docs/MultiDocServe.md sec 8).
+    bool viewOnly = false;
+    /// The connection it arrived on (SceneClientInfo::id).
+    uint64_t client = 0;
 };
 
 /// One entry of the door's grant list (docs/ShareAccess.md §2): an
@@ -539,6 +574,14 @@ public:
             std::function<void(SceneControlRequest &&)> handler,
             const std::string &doc = {});
 
+    /// Install the consumer of sandbox bridge frames (SceneBridgeRequest,
+    /// docs/Sandbox.md 7.20 C2). Called on a server connection thread, in
+    /// the order the connection sent them; the handler marshals itself
+    /// and answers each Op through sendBridge. No handler installed =
+    /// every Op is answered empty.
+    void setBridgeHandler(std::function<void(SceneBridgeRequest &&)> handler,
+                          const std::string &doc = {});
+
     /// Install the publisher's cue that queued work finished (a level
     /// was generated): without it an idle backend sits on finished
     /// work, because the publish that would announce it lives in the
@@ -563,6 +606,10 @@ public:
     /// a frame is a state, not an event, and a slow link should see
     /// the newest one. Any thread.
     bool sendBinary(uint64_t client, std::vector<uint8_t> &&data);
+    /// Answer bridge op \a seq of ONE connection (SceneBridgeRequest):
+    /// queued in order, never replaced -- unlike a streamed frame, every
+    /// answer is awaited. False when the connection is gone. Any thread.
+    bool sendBridge(uint64_t client, uint32_t seq, std::vector<uint8_t> &&reply);
 
     /// Declare \a doc served: give its group the display label the
     /// `docs` document listing shows, mark it joinable by name on the

@@ -1137,6 +1137,45 @@ std::vector<unsigned char> dispatchHostOpFixed(HandleTable& table,
     return out;
 }
 
+std::vector<unsigned char> dispatchHostBytes(HandleTable& table,
+                                             const unsigned char* data,
+                                             std::size_t len,
+                                             std::string& opName,
+                                             std::string& missing)
+{
+    missing.clear();
+    // the fixed layout of a bare read_prop / get_attr (FcxWire.h): no
+    // CBOR on either side for the most frequent hop
+    if (len > 0 && data[0] == FcxWire::FixedRequestMagic)
+        return dispatchHostOpFixed(table, data, len, opName);
+    json reply;
+    try {
+        json req = json::from_cbor(data, data + len);
+        opName = req.is_object() ? req.value("op", std::string("?")) : std::string("?");
+        if (opName == FcxWire::OpPkgMissing && req.is_object())
+            missing = req.value("a", std::string("?"));
+        reply = dispatchHostOp(table, req);
+    }
+    catch (const std::exception& e) {
+        opName = "?";
+        reply = {{"ok", false}, {"exc", "ProtocolError"}, {"msg", e.what()}};
+    }
+    return json::to_cbor(reply);
+}
+
+std::vector<unsigned char> errorReplyBytes(const unsigned char* request,
+                                           std::size_t len,
+                                           const char* exc,
+                                           const std::string& msg)
+{
+    const auto cbor = json::to_cbor(json {{"ok", false}, {"exc", exc}, {"msg", msg}});
+    if (len == 0 || request[0] != FcxWire::FixedRequestMagic)
+        return cbor;
+    std::vector<unsigned char> out {FcxWire::FixedReplyMagic, FcxWire::FixedKindCbor};
+    out.insert(out.end(), cbor.begin(), cbor.end());
+    return out;
+}
+
 // ---- registered op families (docs/Sandbox.md 7.9) ----
 
 static std::map<std::string, BridgeOpHandler>& bridgeOpHandlers()
@@ -1338,6 +1377,15 @@ json dispatchHostOp(HandleTable& table, const json& req)
             const uint64_t ownerId = table.owner() ? table.idOf(table.owner()) : 0;
             if (!ownerId)
                 return okReply(json());
+            // An owner that IS a document -- a remote guest's endpoint,
+            // answering for the served document as a whole
+            // (docs/Sandbox.md 7.20, C2) -- is its own active document.
+            if (PyObject_TypeCheck(table.owner(), &App::DocumentPy::Type)) {
+                ExpressionSecurity::checkPermission(
+                    ExpressionSecurity::Permission::DocReadSelf);
+                Py_INCREF(table.owner());
+                return encodeResult(table, table.owner());
+            }
             json sub = {{"op", FcxWire::OpGetAttr}, {"h", ownerId}, {"a", "Document"}};
             json reply = dispatchHostOp(table, sub);
             if (!reply.value("ok", false) && reply.value("exc", "") == "AttributeError")

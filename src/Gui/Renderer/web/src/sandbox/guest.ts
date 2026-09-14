@@ -40,8 +40,14 @@ export interface BootInfo {
   packages: string[];
 }
 
-/// One host round trip: the request bytes the guest wrote, the reply bytes.
-export type HostBridge = (request: Uint8Array) => Promise<Uint8Array>;
+/// The guest's reach-back to the host, shaped as a transport: request bytes in,
+/// a promise of reply bytes out (remote.ts carries it over the viewer's socket,
+/// docs/Sandbox.md 7.20 C2).  An empty reply means nothing serves the bridge.
+export interface HostBridge {
+  roundTrip(request: Uint8Array): Promise<Uint8Array>;
+  /// The guest call is over: the host may drop the handles it minted.
+  endStatement?(): void;
+}
 
 export interface GuestOptions {
   /// The link's ?token=, for boot.json.
@@ -80,6 +86,7 @@ export class BrowserGuest {
     private readonly ex: SideExports,
     private readonly enter: (req: number, len: number) => number | Promise<number>,
     failed: string[],
+    private readonly bridge: HostBridge | undefined,
   ) {
     this.failed = failed;
   }
@@ -131,8 +138,11 @@ export class BrowserGuest {
       hostCall = new (WebAssembly as any).Suspending(async (ptr: number, len: number) => {
         const request = M.HEAPU8.slice(ptr, ptr + len);
         try {
-          parked = await bridge(request);
-          return parked.length;
+          const reply = await bridge.roundTrip(request);
+          if (!reply.length)
+            throw new Error('nothing on the server answers the sandbox bridge');
+          parked = reply;
+          return reply.length;
         } catch (e) {
           parked = null;
           warn('host bridge: ' + e);
@@ -185,7 +195,7 @@ export class BrowserGuest {
         throw new Error('fcx_image exports no ' + fn);
     const enter = jspi ? (WebAssembly as any).promising(ex.fcx_call) : ex.fcx_call;
     return new BrowserGuest(info, { runtimeMs: t1 - t0, wheelsMs: performance.now() - t1 },
-                            py, ex, enter, failed);
+                            py, ex, enter, failed, opts.bridge);
   }
 
   /// The guest's linear memory, in MB.
@@ -214,6 +224,9 @@ export class BrowserGuest {
       at = await this.enter(ptr, req.length);
     } finally {
       this.ex.fcx_free(ptr);
+      // One call is one statement: its handles on the host can go.  What
+      // the guest keeps across statements re-resolves by its durable key.
+      this.bridge?.endStatement?.();
     }
     if (!at)
       throw new Error('sandbox guest returned no reply');
@@ -237,5 +250,11 @@ export class BrowserGuest {
   /// Raw Python in the guest's interpreter -- the debug path.
   runPython(src: string) {
     return this.call({ op: 'eval', src });
+  }
+
+  /// Python statements in the guest (FcxWire OpExec): their names are
+  /// discarded, what they put in sys.modules or builtins stays.
+  exec(src: string) {
+    return this.call({ op: 'exec', src });
   }
 }

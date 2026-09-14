@@ -292,31 +292,16 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     /// One guest->host bridge op, CBOR both ways (ExpressionImageBridge).
     std::vector<uint8_t> bridge(const uint8_t* data, std::size_t len)
     {
-        // the fixed layout of a bare read_prop / get_attr (FcxWire.h):
-        // no CBOR on either side for the most frequent hop
-        if (len > 0 && data[0] == FcxWire::FixedRequestMagic) {
-            std::string opName;
-            auto out = dispatchHostOpFixed(handles, data, len, opName);
-            ++ops[opName];
-            return out;
-        }
-        json reply;
-        try {
-            json req = json::from_cbor(data, data + len);
-            const std::string opName =
-                req.is_object() ? req.value("op", std::string("?")) : std::string("?");
-            ++ops[opName];
-            // A failed guest import is counted by NAME as well: which
-            // module asked is what a corpus gate needs to read (a name
-            // in the package lock becomes an install prompt).
-            if (opName == FcxWire::OpPkgMissing && req.is_object())
-                ++ops[opName + ":" + req.value("a", std::string("?"))];
-            reply = dispatchHostOp(handles, req);
-        }
-        catch (const std::exception& e) {
-            reply = {{"ok", false}, {"exc", "ProtocolError"}, {"msg", e.what()}};
-        }
-        return json::to_cbor(reply);
+        std::string opName;
+        std::string missing;
+        auto out = dispatchHostBytes(handles, data, len, opName, missing);
+        ++ops[opName];
+        // A failed guest import is counted by NAME as well: which
+        // module asked is what a corpus gate needs to read (a name
+        // in the package lock becomes an install prompt).
+        if (!missing.empty())
+            ++ops[opName + ":" + missing];
+        return out;
     }
 
     bool initialize()

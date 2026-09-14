@@ -161,6 +161,16 @@ Runtime::Scope::Scope(const char *principalId)
     pushed = true;
 }
 
+Runtime::Scope::Scope(const App::Document *doc)
+{
+    if (!doc)
+        return;
+    ScopeEntry entry;
+    entry.doc = doc;
+    _ScopeStack.push_back(std::move(entry));
+    pushed = true;
+}
+
 Runtime::Scope::~Scope()
 {
     if (pushed)

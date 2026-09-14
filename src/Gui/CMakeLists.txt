@@ -473,7 +473,7 @@ SOURCE_GROUP("Fw" FILES ${Fw_SRCS})
 # the sandbox host seam (docs/Sandbox.md 7.9): the gui.* bridge ops live in
 # SandboxGui.cpp alone, so the host macro is scoped to it
 if(BUILD_EXPR_IMAGE_HOST)
-    set_source_files_properties(SandboxGui.cpp PROPERTIES COMPILE_DEFINITIONS FC_EXPR_IMAGE_HOST)
+    set_source_files_properties(SandboxGui.cpp SandboxRemote.cpp PROPERTIES COMPILE_DEFINITIONS FC_EXPR_IMAGE_HOST)
 endif()
 # the browser console's file mount (docs/Sandbox.md 7.20): only a pyodide
 # host has the runtime a page's guest boots from
@@ -1160,6 +1160,7 @@ SET(Inventor_CPP_SRCS
     SoFCSelection.cpp
     ObjectMetaFeed.cpp
     SceneServeSource.cpp
+    SandboxRemote.cpp
     SandboxServe.cpp
     ShareDocument.cpp
     SoFCUnifiedSelection.cpp
@@ -1226,6 +1227,7 @@ SET(Inventor_SRCS
     SoFCSelection.h
     ObjectMetaFeed.h
     SceneServeSource.h
+    SandboxRemote.h
     SandboxServe.h
     ShareDocument.h
     SoFCUnifiedSelection.h

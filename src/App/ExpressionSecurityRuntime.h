@@ -55,6 +55,7 @@ typedef struct _object PyObject;
 
 namespace App {
 
+class Document;
 class DocumentObject;
 
 namespace ExpressionSecurity {
@@ -86,6 +87,7 @@ public:
         explicit Scope(const App::DocumentObject *) {}
         Scope(const App::DocumentObject *, const App::DocumentObject *) {}
         explicit Scope(const char *) {}
+        explicit Scope(const App::Document *) {}
         Scope(const Scope &) = delete;
         Scope &operator=(const Scope &) = delete;
     };
@@ -184,6 +186,13 @@ public:
         Scope(const App::DocumentObject *runAs, const App::DocumentObject *via);
         /// Explicit principal id: "session" or "addon:<name>".
         explicit Scope(const char *principalId);
+        /** The document principal of `doc` with no owner object, pushed
+         * WHATEVER scope is active: a remote guest's bridge op on a served
+         * document (docs/Sandbox.md 7.20, C2), which answers for the
+         * document as a whole rather than for one object's code.  A null
+         * `doc` pushes nothing -- never the session.
+         */
+        explicit Scope(const App::Document *doc);
         ~Scope();
 
         Scope(const Scope &) = delete;

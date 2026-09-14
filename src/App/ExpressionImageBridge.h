@@ -287,6 +287,30 @@ AppExport std::vector<unsigned char> dispatchHostOpFixed(HandleTable& table,
                                                           std::size_t len,
                                                           std::string& opName);
 
+/** One guest->host bridge request as the guest wrote it -- the fixed
+ * layout when it starts with FixedRequestMagic, CBOR otherwise -- to
+ * the reply bytes in the matching form.  What ImageHost's own bridge
+ * does, for a caller holding a table of its own: a remote guest's
+ * endpoint (docs/Sandbox.md 7.20, C2).  `opName` receives the wire op
+ * name; `missing` the module name of a pkg.missing request, else it is
+ * left empty.  Never throws; an undecodable request is a ProtocolError
+ * reply.
+ */
+AppExport std::vector<unsigned char> dispatchHostBytes(HandleTable& table,
+                                                        const unsigned char* data,
+                                                        std::size_t len,
+                                                        std::string& opName,
+                                                        std::string& missing);
+
+/** An error reply shaped for `request`: behind the fixed layout's
+ * CBOR kind when the request is fixed-layout, plain CBOR otherwise --
+ * a bridge op refused before it reaches the dispatcher.
+ */
+AppExport std::vector<unsigned char> errorReplyBytes(const unsigned char* request,
+                                                      std::size_t len,
+                                                      const char* exc,
+                                                      const std::string& msg);
+
 }  // namespace ExpressionSandbox
 }  // namespace App
 
