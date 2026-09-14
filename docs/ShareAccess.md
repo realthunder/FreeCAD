@@ -102,6 +102,11 @@ The rules that keep it that:
 - **By hand, the same.** Making a live connection a host for the session needs a
   verified identity too (`SceneStreamServer::setClientAccess`,
   `Gui.serveSetClientMode(id, 'host')`).
+- **The panel says so.** The Share panel offers "Full control" in the invite row, the
+  grant editor, a grant's row and a live connection's row, disabled where it cannot
+  apply -- a grant whose identity is a pattern, a connection with no verified identity
+  -- and an invite or a new grant of full control on a pattern is refused with a
+  warning rather than stored as a host grant that would admit editors.
 - **An easing never carries it.** The live-only rule a rename mints is at most edit.
 - **Re-judged like any access.** A change of the grant list re-judges every connection,
   a hand promotion included, and the client is told its level
