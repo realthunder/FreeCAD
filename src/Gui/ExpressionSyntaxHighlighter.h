@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (c) 2017 Markus Hovorka <m.hovorka@live.de>                 *
+ *   Copyright (c) 2026 realthunder <realthunder.dev@gmail.com>            *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -20,46 +20,48 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef GUI_ViewProviderTextDocument_H
-#define GUI_ViewProviderTextDocument_H
+#ifndef GUI_EXPRESSIONSYNTAXHIGHLIGHTER_H
+#define GUI_EXPRESSIONSYNTAXHIGHLIGHTER_H
 
-#include <QPointer>
-#include "ViewProviderDocumentObject.h"
+#include <memory>
 
+#include "SyntaxHighlighter.h"
 
-class QPlainTextEdit;
+namespace Gui
+{
 
-namespace Gui {
-
-class GuiExport ViewProviderTextDocument : public ViewProviderDocumentObject {
-    PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderTextDocument);
+/** Highlights the expression language (App/ExpressionParser.l).
+ *
+ * Adapted from PythonSyntaxHighlighter, with the lexer's differences:
+ * a '#' only starts a comment when a blank or the end of the line follows
+ * it (Doc#Obj is a reference), '#@pybegin'/'#@pyend' switch to Python
+ * rules until the end marker, '<<...>>' is a string, a number carries its
+ * unit ('5mm'), triple-quoted strings span lines, and the '##@@' header
+ * lines of the expression copy format are shown as headers.
+ *
+ * The block state carries the multi-line constructs only: an open triple
+ * quoted string and the Python mode flag.
+ */
+class GuiExport ExpressionSyntaxHighlighter: public SyntaxHighlighter
+{
 public:
-    ViewProviderTextDocument();
-    ~ViewProviderTextDocument() override = default;
+    explicit ExpressionSyntaxHighlighter(QObject* parent);
+    ~ExpressionSyntaxHighlighter() override;
 
-    App::PropertyBool ReadOnly;
-    App::PropertyFloat FontSize;
-    App::PropertyFont FontName;
-    App::PropertyEnumeration SyntaxHighlighter;
+    void highlightBlock(const QString& text) override;
 
-    bool doubleClicked() override;
-    void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
-    bool isShow() const override { return true; }
+    /// Take the colors of the Editor preference page. A TextEditor pushes
+    /// them itself; a plain text widget calls this once.
+    void loadEditorColors();
 
-    void attach(App::DocumentObject* pcObject) override;
-    void onChanged(const App::Property* prop) override;
-
-    MDIView *getMDIView() const override;
+    /// The builtin function names colored as class names.
+    static bool isBuiltinFunction(const QString& name);
 
 private:
-    bool activateView() const;
-
-private:
-    QPointer<QPlainTextEdit> editorWidget;
-    static const char* SyntaxEnums[];
+    class Private;
+    std::unique_ptr<Private> d;
 };
 
-}
+}  // namespace Gui
 
-#endif
-
+#endif  // GUI_EXPRESSIONSYNTAXHIGHLIGHTER_H

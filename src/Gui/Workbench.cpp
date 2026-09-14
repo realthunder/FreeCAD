@@ -35,6 +35,7 @@
 #include "Command.h"
 #include "Control.h"
 #include "DockWindowManager.h"
+#include "ExpressionEditorView.h"
 #include "MainWindow.h"
 #include "MenuManager.h"
 #include "OverlayWidgets.h"
@@ -401,6 +402,20 @@ void  Workbench::addPermanentMenuItems(MenuItem* mb) const
     }
 }
 
+void Workbench::addPermanentToolBars(ToolBarItem* root) const
+{
+    // The expression editor's commands, in every workbench. The tool bar
+    // starts unavailable; ExpressionEditorView shows it while an expression
+    // editor is the active view.
+    if (is<NoneWorkbench>()) {
+        return;
+    }
+    auto bar = new ToolBarItem(root, ToolBarItem::DefaultVisibility::Unavailable);
+    bar->setCommand(ExpressionEditorView::toolBarName());
+    *bar << "Std_ExpressionApply" << "Std_ExpressionDiff" << "Std_ExpressionRevert"
+         << "Std_ExpressionRefresh" << "Separator" << "Std_ExpressionUnbind";
+}
+
 void Workbench::activated()
 {
     Application::Instance->commandManager().signalPyCmdInitialized();
@@ -414,6 +429,7 @@ bool Workbench::activate()
 {
     ToolBarItem* tb = setupToolBars();
     setupCustomToolbars(tb, "Toolbar");
+    addPermanentToolBars(tb);
     WorkbenchManipulator::changeToolBars(tb);
     ToolBarManager::getInstance()->setup( tb );
     delete tb;
@@ -545,6 +561,7 @@ std::list<std::string> Workbench::listCommandbars() const
     qApp->translate("Workbench", "Clipboard");
     qApp->translate("Workbench", "Workbench");
     qApp->translate("Workbench", "Structure");
+    qApp->translate("Workbench", "Expression editor");
     qApp->translate("Workbench", "Standard views");
     qApp->translate("Workbench", "Axonometric");
     qApp->translate("Workbench", "&Stereo");

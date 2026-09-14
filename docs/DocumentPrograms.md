@@ -294,3 +294,5 @@ against, and opening it on a build with a newer surface logs a note.
   fixture cases.
 - docs/Sandbox.md 7.17 -- why it is built this way; sec 12 for the traps.
 - docs/ProxyChain.md -- the chain the sheet form rides on.
+- docs/ExpressionEditor.md -- every binding of a document as one text to
+  edit, diff and apply.

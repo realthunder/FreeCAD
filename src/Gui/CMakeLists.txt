@@ -769,6 +769,8 @@ SET(Editor_CPP_SRCS
     CallTips.cpp
     EditorView.cpp
     TextDocumentEditorView.cpp
+    ExpressionEditorView.cpp
+    ExpressionSyntaxHighlighter.cpp
     PythonConsole.cpp
     PythonConsolePy.cpp
     PythonDebugger.cpp
@@ -781,6 +783,8 @@ SET(Editor_HPP_SRCS
     CallTips.h
     EditorView.h
     TextDocumentEditorView.h
+    ExpressionEditorView.h
+    ExpressionSyntaxHighlighter.h
     PythonConsole.h
     PythonConsolePy.h
     PythonDebugger.h

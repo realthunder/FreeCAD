@@ -169,6 +169,27 @@ if(TARGET FreeCADGui)
                           ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
     add_test(NAME OnViewParameter_tests_run
              COMMAND OnViewParameter_tests_run)
+
+    # The expression editor (src/Gui/ExpressionEditorView.h): the text
+    # form's parse, and its dump and apply over a live document, the line
+    # diff, and the formats the expression highlighter gives. A highlighter
+    # formats a QTextDocument, so there is a QApplication, under the
+    # offscreen platform; no window is shown.
+    add_executable(ExpressionEditor_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionEditor.cpp)
+    target_include_directories(ExpressionEditor_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(ExpressionEditor_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase
+                          ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
+    add_test(NAME ExpressionEditor_tests_run
+             COMMAND ExpressionEditor_tests_run)
 endif()
 
 if(TARGET FreeCADRenderer)

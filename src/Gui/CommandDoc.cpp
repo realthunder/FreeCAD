@@ -58,6 +58,7 @@
 #include "FileDialog.h"
 #include "MainWindow.h"
 #include "Selection.h"
+#include "ExpressionEditorView.h"
 #include "DlgObjectSelection.h"
 #include "DlgProjectInformationImp.h"
 #include "DlgProjectUtility.h"
@@ -1866,6 +1867,91 @@ Action * StdCmdExpression::createAction(void)
     return pcAction;
 }
 
+//===========================================================================
+// Std_ExpressionApply, Std_ExpressionDiff, Std_ExpressionRevert,
+// Std_ExpressionRefresh, Std_ExpressionUnbind
+//===========================================================================
+namespace {
+
+// The expression editor's commands: each forwards its message to the active
+// view, which only an expression editor (Gui::ExpressionEditorView) answers.
+class StdCmdExpressionEditor : public Command
+{
+public:
+    StdCmdExpressionEditor(const char *name, const char *msg, const char *menuText,
+                           const char *toolTip, const char *pixmap)
+        : Command(name), msg(msg)
+    {
+        sGroup        = "Edit";
+        sMenuText     = menuText;
+        sToolTipText  = toolTip;
+        sWhatsThis    = name;
+        sStatusTip    = toolTip;
+        sPixmap       = pixmap;
+        eType         = NoTransaction;
+    }
+
+    const char* className() const override
+    { return "StdCmdExpressionEditor"; }
+
+protected:
+    void activated(int iMsg) override
+    {
+        Q_UNUSED(iMsg);
+        getGuiApplication()->sendMsgToActiveView(msg);
+    }
+
+    bool isActive() override
+    {
+        return getGuiApplication()->sendHasMsgToActiveView(msg);
+    }
+
+private:
+    const char *msg;
+};
+
+// Std_ExpressionEditSelected, Std_ExpressionEditDocument, Std_ExpressionEditAll:
+// open an expression editor, as the copy entries of Std_Expressions copy.
+class StdCmdExpressionEdit : public Command
+{
+public:
+    StdCmdExpressionEdit(const char *name, ExpressionEditorView::Scope scope,
+                         const char *menuText, const char *toolTip)
+        : Command(name), scope(scope)
+    {
+        sGroup        = "Edit";
+        sMenuText     = menuText;
+        sToolTipText  = toolTip;
+        sWhatsThis    = name;
+        sStatusTip    = toolTip;
+        sPixmap       = "accessories-text-editor";
+        eType         = NoTransaction;
+    }
+
+    const char* className() const override
+    { return "StdCmdExpressionEdit"; }
+
+protected:
+    void activated(int iMsg) override
+    {
+        Q_UNUSED(iMsg);
+        ExpressionEditorView::open(scope);
+    }
+
+    bool isActive() override
+    {
+        if (!App::GetApplication().getActiveDocument())
+            return false;
+        return scope != ExpressionEditorView::Scope::Selection
+            || Selection().hasSelection();
+    }
+
+private:
+    ExpressionEditorView::Scope scope;
+};
+
+} // anonymous namespace
+
 namespace Gui {
 
 void CreateDocCommands()
@@ -1908,6 +1994,44 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdAlignment());
     rcCmdMgr.addCommand(new StdCmdEdit());
     rcCmdMgr.addCommand(new StdCmdExpression());
+    rcCmdMgr.addCommand(new StdCmdExpressionEdit("Std_ExpressionEditSelected",
+        ExpressionEditorView::Scope::Selection,
+        QT_TRANSLATE_NOOP("StdCmdExpressionEdit", "Edit selected expressions"),
+        QT_TRANSLATE_NOOP("StdCmdExpressionEdit",
+                          "Open the expressions of the selected objects in an editor")));
+    rcCmdMgr.addCommand(new StdCmdExpressionEdit("Std_ExpressionEditDocument",
+        ExpressionEditorView::Scope::ActiveDocument,
+        QT_TRANSLATE_NOOP("StdCmdExpressionEdit", "Edit document expressions"),
+        QT_TRANSLATE_NOOP("StdCmdExpressionEdit",
+                          "Open the expressions of the active document in an editor")));
+    rcCmdMgr.addCommand(new StdCmdExpressionEdit("Std_ExpressionEditAll",
+        ExpressionEditorView::Scope::AllDocuments,
+        QT_TRANSLATE_NOOP("StdCmdExpressionEdit", "Edit all expressions"),
+        QT_TRANSLATE_NOOP("StdCmdExpressionEdit",
+                          "Open the expressions of all documents in an editor")));
+    rcCmdMgr.addCommand(new StdCmdExpressionEditor("Std_ExpressionApply", "ExpressionApply",
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Apply expressions"),
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Apply the edited expressions to the documents"),
+        "edit_OK"));
+    rcCmdMgr.addCommand(new StdCmdExpressionEditor("Std_ExpressionDiff", "ExpressionDiff",
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Show expression changes"),
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor",
+                          "Toggle between the text and its changes since the expressions were loaded"),
+        "Std_WindowTileVer"));
+    rcCmdMgr.addCommand(new StdCmdExpressionEditor("Std_ExpressionRevert", "ExpressionRevert",
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Revert expressions"),
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor",
+                          "Discard the edits made since the expressions were loaded"),
+        "Std_Revert"));
+    rcCmdMgr.addCommand(new StdCmdExpressionEditor("Std_ExpressionRefresh", "ExpressionRefresh",
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Refresh expressions"),
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Reload the expressions from the documents"),
+        "view-refresh"));
+    rcCmdMgr.addCommand(new StdCmdExpressionEditor("Std_ExpressionUnbind", "ExpressionUnbind",
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor", "Unbind expressions"),
+        QT_TRANSLATE_NOOP("StdCmdExpressionEditor",
+                          "Unbind the expression block at the cursor, or every block the selection touches"),
+        "bound-expression-unset"));
 }
 
 } // namespace Gui
