@@ -138,6 +138,43 @@ PyObject* evalCountFunc(PyObject*, PyObject*)
 #endif
 }
 
+PyObject* memoryInfoFunc(PyObject*, PyObject*)
+{
+    PyObject* dict = PyDict_New();
+    if (!dict)
+        return nullptr;
+    auto put = [dict](const char* key, PyObject* value) {
+        if (!value)
+            return false;
+        int rc = PyDict_SetItemString(dict, key, value);
+        Py_DECREF(value);
+        return rc == 0;
+    };
+#ifdef FC_EXPR_IMAGE_HOST
+    const ExpressionSandbox::ImageHost::MemoryInfo m =
+        ExpressionSandbox::ImageHost::instance().memoryInfo();
+#else
+    const struct
+    {
+        bool live = false;
+        std::size_t linear = 0, linearLimit = 0, engineHeapUsed = 0, engineHeapLimit = 0,
+                    buffers = 0, refusals = 0;
+    } m;
+#endif
+    const bool ok = put("live", PyBool_FromLong(m.live))
+        && put("linear", PyLong_FromSize_t(m.linear))
+        && put("linear_limit", PyLong_FromSize_t(m.linearLimit))
+        && put("engine_heap_used", PyLong_FromSize_t(m.engineHeapUsed))
+        && put("engine_heap_limit", PyLong_FromSize_t(m.engineHeapLimit))
+        && put("buffers", PyLong_FromSize_t(m.buffers))
+        && put("refusals", PyLong_FromSize_t(m.refusals));
+    if (!ok) {
+        Py_DECREF(dict);
+        return nullptr;
+    }
+    return dict;
+}
+
 PyObject* statsFunc(PyObject*, PyObject*)
 {
     PyObject* dict = PyDict_New();
@@ -527,6 +564,13 @@ PyMethodDef Methods[] = {
      "  How many guest->host hops (read_prop, get_attr, call, get_item,"
      " len, release, pkg.missing) a workload really makes; what prices a"
      " snapshot op before one is designed."},
+    {"memoryInfo", memoryInfoFunc, METH_NOARGS,
+     "memoryInfo() -> dict -- what the live guest holds against its memory"
+     " budget, in bytes: {'live', 'linear' (its linear memory, the Python"
+     " heap), 'linear_limit' (the ceiling, Sandbox:MemoryMB; 0 = the"
+     " engine's own), 'engine_heap_used', 'engine_heap_limit'"
+     " (Sandbox:EngineHeapMB), 'buffers' (live array buffers), 'refusals'"
+     " (growth requests the ceiling refused)}."},
     {"exec", execFunc, METH_VARARGS,
      "exec(source[, module]): run statements in the sandbox guest, as the session\n"
      "principal; with module the source becomes that module in the guest."},

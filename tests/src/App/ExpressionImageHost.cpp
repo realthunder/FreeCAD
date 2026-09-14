@@ -295,6 +295,153 @@ TEST_F(ExpressionImageBudgetTest, zeroBudgetIsUnbounded)
     EXPECT_EQ(value(res).get<int64_t>(), 4999950000);
 }
 
+// ---- the memory budget (Outcome in App/ExpressionImageRuntime.h,
+// ---- docs/Sandbox.md 7.17 D4): a growth past the ceiling is refused as
+// ---- a MemoryError and the guest kept; the engine heap's limit stops
+// ---- the guest, and the next evaluation boots a fresh one ----
+
+class ExpressionImageMemoryTest: public ExpressionImageBudgetTest
+{
+protected:
+    void SetUp() override
+    {
+        ExpressionImageBudgetTest::SetUp();  // may GTEST_SKIP
+        if (IsSkipped())
+            return;
+        if (ImageHost::instance().runtime() != "pyodide")
+            GTEST_SKIP() << "the memory budget is the pyodide runtime's";
+        hadMemory = prefs()->GetInt("MemoryMB", -1);
+        hadHeap = prefs()->GetInt("EngineHeapMB", -1);
+        touched = true;
+        // not the time budget under test
+        prefs()->SetInt("BudgetMs", 10000);
+        prefs()->SetInt("MemoryMB", 256);
+        prefs()->SetInt("EngineHeapMB", 256);
+        // the engine heap's limit applies at boot
+        ImageHost::instance().reset();
+    }
+
+    void TearDown() override
+    {
+        if (touched) {
+            if (hadMemory < 0)
+                prefs()->RemoveInt("MemoryMB");
+            else
+                prefs()->SetInt("MemoryMB", hadMemory);
+            if (hadHeap < 0)
+                prefs()->RemoveInt("EngineHeapMB");
+            else
+                prefs()->SetInt("EngineHeapMB", hadHeap);
+            ImageHost::instance().reset();
+        }
+        ExpressionImageBudgetTest::TearDown();
+    }
+
+    long hadMemory = -1;
+    long hadHeap = -1;
+    bool touched = false;
+};
+
+// One allocation past the ceiling: refused, and the guest keeps going
+// with everything it had.
+TEST_F(ExpressionImageMemoryTest, growthPastTheCeilingIsRefused)
+{
+    mark();
+    auto res = ImageHost::instance().eval("len(bytearray(400 * 1024 * 1024))", {});
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "MemoryError") << res.message;
+    EXPECT_NE(res.message.find("256 MB memory budget (refused)"), std::string::npos)
+        << res.message;
+
+    const auto info = ImageHost::instance().memoryInfo();
+    EXPECT_TRUE(info.live);
+    EXPECT_GT(info.refusals, 0u);
+    EXPECT_EQ(info.linearLimit, std::size_t(256) << 20);
+    EXPECT_LE(info.linear, info.linearLimit);
+
+    auto good = ImageHost::instance().eval("40 + 2", {});
+    ASSERT_TRUE(good.ok) << good.excType << ": " << good.message;
+    EXPECT_EQ(value(good).get<int64_t>(), 42);
+    auto after = readMark();
+    ASSERT_TRUE(after.ok) << "a refusal dropped the instance: " << after.excType << ": "
+                          << after.message;
+    EXPECT_EQ(value(after).get<int64_t>(), 42);
+}
+
+// Many allocations, each inside the ceiling, until one is not: the list
+// unwinds with the exception and its megabytes are reused.
+TEST_F(ExpressionImageMemoryTest, runawayGrowthIsRefused)
+{
+    auto res = ImageHost::instance().eval("len([bytearray(1 << 20) for x in iter(int, 1)])", {});
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "MemoryError") << res.message;
+
+    auto again = ImageHost::instance().eval("len(bytearray(64 << 20))", {});
+    ASSERT_TRUE(again.ok) << again.excType << ": " << again.message;
+    EXPECT_EQ(value(again).get<int64_t>(), int64_t(64) << 20);
+}
+
+// An array buffer is outside the Python heap and outside the engine
+// heap: the allocator counts it against the same ceiling.
+TEST_F(ExpressionImageMemoryTest, arrayBufferPastTheCeilingIsRefused)
+{
+    mark();
+    auto res = ImageHost::instance().eval(
+        "__import__('js').ArrayBuffer.new(300 * 1024 * 1024).byteLength", {});
+    ASSERT_FALSE(res.ok) << "a 300 MB array buffer under a 256 MB ceiling";
+    // JavaScript's RangeError, as pyodide raises it in Python; V8's
+    // last-resort GC after the failed allocation must not stop the guest
+    EXPECT_EQ(res.excType, "JsException") << res.message;
+    EXPECT_GT(ImageHost::instance().memoryInfo().refusals, 0u);
+    auto after = readMark();
+    ASSERT_TRUE(after.ok) << "a refused buffer dropped the instance: " << after.excType << ": "
+                          << after.message;
+}
+
+// A wasm memory made from JavaScript asks for its initial size.
+TEST_F(ExpressionImageMemoryTest, memoryConstructedPastTheCeilingIsRefused)
+{
+    auto res = ImageHost::instance().eval(
+        "__import__('js').WebAssembly.Memory.new(__import__('pyodide').ffi.to_js("
+        "{'initial': 8000}, dict_converter=__import__('js').Object.fromEntries))",
+        {});
+    ASSERT_FALSE(res.ok) << "a 500 MB memory under a 256 MB ceiling";
+    EXPECT_NE(res.message.find("memory budget"), std::string::npos) << res.message;
+}
+
+// The engine's own heap cannot refuse; its limit stops the guest.
+TEST_F(ExpressionImageMemoryTest, engineHeapLimitStopsTheGuest)
+{
+    mark();
+    auto res = ImageHost::instance().eval(
+        "__import__('js').eval('var a = []; for (;;) a.push(new Array(100000).fill(1.5))')", {});
+    ASSERT_FALSE(res.ok);
+    EXPECT_EQ(res.excType, "MemoryError") << res.message;
+    EXPECT_NE(res.message.find("stopped"), std::string::npos) << res.message;
+
+    auto good = ImageHost::instance().eval("40 + 2", {});
+    ASSERT_TRUE(good.ok) << good.excType << ": " << good.message;
+    EXPECT_EQ(value(good).get<int64_t>(), 42);
+    EXPECT_FALSE(readMark().ok) << "a stopped instance was kept";
+}
+
+TEST_F(ExpressionImageMemoryTest, memoryInfoReportsTheLiveGuest)
+{
+    auto res = ImageHost::instance().eval("1", {});
+    ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
+    const auto info = ImageHost::instance().memoryInfo();
+    EXPECT_TRUE(info.live);
+    EXPECT_GT(info.linear, std::size_t(16) << 20);
+    EXPECT_LE(info.linear, info.linearLimit);
+    EXPECT_GT(info.engineHeapUsed, 0u);
+    EXPECT_GE(info.engineHeapLimit, std::size_t(200) << 20);
+    EXPECT_LE(info.engineHeapLimit, std::size_t(320) << 20);
+    EXPECT_EQ(info.refusals, 0u);
+
+    ImageHost::instance().reset();
+    EXPECT_FALSE(ImageHost::instance().memoryInfo().live);
+}
+
 // ---- image->host bridge ops (get_attr/call/get_item/len/release,
 // ---- ExpressionImageBridge.cpp): live host objects cross as handles ----
 

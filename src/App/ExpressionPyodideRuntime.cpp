@@ -30,6 +30,9 @@
 #include <map>
 #include <random>
 #include <thread>
+#if defined(__GLIBC__)
+# include <malloc.h>
+#endif
 
 #include <libplatform/libplatform.h>
 #include <v8-array-buffer.h>
@@ -49,6 +52,7 @@
 #include <v8-primitive.h>
 #include <v8-promise.h>
 #include <v8-script.h>
+#include <v8-statistics.h>
 #include <v8-typed-array.h>
 
 #include <Base/Console.h>
@@ -138,6 +142,73 @@ v8::Platform* platform()
     }();
     return p;
 }
+
+/** The array buffers' allocator, counting (docs/Sandbox.md 7.17 D4): a
+ * buffer that would take the live total past the ceiling is refused,
+ * which JavaScript sees as a RangeError.  Wasm memories do not come
+ * through here -- V8 reserves those itself -- and are held by the grow
+ * check of host_shim.js instead.  Natives allocate with MaybeNew: a
+ * refused ArrayBuffer::New is V8's fatal out-of-memory.
+ */
+class CountingAllocator: public v8::ArrayBuffer::Allocator
+{
+public:
+    CountingAllocator()
+        : inner(v8::ArrayBuffer::Allocator::NewDefaultAllocator())
+    {}
+    ~CountingAllocator() override
+    {
+        delete inner;
+    }
+
+    void* Allocate(size_t length) override
+    {
+        return take(length) ? settle(inner->Allocate(length), length) : nullptr;
+    }
+    void* AllocateUninitialized(size_t length) override
+    {
+        return take(length) ? settle(inner->AllocateUninitialized(length), length) : nullptr;
+    }
+    void Free(void* data, size_t length) override
+    {
+        inner->Free(data, length);
+        if (data)
+            live.fetch_sub(length);
+    }
+
+    /// Live bytes; the ceiling in bytes, 0 = none.
+    std::atomic<size_t> live {0};
+    std::atomic<size_t> limit {0};
+    /// Buffers refused; and a refusal onNearHeapLimit has not seen yet.
+    /// V8 follows a failed buffer allocation with a last-resort GC that
+    /// asks the near-heap-limit callback too, with the engine heap
+    /// nowhere near its limit.
+    std::atomic<size_t> refused {0};
+    std::atomic<bool> refusalPending {false};
+
+private:
+    v8::ArrayBuffer::Allocator* inner;
+
+    bool take(size_t length)
+    {
+        size_t now = live.load();
+        do {
+            const size_t cap = limit.load();
+            if (cap > 0 && (length > cap || now > cap - length)) {
+                refused.fetch_add(1);
+                refusalPending.store(true);
+                return false;
+            }
+        } while (!live.compare_exchange_weak(now, now + length));
+        return true;
+    }
+    void* settle(void* data, size_t length)
+    {
+        if (!data)
+            live.fetch_sub(length);
+        return data;
+    }
+};
 
 class PyodideRuntime: public ImageRuntime
 {
@@ -300,10 +371,23 @@ public:
 
         platform();
         v8::Isolate::CreateParams params;
-        allocator = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
+        allocator = new CountingAllocator;
+        allocator->limit.store(linearLimit.load());
         params.array_buffer_allocator = allocator;
+        // The engine's own heap (7.17 D4): at its limit V8 asks
+        // onNearHeapLimit, which stops the guest rather than let the
+        // engine end the process.
+        if (engineHeapMB > 0)
+            params.constraints.ConfigureDefaultsFromHeapSize(
+                    0, static_cast<size_t>(engineHeapMB) << 20);
+        refusals = 0;
+        refusedInTrip = false;
+        heapExhausted = false;
+        heapExtensions = 0;
+        linearAllowed = 0;
         isolate = v8::Isolate::New(params);
         isolate->SetData(0, this);
+        isolate->AddNearHeapLimitCallback(onNearHeapLimit, this);
         isolate->SetMicrotasksPolicy(v8::MicrotasksPolicy::kExplicit);
         isolate->SetHostImportModuleDynamicallyCallback(importDynamically);
         isolate->SetHostInitializeImportMetaObjectCallback(initImportMeta);
@@ -332,6 +416,7 @@ public:
         put(h, "randomBytes", hostRandomBytes);
         put(h, "now", hostNow);
         put(h, "print", hostPrint);
+        put(h, "memoryGrow", hostMemoryGrow);
         ctx->Global()->Set(ctx, str(isolate, "__fcx_host"), h).Check();
         if (!run(std::string(reinterpret_cast<const char*>(kPyodideShim), kPyodideShim_len),
                  "host_shim.js")) {
@@ -368,7 +453,14 @@ public:
             + ", " + names + ")";
         v8::Local<v8::Value> result;
         if (!run(boot, "boot", &result) || toStd(isolate, result) != "booted") {
-            FC_ERR("pyodide boot failed");
+            if (heapExhausted)
+                FC_ERR("pyodide boot failed: the engine heap budget of " << engineHeapMB
+                       << " MB is below what the guest needs to boot (Sandbox:EngineHeapMB)");
+            else if (refusals > 0)
+                FC_ERR("pyodide boot failed: the memory budget of " << (linearLimit.load() >> 20)
+                       << " MB is below what the guest needs to boot (Sandbox:MemoryMB)");
+            else
+                FC_ERR("pyodide boot failed");
             return false;
         }
         // The guest's exports and its emscripten Module, from the glue:
@@ -395,6 +487,13 @@ public:
             }
             emModule.Reset(isolate, mod.As<v8::Object>());
             heapKey.Reset(isolate, str(isolate, "HEAPU8"));
+        }
+        // The linear memory the boot left: what the module declared plus
+        // the growths the ceiling allowed.
+        {
+            size_t size = 0;
+            guestMemory(size);
+            linearAllowed = std::max(linearAllowed, size);
         }
 
         // 4. the soft stage of the budget: pyodide's interrupt buffer,
@@ -439,6 +538,35 @@ public:
     {
         budgetMs = budget;
         graceMs = grace;
+    }
+
+    void setMemoryBudget(int memoryMB, int heapMB) override
+    {
+        linearLimit.store(memoryMB > 0 ? static_cast<size_t>(memoryMB) << 20 : 0);
+        if (allocator)
+            allocator->limit.store(linearLimit.load());
+        engineHeapMB = heapMB;
+    }
+
+    MemoryStats memoryStats() override
+    {
+        MemoryStats s;
+        s.linearLimit = linearLimit.load();
+        s.refusals = refusals + (allocator ? allocator->refused.load() : 0);
+        if (!isolate || !live)
+            return s;
+        v8::Locker locker(isolate);
+        v8::Isolate::Scope isolateScope(isolate);
+        v8::HandleScope handleScope(isolate);
+        v8::Local<v8::Context> ctx = context.Get(isolate);
+        v8::Context::Scope contextScope(ctx);
+        guestMemory(s.linear);
+        v8::HeapStatistics heap;
+        isolate->GetHeapStatistics(&heap);
+        s.engineHeapUsed = heap.used_heap_size();
+        s.engineHeapLimit = heap.heap_size_limit();
+        s.buffers = allocator ? allocator->live.load() : 0;
+        return s;
     }
 
     Outcome roundTrip(const std::vector<uint8_t>& request,
@@ -509,6 +637,7 @@ public:
         }
         if (outer) {
             signal.store(0);
+            refusedInTrip = false;
             if (budgetMs > 0)
                 watchdog.arm(budgetMs, budgetMs + std::max(graceMs, 0));
         }
@@ -523,10 +652,15 @@ public:
                 // nested: the outer frame is terminating too and cancels
                 if (outer) {
                     isolate->CancelTerminateExecution();
-                    FC_WARN("pyodide guest terminated after " << (budgetMs + std::max(graceMs, 0))
-                            << " ms; the runtime is dropped");
+                    if (heapExhausted)
+                        FC_WARN("pyodide guest stopped at its engine heap limit of "
+                                << engineHeapMB << " MB; the runtime is dropped");
+                    else
+                        FC_WARN("pyodide guest terminated after "
+                                << (budgetMs + std::max(graceMs, 0))
+                                << " ms; the runtime is dropped");
                 }
-                return Outcome::Terminated;
+                return heapExhausted ? Outcome::MemoryExhausted : Outcome::Terminated;
             }
             report(tc, "fcx call");
             return Outcome::Failed;
@@ -553,13 +687,27 @@ public:
         // Let the guest's own housekeeping (proxy finalizers, deferred
         // work) run now rather than pile up -- outermost only, never
         // from inside a bridge op's native frame.
-        if (outer)
+        if (outer) {
             isolate->PerformMicrotaskCheckpoint();
-        return fired >= 0 ? Outcome::Interrupted : Outcome::Ok;
+            // Linear memory larger than every growth the ceiling allowed
+            // grew without asking -- from wasm, in a module of the
+            // guest's own making: not trusted, like the hard stage.
+            size_t now = 0;
+            guestMemory(now);
+            if (linearLimit.load() > 0 && now > linearAllowed) {
+                FC_WARN("pyodide guest linear memory at " << (now >> 20)
+                        << " MB, past what its memory budget allowed; the runtime is dropped");
+                return Outcome::MemoryExhausted;
+            }
+        }
+        if (fired >= 0)
+            return Outcome::Interrupted;
+        return outer && refusedInTrip ? Outcome::MemoryRefused : Outcome::Ok;
     }
 
     void teardown() override
     {
+        const bool hadIsolate = isolate != nullptr;
         if (isolate) {
             {
                 v8::Locker locker(isolate);
@@ -597,6 +745,14 @@ public:
         delete allocator;
         allocator = nullptr;
         live = false;
+#if defined(__GLIBC__)
+        // The engine freed a few hundred MB of buffers and compile zones,
+        // which glibc keeps in its arenas under a raised mmap threshold
+        // (measured 2026-09-14, docs/Sandbox.md 7.17 D4); hand back the
+        // pages it can.
+        if (hadIsolate)
+            malloc_trim(0);
+#endif
     }
 
 private:
@@ -611,6 +767,19 @@ private:
     std::string packagesRoot;
     int budgetMs = 0;
     int graceMs = 0;
+    /// The memory budget (setMemoryBudget, 7.17 D4): the ceiling on
+    /// linear memory and on array buffers, in bytes (0 = none), read at
+    /// every growth; the engine heap's limit in MB, applied at boot.
+    std::atomic<size_t> linearLimit {0};
+    int engineHeapMB = 0;
+    /// The largest linear memory the ceiling allowed, or the boot left.
+    size_t linearAllowed = 0;
+    /// Growth requests the ceiling refused, this guest; one this trip.
+    size_t refusals = 0;
+    bool refusedInTrip = false;
+    /// onNearHeapLimit fired: the guest is being stopped.
+    bool heapExhausted = false;
+    int heapExtensions = 0;
     /// The interrupt buffer's one word (ExpressionImageRuntime.h,
     /// Outcome): 2 = SIGINT, which the guest raises as KeyboardInterrupt.
     std::atomic<int32_t> signal {0};
@@ -621,7 +790,7 @@ private:
             isolate->TerminateExecution();
     }};
     v8::Isolate* isolate = nullptr;
-    v8::ArrayBuffer::Allocator* allocator = nullptr;
+    CountingAllocator* allocator = nullptr;
     v8::Global<v8::Context> context;
     /// The guest side module's exports (ImageModule.cpp), called as
     /// wasm functions; its emscripten Module, whose HEAPU8 is the
@@ -714,7 +883,9 @@ private:
             info.GetReturnValue().Set(str(isolate, data));
             return;
         }
-        v8::Local<v8::ArrayBuffer> ab = v8::ArrayBuffer::New(isolate, data.size());
+        v8::Local<v8::ArrayBuffer> ab;
+        if (!v8::ArrayBuffer::MaybeNew(isolate, data.size()).ToLocal(&ab))
+            return throwError(isolate, "read: refused by the sandbox memory budget: " + p.string());
         if (!data.empty())
             std::memcpy(ab->Data(), data.data(), data.size());
         info.GetReturnValue().Set(ab);
@@ -737,7 +908,9 @@ private:
             : -1;
         if (!(n >= 0 && n <= 65536))
             return throwError(isolate, "randomBytes: refused size");
-        v8::Local<v8::ArrayBuffer> ab = v8::ArrayBuffer::New(isolate, static_cast<size_t>(n));
+        v8::Local<v8::ArrayBuffer> ab;
+        if (!v8::ArrayBuffer::MaybeNew(isolate, static_cast<size_t>(n)).ToLocal(&ab))
+            return throwError(isolate, "randomBytes: refused by the sandbox memory budget");
         auto* out = static_cast<unsigned char*>(ab->Data());
         for (size_t i = 0; i < static_cast<size_t>(n); ++i)
             out[i] = static_cast<unsigned char>(rt->rng());
@@ -758,6 +931,61 @@ private:
             FC_WARN("pyodide: " << text);
         else
             FC_LOG("pyodide: " << text);
+    }
+
+    /// The shim's grow check (host_shim.js): may a wasm memory now
+    /// `bytes` long take `pages` more?  Refused past the ceiling, and
+    /// counted; an allowed growth raises the size the post-trip check
+    /// accepts.  The same answer for every memory in the guest: the
+    /// ceiling is per memory, and pyodide has the one.
+    static void hostMemoryGrow(const v8::FunctionCallbackInfo<v8::Value>& info)
+    {
+        v8::Isolate* isolate = info.GetIsolate();
+        PyodideRuntime* rt = self(info);
+        v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+        const double bytes = info.Length() > 0 ? info[0]->NumberValue(ctx).FromMaybe(-1) : -1;
+        const double pages = info.Length() > 1 ? info[1]->NumberValue(ctx).FromMaybe(-1) : -1;
+        // malformed: let the engine's own grow reject it
+        if (!(bytes >= 0 && pages >= 0)) {
+            info.GetReturnValue().Set(true);
+            return;
+        }
+        const double wanted = bytes + pages * 65536.0;
+        const size_t limit = rt->linearLimit.load();
+        if (limit > 0 && wanted > static_cast<double>(limit)) {
+            ++rt->refusals;
+            rt->refusedInTrip = true;
+            info.GetReturnValue().Set(false);
+            return;
+        }
+        if (wanted > static_cast<double>(rt->linearAllowed))
+            rt->linearAllowed = static_cast<size_t>(wanted);
+        info.GetReturnValue().Set(true);
+    }
+
+    /// V8 at the engine heap's limit (7.17 D4): stop the guest from
+    /// outside and lend the headroom the termination needs to unwind.
+    /// Returning the current limit is V8's fatal out-of-memory, which
+    /// ends the process; only a guest still allocating after four loans
+    /// gets there.
+    static size_t onNearHeapLimit(void* data, size_t current, size_t)
+    {
+        auto* rt = static_cast<PyodideRuntime*>(data);
+        // A refused array buffer's last-resort GC, not the heap: the
+        // limit stays and the allocation fails as a RangeError in the
+        // guest.  Both tests, so a stale flag cannot hide a full heap.
+        if (rt->allocator && rt->allocator->refusalPending.exchange(false)) {
+            v8::HeapStatistics heap;
+            rt->isolate->GetHeapStatistics(&heap);
+            if (heap.used_heap_size() < current / 4 * 3)
+                return current;
+        }
+        rt->heapExhausted = true;
+        rt->isolate->TerminateExecution();
+        if (rt->heapExtensions >= 4)
+            return current;
+        ++rt->heapExtensions;
+        return current + (size_t(32) << 20);
     }
 
     /// Wasm memory as the guest sees it now: Module.HEAPU8's buffer.

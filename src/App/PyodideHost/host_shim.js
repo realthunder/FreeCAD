@@ -12,6 +12,7 @@
 //   randomBytes(n) -> ArrayBuffer     from the host RNG
 //   now() -> double ms                monotonic
 //   print(kind, text)                 kind is "out" or "err"
+//   memoryGrow(bytes, pages) -> bool  may a wasm memory grow
 // This file turns those into the shape pyodide reads, and removes
 // `__fcx_host` from the global when it is done.
 (function (host) {
@@ -283,6 +284,47 @@
     }
     return out;
   };
+
+  // --------------------------------------------------------- memory ceiling
+  // Every growth of a wasm memory asks the host first (docs/Sandbox.md
+  // 7.17 D4).  pyodide's heap grows only through emscripten's growMemory,
+  // which calls this and turns a throw into a failed sbrk: a MemoryError
+  // in Python, the refusal travelling the ordinary path.  The host holds
+  // the ceiling, counts the refusal and remembers the size it allowed,
+  // so a growth that did not come through here shows after the trip.
+  // A memory made from JavaScript asks for its initial size the same way.
+  // The originals are reachable from this closure only.  A module that
+  // DEFINES its memory and grows it from wasm never passes here: that is
+  // the post-trip check's.
+  var refused = "refused by the sandbox memory budget";
+  var NativeMemory = WebAssembly.Memory;
+  var grow = NativeMemory.prototype.grow;
+  Object.defineProperty(NativeMemory.prototype, "grow", {
+    value: function (delta) {
+      if (!host.memoryGrow(this.buffer.byteLength, Number(delta)))
+        throw new RangeError("WebAssembly.Memory.grow: " + refused);
+      return grow.call(this, delta);
+    },
+    writable: false,
+    enumerable: false,
+    configurable: false,
+  });
+  // Named Memory for its .name; inside, that name is this function, so
+  // the native constructor is NativeMemory.
+  var CheckedMemory = function Memory(descriptor) {
+    if (!new.target) throw new TypeError("WebAssembly.Memory must be invoked with 'new'");
+    var initial = descriptor ? Number(descriptor.initial) : NaN;
+    if (!host.memoryGrow(0, initial))
+      throw new RangeError("WebAssembly.Memory: " + refused);
+    return Reflect.construct(NativeMemory, [descriptor], new.target);
+  };
+  CheckedMemory.prototype = NativeMemory.prototype;
+  Object.defineProperty(NativeMemory.prototype, "constructor", {
+    value: CheckedMemory, writable: false, enumerable: false, configurable: false,
+  });
+  Object.defineProperty(WebAssembly, "Memory", {
+    value: CheckedMemory, writable: false, enumerable: false, configurable: false,
+  });
 
   // ------------------------------------------------------------ housekeeping
   // Not a Web platform, but pyodide reads it in a few places.
