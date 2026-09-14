@@ -39,8 +39,10 @@ namespace Gui
  * unit ('5mm'), triple-quoted strings span lines, and the '##@@' header
  * lines of the expression copy format are shown as headers.
  *
- * The block state carries the multi-line constructs only: an open triple
- * quoted string and the Python mode flag.
+ * The block state carries the multi-line constructs -- an open triple
+ * quoted string and the Python mode flag -- and the parity of the expression
+ * block the line belongs to, flipped at each first header line, so that a
+ * header added or removed re-tints the blocks after it and nothing else.
  */
 class GuiExport ExpressionSyntaxHighlighter: public SyntaxHighlighter
 {
@@ -56,6 +58,11 @@ public:
 
     /// The builtin function names colored as class names.
     static bool isBuiltinFunction(const QString& name);
+
+    /// Whether a line with this block state (QTextBlock::userState) is in an
+    /// odd-numbered expression block of the copy format -- the first, third,
+    /// ... -- which the expression editor tints to set blocks apart.
+    static bool isAlternateBlock(int userState);
 
 private:
     class Private;

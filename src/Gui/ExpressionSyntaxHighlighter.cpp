@@ -39,8 +39,11 @@ using namespace Gui;
 namespace
 {
 
-// The block state: an open triple-quoted string in the low bits, and the
-// Python mode of '#@pybegin' above them. Nothing else spans lines.
+// The block state: an open triple-quoted string in the low bits, the Python
+// mode of '#@pybegin' above them, then the parity of the expression block
+// and a flag saying the previous line was a first header line -- so that the
+// comment line under it, which may itself start with "##@@ ", does not flip
+// the parity again.
 enum BlockState
 {
     Standard = 0,
@@ -48,6 +51,8 @@ enum BlockState
     TripleSingle = 2,
     QuoteMask = 3,
     PyMode = 4,
+    AlternateBlock = 8,
+    HeaderPending = 16,
 };
 
 bool isStringPrefix(const QString& word)
@@ -90,6 +95,11 @@ ExpressionSyntaxHighlighter::ExpressionSyntaxHighlighter(QObject* parent)
 
 ExpressionSyntaxHighlighter::~ExpressionSyntaxHighlighter() = default;
 
+bool ExpressionSyntaxHighlighter::isAlternateBlock(int userState)
+{
+    return userState >= 0 && (userState & AlternateBlock) != 0;
+}
+
 bool ExpressionSyntaxHighlighter::isBuiltinFunction(const QString& name)
 {
     static const QSet<QString> functions = [] {
@@ -126,6 +136,7 @@ void ExpressionSyntaxHighlighter::highlightBlock(const QString& text)
     }
     int quote = state & QuoteMask;
     bool py = (state & PyMode) != 0;
+    const int parity = state & AlternateBlock;
 
     const int len = static_cast<int>(text.size());
     auto at = [&](int j) {
@@ -141,7 +152,12 @@ void ExpressionSyntaxHighlighter::highlightBlock(const QString& text)
         QTextCharFormat fmt(bold);
         fmt.setForeground(colorByType(SyntaxHighlighter::Output));
         setFormat(0, len, fmt);
-        setCurrentBlockState(Standard);
+        if (!(state & HeaderPending) && text.startsWith(QLatin1String("##@@ "))) {
+            setCurrentBlockState((parity ^ AlternateBlock) | HeaderPending);
+        }
+        else {
+            setCurrentBlockState(parity);
+        }
         return;
     }
 
@@ -315,5 +331,5 @@ void ExpressionSyntaxHighlighter::highlightBlock(const QString& text)
         ++i;
     }
 
-    setCurrentBlockState(quote | (py ? PyMode : 0));
+    setCurrentBlockState(quote | (py ? PyMode : 0) | parity);
 }

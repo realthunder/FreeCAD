@@ -588,6 +588,11 @@ protected:
     void drawMarker(int line, int x, int y, QPainter* painter) override
     {
         QTextBlock block = document()->findBlockByNumber(line - 1);
+        if (ExpressionSyntaxHighlighter::isAlternateBlock(block.userState())) {
+            painter->fillRect(
+                QRectF(0, y, getMarker()->width(), blockBoundingRect(block).height()),
+                blockTint());
+        }
         if (!isHeader(block)) {
             return;
         }
@@ -616,6 +621,28 @@ protected:
 
     void paintEvent(QPaintEvent* event) override
     {
+        // Every other expression block on a tint, under the text: painted
+        // before the text edit paints, which draws text and the current line
+        // over whatever the viewport holds.
+        {
+            QPainter painter(viewport());
+            const QColor tint = blockTint();
+            for (QTextBlock block = firstVisibleBlock(); block.isValid(); block = block.next()) {
+                if (!block.isVisible()) {
+                    continue;
+                }
+                QRectF rect = blockBoundingGeometry(block).translated(contentOffset());
+                if (rect.top() > event->rect().bottom()) {
+                    break;
+                }
+                if (ExpressionSyntaxHighlighter::isAlternateBlock(block.userState())) {
+                    rect.setLeft(0);
+                    rect.setRight(viewport()->width());
+                    painter.fillRect(rect, tint);
+                }
+            }
+        }
+
         TextEditor::paintEvent(event);
 
         // A box after the header of a folded block, for what is hidden.
@@ -644,6 +671,14 @@ protected:
     }
 
 private:
+    /// The text color, faint: a tint that reads on light and dark themes.
+    QColor blockTint() const
+    {
+        QColor tint = palette().color(QPalette::Text);
+        tint.setAlpha(14);
+        return tint;
+    }
+
     /// Shows or hides the lines of the block under \a header, up to the
     /// next header; returns the last of them.
     static QTextBlock hide(const QTextBlock& header, bool fold)

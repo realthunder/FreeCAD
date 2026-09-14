@@ -58,7 +58,13 @@ Cancel.
 Closing an editor with unapplied edits asks Apply / Discard / Cancel.
 
 
-## 3. Folding
+## 3. Blocks: tint and folding
+
+Every other block sits on a faint tint -- the text color at about 5% -- so
+where one binding ends and the next begins reads at a glance, on light and dark
+themes alike. The parity is carried in the highlighter's block state, flipped
+at each first header line, so adding or deleting a block re-tints the ones
+after it as you type.
 
 Each block folds under its first header line: click the arrow in the line
 number margin, or fold and unfold them all with `Std_ExpressionFoldAll`. A folded block shows `...` after its header. Moving the cursor

@@ -17,7 +17,9 @@
 #include <string>
 
 #include <QApplication>
+#include <QPlainTextDocumentLayout>
 #include <QTextBlock>
+#include <QTextCursor>
 #include <QTextDocument>
 #include <QTextLayout>
 
@@ -186,6 +188,47 @@ TEST_F(ExpressionEditorTest, headerLines)
     EXPECT_EQ(h.at(0, 20), kHeader);
     EXPECT_EQ(h.at(1, 0), kHeader);
     EXPECT_EQ(h.at(2, 0), kNumber);
+}
+
+TEST_F(ExpressionEditorTest, blocksAlternate)
+{
+    // Three blocks; the second's comment starts with a blank, so its comment
+    // line reads "##@@ ..." and must not count as another header.
+    QTextDocument doc;
+    // The layout a QPlainTextEdit gives its document. Without one an edit
+    // announces no contentsChange, and the highlighter never hears of it.
+    doc.setDocumentLayout(new QPlainTextDocumentLayout(&doc));
+    auto highlighter = new ExpressionSyntaxHighlighter(&doc);
+    highlighter->setDocument(&doc);
+    doc.setPlainText(QStringLiteral("##@@ .a D#O.ExpressionEngine (O)\n"
+                                    "##@@\n"
+                                    "1\n"
+                                    "\n"
+                                    "##@@ .b D#O.ExpressionEngine (O)\n"
+                                    "##@@ a comment\n"
+                                    "2\n"
+                                    "##@@ .c D#O.ExpressionEngine (O)\n"
+                                    "##@@\n"
+                                    "\"\"\"x\n"
+                                    "##@@ not a header, inside a string\"\"\"\n"));
+    highlighter->rehighlight();
+    std::string parity;
+    for (auto block = doc.begin(); block.isValid(); block = block.next()) {
+        parity += ExpressionSyntaxHighlighter::isAlternateBlock(block.userState()) ? '1' : '0';
+    }
+    // The trailing empty line is the third block's too.
+    EXPECT_EQ(parity, "111100011111");
+
+    // The second block's header removed, both lines: its body joins the first
+    // block, and the block after it flips.
+    QTextCursor cursor(doc.findBlockByNumber(4));
+    cursor.setPosition(doc.findBlockByNumber(6).position(), QTextCursor::KeepAnchor);
+    cursor.removeSelectedText();
+    parity.clear();
+    for (auto block = doc.begin(); block.isValid(); block = block.next()) {
+        parity += ExpressionSyntaxHighlighter::isAlternateBlock(block.userState()) ? '1' : '0';
+    }
+    EXPECT_EQ(parity, "1111100000");
 }
 
 // ---------------------------------------------------------------------------
