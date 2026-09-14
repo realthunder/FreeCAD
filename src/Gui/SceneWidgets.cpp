@@ -192,6 +192,18 @@ void SceneWidgetStream::onMessage(const QString& id, const QString& method,
     }
 }
 
+namespace
+{
+/// Whether \a id names a tool bar mirror model (FwToolBarMirror.h): the
+/// desktop's own tool bars, and the real actions behind their buttons
+bool isToolBarModel(const QString& id)
+{
+    return id == QLatin1String("toolbars") || id.startsWith(QLatin1String("cmd:"))
+        || id.startsWith(QLatin1String("toolbar:")) || id.startsWith(QLatin1String("widget:"))
+        || id.startsWith(QLatin1String("action:"));
+}
+}  // namespace
+
 void Gui::installSceneWidgetOps()
 {
     static bool installed = false;
@@ -282,6 +294,12 @@ void Gui::installSceneWidgetOps()
         const QVariantMap state = req.value(QLatin1String("state")).toObject().toVariantMap();
         if (objectId.isEmpty())
             return sceneControlError(id, "BadRequest", QStringLiteral("target required"));
+        // A tool bar model writes into the desktop's real action -- its
+        // text, shortcut, enabled state -- for everyone the process serves:
+        // a host's to change (docs/ShareAccess.md sec 2.2). A panel's
+        // widgets are the task in hand, and any editor works them.
+        if (isToolBarModel(objectId) && sceneControlAccess() < Render::ClientAccess::Host)
+            return sceneControlError(id, "Forbidden", objectId);
         if (!Fw::Store::instance().applyUpdate(objectId, state, client))
             return sceneControlError(id, "UnknownObject", objectId);
         return okReply(id);
@@ -295,6 +313,15 @@ void Gui::installSceneWidgetOps()
             req.value(QLatin1String("content")).toObject().toVariantMap();
         if (objectId.isEmpty())
             return sceneControlError(id, "BadRequest", QStringLiteral("target required"));
+        // A tool bar action's trigger runs its command past the browser
+        // allowlist, and a reparenting or layout op rearranges the desktop's
+        // own widgets: a host's (docs/ShareAccess.md sec 2.2). A click or an
+        // edit in a mirrored panel or dialog is any editor's.
+        if (sceneControlAccess() < Render::ClientAccess::Host
+            && (isToolBarModel(objectId) || content.contains(QLatin1String("layout"))
+                || content.value(QLatin1String("event")).toString()
+                    == QLatin1String("setParent")))
+            return sceneControlError(id, "Forbidden", objectId);
         if (!Fw::Store::instance().applyCustom(objectId, content, client))
             return sceneControlError(id, "UnknownObject", objectId);
         return okReply(id);

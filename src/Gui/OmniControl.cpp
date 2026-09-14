@@ -48,6 +48,7 @@
 #include "Command.h"
 #include "OmniControl.h"
 #include "OmniSearch.h"
+#include "SceneControl.h"
 #include "SceneControlP.h"
 #include "ShortcutManager.h"
 #include "ViewProviderDocumentObject.h"
@@ -551,10 +552,23 @@ QJsonObject opCommandRun(const QJsonObject &req)
     auto cmd = manager.getCommandByName(name.constData());
     if (!cmd)
         return errorReply(idOf(req), "UnknownCommand", QString::fromUtf8(name));
+    const QJsonValue child = req.value(QLatin1String("child"));
+    // What will RUN is judged, not the name asked for: a row of a group
+    // runs its member's command. An editing connection is held to the
+    // browser allowlist and a host is not (docs/ShareAccess.md sec 2.2) --
+    // and the refusal comes before whether the command is active, which is
+    // the desktop's state, not the catalog's.
+    if (sceneControlAccess() < Render::ClientAccess::Host) {
+        const QString runs = child.isDouble()
+            ? groupMemberCommand(cmd, int(child.toDouble()) + 1)
+            : QString::fromUtf8(name);
+        if (!isBrowserSafeCommand(runs))
+            return errorReply(idOf(req), "Forbidden",
+                              runs.isEmpty() ? QString::fromUtf8(name) : runs);
+    }
     if (!cmd->isActive())
         return errorReply(idOf(req), "Inactive", QString::fromUtf8(name));
     try {
-        const QJsonValue child = req.value(QLatin1String("child"));
         if (child.isDouble()) {
             // One row of a group command's menu, as a click on it
             cmd->initAction();

@@ -803,7 +803,13 @@ QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
     return reply;
 }
 
-/// The `command` op's allowlist (the rationale is on runCommandOp below).
+} // namespace
+
+namespace Gui {
+namespace SceneControlDetail {
+
+/// The browser allowlist, for the `command` op and `command.run` on a
+/// connection that is not a host (the rationale is on runCommandOp below).
 /// The web client keeps a copy to draw a button disabled rather than let
 /// it be refused (web/src/control.ts); this one decides.
 bool isBrowserSafeCommand(const QString &name)
@@ -830,6 +836,11 @@ QString groupMemberCommand(Command *group, int index)
     return cmd ? QString::fromUtf8(cmd->getName()) : QString();
 }
 
+} // namespace SceneControlDetail
+} // namespace Gui
+
+namespace {
+
 /// Run a sketch tool in this client's view (docs/ThinClient.md sec 8.7).
 ///
 /// A tool is what puts on-view parameters on the screen, and a browser has
@@ -846,6 +857,9 @@ QString groupMemberCommand(Command *group, int index)
 /// Sketcher_External and Sketcher_CarbonCopy, which activate a handler the
 /// same way and open nothing. Widening it further is gated on an answer to
 /// modality, not on taste.
+///
+/// A host connection (docs/ShareAccess.md sec 2.2) is not held to it: that
+/// is the desktop's owner, who takes the modal risk as at the machine.
 QJsonObject runCommandOp(const QJsonObject &req, const std::string &boundDoc,
                          uint64_t client)
 {
@@ -860,17 +874,18 @@ QJsonObject runCommandOp(const QJsonObject &req, const std::string &boundDoc,
     const int index = req.value(QLatin1String("index")).toInt(0);
     QByteArray cmd = name.toUtf8();
     QString member;
+    const bool host = sceneControlAccess() == Render::ClientAccess::Host;
     if (index > 0) {
         Command *group = Application::Instance->commandManager()
                              .getCommandByName(cmd.constData());
         if (!group)
             return errorReply(id, "UnknownCommand", name);
         member = groupMemberCommand(group, index);
-        if (!isBrowserSafeCommand(member))
+        if (member.isEmpty() || (!host && !isBrowserSafeCommand(member)))
             return errorReply(id, "CommandRefused",
                               member.isEmpty() ? name : member);
     }
-    else if (!isBrowserSafeCommand(name))
+    else if (!host && !isBrowserSafeCommand(name))
         return errorReply(id, "CommandRefused", name);
 
     // A named document only when it is in this connection's reach

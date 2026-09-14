@@ -81,10 +81,10 @@ class SandboxToolBarMirrorTest(unittest.TestCase):
             QtCore.QTimer.singleShot(ms, loop.quit)
             loop.exec()
 
-    def control(self, req, client=7):
+    def control(self, req, client=7, access=None):
         req = dict(req)
         req.setdefault("id", 1)
-        return json.loads(self.FW.control(json.dumps(req), client))
+        return json.loads(self.FW.control(json.dumps(req), client, False, access))
 
     def pushed(self, client=None):
         out = []
@@ -245,6 +245,45 @@ class SandboxToolBarMirrorTest(unittest.TestCase):
         self.assertEqual([m for m in msgs if m["origin"] != 7], [], msgs)
         self.assertLessEqual(len(msgs), 1, msgs)
         self.Gui.Selection.clearSelection()
+
+    def test_host_only(self):
+        """What only a host connection may do (docs/ShareAccess.md sec 2.2):
+        write a tool bar model, which is the desktop's real action, fire
+        one, or run a command outside the browser allowlist -- a group row
+        judged by what it runs. An editing connection is refused before
+        anything runs, and before it learns whether the command is active."""
+        state = self.FW.snapshot("cmd:Std_Copy")["state"]
+        enabled = state["q_enabled"]
+        reply = self.control({"op": "widgets.update", "target": "cmd:Std_Copy",
+                              "state": {"q_enabled": not enabled}}, 7, "edit")
+        self.assertEqual(reply.get("code"), "Forbidden", reply)
+        reply = self.control({"op": "widgets.custom", "target": "cmd:Std_Copy",
+                              "content": {"event": "trigger"}}, 7, "edit")
+        self.assertEqual(reply.get("code"), "Forbidden", reply)
+        reply = self.control({"op": "widgets.custom", "target": "toolbar:Draft Creation",
+                              "content": {"event": "setParent", "args": [""]}}, 7, "edit")
+        self.assertEqual(reply.get("code"), "Forbidden", reply)
+        self.spin()
+        self.FW.mirrorFlush()
+        self.assertEqual(self.FW.snapshot("cmd:Std_Copy")["state"]["q_enabled"], enabled)
+
+        reply = self.control({"op": "command.run", "name": "Std_Copy"}, 7, "edit")
+        self.assertEqual(reply.get("code"), "Forbidden", reply)
+        reply = self.control({"op": "command.run", "name": "Std_DrawStyle", "child": 0}, 7, "edit")
+        self.assertEqual(reply.get("code"), "Forbidden", reply)
+        reply = self.control({"op": "command", "name": "Std_Copy"}, 7, "edit")
+        self.assertEqual(reply.get("code"), "CommandRefused", reply)
+        # the allowlist still answers an editor
+        reply = self.control({"op": "command.run", "name": "Sketcher_CreateLine"}, 7, "edit")
+        self.assertNotEqual(reply.get("code"), "Forbidden", reply)
+        # and a host is past the judgment, on to the command's own answer
+        reply = self.control({"op": "command.run", "name": "Std_DrawStyle", "child": 99}, 7, "host")
+        self.assertEqual(reply.get("code"), "BadValue", reply)
+        reply = self.control({"op": "widgets.update", "target": "cmd:Std_Copy",
+                              "state": {"q_enabled": enabled}}, 7, "host")
+        self.assertTrue(reply.get("ok"), reply)
+        reply = self.control({"op": "command", "name": "Std_Copy"}, 7, "host")
+        self.assertNotEqual(reply.get("code"), "CommandRefused", reply)
 
     def test_transport(self):
         """The stream: subscribe, the snapshot after the reply, a live

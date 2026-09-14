@@ -41,6 +41,8 @@ class PropertyContainer;
 }
 
 namespace Gui {
+class Command;
+
 namespace SceneControlDetail {
 
 /// The 3D view whose properties a request bound to \a boundDoc edits:
@@ -68,6 +70,17 @@ bool documentAllowed(App::Document *doc, const std::string &boundDoc);
 /// reported the same way, so the channel is no oracle for what else
 /// the process has open.
 App::Document *requestDocument(const QJsonObject &req, const std::string &boundDoc);
+
+/// The browser allowlist (SceneControl.cpp): the commands a connection that
+/// is not a host may run -- the tools that start in the client's view and
+/// open nothing modal (docs/ThinClient.md sec 8.7). The web client keeps a
+/// copy to draw a button disabled; this one decides.
+bool isBrowserSafeCommand(const QString &name);
+
+/// The command a group's member \a index (1-based) runs: the member action's
+/// owning Action's. Empty when \a group is no group, or the member is a
+/// separator or out of range.
+QString groupMemberCommand(Command *group, int index);
 
 QJsonObject errorReply(const QJsonValue &id, const char *code, const QString &message = QString());
 

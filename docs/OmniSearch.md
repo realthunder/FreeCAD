@@ -417,7 +417,7 @@ retried: offline is reported, not queued.
 | `omni.rows`        | `list`, `keys`                         | `rows`: key -> `{value, set}` or `{active}`              |
 | `omni.objects`     | `doc` (optional)                       | `doc`, `label`, `objects[{name,label,type,children}]`, `views[{name,title,served}]` |
 | `omni.resolve`     | `query`, `doc` (optional)              | `kind` `object` (`doc`,`obj`,`top`,`sub`,`label`,`type`) or `property` (`doc`,`obj`,`scope`,`view`,`prop`) |
-| `command.run`      | `name`, `child` (optional row index)   | ok; `Inactive`, `UnknownCommand`, `NotGroup`, `CommandFailed` |
+| `command.run`      | `name`, `child` (optional row index)   | ok; `Forbidden`, `Inactive`, `UnknownCommand`, `NotGroup`, `CommandFailed` |
 | `command.children` | `name`                                 | `exclusive`, `items[{index,text,tooltip,checkable,checked,enabled,visible,separator}]` |
 | `param.get`/`set`/`reset` | `key` (`ParamInfo::fullPath()`), `value` for set | `key`, `value`, `set`                        |
 | `omni.changed` (push) | --                                  | `list`, `session`, `version`                             |
@@ -588,8 +588,12 @@ whatever the desktop's own command layer considers active -- its active
 document and its selection -- and `param.set` writes a process-wide
 preference. So an *editing* connection joined to one served document can
 still act outside it through those two ops. Both are refused on a
-view-only connection, and since 2026-09-14 the parameter writes need a host
-connection as well (docs/ShareAccess.md sec 2.2). Scoping them properly means either making the
+view-only connection, and since 2026-09-14 both need more of an editing one
+(docs/ShareAccess.md sec 2.2): the parameter writes need a host connection, and
+`command.run` holds a connection that is not a host to the browser allowlist the
+`command` op keeps, judged on what will run -- a group row by its member -- and
+answered `Forbidden` before whether the command is active. So the hazards below are
+a host's, who is the desktop's owner. Scoping them properly means either making the
 command layer take a document (it takes none) or activating the served
 document around the call (which moves the desktop user's focus), and
 neither is a change to make in passing.
