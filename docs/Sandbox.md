@@ -92,10 +92,14 @@ pieces are frozen, not extended.**
                                                  BUILT 2026-09-13 (ProxyChain.md 4.5, 4.6),
                                                  fine-grained per-cell, 8 gate cases; P3, the
                                                  sandbox, BUILT 2026-09-13 inside 7.17's D2
-    the browser console              sized       7.20: pyodide in the client's page, the wire
+    the browser console              building    7.20: pyodide in the client's page, the wire
                                                  over the socket (JSPI), a client:<identity>
                                                  principal, catalog v2; C1-C6, one to two weeks;
-                                                 RULED 2026-09-11 after the document program
+                                                 RULED 2026-09-11 after the document program;
+                                                 C1 BUILT 2026-09-14: the guest boots in a page
+                                                 from the serving FreeCAD (/pyodide/, boot.json
+                                                 behind the door), and JSPI is proven -- the
+                                                 host import suspends mid-statement
     host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -7065,7 +7069,7 @@ the writer).  What the numbers decide:
   (`grabUs` is counted, the bench has no picture); a non-native file
   dialog's rows; the DOM client's own cost of applying an open.
 
-### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program]**
+### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven]**
 
 The question, asked before the document program (7.17) was started:
 how far is a Python console in the browser tier -- pyodide running in
@@ -7245,6 +7249,81 @@ under its own principal; the desktop's own console is unchanged.
 Sources: Firefox's JSPI release bug (bugzilla 2044809), the V8 JSPI
 introduction (v8.dev/blog/jspi), Chromium's intent to ship, pyodide's
 JSPI post (blog.pyodide.org/posts/jspi) and changelog.
+
+**C1, BUILT 2026-09-14.**  The guest boots in a page from the FreeCAD
+that serves the document, bridge unattached.  Two probes came first,
+both in headless Chrome 153 against a plain static server: pyodide
+314.0.6 and the fcx_image wheel boot in the page unchanged (1273 ms for
+the runtime, 118 ms for the wheel and the `_fcx_image` import) and
+`fcx_call` round trips answer (`1 + 2 * 3`, a quantity); and **the one
+unproven piece of this section is proven**.  `fcx_host_call` merged as a
+`WebAssembly.Suspending` through `mergeLibSymbols` -- which stores what
+it is given as is, and pyodide imports a Suspending of its own already
+-- with `fcx_call` entered through `WebAssembly.promising`: a CBOR op and
+a fixed-layout op, both called from a Python statement deep inside
+CPython, suspended on a 30 ms promise and resumed with the reply.  So C2
+is not a JSPI fight, and the host-side alternative above is not needed
+for Chrome.
+
+*The server* (`SceneStreamServer::setHttpMount`, a generic mount: a
+prefix, a provider, gated or not; the path gets the viewer bundle's
+checks first).  `Gui::SandboxServe` (src/Gui/SandboxServe.cpp) mounts,
+from every `SceneServeSource::serve` -- `Gui.serveDocument` and the
+share panel alike:
+
+    GET /pyodide/boot.json                  behind the door, no-store
+    GET /pyodide/runtime/<version>/<file>   the pinned runtime files, max-age
+    GET /pyodide/wheels/<file>              fcx_image (no-store), bundled wheels
+    GET /pyodide/packages/<file>            the package set, closed over the lock
+
+boot.json names what the DESKTOP runtime would boot with, resolved the
+way it does (`ImageHost::location`, `Pyodide::layout`, the pinned table
+and its `PyodideUnpinned` override, the ABI match), relative to
+/pyodide/; a box with nothing to serve answers 503 with the reason.  It
+is resolved on the GUI thread per serve and answered from that snapshot:
+no request ever takes the evaluation lock.  The files are served AHEAD
+of the door, like the viewer bundle, and nothing but the files boot.json
+names: they are published code, and they cannot be gated anyway --
+pyodide fetches the runtime by URL arithmetic that drops a `?token=`,
+and `loadPackage` takes a URL for a wheel only when it ENDS in `.whl`
+(`uriToPackageData`).  boot.json is gated because it names the owner's
+package set; the package files themselves are pyodide's own public
+wheels.  The version sits in the runtime URL so those 13 MB can be
+cached; fcx_image keeps its name across rebuilds and is never cached.
+A path the ungated mount declines goes to the door: 403 without the
+token, 404 past it.  Compiled only with the pyodide host
+(`FC_EXPR_PYODIDE_HOST`, scoped to the one source file).
+
+*The page* (`web/src/sandbox/guest.ts`, `BrowserGuest`): the glue's boot
+step for step -- runtime, the two imports merged, the wheel, the bundled
+wheels and the package set by lock name, `_fcx_image`, the side module's
+exports -- and `call()` in the desktop host's `roundTrip` sequence,
+queued (one guest stack, and a suspended call still holds it).  A
+`bridge` option already takes an async round trip and wires the JSPI
+pair; C2 supplies it.  `console-test.html` is the gate page.
+
+*Measured* (the browser leg, headless Chrome 153, swiftshader, served
+by FreeCAD on loopback): runtime 1433 ms, fcx_image plus the six bundled
+wheels (pivy included) 409 ms, guest linear memory 50 MB after boot.
+The 50 MB is the wasm heap alone and is not comparable to the desktop's
+335 MB, which is the whole V8 process; the page's process figure and a
+phone's are still C5's.
+
+*Gates*: `GuiSandboxConsoleServe` (registered, 33 PASS:
+the door on boot.json, every runtime file and the wheel byte for byte
+with the types a module loader insists on, the refusals);
+`tests/gui/sandbox-console-browser.py` (not registered, docs/Testing.md:
+node, puppeteer-core, a Chrome; 10 PASS -- served headless, the page
+boots, JSPI present, an expression and a quantity, CPython 3.14, the
+in-image FreeCAD module, the bridge unattached, every bundled wheel
+loaded).  The browser tooling was gone from the box and was set up again
+(Testing.md): node from emsdk, Chrome for Testing, and a `libasound`
+symlink it needs.
+
+*Not in C1*: the viewer page has no console (C4); the static-page source
+(jsDelivr, docs/SandboxNetwork.md 9.6 source 2) and the Cache API
+persistence are not
+built; a remote client's `ActiveView` facade is C4's.
 
 ### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, BUILT 2026-09-13 inside 7.17's D2]**
 

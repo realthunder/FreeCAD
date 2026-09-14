@@ -477,17 +477,39 @@ being filled, all live at once.
 The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
 current.
 
-**Two of them are not registered, and are meant not to be**:
+**Three of them are not registered, and are meant not to be**:
 `camera-uplink-browser.py` and `serve-edit-browser.py` drive a real Chrome
-through the built WASM viewer, so they need three things this repository does
-not carry -- `build/wasm`, a `puppeteer-core` install, and a Chrome binary --
-and they skip rather than fail when any is missing. Registering them would
+through the built WASM viewer, and `sandbox-console-browser.py` boots the
+sandbox guest in a page served by FreeCAD (docs/Sandbox.md 7.20, C1; its
+endpoints without a browser are the registered `GuiSandboxConsoleServe`), so
+they need what this repository does not carry -- `build/wasm` (for the console
+page only the web bundle, `npm run build` in `src/Gui/Renderer/web`), a
+`puppeteer-core` install, and a Chrome binary -- and they skip rather than fail
+when any is missing. Registering them would
 put a test in the ctest count that says SKIP on every box but this one, which
 is a worse lie than an unregistered test. Run them by hand:
 
     PUPPETEER_PATH=~/works/sw/fcad-probes/node_modules/puppeteer-core \
     CHROME=~/.cache/puppeteer/chrome/*/chrome-linux64/chrome \
     scripts/gui-test.sh tests/gui/serve-edit-browser.py /tmp/edit-web \
+        --timeout 600
+
+Setting the browser tooling up again (done 2026-09-14, when none of it was
+left on the box): node comes with emsdk
+(`~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin`, pass it as `NODE` or put it
+on PATH); `npm i puppeteer-core @puppeteer/browsers` in
+`~/works/sw/fcad-probes`, then `npx @puppeteer/browsers install chrome@stable
+--path ~/.cache/puppeteer`. Chrome for Testing links `libasound.so.2`, which
+the system does not have and there is no sudo to install: symlink the conda
+env's copy into `~/.cache/puppeteer/lib` and pass that directory as
+`CHROME_LIBS` (`scripts/console-drive.js` prepends it to the browser's
+`LD_LIBRARY_PATH`; the older drivers need it in `LD_LIBRARY_PATH` itself).
+
+    PUPPETEER_PATH=~/works/sw/fcad-probes/node_modules/puppeteer-core \
+    CHROME=$(ls ~/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome) \
+    CHROME_LIBS=~/.cache/puppeteer/lib \
+    NODE=~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin/node \
+    scripts/gui-test.sh tests/gui/sandbox-console-browser.py /tmp/console-web \
         --timeout 600
 
 `EDIT_REAL=1` (`CAMUP_REAL=1` for the other) moves it off headless
