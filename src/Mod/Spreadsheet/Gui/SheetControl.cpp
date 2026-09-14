@@ -165,20 +165,15 @@ Feed& feedFor(Sheet* sheet)
 }
 
 /// Resolve the {doc, obj} a request names to a Sheet, with the same
-/// document-defaulting rule the other control ops use: the named
-/// document, else the one this connection's group serves.
+/// document rule the other control ops use: the named document, else
+/// the one this connection's group serves -- and a named one only when
+/// it is in the connection's reach (Gui::sceneControlDocument).
 Sheet* resolveSheet(const QJsonObject& req, const std::string& boundDoc,
                     QJsonObject& error)
 {
     const QJsonValue id = req.value(QLatin1String("id"));
     const QString docName = req.value(QLatin1String("doc")).toString();
-    App::Document* doc = nullptr;
-    if (!docName.isEmpty())
-        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
-    else if (!boundDoc.empty())
-        doc = App::GetApplication().getDocument(boundDoc.c_str());
-    else
-        doc = App::GetApplication().getActiveDocument();
+    App::Document* doc = Gui::sceneControlDocument(req, boundDoc);
     if (!doc) {
         error = Gui::sceneControlError(id, "UnknownDocument", docName);
         return nullptr;
@@ -355,13 +350,7 @@ QJsonObject sheetList(const QJsonObject& req, const std::string& boundDoc)
 {
     const QJsonValue id = req.value(QLatin1String("id"));
     const QString docName = req.value(QLatin1String("doc")).toString();
-    App::Document* doc = nullptr;
-    if (!docName.isEmpty())
-        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
-    else if (!boundDoc.empty())
-        doc = App::GetApplication().getDocument(boundDoc.c_str());
-    else
-        doc = App::GetApplication().getActiveDocument();
+    App::Document* doc = Gui::sceneControlDocument(req, boundDoc);
     if (!doc)
         return Gui::sceneControlError(id, "UnknownDocument", docName);
 

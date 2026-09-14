@@ -32,6 +32,10 @@
 
 #include <FCGlobal.h>
 
+namespace App {
+class Document;
+}
+
 namespace Gui {
 
 /// The semantic control channel of the scene stream (docs/ThinClient.md
@@ -88,6 +92,15 @@ GuiExport void registerSceneControlOp(const QString &op, bool mutating,
 GuiExport QJsonObject sceneControlError(const QJsonValue &id,
                                         const char *code,
                                         const QString &message);
+
+/// The document a request's "doc" names, else the one \a boundDoc
+/// serves, else the active one -- and null when the named document is
+/// outside this connection's reach (the served document and what it
+/// links out to, docs/OmniSearch.md sec 6.4). A handler answers null
+/// with UnknownDocument, the answer a name belonging to no document
+/// gets, so the channel is no oracle for what else the process has open.
+GuiExport App::Document *sceneControlDocument(const QJsonObject &req,
+                                              const std::string &boundDoc);
 
 /// Route the scene stream server's control requests ("op" JSON text
 /// frames) through handleSceneControlRequest on the GUI thread.

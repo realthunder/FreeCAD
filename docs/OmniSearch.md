@@ -569,6 +569,16 @@ and were refused with the answer a name belonging to no document gets;
 the same ops named `Library` and answered. `tests/src/Gui/OmniControl.cpp`
 `test_documentReach` is the same shape without a socket.
 
+**Extended 2026-09-14** to the ops that act on a document they name
+outside the mirror: `edit`, `resetEdit`, `command`, `onViewFocus`,
+`undo`, `redo`, and Spreadsheet's `sheet.list`/`sheet.get`/`sheet.set`,
+the last through `Gui::sceneControlDocument()`, the exported form of the
+same resolution for a module's handler. They used to look the name up
+directly, so an editing connection could undo, enter or leave an edit
+mode, or write cells in any document the process had open -- and
+`sheet.list`/`sheet.get`, being reads, answered a view-only connection
+too. `test_documentReachOfEditOps` covers the first six.
+
 **Still open, and the gate does not close it:** `command.run` and the
 parameter ops are not document-addressed. A command runs against
 whatever the desktop's own command layer considers active -- its active

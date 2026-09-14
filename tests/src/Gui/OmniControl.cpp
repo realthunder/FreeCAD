@@ -364,6 +364,44 @@ private Q_SLOTS:
         App::GetApplication().closeDocument(other->getName());
     }
 
+    /** The ops that act on a document they name -- entering and leaving
+     * an edit mode, a sketch tool, an on-view entry box, undo and redo --
+     * are held to the same reach as the omni ops: another open document
+     * answers UnknownDocument, and nothing happens to it. They used to
+     * look the name up directly, so a connection joined to one served
+     * document could undo the desktop user's work in any other.
+     */
+    void test_documentReachOfEditOps()  // NOLINT
+    {
+        auto other = App::GetApplication().newDocument("OmniControlElsewhere");
+        auto thing = other->addObject("App::DocumentObjectGroup", "Thing");
+        other->setUndoMode(1);
+        other->openTransaction("Rename");
+        thing->Label.setValue("renamed");
+        other->commitTransaction();
+        QCOMPARE(other->getAvailableUndos(), 1);
+        const QString name = QString::fromUtf8(other->getName());
+
+        const std::pair<const char *, QJsonObject> requests[] = {
+            {"edit", op("edit", {{"doc", name}, {"obj", "Thing"}})},
+            {"resetEdit", op("resetEdit", {{"doc", name}})},
+            {"command", op("command", {{"doc", name}, {"name", "Sketcher_CreateLine"}})},
+            {"onViewFocus", op("onViewFocus", {{"doc", name}, {"index", 0}})},
+            {"undo", op("undo", {{"doc", name}})},
+            {"redo", op("redo", {{"doc", name}})},
+        };
+        for (const auto &r : requests) {
+            auto reply = ask(r.second);
+            QVERIFY2(reply.value("code").toString() == QStringLiteral("UnknownDocument"),
+                     (std::string(r.first) + ": "
+                      + QJsonDocument(reply).toJson(QJsonDocument::Compact).toStdString())
+                         .c_str());
+        }
+        QCOMPARE(other->getAvailableUndos(), 1);
+        QCOMPARE(QString::fromUtf8(thing->Label.getValue()), QStringLiteral("renamed"));
+        App::GetApplication().closeDocument(other->getName());
+    }
+
     void test_commandsWithoutGui()  // NOLINT
     {
         auto reply = ask(op("omni.catalog", {{"list", "commands"}}));

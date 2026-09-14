@@ -704,14 +704,9 @@ QJsonObject setEditOp(const QJsonObject &req, const std::string &boundDoc,
 {
     const QJsonValue id = req.value(QLatin1String("id"));
 
-    App::Document *doc = nullptr;
+    // A named document only when it is in this connection's reach
     const QString docName = req.value(QLatin1String("doc")).toString();
-    if (!docName.isEmpty())
-        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
-    else if (!boundDoc.empty())
-        doc = App::GetApplication().getDocument(boundDoc.c_str());
-    else
-        doc = App::GetApplication().getActiveDocument();
+    App::Document *doc = requestDocument(req, boundDoc);
     if (!doc)
         return errorReply(id, "UnknownDocument", docName);
 
@@ -782,14 +777,9 @@ QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
 {
     const QJsonValue id = req.value(QLatin1String("id"));
 
-    App::Document *doc = nullptr;
+    // A named document only when it is in this connection's reach
     const QString docName = req.value(QLatin1String("doc")).toString();
-    if (!docName.isEmpty())
-        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
-    else if (!boundDoc.empty())
-        doc = App::GetApplication().getDocument(boundDoc.c_str());
-    else
-        doc = App::GetApplication().getActiveDocument();
+    App::Document *doc = requestDocument(req, boundDoc);
     if (!doc)
         return errorReply(id, "UnknownDocument", docName);
 
@@ -882,14 +872,9 @@ QJsonObject runCommandOp(const QJsonObject &req, const std::string &boundDoc,
     else if (!isBrowserSafeCommand(name))
         return errorReply(id, "CommandRefused", name);
 
-    App::Document *doc = nullptr;
+    // A named document only when it is in this connection's reach
     const QString docName = req.value(QLatin1String("doc")).toString();
-    if (!docName.isEmpty())
-        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
-    else if (!boundDoc.empty())
-        doc = App::GetApplication().getDocument(boundDoc.c_str());
-    else
-        doc = App::GetApplication().getActiveDocument();
+    App::Document *doc = requestDocument(req, boundDoc);
     if (!doc)
         return errorReply(id, "UnknownDocument", docName);
 
@@ -942,14 +927,9 @@ QJsonObject onViewFocusOp(const QJsonObject &req, const std::string &boundDoc,
 {
     const QJsonValue id = req.value(QLatin1String("id"));
 
-    App::Document *doc = nullptr;
+    // A named document only when it is in this connection's reach
     const QString docName = req.value(QLatin1String("doc")).toString();
-    if (!docName.isEmpty())
-        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
-    else if (!boundDoc.empty())
-        doc = App::GetApplication().getDocument(boundDoc.c_str());
-    else
-        doc = App::GetApplication().getActiveDocument();
+    App::Document *doc = requestDocument(req, boundDoc);
     if (!doc)
         return errorReply(id, "UnknownDocument", docName);
 
@@ -988,14 +968,9 @@ QJsonObject undoRedoOp(const QJsonObject &req, const std::string &boundDoc, bool
 {
     const QJsonValue id = req.value(QLatin1String("id"));
 
-    App::Document *doc = nullptr;
+    // A named document only when it is in this connection's reach
     const QString docName = req.value(QLatin1String("doc")).toString();
-    if (!docName.isEmpty())
-        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
-    else if (!boundDoc.empty())
-        doc = App::GetApplication().getDocument(boundDoc.c_str());
-    else
-        doc = App::GetApplication().getActiveDocument();
+    App::Document *doc = requestDocument(req, boundDoc);
     if (!doc)
         return errorReply(id, "UnknownDocument", docName);
     Gui::Document *gdoc = Application::Instance->getDocument(doc);
@@ -1055,6 +1030,12 @@ QJsonObject Gui::sceneControlError(const QJsonValue &id, const char *code,
                                    const QString &message)
 {
     return errorReply(id, code, message);
+}
+
+App::Document *Gui::sceneControlDocument(const QJsonObject &req,
+                                         const std::string &boundDoc)
+{
+    return requestDocument(req, boundDoc);
 }
 
 std::string Gui::handleSceneControlRequest(const std::string &json,
