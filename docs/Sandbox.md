@@ -73,7 +73,11 @@ pieces are frozen, not extended.**
                                                  file (RULED); D3 BUILT 2026-09-14: the five
                                                  fixtures (six files) open routed = native, the
                                                  flange bench 1.12x native, the tutorial in
-                                                 docs/DocumentPrograms.md; NEXT D4 (memory)
+                                                 docs/DocumentPrograms.md; D4 BUILT 2026-09-14:
+                                                 a memory ceiling per guest (MemoryMB on the
+                                                 Python heap, EngineHeapMB on V8's), a refusal
+                                                 as MemoryError, and the reset retention
+                                                 measured: glibc's arenas, not a leak
     the abandoned rungs' code        frozen      1.6: RULED 2026-09-09 "freeze everything"; the
                                                  cut line kept as the record; 1.7 evaluates what
                                                  the workbench path would still take
@@ -96,7 +100,7 @@ pieces are frozen, not extended.**
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
     rungs 1-4 of the ladder          designed    sec 1.3
-    memory ceiling for a guest       open        sec 13
+    memory ceiling for a guest       built       7.17 D4 (2026-09-14); what it does not bound, sec 13
 
 ## 1. Direction
 
@@ -1071,7 +1075,17 @@ hard `Isolate::TerminateExecution` (wasmtime: epoch interruption);
 `ExpressionPyodideRuntime.cpp:389-517`.  Budget overhead: WASI transport
 floor 2.6 to 3.1 us; pyodide inside run-to-run noise.
 
-Still open: a memory ceiling for a guest (no `MAXIMUM_MEMORY` handling).
+Memory (7.17 D4, BUILT 2026-09-14): a ceiling per guest,
+`Sandbox:MemoryMB` (1024) on its linear memory and array buffers and
+`Sandbox:EngineHeapMB` (512) on V8's heap.  pyodide's memory is
+EXPORTED by its module with a 4 GB maximum compiled in, so neither
+`MAXIMUM_MEMORY` nor a constructor clamp reaches it; every growth goes
+through emscripten's `growMemory` -> `WebAssembly.Memory.prototype.grow`,
+which the shim wraps -- refused past the ceiling is a failed sbrk, a
+`MemoryError` in Python, the guest kept (`Outcome::MemoryRefused`).
+The engine heap cannot refuse: its near-limit callback stops the guest
+(`Outcome::MemoryExhausted`, dropped).  Details and limits in 7.17 "D4,
+BUILT".
 
 ### 4.2 The WASI image (the reference) **[built 2026-08-30/31, frozen]**
 
@@ -4672,7 +4686,7 @@ pivy wheel rebuild); 900 in the wheel (the walker 300, the host node,
 camera, event and view shims 400, the view provider glue and the MDI
 shim 200); 600 of gate.  G4a is the larger half.
 
-### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed; D1 BUILT 2026-09-13; D2's library half and the linked library BUILT 2026-09-13; P3 BUILT 2026-09-13; D3 BUILT 2026-09-14]**
+### 7.17 The document program sized: expression-language libraries in the document's guest **[sized 2026-09-10; RE-SIZED 2026-09-13 against the proxy chain, probed; D1 BUILT 2026-09-13; D2's library half and the linked library BUILT 2026-09-13; P3 BUILT 2026-09-13; D3 BUILT 2026-09-14; D4 BUILT 2026-09-14]**
 
 Sec 11 item 2, the re-aim's one target (1.2): a program a DOCUMENT
 carries, written in the expression engine's language, generating
@@ -5704,6 +5718,109 @@ the D3 rows -- the overrun is the fixture-text check and the routed linked,
 pinned and tamper cases, which the sizing counted as one gate.
 Code: 8a0d5c30b4 (the fix), 0cc8c7ad79 (the rig), 1bae4bdf25 (D3).
 
+**D4, BUILT 2026-09-14.**  A memory ceiling per guest, and the reset
+retention measured to its cause.  Neither mechanism the sizing named was
+the one: pyodide's `MAXIMUM_MEMORY` is the MAIN module's link flag, and
+the main module is the pinned distribution (sec 5.3), not our wheel; its
+memory is EXPORTED by the module with a 4 GB maximum compiled in
+(`getHeapMax`), so no constructor clamp reaches it either.  And V8's
+`ResourceConstraints` bound the engine's own heap only, where the Python
+heap is not.
+
+Measured first, on this box, a guest at default settings:
+
+    at boot (memoryInfo())         linear 49 MB, engine heap 35-38 MB,
+                                   array buffers 37 MB
+    RSS after reset, no trim       316 -> 433 -> 492 -> 465 -> 482 MB
+    glibc in use after each reset  7-8 MB (the boot peak is ~80 MB)
+    glibc arena free after reset   166 -> 290 -> ... -> 440 MB (ten)
+    M_MMAP_THRESHOLD fixed 256 KB  post-trim RSS 155-185 MB, flat (six)
+    M_MMAP_THRESHOLD fixed 2 MB    post-trim RSS 152-179 MB, flat (six)
+    malloc_trim after dispose      RSS after reset 236 -> 303 -> 367 ->
+      (built)                      407 -> 417 MB
+
+The retention is not a leak and not V8's heap: glibc's in-use total is
+back to 7-8 MB after every reset.  What stays is free memory in the main
+arena and in one arena per V8 worker thread (`malloc_info`: 18 heaps, 16
+of them ~26 MB each after three resets): each time glibc frees a large
+mmapped chunk it raises its mmap threshold, so the next boot's buffers
+and compile zones land in arenas that do not shrink.  A fixed threshold
+ends it; that is process-wide, so it is left a ruling (sec 13), and what
+is built is `malloc_trim(0)` after a guest's isolate is disposed.
+
+The ceiling, three layers, because the guest reaches the JavaScript
+realm through pyodide's own `js` module (probed: `js.WebAssembly`,
+`js.ArrayBuffer`, `js.eval` all answer):
+
+1. *Linear memory*, `Sandbox:MemoryMB` (1024; 0 = the engine's 4 GB).
+   emscripten grows the heap only through JavaScript, `growMemory` ->
+   `WebAssembly.Memory.prototype.grow`, and host_shim.js replaces that
+   method (and the `WebAssembly.Memory` constructor, for a memory's
+   initial size) with one that asks the host's `memoryGrow` native
+   first.  A refusal throws, emscripten's `growMemory` returns failure,
+   sbrk fails, and Python raises `MemoryError` -- the ordinary error
+   path, the guest as whole as after any exception.  The runtime
+   reports `Outcome::MemoryRefused`; ImageHost rewrites a `MemoryError`
+   reply to "exceeded its N MB memory budget (refused)" and KEEPS the
+   guest.  Its memory stays at the high-water mark (wasm memory never
+   shrinks), reused by the next evaluations and returned only by a
+   reset.  The limit is read at every growth, so a preference change
+   applies at once.  After each outer trip the runtime compares
+   pyodide's memory with the largest size the host allowed; larger
+   means it grew from wasm without asking, and the guest is dropped.
+2. *The engine heap*, `Sandbox:EngineHeapMB` (512; 0 = V8's default),
+   `ConfigureDefaultsFromHeapSize` at boot.  It cannot refuse: at its
+   limit V8 ends the PROCESS unless a near-heap-limit callback raises
+   it.  The callback terminates the guest and lends 32 MB (at most four
+   times) for the termination to unwind; `Outcome::MemoryExhausted`,
+   dropped like the hard stage, "exceeded its memory budget (...;
+   stopped)".
+3. *Array buffers*, the same `MemoryMB` over the live total, through a
+   counting `ArrayBuffer::Allocator`.  A refusal is JavaScript's
+   RangeError (`JsException` in Python), the guest kept.  The natives
+   allocate with `ArrayBuffer::MaybeNew`: a refused `ArrayBuffer::New`
+   is V8's fatal out-of-memory.
+
+Found on the way: *V8 calls the near-heap-limit callback from the
+last-resort GC that follows a failed buffer allocation*, with the engine
+heap nowhere near its limit (38 of 512 MB) -- the first build stopped
+and dropped the guest on a refused `js.ArrayBuffer.new`.  FIXED: the
+allocator flags its refusal, and the callback leaves the limit alone
+when the flag is set AND the heap is under three quarters of it, so a
+stale flag cannot hide a full heap.  Sec 12.  And a JavaScript trap that
+cost one boot: the replacement constructor written as `function
+Memory(...)` sees ITSELF under that name, so `Reflect.construct(Memory,
+...)` recursed until the stack ran out; the native is `NativeMemory`.
+
+`FreeCAD.ExpressionSandbox.memoryInfo()` (`ImageHost::memoryInfo()`):
+`live`, `linear`, `linear_limit`, `engine_heap_used`,
+`engine_heap_limit`, `buffers`, `refusals`.  gtests,
+`ExpressionImageMemoryTest` (6, pyodide only, MemoryMB and EngineHeapMB
+at 256 and a reset so the heap limit applies): a 400 MB `bytearray`
+refused with the budget message, the refusal counted, linear memory
+under the ceiling and the guest's mark kept; a runaway list of 1 MB
+buffers refused and 64 MB allocatable again afterwards; a 300 MB
+`js.ArrayBuffer` refused as `JsException`, counted, guest kept; a
+`js.WebAssembly.Memory` of 8000 pages refused at construction; a
+`js.eval` loop filling the engine heap stopped, the guest dropped and
+the next evaluation on a fresh one; `memoryInfo()` of a live guest and
+of none.  All 94 `ExpressionImage*` / `ExpressionRouting*` gtests OK,
+`SandboxProgram` 46 OK, `FeaturePythonChain` 44 OK.
+
+Suites green at the build: C++ 633/633 (offscreen), Python 2778 OK, the
+view gate (`ViewProviderHooks`, `ViewProviderChain`) 25 OK.
+
+NOT covered, stated: the ceiling is per memory, so a second wasm memory
+is bounded but not counted with the first, and a module the guest
+compiles for itself through `js` can define a memory and grow it from
+wasm unseen until the trip ends (sec 13); a ceiling below what the boot
+needs fails the boot with a log line naming the preference, untested;
+the WASI reference runtime (frozen, not built here) has no ceiling.
+The cost: about 470 lines of feature code and comment (the runtime
++250, the shim +42, ImageHost +78, the interface +55, the binding +44)
+and 147 of tests, against 200-400 sized.
+Code: 81ee7762d9.
+
 **Stages.**
 
     D1  function objects in the image (ExpressionPy into
@@ -5749,7 +5866,8 @@ Code: 8a0d5c30b4 (the fix), 0cc8c7ad79 (the rig), 1bae4bdf25 (D3).
         isolate, pyodide's MAXIMUM_MEMORY at wheel build) with the
         outcome a budget-style refusal, and the reset retention
         measured to its cause (V8 heap not shrinking, or the guest's
-        buffers held by the host).
+        buffers held by the host).  **BUILT 2026-09-14**, "D4, BUILT"
+        above; the cause was neither -- glibc's arenas.
 
 **Cost** (lines, new or changed):
 
@@ -7410,6 +7528,13 @@ Preferences under `User parameter:BaseApp/Preferences/Expression/`:
                              guest (default OFF; 7.9 G2b); the rig's
                              FCX_INITGUI_IN_GUEST=1|0 overrides it
     Sandbox:BudgetMs         5000        Sandbox:GraceMs   1000
+    Sandbox:MemoryMB         1024: the ceiling on a guest's linear memory
+                             (the Python heap) and on its array buffers,
+                             from the next growth; 0 = the engine's own
+                             4 GB (7.17 D4; a guest boots at 49 MB)
+    Sandbox:EngineHeapMB     512: V8's heap limit for the guest, from the
+                             next boot; 0 = V8's default (a guest boots
+                             at 35-38 MB)
     Sandbox:ImagePath        Sandbox:StdlibPath          (WASI)
     Sandbox:PyodideDir       Sandbox:PyodideWheel        Sandbox:PyodideUserDir
     Sandbox:PyodidePackages  Sandbox:PyodideUnpinned
@@ -7538,8 +7663,9 @@ push the user's call).
    principal hash; a library in another file is reached by an XLink,
    live or pinned with a snapshot (RULED 2026-09-10 against a
    same-document rule); per-document guests are OUT on the
-   measurement (2.5 s, 335 MB, resets retain ~100 MB); stages D1-D4,
-   1.7-2.5k lines.  As asked: (a) the example set: two or three document-carried programs (a
+   measurement (2.5 s, 335 MB, resets retain ~100 MB -- glibc's arenas,
+   measured in D4); stages D1-D4, 1.7-2.5k lines, all four BUILT by
+   2026-09-14 (D4: the memory ceiling).  As asked: (a) the example set: two or three document-carried programs (a
    parametric bracket, a stair) written in the engine's language,
    generating shapes, run routed and native; (b) the geometry surface
    audit against them -- the constructive set (`make*`, extrude,
@@ -7797,10 +7923,29 @@ sockets, any network for the reference image, a webview escape hatch.
 - Windows and macOS path handling in the pyodide scoping is by
   construction only; nothing ran there.
 - `pre-commit` and `black` are not on this box's PATH.
-- A guest `reset()` does not give its memory back: RSS 462 -> 557 ->
+- A guest `reset()` does not give all its memory back: RSS 462 -> 557 ->
   633 -> 659 MB over three resets (2026-09-10, 7.17), about 100 MB
-  retained each, decelerating.  Reset for a package install only;
-  a library edit drops one module (`lib.drop`), never the guest.
+  retained each, decelerating.  MEASURED TO ITS CAUSE 2026-09-14 (7.17
+  D4): not a leak.  glibc's in-use heap is back to 7-8 MB after every
+  reset; what stays is FREE memory in glibc's arenas -- the main arena
+  and one per V8 worker thread (18 heaps, 16 of them ~26 MB each, after
+  three resets) -- because glibc raises its mmap threshold each time a
+  large mmapped chunk is freed, so the next boot's buffers and compile
+  zones land in the arenas and stay there.  A fixed `M_MMAP_THRESHOLD`
+  (256 KB or 2 MB, the same) removes it: post-trim RSS flat at 152-185
+  MB over six resets, against 252 -> 488 MB over ten without.  Built:
+  `malloc_trim(0)` after a guest's isolate is disposed: RSS after five
+  resets 236 -> 303 -> 367 -> 407 -> 417 MB, against 316 -> 433 ->
+  492 -> 465 -> 482 MB without it; the process-wide threshold is
+  NOT set (it changes every allocation FreeCAD and OCCT make; a ruling,
+  sec 13).  Reset for a package install only; a library edit drops one
+  module (`lib.drop`), never the guest.
+- V8 calls the near-heap-limit callback from the LAST-RESORT GC that
+  follows a failed array buffer allocation, not only at the heap's
+  limit: a callback that stops the guest there stops it for a refused
+  buffer.  The runtime's tells the two apart (7.17 D4).  And returning
+  the current limit from it at a real limit is V8's fatal out-of-memory,
+  which ends the process.
 - The WASI stdlib slice has no `importlib`: guest prelude code imports
   with `__import__` and walks dotted names by hand.
 - `FeaturePythonT::Proxy` is private; tests reach it through
@@ -8243,8 +8388,16 @@ sockets, any network for the reference image, a webview escape hatch.
   the item, as Qt does; `Gui.ActiveDocument` carries `resetEdit` and
   `Document` only.
 - The GUI live expression editors evaluate as session, unconfined.
-- No memory ceiling for a guest -- sized as 7.17's D4 (a guest is
-  335 MB at boot; the reset retention of sec 12 measured to its cause).
+- The memory ceiling (7.17 D4) is per wasm memory and sees growth only
+  through JavaScript: a wasm module the guest compiles for itself
+  through `js` can define a memory and grow it from wasm, found only
+  by the post-trip check against pyodide's own memory -- a second
+  memory is not.  Closing it means taking `WebAssembly`'s compilers
+  away after boot, which a runtime `dlopen` still needs; open.
+- Whether to set glibc's `M_MMAP_THRESHOLD` process-wide (2 MB is
+  enough) to end the reset retention of sec 12 entirely: it changes
+  every allocation FreeCAD and OCCT make, so a ruling, unmeasured
+  against a modelling workload.
 - Addon principal granularity (per addon, per file?) is still open.
 - Whether a document network grant may ever be "always" (a
   content-hashed identity makes it safe against tampering; a
