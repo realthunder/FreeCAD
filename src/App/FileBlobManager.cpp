@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <tuple>
@@ -35,6 +36,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+
+#include <zlib.h>
 
 #include <Base/Console.h>
 #include <Base/Reader.h>
@@ -48,11 +51,315 @@
 #include "FileBlobManager.h"
 #include "Document.h"
 #include "DocumentObject.h"
+#include "DocumentParams.h"
 #include "PropertyFile.h"
 
 FC_LOG_LEVEL_INIT("App", true, 2, true)
 
 using namespace App;
+
+// ---------------------------------------------------------------------------
+// BlobArchive
+// ---------------------------------------------------------------------------
+
+namespace App
+{
+
+/** A private copy of a document archive, serving the blob entries in it.
+ *
+ * Restoring a blob as a file of its own costs a file create, and on a
+ * filesystem watched by endpoint protection that is where a large document's
+ * open goes: MiSTer.FCStd's 5401 entries took 51 s to write out on a managed
+ * Windows laptop once every other round trip was gone, against 0.05 s to copy
+ * the archive whole and 0.26 s to inflate every entry back out of the copy
+ * (docs/FileBlobsManager.md sec 14). So the archive is copied once, and the
+ * content stays in it until something needs a real file.
+ *
+ * A copy and not the original, because the next save of the document replaces
+ * that file while the content inside it is still referred to.
+ *
+ * One handle serves every read, since opening a file is itself a round trip
+ * the monitor charges for. It is closed around anything that moves or deletes
+ * the transient directory -- Windows refuses either while a file inside is
+ * open -- and opened again by the next read.
+ */
+class BlobArchive
+{
+public:
+    struct Entry
+    {
+        std::string name;
+        uint64_t headerOffset {0};
+        uint64_t compressedSize {0};
+        uint64_t size {0};
+        uint16_t method {0};
+    };
+
+    /// Index the central directory. Throws Base::FileException when the file
+    /// is not a zip archive this can read.
+    explicit BlobArchive(const std::string& path);
+    /// Deletes the copy: nothing refers to its content any more.
+    ~BlobArchive();
+
+    BlobArchive(const BlobArchive&) = delete;
+    BlobArchive& operator=(const BlobArchive&) = delete;
+
+    const std::vector<Entry>& entries() const { return _entries; }
+    std::string path() const;
+    /// Follow the copy after the transient directory has moved.
+    void setPath(const std::string& path);
+    /// Content of one entry, inflated. False, and \a bytes empty, on failure.
+    bool read(std::size_t index, std::string& bytes);
+    /// Let go of the file handle; the next read opens it again.
+    void close();
+
+private:
+    bool open();
+    bool readAt(uint64_t offset, char* data, std::size_t size);
+    void index();
+
+    mutable std::mutex _mutex;
+    std::string _path;
+    std::vector<Entry> _entries;
+    Base::ifstream _file;
+};
+
+}  // namespace App
+
+namespace
+{
+uint16_t le16(const unsigned char* p)
+{
+    return static_cast<uint16_t>(p[0] | (p[1] << 8));
+}
+
+uint32_t le32(const unsigned char* p)
+{
+    return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16)
+        | (uint32_t(p[3]) << 24);
+}
+
+uint64_t le64(const unsigned char* p)
+{
+    return uint64_t(le32(p)) | (uint64_t(le32(p + 4)) << 32);
+}
+}  // namespace
+
+BlobArchive::BlobArchive(const std::string& path)
+    : _path(path)
+{
+    if (!open()) {
+        throw Base::FileException("Cannot open archive copy", path.c_str());
+    }
+    index();
+}
+
+BlobArchive::~BlobArchive()
+{
+    close();
+    Base::FileInfo fi(_path);
+    if (fi.exists()) {
+        fi.setPermissions(Base::FileInfo::ReadWrite);
+        fi.deleteFile();
+    }
+}
+
+void BlobArchive::index()
+{
+    // Read here rather than through zipios: all this needs is where each entry
+    // is and how it is stored, and zipios' ZipFile does not read zip64, which
+    // an archive past 4 GB has to be.
+    _file.clear();
+    _file.seekg(0, std::ios::end);
+    const uint64_t fileSize = static_cast<uint64_t>(_file.tellg());
+    const uint64_t tail = std::min<uint64_t>(fileSize, 22u + 65535u);
+    if (tail < 22) {
+        throw Base::FileException("Not a zip archive", _path.c_str());
+    }
+    std::vector<unsigned char> buf(static_cast<std::size_t>(tail));
+    if (!readAt(fileSize - tail, reinterpret_cast<char*>(buf.data()), buf.size())) {
+        throw Base::FileException("Cannot read the end of archive", _path.c_str());
+    }
+    // The last end-of-directory signature: the comment behind it may hold
+    // anything, including something that looks like one.
+    std::size_t eocd = std::string::npos;
+    for (std::size_t i = buf.size() - 22 + 1; i-- > 0;) {
+        if (le32(&buf[i]) == 0x06054b50u) {
+            eocd = i;
+            break;
+        }
+    }
+    if (eocd == std::string::npos) {
+        throw Base::FileException("No zip central directory", _path.c_str());
+    }
+    uint64_t count = le16(&buf[eocd + 10]);
+    uint64_t cdSize = le32(&buf[eocd + 12]);
+    uint64_t cdOffset = le32(&buf[eocd + 16]);
+    if (count == 0xFFFFu || cdSize == 0xFFFFFFFFu || cdOffset == 0xFFFFFFFFu) {
+        // zip64: the real numbers are in a record the locator points at, and
+        // the locator sits right in front of the end-of-directory record.
+        const uint64_t eocdAt = fileSize - tail + eocd;
+        unsigned char locator[20];
+        unsigned char record[56];
+        if (eocdAt < sizeof(locator)
+            || !readAt(eocdAt - sizeof(locator), reinterpret_cast<char*>(locator), sizeof(locator))
+            || le32(locator) != 0x07064b50u
+            || !readAt(le64(locator + 8), reinterpret_cast<char*>(record), sizeof(record))
+            || le32(record) != 0x06064b50u) {
+            throw Base::FileException("Unreadable zip64 directory", _path.c_str());
+        }
+        count = le64(record + 32);
+        cdSize = le64(record + 40);
+        cdOffset = le64(record + 48);
+    }
+    if (cdOffset > fileSize || cdSize > fileSize - cdOffset) {
+        throw Base::FileException("Zip central directory out of range", _path.c_str());
+    }
+
+    std::vector<unsigned char> cd(static_cast<std::size_t>(cdSize));
+    if (!cd.empty() && !readAt(cdOffset, reinterpret_cast<char*>(cd.data()), cd.size())) {
+        throw Base::FileException("Cannot read zip central directory", _path.c_str());
+    }
+    _entries.reserve(static_cast<std::size_t>(std::min<uint64_t>(count, cd.size() / 46)));
+    std::size_t pos = 0;
+    while (pos + 46 <= cd.size() && le32(&cd[pos]) == 0x02014b50u) {
+        const unsigned char* header = &cd[pos];
+        const std::size_t nameLen = le16(header + 28);
+        const std::size_t extraLen = le16(header + 30);
+        const std::size_t commentLen = le16(header + 32);
+        if (pos + 46 + nameLen + extraLen + commentLen > cd.size()) {
+            break;
+        }
+        Entry entry;
+        entry.method = le16(header + 10);
+        entry.compressedSize = le32(header + 20);
+        entry.size = le32(header + 24);
+        entry.headerOffset = le32(header + 42);
+        entry.name.assign(reinterpret_cast<const char*>(header + 46), nameLen);
+        // zip64 extended information carries, in this order, whichever of
+        // the three 32-bit fields above are saturated -- and only those.
+        const unsigned char* extra = header + 46 + nameLen;
+        const unsigned char* extraEnd = extra + extraLen;
+        while (extra + 4 <= extraEnd) {
+            const uint16_t id = le16(extra);
+            const uint16_t len = le16(extra + 2);
+            const unsigned char* field = extra + 4;
+            if (field + len > extraEnd) {
+                break;
+            }
+            if (id == 0x0001) {
+                const unsigned char* value = field;
+                const unsigned char* valueEnd = field + len;
+                for (uint64_t* slot : {&entry.size, &entry.compressedSize, &entry.headerOffset}) {
+                    if (*slot == 0xFFFFFFFFu && value + 8 <= valueEnd) {
+                        *slot = le64(value);
+                        value += 8;
+                    }
+                }
+            }
+            extra = field + len;
+        }
+        _entries.push_back(std::move(entry));
+        pos += 46 + nameLen + extraLen + commentLen;
+    }
+}
+
+std::string BlobArchive::path() const
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    return _path;
+}
+
+void BlobArchive::setPath(const std::string& path)
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    _file.close();
+    _path = path;
+}
+
+void BlobArchive::close()
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    _file.close();
+    _file.clear();
+}
+
+bool BlobArchive::open()
+{
+    if (_file.is_open()) {
+        return true;
+    }
+    _file.clear();
+    _file.open(Base::FileInfo(_path), std::ios::in | std::ios::binary);
+    return _file.is_open();
+}
+
+bool BlobArchive::readAt(uint64_t offset, char* data, std::size_t size)
+{
+    _file.clear();
+    _file.seekg(static_cast<std::streamoff>(offset));
+    _file.read(data, static_cast<std::streamsize>(size));
+    return !_file.fail() && static_cast<std::size_t>(_file.gcount()) == size;
+}
+
+bool BlobArchive::read(std::size_t index, std::string& bytes)
+{
+    bytes.clear();
+    std::lock_guard<std::mutex> guard(_mutex);
+    if (index >= _entries.size() || !open()) {
+        return false;
+    }
+    const Entry& entry = _entries[index];
+    unsigned char local[30];
+    if (!readAt(entry.headerOffset, reinterpret_cast<char*>(local), sizeof(local))
+        || le32(local) != 0x04034b50u) {
+        return false;
+    }
+    // The local header's own name and extra lengths, which the format lets
+    // differ from the central directory's.
+    const uint64_t data = entry.headerOffset + sizeof(local) + le16(local + 26) + le16(local + 28);
+    if (entry.size > std::numeric_limits<uInt>::max()
+        || entry.compressedSize > std::numeric_limits<uInt>::max()) {
+        return false;
+    }
+
+    if (entry.method == 0) {
+        if (entry.compressedSize != entry.size) {
+            return false;
+        }
+        bytes.resize(static_cast<std::size_t>(entry.size));
+        if (!bytes.empty() && !readAt(data, bytes.data(), bytes.size())) {
+            bytes.clear();
+            return false;
+        }
+        return true;
+    }
+    if (entry.method != 8) {
+        return false;
+    }
+
+    std::vector<char> packed(static_cast<std::size_t>(entry.compressedSize));
+    if (!packed.empty() && !readAt(data, packed.data(), packed.size())) {
+        return false;
+    }
+    bytes.resize(static_cast<std::size_t>(entry.size));
+    z_stream stream {};
+    if (inflateInit2(&stream, -MAX_WBITS) != Z_OK) {
+        bytes.clear();
+        return false;
+    }
+    stream.next_in = reinterpret_cast<Bytef*>(packed.data());
+    stream.avail_in = static_cast<uInt>(packed.size());
+    stream.next_out = reinterpret_cast<Bytef*>(bytes.data());
+    stream.avail_out = static_cast<uInt>(bytes.size());
+    const int result = inflate(&stream, Z_FINISH);
+    const bool done = result == Z_STREAM_END && stream.total_out == entry.size;
+    inflateEnd(&stream);
+    if (!done) {
+        bytes.clear();
+    }
+    return done;
+}
 
 // ---------------------------------------------------------------------------
 // FileBlob
@@ -63,6 +370,46 @@ FileBlob::~FileBlob()
     if (_owner) {
         _owner->release(this);
     }
+}
+
+const std::string& FileBlob::path() const
+{
+    if (!_materialized.load(std::memory_order_acquire) && _owner) {
+        _owner->materialize(*this);
+    }
+    return _path;
+}
+
+bool FileBlob::inArchive() const
+{
+    return !_materialized.load(std::memory_order_acquire);
+}
+
+bool FileBlob::hasExtension(const char* ext) const
+{
+    if (inArchive()) {
+        return Base::FileInfo("blob." + _ext).hasExtension(ext);
+    }
+    return Base::FileInfo(_path).hasExtension(ext);
+}
+
+bool FileBlob::read(std::string& bytes) const
+{
+    bytes.clear();
+    if (inArchive()) {
+        return _archive && _archive->read(_entry, bytes);
+    }
+    Base::ifstream from(Base::FileInfo(_path), std::ios::in | std::ios::binary);
+    if (!from) {
+        return false;
+    }
+    bytes.reserve(static_cast<std::size_t>(_size));
+    std::vector<char> chunk(64u * 1024u);
+    while (from.read(chunk.data(), static_cast<std::streamsize>(chunk.size()))
+           || from.gcount() > 0) {
+        bytes.append(chunk.data(), static_cast<std::size_t>(from.gcount()));
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +475,9 @@ void FileBlobManager::repath(const FileBlobHandle& blob, const std::string& path
 
 std::string FileBlobManager::relocatedPath(const FileBlobHandle& blob) const
 {
-    if (!blob) {
+    // Content still in the archive copy has no file to have moved, and asking
+    // for its path would write one.
+    if (!blob || blob->inArchive()) {
         return {};
     }
     // The transient directory is renamed with its contents, so the file is
@@ -140,7 +489,22 @@ std::string FileBlobManager::relocatedPath(const FileBlobHandle& blob) const
 
 void FileBlobManager::relocate()
 {
+    // The archive copies moved with the directory as well, and like the files
+    // they keep their names: only the directory leading to them is stale.
+    for (const auto& archive : liveArchives()) {
+        const std::string current = archive->path();
+        if (Base::FileInfo(current).exists()) {
+            continue;
+        }
+        Base::FileInfo moved(blobDir() + "/" + Base::FileInfo(current).fileName());
+        if (moved.exists()) {
+            archive->setPath(moved.filePath());
+        }
+    }
     for (const auto& blob : blobs()) {
+        if (blob->inArchive()) {
+            continue;
+        }
         if (Base::FileInfo(blob->path()).exists()) {
             continue;
         }
@@ -148,6 +512,25 @@ void FileBlobManager::relocate()
         if (moved.exists()) {
             repath(blob, moved.filePath());
         }
+    }
+}
+
+std::vector<std::shared_ptr<BlobArchive>> FileBlobManager::liveArchives() const
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    std::vector<std::shared_ptr<BlobArchive>> live;
+    for (const auto& archive : _archives) {
+        if (auto held = archive.lock()) {
+            live.push_back(std::move(held));
+        }
+    }
+    return live;
+}
+
+void FileBlobManager::closeArchives()
+{
+    for (const auto& archive : liveArchives()) {
+        archive->close();
     }
 }
 
@@ -724,6 +1107,21 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
                 continue;
             }
         }
+        const std::string entryName = std::string(archivePrefix()) + entry.name;
+        if (entry.blob->inArchive()) {
+            // Straight out of the archive copy: writing the file first only to
+            // stream it back in is the round trip the copy exists to avoid.
+            std::string bytes;
+            if (!entry.blob->read(bytes)) {
+                std::stringstream str;
+                str << "FileBlobManager::writeBlobs(): content " << entry.blob->hash()
+                    << " cannot be read back out of the document's archive copy.";
+                THROWM(Base::FileSystemError, str.str())
+            }
+            writer.putNextEntry(entryName.c_str());
+            writer.Stream().write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+            continue;
+        }
         Base::ifstream from(Base::FileInfo(entry.blob->path()), std::ios::in | std::ios::binary);
         if (!from) {
             std::stringstream str;
@@ -731,7 +1129,7 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
                 << "' in transient directory doesn't exist.";
             THROWM(Base::FileSystemError, str.str())
         }
-        writer.putNextEntry((std::string(archivePrefix()) + entry.name).c_str());
+        writer.putNextEntry(entryName.c_str());
         writer.Stream() << from.rdbuf();
     }
 
@@ -820,23 +1218,56 @@ void FileBlobManager::beginRestore(Base::XMLReader& reader)
         }
     }
 
+    // A zip read through its central directory can be copied whole and its
+    // content served from the copy (restoreFromArchive()). Gated on the index,
+    // which every save that writes blobs writes first, so a file without one
+    // costs no copy.
+    std::string archive;
+    if (DocumentParams::getArchiveBlobStore()) {
+        auto* zip = dynamic_cast<Base::ZipFileReader*>(reader.getReader());
+        if (zip && zip->hasEntry(std::string(archivePrefix()) + indexName())) {
+            archive = zip->getFileName();
+        }
+    }
+
+    // ***Served when the index entry is reached, not here.*** The copy could
+    // be made now, but the content would then be in the store before
+    // Document.xml is parsed -- and a shape property's Restore() ends by
+    // asking for its shape, which a blob already present answers with a
+    // parse. That is the lazy load undone: it moved 3.3 s of MiSTer's shape
+    // parsing into the open. readFiles() drains the unregistered entries before
+    // anything else, and the index is written ahead of the content it
+    // describes, so reaching it is exactly the moment the content used to
+    // arrive.
+    //
+    // Once the copy is serving, the predicate turns every later blob entry
+    // away, so a random-access reader does not even open them. If the copy
+    // cannot be made they are read one file each, as before.
+    auto served = std::make_shared<bool>(false);
     // The name predicate doubles as the ArchiveFilter: a random-access
     // reader asks it before paying to open an entry.
-    auto wanted = [](const std::string& name) {
-        return name.compare(0, std::strlen(archivePrefix()), archivePrefix()) == 0;
+    auto wanted = [served](const std::string& name) {
+        return !*served
+            && name.compare(0, std::strlen(archivePrefix()), archivePrefix()) == 0;
     };
-    reader.setArchiveHandler([this, wanted](const std::string& name, Base::Reader& entry) {
-        if (!wanted(name)) {
-            return false;
-        }
-        try {
-            readBlobEntry(name, entry);
-        }
-        catch (const Base::Exception& e) {
-            FC_ERR("Failed to read included file " << name << ": " << e.what());
-        }
-        return true;
-    }, wanted);
+    reader.setArchiveHandler(
+        [this, wanted, served, archive](const std::string& name, Base::Reader& entry) {
+            if (!wanted(name)) {
+                return false;
+            }
+            if (!archive.empty() && name == std::string(archivePrefix()) + indexName()) {
+                *served = restoreFromArchive(archive);
+                return true;
+            }
+            try {
+                readBlobEntry(name, entry);
+            }
+            catch (const Base::Exception& e) {
+                FC_ERR("Failed to read included file " << name << ": " << e.what());
+            }
+            return true;
+        },
+        wanted);
 }
 
 void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry)
@@ -902,6 +1333,93 @@ void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry
     auto blob = adoptFile(staging.c_str(), ext.c_str());
     FC_TRACE("blob entry " << name << " -> " << (blob ? blob->hash() : std::string("(none)")));
     hold(std::move(blob));
+}
+
+bool FileBlobManager::restoreFromArchive(const std::string& source)
+{
+    FC_DURATION_DECL_INIT(dCopy);
+    FC_DURATION_DECL_INIT(dRead);
+    FC_TIME_INIT(tCopy);
+
+    // Copied, not read in place: the next save of the document replaces the
+    // file it was opened from while this content is still referred to.
+    const std::string copy = newBlobPath("FCStd");
+    if (!Base::FileInfo(source).copyTo(copy.c_str())) {
+        FC_WARN("Cannot copy " << source << " to " << copy
+                               << ", writing its included files out instead");
+        return false;
+    }
+    std::shared_ptr<BlobArchive> archive;
+    try {
+        archive = std::make_shared<BlobArchive>(copy);
+    }
+    catch (const Base::Exception& e) {
+        FC_WARN("Cannot serve included files from " << copy << " (" << e.what()
+                                                     << "), writing them out instead");
+        Base::FileInfo(copy).deleteFile();
+        return false;
+    }
+    FC_DURATION_PLUS(dCopy, tCopy);
+
+    FC_TIME_INIT(tRead);
+    const std::string prefix = archivePrefix();
+    const std::string index = prefix + indexName();
+    std::size_t served = 0;
+    std::string bytes;
+    const auto& entries = archive->entries();
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        const auto& entry = entries[i];
+        // The index describes the content rather than being any; see
+        // readBlobEntry().
+        if (entry.name.compare(0, prefix.size(), prefix) != 0 || entry.name == index) {
+            continue;
+        }
+        // Every entry is inflated and hashed now: identity is what the archive
+        // holds, never what an entry's name claims, and MiSTer's 87 MB of it
+        // costs a fraction of a second.
+        if (!archive->read(i, bytes)) {
+            FC_ERR("Failed to read included file " << entry.name << " from " << source);
+            continue;
+        }
+        const std::string hash = hashBytes(bytes);
+        FileBlobHandle blob;
+        {
+            std::lock_guard<std::mutex> guard(_mutex);
+            auto it = _blobs.find(hash);
+            if (it != _blobs.end()) {
+                blob = it->second.lock();
+            }
+            if (!blob) {
+                // Complete before the lock is let go: find() is how anything
+                // else gets at it, and it must never see a blob with neither a
+                // file nor an archive behind it.
+                blob = make(hash, std::string(), bytes.size());
+                blob->_archive = archive;
+                blob->_entry = i;
+                const std::string ext = Base::FileInfo(entry.name).extension();
+                blob->_ext = isPlainExtension(ext) ? ext : std::string();
+                blob->_materialized.store(false, std::memory_order_release);
+            }
+        }
+        hold(std::move(blob));
+        ++served;
+    }
+    FC_DURATION_PLUS(dRead, tRead);
+
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        _archives.erase(std::remove_if(_archives.begin(), _archives.end(),
+                                       [](const auto& held) { return held.expired(); }),
+                        _archives.end());
+        _archives.push_back(archive);
+    }
+    // Closed until the first read asks for it. Nothing needs it before then,
+    // and an open handle is what stops the transient directory being renamed
+    // or removed on Windows.
+    archive->close();
+    FC_LOG("blob store " << source << ": " << served << " entries served from the archive copy, copy "
+                         << dCopy.count() << "s, read " << dRead.count() << "s");
+    return true;
 }
 
 void FileBlobManager::restoreFromDirectory(const std::string& dir)
@@ -1172,8 +1690,10 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* extensio
     auto it = _blobs.find(hash);
     if (it != _blobs.end()) {
         if (auto existing = it->second.lock()) {
-            // Content already stored: drop the incoming duplicate.
-            if (existing->path() != fi.filePath()) {
+            // Content already stored: drop the incoming duplicate. _path and
+            // not path(), which for an archived blob writes its file and takes
+            // this same lock to do it.
+            if (existing->_path != fi.filePath()) {
                 fi.setPermissions(Base::FileInfo::ReadWrite);
                 fi.deleteFile();
             }
@@ -1222,11 +1742,12 @@ FileBlobHandle FileBlobManager::adoptBytes(const std::string& bytes, const char*
     // Written straight to its place in the store: there is nothing to adopt
     // from, so there is no staging path to move and no reason to hash a file
     // that was just written from bytes already hashed here.
-    std::string ext = extension ? extension : "";
-    if (!ext.empty() && ext[0] != '.') {
-        ext.insert(ext.begin(), '.');
-    }
-    const std::string dst = newBlobPath(ext.empty() ? nullptr : ext.c_str());
+    return make(hash, writeNewFile(bytes, extension), bytes.size());
+}
+
+std::string FileBlobManager::writeNewFile(const std::string& bytes, const char* extension) const
+{
+    const std::string dst = newBlobPath(extension && *extension ? extension : nullptr);
     {
         Base::ofstream to(Base::FileInfo(dst), std::ios::out | std::ios::binary | std::ios::trunc);
         if (!to) {
@@ -1246,7 +1767,31 @@ FileBlobHandle FileBlobManager::adoptBytes(const std::string& bytes, const char*
 
     Base::FileInfo fi(dst);
     fi.setPermissions(Base::FileInfo::ReadOnly);
-    return make(hash, fi.filePath(), bytes.size());
+    return fi.filePath();
+}
+
+void FileBlobManager::materialize(const FileBlob& blob)
+{
+    // Under the lock, so two threads asking for the same path write one file.
+    std::lock_guard<std::mutex> guard(_mutex);
+    if (!blob.inArchive()) {
+        return;
+    }
+    std::string bytes;
+    if (!blob._archive || !blob._archive->read(blob._entry, bytes)) {
+        FC_ERR("Included file " << blob._hash << " cannot be read back out of "
+                                << (blob._archive ? blob._archive->path()
+                                                  : std::string("its archive copy")));
+        return;
+    }
+    try {
+        blob._path = writeNewFile(bytes, blob._ext.c_str());
+    }
+    catch (const Base::Exception& e) {
+        FC_ERR("Included file " << blob._hash << ": " << e.what());
+        return;
+    }
+    blob._materialized.store(true, std::memory_order_release);
 }
 
 std::vector<FileBlobHandle> FileBlobManager::blobs() const

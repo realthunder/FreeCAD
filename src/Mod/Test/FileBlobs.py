@@ -31,6 +31,7 @@ grouped by the concern they pin down:
   BlobSaveOptionCases   ForceXML / SplitXML / PreferBinary over both writers
   BlobNamingCases       stable saved names, the content index, pruning (docs sec 13)
   BlobExportImportCases the export/import path (copyObject, clipboard)
+  BlobArchiveStoreCases a reopened archive served from one copy of it (docs sec 14)
 
 Run headless with:  FreeCADCmd -t FileBlobs
 """
@@ -138,11 +139,20 @@ class BlobTestCase(unittest.TestCase):
         return [n for n in names if n.startswith(BLOB_DIR + "/") and n != index]
 
     def storedBlobs(self, doc):
-        """Files actually present in the document's blob store."""
+        """Files actually present in the document's blob store: content with a
+        file of its own, not the archive copies a reopened document serves
+        content from until something asks for a path (docs sec 14)."""
         blobdir = os.path.join(doc.TransientDir, BLOB_DIR)
         if not os.path.isdir(blobdir):
             return []
-        return sorted(os.listdir(blobdir))
+        return sorted(n for n in os.listdir(blobdir) if not n.endswith(".FCStd"))
+
+    def archiveCopies(self, doc):
+        """The archive copies in the document's blob store."""
+        blobdir = os.path.join(doc.TransientDir, BLOB_DIR)
+        if not os.path.isdir(blobdir):
+            return []
+        return sorted(n for n in os.listdir(blobdir) if n.endswith(".FCStd"))
 
     def documentXml(self, project):
         return zipfile.ZipFile(project).read("Document.xml").decode("utf-8")
@@ -509,9 +519,11 @@ class BlobPersistenceCases(BlobTestCase):
         doc.saveAs(project)
         FreeCAD.closeDocument(doc.Name)
         reopened = self.openDocument(project)
-        self.assertEqual(len(self.storedBlobs(reopened)), 2)
+        # Content first: a reopened archive gives a blob its file only when
+        # the path is asked for, which is what assertContent() does.
         self.assertContent(reopened.getObject("File1"), b"claimed")
         self.assertContent(reopened.getObject("File2"), b"also claimed")
+        self.assertEqual(len(self.storedBlobs(reopened)), 2)
 
     def testResaveDropsReplacedContent(self):
         doc = self.newDocument()
@@ -1216,3 +1228,133 @@ class BlobStringPropertyCases(BlobTestCase):
 
         reopened = self.openDocument(rewritten)
         self.assertEqual(reopened.Objects[0].FragmentProgram, self.LONG)
+
+
+# ---------------------------------------------------------------------------
+# the archive copy: restored content served without a file each (docs sec 14)
+# ---------------------------------------------------------------------------
+
+
+class BlobArchiveStoreCases(BlobTestCase):
+    """A reopened archive serves its content out of one copy of the file, and a
+    blob gets a file of its own only when something asks for its path."""
+
+    PARAMS = "User parameter:BaseApp/Preferences/Document"
+
+    def setUp(self):
+        super().setUp()
+        self.params = FreeCAD.ParamGet(self.PARAMS)
+        # Stated, so these cases do not move with the default.
+        self.params.SetBool("ArchiveBlobStore", True)
+
+    def tearDown(self):
+        self.params.RemBool("ArchiveBlobStore")
+        super().tearDown()
+
+    def savedProject(self, contents):
+        doc = self.newDocument()
+        for index, content in enumerate(contents):
+            self.fileObject(doc, "File%d" % index, content)
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+        return project
+
+    def testReopenWritesNoFileForTheContent(self):
+        project = self.savedProject([b"one", b"two", b"three"])
+        reopened = self.openDocument(project)
+        self.assertEqual(self.storedBlobs(reopened), [])
+        self.assertEqual(len(self.archiveCopies(reopened)), 1)
+
+    def testAskingForAPathWritesThatFileOnly(self):
+        project = self.savedProject([b"one", b"two"])
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File0"), b"one")
+        self.assertEqual(len(self.storedBlobs(reopened)), 1)
+        self.assertContent(reopened.getObject("File1"), b"two")
+        self.assertEqual(len(self.storedBlobs(reopened)), 2)
+
+    def testBinaryContentSurvivesTheCopy(self):
+        payload = bytes(range(256)) * 64 + b"\n\r\n\x00"
+        project = self.savedProject([b"\n leading whitespace", payload])
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File0"), b"\n leading whitespace")
+        self.assertContent(reopened.getObject("File1"), payload)
+
+    def testSaveOverTheOriginalKeepsTheContent(self):
+        """What the copy is for: the save replaces the file the document was
+        opened from while none of the content has been written out of it."""
+        project = self.savedProject([b"kept", b"also kept"])
+        reopened = self.openDocument(project)
+        reopened.getObject("File0").Label = "touched"
+        reopened.save()
+        self.assertEqual(self.storedBlobs(reopened), [])
+        archive = zipfile.ZipFile(project)
+        saved = sorted(self.sha1(archive.read(n)) for n in self.blobEntries(project))
+        archive.close()
+        self.assertEqual(saved, sorted([self.sha1(b"kept"), self.sha1(b"also kept")]))
+        FreeCAD.closeDocument(reopened.Name)
+        again = self.openDocument(project)
+        self.assertContent(again.getObject("File0"), b"kept")
+        self.assertContent(again.getObject("File1"), b"also kept")
+
+    def testSaveAsMovesTheCopyWithTheDirectory(self):
+        """Save-as renames the transient directory, which Windows refuses
+        while a file in it is open -- and reading one blob opens the copy."""
+        project = self.savedProject([b"read first", b"read after the move"])
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File0"), b"read first")
+        before = reopened.TransientDir
+        reopened.saveAs(self.projectPath("second.FCStd"))
+        self.assertNotEqual(reopened.TransientDir, before)
+        self.assertFalse(os.path.exists(before))
+        self.assertEqual(len(self.archiveCopies(reopened)), 1)
+        self.assertContent(reopened.getObject("File1"), b"read after the move")
+        FreeCAD.closeDocument(reopened.Name)
+        again = self.openDocument(self.projectPath("second.FCStd"))
+        self.assertContent(again.getObject("File1"), b"read after the move")
+
+    def testClosingRemovesTheTransientDirectory(self):
+        project = self.savedProject([b"one", b"two"])
+        reopened = self.openDocument(project)
+        # Opens the copy, and leaves File1 still served from it.
+        self.assertContent(reopened.getObject("File0"), b"one")
+        transient = reopened.TransientDir
+        FreeCAD.closeDocument(reopened.Name)
+        self.assertFalse(os.path.exists(transient))
+
+    def testLastReferrerTakesTheCopyWithIt(self):
+        project = self.savedProject([b"only"])
+        reopened = self.openDocument(project)
+        reopened.UndoMode = 0
+        self.assertEqual(len(self.archiveCopies(reopened)), 1)
+        reopened.removeObject("File0")
+        self.assertEqual(self.archiveCopies(reopened), [])
+
+    def testCopyAcrossDocumentsTakesTheContent(self):
+        project = self.savedProject([b"crossing"])
+        reopened = self.openDocument(project)
+        target = self.newDocument("BlobTarget")
+        copied = target.copyObject(reopened.getObject("File0"))
+        FreeCAD.closeDocument(reopened.Name)
+        self.assertContent(copied, b"crossing")
+
+    def testSwitchedOffWritesAFileEach(self):
+        self.params.SetBool("ArchiveBlobStore", False)
+        project = self.savedProject([b"one", b"two"])
+        reopened = self.openDocument(project)
+        self.assertEqual(len(self.storedBlobs(reopened)), 2)
+        self.assertEqual(self.archiveCopies(reopened), [])
+
+    @unittest.skipUnless(HAS_PART, "Part module not available")
+    def testShapeParsesOutOfTheCopy(self):
+        doc = self.newDocument()
+        box = doc.addObject("Part::Feature", "Box")
+        box.Shape = Part.makeBox(1, 2, 3)
+        project = self.projectPath()
+        doc.saveAs(project)
+        self.assertTrue(self.blobEntries(project), "the shape was not saved as a blob")
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertAlmostEqual(reopened.getObject("Box").Shape.Volume, 6.0)
+        self.assertEqual(self.storedBlobs(reopened), [])

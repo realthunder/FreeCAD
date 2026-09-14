@@ -71,6 +71,7 @@ include_directories(
 set(FreeCADApp_LIBS
     FreeCADBase
     ${Boost_LIBRARIES}
+    ${ZLIB_LIBRARIES}
     fmt::fmt
 )
 

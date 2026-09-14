@@ -773,6 +773,11 @@ void Document::onChanged(const Property* prop)
         // this directory should not exist
         if (!TransDirNew.exists()) {
             if (TransDirOld.exists()) {
+                // Windows refuses to rename a directory with a file open in
+                // it, and a restore holds one: the archive copy the blobs are
+                // served from. It opens again on its next read.
+                if (d->fileBlobs)
+                    d->fileBlobs->closeArchives();
                 if (!TransDirOld.renameFile(new_dir.c_str()))
                     Base::Console().Warning("Failed to rename '%s' to '%s'\n", old_dir.c_str(), new_dir.c_str());
                 else {
@@ -1022,6 +1027,10 @@ Document::~Document()
 
     // remove Transient directory
     try {
+        // Nothing deletes a file held open on Windows, and the archive copy
+        // the blobs are served from may be.
+        if (d->fileBlobs)
+            d->fileBlobs->closeArchives();
         Base::FileInfo TransDir(TransientDir.getValue());
         TransDir.deleteDirectoryRecursive();
     }

@@ -322,7 +322,8 @@ void PropertyFileIncluded::Save (Base::Writer &writer) const
 {
     // when saving a document under a new file name the transient directory
     // name changes and thus the stored file name doesn't work any more.
-    if (_blob && !Base::FileInfo(_blob->path()).exists()) {
+    // Content still in the archive copy has no file, so no path to go stale.
+    if (_blob && !_blob->inArchive() && !Base::FileInfo(_blob->path()).exists()) {
         auto &manager = blobManager();
         // Saving under a new name gives the document a new transient
         // directory, so the stored absolute path is stale. The directory is
@@ -663,7 +664,8 @@ void PropertyStringIncluded::setValue(const char* sString)
 const FileBlobHandle &PropertyStringIncluded::ensureBlob() const
 {
     auto &manager = blobManager();
-    if (_blob && !Base::FileInfo(_blob->path()).exists()) {
+    // Content still in the archive copy has no file, so no path to go stale.
+    if (_blob && !_blob->inArchive() && !Base::FileInfo(_blob->path()).exists()) {
         // Saving under a new name gives the document a new transient
         // directory, so the stored path is stale. The directory is renamed
         // with its contents, so the file is still where relocatedPath() says.
