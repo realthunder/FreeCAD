@@ -50,6 +50,10 @@ declare global {
     /// panel mounting after the push still reads the current mode;
     /// changes arrive as 'fc:viewonly' events.
     fcviewerViewOnly?: boolean;
+    /// This connection's access level (docs/ShareAccess.md sec 2.2), as
+    /// the backend last said; changes arrive as 'fc:access' events. Absent
+    /// from a backend that predates the levels.
+    fcviewerAccess?: 'view' | 'edit' | 'host';
     /// Set by this layer to claim the HUD feed: the viewer then reports
     /// it as 'fc:hud' events instead of drawing its own overlay box.
     fcviewerHudCard?: boolean;

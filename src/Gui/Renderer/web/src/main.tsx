@@ -122,6 +122,14 @@ const [viewOnly, setViewOnly] = createSignal(!!window.fcviewerViewOnly);
 window.addEventListener('fc:viewonly', (e: Event) => {
   setViewOnly(!!(e as CustomEvent).detail);
 });
+// And whether it is a host (docs/ShareAccess.md sec 2.2): the desktop's
+// owner, whose tool bars and command list are not held to the browser
+// allowlist. The server judges either way; this only draws what it allows.
+const [access, setAccess] = createSignal<string>(window.fcviewerAccess ?? '');
+window.addEventListener('fc:access', (e: Event) => {
+  setAccess(String((e as CustomEvent).detail));
+});
+const isHost = () => access() === 'host';
 
 // The name the host's sharing roster shows for this connection
 // (docs/MultiDocServe.md §6). ?client= wins at load; after that this is
@@ -298,14 +306,14 @@ const setTopInset = (px: number) => host.style.setProperty('--fc-top', `${px}px`
 render(() => (
   <>
     <SplitOverlay />
-    <ToolbarStrip enabled={toolbarsOn} viewOnly={viewOnly} narrow={narrow}
+    <ToolbarStrip enabled={toolbarsOn} viewOnly={viewOnly} host={isHost} narrow={narrow}
                   onTopInset={setTopInset} />
     <Inspector selection={selection} request={request}
                onCardOpen={setCardOpen} viewOnly={viewOnly} />
     <SheetPanel open={sheetOpen} onClose={() => setSheetOpen(false)}
                 viewOnly={viewOnly} doc={() => docs().current} />
     <OmniBox open={omniOpen} onClose={() => setOmniOpen(false)}
-             selection={selection} viewOnly={viewOnly} />
+             selection={selection} viewOnly={viewOnly} host={isHost} />
     <LoupeOverlay mark={loupe} />
     <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />

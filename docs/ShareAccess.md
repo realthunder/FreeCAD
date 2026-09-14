@@ -114,6 +114,13 @@ Which ops need a host is the control channel's to say: an op's level is checked 
 runs (`OmniControl::requiredAccess` for the omni ops -- `param.set`/`param.reset`), and an
 op whose answer depends on what it touches asks `Gui::sceneControlAccess()`.
 
+The browser viewer draws what the level allows, and the server judges either way. The
+config message's `access` reaches the page as `window.fcviewerAccess` and an `fc:access`
+event (wasm `fcviewer_access_event`). A host's tool bars and `/cmd` rows are not drawn
+refused; an editor's commands off the browser allowlist are. The omni box offers no
+`/param` mode to anyone: the host's preferences are not a browser's to change, whatever
+its level.
+
 ## 3. Prior art
 
 - **Ticket exchange** — a long-lived credential buys a short-lived, often single-use

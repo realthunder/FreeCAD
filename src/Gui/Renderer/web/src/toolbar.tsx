@@ -94,6 +94,9 @@ export function ToolbarStrip(props: {
   /// A view-only connection gets no tool bars: the server refuses the
   /// subscription, and there is nothing on them it could run.
   viewOnly: () => boolean;
+  /// A host connection (docs/ShareAccess.md sec 2.2): not held to the
+  /// browser allowlist, so nothing is drawn refused.
+  host: () => boolean;
   /// The phone layout: one scrolling row along the bottom.
   narrow: () => boolean;
   /// The strip's height while it is shown on the top edge, 0 otherwise,
@@ -263,7 +266,7 @@ export function ToolbarStrip(props: {
         <For each={bars()}>
           {(id) => (
             <Bar id={id} objs={objs} setObjs={setObjs} theme={theme}
-                 narrow={props.narrow} run={run} />
+                 narrow={props.narrow} host={props.host} run={run} />
           )}
         </For>
         <Show when={error()}>
@@ -279,6 +282,7 @@ interface ButtonCtx {
   setObjs: (...args: any[]) => void;
   theme: () => string;
   narrow: () => boolean;
+  host: () => boolean;
   run: (name: string, index: number) => void;
 }
 
@@ -330,7 +334,7 @@ function ActionButton(props: ButtonCtx & { id: string; size: () => number }) {
       && s.q_dropDown !== false;
   };
   const who = () => identity(props.objs, st() ?? {});
-  const safe = () => !!who().name && isBrowserSafeCommand(who().runs);
+  const safe = () => !!who().name && (props.host() || isBrowserSafeCommand(who().runs));
   const [open, setOpen] = createSignal(false);
   let root: HTMLDivElement | undefined;
 
@@ -461,7 +465,8 @@ function GroupMenu(props: ButtonCtx & { id: string; size: () => number;
             <Show when={m() && m()!.q_visible !== false}>
               <Show when={!m()!.q_separator} fallback={<div class="fc-tb-menu-sep" />}>
                 {(() => {
-                  const safe = () => isBrowserSafeCommand(m()!.q_memberCommand ?? '');
+                  const safe = () => props.host()
+                    || isBrowserSafeCommand(m()!.q_memberCommand ?? '');
                   return (
                     <button
                       class="fc-tb-menu-item"

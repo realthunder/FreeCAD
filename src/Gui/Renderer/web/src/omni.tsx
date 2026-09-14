@@ -1,7 +1,7 @@
 // The omni search box in the browser (docs/OmniSearch.md sec 6): the
 // mirror of the desktop's Std_OmniSearch over the control channel.
 // One line at the top centre, '/' opens it, and the same grammar --
-// "/ Box.Length", "/cmd draw style", "/param sync select", "#.Comment",
+// "/ Box.Length", "/cmd draw style", "#.Comment",
 // "#.View2.DrawStyle", ".Height" for the selection.
 //
 // Latency is the design constraint. The box re-filters on every
@@ -20,6 +20,7 @@ import {
   commandChildren,
   getContainerProperties,
   getProperties,
+  isBrowserSafeCommand,
   omniObjects,
   omniResolve,
   omniRows,
@@ -52,9 +53,10 @@ export interface Input {
   offset: number;
 }
 
+/// No '/param ' here: the host's preferences are not a browser's to change
+/// (docs/ShareAccess.md sec 2.2), so the mirror does not offer the mode.
 const PREFIXES: [string, Mode][] = [
   ['/cmd ', 'command'],
-  ['/param ', 'param'],
   ['/ ', 'object'],
 ];
 
@@ -111,8 +113,6 @@ const MODE_ROWS: Row[] = [
   { key: '/ ', kind: 'mode', title: '/ ', desc: 'Objects, properties, documents and views',
     complete: '/ ' },
   { key: '/cmd ', kind: 'mode', title: '/cmd ', desc: 'Commands, by keyword', complete: '/cmd ' },
-  { key: '/param ', kind: 'mode', title: '/param ', desc: 'Application parameters, by keyword',
-    complete: '/param ' },
 ];
 
 const stripLabel = (s: string) =>
@@ -200,6 +200,8 @@ export function OmniBox(props: {
   onClose: () => void;
   selection: () => SelectionItem[];
   viewOnly?: () => boolean;
+  /// A host connection: not held to the browser allowlist
+  host?: () => boolean;
 }) {
   const [text, setText] = createSignal('/');
   const input = createMemo(() => parseInput(text()));
@@ -501,6 +503,11 @@ export function OmniBox(props: {
 
   const inactive = (row: Row) =>
     row.kind === 'command' && detail()[row.key]?.active === false;
+  /// A command the server will not run for this connection: anything off
+  /// the browser allowlist unless it is a host (docs/ShareAccess.md sec
+  /// 2.2). A group's rows are judged by the server when one is picked.
+  const refused = (row: Row) =>
+    row.kind === 'command' && !row.group && !props.host?.() && !isBrowserSafeCommand(row.key);
 
   // ---- actions
 
@@ -598,6 +605,10 @@ export function OmniBox(props: {
         complete(row);
         break;
       case 'command':
+        if (refused(row)) {
+          setStatus({ text: `${row.title} runs only for the desktop's owner`, error: true });
+          break;
+        }
         if (inactive(row)) { setStatus({ text: `${row.title} is not active`, error: true }); break; }
         run(row.key);
         break;
@@ -826,7 +837,7 @@ export function OmniBox(props: {
             autocapitalize="off"
             spellcheck={false}
             value={text()}
-            placeholder="/ object, /cmd command, /param parameter"
+            placeholder="/ object, /cmd command"
             onInput={(e) => { setText(e.currentTarget.value); setHi(-1); setStatus(null); }}
             onKeyDown={onKey}
           />
@@ -839,7 +850,8 @@ export function OmniBox(props: {
                 class="fc-omni-row"
                 role="option"
                 aria-selected={hi() === i()}
-                classList={{ 'fc-omni-hi': hi() === i(), 'fc-omni-inactive': inactive(row) }}
+                classList={{ 'fc-omni-hi': hi() === i(),
+                             'fc-omni-inactive': inactive(row) || refused(row) }}
                 title={row.desc ?? ''}
                 onPointerEnter={() => setHi(i())}
                 onClick={() => pick(row, true)}

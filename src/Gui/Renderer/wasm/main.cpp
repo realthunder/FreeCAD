@@ -442,6 +442,16 @@ EM_JS(void, fcviewer_viewonly_event, (int viewOnly), {
                                          { detail: !!viewOnly }));
 });
 
+// This connection's access level by name -- 'view', 'edit' or 'host'
+// (docs/ShareAccess.md sec 2.2) -- for a layer that offers only what the
+// backend will run: a host's tool bars and command list are not held to
+// the browser allowlist. Mirrored on window for a late mount.
+EM_JS(void, fcviewer_access_event, (const char *access), {
+    const level = UTF8ToString(access);
+    window.fcviewerAccess = level;
+    window.dispatchEvent(new CustomEvent('fc:access', { detail: level }));
+});
+
 // The scene socket went up or down (docs/ThinClient.md 8.11 item 4). A
 // subscription belongs to one connection -- the streamed tool bars are --
 // so the DOM layer re-asks on every open. Mirrored on window for a panel
@@ -8380,6 +8390,16 @@ static void handleControlMessage(const char *json)
         // (docs/MultiDocServe.md §8). The refusal is the backend's, but
         // the UI must not offer what will be refused — tell the DOM
         // layer, which greys its editors and says so.
+        // The level by name, which a backend that predates the levels
+        // does not send (docs/ShareAccess.md sec 2.2)
+        if (const char *ac = std::strstr(json, "\"access\":\"")) {
+            const char *start = ac + std::strlen("\"access\":\"");
+            if (const char *end = std::strchr(start, '"')) {
+                const std::string level(start, end);
+                if (level == "view" || level == "edit" || level == "host")
+                    fcviewer_access_event(level.c_str());
+            }
+        }
         if (const char *vo = std::strstr(json, "\"viewOnly\"")) {
             bool on = std::strstr(vo, "true") != nullptr;
             std::printf("fcviewer: %s\n",

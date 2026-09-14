@@ -462,6 +462,12 @@ when the named view is the served one.
 - A group command's arrow (or Right on the row) asks `command.children`
   and shows the rows as a menu; a row runs `command.run` with its index,
   which triggers the same `QAction` the desktop menu would.
+- No `/param` mode (removed 2026-09-14): the host's preferences are not a
+  browser's to change, whatever its level, so the box does not offer them;
+  `param.set`/`param.reset` on the wire need a host connection
+  (docs/ShareAccess.md sec 2.2). And a command a connection may not run --
+  off the browser allowlist, unless it is a host -- is drawn refused and not
+  sent.
 - No icons, no `<<label>>` rows: the label is the object row's
   description, and `<<Label>>` still resolves when typed.
 - ~~Building the web layer on the Windows box needs WSL and a
@@ -495,6 +501,8 @@ the page being believed:
 | a group command's child | `/cmd draw style`, the row's arrow, then Wireframe | the menu came back with its radio tick on As Is; the DESKTOP view's draw style became Wireframe |
 | `param.set` / `param.reset` | `/param sync selection`, the checkbox, then Reset | stored false, then the stored value removed and the default back; the Reset button's own disabled state tracks whether anything is stored |
 | the leading-dot selection | two objects selected, `.Height`, one commit | BOTH objects went to 33 -- one `setProperty` each |
+
+The `/param` row records a mode the browser box no longer offers (sec 6.3).
 
 The **Hex colour editor**, the corner these notes called the one most
 likely to be wrong, is right: the picker's `#123456` is stored as
