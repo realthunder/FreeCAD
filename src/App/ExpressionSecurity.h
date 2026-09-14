@@ -33,6 +33,7 @@
 // evaluation chokepoints (and the prompt UX that requires) is a separate
 // step -- nothing here changes evaluation behavior yet.
 
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
@@ -87,11 +88,15 @@ enum class Decision {
 };
 
 /// Who is asking: the class of principal, derived from the principal id
-/// string ("document:sha256:<hex>", "session", "addon:<name>").
+/// string ("document:sha256:<hex>", "session", "addon:<name>",
+/// "client:..." -- clientPrincipalId).
 enum class PrincipalClass {
     Document,
     Session,
     Addon,
+    /// A remote user reaching a served document from a sandbox guest in
+    /// their own page (catalog v2, docs/Sandbox.md 7.20 C3).
+    Client,
 };
 
 AppExport const char *permissionName(Permission perm);
@@ -107,13 +112,43 @@ AppExport std::optional<Permission> permissionFromName(
 /// Classify a principal id string; nullopt if it matches no known form.
 AppExport std::optional<PrincipalClass> principalClass(const std::string &principal);
 
+/** The principal id of a remote client (docs/Sandbox.md 7.20, C3), from
+ * what the scene server's door knows of its connection:
+ *
+ *     client:id:<identity>    the front door's verified identity
+ *     client:grant:<n>        none: the grant that admitted it
+ *     client:conn:<n>         neither (the legacy single-token door)
+ *
+ * Only the first names a person across runs; a grant id is assigned per
+ * run and a connection id per connection, so those two are never
+ * persisted (isPersistablePrincipal).  An identity carrying a control
+ * character falls back to the next form rather than being rewritten --
+ * a rewrite could make two identities one principal.
+ */
+AppExport std::string clientPrincipalId(const std::string &identity, uint64_t grant,
+        uint64_t connection);
+
+/// Whether a grant for this principal may be stored with scope "always":
+/// false for a run-local client id and for an unknown form.
+AppExport bool isPersistablePrincipal(const std::string &principal);
+
 /// The frozen catalog default for (principal class, permission).
 AppExport Decision catalogDefault(PrincipalClass pclass, Permission perm);
 
-/** Whether a default DENY/PROMPT may be lifted interactively. Only
- * (document, gui) is marked not-promptable in the v1 catalog.
+/** Whether a default DENY/PROMPT may be lifted interactively. v1 marks
+ * four document cells not-promptable; v2's client column is promptable
+ * only where it prompts (host.import, pkg.install).
  */
 AppExport bool isPromptable(PrincipalClass pclass, Permission perm);
+
+/** Whether any grant -- a panel answer, grants.json, a process --grant --
+ * may lift the decision at all.  False only for a client's gui and
+ * unsafe.getattr: both reach host code (a command by name runs a recent
+ * macro file, docs/Sandbox.md 7.14; an undeclared getattr runs host
+ * Python), and until the 7.14 chokepoints are built nothing narrower
+ * than the whole row can be granted to a remote user.
+ */
+AppExport bool isGrantable(PrincipalClass pclass, Permission perm);
 
 /** The frozen pseudo-property -> permission mapping. Returns nullopt for
  * names needing no permission (_math/_re/_coll/_py are Ring-0 in-image
@@ -152,6 +187,7 @@ private:
 /// One persisted grant (grants.json schema v1, frozen).
 struct AppExport Grant {
     std::string principal;   // "document:sha256:<hex>" | "session" | "addon:<name>"
+                             // | "client:id:<identity>" (v2; a v1 reader skips it)
     std::string permission;  // catalog name; HostImport stored as "host.import"
     std::string target;      // "*" or a specific target (doc name, module)
     bool allow = false;      // decision: allow / deny

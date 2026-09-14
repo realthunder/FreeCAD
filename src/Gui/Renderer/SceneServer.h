@@ -204,6 +204,13 @@ struct SceneBridgeRequest {
     bool viewOnly = false;
     /// The connection it arrived on (SceneClientInfo::id).
     uint64_t client = 0;
+    /// Who sent it, as the door knows the connection at the moment the
+    /// frame arrived (SceneClientInfo's fields of the same names): the
+    /// client principal is made of these (docs/Sandbox.md 7.20, C3).
+    std::string identity;
+    uint64_t grant = 0;
+    std::string label;
+    std::string address;
 };
 
 /// One entry of the door's grant list (docs/ShareAccess.md §2): an

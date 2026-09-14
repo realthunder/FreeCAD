@@ -81,9 +81,18 @@ std::vector<uint8_t> dispatch(App::Document* doc, const Render::SceneBridgeReque
     if (!doc)
         return Sandbox::errorReplyBytes(data, len, "RuntimeError",
                                         "this connection is joined to no served document");
-    if (req.viewOnly)
-        return Sandbox::errorReplyBytes(data, len, "PermissionError",
-                                        "a view-only connection has no sandbox bridge");
+
+    // The client, as the door knows it at this frame: a connection the
+    // roster turns view-only is read-only from its next op on.
+    App::ExpressionSecurity::RemoteClient client;
+    client.principal = App::ExpressionSecurity::clientPrincipalId(req.identity, req.grant,
+                                                                  req.client);
+    client.context = "#" + std::to_string(req.client);
+    if (!req.label.empty())
+        client.context += " '" + req.label + "'";
+    if (!req.address.empty())
+        client.context += " @" + req.address;
+    client.readOnly = req.viewOnly;
 
     auto& slot = endpoints()[req.client];
     if (!slot)
@@ -106,7 +115,7 @@ std::vector<uint8_t> dispatch(App::Document* doc, const Render::SceneBridgeReque
             e.table.add(face);
         e.table.setOwner(face);
         Py_DECREF(face);
-        App::ExpressionSecurity::Runtime::Scope scope(doc);
+        App::ExpressionSecurity::Runtime::Scope scope(doc, client);
         std::string opName;
         std::string missing;
         return Sandbox::dispatchHostBytes(e.table, data, len, opName, missing);

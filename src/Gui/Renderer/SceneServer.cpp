@@ -3505,6 +3505,10 @@ public:
         {
             std::lock_guard<std::mutex> guard(connMutex);
             req.viewOnly = conn.viewOnly;
+            req.identity = conn.identity;
+            req.grant = conn.grant;
+            req.label = conn.client;
+            req.address = conn.fwd.empty() ? conn.addr : conn.fwd;
             if (req.kind == SceneBridgeRequest::Op) {
                 if (!handler) {
                     conn.queueBridge(bridgeFrame(req.seq, {}));

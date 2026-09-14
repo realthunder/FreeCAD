@@ -92,6 +92,76 @@ TEST_F(ExpressionSecurityRuntimeTest, documentScopeCatalogDefaults)
     }
 }
 
+TEST_F(ExpressionSecurityRuntimeTest, clientScope)
+{
+    // a remote client on a served document (docs/Sandbox.md 7.20, C3)
+    RemoteClient client;
+    client.principal = clientPrincipalId("", 0, 900001);
+    client.context = "#900001 'rt-client'";
+    {
+        // the client form pushes whatever is active, as a chain call does
+        Runtime::Scope outer("session");
+        Runtime::Scope scope(_doc, client);
+        EXPECT_EQ(Runtime::instance().currentPrincipal(), "client:conn:900001");
+        EXPECT_NO_THROW(checkPermission(Permission::DocReadSelf));
+        EXPECT_NO_THROW(checkPermission(Permission::DocWriteSelf));
+        EXPECT_NO_THROW(checkPermission(Permission::AppQuery));
+        try {
+            checkPermission(Permission::AppWrite);
+            FAIL() << "expected PermissionNeededException";
+        }
+        catch (PermissionNeededException &e) {
+            EXPECT_FALSE(e.isPromptable());
+            EXPECT_EQ(e.getPrincipal(), "client:conn:900001");
+            EXPECT_NE(std::string(e.what()).find("this client"), std::string::npos) << e.what();
+        }
+        try {
+            checkPermission(Permission::HostImport, "rt_client_module");
+            FAIL() << "expected PermissionNeededException";
+        }
+        catch (PermissionNeededException &e) {
+            EXPECT_TRUE(e.isPromptable());
+        }
+    }
+    Runtime::instance().clearPending(client.principal, Permission::HostImport, "*");
+
+    // a view-only connection: doc.write.self refused, not promptable,
+    // even with a grant in hand
+    RemoteClient viewer = client;
+    viewer.readOnly = true;
+    Runtime::instance().grant(viewer.principal, Permission::DocWriteSelf, "*", true, "session");
+    {
+        Runtime::Scope scope(_doc, viewer);
+        EXPECT_NO_THROW(checkPermission(Permission::DocReadSelf));
+        try {
+            checkPermission(Permission::DocWriteSelf);
+            FAIL() << "expected PermissionNeededException";
+        }
+        catch (PermissionNeededException &e) {
+            EXPECT_FALSE(e.isPromptable());
+        }
+    }
+    Runtime::instance().revoke(viewer.principal, Permission::DocWriteSelf, "*");
+
+    // gui and unsafe.getattr are not grantable to a client at all, and a
+    // run-local client id is never persisted
+    EXPECT_THROW(Runtime::instance().grant(client.principal, Permission::Gui, "*", true, "once"),
+                 Base::ValueError);
+    EXPECT_THROW(Runtime::instance().grant(client.principal, Permission::HostImport, "m", true,
+                                           "always"),
+                 Base::ValueError);
+    EXPECT_EQ(Runtime::instance().resolve(client.principal, Permission::UnsafeGetattr, "*"),
+              Decision::Deny);
+
+    // a null document still pushes: an empty stack would be host code
+    {
+        Runtime::Scope scope(static_cast<const App::Document *>(nullptr), client);
+        EXPECT_TRUE(Runtime::scopeActive());
+        EXPECT_THROW(checkPermission(Permission::Gui), PermissionNeededException);
+    }
+    EXPECT_FALSE(Runtime::scopeActive());
+}
+
 TEST_F(ExpressionSecurityRuntimeTest, promptRecordsPendingAndGrantClears)
 {
     auto &rt = Runtime::instance();

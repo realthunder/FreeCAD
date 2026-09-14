@@ -122,7 +122,39 @@ std::optional<PrincipalClass> principalClass(const std::string &principal)
     if (principal.rfind(docPrefix, 0) == 0
             && principal.size() == sizeof(docPrefix) - 1 + 64)
         return PrincipalClass::Document;
+    if (principal.rfind("client:", 0) == 0) {
+        auto numbered = [&](const char *prefix) {
+            const std::size_t n = std::strlen(prefix);
+            return principal.rfind(prefix, 0) == 0 && principal.size() > n
+                && principal.find_first_not_of("0123456789", n) == std::string::npos;
+        };
+        if ((principal.rfind("client:id:", 0) == 0 && principal.size() > 10)
+                || numbered("client:grant:") || numbered("client:conn:"))
+            return PrincipalClass::Client;
+    }
     return std::nullopt;
+}
+
+std::string clientPrincipalId(const std::string &identity, uint64_t grant,
+        uint64_t connection)
+{
+    const bool clean = !identity.empty()
+        && std::none_of(identity.begin(), identity.end(), [](char c) {
+               return static_cast<unsigned char>(c) < 0x20 || c == 0x7f;
+           });
+    if (clean)
+        return "client:id:" + identity;
+    if (grant)
+        return "client:grant:" + std::to_string(grant);
+    return "client:conn:" + std::to_string(connection);
+}
+
+bool isPersistablePrincipal(const std::string &principal)
+{
+    auto pclass = principalClass(principal);
+    if (!pclass)
+        return false;
+    return *pclass != PrincipalClass::Client || principal.rfind("client:id:", 0) == 0;
 }
 
 Decision catalogDefault(PrincipalClass pclass, Permission perm)
@@ -133,6 +165,25 @@ Decision catalogDefault(PrincipalClass pclass, Permission perm)
     // rows below spell out document and session.
     if (pclass == PrincipalClass::Addon)
         return perm == Permission::GuiDoCommand ? Decision::Prompt : Decision::Allow;
+    if (pclass == PrincipalClass::Client) {
+        // Catalog v2's column (docs/Sandbox.md 7.20, C3): a remote user
+        // on a served document.  It reads and writes that document --
+        // a view-only connection's writes are refused by its scope, not
+        // here -- and builds geometry; it reaches no other document (a
+        // connection that wants one switches to it, and the switch is
+        // the door's decision), never the owner's document set, GUI,
+        // preferences or host code.  host.import prompts the OWNER.
+        switch (perm) {
+        case Permission::DocReadSelf:   return Decision::Allow;
+        case Permission::DocWriteSelf:  return Decision::Allow;
+        case Permission::GeomCall:      return Decision::Allow;
+        case Permission::AppQuery:      return Decision::Allow;
+        case Permission::PrefsRead:     return Decision::Allow;
+        case Permission::HostImport:    return Decision::Prompt;
+        case Permission::PkgInstall:    return Decision::Prompt;
+        default:                        return Decision::Deny;
+        }
+    }
     const bool doc = (pclass == PrincipalClass::Document);
     switch (perm) {
     case Permission::DocReadSelf:   return Decision::Allow;
@@ -169,9 +220,17 @@ bool isPromptable(PrincipalClass pclass, Permission perm)
     // driving the GUI, running a command's script, rewriting the user's
     // preferences or opening and closing the user's documents, and no
     // prompt should offer to let it.
+    if (pclass == PrincipalClass::Client)
+        return perm == Permission::HostImport || perm == Permission::PkgInstall;
     return !(pclass == PrincipalClass::Document
              && (perm == Permission::Gui || perm == Permission::GuiDoCommand
                  || perm == Permission::PrefsWrite || perm == Permission::AppWrite));
+}
+
+bool isGrantable(PrincipalClass pclass, Permission perm)
+{
+    return !(pclass == PrincipalClass::Client
+             && (perm == Permission::Gui || perm == Permission::UnsafeGetattr));
 }
 
 std::optional<Permission> pseudoPropertyPermission(
@@ -640,7 +699,10 @@ bool AuditLog::append(const std::string &principal, Permission perm,
     std::ofstream out(path.c_str(), std::ios::binary | std::ios::app);
     if (!out)
         return false;
-    out << line.dump() << '\n';
+    // a context can carry what a remote client declared about itself
+    // (docs/Sandbox.md 7.20, C3): bytes that are not UTF-8 are replaced,
+    // never a throw on the way to a refusal
+    out << line.dump(-1, ' ', false, json::error_handler_t::replace) << '\n';
     return static_cast<bool>(out);
 }
 

@@ -404,17 +404,32 @@ static App::Document* documentOf(PyObject* obj)
     return nullptr;
 }
 
-/// Whether the CURRENT principal is a document (the scope stack's
-/// class, ExpressionSecurity::Runtime).  No scope active -- host code
-/// calling in directly, a test's exec -- is host code, already
-/// trusted: not a document.
-static bool principalIsDocument()
+/// The CURRENT principal's class (the scope stack's,
+/// ExpressionSecurity::Runtime).  No scope active -- host code calling
+/// in directly, a test's exec -- is host code, already trusted: none.
+static bool principalIs(ExpressionSecurity::PrincipalClass which)
 {
     if (!ExpressionSecurity::Runtime::scopeActive())
         return false;
     auto pclass = ExpressionSecurity::principalClass(
         ExpressionSecurity::Runtime::instance().currentPrincipal());
-    return pclass && *pclass == ExpressionSecurity::PrincipalClass::Document;
+    return pclass && *pclass == which;
+}
+
+/// A principal confined to its owner's document: a document, and a
+/// remote client, whose owner is the document it is served
+/// (docs/Sandbox.md 7.20, C3).
+static bool principalIsConfined()
+{
+    return principalIs(ExpressionSecurity::PrincipalClass::Document)
+        || principalIs(ExpressionSecurity::PrincipalClass::Client);
+}
+
+/// A remote client: a guest in someone else's page, with no registry
+/// of guest proxies on this host and no file dialog of its own here.
+static bool principalIsClient()
+{
+    return principalIs(ExpressionSecurity::PrincipalClass::Client);
 }
 
 /** The reach set follows the PRINCIPAL, never the call shape
@@ -429,7 +444,7 @@ static bool reachable(const HandleTable& table, App::Document* doc)
 {
     if (!doc)
         return false;
-    if (principalIsDocument())
+    if (principalIsConfined())
         return documentOf(table.owner()) == doc;
     for (App::Document* open : App::GetApplication().getDocuments())
         if (open == doc)
@@ -696,8 +711,15 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
                 {"n", routedFunctionName(obj)}};
     // a Proxy that lives in the guest: its stand-in crosses back as the
     // guest's own instance, never as a handle on the stand-in
-    else if (isGuestProxy(obj))
+    else if (isGuestProxy(obj)) {
+        // the id names an instance in the DESKTOP's guest registry: a
+        // remote client's guest cannot resolve it, and holding it would
+        // let it hand another object's Proxy back -- an undeclared reach
+        // (docs/Sandbox.md 7.20, C3), DENY for a client
+        if (principalIsClient())
+            ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::UnsafeGetattr);
         return {{FcxWire::TagKey, FcxWire::TagGuestProxy}, {"id", guestProxyId(obj)}};
+    }
     {
         PyObject* self = nullptr;
         std::string member;
@@ -913,6 +935,14 @@ PyObject* decodeHostValue(const HandleTable& table, const json& v)
             Py_INCREF(obj);
             return obj;
         }
+    }
+    else if ((t == FcxWire::TagGuestProxy || t == FcxWire::TagGuestMethod)
+             && principalIsClient()) {
+        // a remote client has no proxies here: the id it sends would
+        // name the desktop guest's instance (docs/Sandbox.md 7.20, C3)
+        PyErr_SetString(PyExc_PermissionError,
+                        "a remote client cannot pass a guest proxy to the host");
+        return nullptr;
     }
     else if (t == FcxWire::TagGuestProxy) {
         // the guest's Proxy descriptor (write_prop Proxy, a proxy_new
@@ -1366,7 +1396,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
             // FreeCAD.ActiveDocument.getObject(...) as the host would.
             // A refusal must not surface as an AttributeError: Python
             // would read that as "no such attribute" and hide the reason.
-            if (!principalIsDocument()) {
+            if (!principalIsConfined()) {
                 App::Document* active = App::GetApplication().getActiveDocument();
                 if (!active)
                     return okReply(json());
@@ -1754,6 +1784,13 @@ json dispatchHostOp(HandleTable& table, const json& req)
                     return denied;
                 break;
             }
+            if (member == "saveAs" && PyObject_TypeCheck(base, &App::DocumentPy::Type)
+                && principalIsClient())
+                // the blessed set is the desktop guest's pickers; a remote
+                // client has no dialog on this host to choose a path with
+                return errReply("PermissionError",
+                                "saveAs: a remote client cannot choose a path on the"
+                                " serving host (docs/Sandbox.md 7.20)");
             if (member == "saveAs" && PyObject_TypeCheck(base, &App::DocumentPy::Type)) {
                 // A path the guest made up is the file-system slice's
                 // business, which is not in the catalog; a path the

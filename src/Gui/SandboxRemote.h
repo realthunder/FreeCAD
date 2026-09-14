@@ -49,15 +49,15 @@ namespace SandboxRemote
  * one table -- dispatched into the same bridge ops the desktop's own
  * guest reaches.
  *
- * An Op runs under the document principal of the served document `doc`
- * (ExpressionSecurity::Runtime::Scope, pushed per op) with the document
- * itself as the table's owner: the guest reaches that document and
- * nothing else, its FreeCAD.ActiveDocument is that document, and it is
- * held to what the catalog lets a document do.  A connection with edit
- * access can already change the document through the control channel,
- * so this is no wider; the client principal of its own is C3.  A
- * view-only connection gets no bridge at all until C3 maps its flag
- * onto doc.write.self.  An End clears the handles its statement minted.
+ * An Op runs under the CLIENT's principal (C3: clientPrincipalId of the
+ * connection's verified identity, else its admitting grant, else the
+ * connection; ExpressionSecurity::Runtime::Scope, pushed per op) with the
+ * served document `doc` as the table's owner: the guest reaches that
+ * document and nothing else, its FreeCAD.ActiveDocument is that document,
+ * and it is held to the catalog's client column.  A view-only connection
+ * gets a read-only bridge: doc.write.self refused whatever was granted.
+ * The audit line names the connection.  An End clears the handles its
+ * statement minted.
  * Every Op is answered through SceneStreamServer::sendBridge -- empty
  * on a build without the sandbox host.
  *
