@@ -1084,7 +1084,9 @@ through emscripten's `growMemory` -> `WebAssembly.Memory.prototype.grow`,
 which the shim wraps -- refused past the ceiling is a failed sbrk, a
 `MemoryError` in Python, the guest kept (`Outcome::MemoryRefused`).
 The engine heap cannot refuse: its near-limit callback stops the guest
-(`Outcome::MemoryExhausted`, dropped).  Details and limits in 7.17 "D4,
+(`Outcome::MemoryExhausted`, dropped).  After boot the guest has no
+second memory: the shim refuses a module defining one and a memory made
+from JavaScript (the compile gate).  Details and limits in 7.17 "D4,
 BUILT".
 
 ### 4.2 The WASI image (the reference) **[built 2026-08-30/31, frozen]**
@@ -5745,8 +5747,8 @@ arena and in one arena per V8 worker thread (`malloc_info`: 18 heaps, 16
 of them ~26 MB each after three resets): each time glibc frees a large
 mmapped chunk it raises its mmap threshold, so the next boot's buffers
 and compile zones land in arenas that do not shrink.  A fixed threshold
-ends it; that is process-wide, so it is left a ruling (sec 13), and what
-is built is `malloc_trim(0)` after a guest's isolate is disposed.
+ends it; that is process-wide, and RULED 2026-09-14 to leave it: what is
+built is `malloc_trim(0)` after a guest's isolate is disposed.
 
 The ceiling, three layers, because the guest reaches the JavaScript
 realm through pyodide's own `js` module (probed: `js.WebAssembly`,
@@ -5810,16 +5812,53 @@ of none.  All 94 `ExpressionImage*` / `ExpressionRouting*` gtests OK,
 Suites green at the build: C++ 633/633 (offscreen), Python 2778 OK, the
 view gate (`ViewProviderHooks`, `ViewProviderChain`) 25 OK.
 
-NOT covered, stated: the ceiling is per memory, so a second wasm memory
-is bounded but not counted with the first, and a module the guest
-compiles for itself through `js` can define a memory and grow it from
-wasm unseen until the trip ends (sec 13); a ceiling below what the boot
+**The compile gate, BUILT 2026-09-14** (the gap as first built, closed the
+same day on request).  Refusing wasm compilation outright after boot is
+out: pyodide compiles modules at runtime -- its function-pointer wrappers
+(`new WebAssembly.Module` on a generated type section), its call
+trampoline, and `dlopen`'s side modules.  Every one of those IMPORTS a
+memory or has none; the only module defining one is pyodide's main
+module, compiled at boot.  So host_shim.js wraps `WebAssembly.Module`,
+`compile`, `instantiate` and the two streaming forms, and the glue seals
+it as boot ends (`__fcx_sealWasm`, deleted after the call; a shim without
+it fails the boot).  After the seal a module whose memory section (id 5)
+has entries is refused -- the walk is the format's own framing, a section
+id byte and a u32 LEB size, so a section the engine accepts is a section
+seen -- and so is every `new WebAssembly.Memory`; a stream, whose bytes
+cannot be looked at first, is refused outright.  A refusal is a
+RangeError (`JsException` in Python), counted in `refusals`, the guest
+kept.  The guest reaches this realm, so the shim takes every intrinsic it
+uses before guest code runs (`Reflect.apply` and `construct`, the typed
+array, DataView and buffer slot getters, `Promise.reject`), reads the
+bytes through the slots into a copy that is both checked and compiled,
+and converts an argument once.  Three holes that closed, two of them in
+the ceiling as first built: `grow.call(...)` and `Reflect.construct(...)`
+looked up at call time would have handed a replacement the native
+`grow` or constructor, and `this.buffer.byteLength` could lie to the
+grow check about a memory's size; a lying `length` getter would have
+hidden a section from the walk.  A compiled Module passed to
+`instantiate` is told from bytes by its slots, not its prototype.
+gtests (4 more, `ExpressionImageMemoryTest` 10): a memory section behind
+a custom section refused, counted, the guest kept; a module importing its
+memory, with an empty memory section, compiling and `Module.imports`
+answering; a one-page JavaScript memory after boot refused;
+`Reflect.construct` replaced and the typed array `length` getter lying,
+the gate still shut.  Suites green at the gate's build: C++ 637/637,
+Python 2778 OK, `SandboxProgram` 46 OK, `FeaturePythonChain` 44 OK, the
+image and routing gtests 98 OK, the full sandbox GUI gate list 74 OK, and
+`SandboxInitGui` with `FCX_INITGUI_IN_GUEST=1` 7 OK -- Draft's and BIM's
+modules loading into the sealed guest.
+
+NOT covered, stated: a module the guest compiles through `js` that
+IMPORTS pyodide's memory can grow it with wasm's `memory.grow`, found by
+the post-trip check and bounded until then by the time budget (sec 13);
+a ceiling below what the boot
 needs fails the boot with a log line naming the preference, untested;
 the WASI reference runtime (frozen, not built here) has no ceiling.
 The cost: about 470 lines of feature code and comment (the runtime
 +250, the shim +42, ImageHost +78, the interface +55, the binding +44)
 and 147 of tests, against 200-400 sized.
-Code: 81ee7762d9.
+Code: 81ee7762d9 (the ceiling), 95a4344d04 (the compile gate).
 
 **Stages.**
 
@@ -7937,8 +7976,8 @@ sockets, any network for the reference image, a webview escape hatch.
   `malloc_trim(0)` after a guest's isolate is disposed: RSS after five
   resets 236 -> 303 -> 367 -> 407 -> 417 MB, against 316 -> 433 ->
   492 -> 465 -> 482 MB without it; the process-wide threshold is
-  NOT set (it changes every allocation FreeCAD and OCCT make; a ruling,
-  sec 13).  Reset for a package install only; a library edit drops one
+  NOT set (it changes every allocation FreeCAD and OCCT make; RULED
+  2026-09-14: leave it).  Reset for a package install only; a library edit drops one
   module (`lib.drop`), never the guest.
 - V8 calls the near-heap-limit callback from the LAST-RESORT GC that
   follows a failed array buffer allocation, not only at the heap's
@@ -7946,6 +7985,15 @@ sockets, any network for the reference image, a webview escape hatch.
   buffer.  The runtime's tells the two apart (7.17 D4).  And returning
   the current limit from it at a real limit is V8's fatal out-of-memory,
   which ends the process.
+- The guest reaches the shim's JavaScript realm (pyodide's `js`): a shim
+  check that looks up `Reflect.construct`, `fn.call` or a prototype
+  getter when it runs hands the native to the guest's replacement or
+  reads its lie.  Take every intrinsic when the shim loads, read bytes
+  through the slot getters into a copy, convert an argument once (7.17
+  D4, the compile gate).
+- In JavaScript, `var X = function Memory() {}` sees ITSELF as `Memory`
+  inside its body: a wrapper named after the native it wraps must keep
+  the native under another name.
 - The WASI stdlib slice has no `importlib`: guest prelude code imports
   with `__import__` and walks dotted names by hand.
 - `FeaturePythonT::Proxy` is private; tests reach it through
@@ -8388,16 +8436,13 @@ sockets, any network for the reference image, a webview escape hatch.
   the item, as Qt does; `Gui.ActiveDocument` carries `resetEdit` and
   `Document` only.
 - The GUI live expression editors evaluate as session, unconfined.
-- The memory ceiling (7.17 D4) is per wasm memory and sees growth only
-  through JavaScript: a wasm module the guest compiles for itself
-  through `js` can define a memory and grow it from wasm, found only
-  by the post-trip check against pyodide's own memory -- a second
-  memory is not.  Closing it means taking `WebAssembly`'s compilers
-  away after boot, which a runtime `dlopen` still needs; open.
-- Whether to set glibc's `M_MMAP_THRESHOLD` process-wide (2 MB is
-  enough) to end the reset retention of sec 12 entirely: it changes
-  every allocation FreeCAD and OCCT make, so a ruling, unmeasured
-  against a modelling workload.
+- The memory ceiling (7.17 D4) sees pyodide's memory grow only through
+  JavaScript: a module the guest compiles through `js` that IMPORTS that
+  memory can grow it with wasm's `memory.grow`, found by the post-trip
+  check and bounded until then only by the time budget.  A second
+  memory is shut out by the compile gate; catching the growth in flight
+  would take a wasm validator, and only a guest process under an OS
+  memory limit (docs/ComputeBoundaries.md) covers every path.
 - Addon principal granularity (per addon, per file?) is still open.
 - Whether a document network grant may ever be "always" (a
   content-hashed identity makes it safe against tampering; a
