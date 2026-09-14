@@ -132,7 +132,8 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     /// lookup per round trip measured 2.5 us on a 13 us trip.
     void OnChange(ParameterGrp::SubjectType&, ParameterGrp::MessageType reason) override
     {
-        if (!reason || std::strcmp(reason, "BudgetMs") == 0 || std::strcmp(reason, "GraceMs") == 0)
+        if (!reason || std::strcmp(reason, "BudgetMs") == 0 || std::strcmp(reason, "GraceMs") == 0
+                || std::strcmp(reason, "MemoryMB") == 0 || std::strcmp(reason, "EngineHeapMB") == 0)
             readBudget();
     }
 
@@ -140,6 +141,8 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     {
         budgetMs = static_cast<int>(prefs->GetInt("BudgetMs", 5000));
         graceMs = static_cast<int>(prefs->GetInt("GraceMs", 1000));
+        memoryMB = static_cast<int>(prefs->GetInt("MemoryMB", 1024));
+        engineHeapMB = static_cast<int>(prefs->GetInt("EngineHeapMB", 512));
     }
 
     ParameterGrp::handle prefs;
@@ -328,6 +331,7 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         // before initialize(): a runtime may compile its guest with or
         // without the budget's checks depending on whether there is one
         rt->setBudget(budgetMs, graceMs);
+        rt->setMemoryBudget(memoryMB, engineHeapMB);
         live = rt->initialize(where, [this](const uint8_t* d, std::size_t n) {
             return bridge(d, n);
         });
@@ -386,9 +390,27 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
      */
     int budgetMs = 5000;
     int graceMs = 1000;
+    /** The memory budget of the guest (Outcome in
+     * ExpressionImageRuntime.h, docs/Sandbox.md 7.17 D4): MemoryMB
+     * (default 1024, 0 = the engine's own 4 GB) caps its linear memory
+     * -- the Python heap -- and its array buffers, from the next growth
+     * on; EngineHeapMB (default 512, 0 = V8's default) the engine's own
+     * heap, from the next boot.
+     */
+    int memoryMB = 1024;
+    int engineHeapMB = 512;
     void applyBudget()
     {
         rt->setBudget(budgetMs, graceMs);
+        rt->setMemoryBudget(memoryMB, engineHeapMB);
+    }
+
+    json memoryError(const char* how) const
+    {
+        return {{"ok", false},
+                {"exc", "MemoryError"},
+                {"msg", "expression sandbox: evaluation exceeded its "
+                            + std::to_string(memoryMB) + " MB memory budget (" + how + ")"}};
     }
 
     json budgetError(const char* how) const
@@ -424,12 +446,19 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
         const bool nested = depth > 1;
         if (outcome == Outcome::Failed)
             return false;
-        if (outcome == Outcome::Terminated) {
+        if (outcome == Outcome::Terminated || outcome == Outcome::MemoryExhausted) {
             if (nested)
                 resetAfter = true;
             else
                 dropTerminated();
-            reply = budgetError("terminated");
+            if (outcome == Outcome::Terminated)
+                reply = budgetError("terminated");
+            else
+                reply = {{"ok", false},
+                         {"exc", "MemoryError"},
+                         {"msg", "expression sandbox: evaluation exceeded its memory budget ("
+                                     + std::to_string(memoryMB) + " MB, engine heap "
+                                     + std::to_string(engineHeapMB) + " MB; stopped)"}};
             return true;
         }
         if (resetPending) {
@@ -460,6 +489,12 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
             for (const auto& rid : *rides)
                 if (rid.is_number_unsigned())
                     handles.release(rid.get<uint64_t>());
+        }
+        if (outcome == Outcome::MemoryRefused && !reply.value("ok", false)
+                && reply.value("exc", "") == "MemoryError") {
+            // the ceiling's refusal, as the guest raised it; the guest
+            // is whole and stays (its freed heap is reused, not returned)
+            reply = memoryError("refused");
         }
         if (outcome == Outcome::Interrupted && !nested) {
             if (!reply.value("ok", false) && reply.value("exc", "") == "KeyboardInterrupt") {
@@ -637,6 +672,23 @@ void ImageHost::resetStats()
     d->ops.clear();
     d->hostOps.clear();
     d->handles.resetCreated();
+}
+
+ImageHost::MemoryInfo ImageHost::memoryInfo() const
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    MemoryInfo info;
+    if (!d->rt || !d->live)
+        return info;
+    const MemoryStats s = d->rt->memoryStats();
+    info.live = true;
+    info.linear = s.linear;
+    info.linearLimit = s.linearLimit;
+    info.engineHeapUsed = s.engineHeapUsed;
+    info.engineHeapLimit = s.engineHeapLimit;
+    info.buffers = s.buffers;
+    info.refusals = s.refusals;
+    return info;
 }
 
 void ImageHost::reset()

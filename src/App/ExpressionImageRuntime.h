@@ -69,13 +69,37 @@ namespace ExpressionSandbox
  * that unwinds the guest through frames CPython never got to clean up,
  * so a Terminated runtime is not trusted afterwards; ImageHost drops it
  * and the next evaluation starts a fresh one.
+ *
+ * The memory budget (setMemoryBudget) has the same two shapes.  A growth
+ * of the guest's linear memory past the ceiling is REFUSED: the guest's
+ * allocator sees a failed sbrk, Python raises MemoryError, and the reply
+ * travels the ordinary path from a guest left as consistent as after any
+ * other error (MemoryRefused).  The engine's own heap reaching its limit
+ * cannot be refused that way -- V8 would end the process -- so it stops
+ * the guest from outside like the hard stage (MemoryExhausted), and so
+ * does linear memory found larger than the ceiling ever allowed.
  */
 enum class Outcome
 {
-    Ok,           ///< reply valid, nothing fired
-    Interrupted,  ///< reply valid, the soft stage fired during the trip
-    Terminated,   ///< no reply: the hard stage stopped the guest
-    Failed        ///< no reply: a transport failure unrelated to the budget
+    Ok,               ///< reply valid, nothing fired
+    Interrupted,      ///< reply valid, the soft stage fired during the trip
+    Terminated,       ///< no reply: the hard stage stopped the guest
+    MemoryRefused,    ///< reply valid, the ceiling refused a growth during the trip
+    MemoryExhausted,  ///< no reply: the engine heap's limit stopped the guest
+    Failed            ///< no reply: a transport failure unrelated to the budget
+};
+
+/** What a guest holds against its memory budget, in bytes; zero where a
+ * runtime has no such thing.  ImageHost::MemoryInfo mirrors it.
+ */
+struct MemoryStats
+{
+    std::size_t linear = 0;           ///< the guest's linear memory now: the Python heap
+    std::size_t linearLimit = 0;      ///< the ceiling it may grow to (0 = the engine's own)
+    std::size_t engineHeapUsed = 0;   ///< the engine's heap in use: the JavaScript glue
+    std::size_t engineHeapLimit = 0;  ///< the engine's heap limit
+    std::size_t buffers = 0;          ///< live array buffers outside both
+    std::size_t refusals = 0;         ///< growth requests the ceiling refused, this guest
 };
 
 /** A deadline thread shared by the runtimes.  arm() before a call,
@@ -222,9 +246,26 @@ public:
     /// budgetMs + graceMs.  budgetMs <= 0 leaves calls unbounded.
     virtual void setBudget(int budgetMs, int graceMs) = 0;
 
-    /// One request/reply round trip.  `reply` is valid for Ok and
-    /// Interrupted only.  After Failed (and Terminated) ImageHost drops
-    /// the runtime.
+    /// The memory budget (see Outcome): `memoryMB` caps the guest's
+    /// linear memory and its array buffers from the next growth on,
+    /// `engineHeapMB` the engine's own heap when the guest boots.  <= 0
+    /// leaves each to the engine.  A runtime without a ceiling ignores it
+    /// (the wasi reference image, frozen).
+    virtual void setMemoryBudget(int memoryMB, int engineHeapMB)
+    {
+        (void)memoryMB;
+        (void)engineHeapMB;
+    }
+
+    /// What the guest holds now; all zero with no guest.
+    virtual MemoryStats memoryStats()
+    {
+        return {};
+    }
+
+    /// One request/reply round trip.  `reply` is valid for Ok,
+    /// Interrupted and MemoryRefused only.  After Failed, Terminated and
+    /// MemoryExhausted ImageHost drops the runtime.
     virtual Outcome roundTrip(const std::vector<uint8_t>& request,
                               std::vector<uint8_t>& reply) = 0;
 

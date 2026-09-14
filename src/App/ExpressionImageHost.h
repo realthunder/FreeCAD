@@ -287,6 +287,26 @@ public:
     Stats stats() const;
     void resetStats();
 
+    /** What the live guest holds against its memory budget
+     * (Sandbox:MemoryMB, Sandbox:EngineHeapMB; docs/Sandbox.md 7.17 D4),
+     * in bytes: its linear memory (the Python heap) and the ceiling on
+     * it, the engine's heap in use and its limit, the live array buffers,
+     * and the growth requests the ceiling refused.  All zero, `live`
+     * false, with no guest.  Exposed as
+     * FreeCAD.ExpressionSandbox.memoryInfo().
+     */
+    struct MemoryInfo
+    {
+        bool live = false;
+        std::size_t linear = 0;
+        std::size_t linearLimit = 0;
+        std::size_t engineHeapUsed = 0;
+        std::size_t engineHeapLimit = 0;
+        std::size_t buffers = 0;
+        std::size_t refusals = 0;
+    };
+    MemoryInfo memoryInfo() const;
+
     /** Raw protocol call: a CBOR request in, the CBOR reply out, with
      * no host-side parsing, packing or result re-encoding.  Diagnostics
      * and measurement (the transport floor) plus any future op the
