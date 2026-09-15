@@ -20,8 +20,8 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef __PRECOMPILED_GUI__
-#define __PRECOMPILED_GUI__
+#ifndef SKETCHER_GUI_PRECOMPILED_H
+#define SKETCHER_GUI_PRECOMPILED_H
 
 #include <FCConfig.h>
 
@@ -82,4 +82,4 @@
 
 #endif  //_PreComp_
 
-#endif  // __PRECOMPILED_GUI__
+#endif  // SKETCHER_GUI_PRECOMPILED_H
