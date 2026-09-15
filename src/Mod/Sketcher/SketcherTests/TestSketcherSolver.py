@@ -479,8 +479,6 @@ class TestSketcherSolver(unittest.TestCase):
         self.assertTrue(status == 0)  # no redundants/conflicts/convergence issues
         FreeCAD.closeDocument(self.Doc3.Name)
 
-    # Pending upstream 82ec32f9e9: MissingVerticalHorizontal false positive.
-    @unittest.expectedFailure
     def testMissingVerticalHorizontalConstraints(self):
         """Validation must not duplicate existing constraints (issue #21396)."""
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
