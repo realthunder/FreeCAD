@@ -1,8 +1,8 @@
 # Sketcher: picking upstream fixes and features
 
 Status (2026-09-15): phases 0 and 1 done; phase 2 (App fixes) under way --
-the standalone fixes are in (section 6a), the trim/split refactor, external
-projection, internal faces and fillet rows are open. Branch `SketcherPort` off `RemoteEdit`
+the standalone fixes and the internal faces fix are in (section 6a), the
+trim/split refactor, external projection and fillet rows are open. Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
 
@@ -419,14 +419,56 @@ Declined:
   helpers, while the fork keeps it inline in `rebuildExternalGeometry`. These
   need behaviour probes of their issues (19582, 19831) against the fork, not
   diff reading.
-- **Internal faces** `24ab301685` + `0939408c21` (3 markers): a new
-  `Part::FaceMakerBuildFace`.
 - **Fillet** `6d06b61c7e` (3 markers): a behaviour change -- unconnected lines
   no longer fillet.
 - `83d14b785e`: the App crash path is not in the fork's `delExternalPrivate`
   (it sets the values once); the Gui half and the `delExternals` binding are
   phase 3.
 - The `SketchAnalysis` refactor series of 2024-05-28.
+
+### Internal faces: WireJoiner kept (`aa31511fbd`)
+
+Upstream replaced WireJoiner + `FaceMakerRing` in `buildInternals()` with a
+new `Part::FaceMakerBuildFace` (`24ab301685`: BOPAlgo splits the edges and
+builds the faces), then fixed that for self-intersecting B-splines and
+dangling edges (`0939408c21`). Decision (user, 2026-09-15): keep WireJoiner
+and make it pass upstream's `TestSketchInternalFaces`. It already passed
+every overlap case the new face maker was written for (three and four
+overlapping circles, crosses, T-junctions, dangling chains); only the three
+self-intersecting B-spline tests failed. The figure-8 came out as one face of
+143.2 instead of two of 71.6.
+
+The figure-8 is interpolated from its crossing, so it starts and ends there,
+and two places dropped a crossing on the edge's own end point:
+
+- `checkSelfIntersection()` called
+  `ShapeAnalysis_Wire::CheckSelfIntersectingEdge()`, which ignores any
+  crossing within vertex tolerance of the edge's vertices. It now runs
+  `Geom2dInt_GInter` on the pcurve itself, as that function does, and keeps
+  every crossing whose parameter is not an end.
+- `splitEdges()` dropped the first and last split parameter whenever its point
+  was within tolerance of the end point, which erased the crossing again.
+
+Both now ask `isEndParam()`: the point is at the end point *and* the curve
+between the two is shorter than twice the tolerance. A loop back to the end
+point is far longer. An open B-spline passing through its own start point hit
+the same two defects and got no internal shape at all;
+`testBSplineLoopThroughStartPoint` covers it (a fork test in the upstream
+file).
+
+Naming does not shift. A/B of the old and new `Part.so` over the 37 sketches
+in the repo's `.FCStd` files, each sketch's geometry copied into a fresh
+document without constraints and `MakeInternals` on: face, edge and wire
+counts, areas and the whole `InternalShape` element map are identical once
+the string hasher ids are masked. Copying the geometry matters: re-solving the
+files themselves made Drilling_1's `Sketch` differ between the two libraries,
+and a dummy-solve sweep showed that is the solver's history dependence (see
+"Old-file check, corrected"), on both libraries alike. `24ab301685` is
+declined, `0939408c21` adapted.
+
+**Verified.** Full build OK; ctest 667/667; Python 2852 OK (50 skipped, 9
+expected failures, down from 12); `TestSketcherApp` 95 OK (3 expected
+failures, down from 6; the 3 left are the fillet markers).
 
 ## 7. Phases
 
