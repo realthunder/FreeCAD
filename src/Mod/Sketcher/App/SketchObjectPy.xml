@@ -431,6 +431,14 @@ toggleActive(constraintIndex:int)
         </UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="moveGeometry">
+      <Documentation>
+        <UserDocu>
+          moveGeometry(GeoIndex,PointPos,Vector,[relative]) - upstream name of movePoint(),
+          with the same arguments and behaviour.
+        </UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getPoint" Const="true">
       <Documentation>
         <UserDocu>
