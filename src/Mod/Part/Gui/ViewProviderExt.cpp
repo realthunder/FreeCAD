@@ -5770,6 +5770,15 @@ void ViewProviderPartExt::updateVisual()
         return;
     }
 
+    // A nested ask made while this view provider's own shape is being faulted
+    // in by the check below: that check's caller builds once the shape has
+    // fully arrived, so building here would only be thrown away. Stay touched.
+    static const ViewProviderPartExt *faultingIn = nullptr;
+    if (faultingIn == this) {
+        VisualTouched = true;
+        return;
+    }
+
     if (deferVisualForLoad())
         return;
 
@@ -5789,7 +5798,30 @@ void ViewProviderPartExt::updateVisual()
     // MEASURED at 25 minutes of pegged CPU on a 17058-solid document
     // against 8. It also stops a non-build being counted as one, which
     // is most of what "visual build 607" over 200 features was.
-    if (shapeStillMissing()) {
+    //
+    // The check itself used to BUILD the visual. Asking a restored property
+    // for its value serves the parked shape, the serve announces the value
+    // (serveFromBlob and serveFromStore both setValue), and the announcement
+    // reaches updateData() -> updateVisual() for this very view provider --
+    // from INSIDE the serve, before ensureRestored() has run
+    // Feature::restoreShapeContents(). This call then built the same shape
+    // again once the serve was over: every restored object was built twice,
+    // 34116 builds for 17058 shapes on MiSTer. The nested ask is the one
+    // refused (faultingIn above), so the only build runs once the serve has
+    // finished. The second build was not idempotent: it meshed over what the
+    // first left on shared TShapes, and drew 45867 draws / 18.16 M triangles
+    // where any single build of the same document draws 45903 / 17.88 M.
+    bool missing;
+    {
+        struct FaultInScope {
+            const ViewProviderPartExt *&slot;
+            const ViewProviderPartExt *outer;
+            ~FaultInScope() { slot = outer; }
+        } scope{faultingIn, faultingIn};
+        faultingIn = this;
+        missing = shapeStillMissing();
+    }
+    if (missing) {
         VisualTouched = true;
         return;
     }

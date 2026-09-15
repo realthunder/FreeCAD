@@ -840,6 +840,10 @@ What is left of the 97 s is not the store: the headless open plus a parse of
 every shape is 25 s, so the other ~70 s is the GUI side building 17058
 visuals, and that is the next thing to chase for this document.
 
+Chased in DocumentLoad.md sec 16: every restored visual was built twice, and
+the main window re-tested every command about once a second while the objects
+were created. With both fixed the same bench loads in 75.4 s.
+
 (The 54 s of sec 14.1 and the 40.4 s here are the same code on different
 runs; this box's file-create cost varies run to run.) The parse is faster out
 of the copy too: one open handle, where the files cost an open each.

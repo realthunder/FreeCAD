@@ -1046,3 +1046,97 @@ object's `Visibility` and the view provider's together; a view-provider
 property change allowed. The pointer half was confirmed by hand on the
 real GPU -- mouse buttons responsive during a load, which was the symptom
 this section started from.
+
+## 16. Measured: what a GUI load of MiSTer spends after the blob store (Windows, 2026-09-15)
+
+After the archive-backed blob store (FileBlobsManager.md sec 14) the headless
+open of `MiSTer.FCStd` (17800 objects, 17058 shapes) is 2.4 s, and the GUI
+load through `scripts/render-bench.py` was still 97 s (bgfx OpenGL, 1280x720,
+`ProgressiveLoad` off, which is what the bench forces). A wrapper around the
+bench turned on the App, Gui and Part logs and captured the restore lines; with
+that logging on the same load reads 112-118 s.
+
+| stage (logging on) | s |
+|---|---|
+| App restore | 24.7 |
+| -- of which the `<Objects>` create pass | 19.3 |
+| -- -- of which `addObject` | 4.9 |
+| -- -- of which the progress sequencer's event pumps (new `[sequencer]` term) | 14.3 |
+| Gui view providers (`finishRestoring`, inline) | 79.0 |
+| -- of which visual build | 73.8, **34116 builds for 17058 shapes** |
+| -- -- of which BRepMesh | 38.2 |
+| refresh | 1.7 |
+
+Two defects, both fixed.
+
+### 16.1 Every restored visual was built twice
+
+A call stack taken on the second build of each object (a dbghelp walk behind
+an environment variable, in a scratch build) gave the same chain every time:
+`Gui::Document::slotFinishRestoreObject` -> `ViewProviderDocumentObject::
+finishRestoring` sets `Visibility` -> `ViewProviderPartExt::onChanged` ->
+`updateVisual` -> `shapeStillMissing()` -> `PropertyPartShape::getValue` ->
+`ensureRestored` -> `serveFromBlob` -> `setValue` -> the change notification ->
+`updateData(Shape)` -> **`updateVisual`, nested, builds** -> back in the outer
+call, which then **builds the same shape again**.
+
+The serve announcing its value is by design (serveFromBlob and serveFromStore
+both `setValue` under the object's Restore status), so the fix is on the Gui
+side: while a view provider faults its own shape in, a nested `updateVisual`
+for that same view provider stays touched and returns. The outer call, whose
+serve has finished by then, makes the only build.
+
+WARNING -- the first version of the fix skipped the *outer* build instead, and
+it changed the scene: 45903 draws / 17.88 M triangles against 45867 / 18.16 M
+in every earlier run (2026-09-14 twice, 2026-09-15). The guard version gives
+the same 45903 / 17.88 M. So it is not that one of the two builds was the wrong
+one: **the second build is not idempotent.** It meshes over what the first left
+on TShapes that other objects share, and any single build of the document draws
+the 45903 / 17.88 M scene. Settled coverage is identical in all of them (90468
+px).
+
+Compared as pixels: one frame each from a fixed camera after the timed frames,
+old behaviour against the fix, same settings -- **157 of 921600 pixels differ
+(0.017%)**, 74 of them by more than 8 levels and 4 by more than 96, all inside
+one 295x193 region; average colour equal to three decimals. A tessellation
+difference at a few edges, not geometry gained or lost.
+
+### 16.2 The command refresh ran inside the create pass
+
+The create loop's `seqRestore.next()` pumps the event loop at most every
+200 ms, and those pumps cost 14 s -- but the new `restore <doc> gui live:`
+line said only 1.6 s of it was frames. `GUIApplication`'s `SlowDispatchTrace`
+(armed by `Render/LevelDebug` + `LevelSlowBuildMS`) named the rest: the main
+window's `activityTimer`, 760 ms per firing, about once a second. It runs
+`MainWindow::_updateActions()` -> `CommandManager::testActive()`, which asks
+every command whether it is active, and each new object re-arms it.
+
+Nothing a command could do is allowed while a document restores (sec 15.2), so
+`_updateActions()` now does nothing while `App::Application::isRestoring()`,
+leaving its timer running so the pass happens on the first tick after.
+
+NOTE -- `testActive()` is ~830 ms per pass on this document **after** the load
+too. That is an interactivity problem, not a load-time one, and is not
+addressed here.
+
+### 16.3 Result
+
+Same settings, logging on; the old build behaviour restored for the A/B by a
+temporary switch, so each fix is measured with the other held fixed:
+
+| | neither | command refresh gated | both |
+|---|---|---|---|
+| App restore | 24.7 s | 10.0 s | **7.7 s** (create 5.3, sequencer 1.1) |
+| event pumps during the restore | 17.1 s | 1.4 s | **1.4 s** |
+| visual builds | 34116 | 34116 | **17058** |
+| visual build / of which mesh | 73.8 s / 38.2 s | 78.4 s / 38.9 s | **47.4 s / 22.8 s** |
+| load | 112.6 s | 101.6 s | **66.6 s** |
+| draws / triangles | 45867 / 18.16 M | 45867 / 18.16 M | 45903 / 17.88 M |
+
+The gate is 11 s of the load, the single build 35 s.
+
+Without the logging, in the configuration of the 97.3 s bench run
+(FileBlobsManager.md sec 14): **load 75.4 s**, settle 9.6 s, frame 238 ms,
+settled coverage 90468 px as before. One run each; loads on this box move by
+5-10 s between runs of the same binary (the logged "neither" column above read
+112.6 s and 117.7 s on two runs), so the like-for-like figure is the table's.
