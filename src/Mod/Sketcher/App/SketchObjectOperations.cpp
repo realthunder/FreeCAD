@@ -2414,6 +2414,13 @@ int SketchObject::addSymmetric(const std::vector<int>& geoIdList, int refGeoId,
                                     constNew->setValue(-constr->getValue());
                                 }
 
+                                // Signed constraints record which side of a line their subject
+                                // sits on, and a symmetry about a *line* reverses that side while
+                                // a symmetry about a *point* does not. For the new constraint,
+                                // re-derive the sign from the updated geometry instead of trying
+                                // to figure it out from the old one.
+                                setOrientation(constNew, true);
+
                                 newconstrVals.push_back(constNew);
                             }
                         }

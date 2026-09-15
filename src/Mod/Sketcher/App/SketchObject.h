@@ -861,6 +861,9 @@ protected:
 
     // migration functions
     void migrateSketch();
+    /// Derive the signed-constraint orientations of a legacy sketch from its stored geometry.
+    /// Must be called once the external geometry of the sketch is available.
+    void migrateConstraintOrientations();
 
     static void appendConstraintsMsg(const std::vector<int>& vector,
                                      const std::string& singularmsg,
@@ -902,7 +905,23 @@ protected:
                      int thirdGeoId = GeoEnum::GeoUndef,
                      Sketcher::PointPos thirdPos = Sketcher::PointPos::none);
 
+    // sets the constraint's orientation flag
+    // if applicable using the geometric state
+    // if reset is set to false, the function
+    // will return early when the constraint
+    // already has an orientation
+    void setOrientation(Constraint* constr, bool reset);
+
 private:
+    /// As getGeometry, but warns instead of quietly returning nullptr when @p geoId cannot be
+    /// resolved, so that a constraint left without an orientation is traceable.
+    const Part::Geometry* getGeometryOrWarn(int geoId) const;
+    void setOrientationDistance(Constraint* constr);
+    void setOrientationTangent(Constraint* constr);
+    /// Re-derive the orientation of every signed constraint that references one of
+    /// @p reversedGeoIds, whose projection came back running the other way.
+    void reorientConstraintsOnReversedGeometry(const std::set<int>& reversedGeoIds);
+
     /// Flag to allow external geometry from other bodies than the one this sketch belongs to
     bool allowOtherBody;
 

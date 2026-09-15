@@ -22,6 +22,7 @@
 
 #include "PreCompiled.h"
 #include <memory>
+#include <optional>
 #ifndef _PreComp_
 #include <cmath>
 #include <vector>
@@ -311,6 +312,7 @@ int SketchObject::setDriving(int ConstrId, bool isdriving)
     std::vector<Constraint*> newVals(vals);
     newVals[ConstrId] = newVals[ConstrId]->clone();
     newVals[ConstrId]->isDriving = isdriving;
+    setOrientation(newVals[ConstrId], newVals[ConstrId]->isDriving);
 
     this->Constraints.setValues(std::move(newVals));
 
@@ -373,6 +375,8 @@ int SketchObject::setActive(int ConstrId, bool isactive)
     // clone the changed Constraint
     Constraint* constNew = vals[ConstrId]->clone();
     constNew->isActive = isactive;
+    setOrientation(constNew, constNew->isActive);
+
     newVals[ConstrId] = constNew;
     this->Constraints.setValues(std::move(newVals));
 
@@ -410,6 +414,8 @@ int SketchObject::toggleActive(int ConstrId)
     // clone the changed Constraint
     Constraint* constNew = vals[ConstrId]->clone();
     constNew->isActive = !constNew->isActive;
+    setOrientation(constNew, constNew->isActive);
+
     newVals[ConstrId] = constNew;
     this->Constraints.setValues(std::move(newVals));
 
@@ -777,6 +783,8 @@ int SketchObject::addConstraints(const std::vector<Constraint*>& ConstraintList)
             AutoLockTangencyAndPerpty(cnew);
         }
 
+        setOrientation(cnew, false);
+
         addGeometryState(cnew);
     }
 
@@ -848,6 +856,8 @@ int SketchObject::addConstraint(std::unique_ptr<Constraint> constraint)
 
     if (constNew->Type == Tangent || constNew->Type == Perpendicular)
         AutoLockTangencyAndPerpty(constNew);
+
+    setOrientation(constNew, false);
 
     addGeometryState(constNew);
 
@@ -1145,6 +1155,199 @@ void SketchObject::addConstraint(Sketcher::ConstraintType constrType, int firstG
         constrType, firstGeoId, firstPos, secondGeoId, secondPos, thirdGeoId, thirdPos);
 
     this->addConstraint(std::move(newConstr));
+}
+
+namespace
+{
+ConstraintOrientations
+ccw2d(const Base::Vector3d& A, const Base::Vector3d& B, const Base::Vector3d& C)
+{
+    double signedArea = B.x * C.y - B.y * C.x - A.x * C.y + A.y * C.x + A.x * B.y - A.y * B.x;
+    return signedArea > 0.0 ? ConstraintOrientations::CounterClockwise
+                            : ConstraintOrientations::Clockwise;
+}
+
+std::optional<gp_Circ> getCircle(const Part::Geometry* geo)
+{
+    if (auto* asCirc = freecad_cast<const Part::GeomCircle*>(geo)) {
+        auto loc = asCirc->getLocation();
+        return gp_Circ(gp_Ax2(gp_Pnt(loc.x, loc.y, loc.z), gp_Dir(1, 0, 0), gp_Dir(0, 1, 0)),
+                       std::max(asCirc->getRadius(), 0.0));
+    }
+
+    if (auto* asArcOfCirc = freecad_cast<const Part::GeomArcOfCircle*>(geo)) {
+        auto loc = asArcOfCirc->getLocation();
+        return gp_Circ(gp_Ax2(gp_Pnt(loc.x, loc.y, loc.z), gp_Dir(1, 0, 0), gp_Dir(0, 1, 0)),
+                       std::max(asArcOfCirc->getRadius(), 0.0));
+    }
+    return std::nullopt;
+}
+}  // namespace
+
+const Part::Geometry* SketchObject::getGeometryOrWarn(int geoId) const
+{
+    if (geoId == GeoEnum::GeoUndef) {
+        return nullptr;
+    }
+
+    const Part::Geometry* geo = getGeometry(geoId);
+    if (!geo) {
+        // Without the referenced geometry, the side a signed constraint has to be solved on can't
+        // be determined, and the constraint keeps ConstraintOrientations::None. Don't let this be
+        // invisible (which will look like everything worked, when it didn't). This is useful when
+        // debugging old files that didn't reload correctly.
+        FC_WARN("Cannot determine constraint orientation, geometry "
+                << geoId << " is unavailable in " << getFullName());
+    }
+    return geo;
+}
+
+void SketchObject::setOrientationDistance(Constraint* constr)
+{
+    // Try to find the orientation of point-line distance
+    if (constr->FirstPos != PointPos::none && constr->Second != GeoEnum::GeoUndef) {
+        auto* geo1AsLine =
+            freecad_cast<const Part::GeomLineSegment*>(getGeometryOrWarn(constr->Second));
+        if (geo1AsLine) {
+            constr->Orientation = ccw2d(geo1AsLine->getStartPoint(),
+                                        geo1AsLine->getEndPoint(),
+                                        getPoint(constr->First, constr->FirstPos));
+        }
+        return;
+    }
+
+    // Try to find the orientation of circle-circle distance or circle-line
+    if (constr->FirstPos == PointPos::none && constr->SecondPos == PointPos::none
+        && constr->Second != GeoEnum::GeoUndef) {
+        const Part::Geometry* firGeo = getGeometryOrWarn(constr->First);
+        const Part::Geometry* secGeo = getGeometryOrWarn(constr->Second);
+        auto geo1AsCirc = getCircle(firGeo);
+        auto geo2AsCirc = getCircle(secGeo);
+
+        if (geo1AsCirc && geo2AsCirc) {  // circle-circle distance
+
+            // If one of the circles is completely within the other, we will say that
+            // it is internal, if they are not within each other or intersect we won't
+            // make a call
+
+            double centerDistance = geo1AsCirc->Location().Distance(geo2AsCirc->Location());
+
+            auto circ1Radius = geo1AsCirc->Radius();
+            auto circ2Radius = geo2AsCirc->Radius();
+            if (centerDistance + circ1Radius < circ2Radius) {
+                constr->Orientation = ConstraintOrientations::Internal;  // Circ1 is within circ2
+            }
+            else if (centerDistance + circ2Radius < circ1Radius) {
+                constr->Orientation = ConstraintOrientations::External;  // Circ2 is within circ1
+            }
+            return;
+        }
+
+        auto* geo2AsLine = freecad_cast<const Part::GeomLineSegment*>(secGeo);
+        if (geo1AsCirc && geo2AsLine) {  // circle-line distance
+            Base::Vector3d circCenter(geo1AsCirc->Location().X(),
+                                      geo1AsCirc->Location().Y(),
+                                      geo1AsCirc->Location().Z());
+            bool internal =
+                circCenter.DistanceToLine(geo2AsLine->getStartPoint(),
+                                          geo2AsLine->getEndPoint() - geo2AsLine->getStartPoint())
+                < geo1AsCirc->Radius();
+            auto ccw = ccw2d(geo2AsLine->getStartPoint(), geo2AsLine->getEndPoint(), circCenter);
+
+            constr->Orientation = ccw
+                | (internal ? ConstraintOrientations::Internal : ConstraintOrientations::External);
+        }
+    }
+}
+
+void SketchObject::setOrientationTangent(Constraint* constr)
+{
+    const Part::Geometry* firGeo = getGeometryOrWarn(constr->First);
+    const Part::Geometry* secGeo = getGeometryOrWarn(constr->Second);
+
+    auto impl = [&](const Part::Geometry* firGeo, const Part::Geometry* secGeo) -> bool {
+        auto geo1AsCirc = getCircle(firGeo);
+        auto* geo2AsLine = freecad_cast<const Part::GeomLineSegment*>(secGeo);
+
+        if (!geo1AsCirc || !geo2AsLine) {
+            return false;
+        }
+
+        Base::Vector3d circCenter(geo1AsCirc->Location().X(),
+                                  geo1AsCirc->Location().Y(),
+                                  geo1AsCirc->Location().Z());
+        constr->Orientation =
+            ccw2d(geo2AsLine->getStartPoint(), geo2AsLine->getEndPoint(), circCenter);
+        return true;
+    };
+
+    // Tangent can be defined as line + [circle] or [circle] + line
+    // so we test both
+    if (impl(firGeo, secGeo)) {
+        return;
+    }
+    impl(secGeo, firGeo);
+}
+
+void SketchObject::reorientConstraintsOnReversedGeometry(const std::set<int>& reversedGeoIds)
+{
+    if (reversedGeoIds.empty()) {
+        return;
+    }
+
+    auto constraints = Constraints.getValues();
+    bool changed = false;
+
+    for (auto& constr : constraints) {
+        if (constr->Type != Distance && constr->Type != Tangent) {
+            continue;
+        }
+
+        bool referencesReversed = false;
+        for (int index = 0; constr->hasElement(index); ++index) {
+            if (reversedGeoIds.count(constr->getElement(index).GeoId) > 0) {
+                referencesReversed = true;
+                break;
+            }
+        }
+
+        if (!referencesReversed) {
+            continue;
+        }
+
+        // The line turned around underneath the constraint, so the side it recorded no longer
+        // describes where the geometry actually is. Read the side back out of the geometry rather
+        // than inverting the flag, so that the sketch stays where the user left it.
+        //
+        // Change a clone, not the owned constraint: the property tells a real change from a no-op
+        // write by comparing against a snapshot taken in setValues(), which would already carry an
+        // in-place edit.
+        std::unique_ptr<Constraint> reoriented(constr->clone());
+        setOrientation(reoriented.get(), true);
+        if (reoriented->Orientation.isEqual(constr->Orientation)) {
+            continue;
+        }
+        constr = reoriented.release();
+        changed = true;
+    }
+
+    if (changed) {
+        Constraints.setValues(std::move(constraints));
+    }
+}
+
+void SketchObject::setOrientation(Constraint* constr, bool reset)
+{
+    if (!reset && !constr->Orientation.testFlag(ConstraintOrientations::None)) {
+        return;
+    }
+
+    if (constr->Type == Distance) {
+        setOrientationDistance(constr);
+    }
+    else if (constr->Type == Tangent) {
+        setOrientationTangent(constr);
+    }
 }
 
 int SketchObject::removeAxesAlignment(const std::vector<int>& geoIdList)

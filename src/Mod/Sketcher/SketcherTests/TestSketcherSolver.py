@@ -717,8 +717,6 @@ class TestSketcherSolver(unittest.TestCase):
 
         self.assertEqual(ccw, False)
 
-    # Pending upstream 3c8a254356: signed distance constraints.
-    @unittest.expectedFailure
     def testCircleToCircleDistanceOriented(self):
         # Make a set of two circles a small and a big
         # the small is fully contained in the big

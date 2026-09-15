@@ -1118,6 +1118,11 @@ void SketchObject::restoreFinished()
         }else
             acceptGeometry();
 
+        // Must run after the external geometry above: the orientations are derived from the
+        // geometry the constraints reference, and projected external geometry does not exist
+        // before it is rebuilt or accepted.
+        migrateConstraintOrientations();
+
         synchroniseGeometryState();
 
         // this may happen when saving a sketch directly in edit mode
@@ -1152,6 +1157,35 @@ void SketchObject::restoreFinished()
         e.ReportException();
         FC_ERR("Error while restoring " << getFullName());
     } catch (...) {
+    }
+}
+
+void SketchObject::migrateConstraintOrientations()
+{
+    // Migrate point-line and circle-line distance and tangency from unsigned to signed. Documents
+    // written before signed constraints existed carry no orientation at all, so the side each
+    // constraint was solved on has to be read back out of the geometry stored in the file.
+    //
+    // Unlike upstream, set only the constraints that change, and only as clones: an in-place edit
+    // is already in the snapshot the property compares against, so the write would be dropped as
+    // a no-op, and a sketch with nothing to migrate is not written to at all.
+    auto constraints = Constraints.getValues();
+    bool changed = false;
+    for (auto& constr : constraints) {
+        if (!constr->Orientation.testFlag(ConstraintOrientations::None)) {
+            continue;
+        }
+        std::unique_ptr<Constraint> oriented(constr->clone());
+        setOrientation(oriented.get(), false);
+        if (oriented->Orientation.testFlag(ConstraintOrientations::None)) {
+            continue;
+        }
+        constr = oriented.release();
+        changed = true;
+    }
+
+    if (changed) {
+        Constraints.setValues(std::move(constraints));
     }
 }
 
