@@ -1415,6 +1415,17 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
     assert(externalGeoRef.size() == Objects.size());
     auto keys = externalGeoRef;
 
+    // Remember which way the projected lines currently run. Signed constraints record which side
+    // of a line their subject sits on, and that side is expressed relative to the line direction,
+    // so a projection that comes back reversed would otherwise drag the sketch to the other side.
+    std::map<long, Base::Vector3d> previousLineDirections;
+    for (const auto& geo : ExternalGeo.getValues()) {
+        if (auto* line = freecad_cast<const Part::GeomLineSegment*>(geo)) {
+            previousLineDirections[GeometryFacade::getId(geo)] =
+                line->getEndPoint() - line->getStartPoint();
+        }
+    }
+
     // re-check for any missing geometry element. The code here has a side
     // effect that the linked external geometry will continue to work even if
     // ExternalGeometry is wiped out.
@@ -2316,8 +2327,23 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
         }
     }
 
+    std::set<int> reversedGeoIds;
+    for (std::size_t index = 0; index < geoms.size(); ++index) {
+        auto* line = freecad_cast<const Part::GeomLineSegment*>(geoms[index]);
+        if (!line) {
+            continue;
+        }
+        auto previous = previousLineDirections.find(GeometryFacade::getId(geoms[index]));
+        if (previous != previousLineDirections.end()
+            && (line->getEndPoint() - line->getStartPoint()).Dot(previous->second) < 0.0) {
+            reversedGeoIds.insert(-static_cast<int>(index) - 1);
+        }
+    }
+
     ExternalGeo.setValues(std::move(geoms));
     rebuildVertexIndex();
+
+    reorientConstraintsOnReversedGeometry(reversedGeoIds);
 
     // clean up geometry reference
     if(refSet.size() != (size_t)ExternalGeometry.getSize()) {
