@@ -1,6 +1,7 @@
 #include "ImageMarshal.h"
 
 #include <cstdint>
+#include <string>
 
 #include <Base/BoundBoxPy.h>
 #include <Base/MatrixPy.h>
@@ -597,18 +598,64 @@ PyObject* handleType()
 /// Facade class for a wire facade key, HostHandle when unmapped.
 static PyObject* facadeClass(const char* key)
 {
+    // A list of handles is mostly one type: the last answer is kept (with
+    // a reference of its own), since the dictionary path makes two key
+    // strings a handle -- 0.44 us of a 7 us handle (docs/Sandbox.md 7.20
+    // C5, "Where a handle's 6 us goes").
+    static std::string lastKey;
+    static bool lastKeyed = false;
+    static PyObject* lastClass = nullptr;
+    if (lastClass && lastKeyed == (key != nullptr) && (!key || lastKey == key))
+        return lastClass;
     PyObject* ns = proxyNamespace();
     if (!ns)
         return nullptr;
+    PyObject* cls = nullptr;
     if (key) {
         PyObject* facades = PyDict_GetItemString(ns, "FACADES");
-        if (facades) {
-            PyObject* cls = PyDict_GetItemString(facades, key);  // borrowed
-            if (cls)
-                return cls;
-        }
+        if (facades)
+            cls = PyDict_GetItemString(facades, key);  // borrowed
     }
-    return PyDict_GetItemString(ns, "HostHandle");  // borrowed
+    if (!cls)
+        cls = PyDict_GetItemString(ns, "HostHandle");  // borrowed
+    if (cls) {
+        Py_INCREF(cls);
+        Py_XDECREF(lastClass);
+        lastClass = cls;
+        lastKeyed = key != nullptr;
+        lastKey = key ? key : "";
+    }
+    return cls;  // borrowed: the cache holds it
+}
+
+/// A str for `text`, reusing the one this cache made last: a list of
+/// handles repeats its type names and its document's name.  A new
+/// reference, nullptr with a Python error on failure.
+struct LastString
+{
+    std::string text;
+    PyObject* obj = nullptr;
+    PyObject* get(const std::string& s)
+    {
+        if (!obj || s != text) {
+            PyObject* made = PyUnicode_FromStringAndSize(s.data(), (Py_ssize_t)s.size());
+            if (!made)
+                return nullptr;
+            Py_XDECREF(obj);
+            obj = made;
+            text = s;
+        }
+        Py_INCREF(obj);
+        return obj;
+    }
+};
+
+/// An interned attribute name, made once.
+static PyObject* slotName(PyObject*& cached, const char* name)
+{
+    if (!cached)
+        cached = PyUnicode_InternFromString(name);
+    return cached;
 }
 
 static bool getDoubles(const json& arr, double* out, size_t n)
@@ -787,10 +834,11 @@ PyObject* decodeValue(const json& v)
             Py_XDECREF(composed);
             if (!inst)
                 return nullptr;
+            static LastString tyStr, fcStr, docStr;
             PyObject* pid = PyLong_FromUnsignedLongLong(id->get<uint64_t>());
-            PyObject* pty = PyUnicode_FromString(
-                ty->get_ref<const std::string&>().c_str());
-            PyObject* pfc = fcKey ? PyUnicode_FromString(fcKey) : (Py_INCREF(Py_None), Py_None);
+            PyObject* pty = tyStr.get(ty->get_ref<const std::string&>());
+            PyObject* pfc = fcKey ? fcStr.get(fc->get_ref<const std::string&>())
+                                  : (Py_INCREF(Py_None), Py_None);
             // the durable key of a document object ("k"): a tuple of
             // its names, None for a value object
             PyObject* pk = nullptr;
@@ -798,23 +846,38 @@ PyObject* decodeValue(const json& v)
             if (key != v.end() && key->is_array() && !key->empty()) {
                 pk = PyTuple_New((Py_ssize_t)key->size());
                 Py_ssize_t i = 0;
-                for (const auto& part : *key)
-                    if (pk)
-                        PyTuple_SET_ITEM(pk, i++, PyUnicode_FromString(
-                            part.is_string() ? part.get_ref<const std::string&>().c_str() : ""));
+                static const std::string empty;
+                for (const auto& part : *key) {
+                    if (!pk)
+                        break;
+                    const std::string& text =
+                        part.is_string() ? part.get_ref<const std::string&>() : empty;
+                    // the document's name repeats along a list; the object's does not
+                    PyTuple_SET_ITEM(pk, i, i == 0 ? docStr.get(text)
+                                                   : PyUnicode_FromStringAndSize(
+                                                         text.data(), (Py_ssize_t)text.size()));
+                    ++i;
+                }
             }
             else {
                 Py_INCREF(Py_None);
                 pk = Py_None;
             }
-            int rc = (pid && pty && pfc && pk) ? PyObject_SetAttrString(inst, "_id", pid)
-                                               : -1;
+            // Straight into HostHandle's slots: the class's Python-level
+            // __setattr__ (the write_prop hook) would run for each of the
+            // four and only end in object.__setattr__ -- 2 us of a 7 us
+            // handle (docs/Sandbox.md 7.20 C5).
+            static PyObject* nId, *nTy, *nFc, *nK;
+            int rc = (pid && pty && pfc && pk && slotName(nId, "_id") && slotName(nTy, "_ty")
+                      && slotName(nFc, "_fc") && slotName(nK, "_k"))
+                ? PyObject_GenericSetAttr(inst, nId, pid)
+                : -1;
             if (rc == 0)
-                rc = PyObject_SetAttrString(inst, "_ty", pty);
+                rc = PyObject_GenericSetAttr(inst, nTy, pty);
             if (rc == 0)
-                rc = PyObject_SetAttrString(inst, "_fc", pfc);
+                rc = PyObject_GenericSetAttr(inst, nFc, pfc);
             if (rc == 0)
-                rc = PyObject_SetAttrString(inst, "_k", pk);
+                rc = PyObject_GenericSetAttr(inst, nK, pk);
             Py_XDECREF(pid);
             Py_XDECREF(pty);
             Py_XDECREF(pfc);

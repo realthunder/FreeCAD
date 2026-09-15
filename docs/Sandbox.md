@@ -7814,7 +7814,28 @@ only end in `object.__setattr__`.  Setting the slot descriptors directly
 lookup makes a key string and two dict lookups per handle and can be
 cached per facade key.  The two JSON stages (host map 0.46, guest decode
 1.25) are the next tier -- nlohmann allocates a map and its keys per handle
-on both sides.  Not yet changed.
+on both sides.
+
+*The first tier, FIXED 2026-09-15* (ImageMarshal.cpp, guest only): the four
+slots are set with `PyObject_GenericSetAttr` on interned names, straight
+into `HostHandle`'s slot descriptors (every facade class declares
+`__slots__ = ()`, so nothing else answers them); the facade class of the
+last key is kept with a reference of its own; and the type name, facade key
+and document name reuse the last str made for the same text.  Re-benched
+(`DISABLED_BenchPrefetchInProcess`, prefetch off, mean per evaluation):
+
+    statement                                  before   after
+    -----------------------------------------  ------  ------
+    len(d.Objects), 1000 objects               6.09 ms 4.42 ms
+    [o.Name for o in d.Objects]                8.72 ms 7.38 ms
+    sum(o.Width for o in d.Objects[1:])        8.64 ms 6.66 ms
+    sum(e.Length for e in s.Edges), 1000 edges 9.70 ms 8.37 ms
+    d.Objects[5].Name                          6.85 ms 4.40 ms
+
+A handle is 4.4 us from 6.1.  The JSON stages are what is left of it.
+Suites over the change: ExpressionImage*/ExpressionRouting*/
+ExpressionSecurity* 121 OK, ctest 642/642, SandboxProgram 46 OK,
+FeaturePythonChain 44 OK, C2's browser leg 15 PASS.
 
 *Measured* with the prefetch (the same rig; with it off the figures are
 the table above's within noise):
