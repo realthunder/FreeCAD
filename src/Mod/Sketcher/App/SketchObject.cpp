@@ -380,7 +380,7 @@ const std::map<std::string,std::string> SketchObject::getInternalElementMap() co
     if (!internalElementMap.empty() || !MakeInternals.getValue())
         return internalElementMap;
 
-    auto internalShape = InternalShape.getShape();
+    const auto& internalShape = InternalShape.getShape();
     auto shape = Shape.getShape().located();
     if (!internalShape.isNull() && !shape.isNull()) {
         std::vector<std::string> names;

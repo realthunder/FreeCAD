@@ -554,7 +554,7 @@ void SketchObject::setConstraintExpression(int constNum, const std::string& newE
     if (info.expression) {
         try {
             std::shared_ptr<App::Expression> expr(App::Expression::parse(this, newExpression));
-            setExpression(path, expr);
+            setExpression(path, std::move(expr));
         }
         catch (const Base::Exception&) {
             Base::Console().Error("Failed to set constraint expression.");
@@ -1538,7 +1538,7 @@ const std::vector<std::map<int, Sketcher::PointPos>> SketchObject::getCoincidenc
                 std::map<int, Sketcher::PointPos> tmp;
                 tmp.insert(std::pair<int, Sketcher::PointPos>((*it)->First, (*it)->FirstPos));
                 tmp.insert(std::pair<int, Sketcher::PointPos>((*it)->Second, (*it)->SecondPos));
-                coincidenttree.push_back(tmp);
+                coincidenttree.push_back(std::move(tmp));
             }
             else if (firstpresentin != -1) {
                 // add to existing group
@@ -2322,7 +2322,7 @@ int SketchObject::renameConstraint(int GeoId, std::string name)
         Base::StateLocker lock(managedoperation, true);
 
         Constraint* copy = item->clone();
-        copy->Name = name;
+        copy->Name = std::move(name);
 
         Constraints.set1Value(GeoId, copy);
         delete copy;

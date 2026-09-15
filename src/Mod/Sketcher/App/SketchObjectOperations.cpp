@@ -229,7 +229,7 @@ void SketchObject::transferFilletConstraints(int geoId1, PointPos posId1, int ge
                 }
             }
         }
-        delConstraints(deleteme, false);
+        delConstraints(std::move(deleteme), false);
         return;
     }
 
