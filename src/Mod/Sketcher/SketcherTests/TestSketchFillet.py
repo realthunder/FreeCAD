@@ -83,8 +83,6 @@ class TestSketchFillet(unittest.TestCase):
         self.assertAlmostEqual(SketchFeature.Geometry[4].Radius, 0.25)
 
     # Fillets cannot be made even between unconnected lines
-    # Pending upstream 6d06b61c7e: fillet preserves the corner by splitting (behaviour change).
-    @unittest.expectedFailure
     def testUnconnected(self):
         SketchFeature = self.Doc.addObject("Sketcher::SketchObject", "Unconnected")
         # Inverted open V
@@ -101,24 +99,90 @@ class TestSketchFillet(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(SketchFeature.Geometry[2].length(), math.sqrt(2))
 
-        with self.assertRaises(ValueError):
-            SketchFeature.fillet(
-                0,
-                1,
-                App.Vector(0.5, 0.5, 0),
-                App.Vector(2.55, 0.5, 0),
-                0.25,
-                True,
-                True,
-            )
+        # Fork: unlike upstream, curves without a coincident point still fillet, and
+        # createCorner keeps their corner. Both lines stop short of the tangent points, so each is
+        # extended to its tangent point and a construction line runs from there to the corner.
+        SketchFeature.fillet(
+            0,
+            1,
+            App.Vector(0.5, 0.5, 0),
+            App.Vector(2.55, 0.5, 0),
+            0.25,
+            True,
+            True,
+        )
+        self.Doc.recompute()
 
-        # Make sure no fillet was created
-        self.assertEqual(len(SketchFeature.Geometry), 3)
+        # the fillet arc and two corner pieces
+        self.assertEqual(len(SketchFeature.Geometry), 6)
+        self.assertIsInstance(SketchFeature.Geometry[3], Part.ArcOfCircle)
+        self.assertFalse(SketchFeature.getConstruction(0))
+        self.assertFalse(SketchFeature.getConstruction(1))
 
-        # Original geometry should remain unchanged
-        self.assertAlmostEqual(SketchFeature.Geometry[0].length(), math.sqrt(2))
-        self.assertAlmostEqual(SketchFeature.Geometry[1].length(), math.sqrt(0.9**2 + 1))
+        # where the two lines would meet
+        corner = App.Vector(3.0 / 1.9, 3.0 / 1.9, 0)
+        pieces = [
+            geo
+            for index, geo in enumerate(SketchFeature.Geometry)
+            if SketchFeature.getConstruction(index) and isinstance(geo, Part.LineSegment)
+        ]
+        self.assertEqual(len(pieces), 2)
+        for piece in pieces:
+            self.assertLess((piece.EndPoint - corner).Length, 1e-6)
+
+        # the Equal constraint on the extended line was dropped, so the third line keeps its length
         self.assertAlmostEqual(SketchFeature.Geometry[2].length(), math.sqrt(2))
+
+    def testCreateCornerKeepsIds(self):
+        """Fork: with createCorner the filleted curves keep their index and their geometry
+        id, and the corner pieces come after the arc. Upstream left the corner pieces at the
+        curves' indices, and for a corner at a curve's start also with its geometry id."""
+        SketchFeature = self.Doc.addObject("Sketcher::SketchObject", "CornerIds")
+        SketchFeature.addGeometry(Part.LineSegment(App.Vector(0, 0, 0), App.Vector(1, 1, 0)))
+        SketchFeature.addGeometry(Part.LineSegment(App.Vector(1, 1, 0), App.Vector(2, 0, 0)))
+        SketchFeature.addConstraint(Sketcher.Constraint("Coincident", 0, 2, 1, 1))
+        self.Doc.recompute()
+        ids = [SketchFeature.getGeometryId(0), SketchFeature.getGeometryId(1)]
+
+        # the corner is at the end of line 0 and at the start of line 1
+        SketchFeature.fillet(0, 2, 0.25, True, True)
+        self.Doc.recompute()
+
+        self.assertEqual(len(SketchFeature.Geometry), 5)
+        for index in (0, 1):
+            self.assertFalse(SketchFeature.getConstruction(index))
+            self.assertEqual(SketchFeature.getGeometryId(index), ids[index])
+        self.assertIsInstance(SketchFeature.Geometry[2], Part.ArcOfCircle)
+        for index in (3, 4):
+            self.assertTrue(SketchFeature.getConstruction(index))
+            self.assertNotIn(SketchFeature.getGeometryId(index), ids)
+        # the kept pieces still start and end where the curves did
+        self.assertLess((SketchFeature.Geometry[0].StartPoint - App.Vector(0, 0, 0)).Length, 1e-7)
+        self.assertLess((SketchFeature.Geometry[1].EndPoint - App.Vector(2, 0, 0)).Length, 1e-7)
+
+    def testChamferCornerStaysPut(self):
+        """Fork: a chamfer with createCorner does not move when the sketch is solved. Upstream
+        gave the chamfer line the arc's end positions, which flipped it."""
+        SketchFeature = self.Doc.addObject("Sketcher::SketchObject", "ChamferCorner")
+        SketchFeature.addGeometry(Part.LineSegment(App.Vector(0, 0, 0), App.Vector(1, 1, 0)))
+        SketchFeature.addGeometry(Part.LineSegment(App.Vector(1, 1, 0), App.Vector(2, 0, 0)))
+        SketchFeature.addConstraint(Sketcher.Constraint("Coincident", 0, 2, 1, 1))
+        self.Doc.recompute()
+        SketchFeature.fillet(0, 2, 0.25, True, True, True)
+        before = [
+            (g.StartPoint, g.EndPoint)
+            for g in SketchFeature.Geometry
+            if isinstance(g, Part.LineSegment)
+        ]
+        self.assertEqual(SketchFeature.solve(), 0)
+        after = [
+            (g.StartPoint, g.EndPoint)
+            for g in SketchFeature.Geometry
+            if isinstance(g, Part.LineSegment)
+        ]
+        for (s0, e0), (s1, e1) in zip(before, after):
+            self.assertLess((s0 - s1).Length, 1e-7)
+            self.assertLess((e0 - e1).Length, 1e-7)
 
     # Curved lines can also be filleted
     def testCurve(self):
@@ -158,8 +222,6 @@ class TestSketchFillet(unittest.TestCase):
     # does the right thing with pre-existing constraints when a fillet is created.
 
     # Make sure the original corner is preserved when filleting
-    # Pending upstream 6d06b61c7e: fillet preserves the corner by splitting (behaviour change).
-    @unittest.expectedFailure
     def testOriginalCorner(self):
         SketchFeature = self.Doc.addObject("Sketcher::SketchObject", "OriginalCorner")
         VShape(SketchFeature)
@@ -266,8 +328,6 @@ class TestSketchFillet(unittest.TestCase):
         )
 
     # Make sure collinearity doesn't get dropped
-    # Pending upstream 6d06b61c7e: fillet preserves the corner by splitting (behaviour change).
-    @unittest.expectedFailure
     def testTangent(self):
         SketchFeature = self.Doc.addObject("Sketcher::SketchObject", "Tangent")
 

@@ -6592,7 +6592,8 @@ GeomArcOfCircle* createFilletGeometry(
     double radius,
     int& pos1,
     int& pos2,
-    bool& reverse
+    bool& reverse,
+    Base::Vector3d& cornerPoint
 )
 {
     if (geo1->is<GeomLineSegment>() && geo2->is<GeomLineSegment>()) {
@@ -6609,6 +6610,7 @@ GeomArcOfCircle* createFilletGeometry(
         // use int.
         Base::Vector3d intersection, dist1, dist2;
         find2DLinesIntersection(line1, line2, intersection);
+        cornerPoint = intersection;
 
         Base::Vector3d p1 = arc->getStartPoint(true);
 
@@ -6794,6 +6796,9 @@ GeomArcOfCircle* createFilletGeometry(
                 return nullptr;
             }
         }
+
+        // after the basis curve intersection, which upstream's assignment comes before
+        cornerPoint = interpoints.first;
 
         // Now that we know where the curves intersect, get the parameters in the curves of those
         // points
