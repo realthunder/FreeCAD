@@ -13,7 +13,52 @@
 // CHROME the browser.  CHROME_LIBS is prepended to the browser's
 // LD_LIBRARY_PATH: a Chrome for Testing on a box without the system
 // libasound finds one there (docs/Testing.md).
+//
+// Memory (7.20 C5): the page may call `await window.fcxMark(label)`, which
+// answers the browser's processes as /proc sees them at that moment -- each
+// one's type (browser, renderer, gpu-process, ...), RSS and PSS in MB.  The
+// browser runs with --expose-gc so a page can collect before it marks.
+const fs = require('fs');
 const puppeteer = require(process.env.PUPPETEER_PATH || 'puppeteer-core');
+
+/// The browser process and every descendant, with their memory.  Linux only;
+/// elsewhere an empty list.
+function processMemory(root) {
+  const parent = new Map();
+  let pids = [];
+  try {
+    pids = fs.readdirSync('/proc').filter((d) => /^\d+$/.test(d));
+  } catch {
+    return [];
+  }
+  for (const pid of pids) {
+    try {
+      const stat = fs.readFileSync('/proc/' + pid + '/stat', 'utf8');
+      parent.set(+pid, +stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
+    } catch {}
+  }
+  const tree = new Set([root]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [pid, ppid] of parent)
+      if (!tree.has(pid) && tree.has(ppid)) {
+        tree.add(pid);
+        grew = true;
+      }
+  }
+  const out = [];
+  for (const pid of tree) {
+    try {
+      // A child rewrites its argv as one space-separated string.
+      const cmd = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8');
+      const type = ((cmd.match(/--type=([\w-]+)/) || [])[1]) || 'browser';
+      const roll = fs.readFileSync('/proc/' + pid + '/smaps_rollup', 'utf8');
+      const kb = (key) => +((roll.match(new RegExp('^' + key + ':\\s+(\\d+)', 'm')) || [])[1] || 0);
+      out.push({ pid, type, rssMB: kb('Rss') / 1024, pssMB: kb('Pss') / 1024 });
+    } catch {}
+  }
+  return out;
+}
 
 (async () => {
   const [url, variable, timeoutArg, inject] = process.argv.slice(2);
@@ -31,13 +76,20 @@ const puppeteer = require(process.env.PUPPETEER_PATH || 'puppeteer-core');
     headless: true,
     // WebGL through swiftshader, as edit-drive.js has it: the viewer page
     // needs a context, the sandbox pages do not mind one.
-    args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+    args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+           '--js-flags=--expose-gc'],
     env,
   });
   let report = null;
   try {
     console.log('browser ' + await browser.version());
     const page = await browser.newPage();
+    const root = browser.process() ? browser.process().pid : 0;
+    await page.exposeFunction('fcxMark', (label) => {
+      const procs = root ? processMemory(root) : [];
+      console.log('mark ' + label + ' ' + JSON.stringify(procs));
+      return procs;
+    });
     page.on('console', (m) => console.log('[page] ' + m.text()));
     page.on('pageerror', (e) => console.log('[pageerror] ' + e.message));
     page.on('requestfailed', (r) =>
