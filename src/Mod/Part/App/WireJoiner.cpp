@@ -43,9 +43,14 @@
 # include <BRepTools.hxx>
 # include <BRepTools_WireExplorer.hxx>
 # include <gp_Pln.hxx>
+# include <GCPnts_AbscissaPoint.hxx>
+# include <Geom2dAdaptor_Curve.hxx>
+# include <Geom2dInt_GInter.hxx>
 # include <GeomAdaptor_Curve.hxx>
 # include <GeomLProp_CLProps.hxx>
+# include <IntRes2d_Domain.hxx>
 # include <GProp_GProps.hxx>
+# include <ShapeAnalysis_Edge.hxx>
 # include <ShapeAnalysis_Wire.hxx>
 # include <ShapeFix_ShapeTolerance.hxx>
 # include <ShapeExtend_WireData.hxx>
@@ -839,9 +844,6 @@ public:
         // Early return if checking for self intersection (only for non linear spline curves)
         if (info.type <= GeomAbs_Parabola || info.isLinear)
             return;
-        IntRes2d_SequenceOfIntersectionPoint points2d;
-        TColgp_SequenceOfPnt points3d;
-        TColStd_SequenceOfReal errors;
         TopoDS_Wire wire;
         BRepBuilderAPI_MakeWire mkWire(info.edge);
         if (!mkWire.IsDone())
@@ -858,11 +860,53 @@ public:
             return;
         TopoDS_Face face = mkFace.Face();
         ShapeAnalysis_Wire analysis(wire, face, myTol);
-        analysis.CheckSelfIntersectingEdge(1, points2d, points3d);
-        assertCheck(points2d.Length() == points3d.Length());
-        for (int i=1; i<=points2d.Length(); ++i) {
-            params.emplace(points2d(i).ParamOnFirst(), points3d(i), info.edge);
-            params.emplace(points2d(i).ParamOnSecond(), points3d(i), info.edge);
+        // Not ShapeAnalysis_Wire::CheckSelfIntersectingEdge(), which ignores
+        // any crossing at the edge's own vertices, and so misses a curve that
+        // passes through its own end point, e.g. a figure-8 B-spline starting
+        // at its crossing.
+        ShapeAnalysis_Edge sae;
+        Handle(Geom2d_Curve) pcurve;
+        Standard_Real a, b;
+        if (!sae.PCurve(analysis.WireData()->Edge(1), face, pcurve, a, b, false)
+                || b - a <= Precision::PConfusion())
+            return;
+        const double tolint = 1.0e-10;
+        IntRes2d_Domain domain(pcurve->Value(a), a, tolint, pcurve->Value(b), b, tolint);
+        Geom2dAdaptor_Curve adaptor(pcurve);
+        Geom2dInt_GInter inter(adaptor, domain, tolint, tolint);
+        if (!inter.IsDone())
+            return;
+        for (int i=1; i<=inter.NbPoints(); ++i) {
+            const auto &ip = inter.Point(i);
+            for (double param : {ip.ParamOnFirst(), ip.ParamOnSecond()}) {
+                gp_Pnt pt = info.curve->Value(param);
+                if (!isEndParam(info, param, pt, true) && !isEndParam(info, param, pt, false))
+                    params.emplace(param, pt, info.edge);
+            }
+        }
+    }
+
+    // Whether the point 'pt' at 'param' is the edge's first (or last) point.
+    // Being close to the end point is not enough, because a curve may pass
+    // through its own end point in the middle. The curve between the two must
+    // be as short as well. Twice the tolerance allows for the curve bending
+    // between two points closer than the tolerance, while any loop back to the
+    // end point is far longer.
+    bool isEndParam(const EdgeInfo &info, double param, const gp_Pnt &pt, bool first) const
+    {
+        double endParam = first ? info.firstParam : info.lastParam;
+        if (pt.SquareDistance(info.curve->Value(endParam)) >= myTol2)
+            return false;
+        double p1 = std::min(param, endParam);
+        double p2 = std::max(param, endParam);
+        if (p2 - p1 <= Precision::PConfusion())
+            return true;
+        try {
+            GeomAdaptor_Curve adaptor(info.curve);
+            return GCPnts_AbscissaPoint::Length(adaptor, p1, p2) < 2.0 * myTol;
+        }
+        catch (Standard_Failure &) {
+            return true;
         }
     }
 
@@ -1033,12 +1077,12 @@ public:
             }
 
             auto itParam = params.begin();
-            if (itParam->point.SquareDistance(info.p1) < myTol2)
+            if (isEndParam(info, itParam->param, itParam->point, true))
                 params.erase(itParam);
             params.emplace(info.firstParam, info.p1, TopoDS_Shape());
             itParam = params.end();
             --itParam;
-            if (itParam->point.SquareDistance(info.p2) < myTol2)
+            if (isEndParam(info, itParam->param, itParam->point, false))
                 params.erase(itParam);
             params.emplace(info.lastParam, info.p2, TopoDS_Shape());
 
