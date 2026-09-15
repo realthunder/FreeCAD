@@ -448,7 +448,8 @@ void SketchAnalysis::analyseMissingPointOnPointCoincident(double angleprecision)
 
 void SketchAnalysis::makeMissingPointOnPointCoincident(bool onebyone)
 {
-    int status, dofs;
+    SketchSolveStatus status;
+    int dofs;
     std::vector<Sketcher::Constraint*> constr;
 
     for (std::vector<Sketcher::ConstraintIds>::iterator it = vertexConstraints.begin();
@@ -468,13 +469,13 @@ void SketchAnalysis::makeMissingPointOnPointCoincident(bool onebyone)
 
             solvesketch(status, dofs, true);
 
-            if (status == -2) {  // redundant constraints
+            if (status == SketchSolveStatus::RedundantConstraints) {  // redundant constraints
                 sketch->autoRemoveRedundants(false);
 
                 solvesketch(status, dofs, false);
             }
 
-            if (status) {
+            if (status != SketchSolveStatus::Success) {
                 THROWMT(Base::RuntimeError,
                         QT_TRANSLATE_NOOP("Exceptions",
                                           "Autoconstrain error: Unsolvable sketch while applying "
@@ -536,7 +537,8 @@ int SketchAnalysis::detectMissingVerticalHorizontalConstraints(double anglepreci
 
 void SketchAnalysis::makeMissingVerticalHorizontal(bool onebyone)
 {
-    int status, dofs;
+    SketchSolveStatus status;
+    int dofs;
     std::vector<Sketcher::Constraint*> constr;
 
     for (std::vector<Sketcher::ConstraintIds>::iterator it = verthorizConstraints.begin();
@@ -556,13 +558,13 @@ void SketchAnalysis::makeMissingVerticalHorizontal(bool onebyone)
 
             solvesketch(status, dofs, true);
 
-            if (status == -2) {  // redundant constraints
+            if (status == SketchSolveStatus::RedundantConstraints) {  // redundant constraints
                 sketch->autoRemoveRedundants(false);
 
                 solvesketch(status, dofs, false);
             }
 
-            if (status) {
+            if (status != SketchSolveStatus::Success) {
                 THROWMT(Base::RuntimeError,
                         QT_TRANSLATE_NOOP("Exceptions",
                                           "Autoconstrain error: Unsolvable sketch while applying "
@@ -740,7 +742,8 @@ int SketchAnalysis::detectMissingEqualityConstraints(double precision)
 
 void SketchAnalysis::makeMissingEquality(bool onebyone)
 {
-    int status, dofs;
+    SketchSolveStatus status;
+    int dofs;
     std::vector<Sketcher::Constraint*> constr;
 
     std::vector<Sketcher::ConstraintIds> equalities(lineequalityConstraints);
@@ -765,13 +768,13 @@ void SketchAnalysis::makeMissingEquality(bool onebyone)
 
             solvesketch(status, dofs, true);
 
-            if (status == -2) {  // redundant constraints
+            if (status == SketchSolveStatus::RedundantConstraints) {  // redundant constraints
                 sketch->autoRemoveRedundants(false);
 
                 solvesketch(status, dofs, false);
             }
 
-            if (status) {
+            if (status != SketchSolveStatus::Success) {
                 THROWMT(Base::RuntimeError,
                         QT_TRANSLATE_NOOP("Exceptions",
                                           "Autoconstrain error: Unsolvable sketch while applying "
@@ -796,7 +799,7 @@ void SketchAnalysis::makeMissingEquality(bool onebyone)
     }
 }
 
-void SketchAnalysis::solvesketch(int& status, int& dofs, bool updategeo)
+void SketchAnalysis::solvesketch(SketchSolveStatus& status, int& dofs, bool updategeo)
 {
     status = sketch->solve(updategeo);
 
@@ -808,14 +811,14 @@ void SketchAnalysis::solvesketch(int& status, int& dofs, bool updategeo)
     }
 
     if (sketch->getLastHasRedundancies()) {  // redundant constraints
-        status = -2;
+        status = SketchSolveStatus::RedundantConstraints;
     }
 
     if (dofs < 0) {  // over-constrained sketch
-        status = -4;
+        status = SketchSolveStatus::Overconstrained;
     }
     else if (sketch->getLastHasConflicts()) {  // conflicting constraints
-        status = -3;
+        status = SketchSolveStatus::ConflictingConstraints;
     }
 }
 
@@ -830,11 +833,12 @@ int SketchAnalysis::autoconstraint(double precision,
 
     doc->commitTransaction();
 
-    int status, dofs;
+    SketchSolveStatus status;
+    int dofs;
 
     solvesketch(status, dofs, true);
 
-    if (status) {  // it should not be possible at this moment as we start from a clean situation
+    if (status != SketchSolveStatus::Success) {  // it should not be possible at this moment as we start from a clean situation
         THROWMT(Base::RuntimeError,
                 QT_TRANSLATE_NOOP("Exceptions",
                                   "Autoconstrain error: Unsolvable sketch without constraints."));
@@ -875,12 +879,12 @@ int SketchAnalysis::autoconstraint(double precision,
 
         solvesketch(status, dofs, true);
 
-        if (status == -2) {  // redundants
+        if (status == SketchSolveStatus::RedundantConstraints) {  // redundants
             sketch->autoRemoveRedundants(false);
             solvesketch(status, dofs, false);
         }
 
-        if (status) {
+        if (status != SketchSolveStatus::Success) {
             THROWMT(Base::RuntimeError,
                     QT_TRANSLATE_NOOP("Exceptions",
                                       "Autoconstrain error: Unsolvable sketch after applying "
@@ -900,12 +904,12 @@ int SketchAnalysis::autoconstraint(double precision,
 
         solvesketch(status, dofs, true);
 
-        if (status == -2) {  // redundants
+        if (status == SketchSolveStatus::RedundantConstraints) {  // redundants
             sketch->autoRemoveRedundants(false);
             solvesketch(status, dofs, false);
         }
 
-        if (status) {
+        if (status != SketchSolveStatus::Success) {
             THROWMT(Base::RuntimeError,
                     QT_TRANSLATE_NOOP("Exceptions",
                                       "Autoconstrain error: Unsolvable sketch after applying "
@@ -931,12 +935,12 @@ int SketchAnalysis::autoconstraint(double precision,
 
         solvesketch(status, dofs, true);
 
-        if (status == -2) {  // redundants
+        if (status == SketchSolveStatus::RedundantConstraints) {  // redundants
             sketch->autoRemoveRedundants(false);
             solvesketch(status, dofs, false);
         }
 
-        if (status) {
+        if (status != SketchSolveStatus::Success) {
             THROWMT(
                 Base::RuntimeError,
                 QT_TRANSLATE_NOOP(
