@@ -2431,6 +2431,14 @@ void MainWindow::updateActions(bool delay)
 
 void MainWindow::_updateActions()
 {
+    // Not while a document restores. testActive() asks every command, and on
+    // a 17800-object document one pass took ~765 ms; each new object re-arms
+    // this timer, so a load's progress pumps ran it about once a second --
+    // 14 s of MiSTer's 18 s object creation pass. Nothing a command could do
+    // is allowed mid-restore anyway (Document::checkUserEdit). The timer is
+    // left running, so the pass happens on the first tick after the restore.
+    if (App::GetApplication().isRestoring())
+        return;
     if (isVisible() && d->actionUpdateDelay <= 0) {
         FC_LOG("update actions");
         d->activityTimer->stop();
