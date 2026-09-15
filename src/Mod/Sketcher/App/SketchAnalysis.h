@@ -24,6 +24,7 @@
 #ifndef SKETCHER_SKETCHANALYSIS_H
 #define SKETCHER_SKETCHANALYSIS_H
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -38,6 +39,19 @@ namespace Sketcher
 {
 
 class SketchObject;
+
+/// Result of solve() and the SketchObject operations that solve. The values are the integers these
+/// calls used to return, and Python still receives them as numbers.
+enum class SketchSolveStatus : int8_t
+{
+    Success = 0,
+    SolverError = -1,
+    RedundantConstraints = -2,
+    ConflictingConstraints = -3,
+    Overconstrained = -4,
+    MalformedConstraints = -5,
+    InvalidGeometry = -6,
+};
 
 class SketcherExport SketchAnalysis
 {
@@ -164,7 +178,7 @@ public:
     /// solves the sketch and retrieves the error status, and the degrees of freedom.
     /// It enables to solve updating the geometry (so moving the geometry to match the constraints)
     /// or preserving the geometry.
-    void solvesketch(int& status, int& dofs, bool updategeo);
+    void solvesketch(SketchSolveStatus& status, int& dofs, bool updategeo);
 
     // third type of routines
     std::vector<Base::Vector3d> getOpenVertices() const;

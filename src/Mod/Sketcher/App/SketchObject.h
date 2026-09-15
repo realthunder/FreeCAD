@@ -267,16 +267,13 @@ public:
        sketch and updates all dependent features When a solve only is necessary (e.g. DoF changed),
        solve() solves the sketch and updates the geometry (if updateGeoAfterSolving==true), but does
        not trigger any recompute.
-       @return 0 if no error, if error, the following codes in this order of priority:
-       -4 if overconstrained,
-       -3 if conflicting constraints,
-       -5 if malformed constraints,
-       -1 if solver error,
-       -2 if redundant constraints
+       @return SketchSolveStatus::Success if no error, or else any of these in this order of
+       priority: Overconstrained, ConflictingConstraints, MalformedConstraints, SolverError,
+       RedundantConstraints.
     */
-    int solve(bool updateGeoAfterSolving = true);
+    SketchSolveStatus solve(bool updateGeoAfterSolving = true);
     /// set the datum of a Distance or Angle constraint and solve
-    int setDatum(int ConstrId, double Datum);
+    SketchSolveStatus setDatum(int ConstrId, double Datum);
     /// set the driving status of this constraint and solve
     int setDriving(int ConstrId, bool isdriving);
     /// get the driving status of this constraint
@@ -321,11 +318,11 @@ public:
     /// toggle the driving status of this constraint
     int toggleVirtualSpace(int ConstrId);
     /// move this point to a new location and solve
-    int movePoint(int GeoId,
-                  PointPos PosId,
-                  const Base::Vector3d& toPoint,
-                  bool relative = false,
-                  bool updateGeoBeforeMoving = false);
+    SketchSolveStatus movePoint(int GeoId,
+                                PointPos PosId,
+                                const Base::Vector3d& toPoint,
+                                bool relative = false,
+                                bool updateGeoBeforeMoving = false);
     /// retrieves the coordinates of a point
     static Base::Vector3d getPoint(const Part::Geometry* geo, PointPos PosId);
     Base::Vector3d getPoint(int GeoId, PointPos PosId) const;
@@ -371,9 +368,9 @@ public:
                bool chamfer = false);
 
     /// trim a curve
-    int trim(int geoId, const Base::Vector3d& point);
+    SketchSolveStatus trim(int geoId, const Base::Vector3d& point);
     /// extend a curve
-    int extend(int geoId, double increment, PointPos endPoint);
+    SketchSolveStatus extend(int geoId, double increment, PointPos endPoint);
     /// split a curve
     int split(int geoId, const Base::Vector3d& point);
     /*!
@@ -575,7 +572,7 @@ public:
         return lastHasMalformedConstraints;
     }
     /// gets solver status of last solver execution
-    inline int getLastSolverStatus() const
+    inline GCS::SolveStatus getLastSolverStatus() const
     {
         return lastSolverStatus;
     }
@@ -632,7 +629,7 @@ public: /* Solver exposed interface */
      * state as a reference (enables dragging). NOTE: A temporary move operation must always be
      * preceded by a initTemporaryMove() operation.
      */
-    inline int
+    inline GCS::SolveStatus
     moveTemporaryPoint(int geoId, PointPos pos, Base::Vector3d toPoint, bool relative = false);
     /// forwards a request to update an extension of a geometry of the solver to the solver.
     inline void updateSolverExtension(int geoId, std::unique_ptr<Part::GeometryExtension>&& ext)
@@ -945,7 +942,7 @@ private:
     bool lastHasRedundancies;
     bool lastHasPartialRedundancies;
     bool lastHasMalformedConstraints;
-    int lastSolverStatus;
+    GCS::SolveStatus lastSolverStatus;
     float lastSolveTime;
 
     std::vector<int> lastConflicting;
@@ -1033,12 +1030,12 @@ inline int SketchObject::initTemporaryBSplinePieceMove(int geoId,
     return solvedSketch.initBSplinePieceMove(geoId, pos, firstPoint);
 }
 
-inline int SketchObject::moveTemporaryPoint(int geoId,
-                                            PointPos pos,
-                                            Base::Vector3d toPoint,
-                                            bool relative /*=false*/)
+inline GCS::SolveStatus SketchObject::moveTemporaryPoint(int geoId,
+                                                         PointPos pos,
+                                                         Base::Vector3d toPoint,
+                                                         bool relative /*=false*/)
 {
-    return static_cast<int>(solvedSketch.moveGeometry(geoId, pos, toPoint, relative));
+    return solvedSketch.moveGeometry(geoId, pos, toPoint, relative);
 }
 
 using SketchObjectPython = App::FeaturePythonT<SketchObject>;

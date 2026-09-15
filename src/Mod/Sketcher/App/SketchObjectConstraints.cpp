@@ -153,7 +153,7 @@ void SketchObject::retrieveSolverDiagnostics()
     lastMalformedConstraints = solvedSketch.getMalformedConstraints();
 }
 
-int SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
+SketchSolveStatus SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
@@ -186,31 +186,31 @@ int SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
     lastSolveTime = 0.0;
 
     // Failure is default for notifying the user unless otherwise proven
-    lastSolverStatus = static_cast<int>(GCS::SolveStatus::Failed);
+    lastSolverStatus = GCS::SolveStatus::Failed;
 
-    int err = 0;
+    auto status = SketchSolveStatus::Success;
 
     // redundancy is a lower priority problem than conflict/over-constraint/solver error
     // we set it here because we are indeed going to solve, as we can. However, we still want to
     // provide the right error code.
     if (lastHasRedundancies) {// redundant constraints
-        err = -2;
+        status = SketchSolveStatus::RedundantConstraints;
     }
 
     if (lastDoF < 0) {// over-constrained sketch
-        err = -4;
+        status = SketchSolveStatus::Overconstrained;
     }
     else if (lastHasConflict) {// conflicting constraints
         // The situation is exactly the same as in the over-constrained situation.
-        err = -3;
+        status = SketchSolveStatus::ConflictingConstraints;
     }
     else if (lastHasMalformedConstraints) {
-        err = -5;
+        status = SketchSolveStatus::MalformedConstraints;
     }
     else {
-        lastSolverStatus = static_cast<int>(solvedSketch.solve());
-        if (lastSolverStatus != 0) {// solving
-            err = -1;
+        lastSolverStatus = solvedSketch.solve();
+        if (lastSolverStatus != GCS::SolveStatus::Success) {// solving
+            status = SketchSolveStatus::SolverError;
         }
     }
 
@@ -232,11 +232,11 @@ int SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
     // In uncommon situations, the analysis of QR decomposition leads to full rank, but the result
     // does not converge. We avoid marking a sketch as fully constrained when no convergence is
     // achieved.
-    if (err == 0) {
+    if (status == SketchSolveStatus::Success) {
         FullyConstrained.setValue(lastDoF == 0);
     }
 
-    if (err == 0 && updateGeoAfterSolving) {
+    if (status == SketchSolveStatus::Success && updateGeoAfterSolving) {
         // set the newly solved geometry
         std::vector<Part::Geometry*> geomlist = solvedSketch.extractGeometry();
         Part::PropertyGeometryList tmp;
@@ -245,7 +245,7 @@ int SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
         if (!Geometry.isSame(tmp))
             Geometry.moveValues(std::move(tmp));
     }
-    else if (err < 0) {
+    else if (status != SketchSolveStatus::Success) {
         // if solver failed, invalid constraints were likely added before solving
         // (see solve in addConstraint), so solver information is definitely invalid.
         //
@@ -255,30 +255,31 @@ int SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
 
     signalSolverUpdate();
 
-    return err;
+    return status;
 }
 
-int SketchObject::setDatum(int ConstrId, double Datum)
+SketchSolveStatus SketchObject::setDatum(int ConstrId, double Datum)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
     // set the changed value for the constraint
     if (this->Constraints.hasInvalidGeometry())
-        return -6;
+        return SketchSolveStatus::InvalidGeometry;
     const std::vector<Constraint*>& vals = this->Constraints.getValues();
     if (ConstrId < 0 || ConstrId >= int(vals.size()))
-        return -1;
+        return SketchSolveStatus::SolverError;
     ConstraintType type = vals[ConstrId]->Type;
     // for tangent, value==0 is autodecide, value==Pi/2 is external and value==-Pi/2 is internal
     if (!vals[ConstrId]->isDimensional() && type != Tangent && type != Perpendicular)
-        return -1;
+        return SketchSolveStatus::SolverError;
 
     if ((type == Radius || type == Diameter || type == Weight) && Datum <= 0)
-        return (Datum == 0) ? -5 : -4;
+        return (Datum == 0) ? SketchSolveStatus::MalformedConstraints
+                            : SketchSolveStatus::Overconstrained;
 
     if (type == Distance && Datum == 0)
-            return -5;
+            return SketchSolveStatus::MalformedConstraints;
 
     // copy the list
     std::vector<Constraint*> newVals(vals);
@@ -288,12 +289,12 @@ int SketchObject::setDatum(int ConstrId, double Datum)
 
     this->Constraints.setValues(std::move(newVals));
 
-    int err = solve();
+    const auto status = solve();
 
-    if (err)
+    if (status != SketchSolveStatus::Success)
         this->Constraints.getValues()[ConstrId]->setValue(oldDatum);// newVals is a shell now
 
-    return err;
+    return status;
 }
 
 int SketchObject::setDriving(int ConstrId, bool isdriving)

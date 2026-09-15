@@ -1679,7 +1679,7 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
                 getSketchObject()->getGeoVertexIndex(edit->DragPoint, GeoId, PosId);
                 Base::Vector3d vec(x,y,0);
                 if (GeoId != Sketcher::GeoEnum::GeoUndef && PosId != Sketcher::PointPos::none) {
-                    if (getSketchObject()->moveTemporaryPoint(GeoId, PosId, vec, false) == 0) {
+                    if (getSketchObject()->moveTemporaryPoint(GeoId, PosId, vec, false) == GCS::SolveStatus::Success) {
                         setPositionText(Base::Vector2d(x,y));
                         draw(true,false);
                     }
@@ -1720,7 +1720,7 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
                     vec = center + dir / scalefactor;
                 }
 
-                if (getSketchObject()->moveTemporaryPoint(edit->DragCurve, Sketcher::PointPos::none, vec, relative) == 0) {
+                if (getSketchObject()->moveTemporaryPoint(edit->DragCurve, Sketcher::PointPos::none, vec, relative) == GCS::SolveStatus::Success) {
                     setPositionText(Base::Vector2d(x,y));
                     draw(true,false);
                 }
@@ -7659,7 +7659,7 @@ void ViewProviderSketch::UpdateSolverInformation()
                     QString::fromUtf8("(%1)").arg(
                         intListHelper(getSketchObject()->getLastPartiallyRedundant())));
     }
-    else if (getSketchObject()->getLastSolverStatus() != 0) {
+    else if (getSketchObject()->getLastSolverStatus() != GCS::SolveStatus::Success) {
         signalSetUp(QString::fromUtf8("solver_failed"),
                     tr("Solver failed to converge"),
                     QString::fromUtf8(""),

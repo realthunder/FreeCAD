@@ -130,8 +130,8 @@ FC_LOG_LEVEL_INIT("Sketch", true, true)
 
 // clang-format off
 
-int SketchObject::movePoint(int GeoId, PointPos PosId, const Base::Vector3d& toPoint, bool relative,
-                            bool updateGeoBeforeMoving)
+SketchSolveStatus SketchObject::movePoint(int GeoId, PointPos PosId, const Base::Vector3d& toPoint,
+                                          bool relative, bool updateGeoBeforeMoving)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
@@ -154,17 +154,17 @@ int SketchObject::movePoint(int GeoId, PointPos PosId, const Base::Vector3d& toP
     }
 
     if (lastDoF < 0)// over-constrained sketch
-        return -1;
+        return SketchSolveStatus::SolverError;
     if (lastHasConflict)// conflicting constraints
-        return -1;
+        return SketchSolveStatus::SolverError;
 
     // move the point and solve
-    lastSolverStatus = static_cast<int>(solvedSketch.moveGeometry(GeoId, PosId, toPoint, relative));
+    lastSolverStatus = solvedSketch.moveGeometry(GeoId, PosId, toPoint, relative);
 
     // moving the point can not result in a conflict that we did not have
     // or a redundancy that we did not have before, or a change of DoF
 
-    if (lastSolverStatus == 0) {
+    if (lastSolverStatus == GCS::SolveStatus::Success) {
         std::vector<Part::Geometry*> geomlist = solvedSketch.extractGeometry();
         Geometry.setValues(geomlist);
         // Constraints.acceptGeometry(getCompleteGeometry());
@@ -177,7 +177,8 @@ int SketchObject::movePoint(int GeoId, PointPos PosId, const Base::Vector3d& toP
 
     solvedSketch.resetInitMove();// reset solver point moving mechanism
 
-    return lastSolverStatus;
+    return lastSolverStatus == GCS::SolveStatus::Success ? SketchSolveStatus::Success
+                                                         : SketchSolveStatus::SolverError;
 }
 
 int SketchObject::delGeometries(const std::vector<int>& GeoIds)
@@ -1059,14 +1060,14 @@ int SketchObject::fillet(int GeoId1, int GeoId2, const Base::Vector3d& refPnt1,
     return 0;
 }
 
-int SketchObject::extend(int GeoId, double increment, PointPos endpoint)
+SketchSolveStatus SketchObject::extend(int GeoId, double increment, PointPos endpoint)
 {
     if (GeoId < 0 || GeoId > getHighestCurveIndex())
-        return -1;
+        return SketchSolveStatus::SolverError;
 
     const std::vector<Part::Geometry*>& geomList = getInternalGeometry();
     Part::Geometry* geom = geomList[GeoId];
-    int retcode = -1;
+    auto status = SketchSolveStatus::SolverError;
     if (geom->is<Part::GeomLineSegment>()) {
         Part::GeomLineSegment* seg = static_cast<Part::GeomLineSegment*>(geom);
         Base::Vector3d startVec = seg->getStartPoint();
@@ -1077,7 +1078,7 @@ int SketchObject::extend(int GeoId, double increment, PointPos endpoint)
             newPoint.Normalize();
             newPoint.Scale(scaleFactor, scaleFactor, scaleFactor);
             newPoint = newPoint + endVec;
-            retcode = movePoint(GeoId, Sketcher::PointPos::start, newPoint, false, true);
+            status = movePoint(GeoId, Sketcher::PointPos::start, newPoint, false, true);
         }
         else if (endpoint == PointPos::end) {
             Base::Vector3d newPoint = endVec - startVec;
@@ -1085,7 +1086,7 @@ int SketchObject::extend(int GeoId, double increment, PointPos endpoint)
             newPoint.Normalize();
             newPoint.Scale(scaleFactor, scaleFactor, scaleFactor);
             newPoint = newPoint + startVec;
-            retcode = movePoint(GeoId, Sketcher::PointPos::end, newPoint, false, true);
+            status = movePoint(GeoId, Sketcher::PointPos::end, newPoint, false, true);
         }
     }
     else if (geom->is<Part::GeomArcOfCircle>()) {
@@ -1094,17 +1095,17 @@ int SketchObject::extend(int GeoId, double increment, PointPos endpoint)
         arc->getRange(startArc, endArc, true);
         if (endpoint == PointPos::start) {
             arc->setRange(startArc - increment, endArc, true);
-            retcode = 0;
+            status = SketchSolveStatus::Success;
         }
         else if (endpoint == PointPos::end) {
             arc->setRange(startArc, endArc + increment, true);
-            retcode = 0;
+            status = SketchSolveStatus::Success;
         }
     }
-    if (retcode == 0 && noRecomputes) {
+    if (status == SketchSolveStatus::Success && noRecomputes) {
         solve();
     }
-    return retcode;
+    return status;
 }
 
 bool SketchObject::seekTrimPoints(int GeoId, const Base::Vector3d& point, int& GeoId1,
@@ -1133,7 +1134,7 @@ bool SketchObject::seekTrimPoints(int GeoId, const Base::Vector3d& point, int& G
     return true;
 }
 
-int SketchObject::trim(int GeoId, const Base::Vector3d& point)
+SketchSolveStatus SketchObject::trim(int GeoId, const Base::Vector3d& point)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
@@ -1141,12 +1142,12 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
     //******************* Basic checks rejecting the operation
     //****************************************//
     if (GeoId < 0 || GeoId > getHighestCurveIndex())
-        return -1;
+        return SketchSolveStatus::SolverError;
 
     auto geo = getGeometry(GeoId);
 
     if (!GeometryFacade::isInternalType(geo, InternalType::None))
-        return -1;// internal alignment geometry is not trimmable
+        return SketchSolveStatus::SolverError;// internal alignment geometry is not trimmable
 
     //******************* Lambdas - common functions for different intersections
     //****************************************//
@@ -1340,7 +1341,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
     if (!SketchObject::seekTrimPoints(GeoId, point, GeoId1, point1, GeoId2, point2)) {
         // If no suitable trim points are found, then trim defaults to deleting the geometry
         delGeometry(GeoId);
-        return 0;
+        return SketchSolveStatus::Success;
     }
 
     //******************* Preparation of BSplines ****************************************//
@@ -1364,7 +1365,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         auto bspline = static_cast<const Part::GeomBSplineCurve*>(geo);
 
         if (bspline->isPeriodic() && (GeoId1 == GeoEnum::GeoUndef || GeoId2 == GeoEnum::GeoUndef))
-            return -1;
+            return SketchSolveStatus::SolverError;
 
         ifBSplineRemoveInternalAlignmentGeometry(GeoId);// GeoId gets updated here
 
@@ -1378,7 +1379,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         if (!SketchObject::seekTrimPoints(GeoId, point, GeoId1, point1, GeoId2, point2)) {
             // If no suitable trim points are found, then trim defaults to deleting the geometry
             delGeometry(GeoId);
-            return 0;
+            return SketchSolveStatus::Success;
         }
 
         geo = getGeometry(GeoId);
@@ -1389,7 +1390,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         // If both points are detected and are coincident, deletion is the only option.
         delGeometry(GeoId);
 
-        return 0;
+        return SketchSolveStatus::Success;
     }
 
     //******************* Step B.1 => Trimming for GeomTrimmedCurves (line segment and arcs)
@@ -1420,7 +1421,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         double pointParam, point1Param, point2Param;
         if (!getIntersectionParameters(
                 geo, point, pointParam, point1, point1Param, point2, point2Param))
-            return -1;
+            return SketchSolveStatus::SolverError;
 
 #ifdef DEBUG
         Base::Console().Log("Trim sought: GeoId1=%d (%f), GeoId2=%d (%f)\n",
@@ -1525,7 +1526,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
             }
         }
         else {
-            return -1;
+            return SketchSolveStatus::SolverError;
         }
 
         //****** Step B.1 (3) => Execute Trimming operation ******//
@@ -1533,7 +1534,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         if (op.Type == Operation::trim_delete) {
             delGeometry(GeoId);
 
-            return 0;
+            return SketchSolveStatus::Success;
         }
         else if (op.Type == Operation::trim_middle) {
             // We need to create new curve, this new curve will represent the segment comprising the
@@ -1607,7 +1608,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
             if (noRecomputes)
                 solve();
 
-            return 0;
+            return SketchSolveStatus::Success;
         }
         else if (op.Type == Operation::trim_start || op.Type == Operation::trim_end) {
             // drop the second/first intersection point
@@ -1667,10 +1668,10 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
             if (noRecomputes)
                 solve();
 
-            return 0;
+            return SketchSolveStatus::Success;
         }
         else {
-            return -1;
+            return SketchSolveStatus::SolverError;
         }
     }
     //******************* Step B.2 => Trimming for unbounded periodic geometries
@@ -1678,13 +1679,13 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
     else if (isCircle || isEllipse || isPeriodicBSpline) {
         //****** STEP A(2) => Common tests *****//
         if (GeoId1 == GeoEnum::GeoUndef || GeoId2 == GeoEnum::GeoUndef)
-            return -1;
+            return SketchSolveStatus::SolverError;
 
         //****** Step B.2 (1) => Determine intersection parameters ******//
         double pointParam, point1Param, point2Param;
         if (!getIntersectionParameters(
                 geo, point, pointParam, point1, point1Param, point2, point2Param))
-            return -1;
+            return SketchSolveStatus::SolverError;
 
 #ifdef DEBUG
         Base::Console().Log("Trim sought: GeoId1=%d (%f), GeoId2=%d (%f)\n",
@@ -1772,10 +1773,10 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         if (noRecomputes)
             solve();
 
-        return 0;
+        return SketchSolveStatus::Success;
     }
 
-    return -1;
+    return SketchSolveStatus::SolverError;
 }
 
 int SketchObject::split(int GeoId, const Base::Vector3d& point)

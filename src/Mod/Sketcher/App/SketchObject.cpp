@@ -204,7 +204,7 @@ SketchObject::SketchObject()
     lastHasRedundancies = false;
     lastHasPartialRedundancies = false;
     lastHasMalformedConstraints = false;
-    lastSolverStatus = 0;
+    lastSolverStatus = GCS::SolveStatus::Success;
     lastSolveTime = 0;
 
     solverNeedsUpdate = false;
@@ -275,30 +275,29 @@ App::DocumentObjectExecReturn* SketchObject::execute()
 
     // This includes a regular solve including full geometry update, except when an error
     // ensues
-    int err = this->solve(true);
-
-    if (err == -4) {// over-constrained sketch
-        std::string msg = "Over-constrained sketch\n";
-        appendConflictMsg(lastConflicting, msg);
-        return new App::DocumentObjectExecReturn(msg.c_str(), this);
-    }
-    else if (err == -3) {// conflicting constraints
-        std::string msg = "Sketch with conflicting constraints\n";
-        appendConflictMsg(lastConflicting, msg);
-        return new App::DocumentObjectExecReturn(msg.c_str(), this);
-    }
-    else if (err == -2) {// redundant constraints
-        std::string msg = "Sketch with redundant constraints\n";
-        appendRedundantMsg(lastRedundant, msg);
-        return new App::DocumentObjectExecReturn(msg.c_str(), this);
-    }
-    else if (err == -5) {
-        std::string msg = "Sketch with malformed constraints\n";
-        appendMalformedConstraintsMsg(lastMalformedConstraints, msg);
-        return new App::DocumentObjectExecReturn(msg.c_str(), this);
-    }
-    else if (err == -1) {// Solver failed
-        return new App::DocumentObjectExecReturn("Solving the sketch failed", this);
+    std::string msg;
+    switch (this->solve(true)) {
+        case SketchSolveStatus::Success:
+            break;
+        case SketchSolveStatus::Overconstrained:
+            msg = "Over-constrained sketch\n";
+            appendConflictMsg(lastConflicting, msg);
+            return new App::DocumentObjectExecReturn(msg.c_str(), this);
+        case SketchSolveStatus::ConflictingConstraints:
+            msg = "Sketch with conflicting constraints\n";
+            appendConflictMsg(lastConflicting, msg);
+            return new App::DocumentObjectExecReturn(msg.c_str(), this);
+        case SketchSolveStatus::RedundantConstraints:
+            msg = "Sketch with redundant constraints\n";
+            appendRedundantMsg(lastRedundant, msg);
+            return new App::DocumentObjectExecReturn(msg.c_str(), this);
+        case SketchSolveStatus::MalformedConstraints:
+            msg = "Sketch with malformed constraints\n";
+            appendMalformedConstraintsMsg(lastMalformedConstraints, msg);
+            return new App::DocumentObjectExecReturn(msg.c_str(), this);
+        case SketchSolveStatus::SolverError:
+        case SketchSolveStatus::InvalidGeometry:
+            return new App::DocumentObjectExecReturn("Solving the sketch failed", this);
     }
 
     // this is not necessary for sketch representation in edit mode, unless we want to trigger an
@@ -1128,7 +1127,7 @@ void SketchObject::restoreFinished()
         // this may happen when saving a sketch directly in edit mode
         // but never performed a recompute before
         if (Shape.getValue().IsNull() && hasConflicts() == 0) {
-            if (this->solve(true) == 0)
+            if (this->solve(true) == SketchSolveStatus::Success)
                 Shape.setValue(solvedSketch.toShape());
         }
 
