@@ -2173,7 +2173,12 @@ int SketchObject::port_reversedExternalArcs(bool justAnalyze)
         }
         if (affected) {
             cntToBeAffected++;
-            newVals[ic] = constNew;
+            if (justAnalyze) {
+                delete constNew;
+            }
+            else {
+                newVals[ic] = constNew;
+            }
             Base::Console().Log("Constraint%i will be affected\n", ic + 1);
         };
     }
