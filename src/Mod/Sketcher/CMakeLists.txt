@@ -16,6 +16,11 @@ set(Sketcher_TestScripts
     SketcherTests/TestSketchFillet.py
     SketcherTests/TestSketcherSolver.py
     SketcherTests/TestSketchExpression.py
+    SketcherTests/TestSketchValidateCoincidents.py
+    SketcherTests/TestSketchCarbonCopyReverseMapping.py
+    SketcherTests/TestSketchCarbonCopyReverseMapping.FCStd
+    SketcherTests/TestSketchInternalFaces.py
+    SketcherTests/TestSketcherEllipse.py
 )
 
 if(BUILD_GUI)
