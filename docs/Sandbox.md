@@ -7759,9 +7759,31 @@ brought them rather than live.  Built narrower than the sizing's snapshot:
   start and end of every host request, so nothing outlives a statement.
 - *Where.*  On for a remote guest's endpoint (SandboxRemote.cpp;
   `FC_SANDBOX_PREFETCH=0` turns it off, read when a connection's endpoint
-  is made).  Off for the desktop's own guest, where a hop is 5 us and a
-  prefetch is host work no hop pays back; `ImageHost::setPrefetch` exists
-  so a test can run the guest's half in process.
+  is made).  Off for the desktop's own guest, MEASURED 2026-09-15 on the
+  user's question whether it should be on there too
+  (`DISABLED_BenchPrefetchInProcess`, 1000 objects, mean us per
+  evaluation, off / on):
+
+      statement                                     off      on
+      --------------------------------------------  -----  -----
+      42 (the pack alone)                              29     28
+      len(d.Objects) (the list alone)                6090   6243
+      [o.Name for o in d.Objects]                    8719   8459
+      sum(o.Width for o in d.Objects[1:])            8639   7915
+      sum(e.Length for e in s.Edges), 1000 edges     9702   9314
+      d.Objects[5].Name (32 siblings unread)         6849   6391
+      two reads far apart (64 unread)               12188  12469
+      stop at the 40th of 1000                       6294   6596
+      s.Edges[0].Length                              7070   7530
+
+  A loop of 1000 hops is about 2.6 ms, the prefetch saves 0.3 to 0.7 ms
+  of it, and a statement that reads one element or stops early pays 0.15
+  to 0.46 ms for siblings it never reads -- both inside the run-to-run
+  noise (the one-read case moved 450 us between two runs).  The prefetch
+  can save at most the hops, and on the desktop the hops are not the
+  cost: MINTING the list is, 6 us a handle against 3 us a hop.  So it stays
+  off there; `ImageHost::setPrefetch` exists so a test can run the guest's
+  half in process.
 
 *Measured* with the prefetch (the same rig; with it off the figures are
 the table above's within noise):
