@@ -528,8 +528,6 @@ class TestSketchInternalFaces(unittest.TestCase):
     # 10. Self-intersecting BSplines
     # ==================================================================
 
-    # Pending upstream 0939408c21: internal faces of self-intersecting B-splines.
-    @unittest.expectedFailure
     def testFigure8BSpline(self):
         """A single self-intersecting BSpline forming a figure-8 -> 2 faces."""
         sk = self._make_sketch()
@@ -540,8 +538,6 @@ class TestSketchInternalFaces(unittest.TestCase):
         for f in faces:
             self.assertGreater(f.Area, 1.0)
 
-    # Pending upstream 0939408c21: internal faces of self-intersecting B-splines.
-    @unittest.expectedFailure
     def testBSplineWithSeparateLine(self):
         """Self-intersecting BSpline + separate non-touching line:
         the line should be pruned (dangling), BSpline produces 2 faces."""
@@ -551,6 +547,26 @@ class TestSketchInternalFaces(unittest.TestCase):
         self.Doc.recompute()
         faces = get_internal_faces(sk)
         self.assertEqual(len(faces), 2)
+
+    def testBSplineLoopThroughStartPoint(self):
+        """An open BSpline whose middle passes through its own start point:
+        the loop makes 1 face, the tail stays an open wire."""
+        sk = self._make_sketch()
+        pts = [
+            App.Vector(0, 0, 0),
+            App.Vector(5, 5, 0),
+            App.Vector(0, 10, 0),
+            App.Vector(-5, 5, 0),
+            App.Vector(0, 0, 0),
+            App.Vector(5, -5, 0),
+        ]
+        bs = Part.BSplineCurve()
+        bs.interpolate(pts)
+        sk.addGeometry(bs)
+        self.Doc.recompute()
+        faces = get_internal_faces(sk)
+        self.assertEqual(len(faces), 1, "The loop should produce 1 face")
+        self.assertGreater(faces[0].Area, 1.0)
 
     # ==================================================================
     # 11. Element naming
@@ -628,8 +644,6 @@ class TestSketchInternalFaces(unittest.TestCase):
                 f"{idx_name} -> '{mapped_name}' references an indexed name, not a mapped name",
             )
 
-    # Pending upstream 0939408c21: internal faces of self-intersecting B-splines.
-    @unittest.expectedFailure
     def testSplitBSplineFaceNamesReferenceSketchEdges(self):
         """B-Spline variant of testSplitFaceNamesReferenceSketchEdges: face names
         from a self-intersecting B-spline should reference mapped names."""
