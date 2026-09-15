@@ -1233,8 +1233,12 @@ Part::Geometry* projectEdgeToLine(const TopoDS_Edge &edge,
     if (!bbox.IsValid())
         return nullptr;
 
-    gp_Pnt p1(bbox.MinX, bbox.MinY, 0);
-    gp_Pnt p2(bbox.MaxX, bbox.MaxY, 0);
+    // The line runs along x here, so the box should have no extent in y.
+    // Rounding (and the mesh deflection) can give it some; use one y for both
+    // points, in this frame before rotating back (issue 25720).
+    double y = (bbox.MinY + bbox.MaxY) / 2.0;
+    gp_Pnt p1(bbox.MinX, y, 0);
+    gp_Pnt p2(bbox.MaxX, y, 0);
     if (fabs(angle) > Precision::Angular()) {
         trsf.SetRotation(gp_Ax1(gp_Pnt(), gp_Dir(0, 0, 1)), -angle);
         p1.Transform(trsf);
