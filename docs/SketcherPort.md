@@ -276,6 +276,41 @@ same three problems, none of them a regression:
   A multi-document check therefore cannot pin one solve status on the change
   under test -- rerun the sketch alone and sweep N on both libraries.
 
+### Solve results as an enum (`b4d1b55b6c`, upstream `d8cf415e4f`)
+
+`SketchObject::solve`, `setDatum`, `movePoint`, `trim` and `extend` return
+`SketchSolveStatus` (declared in `SketchAnalysis.h`) instead of `int`; the
+enum keeps the old integers, 0 and -1 to -6, so Python sees the same numbers.
+`lastSolverStatus`, `getLastSolverStatus()` and `moveTemporaryPoint()` carry
+`GCS::SolveStatus`, which the phase-1 take had made an `enum class` and the
+fork had been casting to `int`. `SketchAnalysis::solvesketch` and `execute()`
+read the enum.
+
+Adapted rather than applied: the fork still has `movePoint` and
+`moveTemporaryPoint` where upstream has `moveGeometries` and
+`moveGeometriesTemporary`, and its pre-refactor `trim`. `extend()` on an
+unsupported geometry type still reports an error, as the fork's `-1` did
+(upstream's later initialiser makes it `Success`).
+
+**Upstream defect, not taken.** At upstream `bd6be559e8`,
+`ViewProviderSketch::onDelete` and `SketchObject::setTextAndFont` test
+`status == SketchSolveStatus::Success` where the code before `d8cf415e4f`
+tested for failure, so the "solve failed" branch runs on success. The fork's
+`onDelete` ignores the result and the fork has no Text constraint.
+
+**Verified.** Build OK; ctest 667/667; Python 2851 OK (22 expected failures);
+`TestSketcherApp` 94 OK (16 expected failures).
+
+### The dead `fine` parameter (`cd7ff82e17`, upstream `a502762119`)
+
+`initTemporaryMove` and `initTemporaryBSplinePieceMove` lose the parameter the
+solver has ignored since `796c9d79d4`; the phase-1 take had already removed it
+from `Sketch`. `ViewProviderSketch` stops passing `false`. Upstream's if-ladder
+to `switch` rewrites in `setDatum` and `setTextAndFont` are not taken.
+
+**Verified.** Build OK; ctest 667/667; Python 2851 OK (22 expected failures);
+`TestSketcherApp` 94 OK (16 expected failures).
+
 ## 7. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
