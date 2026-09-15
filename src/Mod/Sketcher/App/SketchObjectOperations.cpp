@@ -159,7 +159,7 @@ int SketchObject::movePoint(int GeoId, PointPos PosId, const Base::Vector3d& toP
         return -1;
 
     // move the point and solve
-    lastSolverStatus = solvedSketch.movePoint(GeoId, PosId, toPoint, relative);
+    lastSolverStatus = static_cast<int>(solvedSketch.moveGeometry(GeoId, PosId, toPoint, relative));
 
     // moving the point can not result in a conflict that we did not have
     // or a redundancy that we did not have before, or a change of DoF

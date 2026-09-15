@@ -62,7 +62,7 @@ PyObject* SketchPy::solve(PyObject* args)
         return nullptr;
     }
     getSketchPtr()->resetSolver();
-    return Py::new_reference_to(Py::Long(getSketchPtr()->solve()));
+    return Py::new_reference_to(Py::Long(static_cast<int>(getSketchPtr()->solve())));
 }
 
 PyObject* SketchPy::addGeometry(PyObject* args)
@@ -170,10 +170,10 @@ PyObject* SketchPy::movePoint(PyObject* args)
     Base::Vector3d* toPoint = static_cast<Base::VectorPy*>(pcObj)->getVectorPtr();
 
     return Py::new_reference_to(
-        Py::Long(getSketchPtr()->movePoint(index1,
+        Py::Long(static_cast<int>(getSketchPtr()->moveGeometry(index1,
                                            static_cast<Sketcher::PointPos>(index2),
                                            *toPoint,
-                                           (relative > 0))));
+                                           (relative > 0)))));
 }
 
 // +++ attributes implementer ++++++++++++++++++++++++++++++++++++++++++++++++
