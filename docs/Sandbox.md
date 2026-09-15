@@ -7785,6 +7785,37 @@ brought them rather than live.  Built narrower than the sizing's snapshot:
   off there; `ImageHost::setPrefetch` exists so a test can run the guest's
   half in process.
 
+*Where a handle's 6 us goes* (PROFILED 2026-09-15, on the user's ask; a
+throwaway probe -- per-segment steady_clock timers on both sides, not
+committed -- over `len(d.Objects)` on 1000 objects, 50 evaluations; the
+guest's clock steps 285 ns, fine enough to sum):
+
+    segment                                                 us per handle
+    ------------------------------------------------------  -------------
+    host: Document.Objects read                                 0.03
+    host: encode -- the json map 0.46, facadeKeyFor 0.13,
+          handleKey 0.13, table add 0.08, type checks 0.06,
+          extension keys 0.03                                   0.92
+    guest: the crossing (host dispatch + reply CBOR + copy)     1.48
+    guest: reply CBOR -> nlohmann json                          1.25
+    guest: json -> proxy, of which                              3.43
+             setting _id/_ty/_fc/_k                             2.04
+             the facade class lookup                            0.44
+             instantiating                                      0.23
+             the rest (field finds, strings, the key tuple)     0.72
+    guest: dropping the list (1000 __del__, releases queued)    0.30
+    total, host-timed                                           7.00
+
+The one outlier is the slots: `HostHandle` defines `__setattr__` in Python
+(the write_prop hook), and `decodeValue` sets each of the four slots with
+`PyObject_SetAttrString`, so every handle runs four Python-level calls that
+only end in `object.__setattr__`.  Setting the slot descriptors directly
+(`PyObject_GenericSetAttr` with interned names) skips them; the class
+lookup makes a key string and two dict lookups per handle and can be
+cached per facade key.  The two JSON stages (host map 0.46, guest decode
+1.25) are the next tier -- nlohmann allocates a map and its keys per handle
+on both sides.  Not yet changed.
+
 *Measured* with the prefetch (the same rig; with it off the figures are
 the table above's within noise):
 
