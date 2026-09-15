@@ -395,8 +395,6 @@ class TestSketcherSolver(unittest.TestCase):
         self.assertTrue(len(values) == 0)
         FreeCAD.closeDocument("Issue3245")
 
-    # Pending upstream 9d7073ce7b: geometry extension on a point.
-    @unittest.expectedFailure
     def testPointGeometryExtension(self):
         """Reading point geometry must preserve extensions and return a copy (#15545)."""
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
