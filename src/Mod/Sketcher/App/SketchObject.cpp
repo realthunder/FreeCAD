@@ -334,8 +334,17 @@ void SketchObject::buildShape()
 
     std::vector<Part::TopoShape> shapes;
     std::vector<Part::TopoShape> vertices;
+
+    // Use the geometry as the solver left it: the stored geometry is not
+    // accurate enough to close a wire.
+    std::vector<std::unique_ptr<Part::Geometry>> solvedGeometry;
+    for (auto geo : solvedSketch.extractGeometry()) {
+        solvedGeometry.emplace_back(geo);
+    }
+
     int i=0;
-    for(auto geo : getInternalGeometry()) {
+    for (const auto &solved : solvedGeometry) {
+        const Part::Geometry *geo = solved.get();
         ++i;
         if(GeometryFacade::getConstruction(geo))
             continue;
