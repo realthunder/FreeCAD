@@ -611,23 +611,36 @@ PyObject* SketchObjectPy::carbonCopy(PyObject* args)
 
 PyObject* SketchObjectPy::addExternal(PyObject* args)
 {
-    const char *ObjectName;
-    const char *SubName;
+    std::string ObjectName;
+    std::string SubName;
     bool defining = false;
     bool intersection = false;
     PyObject *mode = Py_False;
-    PyObject *pyobj;
-    App::SubObjectT ref;
+    PyObject *pyIntersection = nullptr;
 
-    if (PyArg_ParseTuple(args, "O|O", &pyobj, &mode)) {
-        ref.setPyObject(pyobj);
-        ObjectName = ref.getObjectName().c_str();
-        SubName = ref.getSubName().c_str();
-    } else {
-        PyErr_Clear();
-        if (!PyArg_ParseTuple(args, "ss|O:Give an object and subelement name", 
-                    &ObjectName,&SubName,&PyBool_Type,&mode))
+    // Two call forms. The string form comes first: "O|O" accepts any two
+    // arguments, so trying it first made addExternal(name, sub) unreachable.
+    //   addExternal(objName, subName, [mode or defining], [intersection])
+    //   addExternal(obj or (obj, subName), [mode])
+    // 'mode' is "defining", "intersection", a sequence of those, or a bool
+    // meaning 'defining'. The trailing bool is upstream's 'intersection'.
+    Py_ssize_t nargs = PyTuple_Size(args);
+    if (nargs >= 1 && PyUnicode_Check(PyTuple_GetItem(args, 0))) {
+        const char *objName;
+        const char *subName;
+        if (!PyArg_ParseTuple(args, "ss|OO:Give an object and subelement name",
+                    &objName, &subName, &mode, &pyIntersection))
             return nullptr;
+        ObjectName = objName;
+        SubName = subName;
+    } else {
+        PyObject *pyobj;
+        if (!PyArg_ParseTuple(args, "O|O", &pyobj, &mode))
+            return nullptr;
+        App::SubObjectT ref;
+        ref.setPyObject(pyobj);
+        ObjectName = ref.getObjectName();
+        SubName = ref.getSubName();
     }
 
     auto checkMode = [&](PyObject *mode) {
@@ -651,17 +664,21 @@ PyObject* SketchObjectPy::addExternal(PyObject* args)
     } else if (PySequence_Check(mode)) {
         Py::Sequence seq(mode);
         for(int i=0;i<seq.size();++i) {
-            if (!PyUnicode_Check(seq[i].ptr()))
+            if (!PyUnicode_Check(seq[i].ptr())) {
                 PyErr_Format(PyExc_ValueError, "Invalid external mode");
+                return nullptr;
+            }
             if (!checkMode(seq[i].ptr()))
                 return nullptr;
         }
     } else
         defining = PyObject_IsTrue(mode);
+    if (pyIntersection && PyObject_IsTrue(pyIntersection))
+        intersection = true;
 
     // get the target object for the external link
     Sketcher::SketchObject* skObj = this->getSketchObjectPtr();
-    App::DocumentObject* Obj = skObj->getDocument()->getObject(ObjectName);
+    App::DocumentObject* Obj = skObj->getDocument()->getObject(ObjectName.c_str());
     if (!Obj) {
         std::stringstream str;
         str << ObjectName << " does not exist in the document";
@@ -677,7 +694,7 @@ PyObject* SketchObjectPy::addExternal(PyObject* args)
     }
 
     // add the external
-    if (skObj->addExternal(Obj,SubName,defining,intersection) < 0) {
+    if (skObj->addExternal(Obj,SubName.c_str(),defining,intersection) < 0) {
         std::stringstream str;
         str << "Not able to add external shape element " << SubName;
         PyErr_SetString(PyExc_ValueError, str.str().c_str());
