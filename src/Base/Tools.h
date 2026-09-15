@@ -502,6 +502,16 @@ struct BaseExport Tools
 };
 
 
+/// Mark a code path that cannot be reached; std::unreachable() once C++23 is required.
+[[noreturn]] inline void unreachable()
+{
+#if defined(_MSC_VER) && !defined(__clang__)
+    __assume(false);
+#else
+    __builtin_unreachable();
+#endif
+}
+
 }  // namespace Base
 
 #endif  // BASE_TOOLS_H
