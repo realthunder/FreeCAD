@@ -185,7 +185,7 @@ int SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
     lastSolveTime = 0.0;
 
     // Failure is default for notifying the user unless otherwise proven
-    lastSolverStatus = GCS::Failed;
+    lastSolverStatus = static_cast<int>(GCS::SolveStatus::Failed);
 
     int err = 0;
 
@@ -207,7 +207,7 @@ int SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
         err = -5;
     }
     else {
-        lastSolverStatus = solvedSketch.solve();
+        lastSolverStatus = static_cast<int>(solvedSketch.solve());
         if (lastSolverStatus != 0) {// solving
             err = -1;
         }

@@ -563,8 +563,6 @@ class TestSketcherSolver(unittest.TestCase):
         l_shape = sketch.Geometry[l_idx].toShape()
         self.assertShapeDistance(c_shape, l_shape, 0)  # secant intersects circle, thus no distance
 
-    # Pending upstream 3c8a254356: expectation changed to a signed circle-line distance.
-    @unittest.expectedFailure
     def testCircleToLineDistance_Reference_Secant(self):
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         radius = 20
@@ -593,8 +591,6 @@ class TestSketcherSolver(unittest.TestCase):
             msg="Reference constraint did not return the expected distance.",
         )
 
-    # Pending upstream c968effe26: legacy negative circle-line distance.
-    @unittest.expectedFailure
     def testCircleToLineDistance_Legacy_Negative(self):
         # TestSketcherApp.TestSketcherSolver.testCircleToLineDistance_Legacy_Negative
         # compare a driving negative distance to an expected positive reference one
@@ -624,8 +620,6 @@ class TestSketcherSolver(unittest.TestCase):
             msg="Negative length constraint did not return the expected distance.",
         )
 
-    # Pending upstream 3c8a254356: signed distance constraints.
-    @unittest.expectedFailure
     def testCircleToLineDistanceOriented(self):
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         radius = 20
@@ -683,8 +677,6 @@ class TestSketcherSolver(unittest.TestCase):
         self.assertGreater(sketch.Geometry[l_right_int].StartPoint.x, 0)
         self.assertLess(sketch.Geometry[l_right_int].StartPoint.x, radius)
 
-    # Pending upstream 3c8a254356: signed distance constraints.
-    @unittest.expectedFailure
     def testPointToLineDistanceSigned(self):
         # Test the signed p2l constraint by trying to flip the sketch
         # with a big constraint datum change

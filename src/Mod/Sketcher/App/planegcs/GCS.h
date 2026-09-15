@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2011 Konstantinos Poulios <logari81@gmail.com>          *
  *                                                                         *
@@ -20,8 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef PLANEGCS_GCS_H
-#define PLANEGCS_GCS_H
+#pragma once
 
 #include <Eigen/QR>
 
@@ -29,12 +30,12 @@
 #include "SubSystem.h"
 
 
-#define EIGEN_VERSION                                                                              \
+#define EIGEN_VERSION \
     (EIGEN_WORLD_VERSION * 10000 + EIGEN_MAJOR_VERSION * 100 + EIGEN_MINOR_VERSION)
 
 #if EIGEN_VERSION >= 30202
-#define EIGEN_SPARSEQR_COMPATIBLE
-#include <Eigen/Sparse>
+# define EIGEN_SPARSEQR_COMPATIBLE
+# include <Eigen/Sparse>
 #endif
 
 namespace GCS
@@ -49,7 +50,7 @@ namespace GCS
 // Solver
 ///////////////////////////////////////
 
-enum SolveStatus
+enum class SolveStatus : uint8_t
 {
     Success = 0,                    // Found a solution zeroing the error function
     Converged = 1,                  // Found a solution minimizing the error function
@@ -58,11 +59,11 @@ enum SolveStatus
                                     // resulting geometry is OCE-invalid
 };
 
-enum Algorithm
+enum Algorithm : uint8_t
 {
-    BFGS = 0,
-    LevenbergMarquardt = 1,
-    DogLeg = 2
+    BFGS,
+    LevenbergMarquardt,
+    DogLeg,
 };
 
 enum DogLegGaussStep
@@ -118,6 +119,7 @@ private:
     std::vector<std::vector<double*>> pDependentParametersGroups;
 
     std::vector<Constraint*> clist;
+    std::vector<Constraint*> drivenConstraints;
     std::map<Constraint*, VEC_pD> c2p;                // constraint to parameter adjacency list
     std::map<double*, std::vector<Constraint*>> p2c;  // parameter to constraint adjacency list
 
@@ -125,8 +127,10 @@ private:
     void clearSubSystems();
 
     VEC_D reference;
-    void setReference();      // copies the current parameter values to reference
-    void resetToReference();  // reverts all parameter values to the stored reference
+    /// Copies the current parameter values to reference.
+    void saveReference();
+    /// Reverts all parameter values to the stored reference.
+    void restoreReference();
 
     std::vector<VEC_pD> plists;  // partitioned plist except equality constraints
     // partitioned clist except equality constraints
@@ -143,22 +147,26 @@ private:
 
     bool emptyDiagnoseMatrix;  // false only if there is at least one driving constraint.
 
-    int solve_BFGS(SubSystem* subsys, bool isFine = true, bool isRedundantsolving = false);
-    int solve_LM(SubSystem* subsys, bool isRedundantsolving = false);
-    int solve_DL(SubSystem* subsys, bool isRedundantsolving = false);
+    SolveStatus solve_BFGS(SubSystem* subsys, bool isRedundantsolving = false);
+    SolveStatus solve_LM(SubSystem* subsys, bool isRedundantsolving = false);
+    SolveStatus solve_DL(SubSystem* subsys, bool isRedundantsolving = false);
 
-    void makeReducedJacobian(Eigen::MatrixXd& J,
-                             std::map<int, int>& jacobianconstraintmap,
-                             GCS::VEC_pD& pdiagnoselist,
-                             std::map<int, int>& tagmultiplicity);
+    void makeReducedJacobian(
+        Eigen::MatrixXd& J,
+        std::map<int, int>& jacobianconstraintmap,
+        GCS::VEC_pD& pdiagnoselist,
+        std::map<int, int>& tagmultiplicity
+    );
 
-    void makeDenseQRDecomposition(const Eigen::MatrixXd& J,
-                                  const std::map<int, int>& jacobianconstraintmap,
-                                  Eigen::FullPivHouseholderQR<Eigen::MatrixXd>& qrJT,
-                                  int& rank,
-                                  Eigen::MatrixXd& R,
-                                  bool transposeJ = true,
-                                  bool silent = false);
+    void makeDenseQRDecomposition(
+        const Eigen::MatrixXd& J,
+        const std::map<int, int>& jacobianconstraintmap,
+        Eigen::FullPivHouseholderQR<Eigen::MatrixXd>& qrJT,
+        int& rank,
+        Eigen::MatrixXd& R,
+        bool transposeJ = true,
+        bool silent = false
+    );
 
 #ifdef EIGEN_SPARSEQR_COMPATIBLE
     void makeSparseQRDecomposition(
@@ -168,7 +176,8 @@ private:
         int& rank,
         Eigen::MatrixXd& R,
         bool transposeJ = true,
-        bool silent = false);
+        bool silent = false
+    );
 #endif
     // This function name is long for a reason:
     // - Only for DenseQR
@@ -177,39 +186,48 @@ private:
         const Eigen::FullPivHouseholderQR<Eigen::MatrixXd>& qrJT,
         const GCS::VEC_pD& pdiagnoselist,
         int paramsNum,
-        int rank);
+        int rank
+    );
 
     template<typename T>
-    void identifyConflictingRedundantConstraints(Algorithm alg,
-                                                 const T& qrJT,
-                                                 const std::map<int, int>& jacobianconstraintmap,
-                                                 const std::map<int, int>& tagmultiplicity,
-                                                 GCS::VEC_pD& pdiagnoselist,
-                                                 Eigen::MatrixXd& R,
-                                                 int constrNum,
-                                                 int rank,
-                                                 int& nonredundantconstrNum);
+    void identifyConflictingRedundantConstraints(
+        Algorithm alg,
+        const T& qrJT,
+        const std::map<int, int>& jacobianconstraintmap,
+        const std::map<int, int>& tagmultiplicity,
+        GCS::VEC_pD& pdiagnoselist,
+        Eigen::MatrixXd& R,
+        int constrNum,
+        int rank,
+        int& nonredundantconstrNum
+    );
 
     void eliminateNonZerosOverPivotInUpperTriangularMatrix(Eigen::MatrixXd& R, int rank);
 
 #ifdef EIGEN_SPARSEQR_COMPATIBLE
-    void identifyDependentParametersSparseQR(const Eigen::MatrixXd& J,
-                                             const std::map<int, int>& jacobianconstraintmap,
-                                             const GCS::VEC_pD& pdiagnoselist,
-                                             bool silent = true);
+    void identifyDependentParametersSparseQR(
+        const Eigen::MatrixXd& J,
+        const std::map<int, int>& jacobianconstraintmap,
+        const GCS::VEC_pD& pdiagnoselist,
+        bool silent = true
+    );
 #endif
 
-    void identifyDependentParametersDenseQR(const Eigen::MatrixXd& J,
-                                            const std::map<int, int>& jacobianconstraintmap,
-                                            const GCS::VEC_pD& pdiagnoselist,
-                                            bool silent = true);
+    void identifyDependentParametersDenseQR(
+        const Eigen::MatrixXd& J,
+        const std::map<int, int>& jacobianconstraintmap,
+        const GCS::VEC_pD& pdiagnoselist,
+        bool silent = true
+    );
 
     template<typename T>
-    void identifyDependentParameters(T& qrJ,
-                                     Eigen::MatrixXd& Rparams,
-                                     int rank,
-                                     const GCS::VEC_pD& pdiagnoselist,
-                                     bool silent = true);
+    void identifyDependentParameters(
+        T& qrJ,
+        Eigen::MatrixXd& Rparams,
+        int rank,
+        const GCS::VEC_pD& pdiagnoselist,
+        bool silent = true
+    );
 
 #ifdef _GCS_EXTRACT_SOLVER_SUBSYSTEM_
     void extractSubsystem(SubSystem* subsys, bool isRedundantsolving);
@@ -223,6 +241,8 @@ public:
     double convergence;
     double convergenceRedundant;
     QRAlgorithm qrAlgorithm;
+    bool autoChooseAlgorithm;
+    int autoQRThreshold;
     DogLegGaussStep dogLegGaussStep;
     double qrpivotThreshold;
     DebugMode debugMode;
@@ -256,86 +276,132 @@ public:
         double* param2,
         int tagId = 0,
         bool driving = true,
-        Constraint::Alignment internalalignment = Constraint::Alignment::NoInternalAlignment);
-    int addConstraintProportional(double* param1,
-                                  double* param2,
-                                  double ratio,
-                                  int tagId,
-                                  bool driving = true);
-    int addConstraintDifference(double* param1,
-                                double* param2,
-                                double* difference,
-                                int tagId = 0,
-                                bool driving = true);
-    int addConstraintP2PDistance(Point& p1,
-                                 Point& p2,
-                                 double* distance,
-                                 int tagId = 0,
-                                 bool driving = true);
-    int addConstraintP2PAngle(Point& p1,
-                              Point& p2,
-                              double* angle,
-                              double incrAngle,
-                              int tagId = 0,
-                              bool driving = true);
-    int
-    addConstraintP2PAngle(Point& p1, Point& p2, double* angle, int tagId = 0, bool driving = true);
-    int addConstraintP2LDistance(Point& p,
-                                 Line& l,
-                                 double* distance,
-                                 int tagId = 0,
-                                 bool driving = true);
+        Constraint::Alignment internalalignment = Constraint::Alignment::NoInternalAlignment
+    );
+    int addConstraintProportional(
+        double* param1,
+        double* param2,
+        double ratio,
+        int tagId,
+        bool driving = true
+    );
+    int addConstraintDifference(
+        double* param1,
+        double* param2,
+        double* difference,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintP2PDistance(Point& p1, Point& p2, double* distance, int tagId = 0, bool driving = true);
+    int addConstraintP2PAngle(
+        Point& p1,
+        Point& p2,
+        double* angle,
+        double incrAngle,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintP2PAngle(Point& p1, Point& p2, double* angle, int tagId = 0, bool driving = true);
+    int addConstraintP2LDistance(
+        Point& p,
+        Line& l,
+        double* distance,
+        bool ccw,
+        int tagId = 0,
+        bool driving = true
+    );
     int addConstraintPointOnLine(Point& p, Line& l, int tagId = 0, bool driving = true);
-    int
-    addConstraintPointOnLine(Point& p, Point& lp1, Point& lp2, int tagId = 0, bool driving = true);
+    int addConstraintPointOnLine(Point& p, Point& lp1, Point& lp2, int tagId = 0, bool driving = true);
     int addConstraintPointOnPerpBisector(Point& p, Line& l, int tagId = 0, bool driving = true);
-    int addConstraintPointOnPerpBisector(Point& p,
-                                         Point& lp1,
-                                         Point& lp2,
-                                         int tagId = 0,
-                                         bool driving = true);
+    int addConstraintPointOnPerpBisector(
+        Point& p,
+        Point& lp1,
+        Point& lp2,
+        int tagId = 0,
+        bool driving = true
+    );
     int addConstraintParallel(Line& l1, Line& l2, int tagId = 0, bool driving = true);
     int addConstraintPerpendicular(Line& l1, Line& l2, int tagId = 0, bool driving = true);
-    int addConstraintPerpendicular(Point& l1p1,
-                                   Point& l1p2,
-                                   Point& l2p1,
-                                   Point& l2p2,
-                                   int tagId = 0,
-                                   bool driving = true);
-    int
-    addConstraintL2LAngle(Line& l1, Line& l2, double* angle, int tagId = 0, bool driving = true);
-    int addConstraintL2LAngle(Point& l1p1,
-                              Point& l1p2,
-                              Point& l2p1,
-                              Point& l2p2,
-                              double* angle,
-                              int tagId = 0,
-                              bool driving = true);
-    int addConstraintAngleViaPoint(Curve& crv1,
-                                   Curve& crv2,
-                                   Point& p,
-                                   double* angle,
-                                   int tagId = 0,
-                                   bool driving = true);
+    int addConstraintPerpendicular(
+        Point& l1p1,
+        Point& l1p2,
+        Point& l2p1,
+        Point& l2p2,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintPerpendicular(Point& l1p1, Point& l1p2, Line& l2, int tagId = 0, bool driving = true);
+    int addConstraintL2LAngle(Line& l1, Line& l2, double* angle, int tagId = 0, bool driving = true);
+    int addConstraintL2LAngle(
+        Point& l1p1,
+        Point& l1p2,
+        Point& l2p1,
+        Point& l2p2,
+        double* angle,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintAngleViaPoint(
+        Curve& crv1,
+        Curve& crv2,
+        Point& p,
+        double* angle,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintAngleViaTwoPoints(
+        Curve& crv1,
+        Curve& crv2,
+        Point& p1,
+        Point& p2,
+        double* angle,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintAngleViaPointAndParam(
+        Curve& crv1,
+        Curve& crv2,
+        Point& p,
+        double* cparam,
+        double* angle,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintAngleViaPointAndTwoParams(
+        Curve& crv1,
+        Curve& crv2,
+        Point& p,
+        double* cparam1,
+        double* cparam2,
+        double* angle,
+        int tagId = 0,
+        bool driving = true
+    );
     int addConstraintMidpointOnLine(Line& l1, Line& l2, int tagId = 0, bool driving = true);
-    int addConstraintMidpointOnLine(Point& l1p1,
-                                    Point& l1p2,
-                                    Point& l2p1,
-                                    Point& l2p2,
-                                    int tagId = 0,
-                                    bool driving = true);
-    int addConstraintTangentCircumf(Point& p1,
-                                    Point& p2,
-                                    double* rd1,
-                                    double* rd2,
-                                    bool internal = false,
-                                    int tagId = 0,
-                                    bool driving = true);
-    int addConstraintTangentAtBSplineKnot(BSpline& b,
-                                          Line& l,
-                                          unsigned int knotindex,
-                                          int tagId = 0,
-                                          bool driving = true);
+    int addConstraintMidpointOnLine(
+        Point& l1p1,
+        Point& l1p2,
+        Point& l2p1,
+        Point& l2p2,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintTangentCircumf(
+        Point& p1,
+        Point& p2,
+        double* rd1,
+        double* rd2,
+        bool internal = false,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintTangentAtBSplineKnot(
+        BSpline& b,
+        Line& l,
+        unsigned int knotindex,
+        int tagId = 0,
+        bool driving = true
+    );
 
     // derived constraints
     int addConstraintP2PCoincident(Point& p1, Point& p2, int tagId = 0, bool driving = true);
@@ -348,159 +414,187 @@ public:
     int addConstraintArcRules(Arc& a, int tagId = 0, bool driving = true);
     int addConstraintPointOnCircle(Point& p, Circle& c, int tagId = 0, bool driving = true);
     int addConstraintPointOnEllipse(Point& p, Ellipse& e, int tagId = 0, bool driving = true);
-    int addConstraintPointOnHyperbolicArc(Point& p,
-                                          ArcOfHyperbola& e,
-                                          int tagId = 0,
-                                          bool driving = true);
-    int addConstraintPointOnParabolicArc(Point& p,
-                                         ArcOfParabola& e,
-                                         int tagId = 0,
-                                         bool driving = true);
-    int addConstraintPointOnBSpline(Point& p,
-                                    BSpline& b,
-                                    double* pointparam,
-                                    int tagId,
-                                    bool driving = true);
+    int addConstraintPointOnHyperbolicArc(Point& p, ArcOfHyperbola& e, int tagId = 0, bool driving = true);
+    int addConstraintPointOnParabolicArc(Point& p, ArcOfParabola& e, int tagId = 0, bool driving = true);
+    int addConstraintPointOnBSpline(
+        Point& p,
+        BSpline& b,
+        double* pointparam,
+        int tagId,
+        bool driving = true
+    );
     int addConstraintArcOfEllipseRules(ArcOfEllipse& a, int tagId = 0, bool driving = true);
     int addConstraintCurveValue(Point& p, Curve& a, double* u, int tagId = 0, bool driving = true);
     int addConstraintArcOfHyperbolaRules(ArcOfHyperbola& a, int tagId = 0, bool driving = true);
     int addConstraintArcOfParabolaRules(ArcOfParabola& a, int tagId = 0, bool driving = true);
     int addConstraintPointOnArc(Point& p, Arc& a, int tagId = 0, bool driving = true);
-    int addConstraintPerpendicularLine2Arc(Point& p1,
-                                           Point& p2,
-                                           Arc& a,
-                                           int tagId = 0,
-                                           bool driving = true);
-    int addConstraintPerpendicularArc2Line(Arc& a,
-                                           Point& p1,
-                                           Point& p2,
-                                           int tagId = 0,
-                                           bool driving = true);
-    int addConstraintPerpendicularCircle2Arc(Point& center,
-                                             double* radius,
-                                             Arc& a,
-                                             int tagId = 0,
-                                             bool driving = true);
-    int addConstraintPerpendicularArc2Circle(Arc& a,
-                                             Point& center,
-                                             double* radius,
-                                             int tagId = 0,
-                                             bool driving = true);
-    int addConstraintPerpendicularArc2Arc(Arc& a1,
-                                          bool reverse1,
-                                          Arc& a2,
-                                          bool reverse2,
-                                          int tagId = 0,
-                                          bool driving = true);
-    int addConstraintTangent(Line& l, Circle& c, int tagId = 0, bool driving = true);
+    int addConstraintPerpendicularLine2Arc(Point& p1, Point& p2, Arc& a, int tagId = 0, bool driving = true);
+    int addConstraintPerpendicularArc2Line(Arc& a, Point& p1, Point& p2, int tagId = 0, bool driving = true);
+    int addConstraintPerpendicularCircle2Arc(
+        Point& center,
+        double* radius,
+        Arc& a,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintPerpendicularArc2Circle(
+        Arc& a,
+        Point& center,
+        double* radius,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintPerpendicularArc2Arc(
+        Arc& a1,
+        bool reverse1,
+        Arc& a2,
+        bool reverse2,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintTangent(Line& l, Circle& c, bool ccw, int tagId = 0, bool driving = true);
     int addConstraintTangent(Line& l, Ellipse& e, int tagId = 0, bool driving = true);
-    int addConstraintTangent(Line& l, Arc& a, int tagId = 0, bool driving = true);
+    int addConstraintTangent(Line& l, Arc& a, bool ccw, int tagId = 0, bool driving = true);
     int addConstraintTangent(Circle& c1, Circle& c2, int tagId = 0, bool driving = true);
     int addConstraintTangent(Arc& a1, Arc& a2, int tagId = 0, bool driving = true);
     int addConstraintTangent(Circle& c, Arc& a, int tagId = 0, bool driving = true);
 
     int addConstraintCircleRadius(Circle& c, double* radius, int tagId = 0, bool driving = true);
     int addConstraintArcRadius(Arc& a, double* radius, int tagId = 0, bool driving = true);
-    int
-    addConstraintCircleDiameter(Circle& c, double* diameter, int tagId = 0, bool driving = true);
+    int addConstraintCircleDiameter(Circle& c, double* diameter, int tagId = 0, bool driving = true);
     int addConstraintArcDiameter(Arc& a, double* diameter, int tagId = 0, bool driving = true);
     int addConstraintEqualLength(Line& l1, Line& l2, int tagId = 0, bool driving = true);
     int addConstraintEqualRadius(Circle& c1, Circle& c2, int tagId = 0, bool driving = true);
     int addConstraintEqualRadii(Ellipse& e1, Ellipse& e2, int tagId = 0, bool driving = true);
-    int addConstraintEqualRadii(ArcOfHyperbola& a1,
-                                ArcOfHyperbola& a2,
-                                int tagId = 0,
-                                bool driving = true);
+    int addConstraintEqualRadii(ArcOfHyperbola& a1, ArcOfHyperbola& a2, int tagId = 0, bool driving = true);
     int addConstraintEqualRadius(Circle& c1, Arc& a2, int tagId = 0, bool driving = true);
     int addConstraintEqualRadius(Arc& a1, Arc& a2, int tagId = 0, bool driving = true);
-    int addConstraintEqualFocus(ArcOfParabola& a1,
-                                ArcOfParabola& a2,
-                                int tagId = 0,
-                                bool driving = true);
-    int
-    addConstraintP2PSymmetric(Point& p1, Point& p2, Line& l, int tagId = 0, bool driving = true);
-    int
-    addConstraintP2PSymmetric(Point& p1, Point& p2, Point& p, int tagId = 0, bool driving = true);
-    int addConstraintSnellsLaw(Curve& ray1,
-                               Curve& ray2,
-                               Curve& boundary,
-                               Point p,
-                               double* n1,
-                               double* n2,
-                               bool flipn1,
-                               bool flipn2,
-                               int tagId,
-                               bool driving = true);
+    int addConstraintEqualFocus(ArcOfParabola& a1, ArcOfParabola& a2, int tagId = 0, bool driving = true);
+    int addConstraintP2PSymmetric(Point& p1, Point& p2, Line& l, int tagId = 0, bool driving = true);
+    int addConstraintP2PSymmetric(Point& p1, Point& p2, Point& p, int tagId = 0, bool driving = true);
+    int addConstraintSnellsLaw(
+        Curve& ray1,
+        Curve& ray2,
+        Curve& boundary,
+        Point p,
+        double* n1,
+        double* n2,
+        bool flipn1,
+        bool flipn2,
+        int tagId,
+        bool driving = true
+    );
 
-    int
-    addConstraintC2CDistance(Circle& c1, Circle& c2, double* dist, int tagId, bool driving = true);
-    int addConstraintC2LDistance(Circle& c, Line& l, double* dist, int tagId, bool driving = true);
-    int addConstraintP2CDistance(Point& p,
-                                 Circle& c,
-                                 double* distance,
-                                 int tagId = 0,
-                                 bool driving = true);
+    int addConstraintC2CDistance(
+        Circle& c1,
+        Circle& c2,
+        double* dist,
+        std::optional<bool> c1bigger,
+        int tagId,
+        bool driving = true
+    );
+    int addConstraintC2LDistance(
+        Circle& c,
+        Line& l,
+        double* dist,
+        bool ccw,
+        bool internal,
+        int tagId,
+        bool driving = true
+    );
+    int addConstraintP2CDistance(Point& p, Circle& c, double* distance, int tagId = 0, bool driving = true);
+    int addConstraintArcLength(Arc& a, double* dist, int tagId, bool driving = true);
 
     // internal alignment constraints
-    int addConstraintInternalAlignmentPoint2Ellipse(Ellipse& e,
-                                                    Point& p1,
-                                                    InternalAlignmentType alignmentType,
-                                                    int tagId = 0,
-                                                    bool driving = true);
-    int addConstraintInternalAlignmentEllipseMajorDiameter(Ellipse& e,
-                                                           Point& p1,
-                                                           Point& p2,
-                                                           int tagId = 0,
-                                                           bool driving = true);
-    int addConstraintInternalAlignmentEllipseMinorDiameter(Ellipse& e,
-                                                           Point& p1,
-                                                           Point& p2,
-                                                           int tagId = 0,
-                                                           bool driving = true);
-    int addConstraintInternalAlignmentEllipseFocus1(Ellipse& e,
-                                                    Point& p1,
-                                                    int tagId = 0,
-                                                    bool driving = true);
-    int addConstraintInternalAlignmentEllipseFocus2(Ellipse& e,
-                                                    Point& p1,
-                                                    int tagId = 0,
-                                                    bool driving = true);
-    int addConstraintInternalAlignmentPoint2Hyperbola(Hyperbola& e,
-                                                      Point& p1,
-                                                      InternalAlignmentType alignmentType,
-                                                      int tagId = 0,
-                                                      bool driving = true);
-    int addConstraintInternalAlignmentHyperbolaMajorDiameter(Hyperbola& e,
-                                                             Point& p1,
-                                                             Point& p2,
-                                                             int tagId = 0,
-                                                             bool driving = true);
-    int addConstraintInternalAlignmentHyperbolaMinorDiameter(Hyperbola& e,
-                                                             Point& p1,
-                                                             Point& p2,
-                                                             int tagId = 0,
-                                                             bool driving = true);
-    int addConstraintInternalAlignmentHyperbolaFocus(Hyperbola& e,
-                                                     Point& p1,
-                                                     int tagId = 0,
-                                                     bool driving = true);
-    int addConstraintInternalAlignmentParabolaFocus(Parabola& e,
-                                                    Point& p1,
-                                                    int tagId = 0,
-                                                    bool driving = true);
-    int addConstraintInternalAlignmentBSplineControlPoint(BSpline& b,
-                                                          Circle& c,
-                                                          unsigned int poleindex,
-                                                          int tag = 0,
-                                                          bool driving = true);
-    int addConstraintInternalAlignmentKnotPoint(BSpline& b,
-                                                Point& p,
-                                                unsigned int knotindex,
-                                                int tagId = 0,
-                                                bool driving = true);
+    int addConstraintInternalAlignmentPoint2Ellipse(
+        Ellipse& e,
+        Point& p1,
+        InternalAlignmentType alignmentType,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentEllipseMajorDiameter(
+        Ellipse& e,
+        Point& p1,
+        Point& p2,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentEllipseMinorDiameter(
+        Ellipse& e,
+        Point& p1,
+        Point& p2,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentEllipseFocus1(
+        Ellipse& e,
+        Point& p1,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentEllipseFocus2(
+        Ellipse& e,
+        Point& p1,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentPoint2Hyperbola(
+        Hyperbola& e,
+        Point& p1,
+        InternalAlignmentType alignmentType,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentHyperbolaMajorDiameter(
+        Hyperbola& e,
+        Point& p1,
+        Point& p2,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentHyperbolaMinorDiameter(
+        Hyperbola& e,
+        Point& p1,
+        Point& p2,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentHyperbolaFocus(
+        Hyperbola& e,
+        Point& p1,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentParabolaFocus(
+        Parabola& e,
+        Point& p1,
+        int tagId = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentBSplineControlPoint(
+        BSpline& b,
+        Circle& c,
+        unsigned int poleindex,
+        int tag = 0,
+        bool driving = true
+    );
+    int addConstraintInternalAlignmentKnotPoint(
+        BSpline& b,
+        Point& p,
+        unsigned int knotindex,
+        int tagId = 0,
+        bool driving = true
+    );
 
     double calculateAngleViaPoint(const Curve& crv1, const Curve& crv2, Point& p) const;
     double calculateAngleViaPoint(const Curve& crv1, const Curve& crv2, Point& p1, Point& p2) const;
+    double calculateAngleViaParams(
+        const Curve& crv1,
+        const Curve& crv2,
+        double* param1,
+        double* param2
+    ) const;
     void calculateNormalAtPoint(const Curve& crv, const Point& p, double& rtnX, double& rtnY) const;
 
     // Calculates errors of all constraints which have a tag equal to
@@ -516,21 +610,14 @@ public:
     void declareDrivenParams(VEC_pD& params);
     void initSolution(Algorithm alg = DogLeg);
 
-    int solve(bool isFine = true, Algorithm alg = DogLeg, bool isRedundantsolving = false);
-    int solve(VEC_pD& params,
-              bool isFine = true,
-              Algorithm alg = DogLeg,
-              bool isRedundantsolving = false);
-    int solve(SubSystem* subsys,
-              bool isFine = true,
-              Algorithm alg = DogLeg,
-              bool isRedundantsolving = false);
-    int solve(SubSystem* subsysA,
-              SubSystem* subsysB,
-              bool isFine = true,
-              bool isRedundantsolving = false);
+    SolveStatus solve(Algorithm alg = DogLeg, bool isRedundantsolving = false);
+    SolveStatus solve(VEC_pD& params, Algorithm alg = DogLeg, bool isRedundantsolving = false);
+    SolveStatus solve(SubSystem* subsys, Algorithm alg = DogLeg, bool isRedundantsolving = false);
+    SolveStatus solve(SubSystem* subsysA, SubSystem* subsysB, bool isRedundantsolving = false);
 
     void applySolution();
+    void evaluateDrivenConstraints();
+
     void undoSolution();
     // FIXME: looks like XconvergenceFine is not the solver precision, at least in DogLeg
     // solver.
@@ -563,8 +650,7 @@ public:
     {
         pdependentparameterlist = pDependentParameters;
     }
-    void
-    getDependentParamsGroups(std::vector<std::vector<double*>>& pdependentparametergroups) const
+    void getDependentParamsGroups(std::vector<std::vector<double*>>& pdependentparametergroups) const
     {
         pdependentparametergroups = pDependentParametersGroups;
     }
@@ -606,10 +692,8 @@ protected:
 // Helper elements
 ///////////////////////////////////////
 
-void free(VEC_pD& doublevec);
-void free(std::vector<Constraint*>& constrvec);
-void free(std::vector<SubSystem*>& subsysvec);
+void deleteAllContent(VEC_pD& doublevec);
+void deleteAllContent(std::vector<Constraint*>& constrvec);
+void deleteAllContent(std::vector<SubSystem*>& subsysvec);
 
 }  // namespace GCS
-
-#endif  // PLANEGCS_GCS_H

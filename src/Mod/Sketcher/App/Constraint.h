@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2008 Jürgen Riegel <juergen.riegel@web.de>              *
  *                                                                         *
@@ -20,17 +22,23 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef SKETCHER_CONSTRAINT_H
-#define SKETCHER_CONSTRAINT_H
+#pragma once
 
 #include <array>
 
 #include <Base/Persistence.h>
 #include <Base/Quantity.h>
+#include <Base/Bitmask.h>
+
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 
 #include "GeoEnum.h"
+
+
+// Flipping this to 0 removes old legazy members First, FirstPos, Second...
+// Will be used when everything has been migrated to new api.
+#define SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS 1
 
 
 namespace Sketcher
@@ -39,7 +47,7 @@ namespace Sketcher
  Important note: New constraint types must be always added at the end but before
  'NumConstraintTypes'. This is mandatory in order to keep the handling of constraint types upward
  compatible which means that this program version ignores later introduced constraint types when
- reading them from a project file.
+ reading them from a project file. They also must be added to the 'type2str' array in this file.
  */
 enum ConstraintType : int
 {
@@ -63,6 +71,8 @@ enum ConstraintType : int
     Block = 17,
     Diameter = 18,
     Weight = 19,
+    Group = 20,
+    Text = 21,
     NumConstraintTypes  // must be the last item!
 };
 
@@ -82,6 +92,15 @@ enum InternalAlignmentType
     ParabolaFocalAxis = 11,
     NumInternalAlignmentType  // must be the last item!
 };
+enum class ConstraintOrientations
+{
+    None = 0,
+    CounterClockwise = 1,
+    Clockwise = 2,
+    Internal = 4,
+    External = 8
+};
+using ConstraintOrientation = Base::Flags<ConstraintOrientations>;
 
 class SketcherExport Constraint: public Base::Persistence
 {
@@ -129,9 +148,23 @@ public:
             || Type == Diameter || Type == Angle || Type == SnellsLaw || Type == Weight;
     }
 
-    /// utility function to swap the index in First/Second/Third of the provided constraint from the
+    /// utility function to swap the index in elements of the provided constraint from the
     /// fromGeoId GeoId to toGeoId
     void substituteIndex(int fromGeoId, int toGeoId);
+
+    /// utility function to swap the index and position in elements of the provided
+    /// constraint from {fromGeoId, fromPosId} to {toGeoId, toPosId}.
+    void substituteIndexAndPos(int fromGeoId, PointPos fromPosId, int toGeoId, PointPos toPosId);
+
+    /// utility function to check if `geoId` is one of the geometries
+    bool involvesGeoId(int geoId) const;
+
+    /// utility function to check if (`geoId`, `posId`) is one of the points/curves
+    bool involvesGeoIdAndPosId(int geoId, PointPos posId) const;
+
+    std::string toString() const;
+
+    std::string elementsToString() const;
 
     std::string typeToString() const
     {
@@ -151,10 +184,12 @@ private:
     Constraint(const Constraint&) = default;  // only for internal use
 
 private:
-    double Value;
+    double Value {0.0};
 
+    // clang-format off
     constexpr static std::array<const char*, ConstraintType::NumConstraintTypes> type2str {
         {"None",
+         "Coincident",
          "Horizontal",
          "Vertical",
          "Parallel",
@@ -172,41 +207,83 @@ private:
          "SnellsLaw",
          "Block",
          "Diameter",
-         "Weight"}};
+         "Weight",
+         "Group",
+         "Text"}};
+    // clang-format on
 
     constexpr static std::array<const char*, InternalAlignmentType::NumInternalAlignmentType>
-        internalAlignmentType2str {{"Undef",
-                                    "EllipseMajorDiameter",
-                                    "EllipseMinorDiameter",
-                                    "EllipseFocus1",
-                                    "EllipseFocus2",
-                                    "HyperbolaMajor",
-                                    "HyperbolaMinor",
-                                    "HyperbolaFocus",
-                                    "ParabolaFocus",
-                                    "BSplineControlPoint",
-                                    "BSplineKnotPoint",
-                                    "ParabolaFocalAxis"}};
+        internalAlignmentType2str {
+            {"Undef",
+             "EllipseMajorDiameter",
+             "EllipseMinorDiameter",
+             "EllipseFocus1",
+             "EllipseFocus2",
+             "HyperbolaMajor",
+             "HyperbolaMinor",
+             "HyperbolaFocus",
+             "ParabolaFocus",
+             "BSplineControlPoint",
+             "BSplineKnotPoint",
+             "ParabolaFocalAxis"}
+    };
 
 public:
-    ConstraintType Type;
-    InternalAlignmentType AlignmentType;
+    ConstraintType Type {None};
+    InternalAlignmentType AlignmentType {Undef};
+    ConstraintOrientation Orientation {ConstraintOrientations::None};
+
     std::string Name;
-    int First;
-    PointPos FirstPos;
-    int Second;
-    PointPos SecondPos;
-    int Third;
-    PointPos ThirdPos;
-    float LabelDistance;
-    float LabelPosition;
-    bool isDriving;
+    std::string MetaData;
+    float LabelDistance {10.F};
+    float LabelPosition {0.F};
+    bool isDriving {true};
     // Note: for InternalAlignment Type this index indexes equal internal geometry elements (e.g.
     // index of pole in a bspline). It is not a GeoId!!
-    int InternalAlignmentIndex;
-    bool isInVirtualSpace;
+    int InternalAlignmentIndex {-1};
+    bool isInVirtualSpace {false};
+    bool isVisible {true};
 
-    bool isActive;
+    bool isActive {true};
+
+    GeoElementId getElement(size_t index) const;
+    void setElement(size_t index, GeoElementId element);
+    void addElement(GeoElementId element);
+    bool hasElement(size_t index) const;
+    size_t getElementsSize() const;
+    bool isElementsEmpty() const;
+    void truncateElements(size_t newSize);
+    int getGeoId(size_t index) const;
+    PointPos getPosId(size_t index) const;
+    int getPosIdAsInt(size_t index) const;
+    void setGeoId(size_t index, int geoId);
+    void setPosId(size_t index, PointPos pos);
+    void setPosId(size_t index, int pos);
+    void swapElements(size_t index1, size_t index2);
+    bool ensureElementExists(size_t index);
+    size_t getElementIndexForGeoId(int geoId) const;
+
+    std::string getText() const;
+    void setText(const std::string& text);
+    std::string getFont() const;
+    void setFont(const std::string& font);
+    bool getIsTextHeight() const;
+    void setIsTextHeight(bool val);
+
+#ifdef SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS
+    // Deprecated, use getElement/setElement instead
+    int First {GeoEnum::GeoUndef};
+    int Second {GeoEnum::GeoUndef};
+    int Third {GeoEnum::GeoUndef};
+    PointPos FirstPos {PointPos::none};
+    PointPos SecondPos {PointPos::none};
+    PointPos ThirdPos {PointPos::none};
+#endif
+
+private:
+    // New way to access point ids and positions.
+    // While the old way is still supported, it is recommended to use the getters and setters instead.
+    std::vector<GeoElementId> elements {GeoElementId(), GeoElementId(), GeoElementId()};
 
 protected:
     boost::uuids::uuid tag;
@@ -214,5 +291,4 @@ protected:
 
 }  // namespace Sketcher
 
-
-#endif  // SKETCHER_CONSTRAINT_H
+ENABLE_BITMASK_OPERATORS(Sketcher::ConstraintOrientations);

@@ -996,7 +996,7 @@ inline int SketchObject::initTemporaryMove(int geoId, PointPos pos, bool fine /*
         solve();
     }
 
-    return solvedSketch.initMove(geoId, pos, fine);
+    return solvedSketch.initMove(geoId, pos);
 }
 
 inline int SketchObject::initTemporaryBSplinePieceMove(int geoId,
@@ -1011,7 +1011,7 @@ inline int SketchObject::initTemporaryBSplinePieceMove(int geoId,
         solve();
     }
 
-    return solvedSketch.initBSplinePieceMove(geoId, pos, firstPoint, fine);
+    return solvedSketch.initBSplinePieceMove(geoId, pos, firstPoint);
 }
 
 inline int SketchObject::moveTemporaryPoint(int geoId,
@@ -1019,7 +1019,7 @@ inline int SketchObject::moveTemporaryPoint(int geoId,
                                             Base::Vector3d toPoint,
                                             bool relative /*=false*/)
 {
-    return solvedSketch.movePoint(geoId, pos, toPoint, relative);
+    return static_cast<int>(solvedSketch.moveGeometry(geoId, pos, toPoint, relative));
 }
 
 using SketchObjectPython = App::FeaturePythonT<SketchObject>;

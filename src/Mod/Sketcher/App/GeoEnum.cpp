@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2021 Abdullah Tahiri <abdullah.tahiri.yo@gmail.com>     *
  *                                                                         *
@@ -20,9 +22,11 @@
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
 
 #include "GeoEnum.h"
+
+#include <FCConfig.h>
+#include <string>
 
 using namespace Sketcher;
 
@@ -40,6 +44,22 @@ bool GeoElementId::operator<(const GeoElementId& obj) const
 {
     return (this->GeoId != obj.GeoId) ? (this->GeoId < obj.GeoId)
                                       : (static_cast<int>(this->Pos) < static_cast<int>(obj.Pos));
+}
+
+std::string GeoElementId::pointPosToString(PointPos pos)
+{
+    const auto index = static_cast<size_t>(pos);
+
+    if (index < pointPos2str.size()) {
+        return pointPos2str[index];
+    }
+
+    return "unknown";
+}
+
+std::string GeoElementId::toString() const
+{
+    return "GeoId=" + std::to_string(GeoId) + ", Pos=" + pointPosToString(Pos);
 }
 
 #ifdef FC_OS_WIN32
