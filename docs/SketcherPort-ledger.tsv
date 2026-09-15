@@ -937,7 +937,7 @@ da3aa42244	2026-03-21	PaddleStroke	?	0	0	open	40	partial 88c9baa853: Gui/DrawSke
 de3de7624a	2026-03-25	xxorza	feature	0	0	open	7		Sketcher: enable two-sided lighting for internal faces	Gui/ViewProviderSketch.cpp
 bf009d41e4	2026-03-25	xxorza	fix	0	0	open	3		Sketcher: fix multi-selection highlighting for internal faces	Gui/ViewProviderSketch.cpp
 3d0aaeb616	2026-03-26	Syres916	fix	0	0	open	1		[Sketcher] Fix missing checkbox preference on loadsettings	Gui/SketcherSettings.cpp
-24ab301685	2026-03-28	ilya	fix	0	0	open	515		Sketcher: fix internal face generation for complex overlapping geometry (#28648)	App/SketchObject.cpp CMakeLists.txt SketcherTests/TestSketchInternalFaces.py TestSketcherApp.py
+24ab301685	2026-03-28	ilya	fix	0	0	open	515	declined WireJoiner kept, fixed in aa31511fbd	Sketcher: fix internal face generation for complex overlapping geometry (#28648)	App/SketchObject.cpp CMakeLists.txt SketcherTests/TestSketchInternalFaces.py TestSketcherApp.py
 926e93c314	2026-03-28	PaddleStroke	?	0	0	open	668		Sketcher: Copy paste of groups (#28728)	App/PythonConverter.cpp App/SketchObject.cpp App/SketchObject.h Gui/CommandSketcherTools.cpp
 03bc80c060	2026-03-28	Max Wilfinger	feature	0	0	open	46		Sketcher: Add grid transparency preference	Gui/SketcherSettings.cpp Gui/SketcherSettingsGrid.ui Gui/ViewProviderSketch.cpp
 be1d53cf5f	2026-03-28	Max Wilfinger	feature	0	0	open	5		Sketcher: Change Make Internals default for new sketches	App/SketchObject.cpp Gui/SketcherSettings.ui
@@ -952,7 +952,7 @@ f432d1c6a7	2026-04-02	theo-vt	refactor	0	0	open	67	partial 88c9baa853: App/Sketc
 aab4bf329a	2026-03-28	Gregg Jaskiewicz	fix	1	0	open	2		Sketcher: Fix TextNodePosition enum to match addChild() order	Gui/EditModeInformationOverlayCoinConverter.h
 00f547d67c	2026-03-28	Gregg Jaskiewicz	fix	0	0	open	4		Gui: Fix use-after-free in QTimer lambdas capturing this	Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherElements.cpp
 2deee96cab	2026-04-04	Bojan	fix	0	0	open	2		Sketcher: fix inverted null check in purgeHandler leaving selection enabled	Gui/ViewProviderSketch.cpp
-0939408c21	2026-04-13	ilya	fix	0	0	open	268		Sketcher: fix internal faces for self-intersecting BSplines and dangling edges (#28964)	SketcherTests/TestSketchInternalFaces.py
+0939408c21	2026-04-13	ilya	fix	0	0	open	268	adapted aa31511fbd	Sketcher: fix internal faces for self-intersecting BSplines and dangling edges (#28964)	SketcherTests/TestSketchInternalFaces.py
 d0b98703c0	2026-02-13	wwmayer	fix	0	0	open	7	adapted ae323bf5a9: y averaged before the back-rotation; upstream's flattens tilted lines	Sketcher: Fix workaround of PR 19700	App/SketchObjectExternal.cpp
 652b25811d	2026-04-12	Chris Hennes	?	0	0	open	30		Sketcher: remove obsolete backwards compat hack	App/SketchObject.cpp App/SketchObject.h App/SketchObjectExternal.cpp
 29771d4a0a	2026-04-14	Joao Matos	fix	0	0	open	221		Sketcher: add rectangle OVP Enter regression test	CMakeLists.txt InitGui.py SketcherTests/TestOnViewParameterGui.py TestSketcherApp.py TestSketcherGui.py
