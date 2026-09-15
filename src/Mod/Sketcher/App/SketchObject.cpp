@@ -1731,6 +1731,18 @@ Data::IndexedName SketchObject::checkSubName(const char *sub) const{
         int posId = static_cast<int>(PointPos::none);
         if((iss >> sep >> posId) && sep=='v') {
             int idx = getVertexIndexGeoPos(geoId, static_cast<PointPos>(posId));
+
+            // Outside edit mode a circle exposes its seam point but not its centre, while in
+            // edit mode it exposes the centre but not the seam, so looking up a circle's start
+            // point (g1v1, which happens outside edit mode) fails. A circle has exactly one
+            // vertex either way (upstream issue 25089).
+            if (idx < 0
+                && (static_cast<PointPos>(posId) == PointPos::start
+                    || static_cast<PointPos>(posId) == PointPos::end)
+                && (geo->is<Part::GeomCircle>() || geo->is<Part::GeomEllipse>())) {
+                idx = getVertexIndexGeoPos(geoId, PointPos::mid);
+            }
+
             if(idx < 0) {
                 FC_ERR("invalid subname " << sub);
                 // return sub;
