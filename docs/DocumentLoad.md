@@ -1140,3 +1140,71 @@ Without the logging, in the configuration of the 97.3 s bench run
 settled coverage 90468 px as before. One run each; loads on this box move by
 5-10 s between runs of the same binary (the logged "neither" column above read
 112.6 s and 117.7 s on two runs), so the like-for-like figure is the table's.
+
+## 17. Measured: scheduling a sensor per node was quadratic (Windows, 2026-09-15)
+
+`FC_LEVEL_DEBUG` turns on the per-build split of `ViewProviderPartExt::
+updateVisual`. Over the 17058 builds of the sec 16.3 load it read: mesh 23.1 s,
+**prologue 13.1 s**, traversal 8.8 s, highlight 0.4 s, unattributed 1.8 s. The
+prologue is the three Coin actions each build applies before refilling
+(`SoUpdateVBOAction`, then selection and highlight clears), about 0.8 ms each.
+
+### 17.1 Skipping the prologue moved the cost, it did not remove it
+
+On a node never filled the actions have nothing to discard, so a trial skipped
+all three when the sets were pristine. The skip fired on every build (prologue
+0.02 s, scene identical), and the visual build stayed at 48 s: **traversal rose
+from 8.8 s to 22.7 s.** Something about 0.8 ms per node was paid by whichever
+code touched the node first.
+
+### 17.2 What that something is
+
+160 stacks of the main thread, taken by `cdb` attached to the running load and
+broken in every 300 ms with `DebugBreakProcess` (a `sxe -c "~0 kc; g" bpe`
+handler dumps and resumes). Of the 143 inside `updateVisual`, 49 were in
+`SoDelayQueueSensor::schedule`, reached from a field write's notification:
+
+| samples | where |
+|---|---|
+| 26 | Coin `SoSensorManager::insertDelaySensor`: a linear scan for the sorted insertion point |
+| 23 | Quarter `SensorManager::sensorQueueChanged`: `QTimer::start`/`setInterval` on a running timer -> `killTimer` -> `QCoreApplicationPrivate::removePostedTimerEvent` |
+| 6 | Coin `processDelayQueue`: `SbList::remove(0)` while a progress pump drained the queue |
+
+Every shape node carries a delay-queue sensor (the render cache's
+`VCacheSensor`, the faceset's `partIndexSensor`). The first notification of the
+node schedules it; later ones find it scheduled and return at once -- which is
+why the cost follows the first touch, and why `SoUpdateVBOAction`'s `touch()`
+used to pay it. During a restore nothing drains the queue between the sequencer's
+pumps, so it holds thousands of entries, and each insert scanned from the front
+(all data sensors share one priority, so the new entry always belongs at the
+end) and restarted two Qt timers. (An earlier env-gated split had charged ~10 s
+of the prologue to the actions' destructors; the samples do not support that.)
+
+### 17.3 Fix
+
+- Coin fork, `SoSensorManager::insertDelaySensor`: append when the new priority
+  is no smaller than the last entry's, otherwise bisect for the same position.
+  The queue is kept sorted (`setPriority` reschedules a queued sensor), so the
+  order is exactly the scan's.
+- `src/Gui/Quarter/SensorManager.cpp`: the idle timer is started only if it is
+  not running, and the timer-queue timer is restarted only for an earlier
+  deadline. A later deadline fires early, finds nothing due and re-arms.
+
+The prologue skip was dropped: with the fix it is worth 0.4 s.
+
+### 17.4 Result
+
+Same bench configuration as sec 16.3; the split runs are logged:
+
+| | before (skip trial) | fix + skip | fix, no skip |
+|---|---|---|---|
+| visual build | 48.2 s | **27.2 s** | 27.4 s |
+| -- traversal / prologue / mesh | 22.7 / 0.0 / 23.2 s | 3.4 / 0.0 / 22.0 s | 3.4 / 0.4 / 22.0 s |
+| load | 67.5 s | **45.0 s** | 45.0 s |
+| draws / triangles, settled px | 45903 / 17.88 M, 90468 | same | same |
+
+Unlogged: **load 42.4 s** (fix + skip) and 44.3 s (the committed tree, no
+skip) against sec 16.3's 75.4 s. The committed tree's fixed-camera frame is
+pixel-identical to the frame before any of this (max channel difference 0). The document close after the
+bench also rebuilds every visual once; that pass fell from ~12 s to 0.4 s.
+Meshing is now four fifths of the visual build.
