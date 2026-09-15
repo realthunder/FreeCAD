@@ -876,3 +876,88 @@
   border-color: #7fb6ff;
   box-shadow: 0 0 0 2px rgba(127, 182, 255, 0.35);
 }
+
+/* The Python console (console.tsx, docs/Sandbox.md 7.20 C4). Bottom-left by
+   default: the spreadsheet panel takes the bottom-right corner, and the two
+   are opened together when a sheet is being scripted. */
+.fc-console {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 32px));
+  height: min(46vh, 420px);
+  font: 12px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(18, 20, 24, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.fc-console-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  cursor: move;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.fc-console-title { font-weight: 600; }
+.fc-console-doc { color: #a8b4c4; }
+.fc-console-btn {
+  font: 11px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.fc-console-interrupt {
+  color: #ffd0a0;
+  border-color: rgba(240, 160, 80, 0.5);
+}
+.fc-console-out {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 8px;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.fc-console-in { color: #9fc2ee; }
+.fc-console-out .fc-console-out { color: #e8e8ea; }
+.fc-console-err { color: #ff9f9f; }
+.fc-console-info { color: #8e98a6; }
+.fc-console-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.fc-console-prompt { color: #9fc2ee; }
+.fc-console-input {
+  flex: 1;
+  font: inherit;
+  color: #e8e8ea;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+@media (max-width: 640px) {
+  .fc-console {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 50vh;
+    border-radius: 8px 8px 0 0;
+  }
+}

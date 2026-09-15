@@ -18,8 +18,9 @@ export default defineConfig({
       // browser tier"), the spreadsheet panel harness
       // (public/sheet-test.html, docs/SpreadsheetRemote.md sec 5) and the
       // console guest's boot gate (public/console-test.html,
-      // docs/Sandbox.md 7.20 C1) and its bridge gate (public/bridge-test.html,
-      // C2).  The
+      // docs/Sandbox.md 7.20 C1), its bridge gate (public/bridge-test.html,
+      // C2) and the console panel's gate (public/console-panel-test.html,
+      // C4).  The
       // chrome keeps its historical inspector.js name because shell.html
       // loads it by that name.
       input: {
@@ -28,6 +29,7 @@ export default defineConfig({
         sheetharness: resolve(__dirname, 'src/sheetharness.ts'),
         consoletest: resolve(__dirname, 'src/sandbox/consolemain.ts'),
         bridgetest: resolve(__dirname, 'src/sandbox/bridgemain.ts'),
+        consolepaneltest: resolve(__dirname, 'src/sandbox/consolepanelmain.ts'),
       },
       output: {
         format: 'es',

@@ -36,6 +36,9 @@ export interface BridgeStats {
   statements: number;
   bytesUp: number;
   bytesDown: number;
+  /// What else the socket was pushed -- the scene, streamed frames, control
+  /// text -- which a console's socket of its own pays for and ignores.
+  otherBytesDown: number;
   /// Round-trip time of the answered ops, summed and worst.
   totalMs: number;
   maxMs: number;
@@ -50,7 +53,7 @@ interface Waiter {
 
 export class RemoteBridge implements HostBridge {
   readonly stats: BridgeStats = {
-    ops: 0, statements: 0, bytesUp: 0, bytesDown: 0, totalMs: 0, maxMs: 0,
+    ops: 0, statements: 0, bytesUp: 0, bytesDown: 0, otherBytesDown: 0, totalMs: 0, maxMs: 0,
   };
   private seq = 0;
   private opsSinceEnd = 0;
@@ -126,17 +129,29 @@ export class RemoteBridge implements HostBridge {
     this.socket.send(frame);
   }
 
+  /// Join another served document on this connection, as the viewer's own
+  /// switch does (main.cpp fcviewer_switch_doc).  The host drops the
+  /// connection's bridge endpoint with the old document's handles.
+  switchDoc(name: string): void {
+    if (this.socket.readyState === WebSocket.OPEN)
+      this.socket.send(JSON.stringify({ cmd: 'switch', doc: name }));
+  }
+
   close(): void {
     this.socket.close();
   }
 
   private onMessage(e: MessageEvent) {
-    if (!(e.data instanceof ArrayBuffer) || e.data.byteLength < 8)
+    if (!(e.data instanceof ArrayBuffer) || e.data.byteLength < 8) {
+      this.stats.otherBytesDown += typeof e.data === 'string' ? e.data.length : e.data.byteLength;
       return;
+    }
     const bytes = new Uint8Array(e.data);
     for (let i = 0; i < 4; ++i)
-      if (bytes[i] !== MAGIC[i])
+      if (bytes[i] !== MAGIC[i]) {
+        this.stats.otherBytesDown += bytes.length;
         return;
+      }
     const seq = new DataView(e.data).getUint32(4, true);
     const w = this.waiting.get(seq);
     if (!w)
