@@ -618,13 +618,12 @@ public: /* Solver exposed interface */
     }
     /// Forwards a request for a temporary initMove to the solver using the current sketch state as
     /// a reference (enables dragging)
-    inline int initTemporaryMove(int geoId, PointPos pos, bool fine = true);
+    inline int initTemporaryMove(int geoId, PointPos pos);
     /// Forwards a request for a temporary initBSplinePieceMove to the solver using the current
     /// sketch state as a reference (enables dragging)
     inline int initTemporaryBSplinePieceMove(int geoId,
                                              PointPos pos,
-                                             const Base::Vector3d& firstPoint,
-                                             bool fine = true);
+                                             const Base::Vector3d& firstPoint);
     /** Forwards a request for point or curve temporary movement to the solver using the current
      * state as a reference (enables dragging). NOTE: A temporary move operation must always be
      * preceded by a initTemporaryMove() operation.
@@ -1003,7 +1002,7 @@ private:
     mutable std::map<std::string, std::string> internalElementMap;
 };
 
-inline int SketchObject::initTemporaryMove(int geoId, PointPos pos, bool fine /*=true*/)
+inline int SketchObject::initTemporaryMove(int geoId, PointPos pos)
 {
     // if a previous operation did not update the geometry (including geometry extensions)
     // or constraints (including any deleted pointer, as in renameConstraint) of the solver,
@@ -1017,8 +1016,7 @@ inline int SketchObject::initTemporaryMove(int geoId, PointPos pos, bool fine /*
 
 inline int SketchObject::initTemporaryBSplinePieceMove(int geoId,
                                                        PointPos pos,
-                                                       const Base::Vector3d& firstPoint,
-                                                       bool fine)
+                                                       const Base::Vector3d& firstPoint)
 {
     // if a previous operation did not update the geometry (including geometry extensions)
     // or constraints (including any deleted pointer, as in renameConstraint) of the solver,

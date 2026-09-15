@@ -1551,7 +1551,7 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
                 Sketcher::PointPos PosId;
                 getSketchObject()->getGeoVertexIndex(edit->DragPoint, GeoId, PosId);
                 if (GeoId != GeoEnum::GeoUndef && PosId != Sketcher::PointPos::none) {
-                    getSketchObject()->initTemporaryMove(GeoId, PosId, false);
+                    getSketchObject()->initTemporaryMove(GeoId, PosId);
                     relative = false;
                     xInit = 0;
                     yInit = 0;
@@ -1653,7 +1653,7 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
                     yInit = 0;
                 }
 
-                getSketchObject()->initTemporaryMove(edit->DragCurve, Sketcher::PointPos::none, false);
+                getSketchObject()->initTemporaryMove(edit->DragCurve, Sketcher::PointPos::none);
 
             } else {
                 setSketchMode(STATUS_NONE);
