@@ -66,8 +66,6 @@ class TestSketchValidateCoincidents(unittest.TestCase):
         del geo0, geo1, geo2, geo3
         del sketch
 
-    # Pending upstream e96ac0b1db: needs the SketchObject.detectDegeneratedGeometries Python binding.
-    @unittest.expectedFailure
     def testDegenratedGeometryCase(self):
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         v0 = Vector(-47.680691, 18.824165000000004, 0.0)
@@ -88,8 +86,6 @@ class TestSketchValidateCoincidents(unittest.TestCase):
         del geo0, geo1
         del sketch
 
-    # Pending upstream 948d747c6c: needs addExternal('Name', 'Sub') argument form.
-    @unittest.expectedFailure
     def testDeleteConstraintsToExternalCase(self):
         box = self.Doc.addObject("Part::Box", "Box")
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
@@ -111,8 +107,6 @@ class TestSketchValidateCoincidents(unittest.TestCase):
         del sketch
         del box
 
-    # Pending upstream e67502025d: needs the SketchObject.evaluateConstraints Python binding.
-    @unittest.expectedFailure
     def testValidateConstraintsCase(self):
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         v0 = Vector(-47.680691, 18.824165000000004, 0.0)
