@@ -1,7 +1,7 @@
 // A Python console session in the page (docs/Sandbox.md 7.20, C4): the guest
-// booted from the FreeCAD that serves the document, its host bridge on a
-// socket of its own, and the interpreter of console.py driven one line at a
-// time.  No DOM here -- the panel (console.tsx) and its gate page
+// booted from the FreeCAD that serves the document, its host bridge on the
+// viewer's scene socket (a socket of its own on a page with no viewer), and
+// the interpreter of console.py driven one line at a time.  No DOM here -- the panel (console.tsx) and its gate page
 // (consolepanelmain.ts) sit on top.
 //
 // Every line enters the guest through fcx_call (BrowserGuest.call), so a
@@ -33,11 +33,29 @@ export interface SessionOptions {
   token?: string;
   /// The served document to join.
   doc?: string;
-  /// The label the owner's sharing roster shows.
+  /// The label the owner's sharing roster shows, for a connection of its own.
   client?: string;
+  /// Ride the wasm viewer's scene socket: the console is then the same
+  /// connection as the view.  Waits a while for the viewer to install its
+  /// hook; a viewer that never does gets a connection of its own, said so
+  /// through `output`.
+  viewerSocket?: boolean;
   output: (text: string, stream: Stream) => void;
   /// Boot progress, for the panel's status line.
   progress?: (what: string) => void;
+}
+
+/// How long a console opened with the page waits for the viewer's hook.
+const VIEWER_WAIT_MS = 20000;
+
+async function waitFor(cond: () => boolean, ms: number): Promise<boolean> {
+  const t0 = performance.now();
+  while (!cond()) {
+    if (performance.now() - t0 > ms)
+      return false;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return true;
 }
 
 export class ConsoleSession {
@@ -59,9 +77,18 @@ export class ConsoleSession {
                       + 'the console needs Chrome 137 or Firefox 139 and later');
     const say = opts.progress ?? (() => {});
     say('connecting');
-    const bridge = await RemoteBridge.connect(opts.server, {
-      token: opts.token, doc: opts.doc, client: opts.client ?? 'python-console',
-    });
+    let bridge: RemoteBridge;
+    if (opts.viewerSocket && await waitFor(() => RemoteBridge.viewerAvailable, VIEWER_WAIT_MS)) {
+      bridge = RemoteBridge.viewer();
+    }
+    else {
+      if (opts.viewerSocket)
+        opts.output('this viewer offers no bridge on its socket; the console opens a '
+                    + 'connection of its own, which the owner sees and sets apart\n', 'err');
+      bridge = await RemoteBridge.connect(opts.server, {
+        token: opts.token, doc: opts.doc, client: opts.client ?? 'python-console',
+      });
+    }
     try {
       say('loading the Python runtime');
       // Boot messages before the raw writers below are installed: batched
@@ -139,9 +166,15 @@ export class ConsoleSession {
       this.intr[0] = 2;  // SIGINT
   }
 
+  /// Whether the console is the viewer's own connection.
+  get onViewerSocket(): boolean {
+    return !this.bridge.ownsConnection;
+  }
+
   /// Follow the viewer to another served document.  The host starts the
   /// connection's bridge over with an empty handle table; a name the console
-  /// holds from the old document no longer resolves.
+  /// holds from the old document no longer resolves.  On the viewer's socket
+  /// the viewer's own switch did it, and this sends nothing.
   switchDoc(name: string): void {
     this.bridge.switchDoc(name);
   }

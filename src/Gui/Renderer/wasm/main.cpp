@@ -447,6 +447,24 @@ EM_JS(void, fcviewer_viewonly_event, (int viewOnly), {
 // "finish editing" instead of "edit", and to keep a panel from asking
 // for a second session; the viewer's own input routing does not go
 // through here.
+// The sandbox console's host bridge (docs/Sandbox.md 7.20 C4) rides this
+// page's scene socket rather than a second connection of its own: one
+// connection is one entry on the owner's sharing roster, one access mode and
+// one principal. Answers ('FCSB' frames) are handed to the page whole as
+// 'fc:bridge' events and never reach the scene parser; the socket's state is
+// an 'fc:socket' event, mirrored on window.fcviewerSocketOpen, because a
+// reconnect is a new connection whose host endpoint knows nothing of the old
+// one's pending ops.
+EM_JS(void, fcviewer_bridge_event, (const unsigned char *data, int size), {
+    window.dispatchEvent(new CustomEvent('fc:bridge',
+                                         { detail: HEAPU8.slice(data, data + size) }));
+});
+
+EM_JS(void, fcviewer_socket_event, (int open), {
+    window.fcviewerSocketOpen = !!open;
+    window.dispatchEvent(new CustomEvent('fc:socket', { detail: !!open }));
+});
+
 EM_JS(void, fcviewer_edit_event, (int editing, const char *obj), {
     var name = obj ? UTF8ToString(obj) : '';
     window.fcviewerEditing = editing ? name : null;
@@ -591,6 +609,15 @@ EM_JS(void, fcviewer_install_control, (), {
     };
     window.fcviewerClientName = function() {
         return UTF8ToString(_fcviewer_client_name());
+    };
+    // The sandbox console's uplink (fcviewer_bridge_event above): one
+    // whole 'S' frame, sent as is. False when the socket is down.
+    window.fcviewerBridgeSend = function(bytes) {
+        var buf = _malloc(bytes.length);
+        HEAPU8.set(bytes, buf);
+        var ok = _fcviewer_bridge_send(buf, bytes.length);
+        _free(buf);
+        return ok === 1;
     };
     window.fcviewerControlSend = function(s) {
         var len = lengthBytesUTF8(s) + 1;
@@ -8468,6 +8495,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_hud(int on)
 /// setProperty, ...): send a JSON text frame on the live scene socket.
 /// Returns 0 when the socket is down — the DOM side treats that as its
 /// "offline" state, it must not queue.
+/// window.fcviewerBridgeSend: one sandbox bridge frame from the page's
+/// console (fcviewer_bridge_event). Only an 'S' frame -- this is not a way
+/// for the page to put arbitrary binary on the scene socket.
+extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_bridge_send(unsigned char *data, int size)
+{
+    if (!s_wsOpen || s_ws <= 0 || size < 6 || data[0] != 'S')
+        return 0;
+    return emscripten_websocket_send_binary(s_ws, data, size)
+           == EMSCRIPTEN_RESULT_SUCCESS;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_control_send(const char *json)
 {
     if (s_ws <= 0 || !s_wsOpen)
@@ -8706,6 +8744,7 @@ static EM_BOOL onWsOpen(int, const EmscriptenWebSocketOpenEvent *, void *)
     // — ask once, so the menu has its document section from the start.
     static const char docs[] = "{\"cmd\":\"docs\"}";
     emscripten_websocket_send_utf8_text(s_ws, const_cast<char *>(docs));
+    fcviewer_socket_event(1);
     return EM_TRUE;
 }
 
@@ -8713,8 +8752,12 @@ static EM_BOOL onWsMessage(int, const EmscriptenWebSocketMessageEvent *e,
                            void *)
 {
     if (!e->isText) {
-        // A streamed frame (FrameStreamWire.h) or the scene.
-        if (Render::isStreamedFrame(e->data, size_t(e->numBytes)))
+        // A sandbox bridge answer (SceneServer.h, SceneBridgeRequest), a
+        // streamed frame (FrameStreamWire.h) or the scene.
+        const uint8_t *d = e->data;
+        if (e->numBytes >= 8 && d[0] == 'F' && d[1] == 'C' && d[2] == 'S' && d[3] == 'B')
+            fcviewer_bridge_event(d, int(e->numBytes));
+        else if (Render::isStreamedFrame(e->data, size_t(e->numBytes)))
             handleStreamedFrame(e->data, size_t(e->numBytes));
         else
             applyScenePayload(reinterpret_cast<const char *>(e->data),
@@ -8737,6 +8780,8 @@ static void onWsDown()
         return;
     bool wasOpen = s_wsOpen;
     s_wsOpen = false;
+    if (wasOpen)
+        fcviewer_socket_event(0);
     if (!s_wsEverOpen) {
         startPolling();
         return;

@@ -1,7 +1,11 @@
 // Open a page headless and wait for the report it leaves on window
 // (docs/Sandbox.md 7.20; tests/gui/sandbox-console-browser.py).
 //
-// Usage:  node scripts/console-drive.js <url> <window-var> [timeout_ms]
+// Usage:  node scripts/console-drive.js <url> <window-var> [timeout_ms] [module]
+//
+// `module`, relative to the page, is loaded into it as a module script once
+// the page is up -- how a gate drives a page that does not carry its own
+// drive, the served viewer (tests/gui/sandbox-console-viewer-browser.py).
 //
 // Relays the page's console as it goes and prints the report last, as one
 // line `REPORT <json>`; exits 0 when the report says ok, 1 when it does not,
@@ -12,7 +16,7 @@
 const puppeteer = require(process.env.PUPPETEER_PATH || 'puppeteer-core');
 
 (async () => {
-  const [url, variable, timeoutArg] = process.argv.slice(2);
+  const [url, variable, timeoutArg, inject] = process.argv.slice(2);
   if (!url || !variable) {
     console.error('usage: node console-drive.js <url> <window-var> [timeout_ms]');
     process.exit(2);
@@ -25,7 +29,9 @@ const puppeteer = require(process.env.PUPPETEER_PATH || 'puppeteer-core');
   const browser = await puppeteer.launch({
     executablePath: process.env.CHROME,
     headless: true,
-    args: ['--no-sandbox', '--disable-gpu'],
+    // WebGL through swiftshader, as edit-drive.js has it: the viewer page
+    // needs a context, the sandbox pages do not mind one.
+    args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
     env,
   });
   let report = null;
@@ -37,6 +43,8 @@ const puppeteer = require(process.env.PUPPETEER_PATH || 'puppeteer-core');
     page.on('requestfailed', (r) =>
       console.log('[requestfailed] ' + r.url() + ' ' + (r.failure() || {}).errorText));
     await page.goto(url);
+    if (inject)
+      await page.addScriptTag({ url: new URL(inject, url).href, type: 'module' });
     await page.waitForFunction('window.' + variable, { timeout });
     report = await page.evaluate('window.' + variable);
   } catch (e) {

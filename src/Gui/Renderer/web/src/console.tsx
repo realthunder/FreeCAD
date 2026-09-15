@@ -55,6 +55,9 @@ export function ConsolePanel(props: {
   server: string;
   token?: string;
   client?: Accessor<string>;
+  /// Ride the wasm viewer's scene socket (the viewer chrome); a page with no
+  /// viewer leaves it off and the console connects on its own.
+  viewerSocket?: boolean;
 }) {
   const [chunks, setChunks] = createSignal<Chunk[]>([]);
   const [state, setState] = createSignal<ConsoleState>('closed');
@@ -113,6 +116,7 @@ export function ConsolePanel(props: {
         doc: sessionDoc || undefined,
         client: (props.client?.() || 'viewer') + ' (console)',
         output: write,
+        viewerSocket: props.viewerSocket,
         progress: (what) => setStatus(what + '...'),
       });
       const g = session.guest;
@@ -120,7 +124,9 @@ export function ConsolePanel(props: {
       (window as any).fcxConsoleStats = () => session?.bridge.stats ?? null;
       write(`Python (pyodide ${g.info.version}) in this page, `
             + `${Math.round(performance.now() - t0)} ms to start. `
-            + 'FreeCAD reaches the served document as this client.\n', 'info');
+            + 'FreeCAD reaches the served document as this client, '
+            + (session.onViewerSocket ? "on the viewer's connection.\n"
+                                      : 'on a connection of its own.\n'), 'info');
       // A switch made while the session was booting.
       if (props.doc() && props.doc() !== sessionDoc) followDoc(props.doc());
       setStatus('');

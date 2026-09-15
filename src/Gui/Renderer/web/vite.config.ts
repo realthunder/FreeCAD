@@ -19,8 +19,9 @@ export default defineConfig({
       // (public/sheet-test.html, docs/SpreadsheetRemote.md sec 5) and the
       // console guest's boot gate (public/console-test.html,
       // docs/Sandbox.md 7.20 C1), its bridge gate (public/bridge-test.html,
-      // C2) and the console panel's gate (public/console-panel-test.html,
-      // C4).  The
+      // C2), the console panel's gate (public/console-panel-test.html, C4)
+      // and the drive a gate injects into the served viewer page
+      // (viewerconsole.js, C4).  The
       // chrome keeps its historical inspector.js name because shell.html
       // loads it by that name.
       input: {
@@ -30,6 +31,7 @@ export default defineConfig({
         consoletest: resolve(__dirname, 'src/sandbox/consolemain.ts'),
         bridgetest: resolve(__dirname, 'src/sandbox/bridgemain.ts'),
         consolepaneltest: resolve(__dirname, 'src/sandbox/consolepanelmain.ts'),
+        viewerconsole: resolve(__dirname, 'src/sandbox/viewerconsolemain.ts'),
       },
       output: {
         format: 'es',

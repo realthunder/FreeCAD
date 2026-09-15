@@ -10,6 +10,7 @@ import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 
 import { ConsolePanel } from '../console';
+import { enter, idle, input, key, makeReport, output, panel, prompt, sleep, type, until } from './consoledrive';
 
 const params = new URLSearchParams(location.search);
 const server = params.get('server') ?? location.origin;
@@ -26,54 +27,7 @@ render(() => ConsolePanel({
   client: () => 'console-panel-test',
 }), host);
 
-interface Check { name: string; pass: boolean; detail: string }
-const report = {
-  ok: false,
-  bootMs: 0,
-  stats: null as unknown,
-  checks: [] as Check[],
-  error: '',
-};
-const check = (name: string, pass: boolean, detail: unknown) => {
-  const d = typeof detail === 'string' ? detail : JSON.stringify(detail);
-  report.checks.push({ name, pass, detail: d });
-  console.log(`${pass ? 'PASS' : 'FAIL'} ${name} | ${d}`);
-};
-
-const panel = () => document.querySelector('.fc-console') as HTMLElement;
-const input = () => panel().querySelector('.fc-console-input') as HTMLInputElement;
-const prompt = () => panel().querySelector('.fc-console-prompt')?.textContent ?? '';
-const output = () => panel().querySelector('.fc-console-out')?.textContent ?? '';
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function until(what: string, cond: () => boolean, ms: number) {
-  const t0 = performance.now();
-  while (!cond()) {
-    if (performance.now() - t0 > ms)
-      throw new Error(`timed out waiting for ${what} (state ${panel()?.dataset.state})`);
-    await sleep(15);
-  }
-}
-const idle = (ms = 30000) => until('the console to be idle', () => panel()?.dataset.state === 'idle', ms);
-
-function type(text: string) {
-  const el = input();
-  el.focus();
-  el.value = text;
-  el.setSelectionRange(text.length, text.length);
-  el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-}
-function key(k: string, mods: KeyboardEventInit = {}) {
-  input().dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...mods }));
-}
-/// Enter one line; what the output gained while it ran.
-async function enter(text: string): Promise<string> {
-  const mark = output().length;
-  type(text);
-  key('Enter');
-  await idle();
-  return output().slice(mark);
-}
+const { report, check } = makeReport();
 
 if (params.has('drive')) (async () => {
   const t0 = performance.now();

@@ -8,6 +8,11 @@
 // Everything else on the socket -- scene payloads, streamed frames, control
 // text -- is someone else's and ignored here.
 //
+// Which socket (C4): the viewer page's own, through the hooks the wasm viewer
+// installs (`viewer()`), so the console is the same connection as the view --
+// one roster entry, one access mode, one principal.  A page with no viewer
+// opens one of its own (`connect()`), or hands over one it has (`attach()`).
+//
 // Transport-shaped on purpose: bytes in, a promise of bytes out.  How the guest
 // waits for the promise is guest.ts's business -- JSPI's suspending import
 // today, a Worker blocked in Atomics.wait for Safari later (C6), which swaps
@@ -19,6 +24,16 @@ const MAGIC = [0x46, 0x43, 0x53, 0x42]; // FCSB
 const TAG = 0x53; // 'S'
 const KIND_OP = 0;
 const KIND_END = 1;
+
+declare global {
+  interface Window {
+    /// The wasm viewer's bridge uplink (wasm/main.cpp fcviewer_bridge_send):
+    /// one whole 'S' frame on the scene socket; false when it is down.
+    fcviewerBridgeSend?: (frame: Uint8Array) => boolean;
+    /// Whether the viewer's scene socket is open; 'fc:socket' events follow it.
+    fcviewerSocketOpen?: boolean;
+  }
+}
 
 export interface RemoteOptions {
   /// The link's ?token=.
@@ -44,6 +59,72 @@ export interface BridgeStats {
   maxMs: number;
 }
 
+/// What the bridge needs of a connection.
+interface Port {
+  /// Put one frame on the wire; false when it cannot go.
+  send(frame: Uint8Array): boolean;
+  readonly open: boolean;
+  /// Whether a down port can come back: the viewer reconnects, a socket of
+  /// our own does not.
+  readonly reconnects: boolean;
+  /// Every binary message, every other message's size, every loss.
+  listen(frame: (bytes: Uint8Array) => void, other: (size: number) => void,
+         down: () => void): void;
+  close(): void;
+  /// Join another served document, where the port's owner is the page.
+  switchDoc?(name: string): void;
+}
+
+function socketPort(socket: WebSocket): Port {
+  socket.binaryType = 'arraybuffer';
+  return {
+    send(frame) {
+      if (socket.readyState !== WebSocket.OPEN)
+        return false;
+      socket.send(frame);
+      return true;
+    },
+    get open() { return socket.readyState === WebSocket.OPEN; },
+    reconnects: false,
+    listen(frame, other, down) {
+      socket.addEventListener('message', (e) => {
+        if (e.data instanceof ArrayBuffer)
+          frame(new Uint8Array(e.data));
+        else
+          other(typeof e.data === 'string' ? e.data.length : 0);
+      });
+      socket.addEventListener('close', down);
+    },
+    close() { socket.close(); },
+    switchDoc(name) {
+      if (socket.readyState === WebSocket.OPEN)
+        socket.send(JSON.stringify({ cmd: 'switch', doc: name }));
+    },
+  };
+}
+
+function viewerPort(): Port {
+  return {
+    send: (frame) => !!window.fcviewerBridgeSend?.(frame),
+    get open() { return !!window.fcviewerSocketOpen; },
+    reconnects: true,
+    listen(frame, _other, down) {
+      // The viewer hands over only bridge frames; the scene never gets here.
+      window.addEventListener('fc:bridge', (e: Event) => {
+        const d = (e as CustomEvent).detail;
+        if (d instanceof Uint8Array)
+          frame(d);
+      });
+      window.addEventListener('fc:socket', (e: Event) => {
+        if (!(e as CustomEvent).detail)
+          down();
+      });
+    },
+    // The socket is the viewer's; closing the console leaves it alone.
+    close() {},
+  };
+}
+
 interface Waiter {
   resolve: (reply: Uint8Array) => void;
   reject: (e: Error) => void;
@@ -58,17 +139,28 @@ export class RemoteBridge implements HostBridge {
   private seq = 0;
   private opsSinceEnd = 0;
   private readonly waiting = new Map<number, Waiter>();
-  private closedWith: string | null = null;
+  private closed = false;
 
-  private constructor(private readonly socket: WebSocket, private readonly timeoutMs: number) {
-    socket.binaryType = 'arraybuffer';
-    socket.addEventListener('message', (e) => this.onMessage(e));
-    socket.addEventListener('close', () => this.fail('the connection to the server closed'));
+  private constructor(private readonly port: Port, private readonly timeoutMs: number) {
+    port.listen((bytes) => this.onFrame(bytes),
+                (size) => { this.stats.otherBytesDown += size; },
+                () => this.lost());
   }
 
-  /// A bridge over a socket already open to /scene -- the viewer's own.
+  /// Whether this page's wasm viewer offers its scene socket to the bridge.
+  static get viewerAvailable(): boolean {
+    return typeof window.fcviewerBridgeSend === 'function';
+  }
+
+  /// A bridge on the viewer's own scene socket.  The viewer owns the
+  /// connection: it reconnects it, and a document switch is its to make.
+  static viewer(timeoutMs = 60000): RemoteBridge {
+    return new RemoteBridge(viewerPort(), timeoutMs);
+  }
+
+  /// A bridge over a socket already open to /scene.
   static attach(socket: WebSocket, timeoutMs = 60000): RemoteBridge {
-    return new RemoteBridge(socket, timeoutMs);
+    return new RemoteBridge(socketPort(socket), timeoutMs);
   }
 
   /// A connection of its own to `server`, an http(s) origin.
@@ -82,7 +174,7 @@ export class RemoteBridge implements HostBridge {
     const socket = new WebSocket(url.href);
     return new Promise((resolve, reject) => {
       socket.addEventListener('open', () => {
-        const bridge = new RemoteBridge(socket, opts.timeoutMs ?? 60000);
+        const bridge = RemoteBridge.attach(socket, opts.timeoutMs ?? 60000);
         const hello: Record<string, string> = { cmd: 'hello', client: opts.client ?? 'sandbox-console' };
         if (opts.token)
           hello.token = opts.token;
@@ -96,9 +188,17 @@ export class RemoteBridge implements HostBridge {
     });
   }
 
+  /// Whether a document switch is this bridge's to send (a socket of its
+  /// own) rather than the viewer's.
+  get ownsConnection(): boolean {
+    return !!this.port.switchDoc;
+  }
+
   roundTrip(request: Uint8Array): Promise<Uint8Array> {
-    if (this.closedWith)
-      return Promise.reject(new Error(this.closedWith));
+    if (this.closed)
+      return Promise.reject(new Error('the console closed its connection'));
+    if (!this.port.open)
+      return Promise.reject(new Error('the connection to the server is down'));
     const seq = this.seq = (this.seq + 1) >>> 0;
     const frame = new Uint8Array(6 + request.length);
     frame[0] = TAG;
@@ -110,49 +210,51 @@ export class RemoteBridge implements HostBridge {
         this.waiting.delete(seq);
         reject(new Error(`bridge op ${seq} unanswered after ${this.timeoutMs} ms`));
       }, this.timeoutMs);
-      this.waiting.set(seq, { resolve, reject, timer, t0: performance.now() });
+      const w = { resolve, reject, timer, t0: performance.now() };
+      this.waiting.set(seq, w);
+      if (!this.port.send(frame)) {
+        this.waiting.delete(seq);
+        clearTimeout(timer);
+        reject(new Error('the connection to the server is down'));
+        return;
+      }
       this.stats.ops++;
       this.stats.bytesUp += frame.length;
       this.opsSinceEnd++;
-      this.socket.send(frame);
     });
   }
 
   endStatement(): void {
-    if (!this.opsSinceEnd || this.closedWith || this.socket.readyState !== WebSocket.OPEN)
+    if (!this.opsSinceEnd || this.closed || !this.port.open)
       return;
     this.opsSinceEnd = 0;
     const frame = new Uint8Array(6);
     frame[0] = TAG;
     frame[1] = KIND_END;
-    this.stats.statements++;
-    this.socket.send(frame);
+    if (this.port.send(frame))
+      this.stats.statements++;
   }
 
-  /// Join another served document on this connection, as the viewer's own
-  /// switch does (main.cpp fcviewer_switch_doc).  The host drops the
-  /// connection's bridge endpoint with the old document's handles.
+  /// Join another served document on a connection of our own, as the
+  /// viewer's switch does (main.cpp fcviewer_switch_doc).  The host drops the
+  /// connection's bridge endpoint with the old document's handles.  On the
+  /// viewer's socket the viewer switches, and this does nothing.
   switchDoc(name: string): void {
-    if (this.socket.readyState === WebSocket.OPEN)
-      this.socket.send(JSON.stringify({ cmd: 'switch', doc: name }));
+    this.port.switchDoc?.(name);
   }
 
   close(): void {
-    this.socket.close();
+    this.closed = true;
+    this.lost();
+    this.port.close();
   }
 
-  private onMessage(e: MessageEvent) {
-    if (!(e.data instanceof ArrayBuffer) || e.data.byteLength < 8) {
-      this.stats.otherBytesDown += typeof e.data === 'string' ? e.data.length : e.data.byteLength;
+  private onFrame(bytes: Uint8Array) {
+    if (bytes.length < 8 || MAGIC.some((m, i) => bytes[i] !== m)) {
+      this.stats.otherBytesDown += bytes.length;
       return;
     }
-    const bytes = new Uint8Array(e.data);
-    for (let i = 0; i < 4; ++i)
-      if (bytes[i] !== MAGIC[i]) {
-        this.stats.otherBytesDown += bytes.length;
-        return;
-      }
-    const seq = new DataView(e.data).getUint32(4, true);
+    const seq = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(4, true);
     const w = this.waiting.get(seq);
     if (!w)
       return;
@@ -165,12 +267,19 @@ export class RemoteBridge implements HostBridge {
     w.resolve(bytes.slice(8));
   }
 
-  private fail(why: string) {
-    this.closedWith = why;
+  /// The connection went: nothing pending will be answered -- a reconnect is
+  /// a new connection, and its endpoint never saw these ops.
+  private lost() {
+    const why = this.closed || !this.port.reconnects
+      ? 'the connection to the server closed'
+      : 'the connection to the server dropped; it is reconnecting';
     for (const w of this.waiting.values()) {
       clearTimeout(w.timer);
       w.reject(new Error(why));
     }
     this.waiting.clear();
+    this.opsSinceEnd = 0;
+    if (!this.port.reconnects)
+      this.closed = true;
   }
 }

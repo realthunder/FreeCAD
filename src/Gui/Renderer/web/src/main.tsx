@@ -166,8 +166,8 @@ const [sheetOpen, setSheetOpen] = createSignal(
 
 // The Python console (docs/Sandbox.md 7.20 C4): a guest in this page, booted
 // the first time the panel opens, reaching the served document as this
-// client. `?console` opens it on load. The token is the link's own, which
-// the console's bridge socket and boot.json are admitted by.
+// client over the viewer's own socket. `?console` opens it on load. The
+// token is the link's own, which boot.json is admitted by.
 const [consoleOpen, setConsoleOpen] = createSignal(
   new URLSearchParams(location.search).has('console'));
 const linkToken = new URLSearchParams(location.search).get('token') ?? undefined;
@@ -271,7 +271,8 @@ render(() => (
                 viewOnly={viewOnly} doc={() => docs().current} />
     <ConsolePanel open={consoleOpen} onClose={() => setConsoleOpen(false)}
                   doc={() => docs().current} viewOnly={viewOnly}
-                  server={location.origin} token={linkToken} client={clientName} />
+                  server={location.origin} token={linkToken} client={clientName}
+                  viewerSocket />
     <LoupeOverlay mark={loupe} />
     <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
