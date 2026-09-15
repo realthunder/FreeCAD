@@ -108,10 +108,10 @@ pieces are frozen, not extended.**
                                                  bridge, gui a hard DENY for clients; C4
                                                  BUILT 2026-09-15: the console panel in the
                                                  viewer chrome, booted on first open; C5
-                                                 MEASURED 2026-09-15: a statement costs its ops
-                                                 x RTT, one op per element a loop touches --
-                                                 fine on a LAN, a loop too slow through a
-                                                 tunnel; the guest is +185 MB PSS in the page
+                                                 BUILT 2026-09-15: a statement costs its ops x
+                                                 RTT, and a prefetch of sibling reads makes a
+                                                 loop a few ops (50 objects at 100 ms: 5.4 s ->
+                                                 0.42 s); the guest is +185 MB PSS in the page
     host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -7081,7 +7081,7 @@ the writer).  What the numbers decide:
   (`grabUs` is counted, the bench has no picture); a non-native file
   dialog's rows; the DOM client's own cost of applying an open.
 
-### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket; C3 BUILT 2026-09-15, the client principal; C4 BUILT 2026-09-15, the console panel; C5 MEASURED 2026-09-15, the latency and the page's memory]**
+### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket; C3 BUILT 2026-09-15, the client principal; C4 BUILT 2026-09-15, the console panel; C5 BUILT 2026-09-15, the latency and the page's memory measured, and a prefetch of sibling reads]**
 
 The question, asked before the document program (7.17) was started:
 how far is a Python console in the browser tier -- pyodide running in
@@ -7654,12 +7654,13 @@ done, as the desktop console does not; open for the owner's view of a
 client's edits); `input()`, which falls to pyodide's default stdin and is
 untried; the latency and memory of C5.
 
-**C5, MEASURED 2026-09-15.**  What a console statement costs when the host
+**C5, BUILT 2026-09-15.**  What a console statement costs when the host
 is a LAN or a tunnel away, and what the guest costs the page.  A statement
-costs its bridge ops times the round trip, and a loop makes one op per
-element it touches: on a LAN the console is usable as built, through a
-tunnel anything with a loop is too slow.  By C5's own criterion the
-snapshot op is needed for the tunnel tier; it is not built here.
+costs its bridge ops times the round trip, and a loop made one op per
+element it touches: on a LAN the console was usable as built, through a
+tunnel anything with a loop was too slow.  By C5's own criterion that
+called for the snapshot op; what was built is a narrower one, the prefetch
+of sibling reads (below), and a loop is now a few ops.
 
 *The rig.*  This box has no second machine, no sudo for `tc netem` and no
 `cloudflared`, so the round trip is injected: `scripts/delay-proxy.js`
@@ -7728,16 +7729,77 @@ from 0 to 100 ms -- but the proxy's local TCP has no slow start and no
 bandwidth cap, so these understate a real tunnel's first boot of a 13 MB
 runtime (cached after that).  Connect is one RTT plus 3 ms.
 
-*The snapshot op.*  It is needed for the tunnel tier and is not built in
-C5.  What it snapshots, and when a snapshot is taken, is a choice with a
-visible trade: a loop reading a snapshot sees values as of the snapshot,
-not live, where today every read is live.  That choice is put to the owner
-before anything is designed.
+*The prefetch, BUILT 2026-09-15.*  Asked of the owner with four shapes --
+a per-statement prefetch, an explicit batch call, a second guest on the
+host for far clients, or nothing -- and **ruled: the prefetch per
+statement**, whose trade is that a loop's values are as of the read that
+brought them rather than live.  Built narrower than the sizing's snapshot:
+
+- *What crosses* (FcxWire.h, `"pf"`).  A read_prop or get_attr off one
+  element of a list the table handed out is answered, next to its `val`,
+  with the same read of the elements after it: `"pf": [[id, value], ...]`.
+  Only the member the guest actually read, only the siblings in that list,
+  only values that cross by value -- a read answered by a handle
+  prefetches nothing, and a sibling whose answer is one is dropped with its
+  use given back, so the table mints nothing the guest did not ask for.
+  32 at the first miss of that member in that list, twice as many at each
+  miss after, at most 1024, cut at 20 ms of host time per reply: what a
+  loop that stops early leaves unread is bounded by what it read.  The
+  checks are the op's own, per sibling (`readAttribute`/`readProperty`,
+  the two op bodies lifted out of the dispatcher); `checkGetattr` returns
+  at once for a FreeCAD-bound object, so a speculative read queues no
+  prompt.  A fixed-layout reply carrying `pf` goes as CBOR (kind 0).
+- *The guest* (ImageBridge.cpp) keeps them keyed by handle id, op and
+  member, and decodes each hit afresh -- a new value object every time,
+  as natively, which the write-back tracking relies on.  It forgets them
+  before any op that is not a pure read (a closed list: the reads, `len`,
+  `get_item`, `bool`, `str`, `ext`, `resolve`, the app queries, `mod_get`,
+  `lib.source`, `pkg.missing`, `release`), so a write, a call, a
+  `mod_call` -- even a pure one -- makes the next read a hop; and at the
+  start and end of every host request, so nothing outlives a statement.
+- *Where.*  On for a remote guest's endpoint (SandboxRemote.cpp;
+  `FC_SANDBOX_PREFETCH=0` turns it off, read when a connection's endpoint
+  is made).  Off for the desktop's own guest, where a hop is 5 us and a
+  prefetch is host work no hop pays back; `ImageHost::setPrefetch` exists
+  so a test can run the guest's half in process.
+
+*Measured* with the prefetch (the same rig; with it off the figures are
+the table above's within noise):
+
+    statement                                    ops    0 ms    2 ms   10 ms   30 ms  100 ms
+    -------------------------------------------  ---  ------  ------  ------  ------  ------
+    doc.Name                                       2     1.2     6.2    23.1      68     213
+    Box.Length = 12                                3     1.8    10.3    35.8      97     309
+    [o.Name for o in doc.Objects]                  4     3.0    13.9    47.8     133     416
+    [o.Placement.Base.x for o in doc.Objects]      4     3.4    15.5    48.6     135     417
+    len(Box.Shape.Edges)                           4     2.3    12.8    46.2     132     417
+    sum(e.Length for e in Box.Shape.Edges)         5     3.0    16.4    57.4     161     520
+    sum(e.Length for e in Poly.Shape.Edges)        7     4.8    23.4    82.1     232     734
+    [v.Point.y for v in Poly.Shape.Vertexes]       7     5.4    24.2    85.6     236     721
+
+Fifty objects through a 100 ms tunnel: 5.4 s -> 0.42 s; a hundred edges:
+10.8 s -> 0.73 s; and direct, 24 ms -> 3 ms.  What is left is a CHAIN:
+`doc.getObject('Box').Shape.Edges` is three reads on three different
+objects, one op each, which no sibling prefetch reaches -- a statement is
+3 to 7 round trips, 0.2 to 0.7 s at 100 ms.  Not addressed: batching a
+chain needs the guest to say what it will read next.
+
+*Gates*: `ExpressionImageEvalTest.prefetchAnswersSiblingReads` (registered,
+in process: 41 names are 42 get_attr hops off and 3 on, 40 properties 40
+and 2, a write inside the statement seen by the read after it, a hit a
+fresh object, `o.Document` -- a handle -- prefetching nothing);
+`GuiSandboxBridgeServe` 38 PASS (+5: the first 32 siblings with their
+values, the doubling, a fixed-layout read answered as CBOR, a handle member
+bringing none); `tests/gui/sandbox-latency-browser.py` now runs every RTT
+with the prefetch on and off, 147 PASS, the op counts the same at every RTT
+of a mode.  Re-run over the changed guest: C2's and C4's browser legs 15
+and 24 PASS; ExpressionImage*/ExpressionRouting* 99 OK, ctest 642/642,
+SandboxProgram 46 OK, FeaturePythonChain 44 OK.
 
 *Not in C5*: a real LAN or tunnel -- the proxy stands in for both, and a
 Cloudflare quick tunnel would publish the served document on the internet,
 which is not done without the owner's say; a phone; the decomposition of
-the 0.4 ms loopback cost; the snapshot op.
+the 0.4 ms loopback cost; batching a chain of reads.
 
 ### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, BUILT 2026-09-13 inside 7.17's D2]**
 
@@ -8242,10 +8304,11 @@ push the user's call).
    remote client is the second guest that needs them, unless `gui`
    is a hard DENY for clients -- which C3 chose.  C1 BUILT 2026-09-14,
    C2, C3 and C4 BUILT 2026-09-15 (C4: the panel, on the guest's own
-   entry rather than `pyodide.console`); C5 MEASURED 2026-09-15: fine on
-   a LAN, a loop too slow through a tunnel, so the snapshot op is needed
-   for that tier -- its shape is open; the guest is +185 MB PSS in the
-   page.  C6 (Safari) only if necessary (ruled 2026-09-15).
+   entry rather than `pyodide.console`); C5 BUILT 2026-09-15: measured (a
+   loop was one op per element, too slow through a tunnel), then a
+   per-statement prefetch of sibling reads, ruled the same day -- 50
+   objects at 100 ms RTT, 5.4 s -> 0.42 s; the guest is +185 MB PSS in
+   the page.  C6 (Safari) only if necessary (ruled 2026-09-15).
 
 DROPPED 2026-09-08: G4 (7.16, sized), F1 (7.14: it closed a hole only
 a SESSION guest has), N1-N5 (network is a session need), G5, G6, rung

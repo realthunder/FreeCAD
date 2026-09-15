@@ -526,8 +526,8 @@ env's copy into `~/.cache/puppeteer/lib` and pass that directory as
 
 `sandbox-bridge-browser.py`, `sandbox-console-panel-browser.py`,
 `sandbox-console-viewer-browser.py` and `sandbox-latency-browser.py` take the
-same four variables (the latency one also `SANDBOX_LATENCY_RTTS`, and about
-three minutes).
+same four variables (the latency one also `SANDBOX_LATENCY_RTTS` and
+`SANDBOX_LATENCY_MODES`, and about seven minutes for the prefetch on and off).
 
 `build/wasm` on this box (configured 2026-09-15; the CMakeLists' own
 instructions name `~/works/sw/emsdk`, which is not here): the emsdk of the

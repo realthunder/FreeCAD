@@ -218,7 +218,7 @@ def collect(run):
         return
     check("RTT %s the guest booted" % rtt, not report.get("error"), report.get("error", ""))
     note(
-        "NOTE RTT %d ms: connect %s ms, runtime %s ms, wheels %s ms"
+        "NOTE RTT %s connect %s ms, runtime %s ms, wheels %s ms"
         % (rtt, report.get("connectMs"), report.get("runtimeMs"), report.get("wheelsMs"))
     )
     for row in report.get("rows", []):
@@ -236,7 +236,7 @@ def collect(run):
             by_type[p["type"]][0] += p["pssMB"]
             by_type[p["type"]][1] += p["rssMB"]
         note(
-            "NOTE RTT %d ms: memory at %s: wasm %s MB, JS heap %s MB, PSS/RSS by process type %s"
+            "NOTE RTT %s memory at %s: wasm %s MB, JS heap %s MB, PSS/RSS by process type %s"
             % (
                 rtt,
                 label,
