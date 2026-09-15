@@ -44,7 +44,7 @@ a54840c2c5	2024-01-31	Chris Hennes	fix	0	1	have(rev)	2		Sketcher: Add check for 
 b1ef4be6fa	2024-01-21	Ajinkya Dahale	?	0	0	open	36	taken 88c9baa853	[planegcs] Remove some numerical testing	App/planegcs/Constraints.cpp
 da48a72269	2024-01-26	Ajinkya Dahale	feature	0	0	open	69	taken 88c9baa853	[planegcs] Implement `BSpline::Value()`	App/planegcs/Geo.cpp
 1e19926a77	2024-02-08	Ajinkya Dahale	feature	1	0	open	30	taken 88c9baa853	[planegcs] Add `SketcherExport` macro to classes in Geo.h	App/planegcs/Geo.h
-459d210f15	2024-01-25	Ajinkya Dahale	feature	1	0	open	187		[planegcs][test] Add Spline and Arc tangent test	tests/App/planegcs/CMakeLists.txt tests/App/planegcs/Constraints.cpp
+459d210f15	2024-01-25	Ajinkya Dahale	feature	1	0	open	187	taken 9b75379eb1	[planegcs][test] Add Spline and Arc tangent test	tests/App/planegcs/CMakeLists.txt tests/App/planegcs/Constraints.cpp
 73434e008a	2024-01-28	Ajinkya Dahale	refactor	0	0	open	261	taken 88c9baa853	[planegcs] Simplify `GCS::BSpline::CalculateNormal()`	App/planegcs/Geo.cpp App/planegcs/Geo.h
 3f1f6387d1	2024-02-03	Ajinkya Dahale	fix	0	0	have(sync)	82		[Sketcher] Handle spline selection in Dimension tool	Gui/CommandConstraints.cpp
 c4720e56c1	2023-11-03	Paddle	noise	0	0	partial(sync)	1425		Translate DSH : A replacement for rectangular array.	Gui/CMakeLists.txt Gui/CommandSketcherTools.cpp Gui/DrawSketchHandlerTranslate.h Gui/Resources/Sketcher.qrc Gui/Resources/icons/pointers/Sketcher_Pointer_Create_Translate.svg Gui/Resources/icons/tools/Sketcher_Translate.svg Gui/Workbench.cpp
@@ -57,7 +57,7 @@ ada76964c3	2024-01-30	PaddleStroke	refactor	0	1	have(rev)	92		Sketcher: CommandC
 df7e783513	2024-02-07	wmayer	noise	0	0	partial(sync)	12	partial 88c9baa853: App/PythonConverter.cpp Gui/ViewProviderSketch.cpp	Mod: fix several compiler warnings: * fix -Wsometimes-uninitialized * fix -Wunused-parameter * fix -Wunused-variable * fix -Winconsistent-missing-override * fix -Wsign-compare * fix -Wreorder-ctor * fix -Wtautological-overlap-compare	App/PythonConverter.cpp App/Sketch.cpp Gui/SketcherSettings.ui Gui/ViewProviderSketch.cpp
 aa977648c3	2024-02-08	LemonBoy	fix	0	1	have(rev)	24		Fix icon order in constraint menu	Gui/CommandConstraints.cpp
 e135f68e8a	2024-02-12	Max Wilfinger	noise	0	0	have(sync)	12		add new Sketcher commands translate and scale to context menu	Gui/ViewProviderSketch.cpp
-c5d462a3d9	2024-02-13	Ajinkya Dahale	fix	0	0	open	10		[planegcs][test] Fix issue in arc-B-spline tangent test	tests/App/planegcs/Constraints.cpp
+c5d462a3d9	2024-02-13	Ajinkya Dahale	fix	0	0	open	10	taken 9b75379eb1	[planegcs][test] Fix issue in arc-B-spline tangent test	tests/App/planegcs/Constraints.cpp
 e20a07653c	2024-02-13	Huba Czine	?	1	0	open	104		Update icons for Sketcher_ToggleConstruction & Sketcher_ToggleConstruction_Constr	Gui/Resources/icons/geometry/Sketcher_ToggleConstruction.svg Gui/Resources/icons/geometry/Sketcher_ToggleConstruction_Constr.svg
 7a025e4e60	2024-02-14	czinehuba	?	0	0	open	72		Updated space in dashed lines	Gui/Resources/icons/geometry/Sketcher_ToggleConstruction.svg Gui/Resources/icons/geometry/Sketcher_ToggleConstruction_Constr.svg
 3e47de6d92	2024-02-19	Max Wilfinger	noise	1	0	open	4		fix typo in polygon task dialog	Gui/SketcherRegularPolygonDialog.ui
@@ -68,7 +68,7 @@ a38e73135e	2024-02-25	wmayer	fix	0	0	have(sync)	59		Sketcher: fixes #12343: Undo
 5539ef625c	2024-02-25	Ajinkya Dahale	feature	0	0	open	161	taken 88c9baa853	[planegcs] Add `ConstraintAngleViaTwoPoints`	App/planegcs/Constraints.cpp App/planegcs/Constraints.h App/planegcs/GCS.cpp App/planegcs/GCS.h
 d1c9370614	2024-02-25	Ajinkya Dahale	refactor	0	0	open	7	taken 88c9baa853	[Sketcher] Use angle-via-two-points in e2e with BSplines	App/Sketch.cpp
 f8f159c4d3	2024-02-27	Ajinkya Dahale	?	1	0	have(sync)	14		[Sketcher] Include endpoint-to-endpoint tangency as coincidence	App/SketchObject.cpp
-da7d5391af	2023-04-14	Ajinkya Dahale	?	1	0	partial(sync)	62		[Sketcher] Join curves with C1 continuity	App/SketchObject.cpp App/SketchObject.h App/SketchObjectPyImp.cpp Gui/CommandSketcherBSpline.cpp
+da7d5391af	2023-04-14	Ajinkya Dahale	?	1	0	partial(sync)	62	partial d8d462426e: rest in App/SketchObjectPyImp.cpp Gui/CommandSketcherBSpline.cpp	[Sketcher] Join curves with C1 continuity	App/SketchObject.cpp App/SketchObject.h App/SketchObjectPyImp.cpp Gui/CommandSketcherBSpline.cpp
 f88f48f64f	2024-02-27	Ed Williams	?	1	0	open	16		Change the calculation of the b parameter of the hyperbolic arc (#12467)	Gui/DrawSketchHandlerArcOfHyperbola.h
 dfa1b94c83	2024-02-12	PaddleStroke	?	1	0	have(sync)	46		Sketcher: Line DSH: Harmonize width/length behavior with rectangle.	Gui/DrawSketchHandlerLine.h
 86726f21b7	2024-02-28	Roy-043	?	0	0	open	2		Sketcher: Change Sketcher_CreatePointFillet button text to match menu text	Gui/CommandCreateGeo.cpp
@@ -339,22 +339,22 @@ f0ba161bdf	2024-11-29	Max Wilfinger	?	0	0	open	1610		Update Sketcher external ic
 d010645d23	2024-11-30	wmayer	noise	0	0	open	2		Fix compiler warnings	Gui/CommandCreateGeo.cpp
 f9d1391588	2024-12-02	Vincent Belpois	?	1	0	open	32		Sketcher: remove auto-generated 'enum value' comments	Gui/CommandSketcherTools.cpp Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/DrawSketchHandlerArcOfParabola.h Gui/DrawSketchHandlerLineSet.h
 0ee3c9f8e6	2024-12-02	Ladislav Michl	feature	0	0	open	53		Base: Drop QString-std::string conversion functions from Tools	Gui/EditDatumDialog.cpp Gui/TaskSketcherConstraints.cpp Gui/Utils.cpp
-311ac3591c	2024-06-17	Ajinkya Dahale	feature	1	0	open	292		[Sketcher][test] Add unit tests for `SketchObject::getPoint()`	tests/App/SketchObject.cpp
+311ac3591c	2024-06-17	Ajinkya Dahale	feature	1	0	open	292	taken 9b75379eb1	[Sketcher][test] Add unit tests for `SketchObject::getPoint()`	tests/App/SketchObject.cpp
 5f86d7f5a8	2024-06-16	Ajinkya Dahale	refactor	0	0	have(sync)	186		[Sketcher] Refactor `SketchObject::getPoint()`	App/SketchObject.cpp App/SketchObject.h
 4cc21e26e1	2024-06-18	Ajinkya Dahale	refactor	1	0	have(sync)	29		[Sketcher] Refactor `SketchObject::delGeometry()`	App/SketchObject.cpp App/SketchObject.h
 423fb77e1f	2024-06-18	Ajinkya Dahale	refactor	1	0	have(sync)	59		[Sketcher] Refactor `SketchObject::AutoLockTangencyAndPerpty()`	App/SketchObject.cpp
-b991c2fbc2	2024-06-18	Ajinkya Dahale	feature	0	0	partial(sync)	772		[Sketcher] Add tests for `split` and `trim`	App/SketchObject.cpp App/SketchObject.h tests/App/SketchObject.cpp
+b991c2fbc2	2024-06-18	Ajinkya Dahale	feature	0	0	partial(sync)	772	partial d8d462426e: rest outside the taken functions	[Sketcher] Add tests for `split` and `trim`	App/SketchObject.cpp App/SketchObject.h tests/App/SketchObject.cpp
 c823a6b270	2024-06-20	Ajinkya Dahale	refactor	0	0	have(sync)	352		[Sketcher] Refactor `SketchObject::split()`	App/SketchObject.cpp App/SketchObject.h
-263331f6fb	2024-06-27	Ajinkya Dahale	refactor	0	0	partial(sync)	915		[Sketcher] Refactor `SketchObject::trim()`	App/SketchObject.cpp App/SketchObject.h tests/App/SketchObject.cpp
-7d8a8b7cc8	2024-08-09	Ajinkya Dahale	fix	0	0	partial(sync)	263		[Sketcher] Attempt to fix toponaming issue on trim refactor	App/GeometryFacade.cpp App/GeometryFacade.h App/SketchObject.cpp App/SketchObject.h
+263331f6fb	2024-06-27	Ajinkya Dahale	refactor	0	0	partial(sync)	915	partial d8d462426e: rest outside the taken functions	[Sketcher] Refactor `SketchObject::trim()`	App/SketchObject.cpp App/SketchObject.h tests/App/SketchObject.cpp
+7d8a8b7cc8	2024-08-09	Ajinkya Dahale	fix	0	0	partial(sync)	263	partial d8d462426e: rest outside the taken functions	[Sketcher] Attempt to fix toponaming issue on trim refactor	App/GeometryFacade.cpp App/GeometryFacade.h App/SketchObject.cpp App/SketchObject.h
 0d27efbc2f	2024-08-11	Ajinkya Dahale	?	0	0	have(sync)	98		[Sketcher] Some trivial for loop changes in `SketchObject`	App/SketchObject.cpp
 1cee07cb26	2024-08-29	Ajinkya Dahale	feature	1	0	open	34	taken 88c9baa853	[Sketcher] Add some utility functions to `Sketcher::Constraint`	App/Constraint.cpp App/Constraint.h
 5262482bc4	2024-08-23	Ajinkya Dahale	refactor	0	0	have(sync)	256		[Sketcher] Refactor `SketchObject::trim()`	App/SketchObject.cpp
 0b32db53ed	2024-11-23	Ajinkya Dahale	refactor	0	0	open	72		[Sketcher] Use `switch`-`case` in `getPointForGeometry()`	App/SketchObject.cpp
 d8a86e4e9d	2024-11-23	Ajinkya Dahale	?	0	0	open	13		[Sketcher] Remove some unneeded comments	App/GeometryFacade.cpp App/GeometryFacade.h
-b2c806d227	2024-11-23	Ajinkya Dahale	?	0	0	open	20		[Sketcher] Remove some commented code from `SketchObject::trim()`	App/SketchObject.cpp
-6c3d2eff64	2024-11-23	Ajinkya Dahale	refactor	0	0	open	9		[Sketcher] Use variable for frequently used static cast in `trim`	App/SketchObject.cpp
-f0f70daa0e	2024-11-23	Ajinkya Dahale	feature	0	0	open	132		[Sketcher][test] Add and use helper function to get points of interest	tests/App/SketchObject.cpp
+b2c806d227	2024-11-23	Ajinkya Dahale	?	0	0	open	20	taken d8d462426e	[Sketcher] Remove some commented code from `SketchObject::trim()`	App/SketchObject.cpp
+6c3d2eff64	2024-11-23	Ajinkya Dahale	refactor	0	0	open	9	taken d8d462426e	[Sketcher] Use variable for frequently used static cast in `trim`	App/SketchObject.cpp
+f0f70daa0e	2024-11-23	Ajinkya Dahale	feature	0	0	open	132	taken 9b75379eb1	[Sketcher][test] Add and use helper function to get points of interest	tests/App/SketchObject.cpp
 70972b3926	2024-12-03	PaddleStroke	?	0	0	partial(sync)	1401	partial 88c9baa853: App/SketchObject.cpp App/SketchObject.h App/SketchObjectPy.xml App/SketchObjectPyImp.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h	Sketcher: Group dragging	App/Sketch.cpp App/Sketch.h App/SketchObject.cpp App/SketchObject.h App/SketchObjectPy.xml App/SketchObjectPyImp.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 c1a75bbafc	2024-12-04	wmayer	noise	0	0	open	7		Fix compiler warnings	App/SketchObject.cpp App/SketchObject.h
 96c838f3b9	2024-12-03	luzpaz	noise	0	0	have(sync)	2		Fix various typos Found with codespell	Gui/DrawSketchHandlerRotate.h
@@ -384,29 +384,29 @@ f43339ad23	2025-01-13	wwmayer	fix	0	0	partial(sync)	31		Fix issues in ellipse cr
 0f3aff0eac	2024-08-12	Ajinkya Dahale	?	0	0	partial(sync)	71		[Sketcher][test] Create test for `getConstraintAfterDeletingGeo`+	App/SketchObject.h tests/App/SketchObject.cpp
 5a4072587b	2024-08-11	Ajinkya Dahale	?	1	0	have(sync)	212		[Sketcher] Some trivial `for` loop changes in `SketchObject`	App/SketchObject.cpp
 5c52353480	2024-06-28	Ajinkya Dahale	refactor	0	0	have(sync)	32		[Sketcher] Refactor `SketchObject::join()` (expected trivial)	App/SketchObject.cpp
-2249c99b33	2025-01-02	Ajinkya Dahale	?	0	0	open	49		[Sketcher] Write `SketchObject::replaceGeometries()`	App/SketchObject.cpp App/SketchObject.h
+2249c99b33	2025-01-02	Ajinkya Dahale	?	0	0	open	49	taken d8d462426e	[Sketcher] Write `SketchObject::replaceGeometries()`	App/SketchObject.cpp App/SketchObject.h
 bc2b35da4e	2024-06-29	Ajinkya Dahale	?	0	0	have(sync)	445		[Sketcher] Helper functions for deleting geometry	App/SketchObject.cpp
 bd522fe189	2024-08-25	Ajinkya Dahale	refactor	1	0	open	79	taken 88c9baa853	[planegcs] Refactor `GCS::System::initSolution()`	App/planegcs/GCS.cpp
 a2521d0798	2024-08-25	Ajinkya Dahale	refactor	1	0	open	238	taken 88c9baa853	[planegcs] Refactor `identifyConflictingRedundantConstraints()`	App/planegcs/GCS.cpp
 2025c009cd	2024-08-27	Ajinkya Dahale	refactor	0	0	open	442	taken 88c9baa853	[planegcs] Refactor conditions & loops in `GCS.cpp` for readability	App/planegcs/GCS.cpp
 568f984b0b	2024-08-27	Ajinkya Dahale	refactor	0	0	open	72	taken 88c9baa853	[planegcs] Refactor pointer vector freeing	App/planegcs/GCS.cpp App/planegcs/GCS.h
-23cd6cb54e	2024-09-26	Ajinkya Dahale	?	0	0	open	201		[Sketcher][test] Tests for expose/delete internal geometry	tests/App/SketchObject.cpp
-5a01d438f2	2024-12-22	Ajinkya Dahale	refactor	0	0	open	1401		[Sketcher] Refactor internal geometry operations	App/SketchObject.cpp App/SketchObject.h
+23cd6cb54e	2024-09-26	Ajinkya Dahale	?	0	0	open	201	taken 9b75379eb1	[Sketcher][test] Tests for expose/delete internal geometry	tests/App/SketchObject.cpp
+5a01d438f2	2024-12-22	Ajinkya Dahale	refactor	0	0	open	1401	partial d8d462426e: rest outside the taken functions	[Sketcher] Refactor internal geometry operations	App/SketchObject.cpp App/SketchObject.h
 0ded3a4af1	2024-08-23	Ajinkya Dahale	refactor	0	0	have(sync)	248		[Sketcher] Refactor `SketchObject::trim()`	App/SketchObject.cpp
-8c53b2ded5	2024-12-23	Ajinkya Dahale	feature	0	0	open	319		[Sketcher][test] Add tests for B-spline operations	tests/App/SketchObject.cpp
+8c53b2ded5	2024-12-23	Ajinkya Dahale	feature	0	0	open	319	taken 9b75379eb1	[Sketcher][test] Add tests for B-spline operations	tests/App/SketchObject.cpp
 6ba1b0b7a9	2024-06-29	Ajinkya Dahale	refactor	0	0	have(sync)	123		[Sketcher] Refactor `SketchObject::insertBSplineKnot()`	App/SketchObject.cpp
-3832db01ff	2024-12-23	Ajinkya Dahale	refactor	0	0	open	138		[Sketcher] Refactor `SketchObject::modifyBSplineKnotMultiplicity`	App/SketchObject.cpp
-e4f906c23b	2024-12-24	Ajinkya Dahale	refactor	0	0	open	374		[Sketcher] Refactor `SketchObject::trim`	App/SketchObject.cpp
-226d24792d	2024-12-26	Ajinkya Dahale	fix	0	0	open	71		[Sketcher] Fix some issues in `trim`	App/SketchObject.cpp
-12102abd6b	2024-12-29	Ajinkya Dahale	?	0	0	open	129		[Sketcher] Incorporate review of #18665	App/SketchObject.cpp
-e6becd0b61	2024-12-29	Ajinkya Dahale	refactor	0	0	open	35		[Sketcher] Further refactor `modifyBSplineKnotMultiplicity`	App/SketchObject.cpp
-c6f5739763	2024-12-29	Ajinkya Dahale	refactor	0	0	open	225		[Sketcher] Refactor `SketchObject::split`	App/SketchObject.cpp
-821bc2ecdf	2024-12-30	Ajinkya Dahale	?	0	0	open	66		[Sketcher] Incorporate review of #18665 by kadet	App/SketchObject.cpp App/SketchObject.h
-8f7a6628ca	2025-01-05	Ajinkya Dahale	feature	0	0	open	52		[Sketcher][test] Add new test for internal geometry deletion	tests/App/SketchObject.cpp
-aa1122c774	2025-01-05	Ajinkya Dahale	fix	0	0	open	9		"[Sketcher] Fix ""used"" B-spline poles being deleted"	App/SketchObject.cpp
+3832db01ff	2024-12-23	Ajinkya Dahale	refactor	0	0	open	138	taken d8d462426e	[Sketcher] Refactor `SketchObject::modifyBSplineKnotMultiplicity`	App/SketchObject.cpp
+e4f906c23b	2024-12-24	Ajinkya Dahale	refactor	0	0	open	374	taken d8d462426e	[Sketcher] Refactor `SketchObject::trim`	App/SketchObject.cpp
+226d24792d	2024-12-26	Ajinkya Dahale	fix	0	0	open	71	taken d8d462426e	[Sketcher] Fix some issues in `trim`	App/SketchObject.cpp
+12102abd6b	2024-12-29	Ajinkya Dahale	?	0	0	open	129	partial d8d462426e: rest outside the taken functions	[Sketcher] Incorporate review of #18665	App/SketchObject.cpp
+e6becd0b61	2024-12-29	Ajinkya Dahale	refactor	0	0	open	35	taken d8d462426e	[Sketcher] Further refactor `modifyBSplineKnotMultiplicity`	App/SketchObject.cpp
+c6f5739763	2024-12-29	Ajinkya Dahale	refactor	0	0	open	225	taken d8d462426e	[Sketcher] Refactor `SketchObject::split`	App/SketchObject.cpp
+821bc2ecdf	2024-12-30	Ajinkya Dahale	?	0	0	open	66	partial d8d462426e: rest outside the taken functions	[Sketcher] Incorporate review of #18665 by kadet	App/SketchObject.cpp App/SketchObject.h
+8f7a6628ca	2025-01-05	Ajinkya Dahale	feature	0	0	open	52	taken 9b75379eb1	[Sketcher][test] Add new test for internal geometry deletion	tests/App/SketchObject.cpp
+aa1122c774	2025-01-05	Ajinkya Dahale	fix	0	0	open	9	taken d8d462426e	"[Sketcher] Fix ""used"" B-spline poles being deleted"	App/SketchObject.cpp
 b2e414c407	2025-01-05	Ajinkya Dahale	?	0	0	open	10		[Sketcher] Make `replaceGeometries` protected	App/SketchObject.h
-73253bd2d4	2025-01-05	Ajinkya Dahale	fix	0	0	open	47		[Sketcher] Fix issues in knot operations	App/SketchObject.cpp
-51cf34a596	2025-01-06	Ajinkya Dahale	fix	1	0	open	87		[Sketcher] Refactor and fix an issue in `transferConstraints`	App/SketchObject.cpp
+73253bd2d4	2025-01-05	Ajinkya Dahale	fix	0	0	open	47	taken d8d462426e	[Sketcher] Fix issues in knot operations	App/SketchObject.cpp
+51cf34a596	2025-01-06	Ajinkya Dahale	fix	1	0	open	87	partial d8d462426e: rest outside the taken functions	[Sketcher] Refactor and fix an issue in `transferConstraints`	App/SketchObject.cpp
 738a044f3c	2025-01-06	Kacper Donat	feature	0	0	have(sync)	7		Gui: Add Show Plane utility to 2D Objects	Gui/ViewProviderSketch.cpp
 17c3286e52	2025-01-20	Joona Okkonen	fix	1	0	open	28		Sketcher: Fixed mapping error when attempting to create a sketch inside a group. (#18971)	Gui/Command.cpp
 f3efb5a7e8	2025-01-13	Vincent Belpois	fix	1	0	open	5	taken 88c9baa853	Fix missing constrain type in type2str	App/Constraint.h
@@ -423,16 +423,16 @@ d18a48ddb1	2025-01-26	Joona	feature	0	0	open	747		Updated tools to use group com
 ae15d98fd3	2025-01-15	Benjamin Nauck	refactor	0	0	partial(sync)	63		Use is<T>() when possible	App/ExternalGeometryFacadePyImp.cpp App/GeometryFacade.h App/PythonConverter.cpp App/SketchObject.cpp Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerSplitting.h
 dd6aa9f3c7	2025-01-16	Benjamin Nauck	refactor	0	0	partial(sync)	42		Prefer to use BaseClass's isDerivedFrom<T> over non template or Base::Type's	App/SketchObject.cpp Gui/CommandAlterGeometry.cpp Gui/CommandConstraints.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherVirtualSpace.cpp Gui/DrawSketchHandler.cpp Gui/Utils.cpp Gui/ViewProviderSketch.cpp
 45c997f40a	2025-01-16	Benjamin Nauck	?	0	0	open	4		Manual changes to improve isDerivedFrom usage	Gui/DrawSketchHandlerSplitting.h
-77bb7ab2d4	2024-12-31	Ajinkya Dahale	?	0	0	open	224		[Sketcher] Move internal functions out of `trim`	App/SketchObject.cpp
-c8c8c2c208	2025-01-01	Ajinkya Dahale	?	0	0	open	435		[Sketcher] Move `trim` sub-steps to different functions	App/SketchObject.cpp App/SketchObject.h
-909e5bfafb	2025-01-02	Ajinkya Dahale	refactor	0	0	open	119		[Sketcher] Use `replaceGeometries()` in `trim`	App/SketchObject.cpp
-502b7b9a3f	2025-01-02	Ajinkya Dahale	fix	0	0	open	3		[Sketcher] Fix some issues in `trim`	App/SketchObject.cpp
-31457746c2	2025-01-08	Ajinkya Dahale	?	0	0	open	258		[Sketcher][test] Move helper functions away for reusability	tests/App/SketchObject.cpp tests/App/SketcherTestHelpers.h
-c48f21585d	2025-01-12	Ajinkya Dahale	refactor	0	0	open	2175		[Sketcher][test] Divide `SketchObject` tests into multiple files	tests/App/CMakeLists.txt tests/App/SketchObject.cpp tests/App/SketchObjectChanges.cpp tests/App/SketcherTestHelpers.cpp tests/App/SketcherTestHelpers.h
-ab2e4adb31	2025-01-12	Ajinkya Dahale	refactor	0	0	open	69		[Sketcher] Refactor `deleteUnusedInternalGeometryWhenBSpline`	App/SketchObject.cpp
-0358ff7ce2	2024-12-22	Ajinkya Dahale	refactor	1	0	open	190		[Sketcher] Refactor `SketchObject::delConstraintOnPoint()`	App/SketchObject.cpp
-9238a7c1fd	2025-01-08	Ajinkya Dahale	refactor	0	0	open	60		[Sketcher] More refactor of `delConstraintOnPoint`	App/SketchObject.cpp
-80fa694270	2025-01-29	Ajinkya Dahale	?	0	0	open	22		[Sketcher] Incorporate suggestions by hyarion from #18916	App/SketchObject.cpp
+77bb7ab2d4	2024-12-31	Ajinkya Dahale	?	0	0	open	224	taken d8d462426e	[Sketcher] Move internal functions out of `trim`	App/SketchObject.cpp
+c8c8c2c208	2025-01-01	Ajinkya Dahale	?	0	0	open	435	taken d8d462426e	[Sketcher] Move `trim` sub-steps to different functions	App/SketchObject.cpp App/SketchObject.h
+909e5bfafb	2025-01-02	Ajinkya Dahale	refactor	0	0	open	119	taken d8d462426e	[Sketcher] Use `replaceGeometries()` in `trim`	App/SketchObject.cpp
+502b7b9a3f	2025-01-02	Ajinkya Dahale	fix	0	0	open	3	taken d8d462426e	[Sketcher] Fix some issues in `trim`	App/SketchObject.cpp
+31457746c2	2025-01-08	Ajinkya Dahale	?	0	0	open	258	taken 9b75379eb1	[Sketcher][test] Move helper functions away for reusability	tests/App/SketchObject.cpp tests/App/SketcherTestHelpers.h
+c48f21585d	2025-01-12	Ajinkya Dahale	refactor	0	0	open	2175	taken 9b75379eb1	[Sketcher][test] Divide `SketchObject` tests into multiple files	tests/App/CMakeLists.txt tests/App/SketchObject.cpp tests/App/SketchObjectChanges.cpp tests/App/SketcherTestHelpers.cpp tests/App/SketcherTestHelpers.h
+ab2e4adb31	2025-01-12	Ajinkya Dahale	refactor	0	0	open	69	taken d8d462426e	[Sketcher] Refactor `deleteUnusedInternalGeometryWhenBSpline`	App/SketchObject.cpp
+0358ff7ce2	2024-12-22	Ajinkya Dahale	refactor	1	0	open	190	taken d8d462426e	[Sketcher] Refactor `SketchObject::delConstraintOnPoint()`	App/SketchObject.cpp
+9238a7c1fd	2025-01-08	Ajinkya Dahale	refactor	0	0	open	60	taken d8d462426e	[Sketcher] More refactor of `delConstraintOnPoint`	App/SketchObject.cpp
+80fa694270	2025-01-29	Ajinkya Dahale	?	0	0	open	22	taken d8d462426e	[Sketcher] Incorporate suggestions by hyarion from #18916	App/SketchObject.cpp
 65466d580b	2025-01-27	tritao	?	0	0	open	74		Gui: Reorganize the selection files into a top `Selection` folder.	Gui/Command.cpp Gui/CommandAlterGeometry.cpp Gui/CommandConstraints.cpp Gui/CommandCreateGeo.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherOverlay.cpp Gui/CommandSketcherTools.cpp Gui/CommandSketcherVirtualSpace.cpp Gui/DrawSketchHandler.h Gui/DrawSketchHandlerCarbonCopy.h Gui/DrawSketchHand
 10513144d9	2025-02-07	tritao	?	1	0	open	10		Base: Standardize on Py::Long type for Python bindings.	App/SketchObjectPyImp.cpp App/SketchPyImp.cpp
 cf5d66d201	2025-02-10	mosfet80	refactor	0	0	open	40		clean SketchObject.cpp (#15728)	App/SketchObject.cpp
@@ -495,15 +495,15 @@ b4eb28e50e	2025-03-27	Benjamin Nauck	noise	0	0	open	580	partial 88c9baa853: App/
 63ed3e8dff	2025-04-05	tritao	?	0	0	open	1614		Sketcher: Remove XML binding files.	App/CMakeLists.txt App/ConstraintPy.xml App/ExternalGeometryExtensionPy.xml App/ExternalGeometryFacadePy.xml App/GeometryFacadePy.xml App/SketchGeometryExtensionPy.xml App/SketchObjectPy.xml App/SketchObjectSF.pyi App/SketchObjectSFPy.xml App/SketchPy.xml Gui/CMakeLists.txt Gui/ViewProviderSketchGeo
 7a12d2f96f	2025-04-05	luzpaz	noise	1	0	open	2		Fix various typos (#20651)	App/SketchObject.cpp
 35a9673a75	2025-03-28	Kacper Donat	refactor	0	0	open	2		Base: Rename Base::freecad_dynamic_cast into freecad_cast	App/SketchObject.cpp
-f0d30cb570	2025-03-09	Ajinkya Dahale	?	0	0	open	79		[Sketcher] Adjust constraint changes when trimming	App/SketchObject.cpp
+f0d30cb570	2025-03-09	Ajinkya Dahale	?	0	0	open	79	taken d8d462426e	[Sketcher] Adjust constraint changes when trimming	App/SketchObject.cpp
 358942b771	2025-03-12	Ajinkya Dahale	fix	0	0	open	1	n/a: fork's transferConstraints is an if-chain, no fall-through	[Sketcher] Fix issue in `SketchObject::transferConstraints`	App/SketchObject.cpp
 fbac7d737b	2025-03-13	Ajinkya Dahale	fix	0	0	open	78		[Sketcher] Refactor `DrawSketchHandlerTrimming::mouseMove()`	Gui/DrawSketchHandlerTrimming.h
 b6a069dc63	2025-03-13	Ajinkya Dahale	fix	0	0	open	5		[Sketcher] Attempt to avoid double-trimming in some cases	Gui/DrawSketchHandlerTrimming.h
-2779f0b29f	2025-03-14	Ajinkya Dahale	feature	0	0	open	4		[Sketcher] Add missing check in `deriveConstraintsForPieces`	App/SketchObject.cpp
-08a66afbc8	2025-03-14	Ajinkya Dahale	feature	0	0	open	2		[Sketcher] Add missing check when transforming constraints for trim	App/SketchObject.cpp
-23ecf94ab6	2025-03-14	Ajinkya Dahale	?	0	0	open	4		[Sketcher] Make trimmed curve(s) construction based on original	App/SketchObject.cpp
-c0d469d404	2025-03-30	Ajinkya Dahale	fix	0	0	open	163		[Sketcher][test] Add tests for fixes done in #20150	tests/App/SketchObjectChanges.cpp tests/App/SketcherTestHelpers.cpp
-f869bace95	2025-03-30	Ajinkya Dahale	?	0	0	open	30		[Sketcher][test] Remove some obsolete TODOs	tests/App/SketchObjectChanges.cpp
+2779f0b29f	2025-03-14	Ajinkya Dahale	feature	0	0	open	4	taken d8d462426e	[Sketcher] Add missing check in `deriveConstraintsForPieces`	App/SketchObject.cpp
+08a66afbc8	2025-03-14	Ajinkya Dahale	feature	0	0	open	2	taken d8d462426e	[Sketcher] Add missing check when transforming constraints for trim	App/SketchObject.cpp
+23ecf94ab6	2025-03-14	Ajinkya Dahale	?	0	0	open	4	taken d8d462426e	[Sketcher] Make trimmed curve(s) construction based on original	App/SketchObject.cpp
+c0d469d404	2025-03-30	Ajinkya Dahale	fix	0	0	open	163	taken 9b75379eb1	[Sketcher][test] Add tests for fixes done in #20150	tests/App/SketchObjectChanges.cpp tests/App/SketcherTestHelpers.cpp
+f869bace95	2025-03-30	Ajinkya Dahale	?	0	0	open	30	taken 9b75379eb1	[Sketcher][test] Remove some obsolete TODOs	tests/App/SketchObjectChanges.cpp
 581fa12e45	2025-04-08	Ajinkya Dahale	fix	0	0	open	399		Sketcher: Refactor and fix `DrawSketchDefaultHandler.h`	Gui/DrawSketchDefaultHandler.h
 b300c80b90	2025-04-11	Kacper Donat	refactor	0	0	open	2		Base: Use explicit pointer syntax for freecad_cast (#20694)	App/SketchObject.cpp
 f9f76a2516	2025-04-14	PaddleStroke	fix	0	0	open	224		Sketcher: Refactor DrawSketchHandler::seekAutoConstraint (#20476)	Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h
@@ -512,7 +512,7 @@ f932c7e4e0	2025-04-09	Benjamin Nauck	refactor	0	0	open	21		Use Base::toRadians()
 755cabc5ba	2025-04-15	PaddleStroke	refactor	0	0	open	620		Sketcher: Refactor SketchObject::Fillet() (#20544)	App/SketchObject.cpp
 e51e1a10d4	2025-04-14	Andrea	refactor	0	0	open	1		MOD: remove unused variable	Gui/DrawSketchHandler.cpp
 5b81cd741a	2025-04-16	Jacob Oursland	?	0	0	open	48		python: apply const method annotations to impls.	App/ExternalGeometryExtensionPyImp.cpp App/ExternalGeometryFacadePyImp.cpp App/GeometryFacadePyImp.cpp App/SketchGeometryExtensionPyImp.cpp App/SketchObjectPyImp.cpp
-5efb8e5e76	2025-04-15	Ajinkya Dahale	feature	0	0	open	5		Sketcher: Add check for validity of geometry when trimming	App/SketchObject.cpp
+5efb8e5e76	2025-04-15	Ajinkya Dahale	feature	0	0	open	5	taken d8d462426e	Sketcher: Add check for validity of geometry when trimming	App/SketchObject.cpp
 e9f2e8fe92	2025-04-19	tetektoza	?	0	0	open	15		Sketcher: Auto-scroll to selected geometry elements (#20866)	Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherElements.cpp Gui/Utils.h
 766ee41b55	2025-04-21	Lothaire Sicot	fix	0	0	open	41		Sketcher: Prevent bad constraint names (#20717)	Gui/EditDatumDialog.cpp Gui/EditDatumDialog.h Gui/TaskSketcherConstraints.cpp
 9aad08a646	2025-04-21	Kacper Donat	?	0	0	open	3		Sketcher: Remove not-needed print statements	Gui/EditDatumDialog.cpp Gui/TaskSketcherConstraints.cpp
@@ -521,7 +521,7 @@ e9f2e8fe92	2025-04-19	tetektoza	?	0	0	open	15		Sketcher: Auto-scroll to selected
 d586447a7d	2025-04-25	Kacper Donat	refactor	1	0	open	6		Sketcher: Use freecad_cast whenever possible	App/ExternalGeometryFacade.h App/GeometryFacade.h
 c704622605	2025-04-07	Kacper Donat	?	1	0	open	2		Sketcher: Replace dynamic_cast with qobject_cast	Gui/PropertyConstraintListItem.cpp
 30fd8d6d60	2025-01-22	bofdahof	refactor	0	0	n/a(uncompiled)	135		Sketcher: refactor EditModeConstraintCoinManager::getPresentationString	Gui/EditModeConstraintCoinManager.cpp
-350a416708	2025-04-24	Ajinkya Dahale	fix	0	0	open	7		Sketcher: Avoid an unnecessary geometry update when trimming	App/SketchObject.cpp
+350a416708	2025-04-24	Ajinkya Dahale	fix	0	0	open	7	taken d8d462426e	Sketcher: Avoid an unnecessary geometry update when trimming	App/SketchObject.cpp
 8cc1565dcb	2025-04-29	Andrea	?	0	0	open	5		remove unnecessary InitApplication.h inclusion	tests/App/SketchObjectChanges.cpp tests/App/SketcherTestHelpers.cpp tests/App/SketcherTestHelpers.h
 ae76f89759	2025-03-24	Benjamin Nauck	refactor	0	0	open	2		Sketcher: Use contains instead of std::find	Gui/TaskSketcherConstraints.cpp
 78e2a12d2d	2025-04-11	Benjamin Nauck	fix	0	0	open	2	n/a: no setExpression override	Sketcher: Fix 463717 Variable copied when it could be moved	App/SketchObject.cpp
@@ -544,13 +544,13 @@ c293d74566	2025-05-01	Ladislav Michl	noise	0	0	open	40		Base: rename Exception's
 6786af6ef9	2025-02-26	Benjamin Brstrup Sayoc	refactor	0	0	open	18	partial 88c9baa853: App/SketchGeometryExtension.cpp	Everywhere: clean up getAttribute conversions	App/Constraint.cpp App/SketchGeometryExtension.cpp
 a4aabe05de	2025-05-14	Chris Hennes	noise	0	0	open	2		Sketcher tests: Silence compiler warning with cast	tests/App/planegcs/Constraints.cpp
 90a612db29	2025-05-17	Celeste Wouters	?	0	0	n/a(uncompiled)	2		"Sketcher: remove ""SecondIcon"" logs on constraint icon hover"	Gui/EditModeConstraintCoinManager.cpp
-82610ca8fa	2025-01-01	Ajinkya Dahale	refactor	0	0	open	99		[Sketcher] Use `replaceGeometries()` in `split`	App/SketchObject.cpp
+82610ca8fa	2025-01-01	Ajinkya Dahale	refactor	0	0	open	99	taken d8d462426e	[Sketcher] Use `replaceGeometries()` in `split`	App/SketchObject.cpp
 3425eebfdc	2025-01-06	Ajinkya Dahale	refactor	0	0	open	128		[Sketcher][WIP] Refactor `SketchObject::generateId()`	App/SketchObject.cpp
 8a1c4526bd	2025-01-19	Ajinkya Dahale	refactor	0	0	open	26		[Sketcher] Refactor `SketchObject::toggleExternalGeometryFlag()`	App/SketchObject.cpp
 ace0c57dd6	2025-01-19	Ajinkya Dahale	feature	0	0	open	75		[Sketcher][WIP] Refactor `SketchObject::addExternal()`	App/SketchObject.cpp
 8fd9c19013	2025-01-23	Ajinkya Dahale	refactor	0	0	open	248		[Sketcher] Refactor `TaskSketcherElements::onSelectionChanged()`	Gui/TaskSketcherElements.cpp
-215fbc5187	2025-03-31	Ajinkya Dahale	refactor	0	0	open	299		[Sketcher] Refactor `SketchObject::split()`	App/SketchObject.cpp
-1cc0ca0a3b	2025-04-01	Ajinkya Dahale	noise	0	0	open	80		[Sketcher] Use `std::ranges` in `SketchObject` where possible	App/SketchObject.cpp
+215fbc5187	2025-03-31	Ajinkya Dahale	refactor	0	0	open	299	taken d8d462426e	[Sketcher] Refactor `SketchObject::split()`	App/SketchObject.cpp
+1cc0ca0a3b	2025-04-01	Ajinkya Dahale	noise	0	0	open	80	partial d8d462426e: rest outside the taken functions	[Sketcher] Use `std::ranges` in `SketchObject` where possible	App/SketchObject.cpp
 07bce810ae	2025-04-03	Ajinkya Dahale	refactor	0	0	open	111		[Sketcher][WIP] Refactor `SketchObject::buildShape()`	App/SketchObject.cpp
 c3c7e8d33f	2025-04-05	Ajinkya Dahale	refactor	0	0	open	29		[Sketcher] Refactor `SketchObject::delAllExternal()`	App/SketchObject.cpp
 eeb061f302	2025-04-05	Ajinkya Dahale	noise	0	0	open	134	taken 88c9baa853	[planegcs] Use `std::ranges` and range `for` in `GCS.cpp`	App/planegcs/GCS.cpp
@@ -614,8 +614,8 @@ c8bddd2f2b	2025-07-14	theo-vt	feature	0	0	open	126		Sketcher: assign the old geo
 9cd3b31067	2025-07-17	matthiasdanner	fix	0	0	open	199		Sketcher: Fix Constraint Filter Handling (#22072)	Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherConstraints.h
 c968effe26	2025-07-18	Florian Foinant-Willig	?	0	0	open	32	taken 88c9baa853 (test 66ca11b76d)	Sketcher: manage legacy negative circle-line distance (#22203)	App/planegcs/Constraints.cpp SketcherTests/TestSketcherSolver.py
 b0dcce6c66	2025-07-18	theo-vt	?	0	0	open	29		Sketcher: Only autoscale if the datum being edited is the scale defining datum (#22419)	App/SketchObject.cpp App/SketchObject.h Gui/EditDatumDialog.cpp
-018ac7b9dd	2025-07-19	Ajinkya Dahale	?	0	0	open	10		Sketcher: Skip checks in `deriveConstraintsForPieces` when risky	App/SketchObject.cpp
-114d3dcd87	2025-07-19	Ajinkya Dahale	?	0	0	open	8		Sketcher: Improve constraint transfer in `SketchObject::trim()`	App/SketchObject.cpp
+018ac7b9dd	2025-07-19	Ajinkya Dahale	?	0	0	open	10	taken d8d462426e	Sketcher: Skip checks in `deriveConstraintsForPieces` when risky	App/SketchObject.cpp
+114d3dcd87	2025-07-19	Ajinkya Dahale	?	0	0	open	8	taken d8d462426e	Sketcher: Improve constraint transfer in `SketchObject::trim()`	App/SketchObject.cpp
 b2453caaea	2025-06-28	Kacper Donat	fix	0	0	open	119		Sketcher: Use generic tool hints table for DrawSketchHandlerArc	Gui/DrawSketchHandlerArc.h
 20876d7b35	2025-06-28	Kacper Donat	fix	0	0	open	65		Sketcher: Use generic tool hints table for DrawSketchHandlerArcOfEllipse	Gui/DrawSketchHandlerArcOfEllipse.h
 d1a25c98bc	2025-06-28	Kacper Donat	fix	0	0	open	74		Sketcher: Use generic tool hints table for DrawSketchHandlerArcOfHyperbola	Gui/DrawSketchHandlerArcOfHyperbola.h
@@ -684,7 +684,7 @@ e469eb5ccb	2025-08-23	Bas Ruigrok	?	0	0	open	18		Sketcher: Cancel rubber band se
 7c4131c4ef	2025-08-24	tetektoza	feature	0	0	open	8		Sketcher: Disable autoscale if new constraint value is below precision	Gui/DrawSketchHandlerScale.h
 eef738b312	2025-09-02	George Peden	feature	0	0	open	114		Feature/sketcher constraint symbol size (#23366)	Gui/EditModeCoinManager.cpp Gui/SketcherSettings.cpp Gui/SketcherSettingsDisplay.ui
 01b547912f	2025-09-02	Ladislav Michl	fix	1	0	open	2	taken 88c9baa853	Base: QuantityFormat: avoid storing formatting defaults	App/Constraint.cpp
-eab485656f	2025-09-07	theo-vt	fix	0	0	open	377		Sketcher: fix invalid constraint on first dimension (#23024)	App/SketchAnalysis.cpp App/SketchObject.cpp App/SketchObject.h App/SketchObject.pyi App/SketchObjectPyImp.cpp Gui/CommandSketcherTools.cpp Gui/CommandSketcherTools.h Gui/DrawSketchHandlerScale.h Gui/EditDatumDialog.cpp
+eab485656f	2025-09-07	theo-vt	fix	0	0	open	377	partial d8d462426e: Gui Scale tool and EditDatumDialog halves are phase 3	Sketcher: fix invalid constraint on first dimension (#23024)	App/SketchAnalysis.cpp App/SketchObject.cpp App/SketchObject.h App/SketchObject.pyi App/SketchObjectPyImp.cpp Gui/CommandSketcherTools.cpp Gui/CommandSketcherTools.h Gui/DrawSketchHandlerScale.h Gui/EditDatumDialog.cpp
 d9da6c8def	2025-09-07	luzpaz	noise	0	0	open	4		Fix various typos Found via codespell	App/SketchObject.h App/SketchObject.pyi
 93db4c7d8a	2025-07-31	wmayer	?	0	0	open	26		CMake: Replace include_directories with target_include_directories	App/CMakeLists.txt Gui/CMakeLists.txt
 dc22fb4b9b	2025-09-09	PaddleStroke	?	0	0	open	30		Sketcher: Constraint symbol size follow-up (#23590)	Gui/EditModeCoinManager.cpp Gui/SketcherSettings.cpp Gui/SketcherSettingsDisplay.ui
@@ -766,7 +766,7 @@ ced9c0dd4f	2025-10-28	tetektoza	feature	0	0	open	23		Sketcher: Remember cursor a
 0b2268a921	2025-11-02	PaddleStroke	?	0	0	n/a(uncompiled)	88		Sketcher: Constraint rendering (#24534)	Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h
 af014a1bb4	2025-11-04	PaddleStroke	fix	0	1	have(rev)	6		Sketcher: Restore ExprBasedConstrDimColor (#25055)	Gui/EditModeConstraintCoinManager.cpp
 cb108249f2	2025-11-05	PaddleStroke	fix	0	0	open	5		Sketcher: Fix offset of open profile (#25091)	Gui/DrawSketchHandlerOffset.h
-857190a20a	2025-11-04	Ajinkya Dahale	?	0	0	open	16		Sketcher: Only transfer equality in specific cases in `trim`	App/SketchObject.cpp
+857190a20a	2025-11-04	Ajinkya Dahale	?	0	0	open	16	taken d8d462426e	Sketcher: Only transfer equality in specific cases in `trim`	App/SketchObject.cpp
 c828c5d1d1	2025-11-08	Bas Ruigrok	fix	0	0	open	675		Sketcher: Remove unused grid toggle icons and fix SIGSEGV	Gui/Command.cpp Gui/Resources/Sketcher.qrc Gui/Resources/icons/general/Sketcher_GridToggle.svg Gui/Resources/icons/general/Sketcher_GridToggle_Deactivated.svg
 a479197f0b	2025-11-08	Bas Ruigrok	fix	1	0	open	784		Sketcher: Remove unused snap icons and fix SIGSEGV	Gui/Command.cpp Gui/Resources/Sketcher.qrc Gui/Resources/icons/general/Sketcher_Snap.svg Gui/Resources/icons/general/Sketcher_Snap_Deactivated.svg
 d95f56b39b	2025-11-08	Bas Ruigrok	refactor	0	0	open	1495		Sketcher: Remove unused rendering order icons	Gui/Command.cpp Gui/Resources/Sketcher.qrc Gui/Resources/icons/general/Sketcher_RenderingOrder_Construction.svg Gui/Resources/icons/general/Sketcher_RenderingOrder_External.svg Gui/Resources/icons/general/Sketcher_RenderingOrder_Normal.svg
@@ -805,8 +805,8 @@ bb0cd704fb	2025-11-24	Ajinkya Dahale	?	0	0	open	6		Merge pull request #25536 fro
 67234e98b7	2025-12-05	PaddleStroke	fix	0	0	open	22		Sketcher: Offset: Fix failure if 2+ closed wires with different orientations (#25941)	Gui/DrawSketchHandlerOffset.h
 945ba15e18	2025-12-05	Sebastian	?	0	0	open	2		Match the string that gets sent to setCommand (#25964)	Gui/Workbench.cpp
 a49d106807	2025-12-05	PaddleStroke	fix	0	0	open	11	adapted 329342b6bc	Sketcher: Fix errors message when selecting circle seam point. (#25953)	App/SketchObject.cpp
-78e5729520	2025-12-03	Ajinkya Dahale	fix	0	0	open	67		Sketcher: Handle angle constraint on sketchobject changes	App/SketchObject.cpp App/SketchObject.h
-0800791a0f	2025-12-12	Ajinkya Dahale	?	0	0	open	52		Sketcher: Only transfer angle to relevant segment on trim etc.	App/SketchObject.cpp
+78e5729520	2025-12-03	Ajinkya Dahale	fix	0	0	open	67	taken d8d462426e	Sketcher: Handle angle constraint on sketchobject changes	App/SketchObject.cpp App/SketchObject.h
+0800791a0f	2025-12-12	Ajinkya Dahale	?	0	0	open	52	taken d8d462426e	Sketcher: Only transfer angle to relevant segment on trim etc.	App/SketchObject.cpp
 bf697ca710	2025-12-13	Kacper Donat	refactor	0	0	n/a(uncompiled)	9		Gui: Use largest possible marker if needed	Gui/EditModeCoinManager.cpp
 29eeab3624	2025-12-12	theo-vt	?	0	0	open	13		Sketcher: Do not autoscale if there are blocked geometries	App/SketchObject.cpp App/SketchObject.h Gui/EditDatumDialog.cpp
 50f029edd4	2025-12-16	Chris Hennes	noise	0	0	open	19		Sketcher: Compiler warning cleanup	Gui/Command.cpp Gui/CommandConstraints.cpp Gui/DrawSketchHandlerOffset.h Gui/EditModeCoinManager.cpp
@@ -824,8 +824,8 @@ c8106982de	2026-01-04	PaddleStroke	fix	0	0	open	206	partial 88c9baa853: Gui/Task
 2682d68809	2026-01-05	Kacper Donat	fix	0	0	open	52		Sketcher: Use correct namespace for tr functions in DSH	Gui/DrawSketchHandler.h Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/DrawSketchHandlerArcOfParabola.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCarbonCopy.h Gui/DrawSketchHandlerCircle.h Gui/DrawSket
 21f0d44320	2026-01-05	PaddleStroke	fix	0	0	n/a(uncompiled)	131		Sketcher: Fix selection & zoom lag in large sketches (#26671)	Gui/EditModeConstraintCoinManager.cpp
 0fa707c523	2026-01-05	PaddleStroke	?	0	0	open	449		Sketcher: Speed up large bulk Selection in edit (#26663)	Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherConstraints.h Gui/TaskSketcherElements.cpp Gui/TaskSketcherElements.h Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
-404482f48e	2025-04-07	Ajinkya Dahale	fix	0	0	open	28		[Sketcher] Fix issue in `replaceGeometries` when more old than new	App/SketchObject.cpp App/SketchObject.h
-9c87e26280	2025-04-07	Ajinkya Dahale	feature	0	0	open	67		[Sketcher][test] Add tests for `replaceGeometries()`	tests/App/SketchObjectChanges.cpp
+404482f48e	2025-04-07	Ajinkya Dahale	fix	0	0	open	28	taken d8d462426e	[Sketcher] Fix issue in `replaceGeometries` when more old than new	App/SketchObject.cpp App/SketchObject.h
+9c87e26280	2025-04-07	Ajinkya Dahale	feature	0	0	open	67	taken 9b75379eb1	[Sketcher][test] Add tests for `replaceGeometries()`	tests/App/SketchObjectChanges.cpp
 ca97889e47	2024-06-29	Ajinkya Dahale	refactor	0	0	have(sync)	39		[Sketcher] Refactor `SketchObject:validateExternalLinks()`	App/SketchObject.cpp
 a16be08159	2024-07-01	Ajinkya Dahale	refactor	0	0	have(sync)	260		[Sketcher] Refactor some loops for understandability	App/SketchObject.cpp
 8e46e74ee5	2024-07-27	Ajinkya Dahale	refactor	0	0	have(sync)	76		[Sketcher] Refactor based on loops and extraction into functions	App/SketchObject.cpp
@@ -833,7 +833,7 @@ a16be08159	2024-07-01	Ajinkya Dahale	refactor	0	0	have(sync)	260		[Sketcher] Ref
 db5ffb4769	2024-08-02	Ajinkya Dahale	feature	0	0	have(sync)	853		[Sketcher] Refactor `SketchObject::addCopy()`	App/SketchObject.cpp
 38a0443195	2024-08-12	Ajinkya Dahale	refactor	0	0	have(sync)	296		[Sketcher] Use range-`for` loop where straightforward	App/SketchObject.cpp
 0ea4c7c280	2024-08-13	Ajinkya Dahale	?	0	0	have(sync)	18		[Sketcher] Move some checks to `Constraint`	App/SketchObject.cpp
-bf51899580	2025-08-31	Ajinkya Dahale	feature	0	0	open	69		Sketcher: [test] Add test for `addExternal` and `delExternal`	tests/App/SketchObjectChanges.cpp
+bf51899580	2025-08-31	Ajinkya Dahale	feature	0	0	open	69	taken 9b75379eb1	Sketcher: [test] Add test for `addExternal` and `delExternal`	tests/App/SketchObjectChanges.cpp
 78cdd8d59d	2024-08-13	Ajinkya Dahale	refactor	0	0	have(sync)	133		[Sketcher] Refactor `delExternalPrivate()`	App/SketchObject.cpp
 0c2f4df8d5	2024-08-22	Ajinkya Dahale	feature	0	0	have(sync)	488		[Sketcher] Refactor `addSymmetric` and `getSymmetric`	App/SketchObject.cpp
 169a10c7d2	2024-08-23	Ajinkya Dahale	refactor	0	0	have(sync)	91		[Sketcher] Refactor some if-else statements in SketchObject	App/SketchObject.cpp
@@ -842,9 +842,9 @@ abc3c74abd	2024-08-28	Ajinkya Dahale	refactor	0	0	have(sync)	52		[Sketcher] Refa
 e34d6604d7	2024-08-22	Ajinkya Dahale	refactor	0	0	have(sync)	134		[Sketcher] Refactor `removeAxesAlignment()`	App/SketchObject.cpp
 9993cc123c	2024-08-31	Ajinkya Dahale	refactor	0	0	have(sync)	528		[Sketcher] Refactor `SketchObject::onChanged()`	App/SketchObject.cpp App/SketchObject.h
 c02969da9c	2024-09-01	Ajinkya Dahale	refactor	0	0	have(sync)	119		[Sketcher] Refactor `SketchObject::updateGeometryRefs()`	App/SketchObject.cpp
-50a091c0ca	2025-04-07	Ajinkya Dahale	refactor	0	0	open	116		[Sketcher] Use `auto` where possible	App/SketchObject.cpp
-e9469d93cc	2025-04-07	Ajinkya Dahale	refactor	0	0	open	71		[Sketcher] Use `replaceGeometries()` in `join()`	App/SketchObject.cpp
-9000dc3c70	2025-08-25	Ajinkya Dahale	feature	0	0	open	6		Sketcher: Add test stubs for `SketchObject::addCopy()`	tests/App/SketchObjectChanges.cpp
+50a091c0ca	2025-04-07	Ajinkya Dahale	refactor	0	0	open	116	partial d8d462426e: rest outside the taken functions	[Sketcher] Use `auto` where possible	App/SketchObject.cpp
+e9469d93cc	2025-04-07	Ajinkya Dahale	refactor	0	0	open	71	taken d8d462426e	[Sketcher] Use `replaceGeometries()` in `join()`	App/SketchObject.cpp
+9000dc3c70	2025-08-25	Ajinkya Dahale	feature	0	0	open	6	taken 9b75379eb1	Sketcher: Add test stubs for `SketchObject::addCopy()`	tests/App/SketchObjectChanges.cpp
 9791d3f6d5	2026-01-06	Ajinkya Dahale	?	0	0	open	24		Sketcher: Override clang-format for some readability	App/SketchObject.cpp
 c19eb5c0e0	2026-01-06	pre-commit-ci[bot]	noise	0	0	open	333		[pre-commit.ci] auto fixes from pre-commit.com hooks	App/SketchObject.cpp tests/App/SketchObjectChanges.cpp
 b1fdf659d8	2026-01-06	tetektoza	?	1	0	n/a(uncompiled)	12		Sketcher: Disable depth testing for constraint icons	Gui/EditModeConstraintCoinManager.cpp
