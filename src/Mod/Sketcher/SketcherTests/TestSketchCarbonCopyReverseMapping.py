@@ -12,8 +12,6 @@ class TestSketchCarbonCopyReverseMapping(unittest.TestCase):
             os.path.join(location, "TestSketchCarbonCopyReverseMapping.FCStd"), True
         )
 
-    # Pending upstream 176ef6da4e: Carbon Copy reverse mapping; needs SketchObject.setAllowUnaligned.
-    @unittest.expectedFailure
     def test_CarbonCopyReverseMapping(self):
         r = 10.0
         rad30 = math.radians(30)

@@ -25,6 +25,7 @@
 #ifndef _PreComp_
 #include <cmath>
 #include <limits>
+#include <numbers>
 #include <vector>
 
 #include <BRep_Tool.hxx>
@@ -568,6 +569,16 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
 
     for (std::vector<Part::Geometry *>::const_iterator it=svals.begin(); it != svals.end(); ++it){
         Part::Geometry *geoNew = (*it)->copy();
+        // The source sketch is flipped relative to this one. The geometry is in
+        // sketch coordinates, so mirror about this sketch's own origin and axes
+        // (upstream mirrors about the Placement, which lifts the copy of a
+        // sketch offset along its normal off the sketch plane).
+        if (xinv) {
+            geoNew->mirror(Base::Vector3d(0, 0, 0), Base::Vector3d(0, 1, 0));
+        }
+        if (yinv) {
+            geoNew->mirror(Base::Vector3d(0, 0, 0), Base::Vector3d(1, 0, 0));
+        }
         generateId(geoNew);
         if(construction && geoNew->getTypeId() != Part::GeomPoint::getClassTypeId()) {
             GeometryFacade::setConstruction(geoNew, true);
@@ -595,12 +606,76 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
         return true;
     };
 
+    auto applyConstraintFlipCorrection = [xinv, yinv](Sketcher::Constraint* newConstr) {
+        using std::numbers::pi;
+        if (!xinv && !yinv) {
+            return;
+        }
+
+        // DistanceX, DistanceY
+        if ((xinv && newConstr->Type == Sketcher::DistanceX)
+            || (yinv && newConstr->Type == Sketcher::DistanceY)) {
+            if (newConstr->First == newConstr->Second) {
+                std::swap(newConstr->FirstPos, newConstr->SecondPos);
+            }
+            else {
+                newConstr->setValue(-newConstr->getValue());
+            }
+        }
+
+        // Angle
+        if (newConstr->Type == Sketcher::Angle) {
+            auto normalizeAngle = [](double angle) {
+                while (angle > pi) {
+                    angle -= pi * 2.0;
+                }
+                while (angle <= -pi) {
+                    angle += pi * 2.0;
+                }
+                return angle;
+            };
+
+            if (xinv && yinv) {  // rotation 180 degrees around normal axis
+                if (newConstr->First == GeoEnum::HAxis || newConstr->Second == GeoEnum::HAxis
+                    || newConstr->First == GeoEnum::VAxis || newConstr->Second == GeoEnum::VAxis
+                    || newConstr->Second == GeoEnum::GeoUndef) {
+                    // angle to horizontal or vertical axis
+                    newConstr->setValue(normalizeAngle(newConstr->getValue() + pi));
+                }
+                // angle between two sketch entities: unchanged
+            }
+            else if (xinv) {  // rotation 180 degrees around vertical axis
+                if (newConstr->First == GeoEnum::HAxis || newConstr->Second == GeoEnum::HAxis
+                    || newConstr->Second == GeoEnum::GeoUndef) {
+                    // angle to horizontal axis
+                    newConstr->setValue(normalizeAngle(pi - newConstr->getValue()));
+                }
+                else {
+                    // angle between two sketch entities or angle to vertical axis
+                    newConstr->setValue(normalizeAngle(-newConstr->getValue()));
+                }
+            }
+            else if (yinv) {  // rotation 180 degrees around horizontal axis
+                if (newConstr->First == GeoEnum::VAxis || newConstr->Second == GeoEnum::VAxis) {
+                    // angle to vertical axis
+                    newConstr->setValue(normalizeAngle(pi - newConstr->getValue()));
+                }
+                else {
+                    // angle between two sketch entities or angle to horizontal axis
+                    newConstr->setValue(normalizeAngle(-newConstr->getValue()));
+                }
+            }
+        }
+    };
+
     for (int i=0; i<(int)scvals.size(); ++i) {
         Sketcher::Constraint *newConstr = scvals[i]->copy();
         if (adjustConstraint(i, newConstr->First)
                 && adjustConstraint(i, newConstr->Second)
-                && adjustConstraint(i, newConstr->Third))
+                && adjustConstraint(i, newConstr->Third)) {
+            applyConstraintFlipCorrection(newConstr);
             newcVals.push_back(newConstr);
+        }
         else
             delete newConstr;
     }
@@ -616,6 +691,44 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
     // ViewProvider::UpdateData is triggered.
     Geometry.touch();
 
+    auto makeCorrectedExpressionString = [xinv, yinv](const Sketcher::Constraint* constr,
+                                                      const std::string& expr) -> std::string {
+        // DistanceX, DistanceY
+        if ((xinv && constr->Type == Sketcher::DistanceX)
+            || (yinv && constr->Type == Sketcher::DistanceY)) {
+            if (constr->First == constr->Second) {
+                return expr;
+            }
+            return "-(" + expr + ")";
+        }
+
+        // Angle
+        if (constr->Type == Sketcher::Angle) {
+            if (xinv && yinv) {  // rotation 180 degrees around normal axis
+                if (constr->First == GeoEnum::HAxis || constr->Second == GeoEnum::HAxis
+                    || constr->First == GeoEnum::VAxis || constr->Second == GeoEnum::VAxis
+                    || constr->Second == GeoEnum::GeoUndef) {
+                    return "(" + expr + ") + 180 deg";
+                }
+                return expr;
+            }
+            if (xinv) {  // rotation 180 degrees around vertical axis
+                if (constr->First == GeoEnum::HAxis || constr->Second == GeoEnum::HAxis
+                    || constr->Second == GeoEnum::GeoUndef) {
+                    return "180 deg - (" + expr + ")";
+                }
+                return "-(" + expr + ")";
+            }
+            if (yinv) {  // rotation 180 degrees around horizontal axis
+                if (constr->First == GeoEnum::VAxis || constr->Second == GeoEnum::VAxis) {
+                    return "180 deg - (" + expr + ")";
+                }
+                return "-(" + expr + ")";
+            }
+        }
+        return expr;
+    };
+
     int sourceid = 0;
     for (std::vector<Sketcher::Constraint*>::const_iterator it = scvals.begin(); it != scvals.end();
          ++it, nextcid++, sourceid++) {
@@ -625,10 +738,21 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
             if ((*it)->isDriving) {
                 App::ObjectIdentifier spath = psObj->Constraints.createPath(sourceid);
                 App::PropertyExpressionEngine::ExpressionInfo expr_info = psObj->getExpression(spath);
-                if (expr_info.expression && !expr_info.expression->getDepObjects().count(psObj))
-                    setExpression(Constraints.createPath(nextcid), expr_info.expression->copy());
+                if (expr_info.expression && !expr_info.expression->getDepObjects().count(psObj)) {
+                    if (xinv || yinv) {
+                        auto expr = App::Expression::parse(
+                            this, makeCorrectedExpressionString(*it, expr_info.expression->toString()));
+                        setExpression(Constraints.createPath(nextcid), std::move(expr));
+                    }
+                    else
+                        setExpression(Constraints.createPath(nextcid), expr_info.expression->copy());
+                }
                 else {
-                    auto expr = App::Expression::parse(this, spath.getDocumentObjectName().getString() + "." + spath.toString());
+                    std::string sref = spath.getDocumentObjectName().getString() + "." + spath.toString();
+                    if (xinv || yinv) {
+                        sref = makeCorrectedExpressionString(*it, sref);
+                    }
+                    auto expr = App::Expression::parse(this, sref);
                     setExpression(Constraints.createPath(nextcid), std::move(expr));
                 }
             }

@@ -203,6 +203,18 @@ getIndexByName(name:str)
         </UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="setAllowUnaligned">
+        <Documentation>
+            <UserDocu>
+Set whether Carbon Copy accepts a sketch whose axes are not aligned with this one's.
+
+setAllowUnaligned(state:bool)
+
+    Args:
+        state: `True` allows unaligned sketches, `False` requires aligned ones.
+            </UserDocu>
+        </Documentation>
+    </Methode>
     <Methode Name="carbonCopy">
         <Documentation>
             <UserDocu>
