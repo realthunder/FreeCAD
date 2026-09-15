@@ -476,13 +476,20 @@ Document* Application::newDocument(const char * Name, const char * UserName, boo
         else {
             userName = defaultName ? QObject::tr("Unnamed").toStdString() : Name;
 
+            // getUniqueName() always hands back a new name, so ask it only when
+            // the label is taken; otherwise any other open document renamed
+            // this one ("Part" became "Part1" next to an unrelated "Unnamed").
             std::vector<std::string> names;
             names.reserve(DocMap.size());
+            bool taken = false;
             for (const auto& pos : DocMap) {
                 names.emplace_back(pos.second->Label.getValue());
+                if (names.back() == userName) {
+                    taken = true;
+                }
             }
 
-            if (!names.empty()) {
+            if (taken) {
                 userName = Base::Tools::getUniqueName(userName, names);
             }
         }

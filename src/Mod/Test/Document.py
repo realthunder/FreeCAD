@@ -60,6 +60,20 @@ class DocumentBasicCases(unittest.TestCase):
         self.Doc = FreeCAD.open(SaveName)
         return self.Doc
 
+    def testNewDocumentLabelOnlyRenamedOnClash(self):
+        # Another open document ("CreateTest") must not rename a new one;
+        # only a label that is already taken gets a suffix.
+        first = FreeCAD.newDocument("LabelNoClash")
+        second = None
+        try:
+            self.assertEqual(first.Label, "LabelNoClash")
+            second = FreeCAD.newDocument("LabelNoClash")
+            self.assertEqual(second.Label, "LabelNoClash1")
+        finally:
+            if second:
+                FreeCAD.closeDocument(second.Name)
+            FreeCAD.closeDocument(first.Name)
+
     def testAccessByNameOrID(self):
         obj = self.Doc.addObject("App::DocumentObject", "MyName")
 
