@@ -716,7 +716,7 @@ int SketchObject::diagnoseAdditionalConstraints(
     return lastDoF;
 }
 
-int SketchObject::deleteAllConstraints()
+int SketchObject::deleteAllConstraints(DeleteOptions options)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
@@ -726,8 +726,9 @@ int SketchObject::deleteAllConstraints()
     this->Constraints.setValues(newConstraints);
 
     // if we do not have a recompute, the sketch must be solved to update the DoF of the solver
-    if (noRecomputes)
-        solve();
+    if (noRecomputes && !options.testFlag(DeleteOption::NoSolve)) {
+        solve(options.testFlag(DeleteOption::UpdateGeometry));
+    }
 
     return 0;
 }
@@ -869,14 +870,15 @@ int SketchObject::addConstraint(std::unique_ptr<Constraint> constraint)
     return this->Constraints.getSize() - 1;
 }
 
-int SketchObject::delConstraint(int ConstrId)
+int SketchObject::delConstraint(int ConstrId, DeleteOptions options)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
     const std::vector<Constraint*>& vals = this->Constraints.getValues();
-    if (ConstrId < 0 || ConstrId >= int(vals.size()))
+    if (ConstrId < 0 || ConstrId >= int(vals.size())) {
         return -1;
+    }
 
     std::vector<Constraint*> newVals(vals);
     auto ctriter = newVals.begin() + ConstrId;
@@ -885,18 +887,20 @@ int SketchObject::delConstraint(int ConstrId)
     this->Constraints.setValues(std::move(newVals));
 
     // if we do not have a recompute, the sketch must be solved to update the DoF of the solver
-    if (noRecomputes)
-        solve();
+    if (noRecomputes && !options.testFlag(DeleteOption::NoSolve)) {
+        solve(options.testFlag(DeleteOption::UpdateGeometry));
+    }
 
     return 0;
 }
 
-int SketchObject::delConstraints(std::vector<int> ConstrIds, bool updategeometry)
+int SketchObject::delConstraints(std::vector<int> ConstrIds, DeleteOptions options)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
-    if (ConstrIds.empty())
+    if (ConstrIds.empty()) {
         return 0;
+    }
 
     const std::vector<Constraint*>& vals = this->Constraints.getValues();
 
@@ -916,11 +920,14 @@ int SketchObject::delConstraints(std::vector<int> ConstrIds, bool updategeometry
     this->Constraints.setValues(std::move(newVals));
 
     // if we do not have a recompute, the sketch must be solved to update the DoF of the solver
-    if (noRecomputes)
-        solve(updategeometry);
+    if (noRecomputes && !options.testFlag(DeleteOption::NoSolve)) {
+        solve(options.testFlag(DeleteOption::UpdateGeometry));
+    }
 
     return 0;
 }
+
+
 
 int SketchObject::delConstraintOnPoint(int VertexId, bool onlyCoincident)
 {
@@ -936,128 +943,139 @@ int SketchObject::delConstraintOnPoint(int VertexId, bool onlyCoincident)
     return delConstraintOnPoint(GeoId, PosId, onlyCoincident);
 }
 
-int SketchObject::delConstraintOnPoint(int GeoId, PointPos PosId, bool onlyCoincident)
+// clang-format on
+int SketchObject::delConstraintOnPoint(int geoId, PointPos posId, bool onlyCoincident)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
     const std::vector<Constraint*>& vals = this->Constraints.getValues();
+    std::vector<Constraint*> newVals;
+    newVals.reserve(vals.size());
 
     // check if constraints can be redirected to some other point
     int replaceGeoId = GeoEnum::GeoUndef;
     PointPos replacePosId = Sketcher::PointPos::none;
-    if (!onlyCoincident) {
-        for (std::vector<Constraint*>::const_iterator it = vals.begin(); it != vals.end(); ++it) {
-            if ((*it)->Type == Sketcher::Coincident) {
-                if ((*it)->First == GeoId && (*it)->FirstPos == PosId) {
-                    replaceGeoId = (*it)->Second;
-                    replacePosId = (*it)->SecondPos;
-                    break;
-                }
-                else if ((*it)->Second == GeoId && (*it)->SecondPos == PosId) {
-                    replaceGeoId = (*it)->First;
-                    replacePosId = (*it)->FirstPos;
-                    break;
-                }
+    auto findReplacement = [geoId, posId, &replaceGeoId, &replacePosId, &vals]() {
+        auto it = std::ranges::find_if(vals, [geoId, posId](auto& constr) {
+            return constr->Type == Sketcher::Coincident
+                && constr->involvesGeoIdAndPosId(geoId, posId);
+        });
+
+        if (it == vals.end()) {
+            return;
+        }
+
+        if ((*it)->First == geoId && (*it)->FirstPos == posId) {
+            replaceGeoId = (*it)->Second;
+            replacePosId = (*it)->SecondPos;
+        }
+        else {
+            replaceGeoId = (*it)->First;
+            replacePosId = (*it)->FirstPos;
+        }
+    };
+
+    auto transferToReplacement =
+        [&geoId, &posId, &replaceGeoId, &replacePosId](int& constrGeoId, PointPos& constrPosId) {
+            if (replaceGeoId == GeoEnum::GeoUndef) {
+                return false;
             }
+            if (geoId != constrGeoId || posId != constrPosId) {
+                return false;
+            }
+            constrGeoId = replaceGeoId;
+            constrPosId = replacePosId;
+            return true;
+        };
+
+    findReplacement();
+
+    auto performCoincidenceChecksOrChanges = [&](auto& constr) -> bool {
+        if (replaceGeoId == GeoEnum::GeoUndef) {
+            return false;
+        }
+        if (constr->involvesGeoIdAndPosId(replaceGeoId, replacePosId)) {
+            return false;
+        }
+        // Assuming `constr` already involves geoId and posId, all conditions are already met
+        constr->substituteIndexAndPos(geoId, posId, replaceGeoId, replacePosId);
+        return true;
+    };
+
+    auto performAllConstraintChecksOrChanges = [&](auto& constr) -> std::optional<bool> {
+        if (constr->Type != Sketcher::Coincident && onlyCoincident) {
+            return true;
+        }
+        switch (constr->Type) {
+            case Sketcher::Coincident:
+                return performCoincidenceChecksOrChanges(constr);
+            case Sketcher::Distance:
+            case Sketcher::DistanceX:
+            case Sketcher::DistanceY: {
+                return (
+                    transferToReplacement(constr->First, constr->FirstPos)
+                    || transferToReplacement(constr->Second, constr->SecondPos)
+                );
+            }
+            case Sketcher::PointOnObject: {
+                return transferToReplacement(constr->First, constr->FirstPos);
+            }
+            case Sketcher::Tangent:
+            case Sketcher::Perpendicular: {
+                // we could keep this constraint by converting it to a simple one, but that doesn't
+                // always work (for example if tangent-via-point is necessary), and it is not really
+                // worth it
+                return false;
+            }
+            case Sketcher::Vertical:
+            case Sketcher::Horizontal:
+            case Sketcher::Symmetric: {
+                return false;
+            }
+            default:
+                return std::nullopt;
+        }
+    };
+
+    // remove or redirect any constraints associated with the given point
+    for (auto& constr : vals) {
+        // keep the constraint if it doesn't involve the point
+        if (!constr->involvesGeoIdAndPosId(geoId, posId)) {
+            // for these constraints remove the constraint even if it is not directly associated
+            // with the given point
+            const bool isOneOfDistanceTypes = constr->Type == Sketcher::Distance
+                || constr->Type == Sketcher::DistanceX || constr->Type == Sketcher::DistanceY;
+            const bool involvesEntireCurve = constr->First == geoId
+                && constr->FirstPos == PointPos::none;
+            const bool isPosAnEndpoint = posId == PointPos::start || posId == PointPos::end;
+            if (isOneOfDistanceTypes && involvesEntireCurve && isPosAnEndpoint) {
+                continue;
+            }
+            newVals.push_back(constr);
+            continue;
+        }
+        if (performAllConstraintChecksOrChanges(constr).value_or(true)) {
+            newVals.push_back(constr);
         }
     }
 
-    // remove or redirect any constraints associated with the given point
-    std::vector<Constraint*> newVals(0);
-    for (std::vector<Constraint*>::const_iterator it = vals.begin(); it != vals.end(); ++it) {
-        if ((*it)->Type == Sketcher::Coincident) {
-            if ((*it)->First == GeoId && (*it)->FirstPos == PosId) {
-                // redirect this constraint
-                if (replaceGeoId != GeoEnum::GeoUndef
-                    && (replaceGeoId != (*it)->Second || replacePosId != (*it)->SecondPos)) {
-                    (*it)->First = replaceGeoId;
-                    (*it)->FirstPos = replacePosId;
-                }
-                else
-                    continue;// skip this constraint
-            }
-            else if ((*it)->Second == GeoId && (*it)->SecondPos == PosId) {
-                // redirect this constraint
-                if (replaceGeoId != GeoEnum::GeoUndef
-                    && (replaceGeoId != (*it)->First || replacePosId != (*it)->FirstPos)) {
-                    (*it)->Second = replaceGeoId;
-                    (*it)->SecondPos = replacePosId;
-                }
-                else
-                    continue;// skip this constraint
-            }
-        }
-        else if (!onlyCoincident) {
-            if ((*it)->Type == Sketcher::Distance || (*it)->Type == Sketcher::DistanceX
-                || (*it)->Type == Sketcher::DistanceY) {
-                if ((*it)->First == GeoId && (*it)->FirstPos == PointPos::none
-                    && (PosId == PointPos::start || PosId == PointPos::end)) {
-                    // remove the constraint even if it is not directly associated
-                    // with the given point
-                    continue;// skip this constraint
-                }
-                else if ((*it)->First == GeoId && (*it)->FirstPos == PosId) {
-                    if (replaceGeoId != GeoEnum::GeoUndef) {// redirect this constraint
-                        (*it)->First = replaceGeoId;
-                        (*it)->FirstPos = replacePosId;
-                    }
-                    else
-                        continue;// skip this constraint
-                }
-                else if ((*it)->Second == GeoId && (*it)->SecondPos == PosId) {
-                    if (replaceGeoId != GeoEnum::GeoUndef) {// redirect this constraint
-                        (*it)->Second = replaceGeoId;
-                        (*it)->SecondPos = replacePosId;
-                    }
-                    else
-                        continue;// skip this constraint
-                }
-            }
-            else if ((*it)->Type == Sketcher::PointOnObject) {
-                if ((*it)->First == GeoId && (*it)->FirstPos == PosId) {
-                    if (replaceGeoId != GeoEnum::GeoUndef) {// redirect this constraint
-                        (*it)->First = replaceGeoId;
-                        (*it)->FirstPos = replacePosId;
-                    }
-                    else
-                        continue;// skip this constraint
-                }
-            }
-            else if ((*it)->Type == Sketcher::Tangent || (*it)->Type == Sketcher::Perpendicular) {
-                if (((*it)->First == GeoId && (*it)->FirstPos == PosId)
-                    || ((*it)->Second == GeoId && (*it)->SecondPos == PosId)) {
-                    // we could keep the tangency constraint by converting it
-                    // to a simple one but it is not really worth
-                    continue;// skip this constraint
-                }
-            }
-            else if ((*it)->Type == Sketcher::Symmetric) {
-                if (((*it)->First == GeoId && (*it)->FirstPos == PosId)
-                    || ((*it)->Second == GeoId && (*it)->SecondPos == PosId)) {
-                    continue;// skip this constraint
-                }
-            }
-            else if ((*it)->Type == Sketcher::Vertical || (*it)->Type == Sketcher::Horizontal) {
-                if (((*it)->First == GeoId && (*it)->FirstPos == PosId)
-                    || ((*it)->Second == GeoId && (*it)->SecondPos == PosId)) {
-                    continue;// skip this constraint
-                }
-            }
-        }
-        newVals.push_back(*it);
-    }
     if (newVals.size() < vals.size()) {
         this->Constraints.setValues(std::move(newVals));
 
         return 0;
     }
 
-    return -1;// no such constraint
+    return -1;  // no such constraint
 }
 
-int SketchObject::transferConstraints(int fromGeoId, PointPos fromPosId, int toGeoId,
-                                      PointPos toPosId, bool doNotTransformTangencies)
+int SketchObject::transferConstraints(
+    int fromGeoId,
+    PointPos fromPosId,
+    int toGeoId,
+    PointPos toPosId,
+    bool doNotTransformTangencies
+)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
@@ -1066,56 +1084,46 @@ int SketchObject::transferConstraints(int fromGeoId, PointPos fromPosId, int toG
     std::vector<Constraint*> newVals(vals);
     bool changed = false;
     for (int i = 0; i < int(newVals.size()); i++) {
-        if (vals[i]->First == fromGeoId && vals[i]->FirstPos == fromPosId
-            && !(vals[i]->Second == toGeoId && vals[i]->SecondPos == toPosId)
-            && !(toGeoId < 0 && vals[i]->Second < 0)) {
-
-            std::unique_ptr<Constraint> constNew(newVals[i]->clone());
-            constNew->First = toGeoId;
-            constNew->FirstPos = toPosId;
-
-            // If not explicitly confirmed, nothing guarantees that a tangent can be freely
-            // transferred to another coincident point, as the transfer destination edge most likely
-            // won't be intended to be tangent. However, if it is an end to end point tangency, the
-            // user expects it to be substituted by a coincidence constraint.
-            if (vals[i]->Type == Sketcher::Tangent || vals[i]->Type == Sketcher::Perpendicular) {
-                if (!doNotTransformTangencies) {
-                    constNew->Type = Sketcher::Coincident;
-                }
-            }
-            // With respect to angle constraints, if it is a DeepSOIC style angle constraint
-            // (segment+segment+point), then no problem arises as the segments are PosId=none. In
-            // this case there is no call to this function.
-            //
-            // However, other angle constraints are problematic because they are created on
-            // segments, but internally operate on vertices, PosId=start Such constraint may not be
-            // successfully transferred on deletion of the segments.
-            else if (vals[i]->Type == Sketcher::Angle) {
-                continue;
-            }
-
-            Constraint* constPtr = constNew.release();
-            newVals[i] = constPtr;
-            changed = true;
+        if (vals[i]->Type == Sketcher::InternalAlignment) {
+            // Transferring internal alignment constraint can cause malformed constraints.
+            // For example a B-spline pole being a point instead of a circle.
+            continue;
         }
-        else if (vals[i]->Second == fromGeoId && vals[i]->SecondPos == fromPosId
-                 && !(vals[i]->First == toGeoId && vals[i]->FirstPos == toPosId)
-                 && !(toGeoId < 0 && vals[i]->First < 0)) {
-
+        else if (
+            vals[i]->involvesGeoIdAndPosId(fromGeoId, fromPosId)
+            && !vals[i]->involvesGeoIdAndPosId(toGeoId, toPosId)
+        ) {
             std::unique_ptr<Constraint> constNew(newVals[i]->clone());
-            constNew->Second = toGeoId;
-            constNew->SecondPos = toPosId;
-            // If not explicitly confirmed, nothing guarantees that a tangent can be freely
-            // transferred to another coincident point, as the transfer destination edge most likely
-            // won't be intended to be tangent. However, if it is an end to end point tangency, the
-            // user expects it to be substituted by a coincidence constraint.
-            if (vals[i]->Type == Sketcher::Tangent || vals[i]->Type == Sketcher::Perpendicular) {
-                if (!doNotTransformTangencies) {
-                    constNew->Type = Sketcher::Coincident;
-                }
-            }
-            else if (vals[i]->Type == Sketcher::Angle) {
+            constNew->substituteIndexAndPos(fromGeoId, fromPosId, toGeoId, toPosId);
+            if (vals[i]->First < 0 && vals[i]->Second < 0) {
+                // TODO: Can `vals[i]->Third` be involved as well?
+                // If it is, we need to be sure at most ONE of these is external
                 continue;
+            }
+            switch (vals[i]->Type) {
+                case Sketcher::Tangent:
+                case Sketcher::Perpendicular: {
+                    // If not explicitly confirmed, nothing guarantees that a tangent can be freely
+                    // transferred to another coincident point, as the transfer destination edge
+                    // most likely won't be intended to be tangent. However, if it is an end to end
+                    // point tangency, the user expects it to be substituted by a coincidence
+                    // constraint.
+                    if (!doNotTransformTangencies) {
+                        constNew->Type = Sketcher::Coincident;
+                    }
+                    break;
+                }
+                case Sketcher::Angle:
+                    // With respect to angle constraints, if it is a DeepSOIC style angle constraint
+                    // (segment+segment+point), then no problem arises as the segments are
+                    // PosId=none. In this case there is no call to this function.
+                    //
+                    // However, other angle constraints are problematic because they are created on
+                    // segments, but internally operate on vertices, PosId=start Such constraint may
+                    // not be successfully transferred on deletion of the segments.
+                    continue;
+                default:
+                    break;
             }
 
             Constraint* constPtr = constNew.release();
@@ -1130,6 +1138,340 @@ int SketchObject::transferConstraints(int fromGeoId, PointPos fromPosId, int toG
     }
     return 0;
 }
+
+std::unique_ptr<Constraint>
+SketchObject::getConstraintAfterDeletingGeo(const Constraint* constr,
+                                            const int deletedGeoId) const
+{
+    if (!constr) {
+        return nullptr;
+    }
+
+    // TODO: While this is not incorrect, it recreates all constraints regardless of whether or not we need to.
+    auto newConstr = std::unique_ptr<Constraint>(constr->clone());
+
+    changeConstraintAfterDeletingGeo(newConstr.get(), deletedGeoId);
+
+    if (newConstr->Type == ConstraintType::None) {
+        return nullptr;
+    }
+
+    return newConstr;
+}
+
+void SketchObject::changeConstraintAfterDeletingGeo(Constraint* constr,
+                                                    const int deletedGeoId) const
+{
+    if (!constr) {
+        return;
+    }
+
+    for (int i = 0; constr->hasElement(i); ++i) {
+        if (constr->getGeoId(i) == deletedGeoId){
+            constr->Type = ConstraintType::None;
+            return;
+        }
+    }
+
+    // legacy to make sure we're not missing something...
+    if (constr->involvesGeoId(deletedGeoId)) {
+        constr->Type = ConstraintType::None;
+        return;
+    }
+
+    int step = 1;
+    std::function<bool (const int&)> needsUpdate = [&deletedGeoId](const int& givenId) -> bool {
+        return givenId > deletedGeoId;
+    };
+    if (deletedGeoId < 0) {
+        step = -1;
+        needsUpdate = [&deletedGeoId](const int& givenId) -> bool {
+            return givenId < deletedGeoId && givenId != GeoEnum::GeoUndef;
+        };
+    }
+
+    for (int i = 0; constr->hasElement(i); ++i) {
+        if (needsUpdate(constr->getGeoId(i))) {
+            constr->setGeoId(i, constr->getGeoId(i) - step);
+        }
+    }
+}
+
+// clang-format on
+std::optional<size_t> findPieceContainingPoint(
+    const SketchObject* obj,
+    const Part::Geometry* geo,
+    const Base::Vector3d& point,
+    const std::vector<int>& newIds,
+    const std::vector<const Part::Geometry*>& newGeos
+)
+{
+    double conParam;
+    auto* geoAsCurve = static_cast<const Part::GeomCurve*>(geo);
+    geoAsCurve->closestParameter(point, conParam);
+    // Choose based on where the closest point lies
+    // If it's not there, just leave this constraint out
+    for (size_t i = 0; i < newIds.size(); ++i) {
+        double newGeoFirstParam = static_cast<const Part::GeomCurve*>(newGeos[i])->getFirstParameter();
+        double newGeoLastParam = static_cast<const Part::GeomCurve*>(newGeos[i])->getLastParameter();
+        // For periodic curves the point may need a full revolution
+        if ((newGeoFirstParam - conParam) > Precision::PApproximation() && obj->isClosedCurve(geo)) {
+            conParam += (geoAsCurve->getLastParameter() - geoAsCurve->getFirstParameter());
+        }
+        if ((newGeoFirstParam - conParam) <= Precision::PApproximation()
+            && (conParam - newGeoLastParam) <= Precision::PApproximation()) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+bool SketchObject::deriveConstraintsForPieces(
+    const int oldId,
+    const std::vector<int>& newIds,
+    const Constraint* con,
+    std::vector<Constraint*>& newConstraints,
+    const bool assumeTangency
+) const
+{
+    std::vector<const Part::Geometry*> newGeos;
+    for (auto& newId : newIds) {
+        newGeos.push_back(getGeometry(newId));
+    }
+
+    return deriveConstraintsForPieces(oldId, newIds, newGeos, con, newConstraints, assumeTangency);
+}
+
+bool SketchObject::deriveConstraintsForPieces(
+    const int oldId,
+    const std::vector<int>& newIds,
+    const std::vector<const Part::Geometry*>& newGeos,
+    const Constraint* con,
+    std::vector<Constraint*>& newConstraints,
+    const bool assumeTangency
+) const
+{
+    const Part::Geometry* geo = getGeometry(oldId);
+    const GeoElementId conGeoElementId = con->getElement(0);
+    int conId = conGeoElementId.GeoId;
+    PointPos conPos = conGeoElementId.Pos;
+    if (conId == oldId) {
+        const GeoElementId second = con->getElement(1);
+        conId = second.GeoId;
+        conPos = second.Pos;
+    }
+
+    bool newGeosLikelyNotCreated = std::ranges::find(newGeos, nullptr) != newGeos.end();
+
+    bool transferToAll = false;
+    switch (con->Type) {
+        case Horizontal:
+        case Vertical:
+        case Parallel: {
+            transferToAll = geo->is<Part::GeomLineSegment>();
+        } break;
+        case Tangent:
+        case Perpendicular: {
+            if (!assumeTangency && geo->is<Part::GeomLineSegment>()) {
+                transferToAll = true;
+                break;
+            }
+
+            // we assume the parts are forced to be tangential, so we only need to apply it to the
+            // ones intersecting
+            const Part::Geometry* conGeo = getGeometry(conId);
+            if (!(conGeo && conGeo->isDerivedFrom<Part::GeomCurve>())) {
+                return false;
+            }
+
+            // no use going forward if newGeos aren't ready
+            if (newGeosLikelyNotCreated) {
+                break;
+            }
+
+            // For now: just transfer to the first intersection
+            // TODO: Actually check that there was perpendicularity earlier
+            for (size_t i = 0; i < newIds.size(); ++i) {
+                // by coincident or point on object constraint
+                const auto& constraints = this->Constraints.getValues();
+
+                const bool coincidentConstrFound = std::find_if(
+                                                       constraints.begin(),
+                                                       constraints.end(),
+                                                       [&](const auto* constraint) {
+                                                           return constraint->Type == Coincident
+                                                               && constraint->involvesGeoId(newIds[i])
+                                                               && constraint->involvesGeoId(conId);
+                                                       }
+                                                   )
+                    != constraints.end();
+
+                // by curve intersection
+                bool intersects = false;
+                if (!coincidentConstrFound) {
+                    std::vector<std::pair<Base::Vector3d, Base::Vector3d>> intersections;
+                    intersects
+                        = static_cast<const Part::GeomCurve*>(newGeos[i])
+                              ->intersect(static_cast<const Part::GeomCurve*>(conGeo), intersections);
+                }
+
+                if (coincidentConstrFound || intersects) {
+                    Constraint* trans = con->copy();
+                    trans->substituteIndex(oldId, newIds[i]);
+                    newConstraints.push_back(trans);
+                    return true;
+                }
+            }
+        } break;
+        case Angle: {
+            const auto [thirdGeo, thirdPos] = con->getElement(2);
+            if (thirdGeo == oldId) {
+                // TODO: transfer to a coincident point,
+                // is it possible to do it somewhere else and avoid?
+                std::vector<int> GeoIdList;
+                std::vector<PointPos> PosIdList;
+                getDirectlyCoincidentPoints(thirdGeo, thirdPos, GeoIdList, PosIdList);
+                if (GeoIdList.size() <= 1) {
+                    // TODO: Even in this case we can add a point
+                    return false;
+                }
+
+                // transfer only to the curve that actually intersects
+                Base::Vector3d point(getPoint(thirdGeo, thirdPos));
+                std::optional<size_t> idx = findPieceContainingPoint(this, geo, point, newIds, newGeos);
+
+                if (idx.has_value()) {
+                    Constraint* trans = con->copy();
+                    trans->substituteIndexAndPos(GeoIdList[0], PosIdList[0], GeoIdList[1], PosIdList[1]);
+                    trans->substituteIndex(oldId, newIds[idx.value()]);
+                    newConstraints.push_back(trans);
+                    return true;
+                }
+            }
+            else if (thirdGeo != GeoEnum::GeoUndef) {
+                // Angle via point but the point won't change, can transfer to all or first
+                // transfer only to the curve that actually intersects
+                Base::Vector3d point(getPoint(thirdGeo, thirdPos));
+                std::optional<size_t> idx = findPieceContainingPoint(this, geo, point, newIds, newGeos);
+
+                if (idx.has_value()) {
+                    Constraint* trans = con->copy();
+                    trans->substituteIndex(oldId, newIds[idx.value()]);
+                    newConstraints.push_back(trans);
+                    return true;
+                }
+                break;
+            }
+            else if (std::ranges::any_of(newGeos, [](const Part::Geometry* geo) {
+                         return !geo->is<Part::GeomLineSegment>();
+                     })) {
+                // Angle without a specific point is only supported when _all_ geometries are lines.
+                // If the original was a line, we may reach this point, for example, when converting
+                // it to NURBS.
+
+                // NOTE: We may decide to change this logic in the future. Follows
+                // `Sketch::addConstraint`.
+                return false;
+            }
+            else {
+                // Straight up angle, can transfer to all or first
+                transferToAll = true;
+                break;
+            }
+        } break;
+        case Distance:
+        case DistanceX:
+        case DistanceY:
+        case Coincident:
+        case PointOnObject: {
+            if (con->FirstPos == PointPos::none && con->SecondPos == PointPos::none
+                && newIds.size() > 1) {
+                Constraint* dist = con->copy();
+                dist->First = newIds.front();
+                dist->FirstPos = PointPos::start;
+                dist->Second = newIds.back();
+                dist->SecondPos = PointPos::end;
+                newConstraints.push_back(dist);
+                return true;
+            }
+
+            if (conId == GeoEnum::GeoUndef || newGeosLikelyNotCreated) {
+                // nothing further to do
+                return false;
+            }
+
+            Base::Vector3d conPoint(getPoint(conId, conPos));
+            double conParam;
+            auto* geoAsCurve = static_cast<const Part::GeomCurve*>(geo);
+            geoAsCurve->closestParameter(conPoint, conParam);
+            // Choose based on where the closest point lies
+            // If it's not there, just leave this constraint out
+            for (size_t i = 0; i < newIds.size(); ++i) {
+                double newGeoFirstParam
+                    = static_cast<const Part::GeomCurve*>(newGeos[i])->getFirstParameter();
+                double newGeoLastParam
+                    = static_cast<const Part::GeomCurve*>(newGeos[i])->getLastParameter();
+                // For periodic curves the point may need a full revolution
+                if ((newGeoFirstParam - conParam) > Precision::PApproximation()
+                    && isClosedCurve(geo)) {
+                    conParam += (geoAsCurve->getLastParameter() - geoAsCurve->getFirstParameter());
+                }
+                if ((newGeoFirstParam - conParam) <= Precision::PApproximation()
+                    && (conParam - newGeoLastParam) <= Precision::PApproximation()) {
+                    Constraint* trans = con->copy();
+                    trans->First = conId;
+                    trans->FirstPos = conPos;
+                    trans->Second = newIds[i];
+                    trans->SecondPos = PointPos::none;
+                    newConstraints.push_back(trans);
+                    return true;
+                }
+            }
+        } break;
+        case Radius:
+        case Diameter:
+        case Equal: {
+            // Only transfer to one of them (arbitrarily chosen here as the first) and only if the
+            // curve is a conic or its arc
+            // TODO: Some equalities may be transferred, using something along the lines of
+            // `getDirectlyCoincidentPoints`
+            if (geo->isDerivedFrom<Part::GeomConic>() || geo->isDerivedFrom<Part::GeomArcOfConic>()) {
+                Constraint* trans = con->copy();
+                trans->substituteIndex(oldId, newIds.front());
+                newConstraints.push_back(trans);
+                break;
+            }
+        } break;
+        default:
+            // Release other constraints
+            break;
+    }
+
+    if (!transferToAll) {
+        return false;
+    }
+
+    if (assumeTangency) {
+        // because the geometries are tangential, we can apply the constraint only to the first one
+        // and the rest will follow
+        Constraint* trans = con->copy();
+        trans->substituteIndex(oldId, newIds[0]);
+        newConstraints.push_back(trans);
+    }
+    else {
+        for (auto& newId : newIds) {
+            Constraint* trans = con->copy();
+            trans->substituteIndex(oldId, newId);
+            newConstraints.push_back(trans);
+        }
+    }
+
+    return true;
+}
+
+
+
+
 
 std::unique_ptr<Constraint> SketchObject::createConstraint(
     Sketcher::ConstraintType constrType, int firstGeoId, Sketcher::PointPos firstPos,
@@ -1617,7 +1959,7 @@ const std::map<int, Sketcher::PointPos> SketchObject::getAllCoincidentPoints(int
 
 void SketchObject::getDirectlyCoincidentPoints(int GeoId, PointPos PosId,
                                                std::vector<int>& GeoIdList,
-                                               std::vector<PointPos>& PosIdList)
+                                               std::vector<PointPos>& PosIdList) const
 {
     const std::vector<Constraint*>& constraints = this->Constraints.getValues();
 
@@ -1625,16 +1967,29 @@ void SketchObject::getDirectlyCoincidentPoints(int GeoId, PointPos PosId,
     PosIdList.clear();
     GeoIdList.push_back(GeoId);
     PosIdList.push_back(PosId);
-    for (std::vector<Constraint*>::const_iterator it = constraints.begin(); it != constraints.end();
-         ++it) {
-        if ((*it)->Type == Sketcher::Coincident) {
-            if ((*it)->First == GeoId && (*it)->FirstPos == PosId) {
-                GeoIdList.push_back((*it)->Second);
-                PosIdList.push_back((*it)->SecondPos);
+    for (const auto& constr : constraints) {
+        if (constr->Type == Sketcher::Coincident) {
+            if (constr->First == GeoId && constr->FirstPos == PosId) {
+                GeoIdList.push_back(constr->Second);
+                PosIdList.push_back(constr->SecondPos);
             }
-            else if ((*it)->Second == GeoId && (*it)->SecondPos == PosId) {
-                GeoIdList.push_back((*it)->First);
-                PosIdList.push_back((*it)->FirstPos);
+            else if (constr->Second == GeoId && constr->SecondPos == PosId) {
+                GeoIdList.push_back(constr->First);
+                PosIdList.push_back(constr->FirstPos);
+            }
+        }
+        if (constr->Type == Sketcher::Tangent) {
+            if (constr->First == GeoId && constr->FirstPos == PosId &&
+                (constr->SecondPos == Sketcher::PointPos::start ||
+                 constr->SecondPos == Sketcher::PointPos::end)) {
+                GeoIdList.push_back(constr->Second);
+                PosIdList.push_back(constr->SecondPos);
+            }
+            if (constr->Second == GeoId && constr->SecondPos == PosId &&
+                (constr->FirstPos == Sketcher::PointPos::start ||
+                 constr->FirstPos == Sketcher::PointPos::end)) {
+                GeoIdList.push_back(constr->First);
+                PosIdList.push_back(constr->FirstPos);
             }
         }
     }
@@ -1645,13 +2000,45 @@ void SketchObject::getDirectlyCoincidentPoints(int GeoId, PointPos PosId,
 }
 
 void SketchObject::getDirectlyCoincidentPoints(int VertexId, std::vector<int>& GeoIdList,
-                                               std::vector<PointPos>& PosIdList)
+                                               std::vector<PointPos>& PosIdList) const
 {
     int GeoId;
     PointPos PosId;
     getGeoVertexIndex(VertexId, GeoId, PosId);
     getDirectlyCoincidentPoints(GeoId, PosId, GeoIdList, PosIdList);
 }
+
+void SketchObject::getDirectlyCoincidentPoints(
+    const int GeoId1,
+    const int GeoId2,
+    std::vector<int>& GeoIds3,
+    std::vector<PointPos>& PosIds3
+) const
+{
+    std::vector<int> constraints;
+    getConstraintIndices(GeoId1, constraints);
+
+    for (auto idx : constraints) {
+        const auto* con = Constraints.getValues()[idx];
+
+        if (!con->involvesGeoId(GeoId2)) {
+            continue;
+        }
+
+        if (con->Type == Sketcher::ConstraintType::Coincident) {
+            if (con->getElement(0).GeoId == GeoId1) {
+                GeoIds3.push_back(con->getElement(0).GeoId);
+                PosIds3.push_back(con->getElement(0).Pos);
+            }
+            else {
+                GeoIds3.push_back(con->getElement(1).GeoId);
+                PosIds3.push_back(con->getElement(1).Pos);
+            }
+        }
+    }
+}
+
+
 
 bool SketchObject::arePointsCoincident(int GeoId1, PointPos PosId1, int GeoId2, PointPos PosId2)
 {
@@ -1685,7 +2072,7 @@ bool SketchObject::arePointsCoincident(int GeoId1, PointPos PosId1, int GeoId2, 
     return false;
 }
 
-void SketchObject::getConstraintIndices(int GeoId, std::vector<int>& constraintList)
+void SketchObject::getConstraintIndices(int GeoId, std::vector<int>& constraintList) const
 {
     const std::vector<Constraint*>& constraints = this->Constraints.getValues();
     int i = 0;
@@ -2296,18 +2683,19 @@ bool SketchObject::AutoLockTangencyAndPerpty(Constraint* cstr, bool bForce, bool
     return true;
 }
 
-int SketchObject::autoRemoveRedundants(bool updategeo)
+int SketchObject::autoRemoveRedundants(DeleteOptions options)
 {
     auto redundants = getLastRedundant();
 
-    if (redundants.empty())
+    if (redundants.empty()) {
         return 0;
+    }
 
     // getLastRedundant is base 1, while delConstraints is base 0
     for (size_t i = 0; i < redundants.size(); i++)
         redundants[i]--;
 
-    delConstraints(redundants, updategeo);
+    delConstraints(redundants, options);
 
     return redundants.size();
 }

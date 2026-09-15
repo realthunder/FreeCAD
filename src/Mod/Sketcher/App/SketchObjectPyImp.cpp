@@ -238,25 +238,30 @@ static inline void setError(const char *name, int GeoId, const char *msg)
 
 PyObject* SketchObjectPy::delGeometry(PyObject *args)
 {
+    PyObject* noSolve = Py_False;
     /*[[[cog
-    getGeoId()
+    getGeoId('|O!', '&PyBool_Type, &noSolve')
     ]]]*/
 
     int GeoId;
     const char *name=nullptr;
-    if (PyArg_ParseTuple(args, "s", &name )) {
+    if (PyArg_ParseTuple(args, "s|O!", &name , &PyBool_Type, &noSolve)) {
         if(!getSketchObjectPtr()->geoIdFromShapeType(name,GeoId)) {
             PyErr_Format(PyExc_ValueError, "Invalid geometry name: %s", name);
             return nullptr;
         }
     } else {
         PyErr_Clear();
-        if (!PyArg_ParseTuple(args, "i", &GeoId ))
+        if (!PyArg_ParseTuple(args, "i|O!", &GeoId , &PyBool_Type, &noSolve))
             return nullptr;
     }
     //[[[end]]]
 
-    if (this->getSketchObjectPtr()->delGeometry(GeoId)) {
+    // Unlike upstream, keep deleting the internal geometry: passing only the
+    // solve option would drop IncludeInternalGeometry from the default.
+    DeleteOptions options = DeleteOption::IncludeInternalGeometry;
+    options |= Base::asBoolean(noSolve) ? DeleteOption::NoSolve : DeleteOption::UpdateGeometry;
+    if (this->getSketchObjectPtr()->delGeometry(GeoId, options)) {
         setError(name, GeoId, "Failed to delete geometry");
         return nullptr;
     }
@@ -267,8 +272,9 @@ PyObject* SketchObjectPy::delGeometry(PyObject *args)
 PyObject* SketchObjectPy::delGeometries(PyObject* args)
 {
     PyObject* pcObj;
+    PyObject* noSolve = Py_False;
 
-    if (!PyArg_ParseTuple(args, "O", &pcObj)) {
+    if (!PyArg_ParseTuple(args, "O|O!", &pcObj, &PyBool_Type, &noSolve)) {
         return nullptr;
     }
 
@@ -282,7 +288,9 @@ PyObject* SketchObjectPy::delGeometries(PyObject* args)
             }
         }
 
-        if (this->getSketchObjectPtr()->delGeometries(geoIdList)) {
+        if (this->getSketchObjectPtr()->delGeometries(
+                geoIdList,
+                Base::asBoolean(noSolve) ? DeleteOption::NoSolve : DeleteOption::UpdateGeometry)) {
             std::stringstream str;
             str << "Not able to delete geometries";
             PyErr_SetString(PyExc_ValueError, str.str().c_str());
@@ -299,11 +307,13 @@ PyObject* SketchObjectPy::delGeometries(PyObject* args)
 
 PyObject* SketchObjectPy::deleteAllGeometry(PyObject* args)
 {
-    if (!PyArg_ParseTuple(args, "")) {
+    PyObject* noSolve = Py_False;
+    if (!PyArg_ParseTuple(args, "|O!", &PyBool_Type, &noSolve)) {
         return nullptr;
     }
 
-    if (this->getSketchObjectPtr()->deleteAllGeometry()) {
+    if (this->getSketchObjectPtr()->deleteAllGeometry(
+            Base::asBoolean(noSolve) ? DeleteOption::NoSolve : DeleteOption::UpdateGeometry)) {
         std::stringstream str;
         str << "Unable to delete Geometry";
         PyErr_SetString(PyExc_ValueError, str.str().c_str());
@@ -516,11 +526,14 @@ PyObject* SketchObjectPy::addConstraint(PyObject* args)
 PyObject* SketchObjectPy::delConstraint(PyObject* args)
 {
     int Index;
-    if (!PyArg_ParseTuple(args, "i", &Index)) {
+    PyObject* noSolve = Py_False;
+    if (!PyArg_ParseTuple(args, "i|O!", &Index, &PyBool_Type, &noSolve)) {
         return nullptr;
     }
 
-    if (this->getSketchObjectPtr()->delConstraint(Index)) {
+    if (this->getSketchObjectPtr()->delConstraint(
+            Index,
+            Base::asBoolean(noSolve) ? DeleteOption::NoSolve : DeleteOption::UpdateGeometry)) {
         std::stringstream str;
         str << "Not able to delete a constraint with the given index: " << Index;
         PyErr_SetString(PyExc_ValueError, str.str().c_str());
@@ -1484,14 +1497,16 @@ PyObject* SketchObjectPy::trim(PyObject* args)
 {
     PyObject* pcObj;
     int GeoId;
+    PyObject* includeAxes = Py_False;
 
-    if (!PyArg_ParseTuple(args, "iO!", &GeoId, &(Base::VectorPy::Type), &pcObj)) {
+    if (!PyArg_ParseTuple(args, "iO!|O!", &GeoId, &(Base::VectorPy::Type), &pcObj, &PyBool_Type, &includeAxes)) {
         return nullptr;
     }
 
     Base::Vector3d v1 = static_cast<Base::VectorPy*>(pcObj)->value();
 
-    if (this->getSketchObjectPtr()->trim(GeoId, v1) != SketchSolveStatus::Success) {
+    if (this->getSketchObjectPtr()->trim(GeoId, v1, Base::asBoolean(includeAxes))
+        != SketchSolveStatus::Success) {
         std::stringstream str;
         str << "Not able to trim curve with the given index: " << GeoId;
         PyErr_SetString(PyExc_ValueError, str.str().c_str());
@@ -1558,14 +1573,17 @@ PyObject* SketchObjectPy::join(PyObject* args)
     int PosId1 = static_cast<int>(Sketcher::PointPos::none),
         PosId2 = static_cast<int>(Sketcher::PointPos::none);
 
-    if (!PyArg_ParseTuple(args, "iiii", &GeoId1, &PosId1, &GeoId2, &PosId2)) {
+    int continuity = 0;
+
+    if (!PyArg_ParseTuple(args, "iiii|i", &GeoId1, &PosId1, &GeoId2, &PosId2, &continuity)) {
         return nullptr;
     }
 
     if (this->getSketchObjectPtr()->join(GeoId1,
                                          (Sketcher::PointPos)PosId1,
                                          GeoId2,
-                                         (Sketcher::PointPos)PosId2)) {
+                                         (Sketcher::PointPos)PosId2,
+                                         continuity)) {
         std::stringstream str;
         str << "Not able to join the curves with end points: (" << GeoId1 << ", " << PosId1
             << "), (" << GeoId2 << ", " << PosId2 << ")";
@@ -2168,7 +2186,9 @@ PyObject* SketchObjectPy::autoRemoveRedundants(PyObject* args)
         return nullptr;
     }
 
-    this->getSketchObjectPtr()->autoRemoveRedundants(Base::asBoolean(updategeo));
+    this->getSketchObjectPtr()->autoRemoveRedundants(
+        Base::asBoolean(updategeo) ? DeleteOption::UpdateGeometry : DeleteOption::NoFlag
+    );
 
     Py_Return;
 }

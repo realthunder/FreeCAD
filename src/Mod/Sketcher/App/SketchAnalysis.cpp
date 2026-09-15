@@ -470,7 +470,7 @@ void SketchAnalysis::makeMissingPointOnPointCoincident(bool onebyone)
             solvesketch(status, dofs, true);
 
             if (status == SketchSolveStatus::RedundantConstraints) {  // redundant constraints
-                sketch->autoRemoveRedundants(false);
+                sketch->autoRemoveRedundants(DeleteOption::NoFlag);
 
                 solvesketch(status, dofs, false);
             }
@@ -571,7 +571,7 @@ void SketchAnalysis::makeMissingVerticalHorizontal(bool onebyone)
             solvesketch(status, dofs, true);
 
             if (status == SketchSolveStatus::RedundantConstraints) {  // redundant constraints
-                sketch->autoRemoveRedundants(false);
+                sketch->autoRemoveRedundants(DeleteOption::NoFlag);
 
                 solvesketch(status, dofs, false);
             }
@@ -781,7 +781,7 @@ void SketchAnalysis::makeMissingEquality(bool onebyone)
             solvesketch(status, dofs, true);
 
             if (status == SketchSolveStatus::RedundantConstraints) {  // redundant constraints
-                sketch->autoRemoveRedundants(false);
+                sketch->autoRemoveRedundants(DeleteOption::NoFlag);
 
                 solvesketch(status, dofs, false);
             }
@@ -892,7 +892,7 @@ int SketchAnalysis::autoconstraint(double precision,
         solvesketch(status, dofs, true);
 
         if (status == SketchSolveStatus::RedundantConstraints) {  // redundants
-            sketch->autoRemoveRedundants(false);
+            sketch->autoRemoveRedundants(DeleteOption::NoFlag);
             solvesketch(status, dofs, false);
         }
 
@@ -917,7 +917,7 @@ int SketchAnalysis::autoconstraint(double precision,
         solvesketch(status, dofs, true);
 
         if (status == SketchSolveStatus::RedundantConstraints) {  // redundants
-            sketch->autoRemoveRedundants(false);
+            sketch->autoRemoveRedundants(DeleteOption::NoFlag);
             solvesketch(status, dofs, false);
         }
 
@@ -948,7 +948,7 @@ int SketchAnalysis::autoconstraint(double precision,
         solvesketch(status, dofs, true);
 
         if (status == SketchSolveStatus::RedundantConstraints) {  // redundants
-            sketch->autoRemoveRedundants(false);
+            sketch->autoRemoveRedundants(DeleteOption::NoFlag);
             solvesketch(status, dofs, false);
         }
 

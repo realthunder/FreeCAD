@@ -27,6 +27,7 @@
 #include <App/IndexedName.h>
 #include <App/PropertyFile.h>
 #include <Base/Axis.h>
+#include <Base/Bitmask.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/PropertyGeometryList.h>
 #include <Mod/Sketcher/App/PropertyConstraintList.h>
@@ -41,6 +42,23 @@
 
 #include "SketchGeometryExtension.h"
 #include "ExternalGeometryExtension.h"
+
+namespace Sketcher
+{
+// Options for deleting geometries/constraints
+enum class DeleteOption
+{
+    NoFlag = 0,
+    IncludeInternalGeometry = 1,  // Only makes sense when deleting a geometry - (default for
+                                  // deleting a single geometry)
+    UpdateGeometry = 2,  // Should the solver update the geometries ? (default) - has no effect if
+                         // noRecompute is false
+    NoSolve = 4,         // Can be useful if the call will do many operations and a single solve
+};
+using DeleteOptions = Base::Flags<DeleteOption>;
+}  // namespace Sketcher
+
+ENABLE_BITMASK_OPERATORS(Sketcher::DeleteOption)
 
 namespace Sketcher
 {
@@ -140,15 +158,26 @@ public:
      \param deleteinternalgeo - if true deletes the associated and unconstraint internal geometry,
      otherwise deletes only the GeoId \retval int - 0 if successful
      */
-    int delGeometry(int GeoId, bool deleteinternalgeo = true);
+    int delGeometry(
+        int GeoId,
+        DeleteOptions options = DeleteOption::UpdateGeometry | DeleteOption::IncludeInternalGeometry
+    );
     /// Deletes just the GeoIds indicated, it does not look for internal geometry
-    int delGeometriesExclusiveList(const std::vector<int>& GeoIds);
-    /// Does the same as \a delGeometry but allows to delete several geometries in one step
-    int delGeometries(const std::vector<int>& GeoIds);
+    int delGeometriesExclusiveList(
+        const std::vector<int>& GeoIds,
+        DeleteOptions options = DeleteOption::UpdateGeometry
+    );
+    /// Does the same as \a delGeometry but allows one to delete several geometries in one step
+    int delGeometries(
+        const std::vector<int>& GeoIds,
+        DeleteOptions options = DeleteOption::UpdateGeometry
+    );
+    template<class InputIt>
+    int delGeometries(InputIt first, InputIt last, DeleteOptions options = DeleteOption::UpdateGeometry);
     /// deletes all the elements/constraints of the sketch except for external geometry
-    int deleteAllGeometry();
+    int deleteAllGeometry(DeleteOptions options = DeleteOption::UpdateGeometry);
     /// deletes all the constraints of the sketch
-    int deleteAllConstraints();
+    int deleteAllConstraints(DeleteOptions options = DeleteOption::UpdateGeometry);
     /// add all constraints in the list
     int addConstraints(const std::vector<Constraint*>& ConstraintList);
     /// Copy the constraints instead of cloning them and copying the expressions if any
@@ -158,7 +187,7 @@ public:
     /// add constraint
     int addConstraint(std::unique_ptr<Constraint> constraint);
     /// delete constraint
-    int delConstraint(int ConstrId);
+    int delConstraint(int ConstrId, DeleteOptions options = DeleteOption::UpdateGeometry);
     /** deletes a group of constraints at once, if norecomputes is active, the default behaviour is
      * that it will solve the sketch.
      *
@@ -166,11 +195,11 @@ public:
      * updategeometry=false, prevents the update. This allows to update the solve status (e.g. dof),
      * without updating the geometry (i.e. make it move to fulfil the constraints).
      */
-    int delConstraints(std::vector<int> ConstrIds, bool updategeometry = true);
+    int delConstraints(std::vector<int> ConstrIds, DeleteOptions options = DeleteOption::UpdateGeometry);
     int delConstraintOnPoint(int GeoId, PointPos PosId, bool onlyCoincident = true);
     int delConstraintOnPoint(int VertexId, bool onlyCoincident = true);
     /// Deletes all constraints referencing an external geometry
-    int delConstraintsToExternal();
+    int delConstraintsToExternal(DeleteOptions options = DeleteOption::UpdateGeometry);
     /// transfers all constraints of a point to a new point
     int transferConstraints(int fromGeoId,
                             PointPos fromPosId,
@@ -323,6 +352,15 @@ public:
                                 const Base::Vector3d& toPoint,
                                 bool relative = false,
                                 bool updateGeoBeforeMoving = false);
+    /// upstream's name for movePoint
+    SketchSolveStatus moveGeometry(int GeoId,
+                                   PointPos PosId,
+                                   const Base::Vector3d& toPoint,
+                                   bool relative = false,
+                                   bool updateGeoBeforeMoving = false)
+    {
+        return movePoint(GeoId, PosId, toPoint, relative, updateGeoBeforeMoving);
+    }
     /// retrieves the coordinates of a point
     static Base::Vector3d getPoint(const Part::Geometry* geo, PointPos PosId);
     Base::Vector3d getPoint(int GeoId, PointPos PosId) const;
@@ -368,7 +406,28 @@ public:
                bool chamfer = false);
 
     /// trim a curve
-    SketchSolveStatus trim(int geoId, const Base::Vector3d& point);
+    SketchSolveStatus trim(int geoId, const Base::Vector3d& point, bool includeSketchAxes = false);
+    /// Once smaller pieces have been created from a larger curve (by split or trim, say), derive
+    /// the constraint that will replace the given one (which is to be deleted). NOTE: Currently
+    /// assuming all constraints on the end points of the old curve have been transferred or
+    /// destroyed
+    /// Returns whether or not new constraint(s) was/were added.
+    bool deriveConstraintsForPieces(
+        const int oldId,
+        const std::vector<int>& newIds,
+        const Constraint* con,
+        std::vector<Constraint*>& newConstraints,
+        const bool assumeTangency = false
+    ) const;
+    // Explicitly giving `newGeos` for cases where they are not yet added
+    bool deriveConstraintsForPieces(
+        const int oldId,
+        const std::vector<int>& newIds,
+        const std::vector<const Part::Geometry*>& newGeo,
+        const Constraint* con,
+        std::vector<Constraint*>& newConstraints,
+        const bool assumeTangency = false
+    ) const;
     /// extend a curve
     SketchSolveStatus extend(int geoId, double increment, PointPos endPoint);
     /// split a curve
@@ -379,7 +438,13 @@ public:
       \param geoId1, posId1, geoId2, posId2: the end points to join
       \retval - 0 on success, -1 on failure
     */
-    int join(int geoId1, Sketcher::PointPos posId1, int geoId2, Sketcher::PointPos posId2);
+    int join(
+        int geoId1,
+        Sketcher::PointPos posId1,
+        int geoId2,
+        Sketcher::PointPos posId2,
+        int continuity = 0
+    );
 
     /// adds symmetric geometric elements with respect to the refGeoId (line or point)
     int addSymmetric(const std::vector<int>& geoIdList,
@@ -408,11 +473,18 @@ public:
                 double perpscale = 1.0);
 
     int removeAxesAlignment(const std::vector<int>& geoIdList);
+    static bool isClosedCurve(const Part::Geometry* geo);
+    static bool hasInternalGeometry(const Part::Geometry* geo);
     /// Exposes all internal geometry of an object supporting internal geometry
     /*!
      * \return -1 on error
      */
     int exposeInternalGeometry(int GeoId);
+    template<class GeomType>
+    int exposeInternalGeometryForType([[maybe_unused]] const int GeoId)
+    {
+        return -1;  // By default internal geometry is not supported
+    }
     /*!
      \brief Deletes all unused (not further constrained) internal geometry
      \param GeoId - the geometry having the internal geometry to delete
@@ -420,6 +492,14 @@ public:
      geometry \retval int - returns -1 on error, otherwise the number of deleted elements
      */
     int deleteUnusedInternalGeometry(int GeoId, bool delgeoid = false);
+    /*!
+     \brief Same as `deleteUnusedInternalGeometry`, but changes `GeoId` to the new Id of the
+     geometry, or to `GeoEnum::GeoUndef` if the geometry is deleted as well. \param GeoId - the
+     geometry having the internal geometry to delete \param delgeoid - if true in addition to the
+     unused internal geometry also deletes the GeoId geometry \retval int - returns -1 on error,
+     otherwise the number of deleted elements
+     */
+    int deleteUnusedInternalGeometryAndUpdateGeoId(int& GeoId, bool delgeoid = false);
     /*!
      \brief Approximates the given geometry with a B-spline
      \param GeoId - the geometry to approximate
@@ -496,17 +576,27 @@ public:
 
     /// retrieves for a Vertex number a list with all coincident points (sharing a single
     /// coincidence constraint)
-    void getDirectlyCoincidentPoints(int GeoId,
-                                     PointPos PosId,
-                                     std::vector<int>& GeoIdList,
-                                     std::vector<PointPos>& PosIdList);
-    void getDirectlyCoincidentPoints(int VertexId,
-                                     std::vector<int>& GeoIdList,
-                                     std::vector<PointPos>& PosIdList);
+    void getDirectlyCoincidentPoints(
+        int GeoId,
+        PointPos PosId,
+        std::vector<int>& GeoIdList,
+        std::vector<PointPos>& PosIdList
+    ) const;
+    void getDirectlyCoincidentPoints(
+        int VertexId,
+        std::vector<int>& GeoIdList,
+        std::vector<PointPos>& PosIdList
+    ) const;
+    void getDirectlyCoincidentPoints(
+        const int GeoId1,
+        const int GeoId2,
+        std::vector<int>& GeoIds3,
+        std::vector<PointPos>& PosIds3
+    ) const;
     bool arePointsCoincident(int GeoId1, PointPos PosId1, int GeoId2, PointPos PosId2);
 
     /// returns a list of indices of all constraints involving given GeoId
-    void getConstraintIndices(int GeoId, std::vector<int>& constraintList);
+    void getConstraintIndices(int GeoId, std::vector<int>& constraintList) const;
 
     /// generates a warning message about constraint conflicts and appends it to the given message
     static void appendConflictMsg(const std::vector<int>& conflicting, std::string& msg);
@@ -745,6 +835,7 @@ public:
      */
     bool seekTrimPoints(int GeoId,
                         const Base::Vector3d& point,
+                        bool includeSketchAxes,
                         int& GeoId1,
                         Base::Vector3d& intersect1,
                         int& GeoId2,
@@ -778,7 +869,7 @@ public:
 
     // helper
     /// returns the number of redundant constraints detected
-    int autoRemoveRedundants(bool updategeo = true);
+    int autoRemoveRedundants(DeleteOptions options = DeleteOption::UpdateGeometry);
 
     int renameConstraint(int GeoId, std::string name);
 
@@ -797,6 +888,19 @@ public:
 public:  // geometry extension functionalities for single element sketch object user convenience
     int setGeometryId(int GeoId, long id);
     int getGeometryId(int GeoId, long& id) const;
+
+    /// Replaces geometries at `oldGeoIds` with `newGeos`, lower Ids first.
+    /// If `oldGeoIds` is bigger, deletes the remaining.
+    /// If `newGeos` is bigger, adds the remaining geometries at the end.
+    /// NOTE: Does NOT move any constraints
+    void replaceGeometries(std::vector<int> oldGeoIds, std::vector<Part::Geometry*>& newGeos);
+
+    std::unique_ptr<Constraint> getConstraintAfterDeletingGeo(
+        const Constraint* constr,
+        const int deletedGeoId
+    ) const;
+
+    void changeConstraintAfterDeletingGeo(Constraint* constr, const int deletedGeoId) const;
 
 protected:
 
@@ -827,6 +931,19 @@ protected:
 
     void updateGeoHistory();
     void generateId(Part::Geometry *geo);
+
+    /// Helper functions for `deleteUnusedInternalGeometry` by cases
+    /// two foci for ellipses and arcs of ellipses and hyperbolas
+    int deleteUnusedInternalGeometryWhenTwoFoci(int GeoId, bool delgeoid = false);
+    /// one focus for parabolas
+    int deleteUnusedInternalGeometryWhenOneFocus(int GeoId, bool delgeoid = false);
+    /// b-splines need their own treatment
+    int deleteUnusedInternalGeometryWhenBSpline(int GeoId, bool delgeoid = false);
+
+    /// Internal helper method for exposeInternalGeometryForType
+    /// Add geometry and constraints to `this`, then delete the geometry and constraints in the
+    /// vectors Note that the contents of the two vectors are invalid after this call.
+    void addAndCleanup(std::vector<Part::Geometry*> igeo, std::vector<Constraint*> icon);
 
     /*!
      \brief Transfer constraints on lines being filleted.
@@ -1070,6 +1187,5 @@ public:
 };
 
 }// namespace Sketcher
-
 
 #endif  // SKETCHER_SKETCHOBJECT_H
