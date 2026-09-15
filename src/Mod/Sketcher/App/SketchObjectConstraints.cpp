@@ -1416,9 +1416,10 @@ int SketchObject::removeAxesAlignment(const std::vector<int>& geoIdList)
     int referenceHorizontal = GeoEnum::GeoUndef;
     int referenceVertical = GeoEnum::GeoUndef;
 
-    int cindex = 0;
+    size_t cindex = 0;
     for (size_t i = 0; i < constrvals.size(); i++) {
-        if (i == changeConstraintIndices[cindex].first) {
+        if (cindex < changeConstraintIndices.size()
+            && i == changeConstraintIndices[cindex].first) {
             if (changeConstraintIndices[cindex].second == Sketcher::Horizontal && nhoriz > 0) {
                 changed = true;
                 if (referenceHorizontal == GeoEnum::GeoUndef) {
