@@ -477,7 +477,7 @@ being filled, all live at once.
 The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
 current.
 
-**Six of them are not registered, and are meant not to be**:
+**Seven of them are not registered, and are meant not to be**:
 `camera-uplink-browser.py` and `serve-edit-browser.py` drive a real Chrome
 through the built WASM viewer, `sandbox-console-browser.py` boots the
 sandbox guest in a page served by FreeCAD (docs/Sandbox.md 7.20, C1; its
@@ -490,7 +490,10 @@ a person does -- lines, a block, Tab, the history, a paste, Interrupt, a
 document switch -- from a gate page with no WASM viewer (C4), and
 `sandbox-console-viewer-browser.py` opens the real viewer page with
 `?console` to show the console rides the viewer's own connection (one
-client, its view-only mode, its document switch), so
+client, its view-only mode, its document switch), and
+`sandbox-latency-browser.py` times the statements a console user types with
+`scripts/delay-proxy.js` holding the page's connection at a LAN's or a
+tunnel's round-trip time, and reads the page's processes' memory (C5), so
 they need what this repository does not carry -- `build/wasm` (for the console
 page only the web bundle, `npm run build` in `src/Gui/Renderer/web`), a
 `puppeteer-core` install, and a Chrome binary -- and they skip rather than fail
@@ -521,8 +524,10 @@ env's copy into `~/.cache/puppeteer/lib` and pass that directory as
     scripts/gui-test.sh tests/gui/sandbox-console-browser.py /tmp/console-web \
         --timeout 600
 
-`sandbox-bridge-browser.py`, `sandbox-console-panel-browser.py` and
-`sandbox-console-viewer-browser.py` take the same four variables.
+`sandbox-bridge-browser.py`, `sandbox-console-panel-browser.py`,
+`sandbox-console-viewer-browser.py` and `sandbox-latency-browser.py` take the
+same four variables (the latency one also `SANDBOX_LATENCY_RTTS`, and about
+three minutes).
 
 `build/wasm` on this box (configured 2026-09-15; the CMakeLists' own
 instructions name `~/works/sw/emsdk`, which is not here): the emsdk of the

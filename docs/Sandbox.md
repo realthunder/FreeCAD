@@ -107,7 +107,11 @@ pieces are frozen, not extended.**
                                                  catalog v2's column, view-only = read-only
                                                  bridge, gui a hard DENY for clients; C4
                                                  BUILT 2026-09-15: the console panel in the
-                                                 viewer chrome, booted on first open
+                                                 viewer chrome, booted on first open; C5
+                                                 MEASURED 2026-09-15: a statement costs its ops
+                                                 x RTT, one op per element a loop touches --
+                                                 fine on a LAN, a loop too slow through a
+                                                 tunnel; the guest is +185 MB PSS in the page
     host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -7077,7 +7081,7 @@ the writer).  What the numbers decide:
   (`grabUs` is counted, the bench has no picture); a non-native file
   dialog's rows; the DOM client's own cost of applying an open.
 
-### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket; C3 BUILT 2026-09-15, the client principal; C4 BUILT 2026-09-15, the console panel]**
+### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket; C3 BUILT 2026-09-15, the client principal; C4 BUILT 2026-09-15, the console panel; C5 MEASURED 2026-09-15, the latency and the page's memory]**
 
 The question, asked before the document program (7.17) was started:
 how far is a Python console in the browser tier -- pyodide running in
@@ -7650,6 +7654,91 @@ done, as the desktop console does not; open for the owner's view of a
 client's edits); `input()`, which falls to pyodide's default stdin and is
 untried; the latency and memory of C5.
 
+**C5, MEASURED 2026-09-15.**  What a console statement costs when the host
+is a LAN or a tunnel away, and what the guest costs the page.  A statement
+costs its bridge ops times the round trip, and a loop makes one op per
+element it touches: on a LAN the console is usable as built, through a
+tunnel anything with a loop is too slow.  By C5's own criterion the
+snapshot op is needed for the tunnel tier; it is not built here.
+
+*The rig.*  This box has no second machine, no sudo for `tc netem` and no
+`cloudflared`, so the round trip is injected: `scripts/delay-proxy.js`
+relays TCP holding every chunk rtt/2 each way, in order.  Bridge ops are
+strictly one at a time -- a guest waits on every answer -- so a fixed delay
+is an honest model of what a LAN or a tunnel adds to them.  It models no
+bandwidth, loss, jitter or TCP slow start, so its BOOT figures are not a
+tunnel's.  `web/latency-test.html` boots the guest through it and runs
+eleven statements a console user types against a document of 50 boxes and
+Poly, a 100-edge polygon, three reps each (one at 30 ms and above);
+`scripts/console-drive.js` answers the page's `window.fcxMark(label)` with
+every browser process's PSS and RSS from /proc, and runs Chrome with
+`--expose-gc` so the page collects before it marks.
+`tests/gui/sandbox-latency-browser.py` (not registered) runs the page at 0
+(no proxy), 2, 10, 30 and 100 ms: 74 PASS, every statement making the same
+op count at every RTT.
+
+*Measured* (headless Chrome 153, the host on loopback, best wall time in ms):
+
+    statement                                    ops    0 ms    2 ms   10 ms   30 ms  100 ms
+    -------------------------------------------  ---  ------  ------  ------  ------  ------
+    doc.Name                                       2     1.1     6.5    22.9      69     214
+    Box.Length                                     3     1.9     9.6    36.9      99     313
+    Box.Length = 12                                3     1.7    10.2    37.4     101     312
+    len(doc.Objects)                               2     2.1     7.5    24.1      71     208
+    [o.Name for o in doc.Objects]                 52    24.3     158     608    1712    5391
+    [o.Placement.Base.x for o in doc.Objects]     52    26.2     155     617    1709    5367
+    Box.Shape.Volume                               4     2.2    13.2    46.3     131     416
+    len(Box.Shape.Edges)                           4     2.1    13.1    48.0     137     414
+    sum(e.Length for e in Box.Shape.Edges)        16     7.3    51.2     191     531    1659
+    sum(e.Length for e in Poly.Shape.Edges)      104    45.5     312    1217    3358   10739
+    [v.Point.y for v in Poly.Shape.Vertexes]     105    46.2     316    1223    3451   10914
+
+Per op: 0.46 ms direct (0.41 of it waiting on the bridge, the guest's own
+CPU about 0.05), then 3.0, 11.7, 32.8 and 103.6 ms -- the RTT, plus the
+direct cost, plus the proxy's own timer lateness (0.6 to 3 ms).  An op is
+about 25 bytes up and 100 down, so bandwidth does not matter to the bridge;
+round trips are all of it.  What that means for a console:
+
+- A property, a write, `len(doc.Objects)`, a shape's volume: 2 to 4 ops,
+  under 50 ms on a LAN, 0.2 to 0.4 s at 100 ms.  Fine everywhere.
+- A loop over the objects or over a shape's sub-elements: one op per
+  element (`o.Name` a read per object, `e.Length` a get per edge,
+  `v.Point.y` one per vertex -- the Vector comes by value).  Fifty objects:
+  0.16 s at 2 ms, 1.7 s at 30 ms, 5.4 s at 100 ms.  A hundred edges: 0.3 s,
+  3.4 s, 10.7 s.  A LAN is fine; a tunnel is not.
+- Direct on loopback, the same loops take 25 to 46 ms.  The fixed cost is
+  not 8.1's 5 us hop but 0.4 ms: the socket both ways, the hop to the GUI
+  thread and back, the JSPI suspend and resume.  Not decomposed.  On a LAN
+  it is a sixth of the per-op cost; through a tunnel it is noise.
+
+*Memory* (PSS, the same at every RTT within 10 MB).  The page's renderer
+process is 94 MB bare, 280 MB with the guest booted, 281 to 291 MB after
+the bench: **the guest costs the page about +185 MB PSS** (+190 MB RSS).
+Of that, 49.6 MB is the wasm heap and about 50 MB pyodide's JavaScript
+heap after a collection (44 MB after the bench); the rest is compiled wasm
+code and the runtime's buffers.  Chrome's other processes barely move:
+browser 100 MB, GPU 100 to 115 MB, utility 55 to 68 MB (the network
+service, +10 MB for the downloads), zygote 34 MB.  The desktop's 335 MB is
+the whole V8 process, so +185 MB is the page's comparable figure.  A
+phone's is NOT measured: there is none on this box, and Chrome's device
+emulation changes the viewport, not the memory.
+
+*Boot through the proxy*: runtime 1.25 to 1.46 s, wheels 0.38 to 0.62 s
+from 0 to 100 ms -- but the proxy's local TCP has no slow start and no
+bandwidth cap, so these understate a real tunnel's first boot of a 13 MB
+runtime (cached after that).  Connect is one RTT plus 3 ms.
+
+*The snapshot op.*  It is needed for the tunnel tier and is not built in
+C5.  What it snapshots, and when a snapshot is taken, is a choice with a
+visible trade: a loop reading a snapshot sees values as of the snapshot,
+not live, where today every read is live.  That choice is put to the owner
+before anything is designed.
+
+*Not in C5*: a real LAN or tunnel -- the proxy stands in for both, and a
+Cloudflare quick tunnel would publish the served document on the internet,
+which is not done without the owner's say; a phone; the decomposition of
+the 0.4 ms loopback cost; the snapshot op.
+
 ### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, BUILT 2026-09-13 inside 7.17's D2]**
 
 The user's answer to 7.17's gap against the spreadsheet-as-object
@@ -8153,8 +8242,10 @@ push the user's call).
    remote client is the second guest that needs them, unless `gui`
    is a hard DENY for clients -- which C3 chose.  C1 BUILT 2026-09-14,
    C2, C3 and C4 BUILT 2026-09-15 (C4: the panel, on the guest's own
-   entry rather than `pyodide.console`); next C5, the latency and memory.
-   C6 (Safari) only if necessary (ruled 2026-09-15).
+   entry rather than `pyodide.console`); C5 MEASURED 2026-09-15: fine on
+   a LAN, a loop too slow through a tunnel, so the snapshot op is needed
+   for that tier -- its shape is open; the guest is +185 MB PSS in the
+   page.  C6 (Safari) only if necessary (ruled 2026-09-15).
 
 DROPPED 2026-09-08: G4 (7.16, sized), F1 (7.14: it closed a hole only
 a SESSION guest has), N1-N5 (network is a session need), G5, G6, rung
