@@ -37,29 +37,21 @@ class TestSketcherEllipse(unittest.TestCase):
         geo = sk.ExternalGeo[-1]
         self.assertEqual(type(geo), Part.Circle)
 
-    # Pending upstream e06290557d: ellipse projection fix; needs addExternal('Name', 'Sub') argument form.
-    @unittest.expectedFailure
     def testProjectEllipse1(self):
         self.addExternalEllipse(30)
 
-    # Pending upstream e06290557d: ellipse projection fix; needs addExternal('Name', 'Sub') argument form.
-    @unittest.expectedFailure
     def testProjectEllipse2(self):
         self.addExternalEllipse(44)
 
     def testProjectEllipse3(self):
         self.addExternalEllipse(44.9)
 
-    # Pending upstream e06290557d: ellipse projection fix; needs addExternal('Name', 'Sub') argument form.
-    @unittest.expectedFailure
     def testProjectEllipse4(self):
         self.addExternalEllipse(45)
 
     def testProjectEllipse5(self):
         self.addExternalEllipse(45.1)
 
-    # Pending upstream e06290557d: ellipse projection fix; needs addExternal('Name', 'Sub') argument form.
-    @unittest.expectedFailure
     def testProjectEllipse6(self):
         self.addExternalEllipse(60)
 
