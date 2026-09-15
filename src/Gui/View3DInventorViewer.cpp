@@ -130,6 +130,7 @@
 #include <App/PropertyUnits.h>
 #include <App/PropertyFile.h>
 #include <App/ComplexGeoDataPy.h>
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <Quarter/devices/InputDevice.h>
@@ -4744,6 +4745,13 @@ void View3DInventorViewer::actualRedraw()
     const double ms = double(frameTimer.nsecsElapsed()) / 1e6;
     if (ms >= 1.0)
         _pimpl->noteFrameCost(ms);
+    // A frame drawn while a document restores is paid for by the load: its
+    // progress reporting pumps the event loop, and the pump paints.
+    if (App::GetApplication().isRestoring()) {
+        auto& stats = RenderTiming::loadPumps();
+        stats.frameSec += ms / 1000.0;
+        ++stats.frames;
+    }
 
     RenderTiming::frameDone();
 }

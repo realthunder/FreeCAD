@@ -124,6 +124,10 @@ struct DocumentP
         /// the factory, the name bookkeeping, the notifications -- against
         /// the XML element reads that surround them in the same pass.
         std::chrono::duration<double> createAdd {0};
+        /// Of 'create': the progress sequencer's next() calls, which pump
+        /// the event loop -- and with it every paint a GUI view schedules
+        /// while the objects arrive.
+        std::chrono::duration<double> createSeq {0};
         std::chrono::duration<double> data {0};
         std::chrono::duration<double> files {0};
         std::size_t objectCount = 0;

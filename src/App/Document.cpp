@@ -2229,7 +2229,11 @@ Document::readObjects(Base::XMLReader& reader)
     Base::SequencerLauncher seqRestore("Restoring document...",
                                        size_t(Cnt) * 2);
     for (int i=0 ;i<Cnt ;i++) {
-        seqRestore.next();
+        {
+            FC_TIME_INIT(tSeq);
+            seqRestore.next();
+            FC_DURATION_PLUS(d->restoreTiming.createSeq, tSeq);
+        }
         reader.readElement("Object");
         std::string type = reader.getAttribute("type");
         std::string name = reader.getAttribute("name");
@@ -3499,7 +3503,8 @@ void Document::restore(Base::XMLReader &reader,
             << d->files.size() << " files"
             << ", xml " << dXml.count()
             << " (create " << rt.create.count()
-            << " [addObject " << rt.createAdd.count() << "s]"
+            << " [addObject " << rt.createAdd.count() << "s, sequencer "
+            << rt.createSeq.count() << "s]"
             << ", data " << rt.data.count()
             << " [" << rt.props.count << " properties, "
             << rt.props.total.count() << "s of which value "
