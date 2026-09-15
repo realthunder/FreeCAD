@@ -460,6 +460,19 @@ public:
 
     ~NodeSensor() { detach(); }
 
+    // This sensor exists only to hear dyingReference(), so the cache
+    // table entry of a node being deleted can be purged. It has no
+    // callback, and content changes need none: the caches notice those
+    // by node id on their next traversal. But an auditor sensor is
+    // notified of EVERY change to its node, and SoDataSensor::notify()
+    // schedules it unconditionally -- a delay-queue entry whose trigger
+    // then does nothing. A restore touches every shape node, so that is
+    // one pointless queue insert per node per rebuild, with no event loop
+    // to drain the queue in between (docs/DocumentLoad.md sec 17). Swallow
+    // the notification; dyingReference() is unaffected, SoBase::destroy()
+    // calls it on each auditing sensor directly, not through notify().
+    void notify(SoNotList *) override {}
+
     void attach(SoFCRenderCacheManagerP * master, const SoNode *node) {
       (void)master;
       if (this->node == node) return;

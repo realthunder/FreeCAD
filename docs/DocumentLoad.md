@@ -1192,6 +1192,14 @@ of the prologue to the actions' destructors; the samples do not support that.)
 
 The prologue skip was dropped: with the fix it is worth 0.4 s.
 
+Follow-up: the render cache's node sensor (`NodeSensor` in
+`SoFCRenderCacheManager.cpp`) exists only for `dyingReference()` and has no
+callback, so every schedule of it was a queue entry whose trigger did nothing.
+It now swallows `notify()` (`SoBase::destroy()` calls `dyingReference()`
+directly). With the two fixes above already in, this measured **no further
+change** -- visual build 27.1 s, traversal 3.3 s, clean load 43.0 s against
+44.3 s (within run noise), frame pixel-identical. It removes waste, not time.
+
 ### 17.4 Result
 
 Same bench configuration as sec 16.3; the split runs are logged:
