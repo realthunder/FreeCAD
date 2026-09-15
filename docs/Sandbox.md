@@ -105,7 +105,9 @@ pieces are frozen, not extended.**
                                                  (per-connection endpoint); C3 BUILT
                                                  2026-09-15: a client:<identity> principal,
                                                  catalog v2's column, view-only = read-only
-                                                 bridge, gui a hard DENY for clients
+                                                 bridge, gui a hard DENY for clients; C4
+                                                 BUILT 2026-09-15: the console panel in the
+                                                 viewer chrome, booted on first open
     host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
@@ -7075,7 +7077,7 @@ the writer).  What the numbers decide:
   (`grabUs` is counted, the bench has no picture); a non-native file
   dialog's rows; the DOM client's own cost of applying an open.
 
-### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket; C3 BUILT 2026-09-15, the client principal]**
+### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket; C3 BUILT 2026-09-15, the client principal; C4 BUILT 2026-09-15, the console panel]**
 
 The question, asked before the document program (7.17) was started:
 how far is a Python console in the browser tier -- pyodide running in
@@ -7535,6 +7537,90 @@ re-run over the new principal, but there is no page-side console yet;
 the permissions panel shows a client's request but has no roster-aware
 UI for identities; the 7.14 chokepoints, which would let `gui` become a
 grantable row for clients; the latency and memory of C5.
+
+**C4, BUILT 2026-09-15.**  The viewer chrome has a Python console, and
+it runs in the page.
+
+*The interpreter* (`web/src/sandbox/console.py`, pushed into the guest as
+the module `fcx_console` by the exec op's `module`, once per boot): stdlib
+`codeop` for incomplete input, `rlcompleter` for completion, `traceback`
+for the report, a namespace of its own with `FreeCAD`/`App` and
+`FreeCADGui`/`Gui`.  Each line is one eval op, `fcx_console.push(line)`
+with the line as a binding, answering `ok`, `more`, `syntax` or `error`;
+the traceback drops the console's own frame, so an error reads as it does
+on the desktop.  The sizing named `pyodide.console.Console`, and it is NOT
+used: it runs a statement as an asyncio task on pyodide's web loop, which
+enters wasm through pyodide's own promising export rather than `fcx_call`,
+so the statement would also bypass `BrowserGuest`'s queue and never end as
+a bridge statement -- the host's handle table would only grow.  Through
+the eval op every line is one guest call and one statement, the path C2
+and C3 already gate.  No top-level `await` (nothing in the image wants
+it).
+
+*The session* (`web/src/sandbox/session.ts`, no DOM): the bridge socket,
+the boot, the module, and the guest's `sys.stdout`/`sys.stderr` taken
+over with pyodide's raw `write` handlers -- delivered as written, not per
+line, so a loop printing at each host call shows its progress while it
+runs.  It opens its OWN socket (`RemoteBridge.connect`), not the viewer's:
+that one is the wasm module's, which hands every binary frame it does not
+recognise to the scene parser, and `attach` would need a hook in
+wasm/main.cpp that cannot be built on this box.  The price is the scene
+payload a second socket is pushed and ignores, now counted
+(`stats.otherBytesDown`): 3.6 KB for the gate's two small documents,
+growing with the document.  A document switch follows the viewer: the
+session sends the viewer's own `{"cmd":"switch"}` on its socket, the host
+drops the connection's endpoint, and the panel says that names bound to
+the old document no longer resolve.
+
+*Interrupt.*  pyodide checks an interrupt buffer at bytecode boundaries,
+and the page can only write it while the guest is not running on the page's
+thread -- which is exactly while a statement is suspended on a host call.
+So the Interrupt button (and Ctrl+C) stops a loop that reaches the host,
+raising `KeyboardInterrupt` at its next boundary, and the console is usable
+at once; a pure CPU loop freezes the page, which only the guest in a
+Worker (C6) can fix.
+
+*Completion* found one gap: a proxy's `dir()` lists the members its facade
+declares, and a property is not one -- it is read through `__getattr__`,
+answered by the host -- so `b.Leng` completed to nothing.  The console's
+completer adds the object's `PropertiesList` (annotated, value tier) to
+rlcompleter's matches.  Nothing else is learned about proxies; a `dir()`
+in user code still shows only the facade.
+
+*The panel* (`web/src/console.tsx`): a draggable card at the bottom left
+(the sheet panel holds the bottom right), a bottom sheet on a phone.  Booted
+the first time it opens, not at load -- 1.7 s and the runtime's download
+are not a viewer's cost unless the console is used -- and kept when closed.
+Enter runs, Up/Down walk a per-browser history (localStorage, 500 lines),
+Tab completes (the common prefix goes in, several candidates are listed),
+Ctrl+C interrupts or drops the line, Ctrl+L clears, a paste of several
+lines runs line by line as if typed.  The header shows the document and the
+view-only badge; a view-only connection's console reads and is refused its
+writes (C3).  A browser without JSPI gets the reason instead of a boot.
+The launcher menu gains "Python console"; `?console` opens it on load.
+
+*Measured* (headless Chrome 153 on loopback, the gate's drive): boot 1709
+ms; 1349 bridge ops over the whole drive, 0.42 ms mean round trip, 5.6 ms
+worst -- most of them the interrupted loop's.
+
+*Gates*: `tests/gui/sandbox-console-panel-browser.py` (not registered,
+docs/Testing.md; 24 PASS) serves two documents and drives
+`web/console-panel-test.html` -- the panel with no WASM viewer -- through
+DOM events: the boot, an expression's repr, a name kept across lines that
+writes `Box.Length`, a block on `...` run by its blank line, output with no
+newline, a traceback without the console's frames, a syntax error followed
+by a working line, `newDocument` refused as the client, Tab on a module and
+on a document object's property, the history both ways, a paste, Interrupt
+on a loop over `b.Width`, Ctrl+C on a typed line, a switch to the second
+document and an object made there; the desktop sees both writes.
+C1's and C2's browser legs, re-run over the changed bundle: 11 and 15 PASS.
+
+*Not in C4*: a local `ActiveView` facade -- the viewer exposes no camera
+hooks to the DOM layer, and wasm/main.cpp cannot be built here to add them;
+the macro echo; wrapping a statement's writes in an undo transaction (not
+done, as the desktop console does not; open for the owner's view of a
+client's edits); `input()`, which falls to pyodide's default stdin and is
+untried; the latency and memory of C5.
 
 ### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, BUILT 2026-09-13 inside 7.17's D2]**
 
@@ -8038,8 +8124,9 @@ push the user's call).
    C1-C6, one to two weeks.  Un-drops the 7.14 chokepoints (F1): a
    remote client is the second guest that needs them, unless `gui`
    is a hard DENY for clients -- which C3 chose.  C1 BUILT 2026-09-14,
-   C2 and C3 BUILT 2026-09-15; next C4, the panel.  C6 (Safari) only if necessary (ruled
-   2026-09-15).
+   C2, C3 and C4 BUILT 2026-09-15 (C4: the panel, on the guest's own
+   entry rather than `pyodide.console`); next C5, the latency and memory.
+   C6 (Safari) only if necessary (ruled 2026-09-15).
 
 DROPPED 2026-09-08: G4 (7.16, sized), F1 (7.14: it closed a hole only
 a SESSION guest has), N1-N5 (network is a session need), G5, G6, rung

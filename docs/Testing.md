@@ -477,14 +477,17 @@ being filled, all live at once.
 The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
 current.
 
-**Four of them are not registered, and are meant not to be**:
+**Five of them are not registered, and are meant not to be**:
 `camera-uplink-browser.py` and `serve-edit-browser.py` drive a real Chrome
 through the built WASM viewer, `sandbox-console-browser.py` boots the
 sandbox guest in a page served by FreeCAD (docs/Sandbox.md 7.20, C1; its
 endpoints without a browser are the registered `GuiSandboxConsoleServe`), and
 `sandbox-bridge-browser.py` has that guest read and write the served document
 over the socket (C2; the same wire without a browser is the registered
-`GuiSandboxBridgeServe`, which also carries C3's client principal), so
+`GuiSandboxBridgeServe`, which also carries C3's client principal), and
+`sandbox-console-panel-browser.py` uses the console panel on top of it the way
+a person does -- lines, a block, Tab, the history, a paste, Interrupt, a
+document switch -- from a gate page with no WASM viewer (C4), so
 they need what this repository does not carry -- `build/wasm` (for the console
 page only the web bundle, `npm run build` in `src/Gui/Renderer/web`), a
 `puppeteer-core` install, and a Chrome binary -- and they skip rather than fail
@@ -515,7 +518,8 @@ env's copy into `~/.cache/puppeteer/lib` and pass that directory as
     scripts/gui-test.sh tests/gui/sandbox-console-browser.py /tmp/console-web \
         --timeout 600
 
-`sandbox-bridge-browser.py` takes the same four variables.
+`sandbox-bridge-browser.py` and `sandbox-console-panel-browser.py` take the
+same four variables.
 
 `EDIT_REAL=1` (`CAMUP_REAL=1` for the other) moves it off headless
 swiftshader onto the WSLg desktop's real GPU; neither is judged by pixels, so
