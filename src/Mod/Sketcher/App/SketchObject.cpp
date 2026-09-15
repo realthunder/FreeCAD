@@ -368,7 +368,15 @@ void SketchObject::buildShape()
         if(!egf->testFlag(ExternalGeometryExtension::Defining))
             continue;
         auto indexedName = Data::IndexedName::fromConst("ExternalEdge", i-1);
-        shapes.push_back(getEdge(geo, convertSubName(indexedName, false).c_str()));
+        if (geo->isDerivedFrom<Part::GeomPoint>()) {
+            Part::TopoShape vertex(TopoDS::Vertex(geo->toShape()));
+            vertex.setElementName(Data::IndexedName::fromConst("Vertex", 1),
+                                  Data::MappedName::fromRawData(convertSubName(indexedName, false).c_str()));
+            vertices.push_back(vertex);
+            vertices.back().copyElementMap(vertex, Part::OpCodes::Sketch);
+        } else {
+            shapes.push_back(getEdge(geo, convertSubName(indexedName, false).c_str()));
+        }
     }
 
     internalElementMap.clear();
