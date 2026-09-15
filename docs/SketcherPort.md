@@ -154,7 +154,7 @@ fix.
 
   | upstream | what | tests |
   |---|---|---|
-  | `3c8a254356`, `c968effe26` | signed distance constraints | 5 in `TestSketcherSolver` |
+  | `3c8a254356` | signed circle-circle distance (the other four signed-distance tests pass since the phase-1 solver take) | 1 in `TestSketcherSolver` |
   | `82ec32f9e9` | MissingVerticalHorizontal false positive | 1 |
   | `9d7073ce7b` | geometry extension on a point | 1 |
   | `6d06b61c7e` | fillet keeps the corner by splitting (**behaviour change**: unconnected lines no longer fillet) | 3 in `TestSketchFillet` |
@@ -171,7 +171,58 @@ fix.
   commands): written against `EditModeCoinManager` behaviour; evaluate one by
   one in phase 3.
 
-## 6. Phases
+## 6. Phase 1: the solver and constraint model
+
+Taken whole from upstream `bd6be559e8`: `planegcs/`, `Sketch.cpp/.h`,
+`Constraint.cpp/.h`, `ConstraintPyImp.cpp`, `GeoEnum.cpp/.h`. A take rather
+than picks, because the fork had changed these files by a few lines since the
+merge base while upstream has 53 solver commits.
+
+**Why the constraint model comes too.** Upstream's `Sketch.cpp` needs a
+per-constraint `Orientation` (signed distances and tangent sides) and the
+`Group`/`Text` constraint types. File compatibility holds: the fork's
+`ConstraintType` and `InternalAlignmentType` are strict prefixes of upstream's
+(upstream appended `Group = 20`, `Text = 21`), and the attributes upstream
+writes that the fork did not -- `ElementIds`, `ElementPositions`, `IsVisible`,
+`MetaData`, `Orientation` -- are all optional on restore. The legacy
+`First`/`FirstPos`/... members stay authoritative for element indices 0-2
+(`SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS`), so the fork's direct writes to
+them cannot desynchronise `elements`.
+
+**Old files.** A constraint restored without `Orientation` is "side unknown",
+and the solver derives the side from the current geometry: point-line uses the
+point's signed distance, circle-line the centre's signed distance and radius,
+tangent the centre's side, circle-circle stays undecided. That is the old
+unsigned behaviour. Filling orientations in on restore
+(`SketchObject::migrateConstraintOrientations`, upstream `e1e72c9195`) and
+upstream's handling of stored negative circle-line distances (`c968effe26`)
+live in `SketchObject` and are later picks.
+
+**Compile probe.** Taking the files and building the `Sketcher` target left 11
+distinct errors, all at fork call sites:
+
+| error | adaptation |
+|---|---|
+| `initMove(geo, pos, fine)`, `initBSplinePieceMove(..., fine)` | upstream removed the dead `fine`; the fork's `SketchObject` keeps its parameter and stops passing it on |
+| `Sketch::movePoint` gone | `moveGeometry()`, in `SketchObject.h`, `SketchObjectOperations.cpp`, `SketchPyImp.cpp` |
+| `GCS::SolveStatus` is an `enum class` | `static_cast<int>` where `SketchObject`, `SketchPy` and `CommandConstraints` read it; the values (0-3) did not change, so `SketchObject`'s `int` results and Python are unchanged. Upstream's `SketchSolveStatus` is a later pick (`d8cf415e4f`) |
+| `Base::unreachable` missing | added to `Base/Tools.h`, as upstream has it (own commit) |
+| `ConstraintPy::getLabelDistance/getLabelPosition` undeclared | read-only `LabelDistance`, `LabelPosition` in `ConstraintPy.xml` |
+
+**Verified.** Build OK; ctest 667/667; Python 2851 OK. The take alone made
+four of the five signed-distance tests pass (their markers came off in the
+same commit), leaving 17 expected failures in the ported Sketcher tests.
+The nine `.FCStd` files in the repository that contain sketches, all saved
+before the take, re-solve with no sketch moving (tolerance 1e-6) and no
+solve failing.
+
+Fork changes re-applied on the taken files: `THROWM` at the four throw sites in
+`Sketch.cpp` (`b3694d32b6`), `GeoElementId::operator<` instead of the
+`std::less` specialisation (`1054a3cae2`). Already upstream: the
+`boost/random.hpp` include (`76e2047902`), the `h_norm` initialisers
+(`ebe4fd9eb5`).
+
+## 7. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
 1. `planegcs/`: take the directory at upstream's tip, adapt `Sketch.cpp`
