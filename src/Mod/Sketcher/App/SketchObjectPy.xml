@@ -221,12 +221,18 @@ carbonCopy(objName:str, asConstruction=True)
         <UserDocu>
 Add a link to an external geometry.
 
-addExternal(objName:str, subName:str)
+addExternal(objName:str, subName:str, [mode], [intersection:bool])
+addExternal(obj or (obj, subName), [mode])
 
     Args:
         objName: The name of the document object to reference.
         subName: The name of the sub-element of the object's shape to link as
             "external geometry".
+        obj: The document object, or an (object, subName) tuple.
+        mode: "defining", "intersection", a sequence of those, or a bool
+            meaning defining.
+        intersection: Add the intersection with the sketch plane instead of
+            the projection.
         </UserDocu>
       </Documentation>
     </Methode>
