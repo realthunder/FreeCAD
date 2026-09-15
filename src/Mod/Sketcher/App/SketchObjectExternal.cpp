@@ -882,7 +882,9 @@ int SketchObject::delExternal(const std::vector<int> &ExtGeoIds)
 {
     std::set<long> geoIds;
     for (int ExtGeoId : ExtGeoIds) {
-        int GeoId = GeoEnum::RefExt - ExtGeoId;
+        // Either an external index (0 is the first external geometry) or its GeoId, which is
+        // what delGeometries() passes on.
+        int GeoId = ExtGeoId >= 0 ? GeoEnum::RefExt - ExtGeoId : ExtGeoId;
         if(GeoId > GeoEnum::RefExt || -GeoId-1 >= ExternalGeo.getSize())
             return -1;
 
@@ -1066,7 +1068,7 @@ int SketchObject::delAllExternal()
     return 0;
 }
 
-int SketchObject::delConstraintsToExternal()
+int SketchObject::delConstraintsToExternal(DeleteOptions options)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
@@ -1095,8 +1097,9 @@ int SketchObject::delConstraintsToExternal()
     Constraints.acceptGeometry(getCompleteGeometry());
 
     // if we do not have a recompute, the sketch must be solved to update the DoF of the solver
-    if (noRecomputes)
-        solve();
+    if (noRecomputes && !options.testFlag(DeleteOption::NoSolve)) {
+        solve(options.testFlag(DeleteOption::UpdateGeometry));
+    }
 
     return 0;
 }

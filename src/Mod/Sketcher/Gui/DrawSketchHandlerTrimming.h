@@ -98,6 +98,7 @@ public:
             Base::Vector3d intersect1, intersect2;
             if (sk->seekTrimPoints(GeoId,
                                    Base::Vector3d(onSketchPos.x, onSketchPos.y, 0),
+                                   /*includeSketchAxes*/ false,
                                    GeoId1,
                                    intersect1,
                                    GeoId2,
