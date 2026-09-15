@@ -7561,16 +7561,31 @@ it).
 the boot, the module, and the guest's `sys.stdout`/`sys.stderr` taken
 over with pyodide's raw `write` handlers -- delivered as written, not per
 line, so a loop printing at each host call shows its progress while it
-runs.  It opens its OWN socket (`RemoteBridge.connect`), not the viewer's:
-that one is the wasm module's, which hands every binary frame it does not
-recognise to the scene parser, and `attach` would need a hook in
-wasm/main.cpp that cannot be built on this box.  The price is the scene
-payload a second socket is pushed and ignores, now counted
-(`stats.otherBytesDown`): 3.6 KB for the gate's two small documents,
-growing with the document.  A document switch follows the viewer: the
-session sends the viewer's own `{"cmd":"switch"}` on its socket, the host
-drops the connection's endpoint, and the panel says that names bound to
-the old document no longer resolve.
+runs.
+
+*The socket is the viewer's.*  The first build opened a second connection
+(`RemoteBridge.connect`), on the belief that the wasm viewer could not be
+built on this box to take a hook.  It could -- nobody had configured
+`build/wasm` here (emsdk-5.0.3 and the relwithdebinfo tree's shaderc, docs/
+Testing.md) -- and a second connection was worse than a cost: it is a
+second entry on the owner's roster, so the owner's view-only switch for
+the viewer did NOT hold for its console; a token-only door made it a
+different principal (`client:conn:<n>`), so a grant to one was not the
+other's; and it was pushed the scene it ignored (3.6 KB for the gate's two
+small documents, growing with the document).  Now wasm/main.cpp hands an
+`FCSB` frame to the page as an `fc:bridge` event before the scene parser
+sees it, sends a page's `'S'` frame through `window.fcviewerBridgeSend`
+(nothing but an `'S'` frame), and reports the socket as `fc:socket` events
+(mirrored on `window.fcviewerSocketOpen`).  RemoteBridge sits on a port:
+`viewer()` for those hooks, `attach()`/`connect()` for a socket of its own.
+A loss fails the pending ops -- a reconnect is a new connection whose
+endpoint never saw them -- and on the viewer's port the bridge works again
+once the viewer is back.  The viewer chrome asks for the viewer's socket
+and waits up to 20 s for the hook; a viewer that never installs one gets a
+connection of its own, and the console says so in red.  A document switch
+is the viewer's own, the host drops the connection's endpoint, and the
+panel says that names bound to the old document no longer resolve; the gate
+page, which has no viewer, sends `{"cmd":"switch"}` on its own socket.
 
 *Interrupt.*  pyodide checks an interrupt buffer at bytecode boundaries,
 and the page can only write it while the guest is not running on the page's
@@ -7601,7 +7616,10 @@ The launcher menu gains "Python console"; `?console` opens it on load.
 
 *Measured* (headless Chrome 153 on loopback, the gate's drive): boot 1709
 ms; 1349 bridge ops over the whole drive, 0.42 ms mean round trip, 5.6 ms
-worst -- most of them the interrupted loop's.
+worst -- most of them the interrupted loop's.  In the real viewer page, on
+the viewer's socket: boot 3.9 s from page load (the viewer's own start
+included), 24 ops at 2.3 ms mean, 19 ms worst while the viewer streams its
+first frames, and nothing but bridge answers handed to the bridge.
 
 *Gates*: `tests/gui/sandbox-console-panel-browser.py` (not registered,
 docs/Testing.md; 24 PASS) serves two documents and drives
@@ -7613,10 +7631,20 @@ by a working line, `newDocument` refused as the client, Tab on a module and
 on a document object's property, the history both ways, a paste, Interrupt
 on a loop over `b.Width`, Ctrl+C on a typed line, a switch to the second
 document and an object made there; the desktop sees both writes.
-C1's and C2's browser legs, re-run over the changed bundle: 11 and 15 PASS.
+`tests/gui/sandbox-console-viewer-browser.py` (not registered; 17 PASS)
+opens the served viewer page itself with `?console`, and
+`scripts/console-drive.js` injects `web/viewerconsole.js` to drive the panel
+the chrome mounted: the console says it is on the viewer's connection, reads
+and writes the document, is refused a write while the owner has that one
+client view-only and writes again when editing is given back, and follows
+`fcviewerSwitchDoc` to the second document; the desktop side answers the
+page's asks through the connection's roster label (which a view-only client
+can still set), sees one client the whole run, and has exactly the writes
+that were allowed.  C1's and C2's browser legs, re-run over the changed
+bundle and driver (swiftshader now, for the viewer's WebGL): 11 and 15 PASS.
 
 *Not in C4*: a local `ActiveView` facade -- the viewer exposes no camera
-hooks to the DOM layer, and wasm/main.cpp cannot be built here to add them;
+hooks to the DOM layer yet;
 the macro echo; wrapping a statement's writes in an undo transaction (not
 done, as the desktop console does not; open for the owner's view of a
 client's edits); `input()`, which falls to pyodide's default stdin and is
