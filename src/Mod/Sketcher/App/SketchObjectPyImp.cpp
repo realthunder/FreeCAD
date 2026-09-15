@@ -1283,6 +1283,12 @@ PyObject* SketchObjectPy::movePoint(PyObject* args)
     Py_Return;
 }
 
+// Upstream renamed movePoint() to moveGeometry(); both spellings stay.
+PyObject* SketchObjectPy::moveGeometry(PyObject* args)
+{
+    return movePoint(args);
+}
+
 PyObject* SketchObjectPy::getGeoVertexIndex(PyObject* args) const
 {
     int index;
