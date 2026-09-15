@@ -1,8 +1,8 @@
 # Sketcher: picking upstream fixes and features
 
 Status (2026-09-15): phases 0 and 1 done; phase 2 (App fixes) under way --
-the standalone fixes and the internal faces fix are in (section 6a), the
-trim/split refactor, external projection and fillet rows are open. Branch `SketcherPort` off `RemoteEdit`
+the standalone fixes, the internal faces fix and the trim/split take are in
+(section 6a); the external projection and fillet rows are open. Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
 
@@ -161,11 +161,11 @@ fix.
   | `e06290557d` | ellipse projection | 4 in `TestSketcherEllipse` |
   | `176ef6da4e` | Carbon Copy reverse mapping, `setAllowUnaligned` | 1 |
   | 2024-05 validate/degenerate cases | `detectDegeneratedGeometries`, `evaluateConstraints` bindings; delete constraints to external | 3 in `TestSketchValidateCoincidents` |
-- **C++**: upstream's tests use APIs that arrive with specific App picks --
-  `Constraint::involvesGeoId`/`involvesGeoIdAndPosId`/`substituteIndexAndPos`,
-  `getConstraintAfterDeletingGeo`, `changeConstraintAfterDeletingGeo`,
-  `deleteUnusedInternalGeometryAndUpdateGeoId`, `replaceGeometries`,
-  `DeriVector2::crossProdZ`. Port each test with the pick that brings its API.
+- **C++: ported with the trim/split take** (`9b75379eb1`): upstream's
+  `tests/src/Mod/Sketcher` is a superset of the fork's 18 tests, 107 tests.
+  99 pass; 8 are `DISABLED_` with a `// Pending upstream <hash>` comment, the
+  C++ counterpart of the Python markers (see "Trim, split and internal
+  geometry" in 6a).
 - **Python, Gui** (`TestOnViewParameterGui`, preselection, constraint
   commands): written against `EditModeCoinManager` behaviour; evaluate one by
   one in phase 3.
@@ -404,21 +404,16 @@ Declined:
 
 **Still open on the App side.**
 
-- **The trim/split/internal-geometry refactor** (Ajinkya Dahale, 2024-11 ..
-  2026): about fifty commits that restructure `trim`, `split`, `join`,
-  `transferConstraints`, `replaceGeometries`, the B-spline knot and pole
-  operations and `deleteUnusedInternalGeometry`, with fixes on top (`226d24792d`
-  `502b7b9a3f` `350a416708` `404482f48e` `51cf34a596` `73253bd2d4`
-  `aa1122c774` `c6c084f22c` `bbbff1f8f1` `bb5afb911a` `78e5729520`
-  `474f704e6c`) and upstream's C++ tests for them. `eab485656f`
-  (`DeleteOptions`) is tied in: `split` uses `DeleteOption::NoSolve`, and the
-  Scale tool uses it. The fork has none of the refactor, so its fixes do not
-  apply as picks.
 - **External projection** `0aed23ca81` `0921ed2969` `ec24bd8c21`: upstream
   restructured projection into free `processEdge`/`processFace`/`projectShape`
   helpers, while the fork keeps it inline in `rebuildExternalGeometry`. These
   need behaviour probes of their issues (19582, 19831) against the fork, not
   diff reading.
+  Found while porting the C++ tests: the fork's `addExternal` refuses a
+  face *parallel* to the sketch ("Skip external reference plane that is not
+  normal to sketch plane"), where upstream projects the face's outline
+  (`1c514f5a15`, `74aafcee75`); `testAddExternalIncreasesCount` is disabled
+  on it.
 - **Fillet** `6d06b61c7e` (3 markers): a behaviour change -- unconnected lines
   no longer fillet.
 - `83d14b785e`: the App crash path is not in the fork's `delExternalPrivate`
@@ -469,6 +464,86 @@ declined, `0939408c21` adapted.
 **Verified.** Full build OK; ctest 667/667; Python 2852 OK (50 skipped, 9
 expected failures, down from 12); `TestSketcherApp` 95 OK (3 expected
 failures, down from 6; the 3 left are the fillet markers).
+
+### Trim, split and internal geometry: taken whole (`d8d462426e`)
+
+Upstream restructured `trim`, `split`, `join`, the B-spline knot operations,
+`transferConstraints`, `delConstraintOnPoint` and the internal geometry
+operations (Ajinkya Dahale, 2024-11 .. 2026), fixed them on top, and moved the
+deletion API to `DeleteOptions` (`eab485656f`). The fork had none of it, so the
+fixes did not apply as picks. Decision (user, 2026-09-15): take the cluster
+whole, as the solver was in phase 1.
+
+**What the fork stood to lose.** A body-by-body comparison of the merge base,
+the fork and upstream's tip showed the fork's own changes inside these
+functions were few and already upstream's: geometry ids (`generateId` on
+trim's middle piece -- now `replaceGeometries`, which copies the old id to the
+first piece and generates the rest; `copyId` in the knot operations), a
+negative GeoId in `delGeometry` forwarding to `delExternal`, `SketchSolveStatus`
+results. Upstream's `generateId` is the fork's with its `goto`s turned into
+lambdas.
+
+**Taken** from `upstream/main` `bd6be559e8`, by a script that replaces the
+fork's definitions with upstream's regions in the same split files
+(scratchpad `probe_take.py`):
+
+| file | functions |
+|---|---|
+| `SketchObjectOperations.cpp` | `delGeometries` (with the iterator template), `replaceGeometries`, `extend`, `seekTrimPoints` + the trim helpers, `trim`, `split`, `join`, `modifyBSplineKnotMultiplicity`, `insertBSplineKnot` |
+| `SketchObjectGeometry.cpp` | `isClosedCurve`, `hasInternalGeometry`, `delGeometry`, `delGeometriesExclusiveList`, `deleteAllGeometry`, `exposeInternalGeometry` with its per-type specialisations and `addAndCleanup`, the `deleteUnusedInternalGeometry` family |
+| `SketchObjectConstraints.cpp` | `deleteAllConstraints`, `delConstraint(s)`, `delConstraintOnPoint`, `transferConstraints`, `getConstraintAfterDeletingGeo`, `changeConstraintAfterDeletingGeo`, `deriveConstraintsForPieces`, `getDirectlyCoincidentPoints`, `autoRemoveRedundants` |
+
+**Adapted.**
+
+- `delConstraintsToExternal` keeps the fork's body: it removes only
+  constraints to *linked* external geometry, where upstream's removes
+  constraints to any. It gains the options and solves unless `NoSolve`, like
+  `delConstraints`.
+- `delExternal` accepts a GeoId as well as an external index, as upstream's
+  does. The taken `delGeometries` passes negative GeoIds on, and with the
+  fork's index-only version a selection holding an external geometry failed
+  to delete (upstream's C++ `testDelExternalReducesCount`; a Python probe of
+  `delGeometries([0, -3])` deletes both).
+- `moveGeometry` forwards to `movePoint` for `extend`; upstream's rename (and
+  `moveGeometries`) is its own pick.
+- Python: `delGeometry`, `delGeometries`, `deleteAllGeometry` and
+  `delConstraint` take an optional `noSolve`, `trim` an optional
+  `includeAxes`, `join` an optional `continuity`. **Upstream defect not
+  copied:** upstream's `delGeometry` binding passes the solve option alone,
+  which drops `IncludeInternalGeometry` from the default, so deleting an
+  ellipse from Python no longer deletes its foci. The fork keeps it.
+  `delGeometry`'s name form stays; its cog block was edited with the template
+  call and `cogapp --check` is clean.
+- `SketchAnalysis` and the fork's `transferFilletConstraints` passed `false`
+  (solve without updating the geometry); that is `DeleteOption::NoFlag`
+  under the new guard, which is also what upstream's `SketchAnalysis` passes.
+- The Gui trimming preview passes `includeSketchAxes = false`; upstream's
+  "include axes" tool widget option is phase 3.
+- `getConstraintIndices` is `const`, for the `const`
+  `getDirectlyCoincidentPoints`.
+
+Left out, still open: the `generateId`, `addExternal`, `buildShape`,
+`delAllExternal` and `toggleExternalGeometryFlag` "WIP refactor" rows, the
+`addSymmetric` rows, `getPointForGeometry`, and the Gui rows (trimming
+handler, `DrawSketchDefaultHandler`, `TaskSketcherElements`). The ledger marks
+the cluster: rows wholly inside the taken functions `taken`, rows partly
+inside `partial` with the rest named, test-only rows `taken` by the tests
+commit.
+
+**Tests** (`9b75379eb1`): upstream's C++ tests, 107, replace the fork's 18
+(a strict subset). `getElementName` returns `std::pair` in the fork (first the
+new style name), so one test reads `first`/`second`. 8 are `DISABLED_`
+pending picks that were not taken: 6 `addSymmetric` tests (`e1a431d5ee`
+`14280cdbf7` `bc3c0dc19a` `451072f0d7` `28f5e823d3`), the supplementary
+angle of a function expression (`8b06bca68a` builds it as an AST and keeps
+the unit), and a face parallel to the sketch as external geometry
+(`1c514f5a15` `74aafcee75`). Committed with `NO_STRIP_NONASCII=1`: the degree
+signs are unit strings the tests compare against.
+
+**Verified.** Full build OK; ctest 748/748 (+81 from upstream's C++ tests, 16
+entries disabled, 8 of them the pending upstream tests); Python 2852 OK (50 skipped,
+9 expected failures, unchanged); `TestSketcherApp` 95 OK (3 expected
+failures, unchanged). `Sketcher_tests_run` 99 passed, 8 disabled.
 
 ## 7. Phases
 
