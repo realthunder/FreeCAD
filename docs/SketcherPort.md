@@ -2,7 +2,7 @@
 
 Status (2026-09-15): phases 0 and 1 done; phase 2 (App fixes) under way --
 the standalone fixes, the internal faces fix and the trim/split take are in
-(section 6a); the external projection and fillet rows are open. Branch `SketcherPort` off `RemoteEdit`
+(section 6a), and so is the fillet; the external projection rows are open. Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
 
@@ -404,18 +404,11 @@ Declined:
 
 **Still open on the App side.**
 
-- **External projection** `0aed23ca81` `0921ed2969` `ec24bd8c21`: upstream
-  restructured projection into free `processEdge`/`processFace`/`projectShape`
-  helpers, while the fork keeps it inline in `rebuildExternalGeometry`. These
-  need behaviour probes of their issues (19582, 19831) against the fork, not
-  diff reading.
-  Found while porting the C++ tests: the fork's `addExternal` refuses a
-  face *parallel* to the sketch ("Skip external reference plane that is not
-  normal to sketch plane"), where upstream projects the face's outline
-  (`1c514f5a15`, `74aafcee75`); `testAddExternalIncreasesCount` is disabled
-  on it.
-- **Fillet** `6d06b61c7e` (3 markers): a behaviour change -- unconnected lines
-  no longer fillet.
+- **Face selection** for external geometry (`1c514f5a15`, `74aafcee75`): the
+  fork's `addExternal` refuses a face *parallel* to the sketch ("Skip external
+  reference plane that is not normal to sketch plane"), where upstream projects
+  the face's outline. A feature, not a fix; `testAddExternalIncreasesCount` is
+  disabled on it.
 - `83d14b785e`: the App crash path is not in the fork's `delExternalPrivate`
   (it sets the values once); the Gui half and the `delExternals` binding are
   phase 3.
@@ -544,6 +537,83 @@ signs are unit strings the tests compare against.
 entries disabled, 8 of them the pending upstream tests); Python 2852 OK (50 skipped,
 9 expected failures, unchanged); `TestSketcherApp` 95 OK (3 expected
 failures, unchanged). `Sketcher_tests_run` 99 passed, 8 disabled.
+
+### Fillet: the corner kept by splitting (`c2924c2fa4`, upstream `6d06b61c7e`, adapted)
+
+Upstream's `fillet` with `createCorner` used to leave a point at the old
+corner and move the corner's constraints onto it
+(`transferFilletConstraints`). `6d06b61c7e` splits each curve at its tangent
+point instead, turns the piece towards the corner into construction, and lets
+`split` carry the constraints over. Taken from upstream's tip:
+`chooseFilletsEdges`, both `fillet` overloads, the `cornerPoint` output of
+`Part::createFilletGeometry` and `PropertyGeometryList::swapValues`;
+`transferFilletConstraints` is gone. The fork's `createFilletGeometry` was
+upstream's already.
+
+**Curves that do not meet** (decided with the user, 2026-09-15). Upstream now
+refuses to fillet two curves without a coincident point. The fork keeps
+filleting them, and keeps their corner too, per curve:
+
+- a curve that reaches its tangent point is split there, as for a connected
+  corner -- this covers crossing curves;
+- a line that stops short of it is extended to the tangent point, and a
+  construction line from there to where the curves would meet stands in for
+  the missing piece, joined by a tangent constraint. The constraints on the
+  moving end, and length or equality constraints on the line, are removed, as
+  upstream did for unconnected curves;
+- any other curve that stops short gets only that removal: a trimmed curve's
+  `closestParameter` clamps to its range, so the missing piece has no safe
+  parameters.
+
+`testUnconnected` holds the fork expectation instead of upstream's
+`ValueError`.
+
+**Upstream defects not taken**, both found by probing, not by reading:
+
+- *The curves did not keep their ids.* After the split, upstream's swap left
+  the construction corner pieces at the curves' indices, and for a corner at a
+  curve's start also with that curve's geometry id (probe: a V of `g1`, `g2`
+  came out with `g2` on a construction piece and the kept piece as `g5`), so
+  references to the curve landed on construction geometry. `split()` already
+  leaves the kept piece first when the corner is at the curve's end; with the
+  corner at the start the two pieces are now swapped with their geometry ids
+  -- from clones, since a write equal to the value before it does not notify.
+  Upstream's own comment says the curve should keep its id.
+- *A chamfer flipped.* Upstream gave the chamfer line the fillet arc's end
+  positions in its coincidences, so the next solve flipped the line, and the
+  whole corner with it, whenever the arc was not reversed. The line's own start
+  and end are used, as the fork's chamfer did.
+
+`testCreateCornerKeepsIds` and `testChamferCornerStaysPut` cover them. The
+PartDesign TNP test whose volume upstream changed with this commit
+(7400 -> 8533.33) has no copy in the fork.
+
+**Verified.** Full build OK; ctest 748/748; Python 2854 OK (50 skipped, 6
+expected failures, 3 fewer); `TestSketcherApp` 97 OK (+2 tests, no expected
+failures left); `Sketcher_tests_run` 99 passed, 8 disabled.
+
+### External projection: probed, nothing to take
+
+`0aed23ca81` (#19582, a B-spline from another sketch could not be projected),
+`0921ed2969` and `ec24bd8c21` (#19831, intersection with complex surfaces, and
+a split B-spline edge on a parallel plane) fix code upstream had by then moved
+into free `processEdge`/`projectShape` helpers; the fork keeps projection
+inline in `rebuildExternalGeometry`, so the diffs do not apply. Probed instead,
+against the fork (scratchpad `projprobe.py`, `projprobe2.py`):
+
+| case | result |
+|---|---|
+| B-spline from another sketch, same plane and a parallel plane 7 up | a B-spline spanning x 0..15, as the source |
+| circle onto a sketch tilted 40 deg | an ellipse, semi-minor 3.064 = 4 cos 40 |
+| intersection of a sketch tilted 30 deg with a cylinder face | an ellipse, semi-axes 5 and 5.774 = 5 / cos 30 |
+| intersection with a B-spline saddle surface | its four diagonal branches |
+| an edge using the middle third of a B-spline's range, onto a parallel plane | only that third (x 6.67..13.33), not the whole curve |
+| a planar B-spline seen edge-on by a perpendicular sketch | one line segment, x 0..20 |
+
+All correct. The fork already moves a planar edge onto a parallel sketch plane
+instead of projecting it -- the OCC failure `0921ed2969` works around -- and
+adds a retry for OCC 7.7's projection. The three rows are marked `have`. The one
+real gap found on the way is face selection, above.
 
 ## 7. Phases
 
