@@ -133,7 +133,7 @@ a88e7baff5	2024-04-13	bgbsww	fix	0	0	have(sync)	2		TopoShape/Part:  Bug fixes; p
 280452bcc8	2024-04-17	PaddleStroke	fix	0	0	open	30		Sketcher: Fix mid-point autoconstraint not working on polyline. Fixes #13277	Gui/DrawSketchHandler.cpp
 64029d3a5b	2024-04-17	wmayer	fix	0	0	open	20		Sketcher: fix crash in CmdRenderingOrder::updateIcon()	Gui/Command.cpp
 7909815002	2024-04-18	Roy-043	?	0	0	open	24		Sketcher: Improve GUI texts in SketcherSettingsAppearance.ui	Gui/SketcherSettingsAppearance.ui
-52935f8249	2024-04-21	wmayer	?	1	0	open	94		Sketch: expose several methods to Python	App/SketchObjectPy.xml App/SketchObjectPyImp.cpp
+52935f8249	2024-04-21	wmayer	?	1	0	open	94	taken 619abdfac4	Sketch: expose several methods to Python	App/SketchObjectPy.xml App/SketchObjectPyImp.cpp
 989c710d17	2024-04-21	wmayer	noise	1	0	open	150		Sketch: Fix linter warnings	Gui/TaskSketcherValidation.cpp
 37f0ad43f9	2024-04-21	wmayer	fix	0	0	open	9		Sketcher: Fixes #13518: ValidateSketch cannot be scripted	Gui/TaskSketcherValidation.cpp
 0a514c201a	2024-04-14	Roy-043	?	0	1	have(rev)	12		Sketcher: Make constraints menu texts more consistent	Gui/CommandConstraints.cpp
@@ -141,7 +141,7 @@ a88e7baff5	2024-04-13	bgbsww	fix	0	0	have(sync)	2		TopoShape/Part:  Bug fixes; p
 cb0a2d2809	2024-04-17	PaddleStroke	?	0	0	partial(sync)	144		Sketcher: Joint Line and Polyline in a command group.	Gui/CommandAlterGeometry.cpp Gui/CommandCreateGeo.cpp Gui/Workbench.cpp
 05e79b5d0a	2024-04-11	PaddleStroke	feature	0	0	have(sync)	44		Sketcher: Reorganize toolbars	Gui/Workbench.cpp
 3a9547c235	2024-04-22	Chris Hennes	?	0	0	open	3		Start: Create 'First Start' screen	tests/App/planegcs/Constraints.cpp
-832a0653fa	2024-01-14	hlorus	fix	1	0	open	89		[Sketcher] Add handlers for unified measurement facility	App/AppSketcher.cpp App/CMakeLists.txt App/Measure.cpp App/Measure.h
+832a0653fa	2024-01-14	hlorus	fix	1	0	open	89	n/a: no unified Measure module in the fork	[Sketcher] Add handlers for unified measurement facility	App/AppSketcher.cpp App/CMakeLists.txt App/Measure.cpp App/Measure.h
 c14e735c20	2024-04-24	wmayer	fix	1	0	open	17		Sketcher: Fix possible crash inside ~CurveConverter()	Gui/DrawSketchHandler.cpp
 56f84c8042	2024-04-30	wmayer	noise	0	0	open	1		Fix various compiler warnings:	Gui/DrawSketchHandler.cpp
 d7ade12dc3	2024-04-21	bgbsww	fix	0	0	partial(sync)	67		Ensure we set up a valid sketch even with invalid external references	App/SketchObject.cpp SketcherTests/TestSketcherSolver.py
@@ -173,9 +173,9 @@ e7c11a01be	2024-05-27	Syres916	?	0	0	have(sync)	15		[Sketcher] Change HeadlightI
 9d0320198f	2024-05-26	Max Wilfinger	?	0	0	have(sync)	3		Revert UI command change in Sketcher and PartDesign	Gui/Workbench.cpp
 f52a039811	2024-05-24	Syres916	fix	1	0	open	57		[Sketcher] Add new Fix Missing Coincident test	CMakeLists.txt SketcherTests/TestSketchValidateCoincidents.py TestSketcherApp.py
 cdec6dd1a2	2024-05-27	wmayer	fix	0	0	open	78		Sketch: Fix TestSketchValidateCoincidents	SketcherTests/TestSketchValidateCoincidents.py
-e96ac0b1db	2024-05-27	wmayer	feature	0	0	open	61		Sketch: Add test case for degenerated geometry	App/SketchAnalysis.cpp App/SketchAnalysis.h SketcherTests/TestSketchValidateCoincidents.py
-948d747c6c	2024-05-27	wmayer	feature	0	0	open	17		Sketch: Add test case for deleting constraints with external geometry	SketcherTests/TestSketchValidateCoincidents.py
-e67502025d	2024-05-27	wmayer	feature	0	0	partial(sync)	48		Sketch: Add test case for validating constraints	App/SketchObject.cpp SketcherTests/TestSketchValidateCoincidents.py
+e96ac0b1db	2024-05-27	wmayer	feature	0	0	open	61	adapted 619abdfac4: its test passes on the binding; getDegeneratedGeometries refactor not taken	Sketch: Add test case for degenerated geometry	App/SketchAnalysis.cpp App/SketchAnalysis.h SketcherTests/TestSketchValidateCoincidents.py
+948d747c6c	2024-05-27	wmayer	feature	0	0	open	17	taken 66ca11b76d (test), enabled by 619abdfac4	Sketch: Add test case for deleting constraints with external geometry	SketcherTests/TestSketchValidateCoincidents.py
+e67502025d	2024-05-27	wmayer	feature	0	0	partial(sync)	48	taken 66ca11b76d (test), enabled by 619abdfac4; the rest is braces	Sketch: Add test case for validating constraints	App/SketchObject.cpp SketcherTests/TestSketchValidateCoincidents.py
 5982ac470e	2024-05-28	wmayer	refactor	0	0	open	32		Sketch: Refactor SketchAnalysis	App/SketchAnalysis.cpp App/SketchAnalysis.h
 bcc1a9ada5	2024-05-28	wmayer	refactor	0	0	open	214		Sketch: Refactor SketchAnalysis	App/SketchAnalysis.cpp
 5461d0d27f	2024-05-28	wmayer	refactor	0	0	partial(sync)	108		Sketch: Refactor SketchAnalysis	App/SketchAnalysis.cpp App/SketchAnalysis.h App/SketchObject.cpp
@@ -202,7 +202,7 @@ e6b18dc381	2024-05-24	PaddleStroke	noise	0	0	have(sync)	12		Sketcher: polygone D
 a98d7eb288	2024-06-12	Alexandre Prokoudine	feature	0	1	have(rev)	4		Adjust names of two Sketcher tools to make their functions discoverable	Gui/CommandSketcherTools.cpp
 77eedb84f8	2024-06-01	Mihail Dumitrescu	fix	0	0	have(sync)	306		Fix importing arcs and elliptical arcs as external geometry.	App/SketchObject.cpp
 2d22e7a21a	2024-06-17	bgbsww	fix	0	0	have(sync)	5		Toponaming: Fix crash with invalid external geometry	App/SketchObject.cpp
-a36a60d29d	2024-06-17	Chris Hennes	fix	0	0	open	1		Fem/Sketcher: Fix missing PreCompiled.h files	App/PreCompiled.h
+a36a60d29d	2024-06-17	Chris Hennes	fix	0	0	open	1	have	Fem/Sketcher: Fix missing PreCompiled.h files	App/PreCompiled.h
 f6e67a009d	2024-06-18	wmayer	noise	0	0	partial(sync)	18	partial 88c9baa853: App/SketchObject.cpp Gui/CommandConstraints.cpp Gui/DrawSketchHandlerOffset.h Gui/EditModeGeometryCoinConverter.cpp Gui/EditModeGeometryCoinConverter.h	Fix several compiler warnings	App/SketchObject.cpp App/planegcs/GCS.cpp Gui/CommandConstraints.cpp Gui/DrawSketchHandlerOffset.h Gui/EditModeGeometryCoinConverter.cpp Gui/EditModeGeometryCoinConverter.h
 d2491541e1	2024-06-23	Max Wilfinger	feature	1	0	open	6		Rename OVP preference options	Gui/SketcherSettings.cpp
 4a486b21ed	2024-05-29	CalligaroV	fix	0	0	partial(sync)	51		Sketcher: fix external edges selection  * fix selection from Sketcher Task Panel  * fix selection from 3D View  * Synchronize selection between Task Panel and 3D View	Gui/TaskSketcherElements.cpp Gui/ViewProviderSketch.cpp
@@ -220,7 +220,7 @@ e490531510	2024-07-01	Max Wilfinger	feature	0	0	open	6		Activate Part/Part Desig
 fa0fdf22cf	2024-06-27	PaddleStroke	fix	0	0	have(sync)	96		Sketcher: Dimension: Fix constraint switching. Refactor a little bit by adding finishDimensionCreation to reduce code copies.	Gui/CommandConstraints.cpp
 d92742f9c6	2024-07-02	PaddleStroke	fix	0	0	have(sync)	94		Sketcher: Dimension: Prevent the use of Undo from crashing.	Gui/CommandConstraints.cpp
 09209436d2	2024-07-03	PaddleStroke	fix	1	0	open	25		Sketcher: add SketcherSettings::resetSettingsToDefaults to reset correctly some settings.	Gui/SketcherSettings.cpp Gui/SketcherSettings.h
-858e59fabf	2024-06-30	wmayer	fix	0	0	open	4		Sketcher: Fix format string in ExternalGeometryFacade::initExtensions()	App/ExternalGeometryFacade.cpp
+858e59fabf	2024-06-30	wmayer	fix	0	0	open	4	n/a: the warnings are commented out	Sketcher: Fix format string in ExternalGeometryFacade::initExtensions()	App/ExternalGeometryFacade.cpp
 561e521817	2024-07-05	wmayer	fix	1	0	open	2		MSVC: Fix warning C4005: 'NOMINMAX': macro redefinition	Gui/PreCompiled.h
 1eaf89b485	2024-06-26	wmayer	fix	1	0	open	28		Sketcher: Handle PyException in createGeneratedAutoConstraints	Gui/DrawSketchDefaultHandler.h
 6a309e889e	2024-06-26	PaddleStroke	fix	0	0	open	12		Sketcher: BSpline: Fix crash when cancelled while only one point with autoconstraint.	Gui/DrawSketchHandlerBSpline.h
@@ -306,9 +306,9 @@ c5ad54d5a8	2024-09-21	bgbsww	refactor	0	0	open	6		Update method names and clean	
 596fa2856b	2024-10-03	Ajinkya Dahale	?	1	0	open	9		[Sketcher] Apply tangent autoconstraint only when `Dir` given	Gui/DrawSketchHandler.cpp
 5ce6c7933a	2024-10-04	Benjamin Brstrup Sayoc	?	0	1	have(rev)	6		[Sketcher] If origin selected: don't do distance to origin	Gui/CommandConstraints.cpp
 a9bff78974	2024-10-08	PaddleStroke	fix	0	0	have(sync)	6		Sketcher: Fix double click of wire and remove selection that was not working	Gui/ViewProviderSketch.cpp
-d2637ec881	2024-10-15	wmayer	fix	0	0	open	9		Sketch: Fix creating the shape of a sketch	App/SketchObject.cpp
+d2637ec881	2024-10-15	wmayer	fix	0	0	open	9	adapted e8315e9a39: clones held in unique_ptr	Sketch: Fix creating the shape of a sketch	App/SketchObject.cpp
 ca9b556ec0	2024-09-24	Jiri Pinkava	refactor	0	0	have(sync)	3		Sketch: refactor GeoHistory	App/SketchObject.cpp
-cf8ad66373	2024-10-21	Eric Price	fix	0	0	open	8		Fix boolean operations (#17119)	App/PreCompiled.h App/SketchObject.cpp
+cf8ad66373	2024-10-21	Eric Price	fix	0	0	open	8	n/a: no FCBRepAlgoAPI wrappers in the fork's Part	Fix boolean operations (#17119)	App/PreCompiled.h App/SketchObject.cpp
 d03441fca0	2024-10-24	PaddleStroke	fix	0	0	have(sync)	18		Sketcher: PythonConverter: use getRange to handle bad arcs.	App/PythonConverter.cpp
 c098d9b312	2024-10-24	PaddleStroke	refactor	0	1	have(rev)	20		Formating PythonConverter.cpp	App/PythonConverter.cpp
 982ffeac08	2024-10-24	PaddleStroke	fix	1	0	have(sync)	25		Sketcher: DrawSketchHandlerRotate : Fix unwanted copy of DistanceX/Y constraints	Gui/DrawSketchHandlerRotate.h
@@ -358,17 +358,17 @@ f0f70daa0e	2024-11-23	Ajinkya Dahale	feature	0	0	open	132		[Sketcher][test] Add 
 70972b3926	2024-12-03	PaddleStroke	?	0	0	partial(sync)	1401	partial 88c9baa853: App/SketchObject.cpp App/SketchObject.h App/SketchObjectPy.xml App/SketchObjectPyImp.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h	Sketcher: Group dragging	App/Sketch.cpp App/Sketch.h App/SketchObject.cpp App/SketchObject.h App/SketchObjectPy.xml App/SketchObjectPyImp.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 c1a75bbafc	2024-12-04	wmayer	noise	0	0	open	7		Fix compiler warnings	App/SketchObject.cpp App/SketchObject.h
 96c838f3b9	2024-12-03	luzpaz	noise	0	0	have(sync)	2		Fix various typos Found with codespell	Gui/DrawSketchHandlerRotate.h
-760091bc8a	2024-12-05	PaddleStroke	fix	0	0	open	2		Sketcher: Fix first external geo deletion failure.	App/SketchObject.cpp
+760091bc8a	2024-12-05	PaddleStroke	fix	0	0	open	2	n/a: fork never had the ternary	Sketcher: Fix first external geo deletion failure.	App/SketchObject.cpp
 b92bda03da	2024-12-06	PaddleStroke	refactor	0	0	partial(sync)	164	partial 88c9baa853: App/SketchObject.cpp App/SketchObject.h App/SketchObjectPy.xml App/SketchObjectPyImp.cpp App/SketchPy.xml App/SketchPyImp.cpp Gui/CommandConstraints.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h SketcherTests/TestSketcherSolver.py	Sketcher: Rename movePoint to moveGeometries.	App/Sketch.cpp App/Sketch.h App/SketchObject.cpp App/SketchObject.h App/SketchObjectPy.xml App/SketchObjectPyImp.cpp App/SketchPy.xml App/SketchPyImp.cpp Gui/CommandConstraints.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h SketcherTests/TestSketcherSolver.py
 3164ee1849	2024-09-13	Jiri Pinkava	feature	0	0	open	3		[PartDesign]: Sort sketches in Attach sketch tool alphabetically	Gui/Command.cpp
 1eb8496aae	2024-12-01	Florian Foinant-Willig	fix	0	0	have(sync)	5		[Core] Fix for frozen status	Gui/ViewProviderSketch.cpp
 651cefde4d	2024-10-27	Kacper Donat	refactor	0	0	partial(sync)	64		Gui: Use getObject<T>() helpers in classes	Gui/CommandConstraints.cpp Gui/CommandSketcherTools.cpp Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/DrawSketchHandlerArcOfParabola.h Gui/DrawSketchHandlerCarbonCopy.h Gui/DrawSketchHandlerExternal.h Gui/DrawSketchHandlerLineSet.h Gui/D
-f2e57b4eb4	2024-12-07	wmayer	fix	0	0	open	2		Sketch: Fix Python type hints in addExternal	App/SketchObjectPy.xml
-cebcb7f66c	2024-12-07	wmayer	fix	0	0	open	33		Sketch: Fix SketchObjectPy::addExternal	App/SketchObjectPyImp.cpp
+f2e57b4eb4	2024-12-07	wmayer	fix	0	0	open	2	superseded 6456f287c4	Sketch: Fix Python type hints in addExternal	App/SketchObjectPy.xml
+cebcb7f66c	2024-12-07	wmayer	fix	0	0	open	33	superseded 6456f287c4	Sketch: Fix SketchObjectPy::addExternal	App/SketchObjectPyImp.cpp
 e09e107778	2024-12-07	Vincenzo Calligaro	?	0	0	open	11		Updated tests affected by the modification	SketcherTests/TestSketcherSolver.py
 74e7df9676	2024-12-09	Syres916	feature	0	0	open	22		[Sketcher] [Post 1.0] Allow CarbonCopy to work with SketchObjectPython (#15594)	App/SketchObject.cpp Gui/DrawSketchHandlerCarbonCopy.h
 20d64a7f0f	2024-12-10	luzpaz	noise	0	0	open	2		"Fix various typos Found via `codespell -q 3 -L aci,addmin,ake,aline,alle,alledges,alocation,als,ang,anid,anormal,aply,apoints,ba,beginn,behaviour,bloaded,bottome,brushin,bu,byteorder,calculater,cancelled,cancelling,cas,cascade,centimetre,childrens,childs,colour,colours,commen,connexion,currenty,documentin,dof,doubleclick,dum,eiter,elemente,ende,feld,finde,findf,findn,fle,freez,graphin,hist,iff,incrementin,indexin,indicies,initialisation,initialise,initialised,initialises,initialisiert,inout,ist,itsel,kilometre,leadin,lod,mantatory,methode,metres,millimetre,modell,nd,noe,normale,normaly,nto,numer,oce,oder,ontop,orgin,orginx,orginy,ot,pard,parm,parms,pres,programm,que,rady,recurrance,renderin,rin,ro,rougly,sectionin,seperator,serie,shs,sinc,siz,som,strack,substraction,te,technic,thist,thru,tread,tru,ue,uint,unter,uptodate,vas,vertexes,vew,wallthickness,whitespaces -S ""./.git,*.po,*.ts,*.pdf,./ChangeLog.txt,./src/3rdParty,./src/Mod/Assembly/App/opendcm,./src/CXX,./src/zipios++,./src/Base/swig*,./src/Mod/Robot/App/kdl_cp,./src/Mod/Import/App/SCL,./src/WindowsInstaller,./src/Doc/FreeCAD.uml,./src/Base/StackWalker.cpp,./build/doc/SourceDoc,./tools/build/WindowsInstaller/lang,./src/Mod/TechDraw/Templates/locale""`"	App/SketchObject.cpp
-ab5b53e972	2024-12-10	wmayer	fix	0	0	open	22		Sketcher: Fix warning [-Wmaybe-uninitialized]	App/SketchObject.cpp
+ab5b53e972	2024-12-10	wmayer	fix	0	0	open	22	taken c53ba6a814	Sketcher: Fix warning [-Wmaybe-uninitialized]	App/SketchObject.cpp
 e7e410323e	2024-12-09	wmayer	fix	1	0	open	2	taken 88c9baa853	Sketch: Fix possible crash in BSpline::splineValue	App/planegcs/Geo.cpp
 d4b7d074ee	2024-12-02	Vincent Belpois	fix	1	0	open	1		Sketcher: Fix double RMB to quite polyline after closed shape	Gui/DrawSketchHandlerLineSet.h
 973ad7b5c8	2024-09-09	Jiri Pinkava	refactor	0	0	have(sync)	8		Sketcher: clean-up geometry history configuation	App/SketchObject.cpp App/SketchObject.h
@@ -454,7 +454,7 @@ cc6ffb44de	2025-02-16	Joao Matos	?	0	0	open	3		Core: Move `PyCXX` library to `sr
 b07caa732e	2025-02-24	Max Wilfinger	?	0	0	partial(sync)	64		Remove hack around geometry visibility in active sketch. Revert #14386 and #16378	Gui/SketcherSettings.cpp Gui/SketcherSettings.ui Gui/ViewProviderSketch.cpp
 0921ed2969	2025-02-25	Andrew Shkolik	fix	0	0	open	43		fix #19831 Sketcher: Create external Intersection geometry not working with complex surfaces	App/SketchObject.cpp
 ceac12c388	2025-02-25	pre-commit-ci[bot]	noise	0	0	open	4		[pre-commit.ci] auto fixes from pre-commit.com hooks	App/SketchObject.cpp
-0fbb300fe4	2025-02-25	Andrea	fix	0	0	open	27		[mod:part] fix compile warning .	App/SketchObject.cpp
+0fbb300fe4	2025-02-25	Andrea	fix	0	0	open	27	declined: comment removal	[mod:part] fix compile warning .	App/SketchObject.cpp
 3de97a43fe	2025-02-24	Chris Hennes	feature	0	0	open	51		Sketcher Tests: add [[maybe_unused]]	tests/App/SketchObject.cpp
 755229df23	2025-02-24	Benjamin Brstrup Sayoc	noise	0	0	open	10		Build: suppress warnings from 3rd party libraries	App/CMakeLists.txt Gui/CMakeLists.txt tests/CMakeLists.txt
 411cdadf49	2025-02-27	Andrew Shkolik	feature	0	0	open	67		Sketcher: Preference color added for External defining geometry	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManagerParameters.cpp Gui/EditModeCoinManagerParameters.h Gui/EditModeGeometryCoinManager.cpp Gui/SketcherSettings.cpp Gui/SketcherSettingsAppearance.ui
@@ -464,7 +464,7 @@ ec24bd8c21	2025-02-28	Andrew Shkolik	fix	0	0	open	25		fixes #19831 - additional 
 f3643af82b	2025-03-02	Andrew	?	0	0	open	48		Merge pull request #19747 from Shkolik/sketcher_datums_projection	App/SketchObject.cpp Gui/DrawSketchHandlerExternal.h
 1155182ac3	2025-03-03	Andrew Shkolik	feature	0	0	open	104		Sketcher: Preference pattern and width added for External defining geometry	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManagerParameters.cpp Gui/EditModeCoinManagerParameters.h Gui/EditModeGeometryCoinManager.cpp Gui/SketcherSettings.cpp Gui/SketcherSettingsAppearance.ui
 400863889b	2025-03-04	pre-commit-ci[bot]	noise	0	0	n/a(uncompiled)	20		[pre-commit.ci] auto fixes from pre-commit.com hooks	Gui/EditModeCoinManagerParameters.cpp Gui/EditModeCoinManagerParameters.h Gui/EditModeGeometryCoinManager.cpp
-27dd14174e	2025-02-26	Andrew Shkolik	fix	0	0	open	19		fix #18356 Sketcher: External reference line defaults to geometry, but vertex does not	App/SketchObject.cpp
+27dd14174e	2025-02-26	Andrew Shkolik	fix	0	0	open	19	adapted 814e0c8f30	fix #18356 Sketcher: External reference line defaults to geometry, but vertex does not	App/SketchObject.cpp
 f9eaf9b568	2025-03-10	PaddleStroke	feature	0	0	open	23		Sketcher: DSH: add OVP constraints before AutoConstraints.	Gui/DrawSketchDefaultHandler.h
 cd5c46ba18	2025-03-10	Andrea	?	1	0	open	4		Remove unnecessary check (duplicated)	Gui/PreCompiled.h
 0bb47bc0d8	2025-03-03	PaddleStroke	?	0	0	open	9		Move getStandardButtons to cpp file	Gui/TaskDlgEditSketch.cpp Gui/TaskDlgEditSketch.h
@@ -482,7 +482,7 @@ fa61131590	2025-03-13	Karliss	feature	0	0	have(sync)	2		Add missing parent for m
 6c2c6847eb	2025-03-17	tritao	refactor	0	0	open	40		CMake: Cleanup targets with transitive dependencies	App/CMakeLists.txt Gui/CMakeLists.txt tests/CMakeLists.txt
 7076989ead	2025-03-20	PaddleStroke	fix	0	0	open	3		Remove unecessary if in DrawSketchHandlerArc.h	Gui/DrawSketchHandlerArc.h
 e12deea20e	2025-03-20	Chris Hennes	fix	1	0	open	8		Sketcher: Ensure loop can exit	Gui/Command.cpp
-28b62eb52b	2025-03-20	Chris Hennes	fix	0	0	open	4		Sketcher: Ensure copy of temp string is kept	App/AppSketcherPy.cpp
+28b62eb52b	2025-03-20	Chris Hennes	fix	0	0	open	4	have: the temporary lives through the full expression	Sketcher: Ensure copy of temp string is kept	App/AppSketcherPy.cpp
 1fc61423f3	2025-03-22	PaddleStroke	fix	1	0	open	14		Sketcher: Line tool: Enforce correctly when angle is set (#20267)	Gui/DrawSketchHandlerLine.h
 0f00c6d2d1	2025-03-22	PaddleStroke	fix	1	0	open	15		Sketcher: Slot tool: Enforce correctly when angle is set (#20269)	Gui/DrawSketchHandlerSlot.h
 96e8a9e83c	2025-03-29	mosfet80	?	1	0	open	18		Remove old GCC<=8 (#20508)	App/ExternalGeometryExtension.cpp App/SketchGeometryExtension.cpp App/SolverGeometryExtension.cpp Gui/ViewProviderSketchGeometryExtension.cpp
@@ -496,7 +496,7 @@ b4eb28e50e	2025-03-27	Benjamin Nauck	noise	0	0	open	580	partial 88c9baa853: App/
 7a12d2f96f	2025-04-05	luzpaz	noise	1	0	open	2		Fix various typos (#20651)	App/SketchObject.cpp
 35a9673a75	2025-03-28	Kacper Donat	refactor	0	0	open	2		Base: Rename Base::freecad_dynamic_cast into freecad_cast	App/SketchObject.cpp
 f0d30cb570	2025-03-09	Ajinkya Dahale	?	0	0	open	79		[Sketcher] Adjust constraint changes when trimming	App/SketchObject.cpp
-358942b771	2025-03-12	Ajinkya Dahale	fix	0	0	open	1		[Sketcher] Fix issue in `SketchObject::transferConstraints`	App/SketchObject.cpp
+358942b771	2025-03-12	Ajinkya Dahale	fix	0	0	open	1	n/a: fork's transferConstraints is an if-chain, no fall-through	[Sketcher] Fix issue in `SketchObject::transferConstraints`	App/SketchObject.cpp
 fbac7d737b	2025-03-13	Ajinkya Dahale	fix	0	0	open	78		[Sketcher] Refactor `DrawSketchHandlerTrimming::mouseMove()`	Gui/DrawSketchHandlerTrimming.h
 b6a069dc63	2025-03-13	Ajinkya Dahale	fix	0	0	open	5		[Sketcher] Attempt to avoid double-trimming in some cases	Gui/DrawSketchHandlerTrimming.h
 2779f0b29f	2025-03-14	Ajinkya Dahale	feature	0	0	open	4		[Sketcher] Add missing check in `deriveConstraintsForPieces`	App/SketchObject.cpp
@@ -524,22 +524,22 @@ c704622605	2025-04-07	Kacper Donat	?	1	0	open	2		Sketcher: Replace dynamic_cast 
 350a416708	2025-04-24	Ajinkya Dahale	fix	0	0	open	7		Sketcher: Avoid an unnecessary geometry update when trimming	App/SketchObject.cpp
 8cc1565dcb	2025-04-29	Andrea	?	0	0	open	5		remove unnecessary InitApplication.h inclusion	tests/App/SketchObjectChanges.cpp tests/App/SketcherTestHelpers.cpp tests/App/SketcherTestHelpers.h
 ae76f89759	2025-03-24	Benjamin Nauck	refactor	0	0	open	2		Sketcher: Use contains instead of std::find	Gui/TaskSketcherConstraints.cpp
-78e2a12d2d	2025-04-11	Benjamin Nauck	fix	0	0	open	2		Sketcher: Fix 463717 Variable copied when it could be moved	App/SketchObject.cpp
-53b9c54f97	2025-04-11	Benjamin Nauck	fix	1	0	open	2		Sketcher: Fix 512831 Variable copied when it could be moved	App/SketchObject.cpp
-6adebe348e	2025-04-11	Benjamin Nauck	fix	1	0	open	2		Sketcher: Fix 512301 Variable copied when it could be moved	App/SketchObject.cpp
+78e2a12d2d	2025-04-11	Benjamin Nauck	fix	0	0	open	2	n/a: no setExpression override	Sketcher: Fix 463717 Variable copied when it could be moved	App/SketchObject.cpp
+53b9c54f97	2025-04-11	Benjamin Nauck	fix	1	0	open	2	taken 36a52b0ac2	Sketcher: Fix 512831 Variable copied when it could be moved	App/SketchObject.cpp
+6adebe348e	2025-04-11	Benjamin Nauck	fix	1	0	open	2	declined: std::move of a returned value is redundant	Sketcher: Fix 512301 Variable copied when it could be moved	App/SketchObject.cpp
 de17a7acee	2025-04-11	Benjamin Nauck	refactor	0	0	open	2		Sketcher: 532658 Use of auto that causes a copy	App/SketchObject.cpp
-7f49a4e668	2025-04-11	Benjamin Nauck	fix	1	0	open	2		Sketcher: Fix 513105 Variable copied when it could be moved	App/SketchObject.cpp
-be264928fc	2025-04-14	Benjamin Nauck	fix	0	0	open	6		Sketcher: Fix 515688, 513858, 515692, Variable copied	App/SketchObject.cpp
-70d11e33dc	2025-04-14	Benjamin Nauck	fix	0	0	open	4		Sketcher: Fix 529853 Variable copied when it could be moved	App/SketchObject.cpp App/SketchObject.h
-6b87d7df22	2025-04-11	Benjamin Nauck	fix	0	0	open	2		Sketcher: Fix 512328 Use of auto that causes a copy	App/SketchObject.cpp
-47a43e21b2	2025-04-11	Benjamin Nauck	fix	0	0	open	2		Sketcher: Fix    532547 Variable copied when it could be moved	App/SketchObject.cpp
-3f79626799	2025-04-11	Benjamin Nauck	fix	0	0	open	2		Sketcher: Fix 513269 Variable copied when it could be moved	App/SketchObject.cpp
+7f49a4e668	2025-04-11	Benjamin Nauck	fix	1	0	open	2	taken 36a52b0ac2	Sketcher: Fix 513105 Variable copied when it could be moved	App/SketchObject.cpp
+be264928fc	2025-04-14	Benjamin Nauck	fix	0	0	open	6	adapted 36a52b0ac2: one of three sites; the trim/split two are in the refactor	Sketcher: Fix 515688, 513858, 515692, Variable copied	App/SketchObject.cpp
+70d11e33dc	2025-04-14	Benjamin Nauck	fix	0	0	open	4	n/a: no moveGeometries	Sketcher: Fix 529853 Variable copied when it could be moved	App/SketchObject.cpp App/SketchObject.h
+6b87d7df22	2025-04-11	Benjamin Nauck	fix	0	0	open	2	taken 36a52b0ac2	Sketcher: Fix 512328 Use of auto that causes a copy	App/SketchObject.cpp
+47a43e21b2	2025-04-11	Benjamin Nauck	fix	0	0	open	2	taken 36a52b0ac2	Sketcher: Fix    532547 Variable copied when it could be moved	App/SketchObject.cpp
+3f79626799	2025-04-11	Benjamin Nauck	fix	0	0	open	2	have	Sketcher: Fix 513269 Variable copied when it could be moved	App/SketchObject.cpp
 24df826865	2025-05-04	David Carter	fix	0	0	open	555		Merge pull request #21046 from davesrocketshop/issue_13922_2	SketcherTests/TestSketchValidateCoincidents.py SketcherTests/TestSketcherSolver.py
 c293d74566	2025-05-01	Ladislav Michl	noise	0	0	open	40		Base: rename Exception's PascalCase methods to camelCase	App/SketchObject.cpp Gui/CommandSketcherBSpline.cpp Gui/DrawSketchController.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerRotate.h Gui/DrawSketchHandlerScale.h Gui/DrawSketchHandlerSymmetry.h Gui/DrawSketchHandlerTranslate.h Gui/EditModeConstraintCoinManager.cpp Gui/EditModeGeometryCoinConve
 998f4e4d45	2025-03-30	bofdahof	noise	0	0	open	338	partial 88c9baa853: App/AppSketcher.cpp App/AppSketcherPy.cpp App/ExternalGeometryFacade.cpp App/GeometryFacade.cpp App/SketchAnalysis.cpp App/SketchObject.cpp App/SketchObjectSF.cpp Gui/AppSketcherGui.cpp Gui/DrawSketchController.h Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandle	Console: rename PascalCase named methods to camelCase	App/AppSketcher.cpp App/AppSketcherPy.cpp App/ExternalGeometryFacade.cpp App/GeometryFacade.cpp App/Sketch.cpp App/SketchAnalysis.cpp App/SketchObject.cpp App/SketchObjectSF.cpp App/planegcs/GCS.cpp Gui/AppSketcherGui.cpp Gui/DrawSketchController.h Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandle
-4c8fadd68d	2025-05-06	PaddleStroke	fix	0	0	open	9		Core: restoreContent not restoring expressions (#21152)	App/SketchObject.cpp App/SketchObject.h
+4c8fadd68d	2025-05-06	PaddleStroke	fix	0	0	open	9	n/a: core DocumentObject has no restoreFinished to chain	Core: restoreContent not restoring expressions (#21152)	App/SketchObject.cpp App/SketchObject.h
 418c09899b	2025-05-06	Jacques Beaurain	fix	0	0	open	74		Gui: HiDPI fixes for Sketcher (#21098)	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h Gui/ViewProviderSketchCoinAttorney.h
-2032a9d844	2025-05-09	Rayno Jiang	?	1	0	open	47		Sketcher: Scaling of a sketch containing BSplines doesn't work (#20943)	App/PythonConverter.cpp
+2032a9d844	2025-05-09	Rayno Jiang	?	1	0	open	47	taken 8550ffdc64	Sketcher: Scaling of a sketch containing BSplines doesn't work (#20943)	App/PythonConverter.cpp
 492b8312b3	2025-02-25	Benjamin Brstrup Sayoc	?	0	0	open	58	partial 88c9baa853: App/ExternalGeometryExtension.cpp App/PropertyConstraintList.cpp App/SketchGeometryExtension.cpp Gui/PropertyVisualLayerList.cpp Gui/ViewProviderSketchGeometryExtension.cpp Gui/VisualLayer.cpp	Base: make getAttribute template	App/Constraint.cpp App/ExternalGeometryExtension.cpp App/PropertyConstraintList.cpp App/SketchGeometryExtension.cpp Gui/PropertyVisualLayerList.cpp Gui/ViewProviderSketchGeometryExtension.cpp Gui/VisualLayer.cpp
 6786af6ef9	2025-02-26	Benjamin Brstrup Sayoc	refactor	0	0	open	18	partial 88c9baa853: App/SketchGeometryExtension.cpp	Everywhere: clean up getAttribute conversions	App/Constraint.cpp App/SketchGeometryExtension.cpp
 a4aabe05de	2025-05-14	Chris Hennes	noise	0	0	open	2		Sketcher tests: Silence compiler warning with cast	tests/App/planegcs/Constraints.cpp
@@ -562,9 +562,9 @@ e33377b595	2025-04-25	Ajinkya Dahale	refactor	0	0	open	10	taken 88c9baa853	Sketc
 a280cacb93	2025-05-04	Ajinkya Dahale	refactor	0	0	open	2		Sketcher: clean up import	App/SketchObject.cpp
 1cfb85a71f	2025-05-12	Ajinkya Dahale	?	0	0	open	69		Sketcher: Incorporate comments from #20589	App/SketchObject.cpp Gui/TaskSketcherElements.cpp
 9baeb6e9e6	2025-03-23	Kacper Donat	feature	0	0	open	37		Gui: Add support for hints in status bar	Gui/DrawSketchControllableHandler.h Gui/DrawSketchHandlerLineSet.h Gui/DrawSketchHandlerPolygon.h
-46a11b6538	2025-05-21	jffmichi	fix	0	0	open	1		Sketcher: remove surplus push_back to shapes (fixes #21499)	App/SketchObject.cpp
+46a11b6538	2025-05-21	jffmichi	fix	0	0	open	1	n/a: the surplus push_back came with buildShape refactor 07bce810ae	Sketcher: remove surplus push_back to shapes (fixes #21499)	App/SketchObject.cpp
 41c750be47	2025-05-25	mosfet80	refactor	0	0	open	2		Sketcher: Remove unused variables (#21504)	App/SketchObject.cpp
-13e7952ccc	2025-05-29	theo-vt	fix	0	0	open	4		PartDesign: Fix hole centered on point edge case (#21257)	App/SketchObject.cpp
+13e7952ccc	2025-05-29	theo-vt	fix	0	0	open	4	have: getTopoShape resolves links and transforms by default	PartDesign: Fix hole centered on point edge case (#21257)	App/SketchObject.cpp
 b0e901bab6	2025-06-02	George Peden	feature	0	0	open	886		Sketcher: Implement hints for for all drawing tools and modes (consolidates previous PRs into a single PR) (#21632)	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/DrawSketchHandlerArcOfParabola.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSke
 46d626f368	2025-06-01	Matthias Danner	fix	0	0	n/a(uncompiled)	4		fix use of viewScalingFactor	Gui/EditModeCoinManager.cpp
 9b40afea7a	2025-06-02	tetektoza	feature	0	0	open	105		Sketcher: Do not allow mouse interruption while entering dimension (#20925)	Gui/DrawSketchController.h Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerPoint.h Gui/DrawSketchHandlerPolygon.h Gui/D
@@ -607,7 +607,7 @@ f72397ce19	2025-07-04	Luz Paz	noise	0	0	open	2		Fix various typos Found via code
 4b84834112	2025-07-06	theo-vt	?	0	0	open	18		Sketcher: Autoscale: do not scale dimension's position if it is a radius or diameter (#22308)	Gui/EditDatumDialog.cpp
 3e32ea5dd4	2025-07-07	Max Wilfinger	?	0	0	open	52		Sketcher: Update missed UI strings (#22363)	Gui/CommandSketcherOverlay.cpp Gui/CommandSketcherTools.cpp Gui/Workbench.cpp
 0e8a7b6319	2025-07-07	FEA-eng	feature	0	0	open	21		Sketcher: Add tooltip for autoscale feature (#22252)	Gui/SketcherSettings.ui
-1881686e72	2025-07-09	Fermin Olaiz	fix	0	0	open	7		Fix crash on out-of-bound vector access (#22397)	App/SketchObject.cpp
+1881686e72	2025-07-09	Fermin Olaiz	fix	0	0	open	7	n/a: no ExternalTypes property	Fix crash on out-of-bound vector access (#22397)	App/SketchObject.cpp
 c8bddd2f2b	2025-07-14	theo-vt	feature	0	0	open	126		Sketcher: assign the old geometries' GeometryId[s] to new geometries after scaling (#22263)	App/SketchObject.cpp App/SketchObject.h App/SketchObject.pyi App/SketchObjectPyImp.cpp Gui/DrawSketchHandlerScale.h
 0ecdb8b00e	2025-07-14	Florian Foinant-Willig	refactor	0	0	open	403	taken 88c9baa853	Sketcher: clean planegcs/Geo (#22378)	App/planegcs/Geo.cpp App/planegcs/Geo.h
 562d646082	2025-07-14	PaddleStroke	feature	0	0	open	100		Sketcher: add ConstraintLineByAngle helper. (#22273)	Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerRectangle.h Gui/Utils.cpp Gui/Utils.h
@@ -654,7 +654,7 @@ ab91372e28	2025-07-25	Chris Hennes	?	0	0	open	36		"Sketcher: Resolve ""Type conf
 cdf0097dec	2025-07-24	Chris Hennes	fix	1	0	open	2	taken 88c9baa853	Sketcher: Fix increment of parabola constraint tag	App/Sketch.cpp
 29da89febd	2025-07-25	Chris Hennes	refactor	0	0	open	54		Sketcher: Clean up some old commented out code	App/SketchObject.cpp App/SketchObject.h
 2da7c9ff17	2025-07-27	theo-vt	?	0	0	open	75		Sketcher: Change the style of the curves in creation to match the construction/defining flag (#22407)	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/EditModeCoinManagerParameters.cpp Gui/EditModeCoinManagerParameters.h Gui/Utils.h Gui/ViewProviderSketch.cpp
-3321b13218	2025-07-29	Johannes Wuller	fix	0	0	open	8		Sketcher: Fix external geometry out-of-bounds vector access (#22181)	App/SketchObject.cpp
+3321b13218	2025-07-29	Johannes Wuller	fix	0	0	open	8	n/a: no ExternalTypes property	Sketcher: Fix external geometry out-of-bounds vector access (#22181)	App/SketchObject.cpp
 f73e863a02	2025-08-04	luzpaz	noise	0	0	n/a(uncompiled)	5		Fix various typos (#22836)	Gui/EditModeCoinManager.cpp
 764b9cca0e	2025-07-27	Max Wilfinger	fix	0	0	open	22		Sketcher: Fix UI strings	Gui/Command.cpp Gui/SketcherSettings.ui Gui/TaskSketcherMessages.cpp Gui/TaskSketcherSolverAdvanced.cpp Gui/TaskSketcherSolverAdvanced.ui
 7dbb67cbe8	2025-08-03	Bas Ruigrok	feature	0	0	n/a(uncompiled)	1		Sketcher: Add missing finishEditing() for points	Gui/EditModeGeometryCoinManager.cpp
@@ -665,7 +665,7 @@ ccb28af4a1	2025-07-26	paddle	feature	0	0	open	767		"Sketcher: Rename ""Solver me
 a7b501c95c	2025-08-14	Matthias Danner	feature	0	0	open	11		remove edit value option from non dimensional constraints	Gui/ViewProviderSketch.cpp
 ed770bf849	2025-08-16	captain0xff	fix	0	0	open	6		Sketcher: fix cropping of some icons on hidpi screens	Gui/CommandConstraints.cpp Gui/EditModeConstraintCoinManager.cpp
 569deff94d	2025-08-18	PaddleStroke	?	0	0	n/a(uncompiled)	8		Sketcher: Coinmanager: remove dpi (#22941)	Gui/EditModeCoinManager.cpp
-1c67ab7be2	2025-08-18	Valentin Rusu	fix	0	0	open	4		Fix segfault where DatumLine does not have a refSubSHape	App/SketchObject.cpp
+1c67ab7be2	2025-08-18	Valentin Rusu	fix	0	0	open	4	have: null refSubShape skipped earlier	Fix segfault where DatumLine does not have a refSubSHape	App/SketchObject.cpp
 fc463ee5d7	2025-08-20	PaddleStroke	?	0	0	n/a(uncompiled)	6		Sketcher: Revert DPI adjustment error #22941 (#23237)	Gui/EditModeCoinManager.cpp
 9fc40b33de	2025-08-25	Max Wilfinger	noise	0	0	open	22		Fix source string mistakes reported on Crowdin (#23157)	Gui/CommandConstraints.cpp Gui/CommandSketcherBSpline.cpp Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandler.cpp Gui/DrawSketchHandlerBSpline.h Gui/SketcherSettingsAppearance.ui Gui/TaskSketcherValidation.cpp
 19a082b63c	2025-08-25	matthiasdanner	fix	0	0	open	237		Sketcher: Fix constraint selection in groups (#22937)	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
@@ -718,7 +718,7 @@ fa2e5cd5fe	2025-09-17	theo-vt	refactor	0	0	open	4		Sketcher: Use the right delet
 3872d0682d	2025-09-22	PaddleStroke	?	0	0	open	7		Sketcher: Improve circle constraint position (#23569)	Gui/DrawSketchController.h Gui/DrawSketchHandlerCircle.h
 46ec53f4da	2025-09-22	matthiasdanner	fix	0	0	open	197	partial 88c9baa853: App/SketchObject.cpp App/SketchObject.h App/SketchObjectPyImp.cpp Gui/EditModeConstraintCoinManager.cpp Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherConstraints.h	"Fix ""Show only Visible Constraints"" option (#23187)"	App/Constraint.cpp App/Constraint.h App/SketchObject.cpp App/SketchObject.h App/SketchObject.pyi App/SketchObjectPyImp.cpp Gui/EditModeConstraintCoinManager.cpp Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherConstraints.h
 ef670e7880	2025-09-16	Markus Reitbock	refactor	0	0	open	280	partial 88c9baa853: App/AppSketcher.cpp App/AppSketcherPy.cpp App/ExternalGeometryExtension.cpp App/ExternalGeometryExtensionPyImp.cpp App/ExternalGeometryFacade.cpp App/ExternalGeometryFacadePyImp.cpp App/GeoList.cpp App/Geomet	Sketcher: use CMake to generate precompiled headers on all platforms	App/AppSketcher.cpp App/AppSketcherPy.cpp App/CMakeLists.txt App/Constraint.cpp App/ConstraintPyImp.cpp App/ExternalGeometryExtension.cpp App/ExternalGeometryExtensionPyImp.cpp App/ExternalGeometryFacade.cpp App/ExternalGeometryFacadePyImp.cpp App/GeoEnum.cpp App/GeoEnum.h App/GeoList.cpp App/Geomet
-c3805ecf4a	2025-09-21	Markus Reitbock	fix	0	0	open	10		fix duplicate include guards in precompiled headers	App/PreCompiled.h Gui/PreCompiled.h
+c3805ecf4a	2025-09-21	Markus Reitbock	fix	0	0	open	10	taken 708be44c03	fix duplicate include guards in precompiled headers	App/PreCompiled.h Gui/PreCompiled.h
 5961651547	2025-09-23	matthiasdanner	?	0	0	open	3		Sketcher: Display non-empty Sketch when having external geometry (#23660)	Gui/ViewProviderSketch.cpp
 c6c084f22c	2025-09-23	theo-vt	fix	0	0	open	5		Sketcher: fix split breaking sketch (#23711)	App/SketchObject.cpp
 155edc0f53	2025-09-24	PaddleStroke	fix	0	0	open	203		Sketcher: Fix is active. (#24124)	Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherOverlay.cpp Gui/CommandSketcherTools.cpp Gui/Utils.cpp Gui/Utils.h
@@ -746,7 +746,7 @@ ef10f20351	2025-09-30	PaddleStroke	fix	1	0	open	3		Sketcher: Prevent non-edit to
 f90e73f64b	2025-09-25	paddle	feature	1	0	open	8		Sketcher: Force OVP visibility for offset and scale.	Gui/DrawSketchController.h Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerScale.h
 c2592271e8	2025-10-06	PaddleStroke	feature	0	0	open	22		Sketcher: remove edit tools from toolbar (#24229)	Gui/Workbench.cpp Gui/Workbench.h
 365af33fc6	2025-10-06	PaddleStroke	?	1	0	open	54	taken 88c9baa853	Sketcher: Symmetric arc when center is on symmetry line. (#24228)	App/Sketch.cpp
-331e51cdfc	2025-10-09	PaddleStroke	fix	0	0	open	11		Sketcher: Fix toggle construction not undoable (#24539)	App/SketchObject.cpp
+331e51cdfc	2025-10-09	PaddleStroke	fix	0	0	open	11	have: toggleConstructions clones and sets values	Sketcher: Fix toggle construction not undoable (#24539)	App/SketchObject.cpp
 ca8bfc6180	2025-10-09	PaddleStroke	?	0	0	open	35		Sketcher: Make ctrlA work with filter (#24541)	Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherElements.cpp Gui/ViewProviderSketch.cpp
 084003e361	2025-10-09		noise	0	0	open	7		Tests: Add/update SPDX header (#24547)	tests/App/CMakeLists.txt tests/App/Constraint.cpp tests/App/planegcs/CMakeLists.txt tests/CMakeLists.txt
 98d64f9939	2025-10-09	PaddleStroke	?	0	0	open	14		Sketcher: Element Task : clear selection when list selection is cleared	Gui/TaskSketcherElements.cpp Gui/TaskSketcherElements.h
@@ -797,14 +797,14 @@ efb10e1b28	2025-11-20	pjcreath	fix	0	0	open	5		Sketcher: prevent undo/redo crash
 e38154474a	2025-11-24	PaddleStroke	fix	1	0	open	23		Sketcher: Prevent bad coincidences (#25304)	Gui/CommandConstraints.cpp
 74aafcee75	2025-11-24	PaddleStroke	?	0	0	open	26		Sketcher: External Face: decide between defining and construction (#25390)	App/SketchObject.cpp
 bb0cd704fb	2025-11-24	Ajinkya Dahale	?	0	0	open	6		Merge pull request #25536 from AjinkyaDahale/patch-8	Gui/DrawSketchHandler.cpp
-8ea5075385	2025-12-02	marbocub	fix	0	0	open	6		Sketcher: Fix error when first constraint is DistanceX/DistanceY to vertex (#25813)	App/PythonConverter.cpp
+8ea5075385	2025-12-02	marbocub	fix	0	0	open	6	taken e4352d774d	Sketcher: Fix error when first constraint is DistanceX/DistanceY to vertex (#25813)	App/PythonConverter.cpp
 5f4fe75f5f	2025-11-27	tetektoza	refactor	0	0	open	23		Sketcher: Use constraint index instead of geoId as key in expr storage	Gui/SketcherTransformationExpressionHelper.cpp Gui/SketcherTransformationExpressionHelper.h
-6ddb0165ff	2025-12-02	PaddleStroke	fix	0	0	open	8		Sketcher: fix new external always construction (#25733)	App/SketchObject.cpp
+6ddb0165ff	2025-12-02	PaddleStroke	fix	0	0	open	8	n/a: no linkIsDefiningMap	Sketcher: fix new external always construction (#25733)	App/SketchObject.cpp
 1784be046f	2025-12-03	PaddleStroke	feature	0	0	open	9		Sketcher: Make VPSketch::addSelection public	Gui/ViewProviderSketch.h
 0c34c93fe4	2025-12-03	PaddleStroke	feature	0	0	open	8		Sketcher: dimension tool, use VPSketch version of addSelection	Gui/CommandConstraints.cpp
 67234e98b7	2025-12-05	PaddleStroke	fix	0	0	open	22		Sketcher: Offset: Fix failure if 2+ closed wires with different orientations (#25941)	Gui/DrawSketchHandlerOffset.h
 945ba15e18	2025-12-05	Sebastian	?	0	0	open	2		Match the string that gets sent to setCommand (#25964)	Gui/Workbench.cpp
-a49d106807	2025-12-05	PaddleStroke	fix	0	0	open	11		Sketcher: Fix errors message when selecting circle seam point. (#25953)	App/SketchObject.cpp
+a49d106807	2025-12-05	PaddleStroke	fix	0	0	open	11	adapted 329342b6bc	Sketcher: Fix errors message when selecting circle seam point. (#25953)	App/SketchObject.cpp
 78e5729520	2025-12-03	Ajinkya Dahale	fix	0	0	open	67		Sketcher: Handle angle constraint on sketchobject changes	App/SketchObject.cpp App/SketchObject.h
 0800791a0f	2025-12-12	Ajinkya Dahale	?	0	0	open	52		Sketcher: Only transfer angle to relevant segment on trim etc.	App/SketchObject.cpp
 bf697ca710	2025-12-13	Kacper Donat	refactor	0	0	n/a(uncompiled)	9		Gui: Use largest possible marker if needed	Gui/EditModeCoinManager.cpp
@@ -812,7 +812,7 @@ bf697ca710	2025-12-13	Kacper Donat	refactor	0	0	n/a(uncompiled)	9		Gui: Use larg
 50f029edd4	2025-12-16	Chris Hennes	noise	0	0	open	19		Sketcher: Compiler warning cleanup	Gui/Command.cpp Gui/CommandConstraints.cpp Gui/DrawSketchHandlerOffset.h Gui/EditModeCoinManager.cpp
 22552848fd	2025-12-17	chris	fix	1	0	open	5		sketcher: fixes issue #26167 no polygon distort when repositioning / constraining	Gui/DrawSketchControllableHandler.h
 4cd81136b6	2025-12-21	Chris	feature	0	0	open	261		Sketcher: Allow live preview of sketch placement (#26033)	CMakeLists.txt Gui/ViewProviderSketch.cpp SketcherTests/TestPlacementUpdate.py TestSketcherApp.py
-176ef6da4e	2025-12-22	marbocub	fix	0	0	open	374		Sketcher: add reverse mapping correction to Carbon Copy (#25745)	App/SketchObject.cpp App/SketchObject.pyi App/SketchObjectPyImp.cpp CMakeLists.txt SketcherTests/TestSketchCarbonCopyReverseMapping.FCStd SketcherTests/TestSketchCarbonCopyReverseMapping.py TestSketcherApp.py
+176ef6da4e	2025-12-22	marbocub	fix	0	0	open	374	adapted 92e5004b51: mirror about the local origin, not the Placement; fork's copied-expression path corrected too	Sketcher: add reverse mapping correction to Carbon Copy (#25745)	App/SketchObject.cpp App/SketchObject.pyi App/SketchObjectPyImp.cpp CMakeLists.txt SketcherTests/TestSketchCarbonCopyReverseMapping.FCStd SketcherTests/TestSketchCarbonCopyReverseMapping.py TestSketcherApp.py
 eb61ee36a6	2025-12-23	Chris	fix	0	0	open	52		sketcher: fix issue #25992 keep snapped position when releasing mosue for updated sketch points (#26102)	Gui/ViewProviderSketch.cpp
 670da3d796	2025-12-25		noise	0	0	open	377	partial 88c9baa853: App/Analyse.h App/AppSketcher.cpp App/AppSketcherPy.cpp App/ExternalGeometryExtension.cpp App/ExternalGeometryExtension.h App/ExternalGeometryExtensionPyImp.cpp App/ExternalGeometryFacade.cpp App/ExternalGeometryFacade.h	SPDX [ 41 ][ Src / Mod / Sketcher ] (#25135)	App/Analyse.h App/AppSketcher.cpp App/AppSketcherPy.cpp App/CMakeLists.txt App/Constraint.cpp App/Constraint.h App/ConstraintPyImp.cpp App/ExternalGeometryExtension.cpp App/ExternalGeometryExtension.h App/ExternalGeometryExtensionPyImp.cpp App/ExternalGeometryFacade.cpp App/ExternalGeometryFacade.h 
 4892154faf	2025-12-26	horseDeveloper	fix	1	0	open	10		Fixing Leftover references from migration from freecadweb.org (#26163)	Gui/DrawSketchHandlerOffset.h Gui/Resources/icons/constraints/Constraint_Dimension.svg Gui/Resources/icons/constraints/Constraint_Dimension_Driven.svg Gui/Resources/icons/tools/Sketcher_Rotate.svg Gui/Resources/icons/tools/Sketcher_Scale.svg
@@ -850,13 +850,13 @@ c19eb5c0e0	2026-01-06	pre-commit-ci[bot]	noise	0	0	open	333		[pre-commit.ci] aut
 b1fdf659d8	2026-01-06	tetektoza	?	1	0	n/a(uncompiled)	12		Sketcher: Disable depth testing for constraint icons	Gui/EditModeConstraintCoinManager.cpp
 d0c7ab7d62	2026-01-07	Leandro Heck	feature	0	0	open	26		Sketcher: Support Bezier and Offset curves as external geometry (#25144)	App/PreCompiled.h App/SketchObject.cpp
 69058376e6	2026-01-07	tritao	?	0	0	open	105		Base: Remove Boost-based signals and switch to `FastSignals`.	App/PropertyConstraintList.h App/SketchObject.h Gui/DrawSketchDefaultWidgetController.h Gui/SketcherToolDefaultWidget.h Gui/TaskDlgEditSketch.h Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherConstraints.h Gui/TaskSketcherElements.h Gui/TaskSketcherTool.h Gui/ViewProviderSketch.h
-db8c90b788	2026-01-08	Saksham Malhotra	fix	0	0	open	20		Fix sketch redundancy warning (#26064)	App/SketchObject.cpp
+db8c90b788	2026-01-08	Saksham Malhotra	fix	0	0	open	20	declined: the notifier already names the sketch; a formatted string loses its translation	Fix sketch redundancy warning (#26064)	App/SketchObject.cpp
 887c8d3bdf	2026-01-07	tetektoza	fix	0	0	open	2		Sketcher: Fix crash when applying constraints during selection batching	Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherElements.cpp
 e1a431d5ee	2026-01-13	Ajinkya Dahale	feature	0	0	open	88		Sketcher: Use new constraint element access in `add/getSymmetric`	App/SketchObject.cpp
 14280cdbf7	2026-01-13	Ajinkya Dahale	feature	0	0	open	4		Sketcher: Add new constraints after running `addSymmetric`	App/SketchObject.cpp
-fc82d71c15	2026-01-13	PaddleStroke	fix	0	0	open	15		Sketcher: Fix symmetry of slot redundancy false positive (#26604)	App/SketchObject.cpp
+fc82d71c15	2026-01-13	PaddleStroke	fix	0	0	open	15	taken 7b2b094b38	Sketcher: Fix symmetry of slot redundancy false positive (#26604)	App/SketchObject.cpp
 c14d6f8848	2026-01-16	Syres916	feature	0	0	open	7		[Sketcher] set vertex size for new sketches to preference otherwise ... (#26908)	Gui/ViewProviderSketch.cpp
-cf93c33359	2026-01-18	Yash Suthar	fix	0	0	open	72		Sketcher: Fix external geometry creation from LCS (#26946)	App/SketchObject.cpp Gui/DrawSketchHandlerExternal.h
+cf93c33359	2026-01-18	Yash Suthar	fix	0	0	open	72	n/a: no App::DatumElement / LCS datum elements in the fork	Sketcher: Fix external geometry creation from LCS (#26946)	App/SketchObject.cpp Gui/DrawSketchHandlerExternal.h
 0a45527b8b	2026-01-18	Syres916	noise	0	0	open	3		[Sketcher] Fix serious integer typo	Gui/ViewProviderSketch.cpp
 af053f19f5	2026-01-19	PaddleStroke	fix	0	0	open	8		Sketcher: Fix box selection regressions. And make addSelections Print to python (#26869)	Gui/ViewProviderSketch.cpp
 9beca4363a	2026-01-20	Yash Suthar	?	0	0	open	2		"Sketcher: Switch to perpendicular based instead of ""de la Hire"" in setting minor axis of ellipse"	Gui/DrawSketchHandlerEllipse.h
@@ -871,13 +871,13 @@ a0847c22c7	2026-01-27	PaddleStroke	fix	0	0	open	9		Sketcher: fix logic flaw in C
 8a6872e69d	2026-02-03	PaddleStroke	feature	0	0	open	31		Merge pull request #25848 from PaddleStroke/sk_scale_distances	App/SketchObject.cpp App/SketchObject.h Gui/CommandConstraints.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 41e3cdb9a5	2026-02-04	Tomas Pikalek	feature	0	0	n/a(uncompiled)	13		Sketcher: Reimplement strikethrough of inactive constraint labels	Gui/EditModeConstraintCoinManager.cpp
 5f952812c3	2026-02-08	William Skellenger	fix	0	0	open	15		Fix tooltips on mirror checkboxes in sketcher (#27131)	Gui/DrawSketchHandlerSymmetry.h
-c4317f88f8	2026-02-04	chris jones @ipatch	fix	0	0	open	6		"sketcher: fixes #27281 fix access out of bounds crash with ""remove axes alignment"""	App/SketchObject.cpp
+c4317f88f8	2026-02-04	chris jones @ipatch	fix	0	0	open	6	adapted 3bfb748012	"sketcher: fixes #27281 fix access out of bounds crash with ""remove axes alignment"""	App/SketchObject.cpp
 2cd45b07f7	2026-01-22	Yash Suthar	fix	0	0	open	13		Sketcher: Fix snap while drag and fix drag for arc	Gui/ViewProviderSketch.cpp
 ecbe21ca03	2026-02-08	Chris Hennes	?	0	0	open	1		Sketcher: Annotate unused parameter	Gui/EditDatumDialog.cpp
 ec18d4e250	2026-02-08	Chris Hennes	?	0	0	open	3		Tests/Sketcher: Eliminate unused variables	tests/App/SketchObjectChanges.cpp
 076c5916b5	2026-02-08	Chris Hennes	?	0	0	n/a(uncompiled)	95		Sketcher: Remove unneeded parameters from seekConstraintPosition	Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h
 5d81f8ac16	2026-02-13	Loke Strm	fix	0	0	open	221		Sketcher: Fix: Arc of ellipse when first and second X coordinates are the same (#27327)	Gui/DrawSketchHandlerArcOfEllipse.h
-885b8cf1de	2026-02-13	PaddleStroke	fix	0	0	open	18		Sketcher : SketchObject::getHigherElements fix (#27560)	App/SketchObject.cpp
+885b8cf1de	2026-02-13	PaddleStroke	fix	0	0	open	18	have: fork has ObjEditing and the loop	Sketcher : SketchObject::getHigherElements fix (#27560)	App/SketchObject.cpp
 9cbef0c5ce	2026-02-13	theo-vt	?	0	0	open	25		Sketcher.scale: scale constraint with the right index (#27188)	Gui/DrawSketchHandlerScale.h
 928b55c6e6	2026-02-15	Louis Gombert	?	0	0	open	4		Replace all uses of FC_TIME_X/FC_DURATION_X	App/SketchObject.cpp
 bb5afb911a	2026-02-16	PaddleStroke	fix	0	0	open	36		Sketcher: Fix loss of expression on trim (#27505)	App/SketchObject.cpp
@@ -888,7 +888,7 @@ be6af47f29	2026-02-18	PaddleStroke	feature	0	0	open	17		Sketcher: Offset: add ch
 ca9e1ecdf3	2026-02-22		noise	0	0	open	704	partial 88c9baa853: App/Analyse.h App/ExternalGeometryExtension.h App/ExternalGeometryFacade.h App/GeoList.h App/GeometryFacade.h App/Measure.h App/PreCompiled.h App/PropertyConstraintList.h App/PythonConverter.h App/SketchAnalysis.h App/SketchGeometryExtension.h App/SketchOb	All: Header Guards -> Pragma Once (#27154)	App/Analyse.h App/Constraint.h App/ExternalGeometryExtension.h App/ExternalGeometryFacade.h App/GeoEnum.h App/GeoList.h App/GeometryFacade.h App/Measure.h App/PreCompiled.h App/PropertyConstraintList.h App/PythonConverter.h App/Sketch.h App/SketchAnalysis.h App/SketchGeometryExtension.h App/SketchOb
 92894ea3a8	2026-02-23	theo-vt	?	0	0	open	249	taken 88c9baa853	Sketcher: Evaluate driven constraints rather than solving them (#26632)	App/planegcs/Constraints.cpp App/planegcs/Constraints.h App/planegcs/GCS.cpp App/planegcs/GCS.h
 0b44a3f6c8	2026-01-16	Louis Gombert	?	0	0	open	4	taken 88c9baa853	Sketcher: Optimize eliminateNonZerosOverPivotInUpperTriangularMatrix for sparse matrices	App/planegcs/GCS.cpp
-e89d849bb7	2026-02-23		fix	0	0	open	3		[ Sketcher ]: Fix Windows Include (#27829)	App/PreCompiled.h
+e89d849bb7	2026-02-23		fix	0	0	open	3	n/a: fork's PreCompiled.h keeps the _PreComp_ switch	[ Sketcher ]: Fix Windows Include (#27829)	App/PreCompiled.h
 34ae16cd01	2026-02-23	theo-vt	fix	0	0	open	29	taken 88c9baa853	Sketcher: fix evaluation of driven diameter constraint	App/Sketch.cpp App/planegcs/Constraints.cpp
 8caa218950	2025-03-10	wmayer	fix	1	0	open	13		Sketcher: Handle exception in DrawSketchHandlerOffset::drawOffsetPreview	Gui/DrawSketchHandlerOffset.h
 be1ec84709	2025-10-06	Florian Foinant-Willig	?	0	0	open	240	partial 88c9baa853: Gui/CommandConstraints.cpp	Sketcher: extend Perpendicular constraint to point point line	App/ConstraintPyImp.cpp App/Sketch.cpp App/Sketch.h App/planegcs/Constraints.cpp App/planegcs/Constraints.h App/planegcs/GCS.cpp App/planegcs/GCS.h Gui/CommandConstraints.cpp
@@ -953,7 +953,7 @@ aab4bf329a	2026-03-28	Gregg Jaskiewicz	fix	1	0	open	2		Sketcher: Fix TextNodePos
 00f547d67c	2026-03-28	Gregg Jaskiewicz	fix	0	0	open	4		Gui: Fix use-after-free in QTimer lambdas capturing this	Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherElements.cpp
 2deee96cab	2026-04-04	Bojan	fix	0	0	open	2		Sketcher: fix inverted null check in purgeHandler leaving selection enabled	Gui/ViewProviderSketch.cpp
 0939408c21	2026-04-13	ilya	fix	0	0	open	268		Sketcher: fix internal faces for self-intersecting BSplines and dangling edges (#28964)	SketcherTests/TestSketchInternalFaces.py
-d0b98703c0	2026-02-13	wwmayer	fix	0	0	open	7		Sketcher: Fix workaround of PR 19700	App/SketchObjectExternal.cpp
+d0b98703c0	2026-02-13	wwmayer	fix	0	0	open	7	adapted ae323bf5a9: y averaged before the back-rotation; upstream's flattens tilted lines	Sketcher: Fix workaround of PR 19700	App/SketchObjectExternal.cpp
 652b25811d	2026-04-12	Chris Hennes	?	0	0	open	30		Sketcher: remove obsolete backwards compat hack	App/SketchObject.cpp App/SketchObject.h App/SketchObjectExternal.cpp
 29771d4a0a	2026-04-14	Joao Matos	fix	0	0	open	221		Sketcher: add rectangle OVP Enter regression test	CMakeLists.txt InitGui.py SketcherTests/TestOnViewParameterGui.py TestSketcherApp.py TestSketcherGui.py
 e228ab8616	2026-04-14	Joao Matos	feature	0	0	open	15		Gui: split OVP accept from live value changes	Gui/DrawSketchController.h
@@ -971,7 +971,7 @@ a5bf17b144	2026-04-24	Olaf ogin	?	0	0	open	15		Core: Box selection filter and cu
 b4de78d3d7	2026-04-16	Celeste Wouters	?	0	0	open	12		Sketcher: make line type settings DPI-aware	Gui/SketcherSettings.cpp
 ab9188a5dc	2026-04-16	Celeste Wouters	refactor	0	0	open	205		Sketcher: properly use theme colors in line type settings	Gui/SketcherSettings.cpp Gui/SketcherSettings.h
 94c486184c	2026-04-26	Ladislav Michl	fix	0	0	open	2		Sketcher: fix initialization order	Gui/ViewProviderSketch.cpp
-d9910ce9bc	2026-04-27	PaddleStroke	fix	0	0	open	318		Sketcher: Fix PythonConverter cropping precision (#29211)	App/PythonConverter.cpp
+d9910ce9bc	2026-04-27	PaddleStroke	fix	0	0	open	318	adapted 9ffed788d9	Sketcher: Fix PythonConverter cropping precision (#29211)	App/PythonConverter.cpp
 b2c51665a2	2026-04-29	Rehan Ahmed	refactor	0	0	open	2		Convert Qt Dialog titles to title case	Gui/Command.cpp
 ebd770e025	2026-05-01	Alfredo Monclus	fix	0	0	open	110		Merge pull request #29477 from alfrix/fix_ovp_4	Gui/DrawSketchKeyboardManager.cpp Gui/DrawSketchKeyboardManager.h
 a2468774d3	2026-05-03	ilya	?	0	0	open	2		Gui: prioritize annotation picks over shape picks at same location (#29253)	Gui/ViewProviderSketch.cpp
@@ -987,7 +987,7 @@ fa3d63d7d4	2026-04-14	Lokestrom	fix	0	0	open	8		Fixed unused variables.	Gui/Draw
 30912c1d4e	2026-05-05	Louis Gombert	?	0	0	open	4		Remove gtest as submodule, always find it externally	tests/CMakeLists.txt
 160db2afd6	2026-05-07	Pieter Hijma	?	1	0	open	1		Sketcher: Make common between OCCT 7 and OCCT 8	Gui/DrawSketchHandlerOffset.h
 99c2f19dfc	2026-05-14	David Osterberg	fix	0	0	open	2		Sketcher: Fix Trim Edge shortcut hijacked by new Text tool (#29721)	Gui/CommandCreateGeo.cpp
-a9942be046	2026-05-03	andershol	fix	0	0	open	5		Sketcher: Remove incorrect optimization due to isSame not checking solver result	App/SketchObjectConstraints.cpp
+a9942be046	2026-05-03	andershol	fix	0	0	open	5	declined: removes the fork's own isSame optimisation (db62f72188); no failing case given	Sketcher: Remove incorrect optimization due to isSame not checking solver result	App/SketchObjectConstraints.cpp
 a00fe1e886	2026-05-14	Celeste Wouters	fix	0	0	open	4		Sketcher: fix line style dropdowns being empty	Gui/SketcherSettings.cpp
 4dbd16a31c	2026-05-16	Louis Gombert	fix	0	0	open	2		Fix -Winconsistent-missing-override by adding missing 'override'	Gui/TaskDlgEditSketch.h
 97e7b9d1f2	2026-05-15	Bojan	fix	0	0	open	56		Sketcher: fix AutoColor not updating colors immediately when enabled	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h SketcherTests/TestOnViewParameterGui.py
@@ -1061,7 +1061,7 @@ fbf590e7d8	2026-07-06	PaddleStroke	fix	0	0	open	6		Sketcher: Polyline: fix angle
 aa26d9ff8a	2026-07-08	Tari	feature	0	0	open	43		Created new icon variant for external construction geometry (#28507)	Gui/TaskSketcherElements.cpp
 ea6469a7d7	2026-07-08	Max Wilfinger	feature	0	0	open	19		Sketcher: Add custom hint check for dimension tool (#30944)	Gui/CommandConstraints.cpp
 3d9921e71a	2026-07-08	Max Wilfinger	?	0	0	n/a(uncompiled)	40		Gui: Improve selection colors (#31050)	Gui/EditModeCoinManagerParameters.cpp
-cc802c341d	2026-07-05	wwmayer	fix	0	0	open	8		Sketcher: Fix crash in SketchObject::rebuildExternalGeometry	App/SketchObject.cpp App/SketchObjectExternal.cpp
+cc802c341d	2026-07-05	wwmayer	fix	0	0	open	8	taken 4e6df1319a	Sketcher: Fix crash in SketchObject::rebuildExternalGeometry	App/SketchObject.cpp App/SketchObjectExternal.cpp
 5f90e988a0	2026-06-15	PaddleStroke	fix	0	0	open	17		Sketcher: Copy: fix crash when external selected	Gui/CommandSketcherTools.cpp
 93feb3ce51	2026-06-22	Joao Matos	?	0	0	n/a(uncompiled)	334		Sketcher: score typed preselection candidates	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h SketcherTests/TestConstraintPreselectionGui.py
 46a0498069	2026-07-12	Matthias Danner	?	1	0	open	518		Sketcher_CreateFillet_Constr Sketcher_CreateFillet_Constr	Gui/Resources/Sketcher.qrc Gui/Resources/icons/geometry/Sketcher_CreateFillet_Constr.svg
@@ -1103,7 +1103,7 @@ c2d6248bc7	2026-08-10	John Lewin	feature	0	0	open	212		Add dimensional constrain
 ed848d3251	2026-08-12	John Lewin	feature	0	0	n/a(uncompiled)	56		Add missing pref group observer to EditModeCoinManager (#31892)	Gui/EditModeCoinManager.cpp
 90ca7a30d9	2026-08-13	John Lewin	feature	0	0	open	80		Add axis line width preference (#31679)	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManagerParameters.h Gui/SketcherSettings.cpp Gui/SketcherSettingsAppearance.ui
 8c1d03ccb4	2026-08-14	PaddleStroke	feature	0	0	open	3		Core: Add VP actions to view right click for consistency. (#30990)	Gui/ViewProviderSketch.cpp
-884192e005	2026-08-16	Flaviu Tamas	fix	0	0	open	7		Sketcher: fix memory leak	App/SketchObjectConstraints.cpp
+884192e005	2026-08-16	Flaviu Tamas	fix	0	0	open	7	taken bec74e1472	Sketcher: fix memory leak	App/SketchObjectConstraints.cpp
 f8890114fa	2026-08-16	Flaviu Tamas	?	0	0	open	13		suggested unique pointer approach	App/SketchObjectConstraints.cpp
 ed932218ec	2026-08-16	pre-commit-ci[bot]	noise	0	0	open	10		[pre-commit.ci] auto fixes from pre-commit.com hooks	App/SketchObjectConstraints.cpp
 3ec51da2cb	2026-08-19	matthiasdanner	feature	0	0	open	137		Sketcher: Add Angle Constraint to Polygon (#31180)	Gui/DrawSketchHandlerPolygon.h
@@ -1115,7 +1115,7 @@ a540d47665	2026-08-23	Max Wilfinger	?	0	0	open	54		Sketcher: Harden delayed drag
 72faf72088	2026-08-26	Joao Matos	?	0	0	open	104		Complete Sketcher and Part geometry signatures	App/Constraint.pyi App/SketchObject.pyi
 38c68f353d	2026-08-28	Joao Matos	?	0	0	open	20		Generate stubs for C++-registered dynamic properties	App/PropertyPythonContracts.pyi App/SketchObject.pyi
 ce1b63584c	2026-08-12	Joao Matos	?	0	0	n/a(uncompiled)	1		Sketcher: keep angle constraint labels in front of model	Gui/EditModeConstraintCoinManager.cpp
-e06290557d	2026-08-27	wwmayer	fix	0	0	open	69		Sketcher: Fix adding ellipse	App/SketchObjectExternal.cpp CMakeLists.txt SketcherTests/TestSketcherEllipse.py TestSketcherApp.py
+e06290557d	2026-08-27	wwmayer	fix	0	0	open	69	taken f7c3d7bff4	Sketcher: Fix adding ellipse	App/SketchObjectExternal.cpp CMakeLists.txt SketcherTests/TestSketcherEllipse.py TestSketcherApp.py
 2b9bd823bc	2026-08-27	wwmayer	feature	0	0	open	26		Sketch: Add test case for rotated ellipse	SketcherTests/TestSketcherEllipse.py
 cb5a28acd7	2026-08-28	Joao Matos	?	0	0	n/a(uncompiled)	150		Sketcher: connect distance labels to finite geometry	CMakeLists.txt Gui/EditModeConstraintCoinManager.cpp SketcherTests/TestDistanceLabelExtensionGui.py TestSketcherGui.py
 566a724c26	2026-08-29	Michael Bujnovsky	?	0	0	open	60		Refresh active Sketcher preview on construction mode changes (#32245)	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/ViewProviderSketch.cpp
@@ -1138,17 +1138,17 @@ b9368b17a8	2026-08-29	Joao Matos	refactor	0	0	n/a(uncompiled)	30		Sketcher: spli
 084379651a	2026-09-07	paddle	fix	0	0	open	22		Sketcher: Fix Constraint coincident tool gives error when applying two points on the same line  #20771	Gui/CommandConstraints.cpp
 828b85fae1	2026-09-07	paddle	?	1	0	open	4		Sketcher: Offset fully constraint the construction lines 17930	Gui/DrawSketchHandlerOffset.h
 deeb43198d	2026-09-07	paddle	fix	0	0	open	8		Sketcher: Fix Sketcher: OVP 270 degree internal angle for 3 corners rectangle results in over-contrained sketch (since v0.22) #12321	Gui/DrawSketchHandlerRectangle.h
-82ec32f9e9	2026-09-07	paddle	fix	0	0	open	47		Sketcher: Fix MissingVerticalHorizontal false positive #21396	App/SketchAnalysis.cpp SketcherTests/TestSketcherSolver.py
+82ec32f9e9	2026-09-07	paddle	fix	0	0	open	47	taken 798e88bfd5	Sketcher: Fix MissingVerticalHorizontal false positive #21396	App/SketchAnalysis.cpp SketcherTests/TestSketcherSolver.py
 55c36e8c03	2026-09-08	PaddleStroke	fix	0	0	open	7		Sketcher: Fix Cancelling Sketcher B-spline creation tools leaves behind (#32457)	Gui/DrawSketchHandler.cpp
 0c6b877daa	2026-09-07	paddle	fix	1	0	n/a(uncompiled)	10		Sketcher: Fix constraint text cutoff 21269	Gui/EditModeConstraintCoinManager.cpp
-9d7073ce7b	2026-09-08	PaddleStroke	fix	1	0	open	22		Sketcher: Fix Geometry Extension Not Working on Point Object (#32453)	SketcherTests/TestSketcherSolver.py
+9d7073ce7b	2026-09-08	PaddleStroke	fix	1	0	open	22	taken 9b9c4d4a3a	Sketcher: Fix Geometry Extension Not Working on Point Object (#32453)	SketcherTests/TestSketcherSolver.py
 16a836743a	2026-09-07	paddle	fix	0	0	open	11		Sketcher: Fix updating a spreadsheet dimension does not update an open sketch 17036	Gui/ViewProviderSketch.cpp
 07b2d9973d	2026-09-08	PaddleStroke	fix	0	0	open	30		Sketcher: Report in tree and tree item tooltip when broken external (#32478)	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 0540f90a15	2026-09-08	Joao Matos	fix	0	0	open	33		Sketcher: avoid origin hit in marker GUI test	SketcherTests/TestOnViewParameterGui.py
 880335a0f2	2026-09-09	007stevendigar-lgtm	fix	1	0	open	4		Fix grid line width tooltips	Gui/SketcherSettingsGrid.ui
 ceeeba26b2	2026-05-27	andershol	refactor	0	0	open	4		Build: Simplify use of SET_BIN_DIR	App/CMakeLists.txt Gui/CMakeLists.txt
 69b04222cc	2026-09-11	Chris Hennes	fix	0	0	open	2		Sketcher: Correct Transformed() call on BBox	Gui/ViewProviderSketch.cpp
-5b43180899	2026-09-11	PaddleStroke	fix	0	0	open	20		Sketcher: Fix sketch recompute does not honor configured Sketcher default solver (#32461)	App/SketchObject.cpp
+5b43180899	2026-09-11	PaddleStroke	fix	0	0	open	20	taken 30b9838f3c	Sketcher: Fix sketch recompute does not honor configured Sketcher default solver (#32461)	App/SketchObject.cpp
 fe7c1d18be	2026-09-12	PaddleStroke	fix	0	0	open	2833		Sketcher: dismiss handler when triggering constraints (#32467)	CMakeLists.txt Gui/CommandConstraints.cpp SketcherTests/TestConstraintCommandsGui.py TestSketcherGui.py
 cfd1cdfb36	2026-09-12	Max Wilfinger	fix	0	0	open	7		Gui: Fix LCS attachment (#32401)	Gui/Command.cpp
 

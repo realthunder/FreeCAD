@@ -1,8 +1,8 @@
 # Sketcher: picking upstream fixes and features
 
-Status (2026-09-15): phase 0 done -- ledger, the SketchObject.cpp split,
-upstream's App-level Python tests and the three defects they exposed; phase 1
-(solver + constraint model) next. Branch `SketcherPort` off `RemoteEdit`
+Status (2026-09-15): phases 0 and 1 done; phase 2 (App fixes) under way --
+the standalone fixes are in (section 6a), the trim/split refactor, external
+projection, internal faces and fillet rows are open. Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
 
@@ -310,6 +310,123 @@ to `switch` rewrites in `setDatum` and `setTextAndFont` are not taken.
 
 **Verified.** Build OK; ctest 667/667; Python 2851 OK (22 expected failures);
 `TestSketcherApp` 94 OK (16 expected failures).
+
+### Standalone App fixes (`c53ba6a814` .. `619abdfac4`)
+
+The open App rows of kind `fix` were triaged by script first
+(`git show -U0` per commit; each non-trivial added or removed line looked up,
+whitespace-insensitive, in the fork's file, `SketchObject.cpp` meaning all five
+split files), then by reading every diff against the fork's code. Nineteen
+picks, one commit each:
+
+| upstream | fork | what |
+|---|---|---|
+| `ab5b53e972` | `c53ba6a814` | `fitArcs` middle parameter initialised |
+| `cc802c341d` | `4e6df1319a` | throw, not assert, on an ExternalGeometry size mismatch |
+| `8ea5075385` | `e4352d774d` | PythonConverter: DistanceX/Y on one vertex keeps its position |
+| `c4317f88f8` | `3bfb748012` | `removeAxesAlignment` read past its index list |
+| `fc82d71c15` | `7b2b094b38` | mirrored arcs with symmetry constraints no longer come out redundant |
+| `884192e005` | `bec74e1472` | `port_reversedExternalArcs` leak when only analysing |
+| 5 Coverity moves | `36a52b0ac2` | move instead of copy |
+| `e06290557d` | `f7c3d7bff4` | ellipse projecting to a circle divided by zero (4 markers off) |
+| `82ec32f9e9` | `798e88bfd5` | missing vertical/horizontal detection skips active constraints (1 marker off) |
+| `d0b98703c0` | `ae323bf5a9` | a projected edge collapsing to a line keeps one y (adapted, below) |
+| `5b43180899` | `30b9838f3c` | recompute uses the configured default solver |
+| `d2637ec881` | `e8315e9a39` | shape built from the solved geometry |
+| `27dd14174e` | `814e0c8f30` | a defining external point is a vertex of the shape |
+| `a49d106807` | `329342b6bc` | a circle's seam vertex resolves outside edit mode |
+| `c3805ecf4a` | `708be44c03` | module-specific precompiled-header guards |
+| `176ef6da4e` | `92e5004b51` | Carbon Copy from a flipped sketch mirrors the copy (adapted, below; 1 marker off) |
+| `2032a9d844` | `8550ffdc64` | PythonConverter writes B-spline knots, multiplicities and weights |
+| `d9910ce9bc` | `9ffed788d9` | PythonConverter writes geometry with 8 decimals |
+| `9d7073ce7b` | `9b9c4d4a3a` | Part: a point's Python object keeps its extensions (1 marker off) |
+| `52935f8249` | `619abdfac4` | Python bindings for degenerate geometry and constraint validation (3 markers off) |
+
+`2032a9d844` was not in the fix list: the fork's converter wrote a B-spline as
+`Part.BSplineCurve(poles, None, None, periodic, degree, None, False)`, dropping
+knots, multiplicities and weights, and turned up while adapting `d9910ce9bc`.
+Its upstream history is behind the grafted root `057d51f846`, so pickaxe
+searches past July 2026 find only that commit; the ledger's subjects found it.
+
+**Verified**, detached, on the combined tree: build OK; ctest 667/667; Python
+2851 OK (50 skipped, 12 expected failures, down from 22); `TestSketcherApp` 94
+OK (6 expected failures, down from 16). After the first 14 picks the same run
+gave 17 and 11. The old-file check shows only the known cases (section 6a,
+"Old-file check, corrected"): `CAMTests/Drilling_1.FCStd` `Sketch` came out
+moved by 0.0045 in the multi-file run where the previous run had -1, and alone
+it solves; a sweep of N unrelated solves before it fails at N = 1, 3 and 9 --
+history dependence, which the phase-1 baseline library showed too (moved
+0.00178 in one run).
+
+**Two upstream defects not carried over.**
+
+- `d0b98703c0` averages the two y values of a line measured from a bounding
+  box *after* rotating the points back into the sketch frame. That flattens
+  every such line whose plane is not aligned with the sketch axes. The fork
+  averages in the rotated frame, where the line runs along x. Checked: a
+  circle in a vertical plane turned 30 deg projects to a line along its trace
+  (cross product 5.6e-17), of length 10, centred on the circle.
+- `176ef6da4e` mirrors a carbon-copied geometry about the sketch Placement's
+  position and rotated axes, but the geometry is in sketch coordinates. For a
+  flipped sketch offset along its normal (a sketch on the underside of a pad)
+  that lifts the copy off the sketch plane: offset 10 puts it at local z = 20.
+  Upstream's test fixture has every Placement at the origin. The fork mirrors
+  about the local origin and axes. Checked: a flipped sketch at z = 10 gets the
+  copy at local z = 0, matching the source in global XY, still solving. The
+  fork also copies a source constraint's own expression when it does not
+  depend on the source sketch; that path gets the same sign correction.
+
+**Also checked by probe** (not covered by any suite): a defining external
+vertex gives one shape vertex and a clean recompute; `;g1v1;SKT.Vertex1` on a
+circle resolves; a rational non-uniform B-spline round-trips through
+`toPythonCommands` with identical knots, multiplicities and weights and poles
+within 3e-9.
+
+**Decided without a pick** (ledger `decision` column has the reason):
+already here -- `3f79626799` `a36a60d29d` `885b8cf1de` `331e51cdfc`
+`1c67ab7be2` `13e7952ccc` `28b62eb52b`; not applicable to the fork's code --
+`858e59fabf` `cf8ad66373` `760091bc8a` `46a11b6538` `1881686e72`
+`3321b13218` `6ddb0165ff` `4c8fadd68d` `e89d849bb7` `70d11e33dc`
+`78e2a12d2d` `358942b771` `832a0653fa` `cf93c33359`; superseded by
+`6456f287c4` -- `cebcb7f66c` `f2e57b4eb4`.
+
+Declined:
+
+- `a9942be046` removes `if (!Geometry.isSame(tmp))` from `solve()`. That check
+  is the fork's own (`db62f72188`, to avoid touching the sketch while editing);
+  `isSame` compares within `Precision::Confusion()` plus the extensions, and
+  upstream gave no failing case.
+- `db8c90b788` formats the partially-redundant warning with the sketch name.
+  The notifier already names the sketch, and a formatted string no longer
+  matches its translation.
+- `0fbb300fe4` (comment removal), `6adebe348e` (`std::move` of a returned
+  value).
+
+**Still open on the App side.**
+
+- **The trim/split/internal-geometry refactor** (Ajinkya Dahale, 2024-11 ..
+  2026): about fifty commits that restructure `trim`, `split`, `join`,
+  `transferConstraints`, `replaceGeometries`, the B-spline knot and pole
+  operations and `deleteUnusedInternalGeometry`, with fixes on top (`226d24792d`
+  `502b7b9a3f` `350a416708` `404482f48e` `51cf34a596` `73253bd2d4`
+  `aa1122c774` `c6c084f22c` `bbbff1f8f1` `bb5afb911a` `78e5729520`
+  `474f704e6c`) and upstream's C++ tests for them. `eab485656f`
+  (`DeleteOptions`) is tied in: `split` uses `DeleteOption::NoSolve`, and the
+  Scale tool uses it. The fork has none of the refactor, so its fixes do not
+  apply as picks.
+- **External projection** `0aed23ca81` `0921ed2969` `ec24bd8c21`: upstream
+  restructured projection into free `processEdge`/`processFace`/`projectShape`
+  helpers, while the fork keeps it inline in `rebuildExternalGeometry`. These
+  need behaviour probes of their issues (19582, 19831) against the fork, not
+  diff reading.
+- **Internal faces** `24ab301685` + `0939408c21` (3 markers): a new
+  `Part::FaceMakerBuildFace`.
+- **Fillet** `6d06b61c7e` (3 markers): a behaviour change -- unconnected lines
+  no longer fillet.
+- `83d14b785e`: the App crash path is not in the fork's `delExternalPrivate`
+  (it sets the values once); the Gui half and the `delExternals` binding are
+  phase 3.
+- The `SketchAnalysis` refactor series of 2024-05-28.
 
 ## 7. Phases
 
