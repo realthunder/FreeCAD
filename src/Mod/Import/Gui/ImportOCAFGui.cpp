@@ -56,7 +56,10 @@ void ImportOCAFGui::applyFaceColors(Part::Feature* part, const std::vector<App::
 
     if (colors.size() == 1) {
         vp->ShapeColor.setValue(colors.front());
-        vp->Transparency.setValue(100 * colors.front().a);
+        // The alpha component is an opacity (Base/Color.h), and Transparency
+        // is a percentage of the other kind: an opaque STEP colour used to
+        // import as Transparency 100 -- a fully transparent part.
+        vp->Transparency.setValue(100 * colors.front().transparency());
     }
     else {
         vp->DiffuseColor.setValues(colors);
