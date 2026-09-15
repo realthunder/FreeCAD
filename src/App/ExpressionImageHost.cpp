@@ -610,6 +610,12 @@ uint64_t ImageHost::exportObject(PyObject* obj)
     return d->handles.add(obj);
 }
 
+void ImageHost::setPrefetch(bool on)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    d->handles.setPrefetch(on);
+}
+
 void ImageHost::clearHandles()
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);

@@ -16,6 +16,10 @@ What is asserted:
     fixed layout;
   - a call on the document returns an object; write_prop on it lands and
     read_prop reads it back; ops sent back to back are answered in order;
+  - the prefetch (C5): a read off one of the document's objects brings the
+    same read of the 32 after it, the next miss twice as many, a
+    fixed-layout read carrying them is answered as CBOR, and a member that
+    crosses as a handle brings none;
   - the end of a statement releases its handles (a stale id is refused), and
     a durable key re-resolves afterwards;
   - the client principal holds (C3): app.new_doc is refused, not promptable,
@@ -308,6 +312,45 @@ def client(port):
             rd,
         )
 
+        objs = b.op({"op": "get_attr", "h": doc_h, "a": "Objects"})
+        ids = [
+            v["id"]
+            for v in (objs.get("val") if objs.get("ok") else [])
+            if isinstance(v, dict) and v.get("t") == "h"
+        ]
+        add("the document's objects cross as a list of handles", len(ids) == 100, len(ids))
+        if len(ids) == 100:
+            first = b.op({"op": "get_attr", "h": ids[0], "a": "Name"})
+            pf = first.get("pf") or []
+            add(
+                "prefetch: a read off one object brings the same read of the 32 after it",
+                first.get("val") == "Box"
+                and [p[0] for p in pf] == ids[1:33]
+                and [p[1] for p in pf] == ["Sib%02d" % i for i in range(32)],
+                first,
+            )
+            second = b.op({"op": "get_attr", "h": ids[33], "a": "Name"})
+            add(
+                "prefetch: the next miss brings twice as many",
+                [p[0] for p in second.get("pf") or []] == ids[34:98],
+                second,
+            )
+            fx = b.raw(fixed_get_attr(ids[98], "Name"))
+            fxr = cbor_decode(fx[2:]) if fx and fx[:2] == b"\xf2\x00" else None
+            add(
+                "prefetch: a fixed-layout read carrying it is answered as CBOR",
+                isinstance(fxr, dict)
+                and fxr.get("val") == "Sib97"
+                and [p[0] for p in fxr.get("pf") or []] == ids[99:],
+                fx,
+            )
+            hd = b.op({"op": "get_attr", "h": ids[0], "a": "Document"})
+            add(
+                "prefetch: a member that crosses as a handle brings none",
+                is_handle(hd) and "pf" not in hd,
+                hd,
+            )
+
         seqs = [b.send(cbor_encode({"op": "get_attr", "h": box_h, "a": "Name"})) for _ in range(3)]
         answers = [b.answer(s) for s in seqs]
         names = [cbor_decode(a).get("val") if a else None for a in answers]
@@ -441,6 +484,8 @@ def build():
         FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document").SetInt("AutoSaveTimeout", 0)
         doc = FreeCAD.newDocument(DOC, hidden=True)
         doc.addObject("Part::Box", "Box")
+        for i in range(99):
+            doc.addObject("App::FeaturePython", "Sib%02d" % i)
         doc.recompute()
         FreeCAD.newDocument(OTHER, hidden=True)
         port = wsclient.free_port()

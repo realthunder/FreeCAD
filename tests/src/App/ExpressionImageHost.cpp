@@ -836,6 +836,87 @@ TEST_F(ExpressionImageEvalTest, bridgeCountersPerOp)
     host.clearHandles();
 }
 
+TEST_F(ExpressionImageEvalTest, prefetchAnswersSiblingReads)
+{
+    // docs/Sandbox.md 7.20, C5: on a table that prefetches (a remote
+    // guest's endpoint; turned on here to run the guest's half in
+    // process), a read off one element of a list brings the same read of
+    // the elements after it, and the guest answers those without a hop --
+    // until an op that may write, and never past the statement.
+    auto& host = ImageHost::instance();
+    for (int i = 0; i < 40; ++i) {
+        auto o = doc->addObject("App::FeaturePython", ("P" + std::to_string(i)).c_str());
+        auto w = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            o->addDynamicProperty("App::PropertyFloat", "Width"));
+        ASSERT_NE(w, nullptr);
+        w->setValue(i);
+        auto v = Base::freecad_dynamic_cast<App::PropertyVector>(
+            o->addDynamicProperty("App::PropertyVector", "Pos"));
+        ASSERT_NE(v, nullptr);
+        v->setValue(Base::Vector3d(i, 0, 0));
+    }
+    struct PrefetchOff
+    {
+        ~PrefetchOff()
+        {
+            ImageHost::instance().setPrefetch(false);
+        }
+    } off;
+    auto run = [&](const char* src, bool prefetch, const char* op) {
+        host.setPrefetch(prefetch);
+        host.clearHandles();
+        host.resetStats();
+        auto r = host.eval(src, objectBinding("d", doc));
+        EXPECT_TRUE(r.ok) << src << ": " << r.excType << ": " << r.message;
+        auto n = host.stats().ops[op];
+        return std::make_pair(r.ok ? value(r) : json(), n);
+    };
+
+    // a declared attribute: 41 names, one hop each without the prefetch;
+    // with it the list, the first miss (32 more) and the second (the rest)
+    const char* names = "[o.Name for o in d.Objects]";
+    auto [namesOff, hopsOff] = run(names, false, "get_attr");
+    auto [namesOn, hopsOn] = run(names, true, "get_attr");
+    EXPECT_EQ(namesOn, namesOff);
+    ASSERT_TRUE(namesOn.is_array());
+    EXPECT_EQ(namesOn.size(), 41u);
+    EXPECT_EQ(hopsOff, 42u);
+    EXPECT_EQ(hopsOn, 3u);
+
+    // a property, the same
+    const char* widths = "[o.Width for o in d.Objects[1:]]";
+    auto [widthsOff, readsOff] = run(widths, false, "read_prop");
+    auto [widthsOn, readsOn] = run(widths, true, "read_prop");
+    EXPECT_EQ(widthsOn, widthsOff);
+    EXPECT_EQ(readsOff, 40u);
+    EXPECT_EQ(readsOn, 2u);
+
+    // a write forgets what was prefetched: the read after it sees it
+    auto [written, n1] = run(
+        "(lambda l: [l[1].Width, setattr(l[2], 'Width', 99.0), l[2].Width])(d.Objects)",
+        true, "read_prop");
+    ASSERT_TRUE(written.is_array());
+    ASSERT_EQ(written.size(), 3u);
+    EXPECT_DOUBLE_EQ(written[0].get<double>(), 0.0);
+    EXPECT_DOUBLE_EQ(written[2].get<double>(), 99.0);
+    EXPECT_EQ(n1, 2u);
+
+    // a hit is a fresh value, as natively
+    auto [fresh, n2] = run(
+        "(lambda l: [l[1].Pos.x, l[2].Pos is l[2].Pos])(d.Objects)",
+        true, "read_prop");
+    ASSERT_TRUE(fresh.is_array());
+    ASSERT_EQ(fresh.size(), 2u);
+    EXPECT_EQ(fresh[1], json(false));
+    EXPECT_EQ(n2, 1u);
+
+    // a member that crosses as a handle prefetches nothing: no handle is
+    // minted that the guest did not ask for
+    auto [docs, hops] = run("len([o.Document for o in d.Objects])", true, "get_attr");
+    EXPECT_EQ(docs, json(41));
+    EXPECT_EQ(hops, 42u);
+}
+
 TEST_F(ExpressionImageEvalTest, writePropSameDocument)
 {
     // write_prop and the write-family calls (addProperty,

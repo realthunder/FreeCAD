@@ -6,10 +6,14 @@ scripts/delay-proxy.js between Chrome and the server and has
 scripts/console-drive.js open web/latency-test.html through it. The page boots
 the guest over the proxied socket and times a fixed set of statements; its rows
 come back here as NOTE lines, one table per RTT, with the boot times and the
-page's processes' memory at three marks. RTT 0 is no proxy at all.
+page's processes' memory at three marks. RTT 0 is no proxy at all. Each RTT
+runs with the host's prefetch of sibling reads on and off (FC_SANDBOX_PREFETCH,
+read when the connection's endpoint is made); SANDBOX_LATENCY_MODES narrows
+that to "on" or "off".
 
-A C5 measurement, not a gate: it checks only that every statement ran at every
-RTT, made the same number of bridge ops at each, and cost at least ops x RTT.
+A C5 measurement, not a gate: it checks only that every statement ran in every
+run, made the same number of bridge ops at each RTT of one mode, and cost at
+least ops x RTT.
 The figures go to $GT_OUT/latency.json. SANDBOX_LATENCY_RTTS overrides the list
 of RTTs in ms. Not registered, for the reason docs/Testing.md gives; the
 environment is the one tests/gui/sandbox-console-browser.py names:
@@ -46,6 +50,8 @@ PROXY = os.path.join(REPO, "scripts", "delay-proxy.js")
 DOC = "SandboxLatencyBrowser"
 TOKEN = "c5-latency-token"
 RTTS = [int(x) for x in os.environ.get("SANDBOX_LATENCY_RTTS", "0,2,10,30,100").split(",")]
+MODES = os.environ.get("SANDBOX_LATENCY_MODES", "on,off").split(",")
+RUNS = [(rtt, mode) for mode in MODES for rtt in RTTS]
 RUN_WAIT_S = 600
 
 os.environ["FC_BGFX_VIEWER_BUILD"] = WASM
@@ -120,8 +126,9 @@ def build():
 
 def start_run():
     try:
-        rtt = RTTS[state["i"]]
-        run = {"rtt": rtt, "proxy": None, "lines": [], "t0": time.perf_counter()}
+        rtt, mode = RUNS[state["i"]]
+        os.environ["FC_SANDBOX_PREFETCH"] = "1" if mode == "on" else "0"
+        run = {"rtt": rtt, "mode": mode, "proxy": None, "lines": [], "t0": time.perf_counter()}
         state["runs"].append(run)
         port = state["port"]
         if rtt > 0:
@@ -144,8 +151,8 @@ def start_run():
             DOC,
             reps,
         )
-        note("NOTE RTT %d ms: %s" % (rtt, url))
-        log = open(os.path.join(OUT, "drive-rtt%d.log" % rtt), "w")
+        note("NOTE RTT %d ms, prefetch %s: %s" % (rtt, mode, url))
+        log = open(os.path.join(OUT, "drive-rtt%d-%s.log" % (rtt, mode)), "w")
         run["proc"] = subprocess.Popen(
             [state["node"], DRIVER, url, "fcxLatency", str((RUN_WAIT_S - 30) * 1000)],
             stdout=subprocess.PIPE,
@@ -172,7 +179,11 @@ def poll():
     run = state["runs"][-1]
     if run["proc"].poll() is None:
         if time.perf_counter() - run["t0"] > RUN_WAIT_S:
-            check("RTT %d ms: the page reported" % run["rtt"], False, "timed out")
+            check(
+                "RTT %d ms, prefetch %s: the page reported" % (run["rtt"], run["mode"]),
+                False,
+                "timed out",
+            )
             run["proc"].kill()
             finish()
             return
@@ -183,14 +194,14 @@ def poll():
         run["proxy"].kill()
     collect(run)
     state["i"] += 1
-    if state["i"] < len(RTTS):
+    if state["i"] < len(RUNS):
         QtCore.QTimer.singleShot(0, start_run)
     else:
         summarize()
 
 
 def collect(run):
-    rtt = run["rtt"]
+    rtt = "%d ms, prefetch %s:" % (run["rtt"], run["mode"])
     report = None
     for line in run["lines"]:
         if line.startswith("REPORT "):
@@ -200,12 +211,12 @@ def collect(run):
                 pass
     run["report"] = report
     if not check(
-        "RTT %d ms: the page reported" % rtt,
+        "RTT %s the page reported" % rtt,
         report is not None,
         "exit %s" % run["proc"].returncode,
     ):
         return
-    check("RTT %d ms: the guest booted" % rtt, not report.get("error"), report.get("error", ""))
+    check("RTT %s the guest booted" % rtt, not report.get("error"), report.get("error", ""))
     note(
         "NOTE RTT %d ms: connect %s ms, runtime %s ms, wheels %s ms"
         % (rtt, report.get("connectMs"), report.get("runtimeMs"), report.get("wheelsMs"))
@@ -213,7 +224,7 @@ def collect(run):
     for row in report.get("rows", []):
         best = min(row["ms"]) if row["ms"] else -1
         check(
-            "RTT %d ms: %s" % (rtt, row["name"]),
+            "RTT %s %s" % (rtt, row["name"]),
             row["ok"],
             "%d ops, best %.1f ms, bridge %.1f ms | %s"
             % (row["ops"], best, min(row["bridgeMs"] or [-1]), row["detail"]),
@@ -237,32 +248,41 @@ def collect(run):
 
 
 def summarize():
-    base = state["runs"][0].get("report")
-    if base:
-        for run in state["runs"][1:]:
+    for mode in MODES:
+        runs = [r for r in state["runs"] if r["mode"] == mode]
+        base = runs[0].get("report") if runs else None
+        if not base:
+            continue
+        for run in runs[1:]:
             rep = run.get("report")
             if not rep:
                 continue
-            rtt = run["rtt"]
+            what = "RTT %d ms, prefetch %s:" % (run["rtt"], mode)
             same = [r["ops"] for r in rep["rows"]] == [r["ops"] for r in base["rows"]]
-            check("RTT %d ms: every statement made the ops it made direct" % rtt, same)
-            floor = all(min(r["ms"]) >= 0.9 * r["ops"] * rtt for r in rep["rows"] if r["ok"])
-            check("RTT %d ms: every statement cost at least ops x RTT" % rtt, floor)
-        # One table: statement, ops, then best ms per RTT.
+            check(what + " every statement made the ops it made direct", same)
+            floor = all(min(r["ms"]) >= 0.9 * r["ops"] * run["rtt"] for r in rep["rows"] if r["ok"])
+            check(what + " every statement cost at least ops x RTT", floor)
+        # One table per mode: statement, ops, then best ms per RTT.
+        note("NOTE prefetch %s" % mode)
         head = "%-44s %5s" % ("statement", "ops") + "".join(
-            " %9s" % ("%d ms" % run["rtt"]) for run in state["runs"]
+            " %9s" % ("%d ms" % run["rtt"]) for run in runs
         )
         note("NOTE " + head)
         for k, row in enumerate(base["rows"]):
             cells = []
-            for run in state["runs"]:
+            for run in runs:
                 rep = run.get("report")
                 rows = rep["rows"] if rep else []
                 cells.append(" %9.1f" % min(rows[k]["ms"]) if k < len(rows) else " %9s" % "-")
             note("NOTE %-44s %5d" % (row["name"], row["ops"]) + "".join(cells))
     with open(os.path.join(OUT, "latency.json"), "w") as f:
         json.dump(
-            [{"rtt": r["rtt"], "report": r.get("report")} for r in state["runs"]], f, indent=1
+            [
+                {"rtt": r["rtt"], "mode": r["mode"], "report": r.get("report")}
+                for r in state["runs"]
+            ],
+            f,
+            indent=1,
         )
     finish()
 

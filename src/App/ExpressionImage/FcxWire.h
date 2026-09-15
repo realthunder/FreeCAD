@@ -186,6 +186,17 @@ inline const char* const OpFunctionCall = "fcall";
 // Neither magic byte begins a CBOR document this wire produces (a map
 // starts 0xA0-0xBF); a request without the magic is CBOR as before.
 // Releases pending in the guest force the CBOR form (they ride "r").
+// Prefetch (docs/Sandbox.md 7.20, C5).  A host table that prefetches -- a
+// remote guest's endpoint, where every hop is a network round trip --
+// answers a read_prop / get_attr off one element of a list it handed out
+// with the same read of the elements after it, next to "val":
+//   "pf": [[id, value], ...]
+// By-value results only (a read answered by a handle prefetches nothing),
+// 32 siblings at the first miss of that member in that list, twice as many
+// at each miss after, at most 1024, within 20 ms of host time.  The guest
+// answers those reads from them, each decoded afresh, until its next op
+// that may write, and forgets them when the host request ends.  A
+// fixed-layout reply carrying "pf" is kind 0, CBOR.
 inline constexpr uint8_t FixedRequestMagic = 0xF1;
 inline constexpr uint8_t FixedReplyMagic = 0xF2;
 inline constexpr uint8_t FixedOpReadProp = 1;

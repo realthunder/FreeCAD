@@ -20,6 +20,7 @@
 
 #include "PreCompiled.h"
 
+#include <chrono>
 #include <cstring>
 #include <map>
 #include <set>
@@ -345,6 +346,34 @@ void HandleTable::clear()
     objects.clear();
     ids.clear();
     uses.clear();
+    siblingLists.clear();
+    siblingOf.clear();
+    chunks.clear();
+}
+
+void HandleTable::noteSiblings(std::vector<uint64_t> list)
+{
+    if (!prefetching || list.size() < 2)
+        return;
+    const std::size_t index = siblingLists.size();
+    for (std::size_t i = 0; i < list.size(); ++i)
+        siblingOf[list[i]] = {index, i};
+    siblingLists.push_back(std::move(list));
+}
+
+std::vector<uint64_t> HandleTable::nextSiblings(uint64_t id, const std::string& name)
+{
+    std::vector<uint64_t> out;
+    auto at = siblingOf.find(id);
+    if (!prefetching || at == siblingOf.end())
+        return out;
+    const auto& list = siblingLists[at->second.first];
+    std::size_t& chunk = chunks[{at->second.first, name}];
+    chunk = chunk ? std::min<std::size_t>(chunk * 2, 1024) : 32;
+    for (std::size_t i = at->second.second + 1; i < list.size() && out.size() < chunk; ++i)
+        if (objects.count(list[i]))
+            out.push_back(list[i]);
+    return out;
 }
 
 
@@ -681,6 +710,18 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
                     table, PySequence_Fast_GET_ITEM(seq, i)));
             bool isTuple = PyTuple_Check(obj);
             Py_DECREF(seq);
+            // a list of objects is what a loop reads the same member off
+            // (docs/Sandbox.md 7.20, C5)
+            if (table.prefetch()) {
+                std::vector<uint64_t> handles;
+                for (const auto& e : arr) {
+                    auto t = e.is_object() ? e.find(FcxWire::TagKey) : e.end();
+                    if (e.is_object() && t != e.end() && t->is_string()
+                            && *t == FcxWire::TagHandle && !e.contains("m"))
+                        handles.push_back(e["id"].get<uint64_t>());
+                }
+                table.noteSiblings(std::move(handles));
+            }
             if (isTuple)
                 return json {{FcxWire::TagKey, FcxWire::TagTuple},
                              {"v", std::move(arr)}};
@@ -1121,7 +1162,8 @@ std::vector<unsigned char> dispatchHostOpFixed(HandleTable& table,
         std::memcpy(&bits, &d, 8);
         put64(bits);
     };
-    if (reply.value("ok", false)) {
+    // prefetched reads ride only the CBOR form
+    if (reply.value("ok", false) && !reply.contains("pf")) {
         auto val = reply.find("val");
         if (val != reply.end()) {
             if (val->is_number_float()) {
@@ -1357,6 +1399,155 @@ static json applicationOp(HandleTable& table, const std::string& op, const json&
     return encodeResult(table, r);
 }
 
+/// get_attr: a DECLARED attribute of the handle's object.
+static json readAttribute(HandleTable& table, PyObject* base, const std::string& name)
+{
+    // The closed table is the whole reachable surface: an
+    // undeclared member is a protocol error, never a getattr
+    // (docs/ExpressionSandbox.md sec 7.5).
+    const FacadeMember* fm = memberLookupOn(base, name.c_str());
+    if (!fm || fm->kind != FacadeKind::Attribute)
+        return errReply("ProtocolError",
+                        "member '" + name + "' of '" + Py_TYPE(base)->tp_name
+                            + "' is not declared for sandbox access");
+    PyObject* result = PyObject_GetAttrString(base, name.c_str());
+    if (!result)
+        return pyErrorReply();
+    try {
+        ExpressionSecurity::checkGetattr(base, name.c_str(), result);
+    }
+    catch (...) {
+        Py_DECREF(result);
+        throw;
+    }
+    json reply = encodeResult(table, result);
+    if (fm->tier == FacadeTier::Value && reply.value("ok", false)) {
+        const json& val = reply["val"];
+        if (val.is_object() && val.value(FcxWire::TagKey, "") == FcxWire::TagHandle)
+            return errReply("ProtocolError",
+                            "by-value member '" + name + "' produced a non-marshalable result");
+    }
+    return reply;
+}
+
+/// read_prop: answered from the C++ property system, never host Python
+/// (sec 7.5): dynamic properties are not XML members, but
+/// getPropertyByName is typed, side-effect free, and still
+/// permission-classified per principal.
+static json readProperty(HandleTable& table, PyObject* base, const std::string& name)
+{
+    if (!PyObject_TypeCheck(base, &App::PropertyContainerPy::Type))
+        return errReply("AttributeError",
+                        "'" + std::string(Py_TYPE(base)->tp_name) + "' object has no attribute '"
+                            + name + "'");
+    auto* container = static_cast<App::PropertyContainerPy*>(base)->getPropertyContainerPtr();
+    App::Property* prop = container ? container->getPropertyByName(name.c_str()) : nullptr;
+    if (!prop)
+        return errReply("AttributeError",
+                        "'" + std::string(Py_TYPE(base)->tp_name) + "' object has no attribute '"
+                            + name + "'");
+    PyObject* result = prop->getPyObject();
+    if (!result)
+        return pyErrorReply();
+    try {
+        ExpressionSecurity::checkGetattr(base, name.c_str(), result);
+    }
+    catch (...) {
+        Py_DECREF(result);
+        throw;
+    }
+    return encodeResult(table, result);
+}
+
+/// Whether a wire value holds anything the table minted or names.
+static bool carriesHandle(const json& v)
+{
+    if (v.is_object()) {
+        auto t = v.find(FcxWire::TagKey);
+        if (t != v.end() && t->is_string()
+                && (*t == FcxWire::TagHandle || *t == FcxWire::TagGuestFunction
+                    || *t == FcxWire::TagGuestProxy))
+            return true;
+        for (const auto& e : v)
+            if (carriesHandle(e))
+                return true;
+    }
+    else if (v.is_array()) {
+        for (const auto& e : v)
+            if (carriesHandle(e))
+                return true;
+    }
+    return false;
+}
+
+/// Give back the uses a value's handles took (a prefetch that is dropped).
+static void releaseHandlesIn(HandleTable& table, const json& v)
+{
+    if (v.is_object()) {
+        auto t = v.find(FcxWire::TagKey);
+        auto id = v.find("id");
+        if (t != v.end() && t->is_string()
+                && (*t == FcxWire::TagHandle || *t == FcxWire::TagGuestFunction)
+                && id != v.end() && id->is_number_unsigned())
+            table.release(id->get<uint64_t>());
+        for (const auto& e : v)
+            releaseHandlesIn(table, e);
+    }
+    else if (v.is_array()) {
+        for (const auto& e : v)
+            releaseHandlesIn(table, e);
+    }
+}
+
+/// How long one reply may spend prefetching.
+static constexpr int PrefetchBudgetMs = 20;
+
+/** The prefetch (docs/Sandbox.md 7.20, C5; FcxWire "pf"): `reply`, a
+ * successful read of `name` off handle `id`, also carries the same read of
+ * the siblings after `id` in the list it came in.  By value only -- a read
+ * whose answer is a handle prefetches nothing, and a sibling's that is one
+ * is dropped, so the table mints nothing the guest did not ask for.  The
+ * checks are the op's own; a sibling that fails any is left for the guest
+ * to ask, and answered as it would have been.
+ */
+static void prefetchSiblings(HandleTable& table,
+                             uint64_t id,
+                             const std::string& name,
+                             bool property,
+                             json& reply)
+{
+    if (!reply.value("ok", false) || carriesHandle(reply["val"]))
+        return;
+    const auto t0 = std::chrono::steady_clock::now();
+    json pf = json::array();
+    for (uint64_t sid : table.nextSiblings(id, name)) {
+        PyObject* sib = table.get(sid);
+        if (!sib)
+            continue;
+        json r;
+        try {
+            r = property ? readProperty(table, sib, name) : readAttribute(table, sib, name);
+        }
+        catch (...) {
+            if (PyErr_Occurred())
+                PyErr_Clear();
+            continue;
+        }
+        if (!r.value("ok", false))
+            continue;
+        json& val = r["val"];
+        if (carriesHandle(val)) {
+            releaseHandlesIn(table, val);
+            continue;
+        }
+        pf.push_back(json::array({sid, std::move(val)}));
+        if (std::chrono::steady_clock::now() - t0 > std::chrono::milliseconds(PrefetchBudgetMs))
+            break;
+    }
+    if (!pf.empty())
+        reply["pf"] = std::move(pf);
+}
+
 json dispatchHostOp(HandleTable& table, const json& req)
 {
     Base::PyGILStateLocker lock;
@@ -1561,73 +1752,17 @@ json dispatchHostOp(HandleTable& table, const json& req)
             return callWithWireArgs(table, base, req);
         }
 
-        if (op == FcxWire::OpGetAttr) {
+        if (op == FcxWire::OpGetAttr || op == FcxWire::OpReadProp) {
+            const bool property = op == FcxWire::OpReadProp;
             auto a = req.find("a");
             if (a == req.end() || !a->is_string())
-                return errReply("ProtocolError", "get_attr without a name");
-            const std::string& name = a->get_ref<const std::string&>();
-            // The closed table is the whole reachable surface: an
-            // undeclared member is a protocol error, never a getattr
-            // (docs/ExpressionSandbox.md sec 7.5).
-            const FacadeMember* fm = memberLookupOn(base, name.c_str());
-            if (!fm || fm->kind != FacadeKind::Attribute)
                 return errReply("ProtocolError",
-                                "member '" + name + "' of '"
-                                    + Py_TYPE(base)->tp_name
-                                    + "' is not declared for sandbox access");
-            PyObject* result = PyObject_GetAttrString(base, name.c_str());
-            if (!result)
-                return pyErrorReply();
-            try {
-                ExpressionSecurity::checkGetattr(base, name.c_str(), result);
-            }
-            catch (...) {
-                Py_DECREF(result);
-                throw;
-            }
-            json reply = encodeResult(table, result);
-            if (fm->tier == FacadeTier::Value && reply.value("ok", false)) {
-                const json& val = reply["val"];
-                if (val.is_object() && val.value(FcxWire::TagKey, "") == FcxWire::TagHandle)
-                    return errReply("ProtocolError",
-                                    "by-value member '" + name
-                                        + "' produced a non-marshalable result");
-            }
-            return reply;
-        }
-
-        if (op == FcxWire::OpReadProp) {
-            // Answered from the C++ property system, never host Python
-            // (sec 7.5): dynamic properties are not XML members, but
-            // getPropertyByName is typed, side-effect free, and still
-            // permission-classified per principal.
-            auto a = req.find("a");
-            if (a == req.end() || !a->is_string())
-                return errReply("ProtocolError", "read_prop without a name");
+                                property ? "read_prop without a name" : "get_attr without a name");
             const std::string& name = a->get_ref<const std::string&>();
-            if (!PyObject_TypeCheck(base, &App::PropertyContainerPy::Type))
-                return errReply("AttributeError",
-                                "'" + std::string(Py_TYPE(base)->tp_name)
-                                    + "' object has no attribute '" + name + "'");
-            auto* container = static_cast<App::PropertyContainerPy*>(base)
-                                  ->getPropertyContainerPtr();
-            App::Property* prop =
-                container ? container->getPropertyByName(name.c_str()) : nullptr;
-            if (!prop)
-                return errReply("AttributeError",
-                                "'" + std::string(Py_TYPE(base)->tp_name)
-                                    + "' object has no attribute '" + name + "'");
-            PyObject* result = prop->getPyObject();
-            if (!result)
-                return pyErrorReply();
-            try {
-                ExpressionSecurity::checkGetattr(base, name.c_str(), result);
-            }
-            catch (...) {
-                Py_DECREF(result);
-                throw;
-            }
-            return encodeResult(table, result);
+            json reply = property ? readProperty(table, base, name) : readAttribute(table, base, name);
+            if (table.prefetch())
+                prefetchSiblings(table, id, name, property, reply);
+            return reply;
         }
 
         // The write gate (FcxWire::OpWriteProp and the write-family

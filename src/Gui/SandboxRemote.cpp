@@ -39,6 +39,8 @@
 #include <App/ExpressionSecurityRuntime.h>
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
+#include <cstdlib>
+#include <cstring>
 #endif
 
 using namespace Gui;
@@ -62,6 +64,15 @@ std::map<uint64_t, std::unique_ptr<Endpoint>>& endpoints()
 {
     static std::map<uint64_t, std::unique_ptr<Endpoint>> map;
     return map;
+}
+
+/// Prefetch sibling reads (docs/Sandbox.md 7.20, C5) -- a page's guest is a
+/// round trip away -- unless FC_SANDBOX_PREFETCH=0, which measures the
+/// bridge without it.
+bool prefetchWanted()
+{
+    const char* v = std::getenv("FC_SANDBOX_PREFETCH");
+    return !(v && std::strcmp(v, "0") == 0);
 }
 
 /// Release every handle; the table holds a reference per entry.
@@ -95,8 +106,10 @@ std::vector<uint8_t> dispatch(App::Document* doc, const Render::SceneBridgeReque
     client.readOnly = req.viewOnly;
 
     auto& slot = endpoints()[req.client];
-    if (!slot)
+    if (!slot) {
         slot = std::make_unique<Endpoint>();
+        slot->table.setPrefetch(prefetchWanted());
+    }
     Endpoint& e = *slot;
 
     Base::PyGILStateLocker lock;

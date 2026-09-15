@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -41,6 +42,58 @@ using nlohmann::json;
  * hops in a draftgeoutils workload were single releases.
  */
 static std::vector<uint64_t> g_pendingReleases;
+
+/* Prefetched reads (FcxWire "pf", docs/Sandbox.md 7.20 C5).  A host a
+ * round trip away answers a read off one element of a list with the same
+ * read of the elements after it; a loop over the list then finds its next
+ * reads here instead of making a hop each.  Keyed by handle id, op and
+ * member; kept as wire values and decoded afresh at each hit, so a value
+ * is a new object every time, as natively.  Forgotten before any op that
+ * may write -- a read after a write sees the write -- and at the start and
+ * the end of every host request (ImageDispatch dispatch()).  What the
+ * DESKTOP does between two ops of one statement is not seen: the values
+ * are as of the read that brought them (ruled 2026-09-15).
+ */
+static std::unordered_map<std::string, json> g_prefetched;
+
+static std::string prefetchKey(uint64_t id, bool property, const char *name, size_t nlen)
+{
+    std::string key = std::to_string(id);
+    key += property ? '\x01' : '\x02';
+    key.append(name, nlen);
+    return key;
+}
+
+/// The ops that change nothing on the host; any other one forgets the
+/// prefetched reads before it goes.
+static bool readsOnly(const char *op)
+{
+    static const char *const reads[] = {
+        FcxWire::OpReadProp, FcxWire::OpGetAttr, FcxWire::OpGetItem, FcxWire::OpLen,
+        FcxWire::OpBool, FcxWire::OpStr, FcxWire::OpExt, FcxWire::OpActiveDoc,
+        FcxWire::OpAppDocs, FcxWire::OpAppDoc, FcxWire::OpResolve, FcxWire::OpResolveAlias,
+        FcxWire::OpModGet, FcxWire::OpLibSource, FcxWire::OpPkgMissing, FcxWire::OpRelease,
+    };
+    for (const char *r : reads)
+        if (strcmp(op, r) == 0)
+            return true;
+    return false;
+}
+
+static void notePrefetched(const json &reply, bool property, const char *name, size_t nlen)
+{
+    auto pf = reply.find("pf");
+    if (pf == reply.end() || !pf->is_array())
+        return;
+    for (const auto &e : *pf)
+        if (e.is_array() && e.size() == 2 && e[0].is_number_unsigned())
+            g_prefetched[prefetchKey(e[0].get<uint64_t>(), property, name, nlen)] = e[1];
+}
+
+void FcxImage::clearPrefetched()
+{
+    g_prefetched.clear();
+}
 
 #ifdef FC_EXPR_PYODIDE
 #define FCX_IMPORT_MODULE "env"
@@ -133,6 +186,22 @@ static PyObject *fcx_op(PyObject *, PyObject *args)
     if (!PyArg_ParseTuple(args, "sK|OOO", &op, &id, &a1, &a2, &a3))
         return nullptr;
 
+    // a read the host already answered, or an op that makes those stale
+    const bool property = strcmp(op, FcxWire::OpReadProp) == 0;
+    const bool bareRead = (property || strcmp(op, FcxWire::OpGetAttr) == 0) && a1 && !a2
+        && PyUnicode_Check(a1);
+    Py_ssize_t readLen = 0;
+    const char *readName = bareRead ? PyUnicode_AsUTF8AndSize(a1, &readLen) : nullptr;
+    if (bareRead && !readName)
+        return nullptr;
+    if (readName && !g_prefetched.empty()) {
+        auto hit = g_prefetched.find(prefetchKey(id, property, readName, (size_t)readLen));
+        if (hit != g_prefetched.end())
+            return FcxImage::decodeValue(hit->second);
+    }
+    if (!readsOnly(op))
+        g_prefetched.clear();
+
     // The fixed layout (FcxWire.h): a bare read_prop / get_attr with a
     // name, no releases waiting -- the hop that dominates, without CBOR
     // on either side.  Anything else takes the CBOR form below.
@@ -209,6 +278,7 @@ static PyObject *fcx_op(PyObject *, PyObject *args)
                     raiseFromReply(reply);
                     return nullptr;
                 }
+                notePrefetched(reply, property, name, (size_t)nlen);
                 auto val = reply.find("val");
                 return FcxImage::decodeValue(val != reply.end() ? *val : json());
             }
@@ -268,6 +338,8 @@ static PyObject *fcx_op(PyObject *, PyObject *args)
         raiseFromReply(reply);
         return nullptr;
     }
+    if (readName)
+        notePrefetched(reply, property, readName, (size_t)readLen);
     auto val = reply.find("val");
     return FcxImage::decodeValue(val != reply.end() ? *val : json());
 }
