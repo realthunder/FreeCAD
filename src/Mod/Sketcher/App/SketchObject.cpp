@@ -930,7 +930,9 @@ void SketchObject::onChanged(const App::Property* prop)
         }
         if(detached.size()) {
             auto objs = ExternalGeometry.getValues();
-            assert(externalGeoRef.size() == objs.size());
+            if (externalGeoRef.size() != objs.size()) {
+                throw Base::RuntimeError("Inconsistency with external geometries");
+            }
             auto itObj = objs.begin();
             auto subs = ExternalGeometry.getSubValues();
             auto itSub = subs.begin();

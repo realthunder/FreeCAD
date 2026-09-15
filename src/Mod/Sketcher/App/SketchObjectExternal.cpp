@@ -1412,7 +1412,9 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
     // get the actual lists of the externals
     auto Objects     = ExternalGeometry.getValues();
     auto SubElements = ExternalGeometry.getSubValues();
-    assert(externalGeoRef.size() == Objects.size());
+    if (externalGeoRef.size() != Objects.size()) {
+        throw Base::RuntimeError("Inconsistency with external geometries");
+    }
     auto keys = externalGeoRef;
 
     // Remember which way the projected lines currently run. Signed constraints record which side
