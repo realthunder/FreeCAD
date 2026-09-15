@@ -154,7 +154,6 @@ fix.
 
   | upstream | what | tests |
   |---|---|---|
-  | `3c8a254356` | signed circle-circle distance (the other four signed-distance tests pass since the phase-1 solver take) | 1 in `TestSketcherSolver` |
   | `82ec32f9e9` | MissingVerticalHorizontal false positive | 1 |
   | `9d7073ce7b` | geometry extension on a point | 1 |
   | `6d06b61c7e` | fillet keeps the corner by splitting (**behaviour change**: unconnected lines no longer fillet) | 3 in `TestSketchFillet` |
@@ -194,9 +193,10 @@ and the solver derives the side from the current geometry: point-line uses the
 point's signed distance, circle-line the centre's signed distance and radius,
 tangent the centre's side, circle-circle stays undecided. That is the old
 unsigned behaviour. Filling orientations in on restore
-(`SketchObject::migrateConstraintOrientations`, upstream `e1e72c9195`) and
-upstream's handling of stored negative circle-line distances (`c968effe26`)
-live in `SketchObject` and are later picks.
+(`SketchObject::migrateConstraintOrientations`, upstream `e1e72c9195`) lives in
+`SketchObject` and landed in phase 2 (section 6a). Upstream's handling of stored
+negative circle-line distances (`c968effe26`) is solver code and came with this
+take; its test came with the phase-0 test port.
 
 **Compile probe.** Taking the files and building the `Sketcher` target left 11
 distinct errors, all at fork call sites:
@@ -213,14 +213,68 @@ distinct errors, all at fork call sites:
 four of the five signed-distance tests pass (their markers came off in the
 same commit), leaving 17 expected failures in the ported Sketcher tests.
 The nine `.FCStd` files in the repository that contain sketches, all saved
-before the take, re-solve with no sketch moving (tolerance 1e-6) and no
-solve failing.
+before the take, were recorded as re-solving with no sketch moving
+(tolerance 1e-6) and no solve failing. That record does not reproduce; see
+"Old-file check, corrected" in section 6a.
 
 Fork changes re-applied on the taken files: `THROWM` at the four throw sites in
 `Sketch.cpp` (`b3694d32b6`), `GeoElementId::operator<` instead of the
 `std::less` specialisation (`1054a3cae2`). Already upstream: the
 `boost/random.hpp` include (`76e2047902`), the `h_norm` initialisers
 (`ebe4fd9eb5`).
+
+## 6a. Phase 2: App picks
+
+### Signed constraint orientations (`0f5a36bfc8`)
+
+The `SketchObject` half of `3c8a254356` and `e1e72c9195`, plus the tangent
+orientation that reached upstream through merge #29904, ported from upstream's
+tip rather than replayed commit by commit:
+
+- `setOrientation()` runs in `addConstraint`, `addConstraints`, `setDriving`,
+  `setActive` and `toggleActive`;
+- `restoreFinished()` calls `migrateConstraintOrientations()` after the
+  external geometry is rebuilt or accepted;
+- `addSymmetric` re-derives the side of a copied two-element constraint;
+- `rebuildExternalGeometry` re-derives constraints on a projected line that
+  came back reversed.
+
+`testCircleToCircleDistanceOriented` passes and its marker is gone.
+
+**Fork difference.** Upstream edits the owned constraints in place and then
+calls `Constraints.setValues()`. The fork's `Property::hasSetValue()` compares
+against a snapshot taken inside that call, which already carries an in-place
+edit, so the write would be dropped as a no-op (`docs/UpstreamCoreSync.md`
+5.5). The migration and the reversal pass set clones of only the constraints
+that change, and a sketch with nothing to migrate is not written to.
+
+As upstream, every Tangent gets an orientation, endpoint-to-endpoint ones
+included; the solver reads it only for edge-to-edge tangency.
+
+**Verified.** Build OK; ctest 667/667; Python 2851 OK (22 expected failures);
+`TestSketcherApp` 94 OK (16 expected failures).
+
+### Old-file check, corrected
+
+The phase-1 record in section 6 does not reproduce. The check script stopped
+at the first file: `ArchDetail.FCStd` `Sketch003` has 13 constraints and no
+geometry, and `solve()` throws from `Sketch::checkGeoId`. Rerun with the script
+catching each sketch, the phase-1 library and the orientation pick show the
+same three problems, none of them a regression:
+
+- `ArchDetail.FCStd` `Sketch002` moves 278 mm on any solve. Its stored geometry
+  disagrees with its stored external geometry: `DistanceX` 0 ties an edge at
+  x = -30 to an external line at x = -268. It has no Distance or Tangent
+  constraint, so no orientation is involved.
+- `ArchDetail.FCStd` `Sketch003` throws in `solve()`.
+- `CAMTests/Drilling_1.FCStd` `Sketch` solves when opened alone, and returns -1
+  after some numbers of unrelated solves in the same process. After N solves
+  of a trivial sketch, the phase-1 library fails for N = 3, 4, 7-10 and 12, the
+  orientation pick for N = 9, 10 and 12. The solve result depends on process
+  history. The likely cause is the planegcs containers keyed by pointer
+  (`p2c`, `c2p` in `GCS.h`), whose order follows heap addresses; not yet traced.
+  A multi-document check therefore cannot pin one solve status on the change
+  under test -- rerun the sketch alone and sweep N on both libraries.
 
 ## 7. Phases
 
