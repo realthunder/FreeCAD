@@ -48,6 +48,7 @@ pieces are frozen, not extended.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
+    the panels in the browser (G7)  sized       7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); NOT built -- sizing stopped for review 2026-09-16
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same) and the restore half guarded by available() first
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -7919,6 +7920,264 @@ several; the typed-sheet discussion is subsumed: `ProxyExp` is the
 type link, the chain is the delegation) are in docs/ProxyChain.md.  The variant Link idea recorded the same day is
 docs/VariantLink.md, a parallel thread for later.
 
+### 7.22 G7 sized: the desktop's panels in the browser, a DOM view over the widget layer **[sized 2026-09-16]**
+
+The question, asked with 7.19's mirror complete as sized (M1-M3 built,
+M4 measured 2026-09-11): the desktop's real task panels are already
+walked into models and streamed to any subscriber, and nothing in the
+browser consumes them.  What does that consumer cost.  Sized here;
+**NOT built, and no TypeScript written -- the user ruled 2026-09-16
+that the sizing comes first and stops for review**, because 7.12's
+1.5-2k of TypeScript is a multi-session build rather than a bounded
+item.
+
+**The short answer.**  Everything the browser needs is on the wire and
+gated on the host already; the missing piece is one consumer of about
+2.2-3.3k of TypeScript and CSS in `src/Gui/Renderer/web`, in five
+stages, of which the first -- a Pad-class form panel, editable, in the
+page -- is one to two sessions.  The host needs exactly one change, and
+it is 20 lines: today a client is never told how the host CORRECTED its
+own write ("The one gap on the host side" below).  One design choice
+needs the user before W1 starts (question 1).
+
+**What is already built and reused as is.**
+
+- *The panels are on the wire.*  7.19's `PanelMirror` walks the real
+  `TaskBox` tree into store models and streams them; M2 reflects item
+  views and sends pictures and icons as image ids; M3 mirrors top-level
+  dialogs as `dialog:<n>` roots.  No workbench was edited for any of it,
+  and none has to be edited for this.
+- *The ops exist and are gated.*  `src/Gui/SceneWidgets.cpp` registers
+  `widgets.subscribe` / `unsubscribe` / `icon` / `image` / `update` /
+  `custom` on the scene socket's control lane, behind the same door as
+  every other control op (`registerSceneControlOp`, the write ops with
+  the write flag, so a view-only connection is refused).
+- *The class set is a build artifact.*  `widget-models.json`
+  (`build/.../share/Pyodide/`, from `src/Tools/bindings/
+  dumpWidgetModels.py`, gate `SandboxModelDump.py`) carries 39 model
+  classes and 54 Qt class names: `base`, `properties` with type,
+  default and `allowNone`, `signals`, and `qtClasses` mapping
+  `Gui::PrefQuantitySpinBox` -> `QuantitySpinBoxModel`.  The DOM side
+  reads one file and needs no Python.
+- *The browser chrome is a working DOM layer.*  `control.ts` already
+  correlates ops by id and delivers uncorrelated frames to `onPush(op)`
+  subscribers -- a `widgets` push needs no new transport, no second
+  socket and no change to `main.cpp`, which re-dispatches every control
+  frame as an `fc:control` event.  `panel.ts` has the floating-card
+  behaviour (drag with pointer capture, remembered position, the
+  `NARROW` 640 px bottom-sheet switch); `console.tsx` (7.20 C4) is the
+  precedent for a panel that talks to the host over this socket; the
+  bundle is wired into CMake as `FCVIEWER_UI` (vite, `npm ci`, the
+  rollup-wasm fallback) and `shell.html` loads it as `web/inspector.js`.
+- *The cost is measured* (8.4).  A Pad panel opens as 64 messages /
+  45.9 KB / 61 models, OrthoArray as 48 / 35.1 KB / 46, Sketcher's as
+  31 / 29.7 KB / 29; a panel at rest sends nothing, a repaint burst
+  sends nothing, ten keystrokes cost 20 messages / 1.5 KB.  The one hot
+  spot is Sketcher's refill on a solve: 162 messages / 21 KB, three ops
+  a row.
+
+**What the walker consumes.**  Exact, from the code; this does not need
+re-deriving.
+
+- *Subscribing.*  `widgets.subscribe {panels|toolbars|all}` replies
+  `{ok, subscribed, panel, dialogs, theme, locale}` -- `panel` is the
+  id of the task panel up right now or null, so a client tells "no
+  panel" from "not yet", `dialogs` the top-level dialogs in show order,
+  `theme` the host's icon override and `locale` its `QLocale::name()`.
+  The snapshot does NOT ride the reply: it follows on a zero timer, so
+  the client must accept `open`s arriving after it.  The mirror starts
+  with the first `panels` subscriber and stops with the last.
+- *Frame shapes.*  Every pushed frame is `{op:"widgets", method, id,
+  ...}`.  `open` SPLICES the snapshot at top level (`model`, `qtClass`,
+  `state`, `layout?`, `items?`, `parent?`); **every other method nests
+  its payload under `content`**.  The vocabulary is exactly five:
+  `open`, `close`, `state`, `update`, `custom`.  So the client needs a
+  method dispatcher beside the snapshot applier, not one shared path.
+- *The snapshot.*  `model` keys `classes` in the dump, `qtClass` keys
+  `qtClasses`; every state key carries the `q_` prefix; an object-valued
+  property crosses as the string `IPY_MODEL_<id>`, and the ref walk
+  RECURSES through lists and maps, so a ref sits at any depth.
+- *Arrival order.*  `snapshotOrder()` visits what an object refers to
+  first and deliberately EXCLUDES `parent` ("a container names its
+  children through its layout").  **Children arrive before their
+  container**: the walker builds bottom-up and needs no buffering.  Do
+  not assume parents-first.
+- *Layouts.*  `Layout::spec()` -> `{class, name, items[], margins?,
+  spacing?, +extras}`.  Each item is exactly one of `widget` (a ref) |
+  `layout` (nested, recursive) | `action` | `separator` | `stretch` |
+  `spacing` | `spacer [w, h, hPolicy, vPolicy]`, plus optional `pos`
+  (grid coordinates, with a row span in the third slot), `stretch` and
+  `align` on a widget or nested layout.  The recursion and the
+  spacer/stretch/policy handling are where 7.12's 1.5-2k goes.
+- *Item views.*  `ItemView::snapshot()` is a list of rows; a row is
+  `{id, cells[], children[] (recursive), expanded?, hidden?, flags?}`
+  and a cell is `{text?, icon?, toolTip?, statusTip?, whatsThis?,
+  check?, flags?, fg?, bg?, bold?, align?}`.  Live changes arrive as
+  `custom` with an `item` op, in the same shape a client writes.
+- *Pictures and icons.*  Both travel as `img:<sha1>` ids in the bag --
+  a custom-painted leaf's pixmap, a button's icon, a cell's icon -- and
+  are fetched once with `widgets.image {name}` (PNG, base64, with width
+  and height).  A named theme icon is `widgets.icon {name, size}`,
+  answered as SVG text or a base64 PNG.  Both are content-addressed, so
+  a page-lifetime cache never goes stale.
+- *Writing back.*  `widgets.update {target, state}` with `q_` keys ->
+  `Store::applyUpdate`; `widgets.custom {target, content}` ->
+  `applyCustom`.  Both mutate a real widget through the panel's own
+  slots, so both are refused on a view-only connection.
+- *Roots.*  `PanelMirror::owns` answers for the list id, `panel:<n>`
+  (the task panel root), `pw:<n>` (a mirrored picture widget) and
+  `dialog:<n>` (a top-level dialog).  Tool bar ids are
+  `ToolBarMirror`'s and belong to the `toolbars` subscription, which
+  this section does not touch.
+
+**The one gap on the host side.**  `SceneWidgetStream::onMessage` fans
+a frame out to every subscriber EXCEPT its origin (`client == origin`),
+and `Store::applyUpdate` runs the client's write inside an
+`OriginScope` holding that client's id.  The property change the write
+provokes is announced on the same stack, still stamped with that
+origin -- so **the writer never hears what the host made of its write**.
+That is right for the echo of an unchanged value and wrong for every
+correction: a spin box clamping to its maximum, a quantity re-parsed
+into its display unit, a slot that writes the field back.  The client
+then shows a value the document does not have, and nothing corrects it
+until another client touches the same widget.
+
+Two answers.  (a) The client stays optimistic and accepts the drift;
+(b) the host sends the announced state to the origin as well WHEN the
+applied value differs from what that client wrote -- `applyUpdate`
+already holds both halves, so it is a comparison and a targeted send,
+about 20 lines, and the wire shape does not change.  **Recommended:
+(b), in W1**, because (a) is undetectable from the browser and the
+first field anyone tests is a quantity.  It is the only C++ this
+sizing asks for.
+
+**Stages and gates.**
+
+    W1  the spine and the form panel.  The widgets client (subscribe
+        over the existing lane, the model store, ref resolution at
+        depth, the five methods, the `q_` strip), the layout walker
+        (VBox/HBox as flex, Grid as CSS grid with `pos` and spans,
+        Form as a two-column grid, margins/spacing/stretch/align/
+        spacer/separator), the panel container (the `panel:<n>` root,
+        TaskBox headers, the dialog button box, close), and the form
+        leaves: label, line edit, quantity/double/int spin boxes,
+        check box, radio, combo, push and tool buttons, group box,
+        frame, stacked and tab widgets, scroll area, splitter.  Write
+        -back on the edit signals, and the origin echo above.
+        Gate: the replay gate below over Pad and OrthoArray fixtures
+        (every model realized, the layout plan matching the .ui's
+        structure, a `setText` from the host applied, a client edit
+        producing the right `widgets.update`), plus the hand-opened
+        page against a live serving FreeCAD.
+    W2  item views.  Rows, cells, nested children, expanded/hidden/
+        flags, the column headers, check writes, selection, and the
+        `custom` item ops applied as a batch per frame rather than per
+        op -- 8.4's Sketcher refill is 162 ops in one solve and must
+        not be 162 reflows.  Gate: the Sketcher fixture replays to the
+        right row tree; a check write produces the op the host expects.
+    W3  pictures, icons, theme, locale.  `img:` and `widgets.icon`
+        with a page-lifetime cache, the picture leaf as an image with
+        M3's mouse replay, the theme from the subscribe reply, numbers
+        and dates through the reported locale.
+        Gate: a fixture carrying a QSvgWidget and a button icon; the
+        image op is asked once per distinct id.
+    W4  dialogs and modality.  `dialog:<n>` as a modal layer over the
+        panel, the button box's exec code returned, the QMessageBox
+        shape, and the file chooser model routed to the client's own
+        picker rather than the host's.  Gate: M3's QMessageBox fixture;
+        a button click returns the exec code.
+    W5  the measurement and the finish.  First paint of a panel open
+        against 8.4's host-side numbers, apply time per burst, the
+        keystroke round trip; the narrow layout (bottom sheet), touch
+        targets, dark and light, and what a panel does when the socket
+        drops.
+
+**The gate, and why it is a replay.**  There is no browser CI on this
+box: the host-side gates run under Xvfb through
+`scripts/sandbox-gui-gate.py`, and the browser-side artifacts so far
+(`sandbox-test.html`, `bridge-test.html`, ...) are pages a person
+opens.  A DOM view of a panel deserves better than that, and the wire
+makes it cheap: extend the existing `SandboxPanelMirror.py` gate with a
+dump mode that writes the exact JSON frames of a Pad, OrthoArray,
+Sketcher and QMessageBox session into fixture files, then gate the
+walker in node by replaying each fixture and asserting the result.
+Keeping the walker's model store and layout plan PURE (frames in, a
+view plan out; the DOM built from the plan) makes that assertion a data
+comparison and adds no dependency -- the alternative, rendering Solid
+into jsdom or happy-dom, buys a truer test for a new devDependency and
+a slower gate.  **Recommended: the pure plan plus one DOM smoke check
+in the hand-opened page** (question 5).
+
+**Cost** (new; TypeScript unless noted):
+
+    the client: subscribe, frame dispatch, model store, refs,
+      the write path                                            250-350
+    the class set: the leaf views that matter (about 25 of 39)  500-700
+    the layout walker: four kinds, pos/span/stretch/align,
+      spacers, separators, margins                              250-350
+    the panel container: roots, TaskBox headers, button box,
+      open/close, the socket's comings and goings               200-300
+    item views (W2)                                             300-400
+    images, icons, theme, locale (W3)                           150-250
+    dialogs, modality, the file chooser (W4)                    150-250
+    CSS                                                         200-300
+    the gate: the fixture dump (Python, in the existing gate)
+      and the node replay harness                               250-350
+    the host's origin echo (C++)                                 ~20
+    total                                                       2.2-3.3k
+
+7.12's 1.5-2k stands for the walker proper (the client, the class set
+and the layout walker are 1.0-1.4k of it); the rest is the container,
+the gate and the CSS, which that number never covered.  Rough scale at
+sec 7's pace: W1 one to two sessions, W2 one, W3 and W4 one together,
+W5 one.
+
+**Decided here: borrow the shape of ipywidgets, not the code.**  The
+wire is ipywidgets-SHAPED -- `IPY_MODEL_` refs, a state prefix, open/
+close/state/update/custom -- which is worth asking about before writing
+2k of TypeScript, and the answer is no.  There is no kernel and no
+Jupyter message envelope here (frames ride the scene socket's control
+lane); `@jupyter-widgets/base` brings a Backbone-era model layer and a
+manager that expects comm objects from a kernel connection; and the
+class set it renders is ipywidgets', while ours is Qt's -- line edits,
+group boxes, stacked widgets, grid layouts with spans, item views.  The
+overlap is the ref resolution and the state diff, a couple of hundred
+lines we write anyway; the 1.5-2k has no counterpart to borrow.  A
+Backbone dependency against a 7.5 KB Solid bundle is also the wrong
+trade for the mobile tier.  What we keep from the resemblance is the
+vocabulary, which is already on the wire.
+
+**Limits, stated.**  A Qt desktop host only -- a headless serving
+FreeCAD has no panels to mirror, and a Qt-free panel backend is 7.12's
+H2/H3, still optional.  One shared session (8.11): a client's write is
+the desktop user's write, and a modal blocks every client.  No
+per-client grant; `Preferences/Fw/PanelMirror` is the only gate, and a
+per-client one is 8.12's multi-user work.  Custom-painted widgets
+arrive as pictures, not as widgets.  `styleSheet` and `font` travel in
+the bag but are Qt spellings, not CSS, and W1 ignores both.  No drag
+and drop in item views.  The DOM panel will not look like the Qt panel
+(question 1).
+
+**Questions for the review.**
+
+1. *The look.*  Chrome-flavoured (the inspector's language, ThinClient
+   4.3) or as close to the desktop's Qt panel as DOM can get.
+   Recommended: chrome-flavoured -- the viewer already speaks it, a
+   near-miss of a Qt panel reads as broken rather than familiar, and
+   the desktop's QSS does not travel anyway.
+2. *The origin echo.*  Take the 20-line host change in W1, or leave the
+   client optimistic.  Recommended: take it.
+3. *W4's scope.*  Dialogs and modality inside G7, or deferred until the
+   form panel has been used.  They are 150-250 lines and M3 already
+   streams them.
+4. *The panel's placement.*  A floating card like the console, or a
+   docked side rail on a wide viewport and a bottom sheet on a narrow
+   one.  Recommended: docked plus sheet -- a task panel is modal in
+   spirit and competes with the model for space.
+5. *The gate shape.*  The pure view plan with no new dependency, or
+   jsdom/happy-dom for a truer DOM assertion.  Recommended: the pure
+   plan.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -8497,7 +8756,10 @@ push the user's call).
    the PANEL MIRROR of 7.19 -- the desktop's real task panel walked
    into models and streamed, no edit to any workbench, C++ panels
    included -- with G7, the DOM view over the widget layer (7.12,
-   the ThinClient session's).  The `freecad.widgets` shim's op call
+   the ThinClient session's) -- **G7 SIZED 2026-09-16 as 7.22**:
+   W1-W5, 2.2-3.3k of TypeScript, one 20-line host change, the
+   gate a replay of frames dumped by the panel gate; sizing only,
+   stopped for review.  The `freecad.widgets` shim's op call
    bound natively (route A: Draft's panels on the host without
    pyodide, the toolkit gates' native-mode twin) drops behind it and
    stays the answer for the tier with no Qt.  H2 and H3 (7.12) are
@@ -8663,10 +8925,10 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    **N4** -- WebSocket (`net.ws:<origin>`), and `SOCKFS` under its own
    `net.socket` permission.
 10. **G5** -- the snapper in C++, when measured to matter.  **G7** --
-    the DOM walker over the widget layer in the browser tier (7.12;
-    no Draft/BIM gate of its own): every panel, guest or native, in
-    the browser from the same models.  The Qt-free manager over bgfx
-    (RmlUi or imgui) is DROPPED, 7.4.
+    the DOM walker over the widget layer in the browser tier (7.12,
+    SIZED 2026-09-16 as 7.22; no Draft/BIM gate of its own): every
+    panel, guest or native, in the browser from the same models.
+    The Qt-free manager over bgfx (RmlUi or imgui) is DROPPED, 7.4.
 11. **Rung 1** -- generated C++ dispatch for `call` members; the
     App-core severance.  **Rung 2** -- per-document guests.
 12. **N5 / G6 / the switch** -- `Python/Runtime = pyodide`, Draft and BIM
