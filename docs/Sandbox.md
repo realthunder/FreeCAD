@@ -48,7 +48,7 @@ pieces are frozen, not extended.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  sized       7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); NOT built -- sizing stopped for review 2026-09-16
+    the panels in the browser (G7)  W1 next     7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same) and the restore half guarded by available() first
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -7920,7 +7920,7 @@ several; the typed-sheet discussion is subsumed: `ProxyExp` is the
 type link, the chain is the delegation) are in docs/ProxyChain.md.  The variant Link idea recorded the same day is
 docs/VariantLink.md, a parallel thread for later.
 
-### 7.22 G7 sized: the desktop's panels in the browser, a DOM view over the widget layer **[sized 2026-09-16]**
+### 7.22 G7 sized: the desktop's panels in the browser, a DOM view over the widget layer **[sized 2026-09-16; the five questions RULED 2026-09-16, W1 started]**
 
 The question, asked with 7.19's mirror complete as sized (M1-M3 built,
 M4 measured 2026-09-11): the desktop's real task panels are already
@@ -8158,25 +8158,33 @@ the bag but are Qt spellings, not CSS, and W1 ignores both.  No drag
 and drop in item views.  The DOM panel will not look like the Qt panel
 (question 1).
 
-**Questions for the review.**
+**Questions for the review -- ALL FIVE RULED 2026-09-16.**
 
 1. *The look.*  Chrome-flavoured (the inspector's language, ThinClient
    4.3) or as close to the desktop's Qt panel as DOM can get.
-   Recommended: chrome-flavoured -- the viewer already speaks it, a
+   **RULED: chrome-flavoured** -- the viewer already speaks it, a
    near-miss of a Qt panel reads as broken rather than familiar, and
    the desktop's QSS does not travel anyway.
 2. *The origin echo.*  Take the 20-line host change in W1, or leave the
-   client optimistic.  Recommended: take it.
+   client optimistic.  **RULED: taken, in W1.**  It is the only C++
+   this section asks for.
 3. *W4's scope.*  Dialogs and modality inside G7, or deferred until the
-   form panel has been used.  They are 150-250 lines and M3 already
-   streams them.
+   form panel has been used.  **RULED: inside G7, as staged** (stage 4
+   of 5).  A client that ignored the `dialog:<n>` roots would silently
+   swallow a `QMessageBox` a panel slot raised -- the user clicks and
+   nothing happens -- which is worse than not mirroring panels at all.
 4. *The panel's placement.*  A floating card like the console, or a
    docked side rail on a wide viewport and a bottom sheet on a narrow
-   one.  Recommended: docked plus sheet -- a task panel is modal in
-   spirit and competes with the model for space.
+   one.  **RULED: floating** (the user's call, against the
+   recommendation).  It is also the cheaper half: `panel.ts` already
+   carries the drag with pointer capture, the remembered position and
+   the `NARROW` fallback, and `console.tsx` is the working precedent
+   for a floating panel that talks to the host over this socket, so
+   the container reuses behaviour rather than writing a rail.
 5. *The gate shape.*  The pure view plan with no new dependency, or
-   jsdom/happy-dom for a truer DOM assertion.  Recommended: the pure
-   plan.
+   jsdom/happy-dom for a truer DOM assertion.  **RULED: the pure
+   plan** -- the model store and the layout plan stay pure functions,
+   and the DOM is checked by the hand-opened page.
 
 ## 8. Measurements
 
@@ -8758,8 +8766,9 @@ push the user's call).
    included -- with G7, the DOM view over the widget layer (7.12,
    the ThinClient session's) -- **G7 SIZED 2026-09-16 as 7.22**:
    W1-W5, 2.2-3.3k of TypeScript, one 20-line host change, the
-   gate a replay of frames dumped by the panel gate; sizing only,
-   stopped for review.  The `freecad.widgets` shim's op call
+   gate a replay of frames dumped by the panel gate; the five
+   questions RULED 2026-09-16 and W1 started.  The `freecad.widgets`
+   shim's op call
    bound natively (route A: Draft's panels on the host without
    pyodide, the toolkit gates' native-mode twin) drops behind it and
    stays the answer for the tier with no Qt.  H2 and H3 (7.12) are
