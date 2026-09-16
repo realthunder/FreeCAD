@@ -1963,7 +1963,7 @@ Reply dialogColor(const json& a)
 
 Reply guiOp(HandleTable& table, const Reply& requestCbor)
 {
-    const json req = json::from_cbor(requestCbor);
+    const json req = FcxWire::fromCbor(requestCbor);
     const std::string op = req.value("op", "");
     if (!Application::Instance)
         return replyErr("RuntimeError", "no GUI application");

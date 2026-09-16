@@ -18,6 +18,8 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+
+#include "../FcxCbor.h"
 #include <wasm.h>
 #include <wasmtime.h>
 
@@ -204,7 +206,7 @@ int main(int argc, char** argv)
         fprintf(stderr, "FAIL reply length\n");
         return 1;
     }
-    json rj = json::from_cbor(mem + reply + 4, mem + reply + 4 + rlen);
+    json rj = FcxWire::fromCbor(mem + reply + 4, rlen);
     printf("%s\n", rj.dump().c_str());
 
     wasmtime_module_delete(module);

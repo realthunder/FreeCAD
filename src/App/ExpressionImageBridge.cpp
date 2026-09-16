@@ -1222,7 +1222,7 @@ std::vector<unsigned char> dispatchHostBytes(HandleTable& table,
         return dispatchHostOpFixed(table, data, len, opName);
     json reply;
     try {
-        json req = json::from_cbor(data, data + len);
+        json req = FcxWire::fromCbor(data, len);
         opName = req.is_object() ? req.value("op", std::string("?")) : std::string("?");
         if (opName == FcxWire::OpPkgMissing && req.is_object())
             missing = req.value("a", std::string("?"));
@@ -1279,7 +1279,7 @@ static const BridgeOpHandler* bridgeOpHandlerFor(const std::string& op)
 PyObject* decodeHostValueCbor(const HandleTable& table, const std::vector<unsigned char>& valueCbor)
 {
     try {
-        return decodeHostValue(table, json::from_cbor(valueCbor));
+        return decodeHostValue(table, FcxWire::fromCbor(valueCbor));
     }
     catch (const json::exception& e) {
         PyErr_SetString(PyExc_ValueError, e.what());
@@ -1734,7 +1734,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
         // an op family another library registered (Gui's gui.*, 7.9):
         // no handle of its own, so before the handle ops below
         if (const BridgeOpHandler* handler = bridgeOpHandlerFor(op))
-            return json::from_cbor((*handler)(table, json::to_cbor(req)));
+            return FcxWire::fromCbor((*handler)(table, json::to_cbor(req)));
 
         PyObject* base = table.get(id);
         if (!base)

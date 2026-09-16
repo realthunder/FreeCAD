@@ -456,7 +456,7 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
                 dropTerminated();
         }
         try {
-            reply = json::from_cbor(bytes.begin(), bytes.end());
+            reply = FcxWire::fromCbor(bytes);
         }
         catch (const json::exception& e) {
             FC_ERR("undecodable reply: " << e.what());
@@ -706,7 +706,7 @@ PyObject* ImageHost::decodeResult(const ImageResult& result)
     if (!result.ok)
         return nullptr;
     try {
-        json v = json::from_cbor(result.value.begin(), result.value.end());
+        json v = FcxWire::fromCbor(result.value);
         if (result.owner && v.is_object()) {
             // a function the evaluation left: the stand-in that calls it
             auto t = v.find(FcxWire::TagKey);
@@ -782,7 +782,7 @@ ImageResult ImageHost::eval(const std::string& source,
     if (!bindingsCbor.empty()) {
         try {
             req["bindings"] =
-                json::from_cbor(bindingsCbor.begin(), bindingsCbor.end());
+                FcxWire::fromCbor(bindingsCbor);
         }
         catch (const json::exception& e) {
             res.excType = "ProtocolError";

@@ -73,7 +73,7 @@ protected:
 
     static json value(const ImageResult& res)
     {
-        return json::from_cbor(res.value.begin(), res.value.end());
+        return FcxWire::fromCbor(res.value);
     }
 };
 
@@ -960,9 +960,9 @@ TEST_F(ExpressionImageEvalTest, writePropSameDocument)
         auto a = objectBinding("o", obj);
         auto b = objectBinding("p", other);
         auto c = objectBinding("q", foreign);
-        json m = json::from_cbor(a.begin(), a.end());
-        m.update(json::from_cbor(b.begin(), b.end()));
-        m.update(json::from_cbor(c.begin(), c.end()));
+        json m = FcxWire::fromCbor(a);
+        m.update(FcxWire::fromCbor(b));
+        m.update(FcxWire::fromCbor(c));
         auto v = json::to_cbor(m);
         return std::vector<unsigned char>(v.begin(), v.end());
     };
@@ -1121,8 +1121,8 @@ TEST_F(ExpressionImageEvalTest, partSurfaceOnHandles)
         Py_INCREF(other);
         auto a = pyBinding("s", box);
         auto b = pyBinding("t", other);
-        json m = json::from_cbor(a.begin(), a.end());
-        m.update(json::from_cbor(b.begin(), b.end()));
+        json m = FcxWire::fromCbor(a);
+        m.update(FcxWire::fromCbor(b));
         auto v = json::to_cbor(m);
         return std::vector<unsigned char>(v.begin(), v.end());
     };
@@ -1245,8 +1245,8 @@ TEST_F(ExpressionImageEvalTest, partModuleFacade)
         Py_INCREF(other);
         auto a = pyBinding("s", box);
         auto b = pyBinding("t", other);
-        json m = json::from_cbor(a.begin(), a.end());
-        m.update(json::from_cbor(b.begin(), b.end()));
+        json m = FcxWire::fromCbor(a);
+        m.update(FcxWire::fromCbor(b));
         auto v = json::to_cbor(m);
         return std::vector<unsigned char>(v.begin(), v.end());
     };
@@ -1765,7 +1765,7 @@ int geoUtilsAgreement(ImageHost& host, PyObject* fixtures, int& bothError,
             PyObject* py = PyDict_GetItemString(fixtures, n);
             Py_INCREF(py);
             auto one = pyBinding(n, py);
-            m.update(json::from_cbor(one.begin(), one.end()));
+            m.update(FcxWire::fromCbor(one));
         }
         auto v = json::to_cbor(m);
         return std::vector<unsigned char>(v.begin(), v.end());
@@ -2412,7 +2412,7 @@ TEST_F(ExpressionImageAcceptanceTest, storedExpressionStillEvaluates)
 {
     auto res = ImageHost::instance().evalExpression(obj, "Width * 2");
     ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
-    EXPECT_DOUBLE_EQ(json::from_cbor(res.value.begin(), res.value.end())
+    EXPECT_DOUBLE_EQ(FcxWire::fromCbor(res.value)
                          .get<double>(), 42.0);
 }
 
@@ -2496,8 +2496,7 @@ TEST_F(ExpressionImageAcceptanceTest, foreignDocGrantRevokeCycle)
                               otherName, true, "session");
     auto granted = ImageHost::instance().evalExpression(obj, src);
     ASSERT_TRUE(granted.ok) << granted.excType << ": " << granted.message;
-    EXPECT_DOUBLE_EQ(json::from_cbor(granted.value.begin(),
-                                     granted.value.end()).get<double>(), 30.0);
+    EXPECT_DOUBLE_EQ(FcxWire::fromCbor(granted.value).get<double>(), 30.0);
 
     Runtime::instance().grant(principal, Permission::DocForeign,
                               otherName, false, "session");
@@ -2820,7 +2819,7 @@ TEST_F(ExpressionImageBenchTest, DISABLED_BenchTransportFloor)
     std::vector<unsigned char> reqBytes(req.begin(), req.end());
     std::vector<unsigned char> replyBytes;
     ASSERT_TRUE(ImageHost::instance().rawCall(reqBytes, replyBytes));
-    json reply = json::from_cbor(replyBytes.begin(), replyBytes.end());
+    json reply = FcxWire::fromCbor(replyBytes);
     EXPECT_FALSE(reply.value("ok", true));
     benchUs("image.transport.floor", 5000, [&] {
         std::vector<unsigned char> out;
@@ -3959,7 +3958,7 @@ TEST_F(ExpressionImageEvalTest, tupleCrossesIntoTheImageAsTuple)
     auto res = ImageHost::instance().eval(
         "t.__class__.__name__", {cbor.begin(), cbor.end()});
     ASSERT_TRUE(res.ok) << res.excType << ": " << res.message;
-    EXPECT_EQ(json::from_cbor(res.value.begin(), res.value.end())
+    EXPECT_EQ(FcxWire::fromCbor(res.value)
                   .get<std::string>(), "tuple");
     table.clear();
 }

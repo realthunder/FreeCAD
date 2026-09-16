@@ -13,6 +13,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "FcxCbor.h"
+
 #include <Base/BoundBoxPy.h>
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
@@ -1230,7 +1232,7 @@ std::vector<uint8_t> dispatchCbor(const uint8_t *req_bytes, size_t len)
 {
     json reply;
     try {
-        json req = json::from_cbor(req_bytes, req_bytes + len);
+        json req = FcxWire::fromCbor(req_bytes, len);
         reply = dispatch(req);
     }
     catch (const json::exception &e) {
