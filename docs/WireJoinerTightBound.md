@@ -179,10 +179,24 @@ Verified on the second of them:
   makes this safe to land in a fork that treats element names as an API;
 * the Python suite, 2854 OK, 50 skipped, 6 expected failures.
 
-There is no automated regression test for this defect. The smallest reliable
-reproducer is a k=31 lattice at roughly 20 seconds, which is too slow for the
-unit suites, and `tests/src/Mod/Part/App` has no WireJoiner suite to host one.
-It is guarded by the sweep below, run by hand.
+`src/Mod/Part/parttests/regression_tests.py` carries
+`test_joinWires_tight_bound_tiles_the_region`, which pins the contract this
+defect broke: one wire per cell of a grid with deliberately uneven spacing, each
+a closed face of positive area, together tiling the region exactly. The area sum
+is the part that earns its place -- a wire count alone would not notice the
+non-minimal cycles, whose areas summed to *more* than the region, nor a
+reversed cycle of negative area. It costs about a third of a second.
+
+Be clear about what it does not do: **it passes on the pre-fix code too**, so it
+would not catch a revert of the two commits above. That is a measured result
+rather than an oversight. With the canonical adjacency order in place the defect
+could not be reproduced through `Part.joinWires` on any of 51 inputs tried --
+uniform lattices k=30 to k=40, irregular grids k=12 to k=28 over many seeds, and
+20 random chord arrangements -- which matched the fixed code on wire count,
+degenerate-wire count and total area alike. The inputs that do separate them
+need the canonical order absent, which a test cannot arrange from the public
+API. So the test guards the contract against future change, and the sweep below
+is what exercises the defect itself.
 
 ## Reproducing
 
