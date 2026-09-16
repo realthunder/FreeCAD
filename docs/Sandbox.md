@@ -48,7 +48,7 @@ pieces are frozen, not extended.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN), the leaf views next
+    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean; NOT yet rendered against a live desktop), W2 next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same) and the restore half guarded by available() first
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -8220,12 +8220,34 @@ tool-bar shapes, and the tool bars are the other subscription -- so they
 are planned but ungated.  What the corpus does carry is widget 250,
 nested layout 24, spacer 9, and no layout extras at all.
 
-What is left in W1: the leaf views (the corpus ranks them: `QLabel` 66,
-`QPushButton` 27, `QuantitySpinBox` 27, `QWidget` 26, `QCheckBox` 25,
-`QGroupBox` 22 of which 10 are `TaskBox` headers, `QComboBox` 14,
-`InputField` 9, `QToolButton` 8, `QDialogButtonBox` 7, `QDialog` 7), the
-floating panel container (question 4), and the write path, with the
-origin echo already waiting for it on the host.
+**W1's client and views BUILT 2026-09-16 -- W1 is code-complete.**
+`client.ts` is the socket half: it registers the push handler BEFORE
+subscribing (the snapshot follows the reply rather than riding it, so
+registering after drops the first opens), carries the write back, and
+caches the content-addressed images and icons.  `panel.tsx` is the
+views: the floating card on the chrome's own drag and bottom-sheet
+behaviour, a plan rendered as flex or CSS grid, and the leaves the
+corpus ranks (`QLabel` 66, `QPushButton` 27, `QuantitySpinBox` 27,
+`QWidget` 26, `QCheckBox` 25, `QGroupBox` 22 -- 10 of them `TaskBox`
+headers -- `QComboBox` 14, `InputField` 9, `QToolButton` 8,
+`QDialogButtonBox` 7, `QDialog` 7).  A class with no view yet still
+renders its layout, so an unfamiliar widget costs its own box and not
+the panel.  `main.tsx` mounts the card beside the console and the sheet
+with a launcher entry; `style.css` gains the `.fc-panel` block in the
+material those cards already use.  The origin echo needed no client code
+at all, which was the point of building it host-side.
+
+**What is verified, and what is not.**  `npm run typecheck` is clean,
+the replay gate is 62 checks ALL GREEN, and `npm run build` emits the
+card into the chrome (`panel.js`, 14.2 kB, 5.8 kB gzipped).  That is
+compilation and reduction, **not rendering**: the DOM check question 5
+ruled -- the hand-opened page against a serving FreeCAD -- has NOT been
+run.  W1 is code-complete and unproven on screen, which is the honest
+state of it.
+
+Then W2 to W5 as staged: the item views properly (the checks, the
+nesting, the refill coalesced), the pictures and icons, the dialogs and
+modality, and the measurement against 8.4.
 
 **Cost** (new; TypeScript unless noted):
 
