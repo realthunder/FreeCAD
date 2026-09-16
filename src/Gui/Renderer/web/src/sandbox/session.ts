@@ -13,17 +13,30 @@
 // (pyodide's raw write handler), not batched per line: a loop printing
 // progress shows it at each host call, where the page gets to paint.
 //
-// Interrupt: pyodide checks an interrupt buffer at bytecode boundaries.  The
-// page can only set it while the guest is NOT running -- it runs on this
-// thread -- which is exactly while a statement is suspended on a host call.
-// So a loop that reaches the host is interruptible and a pure CPU loop is
-// not; that needs the guest in a Worker (C6).
+// Where the guest runs (C6).  Two transports, one session on top:
+//   jspi    the guest in THIS thread, its host call suspended on a promise
+//           (Chrome 137+, Firefox 139+)
+//   worker  the guest in a worker, its host call parked in Atomics.wait while
+//           this thread carries the op (every browser with cross-origin
+//           isolation, which is how Safari gets a console at all)
+// `auto` takes JSPI where there is JSPI, because that is the path C1-C5
+// measured, and the worker otherwise.
+//
+// Interrupt: pyodide checks an interrupt buffer at bytecode boundaries.  Under
+// JSPI the page can only set it while the guest is NOT running -- it runs on
+// this thread -- which is exactly while a statement is suspended on a host
+// call, so a loop that reaches the host is interruptible and a pure CPU loop
+// is not.  In the worker the buffer is shared memory the page writes while the
+// guest runs, and both are.
 
-import { BrowserGuest } from './guest.js';
+import { BrowserGuest, type SandboxGuest } from './guest.js';
 import { RemoteBridge } from './remote.js';
+import { WorkerGuest } from './workerguest.js';
 import consoleSource from './console.py?raw';
 
 export type Stream = 'out' | 'err';
+/// Where the guest runs; see the note above.
+export type Transport = 'auto' | 'jspi' | 'worker';
 /// What push() says of a line: ran, still incomplete, did not compile, raised.
 export type PushStatus = 'ok' | 'more' | 'syntax' | 'error';
 
@@ -43,6 +56,19 @@ export interface SessionOptions {
   output: (text: string, stream: Stream) => void;
   /// Boot progress, for the panel's status line.
   progress?: (what: string) => void;
+  /// Where the guest runs (default 'auto').  A gate forces one.
+  transport?: Transport;
+}
+
+/// The transport `auto` would take, and why there is none.
+export function chooseTransport(want: Transport = 'auto'): Transport | null {
+  if (want === 'jspi')
+    return BrowserGuest.jspi ? 'jspi' : null;
+  if (want === 'worker')
+    return WorkerGuest.supported ? 'worker' : null;
+  if (BrowserGuest.jspi)
+    return 'jspi';
+  return WorkerGuest.supported ? 'worker' : null;
 }
 
 /// How long a console opened with the page waits for the viewer's hook.
@@ -59,22 +85,35 @@ async function waitFor(cond: () => boolean, ms: number): Promise<boolean> {
 }
 
 export class ConsoleSession {
-  private readonly intr = new Int32Array(1);
+  private readonly intr: Int32Array;
   private running = 0;
 
-  private constructor(readonly guest: BrowserGuest, readonly bridge: RemoteBridge,
+  private constructor(readonly guest: SandboxGuest, readonly bridge: RemoteBridge,
+                      readonly transport: Transport,
                       private readonly output: (text: string, stream: Stream) => void) {
-    guest.pyodide.setInterruptBuffer(this.intr);
+    // Shared memory in the worker, where the guest reads it from another
+    // thread; a plain array on this one, where it is the same memory anyway.
+    this.intr = transport === 'worker'
+      ? new Int32Array(new SharedArrayBuffer(4))
+      : new Int32Array(1);
+    guest.setInterruptBuffer(this.intr);
   }
 
   static get supported(): boolean {
-    return BrowserGuest.jspi;
+    return chooseTransport() !== null;
   }
 
   static async open(opts: SessionOptions): Promise<ConsoleSession> {
-    if (!ConsoleSession.supported)
-      throw new Error('this browser cannot suspend WebAssembly on a promise (no JSPI): '
-                      + 'the console needs Chrome 137 or Firefox 139 and later');
+    const transport = chooseTransport(opts.transport);
+    if (!transport)
+      throw new Error(opts.transport === 'worker'
+        ? 'this page is not cross-origin isolated, so the console cannot run the '
+          + 'interpreter in a worker'
+        : opts.transport === 'jspi'
+        ? 'this browser cannot suspend WebAssembly on a promise (no JSPI)'
+        : 'this browser cannot run the console: it has neither JavaScript Promise '
+          + 'Integration (Chrome 137, Firefox 139 and later) nor shared memory on '
+          + 'this page');
     const say = opts.progress ?? (() => {});
     say('connecting');
     let bridge: RemoteBridge;
@@ -90,29 +129,28 @@ export class ConsoleSession {
       });
     }
     try {
-      say('loading the Python runtime');
-      // Boot messages before the raw writers below are installed: batched
-      // per line, which is what pyodide's own loader output wants.
-      const guest = await BrowserGuest.boot(new URL('/pyodide/', opts.server).href, {
-        token: opts.token,
-        bridge,
-        stdout: (s) => opts.output(s + '\n', 'out'),
-        stderr: (s) => opts.output(s + '\n', 'err'),
-      });
-      for (const [stream, name] of [['out', 'setStdout'], ['err', 'setStderr']] as const) {
-        const decoder = new TextDecoder();
-        guest.pyodide[name]({
-          write: (buf: Uint8Array) => {
-            opts.output(decoder.decode(buf, { stream: true }), stream);
-            return buf.length;
-          },
-        });
-      }
+      say('loading the Python runtime'
+          + (transport === 'worker' ? ' in a worker' : ''));
+      const base = new URL('/pyodide/', opts.server).href;
+      // Boot messages before the raw writers are installed: batched per line,
+      // which is what pyodide's own loader output wants.
+      const guest: SandboxGuest = transport === 'worker'
+        ? await WorkerGuest.boot(base, {
+            token: opts.token, bridge,
+            output: (text, stream) => opts.output(text, stream),
+          })
+        : await BrowserGuest.boot(base, {
+            token: opts.token,
+            bridge,
+            stdout: (s) => opts.output(s + '\n', 'out'),
+            stderr: (s) => opts.output(s + '\n', 'err'),
+          });
+      guest.setRawOutput((text, stream) => opts.output(text, stream));
       say('starting the console');
       const installed = await guest.call({ op: 'exec', src: consoleSource, module: 'fcx_console' });
       if (!installed.ok)
         throw new Error(`the console module did not load: ${installed.exc}: ${installed.msg}`);
-      return new ConsoleSession(guest, bridge, opts.output);
+      return new ConsoleSession(guest, bridge, transport, opts.output);
     } catch (e) {
       bridge.close();
       throw e;
@@ -128,7 +166,7 @@ export class ConsoleSession {
   async push(line: string): Promise<PushStatus> {
     this.running++;
     try {
-      this.intr[0] = 0;
+      Atomics.store(this.intr, 0, 0);
       const r = await this.guest.call({
         op: 'eval', src: "__import__('fcx_console').push(line)", bindings: { line },
       });
@@ -160,10 +198,11 @@ export class ConsoleSession {
     return this.guest.call({ op: 'eval', src: "__import__('fcx_console').reset()" });
   }
 
-  /// Raise KeyboardInterrupt in the running statement at its next host call.
+  /// Raise KeyboardInterrupt in the running statement: at its next host call
+  /// under JSPI, at its next bytecode boundary in the worker.
   interrupt(): void {
     if (this.busy)
-      this.intr[0] = 2;  // SIGINT
+      Atomics.store(this.intr, 0, 2);  // SIGINT
   }
 
   /// Whether the console is the viewer's own connection.
@@ -180,11 +219,12 @@ export class ConsoleSession {
   }
 
   close(): void {
+    this.guest.close();
     this.bridge.close();
   }
 
   private fail(text: string): PushStatus {
-    this.intr[0] = 0;
+    Atomics.store(this.intr, 0, 0);
     this.output(text, 'err');
     return 'error';
   }
