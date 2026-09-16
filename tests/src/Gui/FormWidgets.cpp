@@ -1288,6 +1288,45 @@ private Q_SLOTS:
         QCOMPARE(label->text(), QStringLiteral("from six"));
         QCOMPARE(pushed.size(), 1);
         QCOMPARE(pushed.at(0).first, 5ULL);
+        // what the host made of a client's own write comes back to
+        // that client (docs/Sandbox.md 7.22): the fan-out skips the
+        // writer, so a correction -- here a slot writing the field
+        // back, as a clamp or a re-parse would -- is targeted
+        pushed.clear();
+        bool correcting = false;
+        auto fix = QObject::connect(label, &Fw::Widget::propertiesChanged, label,
+                                    [&](const QStringList& names, int) {
+            if (correcting || !names.contains(QStringLiteral("text")))
+                return;
+            correcting = true;
+            label->setText(QStringLiteral("corrected"));
+            correcting = false;
+        });
+        reply = control(R"({"id":11,"op":"widgets.update","target":"cmd:Std_Label",)"
+                        R"("state":{"q_text":"from six again"}})", 6);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), true);
+        QCOMPARE(label->text(), QStringLiteral("corrected"));
+        int toSix = 0;
+        QJsonObject echo;
+        for (const auto& p : pushed) {
+            if (p.first != 6ULL)
+                continue;
+            ++toSix;
+            echo = p.second;
+        }
+        QCOMPARE(toSix, 1);
+        QCOMPARE(echo.value(QLatin1String("method")).toString(), QStringLiteral("update"));
+        QCOMPARE(echo.value(QLatin1String("content")).toObject()
+                     .value(QLatin1String("q_text")).toString(),
+                 QStringLiteral("corrected"));
+        QObject::disconnect(fix);
+        // a write the host leaves alone: the writer hears nothing
+        pushed.clear();
+        control(R"({"id":12,"op":"widgets.update","target":"cmd:Std_Label",)"
+                R"("state":{"q_text":"plain"}})", 6);
+        QCOMPARE(label->text(), QStringLiteral("plain"));
+        for (const auto& p : pushed)
+            QVERIFY(p.first != 6ULL);
         // an unknown target
         reply = control(R"({"id":5,"op":"widgets.update","target":"nope","state":{}})", 6);
         QCOMPARE(reply.value(QLatin1String("code")).toString(), QStringLiteral("UnknownObject"));

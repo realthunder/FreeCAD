@@ -82,6 +82,8 @@ void SceneWidgetStream::subscribe(uint64_t client, bool toolbars, bool all, bool
         _connected = true;
         connect(&Fw::Store::instance(), &Fw::Store::message, this,
                 &SceneWidgetStream::onMessage);
+        connect(&Fw::Store::instance(), &Fw::Store::messageTo, this,
+                &SceneWidgetStream::onMessageTo);
     }
     const bool fresh = !isSubscribed(client);
     if (toolbars)
@@ -168,6 +170,22 @@ void SceneWidgetStream::pushSnapshot(uint64_t client)
         if (!isSubscribed(client))
             return;
     }
+}
+
+// The host's answer to one client's own write (docs/Sandbox.md 7.22):
+// the corrected keys, to that client only.  Never an `open`, so the
+// content always nests.
+void SceneWidgetStream::onMessageTo(quint64 client, const QString& id, const QString& method,
+                                    const QVariantMap& content)
+{
+    if (!isSubscribed(client) || !wants(client, id))
+        return;
+    QJsonObject msg;
+    msg[QLatin1String("content")] = QJsonObject::fromVariantMap(content);
+    msg[QLatin1String("op")] = QStringLiteral("widgets");
+    msg[QLatin1String("method")] = method;
+    msg[QLatin1String("id")] = id;
+    send(client, compact(msg));
 }
 
 void SceneWidgetStream::onMessage(const QString& id, const QString& method,

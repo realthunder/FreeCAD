@@ -39,6 +39,11 @@
  * Pushes: {"op": "widgets", "method": "open" | "update" | "custom" |
  * "close", "id", ... the snapshot's keys for open, "content" otherwise}.
  *
+ * A push goes to every subscriber except the one that caused it -- with
+ * one exception (docs/Sandbox.md 7.22): when the host CORRECTS a
+ * client's own write, the corrected keys go back to that client alone
+ * (Store::messageTo), because nobody else would tell it.
+ *
  * A "toolbars" subscription starts the tool bar mirror, a "panels" one
  * the panel mirror (docs/Sandbox.md 7.19); the last one out stops it.  A connection is dropped from the sets when a push to
  * it fails (the server says it is gone).
@@ -89,6 +94,8 @@ private:
     SceneWidgetStream();
     void onMessage(const QString& id, const QString& method, const QVariantMap& content,
                    quint64 origin);
+    void onMessageTo(quint64 client, const QString& id, const QString& method,
+                     const QVariantMap& content);
     bool wants(uint64_t client, const QString& id) const;
     void send(uint64_t client, const std::string& json);
     void checkMirror();
