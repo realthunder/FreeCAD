@@ -153,6 +153,17 @@ public:
         /// `Access-Control-Allow-Headers: *` -- the /log beacon's
         /// preflight wants it.
         bool allowAnyHeader = false;
+        /// Cross-origin isolation on this answer: what a page needs
+        /// before the browser gives it a SharedArrayBuffer, which is how
+        /// the Python console runs its guest in a worker where there is
+        /// no JSPI -- Safari (docs/Sandbox.md 7.20 C6).  The document
+        /// carries both headers; every other file of the bundle carries
+        /// the embedder policy alone, because a dedicated worker's own
+        /// SCRIPT must assert it too or the worker does not load at all
+        /// (and fails with an empty message, which is a bad hour).
+        bool isolate = false;
+        /// ... and this one says the answer is that document.
+        bool isolateDocument = false;
         std::vector<uint8_t> body;
 
         void set(int s, const char *type = nullptr,
@@ -1743,6 +1754,11 @@ public:
             body.insert(body.end(), buf, buf + n);
         std::fclose(f);
         reply.set(200, type, "no-store");
+        // FC_SERVE_NO_COI=1 turns the isolation off for a page that must
+        // embed something cross-origin instead.
+        static const char *noCoi = std::getenv("FC_SERVE_NO_COI");
+        reply.isolate = !(noCoi && *noCoi && *noCoi != '0');
+        reply.isolateDocument = std::strcmp(type, "text/html; charset=utf-8") == 0;
         reply.body = std::move(body);
         return true;
     }
@@ -2767,6 +2783,12 @@ public:
             res.set(http::field::access_control_allow_origin, "*");
             if (reply.allowAnyHeader)
                 res.set(http::field::access_control_allow_headers, "*");
+            if (reply.isolate) {
+                res.set("Cross-Origin-Embedder-Policy", "require-corp");
+                if (reply.isolateDocument) {
+                    res.set("Cross-Origin-Opener-Policy", "same-origin");
+                }
+            }
             if (reply.contentType)
                 res.set(http::field::content_type, reply.contentType);
             if (reply.cacheControl)
