@@ -1015,12 +1015,26 @@ editors (`DlgExpressionInput`, `SpinBox`, `InputField`, `PropertyItem`)
 Writes were never the router's problem: `PropertyExpressionEngine::
 execute` sets the path on the host after the value returns.
 The same preference routes a document object's saved Proxy at document
-OPEN (`ExpressionSandbox::proxyRestoreRouted()`, the preference alone,
-no image boot to answer it): `PropertyPythonObject::Restore` builds the
+OPEN (`ExpressionSandbox::proxyRestoreRouted()`: the preference AND
+`ImageHost::available()`, since 2026-09-16 -- the paragraph below):
+`PropertyPythonObject::Restore` builds the
 `<Python module=".." class="..">` instance in the guest and holds the
 stand-in (7.6 G1c step (f)); a module the guest cannot serve FAILS
 CLOSED.  A view provider's Proxy is not routed -- the Gui side is not
 in the guest (G2).
+
+**The restore half asks `available()` too (2026-09-16).**  It used to
+read the preference alone, deliberately, so that answering it booted no
+image.  The cost of that was a build with the preference on and no
+runtime INSTALLED: every saved Proxy took the routed path, no guest
+could answer, the restore failed closed, and the document came back
+de-Proxied -- 70 of 70 objects of `data/examples/draft_test_objects.FCStd`,
+measured.  Evaluation never had the problem (`evaluationRouted()` has
+always ended in `available()` and falls back to native).  `available()`
+is memoized and, where there is no runtime, answers no without booting
+anything; off the routed path the native restore still runs under the
+Mod-root import restriction of sec 11 item 1, so refusing widens
+nothing.  Gate: `ExpressionImageEvalTest.proxyRestoreNeedsRuntime`.
 
 Python: `FreeCAD.ExpressionSandbox` -- `routed`, `setRouting`,
 `available`, `imageInfo`, `evaluate`, `evaluateNative`, `exec` (statements
@@ -1915,7 +1929,8 @@ against the ~45 hops + 7 nested calls sized above: the `call` count is
 the `addProperty` calls of `Wire.__init__` (12) that the sizing left
 out, the rest lands where estimated.
 **(f) the Restore route BUILT 2026-09-04.**  With routing on
-(`proxyRestoreRouted()`, the preference alone), `PropertyPythonObject::
+(`proxyRestoreRouted()`, the preference alone then; the preference AND
+`available()` since 2026-09-16, 3.5), `PropertyPythonObject::
 Restore` on a document object sends `proxy_new alloc` -- the guest
 imports the saved module name and allocates `cls.__new__(cls)`, no
 `__init__`, what `PyType_GenericAlloc` is natively -- and holds the
@@ -7992,6 +8007,17 @@ OCCT regression model, at 180 s).  The D3 fixtures are in the list --
 and install copies are skipped -- and their seven expressions (five `Shape`
 programs, the linked consumer's, the sheet's method cell) are all the same.
 
+**Re-run 2026-09-16** (sec 11 item 3's decision run, pyodide): 95 files
+listed, 94 compared, **195 expressions, 195 same**, 0 differ, no error on
+either side, the same single timeout -- the 2026-09-14 result to the
+number.  What this gate does NOT answer, and item 3 turns on: the rig
+sets `Evaluate` BEFORE it opens its files, so all 94 do open routed, but
+a Proxy the guest cannot serve fails closed silently and the rig counts
+expression bindings only.  Probed separately, with no runtime installed:
+routing on de-Proxied 70 of 70 objects of
+`data/examples/draft_test_objects.FCStd`, routing off none.  That is the
+gap the `available()` guard of 3.5 closes.
+
 ### 8.3 The corpus
 
 456 documents under `~/works`, 7628 expressions, 362 unique strings
@@ -8190,7 +8216,10 @@ Preferences under `User parameter:BaseApp/Preferences/Expression/`:
     Sandbox:Runtime          "pyodide" | "wasi" (default: pyodide when built)
     Sandbox:Evaluate         route evaluation through the image (default OFF);
                              also routes a document object's saved Proxy
-                             to the guest at open, failing closed (3.5)
+                             to the guest at open, failing closed (3.5);
+                             BOTH halves also require a runtime that
+                             boots, so the preference alone never
+                             de-Proxies a document (2026-09-16)
     Sandbox:InitGuiInGuest   run the InitGui.py of a module whose GUI side
                              is a bundled wheel (fcx_draft, fcx_bim) in the
                              guest (default OFF; 7.9 G2b); the rig's
