@@ -88,6 +88,19 @@ void submitPreMesh(std::vector<PreMeshItem> &&items);
 /// shape alone while it is.
 bool preMeshInFlight(const void *tshape);
 
+/// Block until \a tshape's pre-mesh has published, at most \a seconds.
+/// True once the shape is safe to read, false on the timeout -- where
+/// the caller must go on treating the shape as in flight.
+///
+/// For the load that has no drain behind it (ProgressiveLoad off): its
+/// builds run inside the restore, so there is nowhere to park one to,
+/// and parking it anyway would turn a synchronous load into a
+/// progressive one -- an open returning with the document still
+/// arriving is the one thing that preference rules out. The GUI thread
+/// has nothing else to do inside such a load, so it waits for the
+/// worker and then builds as it always did.
+bool waitPreMesh(const void *tshape, double seconds);
+
 /// The geometry box the pre-mesh measured for \a tshape, if it claimed
 /// it at all. False leaves \a box untouched.
 bool preMeshBox(const void *tshape, Bnd_Box &box);

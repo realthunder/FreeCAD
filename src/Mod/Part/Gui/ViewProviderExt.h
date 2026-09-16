@@ -644,6 +644,11 @@ protected:
     bool shapeStillMissing() const;
     /// Build one slice of the parked visuals, then reschedule if any remain.
     static void runDeferredVisualSlice();
+    /// Hand this load's shapes to the parallel pre-mesh where there is no
+    /// drain to hook -- ProgressiveLoad off, so the builds run inside the
+    /// restore (docs/DocumentLoad.md sec 18.6). Called from every
+    /// finishRestoring(); acts on the first of a load and no other.
+    static void preMeshUndeferredLoad(App::Document *doc);
     /// Post the next slice to the event loop (nothing if one is pending).
     static void scheduleDeferredVisualSlice(int delayMs = 0);
     /// The coarse-first ladder's per-object state (sec 13). Every

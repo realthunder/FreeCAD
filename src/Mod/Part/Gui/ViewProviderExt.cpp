@@ -113,6 +113,7 @@
 #include <App/DocumentObserver.h>
 #include <App/MappedElement.h>
 #include <map>
+#include <set>
 #include <Base/Console.h>
 #include <Base/Sequencer.h>
 #include <Base/Parameter.h>
@@ -938,6 +939,60 @@ DeferredVisuals &deferredVisuals()
     }();
     (void)observing;
     return visuals;
+}
+
+/// The loads whose shapes the pre-mesh has already been handed, by
+/// document name (docs/DocumentLoad.md sec 18.6).
+///
+/// A load with ProgressiveLoad off has no drain to hook, so its batch is
+/// submitted from the first view provider of that load to finish
+/// restoring -- and that is one call per object, so this set is what
+/// makes it one batch per load.
+struct LoadPreMeshState {
+    std::set<std::string> submitted;
+};
+
+LoadPreMeshState &loadPreMeshState()
+{
+    static LoadPreMeshState state;
+    static bool observing = []() {
+        // The end of a restore is the end of what the batch is for: the
+        // signal is emitted after App's per-object walk, so every visual
+        // that load was going to build has been built, and no build will
+        // ask about a claim again. A claim outliving its load is a
+        // bounding box keyed on a TShape address that a closed document
+        // may free and a later allocation reuse (sec 18).
+        //
+        // Claims are global, and where there IS a drain it owns them --
+        // so this clears only when no drain owes anything, or a document
+        // opening progressively alongside this one would lose the claims
+        // its own drain still needs.
+        auto forget = [](const App::Document &doc) {
+            if (state.submitted.erase(doc.getName())) {
+                // What the batch bought, for the load that has no drain
+                // to say it (the drain prints the same line for its
+                // own). Read BEFORE the claims go, because the counts
+                // live with them.
+                std::size_t claimed = 0, meshed = 0, failed = 0;
+                double wall = 0.0;
+                preMeshStats(claimed, meshed, failed, wall);
+                FC_LOG("pre-mesh " << doc.getName() << ": " << meshed
+                        << " of " << claimed << " claimed shapes meshed in "
+                        << wall << "s, " << failed << " failed");
+            }
+            if (deferredVisuals().docs.empty())
+                clearPreMeshClaims();
+        };
+        App::GetApplication().signalFinishRestoreDocument.connect(forget);
+        // A load that never finished leaves its claims behind -- a
+        // partial reload takes an early return before that signal -- and
+        // the close is the last moment they can be dropped while the
+        // TShapes they are keyed on still exist.
+        App::GetApplication().signalDeleteDocument.connect(forget);
+        return true;
+    }();
+    (void)observing;
+    return state;
 }
 
 /// Publish "geometry is still being built into the views" for readers
@@ -5522,6 +5577,20 @@ static void collectPreMeshItems(App::Document *doc,
     std::unordered_map<const void *, std::size_t> owner;
 
     for (auto *vp : vps) {
+        // Shape contents (a compound expanded into child features) are
+        // restored FROM the shape, and where this batch runs ahead of
+        // the restore (sec 18.6) the read below is what serves it --
+        // ahead of that object's own onDocumentRestored, which then
+        // expands a second time on top of the serve's own expansion
+        // (sec 14). Reading such a shape early is the one thing this
+        // collector must not do, and a shape it may not read is a shape
+        // it cannot mesh.
+        if (auto feat = Base::freecad_dynamic_cast<Part::Feature>(
+                    vp->getObject())) {
+            if (feat->getShapeContentsProperty()
+                    || feat->get_ShapeContentOwnerProperty())
+                continue;
+        }
         TopoDS_Shape shape;
         try {
             shape = vp->getShape().getShape();
@@ -5624,6 +5693,61 @@ static void collectPreMeshItems(App::Document *doc,
         item.angle = cand.angle;
         items.push_back(std::move(item));
     }
+}
+
+/// The same batch, for the load that has no drain to hook
+/// (docs/DocumentLoad.md sec 18.6).
+///
+/// With ProgressiveLoad off nothing is parked: every visual is built
+/// inside the restore, as App signals each object. The latest moment
+/// still ahead of that meshing is therefore the FIRST of those signals,
+/// which is where this runs. By then the objects all exist and the
+/// archive's file phase has run, which is what makes the shapes
+/// readable without forcing a serve of anything.
+///
+/// Reading a shape here DOES serve it, ahead of that object's own
+/// onDocumentRestored -- which is why the collector refuses anything
+/// carrying shape contents, the one thing a second expansion would
+/// damage (sec 14), and why nothing else here touches the object. The
+/// serve's own change notification reaches that object's view provider,
+/// and its updateVisual refuses the ask while the view provider is
+/// still restoring: the ask that builds it is its own finishRestoring,
+/// later in this same walk.
+void ViewProviderPartExt::preMeshUndeferredLoad(App::Document *doc)
+{
+    if (!doc || !preMeshEnabled() || Gui::RenderParams::getProgressiveLoad())
+        return;
+    // Inside a document restore only. finishRestoring() is an ask a
+    // single object can get on its own, and one of those is no reason to
+    // mesh a whole document.
+    if (!doc->testStatus(App::Document::Restoring))
+        return;
+    auto &state = loadPreMeshState();
+    if (!state.submitted.insert(doc->getName()).second)
+        return;
+    auto guiDoc = Gui::Application::Instance
+        ? Gui::Application::Instance->getDocument(doc)
+        : nullptr;
+    if (!guiDoc)
+        return;
+
+    std::vector<ViewProviderPartExt *> vps;
+    for (auto *v : guiDoc->getViewProvidersOfType(
+                 ViewProviderPartExt::getClassTypeId())) {
+        auto vp = static_cast<ViewProviderPartExt *>(v);
+        // Exactly what this load is going to build: a visual nobody has
+        // asked for is not worth a worker, and an object that is not
+        // visible keeps its touched flag until the ask that shows it.
+        if (vp->VisualTouched
+                && (vp->isUpdateForced() || vp->Visibility.getValue()))
+            vps.push_back(vp);
+    }
+
+    std::vector<PreMeshItem> items;
+    collectPreMeshItems(doc, vps, items);
+    FC_LOG("pre-mesh " << doc->getName() << ": " << items.size() << " of "
+            << vps.size() << " shapes submitted ahead of the builds");
+    submitPreMesh(std::move(items));
 }
 
 void ViewProviderPartExt::runDeferredVisualSlice()
@@ -6165,12 +6289,26 @@ void ViewProviderPartExt::updateVisual()
     // every other early exit does.
     if (preMeshEnabled() && !cachedShape.getShape().IsNull()
             && preMeshInFlight(cachedShape.getShape().TShape().get())) {
-        VisualTouched = true;
-        if (auto obj = getObject()) {
-            if (auto doc = obj->getDocument())
-                parkVisualForLoad(doc, obj);
+        // ...unless there is no drain to park it TO. A load with
+        // ProgressiveLoad off builds inside the restore, and parking
+        // there would hand the open back with the document still
+        // arriving -- a synchronous load turned progressive by nothing
+        // the user asked for (sec 18.6). The GUI thread has nothing
+        // else to do inside such a load, so it waits for the worker
+        // and then builds exactly as it would have. The cap is a
+        // backstop against a claim that never publishes, not a policy
+        // knob: every path that abandons a batch releases its claims,
+        // and a load that hit it would still be correct, just parked.
+        const bool parks = Gui::RenderParams::getProgressiveLoad();
+        if (parks
+                || !waitPreMesh(cachedShape.getShape().TShape().get(), 120.0)) {
+            VisualTouched = true;
+            if (auto obj = getObject()) {
+                if (auto doc = obj->getDocument())
+                    parkVisualForLoad(doc, obj);
+            }
+            return;
         }
-        return;
     }
     if (cachedShape.isNull()) {
         // A shape that has not ARRIVED is not a shape that is empty, and
@@ -7960,6 +8098,14 @@ void ViewProviderPartExt::finishRestoring()
     syncMaterial(LineMaterial.getValue(), pcLineMaterial);
     syncMaterial(PointMaterial.getValue(), pcPointMaterial);
     syncMaterial(ShapeAppearance.getBase(), pcShapeMaterial);
+
+    // The load's parallel pre-mesh where there is no drain to hook: this
+    // is the first ask of the load that is still ahead of the meshing
+    // (docs/DocumentLoad.md sec 18.6), and the build below is the first
+    // of the 17000 it is meant to feed. A no-op on the progressive path,
+    // which hooks its drain instead, and after the first call of a load.
+    if (auto obj = getObject())
+        preMeshUndeferredLoad(obj->getDocument());
 
     if(VisualTouched && (isUpdateForced() || Visibility.getValue()))
         updateVisual();

@@ -22,8 +22,10 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -79,6 +81,14 @@ double s_wall = 0.0;
 /// publishing, because the shapes its claims describe are gone.
 std::atomic<uint64_t> s_generation {0};
 
+/// Signalled every time a claim is published, for waitPreMesh. The
+/// publishing store is made under s_mutex as well as being atomic, and
+/// that is the whole point of it: without the lock a worker could
+/// publish and notify in the window between a waiter's predicate test
+/// and its wait, and the waiter would then sleep through the wakeup it
+/// had already been owed.
+std::condition_variable s_published;
+
 /// One batch's work, owned by the thread that runs it: the shapes stay
 /// alive for as long as any worker may touch them.
 struct Batch
@@ -126,7 +136,14 @@ struct BatchFunctor
         }
         // Published last, and only after the tessellation is entirely
         // written: this is what lets the GUI thread touch the shape.
-        claim->done.store(true, std::memory_order_release);
+        // Under the mutex because a build may be asleep on this very
+        // claim (waitPreMesh), and the lock is what orders this store
+        // against that waiter's predicate test.
+        {
+            std::lock_guard<std::mutex> guard(s_mutex);
+            claim->done.store(true, std::memory_order_release);
+        }
+        s_published.notify_all();
     }
 };
 
@@ -139,9 +156,14 @@ void runBatch(Batch *batch)
     }
     catch (...) {
         // Whatever is left unpublished would park its shapes' builds
-        // forever, so every claim is released before this unwinds.
-        for (Claim *claim : batch->claims)
-            claim->done.store(true, std::memory_order_release);
+        // forever -- or hold a waiting one until its timeout -- so
+        // every claim is released before this unwinds.
+        {
+            std::lock_guard<std::mutex> guard(s_mutex);
+            for (Claim *claim : batch->claims)
+                claim->done.store(true, std::memory_order_release);
+        }
+        s_published.notify_all();
     }
     const double wall = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - start).count();
@@ -200,6 +222,25 @@ bool preMeshInFlight(const void *tshape)
         && !it->second->done.load(std::memory_order_acquire);
 }
 
+bool waitPreMesh(const void *tshape, double seconds)
+{
+    if (!tshape)
+        return true;
+    const auto deadline = std::chrono::steady_clock::now()
+        + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<double>(std::max(0.0, seconds)));
+    std::unique_lock<std::mutex> lock(s_mutex);
+    // A claim that is GONE answers as well as one that is published:
+    // clearPreMeshClaims drops the lot, and nothing owns the shape after
+    // it. Waiting on the entry itself would be waiting on a claim that
+    // no longer exists to be published.
+    return s_published.wait_until(lock, deadline, [tshape]() {
+        auto it = s_claims.find(tshape);
+        return it == s_claims.end()
+            || it->second->done.load(std::memory_order_acquire);
+    });
+}
+
 bool preMeshBox(const void *tshape, Bnd_Box &box)
 {
     if (!tshape)
@@ -237,6 +278,9 @@ void clearPreMeshClaims()
     s_claimed = s_meshed = s_failed = 0;
     s_wall = 0.0;
     s_generation.fetch_add(1, std::memory_order_acq_rel);
+    // A build asleep on one of these is waiting for a claim that has
+    // just stopped existing; its predicate reads that as settled.
+    s_published.notify_all();
 }
 
 } // namespace PartGui

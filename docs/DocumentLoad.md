@@ -1324,3 +1324,93 @@ agrees. **A faster load moves the capture, not the mesh** -- any A/B of
 load speed against a picture has to let the ladder settle in both arms,
 and primitive totals still carry a few thousand of refine variance where
 the frame does not.
+
+### 18.6 The load with no drain to hook
+
+Sec 18.2 hooks the batch to the first slice of the progressive visual
+drain. With `ProgressiveLoad` off there is no drain at all: every visual
+is built inside the restore, one per object, as App signals them from
+`afterRestore`'s dependency-sorted walk. That load got nothing from the
+above, and it is the configuration every measurement in this document is
+taken in (`scripts/render-bench.py` forces the preference off).
+
+**Where it hooks.** The latest moment still ahead of the meshing is the
+FIRST of those signals, so the batch is submitted from
+`ViewProviderPartExt::finishRestoring()` -- once per load, and a no-op
+on the progressive path. By then every object exists and the archive's
+file phase has run, which is what makes the shapes readable without
+forcing a serve of anything.
+
+**Why reading every shape there is safe, and the one case it is not.**
+The read serves each parked shape ahead of that object's own
+`onDocumentRestored`. Two things carry it. The serve announces its value
+(`serveFromStore` calls `setValue`), and that notification reaches the
+object's own view provider -- whose `updateVisual` returns at once while
+the view provider is still flagged `Gui::isRestoring`, which every one
+of them is except the single object currently being finish-restored. So
+the read costs a serve and refuses a build, which is the same serve that
+object's own build would have paid for later.
+
+The case it is not safe is shape contents. `Feature::onDocumentRestored`
+skips `restoreShapeContents()` only while the shape is still pending,
+and `ensureRestored()` runs it when the shape arrives -- so serving
+early makes it run TWICE, once on the serve and again from that object's
+own restore (sec 14). The collector therefore refuses any object
+carrying a shape-contents or shape-content-owner property, which is the
+only thing a second expansion could damage. A doubt excludes, as
+everywhere else in this batch.
+
+**Parking is not available here, so the build waits.** The in-flight
+rule of sec 18.3 parks a build whose shape a worker still owns. On this
+path there is nowhere to park it TO: the build is running inside the
+restore, and the drain's slice machinery checks only document
+eligibility, not the preference -- so a parked build would land after
+the restore and quietly turn a synchronous load into a partly
+progressive one. An open that returns with the document still arriving
+is the one thing `ProgressiveLoad` off rules out. So the gate waits for
+the worker instead (`waitPreMesh`) and then builds exactly as it would
+have; the GUI thread has nothing else to do inside such a load. Parking
+remains the fallback if the wait's backstop ever trips.
+
+**Claims are dropped at the end of the restore.** With no drain, nothing
+would have called `clearPreMeshClaims()` and the claims would outlive
+their load -- a bounding box keyed on a TShape address a closed document
+may free. They are cleared from `signalFinishRestoreDocument`, which App
+emits after the per-object walk, and from `signalDeleteDocument` for the
+load that never finished; in both cases only when no drain owes anything,
+since claims are global and the drain owns them where there is one.
+
+Measured on the MiSTer reference, 17058 solids, A/B by the parameter
+alone (7172 of 17057 shapes submitted):
+
+| | off | on |
+|---|---|---|
+| load, unlogged | 46.8s | **31.5s** |
+| load, with the split reporter | 52.0s | 33.4s |
+| visual build of the restore | 30.9s | **17.3s** |
+| of which mesh | 24.8s | **12.0s** |
+| traversal / prologue | 3.8s / 0.4s | 3.5s / 0.3s |
+| frame | reference | **pixel-identical** |
+
+The frame is identical at every threshold (45903 draws in both arms,
+primitive totals 10 apart out of 17.88M -- refine variance, sec 18.5).
+Neither arm logged a `progressive load` line, which is the check that
+the load stayed synchronous and nothing parked.
+
+The batch itself, from the line this path now reports for it: **7172 of
+7172 claimed shapes meshed in 6.5s of wall time, none failed.** That is
+longer than the 3.7s the same batch takes on the progressive path (sec
+18.4), and the ask is why -- `CoarseTessellation` is -1 here, so every
+shape is meshed at the full display deviation rather than at a coarse
+rung.
+
+Read the table as a range, not as constants. A third pre-mesh run put the
+load at 35.3s with a 14.5s mesh term against leg b's 33.4s and 12.0s, so
+what this buys on the bench path is 11-15s of a 47s load depending on the
+run -- the arms differ by more than the reporter's own overhead does.
+
+Mesh is still 12-14s of it, and still the bulk of the visual build. The
+batch covers 7172 of the 17057 shapes -- the rest are refused for sharing
+a face or an edge TShape with another root -- so the GUI thread goes on
+tessellating everything the collector would not claim. That remainder is
+the next thing to attack here, not the hook.
