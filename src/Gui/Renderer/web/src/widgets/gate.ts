@@ -12,11 +12,12 @@
 // SANDBOX_PANEL_FIXTURES (7.22, "The fixture corpus"); regenerating them
 // needs that gate module alone, since a root's id is a process-wide serial.
 //
-// tsconfig excludes this file: it imports node builtins and names
-// './protocol.ts' with the extension node's stripper wants, neither of
-// which the bundle's config (vite/client types, bundler resolution)
-// describes. Adding @types/node for one script would break the ruling
-// that this gate takes no new dependency; running it is the check.
+// tsconfig excludes this file, for one reason: it imports node builtins
+// (`node:fs`, `process`) and @types/node is not installed -- adding it
+// for a single script would spend the dependency question 5 withheld.
+// Running the gate is its check. The `.ts` specifiers below are NOT
+// why: `allowImportingTsExtensions` covers those, so the core this
+// imports is typechecked normally.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -24,6 +25,8 @@ import { fileURLToPath } from 'node:url';
 
 import { WidgetStore, layoutRefs, refId } from './protocol.ts';
 import type { Frame } from './protocol.ts';
+import { isKnownLayoutClass, planLayout } from './layout.ts';
+import type { LayoutPlan } from './layout.ts';
 
 interface Fixture {
   case: string;
@@ -84,6 +87,53 @@ function replay(fixture: Fixture): void {
         `locale=${String(reply.locale)}`);
 }
 
+/// Every layout in a fixture, planned, with what the plan must hold true.
+/// The corpus carries QVBox/QHBox/QGrid/QForm only, and a `pos` that is two
+/// wide as often as a form has rows -- both gated here, because a span read
+/// out of a missing pos[2] is NaN and a panel would collapse silently.
+function checkLayouts(fixture: Fixture): void {
+  const name = fixture.case;
+  let unknownClass = '';
+  let badSpan = '';
+  let badKind = '';
+  let planned = 0;
+  let twoWide = 0;
+
+  const walk = (plan: LayoutPlan): void => {
+    planned++;
+    if (!isKnownLayoutClass(plan.className) && !unknownClass) unknownClass = plan.className;
+    for (const item of plan.items) {
+      if (item.kind === 'layout' && item.layout) walk(item.layout);
+      if (item.kind === 'spacer' && !item.spacer && !badKind) badKind = 'spacer without extent';
+      if (item.kind === 'widget' && !item.id && !badKind) badKind = 'widget without a ref';
+      if (plan.kind === 'stack') continue;
+      // a placed item must have usable spans: never NaN, never below 1
+      if (item.row === undefined) continue;
+      const rs = item.rowSpan ?? 0;
+      const cs = item.columnSpan ?? 0;
+      if (!Number.isFinite(rs) || !Number.isFinite(cs) || rs < 1 || cs < 1) {
+        if (!badSpan) badSpan = `${plan.className} r=${item.row} rs=${rs} cs=${cs}`;
+      }
+    }
+  };
+
+  for (const { frame } of fixture.frames) {
+    if (frame.layout) {
+      for (const item of frame.layout.items ?? []) {
+        if (item.pos && item.pos.length === 2) twoWide++;
+      }
+      walk(planLayout(frame.layout));
+    }
+    const spec = frame.content?.layoutSpec;
+    if (spec && typeof spec === 'object') walk(planLayout(spec as never));
+  }
+
+  check(name, 'layout classes known', !unknownClass, unknownClass);
+  check(name, 'placed spans usable', !badSpan, badSpan);
+  check(name, 'item shapes complete', !badKind, badKind);
+  check(name, 'layouts planned', planned > 0, `${planned} planned, ${twoWide} two-wide pos`);
+}
+
 function main(): void {
   const files = readdirSync(fixtureDir).filter((f: string) => f.endsWith('.json')).sort();
   if (files.length === 0) {
@@ -91,7 +141,9 @@ function main(): void {
     process.exit(1);
   }
   for (const file of files) {
-    replay(JSON.parse(readFileSync(join(fixtureDir, file), 'utf-8')) as Fixture);
+    const fixture = JSON.parse(readFileSync(join(fixtureDir, file), 'utf-8')) as Fixture;
+    replay(fixture);
+    checkLayouts(fixture);
   }
 
   // Sketcher's list is the item-op case: 21 customs that must leave real
