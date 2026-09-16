@@ -59,6 +59,7 @@ public:
     long BackgroundReleaseDelay;
     long CoarseTessellation;
     long CoarseDeferFaces;
+    bool PreMeshOnLoad;
     bool MeshSkipRedundant;
     bool MeshSkipFinerResident;
     bool MeshSkipInvariant;
@@ -226,6 +227,8 @@ public:
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         CoarseDeferFaces = this->handle->GetInt("CoarseDeferFaces", 1000);
         funcs["CoarseDeferFaces"] = &RenderParamsP::updateCoarseDeferFaces;
+        PreMeshOnLoad = this->handle->GetBool("PreMeshOnLoad", true);
+        funcs["PreMeshOnLoad"] = &RenderParamsP::updatePreMeshOnLoad;
         MeshSkipRedundant = this->handle->GetBool("MeshSkipRedundant", true);
         funcs["MeshSkipRedundant"] = &RenderParamsP::updateMeshSkipRedundant;
         MeshSkipFinerResident = this->handle->GetBool("MeshSkipFinerResident", false);
@@ -564,6 +567,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateCoarseDeferFaces(RenderParamsP *self) {
         self->CoarseDeferFaces = self->handle->GetInt("CoarseDeferFaces", 1000);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatePreMeshOnLoad(RenderParamsP *self) {
+        self->PreMeshOnLoad = self->handle->GetBool("PreMeshOnLoad", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateMeshSkipRedundant(RenderParamsP *self) {
@@ -1302,6 +1309,36 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "swapped in when it arrives (docs/SceneStreaming.md #13) - the\n"
 "import stall otherwise scales with the largest single part. -1\n"
 "disables the stand-in so every shape tessellates inline."),
+    App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PreMeshOnLoad", "PreMeshOnLoad", App::ParamInfo::Bool, true)
+        .setTitle("Pre-mesh a restored document in parallel")
+        .setDoc("Tessellate a restored document's parked shapes on worker\n"
+"threads, before the drain that displays them builds any of them\n"
+"(docs/DocumentLoad.md sec 18).\n"
+"A load's visual build is mostly tessellation -- measured on a\n"
+"17058-solid assembly, 16.0s of the drain's 25.3s -- and it runs\n"
+"one shape at a time on the GUI thread, which is where the display\n"
+"nodes are. OCCT's own parallelism does not answer that: BRepMesh\n"
+"splits ONE shape over its faces, and a model made of thousands of\n"
+"small parts gives it nothing to split. Measured over such a build\n"
+"the process held 2.04 cores of 28 -- and turning that parallelism\n"
+"off costs 4.8s of a 22s mesh term, so it does help, it just\n"
+"cannot scale.\n"
+"Meshing DIFFERENT shapes at once scales: 7171 shapes took 3.8s of\n"
+"wall time against 16.0s serial, the drain's build fell from 25.3s\n"
+"to 13.5s, and the settled frame arrived about 12s sooner -- with\n"
+"the frame pixel-identical and every triangle count unchanged.\n"
+"Only shapes whose ask can be reproduced exactly are pre-meshed.\n"
+"The claim carries the GEOMETRY bounding box the ask derives from,\n"
+"because BRepBndLib prefers a resident triangulation and enlarges\n"
+"the box by its deflection -- measuring again after the pre-mesh\n"
+"would ask for something coarser than what is resident, and a\n"
+"finer resident mesh is refused by default, so the call would\n"
+"re-tessellate exactly what was just built. Roots sharing a face\n"
+"or an edge with another root, instancing candidates and the\n"
+"oversized shapes that take a stand-in are left alone, and a build\n"
+"whose shape is still being meshed parks itself rather than read\n"
+"a triangulation mid-write.\n"
+""),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "MeshSkipRedundant", "MeshSkipRedundant", App::ParamInfo::Bool, true)
         .setTitle("Skip redundant tessellation")
         .setDoc("Ask the shape whether it is already tessellated the way this\n"
@@ -2859,7 +2896,7 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "against how many it rebuilt. One summary line per second. A\n"
 "publish rebuilds the whole scene however little moved, and these\n"
 "counts are how much of that rebuild was avoidable\n"
-"(docs/IncrementalPublish.md sec 5)."),
+"(docs/IncrementalPublish.md §5)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugCoverage", "DebugCoverage", App::ParamInfo::Bool, false)
         .setTitle("Screen coverage histogram")
         .setDoc("Log how much of the screen each drawn object actually covers,\n"
@@ -2868,7 +2905,7 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "one of those parts still costs a full object; the histogram says\n"
 "how much of the model is in that state, which is what decides\n"
 "whether aggregating distant parts is worth building\n"
-"(docs/FarFieldProxies.md sec 9)."),
+"(docs/FarFieldProxies.md §9)."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "DebugProxyCut", "DebugProxyCut", App::ParamInfo::Bool, false)
         .setTitle("Far-field cut estimate")
         .setDoc("Log what a far-field cut would cost this camera, without\n"
@@ -3260,6 +3297,61 @@ void RenderParams::setCoarseDeferFaces(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void RenderParams::removeCoarseDeferFaces() {
     instance()->handle->RemoveInt("CoarseDeferFaces");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *RenderParams::docPreMeshOnLoad() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Tessellate a restored document's parked shapes on worker\n"
+"threads, before the drain that displays them builds any of them\n"
+"(docs/DocumentLoad.md sec 18).\n"
+"A load's visual build is mostly tessellation -- measured on a\n"
+"17058-solid assembly, 16.0s of the drain's 25.3s -- and it runs\n"
+"one shape at a time on the GUI thread, which is where the display\n"
+"nodes are. OCCT's own parallelism does not answer that: BRepMesh\n"
+"splits ONE shape over its faces, and a model made of thousands of\n"
+"small parts gives it nothing to split. Measured over such a build\n"
+"the process held 2.04 cores of 28 -- and turning that parallelism\n"
+"off costs 4.8s of a 22s mesh term, so it does help, it just\n"
+"cannot scale.\n"
+"Meshing DIFFERENT shapes at once scales: 7171 shapes took 3.8s of\n"
+"wall time against 16.0s serial, the drain's build fell from 25.3s\n"
+"to 13.5s, and the settled frame arrived about 12s sooner -- with\n"
+"the frame pixel-identical and every triangle count unchanged.\n"
+"Only shapes whose ask can be reproduced exactly are pre-meshed.\n"
+"The claim carries the GEOMETRY bounding box the ask derives from,\n"
+"because BRepBndLib prefers a resident triangulation and enlarges\n"
+"the box by its deflection -- measuring again after the pre-mesh\n"
+"would ask for something coarser than what is resident, and a\n"
+"finer resident mesh is refused by default, so the call would\n"
+"re-tessellate exactly what was just built. Roots sharing a face\n"
+"or an edge with another root, instancing candidates and the\n"
+"oversized shapes that take a stand-in are left alone, and a build\n"
+"whose shape is still being meshed parks itself rather than read\n"
+"a triangulation mid-write.\n"
+"");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & RenderParams::getPreMeshOnLoad() {
+    return instance()->PreMeshOnLoad;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & RenderParams::defaultPreMeshOnLoad() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void RenderParams::setPreMeshOnLoad(const bool &v) {
+    instance()->handle->SetBool("PreMeshOnLoad",v);
+    instance()->PreMeshOnLoad = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void RenderParams::removePreMeshOnLoad() {
+    instance()->handle->RemoveBool("PreMeshOnLoad");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

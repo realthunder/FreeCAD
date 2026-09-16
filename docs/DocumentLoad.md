@@ -1216,3 +1216,111 @@ skip) against sec 16.3's 75.4 s. The committed tree's fixed-camera frame is
 pixel-identical to the frame before any of this (max channel difference 0). The document close after the
 bench also rebuilds every visual once; that pass fell from ~12 s to 0.4 s.
 Meshing is now four fifths of the visual build.
+
+## 18. Design: the load tessellates in parallel, ahead of the drain (2026-09-16)
+
+Sec 17 left meshing as four fifths of the visual build. It is the last big
+serial phase of a load: the drain builds one shape at a time on the GUI
+thread, because that is where the display nodes are.
+
+### 18.1 OCCT's own parallelism is already on, and cannot scale here
+
+`ViewProviderPartExt::updateVisual` has always asked for
+`IMeshTools_Parameters::InParallel`, and BRepMesh does use it -- it splits
+ONE shape over its faces (`BRepMesh_FaceDiscret`, `BRepMesh_EdgeDiscret`,
+each an `OSD_Parallel::For` over the model's faces or edges). On a model
+made of thousands of small parts there is nothing there to split. Measured
+over the 38.6s visual-build window of the MiSTer load, by sampling every
+thread's CPU time: **2.04 cores of 28**, the main thread 30.1s and all 28
+pool threads together 48.6s of CPU to buy that. It is still worth keeping
+-- turning it off costs 4.8s of a 22.0s mesh term -- but the scaling has to
+come from somewhere else.
+
+Meshing DIFFERENT shapes at once is what scales, and that is this section:
+`src/Mod/Part/Gui/PreMesh.cpp`, behind `Render_PreMeshOnLoad`.
+
+### 18.2 Where it hooks, and what it meshes
+
+At the first slice of the progressive visual drain that may work -- every
+shape served, nothing built yet -- the document's parked shapes are handed
+to workers, each shape meshed WHOLE and single-threaded (`InParallel` off:
+the split is across shapes now, and nesting the two only oversubscribes).
+The drain's own BRepMesh call then finds the mesh resident and skips it
+(`Render_MeshSkipRedundant`).
+
+NOT inside the restore: serving a later object's shape early makes
+`Feature::onDocumentRestored` run `restoreShapeContents()` on top of the
+serve's own work (sec 14).
+
+### 18.3 Two rules, and both are load-bearing
+
+**The ask has to match, so the claim carries the GEOMETRY box.** The
+display deflection derives from the shape's bounding box, and
+`BRepBndLib::Add` defaults to preferring a resident triangulation over the
+geometry, enlarging the box by `T->Deflection() + tolerance`. So a
+pre-meshed shape measures BIGGER than it did: the build would ask for
+something coarser than what is resident, and the redundancy check refuses
+a finer resident mesh by default -- `Render_MeshSkipFinerResident` is off,
+and for a measured reason. The call would then re-tessellate exactly what
+the pre-mesh had just built, and the load would pay twice. Every claim
+therefore carries the box measured BEFORE any triangulation existed, and
+`updateVisual` derives its ask from that box instead of measuring again.
+
+**A shape being meshed must not be touched.** BRepMesh writes the
+triangulation into the TShape. A claim is IN FLIGHT until its worker has
+published it, and a build that lands on such a shape parks itself the way
+the load parks one; the drain then moves on to the next slice rather than
+walking a queue whose every item is in flight.
+
+Excluded, on the principle that a doubt excludes: roots sharing a face or
+an edge TShape with another root (two workers would write one
+triangulation, and their asks may differ -- both go, which is why nothing
+is submitted until the whole batch is known), instancing candidates (an
+instanced build shares one tessellation and asks per member), and shapes
+big enough to take a stand-in, whose coarse mesh the refine pool delivers
+at a deflection decided there.
+
+Claims are dropped once every queue the drain serves is empty. A claim
+outliving its load is a bounding box keyed on a TShape address that a
+closed document may free and a later allocation reuse; until then each
+claim also pins its own shape.
+
+### 18.4 Result
+
+MiSTer, 17058 solids, the DEFAULT path (`ProgressiveLoad` on, coarse rung
+2), one build, A/B by the parameter alone:
+
+| | off | on |
+|---|---|---|
+| drain's visual build | 22.4s / 159 slices | **15.8s / 91 slices** |
+| pre-mesh batch | -- | 7171 shapes in 3.7s wall |
+| frame at convergence | reference | **pixel-identical** |
+
+And with the split reporter, against the same load before this: the GUI
+thread's REAL tessellations fall from **7578 (16.0s) to 403 (5.0s)** --
+validated-only calls unchanged at ~8766, so 7175 asks were answered by
+geometry the workers had already meshed -- the mesh term from 17.2s to
+6.2s, the whole visual build from 26.3s to 13.6s, and the settled frame
+from 69-73s to 56-58s. A per-shape audit over 17054 objects found zero
+triangle-count differences, and the same 5342 objects ending at the exact
+rung.
+
+### 18.5 The measurement trap this walked into twice
+
+The first comparison showed 1843 pixels differing in one small region and
+1% fewer primitives, and two baseline runs were pixel-identical to each
+other -- which looked like proof that the difference was the change rather
+than run variance. It was neither. A per-shape audit named seven objects
+built at `lvl 2` with the pre-mesh and `lvl -1` without it, and the build
+timeline explained why: without it those seven are built TWICE, coarse at
+t=72.8 and again at t=76.5 at the exact deviation, the second build being
+the fidelity ladder's refine landing. With the pre-mesh the load finishes
+~12s sooner, so the bench captured BEFORE that refine landed. The two
+baselines agreed with each other only because both were equally slow.
+
+Captured after the ladder converges in both arms (a 30s quiet window
+instead of 5s), the frames are pixel-identical and every triangle count
+agrees. **A faster load moves the capture, not the mesh** -- any A/B of
+load speed against a picture has to let the ladder settle in both arms,
+and primitive totals still carry a few thousand of refine variance where
+the frame does not.

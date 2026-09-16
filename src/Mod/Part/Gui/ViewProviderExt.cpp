@@ -146,9 +146,12 @@
 #include <Gui/Renderer/MeshSource.h>
 #include <Mod/Part/App/Tools.h>
 
+#include <unordered_map>
+
 #include "ViewProviderExt.h"
 #include "MeshLevelSource.h"
 #include "PartParams.h"
+#include "PreMesh.h"
 #include "SoBrepEdgeSet.h"
 #include "SoBrepFaceSet.h"
 #include "SoBrepPointSet.h"
@@ -848,6 +851,11 @@ struct SlowBuildProbe {
 /// have been closed by then.
 struct DeferredVisualQueue {
     std::deque<App::DocumentObjectT> pending;
+    /// The load's parallel pre-mesh has been handed this document's
+    /// parked shapes (docs/DocumentLoad.md sec 18). Once per queue: the
+    /// batch is submitted at the first slice that may work, when every
+    /// shape is served and nothing has been built yet.
+    bool preMeshed = false;
     /// Counted per drain, for the one line the queue reports itself with.
     std::size_t built = 0;
     std::size_t popped = 0;
@@ -5479,6 +5487,145 @@ void ViewProviderPartExt::scheduleDeferredVisualSlice(int delayMs)
                        []() { ViewProviderPartExt::runDeferredVisualSlice(); });
 }
 
+/// The load's parallel pre-mesh, collected (docs/DocumentLoad.md sec 18).
+///
+/// Every refusal here is a shape whose ask this batch cannot be SURE of
+/// matching, and a mesh built at the wrong ask is worse than no mesh at
+/// all: the display build then pays for the pre-mesh's work and its own.
+/// So the rule throughout is that a doubt excludes.
+/// \a vps are the parked view providers, filtered by the caller: the
+/// parked flag is the view provider's own business (protected), and
+/// everything this reads off them -- the shape and the two deviation
+/// properties -- is the same public state updateVisual reads.
+static void collectPreMeshItems(App::Document *doc,
+                                const std::vector<ViewProviderPartExt *> &vps,
+                                std::vector<PreMeshItem> &items)
+{
+    const int coarseLvl = coarseTessellationLevel(doc);
+    const long deferFaces = Gui::RenderParams::getCoarseDeferFaces();
+    const bool instancing = shapeInstancingActive();
+
+    struct Candidate {
+        TopoDS_Shape shape;
+        double deflection = 0.0;
+        double angle = 0.0;
+        Bnd_Box box;
+        bool excluded = false;
+    };
+    std::vector<Candidate> candidates;
+    candidates.reserve(vps.size());
+    // Every face and edge TShape seen, to the candidate that owns it.
+    // Two candidates sharing one -- an instance pair, a shape and its
+    // own compound -- would have two workers writing one triangulation,
+    // so BOTH go. That is why nothing is submitted until the whole
+    // batch is known.
+    std::unordered_map<const void *, std::size_t> owner;
+
+    for (auto *vp : vps) {
+        TopoDS_Shape shape;
+        try {
+            shape = vp->getShape().getShape();
+        }
+        catch (const Base::Exception &) {
+            continue;
+        }
+        if (shape.IsNull())
+            continue;
+        // The build meshes the shape with its location stripped (the
+        // placement rides the transform node), and that is the shape
+        // whose TShape the claim is about.
+        shape = shape.Located(TopLoc_Location());
+        // An instanced build shares one tessellation among a compound's
+        // members and asks per member: not this batch's business.
+        if (instancing && shape.ShapeType() == TopAbs_COMPOUND)
+            continue;
+        int faces = 0;
+        for (TopExp_Explorer xp(shape, TopAbs_FACE); xp.More(); xp.Next())
+            ++faces;
+        // A shape the drain hands to the stand-in path is not
+        // tessellated by the drain at all (buildCoarseStandIn): the
+        // refine pool delivers its coarse mesh at a deflection decided
+        // there, which is not the one this would build.
+        if (coarseLvl >= 0 && deferFaces >= 0 && long(faces) > deferFaces)
+            continue;
+
+        // The ask, derived exactly as updateVisual derives it -- off the
+        // GEOMETRY box, which is what the claim carries so the build can
+        // derive the same one without measuring a meshed shape.
+        Bnd_Box box;
+        BRepBndLib::Add(shape, box, /*useTriangulation*/ Standard_False);
+        box.SetGap(0.0);
+        if (box.IsVoid())
+            continue;
+        Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+        box.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+        double deflection = std::max(Precision::Confusion(),
+            ((xMax - xMin) + (yMax - yMin) + (zMax - zMin)) / 300.0
+                * std::max(PartParams::getOverrideTessellation()
+                               ? PartParams::getMeshDeviation()
+                               : vp->Deviation.getValue(),
+                           PartParams::getMinimumDeviation()));
+        if (deflection < gp::Resolution())
+            deflection = Precision::Confusion();
+        deflection = std::min(deflection, 20.0);
+        double angle = std::max(Precision::Angular(),
+            std::max((PartParams::getOverrideTessellation()
+                          ? PartParams::getMeshAngularDeflection()
+                          : vp->AngularDeflection.getValue()),
+                     PartParams::getMinimumAngularDeflection())
+                / 180.0 * M_PI);
+        if (coarseLvl >= 0) {
+            const double dx = xMax - xMin, dy = yMax - yMin, dz = zMax - zMin;
+            const double diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (diag <= 0.0)
+                continue;
+            // A fresh rebind carries no error scale and no spent claim,
+            // which is exactly the state every shape of a restore is in
+            // -- so the rung itself is the ask.
+            deflection = meshLevelDeflection(diag, unsigned(coarseLvl));
+            angle = std::min(meshLevelAngle(unsigned(coarseLvl)), M_PI / 2.0);
+        }
+
+        Candidate cand;
+        cand.shape = shape;
+        cand.deflection = deflection;
+        cand.angle = angle;
+        cand.box = box;
+        const std::size_t index = candidates.size();
+        candidates.push_back(std::move(cand));
+
+        // The sharing test, over the subshapes a mesher writes: the
+        // faces (triangulation) and the edges (polygons).
+        auto claim = [&owner, index, &candidates](const TopoDS_Shape &sub) {
+            auto res = owner.emplace(sub.TShape().get(), index);
+            if (!res.second && res.first->second != index) {
+                candidates[res.first->second].excluded = true;
+                candidates[index].excluded = true;
+            }
+        };
+        for (TopExp_Explorer xp(candidates[index].shape, TopAbs_FACE);
+             xp.More(); xp.Next())
+            claim(xp.Current());
+        for (TopExp_Explorer xp(candidates[index].shape, TopAbs_EDGE);
+             xp.More(); xp.Next())
+            claim(xp.Current());
+        // A shape that shares a subshape with ITSELF (the same TShape
+        // twice in one compound) is fine: one worker owns both.
+    }
+
+    items.reserve(candidates.size());
+    for (Candidate &cand : candidates) {
+        if (cand.excluded)
+            continue;
+        PreMeshItem item;
+        item.shape = std::move(cand.shape);
+        item.geomBox = cand.box;
+        item.deflection = cand.deflection;
+        item.angle = cand.angle;
+        items.push_back(std::move(item));
+    }
+}
+
 void ViewProviderPartExt::runDeferredVisualSlice()
 {
     auto &visuals = deferredVisuals();
@@ -5522,6 +5669,38 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         // than spin on the events its restore pumps.
         scheduleDeferredVisualSlice(100);
         return;
+    }
+
+    // The load's parallel pre-mesh (docs/DocumentLoad.md sec 18): hand
+    // the parked shapes to the workers before the first of them is
+    // built. HERE and not inside the restore -- a shape served early
+    // would have its content restored twice -- and once per document,
+    // at the first slice that may work: by now every shape this queue
+    // knows about is served, and nothing has been tessellated yet.
+    if (preMeshEnabled()) {
+        for (auto &entry : visuals.docs) {
+            auto doc = eligible(entry.first);
+            if (!doc || entry.second.preMeshed)
+                continue;
+            entry.second.preMeshed = true;
+            std::vector<ViewProviderPartExt *> vps;
+            vps.reserve(entry.second.pending.size());
+            for (const auto &objT : entry.second.pending) {
+                auto obj = objT.getObject();
+                auto vp = obj
+                    ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
+                          Gui::Application::Instance->getViewProvider(obj))
+                    : nullptr;
+                if (vp && vp->VisualDeferred)
+                    vps.push_back(vp);
+            }
+            std::vector<PreMeshItem> items;
+            collectPreMeshItems(doc, vps, items);
+            FC_LOG("pre-mesh " << entry.first << ": " << items.size()
+                    << " of " << entry.second.pending.size()
+                    << " parked shapes submitted");
+            submitPreMesh(std::move(items));
+        }
     }
 
     // Say what this drain owes and how it is going -- the visual build
@@ -5611,6 +5790,15 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                     // tessellation (see s_drainVisualBuild).
                     Base::StateLocker drainBuild(s_drainVisualBuild);
                     vp->updateVisual();
+                    if (vp->VisualDeferred) {
+                        // Parked again rather than built: a pre-mesh
+                        // worker still owns this shape's TShape (sec
+                        // 18), and it is back on this very queue.
+                        // Walking the rest of a queue that is all in
+                        // flight would only re-park every item and
+                        // burn the slice, so the next one has it.
+                        break;
+                    }
                     ++queue.built;
                 }
             }
@@ -5627,6 +5815,17 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         FC_LOG("progressive load " << it->first << ": " << queue.built
                 << " of " << queue.popped << " visuals in " << queue.slices
                 << " slices, " << queue.spent.count() << 's');
+        if (preMeshEnabled()) {
+            // What the parallel pre-mesh did for this load (sec 18):
+            // the batch's own wall time is what the drain's mesh term
+            // was traded for, so the two are reported together.
+            std::size_t claimed = 0, meshed = 0, failed = 0;
+            double wall = 0.0;
+            preMeshStats(claimed, meshed, failed, wall);
+            FC_LOG("pre-mesh " << it->first << ": " << meshed << " of "
+                    << claimed << " claimed shapes meshed in " << wall
+                    << "s, " << failed << " failed");
+        }
         it = visuals.docs.erase(it);
     }
 
@@ -5635,8 +5834,15 @@ void ViewProviderPartExt::runDeferredVisualSlice()
     // may draw the elements the load gate was holding back.
     syncBuildingVisuals();
 
-    if (visuals.docs.empty())
+    if (visuals.docs.empty()) {
         visuals.seq.reset();
+        // Every queue this drain served is empty, so no build is going
+        // to ask about a pre-mesh claim again -- and a claim outliving
+        // its load is a bounding box keyed on a TShape address that a
+        // closed document may free and a later allocation reuse
+        // (docs/DocumentLoad.md sec 18).
+        clearPreMeshClaims();
+    }
 
     if (more)
         scheduleDeferredVisualSlice();
@@ -5950,6 +6156,22 @@ void ViewProviderPartExt::updateVisual()
     // mirrors arrays this rebuild is about to replace.
     ++meshLadder.visualFillSeq;
     pendingVCache.reset();
+    // A pre-mesh worker may still be writing this very TShape's
+    // triangulation (docs/DocumentLoad.md sec 18). Nothing may read it
+    // until that write is published, so the build is parked exactly as
+    // the load parks one and the drain pops it again once the claim
+    // clears. Placed after the landing claim is consumed and the fill
+    // sequence bumped, so an early exit here leaves the same state
+    // every other early exit does.
+    if (preMeshEnabled() && !cachedShape.getShape().IsNull()
+            && preMeshInFlight(cachedShape.getShape().TShape().get())) {
+        VisualTouched = true;
+        if (auto obj = getObject()) {
+            if (auto doc = obj->getDocument())
+                parkVisualForLoad(doc, obj);
+        }
+        return;
+    }
     if (cachedShape.isNull()) {
         // A shape that has not ARRIVED is not a shape that is empty, and
         // the difference is the whole of the picture. A restore registers
@@ -6106,7 +6328,18 @@ void ViewProviderPartExt::updateVisual()
     try {
         // calculating the deflection value
         Bnd_Box bounds;
-        BRepBndLib::Add(cShape, bounds);
+        // The pre-mesh measured this shape BEFORE it had any
+        // triangulation, and the ask has to be derived from THAT box
+        // (docs/DocumentLoad.md sec 18): with a mesh resident,
+        // BRepBndLib::Add prefers it over the geometry and enlarges the
+        // box by the mesh's own deflection, so measuring again here
+        // would ask for something coarser than what is resident -- and
+        // the redundancy check refuses a finer resident mesh, so the
+        // call would re-tessellate exactly what the pre-mesh built.
+        const bool preMeshBoxUsed = preMeshEnabled()
+            && preMeshBox(cShape.TShape().get(), bounds);
+        if (!preMeshBoxUsed)
+            BRepBndLib::Add(cShape, bounds);
         bounds.SetGap(0.0);
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
         bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
@@ -6562,7 +6795,12 @@ bool ViewProviderPartExt::captureVisualFill(const TopoDS_Shape &cShape,
                 IMeshTools_Parameters meshParams;
                 meshParams.Deflection = deflection;
                 meshParams.Relative = Standard_False;
-                meshParams.Angle = AngDeflectionRads;
+                // OCCT's own parallelism splits THIS shape over its
+                // faces. Measured on a 17058-solid load it is worth
+                // keeping (4.8s of a 22s mesh term) but reaches only
+                // ~2 cores of 28, because most shapes are small: what
+                // scales there is the load's pre-mesh, which splits
+                // across shapes instead (docs/DocumentLoad.md sec 18).
                 meshParams.InParallel = Standard_True;
                 meshParams.AllowQualityDecrease = Standard_True;
 

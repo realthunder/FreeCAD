@@ -171,6 +171,8 @@ SET(PartGui_SRCS
     MeshLevelBuild.cpp
     MeshLevelSource.cpp
     MeshLevelSource.h
+    PreMesh.cpp
+    PreMesh.h
     ViewProviderExt.cpp
     ViewProviderExt.h
     ViewProviderReference.cpp
