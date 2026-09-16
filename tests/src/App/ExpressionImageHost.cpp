@@ -9,8 +9,12 @@
 #include <functional>
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -20,6 +24,7 @@
 #include <App/ExpressionImageBridge.h>
 #include <App/ExpressionLibrary.h>
 #include <Base/FileInfo.h>
+#include <Base/Vector3D.h>
 
 #include "InitApplication.h"
 
@@ -3409,6 +3414,65 @@ bool addFlangeParameters(App::DocumentObject* owner)
     return true;
 }
 
+/// Every vertex of \a shape, as coordinates.
+std::vector<Base::Vector3d> vertexesOf(PyObject* shape)
+{
+    std::vector<Base::Vector3d> out;
+    PyObject* vs = PyObject_GetAttrString(shape, "Vertexes");
+    if (!vs) {
+        PyErr_Clear();
+        return out;
+    }
+    const Py_ssize_t n = PySequence_Size(vs);
+    for (Py_ssize_t i = 0; i < n; ++i) {
+        PyObject* v = PySequence_GetItem(vs, i);
+        double xyz[3] {};
+        const char* names[3] {"X", "Y", "Z"};
+        for (int k = 0; k < 3; ++k) {
+            PyObject* c = v ? PyObject_GetAttrString(v, names[k]) : nullptr;
+            xyz[k] = c ? PyFloat_AsDouble(c) : 0.0;
+            Py_XDECREF(c);
+        }
+        Py_XDECREF(v);
+        out.emplace_back(xyz[0], xyz[1], xyz[2]);
+    }
+    Py_DECREF(vs);
+    return out;
+}
+
+/// How far the two shapes' vertices are apart, in ULPs of the largest
+/// coordinate: for every vertex of one, the distance to the NEAREST
+/// vertex of the other (the larger of the two directions).  Not a
+/// comparison of sorted lists -- one last bit in X reorders two vertices
+/// and then pairs unrelated points, which reads as a whole-element
+/// divergence.  Negative when the vertex counts differ at all.
+double vertexUlpsApart(PyObject* a, PyObject* b)
+{
+    const std::vector<Base::Vector3d> va = vertexesOf(a);
+    const std::vector<Base::Vector3d> vb = vertexesOf(b);
+    if (va.empty() || va.size() != vb.size())
+        return -1.0;
+    double worst = 0.0;
+    double scale = 0.0;
+    auto sweep = [&worst, &scale](const std::vector<Base::Vector3d>& from,
+                                  const std::vector<Base::Vector3d>& to) {
+        for (const auto& p : from) {
+            double best = std::numeric_limits<double>::max();
+            for (const auto& q : to) {
+                const double d = std::max({std::fabs(p.x - q.x), std::fabs(p.y - q.y),
+                                           std::fabs(p.z - q.z)});
+                best = std::min(best, d);
+            }
+            worst = std::max(worst, best);
+            scale = std::max({scale, std::fabs(p.x), std::fabs(p.y), std::fabs(p.z)});
+        }
+    };
+    sweep(va, vb);
+    sweep(vb, va);
+    const double ulp = std::nextafter(scale, std::numeric_limits<double>::max()) - scale;
+    return ulp > 0.0 ? worst / ulp : (worst == 0.0 ? 0.0 : -1.0);
+}
+
 bool partImportable()
 {
     Base::PyGILStateLocker lock;
@@ -3463,7 +3527,21 @@ TEST_F(ExpressionRoutingTest, programsFlangeMatchesNative)
     PyObject* nb = PyObject_CallMethod(native, "exportBrepToString", nullptr);
     ASSERT_NE(rb, nullptr);
     ASSERT_NE(nb, nullptr);
-    EXPECT_TRUE(PyUnicode_Compare(rb, nb) == 0) << "the BRep is not byte-identical";
+    // Byte-identical where the two libms agree, and within the last bit
+    // where they do not -- the rule the corpus gate states and for the
+    // same reason (the guest's wasm libm against the host's).  On macOS
+    // the bolt circle's cos/sin differ in the last bit, which moves a
+    // hole by 1e-14 of its radius: the volume is still identical to the
+    // bit, and the BRep text is not.
+    if (PyUnicode_Compare(rb, nb) != 0) {
+        const double ulps = vertexUlpsApart(routed, native);
+        std::cout << "flange: the BRep is not byte-identical; the vertices are " << ulps
+                  << " ULPs of the largest coordinate apart" << std::endl;
+        EXPECT_GE(ulps, 0.0) << "the shapes differ in structure, not in rounding";
+        EXPECT_LE(ulps, 4.0) << "the BRep is not byte-identical and the vertices are " << ulps
+                             << " ULPs of the largest coordinate apart, more than a last-bit "
+                                "libm difference";
+    }
     Py_DECREF(rb);
     Py_DECREF(nb);
     Py_DECREF(routed);
@@ -4899,9 +4977,39 @@ std::string corpusRig(const CorpusGate& gate)
           "    return hashlib.sha1(sh.exportBrepToString().encode()).hexdigest()\n"
           "def verts(o):\n"
           "    try:\n"
-          "        return sorted((v.X, v.Y, v.Z) for v in o.Shape.Vertexes)\n"
+          "        return [(v.X, v.Y, v.Z) for v in o.Shape.Vertexes]\n"
           "    except Exception:\n"
           "        return None\n"
+          // How far apart two vertex sets are: for every point, the
+          // distance to the NEAREST point of the other set, the larger
+          // of the two directions.  NOT the pairwise distance of the two
+          // SORTED lists, which is what this used to be: one last bit in
+          // X reorders two vertices, the zip then pairs unrelated points,
+          // and a shape that agrees to 2 ULPs reads as 5e14 of them
+          // (Draft's circular array, measured 2026-09-16).  A bucket
+          // grid keeps it linear; a point with no neighbour in its 27
+          // buckets falls back to the whole set, which only a real
+          // divergence pays for.
+          "def _dev(vn, vr):\n"
+          "    eps = 1e-6\n"
+          "    key = lambda p: tuple(int(math.floor(c / eps)) for c in p)\n"
+          "    grid = {}\n"
+          "    for q in vr:\n"
+          "        grid.setdefault(key(q), []).append(q)\n"
+          "    near = lambda p, qs: min((max(abs(a - b) for a, b in zip(p, q)) for q in qs),\n"
+          "                             default=None)\n"
+          "    worst = 0.0\n"
+          "    for p in vn:\n"
+          "        k = key(p)\n"
+          "        close = [q for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)\n"
+          "                 for q in grid.get((k[0] + dx, k[1] + dy, k[2] + dz), ())]\n"
+          "        d = near(p, close)\n"
+          "        if d is None:\n"
+          "            d = near(p, vr)\n"
+          "        if d is None:\n"
+          "            return None\n"
+          "        worst = max(worst, d)\n"
+          "    return worst\n"
           "def proxy(o):\n"
           "    p = getattr(o, 'Proxy', None)\n"
           "    if p is None:\n"
@@ -4960,9 +5068,11 @@ std::string corpusRig(const CorpusGate& gate)
           "        if sn is not None and sn != sr:\n"
           "            d = ulps = None\n"
           "            if vn and vr and len(vn) == len(vr):\n"
-          "                d = max(abs(a - b) for pa, pb in zip(vn, vr) for a, b in zip(pa, pb))\n"
+          "                one, other = _dev(vn, vr), _dev(vr, vn)\n"
+          "                d = None if one is None or other is None else max(one, other)\n"
           "                scale = max(abs(c) for p in vn + vr for c in p)\n"
-          "                ulps = d / math.ulp(scale) if scale else (0.0 if d == 0 else None)\n"
+          "                if d is not None:\n"
+          "                    ulps = d / math.ulp(scale) if scale else (0.0 if d == 0 else None)\n"
           "            out['differ'].append([name, d, ulps])\n"
           "    return json.dumps(out)\n";
 }
