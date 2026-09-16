@@ -150,7 +150,7 @@ ParameterGrp::handle sandboxParams()
 ExpressionSandbox::SandboxStatus ExpressionSandbox::sandboxStatus()
 {
     SandboxStatus status;
-    status.enabled = sandboxParams()->GetBool("Evaluate", false);
+    status.enabled = sandboxParams()->GetBool("Evaluate", true);
 #ifdef FC_EXPR_IMAGE_HOST
     status.hostBuilt = true;
     auto where = ImageHost::instance().location();
@@ -178,7 +178,7 @@ void ExpressionSandbox::setEvaluationRouted(bool on)
 bool ExpressionSandbox::proxyRestoreRouted()
 {
 #ifdef FC_EXPR_IMAGE_HOST
-    if (!sandboxParams()->GetBool("Evaluate", false))
+    if (!sandboxParams()->GetBool("Evaluate", true))
         return false;
     // The preference alone is not enough.  On a build with no runtime
     // installed every saved Proxy went down the routed path, the guest
@@ -199,7 +199,7 @@ bool ExpressionSandbox::proxyRestoreRouted()
 bool ExpressionSandbox::evaluationRouted()
 {
 #ifdef FC_EXPR_IMAGE_HOST
-    if (!sandboxParams()->GetBool("Evaluate", false))
+    if (!sandboxParams()->GetBool("Evaluate", true))
         return false;
     return ImageHost::instance().available();
 #else

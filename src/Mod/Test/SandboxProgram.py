@@ -662,7 +662,9 @@ class SandboxProgramFixtureCases(unittest.TestCase):
             self.params.set(SANDBOX, "Evaluate", True)
             self.params.set(SECURITY, "Enforce", True)
         else:
-            self.params.remove(SANDBOX, "Evaluate")
+            # routing is ON by default since 2026-09-16: native has to be
+            # written, an absent key is no longer off
+            self.params.set(SANDBOX, "Evaluate", False)
             self.params.set(SECURITY, "Enforce", False)
         self.assertEqual(FreeCAD.ExpressionSandbox.routed(), routed)
 
@@ -864,7 +866,8 @@ class SandboxProgramFixtureCases(unittest.TestCase):
         self.assertEqual(security.resolve(principal, "host.import", "Part"), "allow")
 
         # natively and enforced, the grant is what lets the programs import Part
-        self.params.remove(SANDBOX, "Evaluate")
+        # (ON by default since 2026-09-16: native has to be written)
+        self.params.set(SANDBOX, "Evaluate", False)
         self.params.set(SECURITY, "Enforce", True)
         doc = FreeCAD.openDocument(path)
         self.assertEqual(security.principalOf(doc.Name), principal)
