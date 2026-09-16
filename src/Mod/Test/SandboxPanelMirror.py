@@ -35,6 +35,7 @@ Xvfb.  Skips headless."""
 import base64
 
 import json
+import os
 import unittest
 
 import FreeCAD
@@ -44,6 +45,43 @@ REF = "IPY_MODEL_"
 
 def _ref(ref):
     return ref[len(REF):] if isinstance(ref, str) and ref.startswith(REF) else None
+
+
+class _Recorder:
+    """Records the wire for the browser gate (docs/Sandbox.md 7.22).
+
+    Every frame `pushed()` hands back and every `widgets.subscribe`
+    reply, kept so the DOM walker can be gated on a replay of what the
+    desktop really sent rather than on a hand-written sample.  A proxy
+    rather than a patch: the gate binds `self.FW` once, so nothing else
+    here changes and no module attribute is touched.  Off unless
+    SANDBOX_PANEL_FIXTURES names a directory.
+    """
+
+    def __init__(self, fw):
+        self._fw = fw
+        self.frames = []
+        self.replies = []
+
+    def __getattr__(self, name):
+        return getattr(self._fw, name)
+
+    def pushed(self):
+        out = self._fw.pushed()
+        for entry in out:
+            self.frames.append(
+                {"client": entry["client"], "frame": json.loads(entry["json"])}
+            )
+        return out
+
+    def control(self, payload, client):
+        reply = self._fw.control(payload, client)
+        try:
+            if json.loads(payload).get("op") == "widgets.subscribe":
+                self.replies.append(json.loads(reply))
+        except (ValueError, TypeError):
+            pass
+        return reply
 
 
 class SandboxPanelMirrorTest(unittest.TestCase):
@@ -62,6 +100,10 @@ class SandboxPanelMirrorTest(unittest.TestCase):
         self.FW.watchMessages()
         self.FW.messages()
         self.FW.pushed()
+        # after the drains, so a fixture carries this case only
+        self.fixtureDir = os.environ.get("SANDBOX_PANEL_FIXTURES")
+        if self.fixtureDir:
+            self.FW = _Recorder(Gui.FormWidgets)
 
     def tearDown(self):
         try:
@@ -77,7 +119,32 @@ class SandboxPanelMirrorTest(unittest.TestCase):
                 self.Gui.activateWorkbench(self.previous)
                 self.spin()
         finally:
+            self.writeFixture()
             FreeCAD.closeDocument(self.doc.Name)
+
+    def writeFixture(self):
+        """The case's frames, for the browser gate's replay."""
+        if not getattr(self, "fixtureDir", None) or not isinstance(self.FW, _Recorder):
+            return
+        os.makedirs(self.fixtureDir, exist_ok=True)
+        name = self.id().rsplit(".", 1)[-1]
+        if name.startswith("test_"):
+            name = name[len("test_"):]
+        path = os.path.join(self.fixtureDir, name + ".json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "case": name,
+                    "subscribeReplies": self.FW.replies,
+                    "frames": self.FW.frames,
+                },
+                handle,
+                indent=1,
+                sort_keys=True,
+            )
+        FreeCAD.Console.PrintMessage(
+            "panel fixture: %s (%d frames)\n" % (path, len(self.FW.frames))
+        )
 
     @staticmethod
     def spin(ms=30, times=4):
