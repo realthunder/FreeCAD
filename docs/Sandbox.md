@@ -8003,26 +8003,50 @@ trap biting its own author.  `DISABLED_BenchFlangeProgram`, the decider
 sec 11 item 4 names: a shape program is **1.084x** native when routed
 (21.4 ms against 19.8 ms, +1.7 ms, 15 bridge ops per evaluation).
 
-**A finding that is NOT the sandbox's** (2026-09-16): 2000 cells of
-`=Box.Shape.Volume / i + Box.Height` recompute at **56.8 ms per cell**
-(113 s for the sheet), against 15.2 us/cell for arithmetic cells and 156
-us for that same expression evaluated once.  Routing changes nothing
-(56.9 ms/cell routed, 56.8 native), so it is a host path.  The
-mechanism: `PropertySheet::addDependencies` asks `ObjectIdentifier::
-getDep(true)`, which resolves and then calls `access(result, nullptr,
-&deps)` -- the same walk that EVALUATES the path, `Box` -> `.Shape` ->
-`.Volume`, to discover what it touches, so collecting a dependency runs
-OCCT's mass properties.  `getDep` ignores its own `needProps`
-(`(void)needProps;`, 2022-05-09) with the cheap early return commented
-out beneath it; `Cell::setExpression` rebuilds dependencies
-unconditionally, and `Sheet::onChanged` calls it again on the result
-write.  The non-evaluating twin exists -- `getDepStructural`, from the
-sandbox seam work -- but it OVER-APPROXIMATES on purpose (an
-all-property dependency once the path continues past the resolved
-property), so it is not a drop-in.  The multiplier that turns 156 us
-into 56.8 ms is NOT explained by reading and wants instrumentation.  Not
-sized and not started: the disabled shortcut is the user's own 2022
-call.
+**A finding that is NOT the sandbox's, DIAGNOSED AND FIXED 2026-09-16**
+(`f21f46b9f1`).  A sheet of unit-valued cells that reference anything
+recomputed in **O(n^2)**.  Measured on `=Box.Height * i`, one document
+per case, routing off:
+
+    n=250     692.2 us/cell  ->  11.3        n=1000   2818.0  ->  11.6
+    n=500    1394.3          ->  10.9        n=2000   5681.3  ->  11.9
+
+Flat in n afterwards; 477x at 2000 cells.  The mechanism: a
+QUANTITY-valued cell's write goes through `Cell::setComputedUnit`,
+whose `AtomicPropertyChange` invokes `PropertySheet::hasSetValue()`,
+and that walks EVERY cell of the sheet (`getDepObjects` on each
+expression, plus the element-reference visitor) before calling
+`updateDeps`.  Per cell that is O(n).  The fix is the class's own
+batching: one `AtomicPropertyChange` held across `Sheet::execute`'s
+recompute loop makes the inner ones no-ops (`tryInvoke` fires only at
+`signalCounter == 1`), leaving one rebuild at the end -- which is what
+`hasSetValue` does anyway, rebuilding wholesale from `data`.
+`markChange` is false, so a pass that writes nothing still costs
+nothing.  Correctness: an external change still reaches the cells
+(`Box.Height` 10 -> 20 propagates) and the sheet still lists `Box` in
+its `OutList`; `TestSpreadsheet` 52 OK, ctest 643/643.  This is host
+code that looks upstream, not fork-specific.
+
+**Three things this section got wrong on the way, kept because they
+cost hours.**  (1) The SHAPE read was blamed and is innocent:
+`=Box.Shape.Volume / i` is flat at ~158 us/cell at every size, which is
+just OCCT's mass properties.  The original cell was pathological
+because it ends `+ Box.Height`, making the RESULT a quantity -- a plain
+number result never calls `setComputedUnit` and was never affected,
+which is why a 10k-cell arithmetic sheet was always 15 us/cell.  (2)
+The **56.8 ms/cell** figure carried a confound: that bench's sheet
+shares a document with a 10k-cell sheet and a third sheet, and
+`doc.recompute()` covers all of them; in a fresh document the same cell
+is 6.5 ms/cell.  Bench sheets belong in their own documents.  (3)
+Routing was never involved -- 56.9 ms/cell routed against 56.8 native.
+The `getDep(true)` -> `access(..., &deps)` observation below stands as
+true (collecting a dependency DOES evaluate the path, so a dependency
+walk over shape cells runs OCCT), and it is why this sheet was the
+worst case, but it was not the cause: `getDep` ignores its own
+`needProps` (`(void)needProps;`, 2022-05-09) with the cheap early
+return commented out beneath it, and the non-evaluating twin
+`getDepStructural` OVER-APPROXIMATES on purpose, so neither is a
+drop-in.  Both are still open, and both are the user's call.
 
 ### 8.2 The corpus gate
 
