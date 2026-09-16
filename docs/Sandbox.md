@@ -48,7 +48,7 @@ pieces are frozen, not extended.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the browser half next
+    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases, from the panel gate) recorded 2026-09-16, the walker next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same) and the restore half guarded by available() first
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -8126,6 +8126,48 @@ comparison and adds no dependency -- the alternative, rendering Solid
 into jsdom or happy-dom, buys a truer test for a new devDependency and
 a slower gate.  **Recommended: the pure plan plus one DOM smoke check
 in the hand-opened page** (question 5).
+
+**The fixture corpus BUILT 2026-09-16.**  `SandboxPanelMirror.py` grows
+a recorder (`_Recorder`, armed only by `SANDBOX_PANEL_FIXTURES`): a
+proxy over `FormWidgets` keeping every frame `pushed()` drains and every
+`widgets.subscribe` reply, written per case in `tearDown`.  A proxy
+rather than a patch, so not one assertion in the gate changed.  Six
+fixtures, one per stage, in `src/Gui/Renderer/web/src/widgets/fixtures/`:
+
+    pad_panel             69 frames   64 open, 4 update, 1 close    W1
+    draft_orthoarray      52          49 open, 2 update, 1 close    W1
+    cam_op_panel          95          92 open, 2 update, 1 close    W1
+    sketcher_constraints  56          32 open, 21 custom, 2, 1      W2
+    svg_picture           12           8 open, 3 update, 1 close    W3
+    nested_messagebox     21          15 open, 4 update, 2 close    W4
+
+Pad's 64 opens are 8.4's measured 64 messages -- the corpus checking
+itself against the measurement.  They carry no absolute path, no home
+and no temp directory; `locale` is `C` and `theme` empty under the gate.
+Regenerate with `SANDBOX_PANEL_FIXTURES=<dir>` and
+`SANDBOX_GUI_GATE_MODULES=SandboxPanelMirror` -- that module alone: a
+root's id is a process-wide serial (`panel:1` to `panel:6`, the cases in
+alphabetical order), so a different module set renumbers them, which a
+replay does not care about (it is self-consistent) but a diff does.
+
+**The corpus earned itself at once: an `open` arrives TWICE for the same
+id.**  Every one of the six starts with two adjacent, byte-equal opens
+of `panel`, the mirror's list container.  `widgets.subscribe` calls
+`checkMirror()`, which runs `PanelMirror::start()` synchronously; that
+adopts the list with the announce on, and the client is already in
+`_panels`, so it hears that open live -- then the deferred
+`pushSnapshot()` sends an open for every object in the store, the list
+among them.  Only an object adopted inside that window doubles, which is
+why it is exactly one.  So **the walker's `open` must be an idempotent
+replace**, which is what `Store::insert` does on the host.  Nothing to
+fix on the wire: a rule to build to, and one no hand-written sample
+would ever have shown.
+
+**The harness runs on node 24** (`emsdk-5.0.3/node/24.19.0_64bit`, the
+only node on this box and what `FCVIEWER_NODE` already points at), whose
+`process.features.typescript` is `strip` -- it imports the walker's
+`.ts` core directly, so the ruled pure-plan gate needs no compile step
+and no new dependency.
 
 **Cost** (new; TypeScript unless noted):
 
