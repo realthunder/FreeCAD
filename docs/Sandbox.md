@@ -49,7 +49,7 @@ pieces are frozen, not extended.**
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
-    routing ON by default            not yet     preference Expression/Sandbox:Evaluate
+    routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same) and the restore half guarded by available() first
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
                                                  confined to the Mod roots, both containers
     the document program             D1 built    7.17: a Part::Feature's Shape expression is the
@@ -204,7 +204,7 @@ Each rung ships alone; each is strictly more Python in the sandbox.
 
 - **Rung 0, expressions** **[built]**: both spreadsheet modes route,
   the corpus gate passes, the budget works.  Routing is preference-gated
-  OFF by default (sec 3.5).
+  and ON by default since 2026-09-16 (sec 3.5); OFF by default before.
 - **Rung 1, native dispatch for `call` members** **[designed; DROPPED
   2026-09-08]**: the annotated method set retargeted from Python C API
   calls to generated C++ dispatch.  Dropped because it has no
@@ -253,7 +253,11 @@ around App.  `ExpressionCore` stays an OBJECT library folded into
 - Pre-resolve host-side, then FAIL CLOSED: no silent native fallback
   when the image cannot evaluate (2026-08-31).
 - Routing stays OFF by default until the corpus regression, not
-  judgement, says otherwise (2026-08-31).
+  judgement, says otherwise (2026-08-31).  It said otherwise on
+  2026-09-16: 94 files, 195 expressions, 195 same, 0 differ.  The same
+  preference also routes a saved Proxy's restore, which that gate does
+  not measure, so the restore half was guarded by `available()` first
+  (3.5) and the default flipped only after.
 - wasmtime stays a SHARED library and a conda package
   (`wasmtime-capi`), decided on the multi-process OCCT direction and on
   more Python moving into the image, not on size (2026-09-01).
@@ -1002,7 +1006,8 @@ read_prop/get_attr/call counts say where a snapshot op would pay
 
 ### 3.5 The router: what is routed
 
-Preference `Expression/Sandbox:Evaluate`, **OFF by default**.  Routed:
+Preference `Expression/Sandbox:Evaluate`, **ON by default since
+2026-09-16** (OFF by default before).  Routed:
 expression evaluation, the spreadsheet through the single seam
 `PropertySheet::eval` (and its `evalPy` twin) -- python mode CROSSES
 rather than being refused, since python mode is a lexer state plus
@@ -8214,7 +8219,8 @@ Every gtest and the corpus gate select a runtime per process through
 Preferences under `User parameter:BaseApp/Preferences/Expression/`:
 
     Sandbox:Runtime          "pyodide" | "wasi" (default: pyodide when built)
-    Sandbox:Evaluate         route evaluation through the image (default OFF);
+    Sandbox:Evaluate         route evaluation through the image (default ON
+                             since 2026-09-16, OFF before);
                              also routes a document object's saved Proxy
                              to the guest at open, failing closed (3.5);
                              BOTH halves also require a runtime that
@@ -8377,6 +8383,29 @@ push the user's call).
    byte-identical to native, and the corpus gate stays green.
 3. **Routing ON by default** (`Expression/Sandbox:Evaluate`) when the
    corpus gate says so, as ruled 2026-08-31 -- not judgement.
+   **BUILT 2026-09-16.**  The gate said so: 95 files listed, 94
+   compared, 195 expressions, 195 same, 0 differ, no error on either
+   side, one timeout (8.2) -- the 2026-09-14 result to the number.
+   Found on the way and fixed BEFORE the flip: the same preference also
+   routes a saved Proxy's restore, which the gate does not measure, and
+   on a build with no runtime installed that de-Proxied 70 of 70
+   objects of a real Draft document, so `proxyRestoreRouted()` now asks
+   `available()` too (3.5; gate
+   `ExpressionImageEvalTest.proxyRestoreNeedsRuntime`).  The flip
+   itself is the three defaults in `ExpressionEvaluator.cpp` and the
+   save/restore in `SandboxProxyImport.py`, which would otherwise read
+   False from an unset key and write it back.  Measured on the flipped
+   build over `data/examples/draft_test_objects.FCStd`: the key unset
+   routes (70 stand-ins, 0 native), a stored `false` still wins (70
+   native, so nobody who opted out is overridden), and with no runtime
+   the guard keeps all 70.  Live construction is NOT affected --
+   `MyClass(obj)` in a macro still builds a host Proxy, since
+   `constructGuestProxy` answers only for a construction the guest
+   serves.  `scripts/sandbox-reopen-routed.py` reproduces the 7.6
+   reference to the number: 70 stand-ins, 0 host, 0 unserved, 0
+   invalid, one shape not byte-identical (Polygon, the documented 1 ULP
+   of the guest's libm `cos`).  The rest of the work was the tests,
+   where an absent key used to mean off -- sec 12.
 4. **Expression performance, two bounded items** (1.3, rung 1's
    replacement): the bindings pack cached per cell across evaluations
    and invalidated on document change (the 23 us per eval of 8.1);
@@ -8607,6 +8636,23 @@ sockets, any network for the reference image, a webview escape hatch.
 - A `FREECAD_USER_HOME` pointing at a nonexistent directory is silently
   ignored and writes the REAL `user.cfg`; an ad-hoc gate run once left
   `Enforce=0` there.
+- **An absent `Evaluate` key stopped meaning "off" on 2026-09-16**, when
+  routing became the default (sec 11 item 3).  Twelve cases in three
+  modules broke on it.  `SandboxProgram.route(False)` removed the key
+  and then asserted `routed()` was False.  The tampered-library case
+  used the same idiom for its "natively and enforced" step, so that
+  step ran ROUTED, where `import Part` is served by the guest instead
+  of being `host.import` -- the withheld grant blocked nothing and the
+  consumer stayed Up-to-date instead of going Invalid.
+  `FeaturePythonChainCases` and `ViewProviderChainCases` set routing
+  nowhere at all, while their hooks are recorded on the HOST and a
+  Proxy restored into the guest calls nothing there (a view provider's
+  own Proxy is never routed, but the EXTENSION of a view chain is a
+  document object whose Proxy is).  The distinction to keep: removing
+  the key INSIDE a save-and-restore is right -- it restores "unset",
+  which is what was there, and every `PrefGuard` in the Test modules
+  does exactly that; removing it to MEAN off is a bug.  A case that
+  wants native writes `SetBool("Evaluate", False)`.
 - The image directory is read-only after an install: the compiled
   module cache must live under `<user cache>`; its file name hashes the
   full image path (collision if two images share a base name).
