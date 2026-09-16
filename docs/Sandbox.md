@@ -7081,7 +7081,7 @@ the writer).  What the numbers decide:
   (`grabUs` is counted, the bench has no picture); a non-native file
   dialog's rows; the DOM client's own cost of applying an open.
 
-### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket; C3 BUILT 2026-09-15, the client principal; C4 BUILT 2026-09-15, the console panel; C5 BUILT 2026-09-15, the latency and the page's memory measured, and a prefetch of sibling reads]**
+### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket; C3 BUILT 2026-09-15, the client principal; C4 BUILT 2026-09-15, the console panel; C5 BUILT 2026-09-15, the latency and the page's memory measured, and a prefetch of sibling reads; C6 BUILT 2026-09-16, the guest in a worker -- Safari]**
 
 The question, asked before the document program (7.17) was started:
 how far is a Python console in the browser tier -- pyodide running in
@@ -7875,6 +7875,126 @@ Cloudflare quick tunnel would publish the served document on the internet,
 which is not done without the owner's say; a phone; the decomposition of
 the 0.4 ms loopback cost; batching a chain of reads.
 
+**C6, BUILT 2026-09-16.**  The console in Safari: the guest in a worker,
+parked in Atomics.wait while the page carries the op.  Asked for by the
+user on a macOS box, where Safari 17.6 is the browser and has no JSPI --
+so this is the "only if necessary" of the roadmap's item 7, and it was.
+
+*Why there is no third option.*  The guest's host call is a synchronous
+wasm import made from deep inside CPython, so something must WAIT for the
+socket: either the wasm stack suspends (JSPI, C2) or a thread blocks
+(Atomics.wait).  Safari has no JSPI and no plan on the table for one, and
+a thread may only block if it is not the page's -- Atomics.wait throws on
+the main thread -- so the guest moves into a worker and the page keeps the
+socket.  Which also answers the shape: the SOCKET does not move.  The
+viewer's connection is the page's (C4), one roster entry and one
+principal, and the worker never sees it.
+
+*What was measured first, before any of it was written* (Safari 17.6 on
+macOS 12.7.6, the probe page of scratch): cross-origin isolation with
+COOP/COEP is granted, `SharedArrayBuffer` and a worker's `Atomics.wait`
+work, JSPI is absent, and -- the one that decides whether this section is
+possible at all -- **pyodide 314.0.6 boots and runs CPython 3.14 in
+Safari**, unchanged, 9.2 s cold on this box.  A browser that could not run
+the runtime would have ended C6 before it started.
+
+*The handshake* (`web/src/sandbox/sabwire.ts`): one SharedArrayBuffer,
+three int32 slots and a 1 MB data region.  The worker copies the request
+out of wasm memory, posts it to the page (it is not parked yet, so a
+message is free), stores WAITING and waits; the page round trips over the
+bridge, writes the reply into the region, sets TOTAL, CHUNK and
+CHUNK_READY and notifies; the worker copies the chunk out and, if the
+reply is longer than the region, stores WAITING again and asks for the
+next chunk by message.  A refused, lost or timed-out op is FAILED, which
+the import answers -1 to and the guest raises "host bridge unavailable"
+on -- the same end the JSPI path's rejected promise has.  The request
+goes by message and the reply by shared memory for the same reason: by
+the time the reply comes the worker can no longer receive a message.
+
+*The guest is the same guest.*  `BrowserGuest.boot` gained a `syncBridge`
+(guest.ts): where a `bridge` is wrapped in `WebAssembly.Suspending` and
+entered through `WebAssembly.promising`, a `syncBridge` is an ordinary
+function and `fcx_call` is entered directly -- because the thread it runs
+on may block.  Nothing else about the boot, the wheel, the packages or
+the wire changes, and `guestworker.ts` is that boot in a worker.  On the
+page `WorkerGuest` (workerguest.ts) holds the bridge and answers the
+parked worker; both it and `BrowserGuest` implement one `SandboxGuest`
+interface, which is all `ConsoleSession` now knows about.  The transport
+is chosen once, per browser: JSPI where there is JSPI (the path C1-C5
+measured and the one Chrome and Firefox keep), the worker otherwise, and
+`?guest=worker` or `?guest=jspi` forces one so a gate can run either.
+
+*Cross-origin isolation.*  A SharedArrayBuffer exists only on a page the
+browser has isolated, so a served document now carries
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` (`HttpReply::isolate`,
+SceneServer.cpp).  No CORP headers were needed: every file a served page
+fetches -- the bundle, the worker, the runtime, the wheels, the packages
+-- is this same origin, which passes the embedder check on its own.
+`FC_SERVE_NO_COI=1` turns the whole thing off for a page that must embed
+something cross-origin instead.
+
+**The trap, and it cost an hour**: on an isolated page a dedicated
+worker's OWN SCRIPT must also answer with the embedder policy, or the
+worker does not load -- and what a page sees of that is an error with an
+EMPTY message and a stack pointing at the `new Worker` line.  It reads
+exactly like a bad URL, which it also was the first time (vite's default
+base made the worker `/assets/...`, and the bundle is served under
+`/web/`: `base: './'` in vite.config.ts).  So `Cross-Origin-Embedder-
+Policy` goes on every file of the bundle and the opener policy on the
+document alone; `SceneServerWire.servedPageIsCrossOriginIsolated` holds
+both halves.
+
+*Measured, the page side* (the runtime, the wheel and the guest, with no
+host: C1's gate page, which `?guest=worker` now boots in a worker, served
+by a static stand-in so the FreeCAD build was not on the critical path).
+Six checks pass on every one of them -- an expression, a quantity,
+CPython 3.14, the in-image FreeCAD module, the unattached bridge's
+refusal, every wheel loaded:
+
+    browser                       transport   runtime   wheel   guest mem
+    ----------------------------  ----------  -------  ------  ----------
+    Safari 17.6 (macOS 12.7.6)    worker       10.1 s   417 ms      30 MB
+    Chrome 137 headless           jspi          4.1 s   463 ms      30 MB
+    Chrome 137 headless           worker        4.4 s   228 ms      30 MB
+
+The runtime figures are a COLD load of 13 MB with `no-store` on the
+stand-in; the real serve gives the runtime a `max-age` and only the first
+visit pays it.  Safari's 10 s against Chrome's 4 s is that download plus a
+slower first compile of pyodide's 9.6 MB wasm, not the transport: the
+worker costs Chrome 0.3 s over its own JSPI path, and nothing at all on
+the ops.
+
+*What the thread buys, beyond Safari.*  C4 recorded that a pure CPU loop
+freezes the page and only the worker could fix it: the interrupt buffer
+is now shared memory the page writes WHILE the guest runs, so Ctrl+C
+stops `while True: m += 1`, not just a loop that reaches the host --
+gated below, and the one check the JSPI path does not run, because there
+it would hang the page.  The page also paints while a statement runs.
+Both are the worker's, on any browser that takes it.
+
+*Gates.*  `tests/gui/sandbox-console-safari.py` (not registered,
+docs/Testing.md; macOS only, no WebDriver and no puppeteer): it serves
+two documents with a token door, `open -a Safari` opens C4's own gate
+page with `&guest=worker&report=<url>`, the page drives the panel and
+POSTs its verdict to a collector the test runs, and the desktop is
+checked for what the console wrote.  **24 PASS in Safari 17.6 on macOS
+12.7.6**, every one of C4's checks plus the CPU loop: the console boots
+in a worker (5.3 s), reads `App.ActiveDocument`, keeps a name across
+lines and writes `Box.Length`, runs a block, shows a traceback without
+its own frames, is refused `newDocument` as the client
+(`app.write -- not available to this client`), completes a module name
+and a document object's property over the bridge, walks the history,
+runs a paste, is interrupted on a host loop AND on `while True: m += 1`,
+follows a document switch and makes an object there -- and the desktop
+carries both writes.  973 ops over the run, 0.49 ms mean, 35 ms worst.
+`SceneServerWire.servedPageIsCrossOriginIsolated` is the header gate.
+
+*No regression on the JSPI path*, which every other browser still takes:
+C4's own Chrome gate re-run on this box (Chrome 137 headless, the newest
+that starts on macOS 12), 24 PASS, 1220 ops at 0.44 ms; and C1's gate
+page passes on both transports in Chrome (the table above).
+
 ### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, BUILT 2026-09-13 inside 7.17's D2]**
 
 The user's answer to 7.17's gap against the spreadsheet-as-object
@@ -8382,7 +8502,11 @@ push the user's call).
    loop was one op per element, too slow through a tunnel), then a
    per-statement prefetch of sibling reads, ruled the same day -- 50
    objects at 100 ms RTT, 5.4 s -> 0.42 s; the guest is +185 MB PSS in
-   the page.  C6 (Safari) only if necessary (ruled 2026-09-15).
+   the page.  C6 (Safari) only if necessary (ruled 2026-09-15) -- and it
+   was: BUILT 2026-09-16 on a macOS box whose browser is Safari, the
+   guest in a worker parked in Atomics.wait with the socket left on the
+   page, and COOP/COEP on the served pages.  It also makes a pure CPU
+   loop interruptible, which C4 could not.
 
 DROPPED 2026-09-08: G4 (7.16, sized), F1 (7.14: it closed a hole only
 a SESSION guest has), N1-N5 (network is a session need), G5, G6, rung
