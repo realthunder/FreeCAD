@@ -3101,17 +3101,19 @@ Two things this box says that the Linux one does not:
 - **`libv8.dylib` was built for macOS 13.5** and every link against it warns
   "built for newer macOS version (13.5) than being linked (11.3)". It loads and
   runs on 12.7.6 anyway -- the whole sandbox, guest included, works.
-- **Three sandbox tests fail here and are not regressions**:
-  `ExpressionRoutingTest.programsFlangeMatchesNative` ("the BRep is not
-  byte-identical") and `ExpressionImageEvalTest.draftTestObjects{Built,Reopen}Routed`
-  (a Draft `Array` differing by 458 units). They compare a NATIVE result against
-  the same computation ROUTED through the wasm guest and demand near-bit
-  equality; the host half is macOS's libm and OCCT, the guest half is wasm's, and
-  this box is the first to run them at all. Untouched by the console work, and
-  worth a look of their own. **Without the bundled wheels of step 4 there are
-  eight**: five more report `ModuleNotFoundError: No module named 'ipywidgets'`,
-  and under the default 5 s budget they report a TIMEOUT instead, which is the
-  misleading face of the same gap on a 4-core box.
+- **Three sandbox tests failed here on the first run and are now fixed**
+  (2026-09-16): they compare a NATIVE result against the same computation ROUTED
+  through the wasm guest, the host half being macOS's libm and the guest half
+  musl's, and this box was the first to run them at all. Two were the
+  comparison -- the corpus gate zipped two SORTED vertex lists, where one last
+  bit in X reorders two vertices and pairs unrelated points, so a Draft array
+  2 ULPs out reported 458 units -- and the third, the flange, demanded a
+  byte-identical BRep where the bolt circle's cos/sin differ in the last bit
+  (0.5 ULPs, the volume identical to the bit). See the commit; **ctest is
+  635/635 here**. **Without the bundled wheels of step 4 there are eight**: five
+  more report `ModuleNotFoundError: No module named 'ipywidgets'`, and under the
+  default 5 s budget they report a TIMEOUT instead, which is the misleading face
+  of the same gap on a 4-core box.
 - The **pivy wheel** (`FREECAD_PIVY_WHEEL`) is not built here; nothing the
   browser console needs wants it.
 
