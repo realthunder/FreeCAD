@@ -261,8 +261,12 @@ const cyclesItems = () => {
 
 // The desktop's task panel, mirrored (docs/Sandbox.md 7.22): a card like
 // the console's, opened from the launcher. Subscribing is what starts
-// the host's mirror, so a closed card costs the desktop nothing.
-const [taskPanelOpen, setTaskPanelOpen] = createSignal(false);
+// the host's mirror, so a closed card costs the desktop nothing. `?panel`
+// opens it on load, for the same reason `?sheet` does: a headless run has
+// no way to reach the launcher, and this card is the one W1 must be seen
+// rendering.
+const [taskPanelOpen, setTaskPanelOpen] = createSignal(
+  new URLSearchParams(location.search).has('panel'));
 
 const host = document.createElement('div');
 host.id = 'fc-ui';

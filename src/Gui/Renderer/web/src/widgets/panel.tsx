@@ -80,17 +80,44 @@ export function TaskPanelCard(props: {
   const ensure = () => {
     if (client) return client;
     client = new PanelClient(() => setVersion((n) => n + 1));
-    client.subscribe().catch((err) => setFailed(String(err?.code ?? err)));
     return client;
   };
 
+  // The card can open BEFORE the socket is up: `?panel` opens it during page
+  // load, and the launcher's entry can be clicked while the viewer is still
+  // coming up. control.ts refuses an op on a down socket with 'Offline'
+  // rather than queueing it, so a single subscribe at open time leaves a
+  // dead card that only a reload clears -- which is what the first run
+  // against a live serve showed. An 'Offline' here is "not yet", not "no",
+  // the rule the sheet panel already keeps.
   createEffect(() => {
-    if (props.open()) ensure();
-    else if (client) {
-      void client.dispose();
-      client = null;
-      setVersion((n) => n + 1);
+    if (!props.open()) {
+      if (client) {
+        void client.dispose();
+        client = null;
+        setVersion((n) => n + 1);
+      }
+      return;
     }
+    const c = ensure();
+    let cancelled = false;
+    onCleanup(() => { cancelled = true; });
+    const ask = () => {
+      if (cancelled || !props.open()) return;
+      c.subscribe()
+        .then(() => { if (!cancelled) setFailed(''); })
+        .catch((err) => {
+          if (cancelled) return;
+          const code = String(err?.code ?? err);
+          if (code === 'Offline' || code === 'Timeout') {
+            setFailed('Waiting for the viewer...');
+            setTimeout(ask, 500);
+            return;
+          }
+          setFailed(`The panel stream is unavailable (${code})`);
+        });
+    };
+    ask();
   });
 
   onCleanup(() => {
@@ -144,7 +171,13 @@ export function TaskPanelCard(props: {
         return (
           <button class="fc-panel-btn" title={title} disabled={disabled()}
                   onClick={() => void client?.custom(w.id, { event: 'click' })}>
-            {str(w, 'text') || str(w, 'toolTip') || '...'}
+            {/* An icon-only button's tooltip is a sentence -- Pad's is
+                "Temporary clear link references for new selection" -- and
+                using it as the label overruns the row it sits in, which is
+                what the first run against a live panel drew. The icon is
+                W3; until then the label is a placeholder and the sentence
+                stays where it belongs, on the title. */}
+            {str(w, 'text') || '...'}
           </button>
         );
       case 'QCheckBoxModel':
@@ -293,7 +326,7 @@ export function TaskPanelCard(props: {
         </div>
         <div class="fc-panel-body">
           <Show when={failed()}>
-            <div class="fc-panel-empty">the panel stream is unavailable ({failed()})</div>
+            <div class="fc-panel-empty">{failed()}</div>
           </Show>
           <Show when={!failed() && !rootId()}>
             <div class="fc-panel-empty">No task panel is open on the desktop.</div>

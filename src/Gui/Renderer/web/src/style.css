@@ -1079,6 +1079,12 @@
   padding: 4px 10px;
   font: inherit;
   cursor: pointer;
+  /* A label is the desktop's, not ours: it can be long, and a button that
+     grows past its row pushes the rest of the row off the card. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fc-panel-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); }
