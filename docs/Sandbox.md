@@ -7930,11 +7930,11 @@ these numbers are not CI-checked and can drift.
     what                                  native   WASI (Release)   pyodide (final)
     ------------------------------------  -------  ---------------  ---------------
     transport floor                       --       2.68 us          5.4 us
-    wire floor (eval "1")                 --       12.8-15.7 us     22.2 us (was 30.6-37.6)
-    parse + eval arithmetic               2.03 us  13.36 us (6.6x)  18.6 us (was 23.6)
-    one property read                     ~3.0 us  20.92 us (7.1x)  29.7 us (was 37.1)
-    one bridge hop (marginal, read_prop)  --       5.4 us (was 7.1-7.6)  4.4 us (was 5.9-7.4)
-    pack per eval (export+proxy+release)  --       +19 us (was +23) +23 us (was +44, +27)
+    wire floor (eval "1")                 --       12.8-15.7 us     14.1 us (was 22.2, 30.6-37.6)
+    parse + eval arithmetic               1.8 us   13.36 us (6.6x)  15.9 us (was 18.6, 23.6)
+    one property read                     3.7 us   20.92 us (7.1x)  17.4 us (was 29.7, 37.1)
+    one bridge hop (marginal, read_prop)  --       5.4 us (was 7.1-7.6)  4.5 us (was 4.4, 5.9-7.4)
+    pack per eval (export+proxy+release)  --       +19 us (was +23) +7.4 us (was +23, +44, +27)
     instantiate + first eval              --       14 ms (.cwasm)   ~1.5-1.7 s
 
 The pyodide "was" figures are the bytearray/getBuffer transport; the
@@ -7981,6 +7981,48 @@ parse and evaluation, the pack and the handle traffic of fifteen
 `geom.call`s, all together about an eighth of the solid.  This is sec 11
 item 4's "bench of one shape program routed against native", and the
 program side asks nothing more of it.
+
+**Re-measured 2026-09-16** (sec 11 item 4's decision run, pyodide, the
+same `ExpressionImageBenchTest` benches): the pyodide column above.  The
+pack is **+7.4 us**, not the +23 this table carried -- `image.eval.pack.
+noHop` 20.5 us less `image.eval.noPack` 13.1 us -- and the wire floor is
+14.1 us.  The C5 marshal work of 2026-09-15 (7.20: interned slot names,
+the facade-class cache, the last-string reuse) is where that went.  The
+marginal hop is unchanged at 4.5 us.
+
+`scripts/expr-phase0/native_bench.py`, run twice with `Evaluate` written
+EXPLICITLY both ways: a 10k-cell arithmetic sheet recomputes at 15.2
+us/cell native and 38.4 us/cell routed, so a routed cell carries about
+23 us of fixed cost -- wire floor 14.1 plus pack 7.4, the two terms of
+this table, of which the WIRE is now the larger.  Its first ten rows are
+NOT a routing measurement: `DocumentObjectPy::evalExpression` calls
+`Expression::getPyValue()` and never crosses the seam
+(`PropertySheet::evalPy` is the seam), so they read the same in both
+modes -- which is how the first run of this pair was misread, the sec 12
+trap biting its own author.  `DISABLED_BenchFlangeProgram`, the decider
+sec 11 item 4 names: a shape program is **1.084x** native when routed
+(21.4 ms against 19.8 ms, +1.7 ms, 15 bridge ops per evaluation).
+
+**A finding that is NOT the sandbox's** (2026-09-16): 2000 cells of
+`=Box.Shape.Volume / i + Box.Height` recompute at **56.8 ms per cell**
+(113 s for the sheet), against 15.2 us/cell for arithmetic cells and 156
+us for that same expression evaluated once.  Routing changes nothing
+(56.9 ms/cell routed, 56.8 native), so it is a host path.  The
+mechanism: `PropertySheet::addDependencies` asks `ObjectIdentifier::
+getDep(true)`, which resolves and then calls `access(result, nullptr,
+&deps)` -- the same walk that EVALUATES the path, `Box` -> `.Shape` ->
+`.Volume`, to discover what it touches, so collecting a dependency runs
+OCCT's mass properties.  `getDep` ignores its own `needProps`
+(`(void)needProps;`, 2022-05-09) with the cheap early return commented
+out beneath it; `Cell::setExpression` rebuilds dependencies
+unconditionally, and `Sheet::onChanged` calls it again on the result
+write.  The non-evaluating twin exists -- `getDepStructural`, from the
+sandbox seam work -- but it OVER-APPROXIMATES on purpose (an
+all-property dependency once the path continues past the resolved
+property), so it is not a drop-in.  The multiplier that turns 156 us
+into 56.8 ms is NOT explained by reading and wants instrumentation.  Not
+sized and not started: the disabled shortcut is the user's own 2022
+call.
 
 ### 8.2 The corpus gate
 
@@ -8414,6 +8456,19 @@ push the user's call).
    cells, 8.3).  Measured by the existing bench and the 10k-cell sheet
    projection.  A bench of one shape program routed against native
    decides whether anything more is needed.
+   **MEASURED 2026-09-16, and the measurement argues against building
+   either (8.1).**  The pack is 7.4 us, not 23 -- the C5 marshal work
+   took the rest -- so caching it per cell buys at most that, against a
+   TWO-SIDED protocol change (the host keeping handles past
+   `clearHandles()`, the guest suppressing the releases it queues as it
+   unwinds) and a staleness hazard.  Typed reads buy about 1 us of a
+   205 us `Shape.BoundBox`: 8.1's own note is that the 179/183 us is
+   OCCT computing mass properties, NOT materialization.  And the
+   decider this item names answers itself -- the flange program is
+   1.084x native routed.  What a routed sheet cell actually pays is the
+   WIRE floor (14.1 of its 23 us), which is neither of these items.
+   OPEN FOR THE USER: whether to spend anything here at all, and
+   whether the 56.8 ms/cell host finding of 8.1 is in scope.
 5. **The browser's task panel** -- RULED 2026-09-10 ("B is good"):
    the PANEL MIRROR of 7.19 -- the desktop's real task panel walked
    into models and streamed, no edit to any workbench, C++ panels
