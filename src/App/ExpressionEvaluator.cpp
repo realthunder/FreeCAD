@@ -178,7 +178,19 @@ void ExpressionSandbox::setEvaluationRouted(bool on)
 bool ExpressionSandbox::proxyRestoreRouted()
 {
 #ifdef FC_EXPR_IMAGE_HOST
-    return sandboxParams()->GetBool("Evaluate", false);
+    if (!sandboxParams()->GetBool("Evaluate", false))
+        return false;
+    // The preference alone is not enough.  On a build with no runtime
+    // installed every saved Proxy went down the routed path, the guest
+    // could not answer, and the restore failed closed -- a whole
+    // document de-Proxied for want of a guest (70 of 70 objects in
+    // data/examples/draft_test_objects.FCStd).  available() asks
+    // exactly what the routed restore needs: an engine, an image, a
+    // guest that boots.  It is memoized, and where there is no runtime
+    // it answers no without booting anything.  Off this path the
+    // native restore still runs under the Mod-root import restriction
+    // (sec 11 item 1), so refusing here widens nothing.
+    return ImageHost::instance().available();
 #else
     return false;
 #endif

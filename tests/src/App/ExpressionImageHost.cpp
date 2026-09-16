@@ -4422,6 +4422,84 @@ TEST_F(ExpressionImageEvalTest, guestProxyRestoreRoute)
     EXPECT_DOUBLE_EQ(width->getValue(), 10.0);
 }
 
+TEST_F(ExpressionImageEvalTest, proxyRestoreNeedsRuntime)
+{
+    auto& host = ImageHost::instance();
+    // a class both sides can serve: the guest for the routed restore,
+    // the host for the native one
+    auto r = host.exec(ProbeSource, "fcxprobe");
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    ASSERT_TRUE(hostModule("fcxprobe", ProbeSource));
+    auto param = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    const std::string path = std::string(std::tmpnam(nullptr)) + "-fcxnoruntime.FCStd";
+    struct Cleanup
+    {
+        ParameterGrp::handle param;
+        std::string path;
+        ~Cleanup()
+        {
+            param->RemoveBool("Evaluate");
+            // back to resolving its own paths -- pinning the ones this
+            // case saw would outlive it and decide what the resolution
+            // cases in ExpressionPyodide.cpp see
+            ImageHost::instance().configure("", "");
+            std::remove(path.c_str());
+            dropHostModules({"fcxprobe"});
+        }
+    } cleanup {param, path};
+
+    // a guest Proxy on Obj, saved with routing on
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* py = obj->getPyObject();
+        PyObject* args = Py_BuildValue("(O)", py);
+        Py_DECREF(py);
+        auto n = host.proxyNew("fcxprobe", "Probe", args, false, obj);
+        Py_DECREF(args);
+        ASSERT_TRUE(n.ok) << n.excType << ": " << n.message;
+        PyObject* standIn = host.decodeResult(n);
+        ASSERT_NE(standIn, nullptr);
+        Py_DECREF(standIn);
+    }
+    doc->recompute();
+    ASSERT_TRUE(doc->saveAs(path.c_str()));
+    App::GetApplication().closeDocument(doc->getName());
+    doc = nullptr;
+    obj = nullptr;
+
+    // routing ON, no runtime.  The preference alone used to claim the
+    // routed path here, and every object came back without a Proxy.
+    param->SetBool("Evaluate", true);
+    host.configure("/nonexistent/fcx_image", "/nonexistent/fcx_stdlib");
+    ASSERT_FALSE(host.available());
+    EXPECT_FALSE(App::ExpressionSandbox::proxyRestoreRouted())
+        << "with no runtime the restore must not claim the routed path";
+    EXPECT_FALSE(App::ExpressionSandbox::evaluationRouted());
+
+    doc = App::GetApplication().openDocument(path.c_str());
+    ASSERT_NE(doc, nullptr);
+    obj = doc->getObject("Obj");
+    ASSERT_NE(obj, nullptr);
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* proxy = proxyOf(obj);
+        ASSERT_NE(proxy, nullptr) << "the object must keep its Proxy";
+        EXPECT_NE(proxy, Py_None) << "the object must keep its Proxy";
+        EXPECT_FALSE(App::ExpressionSandbox::isGuestProxy(proxy))
+            << "with no runtime the Proxy restores natively";
+    }
+    EXPECT_EQ(proxyModuleOf(obj), "fcxprobe");
+    auto* width =
+        Base::freecad_dynamic_cast<App::PropertyFloat>(obj->getPropertyByName("Width"));
+    ASSERT_NE(width, nullptr);
+    width->setValue(5.0);
+    obj->touch();
+    doc->recompute();
+    EXPECT_FALSE(obj->isError());
+    EXPECT_DOUBLE_EQ(width->getValue(), 10.0);
+}
+
 TEST_F(ExpressionImageEvalTest, draftWireRestoreInGuest)
 {
     // The step (f) gate on a real object: a Draft Wire whose Proxy was
