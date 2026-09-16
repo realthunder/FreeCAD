@@ -1091,6 +1091,181 @@
 .fc-panel-btn:disabled { opacity: 0.5; cursor: default; }
 .fc-panel-ok { background: rgba(88, 132, 255, 0.28); }
 
+/* A field and what completion hangs off it (docs/Sandbox.md 7.23). */
+.fc-panel-fieldwrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fc-panel-fx {
+  flex: none;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #cfd3d7;
+  font: italic 600 12px/1 serif;
+  padding: 5px 7px;
+  cursor: pointer;
+}
+
+.fc-panel-fx-on { background: rgba(88, 132, 255, 0.34); color: #e8e8ea; }
+.fc-panel-error { color: #ff9c8a; font-size: 12px; padding: 2px 0; }
+
+/* The expression dialog (docs/Sandbox.md 7.23): the desktop's f(x) dialog,
+ * drawn in the page. Centred on a wide viewport, a sheet on a narrow one --
+ * where it also has to sit above the keyboard it raises. */
+.fc-expr-backdrop {
+  position: fixed;
+  /* Above the chrome host's own stacking context (#fc-ui, z-index 10),
+   * not merely above the cards inside it: this dialog is portalled to
+   * the body, so it is that host's SIBLING and loses to it at any lower
+   * value. At 7 the HUD card sat on top of the editor -- it still took
+   * focus and still looked right, and every keystroke went to whatever
+   * was above it instead. */
+  z-index: 20;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fc-expr {
+  width: min(460px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(28, 30, 34, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+@media (max-width: 640px) {
+  .fc-expr-backdrop { align-items: flex-start; }
+  .fc-expr {
+    width: 100%;
+    margin-top: env(safe-area-inset-top);
+    border-radius: 0 0 14px 14px;
+  }
+}
+
+.fc-expr-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.fc-expr-bound {
+  color: #9aa0a6;
+  font-weight: 400;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fc-expr-edit {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: #e8e8ea;
+  padding: 8px;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.fc-expr-suggest {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+/* The result line: what it WOULD evaluate to, or why it would not. */
+.fc-expr-result {
+  min-height: 20px;
+  color: #a8d8a8;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fc-expr-warn { color: #e8c98a; }
+.fc-expr-bad { color: #ff9c8a; }
+
+.fc-expr-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Wide: a dropdown under the field. */
+.fc-panel-suggest {
+  position: absolute;
+  z-index: 3;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: rgba(24, 26, 30, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+.fc-panel-sugg {
+  padding: 6px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fc-panel-sugg-on, .fc-panel-sugg:hover { background: rgba(88, 132, 255, 0.28); }
+
+/* Narrow: a strip pinned above the on-screen keyboard, which is where a
+ * thumb already is. `bottom` is set from visualViewport, not from the
+ * layout viewport the keyboard does not resize. */
+.fc-panel-chips {
+  position: fixed;
+  /* Above the dialog it belongs to, and so above the chrome host too
+   * (see .fc-expr-backdrop). */
+  z-index: 21;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  background: rgba(20, 22, 26, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  scrollbar-width: none;
+}
+
+.fc-panel-chip {
+  flex: none;
+  min-height: 44px;   /* a touch target, not a mouse target */
+  padding: 0 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8e8ea;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.fc-panel-chip-on { background: rgba(88, 132, 255, 0.34); }
+
 .fc-panel-check { display: flex; align-items: center; gap: 6px; }
 .fc-panel-buttons { display: flex; gap: 8px; justify-content: flex-end; }
 .fc-panel-spacer { flex: 1; min-width: 6px; min-height: 6px; }

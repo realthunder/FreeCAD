@@ -36,6 +36,19 @@
  *                       "data" (SVG text, or base64 PNG), "size"
  *   widgets.update      {"id", "state": {"q_...": v}}   -> ok
  *   widgets.custom      {"id", "content": {"event", "args"}} -> ok
+ *   widgets.expression  {"target", "text"} -> ok: set or clear the
+ *                       expression on a bound field (docs/Sandbox.md
+ *                       7.23).  One that does not parse comes back as
+ *                       the lane's own error, code "BadExpression",
+ *                       with the reason as its message
+ *
+ * One op is NOT mutating, so a view-only connection may ask it:
+ *   widgets.complete    {"target", "text", "pos"} -> "items",
+ *                       "details", "start", "end" -- the completions
+ *                       for a bound field, and the range in "text" they
+ *                       replace.  Answered from a completer built for
+ *                       the request, never the one a desktop widget is
+ *                       using, and it shows no popup (7.23).
  * Pushes: {"op": "widgets", "method": "open" | "update" | "custom" |
  * "close", "id", ... the snapshot's keys for open, "content" otherwise}.
  *

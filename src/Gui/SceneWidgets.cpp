@@ -26,11 +26,24 @@
 #include <QLocale>
 #include <QTimer>
 
+#include <optional>
+
+#include <App/DocumentObject.h>
+#include <App/ExpressionParser.h>
+#include <App/ExpressionSecurityRuntime.h>
+#include <App/ObjectIdentifier.h>
+#include <App/PropertyExpressionEngine.h>
+#include <Base/Quantity.h>
+
 #include "BitmapFactory.h"
+#include "ExpressionBinding.h"
+#include "ExpressionCompleter.h"
 #include "Fw/FwImage.h"
+#include "Fw/FwQtView.h"
 #include "Fw/FwPanelMirror.h"
 #include "Fw/FwStore.h"
 #include "Fw/FwToolBarMirror.h"
+#include "Fw/FwWidgets.h"
 #include "MainWindow.h"
 #include "Renderer/SceneServer.h"
 #include "SceneControl.h"
@@ -50,6 +63,88 @@ QJsonObject okReply(const QJsonValue& id)
     QJsonObject reply;
     reply[QLatin1String("id")] = id;
     reply[QLatin1String("ok")] = true;
+    return reply;
+}
+
+/// Where a field's binding lives (docs/Sandbox.md 7.23).
+///
+/// It depends on how the field got here, and both ops need the answer.
+/// A guest-built form binds the MODEL. A mirrored desktop panel (7.19)
+/// does not: its model carries `binding` as a string read off the real
+/// widget, and the widget is what is actually bound -- so the live Pad
+/// panel answered an empty completion list, and would have answered
+/// "NotBound" to an expression, until this asked the widget too.
+std::optional<App::ObjectIdentifier> boundPathOf(Fw::Widget* model)
+{
+    if (auto bound = dynamic_cast<Fw::ExpressionBound*>(model)) {
+        if (bound->isBound())
+            return bound->boundPath();
+    }
+    auto real = dynamic_cast<Gui::ExpressionBinding*>(Gui::FwQt::widgetOf(model));
+    if (real && real->isBound())
+        return real->boundPath();
+    return std::nullopt;
+}
+
+/// The live result line for an expression being typed, evaluated but
+/// NOT set -- what the desktop's expression dialog shows under the
+/// editor.  Never throws: an expression is invalid for most of the time
+/// it is being typed, so the reason is something to show.
+QJsonObject previewExpression(const QJsonValue& id, const App::ObjectIdentifier& path,
+                              const QString& text)
+{
+    QJsonObject reply = okReply(id);
+    QString result;
+    QString severity = QStringLiteral("ok");
+    QString message;
+    App::DocumentObject* obj = path.getDocumentObject();
+    if (obj && !text.trimmed().isEmpty()) {
+        try {
+            // A remote client must not cause side effects merely by
+            // typing, so function calls stay disabled in a preview
+            // whatever the desktop's own "Evaluate function" switch says
+            // -- that switch is the desktop user's choice for their own
+            // keyboard, not for everyone holding a link.
+            App::ExpressionFunctionCallDisabler noCalls(true);
+            App::ExpressionSecurity::Runtime::Scope scope("session");
+            std::shared_ptr<App::Expression> expr(
+                App::Expression::parse(obj, text.toUtf8().constData()));
+            if (!expr)
+                throw Base::RuntimeError("not an expression");
+            const std::string invalid = obj->ExpressionEngine.validateExpression(path, expr);
+            if (!invalid.empty())
+                throw Base::RuntimeError(invalid.c_str());
+            std::unique_ptr<App::Expression> value(expr->eval());
+            if (auto number = dynamic_cast<App::NumberExpression*>(value.get()))
+                result = QString::fromStdString(number->getQuantity().getUserString());
+            else if (value)
+                result = QString::fromStdString(value->toString());
+        }
+        catch (App::ExpressionFunctionDisabledException&) {
+            severity = QStringLiteral("warning");
+            message = QStringLiteral("Functions are not evaluated in a preview.");
+        }
+        catch (Base::Exception& e) {
+            const QString what = QString::fromUtf8(e.what());
+            // Half an expression is not an error to shout about. A
+            // trailing dot -- the moment completion is most wanted --
+            // parses as "unexpected end of input", and a red line under
+            // every keystroke would make the dialog unusable. The
+            // desktop's own dialog blanks exactly this case
+            // (DlgExpressionInput::onTimer), so this does too.
+            if (!what.startsWith(QLatin1String("syntax error, unexpected end of input"))) {
+                severity = QStringLiteral("error");
+                message = what;
+            }
+        }
+        catch (...) {
+            severity = QStringLiteral("error");
+            message = QStringLiteral("could not be evaluated");
+        }
+    }
+    reply[QLatin1String("result")] = result;
+    reply[QLatin1String("severity")] = severity;
+    reply[QLatin1String("message")] = message;
     return reply;
 }
 }  // namespace
@@ -315,6 +410,120 @@ void Gui::installSceneWidgetOps()
             return sceneControlError(id, "BadRequest", QStringLiteral("target required"));
         if (!Fw::Store::instance().applyCustom(objectId, content, client))
             return sceneControlError(id, "UnknownObject", objectId);
+        return okReply(id);
+    });
+    // Completion for a bound field (docs/Sandbox.md 7.23).  NOT
+    // mutating: a view-only client may complete -- it reads names the
+    // inspector already shows it -- and still may not write.
+    //
+    // The completer is built HERE, for this request, on the field's
+    // bound object.  Never the one a desktop widget is using:
+    // setCompletionPrefix and the tokenizer are mutable state, and the
+    // desktop user's caret is not this client's.  Per request rather
+    // than cached, because what a completer knows is the document's
+    // object and property tree, and a cached one is stale exactly when
+    // a completion matters.  It raises no popup -- that is what
+    // ExpressionCompleter::complete() is for.
+    registerSceneControlOp(QStringLiteral("widgets.complete"), false,
+                           [](const QJsonObject& req, const std::string&) {
+        const QJsonValue id = req.value(QLatin1String("id"));
+        const QString objectId = req.value(QLatin1String("target")).toString(
+            req.value(QLatin1String("model")).toString());
+        if (objectId.isEmpty())
+            return sceneControlError(id, "BadRequest", QStringLiteral("target required"));
+        Fw::Widget* model = Fw::Store::instance().object(objectId);
+        if (!model)
+            return sceneControlError(id, "UnknownObject", objectId);
+        const QString text = req.value(QLatin1String("text")).toString();
+        int pos = req.value(QLatin1String("pos")).toInt(text.size());
+        if (pos < 0 || pos > text.size())
+            pos = text.size();
+        int start = 0;
+        int end = 0;
+        QJsonArray items;
+        QJsonArray details;
+        const std::optional<App::ObjectIdentifier> path = boundPathOf(model);
+        App::DocumentObject* obj = path ? path->getDocumentObject() : nullptr;
+        if (obj) {
+            // leadChar 0: the tokenizer skips a leading '=' whatever the
+            // lead char is, so `Pad.Length` and `=Pad.Length` both
+            // tokenize
+            ExpressionCompleter completer(obj);
+            QStringList tips;
+            const QStringList found = completer.completionsFor(text, pos, start, end, &tips);
+            for (const QString& s : found)
+                items.append(s);
+            for (const QString& s : tips)
+                details.append(s);
+        }
+        // A target with nothing to complete against -- an unbound field,
+        // a label -- answers an empty list rather than an error: a
+        // client asks before it can know, and an error would read as a
+        // fault in the panel.
+        QJsonObject reply = okReply(id);
+        reply[QLatin1String("items")] = items;
+        reply[QLatin1String("details")] = details;
+        reply[QLatin1String("start")] = start;
+        reply[QLatin1String("end")] = end;
+        return reply;
+    });
+    // Set or clear a bound field's expression (docs/Sandbox.md 7.23).
+    // Its own op rather than a `q_expression` write: nothing routes that
+    // key to the binding, wiring it into the property path would
+    // re-enter syncExpression (which writes that same key), and a parse
+    // error needs somewhere to go that a property write has not got.
+    registerSceneControlOp(QStringLiteral("widgets.expression"), true,
+                           [](const QJsonObject& req, const std::string&, uint64_t) {
+        const QJsonValue id = req.value(QLatin1String("id"));
+        const QString objectId = req.value(QLatin1String("target")).toString(
+            req.value(QLatin1String("model")).toString());
+        if (objectId.isEmpty())
+            return sceneControlError(id, "BadRequest", QStringLiteral("target required"));
+        Fw::Widget* model = Fw::Store::instance().object(objectId);
+        if (!model)
+            return sceneControlError(id, "UnknownObject", objectId);
+        const std::optional<App::ObjectIdentifier> path = boundPathOf(model);
+        if (!path)
+            return sceneControlError(id, "NotBound", objectId);
+        const QString text = req.value(QLatin1String("text")).toString();
+        // The live result line, evaluated and not set: the dialog asks
+        // for this on every keystroke while someone types.
+        if (req.value(QLatin1String("preview")).toBool())
+            return previewExpression(id, *path, text);
+
+        auto bound = dynamic_cast<Fw::ExpressionBound*>(model);
+        if (bound && bound->isBound()) {
+            QString error;
+            if (!bound->setExpressionText(text, &error))
+                return sceneControlError(id, "BadExpression", error);
+            return okReply(id);
+        }
+        // A mirrored panel's model is not bound, so the expression goes
+        // to the document, which is where the model's own path would
+        // have put it: the real widget and every client hear it back
+        // through the expression-changed signal.
+        App::DocumentObject* obj = path->getDocumentObject();
+        if (!obj)
+            return sceneControlError(id, "NotBound", objectId);
+        try {
+            std::shared_ptr<App::Expression> expr;
+            if (!text.trimmed().isEmpty()) {
+                // parse() hands back an App::ExpressionPtr, not a raw
+                // pointer; the document wants a shared one.
+                App::ExpressionPtr parsed(
+                    App::Expression::parse(obj, text.toUtf8().constData()));
+                if (!parsed)
+                    throw Base::RuntimeError("not an expression");
+                expr = std::move(parsed);
+                const std::string invalid = obj->ExpressionEngine.validateExpression(*path, expr);
+                if (!invalid.empty())
+                    throw Base::RuntimeError(invalid.c_str());
+            }
+            obj->setExpression(*path, expr);   // an empty expression clears it
+        }
+        catch (Base::Exception& e) {
+            return sceneControlError(id, "BadExpression", QString::fromUtf8(e.what()));
+        }
         return okReply(id);
     });
 }

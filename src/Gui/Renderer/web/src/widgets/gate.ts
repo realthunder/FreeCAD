@@ -27,6 +27,9 @@ import { WidgetStore, layoutRefs, refId } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
+import { filterSet, inputModeFor, splice, stillApplies, triggerFor, wordAt }
+  from './complete.ts';
+import type { CompletionSet } from './complete.ts';
 
 interface Fixture {
   case: string;
@@ -162,8 +165,61 @@ function main(): void {
   check('sketcher_constraints', 'item ops leave rows', rows.length > 0, `${rows.length} rows`);
   check('sketcher_constraints', 'cells carry text', texts.length > 0, String(texts.slice(0, 3)));
 
+  checkCompletion();
+
   console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
+}
+
+/// The completion rules (docs/Sandbox.md 7.23). No fixture: these are
+/// decisions about typing, and the ones that matter are the phone's --
+/// a decimal point must not trigger, and a decimal keyboard has no
+/// letters. Both are invisible on a desktop, so they are asserted here
+/// rather than discovered on a handset.
+function checkCompletion(): void {
+  const c = 'completion';
+  check(c, 'a dot after a name triggers', triggerFor('Pad.', 4) === 'dot');
+  check(c, 'a dot after a digit does NOT', triggerFor('10.', 3) === null,
+        String(triggerFor('10.', 3)));
+  check(c, 'a dot after a close bracket triggers',
+        triggerFor('Sketch.Constraints[0].', 22) === 'dot');
+  check(c, 'two word characters arm a request', triggerFor('Pa', 2) === 'word');
+  check(c, 'one does not', triggerFor('P', 1) === null);
+  check(c, 'a bare number does not', triggerFor('10', 2) === null);
+  check(c, 'the word at the caret is the member',
+        wordAt('Other.Wid', 9) === 'Wid', wordAt('Other.Wid', 9));
+
+  const set: CompletionSet = {
+    text: 'Other.', pos: 6, start: 0, end: 6,
+    items: ['Other.Width', 'Other.Placement', 'Other.Label'],
+    details: ['', '', ''],
+  };
+  check(c, 'the set serves the same segment', stillApplies(set, 'Other.Wid', 9));
+  check(c, 'another dot voids it', !stillApplies(set, 'Other.Width.', 12));
+  check(c, 'an edit before it voids it', !stillApplies(set, 'Othen.Wid', 9));
+  check(c, 'local filtering narrows',
+        filterSet(set, 'Other.Wid', 9).join(',') === 'Other.Width',
+        filterSet(set, 'Other.Wid', 9).join(','));
+  check(c, 'a prefix match outranks a substring',
+        filterSet(set, 'Other.La', 8)[0] === 'Other.Label',
+        filterSet(set, 'Other.La', 8).join(','));
+
+  // What the user typed while the answer was in flight is part of the
+  // name being replaced -- getting this wrong leaves `Other.WidOther.Width`.
+  const picked = splice(set, 'Other.Width', 'Other.Wid', 9);
+  check(c, 'splicing replaces what was typed since',
+        picked.text === 'Other.Width' && picked.pos === 11,
+        `${picked.text}@${picked.pos}`);
+  const inline = splice({ ...set, start: 1, end: 7, text: '=Other.' },
+                        'Other.Width', '=Other.Wid', 10);
+  check(c, 'splicing keeps the lead char',
+        inline.text === '=Other.Width', inline.text);
+
+  check(c, 'a quantity field offers a decimal keyboard',
+        inputModeFor('10.00', true) === 'decimal');
+  check(c, 'an expression turns it into a text keyboard',
+        inputModeFor('=Pad', true) === 'text');
+  check(c, 'a plain field is always text', inputModeFor('10', false) === 'text');
 }
 
 main();

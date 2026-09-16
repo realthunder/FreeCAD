@@ -24,6 +24,7 @@
 //     document really holds.
 
 import { onPush, sendOp } from '../control.ts';
+import type { CompletionSet, ExpressionPreview } from './complete.ts';
 import { WidgetStore } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 
@@ -115,6 +116,46 @@ export class PanelClient {
   /// reject, a button's click, a focus.
   async custom(id: string, content: Record<string, unknown>): Promise<void> {
     await sendOp('widgets.custom', { target: id, content });
+  }
+
+  /// Completions for what is typed in a mirrored field (docs/Sandbox.md
+  /// 7.23). The host answers from a completer it builds for the request:
+  /// the one a desktop widget is using is never touched, and nothing pops
+  /// up on the desktop user's screen. A field with nothing to complete
+  /// against answers an empty list rather than an error.
+  async complete(id: string, text: string, pos: number): Promise<CompletionSet> {
+    const reply = await sendOp('widgets.complete', { target: id, text, pos });
+    return {
+      text,
+      pos,
+      items: (reply?.items as string[]) ?? [],
+      details: (reply?.details as string[]) ?? [],
+      start: (reply?.start as number) ?? 0,
+      end: (reply?.end as number) ?? 0,
+    };
+  }
+
+  /// Set -- or clear, with '' -- the expression on a bound field. Its own
+  /// op rather than a property write because a parse error has to come
+  /// back: it rejects with the lane's error, code 'BadExpression' and the
+  /// reason as its message, and the document is left alone.
+  async setExpression(id: string, text: string): Promise<void> {
+    await sendOp('widgets.expression', { target: id, text });
+  }
+
+  /// What the expression WOULD evaluate to, without setting anything --
+  /// the live result line the desktop's expression dialog shows while you
+  /// type (docs/Sandbox.md 7.23). Never throws for a bad expression: an
+  /// expression is wrong for most of the time it is being typed, so the
+  /// reason comes back as a severity and a message to show, not as a
+  /// rejection to handle.
+  async previewExpression(id: string, text: string): Promise<ExpressionPreview> {
+    const reply = await sendOp('widgets.expression', { target: id, text, preview: true });
+    return {
+      result: (reply?.result as string) ?? '',
+      severity: (reply?.severity as ExpressionPreview['severity']) ?? 'ok',
+      message: (reply?.message as string) ?? '',
+    };
   }
 
   /// An `img:<sha1>` the bag carries, as a data URL. Content-addressed, so

@@ -22,7 +22,10 @@ import type { Accessor, JSX } from 'solid-js';
 
 import { NARROW, draggable, fitOnScreen, loadPos, posStyle } from '../panel.ts';
 import type { Pos } from '../panel.ts';
+import { Portal } from 'solid-js/web';
+
 import { PanelClient } from './client.ts';
+import { ExpressionDialog, Field } from './field.tsx';
 import { planLayout } from './layout.ts';
 import type { LayoutPlan, PlannedItem } from './layout.ts';
 import type { ItemRow, WidgetModel } from './protocol.ts';
@@ -71,6 +74,13 @@ export function TaskPanelCard(props: {
   const [version, setVersion] = createSignal(0);
   const [pos, setPos] = createSignal<Pos | null>(loadPos(POS_KEY));
   const [failed, setFailed] = createSignal('');
+  /// The field whose expression is being edited, if any. Held HERE and
+  /// not in the field, because a field's subtree is re-created on every
+  /// store frame -- a dialog owned by one loses what is being typed the
+  /// moment anything else in the panel changes, which is what a phone
+  /// run showed: an editor that came back empty.
+  const [expr, setExpr] =
+    createSignal<{ id: string; binding: string; expression: string } | null>(null);
   let client: PanelClient | null = null;
   let panelRef: HTMLDivElement | undefined;
 
@@ -210,10 +220,14 @@ export function TaskPanelCard(props: {
       case 'QSpinBoxModel':
       case 'QDoubleSpinBoxModel':
       case 'DoubleSpinBoxModel':
+        // A field carries its own completion and, when it is bound, its
+        // own expression editor (docs/Sandbox.md 7.23).
         return (
-          <input class="fc-panel-field" title={title} disabled={disabled()}
-                 value={str(w, 'text') || String(w.state.rawValue ?? '')}
-                 onChange={(e) => write(w.id, valueWrite(w, e.currentTarget.value))} />
+          <Field w={w} title={title} disabled={disabled} viewOnly={props.viewOnly}
+                 client={() => client}
+                 onValue={(raw: string) => write(w.id, valueWrite(w, raw))}
+                 onExpression={(id: string, binding: string, expression: string) =>
+                   setExpr({ id, binding, expression })} />
         );
       case 'QGroupBoxModel': {
         // Gui::TaskView::TaskBox is the panel's own box: same shape, and
@@ -335,6 +349,21 @@ export function TaskPanelCard(props: {
             {(id: string) => <View id={id} />}
           </Show>
         </div>
+        {/* Portalled to the body: .fc-panel carries a backdrop-filter,
+            and a filtered ancestor is the containing block for
+            position:fixed descendants -- rendered in place, the dialog
+            is trapped inside the card with no full-screen dim and no
+            way to click outside it. Where it sits in this tree does not
+            matter to the DOM, only that it is outside the field
+            subtrees the store re-creates. */}
+        <Show when={expr()} keyed>
+          {(e: { id: string; binding: string; expression: string }) => (
+            <Portal>
+              <ExpressionDialog id={e.id} binding={e.binding} expression={e.expression}
+                                client={() => client} onClose={() => setExpr(null)} />
+            </Portal>
+          )}
+        </Show>
       </div>
     </Show>
   );

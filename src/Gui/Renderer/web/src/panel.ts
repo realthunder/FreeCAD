@@ -11,6 +11,35 @@ export interface Pos { x: number; y: number }
 /// there is nowhere to drag it to.
 export const NARROW = 640;
 
+/// Report how much of the viewport the on-screen keyboard is covering, in
+/// CSS pixels, now and whenever it changes. Returns the unsubscribe.
+///
+/// A phone does not resize the LAYOUT viewport when the keyboard opens --
+/// it shrinks the visual one and scrolls the page under it, with no
+/// resize event on window at all. So anything that must stay above the
+/// keyboard (the completion strip, docs/Sandbox.md 7.23) reads
+/// visualViewport, and keeps reading it: the keyboard opens, closes and
+/// changes height on its own as the user switches between letters,
+/// numbers and emoji.
+export function onKeyboardInset(cb: (px: number) => void): () => void {
+  const vv = window.visualViewport;
+  if (!vv) {
+    cb(0);   // a desktop browser, or one too old to say: nothing covered
+    return () => {};
+  }
+  const read = () => {
+    const covered = window.innerHeight - (vv.height + vv.offsetTop);
+    cb(Math.max(0, Math.round(covered)));
+  };
+  read();
+  vv.addEventListener('resize', read);
+  vv.addEventListener('scroll', read);
+  return () => {
+    vv.removeEventListener('resize', read);
+    vv.removeEventListener('scroll', read);
+  };
+}
+
 export function loadPos(key: string): Pos | null {
   try {
     const raw = localStorage.getItem(key);

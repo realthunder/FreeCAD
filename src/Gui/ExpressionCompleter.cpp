@@ -289,7 +289,13 @@ public:
             name = QString::fromUtf8(obj->getNameInDocument());
             label = QString::fromUtf8(quote(obj->Label.getStrValue()).c_str());
 
-            auto vp = Gui::Application::Instance->getViewProvider(obj);
+            // No Gui::Application at all is a real caller now: the
+            // widget stream answers completion for a remote panel
+            // (docs/Sandbox.md 7.23), and its gate runs with no GUI
+            // application object. An icon is what is lost, not the
+            // completion.
+            auto vp = Gui::Application::Instance
+                ? Gui::Application::Instance->getViewProvider(obj) : nullptr;
             if(vp)
                 icon = vp->getIcon();
 
@@ -337,8 +343,12 @@ public:
         }
 
         App::DocumentObject *getObject() const {
-            // make sure the document is still there
-            if(!Gui::Application::Instance->getDocument(doc))
+            // make sure the document is still there.  With no
+            // Gui::Application there is no GUI document to ask, and
+            // "no GUI document" must not read as "the document is
+            // gone" -- that would answer nothing at all to a remote
+            // panel's completion (docs/Sandbox.md 7.23).
+            if(Gui::Application::Instance && !Gui::Application::Instance->getDocument(doc))
                 return nullptr;
             return doc->getObjectByID(objID);
         }
@@ -550,7 +560,8 @@ public:
                 return txt;
             }
             case Qt::DecorationRole: {
-                auto vp = Gui::Application::Instance->getViewProvider(obj);
+                auto vp = Gui::Application::Instance
+                    ? Gui::Application::Instance->getViewProvider(obj) : nullptr;
                 if(vp)
                     return vp->getIcon();
                 return QIcon();
@@ -2350,6 +2361,38 @@ void ExpressionCompleter::slotUpdate(const QString & prefix, int pos)
         setCompletionPrefix(tokenizer.getCurrentPrefix());
         showPopup(true);
     }
+}
+
+QStringList ExpressionCompleter::completionsFor(const QString &text, int pos,
+                                                int &start, int &end,
+                                                QStringList *details)
+{
+    start = end = 0;
+    init();
+    if (tokenizer.perform(text, pos).isEmpty())
+        return {};
+    static_cast<ExpressionCompleterModel*>(model())->setSearchUnit(tokenizer.isSearchingUnit());
+    setCompletionPrefix(tokenizer.getCurrentPrefix());
+    // The tokenizer's own range, not getPrefixRange's: that one rewrites
+    // the prefix to the saved one when the caller's string IS the current
+    // prefix, which is the popup's "nothing was really chosen" case. A
+    // remote caller splices a whole completion over [start, end).
+    start = tokenizer.getPrefixStart();
+    end = tokenizer.getPrefixEnd();
+    QStringList items;
+    const int rows = completionCount();
+    for (int i = 0; i < rows; ++i) {
+        if (!setCurrentRow(i))
+            break;
+        // currentCompletion() runs pathFromIndex, so what comes back is
+        // what activating that row would have inserted
+        items << currentCompletion();
+        if (details) {
+            const QModelIndex idx = completionModel()->index(i, 0);
+            details->append(completionModel()->data(idx, Qt::ToolTipRole).toString());
+        }
+    }
+    return items;
 }
 
 void ExpressionCompleter::showPopup(bool show) {
