@@ -48,7 +48,7 @@ pieces are frozen, not extended.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases, from the panel gate) recorded 2026-09-16, the walker next
+    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core + replay gate BUILT 2026-09-16 (ALL GREEN), the views next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same) and the restore half guarded by available() first
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -8168,6 +8168,36 @@ only node on this box and what `FCVIEWER_NODE` already points at), whose
 `process.features.typescript` is `strip` -- it imports the walker's
 `.ts` core directly, so the ruled pure-plan gate needs no compile step
 and no new dependency.
+
+**W1's core and its gate BUILT 2026-09-16.**
+`src/Gui/Renderer/web/src/widgets/protocol.ts` is the reduction: ref
+resolution at any depth, the `q_` strip, `open`/`close`/`state`/
+`update`/`custom`, the item ops (`clear`, `insert`, `set`) and `roots()`
+for the models no layout names.  Pure -- no DOM, no Solid, no fetch --
+which is what lets `gate.ts` replay the six fixtures in node and assert
+the walker's promises: every frame applied, no patch to an unknown
+model, the subscribe reply usable as boot state, children before their
+container, and an `open` for a live id tolerated as a replace.
+Sketcher's 21 item ops leave 4 rows reading `Line`, `Edge1`, `g1`.
+`npm run gate` -- ALL GREEN, the exit code the verdict; `npm run
+typecheck` covers the core and is clean.  `tsconfig` excludes the gate
+script alone (node builtins, and the `.ts` specifier the stripper wants,
+neither of which the bundle's config describes); adding `@types/node`
+for one script would have spent the dependency question 5 withheld, and
+running it is the check.
+
+**Three things the recorded frames corrected in this sizing**, each
+found by reading the corpus rather than the C++: a grid `pos` is FOUR
+wide (`[row, column, rowSpan, columnSpan]`, e.g. `[2, 0, 1, 3]`), not
+the two-plus-span written above; an `update` can carry a rebuilt
+`layoutSpec` beside the state keys, so the update path needs a layout
+branch; and a picture arrives as a `QLabelModel` whose `qtClass` is
+`QSvgWidget`, so the view keys off `model` but must consult `qtClass`.
+
+What is left in W1: the layout plan (the four kinds onto flex and CSS
+grid, with the spacers and the spans), the leaf views, the floating
+panel container (question 4), and the write path with the origin echo
+already waiting for it on the host.
 
 **Cost** (new; TypeScript unless noted):
 
