@@ -1337,40 +1337,6 @@ public:
                     ++info.iEnd[i];
                 }
 
-                // Give the group a canonical order. The query above returns
-                // coincident vertices in an order decided by the R-tree's shape
-                // and by last-ulp differences in distance, so it varies from one
-                // vertex to the next. Every search below takes the first
-                // candidate that passes and stops, so an order that is not the
-                // same rule everywhere makes them settle on non-minimal -- and
-                // sometimes self-intersecting -- wires. Sorting by a key that
-                // does not depend on the querying edge gives every vertex the
-                // same rule, and keeps the result stable when a coordinate moves
-                // in its last bits.
-                std::stable_sort(adjacentList.begin() + info.iStart[i],
-                                 adjacentList.begin() + info.iEnd[i],
-                                 [](const VertexInfo &a, const VertexInfo &b) {
-                    const gp_Pnt &pa = a.edgeInfo()->mid;
-                    const gp_Pnt &pb = b.edgeInfo()->mid;
-                    if (pa.X() != pb.X())
-                        return pa.X() < pb.X();
-                    if (pa.Y() != pb.Y())
-                        return pa.Y() < pb.Y();
-                    if (pa.Z() != pb.Z())
-                        return pa.Z() < pb.Z();
-                    // Edges that share a mid point are told apart by where they
-                    // lead, then by which end of them meets this vertex.
-                    const gp_Pnt &qa = a.ptOther();
-                    const gp_Pnt &qb = b.ptOther();
-                    if (qa.X() != qb.X())
-                        return qa.X() < qb.X();
-                    if (qa.Y() != qb.Y())
-                        return qa.Y() < qb.Y();
-                    if (qa.Z() != qb.Z())
-                        return qa.Z() < qb.Z();
-                    return (a.start ? 1 : 0) < (b.start ? 1 : 0);
-                });
-
                 // copy the adjacent indices to all connected edges
                 for (int j=info.iStart[i];j<info.iEnd[i];++j) {
                     auto &other = adjacentList[j];
