@@ -2356,7 +2356,27 @@ public:
     {
         if (!wireInfo || !wireInfo->done || !wireSet.insertUnique(wireInfo.get()))
             return;
-        initWireInfo(*wireInfo);
+        if (!initWireInfo(*wireInfo))
+            return;
+
+        // A wire that crosses itself still closes, and still makes a face, so
+        // nothing above rejects one -- that is how this search could hand back a
+        // reversed 62 edge "face" of negative area. Judge the wires that are
+        // actually handed back. Doing it in initWireInfo() instead would run the
+        // check on every candidate the search considers, which measured about a
+        // fifth of the tight bound run on a 40x40 lattice.
+        ShapeAnalysis_Wire analysis(wireInfo->wire, wireInfo->face, myTol);
+        if (analysis.CheckSelfIntersection()) {
+            showShape(wireInfo->wire, "SelfIntersecting");
+            return;
+        }
+        GProp_GProps props;
+        BRepGProp::SurfaceProperties(wireInfo->face, props);
+        if (props.Mass() <= Precision::SquareConfusion()) {
+            showShape(wireInfo->wire, "DegenerateFace");
+            return;
+        }
+
         builder.Add(compound, wireInfo->wire);
     }
 
