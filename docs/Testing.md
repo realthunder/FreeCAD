@@ -594,6 +594,10 @@ It opens a tab and closes it again at the end (`SAFARI_KEEP=1` leaves it);
 `SAFARI_BROWSER` names another browser for `open -a`, which is how the same
 drive gates the worker path in a browser that has JSPI.
 
+`sandbox-console-viewer-browser.py` takes `SAFARI=1` for the same treatment
+of the REAL viewer page: it needs `build/wasm` built, and the page loads its
+own drive from `?drive=console` rather than having one injected.
+
 **Chrome for Testing on macOS 12: pin 137.** The current build (153) does not
 start on Monterey -- `dlopen ... Symbol not found:
 _kVTCompressionPropertyKey_ReferenceBufferCount ... Expected in

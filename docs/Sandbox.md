@@ -7990,6 +7990,20 @@ follows a document switch and makes an object there -- and the desktop
 carries both writes.  973 ops over the run, 0.49 ms mean, 35 ms worst.
 `SceneServerWire.servedPageIsCrossOriginIsolated` is the header gate.
 
+And the real page: C4's viewer gate
+(`tests/gui/sandbox-console-viewer-browser.py`) gained a Safari mode,
+`SAFARI=1` -- no injection either, so the viewer page loads the drive
+itself from `?drive=console` (one fixed module of its own bundle, never a
+URL from the query) and posts the verdict the same way.  **17 PASS in
+Safari**: the console boots in a worker inside the WASM viewer page (7.9
+s from load, the viewer's own start included) and **rides the viewer's
+socket** -- the server sees ONE client the whole run, the owner's
+view-only switch for that client refuses the console's write and giving
+editing back restores it, the viewer's document switch moves the console
+with it, the desktop carries every allowed write, and nothing but bridge
+answers reaches the bridge.  24 ops, 6.2 ms worst.  The same gate in
+Chrome 137: 17 PASS.
+
 *No regression on the JSPI path*, which every other browser still takes:
 C4's own Chrome gate re-run on this box (Chrome 137 headless, the newest
 that starts on macOS 12), 24 PASS, 1220 ops at 0.44 ms; and C1's gate

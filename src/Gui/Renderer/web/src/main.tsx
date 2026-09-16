@@ -328,6 +328,13 @@ render(() => (
   </>
 ), host);
 
+// The gate drive, for a browser no driver can inject one into -- Safari
+// (docs/Sandbox.md 7.20 C6).  One fixed module of this bundle, never a URL
+// from the query: ?drive=console loads the console's own drive, which a
+// Chrome gate injects instead (scripts/console-drive.js).
+if (new URLSearchParams(location.search).get('drive') === 'console')
+  import('./sandbox/viewerconsolemain');
+
 // Breadcrumbs for devices with no devtools: the viewer's ?log overlay
 // mirrors the console, so these two lines are how a phone tells us the
 // UI layer booted and saw a selection at all.

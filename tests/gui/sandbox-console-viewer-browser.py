@@ -14,6 +14,13 @@ viewer's document switch moves the console. The page asks for each host step
 through the connection's roster label ("fcx-ask:<what>"), which a view-only
 connection can still set; this side polls Gui.serveClients() and acts.
 
+SAFARI=1 runs the same drive in Safari instead (docs/Sandbox.md 7.20 C6),
+where the guest is in a worker because there is no JSPI: no puppeteer and no
+WebDriver -- `open -a Safari` opens the viewer page with `&drive=console`, so
+the page loads the drive itself, and `&report=` POSTs the verdict to a
+collector this side runs. macOS only; SAFARI_BROWSER names another browser
+for `open -a`, and SAFARI_KEEP=1 leaves the tab open.
+
 Not registered, for the reason docs/Testing.md gives. Needs the built viewer
 (`cmake --build build/wasm`) and the variables of
 tests/gui/sandbox-console-browser.py:
@@ -26,8 +33,10 @@ tests/gui/sandbox-console-browser.py:
       --timeout 600
 """
 
+import http.server
 import json
 import os
+import platform
 import shutil
 import socket
 import subprocess
@@ -48,6 +57,9 @@ DOC = "ConsoleViewerBrowser"
 DOC2 = "ConsoleViewerSecond"
 TOKEN = "c4-viewer-token"
 RUN_WAIT_S = 420
+# The browser with no driver: the page drives itself and posts its verdict.
+SAFARI = bool(os.environ.get("SAFARI"))
+BROWSER = os.environ.get("SAFARI_BROWSER", "Safari")
 
 # Before the server answers anything: it reads the bundle directory once,
 # on the first request.
@@ -57,10 +69,37 @@ state = {
     "done": False,
     "proc": None,
     "thread": None,
+    "report": None,
     "t0": time.perf_counter(),
     "maxClients": 0,
     "answered": set(),
 }
+
+
+class Collector(http.server.BaseHTTPRequestHandler):
+    """The page's verdict, in Safari mode. CORS open: the page is the
+    server's origin, this is another port."""
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.end_headers()
+
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        try:
+            state["report"] = json.loads(body.decode("utf-8"))
+        except ValueError:
+            state["report"] = {"error": "the page posted something that is not JSON"}
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def log_message(self, *args):
+        pass
 
 
 def note(msg):
@@ -83,6 +122,13 @@ def free_port():
 
 
 def missing():
+    for need in ("fcviewer.html", os.path.join("web", "viewerconsole.js")):
+        if not os.path.isfile(os.path.join(WASM, need)):
+            return "the built viewer (%s)" % os.path.join(WASM, need), None
+    if SAFARI:
+        if platform.system() != "Darwin":
+            return "macOS, where `open -a %s` is the driver" % BROWSER, None
+        return None, None
     node = os.environ.get("NODE") or shutil.which("node")
     if not node:
         return "node (NODE or PATH)", None
@@ -92,9 +138,6 @@ def missing():
     chrome = os.environ.get("CHROME", "")
     if not chrome or not os.path.isfile(chrome):
         return "a Chrome binary (CHROME)", None
-    for need in ("fcviewer.html", os.path.join("web", "viewerconsole.js")):
-        if not os.path.isfile(os.path.join(WASM, need)):
-            return "the built viewer (%s)" % os.path.join(WASM, need), None
     return None, node
 
 
@@ -120,6 +163,16 @@ def build():
         check("a second document is served", FreeCADGui.serveDocument(doc2, port))
         FreeCADGui.serveSetGrants([{"token": TOKEN}])
         url = "http://127.0.0.1:%d/?token=%s&doc=%s&doc2=%s&console" % (port, TOKEN, DOC, DOC2)
+        if SAFARI:
+            back = free_port()
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", back), Collector)
+            state["server"] = server
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            url += "&drive=console&guest=worker&report=http://127.0.0.1:%d/report" % back
+            note("NOTE " + url)
+            subprocess.run(["open", "-a", BROWSER, url], check=True)
+            QtCore.QTimer.singleShot(500, poll)
+            return
         note("NOTE " + url)
         log = open(os.path.join(OUT, "drive.log"), "w")
         state["proc"] = subprocess.Popen(
@@ -172,6 +225,15 @@ def poll():
         answer()
     except Exception:
         note("FAIL poll:\n" + traceback.format_exc())
+    if SAFARI:
+        if state["report"] is not None:
+            verify()
+        elif time.perf_counter() - state["t0"] > RUN_WAIT_S:
+            check("the page reported", False, "nothing posted after %ds" % RUN_WAIT_S)
+            finish()
+        else:
+            QtCore.QTimer.singleShot(200, poll)
+        return
     if state["proc"].poll() is None:
         if time.perf_counter() - state["t0"] > RUN_WAIT_S:
             check("the page reported", False, "still running after %ds" % RUN_WAIT_S)
@@ -185,18 +247,27 @@ def poll():
 
 
 def verify():
-    report = None
-    for line in state["lines"]:
-        if line.startswith("REPORT "):
-            try:
-                report = json.loads(line[len("REPORT ") :])
-            except ValueError:
-                pass
+    report = state["report"]
+    if not SAFARI:
+        for line in state["lines"]:
+            if line.startswith("REPORT "):
+                try:
+                    report = json.loads(line[len("REPORT ") :])
+                except ValueError:
+                    pass
     if not check(
-        "the page reported", report is not None, "exit %s, see drive.log" % state["proc"].returncode
+        "the page reported",
+        report is not None,
+        report.get("ua", "") if report else "see drive.log",
     ):
         finish()
         return
+    if SAFARI:
+        check(
+            "the console ran the guest in a worker",
+            report.get("transport") == "worker",
+            report.get("transport"),
+        )
     check("the page drove the console to the end", not report.get("error"), report.get("error", ""))
     for c in report.get("checks", []):
         check("page: " + c["name"], c["pass"], c["detail"])
@@ -228,10 +299,30 @@ def verify():
     finish()
 
 
+def close_tab():
+    """Leave the browser as it was found: the gate's tab goes."""
+    if not SAFARI or os.environ.get("SAFARI_KEEP") or BROWSER != "Safari":
+        return
+    script = (
+        'tell application "Safari" to close (every tab of every window '
+        'whose URL contains "token=%s")' % TOKEN
+    )
+    try:
+        subprocess.run(
+            ["osascript", "-e", script], timeout=20,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
 def finish():
     if state["done"]:
         return
     state["done"] = True
+    close_tab()
+    if state.get("server"):
+        state["server"].shutdown()
     try:
         FreeCADGui.serveStop()
     except Exception:

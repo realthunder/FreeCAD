@@ -69,4 +69,16 @@ async function ask(what: string, done: () => boolean) {
     console.log('FAIL drive | ' + report.error + '\n' + output());
   }
   (window as any).fcxConsoleViewer = report;
+  // A browser the gate could not inject this into asked for it with
+  // ?drive=console, and reads the verdict back here (C6, Safari).
+  const back = params.get('report');
+  if (back) {
+    report.ua = navigator.userAgent;
+    report.transport = (window as any).fcxConsoleTransport ?? null;
+    try {
+      await fetch(back, { method: 'POST', body: JSON.stringify(report) });
+    } catch (e) {
+      console.log('FAIL report | ' + e);
+    }
+  }
 })();
