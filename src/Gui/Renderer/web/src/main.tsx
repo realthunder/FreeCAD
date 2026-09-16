@@ -6,6 +6,7 @@ import { createSignal } from 'solid-js';
 import { Inspector } from './inspector';
 import { SheetPanel } from './sheet';
 import { ConsolePanel } from './console';
+import { TaskPanelCard } from './widgets/panel';
 import { HudCard } from './hud';
 import { LauncherMenu } from './menu';
 import { LoupeOverlay } from './loupe';
@@ -258,6 +259,11 @@ const cyclesItems = () => {
   ];
 };
 
+// The desktop's task panel, mirrored (docs/Sandbox.md 7.22): a card like
+// the console's, opened from the launcher. Subscribing is what starts
+// the host's mirror, so a closed card costs the desktop nothing.
+const [taskPanelOpen, setTaskPanelOpen] = createSignal(false);
+
 const host = document.createElement('div');
 host.id = 'fc-ui';
 document.body.appendChild(host);
@@ -273,6 +279,8 @@ render(() => (
                   doc={() => docs().current} viewOnly={viewOnly}
                   server={location.origin} token={linkToken} client={clientName}
                   viewerSocket />
+    <TaskPanelCard open={taskPanelOpen} onClose={() => setTaskPanelOpen(false)}
+                   viewOnly={viewOnly} />
     <LoupeOverlay mark={loupe} />
     <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
@@ -290,6 +298,9 @@ render(() => (
         { label: 'Python console',
           checked: () => consoleOpen(),
           onSelect: () => setConsoleOpen(!consoleOpen()) },
+        { label: 'Task panel',
+          checked: () => taskPanelOpen(),
+          onSelect: () => setTaskPanelOpen(!taskPanelOpen()) },
         { label: 'HUD',
           checked: () => hud() !== null,
           onSelect: () => window.fcviewerSetHud?.(hud() === null) },

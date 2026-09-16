@@ -961,3 +961,137 @@
     border-radius: 8px 8px 0 0;
   }
 }
+
+/* The desktop's task panel, mirrored (docs/Sandbox.md 7.22, G7).
+ * A floating card, ruled 2026-09-16: same material as the inspector and
+ * the sheet beside it, because the panel is another card in this chrome
+ * and not a Qt window pretending to be one. */
+.fc-panel {
+  pointer-events: auto;
+  touch-action: pan-y;
+  position: absolute;
+  top: 12px;
+  /* Right of centre: the inspector owns the left, and a task panel is
+   * what you read while the model stays visible. Drag it anywhere. */
+  right: calc(12px + env(safe-area-inset-right));
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px - env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 30, 34, 0.92);
+  color: #e8e8ea;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .fc-panel {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 60vh;
+    border-radius: 14px 14px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+.fc-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px;
+  cursor: grab;
+}
+
+.fc-panel-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fc-panel-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa0a6;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fc-panel-close:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+
+.fc-panel-body {
+  overflow: auto;
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fc-panel-empty { color: #9aa0a6; padding: 6px 0 10px; }
+
+/* A TaskBox: the desktop draws a titled group, so does this. */
+.fc-panel-box {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.fc-panel-box-head {
+  font-weight: 600;
+  color: #cfd3d7;
+  margin-bottom: 6px;
+}
+
+.fc-panel-stack, .fc-panel-grid { min-width: 0; }
+.fc-panel-cell { min-width: 0; display: flex; align-items: center; }
+.fc-panel-label { color: #cfd3d7; white-space: nowrap; }
+
+.fc-panel-field {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #e8e8ea;
+  padding: 4px 6px;
+  font: inherit;
+}
+
+.fc-panel-field:disabled { opacity: 0.5; }
+
+.fc-panel-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #e8e8ea;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fc-panel-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); }
+.fc-panel-btn:disabled { opacity: 0.5; cursor: default; }
+.fc-panel-ok { background: rgba(88, 132, 255, 0.28); }
+
+.fc-panel-check { display: flex; align-items: center; gap: 6px; }
+.fc-panel-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+.fc-panel-spacer { flex: 1; min-width: 6px; min-height: 6px; }
+.fc-panel-sep { flex: 1; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.fc-panel-pic { max-width: 100%; }
+
+.fc-panel-rows { display: flex; flex-direction: column; width: 100%; }
+.fc-panel-row { display: flex; gap: 8px; padding: 2px 0; }
+.fc-panel-row span { color: #cfd3d7; white-space: nowrap; }
+.fc-panel-kids { padding-left: 12px; }
