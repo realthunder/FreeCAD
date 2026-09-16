@@ -3,8 +3,14 @@
 // unattached.  The page reads its server from its own origin (?server=
 // names another) and passes the link's ?token= to boot.json.  The verdict is
 // left on window.fcxConsole for scripts/console-drive.js.
+//
+// ?guest=worker boots the same guest in a worker instead (C6): the transport
+// a browser with no JSPI takes, and the one thing this gate can prove without
+// a host -- that the runtime and the wheel load and run there.  ?report=<url>
+// POSTs the verdict, for a browser no driver attaches to (Safari).
 
-import { BrowserGuest } from './guest.js';
+import { BrowserGuest, type SandboxGuest } from './guest.js';
+import { WorkerGuest } from './workerguest.js';
 
 const out = document.createElement('pre');
 out.style.cssText = 'font: 12px/1.45 ui-monospace, monospace; padding: 12px; white-space: pre-wrap';
@@ -19,7 +25,10 @@ const sink = (line: string) => {
 interface Check { name: string; pass: boolean; detail: string }
 const report = {
   ok: false,
+  transport: '',
+  ua: navigator.userAgent,
   jspi: BrowserGuest.jspi,
+  isolated: WorkerGuest.supported,
   version: '',
   runtimeMs: 0,
   wheelsMs: 0,
@@ -38,15 +47,33 @@ const params = new URLSearchParams(location.search);
 const server = params.get('server') ?? location.origin;
 const token = params.get('token') ?? undefined;
 
+/// The unattached bridge, in the shape the worker path needs one: an empty
+/// reply is what "nothing serves the bridge" looks like on the wire, and the
+/// guest raises "host bridge unavailable" on it -- which is what this gate
+/// checks either way.
+const noHost = {
+  roundTrip: () => Promise.resolve(new Uint8Array(0)),
+  endStatement: () => {},
+};
+
 (async () => {
   sink(`sandbox console, C1 -- ${server}`);
   sink(navigator.userAgent);
   try {
-    const guest = await BrowserGuest.boot(new URL('/pyodide/', server).href, {
-      token,
-      stdout: (s) => sink('stdout: ' + s),
-      stderr: (s) => sink('stderr: ' + s),
-    });
+    const base = new URL('/pyodide/', server).href;
+    const worker = params.get('guest') === 'worker';
+    report.transport = worker ? 'worker' : 'jspi';
+    sink('the guest runs ' + (worker ? 'in a worker' : 'in this page'));
+    const guest: SandboxGuest = worker
+      ? await WorkerGuest.boot(base, {
+          token, bridge: noHost,
+          output: (text) => sink(text.replace(/\n$/, '')),
+        })
+      : await BrowserGuest.boot(base, {
+          token,
+          stdout: (s) => sink('stdout: ' + s),
+          stderr: (s) => sink('stderr: ' + s),
+        });
     report.version = guest.info.version;
     report.runtimeMs = Math.round(guest.timing.runtimeMs);
     report.wheelsMs = Math.round(guest.timing.wheelsMs);
@@ -75,4 +102,12 @@ const token = params.get('token') ?? undefined;
   }
   document.title = report.ok ? 'console OK' : 'console FAILED';
   (window as any).fcxConsole = report;
+  const back = params.get('report');
+  if (back) {
+    try {
+      await fetch(back, { method: 'POST', body: JSON.stringify(report) });
+    } catch (e) {
+      sink('FAIL report | ' + e);
+    }
+  }
 })();
