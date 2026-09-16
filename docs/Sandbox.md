@@ -8358,6 +8358,201 @@ and drop in item views.  The DOM panel will not look like the Qt panel
    plan** -- the model store and the layout plan stay pure functions,
    and the DOM is checked by the hand-opened page.
 
+### 7.23 Completion in the browser sized: a service, not a mirrored popup **[sized 2026-09-17; the phone and the dot trigger RULED 2026-09-17]**
+
+The question, asked once W1 drew a real panel: a mirrored field is a
+DOM input, and the desktop's completion is a `QCompleter` popup --
+a `Qt::Popup` `QListView`, not a `QDialog`, not a child of the panel.
+`PanelMirror::owns` answers for `panel:<n>`, `pw:<n>` and `dialog:<n>`
+only, so **completion is structurally invisible to the browser today**,
+and stays invisible after W4.
+
+**What the code says, and it changes the shape of the answer.**  A
+`Gui::QuantitySpinBox` -- Pad's `lengthEdit`, the field anyone would
+actually type in -- has NO completer: `ExpressionSpinBox` takes
+`spinbox->findChild<QLineEdit*>()` and only hangs the f(x)
+`ExpressionLabel` on it (`SpinBox.cpp:51`).  Completion there lives in
+`DlgExpressionInput`, a modal `QDialog` whose `ExpressionTextEdit` owns
+the `ExpressionCompleter`.  The fields that own one directly --
+`Gui::InputField`, `ExpressionLineEdit` -- appear in almost no task
+panel (`Spreadsheet`'s dialogs, `DlgPropertyLink`).  So "serve the
+widget's own completer" would light up nothing in the panels a phone
+user opens.  Two consequences, both ruled here:
+
+- The service must be able to build a completer **for a bound field
+  that has none**, from `Fw::ExpressionBound::boundPath()`'s document
+  object -- which is exactly what the f(x) dialog would have done.
+- The card gets **a dialog of its own**, in the page, with the parts
+  `DlgExpressionInput` has: a multi-line editor, a live result pane,
+  and OK / Discard.  **CORRECTED 2026-09-17** -- this first read
+  "an inline editor in the field's row", which was built and shown to
+  the user, who ruled against it from the screenshot: expression entry
+  is supposed to be a dialog for entering an expression, and editing
+  in the spin box also throws away the result preview, which is half
+  of what makes the desktop's dialog usable.
+  What stands from the original reasoning is only which dialog: OURS,
+  drawn in the browser, not the host's raised over the desktop user's
+  screen.  `DlgExpressionInput` is modal on the host, and a single
+  shared session (8.11) means raising it would freeze whoever is
+  sitting at the desktop.  W4 still mirrors dialogs; this does not go
+  through them.
+
+**The op.**  One request/reply on the control lane, registered beside
+`widgets.icon` with the write flag `false` (it reads names; a view-only
+client may complete, and still may not write):
+
+    widgets.complete {target, text, pos}
+      -> {items: [...], details: [...], start, end}
+
+`start`/`end` are the tokenizer's prefix range in the ORIGINAL text, so
+the client splices `text.slice(0, start) + item + text.slice(end)` --
+the same replacement `ExpressionLineEdit::slotCompleteText` performs.
+
+**Never the desktop's own completer.**  `setCompletionPrefix` and the
+tokenizer are mutable state, and the desktop's caret is not ours: a
+browser query against the widget's live completer would corrupt what
+the desktop user sees mid-keystroke.  The op builds its OWN
+`ExpressionCompleter` on the bound object, per request, and asks that.
+Per request rather than cached on purpose: the model a completer holds
+is the document's object and property tree, and a cached one goes stale
+the moment an object is added, renamed or deleted -- which is what a
+completion is FOR.  The model is lazy, so the cost is the query; cache
+it if a measurement says to, not before.  That also settles the popup: `ExpressionCompleter::slotUpdate` ends in
+`showPopup`, which is why the entry point is a new
+`ExpressionCompleter::complete(text, pos, start, end, details)` that
+tokenizes, sets the prefix, harvests the rows through `setCurrentRow` +
+`currentCompletion` (so `pathFromIndex` applies, exactly as activation
+would) and **never pops anything**.  `slotUpdate` is untouched.
+
+**The trigger: the dot, ruled.**  Completion fires when the user types
+`.`, and then filters locally as more characters arrive -- one round
+trip per dotted segment rather than one per keystroke, which is what
+makes this usable over a phone's network.  Three qualifications the
+code forces:
+
+- **A dot after a digit is a decimal point, not a trigger.**  `10.` in
+  a quantity field is a number; firing there would pop a menu over the
+  keyboard every time someone types a length.  The rule is local and
+  cheap (look at the character before the dot), and the host is the
+  authority anyway: a query that matches nothing shows nothing.
+- **A first segment has no dot**, so `>= 2` word characters also arm
+  it, debounced -- `CommandCompleter` already refuses to fire under 3
+  characters, so this is the house rule, not a new one.
+- **An explicit ask** always works: a chevron in the field's row (a
+  tap target, which a phone needs and a keyboard shortcut is not) and
+  Ctrl+Space on the desktop.
+
+Between dots the client filters the answered set itself, and re-asks
+when local filtering empties out -- so a stale set can never strand the
+user on a wrong answer.
+
+**The phone, ruled.**  The card is already a bottom sheet under 640px
+(`NARROW`), which is where the on-screen keyboard is.  A dropdown under
+the field would be behind it.  So:
+
+- The suggestions are a **horizontal chip strip** pinned to the bottom
+  of the VISUAL viewport (`window.visualViewport`, which nothing in
+  this chrome uses yet) -- the QuickType position, above the keyboard,
+  reachable with a thumb.  On a wide viewport the same list renders as
+  an ordinary dropdown under the field.
+- **The tap must not blur the field.**  `preventDefault` on
+  `pointerdown` over a chip, or the keyboard collapses, the viewport
+  resizes, and the chip moves out from under the finger -- the classic
+  version of this bug.
+- **The keyboard must be able to type an identifier.**  A quantity
+  field wants `inputmode="decimal"`, on which a phone offers no
+  letters; the field switches to `inputmode="text"` as soon as its
+  value starts with `=` (the expression lead char) so `Pad.Length` can
+  be typed at all.  With `autocapitalize`, `autocorrect` and
+  `spellcheck` off, or the phone helpfully capitalises identifiers.
+- Chips are >= 44px of touch target, Enter accepts the highlighted one
+  while the strip is open and commits the field when it is not, and a
+  tap outside dismisses.
+
+**Writing an expression back.**  Nothing today routes a written
+`q_expression` to `Fw::ExpressionBound::setExpressionText` (only the
+gate calls it), and wiring it into the property path would re-enter
+`syncExpression`, which writes that same key.  So the inline editor
+gets its own op, write-gated, whose reply can carry the parse error the
+property path has nowhere to put:
+
+    widgets.expression {target, text} -> {ok} | {ok:false, error}
+
+**Stages.**
+
+    A1  the host: ExpressionCompleter::complete(), the per-object
+        completer cache, widgets.complete, widgets.expression.
+        Gate: FormWidgets' widgetStream case -- a bound spin box
+        answers "Pad." with Length among the items and a usable
+        [start, end), an unbound plain edit answers nothing, and a
+        view-only client may complete but may not set an expression.
+    A2  the client: the completion controller (dot rule, local
+        filtering, explicit ask), the chip strip and the dropdown,
+        the inline expression editor on a bound field.
+        Gate: the node replay gate over a recorded fixture for the
+        pure half (trigger decisions and splicing are pure functions),
+        then panel-drive.js typing into Pad's Length on a live serve.
+    A3  the phone: visualViewport anchoring, the inputmode switch, the
+        touch targets, and what the strip does when the keyboard
+        closes under it.  Gate: panel-drive.js in a phone viewport
+        with touch emulation.
+
+**A1, A2 and A3 BUILT 2026-09-17, and proven on a live serve.**
+
+The host: `ExpressionCompleter::completionsFor()` (tokenize, set the
+prefix, harvest through `setCurrentRow` / `currentCompletion` so
+`pathFromIndex` applies, and raise nothing), `widgets.complete` (not
+mutating), and `widgets.expression` with a `preview` mode that parses,
+validates and evaluates under a "session" scope with function calls
+DISABLED -- whatever the desktop's own `EvalFuncOnEdit` says, because
+that switch is the desktop user's choice for their own keyboard, not
+for everyone holding a link.  Both ops find the binding through one
+`boundPathOf()`.
+
+The client: `complete.ts` -- the dot rule, local filtering, splicing,
+the keyboard rule -- is pure and gated in node; `field.tsx` is the fx
+button and the dialog (editor, completion list, live result, OK /
+Discard), rendered by the CARD and portalled to the body.
+
+Gates: `FormWidgets` 23 passed / 0 failed, `test_completion` covering
+completion, set, clear, both preview severities, the suppressed
+mid-typing case and the view-only refusal; the node gate 79 checks ALL
+GREEN (62 of W1's, plus 17 for the completion rules); and
+`panel-drive.js` against a serving FreeCAD in a desktop and a phone
+viewport.
+
+**What the live runs showed.**  `SketchPad.` answers 57 items (`Pad.`
+answers 93), and typing on to `SketchPad.Con` narrows to `Constraints`
+and `FullyConstrained` **without asking again** -- one round trip per
+dotted segment, which is the whole point of the dot trigger.  The
+result line reads `Property 'Con' not found in 'SketchPad.Con'` with OK
+disabled, and is blank for a bare trailing dot.  On the phone the chips
+are 44px, anchored to the visual viewport, and the keyboard is the text
+one.
+
+**Six defects, each found by running it rather than by reading it**:
+the live host answered an EMPTY list for Pad's Length, because a
+mirrored panel binds the widget and not the model (the gate's synthetic
+field bound the model, so it passed); a field in expression mode still
+asked for a decimal keyboard, which has no letters, so `SketchPad.`
+could not have been typed on a handset at all; the result line put a
+red parse error under every keystroke, where the desktop's own dialog
+blanks exactly the "unexpected end of input" case; the dialog rendered
+in place was trapped inside the card, because `.fc-panel` carries a
+`backdrop-filter` and a filtered ancestor is the containing block for
+`position: fixed`; portalling it to the body then put it BELOW the
+chrome host (`#fc-ui`, z-index 10), so the HUD card covered the editor
+-- it still took focus, still looked right, and every keystroke went to
+whatever was on top; and the new gate case adopted store objects
+without releasing them, which `Store::reset()` keeps on purpose, so
+three panel-mirror cases failed three tests later.  `panel-drive.js`
+now reports what covers the field it types into, so the invisible one
+cannot recur silently.
+
+**Cost** (TypeScript unless noted): the host A1 ~180 C++; the client
+A2 400-550; A3 and CSS 150-250; the gates 150-200.  Total about 1k,
+against 7.22's 2.2-3.3k for the panel itself.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -9121,6 +9316,20 @@ sockets, any network for the reference image, a webview escape hatch.
 
 ## 12. Traps
 
+- **moc drops the rest of the class after a raw string holding an
+  unbalanced `(`** (found 2026-09-17, 7.23's gate).  A case that feeds
+  the host an expression which deliberately does not parse wants
+  `R"("text":"2 * ("})"` -- and moc's lexer ends the literal at the
+  first `)"` it believes it has found, loses the class, and emits a
+  meta object with NO slots at all.  Nothing warns.  The build fails
+  much later, at link, with `undefined reference to vtable for
+  testFormWidgets`, which points at the class rather than at the
+  string, and the stale test binary keeps passing in the meantime.
+  Proving it takes one command -- run `.conda/freecad/lib/qt6/moc`
+  over the file and count the `test_` names in its output: 0 with that
+  literal, 21 without.  Write such a case as an escaped ordinary
+  string.  The file is full of legitimate `R"({...})"` JSON, which is
+  fine: it is the unbalanced parenthesis, not the raw string.
 - **The tool bar manager owns every `QToolBar` under the status bar**
   (7.15).  A bar a workbench puts in the status bar itself is adopted
   into the manager's `StatusBarArea`, hidden on the next workbench
