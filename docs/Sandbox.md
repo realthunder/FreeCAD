@@ -7920,7 +7920,7 @@ several; the typed-sheet discussion is subsumed: `ProxyExp` is the
 type link, the chain is the delegation) are in docs/ProxyChain.md.  The variant Link idea recorded the same day is
 docs/VariantLink.md, a parallel thread for later.
 
-### 7.22 G7 sized: the desktop's panels in the browser, a DOM view over the widget layer **[sized 2026-09-16; the five questions RULED 2026-09-16; W1's host half -- the origin echo -- BUILT 2026-09-16]**
+### 7.22 G7 sized: the desktop's panels in the browser, a DOM view over the widget layer **[sized 2026-09-16; the five questions RULED 2026-09-16; W1's host half -- the origin echo -- BUILT 2026-09-16; W1 BUILT and PROVEN on screen 2026-09-16]**
 
 The question, asked with 7.19's mirror complete as sized (M1-M3 built,
 M4 measured 2026-09-11): the desktop's real task panels are already
@@ -8244,6 +8244,37 @@ compilation and reduction, **not rendering**: the DOM check question 5
 ruled -- the hand-opened page against a serving FreeCAD -- has NOT been
 run.  W1 is code-complete and unproven on screen, which is the honest
 state of it.
+
+**W1 PROVEN on screen 2026-09-16.**  `scripts/demo-taskpanel.py` through
+`renderer-serve.sh` (Pad's own C++ dialog up on a headless serve), the
+page opened with `?panel` -- a flag added for the reason `?sheet` has
+one, that a headless run cannot reach the launcher -- and driven by
+`scripts/panel-drive.js`: it reports the card's shape as JSON (title,
+TaskBox headings, labels, fields, combos, checks, buttons, rows, and the
+computed grid tracks), optionally types into the first field and reports
+what the host sent back, and writes a screenshot.  The result: Pad's
+panel drawn -- 4 headings, 13 labels, 8 fields, 5 combos carrying their
+items, 12 check boxes, the Profile list holding `SketchPad`, OK/Cancel,
+and grid tracks that are real px rather than the `NaN` the span default
+was guarding against.  Typing 25 into Length leaves the host holding
+`lengthEdit` `rawValue` 25 / `"25.00"` and the pad visibly taller in the
+same screenshot: the write path, end to end, in a picture.
+
+**Two things the screen found that no fixture could.**  *The card
+subscribed once, at open* -- and `control.ts` refuses an op on a socket
+not yet up with `Offline` rather than queueing it, while the WASM module
+installs the uplink seconds into the load.  So the card `?panel` opens
+during page load asked too early, took the refusal as final, and said
+the stream was unavailable until a reload.  An `Offline` is "not yet",
+not "no", which is the rule `sheet.tsx` already keeps; the subscribe is
+retried while the card is open.  *An icon-only tool button drew its
+whole tooltip as its label* -- Pad's is "Temporary clear link references
+for new selection" -- which ran the Profile row off the card and over
+its neighbours.  The icon is W3; until then the label is a placeholder,
+the sentence stays on the title, and a button clamps to its cell so no
+desktop label can do that again.  Both are the fixtures' blind spot by
+construction: one is about the socket's timing and the other about
+pixels, and the replay gate has neither.
 
 Then W2 to W5 as staged: the item views properly (the checks, the
 nesting, the refill coalesced), the pictures and icons, the dialogs and
