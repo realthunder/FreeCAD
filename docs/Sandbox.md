@@ -48,7 +48,7 @@ pieces are frozen, not extended.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W1 next     7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started
+    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the browser half next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same) and the restore half guarded by available() first
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -7920,7 +7920,7 @@ several; the typed-sheet discussion is subsumed: `ProxyExp` is the
 type link, the chain is the delegation) are in docs/ProxyChain.md.  The variant Link idea recorded the same day is
 docs/VariantLink.md, a parallel thread for later.
 
-### 7.22 G7 sized: the desktop's panels in the browser, a DOM view over the widget layer **[sized 2026-09-16; the five questions RULED 2026-09-16, W1 started]**
+### 7.22 G7 sized: the desktop's panels in the browser, a DOM view over the widget layer **[sized 2026-09-16; the five questions RULED 2026-09-16; W1's host half -- the origin echo -- BUILT 2026-09-16]**
 
 The question, asked with 7.19's mirror complete as sized (M1-M3 built,
 M4 measured 2026-09-11): the desktop's real task panels are already
@@ -8050,6 +8050,25 @@ about 20 lines, and the wire shape does not change.  **Recommended:
 (b), in W1**, because (a) is undetectable from the browser and the
 first field anyone tests is a quantity.  It is the only C++ this
 sizing asks for.
+
+**BUILT 2026-09-16**, as ruled.  `Store::messageTo(client, ...)` beside
+`message`, emitted by `applyUpdate` AFTER the `OriginScope` closes -- so
+nothing it sends is stamped with the writer -- carrying only the keys
+that diverged; `SceneWidgetStream::onMessageTo` sends them to that one
+client, if it is still subscribed and still wants that id.  The
+comparison is two-sided on purpose: the WIRE forms first, which settles
+a property whose value is an object (a ref either way), and then
+`Widget::valueDiffers`, which coerces by the DECLARED type -- without
+that second half an int that arrived as a JSON double would be reported
+as a correction of itself.  The helper is new because `coerce` is
+protected and the knowledge of a bag key's type belongs on the widget.
+Gate: `test_widgetStream` gains the case -- a slot writes the field
+back, the writer gets exactly one targeted `update` carrying the
+corrected value, and a write the host leaves alone sends it nothing;
+`FormWidgets_Tests_run` 22 passed, 0 failed, the three panel-mirror
+cases among them.  One limit kept deliberately: `applyCustom` is not
+echoed, so a correction a client's EVENT provokes stays invisible to
+it -- no client sends events yet, and W2 is where that would change.
 
 **Stages and gates.**
 
