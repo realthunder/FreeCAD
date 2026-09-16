@@ -48,7 +48,7 @@ pieces are frozen, not extended.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core + replay gate BUILT 2026-09-16 (ALL GREEN), the views next
+    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN), the leaf views next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same) and the restore half guarded by available() first
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -8187,17 +8187,45 @@ for one script would have spent the dependency question 5 withheld, and
 running it is the check.
 
 **Three things the recorded frames corrected in this sizing**, each
-found by reading the corpus rather than the C++: a grid `pos` is FOUR
-wide (`[row, column, rowSpan, columnSpan]`, e.g. `[2, 0, 1, 3]`), not
-the two-plus-span written above; an `update` can carry a rebuilt
-`layoutSpec` beside the state keys, so the update path needs a layout
-branch; and a picture arrives as a `QLabelModel` whose `qtClass` is
-`QSvgWidget`, so the view keys off `model` but must consult `qtClass`.
+found by reading the corpus rather than the C++: a grid `pos` comes
+BOTH four wide and two wide -- `Layout::addWidget` writes
+`[row, column, rowSpan, columnSpan]` and `Layout::addRow`, a form's
+row, writes `[row, column]` alone; 145 of the corpus's 153 are four
+wide, 8 are two, and 6 of those are in Pad's own panel -- so the spans
+must default to 1 or a form row plans as `NaN` and the panel collapses
+silently (this section claimed FOUR wide when the corpus first landed,
+which was half right; the layout pass counted them and corrected it);
+an `update` can carry a rebuilt `layoutSpec` beside the state keys, so
+the update path needs a layout branch; and a picture arrives as a
+`QLabelModel` whose `qtClass` is `QSvgWidget`, so the view keys off
+`model` but must consult `qtClass`.
 
-What is left in W1: the layout plan (the four kinds onto flex and CSS
-grid, with the spacers and the spans), the leaf views, the floating
-panel container (question 4), and the write path with the origin echo
-already waiting for it on the host.
+**The layout plan BUILT 2026-09-16.**  `layout.ts` turns a spec into what
+a view places: the four classes the corpus carries (`QVBoxLayout` 53,
+`QHBoxLayout` 24, `QGridLayout` 25, `QFormLayout` 2) onto stacks, a grid
+and a form; the seven item shapes; the spans defaulted; the grid extent
+computed once, so a view sizes its track lists without a second pass.  An
+unknown class falls back to a vertical stack rather than throwing, and
+the gate reports the class -- one unfamiliar container should render, not
+blank the panel.  The gate grew four assertions a fixture (the class
+known, the spans usable, the item shapes complete, a plan produced) and
+stands at **62 checks, ALL GREEN**, with `npm run typecheck` clean.  The
+core's `.ts` specifiers, which node's stripper needs literally, are
+covered by `allowImportingTsExtensions`; only the gate script stays out
+of the typecheck, for node builtins alone.
+
+**A limit, stated rather than counted as covered:** `separator`,
+`stretch` and `spacing` ITEMS never appear in this corpus -- they are
+tool-bar shapes, and the tool bars are the other subscription -- so they
+are planned but ungated.  What the corpus does carry is widget 250,
+nested layout 24, spacer 9, and no layout extras at all.
+
+What is left in W1: the leaf views (the corpus ranks them: `QLabel` 66,
+`QPushButton` 27, `QuantitySpinBox` 27, `QWidget` 26, `QCheckBox` 25,
+`QGroupBox` 22 of which 10 are `TaskBox` headers, `QComboBox` 14,
+`InputField` 9, `QToolButton` 8, `QDialogButtonBox` 7, `QDialog` 7), the
+floating panel container (question 4), and the write path, with the
+origin echo already waiting for it on the host.
 
 **Cost** (new; TypeScript unless noted):
 
