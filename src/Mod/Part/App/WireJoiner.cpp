@@ -426,6 +426,24 @@ public:
         mutable Bnd_Box box;
         bool done = false;
         bool purge = false;
+        // Candidates already ruled out as lying outside THIS wire. This used to
+        // be one epoch per starting edge, shared by every wire derived in that
+        // pass, which is only sound while the wires shrink. They do not: the
+        // search returns to larger wires, and a mark taken against a smaller
+        // one then hid edges that were genuinely inside the larger, so the wire
+        // was declared tight with splitters still sitting in its adjacency.
+        std::vector<EdgeInfo *> outsideEdges;
+
+        bool isKnownOutside(const EdgeInfo *info) const
+        {
+            return std::find(outsideEdges.begin(), outsideEdges.end(), info)
+                != outsideEdges.end();
+        }
+
+        void markOutside(EdgeInfo *info)
+        {
+            outsideEdges.push_back(info);
+        }
 
         void sort() const
         {
@@ -1738,14 +1756,12 @@ public:
         std::unique_ptr<Base::SequencerLauncher> seq(
                 new Base::SequencerLauncher("Finding tight bound", edges.size()));
 
-        int iteration2 = iteration;
         for (auto &info : edges) {
             ++iteration;
             seq->next(true);
             if (info.iteration < 0 || !info.wireInfo)
                 continue;
 
-            ++iteration2;
             DerivedWires derivedWires;
             while(!info.wireInfo->done) {
                 auto wireInfo = info.wireInfo;
@@ -1773,7 +1789,10 @@ public:
                     for (int n=current->iStart[idx]; n<current->iEnd[idx]; ++n) {
                         const auto &currentVertex = adjacentList[n];
                         auto next = currentVertex.edgeInfo();
-                        if (next == current || next->iteration2 == iteration2 || next->iteration<0)
+                        if (next == current || next->iteration<0)
+                            continue;
+
+                        if (wireInfo->isKnownOutside(next))
                             continue;
 
                         // An edge of the wire cannot split it. This used to be
@@ -1790,7 +1809,7 @@ public:
 
                         if (!isInside(*wireInfo, next->mid)) {
                             showShape(next, "ninside", iteration);
-                            next->iteration2 = iteration2;
+                            wireInfo->markOutside(next);
                             continue;
                         }
 
@@ -1990,7 +2009,6 @@ public:
             }
         }
 
-        int iteration2 = iteration;
         for (auto &info : edges) {
             ++iteration;
             seq->next(true);
@@ -2078,7 +2096,6 @@ public:
                     showShape(*wireInfo, "nw2", iteration);
 
                     ++iteration;
-                    ++iteration2;
 
                     DerivedWires derivedWires;
                     while (wireInfo && !wireInfo->done) {
@@ -2105,7 +2122,10 @@ public:
                             for (int n=current->iStart[idx]; n<current->iEnd[idx]; ++n) {
                                 const auto &currentVertex = adjacentList[n];
                                 auto next = currentVertex.edgeInfo();
-                                if (next == current || next->iteration2 == iteration2 || next->iteration<0)
+                                if (next == current || next->iteration<0)
+                                    continue;
+
+                                if (wireInfo->isKnownOutside(next))
                                     continue;
 
                                 // As in findTightBound(): the wire is replaced
@@ -2118,7 +2138,7 @@ public:
 
                                 if (!isInside(*wireInfo, next->mid)) {
                                     showShape(next, "ninside2", iteration);
-                                    next->iteration2 = iteration2;
+                                    wireInfo->markOutside(next);
                                     continue;
                                 }
 
