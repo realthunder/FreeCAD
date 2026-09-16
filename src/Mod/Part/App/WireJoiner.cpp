@@ -64,6 +64,8 @@
 #include <BRepTools_History.hxx>
 #include <ShapeBuild_ReShape.hxx>
 
+#include <algorithm>
+#include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
 #include <deque>
@@ -1668,6 +1670,59 @@ public:
         }
     }
 
+    // A wire is identified by the set of edges it runs through, which is what
+    // WireInfo::isSame() compares. The key is a cheap pre-filter for it.
+    static std::size_t wireKey(const WireInfo &wireInfo)
+    {
+        std::vector<std::uintptr_t> ptrs;
+        ptrs.reserve(wireInfo.vertices.size());
+        for (const auto &v : wireInfo.vertices)
+            ptrs.push_back((std::uintptr_t)v.edgeInfo());
+        std::sort(ptrs.begin(), ptrs.end());
+        std::size_t key = 1469598103934665603ULL;
+        for (auto p : ptrs) {
+            key ^= (std::size_t)p;
+            key *= 1099511628211ULL;
+        }
+        return key;
+    }
+
+    // The wires one run of a split loop has already held. Scoped to that loop:
+    // different starting edges reach the same wire legitimately, the same loop
+    // coming back to one it already had is the search going in circles.
+    typedef std::vector<std::pair<std::size_t, std::shared_ptr<WireInfo>>> DerivedWires;
+
+    void rememberWire(DerivedWires &derived, const std::shared_ptr<WireInfo> &wireInfo)
+    {
+        derived.emplace_back(wireKey(*wireInfo), wireInfo);
+    }
+
+    bool wireAlreadyDerived(const DerivedWires &derived, const WireInfo &wireInfo)
+    {
+        std::size_t key = wireKey(wireInfo);
+        for (const auto &d : derived) {
+            if (d.first == key && d.second->isSame(wireInfo))
+                return true;
+        }
+        return false;
+    }
+
+    // Undo a candidate attempt. Once _findClosedWires() has succeeded, the one
+    // frame pushed by the caller is not all there is to take back: that
+    // function pushes a frame for every edge it walks and inserts each into
+    // edgeSet, and it unwinds them itself only when it fails. This mirrors that
+    // unwind, so a refused candidate leaves the search exactly where it stood.
+    void restoreCandidate(std::size_t savedStack, std::size_t savedVertexStack)
+    {
+        for (std::size_t i = savedStack; i < stack.size(); ++i) {
+            auto edgeInfo = vertexStack[stack[i].iCurrent].edgeInfo();
+            edgeSet.erase(edgeInfo);
+            wireSet.erase(edgeInfo->wireInfo.get());
+        }
+        stack.resize(savedStack);
+        vertexStack.resize(savedVertexStack);
+    }
+
     void findTightBound()
     {
         // Assumption: all edges lies on a common manifold surface
@@ -1691,16 +1746,16 @@ public:
                 continue;
 
             ++iteration2;
+            DerivedWires derivedWires;
             while(!info.wireInfo->done) {
                 auto wireInfo = info.wireInfo;
+                rememberWire(derivedWires, wireInfo);
                 checkWireInfo(*wireInfo);
                 const auto &wireVertices = wireInfo->vertices;
                 auto beginVertex = wireVertices.front();
                 auto &beginInfo = *beginVertex.it;
                 initWireInfo(*wireInfo);
                 showShape(wireInfo->wire, "iwire", iteration);
-                for (auto &v : wireVertices)
-                    v.it->iteration2 = iteration2;
 
                 stack.clear();
                 vertexStack.clear();
@@ -1721,6 +1776,16 @@ public:
                         if (next == current || next->iteration2 == iteration2 || next->iteration<0)
                             continue;
 
+                        // An edge of the wire cannot split it. This used to be
+                        // answered by marking every edge of the current wire
+                        // with iteration2, but the wire is replaced on every
+                        // split while those marks live for the whole pass, so a
+                        // mark left over from a larger wire hid an edge that
+                        // would have split the smaller one and the wire was
+                        // called tight too early. Ask the wire being held.
+                        if (wireInfo->find(next))
+                            continue;
+
                         showShape(next, "tcheck", iteration);
 
                         if (!isInside(*wireInfo, next->mid)) {
@@ -1728,6 +1793,9 @@ public:
                             next->iteration2 = iteration2;
                             continue;
                         }
+
+                        std::size_t savedStack = stack.size();
+                        std::size_t savedVertexStack = vertexStack.size();
 
                         edgeSet.insert(next);
                         stack.emplace_back(vertexStack.size());
@@ -1763,6 +1831,19 @@ public:
                             newWire.reset();
                             vertexStack.pop_back();
                             stack.pop_back();
+                            edgeSet.erase(next);
+                            continue;
+                        }
+
+                        // A split has to make progress. Without this the search
+                        // spins: on a k=31 lattice it alternated between two
+                        // wires of 268 and 266 vertices for as long as it was
+                        // left running. Try the next candidate instead, and let
+                        // the wire be declared tight only when none is left.
+                        if (wireAlreadyDerived(derivedWires, *newWire)) {
+                            showShape(*newWire, "noprogress", iteration);
+                            newWire.reset();
+                            restoreCandidate(savedStack, savedVertexStack);
                             edgeSet.erase(next);
                             continue;
                         }
@@ -1999,7 +2080,9 @@ public:
                     ++iteration;
                     ++iteration2;
 
+                    DerivedWires derivedWires;
                     while (wireInfo && !wireInfo->done) {
+                        rememberWire(derivedWires, wireInfo);
                         showShape(next, "next2", iteration);
 
                         vertexStack.resize(1);
@@ -2011,8 +2094,6 @@ public:
 
                         const auto &wireVertices = wireInfo->vertices;
                         initWireInfo(*wireInfo);
-                        for (auto &v : wireVertices)
-                            v.it->iteration2 = iteration2;
 
                         std::shared_ptr<WireInfo> newWire;
 
@@ -2027,6 +2108,12 @@ public:
                                 if (next == current || next->iteration2 == iteration2 || next->iteration<0)
                                     continue;
 
+                                // As in findTightBound(): the wire is replaced
+                                // on every split, so ask the one being held
+                                // rather than trust a mark left by an earlier.
+                                if (wireInfo->find(next))
+                                    continue;
+
                                 showShape(next, "check2", iteration);
 
                                 if (!isInside(*wireInfo, next->mid)) {
@@ -2034,6 +2121,9 @@ public:
                                     next->iteration2 = iteration2;
                                     continue;
                                 }
+
+                                std::size_t savedStack = stack.size();
+                                std::size_t savedVertexStack = vertexStack.size();
 
                                 edgeSet.insert(next);
                                 stack.emplace_back(vertexStack.size());
@@ -2066,6 +2156,18 @@ public:
                                     newWire.reset();
                                     vertexStack.pop_back();
                                     stack.pop_back();
+                                    edgeSet.erase(next);
+                                    wireSet.erase(next->wireInfo.get());
+                                    continue;
+                                }
+
+                                // As in findTightBound(): a split that hands
+                                // back a wire this loop already held is not
+                                // progress, and the loop would not terminate.
+                                if (wireAlreadyDerived(derivedWires, *newWire)) {
+                                    showShape(*newWire, "noprogress2", iteration);
+                                    newWire.reset();
+                                    restoreCandidate(savedStack, savedVertexStack);
                                     edgeSet.erase(next);
                                     wireSet.erase(next->wireInfo.get());
                                     continue;
