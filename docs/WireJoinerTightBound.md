@@ -144,16 +144,42 @@ The guard in part 2 fires three times on k=31 and not at all on the other ten
 sizes once part 4 is in. With the outside marks correctly scoped the loop mostly
 makes progress by itself, so the guard is a backstop rather than the mechanism.
 
-## The canonical adjacency order is kept
+## The canonical adjacency order was dropped again
 
 `buildAdjacentList()` giving each vertex's adjacency group a canonical order
 (`8488e0964b`) was committed earlier as a *mitigation*: it rearranges which
 wires form so the stale marks stop colliding, which made all eleven lattice
-sizes correct without touching the flag defect at all. It is kept, on its own
-merits rather than as a fix -- an order that does not depend on which edge is
-asking is worth having for determinism across platforms and OCCT versions, and
-it renames nothing in the fixture corpus. The defect it was hiding is now
-actually gone, which is what the table above demonstrates.
+sizes correct without touching the flag defect at all. Once the real fix landed
+it was kept anyway, on the grounds that an order which does not depend on which
+edge is asking is worth having for determinism across platforms and OCCT
+versions. That merit was never priced.
+
+It has now been measured, and it is expensive. `build()` calls
+`buildAdjacentList()` unconditionally, so the sort sits on the path of *every*
+join rather than only a tight bound one:
+
+| isolated, one process per measurement | pristine | with the order | without |
+|---|---|---|---|
+| 40x40 lattice, splitting only | 6.83 s | 15.86 s | 6.83 s |
+| pre-split 30x30 lattice, no splitting at all | 2.06 s | 2.77 s | 2.04 s |
+
+The sort itself is not the cost: about 3200 groups of four entries, each sorted
+once. `splitEdges()` runs *before* `buildAdjacentList()` and is untouched, and
+the second row does no splitting whatsoever, so the 2.3x is downstream of the
+reordering -- a different traversal order makes `findClosedWires()` do more
+work. Tight bound runs were slower too, at all eleven sizes: 315 s against
+345 s for k=30 to k=40.
+
+So it was reverted, and the search stands on the fix alone. Without the order
+all eleven lattice sizes are still correct, and the element maps over the 37
+fixture sketches are unchanged -- checked against the stored baseline, against a
+dump taken from the shipped build on the same box, and with a control confirming
+those two agree, so a real rename could be told apart from a drifted baseline.
+
+What remains untested is the property the order was kept for: naming stability
+across platforms and OCCT versions cannot be established on one box. If it is
+wanted later, it should return in a form that does not cost 2.3x, which means
+first understanding why a reordered traversal does more work.
 
 `addWire()` separately refuses to hand back a wire that self-intersects or whose
 face has no area (`95833024c9`). That guard is sound whatever the cause, and it
@@ -165,9 +191,13 @@ nothing measurable.
 ## What is in the tree
 
 The fix is two commits on `SketcherPort`: `38d362dd43` (parts 1 to 3) and
-`09c95bd334` (part 4). Both are individually buildable and neither hangs, so
-the history does not pass through a broken state -- parts 1 to 3 alone are
-already correct on all eleven lattice sizes with the canonical order present.
+`09c95bd334` (part 4), with the earlier ordering mitigation `8488e0964b`
+reverted afterwards once it had been measured (see above). Both are
+individually buildable and neither hangs, so the history does not pass through
+a broken state: the canonical order was still in place at those two commits,
+and parts 1 to 3 alone are correct on all eleven lattice sizes while it is.
+After the revert it is part 4 that carries them -- parts 1 to 3 without the
+order lose nine cells at k=33.
 
 Verified on the second of them:
 
