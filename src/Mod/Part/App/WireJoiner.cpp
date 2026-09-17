@@ -1237,12 +1237,68 @@ public:
         // of that stretch is a place one edge has to be split at.
         // ShapeAnalysis_Wire::CheckIntersectingEdges reads the segments too;
         // it is where the old per-pair path got these splits from.
+        //
+        // But a segment is also what two curves that merely TOUCH come back
+        // as. Two circles tangent to each other stay within the intersector's
+        // tolerance for a stretch either side of the touch point (2.6e-5 for
+        // radii 10 and 5 at 1e-10), and a segment that long is a split on
+        // each side of the vertex, two fragments too short to mean anything,
+        // and a duplicate loop in the result. The two are told apart by where
+        // the segment ends: curves that coincide do so for as long as both
+        // exist, so a real overlap ends only where one of the edges ends,
+        // while a touch ends where the curves drift apart, in the middle of
+        // both. A touch contributes one point: the segment's mid parameter,
+        // which is the touch point to second order (exactly, for two circles)
+        // and so within the model tolerance of it -- unless one end of the
+        // segment is an edge end, in which case the touch is at that end and
+        // the segment is the one-sided stretch running away from it.
+        auto atEdgeEnd = [&](const IntRes2d_IntersectionPoint &ip) {
+            double q1 = ip.ParamOnFirst();
+            double q2 = ip.ParamOnSecond();
+            gp_Pnt pt1 = info.curve->Value(q1);
+            gp_Pnt pt2 = other.curve->Value(q2);
+            return isEndParam(info, q1, pt1, true) || isEndParam(info, q1, pt1, false)
+                || isEndParam(other, q2, pt2, true) || isEndParam(other, q2, pt2, false);
+        };
         for (int i=1; i<=inter.NbSegments(); ++i) {
             const auto &seg = inter.Segment(i);
-            if (seg.HasFirstPoint())
-                push(seg.FirstPoint(), true);
-            if (seg.HasLastPoint())
-                push(seg.LastPoint(), true);
+            if (!seg.HasFirstPoint() || !seg.HasLastPoint()) {
+                if (seg.HasFirstPoint())
+                    push(seg.FirstPoint(), true);
+                if (seg.HasLastPoint())
+                    push(seg.LastPoint(), true);
+                continue;
+            }
+            const auto &a = seg.FirstPoint();
+            const auto &b = seg.LastPoint();
+            bool endA = atEdgeEnd(a);
+            bool endB = atEdgeEnd(b);
+            if (endA && endB) {
+                push(a, true);
+                push(b, true);
+                continue;
+            }
+            if (endA || endB) {
+                push(endA ? a : b, false);
+                continue;
+            }
+            double q1 = 0.5 * (a.ParamOnFirst() + b.ParamOnFirst());
+            double q2 = 0.5 * (a.ParamOnSecond() + b.ParamOnSecond());
+            gp_Pnt pt1 = info.curve->Value(q1);
+            gp_Pnt pt2 = other.curve->Value(q2);
+            // The mid parameter is only the touch point if the segment is
+            // one stretch of parameter; a segment across the seam of a
+            // periodic curve is not, and keeps the old two-point treatment.
+            gp_Pnt pa = info.curve->Value(a.ParamOnFirst());
+            gp_Pnt pb = info.curve->Value(b.ParamOnFirst());
+            double span = pa.Distance(pb) + myTol;
+            if (pt1.Distance(pa) > span || pt2.Distance(pa) > span) {
+                push(a, true);
+                push(b, true);
+                continue;
+            }
+            pushIntersection(params1, q1, pt1, other);
+            pushIntersection(params2, q2, pt2, info);
         }
         return true;
     }
