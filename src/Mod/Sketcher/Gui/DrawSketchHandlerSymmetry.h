@@ -56,7 +56,8 @@ using DSHSymmetryController =
                                       /*OnViewParametersT =*/OnViewParameters<0>,
                                       /*WidgetParametersT =*/WidgetParameters<0>,
                                       /*WidgetCheckboxesT =*/WidgetCheckboxes<2>,
-                                      /*WidgetComboboxesT =*/WidgetComboboxes<0>>;
+                                      /*WidgetComboboxesT =*/WidgetComboboxes<0>,
+                                      /*WidgetLineEditsT =*/WidgetLineEdits<0>>;
 
 using DSHSymmetryControllerBase = DSHSymmetryController::ControllerBase;
 

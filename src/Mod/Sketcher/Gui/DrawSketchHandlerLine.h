@@ -65,6 +65,7 @@ using DSHLineController =
                                       /*WidgetParametersT =*/WidgetParameters<0, 0, 0>,  // NOLINT
                                       /*WidgetCheckboxesT =*/WidgetCheckboxes<0, 0, 0>,  // NOLINT
                                       /*WidgetComboboxesT =*/WidgetComboboxes<1, 1, 1>,  // NOLINT
+                                      /*WidgetLineEditsT =*/WidgetLineEdits<0, 0, 0>,
                                       ConstructionMethods::LineConstructionMethod,
                                       /*bool PFirstComboboxIsConstructionMethod =*/true>;
 

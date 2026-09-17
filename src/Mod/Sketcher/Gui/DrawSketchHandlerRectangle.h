@@ -68,6 +68,7 @@ using DSHRectangleController = DrawSketchDefaultWidgetController<
     /*WidgetParametersT =*/WidgetParameters<0, 0, 0, 0>,  // NOLINT
     /*WidgetCheckboxesT =*/WidgetCheckboxes<2, 2, 2, 2>,  // NOLINT
     /*WidgetComboboxesT =*/WidgetComboboxes<1, 1, 1, 1>,  // NOLINT
+    /*WidgetLineEditsT =*/WidgetLineEdits<0, 0, 0, 0>,
     ConstructionMethods::RectangleConstructionMethod,
     /*bool PFirstComboboxIsConstructionMethod =*/true>;
 

@@ -56,7 +56,8 @@ using DSHSlotController =
                                       /*OnViewParametersT =*/OnViewParameters<5>,   // NOLINT
                                       /*WidgetParametersT =*/WidgetParameters<0>,   // NOLINT
                                       /*WidgetCheckboxesT =*/WidgetCheckboxes<0>,   // NOLINT
-                                      /*WidgetComboboxesT =*/WidgetComboboxes<0>>;  // NOLINT
+                                      /*WidgetComboboxesT =*/WidgetComboboxes<0>,
+                                      /*WidgetLineEditsT =*/WidgetLineEdits<0>>;  // NOLINT
 
 using DSHSlotControllerBase = DSHSlotController::ControllerBase;
 
