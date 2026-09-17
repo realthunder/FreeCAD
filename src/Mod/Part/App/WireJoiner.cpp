@@ -70,6 +70,7 @@
 
 #include <algorithm>
 #include <tuple>
+#include <cmath>
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
@@ -665,15 +666,126 @@ public:
         return fc.State() == TopAbs_OUT;
     }
 
-    struct PntGetter
-    {
-        typedef const gp_Pnt& result_type;
-        result_type operator()(const VertexInfo &v) const {
-            return v.pt();
+    // The coincident-vertex lookup. Every question asked of it is "which edge
+    // ends lie within the tolerance of this point", and an R-tree answered
+    // that with an incremental nearest-neighbour walk that came to nine
+    // tenths of build() on a 40x40 lattice once the wires were assembled
+    // directly. A hash of the point quantised on a grid of twice the
+    // tolerance answers it with at most eight probes: the ball of radius tol
+    // around any point lies inside the 2x2x2 block of cells around it.
+    //
+    // The entries found come back sorted by distance, ties by the order they
+    // were inserted, so the answer does not depend on how the table happens
+    // to be laid out.
+    struct VertexIndex {
+        struct Key {
+            int64_t v[3];
+            bool operator==(const Key &other) const {
+                return v[0] == other.v[0] && v[1] == other.v[1] && v[2] == other.v[2];
+            }
+        };
+        struct KeyHash {
+            size_t operator()(const Key &k) const {
+                uint64_t h = (uint64_t)k.v[0] * 0x9E3779B97F4A7C15ull;
+                h ^= (uint64_t)k.v[1] * 0xC2B2AE3D27D4EB4Full + (h << 6) + (h >> 2);
+                h ^= (uint64_t)k.v[2] * 0x165667B19E3779F9ull + (h << 6) + (h >> 2);
+                return (size_t)h;
+            }
+        };
+        struct Entry {
+            VertexInfo vertex;
+            uint32_t seq;
+        };
+        struct Found {
+            VertexInfo vertex;
+            double dist2;
+            uint32_t seq;
+        };
+
+        double cell = 0.0;
+        double invCell = 0.0;
+        uint32_t nextSeq = 0;
+        std::unordered_multimap<Key, Entry, KeyHash> map;
+
+        void clear()
+        {
+            map.clear();
+            nextSeq = 0;
+        }
+
+        void setTolerance(double tol)
+        {
+            double c = std::max(2.0 * tol, Precision::Confusion());
+            if (c == cell)
+                return;
+            std::vector<Entry> entries;
+            entries.reserve(map.size());
+            for (const auto &item : map)
+                entries.push_back(item.second);
+            std::sort(entries.begin(), entries.end(),
+                      [](const Entry &a, const Entry &b) { return a.seq < b.seq; });
+            cell = c;
+            invCell = 1.0 / c;
+            map.clear();
+            for (const auto &entry : entries)
+                map.emplace(key(entry.vertex.pt()), entry);
+        }
+
+        Key key(const gp_Pnt &pt) const
+        {
+            return Key{{(int64_t)std::floor(pt.X() * invCell),
+                        (int64_t)std::floor(pt.Y() * invCell),
+                        (int64_t)std::floor(pt.Z() * invCell)}};
+        }
+
+        void insert(const VertexInfo &v)
+        {
+            map.emplace(key(v.pt()), Entry{v, nextSeq++});
+        }
+
+        void remove(const VertexInfo &v)
+        {
+            auto range = map.equal_range(key(v.pt()));
+            for (auto it = range.first; it != range.second; ++it) {
+                if (it->second.vertex == v) {
+                    map.erase(it);
+                    return;
+                }
+            }
+        }
+
+        // Every entry within tol of pt, nearest first.
+        void query(const gp_Pnt &pt, double tol, std::vector<Found> &found)
+        {
+            found.clear();
+            if (2.0 * tol > cell)
+                setTolerance(tol);
+            double tol2 = tol * tol;
+            Key lo = key(gp_Pnt(pt.X() - tol, pt.Y() - tol, pt.Z() - tol));
+            Key hi = key(gp_Pnt(pt.X() + tol, pt.Y() + tol, pt.Z() + tol));
+            Key k;
+            for (k.v[0] = lo.v[0]; k.v[0] <= hi.v[0]; ++k.v[0]) {
+                for (k.v[1] = lo.v[1]; k.v[1] <= hi.v[1]; ++k.v[1]) {
+                    for (k.v[2] = lo.v[2]; k.v[2] <= hi.v[2]; ++k.v[2]) {
+                        auto range = map.equal_range(k);
+                        for (auto it = range.first; it != range.second; ++it) {
+                            double d = it->second.vertex.pt().SquareDistance(pt);
+                            if (d <= tol2)
+                                found.push_back(Found{it->second.vertex, d, it->second.seq});
+                        }
+                    }
+                }
+            }
+            std::sort(found.begin(), found.end(), [](const Found &a, const Found &b) {
+                if (a.dist2 != b.dist2)
+                    return a.dist2 < b.dist2;
+                return a.seq < b.seq;
+            });
         }
     };
 
-    bgi::rtree<VertexInfo,RParameters, PntGetter> vmap;
+    VertexIndex vmap;
+    std::vector<VertexIndex::Found> vfound;
 
     struct BoxGetter
     {
@@ -699,6 +811,7 @@ public:
         iteration = 0;
         boxMap.clear();
         vmap.clear();
+        vmap.setTolerance(myTol);
         edges.clear();
         edgeSet.clear();
         wireSet.clear();
@@ -770,8 +883,9 @@ public:
         bool isLinear = TopoShape(e).isLinearEdge();
         std::unique_ptr<Geometry> geo;
 
-        for (auto vit=vmap.qbegin(bgi::nearest(p1,INT_MAX));vit!=vmap.qend();++vit) {
-            auto &vinfo = *vit;
+        vmap.query(p1, myTol, vfound);
+        for (const auto &f : vfound) {
+            const auto &vinfo = f.vertex;
             if (canShowShape()) {
 #if OCC_VERSION_HEX >= 0x070800
                 FC_MSG("addcheck " << std::hash<TopoDS_Edge>{}(vinfo.edge()));
@@ -809,13 +923,10 @@ public:
             }
         }
         if (v2.IsNull()) {
-            for (auto vit=vmap.qbegin(bgi::nearest(p2,1));vit!=vmap.qend();++vit) {
-                auto &vinfo = *vit;
-                double d1 = vinfo.pt().SquareDistance(p2);
-                if (d1 < tol) {
-                    v2 = vit->vertex();
-                    ev2 = vit->edge();
-                }
+            vmap.query(p2, myTol, vfound);
+            if (!vfound.empty() && vfound.front().dist2 < tol) {
+                v2 = vfound.front().vertex.vertex();
+                ev2 = vfound.front().vertex.edge();
             }
         }
 
@@ -893,19 +1004,19 @@ public:
             bool done = false;
             for (int idx=0;!done&&idx<2;++idx) {
                 while (edges.size()) {
-                    std::vector<VertexInfo> ret;
-                    ret.reserve(1);
                     const gp_Pnt &pt = idx==0?pstart:pend;
-                    vmap.query(bgi::nearest(pt,1),std::back_inserter(ret));
-                    assertCheck(ret.size()==1);
-                    double d = ret[0].pt().SquareDistance(pt);
+                    vmap.query(pt, myTol, vfound);
+                    if (vfound.empty()) break;
+                    std::vector<VertexInfo> ret;
+                    ret.push_back(vfound.front().vertex);
+                    double d = vfound.front().dist2;
                     if (d > tol) break;
 
                     const auto &info = *ret[0].it;
                     bool start = ret[0].start;
                     if (d > Precision::SquareConfusion()) {
                         // insert a filling edge to solve the tolerance problem
-                        const gp_Pnt &pt = ret[idx].pt();
+                        const gp_Pnt &pt = ret[0].pt();
                         if (idx)
                             mkWire.Add(BRepBuilderAPI_MakeEdge(pend,pt).Edge());
                         else
@@ -1525,10 +1636,9 @@ public:
                     continue;
                 info.iEnd[i] = info.iStart[i] = (int)adjacentList.size();
 
-                for (auto vit=vmap.qbegin(bgi::nearest(pt[i],INT_MAX));vit!=vmap.qend();++vit) {
-                    auto &vinfo = *vit;
-                    if (vinfo.pt().SquareDistance(pt[i]) > myTol2)
-                        break;
+                vmap.query(pt[i], myTol, vfound);
+                for (const auto &f : vfound) {
+                    const auto &vinfo = f.vertex;
 
                     // We must push ourself too, because the adjacency
                     // information is shared among all connected edges.
