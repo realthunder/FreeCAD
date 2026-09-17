@@ -22,6 +22,7 @@
         <file>icons/constraints/Constraint_Ellipse_Radii.svg</file>
         <file>icons/constraints/Constraint_EqualLength.svg</file>
         <file>icons/constraints/Constraint_ExternalAngle.svg</file>
+        <file>icons/constraints/Constraint_Group.svg</file>
         <file>icons/constraints/Constraint_Horizontal.svg</file>
         <file>icons/constraints/Constraint_HorizontalDistance.svg</file>
         <file>icons/constraints/Constraint_HorizontalDistance_Driven.svg</file>

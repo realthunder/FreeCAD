@@ -125,5 +125,20 @@ void doEndpointToEdgeTangency(Sketcher::SketchObject* Obj,
 /// notifications
 void notifyConstraintSubstitutions(const QString& message);
 
+/// escapes a string for embedding in a single-quoted Python string literal
+std::string escapeForPython(const std::string& input);
+
+/// adds a Group or Text constraint over `elts`, creating the construction line handle that
+/// comes first in it; `frame_p1`/`frame_p2` give that line, or the members' bounding box
+/// does when they are equal
+bool addListConstraint(Sketcher::SketchObject* Obj,
+                       std::vector<Sketcher::GeoElementId>& elts,
+                       const std::string& constraintType,
+                       Base::Vector2d frame_p1 = Base::Vector2d(),
+                       Base::Vector2d frame_p2 = Base::Vector2d(),
+                       bool isTextHeight = true,
+                       const std::string& text = "",
+                       const std::string& font = "");
+
 }  // namespace SketcherGui
 #endif  // SKETCHERGUI_CommandConstraints_H
