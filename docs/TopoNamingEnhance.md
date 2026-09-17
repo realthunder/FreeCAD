@@ -466,6 +466,15 @@ makes the unstable identity underneath it the load-bearing weakness.
 This is the result that decides the cost of the whole main task, and it
 is better than a geometric correlation scheme.
 
+*Status 2026-09-17:* the traversal below now lives in the Part module as
+`Part::HLRProjector` (`src/Mod/Part/App/HLRProjector.*`, with
+`TopoShape::makEHLR` and `Shape.makeHLR`), which also resolves a
+silhouette to its source face through `HLRTopoBRep_Data` and names the
+result with an element map (op code `HLR`). The Sketcher's external face
+path uses it (`docs/SketcherPort.md`, "External faces"); TechDraw's private
+copy of the same traversal in `GeometryObject.cpp` is the next caller to
+move over.
+
 **Exact HLR.**  `HLRBRep_HLRToShape::InternalCompound` walks
 `DS->EDataArray()` by index `ie` and calls a private `DrawEdge(...)` per
 edge.  `HLRBRep_Data::EDataArray()` is indexed identically to

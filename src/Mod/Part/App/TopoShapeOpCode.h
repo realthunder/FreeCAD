@@ -94,6 +94,7 @@ public:
     static constexpr const char *BSplineFace = "BSF";
     static constexpr const char *Split = "SPT";
     static constexpr const char *Evolve = "EVO";
+    static constexpr const char *HLR = "HLR";
 };
 
 } // namespace Part

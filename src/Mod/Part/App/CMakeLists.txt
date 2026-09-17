@@ -577,6 +577,8 @@ SET(Part_SRCS
     FaceMakerBullseye.h
     WireJoiner.cpp
     WireJoiner.h
+    HLRProjector.cpp
+    HLRProjector.h
 )
 
 if(FREECAD_USE_PCH)

@@ -755,6 +755,29 @@ If Visible is False, only invisible edges are returned.
         </UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="makeHLR" Const="true" Keyword="true">
+      <Documentation>
+        <UserDocu>Hidden line projection of this shape, with element history.
+makeHLR(ViewDir, [ViewPos, UpDir, EdgeTypes, Visible, Hidden, IsoCount, Perspective, Focus, OnShape]) -> Shape (Compound of edges)
+--
+The projection looks along ViewDir. The returned edges are flat on the plane
+through ViewPos (origin) normal to ViewDir, in that plane's coordinates with
+UpDir (up direction) as its Y, unless OnShape is True, when they are the 3D
+edges on the shape. Each edge is named after the element it was projected
+from: an edge of this shape, or the face a silhouette belongs to, with a
+fragment index when hiding cuts one source into several pieces.
+EdgeTypes is a string or a sequence of strings selecting the categories:
+- Hard (Sharp): sharp edge (of C0-continuity)
+- Smooth (Rg1Line): smooth edge of G1-continuity between two surfaces
+- Seam (RgNLine): sewn edge of CN-continuity on one surface
+- Outline (OutLine): silhouette edge
+- Iso (IsoLine): isoparametric line, IsoCount per face
+All categories by default. Visible (default True) and Hidden (default False)
+select the visible and the hidden pieces. Perspective projects from a point
+Focus along ViewDir instead of in parallel.
+        </UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="makeShapeFromMesh">
       <Documentation>
         <UserDocu>Make a compound shape out of mesh data.

@@ -90,6 +90,7 @@
 #include "ShapeList.h"
 #include "TopoShape.h"
 #include "TopoShapeOpCode.h"
+#include "HLRProjector.h"
 
 #include <Mod/Part/App/TopoShapePy.h>
 #include <Mod/Part/App/TopoShapePy.cpp>
@@ -2184,6 +2185,81 @@ PyObject* TopoShapePy::reflectLines(PyObject *args, PyObject *kwds) const
         reflect.Perform();
         TopoDS_Shape lines = reflect.GetCompoundOf3dEdges(t, Base::asBoolean(vis), Base::asBoolean(in3d));
         return new TopoShapePy(new TopoShape(lines));
+    } PY_CATCH_OCC
+}
+
+PyObject* TopoShapePy::makeHLR(PyObject *args, PyObject *kwds) const
+{
+    static const std::array<const char *, 11> kwlist{"ViewDir", "ViewPos", "UpDir", "EdgeTypes", "Visible",
+                                                     "Hidden", "IsoCount", "Perspective", "Focus", "OnShape",
+                                                     nullptr};
+    PyObject *pView = nullptr;
+    PyObject *pPos = nullptr;
+    PyObject *pUp = nullptr;
+    PyObject *pTypes = nullptr;
+    PyObject *vis = Py_True;
+    PyObject *hid = Py_False;
+    PyObject *persp = Py_False;
+    PyObject *onShape = Py_False;
+    int isoCount = 0;
+    double focus = 0.0;
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "O!|O!O!OO!O!iO!dO!", kwlist,
+                                             &Base::VectorPy::Type, &pView, &Base::VectorPy::Type, &pPos,
+                                             &Base::VectorPy::Type, &pUp, &pTypes, &PyBool_Type, &vis,
+                                             &PyBool_Type, &hid, &isoCount, &PyBool_Type, &persp, &focus,
+                                             &PyBool_Type, &onShape)) {
+        return nullptr;
+    }
+
+    TopoShape::HLRParams params;
+    params.visible = Base::asBoolean(vis);
+    params.hidden = Base::asBoolean(hid);
+    params.isoCount = isoCount;
+    params.perspective = Base::asBoolean(persp);
+    params.focus = focus;
+    params.onShape = Base::asBoolean(onShape);
+    if (pTypes && pTypes != Py_None) {
+        unsigned types = 0;
+        auto addType = [&](const std::string &name) {
+            if (name == "Hard" || name == "Sharp")
+                types |= HLRProjector::HardMask;
+            else if (name == "Smooth" || name == "Rg1Line")
+                types |= HLRProjector::SmoothMask;
+            else if (name == "Seam" || name == "RgNLine")
+                types |= HLRProjector::SeamMask;
+            else if (name == "Outline" || name == "OutLine")
+                types |= HLRProjector::OutlineMask;
+            else if (name == "Iso" || name == "IsoLine")
+                types |= HLRProjector::IsoMask;
+            else
+                throw Py::ValueError("Unknown edge type: " + name);
+        };
+        if (PyUnicode_Check(pTypes)) {
+            addType(PyUnicode_AsUTF8(pTypes));
+        }
+        else {
+            Py::Sequence seq(pTypes);
+            for (Py::Sequence::size_type i = 0; i < seq.size(); ++i)
+                addType(Py::String(seq[i]).as_std_string());
+        }
+        params.types = types;
+    }
+
+    try {
+        Base::Vector3d v = Py::Vector(pView, false).toVector();
+        Base::Vector3d p(0.0, 0.0, 0.0);
+        if (pPos)
+            p = Py::Vector(pPos, false).toVector();
+        Base::Vector3d u(0.0, 1.0, 0.0);
+        if (pUp)
+            u = Py::Vector(pUp, false).toVector();
+        gp_Pnt pos(p.x, p.y, p.z);
+        gp_Dir dir(v.x, v.y, v.z);
+        // the plane's X is up x view, so that its Y is the up direction
+        Base::Vector3d x = u % v;
+        gp_Ax3 view = x.Length() < Precision::Confusion() ? gp_Ax3(pos, dir)
+                                                          : gp_Ax3(pos, dir, gp_Dir(x.x, x.y, x.z));
+        return new TopoShapePy(new TopoShape(getTopoShapePtr()->makEHLR(view, params)));
     } PY_CATCH_OCC
 }
 
