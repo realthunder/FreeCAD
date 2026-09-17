@@ -66,6 +66,22 @@ nothing this way was a tree. Those edges come back as open wires, which is where
 the search left them too. (Most tails never get this far: `buildAdjacentList()`
 already drops edges connected at one end only.)
 
+A bridge to a loop is different: the walk goes out over it, around the loop and
+back, so the two darts are not adjacent and `pruneTails()` leaves them. The
+wire is emitted as walked, with the bridge in it once each way -- the same
+treatment as a hole touching the boundary at a vertex, where the walk passes
+the vertex twice -- and it is the face maker's job to read it.
+`FaceMakerBullseye` (and `FaceMakerRing` with it) drops every edge a wire
+travels both ways and cuts the rest into its loops; the largest is the outer
+boundary and the others are holes, and only holes: the region behind a bridge
+is an orbit of its own and arrives as its own wire, which the ring maker's
+second pass would otherwise make a face of twice. A wire whose edges all
+already bound a face is that face on the far side of one of its holes.
+OCCT's builder keeps such an edge inside the face instead
+(`BOPAlgo_BuilderFace::PerformInternalShapes`); here it is dropped, like the
+tails, and `Part.Face` on the raw wire still gets the right area and an invalid
+face.
+
 **The unbounded face.** Under the turn rule above, every bounded face comes out
 traversed counter-clockwise and the unbounded face of each component clockwise,
 so the sign of the loop's area decides. The area is a shoelace sum in the common
