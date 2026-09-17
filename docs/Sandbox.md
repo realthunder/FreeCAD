@@ -8553,6 +8553,90 @@ cannot recur silently.
 A2 400-550; A3 and CSS 150-250; the gates 150-200.  Total about 1k,
 against 7.22's 2.2-3.3k for the panel itself.
 
+### 7.24 What a handset found **[found and fixed 2026-09-17]**
+
+7.22 and 7.23 were proven headless, in an emulated phone viewport, and
+against a live desktop.  Then the page was opened on an actual handset,
+over a Cloudflare quick tunnel, and four things were wrong at once --
+three of them defects that no gate here could have caught, and the
+fourth a ruling 7.23 had already made and the console had never had
+applied to it.
+
+**The chrome host takes the pointer, and two panels never took it
+back.**  `#fc-ui` is `pointer-events: none` so the canvas keeps every
+gesture the chrome does not claim, and each panel opts back in for
+itself: `.fc-inspector`, `.fc-panel`, `.fc-hud`, `.fc-menu` and
+`.fc-launch` all carry `pointer-events: auto`.  **`.fc-console` and
+`.fc-sheet` never did.**  So the Python console and the spreadsheet were
+click-through in their ENTIRETY -- every tap landed on the model behind
+them, the close button did nothing, and both panels looked perfect while
+it happened.  Two lines fixed it.
+
+**Why no gate saw it, and why one still cannot.**  The panel harnesses
+(`sheetharness.ts` and the console's) mount into a plain
+`document.body` host with no `pointer-events: none` ancestor, so the
+defect *cannot exist* in a harness: the thing that breaks it is the
+production host, which the harness deliberately does not have.  The
+check that does catch it is a real tap -- `elementFromPoint` over the
+panel returns the canvas (an element with no class at all, which is how
+it reads in a report), and a touch listener on the canvas counts the
+event that should never have arrived.
+
+**The launcher drew over the bottom sheet.**  Both launchers hid only
+for `cardOpen()` -- the inspector card -- and not for the task panel,
+the sheet or the console, and they render after the card with no
+z-index, so DOM order won the hit test.  The predicate now covers all
+four bottom sheets, which is the behaviour the inspector card already
+had.
+
+**A press on a narrow header never stopped.**  `draggable()` returned
+early on narrow BEFORE the `stopPropagation()` whose whole job that is,
+and the viewer binds `mousemove`/`mouseup` to the DOCUMENT
+(`Renderer/wasm/main.cpp`), not to the canvas -- so an event that
+bubbles is one it may read as an orbit.  Stated honestly: **this one was
+never reproduced here.**  In an emulated phone viewport the header
+absorbs both taps and drags (`canvasMove: 0` against a bare-canvas
+control of 3), and Chrome's synthetic touch emits no compatibility mouse
+events at all, which is precisely the mechanism a real handset would
+exercise.  The change is defensible from the code rather than from a
+reproduction, and the handset reported the symptom gone.
+
+**The console completed like readline.**  It spliced in the longest
+common prefix and printed the candidates into the output, which on a
+phone meant: no list unless the line already ended in a dot (the one
+case where more than one candidate survives the "more than one" test),
+no list at all on a partial word, nothing narrowing as typing went on,
+and nothing coming up on its own.  It now runs the 7.23 controller
+unchanged -- `triggerFor`, `stillApplies`, `filterSet`, `splice` -- over
+a guest adapter, `setFromGuest()`, which fills in the `end` the guest
+does not answer (its rlcompleter works on the source up to the caret,
+so the caret IS the end).  The candidates are the chip strip above the
+keyboard on a narrow viewport and a list in the panel's own flow on a
+wide one: `.fc-console` is `overflow: hidden`, so a dropdown over the
+input row would be clipped by the panel that owns it.
+
+**A shortcut is not an affordance.**  The console's only trigger was
+Tab, and a handset keyboard has no Tab key -- so completion was
+unreachable on the device that needs it most, while working perfectly
+on a desktop, which is why every check here passed.  7.23 had already
+ruled this for the expression field ("an explicit ask always works: a
+chevron in the field's row, a tap target, which a phone needs and a
+keyboard shortcut is not"); the ruling simply had never been carried to
+the console.  **The general form, worth keeping: a feature reachable
+only by a key that a phone's keyboard does not have is not a feature on
+a phone, and no desktop gate will ever say so.**
+
+**What proved it** (live, through the tunnel, both viewports): the
+console and sheet absorb their taps and all three close buttons close;
+the launcher is absent while a sheet is up; `str.` raises 20 chips with
+nothing pressed, typing `jo` narrows to one WITHOUT asking again, and
+the chip splices `str.join(`; a partial word with no dot (`st`) lists
+two, both on its own and from the button.  The node gate carries six
+new cases for the adapter, and is ALL GREEN.
+
+**Cost**: about 120 lines of TypeScript and CSS, plus the six gate
+cases.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -9316,6 +9400,18 @@ sockets, any network for the reference image, a webview escape hatch.
 
 ## 12. Traps
 
+- **A panel inside `#fc-ui` that never sets `pointer-events: auto` is
+  invisible to the finger** (found on a handset 2026-09-17, 7.24).  The
+  chrome host is `pointer-events: none` so the canvas keeps everything
+  the chrome does not claim, and each panel opts back in for itself --
+  miss it and every tap goes through to the model, the close button
+  does nothing, and the panel still looks exactly right.  Nothing
+  warns.  No gate here can catch it either: the panel harnesses mount
+  into a plain `document.body` host with no such ancestor, so the
+  defect cannot exist in a harness.  What catches it is a real tap --
+  `document.elementFromPoint` over the panel answers the canvas (an
+  element with no class), and a touch listener on the canvas counts an
+  event that should never have reached it.
 - **moc drops the rest of the class after a raw string holding an
   unbalanced `(`** (found 2026-09-17, 7.23's gate).  A case that feeds
   the host an expression which deliberately does not parse wants
