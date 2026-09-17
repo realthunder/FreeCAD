@@ -29,6 +29,7 @@
 #include <Inventor/SbString.h>
 
 #include <Gui/SelectionFilter.h>
+#include <Gui/ToolHandler.h>
 #include <Base/Parameter.h>
 #include <Base/Tools2D.h>
 #include <Gui/Selection.h>
@@ -138,7 +139,7 @@ private:
  * implemented in DrawSketchHandler and used from its derived classes by virtue of the inheritance.
  * This promotes a concentrating the coupling in a single point (and code reuse).
  */
-class SketcherGuiExport DrawSketchHandler
+class SketcherGuiExport DrawSketchHandler: public Gui::ToolHandler
 {
 public:
     DrawSketchHandler();
@@ -148,7 +149,7 @@ public:
     /// bind the handler to a sketch view without activating it, to run its
     /// commands directly (DrawSketchHandlerScale::make_centerScale)
     void setSketchGui(ViewProviderSketch* vp);
-    void deactivate();
+    void deactivate() override;
 
     virtual void mouseMove(Base::Vector2d onSketchPos) = 0;
     virtual bool pressButton(Base::Vector2d onSketchPos) = 0;
@@ -183,7 +184,7 @@ public:
         return false;
     }
 
-    virtual void quit();
+    void quit() override;
 
     friend class ViewProviderSketch;
 
@@ -209,13 +210,25 @@ public:
     void resetPositionText();
     void renderSuggestConstraintsCursor(std::vector<AutoConstraint>& suggestedConstraints);
 
-    /// restitutes the cursor that was in use at the moment of starting the DrawSketchHandler (i.e.
-    /// oldCursor)
-    void unsetCursor();
+    /** @name Cursor restitution from outside the handler
+     *
+     * The sketch's view provider puts the tool's cursor back when a
+     * preselection took it away, and the selection gate when it changes,
+     * so these two are public here although the base keeps them protected.
+     */
+    //@{
+    /// restitutes the cursor that was in use at the moment of starting the tool
+    void unsetCursor()
+    {
+        Gui::ToolHandler::unsetCursor();
+    }
 
-    /// restitutes the DSH cached cursor (e.g. without any tail due to autoconstraints, ...)
-    void applyCursor();
-
+    /// restitutes the cached tool cursor (without any tail due to autoconstraints, ...)
+    void applyCursor()
+    {
+        Gui::ToolHandler::applyCursor();
+    }
+    //@}
 
     /** @name Interfacing with tool dialogs */
     //@{
@@ -250,19 +263,12 @@ public:
     //@}
 
 private:  // NVI
-    virtual void preActivated();
-    virtual void activated()
-    {}
-    virtual void deactivated()
-    {}
-    virtual void postDeactivated()
-    {}
+    void preActivated() override;
     virtual void onWidgetChanged()
     {}
 
 protected:  // NVI requiring base implementation
     virtual std::string getToolName() const;
-    virtual QString getCrosshairCursorSVGName() const;
 
     virtual std::unique_ptr<QWidget> createWidget() const;
     virtual bool isWidgetVisible() const;
@@ -270,30 +276,6 @@ protected:  // NVI requiring base implementation
     virtual QString getToolWidgetText() const;
 
 protected:
-    // helpers
-    /**
-     * Sets a cursor for 3D inventor view.
-     * pixmap as a cursor image in device independent pixels.
-     *
-     * \param autoScale - set this to false if pixmap already scaled for HiDPI
-     **/
-
-    /** @name Icon helpers */
-    //@{
-    void setCursor(const QPixmap& pixmap, int x, int y, bool autoScale = true);
-
-    /// updates the actCursor with the icon by calling getCrosshairCursorSVGName(),
-    /// enabling to set data member dependent icons (i.e. for different construction methods)
-    void updateCursor();
-
-    /// returns the color to be used for the crosshair (configurable as a parameter)
-    unsigned long getCrosshairColor();
-
-    /// functions to set the cursor to a given svgName (to be migrated to NVI style)
-
-    qreal devicePixelRatio();
-    //@}
-
     void drawEdit(const std::vector<Base::Vector2d>& EditCurve) const;
     void drawEdit(const std::list<std::vector<Base::Vector2d>>& list) const;
     void drawEdit(const std::vector<Part::Geometry*>& geometries) const;
@@ -336,30 +318,7 @@ protected:
      * process serving several browsers has no useful answer
      * (docs/ThinClient.md sec 8.3).
      */
-    Gui::ViewerContext* getViewer();
-    /** The same view, when it is a desktop one with a widget.
-     *
-     * Null for a client's mirror, which is how the surfaces that need a
-     * Qt widget -- the cursor, the on-view parameters -- find out they
-     * cannot run here. Those are the DOM layer's job instead
-     * (docs/ThinClient.md sec 8.7).
-     */
-    Gui::View3DInventorViewer* getDesktopViewer();
-
-private:
-    void setSvgCursor(const QString& svgName,
-                      int x,
-                      int y,
-                      const std::map<unsigned long, unsigned long>& colorMapping =
-                          std::map<unsigned long, unsigned long>());
-
-    void addCursorTail(std::vector<QPixmap>& pixmaps);
-
-    void applyCursor(QCursor& newCursor);
-
-    void setCrosshairCursor(const QString& svgName);
-    void setCrosshairCursor(const char* svgName);
-
+    Gui::ViewerContext* getViewer() override;
 
 protected:
     /**
@@ -369,9 +328,6 @@ protected:
     suggestedConstraintsPixmaps(std::vector<AutoConstraint>& suggestedConstraints);
 
     ViewProviderSketch* sketchgui;
-    QCursor oldCursor;
-    QCursor actCursor;
-    QPixmap actCursorPixmap;
 
     QWidget* toolwidget;
 };

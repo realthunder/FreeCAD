@@ -288,11 +288,6 @@ std::string DrawSketchHandler::getToolName() const
     return "DSH_None";
 }
 
-QString DrawSketchHandler::getCrosshairCursorSVGName() const
-{
-    return QStringLiteral("None");
-}
-
 std::unique_ptr<QWidget> DrawSketchHandler::createWidget() const
 {
     return nullptr;
@@ -318,28 +313,9 @@ void DrawSketchHandler::activate(ViewProviderSketch* vp)
 {
     sketchgui = vp;
 
-    // The view this sketch is being edited in, which is the one the tool
-    // will run in. It used to be whatever window was active, which is the
-    // same thing on a desktop with one window open and nothing like it in
-    // a process serving several browsers.
-    Gui::ViewerContext* viewer = getViewer();
-    if (viewer) {
-        // Save the cursor at the time the DSH is activated. A view with
-        // no widget has none, and that is not a reason to refuse the
-        // tool -- the cursor is chrome, and the DOM layer's
-        // (docs/ThinClient.md sec 8.7).
-        if (QWidget* widget = viewer->getWidget()) {
-            oldCursor = widget->cursor();
-        }
-
-        updateCursor();
-
-        this->signalToolChanged();
-
-        this->preActivated();
-        this->activated();
-    }
-    else {
+    // The base takes the view the sketch is being edited in -- see this
+    // handler's getViewer() -- and refuses only when there is none.
+    if (!Gui::ToolHandler::activate()) {
         sketchgui->purgeHandler();
     }
 }
@@ -350,15 +326,13 @@ void DrawSketchHandler::setSketchGui(ViewProviderSketch* vp)
 }
 void DrawSketchHandler::deactivate()
 {
-    this->deactivated();
-    this->postDeactivated();
+    Gui::ToolHandler::deactivate();
     ViewProviderSketchDrawSketchHandlerAttorney::setConstraintSelectability(*sketchgui, true);
 
     // clear temporary Curve and Markers from the scenograph
     clearEdit();
     clearEditMarkers();
     resetPositionText();
-    unsetCursor();
     setAngleSnapping(false);
 
     ViewProviderSketchDrawSketchHandlerAttorney::signalToolChanged(*sketchgui, "DSH_None");
@@ -366,6 +340,7 @@ void DrawSketchHandler::deactivate()
 
 void DrawSketchHandler::preActivated()
 {
+    this->signalToolChanged();
     ViewProviderSketchDrawSketchHandlerAttorney::setConstraintSelectability(*sketchgui, false);
 }
 
@@ -412,202 +387,6 @@ int DrawSketchHandler::getHighestVertexIndex()
 int DrawSketchHandler::getHighestCurveIndex()
 {
     return sketchgui->getSketchObject()->getHighestCurveIndex();
-}
-
-unsigned long DrawSketchHandler::getCrosshairColor()
-{
-    unsigned long color = 0xFFFFFFFF;  // white
-    ParameterGrp::handle hGrp =
-        App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-    color = hGrp->GetUnsigned("CursorCrosshairColor", color);
-    // from rgba to rgb
-    color = (color >> 8) & 0xFFFFFF;
-    return color;
-}
-
-void DrawSketchHandler::setCrosshairCursor(const QString& svgName)
-{
-    const unsigned long defaultCrosshairColor = 0xFFFFFF;
-    unsigned long color = getCrosshairColor();
-    auto colorMapping = std::map<unsigned long, unsigned long>();
-    colorMapping[defaultCrosshairColor] = color;
-    // hot spot of all SVG icons should be 8,8 for 32x32 size (16x16 for 64x64)
-    int hotX = 8;
-    int hotY = 8;
-    setSvgCursor(svgName, hotX, hotY, colorMapping);
-}
-
-void DrawSketchHandler::setCrosshairCursor(const char* svgName)
-{
-    QString cursorName = QString::fromUtf8(svgName);
-    setCrosshairCursor(cursorName);
-}
-
-void DrawSketchHandler::setSvgCursor(const QString& cursorName,
-                                     int x,
-                                     int y,
-                                     const std::map<unsigned long, unsigned long>& colorMapping)
-{
-    // The Sketcher_Pointer_*.svg icons have a default size of 64x64. When directly creating
-    // them with a size of 32x32 they look very bad.
-    // As a workaround the icons are created with 64x64 and afterwards the pixmap is scaled to
-    // 32x32. This workaround is only needed if pRatio is equal to 1.0
-    //
-    qreal pRatio = devicePixelRatio();
-    bool isRatioOne = (pRatio == 1.0);
-    qreal defaultCursorSize = isRatioOne ? 64 : 32;
-    qreal hotX = x;
-    qreal hotY = y;
-#if !defined(Q_OS_WIN32) && !defined(Q_OS_MAC)
-    if (qGuiApp->platformName() == QStringLiteral("xcb")) {
-        hotX *= pRatio;
-        hotY *= pRatio;
-    }
-#endif
-    qreal cursorSize = defaultCursorSize * pRatio;
-
-    QPixmap pointer = Gui::BitmapFactory().pixmapFromSvg(cursorName.toStdString().c_str(),
-                                                         QSizeF(cursorSize, cursorSize),
-                                                         colorMapping);
-    if (isRatioOne) {
-        pointer = pointer.scaled(32, 32);
-    }
-    pointer.setDevicePixelRatio(pRatio);
-    setCursor(pointer, hotX, hotY, false);
-}
-
-void DrawSketchHandler::setCursor(const QPixmap& p, int x, int y, bool autoScale)
-{
-    // A desktop view: this ends in QWidget::setCursor, and a mirror has
-    // no widget to set one on.
-    Gui::View3DInventorViewer* viewer = getDesktopViewer();
-    if (viewer) {
-        QCursor cursor;
-        QPixmap p1(p);
-        // TODO remove autoScale after all cursors are SVG-based
-        if (autoScale) {
-            qreal pRatio = viewer->devicePixelRatio();
-            int newWidth = p.width() * pRatio;
-            int newHeight = p.height() * pRatio;
-            p1 = p1.scaled(newWidth, newHeight, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            p1.setDevicePixelRatio(pRatio);
-            qreal hotX = x;
-            qreal hotY = y;
-#if !defined(Q_OS_WIN32) && !defined(Q_OS_MAC)
-            if (qGuiApp->platformName() == QStringLiteral("xcb")) {
-                hotX *= pRatio;
-                hotY *= pRatio;
-            }
-#endif
-            cursor = QCursor(p1, hotX, hotY);
-        }
-        else {
-            // already scaled
-            cursor = QCursor(p1, x, y);
-        }
-
-        actCursor = cursor;
-        actCursorPixmap = p1;
-
-        viewer->getWidget()->setCursor(cursor);
-    }
-}
-
-void DrawSketchHandler::addCursorTail(std::vector<QPixmap>& pixmaps)
-{
-    // Create a pixmap that will contain icon and each autoconstraint icon
-    Gui::MDIView* view = Gui::getMainWindow()->activeWindow();
-    if (view && view->isDerivedFrom(Gui::View3DInventor::getClassTypeId())) {
-        QPixmap baseIcon = QPixmap(actCursorPixmap);
-        baseIcon.setDevicePixelRatio(actCursorPixmap.devicePixelRatio());
-        qreal pixelRatio = baseIcon.devicePixelRatio();
-        // cursor size in device independent pixels
-        qreal baseCursorWidth = baseIcon.width();
-        qreal baseCursorHeight = baseIcon.height();
-
-        int tailWidth = 0;
-        for (auto const& p : pixmaps) {
-            tailWidth += p.width();
-        }
-
-        int newIconWidth = baseCursorWidth + tailWidth;
-        int newIconHeight = baseCursorHeight;
-
-        QPixmap newIcon(newIconWidth, newIconHeight);
-        newIcon.fill(Qt::transparent);
-
-        QPainter qp;
-        qp.begin(&newIcon);
-
-        qp.drawPixmap(QPointF(0, 0),
-                      baseIcon.scaled(baseCursorWidth * pixelRatio,
-                                      baseCursorHeight * pixelRatio,
-                                      Qt::KeepAspectRatio,
-                                      Qt::SmoothTransformation));
-
-        // Iterate through pixmaps and them to the cursor pixmap
-        std::vector<QPixmap>::iterator pit = pixmaps.begin();
-        int i = 0;
-        qreal currentIconX = baseCursorWidth;
-        qreal currentIconY;
-
-        for (; pit != pixmaps.end(); ++pit, i++) {
-            QPixmap icon = *pit;
-            currentIconY = baseCursorHeight - icon.height();
-            qp.drawPixmap(QPointF(currentIconX, currentIconY), icon);
-            currentIconX += icon.width();
-        }
-
-        qp.end();  // Finish painting
-
-        // Create the new cursor with the icon.
-        QPoint p = actCursor.hotSpot();
-        newIcon.setDevicePixelRatio(pixelRatio);
-        QCursor newCursor(newIcon, p.x(), p.y());
-        applyCursor(newCursor);
-    }
-}
-
-void DrawSketchHandler::updateCursor()
-{
-    auto cursorstring = getCrosshairCursorSVGName();
-
-    if (cursorstring != QStringLiteral("None")) {
-        setCrosshairCursor(cursorstring);
-    }
-}
-
-void DrawSketchHandler::applyCursor()
-{
-    applyCursor(actCursor);
-}
-
-void DrawSketchHandler::applyCursor(QCursor& newCursor)
-{
-    Gui::View3DInventorViewer* viewer = getDesktopViewer();
-    if (viewer) {
-        viewer->getWidget()->setCursor(newCursor);
-    }
-}
-
-void DrawSketchHandler::unsetCursor()
-{
-    Gui::View3DInventorViewer* viewer = getDesktopViewer();
-    if (viewer) {
-        viewer->getWidget()->setCursor(oldCursor);
-    }
-}
-
-qreal DrawSketchHandler::devicePixelRatio()
-{
-    // The client's, not a screen's: a mirror answers this from what the
-    // browser stated over the wire.
-    qreal pixelRatio = 1;
-    Gui::ViewerContext* viewer = getViewer();
-    if (viewer) {
-        pixelRatio = viewer->devicePixelRatio();
-    }
-    return pixelRatio;
 }
 
 std::vector<QPixmap>
@@ -1288,11 +1067,6 @@ void DrawSketchHandler::signalToolChanged() const
 Gui::ViewerContext* DrawSketchHandler::getViewer()
 {
     return sketchgui ? sketchgui->getEditViewer() : nullptr;
-}
-
-Gui::View3DInventorViewer* DrawSketchHandler::getDesktopViewer()
-{
-    return dynamic_cast<Gui::View3DInventorViewer*>(getViewer());
 }
 
 //////////////////////////////////////////////////////////////////////////////////
