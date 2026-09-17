@@ -671,6 +671,13 @@ public:
                 builder.Add(wire, s.Oriented(v.start ? TopAbs_FORWARD : TopAbs_REVERSED));
                 continue;
             }
+            if (isLoop(*v.it)) {
+                std::vector<TopoDS_Edge> loopChain;
+                loopChainEdges(v, loopChain);
+                for (const auto &e : loopChain)
+                    builder.Add(wire, e);
+                continue;
+            }
             chain.clear();
             for (TopoDS_Iterator it(s); it.More(); it.Next())
                 chain.push_back(it.Value());
@@ -1608,6 +1615,13 @@ public:
                     auto currentVertex = k==1 ? vertices.front() : vertices.back();
                     auto current = currentVertex.edgeInfo();
                     // showShape(current, "siter", k);
+                    // A loop has both of its darts at its one vertex, so with
+                    // any other edge there the vertex is a branch, and the
+                    // scan below, which skips this edge as itself, would not
+                    // see that: it would chain a loop to a tail hanging off
+                    // it, and lose the loop when the tail is dropped.
+                    if (isLoop(*current))
+                        break;
                     int idx = (currentVertex.start?1:0)^k;
                     EdgeInfo *found = nullptr;
                     for (int i=current->iStart[idx]; i<current->iEnd[idx]; ++i) {
@@ -1671,7 +1685,29 @@ public:
             }
             first->superEdge = makeCleanWire(false);
             first->superEdgeReversed.Nullify();
-            if (BRep_Tool::IsClosed(first->superEdge)) {
+            // A chain that closed on itself is a finished loop -- unless it
+            // closed at a vertex other live edges meet, a loop pinched to the
+            // rest of the network, like a circle inside a rectangle touching
+            // its top. Taken out of the graph here, the region around it came
+            // out without the hole, overlapping the disk. The angle walk can
+            // pass a vertex twice and gets the annulus as one wire (a face the
+            // face makers accept), so for it the loop stays live, as an edge
+            // whose two darts leave the same vertex. The search cannot, and
+            // keeps the loop finished, two separate wires -- a known
+            // difference between the two, kept on purpose.
+            bool pinched = false;
+            if (myPlanar && BRep_Tool::IsClosed(first->superEdge)) {
+                const auto &vFirst = vertices.front();
+                int idxHead = vFirst.start ? 0 : 1;
+                for (int i = first->iStart[idxHead]; i < first->iEnd[idxHead]; ++i) {
+                    auto other = adjacentList[i].edgeInfo();
+                    if (other != first && other->iteration >= 0) {
+                        pinched = true;
+                        break;
+                    }
+                }
+            }
+            if (BRep_Tool::IsClosed(first->superEdge) && !pinched) {
                 first->iteration = -2;
                 showShape(first, "super_done");
                 // A chain that closed on itself is a result wire. The tight
@@ -1718,7 +1754,8 @@ public:
         adjacentList.clear();
 
         // populate adjacent list
-        for (auto &info : edges) {
+        for (auto it = edges.begin(); it != edges.end(); ++it) {
+            auto &info = *it;
             if (info.iteration == -2) {
 #if OCC_VERSION_HEX >= 0x070000
                 assertCheck(BRep_Tool::IsClosed(info.shape()));
@@ -1731,10 +1768,25 @@ public:
                 continue;
 
             if (info.p1.SquareDistance(info.p2)<=myTol2) {
-                if (!doTightBound)
-                    builder.Add(compound,info.wire());
-                info.iteration = -2;
-                continue;
+                // a closed edge, done -- unless it is pinched to other edges
+                // at its vertex and the angle walk will run (see the same
+                // case for a merged chain in findSuperEdges())
+                bool pinched = false;
+                if (myPlanar) {
+                    vmap.query(info.p1, myTol, vfound);
+                    for (const auto &f : vfound) {
+                        if (f.vertex.it != it && f.vertex.it->iteration >= 0) {
+                            pinched = true;
+                            break;
+                        }
+                    }
+                }
+                if (!pinched) {
+                    if (!doTightBound)
+                        builder.Add(compound,info.wire());
+                    info.iteration = -2;
+                    continue;
+                }
             }
 
             gp_Pnt pt[2];
@@ -1762,12 +1814,13 @@ public:
                     ++info.iEnd[i];
                 }
 
-                // copy the adjacent indices to all connected edges
+                // copy the adjacent indices to all connected edges -- and to
+                // this edge's other end, when that is the same vertex
                 for (int j=info.iStart[i];j<info.iEnd[i];++j) {
                     auto &other = adjacentList[j];
                     auto &otherInfo = *other.it;
-                    if (&otherInfo != &info) {
-                        int k = other.start?0:1;
+                    int k = other.start?0:1;
+                    if (&otherInfo != &info || k != i) {
                         otherInfo.iStart[k] = info.iStart[i];
                         otherInfo.iEnd[k] = info.iEnd[i];
                     }
@@ -1787,6 +1840,25 @@ public:
             for (auto &info : edges) {
                 if (info.iteration<0)
                     continue;
+                if (isLoop(info)) {
+                    // A loop kept live for the angle walk because other edges
+                    // met it at its vertex. Once those are skipped it is on
+                    // its own, which for a loop means finished, not dangling:
+                    // it is emitted as it is, whichever traversal runs.
+                    bool alone = true;
+                    for (int i = info.iStart[0]; i < info.iEnd[0]; ++i) {
+                        auto other = adjacentList[i].edgeInfo();
+                        if (other != &info && other->iteration >= 0) {
+                            alone = false;
+                            break;
+                        }
+                    }
+                    if (alone) {
+                        info.iteration = -2;
+                        showShape(&info, "super_done");
+                    }
+                    continue;
+                }
                 for (int k=0; k<2; ++k) {
                     int i;
                     for (i=info.iStart[k]; i<info.iEnd[k]; ++i) {
@@ -1936,6 +2008,43 @@ public:
                      v.Dot(gp_Vec(myPlane.Position().YDirection())));
     }
 
+    // An edge, or a merged chain, whose two ends are the same vertex. Both of
+    // its darts leave that vertex, so nothing about them can be told from
+    // which end is nearer: the dart with start set travels the edge, or the
+    // stored chain, forward, the other one backwards, and every helper below
+    // agrees on that.
+    bool isLoop(const EdgeInfo &info) const
+    {
+        return info.p1.SquareDistance(info.p2) <= myTol2;
+    }
+
+    // The edges of a loop chain in the order and orientation a dart travels
+    // them, starting at the vertex. ShapeFix may have stored the loop
+    // starting anywhere, so the edge that leaves the vertex is found, not
+    // assumed to be the first.
+    void loopChainEdges(const VertexInfo &v, std::vector<TopoDS_Edge> &edges) const
+    {
+        edges.clear();
+        std::size_t iStart = 0;
+        for (BRepTools_WireExplorer xp(TopoDS::Wire(v.it->shape())); xp.More(); xp.Next()) {
+            const TopoDS_Edge &e = xp.Current();
+            double f = 0.0;
+            double l = 0.0;
+            Handle(Geom_Curve) c = BRep_Tool::Curve(e, f, l);
+            if (!c.IsNull()
+                    && c->Value(e.Orientation() == TopAbs_REVERSED ? l : f)
+                        .SquareDistance(v.pt()) <= myTol2)
+                iStart = edges.size();
+            edges.push_back(e);
+        }
+        std::rotate(edges.begin(), edges.begin() + iStart, edges.end());
+        if (!v.start) {
+            std::reverse(edges.begin(), edges.end());
+            for (auto &e : edges)
+                e.Reverse();
+        }
+    }
+
     // The edge a dart actually departs along. Merging leaves one EdgeInfo
     // standing for a whole chain of edges, and then only one end of the chain
     // belongs to that EdgeInfo's own edge.
@@ -1944,6 +2053,12 @@ public:
         const auto &s = v.it->shape();
         if (s.ShapeType() != TopAbs_WIRE)
             return TopoDS::Edge(s);
+        if (isLoop(*v.it)) {
+            std::vector<TopoDS_Edge> chain;
+            loopChainEdges(v, chain);
+            if (!chain.empty())
+                return chain.front();
+        }
         TopoDS_Edge first;
         TopoDS_Edge last;
         for (BRepTools_WireExplorer xp(TopoDS::Wire(s)); xp.More(); xp.Next()) {
@@ -1975,7 +2090,11 @@ public:
         Handle(Geom_Curve) c = BRep_Tool::Curve(e, f, l);
         if (c.IsNull())
             return false;
-        bool atFirst = c->Value(f).SquareDistance(v.pt()) <= c->Value(l).SquareDistance(v.pt());
+        bool atFirst;
+        if (v.it->shape().ShapeType() != TopAbs_WIRE && isLoop(*v.it))
+            atFirst = v.start; // both ends are the vertex
+        else
+            atFirst = c->Value(f).SquareDistance(v.pt()) <= c->Value(l).SquareDistance(v.pt());
         gp_Vec dir;
         if (fraction <= 0.0) {
             gp_Pnt p;
@@ -1999,6 +2118,45 @@ public:
         return true;
     }
 
+    // The signed curvature of a dart where it leaves its vertex, in myPlane:
+    // positive when the edge bends counterclockwise (to the left, the way
+    // angles grow), negative when it bends clockwise, zero for a line.
+    // Travelling an edge backwards flips the sign. Two darts that leave at
+    // the same angle are ordered by this before the chord, which as a
+    // fraction of the edge cannot tell two arcs of the same angular span
+    // apart whatever their radii.
+    bool dartCurvature(const VertexInfo &v, double &curvature) const
+    {
+        TopoDS_Edge e = dartEdge(v);
+        double f = 0.0;
+        double l = 0.0;
+        Handle(Geom_Curve) c = BRep_Tool::Curve(e, f, l);
+        if (c.IsNull())
+            return false;
+        bool atFirst;
+        if (v.it->shape().ShapeType() != TopAbs_WIRE && isLoop(*v.it))
+            atFirst = v.start;
+        else
+            atFirst = c->Value(f).SquareDistance(v.pt()) <= c->Value(l).SquareDistance(v.pt());
+        gp_Pnt p;
+        gp_Vec d1;
+        gp_Vec d2;
+        c->D2(atFirst ? f : l, p, d1, d2);
+        if (!atFirst)
+            d1.Reverse();
+        gp_Vec ex(myPlane.Position().XDirection());
+        gp_Vec ey(myPlane.Position().YDirection());
+        double x1 = d1.Dot(ex);
+        double y1 = d1.Dot(ey);
+        double x2 = d2.Dot(ex);
+        double y2 = d2.Dot(ey);
+        double speed2 = x1 * x1 + y1 * y1;
+        if (speed2 <= Precision::SquareConfusion())
+            return false;
+        curvature = (x1 * y2 - y1 * x2) / (speed2 * std::sqrt(speed2));
+        return true;
+    }
+
     bool computeDartAngles()
     {
         dartAngles.assign(adjacentList.size(), 0.0);
@@ -2013,8 +2171,7 @@ public:
     }
 
     // The turn from the back of the edge we came in on to a way out, measured
-    // one way round. Taking the minimum is the tightest turn. Going straight
-    // back is promoted to a full turn so that it is only ever a last resort.
+    // one way round, in [0, 2 pi). Taking the minimum is the tightest turn.
     static double clockWiseAngle(double angleIn, double angleOut)
     {
         double a = angleIn - angleOut;
@@ -2022,8 +2179,6 @@ public:
             a += 2 * M_PI;
         while (a >= 2 * M_PI)
             a -= 2 * M_PI;
-        if (a <= AngleTie)
-            a = 2 * M_PI;
         return a;
     }
 
@@ -2044,12 +2199,73 @@ public:
         if (iBack < 0)
             return false;
 
+        // Going straight back is a full turn, so that it is only ever a last
+        // resort. A different edge that leaves at the same angle as the way
+        // back -- one tangent to the edge we came in on, like a circle
+        // touching a line at the vertex -- is not the way back: it is either
+        // the tightest turn there is or the widest, and its chord a little
+        // way along says which. Promoting it with the way back, as this once
+        // did, sent the walk round such a circle the wrong way and it never
+        // closed.
+        // A candidate at the same angle as another is ordered by how it
+        // bends, and only when they bend the same is the chord consulted.
+        // Bending clockwise lowers the angle an edge is really at, which
+        // carries it further round: of two tied candidates the one bending
+        // counterclockwise comes first. At the way back's own angle the
+        // opposite holds, because a lower angle there wraps to just above
+        // zero, the tightest turn of all, while a higher one wraps to just
+        // under a full turn.
+        static constexpr double CurvatureTie = 1e-9;
+        auto curvatureOrder = [&](int i, int j, int &order) {
+            double ki = 0.0;
+            double kj = 0.0;
+            if (!dartCurvature(adjacentList[i], ki) || !dartCurvature(adjacentList[j], kj))
+                return false;
+            if (ki < kj - CurvatureTie)
+                order = -1;
+            else if (ki > kj + CurvatureTie)
+                order = 1;
+            else
+                order = 0;
+            return true;
+        };
+        double angleInRefined = 0.0;
+        bool haveAngleInRefined = false;
+        auto refinedAngle = [&](int i, double &a) {
+            if (!haveAngleInRefined) {
+                if (!dartAngle(adjacentList[iBack], AngleRefine, angleInRefined))
+                    return false;
+                haveAngleInRefined = true;
+            }
+            double out = 0.0;
+            if (!dartAngle(adjacentList[i], AngleRefine, out))
+                return false;
+            a = clockWiseAngle(angleInRefined, out);
+            return true;
+        };
+        std::vector<double> turns(info->iEnd[idx] - info->iStart[idx], -1.0);
         int best = -1;
         double bestAngle = 0.0;
         for (int i = info->iStart[idx]; i < info->iEnd[idx]; ++i) {
             if (adjacentList[i].edgeInfo()->iteration < 0)
                 continue;
-            double a = clockWiseAngle(dartAngles[iBack], dartAngles[i]);
+            double a;
+            if (i == iBack)
+                a = 2 * M_PI;
+            else {
+                a = clockWiseAngle(dartAngles[iBack], dartAngles[i]);
+                if (a <= AngleTie || a >= 2 * M_PI - AngleTie) {
+                    int order = 0;
+                    double refined = 0.0;
+                    if (curvatureOrder(i, iBack, order) && order != 0)
+                        a = order < 0 ? 0.0 : 2 * M_PI - AngleTie;
+                    else if (refinedAngle(i, refined))
+                        a = refined <= M_PI ? 0.0 : 2 * M_PI - AngleTie;
+                    else
+                        a = 2 * M_PI;
+                }
+            }
+            turns[i - info->iStart[idx]] = a;
             if (best < 0 || a < bestAngle) {
                 best = i;
                 bestAngle = a;
@@ -2062,30 +2278,39 @@ public:
         // are what OCCT's RefineAngles is for.
         std::vector<int> ties;
         for (int i = info->iStart[idx]; i < info->iEnd[idx]; ++i) {
-            if (i == best || adjacentList[i].edgeInfo()->iteration < 0)
+            double a = turns[i - info->iStart[idx]];
+            if (i == best || a < 0.0)
                 continue;
-            if (clockWiseAngle(dartAngles[iBack], dartAngles[i]) <= bestAngle + AngleTie)
+            if (a <= bestAngle + AngleTie)
                 ties.push_back(i);
         }
         if (!ties.empty()) {
             ties.push_back(best);
-            double angleIn = 0.0;
-            if (dartAngle(adjacentList[iBack], AngleRefine, angleIn)) {
-                int refined = -1;
-                double refinedAngle = 0.0;
-                for (int i : ties) {
-                    double a = 0.0;
-                    if (!dartAngle(adjacentList[i], AngleRefine, a))
-                        continue;
-                    double turn = clockWiseAngle(angleIn, a);
-                    if (refined < 0 || turn < refinedAngle) {
-                        refined = i;
-                        refinedAngle = turn;
-                    }
+            int refined = -1;
+            double refinedTurn = 0.0;
+            for (int i : ties) {
+                if (refined < 0) {
+                    refined = i;
+                    continue;
                 }
-                if (refined >= 0)
-                    best = refined;
+                int order = 0;
+                if (curvatureOrder(i, refined, order) && order != 0) {
+                    if (order > 0)
+                        refined = i;
+                    continue;
+                }
+                double turn = 0.0;
+                if (!refinedAngle(i, turn))
+                    continue;
+                if (refinedTurn <= 0.0 && !refinedAngle(refined, refinedTurn))
+                    refinedTurn = 0.0;
+                if (turn < refinedTurn) {
+                    refined = i;
+                    refinedTurn = turn;
+                }
             }
+            if (refined >= 0)
+                best = refined;
         }
 
         next = adjacentList[best];
@@ -2134,7 +2359,33 @@ public:
         const auto &s = v.it->shape();
         if (s.ShapeType() != TopAbs_WIRE) {
             samples.push_back(v.pt());
+            if (isLoop(*v.it)) {
+                // a closed edge on its own: its vertex and mid point are a
+                // chord of no area, so take the quarters as well, in the
+                // direction the dart travels
+                const auto &c = v.it->curve;
+                double f = v.it->firstParam;
+                double l = v.it->lastParam;
+                for (double q : {0.25, 0.5, 0.75})
+                    samples.push_back(c->Value(v.start ? f + (l - f) * q : l - (l - f) * q));
+                return;
+            }
             samples.push_back(v.it->mid);
+            return;
+        }
+
+        if (isLoop(*v.it)) {
+            std::vector<TopoDS_Edge> chain;
+            loopChainEdges(v, chain);
+            for (const auto &e : chain) {
+                double f = 0.0;
+                double l = 0.0;
+                Handle(Geom_Curve) c = BRep_Tool::Curve(e, f, l);
+                if (c.IsNull())
+                    continue;
+                samples.push_back(c->Value(e.Orientation() == TopAbs_REVERSED ? l : f));
+                samples.push_back(c->Value((f + l) * 0.5));
+            }
             return;
         }
 
@@ -2245,8 +2496,9 @@ public:
                 }
 
                 pruneTails(loop);
-                if (loop.size() < 2)
-                    continue; // a tree or a tail, bounding nothing
+                // a tree or a tail bounds nothing; a loop is a face on its own
+                if (loop.size() < 2 && !(loop.size() == 1 && isLoop(*loop.front().it)))
+                    continue;
                 if (signedArea(loop) <= 0.0)
                     continue; // the unbounded face
 
@@ -3216,15 +3468,17 @@ public:
         if (doTightBound || doSplitEdge)
             splitEdges();
 
-        buildAdjacentList();
-
         // The angle rule needs one 2D parameter space to measure the turns in,
         // and a common plane is the case that can be found cheaply and the case
         // every caller in the tree actually has. Without one -- a network of
         // edges spread over several surfaces -- there is no cyclic order at a
         // vertex to speak of, and the search stays. setAngleTraversal(false)
-        // forces the search as well, with nothing else changed.
+        // forces the search as well, with nothing else changed. Decided before
+        // the adjacency is built because the merge below keeps a pinched loop
+        // in the graph only for the angle walk (see findSuperEdges()).
         myPlanar = doAngle && (doTightBound || doOutline) && findCommonPlane();
+
+        buildAdjacentList();
 
         if (!doTightBound && !doOutline)
             findClosedWires();
