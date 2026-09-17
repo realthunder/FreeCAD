@@ -321,8 +321,8 @@ bool SketchObject::isCarbonCopyAllowed(App::Document* pDoc, App::DocumentObject*
     if (rsn)
         *rsn = rlAllowed;
 
-    // Only applicable to sketches
-    if (pObj->getTypeId() != Sketcher::SketchObject::getClassTypeId()) {
+    // Only applicable to sketches, including the Python-scripted subclass
+    if (!pObj->isDerivedFrom<Sketcher::SketchObject>()) {
         if (rsn)
             *rsn = rlNotASketch;
         return false;
