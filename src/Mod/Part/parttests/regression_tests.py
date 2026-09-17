@@ -134,6 +134,35 @@ class RegressionTests(unittest.TestCase):
         # the union of three 100 unit squares overlapping as placed
         self.assertAlmostEqual(sum(Part.Face(w).Area for w in wires), 217.0,
                                places=6)
+        # each region on its own: a wire whose edges are not all oriented the
+        # way it is travelled makes a face of negative area, and two of those
+        # can still add up to 217
+        areas = sorted(round(Part.Face(w).Area, 6) for w in wires)
+        self.assertEqual(areas, [3.0, 5.0, 20.0, 31.0, 42.0, 44.0, 72.0])
+
+    def test_joinWires_orients_reversed_input_edges(self):
+        """
+        The wires come out oriented however the input edges were.
+
+        A wire is assembled from the edges as the traversal walks them, and
+        that direction is decided by an edge's parametric ends, not by the
+        orientation it happens to carry. Half of these edges are handed in
+        REVERSED; every cell must still be a positive face, and the diagonal
+        makes the two chains between its ends run opposite ways.
+        """
+        def seg(a, b):
+            return Part.LineSegment(Vector(*a), Vector(*b)).toShape()
+
+        edges = []
+        for i in range(3):
+            c = 10.0 * i
+            edges.append(seg((c, 0, 0), (c, 20, 0)))
+            edges.append(seg((0, c, 0), (20, c, 0)).reversed())
+        edges.append(seg((0, 0, 0), (10, 10, 0)).reversed())
+        result = Part.joinWires(Part.Compound(edges), split=True, merge=True,
+                                tighten=True)
+        areas = sorted(round(Part.Face(w).Area, 6) for w in result.Wires)
+        self.assertEqual(areas, [50.0, 50.0, 100.0, 100.0, 100.0])
 
     def test_joinWires_splits_a_collinear_overlap(self):
         """

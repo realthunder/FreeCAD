@@ -60,6 +60,7 @@
 # include <ShapeFix_Wire.hxx>
 # include <ShapeFix_Shape.hxx>
 # include <TopExp.hxx>
+# include <TopoDS_Iterator.hxx>
 # include <TopExp_Explorer.hxx>
 # include <TopTools_HSequenceOfShape.hxx>
 #endif
@@ -464,6 +465,9 @@ public:
         mutable Bnd_Box box;
         bool done = false;
         bool purge = false;
+        // Found by the angle traversal: vertices is a face boundary walked in
+        // order, so the wire is assembled from it directly, see makeDartWire().
+        bool orbit = false;
         // Candidates already ruled out as lying outside THIS wire. This used to
         // be one epoch per starting edge, shared by every wire derived in that
         // pass, which is only sound while the wires shrink. They do not: the
@@ -596,6 +600,53 @@ public:
         }
         wireInfo.face = mkFace.Face();
         return true;
+    }
+
+    // The wire of an orbit, assembled straight from its darts. The walk hands
+    // the edges over connected and in order, and add() has already made every
+    // coincident vertex the same TopoDS_Vertex, so ShapeFix_Wire had nothing
+    // left to fix -- it was a fifth of the run on a 40x40 lattice just to find
+    // that out, and the face it was followed by another fifth.
+    //
+    // What the fixer did do was orient. A dart is defined by the parametric
+    // ends of its edge, but the edge as stored may be REVERSED (connectEdge()
+    // rebuilds through MakeWire, which flips edges to connect them), so the
+    // orientation comes from the dart alone. A merged chain is stored the way
+    // round it was walked when it was made and travelled either way: when the
+    // dart leaves its tail rather than its head, its edges go in backwards
+    // and reversed.
+    TopoDS_Wire makeDartWire(const std::vector<VertexInfo> &loop) const
+    {
+        BRep_Builder builder;
+        TopoDS_Wire wire;
+        builder.MakeWire(wire);
+        std::vector<TopoDS_Shape> chain;
+        for (const auto &v : loop) {
+            const auto &s = v.it->shape();
+            if (s.ShapeType() != TopAbs_WIRE) {
+                builder.Add(wire, s.Oriented(v.start ? TopAbs_FORWARD : TopAbs_REVERSED));
+                continue;
+            }
+            chain.clear();
+            for (TopoDS_Iterator it(s); it.More(); it.Next())
+                chain.push_back(it.Value());
+            TopoDS_Vertex head, tail;
+            TopExp::Vertices(TopoDS::Wire(s), head, tail);
+            if (head.IsNull() || tail.IsNull()
+                    || BRep_Tool::Pnt(head).SquareDistance(v.pt())
+                        > BRep_Tool::Pnt(tail).SquareDistance(v.pt())) {
+                std::reverse(chain.begin(), chain.end());
+                for (auto &e : chain)
+                    e.Reverse();
+            }
+            for (const auto &e : chain)
+                builder.Add(wire, e);
+        }
+        TopoDS_Vertex vFirst, vLast;
+        TopExp::Vertices(wire, vFirst, vLast);
+        if (!vFirst.IsNull() && !vLast.IsNull() && vFirst.IsSame(vLast))
+            wire.Closed(true);
+        return wire;
     }
 
     bool isInside(const WireInfo &wireInfo, gp_Pnt &pt)
@@ -1983,6 +2034,7 @@ public:
                 auto wireInfo = std::make_shared<WireInfo>();
                 wireInfo->vertices = loop;
                 wireInfo->done = true;
+                wireInfo->orbit = true;
                 for (const auto &v : loop) {
                     auto einfo = v.edgeInfo();
                     if (!einfo->wireInfo)
@@ -2898,8 +2950,12 @@ public:
     {
         if (!canShowShape(idx, forced))
             return;
-        if (wireInfo.wire.IsNull())
-            initWireInfo(wireInfo);
+        if (wireInfo.wire.IsNull()) {
+            if (wireInfo.orbit)
+                wireInfo.wire = makeDartWire(wireInfo.vertices);
+            else
+                initWireInfo(wireInfo);
+        }
         showShape(wireInfo.wire, name, idx, forced);
     }
 
@@ -3073,6 +3129,23 @@ public:
     {
         if (!wireInfo || !wireInfo->done || !wireSet.insertUnique(wireInfo.get()))
             return;
+
+        // An orbit is a face boundary by construction: the edges were split at
+        // every crossing before the walk, so it cannot cross itself, and the
+        // signed area that admitted it is the area the face check below would
+        // measure. Neither check has anything left to find.
+        if (wireInfo->orbit) {
+            if (wireInfo->wire.IsNull())
+                wireInfo->wire = makeDartWire(wireInfo->vertices);
+            if (!BRep_Tool::IsClosed(wireInfo->wire)) {
+                showShape(wireInfo->wire, "FailedToClose");
+                FC_ERR("Wire not closed");
+                return;
+            }
+            builder.Add(compound, wireInfo->wire);
+            return;
+        }
+
         if (!initWireInfo(*wireInfo))
             return;
 
