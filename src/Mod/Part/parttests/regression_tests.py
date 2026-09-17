@@ -324,6 +324,16 @@ class RegressionTests(unittest.TestCase):
         got, _ = areas(rect + circle, angle=False)
         self.assertEqual(got, [disk, 1200.0])
 
+        # touching top and bottom: the disk and the two side regions
+        rect2 = [seg((-20, 10, 0), (20, 10, 0)), seg((-20, 10, 0), (-20, -10, 0)),
+                 seg((-20, -10, 0), (20, -10, 0)), seg((20, -10, 0), (20, 10, 0))]
+        got, result = areas(rect2 + circle)
+        side = round((800 - 100 * math.pi) / 2, 3)
+        self.assertEqual(got, [side, side, disk])
+        faces = Part.makeFace(result.Wires, "Part::FaceMakerBullseye")
+        self.assertTrue(faces.isValid())
+        self.assertEqual(sorted(round(f.Area, 3) for f in faces.Faces), [side, side, disk])
+
         # a full circle whose seam vertex is the touch point, on a side
         full = [Part.Circle(Vector(0, 0, 0), Vector(0, 0, 1), 10).toShape(),
                 seg((10, -20, 0), (10, 20, 0)), seg((10, 20, 0), (-30, 20, 0)),
