@@ -368,6 +368,29 @@ PythonConverter::SingleGeometry PythonConverter::process(const Part::Geometry* g
     return creator(geo);
 }
 
+namespace
+{
+/// Escapes a string for embedding in a single-quoted Python string literal.
+std::string escapeForPython(const std::string& input)
+{
+    std::string result;
+    result.reserve(input.length());
+
+    for (char c : input) {
+        if (c == '\\') {
+            result += "\\\\";
+        }
+        else if (c == '\'') {
+            result += "\\'";
+        }
+        else {
+            result += c;
+        }
+    }
+    return result;
+}
+}  // namespace
+
 std::string PythonConverter::process(const Sketcher::Constraint* constraint, GeoIdMode geoIdMode)
 {
     bool addLastIdVar = geoIdMode == GeoIdMode::AddLastGeoIdToGeoIds;
@@ -690,14 +713,44 @@ std::string PythonConverter::process(const Sketcher::Constraint* constraint, Geo
              }},
         };
 
-    auto result = converterMap.find(constraint->Type);
+    // A group carries a whole element list rather than the three legacy ids, so it is
+    // written out here instead of from the map above.
+    std::string resultStr;
+    if (constraint->Type == Sketcher::Group || constraint->Type == Sketcher::Text) {
+        auto formatGeoId = [addLastIdVar](int geoId) {
+            return ((geoId >= 0 && addLastIdVar) ? "lastGeoId + " : "") + std::to_string(geoId);
+        };
 
-    if (result == converterMap.end()) {
-        THROWM(Base::ValueError, "PythonConverter: Constraint Type not supported")
+        std::string list = "[";
+        for (int i = 0; constraint->hasElement(i); ++i) {
+            if (i > 0) {
+                list += ", ";
+            }
+            list += formatGeoId(constraint->getGeoId(i)) + ", "
+                + std::to_string(constraint->getPosIdAsInt(i));
+        }
+        list += "]";
+
+        if (constraint->Type == Sketcher::Group) {
+            resultStr = "Sketcher.Constraint('Group', " + list;
+        }
+        else {
+            resultStr = "Sketcher.Constraint('Text', " + list + ", '"
+                + escapeForPython(constraint->getText()) + "', '"
+                + escapeForPython(constraint->getFont()) + "', "
+                + (constraint->getIsTextHeight() ? "True" : "False");
+        }
     }
+    else {
+        auto result = converterMap.find(constraint->Type);
 
-    auto creator = result->second;
-    std::string resultStr = creator(constraint, geoId1, geoId2, geoId3);
+        if (result == converterMap.end()) {
+            THROWM(Base::ValueError, "PythonConverter: Constraint Type not supported")
+        }
+
+        auto creator = result->second;
+        resultStr = creator(constraint, geoId1, geoId2, geoId3);
+    }
 
     if (!constraint->isActive || !constraint->isDriving) {
         std::string active = constraint->isActive ? "True" : "False";
