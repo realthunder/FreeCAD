@@ -400,6 +400,8 @@ struct EditData {
     SoLineSet     *EditCurveSet;
     SoMarkerSet   *EditMarkerSet;
     SoMarkerSet   *PointSet;
+    // the marker every visible vertex uses; a group member's vertices get NONE instead
+    int32_t defaultMarkerIndex = 0;
     SoIndexedMarkerSet   *SelectedPointSet;
     SoIndexedMarkerSet   *PreSelectedPointSet;
 
@@ -3471,6 +3473,37 @@ void ViewProviderSketch::updateColor(void)
         }
     }
 
+    // A group's members are not editable on their own, so their vertices carry no marker:
+    // nothing to see and nothing to pick. The group handle keeps its own.
+    {
+        std::set<int> groupedGeoIds;
+        for (const auto *c : sketch->Constraints.getValues()) {
+            if (c->Type == Sketcher::Group || c->Type == Sketcher::Text) {
+                for (int k = 1; c->hasElement(k); ++k) {
+                    groupedGeoIds.insert(c->getGeoId(k));
+                }
+            }
+        }
+
+        if (groupedGeoIds.empty()) {
+            if (edit->PointSet->markerIndex.getNum() != 1) {
+                edit->PointSet->markerIndex.setValue(edit->defaultMarkerIndex);
+            }
+        }
+        else {
+            std::vector<int32_t> markers(PtNum, edit->defaultMarkerIndex);
+            for (int i = 1; i < PtNum; i++) {
+                int GeoId;
+                PointPos PosId;
+                sketch->getGeoVertexIndex(edit->PointIdToVertexId[i], GeoId, PosId);
+                if (groupedGeoIds.count(GeoId)) {
+                    markers[i] = SoMarkerSet::NONE;
+                }
+            }
+            edit->PointSet->markerIndex.setValues(0, PtNum, markers.data());
+        }
+    }
+
     // colors of the curves
   //int intGeoCount = getSketchObject()->getHighestCurveIndex() + 1;
   //int extGeoCount = getSketchObject()->getExternalGeometryCount();
@@ -3496,9 +3529,18 @@ void ViewProviderSketch::updateColor(void)
         //edit->CurveSet->numVertices => [i] indicates number of vertex for line i.
         vcount = (edit->CurveSet->numVertices[i]);
 
-        bool selected = (edit->SelCurveMap.find(GeoId) != edit->SelCurveMap.end());
         bool preselected = (!edit->hasDraggedCurve() && edit->PreselectCurve == GeoId)
                            || edit->isDraggedCurve(GeoId);
+
+        // A group's members take the colour of its handle: they are selected, preselected
+        // and dragged as one. A member under the cursor still highlights on its own.
+        if (GeoId >= 0) {
+            GeoId = sketch->getGroupHandleIfInGroup(GeoId);
+        }
+
+        bool selected = (edit->SelCurveMap.find(GeoId) != edit->SelCurveMap.end());
+        preselected = preselected || (!edit->hasDraggedCurve() && edit->PreselectCurve == GeoId)
+                      || edit->isDraggedCurve(GeoId);
 
         bool constrainedElement = isFullyConstraintElement(sketch, GeoId);
 
@@ -3800,7 +3842,7 @@ void ViewProviderSketch::updateColor(void)
                 PtId = edit->VertexIdToPointId[PtId-1];
                 if (PtId < PtNum) {
                     indices[i] = PtId;
-                    mindices[i++] = edit->PointSet->markerIndex[0];
+                    mindices[i++] = edit->defaultMarkerIndex;
                 }
             }
         }
@@ -4641,7 +4683,8 @@ void ViewProviderSketch::updateInventorNodeSizes()
 {
     assert(edit);
     edit->PointsDrawStyle->pointSize = 8 * edit->pixelScalingFactor;
-    edit->PointSet->markerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_FILLED", edit->MarkerSize);
+    edit->defaultMarkerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_FILLED", edit->MarkerSize);
+    edit->PointSet->markerIndex = edit->defaultMarkerIndex;
     edit->CurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
     edit->RootCrossDrawStyle->lineWidth = 2 * edit->pixelScalingFactor;
     edit->EditCurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
@@ -7839,7 +7882,8 @@ void ViewProviderSketch::createEditInventorNodes(void)
 
     edit->PointSet = new SoMarkerSet;
     edit->PointSet->setName("PointSet");
-    edit->PointSet->markerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_FILLED", edit->MarkerSize);
+    edit->defaultMarkerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_FILLED", edit->MarkerSize);
+    edit->PointSet->markerIndex = edit->defaultMarkerIndex;
     pointsRoot->addChild(edit->PointSet);
 
     // stuff for the (pre)selected points ++++++++++++++++++++++++++++++++++++++
@@ -7856,13 +7900,13 @@ void ViewProviderSketch::createEditInventorNodes(void)
     edit->SelectedPointSet = new SoIndexedMarkerSet;
     edit->SelectedPointSet->setName("SelectedPointSet");
     selPointsRoot->addChild(edit->SelectedPointSet);
-    edit->SelectedPointSet->markerIndex = edit->PointSet->markerIndex;
+    edit->SelectedPointSet->markerIndex = edit->defaultMarkerIndex;
     edit->SelectedPointSet->materialIndex.setNum(0);
 
     edit->PreSelectedPointSet = new SoIndexedMarkerSet;
     edit->PreSelectedPointSet->setName("PreSelectedPointSet");
     selPointsRoot->addChild(edit->PreSelectedPointSet);
-    edit->PreSelectedPointSet->markerIndex = edit->PointSet->markerIndex;
+    edit->PreSelectedPointSet->markerIndex = edit->defaultMarkerIndex;
     edit->PreSelectedPointSet->materialIndex.setNum(0);
 
     // stuff for the Curves +++++++++++++++++++++++++++++++++++++++
