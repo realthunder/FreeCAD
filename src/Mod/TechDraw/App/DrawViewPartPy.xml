@@ -33,8 +33,9 @@ projection has run.</UserDocu>
         <UserDocu>getEdgeNames() - one tuple (name, sourceName, sourceIndex) per projected
 edge of the View, in the order of getEdgeByIndex: the name this projected edge carries,
 the mapped name of the 3D element it was projected from, and that element's Edge index in
-getProjectionShape().  Empty strings and 0 where an edge has no source in the model -- a
-silhouette is an edge the projection invented.</UserDocu>
+getProjectionShape().  A silhouette is an edge the projection invented on a face: its
+sourceName is that face's, and its sourceIndex is 0.  Empty strings and 0 where an edge
+has no source in the model.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="getVertexNames">

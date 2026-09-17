@@ -161,8 +161,10 @@ protected:
 
     //the shape HLR was run on, kept so the projection can be named from it
     Part::TopoShape m_projectionShape;
-    //projected edge -> index of its source element in m_projectionShape's
-    //Edge<n> numbering.  Filled by the projection, read by nameEdgeGeometry.
+    //projected edge -> index of its source element in m_projectionShape:
+    //Edge<n> for an edge of the model, or -Face<n> (negative) for the face a
+    //silhouette or iso line lies on.  Filled by the projection, split into
+    //BaseGeom::ref3D / ref3DFace by extractGeometry, read by nameEdgeGeometry.
     ShapeIndexMap m_edgeSource;
 
     //HLR output

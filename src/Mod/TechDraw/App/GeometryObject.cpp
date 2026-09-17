@@ -305,11 +305,19 @@ void GeometryObject::nameEdgeGeometry()
 
     std::map<std::string, int> ordinals;
     for (auto& geom : edgeGeom) {
-        if (!geom || geom->getRef3d() <= 0) {
+        if (!geom) {
             continue;
         }
-        Data::MappedName source = m_projectionShape.getMappedName(
-            Data::IndexedName::fromConst("Edge", geom->getRef3d()));
+        //an edge of the model, or the face a silhouette lies on
+        Data::MappedName source;
+        if (geom->getRef3d() > 0) {
+            source = m_projectionShape.getMappedName(
+                Data::IndexedName::fromConst("Edge", geom->getRef3d()));
+        }
+        else if (geom->getRef3dFace() > 0) {
+            source = m_projectionShape.getMappedName(
+                Data::IndexedName::fromConst("Face", geom->getRef3dFace()));
+        }
         if (source.empty()) {
             continue;
         }
@@ -515,6 +523,8 @@ void GeometryObject::projectShape(const Part::TopoShape& inShape, const gp_Ax2& 
     try {
         TopTools_IndexedMapOfShape sourceEdges;
         TopExp::MapShapes(m_projectionShape.getShape(), TopAbs_EDGE, sourceEdges);
+        TopTools_IndexedMapOfShape sourceFaces;
+        TopExp::MapShapes(m_projectionShape.getShape(), TopAbs_FACE, sourceFaces);
 
         auto emit = [&](unsigned type, bool visible, TopoDS_Shape& target) {
             Part::HLRProjector::Params select;
@@ -526,17 +536,22 @@ void GeometryObject::projectShape(const Part::TopoShape& inShape, const gp_Ax2& 
                 return;
             }
 
-            //the source becomes the projection shape's own Edge<n> index.  A
-            //silhouette or an iso line reports the face it lies on, which
-            //the names do not use yet, so it stays unnamed.
+            //the source becomes the projection shape's own Edge<n> index, or
+            //-Face<n> for a silhouette or iso line, which lies on a face
             ShapeIndexMap sourceOf;
             for (TopExp_Explorer xp(compound.getShape(), TopAbs_EDGE); xp.More(); xp.Next()) {
                 const Part::HLRProjector::Edge* info = projector.info(xp.Current());
-                if (!info || info->source.IsNull() || info->source.ShapeType() != TopAbs_EDGE) {
+                if (!info || info->source.IsNull()) {
                     continue;
                 }
-                int index = sourceEdges.FindIndex(info->source);
-                if (index > 0) {
+                int index = 0;
+                if (info->source.ShapeType() == TopAbs_EDGE) {
+                    index = sourceEdges.FindIndex(info->source);
+                }
+                else if (info->source.ShapeType() == TopAbs_FACE) {
+                    index = -sourceFaces.FindIndex(info->source);
+                }
+                if (index != 0) {
                     sourceOf.Bind(xp.Current(), index);
                 }
             }
@@ -687,6 +702,8 @@ void GeometryObject::projectShapeWithPolygonAlgo(const Part::TopoShape& input,
 
         TopTools_IndexedMapOfShape sourceEdges;
         TopExp::MapShapes(m_projectionShape.getShape(), TopAbs_EDGE, sourceEdges);
+        TopTools_IndexedMapOfShape sourceFaces;
+        TopExp::MapShapes(m_projectionShape.getShape(), TopAbs_FACE, sourceFaces);
 
         auto emit = [&](int typ, bool visible, TopoDS_Shape& target) {
             std::vector<std::pair<TopoDS_Shape, TopoDS_Shape>> produced;
@@ -699,11 +716,17 @@ void GeometryObject::projectShapeWithPolygonAlgo(const Part::TopoShape& input,
             ShapeIndexMap sourceOf;
             for (const auto& item : produced) {
                 //a segment off a silhouette reports the face, not an edge
-                if (item.second.IsNull() || item.second.ShapeType() != TopAbs_EDGE) {
+                if (item.second.IsNull()) {
                     continue;
                 }
-                int index = sourceEdges.FindIndex(item.second);
-                if (index > 0) {
+                int index = 0;
+                if (item.second.ShapeType() == TopAbs_EDGE) {
+                    index = sourceEdges.FindIndex(item.second);
+                }
+                else if (item.second.ShapeType() == TopAbs_FACE) {
+                    index = -sourceFaces.FindIndex(item.second);
+                }
+                if (index != 0) {
                     sourceOf.Bind(item.first, index);
                 }
             }
@@ -906,7 +929,13 @@ void GeometryObject::addGeomFromCompound(TopoDS_Shape edgeCompound, edgeClass ca
         //the source element, recorded by the traversal.  Only an index here --
         //the name it stands for is resolved on the main thread.
         if (m_edgeSource.IsBound(edge)) {
-            base->setRef3d(m_edgeSource.Find(edge));
+            int index = m_edgeSource.Find(edge);
+            if (index > 0) {
+                base->setRef3d(index);
+            }
+            else {
+                base->setRef3dFace(-index);
+            }
         }
         edgeGeom.push_back(base);
 

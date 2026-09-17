@@ -138,9 +138,13 @@ class TechDrawExport BaseGeom : public std::enable_shared_from_this<BaseGeom>
         void setReversed(bool state) { reversed = state; }
         //! The index of the element this projected edge came from, in the
         //! Edge<n> numbering of DrawViewPart::getProjectionShape().  -1 when
-        //! there is none -- a silhouette has no source edge.
+        //! there is none: a silhouette or an iso line has no source edge,
+        //! it lies on a face, and getRef3dFace() is that face's index in the
+        //! Face<n> numbering (0 when there is none).
         int getRef3d()  { return ref3D; }
         void setRef3d(int ref)  { ref3D = ref; }
+        int getRef3dFace() const { return ref3DFace; }
+        void setRef3dFace(int ref) { ref3DFace = ref; }
         //! The mapped name of that source element, and the name of this
         //! projected edge derived from it:
         //! <sourceElementName>;HLR:<class>:<ordinal>.  Both are empty until
@@ -181,6 +185,7 @@ protected:
         bool hlrVisible;
         bool reversed;
         int ref3D;                      //source element index, 0 if unknown
+        int ref3DFace = 0;              //source face index of a silhouette
         std::string source3D;           //mapped name of the source element
         std::string hlrName;            //name of this projected edge
         TopoDS_Edge occEdge;            //projected Edge

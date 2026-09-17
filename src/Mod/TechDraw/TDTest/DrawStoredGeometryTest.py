@@ -91,6 +91,32 @@ class DrawStoredGeometryTest(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertTrue(after[1] > 0, "a page that cannot update came back empty")
 
+    def testASilhouetteIsNamedFromItsFaceAndSurvivesAReload(self):
+        """a silhouette has no source edge; it is named from the face it
+        lies on, and the face index is stored with the geometry"""
+        cyl = FreeCAD.ActiveDocument.addObject("Part::Cylinder", "Cyl")
+        self.view.Source = [cyl]
+        self.view.Direction = (1.0, 0.0, 0.0)
+        FreeCAD.ActiveDocument.recompute()
+        self.wait()
+
+        def silhouettes(view):
+            return sorted(
+                name for name, source, index in view.getEdgeNames()
+                if index == 0 and source.startswith("Face1")
+            )
+
+        before = silhouettes(self.view)
+        self.assertEqual(len(before), 2, self.view.getEdgeNames())
+        # every projected edge of the cylinder has a source now
+        self.assertTrue(all(source for _, source, _ in self.view.getEdgeNames()))
+        self.page.KeepUpdated = False
+        FreeCAD.ActiveDocument.saveAs(self.file)
+        FreeCAD.closeDocument(self.docName)
+        doc = FreeCAD.openDocument(self.file)
+        self.wait(1000)
+        self.assertEqual(silhouettes(doc.getObject("View")), before)
+
 
 if __name__ == "__main__":
     unittest.main()

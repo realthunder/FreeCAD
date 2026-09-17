@@ -2514,10 +2514,16 @@ the outliner split (a cylinder rim a silhouette vertex lands on) is a
 new edge, so those went unnamed -- the projector reads the outliner's
 data structure back to the input edge, and the rims of a cylinder now
 carry names like everything else.  And a silhouette or iso line
-reports the face it lies on, which `projectShape` still skips
-(`m_edgeSource` is an `Edge<n>` index); naming those from the face is
-the open follow-up.  The projector is handed the shape without its
-element map, so the worker never touches the hasher (8.2 still holds).  `polySegments` and `polyInternalCompound` are the same
+reports the face it lies on, and is named from it: `m_edgeSource`
+carries `-Face<n>` for those (the polygon path binds its face the same
+way), `extractGeometry` splits that into `BaseGeom::ref3D` /
+`ref3DFace`, and `nameEdgeGeometry` reads the face's mapped name, so a
+cylinder's silhouettes are `Face1;...;HLR:VO:0` and `:1` and the
+vertices and faces built on them get names too.  The face index is
+saved as a `face` attribute on the existing `Ref3D` element, so a file
+from before restores unchanged (no face, unnamed until re-projected).
+The projector is handed the shape without its element map, so the
+worker never touches the hasher (8.2 still holds).  `polySegments` and `polyInternalCompound` are the same
 for `HLRBRep_PolyHLRToShape`: its `Update` pass keeps the shape each
 segment came from, which `HLRBRep_PolyAlgo::Hide` fills in, and
 `InternalCompound` then filters that list by type and visibility.  The
