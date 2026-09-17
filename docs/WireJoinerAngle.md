@@ -155,6 +155,51 @@ Then the standing battery: `ctest`, `TestSketcherApp` including the 46
 against their stored baseline (this fork treats element names as an API, so a
 rename is a regression), and the full Python suite.
 
+## Independent of the adjacency order
+
+The search took whatever candidate the adjacency list offered first, which is
+why a canonical order per vertex (8488e0964b) was once needed for the same
+input to give the same wires on every platform, and why it was reverted when
+it turned out to cost 2.3x. The angle rule never consults that order: the
+successor is the tightest turn, decided by geometry alone, and the orbits are
+walked from the edges in input order. So the result should not depend on how
+the adjacency groups happen to come out of the R-tree, and it does not.
+Measured 2026-09-17 with each vertex's adjacency group reversed, sorted by
+angle, and sorted by a lexicographic key with no geometric meaning:
+
+* the ten shapes above and lattices k=20, 25, 31, 33, 40, with and without
+  `outline`: 30 of 30 results identical, including the order the wires are
+  emitted in;
+* the element maps of the 37 fixture sketches: 38 of 38 sections identical.
+
+The non-planar control case, which the gate hands to the search, changes its
+emission order under the reorderings -- as the search always did -- and it
+exposed a crash in the search that the built order had kept out of reach
+(c049fd09c2: a wire that does not make a face was tightened anyway).
+
+## Where the time goes now
+
+`perf` on the k=40 lattice, angle path, 2026-09-17, as a share of `build()`:
+
+| stage | share | what it is |
+|---|---|---|
+| `addWire()` | 43% | `ShapeFix_Wire` + `BRepBuilderAPI_MakeFace` + self-intersection check per emitted wire |
+| `splitEdges()` | 40% | R-tree nearest queries in `add()` (about half), then a wire+face+`ShapeAnalysis_Wire` per candidate pair |
+| `buildAdjacentList()` | 16% | R-tree nearest queries |
+| `findAngleWires()` | below 0.3% | the traversal |
+
+On 200 nested circles (every bounding box contains the smaller ones, no
+intersection at all) 83% is `checkIntersection()`: the per-pair face
+construction, which is what the `WireJoiner2d` branch (4a08a29e22) replaces
+with cached 2D curves. Its blocker was a fixture rename that came out of the
+search's construction path; the search no longer runs on that input.
+
+The plain `findClosedWires()` -- `tighten=False`, the `Part::Face` and
+`SubShapeBinder` default -- takes 6.4 s on the same k=40 lattice against the
+angle path's 0.45 s, 45% of it in `ShapeAnalysis_WireOrder::Perform` inside
+`makeCleanWire()`, because its wires are as long as possible and the reorder
+is quadratic in a wire's edge count.
+
 ## Reproducing
 
 Scripts are in the durable scratch directory
