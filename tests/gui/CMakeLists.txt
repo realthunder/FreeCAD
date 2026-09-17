@@ -128,3 +128,13 @@ fc_add_gui_test(GuiExpressionEditor_tests_run expression-editor.py
 # taken back out it is picked at the top level and not in the part.
 fc_add_gui_test(GuiServeClaimChildren_tests_run serve-claim-children.py
                 --timeout 180)
+
+# The line mid-point auto-constraint (upstream 64054d13c4, 280452bcc8):
+# a point dropped within 5% of a line's length from its middle is
+# constrained Symmetric about the line's two ends rather than merely
+# PointOnObject. Driven over the wire because the suggestion is only
+# made for PRESELECTED geometry, and synthetic Qt mouse events
+# preselect nothing.
+fc_add_gui_test(GuiSketchMidpointAutoConstraint_tests_run
+                sketch-midpoint-autoconstraint.py
+                --timeout 200)
