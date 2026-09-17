@@ -42,6 +42,9 @@ public:
     void setTightBound(bool enable=true);
     void setSplitEdges(bool enable=true);
     void setMergeEdges(bool enable=true);
+    // Find the minimal wires by the angle rule (the default) instead of by
+    // search. Only takes effect on planar input; see the gate in build().
+    void setAngleTraversal(bool enable=true);
     void setTolerance(double tolerance, double angularTol=0.0);
 
     bool getOpenWires(TopoShape &shape, const char *op="", bool noOriginal=true);
