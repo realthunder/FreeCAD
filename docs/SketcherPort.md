@@ -6,9 +6,12 @@ the external faces (with element history through `Part::HLRProjector`),
 the symmetric and projected-circle picks, and the Gui-coupled App features
 (fillet on a crossed vertex, carbon copy of a scripted sketch, scale keeps
 geometry ids, sketch autoscale) are in (section 6a). Of the listed features,
-datums projection and defining externals were already here, and copy/paste
-of groups waits for the groups feature. The remaining open App rows
-were marked n/a in bulk (section 6a); phase 3 (Gui) is next.
+datums projection and defining externals were already here. The remaining
+open App rows were marked n/a in bulk (section 6a).
+
+**The groups and Text feature family is done** (section 6b): geometry
+groups, the group command, group dragging, the Text tool and copy/paste of
+groups. Phase 3 (Gui) is next.
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
@@ -32,6 +35,9 @@ upstream commit, with a `decision` column filled in as picks land.
    (new geometry type, fonts, persistence) and the context-aware hints
    framework (needs upstream's core input-hint machinery) -- are deferred and
    decided separately.
+   **Superseded for the Text tool** by the ruling of 2026-09-17: take the
+   groups and Text family whole (section 6b). The hints framework stays
+   deferred.
 
 ## 2. How far apart the two sides are
 
@@ -790,6 +796,130 @@ All correct. The fork already moves a planar edge onto a parallel sketch plane
 instead of projecting it -- the OCC failure `0921ed2969` works around -- and
 adds a retry for OCC 7.7's projection. The three rows are marked `have`. The one
 real gap found on the way is face selection, above.
+
+## 6b. Phase 4: the groups and Text feature family
+
+Taken on the user's ruling of 2026-09-17, which overrides the deferral in
+section 1 item 4. Eleven commits, `915703db1c..67c4419033`.
+
+### What a group is
+
+A `Group` constraint binds a set of geometries to a construction line, the
+first element of the constraint, which is the group's handle. The solver
+leaves the members out of the system and disables every constraint on them;
+after each solve it applies the handle's own translation, rotation and scale
+to them, so the group moves as one rigid body and is positioned and sized by
+constraining the handle. A `Text` constraint is a group whose members are the
+curves of a rendered string, with the string, the font name and whether the
+handle gives the height or the width carried in the constraint's metadata.
+
+The whole solver side arrived with the phase-1 take: `Sketch.cpp` is
+byte-identical to upstream for groups, including `captureGroupStates` and
+`applyGroupTransformations`, and so is `Constraint.*` with its `Group` and
+`Text` enum values and text accessors. `Part::makeTextWires` and
+`Part::transformAndConvertToGeometry` were already here from the Part
+geometry port. What was missing was everything above them.
+
+### The picks
+
+| commit | what |
+|---|---|
+| `915703db1c` | App: `isInGroup`, `isGroupHandle`, `getGroupHandleIfInGroup`, `getGroupGeometries`, and the multi-element move `moveGeometries` with its temporary-drag pair, in Python too |
+| `9425073eda` | a group is drawn as a dashed box round its members |
+| `f2968b34f2` | dragging moves every selected geometry, and a group through its handle |
+| `23fdf17d92` | `Sketcher_ConstrainGroup`, and `addListConstraint`, shared with the Text tool |
+| `3e275d5e8d` | a constraint on grouped geometry is shown inactive |
+| `4aed4d4941` | the elements list shows a group by its handle and hides its members |
+| `36dafcc2da` | a member's vertices carry no marker; its edge takes the handle's colour |
+| `fa18b2a096` | a constraint with fewer than three elements can be saved |
+| `5a085a3bd0` | App: `setTextAndFont`, with `TestSketcherText.py` |
+| `5de405b45b` | the tool widget gains line edits |
+| `cd3fa731c3` | the Text tool: handler, dialog, command, icons, panels |
+| `67c4419033` | copy and paste of groups |
+
+### Upstream defects not carried over
+
+- `setTextAndFont` puts the old text and font back on the constraint when the
+  solve **succeeds**, which reverts what the caller just set for a text that
+  has no geometry yet. It also leaks the constraint it builds, since
+  `addConstraint` clones, and `release()`s the geometry it generated although
+  `addGeometry` copies.
+- `Constraint::Save` asks `getElement` for indices 0 to 2 to write the legacy
+  `First`/`Second`/`Third` attributes. A Group or Text constraint can hold
+  fewer, and `getElement` throws. This is not only a failed save:
+  `Property::isSameContent` serialises to compare, so the throw came out of
+  `hasSetValue` on any write to the constraint list.
+- The escape path of the drag refactor calls `commitDragMove` with the initial
+  position, which for a non-relative drag is an absolute move to the origin.
+  `cancelDragMove` here does a relative move of zero, as the old code did.
+- `initDragging` tests the **preselected** geometry for internal alignment
+  instead of the selected one, and drags a group's handle once per selected
+  member.
+- The clipboard renumbering walks the selection and rewrites element ids in
+  place, so a geometry whose id equals another's new index is renumbered twice.
+
+### Fork adaptations
+
+- Upstream's `EditModeGeometryCoinConverter`, `EditModeGeometryCoinManager`
+  and `EditModeConstraintCoinManager` are not compiled here (section 1 item
+  3), so their three group changes went into the monolithic
+  `ViewProviderSketch`: the dashed box in `rebuildConstraintsVisual` and
+  `draw`, the member colouring in `updateColor`, and the hidden vertices as
+  one marker index per point with `SoMarkerSet::NONE` for a member's, rather
+  than leaving those points out of the Coin maps while building them.
+- The elements panel is the fork's own `QTreeWidget` version, so upstream's
+  diff does not apply at all; the group labelling, the hidden members and the
+  "convert to geometry" action are written against it. It follows the view
+  provider's constraints-changed signal as well, because the sketch object's
+  elements-changed signal is not raised for constraints here, and it rebuilds
+  only when the set of handles and members differs from what it was built for.
+- The Text handler drops upstream's input-hint table, which needs core
+  machinery the fork does not have, seeks and renders auto constraints in the
+  fork's two steps, and uses `doChangeDrawSketchHandlerMode` and the `isSet`
+  flag of an on-view parameter.
+- The tool widget's new `WidgetLineEdits` template parameter sits where
+  upstream puts it, so upstream's own handler changes go on applying; all
+  fourteen handlers name it as `WidgetLineEdits<0, ...>`.
+- Filter values `Group` and `Text` are inserted at 12 and 13 as upstream has
+  them, which shifts the ones above `Block`. A saved multi-filter selection
+  comes back shifted by two once.
+- The Text tool takes no shortcut: "G, T" is Trim Edge's (upstream
+  `99c2f19dfc`).
+
+### Not part of this family
+
+`19a082b63c` and `6d5800c862` say "groups" in their subjects but are about
+**combined constraint icons**, several constraint icons drawn in one box, not
+about sketch groups. `19a082b63c` rewrites `detectPreselectionConstr` to find
+the picked icon among all the separator's children instead of assuming two,
+and `6d5800c862` adds the bounds check that rewrite needs. The fork's own
+`detectPreselectionConstr` already bounds-checks the second icon but keeps the
+two-icon assumption, so the "more than two icons in one box picks the wrong
+constraint" half is still open. Phase 3.
+
+`83d91d61c6` and `69930bc58d` are about command groups in the toolbar, not
+sketch groups. `c13ea2fa6d` fixes a typo in a menu string this fork words
+differently.
+
+### Verified
+
+Build OK; ctest 762/762; Python 2883 OK (50 skipped, 6 expected failures);
+`Sketcher_tests_run` 113; `TestSketcherApp` 109.
+
+GUI probes under Xvfb, all passing: entering and leaving edit on a sketch
+with a group; the group command over three edges, with the handle placed on
+the bounding box and the members following the handle; the elements list
+hiding the members and naming the handle "Group"; the marker indices going to
+`-1` for exactly the four vertices of two grouped lines; the Text tool
+activating with its text field and 49 fonts found; the Text constraint hidden
+from the constraints list; copying a lone handle taking all three lines and
+pasting them as a second group.
+
+**Not covered by a probe:** the interactive drag itself. Synthetic mouse
+events produce no preselection in this harness, and the sketch's edit scene
+graph hangs on the viewer's aux root rather than the view provider, so a
+drag cannot be driven from a script. The drag was exercised at the level
+below it instead, through `moveGeometries` on the handle.
 
 ## 7. Phases
 
