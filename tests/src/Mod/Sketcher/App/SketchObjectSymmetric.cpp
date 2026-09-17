@@ -43,7 +43,7 @@ TEST_F(SketchObjectTest, testAddSymmetricWithConstraintsAddsSymmetric)
 }
 
 // Pending upstream e1a431d5ee 14280cdbf7 bc3c0dc19a 451072f0d7 28f5e823d3: addSymmetric rework.
-TEST_F(SketchObjectTest, DISABLED_testAddSymmetricPreservesCoincidentTopology)
+TEST_F(SketchObjectTest, testAddSymmetricPreservesCoincidentTopology)
 {
     // Two connected lines mirrored with constraints should preserve the Coincident connecting
     // the mirrored copies (topological constraint preservation).
@@ -71,7 +71,7 @@ TEST_F(SketchObjectTest, DISABLED_testAddSymmetricPreservesCoincidentTopology)
 }
 
 // Pending upstream e1a431d5ee 14280cdbf7 bc3c0dc19a 451072f0d7 28f5e823d3: addSymmetric rework.
-TEST_F(SketchObjectTest, DISABLED_testAddSymmetricDowngradesTangentToCoincident)
+TEST_F(SketchObjectTest, testAddSymmetricDowngradesTangentToCoincident)
 {
     // Endpoint-to-endpoint Tangent between mirrored geometries would overconstrain (angle is
     // determined by the Symmetric constraints). These are downgraded to Coincident.
@@ -103,7 +103,7 @@ TEST_F(SketchObjectTest, DISABLED_testAddSymmetricDowngradesTangentToCoincident)
 }
 
 // Pending upstream e1a431d5ee 14280cdbf7 bc3c0dc19a 451072f0d7 28f5e823d3: addSymmetric rework.
-TEST_F(SketchObjectTest, DISABLED_testAddSymmetricOnAxisPointGetsCoincident)
+TEST_F(SketchObjectTest, testAddSymmetricOnAxisPointGetsCoincident)
 {
     // When a point lies exactly on the symmetry axis, addSymmetric should create a Coincident
     // (not Symmetric) to avoid solver singularity.
@@ -119,7 +119,7 @@ TEST_F(SketchObjectTest, DISABLED_testAddSymmetricOnAxisPointGetsCoincident)
 }
 
 // Pending upstream e1a431d5ee 14280cdbf7 bc3c0dc19a 451072f0d7 28f5e823d3: addSymmetric rework.
-TEST_F(SketchObjectTest, DISABLED_testAddSymmetricOnAxisPointWithLineRef)
+TEST_F(SketchObjectTest, testAddSymmetricOnAxisPointWithLineRef)
 {
     // Mirror across a user-drawn line with a point sitting exactly on that line.
     Part::GeomLineSegment refLine;
@@ -138,7 +138,7 @@ TEST_F(SketchObjectTest, DISABLED_testAddSymmetricOnAxisPointWithLineRef)
 }
 
 // Pending upstream e1a431d5ee 14280cdbf7 bc3c0dc19a 451072f0d7 28f5e823d3: addSymmetric rework.
-TEST_F(SketchObjectTest, DISABLED_testAddSymmetricSharedVertexNoDuplicateConstraints)
+TEST_F(SketchObjectTest, testAddSymmetricSharedVertexNoDuplicateConstraints)
 {
     // Two lines sharing a vertex: the shared point should only get one Symmetric constraint,
     // not two (deduplication via coincidence groups).
@@ -180,7 +180,7 @@ TEST_F(SketchObjectTest, testAddSymmetricPointSymmetry)
 }
 
 // Pending upstream e1a431d5ee 14280cdbf7 bc3c0dc19a 451072f0d7 28f5e823d3: addSymmetric rework.
-TEST_F(SketchObjectTest, DISABLED_testAddSymmetricPointSymmetryOnPoint)
+TEST_F(SketchObjectTest, testAddSymmetricPointSymmetryOnPoint)
 {
     // Mirror across the origin when a point is at the origin.
     Part::GeomLineSegment line;

@@ -167,9 +167,11 @@ fix.
   | 2024-05 validate/degenerate cases | `detectDegeneratedGeometries`, `evaluateConstraints` bindings; delete constraints to external | 3 in `TestSketchValidateCoincidents` |
 - **C++: ported with the trim/split take** (`9b75379eb1`): upstream's
   `tests/src/Mod/Sketcher` is a superset of the fork's 18 tests, 107 tests.
-  99 pass; 8 are `DISABLED_` with a `// Pending upstream <hash>` comment, the
+  99 pass; 8 were `DISABLED_` with a `// Pending upstream <hash>` comment, the
   C++ counterpart of the Python markers (see "Trim, split and internal
-  geometry" in 6a).
+  geometry" in 6a). As of 2026-09-17 one is left
+  (`testReverseAngleConstraintToSupplementaryExpressionFunction`, the phase 3
+  angle cluster); the six symmetric ones came on with `addSymmetric` below.
 - **Python, Gui** (`TestOnViewParameterGui`, preselection, constraint
   commands): written against `EditModeCoinManager` behaviour; evaluate one by
   one in phase 3.
@@ -653,6 +655,21 @@ PartDesign TNP test whose volume upstream changed with this commit
 **Verified.** Full build OK; ctest 748/748; Python 2854 OK (50 skipped, 6
 expected failures, 3 fewer); `TestSketcherApp` 97 OK (+2 tests, no expected
 failures left); `Sketcher_tests_run` 99 passed, 8 disabled.
+
+### Symmetric copies with constraints (upstream `28f5e823d3`, taken whole)
+
+Upstream's `addSymmetric` at its tip replaces the fork's (which had the
+name-clearing, the arc perturbation and the signed-orientation reset
+already). With the "add symmetric constraints" option it now copies only
+the topological constraints (Coincident, and endpoint-to-endpoint Tangent
+or Perpendicular, which it downgrades to Coincident since the symmetries
+lock the angle), stitches a point that lies on the mirror line or point
+with a Coincident instead of a singular Symmetric, and gives a shared
+vertex one symmetry constraint through the coincidence groups instead of
+one per edge. It also carries `e1a431d5ee` (element access through
+`getElement`/`setElement`) and `14280cdbf7`. The six `DISABLED_` gtests
+in `SketchObjectSymmetric.cpp` are on and pass (110/110); the Python
+suite is unchanged (103 OK).
 
 ### External projection: probed, nothing to take
 
