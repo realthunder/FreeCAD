@@ -2635,6 +2635,39 @@ PyObject* SketchObjectPy::setGeometryId(PyObject* args)
     Py_Return;
 }
 
+PyObject* SketchObjectPy::setGeometryIds(PyObject* args)
+{
+    PyObject* pyList;
+    if (!PyArg_ParseTuple(args, "O!", &PyList_Type, &pyList)) {
+        return nullptr;
+    }
+
+    std::vector<std::pair<int, long>> geoIdsToIds;
+    Py_ssize_t listSize = PyList_Size(pyList);
+    for (Py_ssize_t i = 0; i < listSize; ++i) {
+        PyObject* pyPair = PyList_GetItem(pyList, i);  // borrowed
+        if (!PyTuple_Check(pyPair) || PyTuple_Size(pyPair) != 2) {
+            PyErr_SetString(PyExc_ValueError, "List must contain pairs (geoId, id).");
+            return nullptr;
+        }
+        int geoId = PyLong_AsLong(PyTuple_GetItem(pyPair, 0));
+        long id = PyLong_AsLong(PyTuple_GetItem(pyPair, 1));
+        if (PyErr_Occurred()) {
+            PyErr_SetString(PyExc_ValueError, "Invalid geoId or id in the list.");
+            return nullptr;
+        }
+        geoIdsToIds.emplace_back(geoId, id);
+    }
+
+    if (this->getSketchObjectPtr()->setGeometryIds(geoIdsToIds)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "Not able to set geometry Ids of geometries with the given indices");
+        return nullptr;
+    }
+
+    Py_Return;
+}
+
 Py::Long SketchObjectPy::getDoF() const
 {
     auto dofs = this->getSketchObjectPtr()->getLastDoF();
