@@ -925,3 +925,57 @@ TEST_F(SketchObjectTest, testMoveGeometries)
     EXPECT_EQ(getObject()->getPoint(geoId, Sketcher::PointPos::end),
               Base::Vector3d(13.0, 4.0, 0.0));
 }
+
+// The solver ignores constraints whose geometry is inside a group, so the UI shows them
+// as inactive even when the user has not deactivated them.
+TEST_F(SketchObjectTest, testConstraintActiveInSketch)
+{
+    // Arrange
+    auto addLine = [this](Base::Vector3d p1, Base::Vector3d p2, bool construction) {
+        Part::GeomLineSegment line;
+        line.setPoints(p1, p2);
+        return getObject()->addGeometry(&line, construction);
+    };
+    int handle = addLine(Base::Vector3d(0.0, 0.0, 0.0), Base::Vector3d(0.0, 1.0, 0.0), true);
+    int member = addLine(Base::Vector3d(0.0, 0.0, 0.0), Base::Vector3d(1.0, 0.0, 0.0), false);
+    int member2 = addLine(Base::Vector3d(1.0, 0.0, 0.0), Base::Vector3d(1.0, 1.0, 0.0), false);
+    int loner = addLine(Base::Vector3d(5.0, 5.0, 0.0), Base::Vector3d(6.0, 5.0, 0.0), false);
+
+    auto onMember = std::make_unique<Sketcher::Constraint>();
+    onMember->Type = Sketcher::Horizontal;
+    onMember->First = member;
+    auto onLoner = std::make_unique<Sketcher::Constraint>();
+    onLoner->Type = Sketcher::Horizontal;
+    onLoner->First = loner;
+    auto deactivated = std::make_unique<Sketcher::Constraint>();
+    deactivated->Type = Sketcher::Horizontal;
+    deactivated->First = loner;
+    deactivated->isActive = false;
+
+    auto group = std::make_unique<Sketcher::Constraint>();
+    group->Type = Sketcher::Group;
+    group->setElement(0, Sketcher::GeoElementId(handle));
+    group->setElement(1, Sketcher::GeoElementId(member));
+    group->setElement(2, Sketcher::GeoElementId(member2));
+
+    const Sketcher::Constraint* onMemberPtr = onMember.get();
+    const Sketcher::Constraint* onLonerPtr = onLoner.get();
+    const Sketcher::Constraint* deactivatedPtr = deactivated.get();
+    const Sketcher::Constraint* groupPtr = group.get();
+
+    getObject()->addConstraint(std::move(onMember));
+    getObject()->addConstraint(std::move(onLoner));
+    getObject()->addConstraint(std::move(deactivated));
+
+    // Act & Assert: before the group, every active constraint counts
+    EXPECT_TRUE(getObject()->isConstraintActiveInSketch(onMemberPtr));
+    EXPECT_TRUE(getObject()->isConstraintActiveInSketch(onLonerPtr));
+    EXPECT_FALSE(getObject()->isConstraintActiveInSketch(deactivatedPtr));
+
+    getObject()->addConstraint(std::move(group));
+
+    EXPECT_FALSE(getObject()->isConstraintActiveInSketch(onMemberPtr));
+    EXPECT_TRUE(getObject()->isConstraintActiveInSketch(onLonerPtr));
+    EXPECT_TRUE(getObject()->isConstraintActiveInSketch(groupPtr));
+    EXPECT_FALSE(getObject()->isConstraintActiveInSketch(nullptr));
+}

@@ -348,6 +348,9 @@ public:
     int setActive(int ConstrId, bool isactive);
     /// get the driving status of this constraint
     int getActive(int ConstrId, bool& isactive);
+    /// is this constraint enforced by the solver? a constraint on geometry inside a group
+    /// is not, whether or not the user deactivated it
+    bool isConstraintActiveInSketch(const Sketcher::Constraint* cstr) const;
     /// toggle the driving status of this constraint
     int toggleActive(int ConstrId);
 

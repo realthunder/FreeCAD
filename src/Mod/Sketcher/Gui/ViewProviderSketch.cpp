@@ -3745,7 +3745,7 @@ void ViewProviderSketch::updateColor(void)
             if (hasDatumLabel) {
                 Gui::SoDatumLabel *l = static_cast<Gui::SoDatumLabel *>(s->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL));
 
-                l->textColor = constraint->isActive ?
+                l->textColor = getSketchObject()->isConstraintActiveInSketch(constraint) ?
                                     (getSketchObject()->constraintHasExpression(i) ?
                                         ExprBasedConstrDimColor
                                         :(constraint->isDriving ?
@@ -3754,7 +3754,7 @@ void ViewProviderSketch::updateColor(void)
                                     :DeactivatedConstrDimColor;
 
             } else if (hasMaterial) {
-                m->diffuseColor = constraint->isActive ?
+                m->diffuseColor = getSketchObject()->isConstraintActiveInSketch(constraint) ?
                                     (constraint->isDriving ?
                                         ConstrDimColor
                                         :NonDrivingConstrDimColor)
@@ -4032,7 +4032,7 @@ QColor ViewProviderSketch::constrColor(int constraintId)
         return constrIconPreselColor;
     else if (edit->SelConstraintSet.find(constraintId) != edit->SelConstraintSet.end())
         return constrIconSelColor;
-    else if(!constraints[constraintId]->isActive)
+    else if(!getSketchObject()->isConstraintActiveInSketch(constraints[constraintId]))
         return constrIconDisabledColor;
     else if(!constraints[constraintId]->isDriving)
         return nonDrivingConstrIcoColor;
@@ -7045,7 +7045,7 @@ void ViewProviderSketch::rebuildConstraintsVisual(void)
         // every constrained visual node gets its own material for preselection and selection
         SoMaterial *mat = new SoMaterial;
         mat->ref();
-        mat->diffuseColor = (*it)->isActive ?
+        mat->diffuseColor = getSketchObject()->isConstraintActiveInSketch(*it) ?
                                 ((*it)->isDriving ?
                                     ConstrDimColor
                                     :NonDrivingConstrDimColor)
@@ -7075,7 +7075,7 @@ void ViewProviderSketch::rebuildConstraintsVisual(void)
                 Gui::SoDatumLabel *text = new Gui::SoDatumLabel();
                 text->norm.setValue(norm);
                 text->string = "";
-                text->textColor = (*it)->isActive ?
+                text->textColor = getSketchObject()->isConstraintActiveInSketch(*it) ?
                                         ((*it)->isDriving ?
                                             ConstrDimColor
                                             :NonDrivingConstrDimColor)
