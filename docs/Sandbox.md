@@ -113,7 +113,7 @@ pieces are frozen, not extended.**
                                                  RTT, and a prefetch of sibling reads makes a
                                                  loop a few ops (50 objects at 100 ms: 5.4 s ->
                                                  0.42 s); the guest is +185 MB PSS in the page
-    host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
+    host file / code chokepoints     BUILT       7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
     rungs 1-4 of the ladder          designed    sec 1.3
@@ -504,8 +504,8 @@ in dependency order; sizes are the sizings' where one exists.
                                                                        closes the GuiUp cost list of sec 13
     G4c the residue                       7.16    measured after a, b  Draft_Edit's pick, host-node field
                                                                        writes, whatever the corpus hits next
-    F1 the file and code chokepoints      7.14    an afternoon to a    a SESSION or ADDON guest stops
-                                                  day                  reaching host files and host Python
+    F1 the file and code chokepoints      7.29    BUILT 2026-09-17     a SESSION or ADDON guest stops
+                                                  (proven in C++)      reaching host files and host Python
                                                                        through Gui.runCommand (Std_Recent*,
                                                                        Std_DlgMacroExecuteDirect);
                                                                        mergeProject, importIFC.insert(path)
@@ -633,7 +633,7 @@ across the board.
     fs.write:<path>   DENY (np)  PROMPT    PROMPT  (Gui::Application::open/importFrom/exportTo,
     host.exec:<path>  DENY (np)  PROMPT    PROMPT  openDocument, saveAs, MacroManager::run,
                                                    Interpreter::runFile), a picker-blessed path
-                                                   passing; designed (7.14), not in the enum yet
+                                                   passing; BUILT 2026-09-17 (7.29)
     net.*             --         --        --      designed (sec 6), not in the enum yet
 
 The one deliberate compatibility break: `unsafe.getattr` (the
@@ -4035,7 +4035,7 @@ where it departs from the sizing above:
   loader that hooks `addCommand` around the import records nothing
   unless it `importlib.reload`s the module.
 
-### 7.14 Host commands from the guest sized: the file and code chokepoints **[sized 2026-09-07]**
+### 7.14 Host commands from the guest sized: the file and code chokepoints **[sized 2026-09-07; BUILT 2026-09-17, see 7.29]**
 
 The question, asked after S2 ("shall we fine grain control doCommand?
 there are commands allow file access" -- then "that's the same trap as
@@ -9193,6 +9193,115 @@ expected (8 failures in `TestArchComponent`).  Those are guest-behaviour
 regressions of BIM in the guest -- as is Draft's `test_hatch` in the
 full run -- and belong to the corpus gate (8.2), not to a fallback.
 
+### 7.29 F1 built: the host file and code chokepoints **[BUILT and PROVEN 2026-09-17; the guest-driven gate cases blocked on a bridge defect found doing it]**
+
+Sized in 7.14, built here.  The rows are in the enum, the checks are in
+the primitives, and the blessed-path set moved down a layer so they hold
+in a build with no sandbox image host at all.
+
+**The catalog** (`ExpressionSecurity.h`/`.cpp`), the path as the target:
+
+    fs.read:<path>    DENY (np)  PROMPT  PROMPT  a host file read by path
+    fs.write:<path>   DENY (np)  PROMPT  PROMPT  saveAs / saveCopy / exportTo
+    host.exec:<path>  DENY (np)  PROMPT  PROMPT  host Python run from a file
+
+DENY and not promptable for a document -- a file's own code never reads,
+overwrites or runs another host file, and no prompt offers to let it.
+PROMPT for the session and ALSO for an addon: the second exception to
+the addon's blanket ALLOW (`gui.doCommand` was the first), because an
+addon is trusted to drive the GUI, not to read, overwrite or run an
+arbitrary host file without the user seeing which one.  DENY for a
+remote client, which is not offered the row at all.
+
+**The chokepoints, each inside the primitive, never at a command name:**
+
+    primitive                                      row
+    ---------------------------------------------  ---------
+    App::Application::openDocumentPrivate          fs.read
+      (openDocument, openDocuments, loadFile and
+       a link's addPendingDocument all funnel
+       here; the check comes BEFORE the existence
+       test, which is itself an answer about the
+       host's disk)
+    Gui::Application::open / importFrom            fs.read
+    Gui::Application::exportTo                     fs.write
+    App::Document::saveAs / saveCopy               fs.write
+    Gui::MacroManager::run                         host.exec
+    Gui::PythonDebugger::runFile                   host.exec
+      (its own PyRun_File: the guard below never
+       sees it)
+    Base::Interpreter::runFile                     host.exec
+
+`runString` is deliberately NOT gated, as 7.14 ruled: host C++ composes
+Python and runs it there (every `doCommand`), so gating it would refuse
+everything.  Caller-chosen content arrives as a FILE, and that is the
+seam.  `save()` stays the guest's to call -- it writes the document's
+own file (S1); `saveAs` names a new one, so it is gated.
+
+**Base takes the check as a callback.**  Base cannot see App's
+permission runtime, so `InterpreterSingleton::setFileGuard` holds a
+guard that `Application::initApplication` installs.  With no principal
+active -- the user's own click, every startup script -- it decides
+nothing and `runFile` behaves exactly as it always did.
+
+**Two things had to move.**  The picker-blessed set (S1) lived in
+`ExpressionImageBridge.cpp`, which is compiled only with
+`BUILD_EXPR_IMAGE_HOST`; the chokepoints are in the core and must hold
+without it, so the set now lives in `ExpressionSecurity.cpp` and the
+guest-facing `ExpressionSandbox::blessPath` / `pathBlessed` /
+`clearBlessedPaths` forward to it.  And every target is normalized
+(`normalizeHostPath`: absolute, `.` and `..` and symlinks resolved, no
+trailing separator, `weakly_canonical` so a file being SAVED to
+normalizes before it exists), so an answer is keyed to the FILE rather
+than to whichever spelling reached the primitive.
+
+**Consent stays a capability, as S1 ruled.**  `Gui::FileDialog` blesses
+what it returns while a scope is active: `checkDocumentXML` is the one
+post-accept funnel of `getSaveFileName`, `getOpenFileName` and
+`getOpenFileNames`, and `getExistingDirectory` blesses separately.  So
+`Std_Open` driven from a guest opens the file the user just chose in
+that nested modal, while `Std_RecentFiles`, which has no picker, blessed
+nothing and is refused.
+
+**Proven.**  `ExpressionSecurityRuntimeTest` 16/16 (six new cases): the
+normalization, the blessed set keyed to the file rather than the
+spelling, all three rows DENY and not promptable under a document scope
+with the normalized path as the refusal's target, a blessed path passing
+with no grant while a made-up one does not, `saveAs` refused at the
+primitive with nothing written, and the `runFile` guard seam.  45/45
+across the security and import suites (`ExpressionSecurity`,
+`ExpressionSecurityRuntime`, `ProxyImport`, `TypeImport`), and
+`ExpressionImage*` 75/75 -- the guest suites are undisturbed.  The audit
+lines name the principal and the path:
+
+    {"decision":"prompt","permission":"fs.read","principal":"session",
+     "target":"/tmp/fcx-hostfiles-.../target.FCStd"}
+    {"decision":"prompt","permission":"host.exec","principal":"session",
+     "target":"/tmp/fcx-hostfiles-.../fcx_hostfiles.FCMacro"}
+
+**The defect found doing it, NOT fixed here.**  A host command that
+THROWS while it runs through the guest's `gui.cmd.run` wedges the guest:
+the call never comes back and the run sits until something kills it.
+Reproduced twice over -- with the refusal converted to a reply at the op
+(`runCommandByName` now catches and answers `PermissionError`, kept
+because it is right either way), and with the session's decision
+pre-answered as a DENY -- so it is neither an unconverted exception nor
+the prompt path, but the reentrancy itself: host -> the guest's
+`Activated` -> a host op -> a host command.  Nothing made a Std command
+throw there until F1 did, which is why it surfaced now.  `gdb` cannot
+attach on this box (`yama/ptrace_scope` is 1), so the blocking frame is
+not yet named; launching FreeCAD under gdb is the next step.
+
+Gate `SandboxHostFiles` (6 cases) therefore reads `RESULT OK` with 2
+run and 4 skipped: the document-principal denial and "host code is
+ungated" pass, and the four guest-driven cases stay written, and
+skipped, for when the bridge defect is fixed.  Two test-side traps are
+recorded in the file: a modal watchdog that truth-tested whatever widget
+was modal segfaulted the process inside shiboken's import hook, and
+`FreeCADGui.sendHasMsgToActiveView` has no Python binding at all
+(sending "Run" instead would run the macro as HOST code and quietly
+invert the case).
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -9436,8 +9545,12 @@ and nothing on the wire unless a value changed.
 
     file                                          cases   covers
     --------------------------------------------  -----   ----------------------------------
-    tests/src/App/ExpressionSecurity.cpp            11    catalog, hash, grant store
-    tests/src/App/ExpressionSecurityRuntime.cpp      9    resolve, scopes, pending, audit
+    tests/src/App/ExpressionSecurity.cpp            12    catalog, hash, grant store
+    tests/src/App/ExpressionSecurityRuntime.cpp     16    resolve, scopes, pending, audit;
+                                                          the F1 chokepoints (7.29): path
+                                                          normalization, the blessed set,
+                                                          the three rows under a document
+                                                          scope, saveAs, the runFile guard
     tests/src/App/ExpressionImageHost.cpp           81    programs 5 (7.17 D1: function
                                                           objects routed = native, the
                                                           flange, the surface stamp and
@@ -9500,6 +9613,15 @@ and nothing on the wire unless a value changed.
                                                           a document refused), Draft_Upgrade's
                                                           commit and Arch_Site through
                                                           doCommand; the same gate script
+    src/Mod/Test/SandboxHostFiles.py                 6    F1 (7.29): a document principal
+                                                          denied all three rows, host code
+                                                          ungated; the four guest-driven
+                                                          cases (Std_DlgMacroExecuteDirect,
+                                                          Std_RecentFiles, Std_Open blessed,
+                                                          a granted macro) are written and
+                                                          SKIPPED on the gui.cmd.run
+                                                          reentrancy defect; the same gate
+                                                          script
     src/Mod/Test/SandboxDraftGui.py                  3    G3c: Draft's DraftGui.py in the
                                                           guest -- the tray tool bar, the
                                                           panel built in code, a point
@@ -9912,8 +10034,8 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    manipulator; both `Activated()`s run to their end; gate
    `SandboxInitGui` 7/7).  NEXT (ruled 2026-09-07): G4 -- SIZED
    2026-09-07 (7.16), its scope put to the user -- then F1.
-   **F1 -- the file and code chokepoints** (7.14, SIZED 2026-09-07, not
-   built): `fs.read` / `fs.write` / `host.exec` checked inside the
+   **F1 -- the file and code chokepoints** (7.14, BUILT 2026-09-17 as
+   7.29): `fs.read` / `fs.write` / `host.exec` checked inside the
    core's file and `runFile` primitives under the guest's scope, the
    host's own file dialog blessing the paths it returns; closes the one
    host-execution path a guest has (`Gui.runCommand("Std_RecentMacros")`
@@ -10429,11 +10551,21 @@ sockets, any network for the reference image, a webview escape hatch.
   (BimSelect's observer stands down), `FreeCAD.isRestoring()` always
   False in the guest.
 - **`Gui.runCommand` from a guest runs any host command under `gui`**
-  (7.14, sized): `Std_RecentMacros`, `Std_RecentFiles` and
-  `Std_DlgMacroExecuteDirect` run a file or open one with no picker,
-  so a session or an addon reaches host Python and host files by name.
-  A document principal cannot (`gui` DENY, not promptable).  The answer
-  is F1, the chokepoints at the primitives, not a list of names.
+  (7.14; CLOSED 2026-09-17 by F1, 7.29): `Std_RecentMacros`,
+  `Std_RecentFiles` and `Std_DlgMacroExecuteDirect` run a file or open
+  one with no picker, so a session or an addon reached host Python and
+  host files by name.  A document principal never could (`gui` DENY,
+  not promptable).  The answer was F1, the chokepoints at the
+  primitives, not a list of names.
+- **A host command that THROWS under `gui.cmd.run` wedges the guest**
+  (found building F1, 7.29; OPEN): the call never returns.  Not the
+  refusal's conversion (the op answers `PermissionError` now) and not
+  the prompt path (reproduced with the decision pre-answered as a
+  deny), but the reentrancy itself -- host -> the guest's `Activated`
+  -> a host op -> a host command.  Nothing made a Std command throw
+  there until F1 did.  `gdb` cannot attach on this box
+  (`yama/ptrace_scope` is 1); running FreeCAD under gdb names the
+  blocking frame and is the next step.
 - **A guest view provider's scene is G4's** (7.13, S2 built note;
   G4 sized 2026-09-07 in 7.16):
   `Arch.makeSite()` from the guest builds `_ViewProviderSite` in the

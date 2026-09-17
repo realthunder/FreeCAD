@@ -72,7 +72,8 @@ class _EagerResult(unittest.TextTestResult):
 
 def main():
     default_modules = ("SandboxGui,SandboxWidgets,SandboxForms,SandboxNative,SandboxPanels,"
-                       "SandboxDraftGui,SandboxSelection,SandboxSessionDoc,SandboxProxyImport,"
+                       "SandboxDraftGui,SandboxSelection,SandboxSessionDoc,SandboxHostFiles,"
+                       "SandboxProxyImport,"
                        "ViewProviderHooks,ViewProviderChain,"
                        "SandboxCorpusGui,SandboxInitGui,SandboxToolBarMirror,"
                        "SandboxPanelMirror")

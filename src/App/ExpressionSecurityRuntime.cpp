@@ -789,6 +789,24 @@ void auditAllowed(Permission perm, const std::string &target, const std::string 
     Runtime::instance().auditAllowed(perm, target, context);
 }
 
+void checkHostPath(Permission perm, const std::string &path)
+{
+    // Host code outside any evaluation is trusted (2.4): the user's own
+    // click on Std_RecentMacros, a startup script, an addon's install-time
+    // work.  check() would return here anyway; doing it first keeps the
+    // normalization (a stat per call) off the native path entirely.
+    if (!Runtime::scopeActive())
+        return;
+    const std::string target = normalizeHostPath(path);
+    // Consent is a capability, not a list (S1): a picker-driven command
+    // runs its modal INSIDE the guest's scope, so the path the user just
+    // chose there is theirs to hand back -- refusing it would refuse
+    // Std_Open from a guest.  A command with no picker blessed nothing.
+    if (!target.empty() && pathBlessed(target))
+        return;
+    checkPermission(perm, target.empty() ? std::string("*") : target);
+}
+
 // Ring-0 module roots: in-image in the final design, no permission attached
 // (docs/ExpressionSandboxPhase0.md sec 6.1).
 static bool isRing0Module(const std::string &root)

@@ -487,27 +487,25 @@ bool documentReachable(const HandleTable& table, App::Document* doc)
 }
 
 // ---- the picker-blessed paths (S1) ----
-
-static std::set<std::string>& blessedPaths()
-{
-    static std::set<std::string> paths;
-    return paths;
-}
+//
+// The set itself moved to ExpressionSecurity (docs/Sandbox.md 7.29): the
+// chokepoints that consult it are in the core's file primitives, which
+// are built whether or not this file is.  These three stay as the name
+// the guest-facing code has always called.
 
 void blessPath(const std::string& path)
 {
-    if (!path.empty())
-        blessedPaths().insert(path);
+    ExpressionSecurity::blessPath(path);
 }
 
 bool pathBlessed(const std::string& path)
 {
-    return blessedPaths().count(path) != 0;
+    return ExpressionSecurity::pathBlessed(path);
 }
 
 void clearBlessedPaths()
 {
-    blessedPaths().clear();
+    ExpressionSecurity::clearBlessedPaths();
 }
 
 /// The durable key a handle to `obj` carries ("k"): [document, name]

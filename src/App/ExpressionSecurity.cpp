@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -60,6 +61,9 @@ const char *permissionName(Permission perm)
     case Permission::HostImport:    return "host.import";
     case Permission::UnsafeGetattr: return "unsafe.getattr";
     case Permission::PkgInstall:    return "pkg.install";
+    case Permission::FsRead:        return "fs.read";
+    case Permission::FsWrite:       return "fs.write";
+    case Permission::HostExec:      return "host.exec";
     }
     return "";
 }
@@ -90,6 +94,9 @@ std::optional<Permission> permissionFromName(const std::string &name, std::strin
         {"host.import",    Permission::HostImport},
         {"unsafe.getattr", Permission::UnsafeGetattr},
         {"pkg.install",    Permission::PkgInstall},
+        {"fs.read",        Permission::FsRead},
+        {"fs.write",       Permission::FsWrite},
+        {"host.exec",      Permission::HostExec},
     };
     std::string base = name;
     std::string module;
@@ -100,9 +107,13 @@ std::optional<Permission> permissionFromName(const std::string &name, std::strin
     }
     for (auto &entry : table) {
         if (base == entry.first) {
-            // Only host.import and pkg.install are parameterized.
+            // The parameterized rows: host.import and pkg.install carry a
+            // module or package, the three chokepoint rows carry a path.
             if (!module.empty() && entry.second != Permission::HostImport
-                    && entry.second != Permission::PkgInstall)
+                    && entry.second != Permission::PkgInstall
+                    && entry.second != Permission::FsRead
+                    && entry.second != Permission::FsWrite
+                    && entry.second != Permission::HostExec)
                 return std::nullopt;
             if (target)
                 *target = module;
@@ -160,11 +171,17 @@ bool isPersistablePrincipal(const std::string &principal)
 Decision catalogDefault(PrincipalClass pclass, Permission perm)
 {
     // The frozen v1 table. Addons default to ALLOW across the board (they
-    // are trusted at install time) but one row: gui.doCommand is PROMPT
-    // for an addon, persisted per addon (U4, docs/Sandbox.md 7.1); the
-    // rows below spell out document and session.
+    // are trusted at install time) but a few rows: gui.doCommand is PROMPT
+    // for an addon, persisted per addon (U4, docs/Sandbox.md 7.1), and so
+    // are the three host file / code chokepoints -- an addon is trusted to
+    // drive the GUI, not to read, overwrite or run an arbitrary host file
+    // without the user seeing which one (7.29).  The rows below spell out
+    // document and session.
     if (pclass == PrincipalClass::Addon)
-        return perm == Permission::GuiDoCommand ? Decision::Prompt : Decision::Allow;
+        return (perm == Permission::GuiDoCommand || perm == Permission::FsRead
+                || perm == Permission::FsWrite || perm == Permission::HostExec)
+            ? Decision::Prompt
+            : Decision::Allow;
     if (pclass == PrincipalClass::Client) {
         // Catalog v2's column (docs/Sandbox.md 7.20, C3): a remote user
         // on a served document.  It reads and writes that document --
@@ -209,6 +226,15 @@ Decision catalogDefault(PrincipalClass pclass, Permission perm)
     case Permission::UnsafeGetattr: return doc ? Decision::Deny : Decision::Prompt;
     // an install is always the user's click, whoever asked
     case Permission::PkgInstall:    return Decision::Prompt;
+    // The host file and code chokepoints (F1, 7.14/7.29).  A document
+    // never reaches a host file: DENY, not promptable.  The session is
+    // the user's console and the bundled workbenches, where natively
+    // Gui.runCommand("Std_RecentMacros") just runs -- under the sandbox
+    // it prompts ONCE, naming the path.  The user's own click is not a
+    // principal at all and never prompts.
+    case Permission::FsRead:        return doc ? Decision::Deny : Decision::Prompt;
+    case Permission::FsWrite:       return doc ? Decision::Deny : Decision::Prompt;
+    case Permission::HostExec:      return doc ? Decision::Deny : Decision::Prompt;
     }
     return Decision::Deny;
 }
@@ -219,18 +245,70 @@ bool isPromptable(PrincipalClass pclass, Permission perm)
     // and app.write for a document principal. A document has no business
     // driving the GUI, running a command's script, rewriting the user's
     // preferences or opening and closing the user's documents, and no
-    // prompt should offer to let it.
+    // prompt should offer to let it.  7.29 adds the three chokepoint rows
+    // on the same ground: a file's own code never reads, overwrites or
+    // runs another host file, so that answer is not the user's to give.
     if (pclass == PrincipalClass::Client)
         return perm == Permission::HostImport || perm == Permission::PkgInstall;
     return !(pclass == PrincipalClass::Document
              && (perm == Permission::Gui || perm == Permission::GuiDoCommand
-                 || perm == Permission::PrefsWrite || perm == Permission::AppWrite));
+                 || perm == Permission::PrefsWrite || perm == Permission::AppWrite
+                 || perm == Permission::FsRead || perm == Permission::FsWrite
+                 || perm == Permission::HostExec));
 }
 
 bool isGrantable(PrincipalClass pclass, Permission perm)
 {
     return !(pclass == PrincipalClass::Client
              && (perm == Permission::Gui || perm == Permission::UnsafeGetattr));
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+//
+// The host file and code chokepoints (F1, docs/Sandbox.md 7.14, 7.29)
+//
+
+std::string normalizeHostPath(const std::string &path)
+{
+    if (path.empty())
+        return {};
+    std::error_code ec;
+    // weakly_canonical resolves what exists (symlinks included) and keeps
+    // the rest lexically: a path being SAVED to does not exist yet, and
+    // must still normalize to what a later read of it would see.
+    std::filesystem::path p = std::filesystem::weakly_canonical(path, ec);
+    if (ec)
+        p = std::filesystem::absolute(std::filesystem::path(path), ec);
+    if (ec)
+        p = std::filesystem::path(path).lexically_normal();
+    std::string s = p.generic_string();
+    // a trailing separator would make one directory two targets
+    while (s.size() > 1 && s.back() == '/')
+        s.pop_back();
+    return s;
+}
+
+static std::set<std::string> &blessedPaths()
+{
+    static std::set<std::string> paths;
+    return paths;
+}
+
+void blessPath(const std::string &path)
+{
+    std::string p = normalizeHostPath(path);
+    if (!p.empty())
+        blessedPaths().insert(std::move(p));
+}
+
+bool pathBlessed(const std::string &path)
+{
+    return blessedPaths().count(normalizeHostPath(path)) != 0;
+}
+
+void clearBlessedPaths()
+{
+    blessedPaths().clear();
 }
 
 std::optional<Permission> pseudoPropertyPermission(

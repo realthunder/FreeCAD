@@ -38,7 +38,8 @@ TEST(ExpressionSecurity, permissionNames)
     for (Permission perm : {Permission::DocReadSelf, Permission::DocWriteSelf,
             Permission::DocForeign, Permission::GeomCall, Permission::AppQuery,
             Permission::PrefsRead, Permission::PrefsWrite, Permission::AppWrite, Permission::Gui,
-            Permission::GuiDoCommand, Permission::HostImport, Permission::UnsafeGetattr}) {
+            Permission::GuiDoCommand, Permission::HostImport, Permission::UnsafeGetattr,
+            Permission::FsRead, Permission::FsWrite, Permission::HostExec}) {
         auto parsed = permissionFromName(permissionName(perm));
         ASSERT_TRUE(parsed.has_value()) << permissionName(perm);
         EXPECT_EQ(*parsed, perm);
@@ -119,6 +120,10 @@ TEST(ExpressionSecurity, catalogDefaults)
         {Permission::GuiDoCommand,  Decision::Deny,   Decision::Allow},
         {Permission::HostImport,    Decision::Prompt, Decision::Prompt},
         {Permission::UnsafeGetattr, Decision::Deny,   Decision::Prompt},
+        // the host file and code chokepoints (F1, docs/Sandbox.md 7.29)
+        {Permission::FsRead,        Decision::Deny,   Decision::Prompt},
+        {Permission::FsWrite,       Decision::Deny,   Decision::Prompt},
+        {Permission::HostExec,      Decision::Deny,   Decision::Prompt},
     };
     for (const auto &row : rows) {
         EXPECT_EQ(catalogDefault(PrincipalClass::Document, row.perm), row.doc)
@@ -126,9 +131,15 @@ TEST(ExpressionSecurity, catalogDefaults)
         EXPECT_EQ(catalogDefault(PrincipalClass::Session, row.perm), row.session)
             << permissionName(row.perm);
         // an addon holds everything at install time but gui.doCommand,
-        // which is PROMPT persisted per addon (S2, docs/Sandbox.md 7.13)
+        // which is PROMPT persisted per addon (S2, docs/Sandbox.md 7.13),
+        // and the three host file / code rows: an addon is trusted to
+        // drive the GUI, not to read, overwrite or run an arbitrary host
+        // file without the user seeing which one (F1, 7.29)
+        const bool addonPrompts = row.perm == Permission::GuiDoCommand
+            || row.perm == Permission::FsRead || row.perm == Permission::FsWrite
+            || row.perm == Permission::HostExec;
         EXPECT_EQ(catalogDefault(PrincipalClass::Addon, row.perm),
-                  row.perm == Permission::GuiDoCommand ? Decision::Prompt : Decision::Allow)
+                  addonPrompts ? Decision::Prompt : Decision::Allow)
             << permissionName(row.perm);
     }
 
@@ -142,6 +153,17 @@ TEST(ExpressionSecurity, catalogDefaults)
     EXPECT_TRUE(isPromptable(PrincipalClass::Session, Permission::AppWrite));
     EXPECT_TRUE(isPromptable(PrincipalClass::Session, Permission::Gui));
     EXPECT_TRUE(isPromptable(PrincipalClass::Document, Permission::UnsafeGetattr));
+    // a document never reaches a host file, and no prompt offers to let
+    // it; the session and an addon are asked, naming the path (F1, 7.29)
+    for (Permission perm : {Permission::FsRead, Permission::FsWrite, Permission::HostExec}) {
+        EXPECT_FALSE(isPromptable(PrincipalClass::Document, perm)) << permissionName(perm);
+        EXPECT_TRUE(isPromptable(PrincipalClass::Session, perm)) << permissionName(perm);
+        EXPECT_TRUE(isPromptable(PrincipalClass::Addon, perm)) << permissionName(perm);
+        // a remote client is not offered the row at all (catalog v2)
+        EXPECT_FALSE(isPromptable(PrincipalClass::Client, perm)) << permissionName(perm);
+        EXPECT_EQ(catalogDefault(PrincipalClass::Client, perm), Decision::Deny)
+            << permissionName(perm);
+    }
 
     // Catalog v2's client column (docs/Sandbox.md 7.20, C3).
     struct ClientRow {

@@ -1624,8 +1624,26 @@ Reply runCommandByName(const json& a)
     if (!a.is_array() || a.empty() || !a[0].is_string())
         return replyErr("ProtocolError", "gui.cmd.run: [name, index]");
     int idx = a.size() > 1 && a[1].is_number() ? a[1].get<int>() : 0;
-    Application::Instance->commandManager().runCommandByName(
-        a[0].get_ref<const std::string&>().c_str(), idx);
+    // A host command that THROWS has to come back as a reply.  The guest
+    // is blocked waiting for one, and this path is reentrant -- host ->
+    // the guest's command -> this op -> a host command -- so an exception
+    // unwinding out of here never reaches the guest and hangs it for
+    // good.  Nothing made a Std command throw here until the file and
+    // code chokepoints did (F1, docs/Sandbox.md 7.29), which is how this
+    // surfaced: a refused Std_RecentMacros wedged the whole guest.
+    try {
+        Application::Instance->commandManager().runCommandByName(
+            a[0].get_ref<const std::string&>().c_str(), idx);
+    }
+    catch (const App::ExpressionSecurity::PermissionNeededException& e) {
+        return replyErr("PermissionError", e.what());
+    }
+    catch (const Base::Exception& e) {
+        return replyErr("RuntimeError", e.what());
+    }
+    catch (const std::exception& e) {
+        return replyErr("RuntimeError", e.what());
+    }
     return replyOk(true);
 }
 

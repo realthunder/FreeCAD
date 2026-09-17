@@ -378,6 +378,19 @@ AppExport void checkPermission(Permission perm, const std::string &target = "*")
 AppExport void auditAllowed(Permission perm, const std::string &target,
         const std::string &context = std::string());
 
+/** The host file and code chokepoint (F1, docs/Sandbox.md 7.14, 7.29):
+ * `perm` is FsRead, FsWrite or HostExec and `path` is the host file the
+ * primitive is about to read, write or run.
+ *
+ * Silent outside any scope -- host code running under no principal is
+ * host code, already trusted (2.4), which is what keeps the user's own
+ * click and every startup script unchanged.  Silent for a path the
+ * host's file dialog blessed for this guest.  Otherwise it is
+ * checkPermission with the NORMALIZED path as the target, and throws
+ * PermissionNeededException unless the principal holds it.
+ */
+AppExport void checkHostPath(Permission perm, const std::string &path);
+
 /** The C7 gate (docs/ExpressionSandbox.md sec 7.1). Classifies a simple
  * attribute read during identifier drill-down: reads on FreeCAD-bound
  * objects (Base::PyObjectBase), modules and plain value/container types are

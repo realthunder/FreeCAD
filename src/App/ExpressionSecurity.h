@@ -79,6 +79,20 @@ enum class Permission {
                     // sandbox guest asked for a package the user has not
                     // installed (docs/SandboxNetwork.md sec 9); only ever
                     // a pending request, never resolved by check()
+    // The host file and code chokepoints (F1, docs/Sandbox.md 7.14 and
+    // 7.29), the path as the target.  Checked INSIDE the core's file
+    // primitives rather than at any command's name: a guest that runs a
+    // host command by name (Gui.runCommand("Std_RecentMacros")) reaches
+    // the same primitive and is stopped there, whatever the command is
+    // called.  All three are DENY for a document (not promptable) and
+    // PROMPT for the session and an addon -- the one row an addon does
+    // not hold by default besides gui.doCommand.  A path the host's own
+    // file dialog returned while a guest scope was active is blessed
+    // (pathBlessed) and passes without a grant: consent is a capability
+    // (S1), so the picker commands still work from a guest.
+    FsRead,         // fs.read:<path> -- a host file read by path
+    FsWrite,        // fs.write:<path> -- saveAs / saveCopy / exportTo
+    HostExec,       // host.exec:<path> -- host Python run from a file
 };
 
 enum class Decision {
@@ -144,11 +158,39 @@ AppExport bool isPromptable(PrincipalClass pclass, Permission perm);
 /** Whether any grant -- a panel answer, grants.json, a process --grant --
  * may lift the decision at all.  False only for a client's gui and
  * unsafe.getattr: both reach host code (a command by name runs a recent
- * macro file, docs/Sandbox.md 7.14; an undeclared getattr runs host
- * Python), and until the 7.14 chokepoints are built nothing narrower
- * than the whole row can be granted to a remote user.
+ * macro file; an undeclared getattr runs host Python), so nothing
+ * narrower than the whole row can be granted to a remote user.  The
+ * chokepoints of 7.29 now stop the file and code half of that reach at
+ * the primitive, but a remote user is still not offered the row.
  */
 AppExport bool isGrantable(PrincipalClass pclass, Permission perm);
+
+// ---- the host file and code chokepoints (F1, docs/Sandbox.md 7.14, 7.29) ----
+
+/** A host path in the one spelling the gate compares by: absolute, with
+ * symlinks and "." / ".." resolved as far as the file system allows and
+ * '/' as the separator.  An empty path stays empty.  The blessed set and
+ * every fs.read / fs.write / host.exec target go through this, so an
+ * answer is keyed to the FILE rather than to whichever spelling of it
+ * reached the primitive.
+ */
+AppExport std::string normalizeHostPath(const std::string &path);
+
+/** The picker-blessed paths (S1, docs/Sandbox.md 7.13): a path the
+ * host's own file dialog returned while a guest scope was active is a
+ * capability -- the user chose that file in the guest's nested modal --
+ * and the chokepoints accept it without a grant.  This is what keeps
+ * consent a capability rather than a list: Std_Open from a guest opens
+ * the file the user just picked, while a command with no picker
+ * (Std_RecentFiles) has no blessed path and is refused.  The set lives
+ * for the life of one guest and is cleared when a fresh guest boots.
+ *
+ * It lives in this always-built layer, not with the image bridge: the
+ * chokepoints hold in a build with no sandbox image host at all.
+ */
+AppExport void blessPath(const std::string &path);
+AppExport bool pathBlessed(const std::string &path);
+AppExport void clearBlessedPaths();
 
 /** The frozen pseudo-property -> permission mapping. Returns nullopt for
  * names needing no permission (_math/_re/_coll/_py are Ring-0 in-image
