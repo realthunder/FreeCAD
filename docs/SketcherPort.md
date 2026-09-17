@@ -1,8 +1,12 @@
 # Sketcher: picking upstream fixes and features
 
-Status (2026-09-15): phases 0 and 1 done; phase 2 (App fixes) under way --
-the standalone fixes, the internal faces fix and the trim/split take are in
-(section 6a), and so is the fillet; the external projection rows are open. Branch `SketcherPort` off `RemoteEdit`
+Status (2026-09-17): phases 0 and 1 done; phase 2 (App fixes) is at its
+tail -- the standalone fixes, the internal faces fix, the trim/split take,
+the fillet and the external faces (with element history through
+`Part::HLRProjector`) are in (section 6a). Of the ledger's open App fix
+rows, four were already here through the trim/split take, one is n/a and
+one (the angle-jump `62c222c211`) is a phase 3 cluster; the open App
+feature and `?` rows are next, then phase 3 (Gui). Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
 
