@@ -1,6 +1,6 @@
 # Sketcher: picking upstream fixes and features
 
-Status (2026-09-17): phases 0 and 1 done; phase 2 (App) done -- the
+Status (2026-09-18): phases 0 and 1 done; phase 2 (App) done -- the
 standalone fixes, the internal faces fix, the trim/split take, the fillet,
 the external faces (with element history through `Part::HLRProjector`),
 the symmetric and projected-circle picks, and the Gui-coupled App features
@@ -11,7 +11,15 @@ open App rows were marked n/a in bulk (section 6a).
 
 **The groups and Text feature family is done** (section 6b): geometry
 groups, the group command, group dragging, the Text tool and copy/paste of
-groups. Phase 3 (Gui) is next.
+groups.
+
+**Phase 3 (Gui) is under way** (section 7). `Gui/ToolHandler` is in, on
+the user's ruling of 2026-09-18 that reverses decision 4's deferral of the
+hints framework -- the core of it was already in the fork and only that
+one class was missing. It is the keystone the tool handler files need.
+Two picks on top of it so far, and the auto-constraint family now has a
+GUI harness that drives a tool through a served mirror, which is the only
+way to get real preselection under test.
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
@@ -921,7 +929,118 @@ graph hangs on the viewer's aux root rather than the view provider, so a
 drag cannot be driven from a script. The drag was exercised at the level
 below it instead, through `moveGeometries` on the handle.
 
-## 7. Phases
+## 7. Phase 3: the Gui
+
+Started 2026-09-18. Tools and commands first, as the phase list says.
+
+### What the tool handler files actually are
+
+The `DrawSketchHandler*.h` family looked like the hardest part of this
+phase and is the easiest: the fork carries **almost no local adaptation
+in them**. Diffed against upstream's tip, what the fork "has and upstream
+does not" is nearly all *stale upstream* -- `#ifndef` guards where
+upstream moved to `#pragma once`, the `geometryCreationMode` extern
+upstream deleted, `Gui::Command::openCommand` where upstream added a
+handler-level helper, `seekAutoConstraint` + `renderSuggestConstraintsCursor`
+where upstream merged the pair into `seekAndRenderAutoConstraint`. The
+fork-only API is small and lives in the base, not the handlers:
+`allowExternalPick`, `allowExternalDocument`, `inSequence`, `toggle`.
+
+So these files can be brought forward far more cheaply than commit by
+commit -- but not yet. Upstream's tip handlers override `getToolHints()`,
+and they take `mouseMove(SnapManager::SnapHandle)` rather than
+`mouseMove(Base::Vector2d)`. Both are base-class questions, so
+`DrawSketchHandler.{h,cpp}` is the keystone and comes first.
+
+### The hints framework: the deferral was stale (user ruling, 2026-09-18)
+
+Decision 4 deferred the context-aware hints because they "need upstream's
+core input-hint machinery". That machinery is **already here**, ported for
+the Python workbenches by `19bb5c42a8`: `src/Gui/InputHint.h` is
+byte-identical to upstream, and `InputHintWidget`, `MainWindow::showHints`
+/ `hideHints` and the Python binding all came with it. Nothing in C++ was
+consuming it; the hint bar was reachable only from `MainWindowPy`.
+
+The one missing piece was `Gui/ToolHandler`, upstream's extraction of the
+cursor and activation lifecycle out of `DrawSketchHandler` -- which is
+where `getToolHints()` lives. The fork's `DrawSketchHandler` already had
+every member of it, one for one. Asked, the user ruled: **port it now**.
+
+`cf85a2ce91` does that (`52ffab90e5`, adapted). The fork's own bodies
+move across as they stand, so the view-less adaptations survive:
+
+| upstream | here | why |
+|---|---|---|
+| `getViewer()` returns `View3DInventorViewer*` from the active window | `virtual`, returns `Gui::ViewerContext*` | a tool belongs to one edit session in one view; "which window is active" has no answer in a process serving several browsers (ThinClient 8.3). The base keeps the active-window lookup for a toolbar-started tool; `DrawSketchHandler` overrides it. |
+| `activate()` fails when the view has no cursor widget | keys off the viewer | a client's mirror has no widget, and the cursor is chrome -- the DOM layer's (8.7) |
+| `devicePixelRatio()` from the widget | from the `ViewerContext` | the client's, stated over the wire |
+| `unsetCursor`/`applyCursor` protected | public on `DrawSketchHandler` | `ViewProviderSketch` restores the tool cursor after a preselection, and the selection gate when it changes |
+
+`signalToolChanged()` moved into `preActivated()`, the first activation
+hook, which keeps the order it had. `preActivated` is overridden only by
+`DrawSketchHandler`, upstream and here, so nothing can skip it.
+
+`GuiSketchEditRoot` already covered this end to end -- it activates the
+line tool inside an edit session and reads the cursor off the 3D view,
+which is a direct test that the handler found a view through the new base
+rather than purging itself.
+
+### Picks so far
+
+- `372d84ca21` -- `~CurveConverter` no longer detaches from the parameter
+  manager (`c14e735c20`, taken). Its only instance is the function-static
+  in `drawEdit`, destroyed after `main()` returns, so the detach was
+  undefined behaviour at exit. The fork had the bug exactly.
+- `4c310bbc1d` -- the line mid-point auto-constraint (`64054d13c4` +
+  `280452bcc8`, adapted). Three sites had to agree and none of them had
+  it: `seekAutoConstraint` saying `Symmetric` near the middle,
+  `suggestedConstraintsPixmaps` having an icon for it, and **both**
+  consumers (`createAutoConstraints` and `DrawSketchDefaultHandler`)
+  writing the three-element constraint. Upstream's restyling of the
+  surrounding loops was not carried, so the diff is the feature.
+
+### A harness for the auto-constraint family
+
+An auto-constraint is only suggested for **preselected** geometry, and
+synthetic Qt mouse events preselect nothing here
+(the same wall the group drag hit in 6b). A served mirror's pointer does:
+the client states a camera and a move at a computed pixel preselects in
+that client's own mirror, which is what `seekAutoConstraint` reads.
+
+`tests/gui/sketch-midpoint-autoconstraint.py`
+(`GuiSketchMidpointAutoConstraint_tests_run`) is built on that and is the
+harness the rest of the family needs -- seven more open rows touch
+`seekAutoConstraint` alone (`596fa2856b`, `ed45e20768`, `f9f76a2516`,
+`07de249ec7`, `387d25c219`, `b71a54d9cc`, `ec298e9e9a`). It draws a line
+starting at the middle of an existing one and again a quarter along it,
+so the middle is *discriminated* rather than always answered. Checked
+against the removed code: without the pick the first click leaves
+`PointOnObject` and the test fails on that line.
+
+Two wire details it cost to learn: the key code on an `'E'` frame is an
+**X11 keysym** (Escape is `0xff1b`), not a Qt key -- a Qt key overflows
+the `u16` and the client thread dies inside `struct.pack`; and on-view
+parameters have to be switched off
+(`Mod/Sketcher/Tools`/`OnViewParameterVisibility` = 0) or an OVP takes
+the click before the auto-constraint is ever consulted.
+
+### Rows closed without a pick
+
+- `19a082b63c` "Fix constraint selection in groups" -- **n/a**. Its subject
+  says groups; it is about combined constraint icons. Three changes, none
+  of which applies: generalising the icon lookup from "first or second" to
+  a child-index scan is a no-op, because a constraint separator holds at
+  most two icons *in both trees* -- `ConstraintNodePosition` is identical
+  upstream and here, and every branch of the fork's separator builder adds
+  either 4 or 7 children. The coordinate rework is the fork's own fix
+  already, and the fork's version is the one that works for a view-less
+  mirror (it projects to viewport device pixels rather than the widget's
+  logical size, which is no unit at all for a client). And upstream's new
+  `dynamic_cast<SoDatumLabel*>` gate would *break* the fork: Group/Text and
+  Symmetric separators rely on the "no icon id found -> the separator's own
+  index" fallback it replaces.
+
+## 8. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
 1. `planegcs/`: take the directory at upstream's tip, adapt `Sketch.cpp`
