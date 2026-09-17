@@ -46,9 +46,12 @@
 # include <GCPnts_AbscissaPoint.hxx>
 # include <Geom2dAdaptor_Curve.hxx>
 # include <Geom2dInt_GInter.hxx>
+# include <GeomAPI.hxx>
 # include <GeomAdaptor_Curve.hxx>
 # include <GeomLProp_CLProps.hxx>
 # include <IntRes2d_Domain.hxx>
+# include <IntRes2d_IntersectionPoint.hxx>
+# include <IntRes2d_IntersectionSegment.hxx>
 # include <GProp_GProps.hxx>
 # include <ShapeAnalysis_Edge.hxx>
 # include <ShapeAnalysis_Wire.hxx>
@@ -124,6 +127,11 @@ public:
     double myTol = Precision::Confusion();
     double myTol2 = myTol * myTol;
     double myAngularTol = Precision::Angular();
+    // The common plane of all edges, if they have one. Found once in splitEdges() so that
+    // the intersection checks can work on 2D curves instead of building a wire and a face
+    // for every candidate pair.
+    bool globalPlanar = false;
+    gp_Pln globalPlane;
     bool doSplitEdge = true;
     bool doMergeEdge = true;
     bool doOutline = false;
@@ -212,6 +220,23 @@ public:
         Handle(Geom_Curve) curve;
         GeomAbs_CurveType type;
         bool isLinear;
+        mutable Handle(Geom2d_Curve) curve2d;
+        mutable bool curve2dChecked = false;
+
+        // The curve in the plane's own 2D frame, built once and shared by every
+        // intersection check of this edge. Null if the curve does not lie in that plane.
+        const Handle(Geom2d_Curve) &pcurve(const gp_Pln &plane) const {
+            if (!curve2dChecked) {
+                curve2dChecked = true;
+                try {
+                    curve2d = GeomAPI::To2d(curve, plane);
+                }
+                catch (Standard_Failure &) {
+                    curve2d.Nullify();
+                }
+            }
+            return curve2d;
+        }
 
         EdgeInfo(const TopoDS_Edge &e,
                  const gp_Pnt &pt1,
@@ -887,32 +912,39 @@ public:
         // Early return if checking for self intersection (only for non linear spline curves)
         if (info.type <= GeomAbs_Parabola || info.isLinear)
             return;
-        TopoDS_Wire wire;
-        BRepBuilderAPI_MakeWire mkWire(info.edge);
-        if (!mkWire.IsDone())
-            return;
-        if (!BRep_Tool::IsClosed(mkWire.Wire())) {
-            BRepBuilderAPI_MakeEdge mkEdge(info.p1, info.p2);
-            if (!mkEdge.IsDone())
+        Handle(Geom2d_Curve) pcurve;
+        Standard_Real a = info.firstParam;
+        Standard_Real b = info.lastParam;
+        if (globalPlanar)
+            pcurve = info.pcurve(globalPlane);
+        if (pcurve.IsNull()) {
+            // No common plane: build a face for this edge alone to get a pcurve.
+            TopoDS_Wire wire;
+            BRepBuilderAPI_MakeWire mkWire(info.edge);
+            if (!mkWire.IsDone())
                 return;
-            mkWire.Add(mkEdge.Edge());
+            if (!BRep_Tool::IsClosed(mkWire.Wire())) {
+                BRepBuilderAPI_MakeEdge mkEdge(info.p1, info.p2);
+                if (!mkEdge.IsDone())
+                    return;
+                mkWire.Add(mkEdge.Edge());
+            }
+            wire = mkWire.Wire();
+            BRepBuilderAPI_MakeFace mkFace(wire);
+            if (!mkFace.IsDone())
+                return;
+            TopoDS_Face face = mkFace.Face();
+            ShapeAnalysis_Wire analysis(wire, face, myTol);
+            ShapeAnalysis_Edge sae;
+            if (!sae.PCurve(analysis.WireData()->Edge(1), face, pcurve, a, b, false))
+                return;
         }
-        wire = mkWire.Wire();
-        BRepBuilderAPI_MakeFace mkFace(wire);
-        if (!mkFace.IsDone())
+        if (b - a <= Precision::PConfusion())
             return;
-        TopoDS_Face face = mkFace.Face();
-        ShapeAnalysis_Wire analysis(wire, face, myTol);
         // Not ShapeAnalysis_Wire::CheckSelfIntersectingEdge(), which ignores
         // any crossing at the edge's own vertices, and so misses a curve that
         // passes through its own end point, e.g. a figure-8 B-spline starting
         // at its crossing.
-        ShapeAnalysis_Edge sae;
-        Handle(Geom2d_Curve) pcurve;
-        Standard_Real a, b;
-        if (!sae.PCurve(analysis.WireData()->Edge(1), face, pcurve, a, b, false)
-                || b - a <= Precision::PConfusion())
-            return;
         const double tolint = 1.0e-10;
         IntRes2d_Domain domain(pcurve->Value(a), a, tolint, pcurve->Value(b), b, tolint);
         Geom2dAdaptor_Curve adaptor(pcurve);
@@ -953,11 +985,71 @@ public:
         }
     }
 
+    // Intersect two curves in the common plane's 2D frame. No wire, no face, no
+    // pcurve building: the 2D curves are cached on the edges. Returns false if
+    // either curve is not in that plane, so the caller can fall back.
+    bool checkIntersection2d(const EdgeInfo &info,
+                             const EdgeInfo &other,
+                             std::set<IntersectInfo> &params1,
+                             std::set<IntersectInfo> &params2)
+    {
+        const Handle(Geom2d_Curve) &c1 = info.pcurve(globalPlane);
+        const Handle(Geom2d_Curve) &c2 = other.pcurve(globalPlane);
+        if (c1.IsNull() || c2.IsNull())
+            return false;
+
+        // The intersector's own tolerance, as ShapeAnalysis_Wire uses for the same job.
+        // myTol is the model tolerance and belongs to the point filtering in
+        // pushIntersection(), not here: using it here shifts the intersection
+        // parameters enough to change how the split points merge afterwards.
+        const double tolint = 1.0e-10;
+        auto makeDomain = [this](const Handle(Geom2d_Curve) &c, double first, double last) {
+            gp_Pnt2d pFirst = c->Value(first);
+            gp_Pnt2d pLast = c->Value(last);
+            IntRes2d_Domain domain(pFirst, first, 1.0e-10, pLast, last, 1.0e-10);
+            if (pFirst.Distance(pLast) < myTol)
+                domain.SetEquivalentParameters(first, last);
+            return domain;
+        };
+
+        Geom2dAdaptor_Curve a1(c1, info.firstParam, info.lastParam);
+        Geom2dAdaptor_Curve a2(c2, other.firstParam, other.lastParam);
+        Geom2dInt_GInter inter(a1, makeDomain(c1, info.firstParam, info.lastParam),
+                               a2, makeDomain(c2, other.firstParam, other.lastParam),
+                               tolint, tolint);
+        if (!inter.IsDone())
+            return false;
+        auto push = [&](const IntRes2d_IntersectionPoint &ip, bool overlap) {
+            pushIntersection(params1, ip.ParamOnFirst(),
+                    info.curve->Value(ip.ParamOnFirst()), other, overlap);
+            pushIntersection(params2, ip.ParamOnSecond(),
+                    other.curve->Value(ip.ParamOnSecond()), info, overlap);
+        };
+        for (int i=1; i<=inter.NbPoints(); ++i)
+            push(inter.Point(i), false);
+        // Two curves that run together for a stretch -- collinear edges that
+        // overlap, say -- come back as a segment, not as points, and each end
+        // of that stretch is a place one edge has to be split at.
+        // ShapeAnalysis_Wire::CheckIntersectingEdges reads the segments too;
+        // it is where the old per-pair path got these splits from.
+        for (int i=1; i<=inter.NbSegments(); ++i) {
+            const auto &seg = inter.Segment(i);
+            if (seg.HasFirstPoint())
+                push(seg.FirstPoint(), true);
+            if (seg.HasLastPoint())
+                push(seg.LastPoint(), true);
+        }
+        return true;
+    }
+
     void checkIntersection(const EdgeInfo &info,
                            const EdgeInfo &other,
                            std::set<IntersectInfo> &params1,
                            std::set<IntersectInfo> &params2)
     {
+        if (globalPlanar && checkIntersection2d(info, other, params1, params2))
+            return;
+
         gp_Pln pln;
         bool planar = TopoShape(info.edge).findPlane(pln);
         if (!planar) {
@@ -1091,6 +1183,17 @@ public:
     void splitEdges()
     {
         std::unordered_map<const EdgeInfo*, std::set<IntersectInfo>> intersects;
+
+        // One plane for all edges, found once. checkIntersection() and
+        // checkSelfIntersection() then work on cached 2D curves.
+        globalPlanar = false;
+        if (!edges.empty()) {
+            TopoDS_Compound comp;
+            builder.MakeCompound(comp);
+            for (const auto &info : edges)
+                builder.Add(comp, info.edge);
+            globalPlanar = TopoShape(comp).findPlane(globalPlane);
+        }
 
         int i=0;
         for (auto &info : edges)

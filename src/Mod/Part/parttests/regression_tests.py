@@ -135,6 +135,46 @@ class RegressionTests(unittest.TestCase):
         self.assertAlmostEqual(sum(Part.Face(w).Area for w in wires), 217.0,
                                places=6)
 
+    def test_joinWires_splits_a_collinear_overlap(self):
+        """
+        An edge that runs along part of another is cut where the overlap ends.
+
+        A 3 x 50 rectangle whose right side is drawn as three collinear
+        pieces, one of them 0.01 long and lying on both of its neighbours
+        (the fixture behind test_28534_truncated_pocket). Two edges that
+        share a stretch come back from the intersector as a segment, not as
+        points; each end of that stretch is a split. The result is one wire
+        of 150 units whose right side is exactly the three pieces, none of
+        them overlapping another.
+        """
+        def seg(a, b):
+            return Part.LineSegment(Vector(*a), Vector(*b)).toShape()
+
+        edges = [seg((0, 50, 0), (0, 0, 0)), seg((0, 0, 0), (3, 0, 0)),
+                 seg((3, 0, 0), (3, 30, 0)), seg((3, 50, 0), (0, 50, 0)),
+                 seg((3, 29.99, 0), (3, 30, 0)), seg((3, 50, 0), (3, 29.99, 0))]
+        result = Part.joinWires(Part.Compound(edges), split=True, merge=True,
+                                tighten=True)
+        self.assertEqual(len(result.Wires), 1)
+        self.assertAlmostEqual(Part.Face(result.Wires[0]).Area, 150.0, places=6)
+        lengths = sorted(round(e.Length, 6) for e in result.Wires[0].Edges)
+        self.assertEqual(lengths, [0.01, 3.0, 3.0, 20.0, 29.99, 50.0])
+
+    def test_joinWires_nested_circles(self):
+        """
+        Concentric circles do not intersect, and every one is its own wire.
+
+        Every bounding box here contains all the smaller ones, so the box
+        query prunes nothing and every pair is checked; this is the input on
+        which building a face per pair cost seconds.
+        """
+        circles = [Part.Circle(Vector(0, 0, 0), Vector(0, 0, 1),
+                               100.0 * (i + 1) / 42).toShape() for i in range(40)]
+        result = Part.joinWires(Part.Compound(circles), split=True, merge=True,
+                                tighten=True)
+        self.assertEqual(len(result.Wires), 40)
+        self.assertEqual(len(result.Edges), 40)
+
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
