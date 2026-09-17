@@ -468,6 +468,10 @@ into is nobody's edge and stays unnamed, positional; so does the output of
 the intersection option (a section has no map) and any reference without a
 map (an `App::Plane`). The tests are `TestSketchExternalGeometry`.
 
+TechDraw's `GeometryObject::projectShape` runs on the same class as of the
+same day (`docs/TopoNamingEnhance.md` 8.5.2); its private copy of the exact
+traversal is gone, the polygon one stays.
+
 ### Internal faces: WireJoiner kept (`aa31511fbd`)
 
 Upstream replaced WireJoiner + `FaceMakerRing` in `buildInternals()` with a

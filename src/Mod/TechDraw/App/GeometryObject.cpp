@@ -41,14 +41,10 @@
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <HLRAlgo_Projector.hxx>
-#include <HLRBRep.hxx>
 #include <HLRBRep_Algo.hxx>
 #include <HLRAlgo_BiPoint.hxx>
 #include <HLRAlgo_EdgeIterator.hxx>
 #include <HLRAlgo_EdgeStatus.hxx>
-#include <HLRBRep_Data.hxx>
-#include <HLRBRep_EdgeData.hxx>
-#include <HLRBRep_FaceIterator.hxx>
 #include <HLRBRep_HLRToShape.hxx>
 #include <BRepLib_MakeEdge2d.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
@@ -73,6 +69,7 @@
 #include <chrono>
 
 #include <Base/Console.h>
+#include <Mod/Part/App/HLRProjector.h>
 #include <Mod/Part/App/PartFeature.h>
 
 #include "Cosmetic.h"
@@ -150,15 +147,16 @@ void GeometryObject::clear()
 
 
 //===========================================================================
-// The HLR traversals, reimplemented so they can say where an edge came from
+// The polygon HLR traversal, reimplemented so it can say where an edge came from
 //===========================================================================
 //
-// HLRBRep_HLRToShape and HLRBRep_PolyHLRToShape both know the source element
-// of every edge they emit and then throw it away: their public API returns a
-// bare compound.  These two traversals are the same walks, in the same order,
-// emitting the same edges, and they hand the source back with each one
-// (docs/TopoNamingEnhance.md sec 3.5).  Nothing here is a heuristic and there
-// is no second HLR pass -- the correspondence is the algorithm's own.
+// HLRBRep_PolyHLRToShape knows the source element of every edge it emits and
+// then throws it away: its public API returns a bare compound.  This
+// traversal is the same walk, in the same order, emitting the same edges, and
+// it hands the source back with each one (docs/TopoNamingEnhance.md sec 3.5).
+// Nothing here is a heuristic and there is no second HLR pass -- the
+// correspondence is the algorithm's own.  The exact algorithm's counterpart
+// is Part::HLRProjector, which projectShape runs.
 //
 // The traversals only ever record indices and shapes.  Turning those into
 // element names is done on the main thread by nameEdgeGeometry, because
@@ -167,160 +165,6 @@ void GeometryObject::clear()
 
 namespace
 {
-
-//! HLRBRep_HLRToShape::DrawEdge.  ie is the index of ed in the data
-//! structure's EDataArray, which is also its index in EdgeMap.
-void hlrDrawEdge(bool visible, bool inFace, int typ, HLRBRep_EdgeData& ed, int ie,
-                 TopoDS_Shape& result, bool& added,
-                 std::vector<std::pair<TopoDS_Shape, int>>& produced)
-{
-    bool todraw = false;
-    if (inFace) {
-        todraw = true;
-    }
-    else if (typ == 3) {
-        todraw = ed.Rg1Line() && !ed.RgNLine();
-    }
-    else if (typ == 4) {
-        todraw = ed.RgNLine();
-    }
-    else {
-        todraw = !ed.Rg1Line();
-    }
-    if (!todraw) {
-        return;
-    }
-
-    double sta, end;
-    float tolsta, tolend;
-    BRep_Builder builder;
-    HLRAlgo_EdgeIterator it;
-    if (visible) {
-        for (it.InitVisible(ed.Status()); it.MoreVisible(); it.NextVisible()) {
-            it.Visible(sta, tolsta, end, tolend);
-            TopoDS_Edge edge = HLRBRep::MakeEdge(ed.Geometry(), sta, end);
-            if (!edge.IsNull()) {
-                builder.Add(result, edge);
-                produced.emplace_back(edge, ie);
-                added = true;
-            }
-        }
-    }
-    else {
-        for (it.InitHidden(ed.Status()); it.MoreHidden(); it.NextHidden()) {
-            it.Hidden(sta, tolsta, end, tolend);
-            TopoDS_Edge edge = HLRBRep::MakeEdge(ed.Geometry(), sta, end);
-            if (!edge.IsNull()) {
-                builder.Add(result, edge);
-                produced.emplace_back(edge, ie);
-                added = true;
-            }
-        }
-    }
-}
-
-//! HLRBRep_HLRToShape::DrawFace
-void hlrDrawFace(bool visible, int typ, int iface, const Handle(HLRBRep_Data)& ds,
-                 TopoDS_Shape& result, bool& added,
-                 std::vector<std::pair<TopoDS_Shape, int>>& produced)
-{
-    HLRBRep_FaceIterator itf;
-    for (itf.InitEdge(ds->FDataArray().ChangeValue(iface)); itf.MoreEdge(); itf.NextEdge()) {
-        int ie = itf.Edge();
-        HLRBRep_EdgeData& edf = ds->EDataArray().ChangeValue(ie);
-        if (edf.Used()) {
-            continue;
-        }
-
-        bool todraw;
-        if (typ == 1) {
-            todraw = itf.IsoLine();
-        }
-        else if (typ == 2) {// outlines
-            todraw = itf.Internal();
-        }
-        else if (typ == 3) {
-            todraw = edf.Rg1Line() && !edf.RgNLine() && !itf.OutLine();
-        }
-        else if (typ == 4) {
-            todraw = edf.RgNLine() && !itf.OutLine();
-        }
-        else {
-            todraw = !itf.IsoLine() && !itf.Internal() && (!edf.Rg1Line() || itf.OutLine());
-        }
-
-        if (todraw) {
-            hlrDrawEdge(visible, true, typ, edf, ie, result, added, produced);
-            edf.Used(true);
-        }
-        else if ((typ > 4 || typ == 2) && edf.Rg1Line() && !itf.OutLine()) {
-            //sharp or outlines: give the edge a second face to be drawn from
-            int hc = edf.HideCount();
-            if (hc > 0) {
-                edf.Used(true);
-            }
-            else {
-                edf.HideCount(hc + 1);
-            }
-        }
-        else {
-            edf.Used(true);
-        }
-    }
-}
-
-//! HLRBRep_HLRToShape::InternalCompound for the whole projection (no shape
-//! filter, and 2D output), plus the source edge index of every edge emitted.
-TopoDS_Shape hlrInternalCompound(const Handle(HLRBRep_Algo)& algo, int typ, bool visible,
-                                 std::vector<std::pair<TopoDS_Shape, int>>& produced)
-{
-    Handle(HLRBRep_Data) ds = algo->DataStructure();
-    if (ds.IsNull()) {
-        return TopoDS_Shape();
-    }
-
-    ds->Projector().Scaled(true);
-    const int e1 = 1;
-    const int e2 = ds->NbEdges();
-    const int f1 = 1;
-    const int f2 = ds->NbFaces();
-
-    TopoDS_Shape result;
-    BRep_Builder builder;
-    builder.MakeCompound(TopoDS::Compound(result));
-
-    for (int ie = e1; ie <= e2; ie++) {
-        HLRBRep_EdgeData& ed = ds->EDataArray().ChangeValue(ie);
-        if (ed.Selected() && !ed.Vertical()) {
-            ed.Used(false);
-            ed.HideCount(0);
-        }
-        else {
-            ed.Used(true);
-        }
-    }
-
-    bool added = false;
-    for (int iface = f1; iface <= f2; iface++) {
-        hlrDrawFace(visible, typ, iface, ds, result, added, produced);
-    }
-    if (typ >= 3) {
-        for (int ie = e1; ie <= e2; ie++) {
-            HLRBRep_EdgeData& ed = ds->EDataArray().ChangeValue(ie);
-            if (!ed.Used()) {
-                hlrDrawEdge(visible, false, typ, ed, ie, result, added, produced);
-                ed.Used(true);
-            }
-        }
-    }
-    ds->Projector().Scaled(false);
-
-    if (!added) {
-        produced.clear();
-        return TopoDS_Shape();
-    }
-    return result;
-}
 
 //! One segment of the polygon algorithm's output, with the shape it came from.
 struct PolySegment
@@ -641,26 +485,27 @@ void GeometryObject::projectShape(const Part::TopoShape& inShape, const gp_Ax2& 
     clear();
     m_projectionShape = inShape;
 
-    Handle(HLRBRep_Algo) brep_hlr;
+    //Part::HLRProjector runs the algorithm and keeps the source of every edge
+    //it emits.  It is handed the shape WITHOUT its element map: this runs in
+    //a worker, and naming is done on the main thread by nameEdgeGeometry from
+    //the indices recorded here (see the header).
+    Part::HLRProjector projector;
+    Part::HLRProjector::Params params;
+    params.isoCount = m_isoCount;
+    params.perspective = m_isPersp;
+    params.focus = std::max(Precision::Confusion(), m_focus);
     try {
-        brep_hlr = new HLRBRep_Algo();
-        //        brep_hlr->Debug(true);
-        brep_hlr->Add(inShape.getShape(), m_isoCount);
+        projector.add(Part::TopoShape(inShape.getShape()));
         if (m_isPersp) {
-            double fLength = std::max(Precision::Confusion(), m_focus);
-            HLRAlgo_Projector projector(viewAxis, fLength);
-            brep_hlr->Projector(projector);
+            projector.build(HLRAlgo_Projector(viewAxis, params.focus), params);
         }
         else {
-            HLRAlgo_Projector projector(viewAxis);
-            brep_hlr->Projector(projector);
+            projector.build(HLRAlgo_Projector(viewAxis), params);
         }
-        brep_hlr->Update();
-        brep_hlr->Hide();
     }
-    catch (const Standard_Failure& e) {
+    catch (const Base::Exception& e) {
         Base::Console().Error("GO::projectShape - OCC error - %s - while projecting shape\n",
-                              e.GetMessageString());
+                              e.what());
         THROWM(Base::RuntimeError, "GeometryObject::projectShape - OCC error")
     }
     catch (...) {
@@ -668,53 +513,50 @@ void GeometryObject::projectShape(const Part::TopoShape& inShape, const gp_Ax2& 
     }
 
     try {
-        //the traversal above HLRToShape's, which reports the source edge of
-        //every edge it emits.  The type codes are HLRToShape's own:
-        //1 iso, 2 outline, 3 smooth, 4 seam, 5 hard.
         TopTools_IndexedMapOfShape sourceEdges;
         TopExp::MapShapes(m_projectionShape.getShape(), TopAbs_EDGE, sourceEdges);
-        Handle(HLRBRep_Data) ds = brep_hlr->DataStructure();
 
-        auto emit = [&](int typ, bool visible, TopoDS_Shape& target) {
-            std::vector<std::pair<TopoDS_Shape, int>> produced;
-            TopoDS_Shape compound = hlrInternalCompound(brep_hlr, typ, visible, produced);
-            if (compound.IsNull()) {
+        auto emit = [&](unsigned type, bool visible, TopoDS_Shape& target) {
+            Part::HLRProjector::Params select;
+            select.types = type;
+            select.visible = visible;
+            select.hidden = !visible;
+            Part::TopoShape compound = projector.edges(select);
+            if (!compound.hasSubShape(TopAbs_EDGE)) {
                 return;
             }
-            BRepLib::BuildCurves3d(compound);
 
-            //the HLR edge index becomes the projection shape's own Edge<n>
-            //index; a silhouette is an edge HLR invented and has none
+            //the source becomes the projection shape's own Edge<n> index.  A
+            //silhouette or an iso line reports the face it lies on, which
+            //the names do not use yet, so it stays unnamed.
             ShapeIndexMap sourceOf;
-            if (!ds.IsNull()) {
-                auto& edgeMap = ds->EdgeMap();
-                for (const auto& item : produced) {
-                    if (item.second < 1 || item.second > edgeMap.Extent()) {
-                        continue;
-                    }
-                    int index = sourceEdges.FindIndex(edgeMap.FindKey(item.second));
-                    if (index > 0) {
-                        sourceOf.Bind(item.first, index);
-                    }
+            for (TopExp_Explorer xp(compound.getShape(), TopAbs_EDGE); xp.More(); xp.Next()) {
+                const Part::HLRProjector::Edge* info = projector.info(xp.Current());
+                if (!info || info->source.IsNull() || info->source.ShapeType() != TopAbs_EDGE) {
+                    continue;
+                }
+                int index = sourceEdges.FindIndex(info->source);
+                if (index > 0) {
+                    sourceOf.Bind(xp.Current(), index);
                 }
             }
 
-            target = invertAndTrack(compound, sourceOf);
+            target = invertAndTrack(compound.getShape(), sourceOf);
             for (ShapeIndexMap::Iterator it(sourceOf); it.More(); it.Next()) {
                 m_edgeSource.Bind(it.Key(), it.Value());
             }
         };
 
-        emit(5, true, visHard);
-        emit(3, true, visSmooth);
-        emit(4, true, visSeam);
-        emit(2, true, visOutline);
-        emit(1, true, visIso);
-        emit(5, false, hidHard);
-        emit(3, false, hidSmooth);
-        emit(4, false, hidSeam);
-        emit(2, false, hidOutline);
-        emit(1, false, hidIso);
+        emit(Part::HLRProjector::HardMask, true, visHard);
+        emit(Part::HLRProjector::SmoothMask, true, visSmooth);
+        emit(Part::HLRProjector::SeamMask, true, visSeam);
+        emit(Part::HLRProjector::OutlineMask, true, visOutline);
+        emit(Part::HLRProjector::IsoMask, true, visIso);
+        emit(Part::HLRProjector::HardMask, false, hidHard);
+        emit(Part::HLRProjector::SmoothMask, false, hidSmooth);
+        emit(Part::HLRProjector::SeamMask, false, hidSeam);
+        emit(Part::HLRProjector::OutlineMask, false, hidOutline);
+        emit(Part::HLRProjector::IsoMask, false, hidIso);
     }
     catch (const Standard_Failure&) {
         throw Base::RuntimeError(
