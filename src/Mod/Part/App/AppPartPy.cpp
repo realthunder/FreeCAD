@@ -2875,7 +2875,7 @@ private:
         const char *op = "";
         static std::array<const char*,10> kwd_list = {"shape", "split", "merge", "tighten", "outline",
                                                       "keep_open", "no_open_original", "tol", "op", nullptr};
-        if(!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|OOOOOds", kwd_list,
+        if(!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|OOOOOOds", kwd_list,
                 &pyshape, &split, &merge, &tighten, &outline, &keep_open, &no_open_original, &tol, &op))
             throw Py::Exception();
 
