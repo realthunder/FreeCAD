@@ -220,8 +220,33 @@ areas in `test_joinWires_overlapping_rectangles`.
 
 k=40 goes from 0.38 s to 0.20 s, 200 nested circles to 0.008 s, and the
 element maps over the 38 fixture sections are identical, indices included.
-What is left is almost entirely the R-tree nearest queries: `add()` inside
+What was left was almost entirely the R-tree nearest queries: `add()` inside
 `splitEdges()` about 55% of `build()`, `buildAdjacentList()` about 41%.
+
+## The vertex lookup is a grid hash
+
+Every question asked of the vertex index is "which edge ends lie within
+the tolerance of this point": `add()` asks it to find the vertex a new
+edge should share and to reject duplicates, `buildAdjacentList()` to
+gather each vertex's adjacency group. The R-tree answered it with an
+incremental nearest-neighbour walk (`bgi::nearest(pt, INT_MAX)`, stopped
+by the caller once the distance exceeded the tolerance), and that walk was
+nine tenths of `build()` once nothing else was left.
+
+`VertexIndex` hashes each point quantised on a grid of twice the tolerance.
+The ball of radius tol around any point lies inside the 2x2x2 block of
+cells around it, so a query is at most eight probes of an
+`unordered_multimap`, filtered by distance. The entries come back sorted
+by distance and then by insertion order, so the adjacency order does not
+depend on how the table is laid out -- the R-tree's tie order was an
+artefact of its splits. The cell size follows `myTol` at `clear()`, and a
+query with a wider tolerance than the grid was built for rehashes first.
+
+k=40 goes from 0.20 s to 0.022 s; 17x since the morning, 1900x since the
+search. `build()` is now a twentieth of the process: the rest is startup.
+Inside it `splitEdges()` is three quarters, most of that `add()`, and most
+of *that* the `BRepLib_MakeWire` that `connectEdge()` goes through to
+give a fragment its shared vertices. The lookup itself is under a tenth.
 
 ## The 2D intersector, and what names follow
 

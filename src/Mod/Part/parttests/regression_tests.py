@@ -164,6 +164,32 @@ class RegressionTests(unittest.TestCase):
         areas = sorted(round(Part.Face(w).Area, 6) for w in result.Wires)
         self.assertEqual(areas, [50.0, 50.0, 100.0, 100.0, 100.0])
 
+    def test_joinWires_tolerance_closes_gaps(self):
+        """
+        A tolerance wider than the gaps between the edges closes them.
+
+        The coincident-vertex lookup is a grid hash sized from the tolerance,
+        so this pins that a tolerance given by the caller reaches it: a square
+        whose corners miss by 0.02 is four open edges at the default tolerance
+        and one closed wire at 0.05.
+        """
+        def seg(a, b):
+            return Part.LineSegment(Vector(*a), Vector(*b)).toShape()
+
+        d = 0.02
+        edges = [seg((0, 0, 0), (10, 0, 0)), seg((10, d, 0), (10, 10, 0)),
+                 seg((10, 10 + d, 0), (0, 10, 0)), seg((-d, 10, 0), (-d, 0, 0))]
+        # nothing closes at the default tolerance; that joinWires raises on
+        # an empty result rather than returning one is how it has always
+        # behaved and is not what this test is about
+        with self.assertRaises(Exception):
+            Part.joinWires(Part.Compound(edges), split=True, merge=True,
+                           tighten=True)
+        result = Part.joinWires(Part.Compound(edges), split=True, merge=True,
+                                tighten=True, tol=0.05)
+        self.assertEqual(len(result.Wires), 1)
+        self.assertAlmostEqual(Part.Face(result.Wires[0]).Area, 100.0, delta=1.0)
+
     def test_joinWires_splits_a_collinear_overlap(self):
         """
         An edge that runs along part of another is cut where the overlap ends.
