@@ -1002,6 +1002,12 @@ TaskSketcherConstraints::~TaskSketcherConstraints()
         ->Detach(this);
 }
 
+void TaskSketcherConstraints::sketchClosed()
+{
+    connectionConstraintsChanged.disconnect();
+    QSignalBlocker blocker(ui->listWidgetConstraints);
+    ui->listWidgetConstraints->clear();
+}
 void TaskSketcherConstraints::onSettingsExtendedInformationChanged(bool value)
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(

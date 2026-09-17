@@ -502,6 +502,12 @@ TaskSketcherElements::~TaskSketcherElements()
     connectionElementsChanged.disconnect();
 }
 
+void TaskSketcherElements::sketchClosed()
+{
+    connectionElementsChanged.disconnect();
+    QSignalBlocker blocker(ui->elementsWidget);
+    ui->elementsWidget->clear();
+}
 void TaskSketcherElements::onSelectionChanged(const Gui::SelectionChanges& msg)
 {
     std::string temp;

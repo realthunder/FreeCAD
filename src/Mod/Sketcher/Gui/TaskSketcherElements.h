@@ -72,6 +72,9 @@ class TaskSketcherElements: public Gui::TaskView::TaskBox, public Gui::Selection
 public:
     explicit TaskSketcherElements(ViewProviderSketch *sketchView);
     ~TaskSketcherElements() override;
+    /// Editing has ended: empty the tree, so no item reads the sketch while
+    /// the dialog waits for its deferred deletion
+    void sketchClosed();
 
     /// Observer message from the Selection
     void onSelectionChanged(const Gui::SelectionChanges& msg);
