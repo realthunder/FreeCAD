@@ -199,6 +199,12 @@ public:
         // angle traversal, 0 for none. Index 0 is the dart leaving p1, index 1
         // the one leaving p2.
         int orbit[2];
+        // Which input edges this one came from, as indices into
+        // sourceEdgeArray, sorted. One for an input edge or a fragment of one,
+        // several for a merged chain. The wires are emitted in the order of
+        // these, so that the result does not depend on the order the edges
+        // happen to be walked in -- see build().
+        std::vector<int> sources;
         std::unique_ptr<Geometry> geo;
         Standard_Real firstParam;
         Standard_Real lastParam;
@@ -1158,17 +1164,28 @@ public:
 
             showShape(info.edge, "remove");
             auto removedEdge = info.edge;
+            auto sources = info.sources;
             it = remove(it);
             for (const auto &v : splitted) {
                 if (!add(v.edge, false, v.bbox, it))
                     continue;
                 auto &newInfo = *it++;
+                newInfo.sources = sources;
                 aHistory->AddModified(v.intersectShape, newInfo.edge);
                 // if (v.intersectShape != removedEdge)
                 //     aHistory->AddModified(removedEdge, newInfo.edge);
                 showShape(newInfo.edge, "split");
             }
         }
+    }
+
+    static void mergeSources(std::vector<int> &into, const std::vector<int> &from)
+    {
+        std::vector<int> merged;
+        merged.reserve(into.size() + from.size());
+        std::set_union(into.begin(), into.end(), from.begin(), from.end(),
+                       std::back_inserter(merged));
+        into.swap(merged);
     }
 
     void findSuperEdges()
@@ -1259,6 +1276,10 @@ public:
                 current->iteration = -1;
             }
             auto first = vertices.front().edgeInfo();
+            for (const auto &v : vertices) {
+                if (v.edgeInfo() != first)
+                    mergeSources(first->sources, v.edgeInfo()->sources);
+            }
             first->superEdge = makeCleanWire(false);
             first->superEdgeReversed.Nullify();
             if (BRep_Tool::IsClosed(first->superEdge)) {
@@ -2778,8 +2799,13 @@ public:
         clear();
         sourceEdges.clear();
         sourceEdges.insert(sourceEdgeArray.begin(), sourceEdgeArray.end());
-        for (const auto &e : sourceEdgeArray)
-            add(TopoDS::Edge(e.getShape()), true);
+        int iSource = 0;
+        for (const auto &e : sourceEdgeArray) {
+            auto it = edges.begin();
+            if (add(TopoDS::Edge(e.getShape()), true, it) > 0)
+                it->sources.assign(1, iSource);
+            ++iSource;
+        }
 
         if (doTightBound || doSplitEdge)
             splitEdges();
@@ -2841,20 +2867,56 @@ public:
             }
 
             builder.MakeCompound(compound);
+
+            // Emit the wires in the order of the input edges they are made of,
+            // not in the order they were found. The order they are found in
+            // follows the walk, which follows which fragment was created
+            // first and which end of a chain became its representative, and
+            // those move with the last bits of an intersection point. The
+            // caller names its faces from the wires in order (FaceMaker::
+            // postBuild takes the first unused edge names), so an order that
+            // followed the walk made the names follow the bits.
+            struct Emit {
+                std::vector<int> key;
+                std::shared_ptr<WireInfo> wire;
+                const EdgeInfo *loop = nullptr; // a closed chain, no WireInfo
+            };
+            std::vector<Emit> emits;
             wireSet.clear();
+            auto queue = [&](const std::shared_ptr<WireInfo> &wireInfo) {
+                if (!wireInfo || !wireInfo->done || !wireSet.insertUnique(wireInfo.get()))
+                    return;
+                Emit emit;
+                for (const auto &v : wireInfo->vertices)
+                    mergeSources(emit.key, v.edgeInfo()->sources);
+                emit.wire = wireInfo;
+                emits.push_back(std::move(emit));
+            };
             for (auto &info : edges) {
                 if (info.iteration == -2) {
                     if (!info.wireInfo) {
-                        builder.Add(compound, info.wire());
+                        Emit emit;
+                        emit.key = info.sources;
+                        emit.loop = &info;
+                        emits.push_back(std::move(emit));
                         continue;
                     }
-                    addWire(info.wireInfo);
-                    addWire(info.wireInfo2);
+                    queue(info.wireInfo);
+                    queue(info.wireInfo2);
                 }
                 else if (info.iteration >= 0) {
-                    addWire(info.wireInfo2);
-                    addWire(info.wireInfo);
+                    queue(info.wireInfo2);
+                    queue(info.wireInfo);
                 }
+            }
+            std::stable_sort(emits.begin(), emits.end(),
+                    [](const Emit &a, const Emit &b) { return a.key < b.key; });
+            wireSet.clear();
+            for (auto &emit : emits) {
+                if (emit.loop)
+                    builder.Add(compound, emit.loop->wire());
+                else
+                    addWire(emit.wire);
             }
             wireSet.clear();
         }
