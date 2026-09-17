@@ -8979,6 +8979,17 @@ read a refusal as a loss.
 
 ### 7.28 The host fallback: a Proxy the guest cannot serve **[designed, BUILT and PROVEN 2026-09-17]**
 
+**INTERIM, ruled 2026-09-17 after it was built:** the automatic
+fallback below is a hole relative to what routing promises -- the
+Mod-root rule bounds which code is imported, not whose data drives it,
+and an untrusted file's `loads`/`execute` run on the host before anyone
+reads the warning.  Next: the fallback becomes a `host.import:<module>`
+PROMPT under the document principal (the catalog row of 2.2), answered
+by a modal at document open, with a deferred restore so a grant re-runs
+the native restore without reopening the file; headless runs pass
+`--grant`.  Until then the mechanism stands as written here.
+
+
 **The defect.**  `1623ac797d` (2026-09-16) made `Expression/Sandbox:
 Evaluate` default true without re-running the Python suite.  The same
 preference routes a saved Proxy's restore (3.5), and the guest serves
