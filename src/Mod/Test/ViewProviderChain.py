@@ -132,6 +132,17 @@ class ViewProviderChainCases(unittest.TestCase):
         if not FreeCAD.GuiUp:
             self.skipTest("needs the GUI")
         del CALLS[:]
+        # The extension of a view chain is a document object, and its Proxy
+        # restores into the GUEST when routing is on -- these cases read the
+        # chain's result on the HOST.  Routing is ON by default since
+        # 2026-09-16, so native has to be asked for, and put back.
+        params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Expression/Sandbox")
+        had = "Evaluate" in params.GetBools()
+        prior = params.GetBool("Evaluate", True)
+        params.SetBool("Evaluate", False)
+        self.addCleanup(
+            lambda: params.SetBool("Evaluate", prior) if had else params.RemBool("Evaluate")
+        )
         self.doc = FreeCAD.newDocument("ViewProxyChain")
         self.tempdirs = []
 

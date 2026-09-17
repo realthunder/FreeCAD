@@ -674,6 +674,13 @@
    body is a real table so the browser's own text selection, clipboard
    and IME work on it without help. */
 .fc-sheet {
+  /* The chrome host (#fc-ui) is pointer-events: none so the canvas keeps
+     every gesture we do not claim, and a panel that never opts back in is
+     invisible to the finger: taps fall through to the model and the close
+     button is dead.  Found on a handset 2026-09-17; the panel harnesses
+     mount into a plain body host with no such ancestor, which is why no
+     gate ever saw it. */
+  pointer-events: auto;
   position: fixed;
   right: 16px;
   bottom: 16px;
@@ -1212,3 +1219,429 @@
   right: 8px;
   bottom: calc(160px + env(safe-area-inset-bottom));
 }
+
+/* The Python console (console.tsx, docs/Sandbox.md 7.20 C4). Bottom-left by
+   default: the spreadsheet panel takes the bottom-right corner, and the two
+   are opened together when a sheet is being scripted. */
+.fc-console {
+  /* Opts back in to the pointer, like .fc-sheet above and for the same
+     reason -- #fc-ui hands everything it does not claim to the canvas. */
+  pointer-events: auto;
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 32px));
+  height: min(46vh, 420px);
+  font: 12px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(18, 20, 24, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.fc-console-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  cursor: move;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.fc-console-title { font-weight: 600; }
+.fc-console-doc { color: #a8b4c4; }
+.fc-console-btn {
+  font: 11px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.fc-console-interrupt {
+  color: #ffd0a0;
+  border-color: rgba(240, 160, 80, 0.5);
+}
+.fc-console-out {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 8px;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.fc-console-in { color: #9fc2ee; }
+.fc-console-out .fc-console-out { color: #e8e8ea; }
+.fc-console-err { color: #ff9f9f; }
+.fc-console-info { color: #8e98a6; }
+.fc-console-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.fc-console-prompt { color: #9fc2ee; }
+.fc-console-input {
+  flex: 1;
+  font: inherit;
+  color: #e8e8ea;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+/* The completion list, in the panel's own flow above the input row:
+   .fc-console is overflow: hidden, so a list positioned over the row
+   would be clipped by the panel that owns it. */
+.fc-console-suggest {
+  flex: none;
+  max-height: 168px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* The explicit ask for completion.  A phone keyboard has no Tab key, so
+   without a tap target the console's only trigger is unreachable there --
+   the same ruling 7.23 made for the expression field. */
+.fc-console-complete {
+  flex: none;
+  touch-action: manipulation;
+}
+.fc-console-complete:disabled { opacity: 0.4; }
+@media (max-width: 640px) {
+  /* A thumb target, not a mouse one. */
+  .fc-console-complete { min-width: 44px; min-height: 44px; }
+}
+@media (max-width: 640px) {
+  .fc-console {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 50vh;
+    border-radius: 8px 8px 0 0;
+  }
+}
+
+/* The desktop's task panel, mirrored (docs/Sandbox.md 7.22, G7).
+ * A floating card, ruled 2026-09-16: same material as the inspector and
+ * the sheet beside it, because the panel is another card in this chrome
+ * and not a Qt window pretending to be one. */
+.fc-panel {
+  pointer-events: auto;
+  touch-action: pan-y;
+  position: absolute;
+  top: 12px;
+  /* Right of centre: the inspector owns the left, and a task panel is
+   * what you read while the model stays visible. Drag it anywhere. */
+  right: calc(12px + env(safe-area-inset-right));
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px - env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 30, 34, 0.92);
+  color: #e8e8ea;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .fc-panel {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 60vh;
+    border-radius: 14px 14px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+.fc-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px;
+  cursor: grab;
+}
+
+.fc-panel-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fc-panel-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa0a6;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fc-panel-close:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+
+.fc-panel-body {
+  overflow: auto;
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fc-panel-empty { color: #9aa0a6; padding: 6px 0 10px; }
+
+/* A TaskBox: the desktop draws a titled group, so does this. */
+.fc-panel-box {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.fc-panel-box-head {
+  font-weight: 600;
+  color: #cfd3d7;
+  margin-bottom: 6px;
+}
+
+.fc-panel-stack, .fc-panel-grid { min-width: 0; }
+.fc-panel-cell { min-width: 0; display: flex; align-items: center; }
+.fc-panel-label { color: #cfd3d7; white-space: nowrap; }
+
+.fc-panel-field {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #e8e8ea;
+  padding: 4px 6px;
+  font: inherit;
+}
+
+.fc-panel-field:disabled { opacity: 0.5; }
+
+.fc-panel-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #e8e8ea;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+  /* A label is the desktop's, not ours: it can be long, and a button that
+     grows past its row pushes the rest of the row off the card. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc-panel-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); }
+.fc-panel-btn:disabled { opacity: 0.5; cursor: default; }
+.fc-panel-ok { background: rgba(88, 132, 255, 0.28); }
+
+/* A field and what completion hangs off it (docs/Sandbox.md 7.23). */
+.fc-panel-fieldwrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fc-panel-fx {
+  flex: none;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #cfd3d7;
+  font: italic 600 12px/1 serif;
+  padding: 5px 7px;
+  cursor: pointer;
+}
+
+.fc-panel-fx-on { background: rgba(88, 132, 255, 0.34); color: #e8e8ea; }
+.fc-panel-error { color: #ff9c8a; font-size: 12px; padding: 2px 0; }
+
+/* The expression dialog (docs/Sandbox.md 7.23): the desktop's f(x) dialog,
+ * drawn in the page. Centred on a wide viewport, a sheet on a narrow one --
+ * where it also has to sit above the keyboard it raises. */
+.fc-expr-backdrop {
+  position: fixed;
+  /* Above the chrome host's own stacking context (#fc-ui, z-index 10),
+   * not merely above the cards inside it: this dialog is portalled to
+   * the body, so it is that host's SIBLING and loses to it at any lower
+   * value. At 7 the HUD card sat on top of the editor -- it still took
+   * focus and still looked right, and every keystroke went to whatever
+   * was above it instead. */
+  z-index: 20;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fc-expr {
+  width: min(460px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(28, 30, 34, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+@media (max-width: 640px) {
+  .fc-expr-backdrop { align-items: flex-start; }
+  .fc-expr {
+    width: 100%;
+    margin-top: env(safe-area-inset-top);
+    border-radius: 0 0 14px 14px;
+  }
+}
+
+.fc-expr-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.fc-expr-bound {
+  color: #9aa0a6;
+  font-weight: 400;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fc-expr-edit {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: #e8e8ea;
+  padding: 8px;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.fc-expr-suggest {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+/* The result line: what it WOULD evaluate to, or why it would not. */
+.fc-expr-result {
+  min-height: 20px;
+  color: #a8d8a8;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fc-expr-warn { color: #e8c98a; }
+.fc-expr-bad { color: #ff9c8a; }
+
+.fc-expr-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Wide: a dropdown under the field. */
+.fc-panel-suggest {
+  position: absolute;
+  z-index: 3;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: rgba(24, 26, 30, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+.fc-panel-sugg {
+  padding: 6px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fc-panel-sugg-on, .fc-panel-sugg:hover { background: rgba(88, 132, 255, 0.28); }
+
+/* Narrow: a strip pinned above the on-screen keyboard, which is where a
+ * thumb already is. `bottom` is set from visualViewport, not from the
+ * layout viewport the keyboard does not resize. */
+.fc-panel-chips {
+  position: fixed;
+  /* Above the dialog it belongs to, and so above the chrome host too
+   * (see .fc-expr-backdrop). */
+  z-index: 21;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  background: rgba(20, 22, 26, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  scrollbar-width: none;
+}
+
+.fc-panel-chip {
+  flex: none;
+  min-height: 44px;   /* a touch target, not a mouse target */
+  padding: 0 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8e8ea;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.fc-panel-chip-on { background: rgba(88, 132, 255, 0.34); }
+
+.fc-panel-check { display: flex; align-items: center; gap: 6px; }
+.fc-panel-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+.fc-panel-spacer { flex: 1; min-width: 6px; min-height: 6px; }
+.fc-panel-sep { flex: 1; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.fc-panel-pic { max-width: 100%; }
+
+.fc-panel-rows { display: flex; flex-direction: column; width: 100%; }
+.fc-panel-row { display: flex; gap: 8px; padding: 2px 0; }
+.fc-panel-row span { color: #cfd3d7; white-space: nowrap; }
+.fc-panel-kids { padding-left: 12px; }

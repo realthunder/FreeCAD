@@ -35,6 +35,11 @@ bool hostOp(const nlohmann::json& req, nlohmann::json& reply);
 /// bridge request or on the evaluation's reply; never as an op.
 nlohmann::json takePendingReleases();
 
+/// Forget the reads the host prefetched (FcxWire "pf", docs/Sandbox.md
+/// 7.20 C5): at the start and the end of every host request.  The bridge
+/// also forgets them before any op that may write.
+void clearPrefetched();
+
 /** Build the module facades (generated MODULES: Part today) into
  * sys.modules -- callables over mod_call, constants over mod_get,
  * exception classes local to the guest.  Called from initEvalGlobals;

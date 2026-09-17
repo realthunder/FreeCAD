@@ -674,11 +674,27 @@ being filled, all live at once.
 The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
 current.
 
-**Two of them are not registered, and are meant not to be**:
+**Seven of them are not registered, and are meant not to be**:
 `camera-uplink-browser.py` and `serve-edit-browser.py` drive a real Chrome
-through the built WASM viewer, so they need three things this repository does
-not carry -- `build/wasm`, a `puppeteer-core` install, and a Chrome binary --
-and they skip rather than fail when any is missing. Registering them would
+through the built WASM viewer, `sandbox-console-browser.py` boots the
+sandbox guest in a page served by FreeCAD (docs/Sandbox.md 7.20, C1; its
+endpoints without a browser are the registered `GuiSandboxConsoleServe`), and
+`sandbox-bridge-browser.py` has that guest read and write the served document
+over the socket (C2; the same wire without a browser is the registered
+`GuiSandboxBridgeServe`, which also carries C3's client principal), and
+`sandbox-console-panel-browser.py` uses the console panel on top of it the way
+a person does -- lines, a block, Tab, the history, a paste, Interrupt, a
+document switch -- from a gate page with no WASM viewer (C4), and
+`sandbox-console-viewer-browser.py` opens the real viewer page with
+`?console` to show the console rides the viewer's own connection (one
+client, its view-only mode, its document switch), and
+`sandbox-latency-browser.py` times the statements a console user types with
+`scripts/delay-proxy.js` holding the page's connection at a LAN's or a
+tunnel's round-trip time, and reads the page's processes' memory (C5), so
+they need what this repository does not carry -- `build/wasm` (for the console
+page only the web bundle, `npm run build` in `src/Gui/Renderer/web`), a
+`puppeteer-core` install, and a Chrome binary -- and they skip rather than fail
+when any is missing. Registering them would
 put a test in the ctest count that says SKIP on every box but this one, which
 is a worse lie than an unregistered test. Run them by hand:
 
@@ -686,6 +702,42 @@ is a worse lie than an unregistered test. Run them by hand:
     CHROME=~/.cache/puppeteer/chrome/*/chrome-linux64/chrome \
     scripts/gui-test.sh tests/gui/serve-edit-browser.py /tmp/edit-web \
         --timeout 600
+
+Setting the browser tooling up again (done 2026-09-14, when none of it was
+left on the box): node comes with emsdk
+(`~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin`, pass it as `NODE` or put it
+on PATH); `npm i puppeteer-core @puppeteer/browsers` in
+`~/works/sw/fcad-probes`, then `npx @puppeteer/browsers install chrome@stable
+--path ~/.cache/puppeteer`. Chrome for Testing links `libasound.so.2`, which
+the system does not have and there is no sudo to install: symlink the conda
+env's copy into `~/.cache/puppeteer/lib` and pass that directory as
+`CHROME_LIBS` (`scripts/console-drive.js` prepends it to the browser's
+`LD_LIBRARY_PATH`; the older drivers need it in `LD_LIBRARY_PATH` itself).
+
+    PUPPETEER_PATH=~/works/sw/fcad-probes/node_modules/puppeteer-core \
+    CHROME=$(ls ~/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome) \
+    CHROME_LIBS=~/.cache/puppeteer/lib \
+    NODE=~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin/node \
+    scripts/gui-test.sh tests/gui/sandbox-console-browser.py /tmp/console-web \
+        --timeout 600
+
+`sandbox-bridge-browser.py`, `sandbox-console-panel-browser.py`,
+`sandbox-console-viewer-browser.py` and `sandbox-latency-browser.py` take the
+same four variables (the latency one also `SANDBOX_LATENCY_RTTS` and
+`SANDBOX_LATENCY_MODES`, and about seven minutes for the prefetch on and off).
+
+`build/wasm` on this box (configured 2026-09-15; the CMakeLists' own
+instructions name `~/works/sw/emsdk`, which is not here): the emsdk of the
+guest wheel, the cmake and ninja of the conda env, node from emsdk, and the
+host shaderc the relwithdebinfo tree builds --
+
+    source src/App/PyodideHost/guest/emsdk-env.sh
+    export PATH=$PATH:$PWD/.conda/freecad/bin:~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin
+    emcmake cmake -S src/Gui/Renderer/wasm -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+        -DFCVIEWER_SHADERC=$PWD/build/conda-relwithdebinfo-801/src/3rdParty/bgfx/cmake/bgfx/shaderc
+    cmake --build build/wasm
+
+It builds the web bundle into `build/wasm/web` as well, emptying it first.
 
 `EDIT_REAL=1` (`CAMUP_REAL=1` for the other) moves it off headless
 swiftshader onto the WSLg desktop's real GPU; neither is judged by pixels, so

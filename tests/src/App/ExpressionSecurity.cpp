@@ -68,6 +68,34 @@ TEST(ExpressionSecurity, principalClasses)
     EXPECT_FALSE(principalClass("addon:").has_value());
     EXPECT_FALSE(principalClass("").has_value());
     EXPECT_FALSE(principalClass("somebody").has_value());
+    // catalog v2: a remote client (docs/Sandbox.md 7.20, C3)
+    EXPECT_EQ(principalClass("client:id:alice@example.com"), PrincipalClass::Client);
+    EXPECT_EQ(principalClass("client:grant:3"), PrincipalClass::Client);
+    EXPECT_EQ(principalClass("client:conn:17"), PrincipalClass::Client);
+    EXPECT_FALSE(principalClass("client:id:").has_value());
+    EXPECT_FALSE(principalClass("client:grant:").has_value());
+    EXPECT_FALSE(principalClass("client:grant:3x").has_value());
+    EXPECT_FALSE(principalClass("client:alice").has_value());
+    EXPECT_FALSE(principalClass("client:").has_value());
+}
+
+TEST(ExpressionSecurity, clientPrincipals)
+{
+    EXPECT_EQ(clientPrincipalId("alice@example.com", 3, 17), "client:id:alice@example.com");
+    // no verified identity: the admitting grant, then the connection
+    EXPECT_EQ(clientPrincipalId("", 3, 17), "client:grant:3");
+    EXPECT_EQ(clientPrincipalId("", 0, 17), "client:conn:17");
+    // a control character is not rewritten into someone else's name
+    EXPECT_EQ(clientPrincipalId(std::string("al\x1fice"), 3, 17), "client:grant:3");
+    EXPECT_EQ(clientPrincipalId("bob\n", 0, 17), "client:conn:17");
+    // only a verified identity outlives the run
+    EXPECT_TRUE(isPersistablePrincipal("client:id:alice@example.com"));
+    EXPECT_FALSE(isPersistablePrincipal("client:grant:3"));
+    EXPECT_FALSE(isPersistablePrincipal("client:conn:17"));
+    EXPECT_TRUE(isPersistablePrincipal("session"));
+    EXPECT_TRUE(isPersistablePrincipal("addon:Draft"));
+    EXPECT_TRUE(isPersistablePrincipal("document:sha256:" + std::string(64, 'a')));
+    EXPECT_FALSE(isPersistablePrincipal("somebody"));
 }
 
 TEST(ExpressionSecurity, catalogDefaults)
@@ -114,6 +142,42 @@ TEST(ExpressionSecurity, catalogDefaults)
     EXPECT_TRUE(isPromptable(PrincipalClass::Session, Permission::AppWrite));
     EXPECT_TRUE(isPromptable(PrincipalClass::Session, Permission::Gui));
     EXPECT_TRUE(isPromptable(PrincipalClass::Document, Permission::UnsafeGetattr));
+
+    // Catalog v2's client column (docs/Sandbox.md 7.20, C3).
+    struct ClientRow {
+        Permission perm;
+        Decision decision;
+        bool promptable;
+        bool grantable;
+    };
+    const ClientRow clientRows[] = {
+        {Permission::DocReadSelf,   Decision::Allow,  false, true},
+        {Permission::DocWriteSelf,  Decision::Allow,  false, true},
+        {Permission::DocForeign,    Decision::Deny,   false, true},
+        {Permission::GeomCall,      Decision::Allow,  false, true},
+        {Permission::AppQuery,      Decision::Allow,  false, true},
+        {Permission::PrefsRead,     Decision::Allow,  false, true},
+        {Permission::PrefsWrite,    Decision::Deny,   false, true},
+        {Permission::AppWrite,      Decision::Deny,   false, true},
+        {Permission::Gui,           Decision::Deny,   false, false},
+        {Permission::GuiDoCommand,  Decision::Deny,   false, true},
+        {Permission::HostImport,    Decision::Prompt, true,  true},
+        {Permission::UnsafeGetattr, Decision::Deny,   false, false},
+        {Permission::PkgInstall,    Decision::Prompt, true,  true},
+    };
+    for (const auto &row : clientRows) {
+        EXPECT_EQ(catalogDefault(PrincipalClass::Client, row.perm), row.decision)
+            << permissionName(row.perm);
+        EXPECT_EQ(isPromptable(PrincipalClass::Client, row.perm), row.promptable)
+            << permissionName(row.perm);
+        EXPECT_EQ(isGrantable(PrincipalClass::Client, row.perm), row.grantable)
+            << permissionName(row.perm);
+    }
+    // every other class can be granted everything
+    for (auto pclass : {PrincipalClass::Document, PrincipalClass::Session, PrincipalClass::Addon}) {
+        EXPECT_TRUE(isGrantable(pclass, Permission::Gui));
+        EXPECT_TRUE(isGrantable(pclass, Permission::UnsafeGetattr));
+    }
 }
 
 TEST(ExpressionSecurity, pseudoPropertyMapping)

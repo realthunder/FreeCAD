@@ -55,6 +55,7 @@ typedef struct _object PyObject;
 
 namespace App {
 
+class Document;
 class DocumentObject;
 
 namespace ExpressionSecurity {
@@ -79,6 +80,12 @@ private:
     bool promptable;
 };
 
+struct RemoteClient {
+    std::string principal;
+    std::string context;
+    bool readOnly = false;
+};
+
 class Runtime {
 public:
     class Scope {
@@ -86,6 +93,8 @@ public:
         explicit Scope(const App::DocumentObject *) {}
         Scope(const App::DocumentObject *, const App::DocumentObject *) {}
         explicit Scope(const char *) {}
+        explicit Scope(const App::Document *) {}
+        Scope(const App::Document *, const RemoteClient &) {}
         Scope(const Scope &) = delete;
         Scope &operator=(const Scope &) = delete;
     };
@@ -157,6 +166,22 @@ struct AppExport PendingRequest {
     int count = 1;             // repeat checks collapse into one entry
 };
 
+/** A remote client's op on a served document (docs/Sandbox.md 7.20,
+ * C3): who it is and what its connection may do, as the scene server's
+ * door decided.
+ */
+struct AppExport RemoteClient {
+    /// clientPrincipalId(identity, grant, connection)
+    std::string principal;
+    /// The audit line's context after the document name: the connection
+    /// as the roster shows it (id, label, address).
+    std::string context;
+    /// A view-only connection: doc.write.self is DENY, not promptable,
+    /// whatever was granted -- the door's access is the owner's decision,
+    /// changed on the sharing roster, never by a permission grant.
+    bool readOnly = false;
+};
+
 class AppExport Runtime {
 public:
     static Runtime &instance();
@@ -184,6 +209,19 @@ public:
         Scope(const App::DocumentObject *runAs, const App::DocumentObject *via);
         /// Explicit principal id: "session" or "addon:<name>".
         explicit Scope(const char *principalId);
+        /** The document principal of `doc` with no owner object, pushed
+         * WHATEVER scope is active: a remote guest's bridge op on a served
+         * document (docs/Sandbox.md 7.20, C2), which answers for the
+         * document as a whole rather than for one object's code.  A null
+         * `doc` pushes nothing -- never the session.
+         */
+        explicit Scope(const App::Document *doc);
+        /** A remote client's bridge op on the served document `doc`
+         * (docs/Sandbox.md 7.20, C3): the CLIENT's principal, pushed
+         * whatever scope is active.  Always pushes -- a null `doc`
+         * reaches nothing, and an empty stack would be host code.
+         */
+        Scope(const App::Document *doc, const RemoteClient &client);
         ~Scope();
 
         Scope(const Scope &) = delete;

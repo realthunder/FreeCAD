@@ -6,6 +6,7 @@
 // provides and a build tree mirrors.  They SKIP when it is nowhere, so
 // the suite stays green without the wasm toolchain.
 
+#include <functional>
 #include <gtest/gtest.h>
 
 #include <cstdlib>
@@ -834,6 +835,87 @@ TEST_F(ExpressionImageEvalTest, bridgeCountersPerOp)
     EXPECT_EQ(host.stats().evals, 0u);
     EXPECT_TRUE(host.stats().ops.empty());
     host.clearHandles();
+}
+
+TEST_F(ExpressionImageEvalTest, prefetchAnswersSiblingReads)
+{
+    // docs/Sandbox.md 7.20, C5: on a table that prefetches (a remote
+    // guest's endpoint; turned on here to run the guest's half in
+    // process), a read off one element of a list brings the same read of
+    // the elements after it, and the guest answers those without a hop --
+    // until an op that may write, and never past the statement.
+    auto& host = ImageHost::instance();
+    for (int i = 0; i < 40; ++i) {
+        auto o = doc->addObject("App::FeaturePython", ("P" + std::to_string(i)).c_str());
+        auto w = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            o->addDynamicProperty("App::PropertyFloat", "Width"));
+        ASSERT_NE(w, nullptr);
+        w->setValue(i);
+        auto v = Base::freecad_dynamic_cast<App::PropertyVector>(
+            o->addDynamicProperty("App::PropertyVector", "Pos"));
+        ASSERT_NE(v, nullptr);
+        v->setValue(Base::Vector3d(i, 0, 0));
+    }
+    struct PrefetchOff
+    {
+        ~PrefetchOff()
+        {
+            ImageHost::instance().setPrefetch(false);
+        }
+    } off;
+    auto run = [&](const char* src, bool prefetch, const char* op) {
+        host.setPrefetch(prefetch);
+        host.clearHandles();
+        host.resetStats();
+        auto r = host.eval(src, objectBinding("d", doc));
+        EXPECT_TRUE(r.ok) << src << ": " << r.excType << ": " << r.message;
+        auto n = host.stats().ops[op];
+        return std::make_pair(r.ok ? value(r) : json(), n);
+    };
+
+    // a declared attribute: 41 names, one hop each without the prefetch;
+    // with it the list, the first miss (32 more) and the second (the rest)
+    const char* names = "[o.Name for o in d.Objects]";
+    auto [namesOff, hopsOff] = run(names, false, "get_attr");
+    auto [namesOn, hopsOn] = run(names, true, "get_attr");
+    EXPECT_EQ(namesOn, namesOff);
+    ASSERT_TRUE(namesOn.is_array());
+    EXPECT_EQ(namesOn.size(), 41u);
+    EXPECT_EQ(hopsOff, 42u);
+    EXPECT_EQ(hopsOn, 3u);
+
+    // a property, the same
+    const char* widths = "[o.Width for o in d.Objects[1:]]";
+    auto [widthsOff, readsOff] = run(widths, false, "read_prop");
+    auto [widthsOn, readsOn] = run(widths, true, "read_prop");
+    EXPECT_EQ(widthsOn, widthsOff);
+    EXPECT_EQ(readsOff, 40u);
+    EXPECT_EQ(readsOn, 2u);
+
+    // a write forgets what was prefetched: the read after it sees it
+    auto [written, n1] = run(
+        "(lambda l: [l[1].Width, setattr(l[2], 'Width', 99.0), l[2].Width])(d.Objects)",
+        true, "read_prop");
+    ASSERT_TRUE(written.is_array());
+    ASSERT_EQ(written.size(), 3u);
+    EXPECT_DOUBLE_EQ(written[0].get<double>(), 0.0);
+    EXPECT_DOUBLE_EQ(written[2].get<double>(), 99.0);
+    EXPECT_EQ(n1, 2u);
+
+    // a hit is a fresh value, as natively
+    auto [fresh, n2] = run(
+        "(lambda l: [l[1].Pos.x, l[2].Pos is l[2].Pos])(d.Objects)",
+        true, "read_prop");
+    ASSERT_TRUE(fresh.is_array());
+    ASSERT_EQ(fresh.size(), 2u);
+    EXPECT_EQ(fresh[1], json(false));
+    EXPECT_EQ(n2, 1u);
+
+    // a member that crosses as a handle prefetches nothing: no handle is
+    // minted that the guest did not ask for
+    auto [docs, hops] = run("len([o.Document for o in d.Objects])", true, "get_attr");
+    EXPECT_EQ(docs, json(41));
+    EXPECT_EQ(hops, 42u);
 }
 
 TEST_F(ExpressionImageEvalTest, writePropSameDocument)
@@ -2553,6 +2635,93 @@ TEST_F(ExpressionImageBenchTest, DISABLED_BenchImageBridgeHop)
     ImageHost::instance().clearHandles();
 }
 
+TEST_F(ExpressionImageBenchTest, DISABLED_BenchPrefetchInProcess)
+{
+    // The prefetch of sibling reads (docs/Sandbox.md 7.20, C5) on the
+    // desktop's own guest, where a hop is a few us: what a loop saves, and
+    // what a statement that reads one element or stops early pays for the
+    // siblings it never reads.  Each case off, then on.
+    auto& host = ImageHost::instance();
+    for (int i = 0; i < 1000; ++i) {
+        auto o = doc->addObject("App::FeaturePython", ("P" + std::to_string(i)).c_str());
+        auto w = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            o->addDynamicProperty("App::PropertyFloat", "Width"));
+        ASSERT_NE(w, nullptr);
+        w->setValue(i);
+    }
+    struct PrefetchOff
+    {
+        ~PrefetchOff()
+        {
+            ImageHost::instance().setPrefetch(false);
+        }
+    } off;
+    auto both = [&](const char* name, const char* src, int iters, const char* op,
+                    const std::function<std::vector<unsigned char>()>& pack) {
+        for (bool on : {false, true}) {
+            host.setPrefetch(on);
+            host.resetStats();
+            std::string label = std::string("prefetch.") + name + (on ? ".on" : ".off");
+            benchUs(label.c_str(), iters, [&] {
+                auto r = host.eval(src, pack());
+                ASSERT_TRUE(r.ok) << src << ": " << r.excType << ": " << r.message;
+                host.clearHandles();
+            });
+            std::cout << "BENCH " << label << " " << op << " hops/eval "
+                      << double(host.stats().ops[op]) / (iters + 1) << std::endl;
+        }
+    };
+    auto docPack = [&] { return objectBinding("d", doc); };
+    // what a statement costs before any hop: the pack, then the list itself
+    both("pack", "42", 200, "get_attr", docPack);
+    both("list1000", "len(d.Objects)", 200, "get_attr", docPack);
+    both("names1000", "len([o.Name for o in d.Objects])", 20, "get_attr", docPack);
+    both("widths1000", "sum(o.Width for o in d.Objects[1:])", 20, "read_prop", docPack);
+    both("oneRead", "d.Objects[5].Name", 200, "get_attr", docPack);
+    both("twoReads", "d.Objects[5].Name + d.Objects[900].Name", 200, "get_attr", docPack);
+    both("breakAt40", "next(i for i, o in enumerate(d.Objects) if o.Name == 'P40')", 100,
+         "get_attr", docPack);
+
+    // shapes: a 1000-edge polygon's edges, when Part imports in this binary
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* part = PyImport_ImportModule("Part");
+        if (!part) {
+            PyErr_Clear();
+            std::cout << "BENCH prefetch.edges skipped: no Part" << std::endl;
+            return;
+        }
+        Py_DECREF(part);
+    }
+    uint64_t unused = exportFromSource(
+        "import FreeCAD, Part\n"
+        "poly = Part.makePolygon([FreeCAD.Vector(i, 3 * (i % 2), 0) for i in range(1001)])\n",
+        "poly");
+    (void)unused;
+    host.clearHandles();
+    auto shapePack = [&] {
+        Base::PyGILStateLocker lock;
+        PyObject* ns = PyDict_New();
+        PyDict_SetItemString(ns, "__builtins__", PyEval_GetBuiltins());
+        PyObject* r = PyRun_String(
+            "import FreeCAD, Part\n"
+            "poly = Part.makePolygon([FreeCAD.Vector(i, 3 * (i % 2), 0) for i in range(1001)])\n",
+            Py_file_input, ns, ns);
+        Py_XDECREF(r);
+        PyObject* py = PyDict_GetItemString(ns, "poly");
+        json h = {{"t", "h"}, {"id", host.exportObject(py)}, {"ty", Py_TYPE(py)->tp_name}};
+        if (const char* fc = App::ExpressionSandbox::facadeKeyFor(Py_TYPE(py)))
+            h["fc"] = fc;
+        Py_DECREF(ns);
+        json b;
+        b["s"] = std::move(h);
+        auto v = json::to_cbor(b);
+        return std::vector<unsigned char>(v.begin(), v.end());
+    };
+    both("edgeLength1000", "sum(e.Length for e in s.Edges)", 10, "get_attr", shapePack);
+    both("edgeFirst", "s.Edges[0].Length", 50, "get_attr", shapePack);
+}
+
 TEST_F(ExpressionImageBenchTest, DISABLED_BenchImageInstantiation)
 {
     // Warm instantiation from the .cwasm: the per-principal zygote cost
@@ -4245,6 +4414,84 @@ TEST_F(ExpressionImageEvalTest, guestProxyRestoreRoute)
     EXPECT_EQ(proxyModuleOf(obj), "fcxprobe");
     EXPECT_EQ(proxyModuleOf(obj2), "fcxhostonly");
     width = Base::freecad_dynamic_cast<App::PropertyFloat>(obj->getPropertyByName("Width"));
+    ASSERT_NE(width, nullptr);
+    width->setValue(5.0);
+    obj->touch();
+    doc->recompute();
+    EXPECT_FALSE(obj->isError());
+    EXPECT_DOUBLE_EQ(width->getValue(), 10.0);
+}
+
+TEST_F(ExpressionImageEvalTest, proxyRestoreNeedsRuntime)
+{
+    auto& host = ImageHost::instance();
+    // a class both sides can serve: the guest for the routed restore,
+    // the host for the native one
+    auto r = host.exec(ProbeSource, "fcxprobe");
+    ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
+    ASSERT_TRUE(hostModule("fcxprobe", ProbeSource));
+    auto param = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Expression/Sandbox");
+    const std::string path = std::string(std::tmpnam(nullptr)) + "-fcxnoruntime.FCStd";
+    struct Cleanup
+    {
+        ParameterGrp::handle param;
+        std::string path;
+        ~Cleanup()
+        {
+            param->RemoveBool("Evaluate");
+            // back to resolving its own paths -- pinning the ones this
+            // case saw would outlive it and decide what the resolution
+            // cases in ExpressionPyodide.cpp see
+            ImageHost::instance().configure("", "");
+            std::remove(path.c_str());
+            dropHostModules({"fcxprobe"});
+        }
+    } cleanup {param, path};
+
+    // a guest Proxy on Obj, saved with routing on
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* py = obj->getPyObject();
+        PyObject* args = Py_BuildValue("(O)", py);
+        Py_DECREF(py);
+        auto n = host.proxyNew("fcxprobe", "Probe", args, false, obj);
+        Py_DECREF(args);
+        ASSERT_TRUE(n.ok) << n.excType << ": " << n.message;
+        PyObject* standIn = host.decodeResult(n);
+        ASSERT_NE(standIn, nullptr);
+        Py_DECREF(standIn);
+    }
+    doc->recompute();
+    ASSERT_TRUE(doc->saveAs(path.c_str()));
+    App::GetApplication().closeDocument(doc->getName());
+    doc = nullptr;
+    obj = nullptr;
+
+    // routing ON, no runtime.  The preference alone used to claim the
+    // routed path here, and every object came back without a Proxy.
+    param->SetBool("Evaluate", true);
+    host.configure("/nonexistent/fcx_image", "/nonexistent/fcx_stdlib");
+    ASSERT_FALSE(host.available());
+    EXPECT_FALSE(App::ExpressionSandbox::proxyRestoreRouted())
+        << "with no runtime the restore must not claim the routed path";
+    EXPECT_FALSE(App::ExpressionSandbox::evaluationRouted());
+
+    doc = App::GetApplication().openDocument(path.c_str());
+    ASSERT_NE(doc, nullptr);
+    obj = doc->getObject("Obj");
+    ASSERT_NE(obj, nullptr);
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* proxy = proxyOf(obj);
+        ASSERT_NE(proxy, nullptr) << "the object must keep its Proxy";
+        EXPECT_NE(proxy, Py_None) << "the object must keep its Proxy";
+        EXPECT_FALSE(App::ExpressionSandbox::isGuestProxy(proxy))
+            << "with no runtime the Proxy restores natively";
+    }
+    EXPECT_EQ(proxyModuleOf(obj), "fcxprobe");
+    auto* width =
+        Base::freecad_dynamic_cast<App::PropertyFloat>(obj->getPropertyByName("Width"));
     ASSERT_NE(width, nullptr);
     width->setValue(5.0);
     obj->touch();

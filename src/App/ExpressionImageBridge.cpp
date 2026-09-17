@@ -20,6 +20,7 @@
 
 #include "PreCompiled.h"
 
+#include <chrono>
 #include <cstring>
 #include <map>
 #include <set>
@@ -345,6 +346,34 @@ void HandleTable::clear()
     objects.clear();
     ids.clear();
     uses.clear();
+    siblingLists.clear();
+    siblingOf.clear();
+    chunks.clear();
+}
+
+void HandleTable::noteSiblings(std::vector<uint64_t> list)
+{
+    if (!prefetching || list.size() < 2)
+        return;
+    const std::size_t index = siblingLists.size();
+    for (std::size_t i = 0; i < list.size(); ++i)
+        siblingOf[list[i]] = {index, i};
+    siblingLists.push_back(std::move(list));
+}
+
+std::vector<uint64_t> HandleTable::nextSiblings(uint64_t id, const std::string& name)
+{
+    std::vector<uint64_t> out;
+    auto at = siblingOf.find(id);
+    if (!prefetching || at == siblingOf.end())
+        return out;
+    const auto& list = siblingLists[at->second.first];
+    std::size_t& chunk = chunks[{at->second.first, name}];
+    chunk = chunk ? std::min<std::size_t>(chunk * 2, 1024) : 32;
+    for (std::size_t i = at->second.second + 1; i < list.size() && out.size() < chunk; ++i)
+        if (objects.count(list[i]))
+            out.push_back(list[i]);
+    return out;
 }
 
 
@@ -404,17 +433,32 @@ static App::Document* documentOf(PyObject* obj)
     return nullptr;
 }
 
-/// Whether the CURRENT principal is a document (the scope stack's
-/// class, ExpressionSecurity::Runtime).  No scope active -- host code
-/// calling in directly, a test's exec -- is host code, already
-/// trusted: not a document.
-static bool principalIsDocument()
+/// The CURRENT principal's class (the scope stack's,
+/// ExpressionSecurity::Runtime).  No scope active -- host code calling
+/// in directly, a test's exec -- is host code, already trusted: none.
+static bool principalIs(ExpressionSecurity::PrincipalClass which)
 {
     if (!ExpressionSecurity::Runtime::scopeActive())
         return false;
     auto pclass = ExpressionSecurity::principalClass(
         ExpressionSecurity::Runtime::instance().currentPrincipal());
-    return pclass && *pclass == ExpressionSecurity::PrincipalClass::Document;
+    return pclass && *pclass == which;
+}
+
+/// A principal confined to its owner's document: a document, and a
+/// remote client, whose owner is the document it is served
+/// (docs/Sandbox.md 7.20, C3).
+static bool principalIsConfined()
+{
+    return principalIs(ExpressionSecurity::PrincipalClass::Document)
+        || principalIs(ExpressionSecurity::PrincipalClass::Client);
+}
+
+/// A remote client: a guest in someone else's page, with no registry
+/// of guest proxies on this host and no file dialog of its own here.
+static bool principalIsClient()
+{
+    return principalIs(ExpressionSecurity::PrincipalClass::Client);
 }
 
 /** The reach set follows the PRINCIPAL, never the call shape
@@ -429,7 +473,7 @@ static bool reachable(const HandleTable& table, App::Document* doc)
 {
     if (!doc)
         return false;
-    if (principalIsDocument())
+    if (principalIsConfined())
         return documentOf(table.owner()) == doc;
     for (App::Document* open : App::GetApplication().getDocuments())
         if (open == doc)
@@ -666,6 +710,18 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
                     table, PySequence_Fast_GET_ITEM(seq, i)));
             bool isTuple = PyTuple_Check(obj);
             Py_DECREF(seq);
+            // a list of objects is what a loop reads the same member off
+            // (docs/Sandbox.md 7.20, C5)
+            if (table.prefetch()) {
+                std::vector<uint64_t> handles;
+                for (const auto& e : arr) {
+                    auto t = e.is_object() ? e.find(FcxWire::TagKey) : e.end();
+                    if (e.is_object() && t != e.end() && t->is_string()
+                            && *t == FcxWire::TagHandle && !e.contains("m"))
+                        handles.push_back(e["id"].get<uint64_t>());
+                }
+                table.noteSiblings(std::move(handles));
+            }
             if (isTuple)
                 return json {{FcxWire::TagKey, FcxWire::TagTuple},
                              {"v", std::move(arr)}};
@@ -696,8 +752,15 @@ json encodeHostValue(HandleTable& table, PyObject* obj)
                 {"n", routedFunctionName(obj)}};
     // a Proxy that lives in the guest: its stand-in crosses back as the
     // guest's own instance, never as a handle on the stand-in
-    else if (isGuestProxy(obj))
+    else if (isGuestProxy(obj)) {
+        // the id names an instance in the DESKTOP's guest registry: a
+        // remote client's guest cannot resolve it, and holding it would
+        // let it hand another object's Proxy back -- an undeclared reach
+        // (docs/Sandbox.md 7.20, C3), DENY for a client
+        if (principalIsClient())
+            ExpressionSecurity::checkPermission(ExpressionSecurity::Permission::UnsafeGetattr);
         return {{FcxWire::TagKey, FcxWire::TagGuestProxy}, {"id", guestProxyId(obj)}};
+    }
     {
         PyObject* self = nullptr;
         std::string member;
@@ -914,6 +977,14 @@ PyObject* decodeHostValue(const HandleTable& table, const json& v)
             return obj;
         }
     }
+    else if ((t == FcxWire::TagGuestProxy || t == FcxWire::TagGuestMethod)
+             && principalIsClient()) {
+        // a remote client has no proxies here: the id it sends would
+        // name the desktop guest's instance (docs/Sandbox.md 7.20, C3)
+        PyErr_SetString(PyExc_PermissionError,
+                        "a remote client cannot pass a guest proxy to the host");
+        return nullptr;
+    }
     else if (t == FcxWire::TagGuestProxy) {
         // the guest's Proxy descriptor (write_prop Proxy, a proxy_new
         // reply): the host stand-in, one per guest proxy
@@ -1091,7 +1162,8 @@ std::vector<unsigned char> dispatchHostOpFixed(HandleTable& table,
         std::memcpy(&bits, &d, 8);
         put64(bits);
     };
-    if (reply.value("ok", false)) {
+    // prefetched reads ride only the CBOR form
+    if (reply.value("ok", false) && !reply.contains("pf")) {
         auto val = reply.find("val");
         if (val != reply.end()) {
             if (val->is_number_float()) {
@@ -1133,6 +1205,45 @@ std::vector<unsigned char> dispatchHostOpFixed(HandleTable& table,
     }
     out.push_back(FcxWire::FixedKindCbor);
     auto cbor = json::to_cbor(reply);
+    out.insert(out.end(), cbor.begin(), cbor.end());
+    return out;
+}
+
+std::vector<unsigned char> dispatchHostBytes(HandleTable& table,
+                                             const unsigned char* data,
+                                             std::size_t len,
+                                             std::string& opName,
+                                             std::string& missing)
+{
+    missing.clear();
+    // the fixed layout of a bare read_prop / get_attr (FcxWire.h): no
+    // CBOR on either side for the most frequent hop
+    if (len > 0 && data[0] == FcxWire::FixedRequestMagic)
+        return dispatchHostOpFixed(table, data, len, opName);
+    json reply;
+    try {
+        json req = json::from_cbor(data, data + len);
+        opName = req.is_object() ? req.value("op", std::string("?")) : std::string("?");
+        if (opName == FcxWire::OpPkgMissing && req.is_object())
+            missing = req.value("a", std::string("?"));
+        reply = dispatchHostOp(table, req);
+    }
+    catch (const std::exception& e) {
+        opName = "?";
+        reply = {{"ok", false}, {"exc", "ProtocolError"}, {"msg", e.what()}};
+    }
+    return json::to_cbor(reply);
+}
+
+std::vector<unsigned char> errorReplyBytes(const unsigned char* request,
+                                           std::size_t len,
+                                           const char* exc,
+                                           const std::string& msg)
+{
+    const auto cbor = json::to_cbor(json {{"ok", false}, {"exc", exc}, {"msg", msg}});
+    if (len == 0 || request[0] != FcxWire::FixedRequestMagic)
+        return cbor;
+    std::vector<unsigned char> out {FcxWire::FixedReplyMagic, FcxWire::FixedKindCbor};
     out.insert(out.end(), cbor.begin(), cbor.end());
     return out;
 }
@@ -1288,6 +1399,155 @@ static json applicationOp(HandleTable& table, const std::string& op, const json&
     return encodeResult(table, r);
 }
 
+/// get_attr: a DECLARED attribute of the handle's object.
+static json readAttribute(HandleTable& table, PyObject* base, const std::string& name)
+{
+    // The closed table is the whole reachable surface: an
+    // undeclared member is a protocol error, never a getattr
+    // (docs/ExpressionSandbox.md sec 7.5).
+    const FacadeMember* fm = memberLookupOn(base, name.c_str());
+    if (!fm || fm->kind != FacadeKind::Attribute)
+        return errReply("ProtocolError",
+                        "member '" + name + "' of '" + Py_TYPE(base)->tp_name
+                            + "' is not declared for sandbox access");
+    PyObject* result = PyObject_GetAttrString(base, name.c_str());
+    if (!result)
+        return pyErrorReply();
+    try {
+        ExpressionSecurity::checkGetattr(base, name.c_str(), result);
+    }
+    catch (...) {
+        Py_DECREF(result);
+        throw;
+    }
+    json reply = encodeResult(table, result);
+    if (fm->tier == FacadeTier::Value && reply.value("ok", false)) {
+        const json& val = reply["val"];
+        if (val.is_object() && val.value(FcxWire::TagKey, "") == FcxWire::TagHandle)
+            return errReply("ProtocolError",
+                            "by-value member '" + name + "' produced a non-marshalable result");
+    }
+    return reply;
+}
+
+/// read_prop: answered from the C++ property system, never host Python
+/// (sec 7.5): dynamic properties are not XML members, but
+/// getPropertyByName is typed, side-effect free, and still
+/// permission-classified per principal.
+static json readProperty(HandleTable& table, PyObject* base, const std::string& name)
+{
+    if (!PyObject_TypeCheck(base, &App::PropertyContainerPy::Type))
+        return errReply("AttributeError",
+                        "'" + std::string(Py_TYPE(base)->tp_name) + "' object has no attribute '"
+                            + name + "'");
+    auto* container = static_cast<App::PropertyContainerPy*>(base)->getPropertyContainerPtr();
+    App::Property* prop = container ? container->getPropertyByName(name.c_str()) : nullptr;
+    if (!prop)
+        return errReply("AttributeError",
+                        "'" + std::string(Py_TYPE(base)->tp_name) + "' object has no attribute '"
+                            + name + "'");
+    PyObject* result = prop->getPyObject();
+    if (!result)
+        return pyErrorReply();
+    try {
+        ExpressionSecurity::checkGetattr(base, name.c_str(), result);
+    }
+    catch (...) {
+        Py_DECREF(result);
+        throw;
+    }
+    return encodeResult(table, result);
+}
+
+/// Whether a wire value holds anything the table minted or names.
+static bool carriesHandle(const json& v)
+{
+    if (v.is_object()) {
+        auto t = v.find(FcxWire::TagKey);
+        if (t != v.end() && t->is_string()
+                && (*t == FcxWire::TagHandle || *t == FcxWire::TagGuestFunction
+                    || *t == FcxWire::TagGuestProxy))
+            return true;
+        for (const auto& e : v)
+            if (carriesHandle(e))
+                return true;
+    }
+    else if (v.is_array()) {
+        for (const auto& e : v)
+            if (carriesHandle(e))
+                return true;
+    }
+    return false;
+}
+
+/// Give back the uses a value's handles took (a prefetch that is dropped).
+static void releaseHandlesIn(HandleTable& table, const json& v)
+{
+    if (v.is_object()) {
+        auto t = v.find(FcxWire::TagKey);
+        auto id = v.find("id");
+        if (t != v.end() && t->is_string()
+                && (*t == FcxWire::TagHandle || *t == FcxWire::TagGuestFunction)
+                && id != v.end() && id->is_number_unsigned())
+            table.release(id->get<uint64_t>());
+        for (const auto& e : v)
+            releaseHandlesIn(table, e);
+    }
+    else if (v.is_array()) {
+        for (const auto& e : v)
+            releaseHandlesIn(table, e);
+    }
+}
+
+/// How long one reply may spend prefetching.
+static constexpr int PrefetchBudgetMs = 20;
+
+/** The prefetch (docs/Sandbox.md 7.20, C5; FcxWire "pf"): `reply`, a
+ * successful read of `name` off handle `id`, also carries the same read of
+ * the siblings after `id` in the list it came in.  By value only -- a read
+ * whose answer is a handle prefetches nothing, and a sibling's that is one
+ * is dropped, so the table mints nothing the guest did not ask for.  The
+ * checks are the op's own; a sibling that fails any is left for the guest
+ * to ask, and answered as it would have been.
+ */
+static void prefetchSiblings(HandleTable& table,
+                             uint64_t id,
+                             const std::string& name,
+                             bool property,
+                             json& reply)
+{
+    if (!reply.value("ok", false) || carriesHandle(reply["val"]))
+        return;
+    const auto t0 = std::chrono::steady_clock::now();
+    json pf = json::array();
+    for (uint64_t sid : table.nextSiblings(id, name)) {
+        PyObject* sib = table.get(sid);
+        if (!sib)
+            continue;
+        json r;
+        try {
+            r = property ? readProperty(table, sib, name) : readAttribute(table, sib, name);
+        }
+        catch (...) {
+            if (PyErr_Occurred())
+                PyErr_Clear();
+            continue;
+        }
+        if (!r.value("ok", false))
+            continue;
+        json& val = r["val"];
+        if (carriesHandle(val)) {
+            releaseHandlesIn(table, val);
+            continue;
+        }
+        pf.push_back(json::array({sid, std::move(val)}));
+        if (std::chrono::steady_clock::now() - t0 > std::chrono::milliseconds(PrefetchBudgetMs))
+            break;
+    }
+    if (!pf.empty())
+        reply["pf"] = std::move(pf);
+}
+
 json dispatchHostOp(HandleTable& table, const json& req)
 {
     Base::PyGILStateLocker lock;
@@ -1327,7 +1587,7 @@ json dispatchHostOp(HandleTable& table, const json& req)
             // FreeCAD.ActiveDocument.getObject(...) as the host would.
             // A refusal must not surface as an AttributeError: Python
             // would read that as "no such attribute" and hide the reason.
-            if (!principalIsDocument()) {
+            if (!principalIsConfined()) {
                 App::Document* active = App::GetApplication().getActiveDocument();
                 if (!active)
                     return okReply(json());
@@ -1338,6 +1598,15 @@ json dispatchHostOp(HandleTable& table, const json& req)
             const uint64_t ownerId = table.owner() ? table.idOf(table.owner()) : 0;
             if (!ownerId)
                 return okReply(json());
+            // An owner that IS a document -- a remote guest's endpoint,
+            // answering for the served document as a whole
+            // (docs/Sandbox.md 7.20, C2) -- is its own active document.
+            if (PyObject_TypeCheck(table.owner(), &App::DocumentPy::Type)) {
+                ExpressionSecurity::checkPermission(
+                    ExpressionSecurity::Permission::DocReadSelf);
+                Py_INCREF(table.owner());
+                return encodeResult(table, table.owner());
+            }
             json sub = {{"op", FcxWire::OpGetAttr}, {"h", ownerId}, {"a", "Document"}};
             json reply = dispatchHostOp(table, sub);
             if (!reply.value("ok", false) && reply.value("exc", "") == "AttributeError")
@@ -1483,73 +1752,17 @@ json dispatchHostOp(HandleTable& table, const json& req)
             return callWithWireArgs(table, base, req);
         }
 
-        if (op == FcxWire::OpGetAttr) {
+        if (op == FcxWire::OpGetAttr || op == FcxWire::OpReadProp) {
+            const bool property = op == FcxWire::OpReadProp;
             auto a = req.find("a");
             if (a == req.end() || !a->is_string())
-                return errReply("ProtocolError", "get_attr without a name");
-            const std::string& name = a->get_ref<const std::string&>();
-            // The closed table is the whole reachable surface: an
-            // undeclared member is a protocol error, never a getattr
-            // (docs/ExpressionSandbox.md sec 7.5).
-            const FacadeMember* fm = memberLookupOn(base, name.c_str());
-            if (!fm || fm->kind != FacadeKind::Attribute)
                 return errReply("ProtocolError",
-                                "member '" + name + "' of '"
-                                    + Py_TYPE(base)->tp_name
-                                    + "' is not declared for sandbox access");
-            PyObject* result = PyObject_GetAttrString(base, name.c_str());
-            if (!result)
-                return pyErrorReply();
-            try {
-                ExpressionSecurity::checkGetattr(base, name.c_str(), result);
-            }
-            catch (...) {
-                Py_DECREF(result);
-                throw;
-            }
-            json reply = encodeResult(table, result);
-            if (fm->tier == FacadeTier::Value && reply.value("ok", false)) {
-                const json& val = reply["val"];
-                if (val.is_object() && val.value(FcxWire::TagKey, "") == FcxWire::TagHandle)
-                    return errReply("ProtocolError",
-                                    "by-value member '" + name
-                                        + "' produced a non-marshalable result");
-            }
-            return reply;
-        }
-
-        if (op == FcxWire::OpReadProp) {
-            // Answered from the C++ property system, never host Python
-            // (sec 7.5): dynamic properties are not XML members, but
-            // getPropertyByName is typed, side-effect free, and still
-            // permission-classified per principal.
-            auto a = req.find("a");
-            if (a == req.end() || !a->is_string())
-                return errReply("ProtocolError", "read_prop without a name");
+                                property ? "read_prop without a name" : "get_attr without a name");
             const std::string& name = a->get_ref<const std::string&>();
-            if (!PyObject_TypeCheck(base, &App::PropertyContainerPy::Type))
-                return errReply("AttributeError",
-                                "'" + std::string(Py_TYPE(base)->tp_name)
-                                    + "' object has no attribute '" + name + "'");
-            auto* container = static_cast<App::PropertyContainerPy*>(base)
-                                  ->getPropertyContainerPtr();
-            App::Property* prop =
-                container ? container->getPropertyByName(name.c_str()) : nullptr;
-            if (!prop)
-                return errReply("AttributeError",
-                                "'" + std::string(Py_TYPE(base)->tp_name)
-                                    + "' object has no attribute '" + name + "'");
-            PyObject* result = prop->getPyObject();
-            if (!result)
-                return pyErrorReply();
-            try {
-                ExpressionSecurity::checkGetattr(base, name.c_str(), result);
-            }
-            catch (...) {
-                Py_DECREF(result);
-                throw;
-            }
-            return encodeResult(table, result);
+            json reply = property ? readProperty(table, base, name) : readAttribute(table, base, name);
+            if (table.prefetch())
+                prefetchSiblings(table, id, name, property, reply);
+            return reply;
         }
 
         // The write gate (FcxWire::OpWriteProp and the write-family
@@ -1706,6 +1919,13 @@ json dispatchHostOp(HandleTable& table, const json& req)
                     return denied;
                 break;
             }
+            if (member == "saveAs" && PyObject_TypeCheck(base, &App::DocumentPy::Type)
+                && principalIsClient())
+                // the blessed set is the desktop guest's pickers; a remote
+                // client has no dialog on this host to choose a path with
+                return errReply("PermissionError",
+                                "saveAs: a remote client cannot choose a path on the"
+                                " serving host (docs/Sandbox.md 7.20)");
             if (member == "saveAs" && PyObject_TypeCheck(base, &App::DocumentPy::Type)) {
                 // A path the guest made up is the file-system slice's
                 // business, which is not in the catalog; a path the

@@ -59,6 +59,27 @@ public:
 
     void getPrefixRange(QString &prefix, int &start, int &end, int &offset) const;
 
+    /** Completions for `text` with the caret at `pos`, showing nothing.
+     *
+     * The matches the popup would have listed, plus the prefix range
+     * [start, end) in `text`'s own coordinates -- so a caller splices
+     * text.left(start) + item + text.mid(end), the replacement
+     * ExpressionLineEdit::slotCompleteText performs.
+     *
+     * For a remote client (a browser panel, docs/Sandbox.md 7.23),
+     * which cannot use slotUpdate: that one ends in showPopup, and a
+     * query must never raise a window on the desktop user's screen.
+     * Ask this of a completer of your OWN -- setCompletionPrefix and
+     * the tokenizer are mutable state, and the desktop's caret is not
+     * the remote caller's.
+     *
+     * Not named complete(): QCompleter::complete(const QRect&) is the
+     * base class's "show the popup", which this must never do, and a
+     * name that hid it would both mislead and break showPopup.
+     */
+    QStringList completionsFor(const QString &text, int pos, int &start, int &end,
+                               QStringList *details = nullptr);
+
     void updatePrefixEnd(int end) {
         tokenizer.updatePrefixEnd(end);
     }

@@ -256,6 +256,13 @@ public:
     /// Drop every live handle (end of a recompute transaction).
     void clearHandles();
 
+    /** Prefetch sibling reads on this host's own table (HandleTable::
+     * setPrefetch, docs/Sandbox.md 7.20 C5).  Off, and meant to stay off:
+     * this guest is a few us away.  A test turns it on to run the guest's
+     * half of the prefetch in process.
+     */
+    void setPrefetch(bool on);
+
     /// Live handle count (tests: proxies release on image-side __del__).
     std::size_t handleCount() const;
 

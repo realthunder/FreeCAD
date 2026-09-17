@@ -1185,6 +1185,8 @@ static void applyProxyDrops(const json &req)
 json dispatch(const json &req)
 {
     json reply;
+    // a statement reads what the host holds now, not a previous one's
+    FcxImage::clearPrefetched();
     applyProxyDrops(req);
     applyLibraryDrops(req);
     sweepLibraries();
@@ -1220,6 +1222,7 @@ json dispatch(const json &req)
     json released = FcxImage::takePendingReleases();
     if (!released.empty())
         reply["r"] = std::move(released);
+    FcxImage::clearPrefetched();
     return reply;
 }
 

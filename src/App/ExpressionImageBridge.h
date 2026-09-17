@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -215,6 +216,33 @@ public:
         return ownerObj;
     }
 
+    /** Prefetch sibling reads (docs/Sandbox.md 7.20, C5).  A guest a round
+     * trip away pays the RTT for every read, and a loop over a list reads
+     * the same member off each element: with this on, a read_prop or
+     * get_attr off one element of a list the table handed out also answers
+     * the same read of the elements after it (FcxWire "pf").  Off by
+     * default -- the desktop's guest is 5 us away, where the prefetch is
+     * host work no hop pays back; a remote guest's endpoint turns it on.
+     * Survives clear().
+     */
+    void setPrefetch(bool on)
+    {
+        prefetching = on;
+    }
+    bool prefetch() const
+    {
+        return prefetching;
+    }
+    /// Remember the handles of one list, in its order, as siblings.  Only
+    /// while prefetching, and only for two or more.
+    void noteSiblings(std::vector<uint64_t> list);
+    /** The live siblings after `id` in its list to prefetch `name` of: 32
+     * the first time the guest misses that member in that list, twice as
+     * many at each miss after, at most 1024.  Empty when `id` came in no
+     * list or prefetching is off.
+     */
+    std::vector<uint64_t> nextSiblings(uint64_t id, const std::string& name);
+
 private:
     std::unordered_map<uint64_t, PyObject*> objects;
     /// the id an object already has, and how many exports hold it
@@ -225,6 +253,12 @@ private:
     uint64_t nextId = 1;
     std::size_t minted = 0;
     PyObject* ownerObj = nullptr;
+    bool prefetching = false;
+    std::vector<std::vector<uint64_t>> siblingLists;
+    /// id -> (its list, its index there)
+    std::unordered_map<uint64_t, std::pair<std::size_t, std::size_t>> siblingOf;
+    /// (list, member) -> the chunk its last miss prefetched
+    std::map<std::pair<std::size_t, std::string>, std::size_t> chunks;
 };
 
 /** Host Python object -> wire value.  Objects outside the by-value set
@@ -286,6 +320,30 @@ AppExport std::vector<unsigned char> dispatchHostOpFixed(HandleTable& table,
                                                           const unsigned char* data,
                                                           std::size_t len,
                                                           std::string& opName);
+
+/** One guest->host bridge request as the guest wrote it -- the fixed
+ * layout when it starts with FixedRequestMagic, CBOR otherwise -- to
+ * the reply bytes in the matching form.  What ImageHost's own bridge
+ * does, for a caller holding a table of its own: a remote guest's
+ * endpoint (docs/Sandbox.md 7.20, C2).  `opName` receives the wire op
+ * name; `missing` the module name of a pkg.missing request, else it is
+ * left empty.  Never throws; an undecodable request is a ProtocolError
+ * reply.
+ */
+AppExport std::vector<unsigned char> dispatchHostBytes(HandleTable& table,
+                                                        const unsigned char* data,
+                                                        std::size_t len,
+                                                        std::string& opName,
+                                                        std::string& missing);
+
+/** An error reply shaped for `request`: behind the fixed layout's
+ * CBOR kind when the request is fixed-layout, plain CBOR otherwise --
+ * a bridge op refused before it reaches the dispatcher.
+ */
+AppExport std::vector<unsigned char> errorReplyBytes(const unsigned char* request,
+                                                      std::size_t len,
+                                                      const char* exc,
+                                                      const std::string& msg);
 
 }  // namespace ExpressionSandbox
 }  // namespace App

@@ -1,0 +1,792 @@
+{
+ "case": "nested_messagebox",
+ "frames": [
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "panel",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "panel",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:138",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:137",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "askButton",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Ask",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:137",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:138"
+      }
+     ],
+     "margins": [
+      9,
+      9,
+      9,
+      9
+     ],
+     "name": "",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:136",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "askForm",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "Ask"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:136",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:137"
+      }
+     ],
+     "margins": [
+      4,
+      4,
+      4,
+      4
+     ],
+     "name": "",
+     "spacing": 0
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:3",
+    "qtClass": "Gui::TaskView::TaskBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Ask",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:140",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:139",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": true,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "img:eb9b7542fdc9525b927ca30fca4d1b046fb6476f",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButton": 1024,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "OK",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:141",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:139",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "img:4c8c80a069ca30e985687bbc5d8366fba0843bce",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButton": 4194304,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Cancel",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:139",
+    "layout": {
+     "class": "QHBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:140"
+      },
+      {
+       "widget": "IPY_MODEL_pw:141"
+      }
+     ],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QDialogButtonBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:3",
+    "qtClass": "QDialogButtonBox",
+    "state": {
+     "q_actions": [],
+     "q_centerButtons": true,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_orientation": 1,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButtons": 4195328,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel:3",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:136"
+      },
+      {
+       "widget": "IPY_MODEL_pw:139"
+      }
+     ],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QDialogModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel",
+    "qtClass": "Gui::TaskView::TaskDialog",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_height": 0,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_modal": false,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_result": 0,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_width": 0,
+     "q_windowIcon": "",
+     "q_windowTitle": "Ask"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "layoutSpec": {
+      "class": "QVBoxLayout",
+      "items": [
+       {
+        "widget": "IPY_MODEL_panel:3"
+       }
+      ],
+      "name": ""
+     }
+    },
+    "id": "panel",
+    "method": "update",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:142",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_dialog:1",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "qt_msgboxex_icon_label",
+     "q_openExternalLinks": false,
+     "q_pixmap": "img:be4d047f8c78f876839af2f7b4187ef10d643d3f",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:143",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_dialog:1",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "qt_msgbox_label",
+     "q_openExternalLinks": true,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Proceed?",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:145",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:144",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": true,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "img:3b89b928891bc862f85176614a5b88b61eec0171",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButton": 16384,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "&Yes",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:146",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:144",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "img:856a5a194b77112284917d3e924fd975ed62a8c7",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButton": 65536,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "&No",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:144",
+    "layout": {
+     "class": "QHBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:145"
+      },
+      {
+       "widget": "IPY_MODEL_pw:146"
+      }
+     ],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QDialogButtonBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_dialog:1",
+    "qtClass": "QDialogButtonBox",
+    "state": {
+     "q_actions": [],
+     "q_centerButtons": false,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "qt_msgbox_buttonbox",
+     "q_orientation": 1,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButtons": 81920,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "dialog:1",
+    "layout": {
+     "class": "QGridLayout",
+     "items": [
+      {
+       "align": 32,
+       "pos": [
+        0,
+        0,
+        2,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:142"
+      },
+      {
+       "pos": [
+        0,
+        1,
+        2,
+        1
+       ],
+       "spacer": [
+        7,
+        1,
+        0,
+        0
+       ]
+      },
+      {
+       "pos": [
+        0,
+        2,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:143"
+      },
+      {
+       "pos": [
+        2,
+        0,
+        1,
+        3
+       ],
+       "widget": "IPY_MODEL_pw:144"
+      }
+     ],
+     "margins": [
+      11,
+      11,
+      11,
+      11
+     ],
+     "name": "",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QDialogModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel",
+    "qtClass": "QMessageBox",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_height": 100,
+     "q_maximumHeight": 100,
+     "q_maximumWidth": 188,
+     "q_minimumHeight": 100,
+     "q_minimumWidth": 188,
+     "q_modal": true,
+     "q_objectName": "askBox",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_result": 0,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_width": 188,
+     "q_windowIcon": "",
+     "q_windowTitle": "Really"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "layoutSpec": {
+      "class": "QVBoxLayout",
+      "items": [
+       {
+        "widget": "IPY_MODEL_panel:3"
+       },
+       {
+        "widget": "IPY_MODEL_dialog:1"
+       }
+      ],
+      "name": ""
+     }
+    },
+    "id": "panel",
+    "method": "update",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {},
+    "id": "dialog:1",
+    "method": "close",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "layoutSpec": {
+      "class": "QVBoxLayout",
+      "items": [
+       {
+        "widget": "IPY_MODEL_panel:3"
+       }
+      ],
+      "name": ""
+     }
+    },
+    "id": "panel",
+    "method": "update",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {},
+    "id": "panel:3",
+    "method": "close",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "layoutSpec": {
+      "class": "QVBoxLayout",
+      "items": [],
+      "name": ""
+     }
+    },
+    "id": "panel",
+    "method": "update",
+    "op": "widgets"
+   }
+  }
+ ],
+ "subscribeReplies": [
+  {
+   "dialogs": [],
+   "id": 1,
+   "locale": "C",
+   "ok": true,
+   "panel": null,
+   "subscribed": true,
+   "theme": ""
+  }
+ ]
+}

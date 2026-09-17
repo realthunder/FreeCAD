@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sandbox bridge -- C2</title>
+<style>
+  body { margin: 0; background: #14161a; color: #d6dae0 }
+  pre  { margin: 0 }
+</style>
+</head>
+<body>
+<!--
+  The sandbox guest in this page reaching the FreeCAD serving it over the
+  socket (docs/Sandbox.md 7.20, C2).  Serve a document with the built bundle
+  (FC_BGFX_VIEWER_BUILD=build/wasm, the web bundle in build/wasm/web) and
+  open
+      http://<server>/web/bridge-test.html?token=<token>&doc=<document>
+  tests/gui/sandbox-bridge-browser.py drives it headless.
+-->
+<script type="module" src="./bridgetest.js"></script>
+</body>
+</html>

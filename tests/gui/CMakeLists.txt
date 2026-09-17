@@ -54,6 +54,21 @@ endif()
 fc_add_gui_test(GuiServeSelectionEcho_tests_run serve-selection-echo.py
                 --timeout 180)
 
+# The sandbox guest's files served next to the scene, for a guest booted in
+# the viewer's page (docs/Sandbox.md 7.20, C1): boot.json behind the door,
+# the runtime and the wheels ahead of it and byte for byte, nothing else.
+# The browser leg (sandbox-console-browser.py) is not registered: it needs
+# node, puppeteer-core and a Chrome (docs/Testing.md).
+fc_add_gui_test(GuiSandboxConsoleServe_tests_run sandbox-console-serve.py
+                --timeout 180)
+
+# A guest in a viewer's page reaches the served document over the socket
+# (docs/Sandbox.md 7.20, C2): bridge frames through the per-connection
+# endpoint, under the document's principal, with no browser -- the browser
+# leg (sandbox-bridge-browser.py) is not registered, for the reason above.
+fc_add_gui_test(GuiSandboxBridgeServe_tests_run sandbox-bridge-serve.py
+                --timeout 180)
+
 # A desktop selection still reaches the panels that observe it
 # (docs/ThinClient.md sec 8.4). Gui::Selection() resolves to the current
 # instance now, and observers were pinned to the room; on the desktop no

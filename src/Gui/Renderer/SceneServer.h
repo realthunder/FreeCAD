@@ -39,7 +39,10 @@
 /// message -- a 'C' frame verbatim followed by a 'P' frame verbatim --
 /// for a client that states its camera only when it clicks
 /// (docs/ThinClient.md sec 8.10a): one frame instead of two, and the
-/// pairing is atomic rather than merely ordered.
+/// pairing is atomic rather than merely ordered. 'S' is a sandbox
+/// guest in the viewer's page reaching back to this process
+/// (SceneBridgeRequest, docs/Sandbox.md 7.20 C2); its answer is a
+/// binary frame starting `FCSB`.
 ///
 /// Fallback transport: plain HTTP polling. GET /scene?v=<last-seen>
 /// answers 204 while unchanged, else 200 with the same version-prefixed
@@ -173,6 +176,47 @@ struct SceneControlRequest {
     std::function<void(const std::string &)> reply;
 };
 
+/** One sandbox bridge frame from a guest in a viewer's page
+ * (docs/Sandbox.md 7.20, C2): the guest's host call, carried over this
+ * connection instead of a wasm import.
+ *
+ * Uplink, a binary message:  'S', kind u8, seq u32 LE, payload.
+ *   kind 0  one bridge op; the payload is the request bytes exactly as
+ *           the guest wrote them (FcxWire.h: CBOR, or the fixed layout).
+ *           Answered by sendBridge with the same seq.
+ *   kind 1  the end of a statement: the endpoint drops the handles the
+ *           statement minted.  No payload, no answer.
+ * Downlink, a binary message:  `FCSB`, seq u32 LE, reply bytes.  An
+ * EMPTY reply means no bridge answers here (no handler, no host), and
+ * the guest raises "host bridge unavailable".  A scene payload starts
+ * with its 64-bit version and a streamed frame with `FCCY`; no version
+ * reaches `FCSB` either.
+ *
+ * The server knows nothing of what the bytes mean: it forwards, keeps
+ * the order of one connection, and caps the ops in flight -- a guest
+ * waits for each answer, so a connection past the cap is not a guest
+ * and is kicked.
+ */
+struct SceneBridgeRequest {
+    enum Kind : uint8_t { Op = 0, End = 1 };
+    uint8_t kind = Op;
+    uint32_t seq = 0;
+    std::vector<uint8_t> payload;
+    /// The connection's access (docs/MultiDocServe.md sec 8): a view-only
+    /// one may read, an edit one may write, a host one may run what the
+    /// desktop's owner may.
+    ClientAccess access = ClientAccess::Edit;
+    /// The connection it arrived on (SceneClientInfo::id).
+    uint64_t client = 0;
+    /// Who sent it, as the door knows the connection at the moment the
+    /// frame arrived (SceneClientInfo's fields of the same names): the
+    /// client principal is made of these (docs/Sandbox.md 7.20, C3).
+    std::string identity;
+    uint64_t grant = 0;
+    std::string label;
+    std::string address;
+};
+
 /// One entry of the door's grant list (docs/ShareAccess.md §2): an
 /// invitation, and who may use it. Every field but the token is a
 /// shell-wildcard pattern (`*` anything, `?` one character; empty =
@@ -275,6 +319,15 @@ struct ViewerFrameDump {
     std::string meta;            ///< viewer-supplied JSON (may be empty)
 };
 
+/// One answer of an HTTP mount (SceneStreamServer::setHttpMount).
+struct SceneHttpFile {
+    int status = 200;
+    std::vector<uint8_t> body;
+    /// Static strings: the reply keeps the pointers, not copies.
+    const char *contentType = "application/octet-stream";
+    const char *cacheControl = "no-store";
+};
+
 class RendererExport SceneStreamServer {
 public:
     static SceneStreamServer &instance();
@@ -372,6 +425,23 @@ public:
     /// re-judged — which is the "ban = drop live, disable stored" move
     /// of docs/ShareAccess.md §2. False when the id is unknown.
     bool removeGrant(uint64_t id);
+
+    /// Answer GET <prefix><rest> from \a provider: files served next to
+    /// the scene that the renderer layer cannot find by itself -- the
+    /// pyodide runtime and wheels of the browser console
+    /// (docs/Sandbox.md 7.20, C1). \a gated puts the mount behind the
+    /// door like every scene route; ungated it answers before the door,
+    /// as the viewer bundle does, which is only for published code a
+    /// page fetches without the link's ?token= tail. The provider runs
+    /// on a server thread and returns false for a path it does not
+    /// serve; the request then falls through to the other routes (and
+    /// 404s). The path has passed the bundle's checks first: no "..",
+    /// nothing outside [A-Za-z0-9/._+-]. Installing a prefix again
+    /// replaces its provider; a null provider removes the mount.
+    void setHttpMount(const std::string &prefix,
+                      std::function<bool(const std::string &rest,
+                                         SceneHttpFile &file)> provider,
+                      bool gated);
 
     /// The connected clients, for the sharing roster. Returns how many.
     int clients(std::vector<SceneClientInfo> &out);
@@ -525,6 +595,14 @@ public:
             std::function<void(SceneControlRequest &&)> handler,
             const std::string &doc = {});
 
+    /// Install the consumer of sandbox bridge frames (SceneBridgeRequest,
+    /// docs/Sandbox.md 7.20 C2). Called on a server connection thread, in
+    /// the order the connection sent them; the handler marshals itself
+    /// and answers each Op through sendBridge. No handler installed =
+    /// every Op is answered empty.
+    void setBridgeHandler(std::function<void(SceneBridgeRequest &&)> handler,
+                          const std::string &doc = {});
+
     /// Install the publisher's cue that queued work finished (a level
     /// was generated): without it an idle backend sits on finished
     /// work, because the publish that would announce it lives in the
@@ -549,6 +627,10 @@ public:
     /// a frame is a state, not an event, and a slow link should see
     /// the newest one. Any thread.
     bool sendBinary(uint64_t client, std::vector<uint8_t> &&data);
+    /// Answer bridge op \a seq of ONE connection (SceneBridgeRequest):
+    /// queued in order, never replaced -- unlike a streamed frame, every
+    /// answer is awaited. False when the connection is gone. Any thread.
+    bool sendBridge(uint64_t client, uint32_t seq, std::vector<uint8_t> &&reply);
 
     /// Declare \a doc served: give its group the display label the
     /// `docs` document listing shows, mark it joinable by name on the
