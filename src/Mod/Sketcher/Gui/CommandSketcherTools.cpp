@@ -160,7 +160,20 @@ Sketcher::SketchObject* getSketchObject()
 bool copySelectionToClipboard(Sketcher::SketchObject* obj) {
     std::vector<int> listOfGeoId = getListOfSelectedGeoIds(true);
     if (listOfGeoId.empty()) { return false; }
+
+    // Selecting a group's handle takes the whole group: its members are not selectable on
+    // their own, and the group without them is not a group.
+    std::vector<int> groupMembers;
+    for (auto geoId : listOfGeoId) {
+        if (obj->isGroupHandle(geoId)) {
+            std::set<int> memberIds = obj->getGroupGeometries(geoId);
+            groupMembers.insert(groupMembers.end(), memberIds.begin(), memberIds.end());
+        }
+    }
+    listOfGeoId.insert(listOfGeoId.end(), groupMembers.begin(), groupMembers.end());
+
     sort(listOfGeoId.begin(), listOfGeoId.end());
+    listOfGeoId.erase(std::unique(listOfGeoId.begin(), listOfGeoId.end()), listOfGeoId.end());
 
     //Export selected geometries as a formatted string.
     std::vector<Part::Geometry*> shapeGeometry;
@@ -183,22 +196,35 @@ bool copySelectionToClipboard(Sketcher::SketchObject* obj) {
                 || value == GeoEnum::VAxis || value == GeoEnum::HAxis;
         };
 
-        if (!isSelectedGeoOrAxis(listOfGeoId, constr->First)
-            || !isSelectedGeoOrAxis(listOfGeoId, constr->Second)
-            || !isSelectedGeoOrAxis(listOfGeoId, constr->Third)) {
+        bool skip = false;
+        for (int i = 0; constr->hasElement(i); ++i) {
+            if (!isSelectedGeoOrAxis(listOfGeoId, constr->getGeoId(i))) {
+                skip = true;
+                break;
+            }
+            if (constr->Type == Group || constr->Type == Text) {
+                // every member of a group came along with its handle, so the handle
+                // answers for all of them
+                break;
+            }
+        }
+        if (skip) {
             continue;
         }
 
-        Constraint* temp = constr->copy();
+        // The copy refers to the geometry by its place in the copied list, not by its id
+        // in this sketch. The map is built first, so that a geometry whose id happens to
+        // equal another's new index is not renumbered twice.
+        std::map<int, int> newIdOfGeoId;
         for (size_t j = 0; j < listOfGeoId.size(); j++) {
-            if (temp->First == listOfGeoId[j]) {
-                temp->First = j;
-            }
-            if (temp->Second == listOfGeoId[j]) {
-                temp->Second = j;
-            }
-            if (temp->Third == listOfGeoId[j]) {
-                temp->Third = j;
+            newIdOfGeoId[listOfGeoId[j]] = static_cast<int>(j);
+        }
+
+        Constraint* temp = constr->copy();
+        for (int i = 0; temp->hasElement(i); ++i) {
+            auto it = newIdOfGeoId.find(temp->getGeoId(i));
+            if (it != newIdOfGeoId.end()) {
+                temp->setGeoId(i, it->second);
             }
         }
         shapeConstraints.push_back(temp);
