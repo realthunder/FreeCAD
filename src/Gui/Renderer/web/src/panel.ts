@@ -109,10 +109,20 @@ export function draggable(
   };
 
   handle.addEventListener('pointerdown', (e: PointerEvent) => {
-    if (window.innerWidth <= NARROW) return;
     // The header carries the close button, and the pill its own; a
-    // press on a control is that control's, not a drag.
+    // press on a control is that control's, not a drag. Checked before
+    // the narrow case below, so a close button still closes.
     if ((e.target as HTMLElement).closest('button, input, select, a')) return;
+    // Narrow: a bottom sheet has nowhere to be dragged to, but the press
+    // must still not reach the canvas underneath -- which the early
+    // return used to skip, along with the stopPropagation below whose
+    // whole job that is. The viewer binds mousemove/mouseup to the
+    // DOCUMENT (Renderer/wasm/main.cpp), not to the canvas, so an event
+    // that bubbles is an event it may read as an orbit.
+    if (window.innerWidth <= NARROW) {
+      e.stopPropagation();
+      return;
+    }
     const r = panel().getBoundingClientRect();
     const ox = e.clientX - r.left;
     const oy = e.clientY - r.top;

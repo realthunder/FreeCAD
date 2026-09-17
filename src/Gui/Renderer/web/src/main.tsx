@@ -289,7 +289,8 @@ render(() => (
     <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
     <LauncherMenu
-      hidden={() => cardOpen() && window.innerWidth <= NARROW}
+      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
+                     || consoleOpen()) && window.innerWidth <= NARROW}
       items={[
         ...docItems(),
         { label: 'View & document properties',
@@ -312,7 +313,8 @@ render(() => (
       ]}
     />
     <LauncherMenu
-      hidden={() => cardOpen() && window.innerWidth <= NARROW}
+      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
+                     || consoleOpen()) && window.innerWidth <= NARROW}
       glyph={
         /* Cursor-arrow "select" icon, inline so every device draws the
            same thing (a text glyph already came out as tofu once). */

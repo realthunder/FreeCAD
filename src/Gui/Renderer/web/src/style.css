@@ -674,6 +674,13 @@
    body is a real table so the browser's own text selection, clipboard
    and IME work on it without help. */
 .fc-sheet {
+  /* The chrome host (#fc-ui) is pointer-events: none so the canvas keeps
+     every gesture we do not claim, and a panel that never opts back in is
+     invisible to the finger: taps fall through to the model and the close
+     button is dead.  Found on a handset 2026-09-17; the panel harnesses
+     mount into a plain body host with no such ancestor, which is why no
+     gate ever saw it. */
+  pointer-events: auto;
   position: fixed;
   right: 16px;
   bottom: 16px;
@@ -881,6 +888,9 @@
    default: the spreadsheet panel takes the bottom-right corner, and the two
    are opened together when a sheet is being scripted. */
 .fc-console {
+  /* Opts back in to the pointer, like .fc-sheet above and for the same
+     reason -- #fc-ui hands everything it does not claim to the canvas. */
+  pointer-events: auto;
   position: fixed;
   left: 16px;
   bottom: 16px;
