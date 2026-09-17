@@ -27,7 +27,7 @@ import { WidgetStore, layoutRefs, refId } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
-import { filterSet, inputModeFor, splice, stillApplies, triggerFor, wordAt }
+import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
   from './complete.ts';
 import type { CompletionSet } from './complete.ts';
 
@@ -220,6 +220,36 @@ function checkCompletion(): void {
   check(c, 'an expression turns it into a text keyboard',
         inputModeFor('=Pad', true) === 'text');
   check(c, 'a plain field is always text', inputModeFor('10', false) === 'text');
+
+  // The Python console's guest (sandbox/console.py) answers `start` but no
+  // `end`: its rlcompleter runs on the source up to the caret. The adapter
+  // fills `end` in from that caret, and everything the controller does
+  // afterwards -- narrowing, splicing -- rests on it being right. Asserted
+  // here because the console's completion was readline-shaped until a
+  // handset showed (2026-09-17) that it never listed, never narrowed and
+  // never came up on its own.
+  const guest = setFromGuest('App.', 4, ['App.ActiveDocument', 'App.Units'], 0);
+  check(c, 'a guest answer ends at the caret',
+        guest.start === 0 && guest.end === 4, `${guest.start}..${guest.end}`);
+  check(c, 'a guest answer serves the next characters',
+        stillApplies(guest, 'App.Ac', 6));
+  check(c, 'a guest answer narrows locally',
+        filterSet(guest, 'App.Ac', 6).join(',') === 'App.ActiveDocument',
+        filterSet(guest, 'App.Ac', 6).join(','));
+  const gpick = splice(guest, 'App.ActiveDocument', 'App.Ac', 6);
+  check(c, 'a guest completion replaces the whole dotted name',
+        gpick.text === 'App.ActiveDocument' && gpick.pos === 18,
+        `${gpick.text}@${gpick.pos}`);
+
+  // rlcompleter answers a first segment with the bare name, from 0 -- and
+  // appends a space to a keyword, which is part of what it means.
+  const bare = setFromGuest('im', 2, ['import '], 0);
+  check(c, 'a bare-name answer splices whole',
+        splice(bare, 'import ', 'im', 2).text === 'import ',
+        splice(bare, 'import ', 'im', 2).text);
+  check(c, 'a start past the caret is clamped',
+        setFromGuest('ab', 1, [], 9).start === 1,
+        String(setFromGuest('ab', 1, [], 9).start));
 }
 
 main();

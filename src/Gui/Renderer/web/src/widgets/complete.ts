@@ -136,6 +136,30 @@ export function splice(set: CompletionSet, item: string, text: string, pos: numb
   return { text: head + item + text.slice(end), pos: head.length + item.length };
 }
 
+/// A set built from a source that answers `start` but no `end` -- the
+/// Python console's guest (sandbox/console.py `complete()`), whose
+/// rlcompleter returns the whole dotted path and the index it replaces
+/// from, against the source up to the caret.
+///
+/// `end` is the caret the answer was asked for: everything from `start`
+/// to there is the name being completed, which is exactly what the host
+/// op states outright. With that filled in, the console runs the same
+/// controller as the panel's fields -- one ask per dotted segment, local
+/// narrowing in between, and a splice that survives typing done while the
+/// answer was in flight.
+export function setFromGuest(text: string, pos: number, items: string[],
+                             start: number): CompletionSet {
+  const at = Math.max(0, Math.min(pos, text.length));
+  return {
+    text,
+    pos: at,
+    items,
+    details: items.map(() => ''),
+    start: Math.max(0, Math.min(start, at)),
+    end: at,
+  };
+}
+
 /// What keyboard a phone should offer for a field holding `text`.
 ///
 /// A quantity field wants `decimal`, and a decimal keyboard has NO

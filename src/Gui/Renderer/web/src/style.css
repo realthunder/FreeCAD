@@ -961,6 +961,29 @@
   border: none;
   outline: none;
 }
+/* The completion list, in the panel's own flow above the input row:
+   .fc-console is overflow: hidden, so a list positioned over the row
+   would be clipped by the panel that owns it. */
+.fc-console-suggest {
+  flex: none;
+  max-height: 168px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* The explicit ask for completion.  A phone keyboard has no Tab key, so
+   without a tap target the console's only trigger is unreachable there --
+   the same ruling 7.23 made for the expression field. */
+.fc-console-complete {
+  flex: none;
+  touch-action: manipulation;
+}
+.fc-console-complete:disabled { opacity: 0.4; }
+@media (max-width: 640px) {
+  /* A thumb target, not a mouse one. */
+  .fc-console-complete { min-width: 44px; min-height: 44px; }
+}
 @media (max-width: 640px) {
   .fc-console {
     left: 0;
