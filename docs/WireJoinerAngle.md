@@ -90,9 +90,57 @@ of them away.
 Two edges leaving a vertex in the same direction -- a line meeting a circle
 tangentially, say -- have the same angle, the successor is ambiguous, and two
 faces would silently merge. Candidates within `AngleTie` (1e-8 rad) of the best
-turn are therefore re-measured with the chord to a point a tenth of the way
-along each edge instead of the tangent at the vertex, which is what OCCT's
+turn are ordered by how they bend, and only when they bend the same by the
+chord to a point a tenth of the way along each edge, which is what OCCT's
 `RefineAngles`/`RefineAngle2D` do for the same reason.
+
+The bend is the signed curvature at the vertex in the plane, positive for a
+turn to the left (`dartCurvature()`). It is asked first because the chord is
+scale blind: two arcs of the same angular span have the same chord angle
+whatever their radii, so two circles tangent from the inside, which differ in
+nothing but curvature, could not be told apart by it. The chord still decides
+the third-order case, a parabola and its osculating circle.
+
+Which way the bend sorts depends on where the tie is. Bending clockwise lowers
+the angle an edge is really at, which carries it further round, so of two
+candidates tied at some angle the one bending counterclockwise comes first. At
+the way back's own angle it is the other way round: a lower angle there wraps
+to just above zero, the tightest turn of all, and a higher one to just under a
+full turn. Only the reverse dart itself is promoted to a full turn; an edge
+tangent to the way back used to be promoted with it, and the walk then went
+round a circle touching a line the wrong way and never closed.
+
+## Pinched loops
+
+A loop that meets the rest of the network at one vertex only -- a circle
+inside a rectangle touching its top edge, two circles tangent from the inside,
+a full circle whose seam vertex sits on a line -- bounds a hole that is
+attached to the boundary of the region around it. The face of that region is
+one face whose boundary passes the touch point twice, and the face makers
+build it as such from one wire that visits the vertex twice (checked: every
+maker, valid, right area, also when handed together with the disk).
+
+`findSuperEdges()` used to merge such a loop into a chain, find it closed, and
+mark it done, taking it out of the graph before any traversal ran. The region
+around it then came out whole, overlapping the disk, silently. Now a chain
+that closes at a vertex where other live edges meet stays live, as an edge
+whose two darts leave the same vertex (`isLoop()`); the same holds for an
+input edge closed on itself. The dart helpers -- `dartEdge()`, `dartAngle()`,
+`dartCurvature()`, `dartSamples()`, `makeDartWire()` -- tell such an edge's
+two darts apart by the dart's `start` flag alone, the one travelling the
+stored edges forward, the other backwards, with `loopChainEdges()` finding
+the edge that leaves the vertex rather than assuming the stored chain starts
+there. A one-dart orbit of a loop is a face. A loop is never extended into a
+chain by the merge, since its vertex is a branch as soon as anything else is
+there, and once whatever met it has been dropped as dangling it is marked
+done after all, so that it is emitted whichever traversal runs.
+
+This is the one place the angle walk and the search disagree on purpose. The
+search finds simple cycles and cannot pass a vertex twice, so `angle=False`
+still returns the two loops apart -- the rectangle whole over the disk. The
+loops are kept live only when the angle walk will run, so the search and the
+plain path see what they always saw. `test_joinWires_pinched_loop` pins the
+angle answer and the difference.
 
 ## The gate
 
@@ -331,7 +379,8 @@ is quadratic in a wire's edge count.
 Scripts are in the durable scratch directory
 `~/.claude/projects/-home-thunder-works-sw-fcad/scratch/wirejoiner`. `onek.py
 <k>` counts one lattice's wires; passing `angle=False` to `Part.joinWires` is
-the control for any input.
+the control for any input. `robust.py` runs the touching, tangent, tiny-edge
+and overlap cases on both traversals against their expected areas.
 
 Two things to know. A regression in the search **hangs** rather than fails, so
 every run needs its own timeout. And `FreeCADCmd` exits 0 even when the script

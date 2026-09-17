@@ -97,10 +97,17 @@ class RegressionTests(unittest.TestCase):
 
         byangle = areas(True)
         bysearch = areas(False)
-        self.assertEqual(byangle, bysearch)
-        # and it is the right answer: the two halves of the annulus, the inner
-        # disc, and what is left of the box outside the circle
-        self.assertEqual(len(byangle), 4)
+        # the two halves of the annulus, the inner disc, and the box with the
+        # circle taken out of it: the circle touches the box at one point, so
+        # the region between them is one face whose boundary passes that
+        # point twice (see test_joinWires_pinched_loop)
+        import math
+        self.assertEqual(byangle, [round(16 * math.pi, 7), round(42 * math.pi, 7),
+                                   round(42 * math.pi, 7), round(1200 - 100 * math.pi, 7)])
+        # the search cannot pass a vertex twice and returns the box whole over
+        # the circle; that difference is deliberate, everything else agrees
+        self.assertEqual(bysearch[:3], byangle[:3])
+        self.assertEqual(bysearch[3], 1200.0)
 
     def test_joinWires_overlapping_rectangles(self):
         """
@@ -267,6 +274,86 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(sorted(len(w.Edges) for w in result.Wires), [2, 2])
         for e in result.Edges:
             self.assertGreater(e.Length, 1.0)
+
+    def test_joinWires_pinched_loop(self):
+        """
+        A loop touching the rest of the network at one vertex is a hole
+        attached to the boundary of the region around it.
+
+        A circle inside a rectangle touching its top edge: the region between
+        them is one face whose boundary passes the touch point twice, and the
+        disk is another. Merging used to close the circle into a finished
+        chain and drop it from the graph, so the rectangle came out whole
+        (1200) over the disk (314), overlapping. The angle walk now keeps such
+        a loop as an edge whose two darts leave the same vertex and walks the
+        annulus as one wire, which the face makers accept. The search cannot
+        pass a vertex twice and still returns the two loops apart: that
+        difference between angle=True and angle=False is deliberate.
+        """
+        import math
+
+        def seg(a, b):
+            return Part.LineSegment(Vector(*a), Vector(*b)).toShape()
+
+        def arc(c, r, a0, a1):
+            return Part.ArcOfCircle(Part.Circle(Vector(*c), Vector(0, 0, 1), r), a0, a1).toShape()
+
+        def areas(edges, **kw):
+            result = Part.joinWires(Part.Compound(edges), split=True, merge=True, tighten=True,
+                                    **kw)
+            return sorted(round(Part.Face(w).Area, 3) for w in result.Wires), result
+
+        rect = [seg((-20, 10, 0), (20, 10, 0)), seg((-20, 10, 0), (-20, -20, 0)),
+                seg((-20, -20, 0), (20, -20, 0)), seg((20, -20, 0), (20, 10, 0))]
+        circle = [arc((0, 0, 0), 10, -math.pi / 2, math.pi / 2),
+                  arc((0, 0, 0), 10, math.pi / 2, 3 * math.pi / 2)]
+        disk = round(100 * math.pi, 3)
+        got, result = areas(rect + circle)
+        self.assertEqual(got, [disk, round(1200 - 100 * math.pi, 3)])
+        for w in result.Wires:
+            self.assertTrue(w.isClosed())
+        faces = Part.makeFace(result.Wires, "Part::FaceMakerBullseye")
+        self.assertTrue(faces.isValid())
+        self.assertEqual(sorted(round(f.Area, 3) for f in faces.Faces),
+                         [disk, round(1200 - 100 * math.pi, 3)])
+        # the outline is the rectangle alone
+        outline = Part.joinWires(Part.Compound(rect + circle), split=True, merge=True,
+                                 tighten=False, outline=True)
+        self.assertEqual([round(Part.Face(w).Area, 3) for w in outline.Wires], [1200.0])
+        # the search keeps the two loops apart
+        got, _ = areas(rect + circle, angle=False)
+        self.assertEqual(got, [disk, 1200.0])
+
+        # a full circle whose seam vertex is the touch point, on a side
+        full = [Part.Circle(Vector(0, 0, 0), Vector(0, 0, 1), 10).toShape(),
+                seg((10, -20, 0), (10, 20, 0)), seg((10, 20, 0), (-30, 20, 0)),
+                seg((-30, 20, 0), (-30, -20, 0)), seg((-30, -20, 0), (10, -20, 0))]
+        got, _ = areas(full)
+        self.assertEqual(got, [disk, round(1600 - 100 * math.pi, 3)])
+
+        # two circles tangent from the inside: the same tangent at the touch
+        # point, and the tie is broken by curvature, the small one bending
+        # harder -- a chord a fraction of the way along cannot tell two arcs
+        # of the same angular span apart
+        small = [arc((5, 0, 0), 5, 0, math.pi), arc((5, 0, 0), 5, math.pi, 2 * math.pi)]
+        big = [arc((0, 0, 0), 10, 0, math.pi), arc((0, 0, 0), 10, math.pi, 2 * math.pi)]
+        got, _ = areas(big + small)
+        self.assertEqual(got, [round(25 * math.pi, 3), round(75 * math.pi, 3)])
+
+        # equal curvature too: a parabola and its osculating circle, decided
+        # by the chord
+        par = [(x / 10.0, (x / 10.0) ** 2, 0) for x in range(-20, 21)]
+
+        def bspline(pts):
+            b = Part.BSplineCurve()
+            b.interpolate([Vector(*p) for p in pts])
+            return b.toShape()
+
+        edges = [bspline(par[:21]), bspline(par[20:]), seg((2, 4, 0), (-2, 4, 0)),
+                 arc((0, 0.5, 0), 0.5, -math.pi / 2, math.pi / 2),
+                 arc((0, 0.5, 0), 0.5, math.pi / 2, 3 * math.pi / 2)]
+        got, _ = areas(edges)
+        self.assertEqual(got, [round(math.pi * 0.25, 3), round(32.0 / 3 - math.pi * 0.25, 3)])
 
     def test_joinWires_splits_a_collinear_overlap(self):
         """
