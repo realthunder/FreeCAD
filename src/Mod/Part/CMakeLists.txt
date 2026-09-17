@@ -71,6 +71,7 @@ set(Part_tests
     parttests/TopoShapeListTest.py
     parttests/ColorPerFaceTest.py
     parttests/ElementNameTest.py
+    parttests/HLRProjectionTest.py
 )
 
 add_custom_target(PartScripts ALL SOURCES

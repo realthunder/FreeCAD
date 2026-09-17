@@ -38,6 +38,7 @@
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Wire.hxx>
 #include <TopTools_ListOfShape.hxx>
+#include <gp_Ax3.hxx>
 
 #include <App/ComplexGeoData.h>
 #include <Base/Bitmask.h>
@@ -117,6 +118,25 @@ enum class HistoryTraceType {
     followTypeChange
 };
 
+
+/** Parameters of a hidden line projection, see HLRProjector and
+ * TopoShape::makEHLR
+ */
+struct HLRParams {
+    /// HLRProjector::EdgeTypeMask bits of the categories to emit; all by default
+    unsigned types = 0x3e;
+    /// emit the visible pieces
+    bool visible = true;
+    /// emit the hidden pieces
+    bool hidden = false;
+    /// number of isoparametric lines per face, 0 for none
+    int isoCount = 0;
+    /// perspective instead of parallel projection, from focus along the view Z
+    bool perspective = false;
+    double focus = 0.0;
+    /// emit the edges in 3D on the shape instead of flat on the view plane
+    bool onShape = false;
+};
 
 /** The representation for a CAD Shape
  */
@@ -2005,6 +2025,43 @@ public:
      */
     TopoShape makESlice(const Base::Vector3d& dir, double d, const char *op=nullptr) const {
         return TopoShape(0,Hasher).makESlice(*this,dir,d,op);
+    }
+
+    /// Parameters of a hidden line projection, see HLRProjector
+    using HLRParams = Part::HLRParams;
+
+    /** Make a hidden line projection
+     *
+     * @param sources: the shapes to project
+     * @param view: the view axis; the projection looks along its Z and the
+     *              result lies on its XY plane, in its coordinates
+     * @param params: what to emit and how to project
+     * @param op: optional string to be encoded into topo naming for indicating
+     *            the operation
+     *
+     * @return The original content of this TopoShape is discarded and
+     *         replaced with a compound of the projected edges. Each edge is
+     *         named from the source element it was projected from: an edge
+     *         of a source, or the face of a silhouette. The function returns
+     *         the TopoShape itself as a self reference so that multiple
+     *         operations can be carried out for the same shape in the same
+     *         line of code.
+     */
+    TopoShape &makEHLR(const std::vector<TopoShape> &sources, const gp_Ax3 &view,
+                       const HLRParams &params = HLRParams(), const char *op=nullptr);
+    /** Make a hidden line projection
+     *
+     * @param view: the view axis; the projection looks along its Z and the
+     *              result lies on its XY plane, in its coordinates
+     * @param params: what to emit and how to project
+     * @param op: optional string to be encoded into topo naming for indicating
+     *            the operation
+     *
+     * @return Return the new shape. The TopoShape itself is not modified.
+     */
+    TopoShape makEHLR(const gp_Ax3 &view, const HLRParams &params = HLRParams(),
+                      const char *op=nullptr) const {
+        return TopoShape(0,Hasher).makEHLR({*this},view,params,op);
     }
 
     /** Make multiple cross section slices

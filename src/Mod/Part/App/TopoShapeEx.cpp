@@ -207,6 +207,7 @@
 #include "PartPyCXX.h"
 #include "TopoShape.h"
 #include "TopoShapeOpCode.h"
+#include "HLRProjector.h"
 #include "CrossSection.h"
 #include "TopoShapeFacePy.h"
 #include "TopoShapeEdgePy.h"
@@ -4691,7 +4692,21 @@ TopoShape &TopoShape::makESlice(const TopoShape &shape,
     return *this;
 }
 
-TopoShape &TopoShape::makESlices(const TopoShape &shape,
+TopoShape &TopoShape::makEHLR(const std::vector<TopoShape> &sources, const gp_Ax3 &view,
+                              const HLRParams &params, const char *op)
+{
+    HLRProjector projector;
+    for (const auto &source : sources)
+        projector.add(source);
+    projector.build(view, params);
+    TopoShape res = projector.edges(params, op, Hasher);
+    setShape(res._Shape);
+    resetElementMap(res.elementMap());
+    return *this;
+}
+
+TopoShape &TopoShape::makESlices(
+const TopoShape &shape,
         const Base::Vector3d& dir, const std::vector<double> &d, const char *op)
 {
     std::vector<TopoShape> wires;
