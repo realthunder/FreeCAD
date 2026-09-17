@@ -40,6 +40,7 @@
 #include <Mod/Part/Gui/ViewProviderGridExtension.h>
 #include <Mod/Part/Gui/ViewProviderAttachExtension.h>
 #include <Mod/Part/App/BodyBase.h>
+#include <Mod/Sketcher/App/GeoEnum.h>
 #include <Mod/Sketcher/App/GeoList.h>
 
 #include "PropertyVisualLayerList.h"
@@ -238,8 +239,7 @@ public:
         STATUS_SELECT_Edge,            /**< enum value an edge was selected. */
         STATUS_SELECT_Constraint,      /**< enum value a constraint was selected. */
         STATUS_SELECT_Cross,           /**< enum value the base coordinate system was selected. */
-        STATUS_SKETCH_DragPoint,       /**< enum value while dragging a point. */
-        STATUS_SKETCH_DragCurve,       /**< enum value while dragging a curve. */
+        STATUS_SKETCH_Drag,            /**< enum value while dragging curves and/or points. */
         STATUS_SKETCH_DragConstraint,  /**< enum value while dragging a compatible constraint. */
         STATUS_SKETCH_UseHandler,      /**< enum value a DrawSketchHandler is in control. */
         STATUS_SKETCH_StartRubberBand, /**< enum value for initiating a rubber band selection */
@@ -579,6 +579,13 @@ protected:
     void setPositionText(const Base::Vector2d &Pos, const SbString &txt);
     void setPositionText(const Base::Vector2d &Pos);
     void resetPositionText();
+
+    // dragging of geometries, one or several at a time
+    void initDragging(int geoId, Sketcher::PointPos pos);
+    Base::Vector3d getDragVector(double x, double y) const;
+    void doDragStep(double x, double y);
+    void commitDragMove(double x, double y);
+    void cancelDragMove();
 
     // handle preselection and selection of points
     void setPreselectPoint(int PreselectPoint);
