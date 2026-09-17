@@ -1,12 +1,15 @@
 # Sketcher: picking upstream fixes and features
 
-Status (2026-09-17): phases 0 and 1 done; phase 2 (App fixes) is at its
-tail -- the standalone fixes, the internal faces fix, the trim/split take,
-the fillet and the external faces (with element history through
-`Part::HLRProjector`) are in (section 6a). Of the ledger's open App fix
-rows, four were already here through the trim/split take, one is n/a and
-one (the angle-jump `62c222c211`) is a phase 3 cluster; the open App
-feature and `?` rows are next, then phase 3 (Gui). Branch `SketcherPort` off `RemoteEdit`
+Status (2026-09-17): phases 0 and 1 done; phase 2 (App) done -- the
+standalone fixes, the internal faces fix, the trim/split take, the fillet,
+the external faces (with element history through `Part::HLRProjector`),
+the symmetric and projected-circle picks, and the Gui-coupled App features
+(fillet on a crossed vertex, carbon copy of a scripted sketch, scale keeps
+geometry ids, sketch autoscale) are in (section 6a). Of the listed features,
+datums projection and defining externals were already here, and copy/paste
+of groups waits for the groups feature. The remaining open App rows
+were marked n/a in bulk (section 6a); phase 3 (Gui) is next.
+Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
 
@@ -681,6 +684,89 @@ or ellipse is full when its parameter range spans its period, not when its
 ends happen to lie within tolerance, so an arc of 360 deg minus a hair
 projects as an arc. Applied at the three ellipse-projection sites of
 `importEdge`; the plain circle site already had a length test.
+
+### Gui-coupled App features (user ruling, 2026-09-17: take them all)
+
+Six rows whose App half is useless without its Gui half. Taken one per
+commit, the Gui half checked against served editing (a handler run
+without a tool session touches no widget; the camera is left alone when
+it is a client's, `ViewerContext::cameraIsRemote`).
+
+- **Fillet on a crossed vertex** (`d55aa0f80b`, upstream `15d9e14851`):
+  the App half, `chooseFilletsEdges`, came with the fillet take; the tool's
+  two paths now run it, so a corner crossed by construction lines fillets.
+- **Carbon copy of a scripted sketch** (`2b103def75`, upstream
+  `74e7df9676`, adapted): `isDerivedFrom<SketchObject>()` at both sites in
+  place of upstream's type-name string. Probed.
+- **Scale keeps geometry ids** (`ea6ba1f918`, upstream `c8bddd2f2b`,
+  adapted): `setGeometryIds` (Python: a list of `(GeoId, id)` pairs) and
+  the Scale tool giving the scaled copies the originals' ids when it
+  deletes them, so the fork's id-based element names follow the geometry.
+  Upstream's helper re-cloned from the last match on every pair and leaked
+  the earlier clones; the fork clones once and validates the indices first.
+- **Sketch autoscale** (`60befe30bc`, upstream `353c4eca55` + `b0dcce6c66` +
+  `29eeab3624`, with the later fixes `9ecb62c8f6`, `7c4131c4ef`,
+  `6a0d59b0c1`, `918547f876` folded in, and the label offset rule of
+  `4b84834112` moot since the fork has no label setter): setting the first
+  scale-defining dimension of a sketch scales the whole sketch about its
+  origin to match and the camera with it. Pieces: `NavigationStyle::scale`
+  / `View3DInventorViewer::scale`; `getDatum`,
+  `getSingleScaleDefiningConstraint` (angles, weights and refraction
+  ratios excluded -- upstream excluded only angles), `hasBlockConstraint`;
+  `DrawSketchHandlerScale::make_centerScale` and `DrawSketchHandler::
+  setSketchGui` (a handler run without a tool session), the constraint
+  remap written the robust way (`offsetGeoID` answers `GeoUndef` for a
+  geometry outside the selection, and every branch requires its references)
+  rather than the first version's; `SketcherGui::centerScale(vp, factor)`
+  in `CommandSketcherTools.h` takes the sketch's own view provider and
+  scales its edit viewer only when the camera is local; the
+  `AutoScaleMode` preference (default: when no scale feature is visible)
+  on the Sketcher General page; `EditDatumDialog::performAutoScale`
+  resolves the sketch's own Gui document rather than the active one and
+  requires the sketch to be in edit. Not autoscaled: a sketch with
+  external geometry or a Block constraint, a datum that is not the single
+  scale-defining one, a factor that is zero, infinite or one.
+- **Datums projection** (upstream `f3643af82b`): n/a -- upstream added
+  `Part::DatumLine`/`DatumPoint`, classes the fork does not have; its
+  PartDesign datums are `Part::Datum` and project through `getShape()`
+  already (probed: a datum line and point become a line and a point).
+- **Defining externals** (upstream `f3c79302c4`): have -- the fork's own
+  `addExternal(..., defining)`, `toggleConstruction` on an `ExternalEdge`
+  and the Defining colour predate it.
+- **Copy/paste of groups** (upstream `926e93c314`): deferred -- a
+  converter refactor plus `isGroupHandle`/`getGroupGeometries`, which need
+  the groups feature; it goes with the Text tool (section 1).
+
+**A crash found by the probe, not by the feature** (`796e3085d9`): a
+script that ends one edit, closes the document and enters another edit
+before returning to the event loop crashed in `ConstraintItem::data`,
+twice in two runs. The task dialog is deleted later than it is removed,
+and a relayout in between (a workbench switch repolishes every child)
+reads every constraint and element item, each dereferencing a sketch
+that was gone. `TaskDlgEditSketch::closed()`, the synchronous hook of the
+removal, now empties both lists. The sequence passes 2/2 afterwards, a
+4x re-entry loop 3/3.
+
+**Verified.** `TestSketcherApp` 103 OK; `Sketcher_tests_run` 110 passed;
+`ctest` 759/759. Autoscale probed in a GUI session under Xvfb
+(scratchpad `autoscale_probe.py`): the first DistanceX on a freehand
+rectangle scales the geometry and the camera by the same factor
+(3.33x), all ten constraints kept, fully constrained; Never, a visible
+Box, external geometry and a zero datum leave the geometry to the solver.
+
+### The App noise rows, marked in bulk
+
+The 70 open App-only rows left after the picks were read once each by
+subject and diff: six SketchAnalysis refactors, upstream's five-way split
+of `SketchObject.cpp` (the fork did its own, section 4), the `.pyi`
+bindings migration and its follow-ups (the fork keeps the `.xml`
+bindings), the fillet refactor the fillet take superseded, thirty
+refactor/cleanup commits, ten warning/typo/formatting commits, two
+commits that came from the fork itself, two already here (the facade
+warnings are commented out; the trim delete flag came with the trim take),
+and one declined: the MakeInternals tooltip, since the fork's property
+also splits edges and makes closed-wire faces and its text says so. No
+open App-only row is undecided; phase 3 (Gui) is next.
 
 ### External projection: probed, nothing to take
 
