@@ -435,6 +435,7 @@ inline void SketcherAddWorkbenchGeometries(T& geom)
     SketcherAddWorkspaceRectangles(geom);
     SketcherAddWorkspaceRegularPolygon(geom);
     SketcherAddWorkspaceslots(geom);
+    geom << "Sketcher_CreateText";
     geom << "Separator";
     geom << "Sketcher_ExternalCmds"
          << "Sketcher_ToggleConstruction"
@@ -442,7 +443,6 @@ inline void SketcherAddWorkbenchGeometries(T& geom)
          << "Sketcher_ExportGeometry"
          << "Sketcher_ExportCompound"
          << "Sketcher_SwapGeometryID"
-        /*<< "Sketcher_CreateText"*/
         /*<< "Sketcher_CreateDraftLine"*/;
 }
 

@@ -36,6 +36,7 @@ set(SketcherGui_UIC_SRCS
     TaskSketcherSolverAdvanced.ui
     TaskSketcherValidation.ui
     InsertDatum.ui
+    EditTextDialog.ui
     SketchOrientationDialog.ui
     SketchMirrorDialog.ui
     SketcherSettings.ui
@@ -79,6 +80,7 @@ SET(SketcherGui_SRCS
     DrawSketchHandlerSlot.h
     DrawSketchHandlerOffset.h
     DrawSketchHandlerRotate.h
+    DrawSketchHandlerText.h
     CommandCreateGeo.cpp
     CommandConstraints.h
     CommandConstraints.cpp
@@ -151,6 +153,9 @@ SET(SketcherGui_SRCS
     Workbench.h
     EditDatumDialog.cpp
     EditDatumDialog.h
+    EditTextDialog.ui
+    EditTextDialog.cpp
+    EditTextDialog.h
     PropertyVisualLayerList.cpp
     PropertyVisualLayerList.h
     SketchOrientationDialog.cpp

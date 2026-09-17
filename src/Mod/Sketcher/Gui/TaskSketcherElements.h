@@ -62,6 +62,7 @@ protected:
 
 protected Q_SLOTS:
     void deleteSelectedItems();
+    void convertTextToGeometry();
 };
 
 class ElementFilterList;
