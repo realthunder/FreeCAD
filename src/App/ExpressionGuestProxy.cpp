@@ -20,12 +20,14 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <cstring>
 #include <map>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <Base/Console.h>
@@ -38,6 +40,7 @@
 #include "ExpressionEvaluator.h"
 #include "ExpressionGuestProxy.h"
 #include "ExpressionImageHost.h"
+#include "ExpressionSecurityRuntime.h"
 #include "PropertyPythonObject.h"
 
 using json = nlohmann::json;
@@ -583,6 +586,114 @@ std::vector<App::DocumentObject*> hostProxies(const App::Document* doc)
         }
     }
     return out;
+}
+
+namespace
+{
+
+/// Every Proxy of `doc` the deferred restore is holding, in document
+/// order, each with the module it waits on.
+std::vector<std::pair<App::PropertyPythonObject*, std::string>> heldProxies(
+    const App::Document* doc)
+{
+    std::vector<std::pair<App::PropertyPythonObject*, std::string>> out;
+    if (!doc)
+        return out;
+    for (App::DocumentObject* obj : doc->getObjects()) {
+        std::vector<App::Property*> props;
+        obj->getPropertyList(props);
+        for (App::Property* prop : props) {
+            auto* py = Base::freecad_dynamic_cast<App::PropertyPythonObject>(prop);
+            if (py && py->isDeferredRestore())
+                out.emplace_back(py, py->deferredModule());
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+std::vector<std::pair<std::string, int>> deferredProxyModules(const App::Document* doc)
+{
+    std::vector<std::pair<std::string, int>> out;
+    for (const auto& held : heldProxies(doc)) {
+        auto it = std::find_if(out.begin(), out.end(),
+                               [&](const std::pair<std::string, int>& entry) {
+                                   return entry.first == held.second;
+                               });
+        if (it == out.end())
+            out.emplace_back(held.second, 1);
+        else
+            ++it->second;
+    }
+    return out;
+}
+
+int resolveDeferredProxies(App::Document* doc)
+{
+    auto held = heldProxies(doc);
+    if (held.empty())
+        return 0;
+    namespace Sec = App::ExpressionSecurity;
+    auto& rt = Sec::Runtime::instance();
+    const std::string principal = rt.documentPrincipal(doc);
+
+    // Enforcement off (Expression/Security:Enforce) is the parity rig's
+    // switch, where every check() is a no-op: the held restores simply
+    // run, as they would with routing off.
+    const bool enforced = rt.enforced();
+
+    // One decision per MODULE, never one per object: a document of
+    // seventy Path features is one question, asked once.
+    std::map<std::string, Sec::Decision> decided;
+    for (const auto& entry : deferredProxyModules(doc)) {
+        const std::string& module = entry.first;
+        Sec::Decision answer = enforced
+            ? rt.resolve(principal, Sec::Permission::HostImport, module)
+            : Sec::Decision::Allow;
+        decided[module] = answer;
+        if (answer == Sec::Decision::Allow) {
+            Base::Console().Warning(
+                "ExpressionSandbox: %d object(s) of %s run their Python Proxy of module '%s'"
+                " in this process -- the sandbox guest cannot serve it, and host.import:%s"
+                " is granted\n",
+                entry.second, doc->getName(), module.c_str(), module.c_str());
+        }
+        else if (answer == Sec::Decision::Prompt) {
+            // The ask, recorded for the panel, the padlock and the modal
+            // at document open -- under the DOCUMENT's principal, which
+            // is what a grant is keyed by.
+            Sec::Runtime::Scope scope(doc);
+            rt.requestPending(Sec::Permission::HostImport, module);
+            Base::Console().Warning(
+                "ExpressionSandbox: %d object(s) of %s hold a Python Proxy of module '%s',"
+                " which the sandbox guest cannot serve; running it in this process needs"
+                " host.import:%s, so far unanswered -- until it is, they have no Proxy\n",
+                entry.second, doc->getName(), module.c_str(), module.c_str());
+        }
+        else {
+            Base::Console().Warning(
+                "ExpressionSandbox: %d object(s) of %s name a Python Proxy of module '%s':"
+                " the sandbox guest cannot serve it and host.import:%s is denied, so they"
+                " are left without a Proxy\n",
+                entry.second, doc->getName(), module.c_str(), module.c_str());
+        }
+    }
+
+    int restored = 0;
+    for (const auto& entry : held) {
+        auto it = decided.find(entry.second);
+        if (it == decided.end())
+            continue;
+        if (it->second == Sec::Decision::Allow) {
+            if (entry.first->completeDeferredRestore())
+                ++restored;
+        }
+        else if (it->second == Sec::Decision::Deny)
+            entry.first->dropDeferredRestore();
+        // PROMPT: still held, still waiting for the answer
+    }
+    return restored;
 }
 
 PyObject* restoreGuestProxy(const std::string& module,

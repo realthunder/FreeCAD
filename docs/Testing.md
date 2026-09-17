@@ -24,8 +24,15 @@ Two traps when running the suites (2026-09-09): give the Python suite and
 `Expression/Sandbox:Evaluate` in the shared `user.cfg` while they run, and
 the Python suite then restores every Proxy through the sandbox guest (46
 failures that vanish alone, on 2026-09-09; since 2026-09-17 a Proxy whose
-module the guest cannot serve restores natively instead, docs/Sandbox.md
-7.28, and what remains under routing is `TestArch`'s 11 guest-behaviour
+module the guest cannot serve is HELD until the document's
+`host.import:<module>` is answered, docs/Sandbox.md 7.28, so a ROUTED
+module run needs its grants -- `TestFemApp` routed with none holds 81
+Proxies and fails 2, and with `--grant host.import:femobjects --grant
+host.import:femsolver` (the TOP-LEVEL packages; the dotted-ancestor chain
+covers every submodule under them) is 90 OK, 0 held, 0 refusals, and
+`TestCAMApp` holds 411 and fails 10 with 17 errors on none but is 1343 OK
+with `--grant host.import:Path` alone -- and
+what remains under routing beyond that is `TestArch`'s 11 guest-behaviour
 cases); and the home directory must **exist** before
 the run, or FreeCAD falls back to the real one.  `Tests_run` gained
 `ProxyImport.*` (7) and four `TypeImport.*` cases on 2026-09-09 (the

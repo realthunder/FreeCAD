@@ -41,6 +41,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -109,6 +110,29 @@ AppExport bool guestServesModule(const std::string& module, std::string* why = n
  * off or every Proxy is a stand-in.
  */
 AppExport std::vector<App::DocumentObject*> hostProxies(const App::Document* doc);
+
+/** The modules of `doc` whose saved Proxies are HELD unrestored because
+ * the sandbox guest cannot serve them (docs/Sandbox.md 7.28), each with
+ * the number of objects waiting on it -- what the modal at document open
+ * asks about, one question per module rather than one per object.
+ */
+AppExport std::vector<std::pair<std::string, int>> deferredProxyModules(
+        const App::Document* doc);
+
+/** Answer `host.import:<module>` for every Proxy of `doc` held by the
+ * deferred restore (docs/Sandbox.md 7.28), under the DOCUMENT's
+ * principal -- the hash a grant is keyed by.  ALLOW restores the Proxy
+ * in this process, natively, and names it in the console; PROMPT leaves
+ * it held and records the request for the panel, the padlock and the
+ * modal; DENY lets it go, the object without a Proxy.
+ *
+ * Called at the top of Document::afterRestore -- the first point where
+ * the document's code is all in, so its principal is final, and still
+ * before onDocumentRestored(), which a restored Proxy answers -- and
+ * again after a grant, which is what re-runs the restore without
+ * reopening the file.  Returns the number of Proxies restored.
+ */
+AppExport int resolveDeferredProxies(App::Document* doc);
 
 /** The construction dispatch (docs/Sandbox.md 7.6 G1d): a scripted
  * object class's host `__new__` calls this with the class and the

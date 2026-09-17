@@ -24,6 +24,7 @@
 #ifndef APP_PROPERTYPYTHONOBJECT_H
 #define APP_PROPERTYPYTHONOBJECT_H
 
+#include <memory>
 #include <string>
 #include <CXX/Objects.hxx>
 
@@ -83,6 +84,42 @@ public:
      */
     bool isHostFallback() const { return hostFallback; }
 
+    /** A saved Proxy the sandbox guest cannot serve, HELD unrestored
+     * until the document's `host.import:<module>` is answered
+     * (docs/Sandbox.md 7.28).  Nothing of the file's choosing has run:
+     * the module is not imported, the instance is not allocated and the
+     * saved state is not applied -- the property holds None and the
+     * module, class and state wait here.
+     *
+     * The answer comes from ExpressionSandbox::resolveDeferredProxies(),
+     * at the top of Document::afterRestore: only there is the document's
+     * code all in, so its principal -- the hash its grants are keyed by
+     * -- is final.
+     */
+    bool isDeferredRestore() const { return deferred != nullptr; }
+    /// The held Proxy's module ("" when nothing is held).
+    std::string deferredModule() const;
+    /// The held Proxy's class ("" when nothing is held).
+    std::string deferredClass() const;
+
+    /** Run the held restore in THIS process, under the same native
+     * import rule as routing off (Base::Type::moduleAllowed, sec 11
+     * item 1): import, allocate, re-attach the object back-references
+     * and apply the saved state.  What a granted host.import buys, with
+     * no need to reopen the file.
+     *
+     * True when the Proxy is in place (isHostFallback() is then true).
+     * A module the native rule refuses is still refused -- the grant
+     * answers for the sandbox, never for that rule -- and the object is
+     * left without a Proxy.  Whatever happens, the held state is spent:
+     * one attempt, never a retry loop.
+     */
+    bool completeDeferredRestore();
+
+    /// Let the held restore go: the object stays without a Proxy (a
+    /// denied host.import, or a document closing on an unanswered one).
+    void dropDeferredRestore();
+
     /** Bump the proxy-chain generation, then notify as usual
      *
      * A ProxyExp element's methods may be attributes of this kind -- a Proxy
@@ -100,6 +137,8 @@ private:
     void loadPickle(const std::string& str);
     Py::Object object;
     bool hostFallback = false;
+    struct DeferredRestore;
+    std::unique_ptr<DeferredRestore> deferred;
 };
 
 

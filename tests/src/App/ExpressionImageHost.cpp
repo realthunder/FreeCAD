@@ -4394,22 +4394,70 @@ TEST_F(ExpressionImageEvalTest, guestProxyRestoreRoute)
         ASSERT_NE(proxy, nullptr);
         EXPECT_TRUE(App::ExpressionSandbox::isGuestProxy(proxy))
             << "with routing on the restored Proxy must be a stand-in";
-        // the host-only module: the guest cannot serve it, the host has
-        // it loaded -- restored in this process, natively, and said so
+        // the host-only module: the guest cannot serve it, so its Proxy
+        // is HELD -- nothing imported, nothing run -- until the
+        // document's host.import is answered (7.28)
         PyObject* proxy2 = proxyOf(obj2);
-        ASSERT_NE(proxy2, nullptr) << "the fallback must restore the Proxy";
-        EXPECT_NE(proxy2, Py_None) << "the fallback must restore the Proxy";
-        EXPECT_FALSE(App::ExpressionSandbox::isGuestProxy(proxy2))
-            << "the fallback restores natively, not as a stand-in";
-        // the module nowhere: the fallback widens nothing -- the native
-        // rule refuses a module neither loaded nor under a Mod root
+        EXPECT_TRUE(proxy2 == nullptr || proxy2 == Py_None)
+            << "an unanswered host.import must hold the Proxy, not restore it";
+        // the module nowhere: held the same way, and the native rule
+        // refuses it even once the sandbox question is answered
         PyObject* proxy3 = proxyOf(obj3);
         EXPECT_TRUE(proxy3 == nullptr || proxy3 == Py_None)
             << "a module neither served nor allowed natively must stay refused";
     }
     EXPECT_EQ(proxyModuleOf(obj), "fcxprobe");
-    EXPECT_EQ(proxyModuleOf(obj2), "fcxhostonly");
+    EXPECT_EQ(proxyModuleOf(obj2), "");
     EXPECT_EQ(proxyModuleOf(obj3), "");
+    // nothing of the file's choosing has run in this process
+    EXPECT_TRUE(App::ExpressionSandbox::hostProxies(doc).empty());
+    {
+        // both modules are held, one object each, and the ask is on
+        // record for the panel, the padlock and the modal
+        auto heldModules = App::ExpressionSandbox::deferredProxyModules(doc);
+        ASSERT_EQ(heldModules.size(), 2u);
+        int hostonly = 0;
+        int nowhere = 0;
+        for (const auto& entry : heldModules) {
+            if (entry.first == "fcxhostonly")
+                hostonly = entry.second;
+            else if (entry.first == "fcxnowhere")
+                nowhere = entry.second;
+        }
+        EXPECT_EQ(hostonly, 1);
+        EXPECT_EQ(nowhere, 1);
+        bool asked = false;
+        for (const auto& req :
+             App::ExpressionSecurity::Runtime::instance().pendingRequests(doc->getName()))
+            asked = asked
+                || (req.permission == App::ExpressionSecurity::Permission::HostImport
+                    && req.target == "fcxhostonly");
+        EXPECT_TRUE(asked) << "a held Proxy must record its host.import ask";
+    }
+
+    // 3. the answer.  Granted, the held restore runs in this process --
+    // the file is never reopened -- and the native import rule still
+    // bounds what a grant can reach.
+    auto& security = App::ExpressionSecurity::Runtime::instance();
+    const std::string principal = security.documentPrincipal(doc);
+    security.grant(principal, App::ExpressionSecurity::Permission::HostImport, "fcxhostonly",
+                   true, "session");
+    security.grant(principal, App::ExpressionSecurity::Permission::HostImport, "fcxnowhere",
+                   true, "session");
+    EXPECT_EQ(App::ExpressionSandbox::resolveDeferredProxies(doc), 1)
+        << "only the module the native import rule admits is restored";
+    EXPECT_TRUE(App::ExpressionSandbox::deferredProxyModules(doc).empty())
+        << "an answered hold is spent, whichever way it went";
+    EXPECT_EQ(proxyModuleOf(obj2), "fcxhostonly");
+    EXPECT_EQ(proxyModuleOf(obj3), "")
+        << "a grant answers for the sandbox, never for the native import rule";
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* restored2 = proxyOf(obj2);
+        ASSERT_NE(restored2, nullptr);
+        EXPECT_FALSE(App::ExpressionSandbox::isGuestProxy(restored2))
+            << "the granted restore is native, not a stand-in";
+    }
     {
         auto* p2 = Base::freecad_dynamic_cast<App::PropertyPythonObject>(obj2->getPropertyByName("Proxy"));
         ASSERT_NE(p2, nullptr);
@@ -4424,7 +4472,7 @@ TEST_F(ExpressionImageEvalTest, guestProxyRestoreRoute)
         auto hosted = App::ExpressionSandbox::hostProxies(doc);
         ASSERT_EQ(hosted.size(), 1u);
         EXPECT_EQ(hosted[0], obj2);
-        // and the fallback object works: its native execute() runs
+        // and it works: its native execute() runs
         auto* w2 = Base::freecad_dynamic_cast<App::PropertyFloat>(obj2->getPropertyByName("Width"));
         ASSERT_NE(w2, nullptr);
         const double before = w2->getValue();

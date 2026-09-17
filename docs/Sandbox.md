@@ -253,10 +253,12 @@ around App.  `ExpressionCore` stays an OBJECT library folded into
   script all run as `document:<hash>`.
 - Pre-resolve host-side, then FAIL CLOSED: no silent native fallback
   when the image cannot evaluate (2026-08-31).  Amended 2026-09-17
-  (7.28): a saved Proxy whose module NO guest wheel carries restores in
-  this process under the native import rule of sec 11 item 1, per
-  object, and is named -- in the console, on the property, on the
-  padlock.  Not silent, and not for any other failure.
+  (7.28): a saved Proxy whose module NO guest wheel carries is HELD --
+  not imported, not allocated, its state not applied -- and runs in this
+  process only on the USER's answer to `host.import:<module>` under the
+  document principal, bounded by the native import rule of sec 11 item 1
+  and named in the console, on the property and on the padlock.  Consent,
+  not a fallback; and not for any other failure.
 - Routing stays OFF by default until the corpus regression, not
   judgement, says otherwise (2026-08-31).  It said otherwise on
   2026-09-16: 94 files, 195 expressions, 195 same, 0 differ.  The same
@@ -1030,11 +1032,12 @@ OPEN (`ExpressionSandbox::proxyRestoreRouted()`: the preference AND
 `PropertyPythonObject::Restore` builds the
 `<Python module=".." class="..">` instance in the guest and holds the
 stand-in (7.6 G1c step (f)); a module the guest cannot serve -- its
-import there raises ModuleNotFoundError -- restores in this process
-under the native import rule and is named (7.28; it FAILED CLOSED from
-2026-09-04 to 2026-09-17); any other guest failure fails closed.  A
-view provider's Proxy is not routed -- the Gui side is not in the guest
-(G2).
+import there raises ModuleNotFoundError -- is HELD unrestored until the
+document's `host.import:<module>` is answered, and only then restores in
+this process under the native import rule, named (7.28; it FAILED CLOSED
+from 2026-09-04 to 2026-09-17, and fell back automatically for one day);
+any other guest failure fails closed.  A view provider's Proxy is not
+routed -- the Gui side is not in the guest (G2).
 
 **The restore half asks `available()` too (2026-09-16).**  It used to
 read the preference alone, deliberately, so that answering it booted no
@@ -1054,6 +1057,8 @@ Python: `FreeCAD.ExpressionSandbox` -- `routed`, `setRouting`,
 in the guest as the session principal, optionally as a named module),
 `evalCount`, `stats`, `resetStats`, `reset`, `proxyNew`, `proxyInfo` (rung 2, 3.2),
 `hostProxies` (the objects restored in this process, 7.28),
+`deferredProxies` and `resumeProxies` (the Proxies HELD for an unanswered
+`host.import`, and the answer re-run over them, 7.28),
 `pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
 `pyodideAbi`; constants `OptionCallFrame`, `OptionPythonMode`.
 
@@ -8977,17 +8982,28 @@ The probe that settles this kind of question logs the RETURN of
 `fcviewerControlSend`, not only the call; the 7.26 probe did not, and
 read a refusal as a loss.
 
-### 7.28 The host fallback: a Proxy the guest cannot serve **[designed, BUILT and PROVEN 2026-09-17]**
+### 7.28 Consent for a Proxy the guest cannot serve **[designed, BUILT and PROVEN 2026-09-17; the automatic fallback of the morning replaced by a host.import prompt the same day]**
 
-**INTERIM, ruled 2026-09-17 after it was built:** the automatic
-fallback below is a hole relative to what routing promises -- the
-Mod-root rule bounds which code is imported, not whose data drives it,
-and an untrusted file's `loads`/`execute` run on the host before anyone
-reads the warning.  Next: the fallback becomes a `host.import:<module>`
-PROMPT under the document principal (the catalog row of 2.2), answered
-by a modal at document open, with a deferred restore so a grant re-runs
-the native restore without reopening the file; headless runs pass
-`--grant`.  Until then the mechanism stands as written here.
+**The hole the automatic fallback opened, ruled 2026-09-17 hours after
+it was built.**  The first form of this section fell back on its own: a
+module no guest wheel carried was imported in this process under the
+Mod-root rule, with a console warning as the only telling.  That is a
+hole relative to what routing promises.  The Mod-root rule bounds WHICH
+CODE is imported; it says nothing about WHOSE DATA drives it -- an
+untrusted file names any installed workbench class and its `loads` and
+`execute` run on the host, before anyone reads the warning.  The user's
+words: "if a user requested the route, ... we should at least popup a
+modal dialog or something more obvious to request explicit action".
+
+**RULED: the fallback becomes consent.**  A module the guest cannot
+serve is HELD, not imported: `host.import:<module>` under the DOCUMENT
+principal (the catalog row of 2.2, PROMPT for a document, with the
+dotted-ancestor target fallback) decides it, and until it is answered
+nothing of the file's choosing has run.  ALLOW -- a grant already held,
+or one the user gives -- restores natively and flags the property, as
+the fallback did.  PROMPT holds.  DENY lets it go.  Enforcement off
+(`Expression/Security:Enforce`, the parity rig's switch) restores them
+all, the way every other `check()` no-ops there.
 
 
 **The defect.**  `1623ac797d` (2026-09-16) made `Expression/Sandbox:
@@ -9016,7 +9032,16 @@ protected nothing the native rule did not: a Path job's Proxy on a box
 with Path installed is what the user asked for when they installed
 Path.  What was lost was the object.
 
-**RULED: fall back, per object, under the native rule, and say so.**
+**And what the automatic fallback gave away.**  That argument is right
+about WHICH MODULE may be imported and wrong about WHAT RUNS.  A Proxy's
+`loads` and `execute` are the FILE's code, driven by the file's saved
+state, and restoring them unasked runs that code on a decision nobody
+made.  Installing Path says a Path job may be imported; it does not say
+this file's Path job may run.  Hence the consent ruling above: the
+native rule still bounds the import, and the user's answer decides
+whether the file's code runs behind it.
+
+**The mechanism, as built.**
 
 - **When.**  Only when the guest CANNOT SERVE the module: its import
   there raises `ModuleNotFoundError`, no wheel carries it.  A module
@@ -9025,14 +9050,31 @@ Path.  What was lost was the object.
   fails closed -- a fallback there would hide the guest's defect behind
   a host that happens to work.  A guest that is not available never
   reaches this: `proxyRestoreRouted()` asks `available()` first (3.5).
-- **Where.**  `PropertyPythonObject::Restore`, the one place the routed
-  restore is decided: the routed branch now takes `unserved`, and when
-  it comes back set, the native branch below runs as it would with
-  routing off -- `proxyModuleAllowed`, then the import.  A module the
-  guest lacks AND the native rule refuses (not loaded, not under a Mod
-  root: a pip-installed addon, a name a file made up) stays refused, the
-  object without a Proxy, logged as sec 11 item 1 logs it.  The
-  fallback is bounded by the same rule the native path always had.
+- **Where it is held.**  `PropertyPythonObject::Restore`, the one place
+  the routed restore is decided: an `unserved` answer no longer falls
+  through to the native branch but records a `DeferredRestore` -- the
+  module, the class, the `__object__`/`__vobject__` back-references the
+  file recorded, and the state -- and leaves the property None.  The
+  state arrives either inline or, for a `file=` payload, later at
+  `RestoreDocFile`, which stashes it rather than applying it: with no
+  instance to take it, `fromString` would make the saved dict the
+  property's own value.
+- **Where it is answered.**  `ExpressionSandbox::resolveDeferredProxies()`,
+  called at the TOP of `Document::afterRestore`.  Not in `Restore`
+  itself: the document principal is a hash over every expression in the
+  file, and mid-restore half of them are not loaded yet, so a decision
+  taken there would be keyed to a principal that is not the document's
+  and a grant would not match on the next open.  By `afterRestore` the
+  code is all in and the principal is final -- and `onDocumentRestored()`,
+  which a restored Proxy answers, has not run yet.  A grant given later
+  re-runs the same sweep, so the restore happens without reopening the
+  file: that is the deferred restore's whole point.
+- **What a grant does NOT buy.**  The native import rule still bounds
+  the restore (`proxyModuleAllowed`, sec 11 item 1): a module the guest
+  lacks AND the native rule refuses -- not loaded, not under a Mod root:
+  a pip-installed addon, a name a file made up -- stays refused whatever
+  is granted, the object without a Proxy, logged as sec 11 item 1 logs
+  it.  The grant answers for the sandbox, never for that rule.
 - **Construction too.**  `constructGuestProxy` (7.6 G1d, Draft's
   `new_proxy`) asks the same question BEFORE constructing: with the
   module unserved it answers None and Python constructs natively -- the
@@ -9045,10 +9087,23 @@ Path.  What was lost was the object.
   boots again with another package set, and a document of seventy such
   objects asks once.  A name that is not a dotted identifier is refused
   without asking.
+- **Asked, once, in a modal.**  `DlgDocumentPermissions::askHostImport`,
+  raised from `signalFinishOpenDocument` -- once the open is complete,
+  so the modal never lands mid-restore -- names the modules with the
+  count of objects waiting on each ("23 objects of Path, 4 of
+  femobjects"), one checkable row per module, and answers with the
+  permission panel's own scope verbs: run once, run this session, always
+  run, never run, or Not now.  One decision per module, not per object.
+  A grant re-runs the sweep and recomputes what came back; Not now
+  leaves them held, and the padlock keeps the tally.  Headless there is
+  no modal: `--grant host.import:<module>` or a `--policy` file decides,
+  and with neither the objects stay without a Proxy and are logged.
 - **Said, three ways.**  A console Warning per module when the guest
   first says no ("the sandbox guest cannot serve module 'Path.Base.
-  PropertyBag' (No module named 'Path')"), and a Warning per OBJECT at
-  its restore naming the object and the reason -- the audit trail.  The
+  PropertyBag' (No module named 'Path')"), and one per module at the
+  sweep saying which way it went and over how many objects -- granted
+  and running here, held for an unanswered `host.import`, or denied --
+  beside the `audit.log` line every PROMPT records anyway.  The
   property remembers: `PropertyPythonObject::isHostFallback()`, false
   for a stand-in, a natively set value, a refused restore, and with
   routing off; cleared by `setValue`, carried by Copy/Paste.
@@ -9060,26 +9115,63 @@ Path.  What was lost was the object.
   -- recomputed when the tooltip is about to show (`event(ToolTip)`),
   since which document is active changes without the preference
   changing.  A shut padlock never claims more than it holds.
+- **The code-free principal, and why "always" is withheld there.**
+  Found building this, 2026-09-17, and it bounds what the gate is worth.
+  A document's principal is a hash over its CODE alone (2.1), and
+  `documentPrincipal()` does not special-case an EMPTY one: a file with
+  no expressions, no cells and no library -- which is most Path and Fem
+  jobs, the very files this gate is about -- hashes to
+  `document:sha256:2155474a...`, the same id as every other code-free
+  file on earth (probed: two fresh empty documents collide, one with a
+  single expression does not).  Before 7.28 that collision was nearly
+  inert, because a `host.import` check arose from an expression and a
+  document with an expression has a hash of its own; this section is the
+  first to ask the question of documents that carry no code at all, so
+  it is the first to make the collision reachable.  A persisted "always"
+  answered on one such file would silently answer for every code-free
+  document afterwards, unprompted -- the gate quietly disabling itself.
+  So the modal offers only the scopes that EXPIRE (once, this session)
+  when the principal is the code-free one, and says why; "always" and
+  "never" appear only for a document whose own code keys the grant.  The
+  hash itself is frozen v1 and is not changed here.  What remains open:
+  a session answer still spans the code-free documents of that session,
+  and `--grant` is process-wide by design.
 - **Not a file change.**  Nothing is written; the same file opens
-  routed on a box whose guest has the wheel and falls back on one whose
-  guest does not.
+  routed on a box whose guest has the wheel, and is held for an answer
+  on one whose guest does not.  The grant that frees it is the USER's,
+  keyed to the document principal -- never anything the file carries.
 
-**Proven 2026-09-17.**  `ExpressionImageEvalTest.guestProxyRestoreRoute`
-now saves three objects and reopens routed: `fcxprobe` (served) comes
-back a stand-in; `fcxhostonly` (host-loaded, not served) comes back
-native, `isHostFallback()` true, the one entry of `hostProxies(doc)`,
-and recomputes; `fcxnowhere` (dropped from the host before the reopen)
-stays refused with no Proxy and no fallback flag -- the widening that
-must not happen.  `guestServesModule` answers from the cache on the
-second ask.  The sandbox and import suites: 92 of 92.  The Python
-modules with routing ON in a fresh home: `TestFemApp` 90 OK (was 2
-failures; 89 fallbacks over 57 femobjects/femsolver modules, 0
-refusals), `TestCAMApp` 1343 OK (was 27; 698 fallbacks over 14 Path
-modules), `TestArch` unchanged at 8 failures and 3 errors, the
-paragraph below.  The whole suite routed, fresh home: 2778 ran, 9
-failures and 3 errors -- `TestArch`'s 11 plus Draft's `test_hatch`
-("'Draft Hatch' failed", Draft in the guest, the same kind) -- and not
-one refusal; against 43 before.
+**Proven 2026-09-17 (the consent form).**
+`ExpressionImageEvalTest.guestProxyRestoreRoute` was rewritten for it:
+three objects are saved and the file reopened routed.  `fcxprobe`
+(served) comes back a stand-in.  `fcxhostonly` (host-loaded, not
+served) and `fcxnowhere` (dropped from the host before the reopen) both
+come back HELD -- no Proxy, nothing imported, `hostProxies(doc)` empty,
+and the `host.import:fcxhostonly` ask on the pending list; both are
+named by `deferredProxyModules(doc)`, one object each.  Then the answer:
+granted for both, `resolveDeferredProxies(doc)` restores exactly ONE --
+`fcxhostonly`, natively, `isHostFallback()` true, the single entry of
+`hostProxies(doc)`, and its native `execute()` runs -- while
+`fcxnowhere` stays refused, since a grant answers for the sandbox and
+never for the native import rule.  `guestServesModule` still answers
+from the cache on the second ask.  The sandbox and import suites: 92 of
+92 green.  The code-free principal was probed directly: two fresh empty
+documents hash to the same `document:sha256:2155474a...` and one
+carrying a single expression does not -- the collision is real, and is
+why the modal withholds the persistent scopes there.
+
+**What it costs a routed suite, measured 2026-09-17.**  Routed in a
+fresh home, a document naming an unserved module now HOLDS instead of
+running, so a routed suite needs its grants -- and only the TOP-LEVEL
+ones, the dotted-ancestor chain covering the rest.  `TestFemApp`: 81
+held and 2 failures with no grant; 90 OK with `--grant
+host.import:femobjects --grant host.import:femsolver`.  `TestCAMApp`:
+411 held, 10 failures and 17 errors with no grant; 1343 OK with
+`--grant host.import:Path` ALONE -- one package for `Path.Op.*`,
+`Path.Base.*` and the rest, 454 granted-module lines.  NOT ONE REFUSAL
+in any of the four runs: nothing was lost, only held pending an answer,
+which is the whole difference between this and the fail-closed form.
+`TestArch`'s 11 guest-behaviour cases are unchanged, and are not this.
 
 **What this does not cover, found on the same run.**  `TestArch`'s 11
 failures under routing are not this: BIM IS served, its Proxies restore
@@ -10349,8 +10441,9 @@ sockets, any network for the reference image, a webview escape hatch.
   document-chosen module name is CLOSED for document objects with
   routing on (G1c step (f), 2026-09-04): the module is imported in the
   guest, the instance allocated there, the property holds the stand-in,
-  and a module the guest cannot serve restores in this process under
-  the native rule, named (7.28; it failed closed until 2026-09-17).  CLOSED
+  and a module the guest cannot serve is HELD until the user answers
+  `host.import:<module>`, then restores in this process under the native
+  rule, named (7.28; it failed closed until 2026-09-17).  CLOSED
   2026-09-09, natively, for BOTH containers (sec 11 item 1): the native
   import in `PropertyPythonObject::Restore` -- a document object's Proxy
   with routing off, a VIEW PROVIDER's Proxy always -- and the legacy

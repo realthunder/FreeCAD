@@ -49,6 +49,10 @@
 class QLabel;
 class QTreeWidget;
 
+namespace App {
+class Document;
+}
+
 namespace Gui {
 namespace Dialog {
 
@@ -60,6 +64,19 @@ public:
 
     /// Show the (single, modeless) dialog, creating it on first use.
     static void showDialog();
+
+    /** The one modal of docs/Sandbox.md 7.28, raised once a document is
+     * open: it names the modules whose saved Proxies the sandbox guest
+     * cannot serve, with the number of objects waiting on each, and asks
+     * whether to run them in THIS process -- once, this session, always,
+     * or never.  One decision per module.
+     *
+     * A grant restores those Proxies and recomputes them, with no need to
+     * reopen the file; no answer leaves them held, their objects without
+     * a Proxy, and the padlock keeps the tally.  Does nothing when the
+     * document holds none, or with no main window.
+     */
+    static void askHostImport(App::Document *doc);
 
     void refresh();
 

@@ -108,6 +108,7 @@
 #include "LinkViewPy.h"
 #include "InputHintPy.h"
 #include "LiveViewInteraction.h"
+#include "DlgDocumentPermissions.h"
 #include "MainWindow.h"
 #include "Macro.h"
 #include "MDIViewWithCamera.h"
@@ -546,6 +547,14 @@ Application::Application(bool GUIenabled)
                 QMessageBox::critical(getMainWindow(), QObject::tr("Recompute error"),
                         QObject::tr("Failed to recompute some document(s).\n"
                                     "Please check report view for more details."));
+        });
+
+        // A saved Proxy the sandbox guest cannot serve is HELD until the
+        // user answers for its module (docs/Sandbox.md 7.28).  Asked once
+        // the open is complete, so the modal never lands mid-restore.
+        App::GetApplication().signalFinishOpenDocument.connect([]() {
+            for (auto doc : App::GetApplication().getDocuments())
+                Gui::Dialog::DlgDocumentPermissions::askHostImport(doc);
         });
 
         // install the last active language

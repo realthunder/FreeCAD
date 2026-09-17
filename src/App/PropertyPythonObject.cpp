@@ -53,6 +53,23 @@ using namespace Base;
 
 TYPESYSTEM_SOURCE(App::PropertyPythonObject , App::Property)
 
+/** A saved Proxy the sandbox guest cannot serve, held whole until the
+ * document's host.import is answered (docs/Sandbox.md 7.28): the module
+ * and class the file named, the object back-references it recorded, and
+ * its state -- which arrives either inline or, for a file= payload,
+ * later at RestoreDocFile.  Nothing here has been handed to Python.
+ */
+struct PropertyPythonObject::DeferredRestore
+{
+    std::string module;
+    std::string cls;
+    std::string state;
+    bool object = false;
+    bool vobject = false;
+    /// what the guest answered when it was asked for the module
+    std::string why;
+};
+
 PropertyPythonObject::PropertyPythonObject() = default;
 
 PropertyPythonObject::~PropertyPythonObject()
@@ -415,7 +432,7 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
             const char* cls = reader.getAttribute("class");
             auto* owner = dynamic_cast<App::DocumentObject*>(getContainer());
             bool routed = false;
-            bool fallback = false;
+            bool held = false;
 #ifdef FC_EXPR_IMAGE_HOST
             if (owner && ExpressionSandbox::proxyRestoreRouted()) {
                 // The sandbox route (docs/Sandbox.md 7.6, sec 13): the
@@ -447,17 +464,34 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
                     throw Py::Exception();
                 }
                 else {
-                    Base::Console().Warning("PropertyPythonObject::Restore: Proxy %s.%s of %s"
-                                            " is restored in this process, not in the sandbox"
-                                            " guest, which cannot serve it (%s)\n",
-                                            module, cls, owner->getFullName().c_str(),
-                                            unserved.c_str());
-                    fallback = true;
+                    // The guest has no wheel for this module.  Running
+                    // the file's code in THIS process is the user's
+                    // decision to make, not the file's (docs/Sandbox.md
+                    // 7.28): the Proxy is HELD -- not imported, not
+                    // allocated, its state not applied -- and the
+                    // document's host.import:<module> is resolved once
+                    // the restore is complete and the document's
+                    // principal is final, by
+                    // ExpressionSandbox::resolveDeferredProxies().
+                    deferred = std::make_unique<DeferredRestore>();
+                    deferred->module = module;
+                    deferred->cls = cls;
+                    deferred->why = unserved;
+                    deferred->object = reader.hasAttribute("object")
+                        && strcmp(reader.getAttribute("object"), "yes") == 0;
+                    deferred->vobject = reader.hasAttribute("vobject")
+                        && strcmp(reader.getAttribute("vobject"), "yes") == 0;
+                    held = true;
                 }
             }
 #endif
             if (routed) {
                 // held above
+            }
+            else if (held) {
+                // the deferred restore holds the Proxy whole; until the
+                // permission is answered the object has none
+                this->object = Py::None();
             }
             else if (!proxyModuleAllowed(*this, module, cls)) {
                 (void)owner;
@@ -481,7 +515,6 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
                     throw Py::TypeError("neither class nor type object");
                 }
                 load_json = true;
-                hostFallback = fallback;
             }
         }
         else if (boost::regex_search(start, end, what, pickle)) {
@@ -524,6 +557,12 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
         reader.addFile(file.c_str(),this);
     } 
     
+    if (deferred) {
+        // the state waits with the Proxy: applied now, with no instance
+        // to take it, the saved dict would become the property's value
+        deferred->state = buffer;
+        buffer.clear();
+    }
     if(refused)
         buffer.clear();
     if(!buffer.empty()) {
@@ -538,6 +577,83 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
 
 }
 
+std::string PropertyPythonObject::deferredModule() const
+{
+    return deferred ? deferred->module : std::string();
+}
+
+std::string PropertyPythonObject::deferredClass() const
+{
+    return deferred ? deferred->cls : std::string();
+}
+
+void PropertyPythonObject::dropDeferredRestore()
+{
+    deferred.reset();
+}
+
+bool PropertyPythonObject::completeDeferredRestore()
+{
+    if (!deferred)
+        return false;
+    // spent whatever happens below: one attempt, never a retry loop
+    auto held = std::move(deferred);
+
+    Base::PyGILStateLocker lock;
+    aboutToSetValue();
+    bool done = false;
+    try {
+        // The grant answers for the SANDBOX, never for the native import
+        // rule (sec 11 item 1): a module neither loaded nor under a Mod
+        // root stays refused, and the object keeps no Proxy.
+        if (proxyModuleAllowed(*this, held->module.c_str(), held->cls.c_str())) {
+            Py::Module mod(PyImport_ImportModule(held->module.c_str()), true);
+            if (mod.isNull())
+                throw Py::Exception();
+            PyObject* pycls = mod.getAttr(held->cls).ptr();
+            if (!pycls) {
+                std::stringstream s;
+                s << "Module " << held->module << " has no class " << held->cls;
+                throw Py::AttributeError(s.str());
+            }
+            if (!PyType_Check(pycls))
+                throw Py::TypeError("neither class nor type object");
+            this->object = PyType_GenericAlloc((PyTypeObject*)pycls, 0);
+            done = true;
+        }
+        else
+            this->object = Py::None();
+    }
+    catch (Py::Exception&) {
+        Base::PyException e;  // extract the Python error text
+        e.ReportException();
+        this->object = Py::None();
+    }
+
+    if (done) {
+        // the back-references the file recorded, as restoreObject() sets
+        // them on the paths that restore in one pass
+        try {
+            PropertyContainer* parent = getContainer();
+            if (parent && (held->object || held->vobject)) {
+                Py::Object self = Py::asObject(parent->getPyObject());
+                if (held->object)
+                    this->object.setAttr("__object__", self);
+                if (held->vobject)
+                    this->object.setAttr("__vobject__", self);
+            }
+        }
+        catch (Py::Exception& e) {
+            e.clear();
+        }
+        hostFallback = true;
+        if (!held->state.empty())
+            this->fromString(held->state);
+    }
+    hasSetValue();
+    return done;
+}
+
 void PropertyPythonObject::SaveDocFile (Base::Writer &writer) const
 {
     writer.Stream() << this->toString();
@@ -547,6 +663,12 @@ void PropertyPythonObject::RestoreDocFile(Base::Reader &reader)
 {
     std::stringstream ss;
     reader >> ss.rdbuf();
+    if (deferred) {
+        // a held Proxy's payload (docs/Sandbox.md 7.28): it waits with
+        // the module and class until the permission is answered
+        deferred->state = ss.str();
+        return;
+    }
     aboutToSetValue();
     this->fromString(ss.str());
     hasSetValue();

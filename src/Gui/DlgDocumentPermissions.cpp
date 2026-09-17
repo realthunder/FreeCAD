@@ -364,6 +364,145 @@ void DlgDocumentPermissions::revokeSelected()
     refresh();
 }
 
+void DlgDocumentPermissions::askHostImport(App::Document *doc)
+{
+#ifdef FC_EXPR_IMAGE_HOST
+    if (!doc || !Gui::getMainWindow())
+        return;
+    auto modules = App::ExpressionSandbox::deferredProxyModules(doc);
+    if (modules.empty())
+        return;
+
+    auto &rt = Sec::Runtime::instance();
+    const std::string principal = rt.documentPrincipal(doc);
+
+    // A document's principal is a hash over its CODE (2.1), and a file
+    // with no expressions at all -- most Path and Fem jobs -- hashes to
+    // the same id as every other code-free file.  A persisted answer
+    // here would therefore answer for all of them, unprompted, for good.
+    // Offer only the scopes that expire (docs/Sandbox.md 7.28, "the
+    // code-free principal").
+    Sec::DocumentHashBuilder codeFree;
+    const bool shared = (principal == codeFree.principalId());
+
+    int total = 0;
+    for (const auto &m : modules)
+        total += m.second;
+
+    QDialog dlg(Gui::getMainWindow());
+    dlg.setWindowTitle(tr("Run this document's Python here?"));
+    auto layout = new QVBoxLayout(&dlg);
+
+    auto text = new QLabel(
+            tr("<b>%1</b> saved a Python Proxy for %n object(s) in modules the expression "
+               "sandbox has no package for. Their code can only run in this process, with "
+               "the reach of the whole application -- the sandbox does not contain it. "
+               "Nothing of theirs has run yet.", "", total)
+                    .arg(QString::fromUtf8(doc->Label.getValue()).toHtmlEscaped()),
+            &dlg);
+    text->setWordWrap(true);
+    layout->addWidget(text);
+
+    auto tree = new QTreeWidget(&dlg);
+    tree->setColumnCount(2);
+    tree->setHeaderLabels({tr("Module"), tr("Objects")});
+    tree->setRootIsDecorated(false);
+    for (const auto &m : modules) {
+        auto item = new QTreeWidgetItem(tree);
+        item->setText(0, QString::fromStdString(m.first));
+        item->setText(1, QString::number(m.second));
+        item->setCheckState(0, Qt::Checked);
+        item->setData(0, RoleTarget, QString::fromStdString(m.first));
+    }
+    tree->resizeColumnToContents(0);
+    layout->addWidget(tree, 1);
+
+    QString hintText = tr("The answer is per module. A module left unchecked stays "
+                          "unanswered: its objects keep no Proxy, and the padlock in the "
+                          "status bar keeps the tally.");
+    if (shared)
+        hintText += QLatin1Char(' ')
+            + tr("This document carries no expressions, and documents without any are told "
+                 "apart by nothing -- so this answer would cover every one of them. It is "
+                 "offered for this session only, never remembered.");
+    auto hint = new QLabel(hintText, &dlg);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+
+    // the scope verbs of the permissions panel, in the panel's order
+    QString scopeChosen;
+    bool allowChosen = false;
+    auto buttons = new QHBoxLayout;
+    auto addBtn = [&](const QString &label, bool allow, const char *scope) {
+        auto btn = new QPushButton(label, &dlg);
+        connect(btn, &QPushButton::clicked, &dlg, [&, allow, scope]() {
+            allowChosen = allow;
+            scopeChosen = QString::fromLatin1(scope);
+            dlg.accept();
+        });
+        buttons->addWidget(btn);
+    };
+    addBtn(tr("Run once"), true, "once");
+    addBtn(tr("Run this session"), true, "session");
+    if (!shared) {
+        // persisted: keyed to THIS file's code, and void the moment it
+        // is edited
+        addBtn(tr("Always run"), true, "always");
+        addBtn(tr("Never run"), false, "always");
+    }
+    buttons->addStretch();
+    auto later = new QPushButton(tr("Not now"), &dlg);
+    connect(later, &QPushButton::clicked, &dlg, &QDialog::reject);
+    buttons->addWidget(later);
+    layout->addLayout(buttons);
+
+    if (dlg.exec() != QDialog::Accepted || scopeChosen.isEmpty())
+        return;  // held, and the padlock says so
+
+    bool answered = false;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        auto item = tree->topLevelItem(i);
+        if (item->checkState(0) != Qt::Checked)
+            continue;
+        auto target = item->data(0, RoleTarget).toString().toStdString();
+        try {
+            rt.grant(principal, Sec::Permission::HostImport, target, allowChosen,
+                     scopeChosen.toLatin1().constData(),
+                     doc->Label.getValue(), doc->FileName.getValue());
+        }
+        catch (const Base::Exception &e) {
+            QMessageBox::warning(Gui::getMainWindow(), tr("Expression sandbox"),
+                                 QString::fromUtf8(e.what()));
+            continue;
+        }
+        rt.clearPending(principal, Sec::Permission::HostImport, target);
+        answered = true;
+    }
+    if (!answered)
+        return;
+
+    // the grant is what re-runs the held restore -- the file is not reopened
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    try {
+        if (App::ExpressionSandbox::resolveDeferredProxies(doc) > 0) {
+            for (App::DocumentObject *obj : App::ExpressionSandbox::hostProxies(doc))
+                obj->enforceRecompute();
+            doc->recompute();
+        }
+    }
+    catch (const Base::Exception &e) {
+        // a Proxy's own execute() is the file's code: it may throw, and
+        // the cursor must come back either way
+        e.ReportException();
+    }
+    QApplication::restoreOverrideCursor();
+    if (scopeChosen == QLatin1String("once"))
+        rt.clearOnce();
+#else
+    (void)doc;
+#endif
+}
+
 ////////////////////////////////////////////////////////////////////////////////////
 //
 // PermissionIndicator

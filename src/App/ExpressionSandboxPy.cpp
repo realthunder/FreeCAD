@@ -385,6 +385,37 @@ PyObject* hostProxiesFunc(PyObject*, PyObject* args)
     return Py::new_reference_to(list);
 }
 
+PyObject* deferredProxiesFunc(PyObject*, PyObject* args)
+{
+    PyObject* docPy = nullptr;
+    if (!PyArg_ParseTuple(args, "O!", &DocumentPy::Type, &docPy))
+        return nullptr;
+    Py::List list;
+#ifdef FC_EXPR_IMAGE_HOST
+    App::Document* doc = static_cast<DocumentPy*>(docPy)->getDocumentPtr();
+    for (const auto& entry : ExpressionSandbox::deferredProxyModules(doc)) {
+        Py::Dict item;
+        item.setItem("module", Py::String(entry.first));
+        item.setItem("objects", Py::Long(static_cast<long>(entry.second)));
+        list.append(item);
+    }
+#endif
+    return Py::new_reference_to(list);
+}
+
+PyObject* resumeProxiesFunc(PyObject*, PyObject* args)
+{
+    PyObject* docPy = nullptr;
+    if (!PyArg_ParseTuple(args, "O!", &DocumentPy::Type, &docPy))
+        return nullptr;
+    long restored = 0;
+#ifdef FC_EXPR_IMAGE_HOST
+    App::Document* doc = static_cast<DocumentPy*>(docPy)->getDocumentPtr();
+    restored = ExpressionSandbox::resolveDeferredProxies(doc);
+#endif
+    return Py::new_reference_to(Py::Long(restored));
+}
+
 PyObject* proxyInfoFunc(PyObject*, PyObject* args)
 {
     PyObject* obj = nullptr;
@@ -610,6 +641,15 @@ PyMethodDef Methods[] = {
      " restored in this process while routing was on, because the sandbox"
      " guest cannot serve its module (no wheel carries it); each one was"
      " named in a console warning at restore.  Empty with routing off."},
+    {"deferredProxies", deferredProxiesFunc, METH_VARARGS,
+     "deferredProxies(doc) -> [{'module', 'objects'}] -- the modules whose"
+     " saved Proxies are HELD unrestored: the sandbox guest cannot serve"
+     " them and host.import for them is unanswered, so nothing of theirs"
+     " has run and those objects have no Proxy yet."},
+    {"resumeProxies", resumeProxiesFunc, METH_VARARGS,
+     "resumeProxies(doc) -> int -- answer host.import again for every held"
+     " Proxy of doc and restore, in this process, the ones now granted --"
+     " without reopening the file.  Returns how many were restored."},
     {"resetStats", resetStatsFunc, METH_NOARGS,
      "resetStats() -- zero the stats() counters (handles stay live)."},
     {"reset", resetFunc, METH_NOARGS,
