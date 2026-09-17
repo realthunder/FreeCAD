@@ -1,0 +1,168 @@
+# WireJoiner finds the minimal wires by angle, not by search
+
+`WireJoiner` used to find its tight bound wires by searching: walk the adjacency
+list, take the first candidate that passes a point-in-face test, backtrack when
+the path does not close, then split the wires that turned out not to be minimal.
+That search is what [WireJoinerTightBound.md](WireJoinerTightBound.md) is about
+-- what was wrong with it, and the four-part redesign that made it correct.
+
+On planar input it is no longer used. The minimal wires are now read off
+directly from the angular order of the edges at each vertex. Written and
+measured 2026-09-17 on `conda-relwithdebinfo-801`.
+
+## The rule
+
+Take a **dart** to be one end of an edge, meaning that edge travelled away from
+that end. `WireJoiner::VertexInfo` already is one -- an edge iterator plus a
+flag saying which end -- and `adjacentList` already holds, for each vertex, the
+darts leaving it. Then
+
+    rev(d)   the same edge travelled the other way
+    next(d)  the first dart clockwise from rev(d) in the angular order of the
+             darts leaving the vertex d arrives at
+
+`next()` is a permutation of the darts. Walking it from any dart returns to that
+dart, every dart lies in exactly one orbit, and each orbit is a face boundary of
+the network. Every edge has exactly two darts, so each side of each edge is
+walked exactly once, and the whole enumeration is one pass over the darts plus
+one angular sort per vertex.
+
+Nothing is searched and nothing is undone. `rev(d)` is always among the
+candidates, so `next()` is a total function and there is no dead end to back out
+of. Dangling tails and spirals need no special case either: at a degree-1 tip
+the only dart leaving is `rev(d)`, so the walk turns around, and a bridge edge
+simply has both of its darts in the same orbit.
+
+This is the rule OCCT walks a branching vertex with --
+`BOPAlgo_WireSplitter::ClockWiseAngle`, in the face's parametric space --
+including its two details: going straight back is promoted to a full turn so it
+is only ever a last resort, and a vertex with one way out takes it without
+consulting angles.
+
+### Where OCCT's "each edge twice" fits
+
+OCCT reaches the two darts differently. Its edge set holds shapes, not ends, and
+each shape contributes an entry at each of its two vertices, tagged in or out by
+orientation -- so one way out per copy. An edge that has to be walked on both
+sides is therefore put in the set **twice**, once forward and once reversed
+(`BOPAlgo_BuilderFace` fills it that way, and `SplitBlock`'s `IsInside` flag is
+how it tells those apart), while an edge that only ever bounds the face from the
+inside goes in once.
+
+Here every edge is in both directions always, because there is no face to take a
+side from. That is the same enumeration, plus one consequence: the walk also
+produces the **unbounded** face of each connected component, which OCCT's
+asymmetry suppresses for it. Dropping those is the signed area filter below.
+
+## The two filters
+
+An orbit is a closed walk, not yet a wire. Two things are removed before one is
+emitted.
+
+**Out and back excursions.** A bridge edge has both darts in the same orbit and,
+once whatever lies beyond it has itself been removed, they sit next to each
+other. The pair bounds nothing, so it is dropped; an orbit that collapses to
+nothing this way was a tree. Those edges come back as open wires, which is where
+the search left them too. (Most tails never get this far: `buildAdjacentList()`
+already drops edges connected at one end only.)
+
+**The unbounded face.** Under the turn rule above, every bounded face comes out
+traversed counter-clockwise and the unbounded face of each component clockwise,
+so the sign of the loop's area decides. The area is a shoelace sum in the common
+plane over points sampled along the loop, and *how* they are sampled is the one
+place this went wrong in development:
+
+* a loop of two arcs has only two vertices, and its chord polygon is empty, so
+  each edge contributes its mid point as well;
+* a **merged** edge stands for a whole chain of edges, and its own two ends say
+  nothing about where that chain went. Two overlapping rectangles reduce to four
+  chains between two vertices -- every face boundary is two darts long -- and
+  sampling only dart ends puts every area at zero. `dartSamples()` walks the
+  chain and samples every edge in it.
+
+That second one is in `regression_tests.py` as
+`test_joinWires_overlapping_rectangles`, because the symptom is quiet: the
+traversal is right, all four faces are found, and the filter then throws three
+of them away.
+
+## Ties
+
+Two edges leaving a vertex in the same direction -- a line meeting a circle
+tangentially, say -- have the same angle, the successor is ambiguous, and two
+faces would silently merge. Candidates within `AngleTie` (1e-8 rad) of the best
+turn are therefore re-measured with the chord to a point a tenth of the way
+along each edge instead of the tangent at the vertex, which is what OCCT's
+`RefineAngles`/`RefineAngle2D` do for the same reason.
+
+## The gate
+
+The rule needs a consistent cyclic order of the darts at each vertex, which
+needs one 2D parameter space to measure the turns in. **A common plane is the
+requirement in practice**, and `findCommonPlane()` asks `TopoShape::findPlane`
+over the input once, in `build()`.
+
+Planar is sufficient but not the true requirement -- OCCT's version runs on any
+face's parametric space, so a cylinder or a NURBS patch would do -- but it is
+what can be found cheaply here, and it is what every caller in the tree has:
+Sketcher internals, `Part::Face`, `SubShapeBinder`, `FaceMakerBullseye`. Only
+`Part.joinWires` can be handed anything. Without a common plane the search runs
+exactly as before; it is still the only thing that serves a 3D edge network
+spread over several surfaces.
+
+`WireJoiner::setAngleTraversal(false)`, or `Part.joinWires(..., angle=False)`,
+forces the search with nothing else changed. The default is on. It is there to
+A/B the two on any input, which is how everything below was checked, and as a
+way out if a real model turns up that the rule handles worse.
+
+The gate only applies to the tight bound and outline paths. Plain
+`findClosedWires()` -- `tighten=False, outline=False` -- has a different
+contract (as many edges as possible in closed wires, minimal or not) and is
+untouched.
+
+## Measured
+
+Lattices of k horizontal and k vertical lines, `(k-1)^2` cells, one process per
+measurement, `Part.joinWires(split=True, merge=True, tighten=True)`:
+
+| k | search | angle | speedup |
+|---|---|---|---|
+| 20 | 4.21 s | 0.085 s | 50x |
+| 25 | 9.24 s | 0.146 s | 63x |
+| 30 | 16.85 s | 0.215 s | 78x |
+| 35 | 25.73 s | 0.317 s | 81x |
+| 40 | 41.52 s | 0.437 s | 95x |
+
+Both columns are correct: every size from k=20 to k=40 returns exactly `(k-1)^2`
+wires whose areas sum to the region, including k=31 and k=33, the sizes the
+search got wrong before its redesign. The angle column grows about linearly in
+the edge count while the search column does not, so the ratio keeps opening up.
+
+The point-in-face test is what left: `isInside()` ran a
+`BRepClass_FaceClassifier` inside the search loop, and in this formulation
+containment is not needed at all -- the angular order decides the successor, and
+the only geometry left is one tangent per dart and one shoelace per loop.
+
+## Verified
+
+Beyond the lattices, the two modes were compared directly on arrangements the
+lattice does not reach -- arcs and a chord, an annulus cut by radial lines, two
+and three overlapping rectangles, a tangency, disjoint and nested components, a
+bridge between two loops, a dangling tail, a six-way star, and a non-planar
+network for the gate -- with and without `outline`. All identical.
+
+Then the standing battery: `ctest`, `TestSketcherApp` including the 46
+`TestSketchInternalFaces` cases, the element maps of the 37 fixture sketches
+against their stored baseline (this fork treats element names as an API, so a
+rename is a regression), and the full Python suite.
+
+## Reproducing
+
+Scripts are in the durable scratch directory
+`~/.claude/projects/-home-thunder-works-sw-fcad/scratch/wirejoiner`. `onek.py
+<k>` counts one lattice's wires; passing `angle=False` to `Part.joinWires` is
+the control for any input.
+
+Two things to know. A regression in the search **hangs** rather than fails, so
+every run needs its own timeout. And `FreeCADCmd` exits 0 even when the script
+it runs raises, so success has to be judged on the result line appearing, never
+on the exit code.
