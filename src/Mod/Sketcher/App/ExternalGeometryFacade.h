@@ -117,6 +117,15 @@ public:
         getExternalGeoExt()->setRefIndex(index);
     }
 
+    const std::string& getRefElement() const override
+    {
+        return getExternalGeoExt()->getRefElement();
+    }
+    void setRefElement(const std::string& element) override
+    {
+        getExternalGeoExt()->setRefElement(element);
+    }
+
     /** GeometryExtension Interface **/
     inline long getId() const override
     {

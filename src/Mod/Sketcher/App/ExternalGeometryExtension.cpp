@@ -44,6 +44,7 @@ void ExternalGeometryExtension::copyAttributes(Part::GeometryExtension* cpy) con
 
     static_cast<ExternalGeometryExtension*>(cpy)->Ref = this->Ref;
     static_cast<ExternalGeometryExtension*>(cpy)->RefIndex = this->RefIndex;
+    static_cast<ExternalGeometryExtension*>(cpy)->RefElement = this->RefElement;
     static_cast<ExternalGeometryExtension*>(cpy)->Flags = this->Flags;
 }
 
@@ -53,6 +54,7 @@ void ExternalGeometryExtension::restoreAttributes(Base::XMLReader& reader)
 
     Ref = reader.getAttribute("Ref", "");
     RefIndex = reader.getAttributeAsInteger("RefIndex", "-1");
+    RefElement = reader.getAttribute("RefElement", "");
     Flags = FlagType(reader.getAttributeAsUnsigned("Flags", "0"));
 }
 
@@ -66,6 +68,8 @@ void ExternalGeometryExtension::saveAttributes(Base::Writer& writer) const
         writer.Stream() << "\" Flags=\"" << Flags.to_ulong();
     if (RefIndex >= 0)
         writer.Stream() << "\" RefIndex=\"" << RefIndex;
+    if (!RefElement.empty())
+        writer.Stream() << "\" RefElement=\"" << Base::Persistence::encodeAttribute(RefElement);
 }
 
 void ExternalGeometryExtension::preSave(Base::Writer &writer) const
@@ -74,6 +78,8 @@ void ExternalGeometryExtension::preSave(Base::Writer &writer) const
         writer.Stream() << " ref=\"" << Base::Persistence::encodeAttribute(Ref)  << "\"";
     if (RefIndex >= 0)
         writer.Stream() << " refIndex=\"" << RefIndex << "\"";
+    if (!RefElement.empty())
+        writer.Stream() << " refElement=\"" << Base::Persistence::encodeAttribute(RefElement) << "\"";
     if (Flags.any())
         writer.Stream() << " flags=\"" << Flags.to_ulong() << "\"";
 }

@@ -55,6 +55,9 @@ public:
 
     virtual int getRefIndex() const = 0;
     virtual void setRefIndex(int index) = 0;
+
+    virtual const std::string& getRefElement() const = 0;
+    virtual void setRefElement(const std::string & element) = 0;
 };
 
 class SketcherExport ExternalGeometryExtension : public Part::GeometryMigrationPersistenceExtension,
@@ -138,6 +141,23 @@ public:
         RefIndex = index;
     }
 
+    /** The element of the reference this geometry came from
+     *
+     * A reference (Ref) that projects to several geometries, a face through
+     * a hidden line projection, names each of them after the element of the
+     * reference it was projected from when the reference carries an element
+     * map. The name keys the geometry's id across rebuilds; a geometry
+     * without one keeps its id by its position within the reference.
+     */
+    const std::string& getRefElement() const override
+    {
+        return RefElement;
+    }
+    void setRefElement(const std::string& element) override
+    {
+        RefElement = element;
+    }
+
     static bool getFlagsFromName(std::string str, ExternalGeometryExtension::Flag &flag);
 
 protected:
@@ -155,6 +175,7 @@ private:
     // <realthunder.dev@gmail.com>
     std::string Ref;
     int RefIndex = -1;
+    std::string RefElement;
     FlagType Flags;
     // END_CREDIT_BLOCK: Credit under LGPL for this block to Zheng, Lei (realthunder)
     // <realthunder.dev@gmail.com>
