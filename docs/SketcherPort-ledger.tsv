@@ -328,7 +328,7 @@ fbd7f7090c	2024-07-03	PaddleStroke	?	0	0	have(sync)	58		Sketcher: ViewProviderSk
 5969df37f4	2024-11-18	Florian Foinant-Willig	?	0	0	partial(sync)	67		Sketcher infinite axes	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 3c1358da10	2024-09-20	PaddleStroke	feature	0	0	partial(sync)	8		Core: Rename 'OriginFeature' file to 'Datums'	App/SketchObject.cpp Gui/Command.cpp Gui/CommandCreateGeo.cpp Gui/DrawSketchHandlerExternal.h
 fb7ce6405b	2024-11-24	Jacob Oursland	feature	0	0	open	1		CMake: Add missing target_link_directories() for OCCT.	tests/CMakeLists.txt
-1c514f5a15	2024-10-25	PaddleStroke	feature	0	0	open	1120		External geos : Enable face selection	App/SketchObject.cpp
+1c514f5a15	2024-10-25	PaddleStroke	feature	0	0	open	1120	adapted e3a8d113d7	External geos : Enable face selection	App/SketchObject.cpp
 f3c79302c4	2024-11-07	PaddleStroke	?	0	0	open	637		Sketcher: Defining External geos.	App/SketchObject.cpp App/SketchObjectPyImp.cpp Gui/CommandAlterGeometry.cpp Gui/CommandCreateGeo.cpp Gui/DrawSketchHandlerExternal.h Gui/EditModeGeometryCoinManager.cpp Gui/Resources/Sketcher.qrc Gui/Resources/icons/geometry/Sketcher_External.svg Gui/Resources/icons/geometry/Sketcher_External_Constr
 0e5e071d72	2024-11-08	PaddleStroke	?	0	0	partial(sync)	1473		Sketcher: Intersection externals	App/SketchObject.cpp App/SketchObject.h App/SketchObjectPy.xml App/SketchObjectPyImp.cpp Gui/CommandAlterGeometry.cpp Gui/CommandCreateGeo.cpp Gui/DrawSketchHandlerExternal.h Gui/Resources/Sketcher.qrc Gui/Resources/icons/geometry/Sketcher_Intersection.svg Gui/Resources/icons/geometry/Sketcher_Inter
 ac788df608	2024-11-12	PaddleStroke	refactor	0	0	partial(sync)	295		Sketcher: Rename External to Projection	Gui/CommandAlterGeometry.cpp Gui/CommandCreateGeo.cpp Gui/Resources/Sketcher.qrc Gui/Resources/icons/geometry/{Sketcher_External.svg => Sketcher_Projection.svg} Gui/Resources/icons/geometry/{Sketcher_External_Constr.svg => Sketcher_Projection_Constr.svg} Gui/ViewProviderSketch.cpp Gui/Workbench.cpp
@@ -795,7 +795,7 @@ d806b4e5f3	2025-11-19	chris	fix	0	0	open	3		sketcher: fix issue #13852 resolve i
 16aff10544	2025-11-20	pjcreath	fix	0	0	open	16		Sketcher: prevent crash on undo/redo while dragging.	Gui/ViewProviderSketch.cpp
 efb10e1b28	2025-11-20	pjcreath	fix	0	0	open	5		Sketcher: prevent undo/redo crash when selected geometry goes away.	Gui/CommandSketcherBSpline.cpp Gui/Utils.cpp
 e38154474a	2025-11-24	PaddleStroke	fix	1	0	open	23		Sketcher: Prevent bad coincidences (#25304)	Gui/CommandConstraints.cpp
-74aafcee75	2025-11-24	PaddleStroke	?	0	0	open	26		Sketcher: External Face: decide between defining and construction (#25390)	App/SketchObject.cpp
+74aafcee75	2025-11-24	PaddleStroke	?	0	0	open	26	adapted e3a8d113d7	Sketcher: External Face: decide between defining and construction (#25390)	App/SketchObject.cpp
 bb0cd704fb	2025-11-24	Ajinkya Dahale	?	0	0	open	6		Merge pull request #25536 from AjinkyaDahale/patch-8	Gui/DrawSketchHandler.cpp
 8ea5075385	2025-12-02	marbocub	fix	0	0	open	6	taken e4352d774d	Sketcher: Fix error when first constraint is DistanceX/DistanceY to vertex (#25813)	App/PythonConverter.cpp
 5f4fe75f5f	2025-11-27	tetektoza	refactor	0	0	open	23		Sketcher: Use constraint index instead of geoId as key in expr storage	Gui/SketcherTransformationExpressionHelper.cpp Gui/SketcherTransformationExpressionHelper.h

@@ -404,15 +404,37 @@ Declined:
 
 **Still open on the App side.**
 
-- **Face selection** for external geometry (`1c514f5a15`, `74aafcee75`): the
-  fork's `addExternal` refuses a face *parallel* to the sketch ("Skip external
-  reference plane that is not normal to sketch plane"), where upstream projects
-  the face's outline. A feature, not a fix; `testAddExternalIncreasesCount` is
-  disabled on it.
+- ~~**Face selection** for external geometry (`1c514f5a15`, `74aafcee75`)~~:
+  taken 2026-09-17, see "External faces" below.
 - `83d14b785e`: the App crash path is not in the fork's `delExternalPrivate`
   (it sets the values once); the Gui half and the `delExternals` binding are
   phase 3.
 - The `SketchAnalysis` refactor series of 2024-05-28.
+
+### External faces (`1c514f5a15`, `74aafcee75`)
+
+The fork's `rebuildExternalGeometry` refused a face parallel or oblique to the
+sketch and any non-planar face, and turned a perpendicular planar face into a
+line clamped at 10000 either way. Now, as upstream: a planar face projects
+each of its edges through the edge path; a perpendicular one collapses those
+projections into one segment spanning them, with the old line only when
+nothing straight came out (an `App::Plane` has no finite edges); a non-planar
+face goes through an HLR projection along the sketch normal (`projectShape`,
+ported) and its edges through the converter the edge path already had, split
+out as `importProjected`. `74aafcee75`: a reference whose geometries are all
+defining keeps the flag on geometries a rebuild adds to it; a reference being
+added still takes the caller's flag, which upstream's version overwrites.
+
+**Behaviour gate.** The perpendicular segment moves the endpoints of a line
+existing sketches were built against, so `SketchObject` now has a hidden
+`_Version` (integer, 0 when absent from the file, 1 for a new sketch): a
+sketch restored without it keeps the long line. Decided by the user
+2026-09-17, on the `SubShapeBinder::_Version` pattern.
+
+Tests: `testAddExternalIncreasesCount` enabled (the parallel top face of a box
+gives four edges), plus the perpendicular face as one segment, the same on a
+version-0 sketch as the long line, and a cylinder side face projecting its
+circle.
 
 ### Internal faces: WireJoiner kept (`aa31511fbd`)
 
@@ -525,12 +547,12 @@ commit.
 
 **Tests** (`9b75379eb1`): upstream's C++ tests, 107, replace the fork's 18
 (a strict subset). `getElementName` returns `std::pair` in the fork (first the
-new style name), so one test reads `first`/`second`. 8 are `DISABLED_`
+new style name), so one test reads `first`/`second`. 8 were `DISABLED_`
 pending picks that were not taken: 6 `addSymmetric` tests (`e1a431d5ee`
 `14280cdbf7` `bc3c0dc19a` `451072f0d7` `28f5e823d3`), the supplementary
 angle of a function expression (`8b06bca68a` builds it as an AST and keeps
 the unit), and a face parallel to the sketch as external geometry
-(`1c514f5a15` `74aafcee75`). Committed with `NO_STRIP_NONASCII=1`: the degree
+(`1c514f5a15` `74aafcee75`, since taken, 7 remain). Committed with `NO_STRIP_NONASCII=1`: the degree
 signs are unit strings the tests compare against.
 
 **Verified.** Full build OK; ctest 748/748 (+81 from upstream's C++ tests, 16
