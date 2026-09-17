@@ -96,6 +96,11 @@ public:
     Part    ::PropertyPartShape      InternalShape;
     App     ::PropertyPrecision      InternalTolerance;
     App     ::PropertyBool           MakeInternals;
+    /** Behaviour version, hidden. 0 is a sketch saved before the property
+     * existed. 1: a planar external face perpendicular to the sketch projects
+     * to a segment spanning the face, not a 20000 long line.
+     */
+    App     ::PropertyInteger        _Version;
     /** @name methods override Feature */
     //@{
     short mustExecute() const override;

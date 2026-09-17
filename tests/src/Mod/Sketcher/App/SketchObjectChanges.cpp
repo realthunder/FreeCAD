@@ -2,6 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
+
 #include <FCConfig.h>
 
 #include <App/Application.h>
@@ -9,14 +12,14 @@
 #include <App/Expression.h>
 #include <App/ObjectIdentifier.h>
 #include <Mod/Part/App/FeaturePartBox.h>
+#include <Mod/Part/App/Geometry.h>
 #include <Mod/Sketcher/App/GeoEnum.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include "SketcherTestHelpers.h"
 
 using namespace SketcherTestHelpers;
 
-// Pending upstream 1c514f5a15 74aafcee75: projecting a face parallel to the sketch.
-TEST_F(SketchObjectTest, DISABLED_testAddExternalIncreasesCount)
+TEST_F(SketchObjectTest, testAddExternalIncreasesCount)
 {
     // Arrange
     auto* doc = getObject()->getDocument();
@@ -24,12 +27,107 @@ TEST_F(SketchObjectTest, DISABLED_testAddExternalIncreasesCount)
     int numExtPre = getObject()->ExternalGeo.getSize();
     doc->recompute();
 
-    // Act
+    // Act: the top face of the box, parallel to the sketch
     getObject()->addExternal(box, "Face6");
     int numExt = getObject()->ExternalGeo.getSize();
 
+    // Assert: its four edges
+    EXPECT_EQ(numExt, numExtPre + 4);
+}
+
+TEST_F(SketchObjectTest, testAddExternalPerpendicularFaceIsOneSegment)
+{
+    // Arrange
+    auto* doc = getObject()->getDocument();
+    auto box {doc->addObject("Part::Box")};
+    int numExtPre = getObject()->ExternalGeo.getSize();
+    doc->recompute();
+
+    // Act: the x=0 face of the box, perpendicular to the sketch on XY
+    getObject()->addExternal(box, "Face1");
+    const auto& geos = getObject()->ExternalGeo.getValues();
+
+    // Assert: one segment spanning the face's projection, y from 0 to 10
+    ASSERT_EQ(static_cast<int>(geos.size()), numExtPre + 1);
+    auto* line = freecad_cast<const Part::GeomLineSegment*>(geos.back());
+    ASSERT_NE(line, nullptr);
+    EXPECT_NEAR((line->getEndPoint() - line->getStartPoint()).Length(), 10.0, 1e-7);
+    EXPECT_NEAR(line->getStartPoint().x, 0.0, 1e-7);
+    EXPECT_NEAR(line->getEndPoint().x, 0.0, 1e-7);
+}
+
+TEST_F(SketchObjectTest, testAddExternalPerpendicularFaceLegacyIsLongLine)
+{
+    // Arrange: a sketch from before _Version keeps the line it was built with
+    auto* doc = getObject()->getDocument();
+    auto box {doc->addObject("Part::Box")};
+    int numExtPre = getObject()->ExternalGeo.getSize();
+    getObject()->_Version.setValue(0);
+    doc->recompute();
+
+    // Act
+    getObject()->addExternal(box, "Face1");
+    const auto& geos = getObject()->ExternalGeo.getValues();
+
     // Assert
-    EXPECT_TRUE(numExt > numExtPre);
+    ASSERT_EQ(static_cast<int>(geos.size()), numExtPre + 1);
+    auto* line = freecad_cast<const Part::GeomLineSegment*>(geos.back());
+    ASSERT_NE(line, nullptr);
+    EXPECT_NEAR((line->getEndPoint() - line->getStartPoint()).Length(), 20000.0, 1e-3);
+}
+
+TEST_F(SketchObjectTest, testAddExternalCurvedFaceProjectsOutline)
+{
+    // Arrange
+    auto* doc = getObject()->getDocument();
+    auto cylinder {doc->addObject("Part::Cylinder")};
+    int numExtPre = getObject()->ExternalGeo.getSize();
+    doc->recompute();
+
+    // Act: the side of the cylinder, seen along its axis
+    getObject()->addExternal(cylinder, "Face1");
+    const auto& geos = getObject()->ExternalGeo.getValues();
+
+    // Assert: the outline is the cylinder's circle, radius 2
+    ASSERT_GT(static_cast<int>(geos.size()), numExtPre);
+    bool circle = false;
+    for (std::size_t i = numExtPre; i < geos.size(); ++i) {
+        if (auto* c = freecad_cast<const Part::GeomCircle*>(geos[i])) {
+            EXPECT_NEAR(c->getRadius(), 2.0, 1e-7);
+            circle = true;
+        }
+    }
+    EXPECT_TRUE(circle);
+}
+
+TEST_F(SketchObjectTest, testAddExternalCurvedFaceFromTheSide)
+{
+    // Arrange: the sketch on XZ, the cylinder side seen across its axis
+    auto* doc = getObject()->getDocument();
+    auto cylinder {doc->addObject("Part::Cylinder")};
+    getObject()->Placement.setValue(
+        Base::Placement(Base::Vector3d(), Base::Rotation(Base::Vector3d(1, 0, 0), M_PI_2)));
+    int numExtPre = getObject()->ExternalGeo.getSize();
+    doc->recompute();
+
+    // Act
+    getObject()->addExternal(cylinder, "Face1");
+    const auto& geos = getObject()->ExternalGeo.getValues();
+
+    // Assert: the two silhouette lines and the two rims seen edge on, each
+    // once, all as segments
+    ASSERT_EQ(static_cast<int>(geos.size()), numExtPre + 4);
+    std::vector<double> lengths;
+    for (std::size_t i = numExtPre; i < geos.size(); ++i) {
+        auto* line = freecad_cast<const Part::GeomLineSegment*>(geos[i]);
+        ASSERT_NE(line, nullptr);
+        lengths.push_back((line->getEndPoint() - line->getStartPoint()).Length());
+    }
+    std::sort(lengths.begin(), lengths.end());
+    EXPECT_NEAR(lengths[0], 4.0, 1e-6);
+    EXPECT_NEAR(lengths[1], 4.0, 1e-6);
+    EXPECT_NEAR(lengths[2], 10.0, 1e-6);
+    EXPECT_NEAR(lengths[3], 10.0, 1e-6);
 }
 
 TEST_F(SketchObjectTest, testDelExternalUndef)
