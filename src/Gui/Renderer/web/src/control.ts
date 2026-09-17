@@ -458,6 +458,19 @@ export function sheetSet(
   return sendOp('sheet.set', doc ? { doc, obj, cell, content } : { obj, cell, content });
 }
 
+/// Completions for a cell's content (docs/Sandbox.md 7.25): the same
+/// shape as PanelClient.complete, answered by a completer the host builds
+/// for the request with the sheet as owner.  Non-mutating: a view-only
+/// client may ask.
+export function sheetComplete(
+  obj: string,
+  text: string,
+  pos: number,
+  doc?: string,
+): Promise<{ items: string[]; details: string[]; start: number; end: number }> {
+  return sendOp('sheet.complete', doc ? { doc, obj, text, pos } : { obj, text, pos });
+}
+
 /// The backend's "this sheet moved on" cue: identity and version only,
 /// so a viewer showing another sheet ignores it without a round trip.
 export function onSheetChanged(

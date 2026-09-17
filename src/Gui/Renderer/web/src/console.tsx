@@ -16,23 +16,17 @@
 import { createEffect, createSignal, For, on, onCleanup, Show } from 'solid-js';
 import type { Accessor } from 'solid-js';
 
-import { draggable, fitOnScreen, loadPos, NARROW, onKeyboardInset, posStyle, type Pos }
+import { draggable, fitOnScreen, loadPos, posStyle, type Pos }
   from './panel';
 import { ConsoleSession, type PushStatus, type Stream } from './sandbox/session';
-import { filterSet, setFromGuest, splice, stillApplies, triggerFor }
-  from './widgets/complete.ts';
-import type { CompletionSet } from './widgets/complete.ts';
+import { setFromGuest } from './widgets/complete.ts';
+import { CompleteButton, CompletionList, createCompletion } from './widgets/completion.tsx';
 
 const POS_KEY = 'fcviewer.console.pos';
 const HISTORY_KEY = 'fcviewer.console.history';
 const HISTORY_MAX = 500;
 /// Output kept, in characters.  A print loop must not grow the DOM forever.
 const OUTPUT_MAX = 200000;
-/// A word trigger fires only after typing pauses; the dot fires at once.
-/// The guest is in THIS page, so the ask is a call and not a round trip --
-/// but a completion over a big namespace still costs, and a menu that
-/// flickers on every keystroke is worse than one that waits.
-const DEBOUNCE_MS = 160;
 
 type Kind = Stream | 'in' | 'info';
 interface Chunk { kind: Kind; text: string }
@@ -74,18 +68,6 @@ export function ConsolePanel(props: {
   const [more, setMore] = createSignal(false);
   const [line, setLine] = createSignal('');
   const [pos, setPos] = createSignal<Pos | null>(loadPos(POS_KEY));
-  /// The completion list as it is shown: the answered set narrowed by what
-  /// has been typed since (docs/Sandbox.md 7.23, the same controller the
-  /// panel's expression fields run).
-  const [items, setItems] = createSignal<string[]>([]);
-  const [active, setActive] = createSignal(0);
-  const [narrow, setNarrow] = createSignal(window.innerWidth <= NARROW);
-  /// How much of the viewport the on-screen keyboard covers: the chip strip
-  /// sits on top of it, where the thumb already is.
-  const [inset, setInset] = createSignal(0);
-  /// What the guest last answered, and what it was answered FOR.
-  let completionSet: CompletionSet | null = null;
-  let askTimer = 0;
 
   let session: ConsoleSession | null = null;
   let sessionDoc = '';
@@ -207,130 +189,41 @@ export function ConsolePanel(props: {
     void run([text]);
   };
 
-  const closeList = () => {
-    setItems([]);
-    setActive(0);
-  };
 
-  /// Ask the guest, and show what it says as a LIST.
-  ///
-  /// This replaced a readline-shaped completion (insert the longest common
-  /// prefix, print the candidates into the output) -- which, on a handset
-  /// 2026-09-17, meant a list appeared only when the line ended in a dot
-  /// (the one case where more than one candidate survives), never narrowed
-  /// as typing continued, and never came up on its own.
-  const ask = async (value: string, at: number) => {
-    const s = session;
-    if (!s || state() !== 'idle') return;
-    try {
-      const answered = await s.complete(value.slice(0, at));
-      if (line() !== value) return;   // the line moved on: a stale answer
-      const built = setFromGuest(value, at, answered.items, answered.start);
-      completionSet = built;
-      setItems(filterSet(built, value, at));
-      setActive(0);
-    }
-    catch {
-      closeList();
-    }
-  };
-
-  /// Every edit of the input: narrow locally if the answered set still
-  /// covers this segment, else decide whether to ask again.
-  const onLineInput = (value: string, at: number) => {
-    setLine(value);
-    clearTimeout(askTimer);
-
-    if (completionSet && stillApplies(completionSet, value, at)) {
-      const narrowed = filterSet(completionSet, value, at);
-      setItems(narrowed);
-      setActive(0);
-      if (narrowed.length) return;
-      completionSet = null;   // narrowed to nothing: ask again below
-    }
-    else {
-      completionSet = null;
-      closeList();
-    }
-
-    const why = triggerFor(value, at);
-    if (!why) return;
-    if (why === 'dot') void ask(value, at);
-    else askTimer = window.setTimeout(() => void ask(value, at), DEBOUNCE_MS);
-  };
-
-  const pick = (item: string) => {
-    if (!completionSet || !item) return;
-    const at = inputRef?.selectionStart ?? line().length;
-    const next = splice(completionSet, item, line(), at);
-    setLine(next.text);
-    closeList();
-    completionSet = null;
-    if (inputRef) {
-      inputRef.value = next.text;
-      inputRef.focus();
-      inputRef.setSelectionRange(next.pos, next.pos);
-    }
-  };
-
-  /// The pointer is taken on pointerdown, not click: a tap that lets the
-  /// input blur closes the keyboard, the visual viewport grows back, and
-  /// the chip moves out from under the finger before the click lands.
-  const hold = (e: PointerEvent, item: string) => {
-    e.preventDefault();
-    pick(item);
-  };
-
-  const onNarrowResize = () => setNarrow(window.innerWidth <= NARROW);
-  window.addEventListener('resize', onNarrowResize);
-  const stopInset = onKeyboardInset(setInset);
-  onCleanup(() => {
-    window.removeEventListener('resize', onNarrowResize);
-    stopInset();
-    clearTimeout(askTimer);
+  /// Completion, over the guest's rlcompleter (sandbox/console.py): the
+  /// same controller and list the panel's expression dialog runs
+  /// (docs/Sandbox.md 7.26).  The guest answers only while idle; a
+  /// running statement owns it.
+  const c = createCompletion({
+    source: () => {
+      const s = session;
+      if (!s || state() !== 'idle') return null;
+      return (text, pos) => s.complete(text.slice(0, pos))
+        .then((a) => setFromGuest(text, pos, a.items, a.start));
+    },
+    editor: {
+      text: line,
+      caret: () => inputRef?.selectionStart ?? line().length,
+      apply: (text, pos) => {
+        setLine(text);
+        if (inputRef) {
+          inputRef.value = text;
+          inputRef.focus();
+          inputRef.setSelectionRange(pos, pos);
+        }
+      },
+    },
   });
 
   const onKey = (e: KeyboardEvent) => {
     const ctrl = e.ctrlKey || e.metaKey;
-    const open = items().length > 0;
-    const caret = () => inputRef?.selectionStart ?? line().length;
-
-    // While a list is up it owns the keys that move and choose within it:
-    // Escape dismisses the list rather than the line, and Up/Down walk the
-    // candidates rather than the history -- which is what every console
-    // with completion does, and what the panel's fields already do.
-    if (open) {
-      if (e.key === 'Escape') { e.preventDefault(); closeList(); return; }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setActive((n) => (n + 1) % items().length);
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setActive((n) => (n - 1 + items().length) % items().length);
-        return;
-      }
-      if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault();
-        pick(items()[active()]);
-        return;
-      }
-    }
+    // The list first: while one is up it owns Escape, Up/Down, Enter and
+    // Tab; with none up, Tab and Ctrl+Space are the explicit ask.
+    if (c.onKey(e)) return;
 
     if (e.key === 'Enter') {
       e.preventDefault();
       if (state() === 'idle') submit();
-    }
-    else if (e.key === 'Tab') {
-      // No list up: Tab is the explicit ask (the button beside the input
-      // is the same ask, for a keyboard that has no Tab key).
-      e.preventDefault();
-      void ask(line(), caret());
-    }
-    else if (e.key === ' ' && ctrl) {
-      e.preventDefault();
-      void ask(line(), caret());
     }
     else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       if (!history.length) return;
@@ -415,20 +308,7 @@ export function ConsolePanel(props: {
             </div>
           </Show>
         </div>
-        <Show when={items().length > 0 && !narrow()}>
-          <div class="fc-console-suggest">
-            <For each={items().slice(0, 12)}>
-              {(item, i) => (
-                <div
-                  class={i() === active() ? 'fc-panel-sugg fc-panel-sugg-on' : 'fc-panel-sugg'}
-                  onPointerDown={(e) => hold(e, item)}
-                >
-                  {item}
-                </div>
-              )}
-            </For>
-          </div>
-        </Show>
+        <CompletionList c={c} class="fc-console-complete-list" />
         <div class="fc-console-line">
           <span class="fc-console-prompt">{more() ? '...' : '>>>'}</span>
           <input
@@ -440,51 +320,13 @@ export function ConsolePanel(props: {
             disabled={state() === 'booting' || state() === 'failed'}
             autocorrect="off"
             value={line()}
-            onInput={(e) => onLineInput(e.currentTarget.value,
-                                        e.currentTarget.selectionStart
-                                        ?? e.currentTarget.value.length)}
+            onInput={(e) => { setLine(e.currentTarget.value); c.onInput(e); }}
             onKeyDown={onKey}
             onPaste={onPaste}
           />
-          {/* Tab is the shortcut; this is the tap target beside it. A
-              handset keyboard has no Tab key at all, so the console's
-              completion was unreachable on the device that needs it most
-              (docs/Sandbox.md 7.23 ruled the same for the expression
-              field: an explicit ask must be a tap target, not a chord).
-              pointerdown with preventDefault, not click: the press must
-              not blur the input, or the keyboard collapses under the
-              caret being completed. */}
-          <button
-            class="fc-console-btn fc-console-complete"
-            title="Complete (Tab)"
-            disabled={state() !== 'idle'}
-            onPointerDown={(e) => {
-              e.preventDefault();
-              void ask(line(), inputRef?.selectionStart ?? line().length);
-            }}
-          >
-            &#9662;
-          </button>
+          <CompleteButton c={c} class="fc-console-btn" disabled={() => state() !== 'idle'} />
         </div>
 
-        {/* On a phone the candidates are a strip pinned above the keyboard
-            (the input row itself is behind it); on a wide viewport they are
-            a list in the panel's own flow -- .fc-console is overflow:hidden,
-            so a dropdown positioned over the input row would be clipped. */}
-        <Show when={items().length > 0 && narrow()}>
-          <div class="fc-panel-chips" style={{ bottom: `${inset()}px` }}>
-            <For each={items().slice(0, 20)}>
-              {(item, i) => (
-                <button
-                  class={i() === active() ? 'fc-panel-chip fc-panel-chip-on' : 'fc-panel-chip'}
-                  onPointerDown={(e) => hold(e, item)}
-                >
-                  {item.slice(item.lastIndexOf('.') + 1)}
-                </button>
-              )}
-            </For>
-          </div>
-        </Show>
       </div>
     </Show>
   );

@@ -29,12 +29,12 @@
 //                             what completion drew
 //   FC_PANEL_FX=1             click the field's fx button first, which is
 //                             the path a user takes to an expression
-//   FC_PANEL_PHONE=1          a phone viewport with touch, so the chip
-//                             strip renders instead of the dropdown
+//   FC_PANEL_PHONE=1          a phone viewport with touch, so the list is
+//                             pinned above the keyboard instead of in flow
 //
 // One limit, stated rather than pretended: headless Chrome has no
-// on-screen keyboard, so visualViewport never shrinks and the strip's
-// inset is always 0 here. What this checks is that the strip is the shape
+// on-screen keyboard, so visualViewport never shrinks and the list's
+// inset is always 0 here. What this checks is that the list is the shape
 // it should be; where it sits when a keyboard is up needs a handset.
 //
 // PUPPETEER_PATH names a puppeteer-core install, CHROME the browser, and
@@ -101,9 +101,9 @@ function readCard() {
   try {
     console.log('browser ' + await browser.version());
     const page = await browser.newPage();
-    // A phone viewport with touch renders the narrow layout and the chip
-    // strip; the dropdown and the strip are different code paths, and
-    // only one of them is within a thumb's reach.
+    // A phone viewport with touch renders the narrow layout, where the
+    // completion list is pinned above the keyboard: the same list as in
+    // flow, but placed within a thumb's reach.
     await page.setViewport(phone
       ? { width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 3 }
       : { width: 1280, height: 1000 });
@@ -174,9 +174,13 @@ function readCard() {
         await new Promise((r) => setTimeout(r, 900));
         card.completion = await page.evaluate(() => {
           const text = (el) => (el.textContent || '').trim();
-          const chipEls = [...document.querySelectorAll('.fc-panel-chip')];
-          const strip = document.querySelector('.fc-panel-chips');
-          const box = strip ? strip.getBoundingClientRect() : null;
+          // One list everywhere (docs/Sandbox.md 7.26): in the dialog's
+          // flow on a wide viewport, pinned above the keyboard on a phone.
+          const rowText = (el) => text(el.querySelector('.fc-pick-title') || el);
+          const listEls = [...document.querySelectorAll('.fc-complete:not(.fc-complete-pinned) .fc-pick-row')];
+          const pinnedEls = [...document.querySelectorAll('.fc-complete-pinned .fc-pick-row')];
+          const sheet = document.querySelector('.fc-complete-sheet');
+          const box = sheet ? sheet.getBoundingClientRect() : null;
           const dlg = document.querySelector('.fc-expr-edit');
           const input = dlg || [...document.querySelectorAll('.fc-panel input.fc-panel-field')]
             .find((el) => !el.disabled);
@@ -204,13 +208,13 @@ function readCard() {
             // The phone rule: a decimal keyboard has no letters, so a
             // field being used for an expression must not ask for one.
             inputMode: input ? input.getAttribute('inputmode') : null,
-            dropdown: [...document.querySelectorAll('.fc-panel-sugg')].map(text).slice(0, 12),
-            chips: chipEls.map(text).slice(0, 12),
-            chipHeight: chipEls.length
-              ? Math.round(chipEls[0].getBoundingClientRect().height) : 0,
+            list: listEls.map(rowText).slice(0, 12),
+            pinned: pinnedEls.map(rowText).slice(0, 12),
+            rowHeight: pinnedEls.length
+              ? Math.round(pinnedEls[0].getBoundingClientRect().height) : 0,
             // 0 headless (no on-screen keyboard to inset it), but it
-            // proves the strip is anchored to the visual viewport.
-            stripBottom: box ? Math.round(window.innerHeight - box.bottom) : null,
+            // proves the pinned list is anchored to the visual viewport.
+            sheetBottom: box ? Math.round(window.innerHeight - box.bottom) : null,
             error: text(document.querySelector('.fc-panel-error') || document.createElement('i')),
           };
         });

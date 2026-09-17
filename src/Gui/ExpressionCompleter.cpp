@@ -2574,6 +2574,13 @@ QStringList ExpressionCompleter::completionsFor(const QString &text, int pos,
 {
     start = end = 0;
     init();
+    // One rule for every remote client, whatever the desktop user set in
+    // the popup's context menu (docs/Sandbox.md 7.25, ruled 2026-09-17):
+    // any keyword, ignoring case, and the list filtered -- with
+    // UnfilteredPopupCompletion completionCount() is the whole model.
+    setCaseSensitivity(Qt::CaseInsensitive);
+    setCompletionMode(QCompleter::PopupCompletion);
+    setFilterMode(Qt::MatchContains);
     if (tokenizer.perform(text, pos).isEmpty())
         return {};
     static_cast<ExpressionCompleterModel*>(model())->setSearchUnit(tokenizer.isSearchingUnit());

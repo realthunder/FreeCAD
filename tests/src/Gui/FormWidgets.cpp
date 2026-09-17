@@ -47,6 +47,7 @@
 #include <src/App/InitApplication.h>
 
 #include "Gui/Camera.h"
+#include "Gui/ExprParams.h"
 #include "Gui/FileDialog.h"
 #include "Gui/Fw/FwImage.h"
 #include "Gui/Fw/FwPanelMirror.h"
@@ -1455,6 +1456,24 @@ private Q_SLOTS:
         QVERIFY2(!items.isEmpty(), qPrintable(QJsonDocument(reply).toJson()));
         const QStringList hits = items.filter(QStringLiteral("Width"));
         QVERIFY2(!hits.isEmpty(), qPrintable(items.join(QLatin1Char(','))));
+
+        // one matching rule for every remote client, whatever the desktop
+        // user chose for the popup (docs/Sandbox.md 7.25): a keyword
+        // anywhere in the name, ignoring case -- so "other.idt" finds
+        // Width, and does so with the exact-match preference set
+        {
+            const bool exact = Gui::ExprParams::getCompleterMatchExact();
+            const bool cased = Gui::ExprParams::getCompleterCaseSensitive();
+            Gui::ExprParams::setCompleterMatchExact(true);
+            Gui::ExprParams::setCompleterCaseSensitive(true);
+            QJsonObject loose = control(R"({"id":10,"op":"widgets.complete","target":"g:spin",)"
+                                        R"("text":"Other.idt","pos":9})", 7);
+            Gui::ExprParams::setCompleterMatchExact(exact);
+            Gui::ExprParams::setCompleterCaseSensitive(cased);
+            const QStringList found = strings(loose, "items");
+            QVERIFY2(!found.filter(QStringLiteral("Width")).isEmpty(),
+                     qPrintable(found.join(QLatin1Char(','))));
+        }
 
         // the range is usable: splicing the chosen item over it is what
         // the client does, and what comes out has to be an expression

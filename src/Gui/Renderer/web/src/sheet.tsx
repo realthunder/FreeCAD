@@ -16,10 +16,11 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'so
 import type { Accessor } from 'solid-js';
 
 import {
-  onSheetChanged, sheetGet, sheetList, sheetSet,
+  onSheetChanged, sheetComplete, sheetGet, sheetList, sheetSet,
   type SheetCell, type SheetData, type SheetEntry,
 } from './control';
 import { draggable, fitOnScreen, loadPos, posStyle, type Pos } from './panel';
+import { CompleteButton, CompletionList, createCompletion } from './widgets/completion.tsx';
 import type { SandboxImage, WireValue } from './sandbox/image';
 
 const POS_KEY = 'fcviewer.sheet.pos';
@@ -119,6 +120,7 @@ export function SheetPanel(props: SheetPanelProps) {
   let panelRef: HTMLDivElement | undefined;
   let headerRef: HTMLDivElement | undefined;
   let inputRef: HTMLInputElement | undefined;
+  let barRef: HTMLInputElement | undefined;
 
   // Address -> cell, so the grid can ask for any coordinate cheaply. Only
   // cells that exist are sent; the rest of the grid is genuinely empty.
@@ -257,6 +259,38 @@ export function SheetPanel(props: SheetPanelProps) {
     if (focusCell) queueMicrotask(() => inputRef?.focus());
   };
 
+  /// Completion for the cell being edited (docs/Sandbox.md 7.25, 7.26):
+  /// ONE controller for the two editors that share editText -- the
+  /// formula bar and the in-cell editor -- so it works in both or in
+  /// neither.  The caret is whichever of them has the focus.
+  const editorEl = (): HTMLInputElement | undefined =>
+    document.activeElement === inputRef ? inputRef
+      : document.activeElement === barRef ? barRef
+      : (editing() ? inputRef : barRef);
+  const completion = createCompletion({
+    source: () => {
+      const obj = data()?.obj;
+      if (!obj || props.viewOnly()) return null;
+      return (text, pos) => sheetComplete(obj, text, pos, props.doc())
+        .then((a) => ({ text, pos, ...a }));
+    },
+    editor: {
+      text: editText,
+      caret: () => editorEl()?.selectionStart ?? editText().length,
+      apply: (text, pos) => {
+        setEditText(text);
+        const el = editorEl();
+        if (el) {
+          el.value = text;
+          el.focus();
+          el.setSelectionRange(pos, pos);
+        }
+        const address = editing() ?? selected();
+        previewEdit(address, text);
+      },
+    },
+  });
+
   const commit = async () => {
     const address = editing();
     const obj = data()?.obj;
@@ -367,6 +401,7 @@ export function SheetPanel(props: SheetPanelProps) {
         <div class="fc-sheet-formula">
           <span class="fc-sheet-addr">{selected()}</span>
           <input
+            ref={barRef}
             class="fc-sheet-input"
             readOnly={props.viewOnly()}
             value={editing() ? editText() : (byAddress().get(selected())?.f ?? '')}
@@ -374,8 +409,10 @@ export function SheetPanel(props: SheetPanelProps) {
             onInput={(e) => {
               setEditText(e.currentTarget.value);
               previewEdit(selected(), e.currentTarget.value);
+              completion.onInput(e);
             }}
             onKeyDown={(e) => {
+              if (completion.onKey(e)) return;
               if (e.key === 'Enter') { e.preventDefault(); void commit(); }
               else if (e.key === 'Escape') { e.preventDefault(); setEditing(null); setPreview(null); }
             }}
@@ -394,7 +431,11 @@ export function SheetPanel(props: SheetPanelProps) {
               {preview()!.error ? preview()!.text : '= ' + preview()!.text}
             </span>
           </Show>
+          <Show when={!props.viewOnly()}>
+            <CompleteButton c={completion} disabled={() => !data()} />
+          </Show>
         </div>
+        <CompletionList c={completion} class="fc-sheet-complete" />
 
         <Show when={error()}>
           <div class="fc-sheet-error">{error()}</div>
@@ -450,9 +491,11 @@ export function SheetPanel(props: SheetPanelProps) {
                                 onInput={(e) => {
                                   setEditText(e.currentTarget.value);
                                   previewEdit(address, e.currentTarget.value);
+                                  completion.onInput(e);
                                 }}
                                 onBlur={() => void commit()}
                                 onKeyDown={(e) => {
+                                  if (completion.onKey(e)) return;
                                   if (e.key === 'Enter') { e.preventDefault(); void commit(); }
                                   else if (e.key === 'Escape') { e.preventDefault(); setEditing(null); setPreview(null); }
                                 }}

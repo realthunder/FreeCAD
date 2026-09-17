@@ -13,6 +13,7 @@
 
 import builtins
 import codeop
+import keyword
 import re
 import rlcompleter
 import sys
@@ -32,27 +33,98 @@ for _name, _alias in (("FreeCAD", "App"), ("FreeCADGui", "Gui")):
 
 
 class _Completer(rlcompleter.Completer):
-    """rlcompleter, plus a host object's properties.  A proxy's dir() lists
-    the members its facade declares; a property is not one of them -- it is
-    read through __getattr__, answered by the host's property system -- so
-    `obj.Leng` would complete to nothing.  PropertiesList names them."""
+    """rlcompleter's namespace and decoration, with our own match.
+
+    rlcompleter matches a case-sensitive PREFIX: `app.` and `fre` answer
+    nothing while `App.` works, and from a phone an empty answer is
+    indistinguishable from a trigger that never fired (docs/Sandbox.md
+    7.25).  Ruled 2026-09-17: any keyword, ignoring case -- so the
+    candidates are enumerated here and matched anywhere in the name,
+    prefixes first then alphabetical, the ranking the page's own
+    narrowing (widgets/complete.ts filterSet) already uses.  The
+    decoration is rlcompleter's, reproduced: a callable gets `(`, and
+    `)` too when it takes nothing; a keyword a trailing space, except
+    the ones that end a statement; `try` and `finally` a colon.  Names
+    starting with `_` stay shelved unless the typed word starts with one
+    -- with contains-matching, `init` would otherwise surface `__init__`.
+
+    Plus a host object's properties: a proxy's dir() lists the members its
+    facade declares; a property is not one of them -- it is read through
+    __getattr__, answered by the host's property system -- so `obj.Leng`
+    would complete to nothing.  PropertiesList names them."""
+
+    def _rank(self, text, names):
+        """The names matching `text` anywhere, case-insensitive: prefix
+        matches first, then the rest, each run alphabetical."""
+        needle = text.lower()
+        shelved = not text.startswith("_")
+        head, tail = [], []
+        for name in sorted(set(names)):
+            if not isinstance(name, str):
+                continue
+            if shelved and name.startswith("_"):
+                continue
+            low = name.lower()
+            if low.startswith(needle):
+                head.append(name)
+            elif needle in low:
+                tail.append(name)
+        return head + tail
+
+    def _keyword(self, word):
+        if word in {"False", "None", "True", "break", "continue", "pass", "else", "_"}:
+            return word
+        if word in {"try", "finally"}:
+            return word + ":"
+        return word + " "
+
+    def global_matches(self, text):
+        found = [self._keyword(k) for k in self._rank(text, keyword.kwlist)]
+        found += [self._keyword(k) for k in self._rank(text, keyword.softkwlist)]
+        names = []
+        for nspace in (self.namespace, builtins.__dict__):
+            names.extend(nspace.keys())
+        for word in self._rank(text, names):
+            val = self.namespace.get(word, builtins.__dict__.get(word))
+            found.append(self._callable_postfix(val, word))
+        return found
 
     def attr_matches(self, text):
-        found = super().attr_matches(text)
         # The same shape rlcompleter evaluates: dotted names, no calls.
         m = re.match(r"(\w+(\.\w+)*)\.(\w*)$", text)
         if not m:
-            return found
+            return []
         expr, attr = m.group(1), m.group(3)
         try:
-            names = eval(expr, self.namespace).PropertiesList
+            obj = eval(expr, self.namespace)
         except Exception:
-            return found
-        have = {f.rstrip("(") for f in found}
-        for name in names:
-            word = "%s.%s" % (expr, name)
-            if isinstance(name, str) and name.startswith(attr) and word not in have:
-                found.append(word)
+            return []
+        names = set()
+        try:
+            names.update(dir(obj))
+        except Exception:
+            pass
+        if isinstance(obj, type):
+            names.update(rlcompleter.get_class_members(obj))
+        elif hasattr(obj, "__class__"):
+            names.add("__class__")
+            try:
+                names.update(rlcompleter.get_class_members(obj.__class__))
+            except Exception:
+                pass
+        try:
+            for name in obj.PropertiesList:
+                names.add(name)
+        except Exception:
+            pass
+        found = []
+        for word in self._rank(attr, names):
+            try:
+                val = getattr(obj, word)
+            except Exception:
+                found.append("%s.%s" % (expr, word))
+                continue
+            found.append(self._callable_postfix(val, "%s.%s" % (expr, word)))
         return found
 
 
@@ -115,7 +187,9 @@ def reset():
 
 def complete(source):
     """Completions for the word at the end of `source`: (list, start) where
-    `start` is the index in `source` the completions replace from."""
+    `start` is the index in `source` the completions replace from.  The
+    list is ranked (prefix matches first), not sorted: the order IS the
+    answer, and the page keeps it."""
     start = max(map(source.rfind, _BREAKS)) + 1
     word = source[start:]
     try:
@@ -125,4 +199,10 @@ def complete(source):
             found = _completer.global_matches(word)
     except Exception:
         found = []
-    return [sorted(set(found)), start]
+    seen = set()
+    ranked = []
+    for item in found:
+        if item not in seen:
+            seen.add(item)
+            ranked.append(item)
+    return [ranked, start]

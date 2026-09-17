@@ -73,6 +73,10 @@ public:
      * the tokenizer are mutable state, and the desktop's caret is not
      * the remote caller's.
      *
+     * The match is contains, case-insensitive, filtered -- always: a
+     * remote client's completion must not depend on the desktop user's
+     * popup preferences (docs/Sandbox.md 7.25).
+     *
      * Not named complete(): QCompleter::complete(const QRect&) is the
      * base class's "show the popup", which this must never do, and a
      * name that hid it would both mislead and break showPopup.

@@ -940,7 +940,7 @@
   max-height: 42vh;
   padding: 0 4px 4px;
 }
-.fc-omni-row {
+.fc-pick-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -949,26 +949,34 @@
   min-height: 34px;
   cursor: pointer;
 }
-.fc-omni-row:hover { background: rgba(255, 255, 255, 0.05); }
-.fc-omni-hi { background: rgba(106, 169, 255, 0.18); }
-.fc-omni-hi:hover { background: rgba(106, 169, 255, 0.24); }
-.fc-omni-inactive { opacity: 0.45; }
-.fc-omni-main {
+.fc-pick-row:hover { background: rgba(255, 255, 255, 0.05); }
+.fc-pick-hi { background: rgba(106, 169, 255, 0.18); }
+.fc-pick-hi:hover { background: rgba(106, 169, 255, 0.24); }
+.fc-pick-inactive { opacity: 0.45; }
+.fc-pick-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
-.fc-omni-title {
+.fc-pick-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.fc-omni-title mark {
+.fc-pick-title mark {
   background: rgba(255, 214, 90, 0.35);
   color: inherit;
 }
-.fc-omni-desc {
+/* The picker (widgets/picker.tsx, docs/Sandbox.md 7.26): one vertical
+ * list for the omni box's rows and for every completion.  The rows are
+ * shared; the placement is the caller's. */
+.fc-pick {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.fc-pick-desc {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1297,28 +1305,7 @@
   border: none;
   outline: none;
 }
-/* The completion list, in the panel's own flow above the input row:
-   .fc-console is overflow: hidden, so a list positioned over the row
-   would be clipped by the panel that owns it. */
-.fc-console-suggest {
-  flex: none;
-  max-height: 168px;
-  overflow-y: auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-/* The explicit ask for completion.  A phone keyboard has no Tab key, so
-   without a tap target the console's only trigger is unreachable there --
-   the same ruling 7.23 made for the expression field. */
-.fc-console-complete {
-  flex: none;
-  touch-action: manipulation;
-}
-.fc-console-complete:disabled { opacity: 0.4; }
 @media (max-width: 640px) {
-  /* A thumb target, not a mouse one. */
-  .fc-console-complete { min-width: 44px; min-height: 44px; }
 }
 @media (max-width: 640px) {
   .fc-console {
@@ -1552,12 +1539,12 @@
   font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.fc-expr-suggest {
-  max-height: 200px;
-  overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
+.fc-expr-editrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
 }
+.fc-expr-editrow .fc-expr-edit { flex: 1; width: auto; min-width: 0; }
 
 /* The result line: what it WOULD evaluate to, or why it would not. */
 .fc-expr-result {
@@ -1578,62 +1565,6 @@
 }
 
 /* Wide: a dropdown under the field. */
-.fc-panel-suggest {
-  position: absolute;
-  z-index: 3;
-  top: 100%;
-  left: 0;
-  right: 0;
-  max-height: 220px;
-  overflow-y: auto;
-  background: rgba(24, 26, 30, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
-}
-
-.fc-panel-sugg {
-  padding: 6px 8px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.fc-panel-sugg-on, .fc-panel-sugg:hover { background: rgba(88, 132, 255, 0.28); }
-
-/* Narrow: a strip pinned above the on-screen keyboard, which is where a
- * thumb already is. `bottom` is set from visualViewport, not from the
- * layout viewport the keyboard does not resize. */
-.fc-panel-chips {
-  position: fixed;
-  /* Above the dialog it belongs to, and so above the chrome host too
-   * (see .fc-expr-backdrop). */
-  z-index: 21;
-  left: 0;
-  right: 0;
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-  background: rgba(20, 22, 26, 0.96);
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  scrollbar-width: none;
-}
-
-.fc-panel-chip {
-  flex: none;
-  min-height: 44px;   /* a touch target, not a mouse target */
-  padding: 0 14px;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
-  color: #e8e8ea;
-  font: inherit;
-  white-space: nowrap;
-}
-
-.fc-panel-chip-on { background: rgba(88, 132, 255, 0.34); }
 
 .fc-panel-check { display: flex; align-items: center; gap: 6px; }
 .fc-panel-buttons { display: flex; gap: 8px; justify-content: flex-end; }
@@ -1645,3 +1576,59 @@
 .fc-panel-row { display: flex; gap: 8px; padding: 2px 0; }
 .fc-panel-row span { color: #cfd3d7; white-space: nowrap; }
 .fc-panel-kids { padding-left: 12px; }
+
+/* A completion list (widgets/completion.tsx).  Wide: in the editor's own
+ * flow, a bordered box under the editor -- the console is overflow:hidden
+ * and would clip anything positioned over its input row.  Narrow: pinned
+ * above the on-screen keyboard where the thumb already is; `bottom` and
+ * the height come from visualViewport, which the layout viewport does not
+ * follow when the keyboard opens. */
+.fc-complete {
+  max-height: 220px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 2px;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.fc-console-complete-list {
+  flex: none;
+  border-radius: 0;
+  border-width: 1px 0 0;
+}
+.fc-complete .fc-pick-row { min-height: 28px; padding: 3px 8px; }
+.fc-complete-sheet {
+  position: fixed;
+  /* Above the dialog it belongs to, and so above the chrome host too
+   * (see .fc-expr-backdrop). */
+  z-index: 21;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  background: rgba(20, 22, 26, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.fc-complete-pinned { min-height: 0; }
+.fc-complete-pinned .fc-pick-row { min-height: 44px; }   /* a thumb target */
+
+/* The explicit ask beside an editor: Tab for a keyboard, this for a
+ * thumb.  A phone keyboard has no Tab key, so without it the completion
+ * is unreachable on the device that needs it most (7.23, 7.24). */
+.fc-complete-btn {
+  flex: none;
+  touch-action: manipulation;
+  cursor: pointer;
+  font: 12px system-ui, sans-serif;
+  color: #e8e8ea;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  padding: 1px 8px;
+}
+.fc-sheet-complete { margin: 0 8px 4px; }
+.fc-complete-btn:disabled { opacity: 0.4; }
+@media (max-width: 640px) {
+  .fc-complete-btn { min-width: 44px; min-height: 44px; }
+}
