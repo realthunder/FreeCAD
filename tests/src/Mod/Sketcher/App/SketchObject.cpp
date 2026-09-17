@@ -858,3 +858,70 @@ TEST_F(SketchObjectTest, testGetElementName)
     EXPECT_STREQ(reverse_export_name.first.c_str(), (";" + tagName + "v1;SKT.Vertex1").c_str());
     EXPECT_STREQ(reverse_export_name.second.c_str(), "Vertex1");
 }
+
+// A Group constraint binds a set of geometries to a construction line handle, the first
+// element of the constraint. Text constraints are groups too.
+TEST_F(SketchObjectTest, testGroupQueries)
+{
+    // Arrange
+    auto addLine = [this](Base::Vector3d p1, Base::Vector3d p2, bool construction) {
+        Part::GeomLineSegment line;
+        line.setPoints(p1, p2);
+        return getObject()->addGeometry(&line, construction);
+    };
+    int handle = addLine(Base::Vector3d(0.0, 0.0, 0.0), Base::Vector3d(0.0, 1.0, 0.0), true);
+    int member1 = addLine(Base::Vector3d(0.0, 0.0, 0.0), Base::Vector3d(1.0, 0.0, 0.0), false);
+    int member2 = addLine(Base::Vector3d(1.0, 0.0, 0.0), Base::Vector3d(1.0, 1.0, 0.0), false);
+    int loner = addLine(Base::Vector3d(5.0, 5.0, 0.0), Base::Vector3d(6.0, 5.0, 0.0), false);
+
+    auto constraint = std::make_unique<Sketcher::Constraint>();
+    constraint->Type = Sketcher::Group;
+    constraint->setElement(0, Sketcher::GeoElementId(handle));
+    constraint->setElement(1, Sketcher::GeoElementId(member1));
+    constraint->setElement(2, Sketcher::GeoElementId(member2));
+    getObject()->addConstraint(std::move(constraint));
+
+    // Act & Assert
+    EXPECT_TRUE(getObject()->isInGroup(handle));
+    EXPECT_FALSE(getObject()->isInGroup(handle, /*includeHandle*/ false));
+    EXPECT_TRUE(getObject()->isInGroup(member1));
+    EXPECT_TRUE(getObject()->isInGroup(member2, /*includeHandle*/ false));
+    EXPECT_FALSE(getObject()->isInGroup(loner));
+
+    EXPECT_TRUE(getObject()->isGroupHandle(handle));
+    EXPECT_FALSE(getObject()->isGroupHandle(member1));
+    EXPECT_FALSE(getObject()->isGroupHandle(loner));
+
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(member1), handle);
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(member2), handle);
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(handle), handle);
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(loner), loner);
+
+    std::set<int> expected {member1, member2};
+    EXPECT_EQ(getObject()->getGroupGeometries(handle), expected);
+    EXPECT_TRUE(getObject()->getGroupGeometries(loner).empty());
+}
+
+// Several geometries move together in one solver pass.
+TEST_F(SketchObjectTest, testMoveGeometries)
+{
+    // Arrange
+    Part::GeomLineSegment line;
+    line.setPoints(Base::Vector3d(0.0, 0.0, 0.0), Base::Vector3d(10.0, 0.0, 0.0));
+    int geoId = getObject()->addGeometry(&line, false);
+    getObject()->solve();
+
+    // Act
+    std::vector<Sketcher::GeoElementId> moved {
+        Sketcher::GeoElementId(geoId, Sketcher::PointPos::start),
+        Sketcher::GeoElementId(geoId, Sketcher::PointPos::end)
+    };
+    auto status = getObject()->moveGeometries(moved, Base::Vector3d(3.0, 4.0, 0.0), true);
+
+    // Assert
+    EXPECT_EQ(status, Sketcher::SketchSolveStatus::Success);
+    EXPECT_EQ(getObject()->getPoint(geoId, Sketcher::PointPos::start),
+              Base::Vector3d(3.0, 4.0, 0.0));
+    EXPECT_EQ(getObject()->getPoint(geoId, Sketcher::PointPos::end),
+              Base::Vector3d(13.0, 4.0, 0.0));
+}
