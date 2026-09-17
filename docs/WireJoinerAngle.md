@@ -173,6 +173,34 @@ Sketcher internals, `Part::Face`, `SubShapeBinder`, `FaceMakerBullseye`. Only
 exactly as before; it is still the only thing that serves a 3D edge network
 spread over several surfaces.
 
+### Lifting the gate to a common surface, if a caller ever needs it
+
+Decided 2026-09-17: not built, no caller wants it. The path, so it is not
+designed twice:
+
+* The precondition is not "a surface can be fitted" but "every edge carries a
+  pcurve on the same surface". That is what OCCT reads its angles off
+  (`BOPTools_AlgoTools2D`, `Angle2D` on the pcurve), and it is what
+  `BRepLib_FindSurface` with plane-only off looks up. Edges taken off one face
+  have it; a sketch does not need it.
+* Everything angular goes through the plane in four places -- `toPlane()`,
+  `dartAngle()`, `dartCurvature()`, `signedArea()` -- so the plane becomes a
+  small parameter-space object: 2D point, 2D tangent, 2D curvature, from the
+  pcurve's `D1`/`D2` when there is a common surface and from the plane
+  projection otherwise. The turn rule, the ties and the area filter are
+  unchanged; `(u,v)` with `u x v` along the normal has the same handedness as
+  the plane's axes.
+* Seams. A loop that crosses a periodic seam does not close in `(u,v)`, and a
+  loop around a cylinder has no sign to read. The safe version checks that the
+  `(u,v)` a dart arrives at is the `(u,v)` the next dart leaves from and
+  returns false otherwise, so `findAngleWires()` hands the whole input to the
+  search, as it does today for any surprise. Full seam handling is what OCCT's
+  `bIsClosed` and 2D-distance checks are for, and is a different size of job.
+* The 2D intersector (below) assumes the plane as well. In `(u,v)` its
+  tolerance is in parameter units and differs per surface, which is a design of
+  its own; leaving it on the 3D per-pair fallback keeps the split right but
+  slow, so the safe version gains the walk and not the split.
+
 `WireJoiner::setAngleTraversal(false)`, or `Part.joinWires(..., angle=False)`,
 forces the search with nothing else changed. The default is on. It is there to
 A/B the two on any input, which is how everything below was checked, and as a
