@@ -145,6 +145,17 @@ public:
         else
             setText(ColumnIndex::ColType, it->second);
         if(ElementNbr>=0) {
+            // a group's handle is listed as the group, its members are not listed at all
+            for (const auto *c : sketch->Constraints.getValues()) {
+                if ((c->Type == Sketcher::Group || c->Type == Sketcher::Text)
+                        && c->getGeoId(0) == ElementNbr) {
+                    setText(ColumnIndex::ColType, c->Type == Sketcher::Group
+                            ? QObject::tr("Group") : QObject::tr("Text"));
+                    break;
+                }
+            }
+            isGroupMember = sketch->isInGroup(ElementNbr, false);
+
             if(GeometryFacade::getConstruction(geo))
                 setText(ColumnIndex::ColFlags,QObject::tr("Construction"));
             isMissing = false;
@@ -174,6 +185,11 @@ public:
 
     void setVisibility(int filterindex)
     {
+        if (isGroupMember) {
+            // the group's handle stands for its members
+            this->setHidden(true);
+            return;
+        }
         if (filterindex == 0)
             this->setHidden(false);
         else {
@@ -316,6 +332,8 @@ public:
     bool isConstruction;
     bool isExternal;
     bool isInternalAligned;
+    // a member of a group: the list shows the group's handle in its place
+    bool isGroupMember = false;
 };
 
 ElementView::ElementView(QWidget *parent)
@@ -342,6 +360,7 @@ void ElementView::contextMenuEvent (QContextMenuEvent* event)
            << "Sketcher_ConstrainSymmetric"
            << "Sketcher_ConstrainLock"
            << "Sketcher_ConstrainBlock"
+           << "Sketcher_ConstrainGroup"
            << "Sketcher_ConstrainDistanceX"
            << "Sketcher_ConstrainDistanceY"
            << "Sketcher_ConstrainDistance"
@@ -475,6 +494,11 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
     connectionElementsChanged = sketchView->getSketchObject()->signalElementsChanged.connect(
         std::bind(&SketcherGui::TaskSketcherElements::slotElementsChanged, this));
 
+    // The list shows a group by its handle and hides its members, so it has to follow
+    // constraint changes as well -- but only the ones that change a group.
+    connectionConstraintsChanged = sketchView->signalConstraintsChanged.connect(
+        std::bind(&SketcherGui::TaskSketcherElements::slotConstraintsChanged, this));
+
     this->groupLayout()->addWidget(proxy);
 
     ui->comboBoxElementFilter->setCurrentIndex(0);
@@ -500,11 +524,13 @@ TaskSketcherElements::~TaskSketcherElements()
     }
 
     connectionElementsChanged.disconnect();
+    connectionConstraintsChanged.disconnect();
 }
 
 void TaskSketcherElements::sketchClosed()
 {
     connectionElementsChanged.disconnect();
+    connectionConstraintsChanged.disconnect();
     QSignalBlocker blocker(ui->elementsWidget);
     ui->elementsWidget->clear();
 }
@@ -806,9 +832,33 @@ void TaskSketcherElements::leaveEvent(QEvent* event)
     ui->elementsWidget->clearFocus();
 }
 
+std::map<int, int> TaskSketcherElements::collectGroupRoles() const
+{
+    std::map<int, int> roles;
+    for (const auto *c : sketchView->getSketchObject()->Constraints.getValues()) {
+        if (c->Type != Sketcher::Group && c->Type != Sketcher::Text) {
+            continue;
+        }
+        for (int i = 0; c->hasElement(i); ++i) {
+            // the handle carries the constraint's type, a member carries None
+            roles[c->getGeoId(i)] = (i == 0) ? static_cast<int>(c->Type)
+                                             : static_cast<int>(Sketcher::None);
+        }
+    }
+    return roles;
+}
+
+void TaskSketcherElements::slotConstraintsChanged()
+{
+    if (collectGroupRoles() != groupRoles) {
+        slotElementsChanged();
+    }
+}
+
 void TaskSketcherElements::slotElementsChanged()
 {
     assert(sketchView);
+    groupRoles = collectGroupRoles();
     // Build up ListView with the elements
     Sketcher::SketchObject* sketch = sketchView->getSketchObject();
     const std::vector<Part::Geometry*>& vals = sketch->Geometry.getValues();
