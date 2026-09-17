@@ -190,6 +190,48 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(len(result.Wires), 1)
         self.assertAlmostEqual(Part.Face(result.Wires[0]).Area, 100.0, delta=1.0)
 
+    def test_joinWires_plain_path_keeps_a_merged_loop(self):
+        """
+        Part.joinWires(merge=True, tighten=False) returns a loop that merging
+        closed on itself.
+
+        Merging joins the edges of a square into one chain, and the chain is
+        closed. The plain (tighten=False) path added closed edges to its result
+        only before merging ran, and its search skips a chain that is already
+        closed, so a merged loop was dropped: a lone square raised on an empty
+        result, and a square next to a circle came back as the circle alone.
+        Part::Face with SplitEdges on and TightBound off runs this path.
+        """
+        def seg(a, b):
+            return Part.LineSegment(Vector(*a), Vector(*b)).toShape()
+
+        def square(x, y, s):
+            return [seg((x, y, 0), (x + s, y, 0)), seg((x + s, y, 0), (x + s, y + s, 0)),
+                    seg((x + s, y + s, 0), (x, y + s, 0)), seg((x, y + s, 0), (x, y, 0))]
+
+        result = Part.joinWires(Part.Compound(square(0, 0, 10)), split=True, merge=True,
+                                tighten=False)
+        self.assertEqual([len(w.Edges) for w in result.Wires], [4])
+        self.assertAlmostEqual(Part.Face(result.Wires[0]).Area, 100.0)
+
+        # a loop that was closed on entry is still emitted, and first
+        circle = Part.Circle(Vector(0, 0, 0), Vector(0, 0, 1), 3).toShape()
+        result = Part.joinWires(Part.Compound([circle] + square(10, 0, 10)), split=True,
+                                merge=True, tighten=False)
+        self.assertEqual([len(w.Edges) for w in result.Wires], [1, 4])
+
+        # two loops joined by a bridge: each loop is a closed chain sharing a
+        # vertex with the bridge, and the bridge, which bounds nothing, is the
+        # one open edge (an untouched input edge, which keep_open drops unless
+        # asked to keep the originals)
+        edges = square(0, 0, 10) + square(20, 0, 10) + [seg((10, 5, 0), (20, 5, 0))]
+        closed, opened = Part.joinWires(Part.Compound(edges), split=True, merge=True,
+                                        tighten=False, keep_open=True,
+                                        no_open_original=False)
+        self.assertEqual(sorted(round(Part.Face(w).Area) for w in closed.Wires), [100, 100])
+        self.assertEqual(len(opened.Edges), 1)
+        self.assertAlmostEqual(opened.Edges[0].Length, 10.0)
+
     def test_joinWires_splits_a_collinear_overlap(self):
         """
         An edge that runs along part of another is cut where the overlap ends.
