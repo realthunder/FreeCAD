@@ -22,6 +22,7 @@ set(Sketcher_TestScripts
     SketcherTests/TestSketchInternalFaces.py
     SketcherTests/TestSketcherEllipse.py
     SketcherTests/TestSketchExternalGeometry.py
+    SketcherTests/TestSketcherText.py
 )
 
 if(BUILD_GUI)

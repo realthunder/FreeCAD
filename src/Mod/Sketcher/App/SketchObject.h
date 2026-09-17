@@ -348,6 +348,19 @@ public:
     int setActive(int ConstrId, bool isactive);
     /// get the driving status of this constraint
     int getActive(int ConstrId, bool& isactive);
+    /** Rebuild the geometry of a Text constraint from a new text and font.
+     *
+     * The old glyph geometry is deleted and new geometry generated along the
+     * constraint's handle line: from its start point, at the angle it points in, and
+     * either as tall as it is long (isHeight) or as wide. The new geometry is
+     * construction geometry if the old was, or if isConstruction is passed for a text
+     * that has none yet.
+     */
+    SketchSolveStatus setTextAndFont(int ConstrId,
+                                     const std::string& newText,
+                                     const std::string& newFont,
+                                     bool isHeight = true,
+                                     bool isConstruction = false);
     /// is this constraint enforced by the solver? a constraint on geometry inside a group
     /// is not, whether or not the user deactivated it
     bool isConstraintActiveInSketch(const Sketcher::Constraint* cstr) const;
