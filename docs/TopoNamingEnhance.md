@@ -2499,11 +2499,25 @@ one hide it.
 `1ffb61df60`.  The reimplementation 3.5 argued for, of both entry
 points.
 
-`hlrInternalCompound` with `hlrDrawFace` and `hlrDrawEdge` is
+`hlrInternalCompound` with `hlrDrawFace` and `hlrDrawEdge` was
 `HLRBRep_HLRToShape::InternalCompound` and its two helpers, minus the
 branches TechDraw never reaches (there is no shape filter and no `In3d`
 output), emitting the same edges in the same order and reporting the
-`ie` of each.  `polySegments` and `polyInternalCompound` are the same
+`ie` of each.  **Since 2026-09-17 that traversal lives in
+`Part::HLRProjector`** (`src/Mod/Part/App/HLRProjector.{h,cpp}`,
+written for the Sketcher's external faces, `docs/SketcherPort.md`) and
+`projectShape` runs the class: `edges()` per type and visibility hands
+out the compounds, `info()` the source of each edge.  Two things
+changed on the way.  The source is now the ORIGINAL input element:
+the old copy keyed it on the algorithm's own edge map, where an edge
+the outliner split (a cylinder rim a silhouette vertex lands on) is a
+new edge, so those went unnamed -- the projector reads the outliner's
+data structure back to the input edge, and the rims of a cylinder now
+carry names like everything else.  And a silhouette or iso line
+reports the face it lies on, which `projectShape` still skips
+(`m_edgeSource` is an `Edge<n>` index); naming those from the face is
+the open follow-up.  The projector is handed the shape without its
+element map, so the worker never touches the hasher (8.2 still holds).  `polySegments` and `polyInternalCompound` are the same
 for `HLRBRep_PolyHLRToShape`: its `Update` pass keeps the shape each
 segment came from, which `HLRBRep_PolyAlgo::Hide` fills in, and
 `InternalCompound` then filters that list by type and visibility.  The
