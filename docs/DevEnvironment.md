@@ -1167,8 +1167,10 @@ for `cmake`/`ninja` and clear the flag variables, as above. (`emcmake` also fail
 with a bare `cmake executable not found on PATH` if you skip the `PATH` line.)
 
 Finally point the FreeCAD build at the wheel, which ships it under
-`<datadir>/Pyodide/wheels/` beside the `fcx_draft` and `fcx_bim` wheels the build
-makes itself, and bootstrap the per-user runtime (6.8 MB from GitHub):
+`<datadir>/Pyodide/wheels/` beside the `fcx_widgets` wheel the build makes
+itself, and bootstrap the per-user runtime (6.8 MB from GitHub).  (The
+workbench wheels `fcx_draft` and `fcx_bim` were removed 2026-09-18,
+docs/Sandbox.md 7.31: installed workbench code is not a sandbox target.)
 
 ```sh
 $RUN cmake -S . -B build/conda-relwithdebinfo-801 \

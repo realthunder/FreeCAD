@@ -24,7 +24,6 @@ SET(Test_SRCS
     SandboxForms.py
     SandboxNative.py
     SandboxPanels.py
-    SandboxDraftGui.py
     SandboxSelection.py
     SandboxSessionDoc.py
     SandboxHostFiles.py
@@ -33,8 +32,6 @@ SET(Test_SRCS
     SandboxToolBarMirror.py
     SandboxPanelMirror.py
     SandboxMirrorBench.py
-    SandboxInitGui.py
-    SandboxCorpusGui.py
     ViewProviderHooks.py
     ViewProviderChain.py
     FeaturePythonChain.py

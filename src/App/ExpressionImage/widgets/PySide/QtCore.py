@@ -1,47 +1,35 @@
-"""PySide.QtCore for the sandbox guest: translation is the identity,
-a single shot runs when the current request returns (there is no event
-loop to defer to; the image drains the queue), the locale is C, and the
-Qt enums, signals and value types are data (freecad.widgets.qtdata).  A
-widget class asked of this module comes from freecad.widgets.models,
-loaded then (docs/Sandbox.md 7.11)."""
+# SPDX-License-Identifier: LGPL-2.1-or-later
+"""`PySide.QtCore` for the sandbox guest: the Qt enums and value types
+are data (`freecad.widgets.qtdata`), signals and `QObject` are the
+widget layer's (`freecad.widgets.models`), and the timers are the host's
+(docs/Sandbox.md 7.15).
+
+There is no event loop in the guest.  A zero-delay single shot runs when
+the request that queued it returns to the host -- the image drains the
+queue after every dispatched exec, evaluate and hook, which is the order
+Qt's zero timer gives a `todo.delay`-style callback: the call that
+scheduled it finishes first.  A DELAYED callback runs when the HOST's
+timer fires (`gui.timer`), one hook call per firing.  Where the op is
+refused -- a document principal has no host timer -- the callback is
+deferred to the NEXT drain instead, so a callback that re-arms itself
+cannot spin the drain it is in.
+"""
 
 from freecad.widgets.qtdata import (  # noqa: F401
     Qt, QSize, QPoint, QPointF, QRect, QMargins, QEvent,
 )
 
-
-def QT_TRANSLATE_NOOP(context, text):
-    return text
-
-
-class QCoreApplication:
-    UnicodeUTF8 = 0
-
-    @staticmethod
-    def translate(context, text, disambiguation=None, n=-1):
-        return text
-
-    @staticmethod
-    def processEvents(*args):
-        pass
-
-
-# There is no event loop in the guest: a single shot runs when the
-# request that scheduled it returns to the host (the image drains the
-# queue at the end of every dispatched exec, evaluate and hook), which
-# is the order Qt's zero-delay timer gives Draft's `todo.delay` -- the
-# call that scheduled it finishes first (G3c, docs/Sandbox.md 7.11).
+# What `QTimer.singleShot(0, ...)` queued, run by the next _drain().
 _pending = []
-# delayed callbacks a document guest queued (no host timer for it): they
-# wait for the NEXT drain, so a callback that re-arms itself cannot
-# spin the one it is in (docs/Sandbox.md 7.15)
+# Delayed callbacks a guest with no host timer queued: they wait for the
+# NEXT drain (docs/Sandbox.md 7.15).
 _deferred = []
 
 
 def _drain():
-    """Run what `QTimer.singleShot(0, ...)` queued, in order, until
-    nothing is left (a callback may queue more); then move what was
-    deferred into the next drain's queue."""
+    """Run what was queued, in order, until nothing is left (a callback
+    may queue more); then move what was deferred into the next drain's
+    queue.  The image's prelude calls this by name after every request."""
     while _pending:
         fn = _pending.pop(0)
         try:
@@ -56,13 +44,6 @@ def _drain():
 
 
 # ---- host timers (docs/Sandbox.md 7.15) -------------------------------
-#
-# A delayed callback runs when the HOST's timer fires, not when the drain
-# after some request happens to reach it: Draft shows its status bar
-# widgets 500 ms after activation, BimViews re-arms its update every 2 s.
-# One hook call per firing (`fire(id)` on the dispatcher below).  Where
-# the op is refused (a document principal) the callback is deferred to
-# the next drain instead.
 
 _timers = {}
 _next_timer = [1]
@@ -70,8 +51,8 @@ _dispatcher = [None]
 
 
 class _TimerDispatcher:
-    """The guest-side end of the host's timers: `fire(id)` runs the
-    callback of that timer (a repeating one stays registered)."""
+    """The guest-side end of the host's timers: `fire(id)` runs that
+    timer's callback (a repeating one stays registered)."""
 
     def fire(self, timer_id):
         entry = _timers.get(int(timer_id))
@@ -125,6 +106,23 @@ def _stop_host_timer(timer_id):
         pass
 
 
+class _Timeout:
+    """`QTimer.timeout`: connect/disconnect/emit, no trait behind it."""
+
+    def __init__(self, timer):
+        self._slots = []
+
+    def connect(self, slot):
+        self._slots.append(slot)
+
+    def disconnect(self, slot=None):
+        self._slots = [] if slot is None else [s for s in self._slots if s != slot]
+
+    def emit(self):
+        for slot in list(self._slots):
+            slot()
+
+
 class QTimer:
     def __init__(self, parent=None):
         self.timeout = _Timeout(self)
@@ -135,9 +133,8 @@ class QTimer:
 
     @staticmethod
     def singleShot(msec, callback):
-        """A 0 ms shot runs in the current drain (todo's order contract);
-        a delayed one on the host's timer, or in the next drain where
-        the guest may not have one."""
+        """A 0 ms shot runs in the current drain; a delayed one on the
+        host's timer, or in the next drain where there is none."""
         if int(msec) <= 0:
             _pending.append(callback)
             return
@@ -183,56 +180,6 @@ class QTimer:
             self._active = False
             self._host_id = None
         self.timeout.emit()
-
-
-class _Timeout:
-    def __init__(self, timer):
-        self._slots = []
-
-    def connect(self, slot):
-        self._slots.append(slot)
-
-    def disconnect(self, slot=None):
-        self._slots = [] if slot is None else [s for s in self._slots if s != slot]
-
-    def emit(self):
-        for slot in list(self._slots):
-            slot()
-
-
-class QLocale:
-    def decimalPoint(self):
-        return "."
-
-
-def Slot(*args, **kw):
-    """PySide's @Slot(...) decorator factory: the function itself
-    (ArchReport decorates at module level under `if FreeCAD.GuiUp`).
-    Always a factory -- `@Slot(int)` names a type, not the function."""
-    return lambda fn: fn
-
-
-class QUrl:
-    def __init__(self, url=""):
-        self._url = str(url)
-
-    @staticmethod
-    def fromLocalFile(path):
-        return QUrl("file://" + str(path))
-
-    def toString(self):
-        return self._url
-
-    def toLocalFile(self):
-        return self._url[7:] if self._url.startswith("file://") else self._url
-
-
-class QRegularExpression:
-    CaseInsensitiveOption = 1
-
-    def __init__(self, pattern="", options=0):
-        self.pattern = pattern
-        self.options = options
 
 
 _MODELS = ("Signal", "SIGNAL", "SLOT", "QObject")

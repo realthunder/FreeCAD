@@ -24,6 +24,10 @@ workbench code is not a target; the GUI stays native; the widget
 layer built under sec 7 is the browser's toolkit.  The guest-only GUI
 pieces are frozen, not extended.**
 
+**As of 2026-09-18 the CODE matches that aim (7.31): Proxy routing and
+the two workbench wheels are removed, so no installed workbench code
+runs in the guest.**
+
     area                            status      where
     ------------------------------  ----------  ------------------------------------------
     principals, permissions, grants  built       src/App/ExpressionSecurity*.{h,cpp}
@@ -50,7 +54,7 @@ pieces are frozen, not extended.**
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
     the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean; NOT yet rendered against a live desktop), W2 next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
-    routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same) and the restore half guarded by available() first
+    routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same); the Proxy-restore half that rode the same preference was REMOVED 2026-09-18 (7.31)
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
                                                  confined to the Mod roots, both containers
     the document program             D1 built    7.17: a Part::Feature's Shape expression is the
@@ -218,12 +222,17 @@ Each rung ships alone; each is strictly more Python in the sandbox.
   builds a `TopoShapePy` first): the two performance items of sec 11
   are the pack cache and typed reads, not dispatch.
 - **Rung 2, document-embedded Python** **[built as G1 for Draft and
-  BIM; hardened mode, not the target, 2026-09-08]**: scripted-object
+  BIM; hardened mode, not the target, 2026-09-08; REMOVED 2026-09-18,
+  7.31]**: scripted-object
   `Proxy` code in the document's guest, `execute()` a bridge call --
   70/70 Draft Proxies and the BIM corpus recompute byte-identical
   (7.6).  With the import restriction (sec 11 item 1) it buys defense
   in depth and crash isolation for INSTALLED code against hostile
   data; kept and maintained, since expressions ride the same bridge.
+  REMOVED 2026-09-18 (7.31), on the ruling that installed workbench code
+  is not a target: one preference was switching this on together with
+  expression routing, and a wheel's existence was deciding which
+  workbench got sandboxed.  What follows is the record of what it was.
   Per-document guests return to the list on a different ground: one
   file's runaway program must not stall another's recompute.
 - **Rung 3, session scripting** **[RETIRED 2026-09-08]**: console and
@@ -424,7 +433,10 @@ guest, the 3D view.  Measured:
                                                                    the InitGui runner, MDI ~600
     guest models and shims (8.9k)  all                             none
     ipywidgets bundling (Probe B)  keep, the comm base             none
-    gates                          SandboxWidgets, SandboxForms,   SandboxGui, SandboxInitGui,
+    gates (the DROP column's           SandboxWidgets, SandboxForms,   SandboxGui, SandboxInitGui,
+      SandboxInitGui, SandboxDraftGui
+      and SandboxCorpusGui were
+      RETIRED 2026-09-18, 7.31)
                                    SandboxPanels, SandboxSelection, SandboxDraftGui,
                                    SandboxNative: 1.9k             SandboxSessionDoc,
                                                                    SandboxCorpusGui: 2.3k
@@ -1026,18 +1038,14 @@ editors (`DlgExpressionInput`, `SpinBox`, `InputField`, `PropertyItem`)
 -- policy-gated as session, not confined; a named future slice.
 Writes were never the router's problem: `PropertyExpressionEngine::
 execute` sets the path on the host after the value returns.
-The same preference routes a document object's saved Proxy at document
-OPEN (`ExpressionSandbox::proxyRestoreRouted()`: the preference AND
-`ImageHost::available()`, since 2026-09-16 -- the paragraph below):
-`PropertyPythonObject::Restore` builds the
-`<Python module=".." class="..">` instance in the guest and holds the
-stand-in (7.6 G1c step (f)); a module the guest cannot serve -- its
-import there raises ModuleNotFoundError -- is HELD unrestored until the
-document's `host.import:<module>` is answered, and only then restores in
-this process under the native import rule, named (7.28; it FAILED CLOSED
-from 2026-09-04 to 2026-09-17, and fell back automatically for one day);
-any other guest failure fails closed.  A view provider's Proxy is not
-routed -- the Gui side is not in the guest (G2).
+**The same preference used to route a document object's saved Proxy at
+document open** (`proxyRestoreRouted()`, 7.6 G1c step (f), with the
+`host.import` consent gate of 7.28 for a module no guest wheel carried).
+That half was REMOVED 2026-09-18 (7.31): installed workbench code is not
+a sandbox target, and one preference was switching it on together with
+expression routing.  `PropertyPythonObject::Restore` now imports
+natively for both containers, under the Mod-root rule of sec 11 item 1 --
+which is what bounded a document-chosen module name all along.
 
 **The restore half asks `available()` too (2026-09-16).**  It used to
 read the preference alone, deliberately, so that answering it booted no
@@ -1312,7 +1320,14 @@ install into a running guest (P2), PyPI sources (PEP 783
 `pyemscripten_<abi>` wheels), the pre-run import scan (dropped: an
 `import` fails at the guest's import with the same offer).
 
-### 5.6 Bundled wheels **[built 2026-09-04]**
+### 5.6 Bundled wheels **[built 2026-09-04; the WORKBENCH wheels removed 2026-09-18, 7.31]**
+
+**Standing note 2026-09-18 (7.31):** the two workbench wheels
+(`fcx_draft`, `fcx_bim`) and the guest shims they packed are removed --
+installed workbench code is not a sandbox target and no longer runs in
+the guest.  What ships is `fcx_image` (the engine) and `fcx_widgets`
+(the widget layer the browser tier uses).  The rest of this section is
+the record of what the workbench wheels were.
 
 FreeCAD's own workbench code reaches the guest as pure-Python wheels
 beside the fcx_image wheel: `<datadir>/Pyodide/wheels/<dist>-<ver>-py3-
@@ -1527,10 +1542,17 @@ per op (`gui`: DENY document / ALLOW session and addons):
   callbacks, coalesced per frame) and the snapper.  The snapper's move
   to C++ stands on cost (its per-move work is geometry queries against
   host shapes) but is deferred: no longer a correctness blocker.
-- **U7 Compatibility**: a `PySide`-named module in the guest covering
-  the data-level subset (translate, icon references, `Qt` enums, the
-  static dialog calls, `QTimer.singleShot`, value types), and the
-  porting linter.
+- **U7 Compatibility** **[RETIRED 2026-09-18, 7.31]**: a `PySide`-named
+  module in the guest covering the data-level subset (translate, icon
+  references, `Qt` enums, the static dialog calls,
+  `QTimer.singleShot`, value types), and the porting linter.  U7
+  existed so INSTALLED workbench code would run in the guest
+  unedited (G2); with Proxy routing removed it has no subject, and
+  the workbench half of the subset (translate, `QLocale`, `Slot`,
+  `QUrl`, `QDesktopServices`) is gone.  The `PySide` NAME survives
+  for the widget layer itself, in the fcx_widgets wheel: the guest's
+  forms are Qt-shaped by design (7.3), and `PySide.QtCore` is where
+  the host-timer protocol's guest half lives (7.15).
 
 ### 7.2 The scene: pivy in the guest, mirrored **[decided: "can we just port pivy over to wasm in full? I don't see any security problem with that"]**
 
@@ -1947,7 +1969,7 @@ the hooks the host fired for the writes, `execute`, its nested
 against the ~45 hops + 7 nested calls sized above: the `call` count is
 the `addProperty` calls of `Wire.__init__` (12) that the sizing left
 out, the rest lands where estimated.
-**(f) the Restore route BUILT 2026-09-04.**  With routing on
+**(f) the Restore route BUILT 2026-09-04; REMOVED 2026-09-18 (7.31), gates and all.**  With routing on
 (`proxyRestoreRouted()`, the preference alone then; the preference AND
 `available()` since 2026-09-16, 3.5), `PropertyPythonObject::
 Restore` on a document object sends `proxy_new alloc` -- the guest
@@ -5287,7 +5309,9 @@ not the guest's.  The reset retention is a new trap (sec 12) and a
 D4 measurement.
 
 **(e) The gate.**  `SandboxProgram` (a Python gate module in the
-default list beside `SandboxCorpusGui`): the three fixture files
+default list; `SandboxCorpusGui`, named beside it at the time, was
+RETIRED 2026-09-18 with the workbench wheels, 7.31): the three fixture
+files
 open with routing ON, recompute, and each `Shape` is BRep
 byte-identical to the same file recomputed native with enforcement
 off; a parameter change recomputes to the native answer; save,
@@ -8839,7 +8863,11 @@ which `1623ac797d` made the default on 2026-09-16 without re-running
 the Python suite, 43 cases fail exactly as Testing.md's 2026-09-09 trap
 predicts: every saved Proxy of Path, Fem and Arch restores into a guest
 that has no such module.  Not the merge's, not fixed here, and the
-number one item for whoever touches routing next.
+number one item for whoever touches routing next.  **CLOSED 2026-09-18
+by 7.31:** Proxy routing is removed, so those saved Proxies restore
+natively and the 43 failures cannot arise.  The diagnosis stands as
+written -- one preference drove two unrelated halves, and the gate that
+justified the default measured only the expression half.
 
 **What the merge exposed, because two cards were on one page for the
 first time.**  `widgets.subscribe` REPLACED a client's three stream
@@ -8982,7 +9010,7 @@ The probe that settles this kind of question logs the RETURN of
 `fcviewerControlSend`, not only the call; the 7.26 probe did not, and
 read a refusal as a loss.
 
-### 7.28 Consent for a Proxy the guest cannot serve **[designed, BUILT and PROVEN 2026-09-17; the automatic fallback of the morning replaced by a host.import prompt the same day]**
+### 7.28 Consent for a Proxy the guest cannot serve **[SUPERSEDED 2026-09-18 by 7.31 -- with Proxy routing removed, a Proxy the guest cannot serve can no longer arise; designed, BUILT and PROVEN 2026-09-17; the automatic fallback of the morning replaced by a host.import prompt the same day]**
 
 **The hole the automatic fallback opened, ruled 2026-09-17 hours after
 it was built.**  The first form of this section fell back on its own: a
@@ -9193,7 +9221,7 @@ expected (8 failures in `TestArchComponent`).  Those are guest-behaviour
 regressions of BIM in the guest -- as is Draft's `test_hatch` in the
 full run -- and belong to the corpus gate (8.2), not to a fallback.
 
-### 7.29 F1 built: the host file and code chokepoints **[BUILT and PROVEN 2026-09-17; the guest-driven gate cases blocked on a bridge defect found doing it]**
+### 7.29 F1 built: the host file and code chokepoints **[BUILT and PROVEN 2026-09-17; the guest-driven gate cases were blocked on a bridge defect found doing it -- named and fixed in 7.30 the same day]**
 
 Sized in 7.14, built here.  The rows are in the enum, the checks are in
 the primitives, and the blessed-path set moved down a layer so they hold
@@ -9279,28 +9307,311 @@ lines name the principal and the path:
     {"decision":"prompt","permission":"host.exec","principal":"session",
      "target":"/tmp/fcx-hostfiles-.../fcx_hostfiles.FCMacro"}
 
-**The defect found doing it, NOT fixed here.**  A host command that
-THROWS while it runs through the guest's `gui.cmd.run` wedges the guest:
-the call never comes back and the run sits until something kills it.
-Reproduced twice over -- with the refusal converted to a reply at the op
-(`runCommandByName` now catches and answers `PermissionError`, kept
-because it is right either way), and with the session's decision
-pre-answered as a DENY -- so it is neither an unconverted exception nor
-the prompt path, but the reentrancy itself: host -> the guest's
-`Activated` -> a host op -> a host command.  Nothing made a Std command
-throw there until F1 did, which is why it surfaced now.  `gdb` cannot
-attach on this box (`yama/ptrace_scope` is 1), so the blocking frame is
-not yet named; launching FreeCAD under gdb is the next step.
+**The defect found doing it, NAMED AND FIXED in 7.30.**  A host command
+that THROWS while it runs through the guest's `gui.cmd.run` wedged the
+guest: the call never came back.  It was not the reentrancy, as this
+section first guessed -- the throw was not unwinding at all.  See 7.30.
 
-Gate `SandboxHostFiles` (6 cases) therefore reads `RESULT OK` with 2
-run and 4 skipped: the document-principal denial and "host code is
-ungated" pass, and the four guest-driven cases stay written, and
-skipped, for when the bridge defect is fixed.  Two test-side traps are
-recorded in the file: a modal watchdog that truth-tested whatever widget
-was modal segfaulted the process inside shiboken's import hook, and
-`FreeCADGui.sendHasMsgToActiveView` has no Python binding at all
-(sending "Run" instead would run the macro as HOST code and quietly
-invert the case).
+Gate `SandboxHostFiles` (6 cases) reads `RESULT OK` with all 6 running
+as of 7.30 (it read 2 run and 4 skipped while the wedge stood).  Two
+test-side traps are recorded in the file: a modal watchdog that
+truth-tested whatever widget was modal segfaulted the process inside
+shiboken's import hook, and `FreeCADGui.sendHasMsgToActiveView` has no
+Python binding at all (sending "Run" instead would run the macro as HOST
+code and quietly invert the case).
+
+### 7.30 The `gui.cmd.run` wedge named and fixed **[BUILT and PROVEN 2026-09-17; the gate's four guest-driven cases now run]**
+
+7.29 left one defect open and guessed at its cause: a host command that
+THROWS under the guest's `gui.cmd.run` never came back, and the guess
+was the reentrancy (host -> the guest's `Activated` -> a host op -> a
+host command).  The guess was wrong, and the way to settle it was to
+name the frame.
+
+**Naming it.**  `gdb` cannot ATTACH on this box (`yama/ptrace_scope` is
+1), so FreeCAD ran UNDER gdb -- gdb as PARENT is permitted -- with the
+gate driving one case:
+
+    SANDBOX_GUI_GATE_MODULES=SandboxHostFiles.SandboxHostFilesTest.test_a_macro_from_guest_refused
+
+A watchdog sent SIGINT once the run sat past the "running the guest
+command" mark, and a `define hook-stop` in the gdb command file printed
+every thread's backtrace without needing anything typed at the prompt
+(the first attempt fed commands through a FIFO and lost them when the
+harness was killed; `-batch -x` plus `hook-stop` needs no stdin).
+
+**What it was.**  Thread 1, top down:
+
+    QEventLoop::exec / QDialog::exec / showNewMessageBox
+    Gui::Command::_invoke                Command.cpp:666
+    Gui::CommandManager::runCommandByName Command.cpp:2415
+    (anonymous)::runCommandByName / guiOp SandboxGui.cpp:2011
+    App::ExpressionSandbox::dispatchHostOp ExpressionImageBridge.cpp:1735
+    PyodideRuntime::hostCall              ExpressionPyodideRuntime.cpp:1047
+    Builtins_WasmToJsWrapperCSA
+
+Not a lock and not the reentrancy: `Command::_invoke`'s
+`catch (Base::Exception &e)` ends in a modal `QMessageBox::critical`.
+F1's refusal is a `Base::Exception`, so the command popped a dialog
+INSIDE the guest's host op -- with the guest parked in wasm waiting for
+the reply that could only be written once `_invoke` returned, and nobody
+at the keyboard to click OK.  That also explains both earlier
+experiments: converting at the op cannot help, because the exception
+never reaches the op; and pre-answering DENY cannot help, because a deny
+still throws.  Nothing made a Std command throw there until F1 did.
+
+**The fix, in three parts.**
+
+- `Command::_invoke` does not ask when a principal scope is active
+  (`ExpressionSecurity::Runtime::scopeActive()`, the same predicate
+  `Gui::FileDialog` uses to bless a picked path): it reports the
+  exception and RETHROWS, for the `Base::PyException` catch as well as
+  the `Base::Exception` one, so `gui.cmd.run`'s own catch answers the
+  guest with a `PermissionError`.  With no scope active -- the user's
+  own click -- the dialog is exactly as it was.
+- `Application::sSendActiveView` and `sSendFocusView` gained
+  `PY_TRY`/`PY_CATCH`.  `Std_DlgMacroExecuteDirect` reaches
+  `MacroManager::run` through `Gui.SendMsgToActiveView("Run")`, and
+  without the wrapper the C++ refusal unwound THROUGH the CPython eval
+  loop, skipping its frame cleanup.  That is the second fault 7.29
+  recorded as a separate shiboken SIGSEGV: with the wedge gone, the run
+  reached the next import and died in `shibokensupport/feature.py:95
+  feature_import`, dereferencing the wreckage.  One root cause, two
+  symptoms.
+- `Application::sRunCommand` and `CommandPy::run` gained the same
+  wrapper, because `_invoke` can now throw where those bindings call it.
+  54 of the 72 `Application::s*` bindings still lack `PY_TRY`; the four
+  on this path are wrapped, the rest are a known trap.
+
+**A modal is not itself the fault.**  A command that opens one as its
+normal work is untouched by this, and must be: `Std_Open`'s picker runs
+in a nested loop under this very op, and answering it is how a picked
+path is blessed (S1); `gui.menu.exec` is a nested loop by design too.
+Nor is a dialog an unconditional hang -- with a user at the keyboard it
+is answerable and the run goes on.  What was always wrong is the
+SWALLOW: `gui.cmd.run` ends in `replyOk(true)`, so a refusal that does
+not propagate tells the guest the command ran.  The block is the second
+symptom, and it bites exactly where nobody can answer -- the gate under
+Xvfb, and the headless and served tiers this project is heading for.  A
+cancelled dialog stays swallowed on purpose: `Base::AbortException` is
+caught above both rethrows, and cancel is not an error.
+
+**What this does NOT cover.**  A command that shows a modal and throws
+nothing is unchanged: `MacroCommand::activated` on a missing macro file,
+the "Cannot load workbench" and "Wrong selection" dialogs in
+`CommandStd.cpp`.  Run by name from a guest, those still block an
+unattended session and still answer `ok(true)`.  They are host UI a user
+answers rather than a refusal being lost, so sizing them belongs with
+the headless and served tiers, not here.
+
+**Proven.**  Gate `SandboxHostFiles` 6/6, `RESULT OK`: the macro refused
+then granted and running, the recent file refused, and `Std_Open` driven
+from the guest opening the path the test chose in the host picker with
+no grant -- the case that keeps consent a capability rather than a list.
+Two assertions in the never-run cases were wrong and are corrected: a
+pre-answered DENY records no pending row (`Runtime::check` calls
+`addPending` only on a promptable decision), and a document saved as
+`target.FCStd` reopens under the name `target`, not the name it was
+built with (probed).  A case that closes its own document no longer
+reads results back through the guest: the read-back evaluates under the
+owner, and a dead owner falls back to the session and asks
+`host.import`.
+
+**One observation left open, not this thread's.**  While the guest-driven
+`Std_Open` runs, the document arriving is claimed by progressive loading
+(`App::Document::LiveImport`) and `Command::_invoke` installs
+`App::Document::UserEditGuard`, so `Document::checkUserEdit` refuses the
+restore's own `Cannot create object 'Owner'`.  The guard exempts
+transactions, `Visibility`, `TreeRank` and `ViewObject`, but not "this
+command is the thing filling the document".  The gate passes either way
+(it judges the open by effect), and the interaction is pre-existing and
+unrelated to the sandbox.
+
+### 7.31 Proxy routing removed: installed workbench code is not a sandbox target **[RULED and BUILT 2026-09-18]**
+
+**The user's ruling, 2026-09-18:** "No routing for proxy, i.e. adding
+code at all.  Cleanup the built BIM/Draft wheel, so the confusion do not
+happen again."  Asked first, and the question that produced it: "Since
+when we start doing routing on addon code again.  I thought we've
+decided to not sandbox addon code."
+
+**The ruling restates what sec 0 already said** and what nothing in the
+code enforced: the sandbox boxes CODE CARRIED IN THE DOCUMENT --
+expressions and expression-language programs.  Installed workbench code
+is not a target (the 1.2 re-aim of 2026-09-08; Rung 2 is labelled
+"hardened mode, not the target" in the same breath).  The threat is
+document-derived code (1.4).  BIM's `_Report` is not document-derived
+code: it is installed workbench code that a document's DATA drives.
+
+**How it happened, since nothing decided it.**  Two independent things
+met.  `PropertyPythonObject::Restore` routed a Proxy whenever
+`proxyRestoreRouted()` was on and `guestServesModule(module)` said the
+guest could import it -- and that function asks only "does `import X`
+succeed in the guest?".  So whether a workbench was sandboxed was
+decided by whether a wheel had been built for it: PACKAGING DECIDED
+TRUST.  And `proxyRestoreRouted()` read the SAME preference as
+`evaluationRouted()`, so `1623ac797d` ("route expression evaluation by
+default", 2026-09-16) switched both halves on at once.  Its own message
+records the gap: "The same preference also routes a saved Proxy's
+restore, WHICH THAT GATE DOES NOT MEASURE."  The corpus gate that
+justified the default compares expression bindings only.  TestArch's 11
+failures under routing, and 7.26's 43 before them, were the bill.
+
+**What came out** (67 files of code, 185 insertions, 4899 deletions;
+18 deleted outright, and one -- the PySide shim's `QtCore.py` --
+MOVED into fcx_widgets rather than deleted, git calling it a rename
+at 59 percent: the host-timer half of it survives, see below):
+
+    the switch          ExpressionSandbox::proxyRestoreRouted()
+    the restore path    PropertyPythonObject::Restore's routed block,
+                        DeferredRestore, the held-payload stashes,
+                        hostFallback, Document::afterRestore's sweep
+    the guest side      restoreGuestProxy, guestServesModule,
+                        constructGuestProxy, hostProxies, heldProxies,
+                        deferredProxyModules, resolveDeferredProxies
+    the transport       ImageHost::proxyNew (both overloads), and in the
+                        image the `proxy_new` wire op whole:
+                        FcxWire::OpProxyNew, dispatchProxyNew, and the
+                        prelude's `_proxy_new` constructor
+    the Python API      proxyNew, proxyConstruct, hostProxies,
+                        deferredProxies, resumeProxies
+    7.28's consent gate DlgDocumentPermissions::askHostImport and its
+                        signalFinishOpenDocument hook
+    the dispatch hooks  15 `__new__` overrides in BIM and Draft plus
+                        draftobjects.base.new_proxy -- product code that
+                        existed only to construct a Proxy in the guest
+    the wheels          BimSandboxWheel, DraftSandboxWheel, and the
+                        guest shims they packed (src/App/ExpressionImage/
+                        shims: the PySide shim, Draft_rc/Arch_rc,
+                        importers, nativeifc, PartGui)
+    the gates           SandboxDraftGui, SandboxCorpusGui, SandboxInitGui
+                        (retired per the sec 7 rule), and 8 C++ cases
+                        with their corpus rig
+
+**What stays, and why it loses nothing.**  Expression routing is
+untouched -- it has the corpus gate behind it and it is the target.  The
+curated surface expressions use is compiled INTO the image
+(`FcxFacades.inc`), never shipped in a workbench wheel, so deleting
+fcx_draft and fcx_bim costs the target nothing; `fcx_image` and
+`fcx_widgets` remain.  The guest stand-in TYPE stays, and so do
+`proxy_call`, `proxy_get` and `proxy_set`: the frozen guest-GUI layer
+still registers handlers that live in the guest -- a command, a
+workbench, a selection observer -- and the host still holds a stand-in
+for each; a routed FUNCTION still crosses as one (P3).  What went is
+only the direction where the HOST asked the guest to CONSTRUCT an
+object.  Above all, **the protection is not weakened**: a document
+naming an arbitrary module is stopped by the NATIVE import restriction
+(sec 11 item 1, `Type::moduleAllowed`, both containers), which never
+depended on routing.  The code said so before it was removed: "Off this
+path the native restore still runs under the Mod-root import
+restriction, so refusing here widens nothing."
+
+**Proven.**  TestArch, the suite whose 11 failures started this, with
+routing ON and Proxy routing removed: 280 tests, OK (expected
+failures=1), zero failures and zero MarshalErrors -- identical to the
+unrouted baseline measured the same day, which is the ruling's proof.
+That run boots no guest at all, which is the point: BIM's Proxies now
+restore natively.  The C++ sandbox suites are 131 of 132 passed, zero
+failed, with `programsSurfaceStampMatchesHost` green on the rebuilt
+wheel; the one skip is environmental (`ExpressionPyodideOfferTest`
+wants a local numpy wheel beside the staged runtime).  The GUI gate is
+RESULT OK: 66 tests, zero failures and zero skips, in 45.9 s.  It
+carries the proof for the PySide relocation above, since a gate whose
+guest cannot boot still reports OK by skipping: every toolkit module
+ran real cases -- SandboxWidgets' guest QTimer, SandboxForms' loadUi
+(40 objects, 100 gui.comm ops), SandboxPanels' 41 .ui panels, all four
+SandboxSelection cases -- and `No module named 'PySide'` appears zero
+times, against 11 occurrences before the relocation.
+
+**Superseded by this section:** 7.28 whole (its premise -- a module no
+guest wheel carries -- cannot arise once no workbench wheel exists);
+7.6 G1c step (f), the Restore route; 5.6's workbench-wheel half.
+
+**Removed on the same ruling** ("Remove for 1 and 2", 2026-09-18), both
+dead by construction once no workbench wheel exists: the InitGui-in-guest
+runner (`FreeCADGuiInit.py`, its four `FreeCADGui._*` exports, its call
+site in `RunInitGuiPy`, and the `_onGuestBoot` hook in SandboxGui.cpp --
+it needed a wheel named `fcx_<module>`, so `GuestInitGuiWanted()` could
+never return True again), its guest half in the fcx_widgets wheel
+(`_run_initgui` and the `_GROUPS` / `_install_group_rule` machinery that
+derived a command's group from the wheel its class came from, with the
+prelude's `_fcx_group` read that nothing sets any more), the
+`Sandbox:InitGuiInGuest` preference with it, and the two
+`draftutils.params` facades in generateSandboxFacades.py, which existed
+so the fcx_draft wheel could read the host's parameter store.
+
+**The `PySide` name moved into fcx_widgets, and U7 retired.**  The
+guest's Qt-shaped spelling was delivered by the WORKBENCH wheels: the
+shims under `src/App/ExpressionImage/shims/PySide/` were packed by
+fcx_draft (`--add shims=.`), so removing those wheels took the name
+`PySide` out of the guest -- and with it four gate modules of the
+widget layer that is KEPT (SandboxWidgets, SandboxForms,
+SandboxPanels, SandboxSelection), which exec Qt-shaped probes into
+the guest.  The classes themselves were never in those shims: they
+are `freecad.widgets.models` and `.qtdata` in the fcx_widgets wheel,
+and 7.3 says so -- "the guest classes `PySide.QtWidgets.QLabel` and
+the rest ARE those models".  So `PySide/` is now a package of
+fcx_widgets (ruling 2026-09-18, "Yes (I) it is"): `QtGui` and
+`QtWidgets` re-export qtdata and resolve widget classes through
+models, and `QtCore` additionally carries the guest half of the
+host-timer protocol (7.15) -- `_drain`, the deferred queue, the
+`gui.timer` dispatcher and `QTimer` -- which had no other home and
+which the image's prelude calls by name
+(`sys.modules['PySide.QtCore']._drain`).  What did NOT come back is
+U7's workbench compatibility: translate/`QT_TRANSLATE_NOOP`,
+`QCoreApplication`/`QApplication`, `QLocale`, `Slot`, `QUrl`,
+`QRegularExpression`, `QDesktopServices`, `QFileSystemModel`,
+`QMdiArea` and the `qRed`/`qGreen`/`qBlue` helpers.  Three gate cases
+retire with G2, being tests of workbench code in the guest:
+SandboxForms' `test_draft_orthoarray_panel` (Draft's
+task_orthoarray.py execed in the guest) and SandboxSessionDoc's
+`test_g_corpus` and `test_i_corpus_docommand` with their loaders.
+
+**The guest wheel was rebuilt**, not just re-stamped.  Removing the two
+facades changes the generated facade set and so the surface hash the
+stamp carries (7.17 (b)); the guest compiles its own `FcxFacades.inc`
+from the same generator, so the rebuild regenerates the stamp from the
+new set and host and guest agree again.  The hash is compared in one
+place only -- `programsSurfaceStampMatchesHost` -- and gates nothing at
+runtime; it was still worth the cross-build, because the same rebuild is
+what carries the in-image removals above into the shipped wheel.
+
+**Getting it back.**  A commit cannot cite its own hash, so the anchor is
+its PARENT, `e38cc266c1` ("App: the host file and code chokepoints (F1),
+keyed on the scope stack"), which still holds every file this removed:
+
+    git show e38cc266c1:src/App/ExpressionGuestProxy.cpp     # the guest side
+    git show e38cc266c1:src/App/PropertyPythonObject.cpp     # the routed Restore
+    git show e38cc266c1:src/Mod/BIM/CMakeLists.txt           # the fcx_bim wheel
+    git show e38cc266c1:src/Mod/Draft/CMakeLists.txt         # the fcx_draft wheel
+    git show e38cc266c1:src/Gui/FreeCADGuiInit.py            # the InitGui runner
+    git show e38cc266c1:src/App/ExpressionImage/ImageDispatch.cpp   # proxy_new
+    git checkout e38cc266c1 -- src/App/ExpressionImage/shims
+    git checkout e38cc266c1 -- src/Mod/Test/SandboxDraftGui.py \
+                               src/Mod/Test/SandboxCorpusGui.py \
+                               src/Mod/Test/SandboxInitGui.py
+
+Eighteen files were deleted outright: those three gates and fifteen of
+the sixteen under `src/App/ExpressionImage/shims` (`Draft_rc`/
+`Arch_rc`, `PartGui`, the `importers` and `nativeifc` shims, the
+`freecad` namespace package, and three of the four PySide modules).
+The sixteenth, `shims/PySide/QtCore.py`, MOVED to
+`src/App/ExpressionImage/widgets/PySide/QtCore.py`: its host-timer
+half is live code in fcx_widgets, so `git log --follow` on the new
+path reaches the shim's history, and the checkout above still
+restores the whole `shims` tree as it was.  Everything else was an edit
+inside a surviving file, so `git diff <this commit> e38cc266c1` shows
+the removal whole, and `git log --diff-filter=D --name-only` finds the
+deletions by path.
+
+Two scopes, both real.  That diff is 73 files, 667 insertions and 5035
+deletions, because this commit also carries the FOLDED modal fix (6
+files, 226 insertions, 83 deletions -- the second part of its message,
+7.30's `gui.cmd.run` wedge).  The figure this section quotes is the
+REMOVAL alone: 67 files of code, 185 insertions, 4899 deletions, which
+was `git diff 78947bd9f7 HEAD -- src/ tests/ scripts/` before the fold.
+The commit's subject for searching: "Sandbox: remove Proxy routing --
+installed workbench code is not a target".
 
 ## 8. Measurements
 
@@ -9551,14 +9862,17 @@ and nothing on the wire unless a value changed.
                                                           normalization, the blessed set,
                                                           the three rows under a document
                                                           scope, saveAs, the runFile guard
-    tests/src/App/ExpressionImageHost.cpp           81    programs 5 (7.17 D1: function
+    tests/src/App/ExpressionImageHost.cpp           73    programs 5 (7.17 D1: function
                                                           objects routed = native, the
                                                           flange, the surface stamp and
                                                           record), acceptance 6, bench 6 (disabled),
-                                                          bridge 8, budget 4, eval 25 (the
-                                                          G1a-G1d gates among them, the
-                                                          Draft and BIM corpus gates, the
-                                                          durable-handle gate),
+                                                          bridge 8, budget 4, eval 17 (the
+                                                          G1a-G1d gates among them; the
+                                                          eight Rung-2 cases -- the routed
+                                                          restores, the Draft and BIM corpus
+                                                          gates, the durable-handle gate,
+                                                          the wheel gate -- were REMOVED
+                                                          2026-09-18, 7.31),
                                                           host 9, routing 9
     tests/src/App/ExpressionPyodide.cpp             10    layout, verify, scoping, offer
     tests/src/App/TypeImport.cpp                    10    the type-string import rule
@@ -9615,19 +9929,14 @@ and nothing on the wire unless a value changed.
                                                           doCommand; the same gate script
     src/Mod/Test/SandboxHostFiles.py                 6    F1 (7.29): a document principal
                                                           denied all three rows, host code
-                                                          ungated; the four guest-driven
-                                                          cases (Std_DlgMacroExecuteDirect,
-                                                          Std_RecentFiles, Std_Open blessed,
-                                                          a granted macro) are written and
-                                                          SKIPPED on the gui.cmd.run
-                                                          reentrancy defect; the same gate
-                                                          script
-    src/Mod/Test/SandboxDraftGui.py                  3    G3c: Draft's DraftGui.py in the
-                                                          guest -- the tray tool bar, the
-                                                          panel built in code, a point
-                                                          typed on the host, the key
-                                                          stream, a menu, the main window
-                                                          shim (7.11); the same gate script
+                                                          ungated, and -- since 7.30 fixed
+                                                          the modal wedge -- the four
+                                                          guest-driven cases too
+                                                          (Std_DlgMacroExecuteDirect
+                                                          refused then granted,
+                                                          Std_RecentFiles refused, Std_Open
+                                                          blessed through the picker); all
+                                                          6 run; the same gate script
     tests/src/Gui/FormWidgets.cpp                   20    H0-H1, G3b, G3c: the host widget
                                                           layer's property core, class set,
                                                           layout ops, code-built layouts,
@@ -9688,10 +9997,6 @@ Preferences under `User parameter:BaseApp/Preferences/Expression/`:
                              BOTH halves also require a runtime that
                              boots, so the preference alone never
                              de-Proxies a document (2026-09-16)
-    Sandbox:InitGuiInGuest   run the InitGui.py of a module whose GUI side
-                             is a bundled wheel (fcx_draft, fcx_bim) in the
-                             guest (default OFF; 7.9 G2b); the rig's
-                             FCX_INITGUI_IN_GUEST=1|0 overrides it
     Sandbox:BudgetMs         5000        Sandbox:GraceMs   1000
     Sandbox:MemoryMB         1024: the ceiling on a guest's linear memory
                              (the Python heap) and on its array buffers,
@@ -9723,10 +10028,10 @@ CMake (`cMake/FreeCAD_Helpers/InitializeFreeCADBuildOptions.cmake`
 configure error), `FREECAD_PYODIDE_DIR` (bundle a distribution in a dev
 tree), `FREECAD_FCX_IMAGE_WHEEL` (ship the wheel under
 `<datadir>/Pyodide/wheels/`), `FREECAD_PIVY_WHEEL` (the pivy wheel of
-7.10, shipped and mirrored the same way), `FREECAD_BUNDLE_WASMTIME`.  With
-`BUILD_EXPR_PYODIDE_HOST` and `BUILD_DRAFT`, target `DraftSandboxWheel`
-packs `fcx_draft-<ver>-py3-none-any.whl` into the same wheels
-directory (5.6); `WidgetsSandboxWheel` packs `fcx_widgets` (the comm
+7.10, shipped and mirrored the same way), `FREECAD_BUNDLE_WASMTIME`.  The workbench
+wheel targets (`DraftSandboxWheel`, `BimSandboxWheel`) were REMOVED
+2026-09-18 (7.31) -- installed workbench code no longer runs in the
+guest.  `WidgetsSandboxWheel` packs `fcx_widgets` (the comm
 shim, 7.3) unconditionally, and `FREECAD_BUNDLED_WHEELS` (a `;`-list of
 pure wheels, `scripts/sandbox-fetch-wheels.py` fetches ipywidgets and
 traitlets) is mirrored one target per wheel (`<dist>_wheel`).
@@ -9780,6 +10085,9 @@ push the user's call).
    place under the sec 7 header's retire-on-break rule, and 1.7
    records what the workbench path would still need.
 1. **The Proxy import restriction, native.**  **BUILT 2026-09-09.**
+   **Load-bearing since 2026-09-18 (7.31): with Proxy routing removed
+   this is the WHOLE of the defence against a document-chosen module
+   name, and it never depended on routing.**
    `PropertyPythonObject::Restore` imports only a module already in
    `sys.modules` or one `importlib.util.find_spec` resolves inside a
    registered module root (`Type::addModuleRoot`, the rule
@@ -10557,15 +10865,17 @@ sockets, any network for the reference image, a webview escape hatch.
   host files by name.  A document principal never could (`gui` DENY,
   not promptable).  The answer was F1, the chokepoints at the
   primitives, not a list of names.
-- **A host command that THROWS under `gui.cmd.run` wedges the guest**
-  (found building F1, 7.29; OPEN): the call never returns.  Not the
-  refusal's conversion (the op answers `PermissionError` now) and not
-  the prompt path (reproduced with the decision pre-answered as a
-  deny), but the reentrancy itself -- host -> the guest's `Activated`
-  -> a host op -> a host command.  Nothing made a Std command throw
-  there until F1 did.  `gdb` cannot attach on this box
-  (`yama/ptrace_scope` is 1); running FreeCAD under gdb names the
-  blocking frame and is the next step.
+- **A host command that THROWS under `gui.cmd.run` answered the guest
+  `ok(true)`** (found building F1, 7.29; CLOSED 2026-09-17 by 7.30):
+  not the reentrancy -- `Command::_invoke` caught the refusal and
+  popped a modal `QMessageBox` inside the op.  The swallowed refusal
+  came back to the guest as a SUCCESS, dialog or no dialog; and where
+  nobody is at the keyboard (the gate under Xvfb, a headless or served
+  session) the guest also sat in wasm until the run was killed.  Named
+  under gdb (gdb as PARENT: `yama/ptrace_scope` is 1, so it cannot
+  attach).  `_invoke` now rethrows while a principal scope is active,
+  and the view-message bindings convert at the boundary so no C++
+  exception crosses the CPython eval loop.
 - **A guest view provider's scene is G4's** (7.13, S2 built note;
   G4 sized 2026-09-07 in 7.16):
   `Arch.makeSite()` from the guest builds `_ViewProviderSite` in the
@@ -10580,15 +10890,14 @@ sockets, any network for the reference image, a webview escape hatch.
 
 - Document OPEN imports, before any expression runs.
   `PropertyPythonObject::Restore`'s `PyImport_ImportModule` on a
-  document-chosen module name is CLOSED for document objects with
-  routing on (G1c step (f), 2026-09-04): the module is imported in the
-  guest, the instance allocated there, the property holds the stand-in,
-  and a module the guest cannot serve is HELD until the user answers
-  `host.import:<module>`, then restores in this process under the native
-  rule, named (7.28; it failed closed until 2026-09-17).  CLOSED
-  2026-09-09, natively, for BOTH containers (sec 11 item 1): the native
+  document-chosen module name is CLOSED 2026-09-09, natively, for BOTH
+  containers (sec 11 item 1).  The ROUTED half of this entry -- the
+  module imported in the guest, a module the guest cannot serve HELD on
+  `host.import` (G1c step (f) 2026-09-04, 7.28) -- was REMOVED
+  2026-09-18 (7.31); the native rule is what closes this, and always
+  was.  The native
   import in `PropertyPythonObject::Restore` -- a document object's Proxy
-  with routing off, a VIEW PROVIDER's Proxy always -- and the legacy
+  and a VIEW PROVIDER's Proxy alike -- and the legacy
   pickle header's module name go through `Base::Type::moduleAllowed`
   first; a refused name is logged with the container's full name and
   the object is left without a Proxy.  A consequence worth knowing: a

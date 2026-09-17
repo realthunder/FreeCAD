@@ -52,9 +52,9 @@ bool installModuleFacades();
 /// reply names it (Part.OCCError).
 PyObject* guestExceptionType(const char* name);
 
-/// A function of the proxy prelude by name (borrowed; the rung 2 proxy
-/// registry: _proxy_new, _proxy_call, _proxy_drop, _proxy_get), or
-/// nullptr with a Python error set.
+/// A function of the proxy prelude by name (borrowed; the proxy
+/// registry: _proxy_call, _proxy_drop, _proxy_get), or nullptr with a
+/// Python error set.
 PyObject* preludeFunction(const char* name);
 
 /// (version, sha256) of the surface this guest was generated from --

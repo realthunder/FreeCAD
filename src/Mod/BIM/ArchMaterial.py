@@ -56,12 +56,6 @@ else:
 
 
 class _ArchMaterialContainer:
-    def __new__(cls, *args, **kwargs):
-        # the sandbox construction dispatch (docs/Sandbox.md 7.6 G1d)
-        from draftobjects.base import new_proxy
-
-        return new_proxy(cls, *args, **kwargs)
-
     "The Material Container"
 
     def __init__(self, obj):
@@ -184,12 +178,6 @@ class _ViewProviderArchMaterialContainer:
 
 
 class _ArchMaterial:
-    def __new__(cls, *args, **kwargs):
-        # the sandbox construction dispatch (docs/Sandbox.md 7.6 G1d)
-        from draftobjects.base import new_proxy
-
-        return new_proxy(cls, *args, **kwargs)
-
     "The Material object"
 
     def __init__(self, obj):
@@ -730,12 +718,6 @@ class _ArchMaterialTaskPanel:
 
 
 class _ArchMultiMaterial:
-    def __new__(cls, *args, **kwargs):
-        # the sandbox construction dispatch (docs/Sandbox.md 7.6 G1d)
-        from draftobjects.base import new_proxy
-
-        return new_proxy(cls, *args, **kwargs)
-
     "The MultiMaterial object"
 
     def __init__(self, obj):

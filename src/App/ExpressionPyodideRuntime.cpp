@@ -344,8 +344,8 @@ public:
                 return false;
             }
         }
-        // Bundled wheels first (FreeCAD's own workbench code packed for
-        // the guest, docs/Sandbox.md sec 5.6), by absolute path; their
+        // Bundled wheels first (FreeCAD's own pure Python packed for the
+        // guest, docs/Sandbox.md sec 5.6), by absolute path; their
         // directories join the reader's roots.  Then the user's package
         // set by lock-file name.
         std::vector<std::string> packageNames;

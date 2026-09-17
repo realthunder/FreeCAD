@@ -984,8 +984,8 @@ PyObject* decodeHostValue(const HandleTable& table, const json& v)
         return nullptr;
     }
     else if (t == FcxWire::TagGuestProxy) {
-        // the guest's Proxy descriptor (write_prop Proxy, a proxy_new
-        // reply): the host stand-in, one per guest proxy
+        // the guest's descriptor for an object it registered: the
+        // host stand-in, one per guest proxy
         return makeGuestProxy(v);
     }
     else if (t == FcxWire::TagGuestMethod) {

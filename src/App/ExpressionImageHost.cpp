@@ -1184,36 +1184,6 @@ bool carriesHandle(const json& v)
 
 }  // namespace
 
-ImageResult ImageHost::proxyNew(const std::string& module,
-                                const std::string& cls,
-                                PyObject* args,
-                                bool alloc,
-                                const App::DocumentObject* owner)
-{
-    return proxyNew(module, cls, args, nullptr, alloc, owner);
-}
-
-ImageResult ImageHost::proxyNew(const std::string& module,
-                                const std::string& cls,
-                                PyObject* args,
-                                PyObject* kwargs,
-                                bool alloc,
-                                const App::DocumentObject* owner)
-{
-    std::lock_guard<std::recursive_mutex> guard(d->mutex);
-    return d->proxyRoundTrip(owner, [&](json& req, ImageResult&) {
-        req["op"] = FcxWire::OpProxyNew;
-        req["mod"] = module;
-        req["cls"] = cls;
-        req["a"] = encodeArgs(d->handles, args);
-        if (kwargs && PyDict_Check(kwargs) && PyDict_Size(kwargs) > 0)
-            req["k"] = encodeHostValue(d->handles, kwargs);
-        if (alloc)
-            req["alloc"] = true;
-        return true;
-    });
-}
-
 ImageResult ImageHost::proxyCall(uint64_t id,
                                  const std::string& hook,
                                  PyObject* args,

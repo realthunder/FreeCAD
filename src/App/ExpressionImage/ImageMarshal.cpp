@@ -332,19 +332,6 @@ static const char ProxyPrelude[] =
     "        inst = PROXIES.pop(pid, None)\n"
     "        if inst is not None:\n"
     "            PROXY_IDS.pop(id(inst), None)\n"
-    "def _proxy_new(mod, cls, args, kw, alloc):\n"
-    // no importlib: the WASI stdlib slice does not carry it
-    "    klass = __import__(mod)\n"
-    "    for part in mod.split('.')[1:]:\n"
-    "        klass = getattr(klass, part)\n"
-    "    for part in cls.split('.'):\n"
-    "        klass = getattr(klass, part)\n"
-    "    if alloc:\n"
-    "        return _proxy_register(klass.__new__(klass))\n"
-    // registered whether or not __init__ did `obj.Proxy = self`: the
-    // instance is the VALUE of `cls(...)` on the host, and Draft's
-    // `Array(None)` is installed later by addObject(..., attach=True)
-    "    return _proxy_register(klass(*args, **kw))\n"
     // A host read of a Proxy attribute (proxy_get): data by value, a
     // method as a descriptor the host binds into a forwarder.  A class
     // object is data (Draft never reads one, but `callable` says yes).
@@ -418,7 +405,7 @@ static const char ProxyPrelude[] =
     "def _gui_add_command(name, obj, activation=None):\n"
     "    if not isinstance(name, str):\n"
     "        raise TypeError('addCommand(name, object[, activation]): name must be a str')\n"
-    "    group = getattr(_gui, '_fcx_group', None) or type(obj).__module__.split('.')[0]\n"
+    "    group = type(obj).__module__.split('.')[0]\n"
     "    _gui_pending.append((name, obj, group, activation))\n"
     "    _gui_flush_commands()\n"
     "def _gui_flush_commands():\n"
@@ -536,9 +523,9 @@ static const char ProxyPrelude[] =
     // the wheel registers its own proxies (task watchers, the main
     // window's close hook) with the hook lists it names
     "_gui._proxy_register = _proxy_register\n"
-    // The guest has no event loop: what `QTimer.singleShot` queued (the
-    // PySide shim in the fcx_draft wheel) runs when the request that
-    // queued it is done -- the dispatcher calls this after every
+    // The guest has no event loop: what `QTimer.singleShot` queued (a
+    // bundled wheel's PySide shim, where one carries it) runs when the
+    // request that queued it is done -- the dispatcher calls this after every
     // exec, evaluate and hook (Draft's todo.delay relies on the order).
     "def _drain_timers():\n"
     "    import sys\n"

@@ -364,155 +364,6 @@ void DlgDocumentPermissions::revokeSelected()
     refresh();
 }
 
-void DlgDocumentPermissions::askHostImport(App::Document *doc)
-{
-#ifdef FC_EXPR_IMAGE_HOST
-    if (!doc || !Gui::getMainWindow())
-        return;
-    auto modules = App::ExpressionSandbox::deferredProxyModules(doc);
-    if (modules.empty())
-        return;
-
-    auto &rt = Sec::Runtime::instance();
-    const std::string principal = rt.documentPrincipal(doc);
-
-    // A document's principal is a hash over its CODE (2.1), and a file
-    // with no expressions at all -- most Path and Fem jobs -- hashes to
-    // the same id as every other code-free file.  "Per document" is then
-    // a fiction, so the honest unit of the answer is the MODULE: the
-    // grant is keyed to the EXACT submodule the file named (never a
-    // package, never "*"), and the wording below says a remembered
-    // answer covers that module in any document carrying no expressions
-    // (docs/Sandbox.md 7.28, "the code-free principal").
-    Sec::DocumentHashBuilder codeFree;
-    const bool shared = (principal == codeFree.principalId());
-
-    int total = 0;
-    for (const auto &m : modules)
-        total += m.second;
-
-    QDialog dlg(Gui::getMainWindow());
-    dlg.setWindowTitle(tr("Run this document's Python here?"));
-    auto layout = new QVBoxLayout(&dlg);
-
-    auto text = new QLabel(
-            tr("<b>%1</b> saved a Python Proxy for %n object(s) in modules the expression "
-               "sandbox has no package for. Their code can only run in this process, with "
-               "the reach of the whole application -- the sandbox does not contain it. "
-               "Nothing of theirs has run yet.", "", total)
-                    .arg(QString::fromUtf8(doc->Label.getValue()).toHtmlEscaped()),
-            &dlg);
-    text->setWordWrap(true);
-    layout->addWidget(text);
-
-    auto tree = new QTreeWidget(&dlg);
-    tree->setColumnCount(2);
-    tree->setHeaderLabels({tr("Module"), tr("Objects")});
-    tree->setRootIsDecorated(false);
-    for (const auto &m : modules) {
-        auto item = new QTreeWidgetItem(tree);
-        item->setText(0, QString::fromStdString(m.first));
-        item->setText(1, QString::number(m.second));
-        item->setCheckState(0, Qt::Checked);
-        item->setData(0, RoleTarget, QString::fromStdString(m.first));
-    }
-    tree->resizeColumnToContents(0);
-    layout->addWidget(tree, 1);
-
-    QString hintText = tr("The answer is per module. A module left unchecked stays "
-                          "unanswered: its objects keep no Proxy, and the padlock in the "
-                          "status bar keeps the tally.");
-    if (shared)
-        hintText += QLatin1Char(' ')
-            + tr("This document carries no expressions, and documents without any are told "
-                 "apart by nothing. A remembered answer is therefore recorded against the "
-                 "module named above, exactly as written, and covers that module in any "
-                 "document that carries no expressions.");
-    auto hint = new QLabel(hintText, &dlg);
-    hint->setWordWrap(true);
-    layout->addWidget(hint);
-
-    // the scope verbs of the permissions panel, in the panel's order
-    QString scopeChosen;
-    bool allowChosen = false;
-    auto buttons = new QHBoxLayout;
-    auto addBtn = [&](const QString &label, bool allow, const char *scope) {
-        auto btn = new QPushButton(label, &dlg);
-        connect(btn, &QPushButton::clicked, &dlg, [&, allow, scope]() {
-            allowChosen = allow;
-            scopeChosen = QString::fromLatin1(scope);
-            dlg.accept();
-        });
-        buttons->addWidget(btn);
-    };
-    addBtn(tr("Run once"), true, "once");
-    addBtn(tr("Run this session"), true, "session");
-    // Persisted.  For a document with code the grant is keyed to THAT
-    // file's hash and is void the moment the file is edited; for a
-    // code-free one it is a MODULE grant at the exact submodule, which
-    // the hint above spells out.
-    addBtn(tr("Always run"), true, "always");
-    addBtn(tr("Never run"), false, "always");
-    buttons->addStretch();
-    auto later = new QPushButton(tr("Not now"), &dlg);
-    connect(later, &QPushButton::clicked, &dlg, &QDialog::reject);
-    buttons->addWidget(later);
-    layout->addLayout(buttons);
-
-    if (dlg.exec() != QDialog::Accepted || scopeChosen.isEmpty())
-        return;  // held, and the padlock says so
-
-    bool answered = false;
-    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
-        auto item = tree->topLevelItem(i);
-        if (item->checkState(0) != Qt::Checked)
-            continue;
-        auto target = item->data(0, RoleTarget).toString().toStdString();
-        try {
-            // metadata only, never matched -- but naming one file against
-            // the code-free principal would misattribute a grant that
-            // covers every such document
-            const std::string label = shared
-                ? std::string("(any document without expressions)")
-                : std::string(doc->Label.getValue());
-            const std::string path =
-                shared ? std::string() : std::string(doc->FileName.getValue());
-            rt.grant(principal, Sec::Permission::HostImport, target, allowChosen,
-                     scopeChosen.toLatin1().constData(), label, path);
-        }
-        catch (const Base::Exception &e) {
-            QMessageBox::warning(Gui::getMainWindow(), tr("Expression sandbox"),
-                                 QString::fromUtf8(e.what()));
-            continue;
-        }
-        rt.clearPending(principal, Sec::Permission::HostImport, target);
-        answered = true;
-    }
-    if (!answered)
-        return;
-
-    // the grant is what re-runs the held restore -- the file is not reopened
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    try {
-        if (App::ExpressionSandbox::resolveDeferredProxies(doc) > 0) {
-            for (App::DocumentObject *obj : App::ExpressionSandbox::hostProxies(doc))
-                obj->enforceRecompute();
-            doc->recompute();
-        }
-    }
-    catch (const Base::Exception &e) {
-        // a Proxy's own execute() is the file's code: it may throw, and
-        // the cursor must come back either way
-        e.ReportException();
-    }
-    QApplication::restoreOverrideCursor();
-    if (scopeChosen == QLatin1String("once"))
-        rt.clearOnce();
-#else
-    (void)doc;
-#endif
-}
-
 ////////////////////////////////////////////////////////////////////////////////////
 //
 // PermissionIndicator
@@ -654,33 +505,6 @@ void SandboxIndicator::updateState()
                    "not a wall.");
     }
 
-    // What the sandbox did NOT take: a Proxy whose module no guest
-    // wheel carries restores in this process and is named here, so the
-    // shut padlock never claims more than it holds (docs/Sandbox.md
-    // 7.28).
-    QString hosted;
-#ifdef FC_EXPR_IMAGE_HOST
-    if (confined) {
-        if (App::Document *doc = App::GetApplication().getActiveDocument()) {
-            auto objs = App::ExpressionSandbox::hostProxies(doc);
-            if (!objs.empty()) {
-                QStringList names;
-                for (App::DocumentObject *obj : objs) {
-                    if (names.size() == 8) {
-                        names << QStringLiteral("...");
-                        break;
-                    }
-                    names << QString::fromUtf8(obj->Label.getValue()).toHtmlEscaped();
-                }
-                hosted = tr("<b>%n object(s) of the active document run their Python "
-                            "Proxy in this process</b>, because the sandbox has no "
-                            "module for them: %1", "", int(objs.size()))
-                             .arg(names.join(QStringLiteral(", ")));
-            }
-        }
-    }
-#endif
-
     QString trade = tr("Sandboxed evaluation is slower per formula (a few "
                        "microseconds each); model recompute is dominated by "
                        "geometry, not by expressions.");
@@ -693,8 +517,6 @@ void SandboxIndicator::updateState()
         action = tr("Click to evaluate in the sandbox instead. The change "
                     "takes effect immediately -- nothing restarts.");
 
-    if (!hosted.isEmpty())
-        state += QStringLiteral("<br/><br/>") + hosted;
     setToolTip(QStringLiteral("%1<br/><br/>%2<br/><br/>%3")
                        .arg(state, trade, action));
 }

@@ -550,14 +550,6 @@ Application::Application(bool GUIenabled)
                                     "Please check report view for more details."));
         });
 
-        // A saved Proxy the sandbox guest cannot serve is HELD until the
-        // user answers for its module (docs/Sandbox.md 7.28).  Asked once
-        // the open is complete, so the modal never lands mid-restore.
-        App::GetApplication().signalFinishOpenDocument.connect([]() {
-            for (auto doc : App::GetApplication().getDocuments())
-                Gui::Dialog::DlgDocumentPermissions::askHostImport(doc);
-        });
-
         // install the last active language
         ParameterGrp::handle hPGrp =
             App::GetApplication().GetUserParameter().GetGroup("BaseApp");

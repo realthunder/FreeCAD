@@ -14,7 +14,7 @@ def attr(name):
     """`FreeCADGui.<name>` for a name the prelude does not define: the
     forms' names, else the AttributeError `hasattr` expects."""
     if name in ("Control", "PySideUic", "UiLoader", "getMainWindow", "runCommand",
-                "InputHint", "HintManager", "getIcon", "_run_initgui", "activeDocument",
+                "InputHint", "HintManager", "getIcon", "activeDocument",
                 "getDocument", "doCommand", "doCommandGui", "addModule", "Command",
                 "addWorkbenchManipulator", "removeWorkbenchManipulator"):
         return globals()[name]
@@ -955,72 +955,3 @@ def getDocument(name):
     if not isinstance(name, str):
         name = name.Name
     return GuiDocument(FreeCAD.getDocument(name))
-
-
-# ---- the InitGui runner (docs/Sandbox.md 7.9, G2b) ----
-
-_GROUPS = {}
-
-
-def _run_initgui(source, path, name, tops):
-    """Run a workbench's `InitGui.py` here, the way the host's
-    `FreeCADGuiInit.RunInitGuiPy` does natively: the file's text exec'd
-    in a scope of its own with `FreeCAD`, `App`, `Gui`, `FreeCADGui`,
-    `Workbench`, `Log`, `Err`, `Msg` as globals.  `name` is the module
-    (Draft, BIM) and `tops` the top-level packages its wheel carries:
-    a command whose class lives in one of them registers under that
-    module as its group, as the host derives it from the caller's
-    `Mod/<Group>/` path natively.  A failure is the caller's to log."""
-    import FreeCAD
-    import FreeCADGui
-
-    for top in tops:
-        _GROUPS[str(top)] = str(name)
-    if not isinstance(getattr(FreeCAD, "__unit_test__", None), list):
-        FreeCAD.__unit_test__ = []
-    _install_group_rule()
-    ns = {
-        "__name__": "InitGui",
-        "__file__": path,
-        "__builtins__": __builtins__,
-        "FreeCAD": FreeCAD,
-        "App": FreeCAD,
-        "Gui": FreeCADGui,
-        "FreeCADGui": FreeCADGui,
-        "Workbench": FreeCADGui.Workbench,
-        "Log": FreeCAD.Console.PrintLog,
-        "Err": FreeCAD.Console.PrintError,
-        "Msg": FreeCAD.Console.PrintMessage,
-    }
-    FreeCADGui._fcx_group = str(name)
-    try:
-        exec(compile(source, path, "exec"), ns)
-    finally:
-        FreeCADGui._fcx_group = None
-
-
-def _install_group_rule():
-    """`FreeCADGui.addCommand` deriving a command's group from the
-    wheel its class came from, once: the prelude's addCommand reads
-    `FreeCADGui._fcx_group` at the call, so this wrapper sets it for
-    the call from the class's top-level package."""
-    import FreeCADGui
-
-    original = FreeCADGui.addCommand
-    if getattr(original, "_fcx_grouped", False):
-        return
-
-    def addCommand(name, obj, activation=None):
-        top = type(obj).__module__.split(".")[0]
-        group = _GROUPS.get(top)
-        if group is None:
-            return original(name, obj, activation)
-        prior = getattr(FreeCADGui, "_fcx_group", None)
-        FreeCADGui._fcx_group = group
-        try:
-            return original(name, obj, activation)
-        finally:
-            FreeCADGui._fcx_group = prior
-
-    addCommand._fcx_grouped = True
-    FreeCADGui.addCommand = addCommand

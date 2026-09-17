@@ -3514,14 +3514,6 @@ void Document::restore(Base::XMLReader &reader,
 
 bool Document::afterRestore(bool checkPartial) {
     Base::FlagToggler<> flag(globalIsRestoring, false);
-#ifdef FC_EXPR_IMAGE_HOST
-    // A saved Proxy whose module the sandbox guest cannot serve is HELD
-    // unrestored (docs/Sandbox.md 7.28).  Here is where it is answered:
-    // the document's code is all in, so the principal its grants are
-    // keyed by is final, and onDocumentRestored() below -- which a
-    // restored Proxy answers -- has not run yet.
-    ExpressionSandbox::resolveDeferredProxies(this);
-#endif
     if(!afterRestore(d->objectArray,checkPartial)) {
         FC_WARN("Reload partial document " << getName());
         GetApplication().signalPendingReloadDocument(*this);

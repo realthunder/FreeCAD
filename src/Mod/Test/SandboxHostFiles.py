@@ -63,20 +63,15 @@ PARAMS = "User parameter:BaseApp/Preferences/Expression/Sandbox"
 RECENT_FILES = "User parameter:BaseApp/Preferences/RecentFiles"
 
 # A host command that THROWS while it runs through the guest's
-# `gui.cmd.run` wedges the guest: the call never comes back, and the run
-# sits there until something kills it.  Reproduced with the refusal
-# converted to a reply at the op, and again with the session's decision
-# pre-answered as a deny, so it is neither an unconverted exception nor
-# the prompt path -- it is the reentrancy itself (host -> the guest's
-# Activated -> a host op -> a host command).  That is a bridge defect,
-# not a chokepoint one: the primitives are proven in C++
-# (ExpressionSecurityRuntimeTest, six cases).  The guest-driven cases
-# below stay written and stay skipped until it is fixed.
-REENTRANT = (
-    "a host command that throws under gui.cmd.run wedges the guest"
-    " (docs/Sandbox.md 7.29, open); the chokepoints themselves are"
-    " covered by ExpressionSecurityRuntimeTest"
-)
+# `gui.cmd.run` used to stall these four cases.  Named under gdb
+# 2026-09-17: the throw was not unwinding at all -- Command::_invoke
+# caught it and popped a modal QMessageBox (Command.cpp:666) inside the
+# op.  Two distinct things were wrong.  The refusal was SWALLOWED, so
+# gui.cmd.run replied ok(true) and the guest was told a refused command
+# had run -- true whether or not anyone answers the dialog.  And under
+# Xvfb nobody answers, so the run also sat.  _invoke now rethrows while
+# a principal scope is active.  A modal a command raises as its normal
+# work is untouched: test_d drives Std_Open's picker on purpose.
 
 # The guest side: a command whose Activated runs one named task as the
 # SESSION principal -- the principal that, before F1, reached host files
@@ -300,7 +295,7 @@ class SandboxHostFilesTest(unittest.TestCase):
         self.assertIsNone(err, "task %s raised in the guest: %s%s" % (task, err, context))
         return self.read("fcx_hostfiles.results.get(%r)" % task)
 
-    def drive(self, task, action, timeout=5.0, grace=25.0):
+    def drive(self, task, action, timeout=5.0, grace=25.0, read=True):
         """Run the guest's `task` while `action(dialog)` answers the host
         modal from a timer inside the nested loop.
 
@@ -335,6 +330,12 @@ class SandboxHostFilesTest(unittest.TestCase):
 
         QtCore.QTimer.singleShot(30, poll)
         self.activate(task, read=False)
+        if not read:
+            # The read-back evaluates under self.owner, and a case that
+            # closed its document has no live owner left: the evaluation
+            # would fall back to the session and ask host.import for the
+            # guest module.  Such a case judges by effect and audit.
+            return outcome, None
         got = self.outcome(task, " (dialog drive: %s)" % outcome)
         return outcome, got
 
@@ -415,7 +416,6 @@ class SandboxHostFilesTest(unittest.TestCase):
     # ---- 1. host code from a guest: host.exec --------------------------
 
     def test_a_macro_from_guest_refused(self):
-        self.skipTest(REENTRANT)
         # Answer the session's decision up front, as a DENY.  The catalog
         # makes host.exec PROMPT for a session, and an unanswered prompt
         # is a question with nobody at the keyboard: this gate is about
@@ -429,18 +429,20 @@ class SandboxHostFilesTest(unittest.TestCase):
         lines = self.new_audit("host.exec", os.path.basename(self.macro))
         self.assertTrue(lines, "no host.exec audit line naming the macro; got %r" % got)
         self.assertEqual(lines[0]["principal"], "session")
-        self.assertIn(lines[0]["decision"], ("prompt", "deny"))
-        # the session is asked, not refused outright: the row is
-        # promptable, so it is recorded for the panel
+        self.assertEqual(lines[0]["decision"], "deny")
+        # Nothing is left pending, and that is the design: a pending row is
+        # the PROMPT path's record for the panel (Runtime::check calls
+        # addPending only when the decision is promptable), and this case
+        # answered for the session up front with a deny.  The refusal is
+        # measured by the effect and the audit line above.
         pend = [
             p
             for p in self.Sec.pending()
             if p["permission"] == "host.exec" and self.macro in p["target"]
         ]
-        self.assertTrue(pend, "the refusal left no pending request to answer")
+        self.assertFalse(pend, "an answered deny still queued a question: %r" % pend)
 
     def test_b_macro_runs_once_granted(self):
-        self.skipTest(REENTRANT)
         self.open_in_editor(self.macro)
         self.activate("macro_direct")
         self.assertEqual(self.marker(), "")
@@ -452,7 +454,6 @@ class SandboxHostFilesTest(unittest.TestCase):
     # ---- 2. a host file read from a guest: fs.read ---------------------
 
     def test_c_recent_file_from_guest_refused(self):
-        self.skipTest(REENTRANT)
         # seed the recent list; the action observes its group and restores
         grp = FreeCAD.ParamGet(RECENT_FILES)
         grp.SetString("MRU0", self.target)
@@ -474,7 +475,6 @@ class SandboxHostFilesTest(unittest.TestCase):
     # ---- 3. consent is a capability: a picked path passes --------------
 
     def test_d_open_picked_is_blessed(self):
-        self.skipTest(REENTRANT)
         from PySide import QtWidgets
 
         FreeCAD.closeDocument(self.doc.Name)
@@ -488,16 +488,16 @@ class SandboxHostFilesTest(unittest.TestCase):
             edit.setText(self.target)
             w.accept()
 
-        outcome, got = self.drive("open_picked", pick_it)
+        outcome, got = self.drive("open_picked", pick_it, read=False)
         if outcome == ["no modal"]:
             self.skipTest("Std_Open showed no modal on this box")
         self.assertEqual(outcome, ["ok"], "driving the picker failed: %r" % outcome)
         self.settle()
         # the path the user chose in the guest's own nested modal opened,
         # with no grant of any kind
-        self.assertIn(
-            "SandboxHostFilesA", FreeCAD.listDocuments(), "a blessed path was refused (%r)" % got
-        )
+        # the document takes its name from the file it was saved as, not
+        # from the name it carried when it was built
+        self.assertIn("target", FreeCAD.listDocuments(), "a blessed path was refused (%r)" % got)
         self.assertFalse(
             [
                 p

@@ -34,16 +34,14 @@ inline const char* const OpEval = "eval";
 // host pushes workbench Python into the guest before a package loader
 // exists (tests; G1's loader later).  Reply {ok:true} or the error.
 inline const char* const OpExec = "exec";
-// Rung 2 (docs/Sandbox.md 7.6, G1c): a scripted object's Proxy lives in
-// the guest and the host holds a stand-in in the Proxy property.
-// {op:"proxy_new", mod, cls, a:[args], k?, alloc?, owner_h?}: import
-// `mod`, call `cls(*args, **k)` -- or only `cls.__new__(cls)` with
-// alloc, the Restore path -- and reply with the proxy's descriptor
-// (TagGuestProxy below); the instance is registered whether or not
-// `__init__` installed it as a Proxy (Draft's `Array(None)` is
-// installed by addObject(attach=True), which then reads `attach` off
-// the stand-in).  The construction dispatch (docs/Sandbox.md 7.6 G1d)
-// is this op from a class's host `__new__`.
+// Guest-resident objects (docs/Sandbox.md 7.6, G1c): a handler the
+// guest registers -- a command, a workbench, a selection observer --
+// lives in the guest, and the host holds a stand-in for it.  The guest
+// names it with TagGuestProxy below, as the value of a registration
+// op, and the host drives it back with the three ops here.  Routing a
+// scripted object's Proxy into the guest was removed 2026-09-18
+// (docs/Sandbox.md 7.31), and the proxy_new op with it: installed code
+// is not a sandbox target, so a Proxy restores natively.
 // {op:"proxy_call", id, m, a:[args], k?, owner_h?}: call hook `m` of the
 // registered proxy `id` with the decoded args (the object rides as a
 // handle, exactly the native `execute(self, obj)` signature) and reply
@@ -55,7 +53,6 @@ inline const char* const OpExec = "exec";
 // `v` is a value, never a handle (a handle outlives no transaction).
 // Any host->guest request may carry "pd":[ids], proxies whose host
 // stand-in died: the guest drops them.
-inline const char* const OpProxyNew = "proxy_new";
 inline const char* const OpProxyCall = "proxy_call";
 inline const char* const OpProxyGet = "proxy_get";
 inline const char* const OpProxySet = "proxy_set";
@@ -224,12 +221,13 @@ inline const char* const TagHandle = "h";
 // `shape.ancestorsOfType(v, Part.Edge)` -- crosses as {"t":"ty",
 // "q":"Part.Edge"} and decodes on the host to the declared object
 inline const char* const TagType = "ty";
-// A guest-resident Proxy (rung 2).  Guest -> host, as the value of
-// `write_prop Proxy` or a proxy_new reply: {"t":"gproxy", "id":N,
-// "mod":"draftobjects.wire", "cls":"Wire", "hooks":[names]} -- the host
-// builds the stand-in from it (hooks = the FeaturePython hook names the
-// class defines, plus dumps/loads).  Host -> guest (a Proxy read, an
-// argument): {"t":"gproxy", "id":N} resolves to the registered instance.
+// A guest-resident object the host holds a stand-in for.  Guest ->
+// host, as the value of a registration op (a command, a workbench, a
+// selection observer): {"t":"gproxy", "id":N, "mod":"freecad.mywb",
+// "cls":"MyCommand", "hooks":[names]} -- the host builds the stand-in
+// from it (hooks = the hook names the class defines, plus dumps/loads).
+// Host -> guest (an argument): {"t":"gproxy", "id":N} resolves to the
+// registered instance.
 inline const char* const TagGuestProxy = "gproxy";
 // A callable attribute of a guest proxy, the reply to a proxy_get
 // whose value is a method: {"t":"gmethod", "id":N, "n":"name"} -- the
