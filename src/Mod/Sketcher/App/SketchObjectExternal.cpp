@@ -2014,6 +2014,11 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 // end points for projection
                 firstPoint = BRep_Tool::Pnt(TopExp::FirstVertex(edge));
                 lastPoint = BRep_Tool::Pnt(TopExp::LastVertex(edge));
+                // A full circle or ellipse by its parameter range: an arc
+                // whose ends nearly meet is an arc (upstream d0c7ab7d62).
+                bool fullPeriod = curve.IsPeriodic()
+                    && fabs(curve.LastParameter() - curve.FirstParameter() - curve.Period())
+                        < Precision::PConfusion();
 
                 if (curve.GetType() == GeomAbs_Circle) {
                     done = true;
@@ -2117,7 +2122,7 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                         gp_Ax2 refFrameEllipse(gp_Pnt(gp_XYZ(p[0], p[1], p[2])), gp_Vec(0, 0, 1), vecMajorAxis);  // NB: force normal of ellipse to be normal of sketch's plane.
                         Handle(Geom_Ellipse) curve = new Geom_Ellipse(refFrameEllipse, circle.Radius(), minorRadius);
 
-                        if (firstPoint.SquareDistance(lastPoint) < Precision::Confusion()) {
+                        if (fullPeriod) {
                             Part::GeomEllipse* ellipse = new Part::GeomEllipse();
                             ellipse->setHandle(curve);
                             GeometryFacade::setConstruction(ellipse, true);
@@ -2205,7 +2210,7 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
 
                     if ((RDest - rDest) < (double) Precision::Confusion()) {  // projection is a circle
                         Handle(Geom_Circle) hCircle = new Geom_Circle(destCurveAx2, 0.5 * (rDest + RDest));
-                        if (firstPoint.SquareDistance(lastPoint) < Precision::Confusion()) {
+                        if (fullPeriod) {
                             Part::GeomCircle* circle = new Part::GeomCircle();
                             circle->setHandle(hCircle);
                             GeometryFacade::setConstruction(circle, true);
@@ -2243,7 +2248,7 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                             elipsDest.SetMajorRadius(destAxisMajor.Magnitude());
                             elipsDest.SetMinorRadius(destAxisMinor.Magnitude());
                             Handle(Geom_Ellipse) curve = new Geom_Ellipse(elipsDest);
-                            if (firstPoint.SquareDistance(lastPoint) < Precision::Confusion()) {
+                            if (fullPeriod) {
                                 Part::GeomEllipse* ellipse = new Part::GeomEllipse();
                                 ellipse->setHandle(curve);
                                 GeometryFacade::setConstruction(ellipse, true);

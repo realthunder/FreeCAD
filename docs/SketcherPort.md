@@ -671,6 +671,17 @@ one per edge. It also carries `e1a431d5ee` (element access through
 in `SketchObjectSymmetric.cpp` are on and pass (110/110); the Python
 suite is unchanged (103 OK).
 
+### A projected circle is full by its parameter range (upstream `d0c7ab7d62`, adapted)
+
+Upstream's commit adds Bezier and Offset curves to `processEdge2`; the fork's
+`importProjected` already converts any other curve type to a B-spline
+(`GeomCurve::toBSpline`), and a probe with an offset arc, a Bezier and an
+offset B-spline imports all three. What is taken is the other half: a circle
+or ellipse is full when its parameter range spans its period, not when its
+ends happen to lie within tolerance, so an arc of 360 deg minus a hair
+projects as an arc. Applied at the three ellipse-projection sites of
+`importEdge`; the plain circle site already had a length test.
+
 ### External projection: probed, nothing to take
 
 `0aed23ca81` (#19582, a B-spline from another sketch could not be projected),
