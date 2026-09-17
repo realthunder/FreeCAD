@@ -179,18 +179,49 @@ exposed a crash in the search that the built order had kept out of reach
 
 ## Where the time goes now
 
-`perf` on the k=40 lattice, angle path, 2026-09-17, as a share of `build()`:
+`perf` on the k=40 lattice, angle path, 2026-09-17, as a share of `build()`,
+before the wires were assembled directly (below):
 
 | stage | share | what it is |
 |---|---|---|
-| `addWire()` | 43% | `ShapeFix_Wire` + `BRepBuilderAPI_MakeFace` + self-intersection check per emitted wire |
-| `splitEdges()` | 40% | R-tree nearest queries in `add()` (about half), then a wire+face+`ShapeAnalysis_Wire` per candidate pair (since replaced, see below) |
-| `buildAdjacentList()` | 16% | R-tree nearest queries |
+| `addWire()` | 45% | `ShapeFix_Wire` + `BRepBuilderAPI_MakeFace` + `BRepGProp` + self-intersection check per emitted wire |
+| `splitEdges()` | 30% | R-tree nearest queries in `add()` |
+| `buildAdjacentList()` | 22% | R-tree nearest queries |
 | `findAngleWires()` | below 0.3% | the traversal |
 
 On 200 nested circles (every bounding box contains the smaller ones, no
 intersection at all) 83% was `checkIntersection()`: the per-pair face
 construction. That is gone since e2a5ccef1f, below.
+
+## The wires are assembled from the darts
+
+`addWire()` used to hand every wire to `ShapeFix_Wire`, make a face of it,
+and check the face for self-intersection and area. The traversal has
+already settled all of that: an orbit's darts are connected and in order,
+`add()` made every coincident vertex the same `TopoDS_Vertex` when the edge
+came in, the edges were split at every crossing before the walk so the
+boundary cannot cross itself, and the signed area that admitted the orbit
+is the area the face check would have measured. `makeDartWire()` now builds
+the wire with `BRep_Builder` straight from the darts, and an orbit wire
+skips the checks. The search path keeps them; its wires are candidates,
+not face boundaries.
+
+The one thing the fixer had been doing was orienting. A dart is defined by
+the parametric ends of its edge, but the edge as stored may be `REVERSED`
+(`connectEdge()` rebuilds edges through `BRepLib_MakeWire`, which flips
+them to connect), and a merged chain is stored the way round it was walked
+when it was made. Adding the edges as stored produced 82 negative cells in
+the k=20 lattice and turned three overlapping rectangles into areas of -20
+and -6 that still summed to 217. The orientation now comes from the dart:
+`FORWARD` when it leaves the parametric start, and a chain is reversed when
+the dart leaves its tail. Pinned by
+`test_joinWires_orients_reversed_input_edges` and by the exact per-region
+areas in `test_joinWires_overlapping_rectangles`.
+
+k=40 goes from 0.38 s to 0.20 s, 200 nested circles to 0.008 s, and the
+element maps over the 38 fixture sections are identical, indices included.
+What is left is almost entirely the R-tree nearest queries: `add()` inside
+`splitEdges()` about 55% of `build()`, `buildAdjacentList()` about 41%.
 
 ## The 2D intersector, and what names follow
 
