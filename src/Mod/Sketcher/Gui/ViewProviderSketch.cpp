@@ -26,6 +26,8 @@
 
 #ifndef _PreComp_
 # include <cfloat>
+# include <Bnd_Box.hxx>
+# include <BRepBndLib.hxx>
 # include <TColgp_Array1OfPnt.hxx>
 # include <BRep_Tool.hxx>
 # include <Poly_Polygon3D.hxx>
@@ -6608,6 +6610,58 @@ Restart:
                         }
                     }
                     break;
+                case Group:
+                case Text:
+                    {
+                        // The group is outlined by the box its members fit in, inflated a
+                        // little so the outline does not sit on the geometry.
+                        SoCoordinate3 *coords = static_cast<SoCoordinate3 *>(sep->getChild(2));
+
+                        Bnd_Box totalBBox;
+                        for (int j = 0; Constr->hasElement(j); ++j) {
+                            int geoId = Constr->getGeoId(j);
+                            if (geoId < -extGeoCount || geoId >= intGeoCount) {
+                                continue;
+                            }
+                            const Part::Geometry *geo = GeoById(*geomlist, geoId);
+                            if (!geo) {
+                                continue;
+                            }
+                            TopoDS_Shape shape = geo->toShape();
+                            if (!shape.IsNull()) {
+                                BRepBndLib::Add(shape, totalBBox, false);
+                            }
+                        }
+
+                        SbVec3f *points = coords->point.startEditing();
+                        if (totalBBox.IsVoid() || !totalBBox.HasFinitePart()) {
+                            // nothing to outline: collapse the rectangle to a point
+                            for (int j = 0; j < 5; ++j) {
+                                points[j].setValue(0.0f, 0.0f, 0.0f);
+                            }
+                        }
+                        else {
+                            gp_Pnt minPnt = totalBBox.CornerMin();
+                            gp_Pnt maxPnt = totalBBox.CornerMax();
+                            double width = maxPnt.X() - minPnt.X();
+                            double height = maxPnt.Y() - minPnt.Y();
+                            // 5% of the average dimension, so the offset is uniform
+                            double offset = (width + height) / 2.0 * 0.05;
+
+                            float x0 = minPnt.X() - offset;
+                            float y0 = minPnt.Y() - offset;
+                            float x1 = maxPnt.X() + offset;
+                            float y1 = maxPnt.Y() + offset;
+
+                            points[0] = SbVec3f(x0, y0, zConstr);
+                            points[1] = SbVec3f(x1, y0, zConstr);
+                            points[2] = SbVec3f(x1, y1, zConstr);
+                            points[3] = SbVec3f(x0, y1, zConstr);
+                            points[4] = points[0];
+                        }
+                        coords->point.finishEditing();
+                    }
+                    break;
                 case Symmetric:
                     {
                         assert(Constr->First >= -extGeoCount && Constr->First < intGeoCount);
@@ -7023,6 +7077,29 @@ void ViewProviderSketch::rebuildConstraintsVisual(void)
                 sep->addChild(new SoInfo());
 
                 // remember the type of this constraint node
+                edit->vConstrType.push_back((*it)->Type);
+            }
+            break;
+            case Group:
+            case Text:
+            {
+                // A group is drawn as the dashed rectangle its members fit in.
+
+                // #define CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL 0
+                sep->addChild(mat);
+
+                SoDrawStyle *drawStyle = new SoDrawStyle();
+                drawStyle->linePattern = 0x0f0f; // a 50% dashed pattern
+                sep->addChild(drawStyle);
+
+                SoCoordinate3 *coords = new SoCoordinate3();
+                coords->point.setNum(5); // the four corners, the first one repeated
+                sep->addChild(coords);
+
+                SoLineSet *lineSet = new SoLineSet();
+                lineSet->numVertices.set1Value(0, 5);
+                sep->addChild(lineSet);
+
                 edit->vConstrType.push_back((*it)->Type);
             }
             break;
