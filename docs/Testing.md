@@ -23,7 +23,10 @@ Two traps when running the suites (2026-09-09): give the Python suite and
 -- the expression routing suites in `Tests_run` flip
 `Expression/Sandbox:Evaluate` in the shared `user.cfg` while they run, and
 the Python suite then restores every Proxy through the sandbox guest (46
-failures that vanish alone); and the home directory must **exist** before
+failures that vanish alone, on 2026-09-09; since 2026-09-17 a Proxy whose
+module the guest cannot serve restores natively instead, docs/Sandbox.md
+7.28, and what remains under routing is `TestArch`'s 11 guest-behaviour
+cases); and the home directory must **exist** before
 the run, or FreeCAD falls back to the real one.  `Tests_run` gained
 `ProxyImport.*` (7) and four `TypeImport.*` cases on 2026-09-09 (the
 Proxy import rule, docs/Sandbox.md sec 11 item 1); the per-binary counts

@@ -41,6 +41,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -50,6 +51,7 @@ typedef struct _object PyObject;
 
 namespace App
 {
+class Document;
 class DocumentObject;
 
 namespace ExpressionSandbox
@@ -76,10 +78,37 @@ AppExport uint64_t guestProxyId(PyObject* obj);
  * else a RuntimeError naming it, or the image being unavailable -- and
  * the caller fails closed.  `owner` is the object being restored; its
  * document is the principal.  Caller holds the GIL.
+ *
+ * With `unserved` given, a module the guest CANNOT SERVE -- its import
+ * there raises ModuleNotFoundError: no wheel carries it (docs/Sandbox.md
+ * 7.28) -- is not an error: nullptr is returned with NO Python error
+ * and `*unserved` says why, for the caller to restore the Proxy in this
+ * process under the native import rule and say so.  Asked once per
+ * module per guest boot (guestServesModule).  Any other failure still
+ * raises, and the caller still fails closed.
  */
 AppExport PyObject* restoreGuestProxy(const std::string& module,
                                       const std::string& cls,
-                                      const App::DocumentObject* owner);
+                                      const App::DocumentObject* owner,
+                                      std::string* unserved = nullptr);
+
+/** Whether the guest can import `module` (docs/Sandbox.md 7.28): true
+ * when the import succeeds or fails with anything but
+ * ModuleNotFoundError (a module that is there and broken is the guest's
+ * to report, not a reason to leave it); false when no wheel in the
+ * guest carries it, with the guest's message in `*why`.  One round trip
+ * per module per guest boot, memoized; a name that is not a dotted
+ * identifier is refused without asking.  Caller holds the GIL.
+ */
+AppExport bool guestServesModule(const std::string& module, std::string* why = nullptr);
+
+/** The objects of `doc` whose Proxy was restored in this process while
+ * routing was on, because the guest could not serve its module (the
+ * fallback of docs/Sandbox.md 7.28): what the padlock and
+ * `FreeCAD.ExpressionSandbox.hostProxies` show.  Empty when routing is
+ * off or every Proxy is a stand-in.
+ */
+AppExport std::vector<App::DocumentObject*> hostProxies(const App::Document* doc);
 
 /** The construction dispatch (docs/Sandbox.md 7.6 G1d): a scripted
  * object class's host `__new__` calls this with the class and the

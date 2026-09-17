@@ -26,6 +26,7 @@
 
 # include <QApplication>
 # include <QDialogButtonBox>
+# include <QEvent>
 # include <QHBoxLayout>
 # include <QHeaderView>
 # include <QIcon>
@@ -44,6 +45,7 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ExpressionEvaluator.h>
+#include <App/ExpressionGuestProxy.h>
 #include <App/ExpressionSecurityRuntime.h>
 #include <Base/Interpreter.h>
 
@@ -457,6 +459,13 @@ SandboxIndicator::SandboxIndicator(QWidget *parent)
 
 SandboxIndicator::~SandboxIndicator() = default;
 
+bool SandboxIndicator::event(QEvent *e)
+{
+    if (e->type() == QEvent::ToolTip)
+        updateState();
+    return QToolButton::event(e);
+}
+
 void SandboxIndicator::updateState()
 {
     auto status = App::ExpressionSandbox::sandboxStatus();
@@ -496,6 +505,33 @@ void SandboxIndicator::updateState()
                    "not a wall.");
     }
 
+    // What the sandbox did NOT take: a Proxy whose module no guest
+    // wheel carries restores in this process and is named here, so the
+    // shut padlock never claims more than it holds (docs/Sandbox.md
+    // 7.28).
+    QString hosted;
+#ifdef FC_EXPR_IMAGE_HOST
+    if (confined) {
+        if (App::Document *doc = App::GetApplication().getActiveDocument()) {
+            auto objs = App::ExpressionSandbox::hostProxies(doc);
+            if (!objs.empty()) {
+                QStringList names;
+                for (App::DocumentObject *obj : objs) {
+                    if (names.size() == 8) {
+                        names << QStringLiteral("...");
+                        break;
+                    }
+                    names << QString::fromUtf8(obj->Label.getValue()).toHtmlEscaped();
+                }
+                hosted = tr("<b>%n object(s) of the active document run their Python "
+                            "Proxy in this process</b>, because the sandbox has no "
+                            "module for them: %1", "", int(objs.size()))
+                             .arg(names.join(QStringLiteral(", ")));
+            }
+        }
+    }
+#endif
+
     QString trade = tr("Sandboxed evaluation is slower per formula (a few "
                        "microseconds each); model recompute is dominated by "
                        "geometry, not by expressions.");
@@ -508,6 +544,8 @@ void SandboxIndicator::updateState()
         action = tr("Click to evaluate in the sandbox instead. The change "
                     "takes effect immediately -- nothing restarts.");
 
+    if (!hosted.isEmpty())
+        state += QStringLiteral("<br/><br/>") + hosted;
     setToolTip(QStringLiteral("%1<br/><br/>%2<br/><br/>%3")
                        .arg(state, trade, action));
 }

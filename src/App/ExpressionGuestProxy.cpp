@@ -20,17 +20,25 @@
 
 #include "PreCompiled.h"
 
+#include <cctype>
 #include <cstddef>
 #include <cstring>
+#include <map>
 #include <string>
 #include <unordered_map>
+#include <vector>
+
+#include <Base/Console.h>
 
 #include <Base/Interpreter.h>
 
+#include "Document.h"
+#include "DocumentObject.h"
 #include "DocumentObjectPy.h"
 #include "ExpressionEvaluator.h"
 #include "ExpressionGuestProxy.h"
 #include "ExpressionImageHost.h"
+#include "PropertyPythonObject.h"
 
 using json = nlohmann::json;
 
@@ -434,6 +442,13 @@ PyObject* constructGuestProxy(PyObject* cls, PyObject* args, PyObject* kwargs)
             PyErr_SetString(PyExc_TypeError, "constructGuestProxy: the class has no module or name");
         return nullptr;
     }
+    // A module the guest cannot serve constructs natively (docs/
+    // Sandbox.md 7.28): asked BEFORE the construction, so that no
+    // __init__ has run anywhere when the answer is no -- the native
+    // __init__ that follows is the first.  Asked once per module per
+    // boot; the warning is guestServesModule's.
+    if (!guestServesModule(module))
+        Py_RETURN_NONE;
     ImageResult r = ImageHost::instance().proxyNew(module, name, args, kwargs, false, owner);
     if (!r.ok) {
         raiseGuestError(r);
@@ -466,10 +481,123 @@ uint64_t guestProxyId(PyObject* obj)
     return reinterpret_cast<GuestProxyObject*>(obj)->id;
 }
 
+namespace
+{
+
+/// What the guest answered about a module's import, per boot: a guest
+/// that lacks a module lacks it until it boots again with another
+/// package set, and a document of seventy such objects must not ask
+/// seventy times.  Module -> "" when served, else the guest's reason.
+struct ServedCache
+{
+    int boot = -1;
+    std::map<std::string, std::string> why;
+};
+
+ServedCache& servedCache()
+{
+    static ServedCache cache;
+    const int boot = ImageHost::instance().bootCount();
+    if (cache.boot != boot) {
+        cache.boot = boot;
+        cache.why.clear();
+    }
+    return cache;
+}
+
+/// A dotted identifier: what an import statement takes, and all a
+/// document may name (the module name is the file's).
+bool dottedName(const std::string& module)
+{
+    if (module.empty())
+        return false;
+    bool start = true;
+    for (unsigned char c : module) {
+        if (c == '.') {
+            if (start)
+                return false;
+            start = true;
+            continue;
+        }
+        if (start ? !(std::isalpha(c) || c == '_') : !(std::isalnum(c) || c == '_'))
+            return false;
+        start = false;
+    }
+    return !start;
+}
+
+}  // namespace
+
+bool guestServesModule(const std::string& module, std::string* why)
+{
+    if (why)
+        why->clear();
+    if (!dottedName(module)) {
+        if (why)
+            *why = "not a module name";
+        return false;
+    }
+    {
+        auto& cache = servedCache();
+        auto it = cache.why.find(module);
+        if (it != cache.why.end()) {
+            if (why)
+                *why = it->second;
+            return it->second.empty();
+        }
+    }
+    // The import the guest's proxy_new would make first, made alone:
+    // the answer is the exception type.  Anything but ModuleNotFoundError
+    // -- a module that is there and fails -- is served, and the routed
+    // construction or restore that follows reports the failure whole.
+    ImageResult r = ImageHost::instance().exec("import " + module);
+    std::string reason;
+    if (!r.ok && r.excType == "ModuleNotFoundError") {
+        reason = r.message.empty() ? std::string("ModuleNotFoundError") : r.message;
+        Base::Console().Warning("ExpressionSandbox: the sandbox guest cannot serve module"
+                                " '%s' (%s); Proxies of that module run in this process\n",
+                                module.c_str(), reason.c_str());
+    }
+    // fetched again: the exec may have booted the guest, which starts a
+    // fresh cache
+    servedCache().why[module] = reason;
+    if (why)
+        *why = reason;
+    return reason.empty();
+}
+
+std::vector<App::DocumentObject*> hostProxies(const App::Document* doc)
+{
+    std::vector<App::DocumentObject*> out;
+    if (!doc)
+        return out;
+    for (App::DocumentObject* obj : doc->getObjects()) {
+        std::vector<App::Property*> props;
+        obj->getPropertyList(props);
+        for (App::Property* prop : props) {
+            auto* py = Base::freecad_dynamic_cast<App::PropertyPythonObject>(prop);
+            if (py && py->isHostFallback()) {
+                out.push_back(obj);
+                break;
+            }
+        }
+    }
+    return out;
+}
+
 PyObject* restoreGuestProxy(const std::string& module,
                             const std::string& cls,
-                            const App::DocumentObject* owner)
+                            const App::DocumentObject* owner,
+                            std::string* unserved)
 {
+    if (unserved) {
+        unserved->clear();
+        std::string why;
+        if (!guestServesModule(module, &why)) {
+            *unserved = why;
+            return nullptr;
+        }
+    }
     PyObject* args = PyTuple_New(0);
     if (!args)
         return nullptr;

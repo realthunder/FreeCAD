@@ -68,6 +68,7 @@ void PropertyPythonObject::setValue(Py::Object o)
     Base::PyGILStateLocker lock;
     aboutToSetValue();
     this->object = o;
+    hostFallback = false;
     hasSetValue();
 }
 
@@ -385,6 +386,7 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
     // no object to take it, fromString would make the state itself the
     // value (a plain object's __dict__ as the Proxy)
     bool refused=false;
+    hostFallback = false;
 
     std::string buffer;
     if(reader.hasAttribute("value")) {
@@ -412,31 +414,52 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
             const char* module = reader.getAttribute("module");
             const char* cls = reader.getAttribute("class");
             auto* owner = dynamic_cast<App::DocumentObject*>(getContainer());
+            bool routed = false;
+            bool fallback = false;
 #ifdef FC_EXPR_IMAGE_HOST
             if (owner && ExpressionSandbox::proxyRestoreRouted()) {
                 // The sandbox route (docs/Sandbox.md 7.6, sec 13): the
                 // document-chosen module name is imported in the GUEST,
                 // the instance allocated there, and the property holds
                 // the stand-in; loads() below forwards through it.  A
-                // module the guest cannot serve fails CLOSED -- never a
-                // native import of a name the file chose.  A view
-                // provider's Proxy (no document object as container)
-                // still restores natively: the Gui side is not in the
-                // guest yet (G2).
-                PyObject* standIn = ExpressionSandbox::restoreGuestProxy(module, cls, owner);
-                if (!standIn) {
+                // module the guest CANNOT SERVE -- no wheel there
+                // carries it: Path, Fem, an addon -- restores in this
+                // process instead, under the same native import rule
+                // as routing off, and says so (docs/Sandbox.md 7.28);
+                // any other guest failure fails CLOSED, never a native
+                // import of a name the file chose.  A view provider's
+                // Proxy (no document object as container) still
+                // restores natively: the Gui side is not in the guest
+                // yet (G2).
+                std::string unserved;
+                PyObject* standIn =
+                    ExpressionSandbox::restoreGuestProxy(module, cls, owner, &unserved);
+                if (standIn) {
+                    this->object = Py::asObject(standIn);
+                    load_json = true;
+                    routed = true;
+                }
+                else if (unserved.empty()) {
                     Base::Console().Error("PropertyPythonObject::Restore: sandbox routing is on"
                                           " and the guest cannot serve Proxy %s.%s of %s;"
                                           " the object is left without a Proxy\n",
                                           module, cls, owner->getFullName().c_str());
                     throw Py::Exception();
                 }
-                this->object = Py::asObject(standIn);
-                load_json = true;
+                else {
+                    Base::Console().Warning("PropertyPythonObject::Restore: Proxy %s.%s of %s"
+                                            " is restored in this process, not in the sandbox"
+                                            " guest, which cannot serve it (%s)\n",
+                                            module, cls, owner->getFullName().c_str(),
+                                            unserved.c_str());
+                    fallback = true;
+                }
             }
-            else
 #endif
-            if (!proxyModuleAllowed(*this, module, cls)) {
+            if (routed) {
+                // held above
+            }
+            else if (!proxyModuleAllowed(*this, module, cls)) {
                 (void)owner;
                 this->object = Py::None();
                 refused = true;
@@ -458,6 +481,7 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
                     throw Py::TypeError("neither class nor type object");
                 }
                 load_json = true;
+                hostFallback = fallback;
             }
         }
         else if (boost::regex_search(start, end, what, pickle)) {
@@ -538,6 +562,7 @@ Property *PropertyPythonObject::Copy() const
     PropertyPythonObject *p = new PropertyPythonObject();
     Base::PyGILStateLocker lock;
     p->object = this->object;
+    p->hostFallback = this->hostFallback;
     return p;
 }
 
@@ -547,6 +572,7 @@ void PropertyPythonObject::Paste(const Property &from)
         Base::PyGILStateLocker lock;
         aboutToSetValue();
         this->object = static_cast<const PropertyPythonObject&>(from).object;
+        this->hostFallback = static_cast<const PropertyPythonObject&>(from).hostFallback;
         hasSetValue();
     }
 }

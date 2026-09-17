@@ -76,6 +76,13 @@ public:
 
     bool isSame(const Property &other) const override;
 
+    /** Restored in this process while sandbox routing was on, because
+     * the guest could not serve the Proxy's module (docs/Sandbox.md
+     * 7.28).  False for a stand-in, for a natively set value, and with
+     * routing off; ExpressionSandbox::hostProxies lists the objects.
+     */
+    bool isHostFallback() const { return hostFallback; }
+
     /** Bump the proxy-chain generation, then notify as usual
      *
      * A ProxyExp element's methods may be attributes of this kind -- a Proxy
@@ -92,6 +99,7 @@ private:
     std::string decodeValue(const std::string& str) const;
     void loadPickle(const std::string& str);
     Py::Object object;
+    bool hostFallback = false;
 };
 
 

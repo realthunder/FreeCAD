@@ -4211,8 +4211,11 @@ TEST_F(ExpressionImageEvalTest, draftWireInGuest)
 // ---- G1c step (f): the Restore route.  With routing ON a saved
 // ---- <Python module=".." class=".."> is allocated in the GUEST
 // ---- (proxy_new alloc) and the property holds the stand-in; a module
-// ---- the guest cannot serve fails CLOSED; with routing OFF the file
-// ---- restores natively as it always has ----
+// ---- the guest cannot serve restores in this process under the native
+// ---- import rule and is named (docs/Sandbox.md 7.28), so a module
+// ---- nowhere -- not in the guest, not loaded, not under a Mod root --
+// ---- still leaves the object without a Proxy; with routing OFF the
+// ---- file restores natively as it always has ----
 
 namespace
 {
@@ -4280,19 +4283,27 @@ TEST_F(ExpressionImageEvalTest, guestProxyRestoreRoute)
     auto r = host.exec(ProbeSource, "fcxprobe");
     ASSERT_TRUE(r.ok) << r.excType << ": " << r.message;
     ASSERT_TRUE(hostModule("fcxprobe", ProbeSource));
-    // and one the host alone has: a document naming it must NOT get it
-    // through the routed restore
-    ASSERT_TRUE(hostModule("fcxhostonly",
-                           "class Only:\n"
-                           "    def __init__(self, obj=None):\n"
-                           "        if obj is not None:\n"
-                           "            obj.Proxy = self\n"
-                           "    def execute(self, obj):\n"
-                           "        obj.Width = obj.Width + 1\n"
-                           "    def dumps(self):\n"
-                           "        return None\n"
-                           "    def loads(self, state):\n"
-                           "        pass\n"));
+    // and one the host alone has: a document naming it gets it through
+    // the host fallback -- the guest cannot serve it, the host has it
+    // loaded, so the native import rule admits it -- and the object is
+    // listed as running in this process
+    const std::string onlySource =
+        "class Only:\n"
+        "    def __init__(self, obj=None):\n"
+        "        if obj is not None:\n"
+        "            obj.Proxy = self\n"
+        "    def execute(self, obj):\n"
+        "        obj.Width = obj.Width + 1\n"
+        "    def dumps(self):\n"
+        "        return None\n"
+        "    def loads(self, state):\n"
+        "        pass\n";
+    ASSERT_TRUE(hostModule("fcxhostonly", onlySource));
+    // and one NOWHERE at restore: loaded on the host only long enough to
+    // be saved under its name, then dropped -- the guest cannot serve
+    // it and the native rule refuses it, so the fallback must not widen
+    // into importing it
+    ASSERT_TRUE(hostModule("fcxnowhere", onlySource));
     auto param = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Expression/Sandbox");
     const std::string path = std::string(std::tmpnam(nullptr)) + "-fcxrestore.FCStd";
@@ -4330,6 +4341,7 @@ TEST_F(ExpressionImageEvalTest, guestProxyRestoreRoute)
     EXPECT_DOUBLE_EQ(width->getValue(), 21.0);
     App::DocumentObject* obj2 = doc->addObject("App::FeaturePython", "Obj2");
     ASSERT_NE(obj2, nullptr);
+    ASSERT_NE(obj2->addDynamicProperty("App::PropertyFloat", "Width"), nullptr);
     {
         Base::PyGILStateLocker lock;
         PyObject* py = obj2->getPyObject();
@@ -4342,6 +4354,22 @@ TEST_F(ExpressionImageEvalTest, guestProxyRestoreRoute)
         Py_DECREF(res);
     }
     EXPECT_EQ(proxyModuleOf(obj2), "fcxhostonly");
+    App::DocumentObject* obj3 = doc->addObject("App::FeaturePython", "Obj3");
+    ASSERT_NE(obj3, nullptr);
+    {
+        Base::PyGILStateLocker lock;
+        PyObject* py = obj3->getPyObject();
+        PyObject* ns = Py_BuildValue("{s:O}", "o", py);
+        Py_DECREF(py);
+        PyDict_SetItemString(ns, "__builtins__", PyEval_GetBuiltins());
+        PyObject* res = PyRun_String("__import__('fcxnowhere').Only(o)", Py_eval_input, ns, ns);
+        Py_DECREF(ns);
+        ASSERT_NE(res, nullptr);
+        Py_DECREF(res);
+    }
+    EXPECT_EQ(proxyModuleOf(obj3), "fcxnowhere");
+    // nothing ran in this process by way of the sandbox yet
+    EXPECT_TRUE(App::ExpressionSandbox::hostProxies(doc).empty());
 
     // 2. save, reopen with routing ON
     param->SetBool("Evaluate", true);
@@ -4350,6 +4378,7 @@ TEST_F(ExpressionImageEvalTest, guestProxyRestoreRoute)
     App::GetApplication().closeDocument(doc->getName());
     doc = nullptr;
     obj = nullptr;
+    dropHostModules({"fcxnowhere"});
     host.resetStats();
     doc = App::GetApplication().openDocument(path.c_str());
     ASSERT_NE(doc, nullptr);
@@ -4357,19 +4386,56 @@ TEST_F(ExpressionImageEvalTest, guestProxyRestoreRoute)
     ASSERT_NE(obj, nullptr);
     obj2 = doc->getObject("Obj2");
     ASSERT_NE(obj2, nullptr);
+    obj3 = doc->getObject("Obj3");
+    ASSERT_NE(obj3, nullptr);
     {
         Base::PyGILStateLocker lock;
         PyObject* proxy = proxyOf(obj);
         ASSERT_NE(proxy, nullptr);
         EXPECT_TRUE(App::ExpressionSandbox::isGuestProxy(proxy))
             << "with routing on the restored Proxy must be a stand-in";
-        // the host-only module was NOT imported for the document
+        // the host-only module: the guest cannot serve it, the host has
+        // it loaded -- restored in this process, natively, and said so
         PyObject* proxy2 = proxyOf(obj2);
-        EXPECT_TRUE(proxy2 == nullptr || proxy2 == Py_None)
-            << "a Proxy module the guest cannot serve must fail closed";
+        ASSERT_NE(proxy2, nullptr) << "the fallback must restore the Proxy";
+        EXPECT_NE(proxy2, Py_None) << "the fallback must restore the Proxy";
+        EXPECT_FALSE(App::ExpressionSandbox::isGuestProxy(proxy2))
+            << "the fallback restores natively, not as a stand-in";
+        // the module nowhere: the fallback widens nothing -- the native
+        // rule refuses a module neither loaded nor under a Mod root
+        PyObject* proxy3 = proxyOf(obj3);
+        EXPECT_TRUE(proxy3 == nullptr || proxy3 == Py_None)
+            << "a module neither served nor allowed natively must stay refused";
     }
     EXPECT_EQ(proxyModuleOf(obj), "fcxprobe");
-    EXPECT_EQ(proxyModuleOf(obj2), "");
+    EXPECT_EQ(proxyModuleOf(obj2), "fcxhostonly");
+    EXPECT_EQ(proxyModuleOf(obj3), "");
+    {
+        auto* p2 = Base::freecad_dynamic_cast<App::PropertyPythonObject>(obj2->getPropertyByName("Proxy"));
+        ASSERT_NE(p2, nullptr);
+        EXPECT_TRUE(p2->isHostFallback());
+        auto* p1 = Base::freecad_dynamic_cast<App::PropertyPythonObject>(obj->getPropertyByName("Proxy"));
+        ASSERT_NE(p1, nullptr);
+        EXPECT_FALSE(p1->isHostFallback());
+        auto* p3 = Base::freecad_dynamic_cast<App::PropertyPythonObject>(obj3->getPropertyByName("Proxy"));
+        ASSERT_NE(p3, nullptr);
+        EXPECT_FALSE(p3->isHostFallback()) << "a refused Proxy is not a fallback";
+        // the ledger names exactly the object that runs in this process
+        auto hosted = App::ExpressionSandbox::hostProxies(doc);
+        ASSERT_EQ(hosted.size(), 1u);
+        EXPECT_EQ(hosted[0], obj2);
+        // and the fallback object works: its native execute() runs
+        auto* w2 = Base::freecad_dynamic_cast<App::PropertyFloat>(obj2->getPropertyByName("Width"));
+        ASSERT_NE(w2, nullptr);
+        const double before = w2->getValue();
+        obj2->touch();
+        doc->recompute();
+        EXPECT_FALSE(obj2->isError());
+        EXPECT_DOUBLE_EQ(w2->getValue(), before + 1.0);
+        // the guest was asked about the module once, whatever the count
+        // of objects naming it
+        EXPECT_FALSE(App::ExpressionSandbox::guestServesModule("fcxhostonly"));
+    }
     // the saved state went through the stand-in's loads(): the guest
     // instance carries the pre-save log
     {

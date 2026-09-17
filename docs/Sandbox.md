@@ -252,7 +252,11 @@ around App.  `ExpressionCore` stays an OBJECT library folded into
   out a carrier (2026-09-03).  An expression, a Proxy, an embedded
   script all run as `document:<hash>`.
 - Pre-resolve host-side, then FAIL CLOSED: no silent native fallback
-  when the image cannot evaluate (2026-08-31).
+  when the image cannot evaluate (2026-08-31).  Amended 2026-09-17
+  (7.28): a saved Proxy whose module NO guest wheel carries restores in
+  this process under the native import rule of sec 11 item 1, per
+  object, and is named -- in the console, on the property, on the
+  padlock.  Not silent, and not for any other failure.
 - Routing stays OFF by default until the corpus regression, not
   judgement, says otherwise (2026-08-31).  It said otherwise on
   2026-09-16: 94 files, 195 expressions, 195 same, 0 differ.  The same
@@ -1025,9 +1029,12 @@ OPEN (`ExpressionSandbox::proxyRestoreRouted()`: the preference AND
 `ImageHost::available()`, since 2026-09-16 -- the paragraph below):
 `PropertyPythonObject::Restore` builds the
 `<Python module=".." class="..">` instance in the guest and holds the
-stand-in (7.6 G1c step (f)); a module the guest cannot serve FAILS
-CLOSED.  A view provider's Proxy is not routed -- the Gui side is not
-in the guest (G2).
+stand-in (7.6 G1c step (f)); a module the guest cannot serve -- its
+import there raises ModuleNotFoundError -- restores in this process
+under the native import rule and is named (7.28; it FAILED CLOSED from
+2026-09-04 to 2026-09-17); any other guest failure fails closed.  A
+view provider's Proxy is not routed -- the Gui side is not in the guest
+(G2).
 
 **The restore half asks `available()` too (2026-09-16).**  It used to
 read the preference alone, deliberately, so that answering it booted no
@@ -1046,6 +1053,7 @@ Python: `FreeCAD.ExpressionSandbox` -- `routed`, `setRouting`,
 `available`, `imageInfo`, `evaluate`, `evaluateNative`, `exec` (statements
 in the guest as the session principal, optionally as a named module),
 `evalCount`, `stats`, `resetStats`, `reset`, `proxyNew`, `proxyInfo` (rung 2, 3.2),
+`hostProxies` (the objects restored in this process, 7.28),
 `pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
 `pyodideAbi`; constants `OptionCallFrame`, `OptionPythonMode`.
 
@@ -8969,6 +8977,109 @@ The probe that settles this kind of question logs the RETURN of
 `fcviewerControlSend`, not only the call; the 7.26 probe did not, and
 read a refusal as a loss.
 
+### 7.28 The host fallback: a Proxy the guest cannot serve **[designed, BUILT and PROVEN 2026-09-17]**
+
+**The defect.**  `1623ac797d` (2026-09-16) made `Expression/Sandbox:
+Evaluate` default true without re-running the Python suite.  The same
+preference routes a saved Proxy's restore (3.5), and the guest serves
+Draft and BIM -- not Path, not Fem, not any addon.  So a document
+naming `Path.Op.Profile.ObjectProfile` or
+`femobjects.material_common.MaterialCommon` opened routed, the guest
+answered ModuleNotFoundError, and the restore failed CLOSED: "the
+object is left without a Proxy", the object broken -- 553 such refusals
+in `TestCAMApp` alone (27 cases), 89 in `TestFemApp` (2 cases).  The
+user's ruling (2026-09-17): not a flag flip; "some mechanism to fall
+back gracefully".
+
+**What fails closed was protecting.**  The rule of 1.4 -- pre-resolve,
+then fail closed, no SILENT native fallback -- and its Restore form in
+7.6 item 2, "no native import of a document-chosen module name", were
+written before sec 11 item 1 put the native import itself under
+`Base::Type::moduleAllowed` (a module already loaded, or one resolving
+into a registered Mod root), for both containers, routing on or off.
+Since then a native restore of a document-chosen name has been bounded
+by that rule regardless; with routing OFF that is exactly what every
+document gets, and the routed path's refusal of an unserved module
+widened nothing ("refusing widens nothing", 3.5) -- but it also
+protected nothing the native rule did not: a Path job's Proxy on a box
+with Path installed is what the user asked for when they installed
+Path.  What was lost was the object.
+
+**RULED: fall back, per object, under the native rule, and say so.**
+
+- **When.**  Only when the guest CANNOT SERVE the module: its import
+  there raises `ModuleNotFoundError`, no wheel carries it.  A module
+  that is there and fails (a SyntaxError in a Draft file, a guest bug)
+  is served, and the routed restore reports the failure whole and still
+  fails closed -- a fallback there would hide the guest's defect behind
+  a host that happens to work.  A guest that is not available never
+  reaches this: `proxyRestoreRouted()` asks `available()` first (3.5).
+- **Where.**  `PropertyPythonObject::Restore`, the one place the routed
+  restore is decided: the routed branch now takes `unserved`, and when
+  it comes back set, the native branch below runs as it would with
+  routing off -- `proxyModuleAllowed`, then the import.  A module the
+  guest lacks AND the native rule refuses (not loaded, not under a Mod
+  root: a pip-installed addon, a name a file made up) stays refused, the
+  object without a Proxy, logged as sec 11 item 1 logs it.  The
+  fallback is bounded by the same rule the native path always had.
+- **Construction too.**  `constructGuestProxy` (7.6 G1d, Draft's
+  `new_proxy`) asks the same question BEFORE constructing: with the
+  module unserved it answers None and Python constructs natively -- the
+  first `__init__` anywhere, so the ruling of 7.6 ("never a native
+  retry, running `__init__` twice repeats its side effects") is kept by
+  asking before, not after.
+- **Asked once.**  `guestServesModule(module)` makes the import alone
+  (`ImageHost::exec("import <module>")`) and memoizes the answer per
+  module per guest BOOT: a guest that lacks a module lacks it until it
+  boots again with another package set, and a document of seventy such
+  objects asks once.  A name that is not a dotted identifier is refused
+  without asking.
+- **Said, three ways.**  A console Warning per module when the guest
+  first says no ("the sandbox guest cannot serve module 'Path.Base.
+  PropertyBag' (No module named 'Path')"), and a Warning per OBJECT at
+  its restore naming the object and the reason -- the audit trail.  The
+  property remembers: `PropertyPythonObject::isHostFallback()`, false
+  for a stand-in, a natively set value, a refused restore, and with
+  routing off; cleared by `setValue`, carried by Copy/Paste.
+  `ExpressionSandbox::hostProxies(doc)` -- Python
+  `FreeCAD.ExpressionSandbox.hostProxies(doc)` -- lists the objects.
+  And the padlock: the status bar's `SandboxIndicator` tooltip, shut,
+  adds "N objects of the active document run their Python Proxy in this
+  process, because the sandbox has no module for them: Job, Stock, ..."
+  -- recomputed when the tooltip is about to show (`event(ToolTip)`),
+  since which document is active changes without the preference
+  changing.  A shut padlock never claims more than it holds.
+- **Not a file change.**  Nothing is written; the same file opens
+  routed on a box whose guest has the wheel and falls back on one whose
+  guest does not.
+
+**Proven 2026-09-17.**  `ExpressionImageEvalTest.guestProxyRestoreRoute`
+now saves three objects and reopens routed: `fcxprobe` (served) comes
+back a stand-in; `fcxhostonly` (host-loaded, not served) comes back
+native, `isHostFallback()` true, the one entry of `hostProxies(doc)`,
+and recomputes; `fcxnowhere` (dropped from the host before the reopen)
+stays refused with no Proxy and no fallback flag -- the widening that
+must not happen.  `guestServesModule` answers from the cache on the
+second ask.  The sandbox and import suites: 92 of 92.  The Python
+modules with routing ON in a fresh home: `TestFemApp` 90 OK (was 2
+failures; 89 fallbacks over 57 femobjects/femsolver modules, 0
+refusals), `TestCAMApp` 1343 OK (was 27; 698 fallbacks over 14 Path
+modules), `TestArch` unchanged at 8 failures and 3 errors, the
+paragraph below.  The whole suite routed, fresh home: 2778 ran, 9
+failures and 3 errors -- `TestArch`'s 11 plus Draft's `test_hatch`
+("'Draft Hatch' failed", Draft in the guest, the same kind) -- and not
+one refusal; against 43 before.
+
+**What this does not cover, found on the same run.**  `TestArch`'s 11
+failures under routing are not this: BIM IS served, its Proxies restore
+routed, and the tests then reach into the guest -- `report.Proxy.
+live_statements[0]` is a `ReportStatement` that "does not marshal by
+value" (3 errors in `TestArchReport`), and `HorizontalArea` of a
+Bspline slab or tilted cylinders comes back 0.0 where 157.08 is
+expected (8 failures in `TestArchComponent`).  Those are guest-behaviour
+regressions of BIM in the guest -- as is Draft's `test_hatch` in the
+full run -- and belong to the corpus gate (8.2), not to a fallback.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -10227,7 +10338,8 @@ sockets, any network for the reference image, a webview escape hatch.
   document-chosen module name is CLOSED for document objects with
   routing on (G1c step (f), 2026-09-04): the module is imported in the
   guest, the instance allocated there, the property holds the stand-in,
-  and a module the guest cannot serve fails closed (3.5, 7.6).  CLOSED
+  and a module the guest cannot serve restores in this process under
+  the native rule, named (7.28; it failed closed until 2026-09-17).  CLOSED
   2026-09-09, natively, for BOTH containers (sec 11 item 1): the native
   import in `PropertyPythonObject::Restore` -- a document object's Proxy
   with routing off, a VIEW PROVIDER's Proxy always -- and the legacy

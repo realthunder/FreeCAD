@@ -371,6 +371,20 @@ PyObject* proxyConstructFunc(PyObject*, PyObject* args, PyObject* kwargs)
 #endif
 }
 
+PyObject* hostProxiesFunc(PyObject*, PyObject* args)
+{
+    PyObject* docPy = nullptr;
+    if (!PyArg_ParseTuple(args, "O!", &DocumentPy::Type, &docPy))
+        return nullptr;
+    Py::List list;
+#ifdef FC_EXPR_IMAGE_HOST
+    App::Document* doc = static_cast<DocumentPy*>(docPy)->getDocumentPtr();
+    for (App::DocumentObject* obj : ExpressionSandbox::hostProxies(doc))
+        list.append(Py::asObject(obj->getPyObject()));
+#endif
+    return Py::new_reference_to(list);
+}
+
 PyObject* proxyInfoFunc(PyObject*, PyObject* args)
 {
     PyObject* obj = nullptr;
@@ -591,6 +605,11 @@ PyMethodDef Methods[] = {
     {"proxyInfo", proxyInfoFunc, METH_VARARGS,
      "proxyInfo(proxy) -> {'id', 'module', 'class'} | None -- describe a"
      " guest Proxy stand-in; None for any other object."},
+    {"hostProxies", hostProxiesFunc, METH_VARARGS,
+     "hostProxies(doc) -> [objects] -- the objects of doc whose Proxy was"
+     " restored in this process while routing was on, because the sandbox"
+     " guest cannot serve its module (no wheel carries it); each one was"
+     " named in a console warning at restore.  Empty with routing off."},
     {"resetStats", resetStatsFunc, METH_NOARGS,
      "resetStats() -- zero the stats() counters (handles stay live)."},
     {"reset", resetFunc, METH_NOARGS,
