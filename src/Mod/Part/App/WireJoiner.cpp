@@ -127,6 +127,7 @@ public:
     bool doMergeEdge = true;
     bool doOutline = false;
     bool doTightBound = true;
+    bool doAngle = true;
 
     std::string catchObject;
     int catchIteration;
@@ -194,6 +195,10 @@ public:
         bool queryBBox;
         std::shared_ptr<WireInfo> wireInfo;
         std::shared_ptr<WireInfo> wireInfo2; // an edge can be shared by at most two tight bound wires.
+        // Which orbit each of the two darts of this edge was walked into by the
+        // angle traversal, 0 for none. Index 0 is the dart leaving p1, index 1
+        // the one leaving p2.
+        int orbit[2];
         std::unique_ptr<Geometry> geo;
         Standard_Real firstParam;
         Standard_Real lastParam;
@@ -226,6 +231,7 @@ public:
         void reset() {
             wireInfo.reset();
             wireInfo2.reset();
+            orbit[0] = orbit[1] = 0;
             if (iteration >= 0)
                 iteration = 0;
             iteration2 = 0;
@@ -1437,6 +1443,422 @@ public:
         }
     }
 
+    // Angle traversal: the faces of a planar edge network, without searching
+    // for them.
+    //
+    // Take a dart to be one end of an edge, meaning that edge travelled away
+    // from that end -- which is exactly what a VertexInfo already is. Then
+    //
+    //     rev(d)   the same edge travelled the other way
+    //     next(d)  the first dart clockwise from rev(d) in the angular order of
+    //              the darts leaving the vertex d arrives at
+    //
+    // next() is a permutation of the darts, so walking it from any dart returns
+    // to that dart, every dart lies in exactly one orbit, and each orbit is a
+    // face boundary of the network. Nothing is searched and nothing is undone:
+    // rev(d) is always one of the candidates, so there is no dead end to back
+    // out of. The loops that come out are the minimal ones by construction,
+    // which is what the tight bound search had to work for.
+    //
+    // This is the rule OCCT walks a branching vertex with
+    // (BOPAlgo_WireSplitter::ClockWiseAngle, in the face's parametric space),
+    // including its two details: the way back is forced to be the last resort,
+    // and a vertex with a single way out takes it without consulting angles.
+    //
+    // OCCT reaches the two darts of an edge a different way. Its edge set holds
+    // shapes, not ends, and each one contributes an entry at each of its two
+    // vertices tagged in or out by orientation -- so one way out. An edge that
+    // has to be walked on both sides is therefore put in the set TWICE, once
+    // forward and once reversed (BOPAlgo_BuilderFace fills it that way, and
+    // SplitBlock's IsInside flag is how it tells those apart), while an edge
+    // that only ever bounds the face from the inside goes in once. Here every
+    // edge is in both directions always, because there is no face to take a
+    // side from. That is the same enumeration, plus one consequence: the walk
+    // also produces the unbounded face of each connected component, which is
+    // what the signed area below is for.
+    //
+    // It needs a consistent cyclic order of the darts at each vertex, hence a
+    // common 2D parameter space to measure the angles in. We require a common
+    // plane -- see findCommonPlane() and the gate in build().
+
+    // Angles at or below this are the same direction. Tangent directions come
+    // out of the curves to near machine precision, and two edges that leave a
+    // vertex the same way leave it exactly the same way, so this only has to be
+    // clear of the noise, not of any real turn.
+    static constexpr double AngleTie = 1e-8;
+    // Where the second order tie break samples the edges. Two edges that leave
+    // a vertex in the same direction are told apart by the chord to a point
+    // this far along each of them.
+    static constexpr double AngleRefine = 0.1;
+
+    gp_Pln myPlane;
+    bool myPlanar = false;
+    // The direction each entry of adjacentList leaves its vertex, as an angle
+    // in myPlane. Parallel to adjacentList.
+    std::vector<double> dartAngles;
+
+    // Is there one plane that carries the whole input? Only then does the
+    // angular order at a vertex mean anything.
+    bool findCommonPlane()
+    {
+        if (sourceEdgeArray.empty())
+            return false;
+        TopoDS_Compound comp;
+        builder.MakeCompound(comp);
+        for (const auto &s : sourceEdgeArray)
+            builder.Add(comp, s.getShape());
+        return TopoShape(comp).findPlane(myPlane, myTol, myAngularTol);
+    }
+
+    gp_XY toPlane(const gp_Pnt &pt) const
+    {
+        gp_Vec v(myPlane.Location(), pt);
+        return gp_XY(v.Dot(gp_Vec(myPlane.Position().XDirection())),
+                     v.Dot(gp_Vec(myPlane.Position().YDirection())));
+    }
+
+    // The edge a dart actually departs along. Merging leaves one EdgeInfo
+    // standing for a whole chain of edges, and then only one end of the chain
+    // belongs to that EdgeInfo's own edge.
+    TopoDS_Edge dartEdge(const VertexInfo &v) const
+    {
+        const auto &s = v.it->shape();
+        if (s.ShapeType() != TopAbs_WIRE)
+            return TopoDS::Edge(s);
+        TopoDS_Edge first;
+        TopoDS_Edge last;
+        for (BRepTools_WireExplorer xp(TopoDS::Wire(s)); xp.More(); xp.Next()) {
+            if (first.IsNull())
+                first = xp.Current();
+            last = xp.Current();
+        }
+        if (first.IsNull())
+            return v.it->edge;
+        double f = 0.0;
+        double l = 0.0;
+        Handle(Geom_Curve) c = BRep_Tool::Curve(first, f, l);
+        if (!c.IsNull()
+                && (c->Value(f).SquareDistance(v.pt()) <= myTol2
+                    || c->Value(l).SquareDistance(v.pt()) <= myTol2))
+            return first;
+        return last;
+    }
+
+    // The direction a dart leaves its vertex, as an angle in myPlane. A
+    // 'fraction' above zero measures the chord to a point that far along the
+    // edge instead of the tangent at the vertex, which is how two edges that
+    // leave in the same direction are told apart.
+    bool dartAngle(const VertexInfo &v, double fraction, double &angle) const
+    {
+        TopoDS_Edge e = dartEdge(v);
+        double f = 0.0;
+        double l = 0.0;
+        Handle(Geom_Curve) c = BRep_Tool::Curve(e, f, l);
+        if (c.IsNull())
+            return false;
+        bool atFirst = c->Value(f).SquareDistance(v.pt()) <= c->Value(l).SquareDistance(v.pt());
+        gp_Vec dir;
+        if (fraction <= 0.0) {
+            gp_Pnt p;
+            gp_Vec d1;
+            c->D1(atFirst ? f : l, p, d1);
+            if (d1.SquareMagnitude() > Precision::SquareConfusion())
+                dir = atFirst ? d1 : d1.Reversed();
+            else
+                fraction = AngleRefine; // no tangent there, take a chord instead
+        }
+        if (fraction > 0.0) {
+            double p0 = atFirst ? f : l;
+            double p1 = atFirst ? f + (l - f) * fraction : l - (l - f) * fraction;
+            dir = gp_Vec(c->Value(p0), c->Value(p1));
+        }
+        double x = dir.Dot(gp_Vec(myPlane.Position().XDirection()));
+        double y = dir.Dot(gp_Vec(myPlane.Position().YDirection()));
+        if (x * x + y * y <= Precision::SquareConfusion())
+            return false;
+        angle = std::atan2(y, x);
+        return true;
+    }
+
+    bool computeDartAngles()
+    {
+        dartAngles.assign(adjacentList.size(), 0.0);
+        for (std::size_t i = 0; i < adjacentList.size(); ++i) {
+            const auto &v = adjacentList[i];
+            if (v.edgeInfo()->iteration < 0)
+                continue;
+            if (!dartAngle(v, 0.0, dartAngles[i]))
+                return false;
+        }
+        return true;
+    }
+
+    // The turn from the back of the edge we came in on to a way out, measured
+    // one way round. Taking the minimum is the tightest turn. Going straight
+    // back is promoted to a full turn so that it is only ever a last resort.
+    static double clockWiseAngle(double angleIn, double angleOut)
+    {
+        double a = angleIn - angleOut;
+        while (a < 0.0)
+            a += 2 * M_PI;
+        while (a >= 2 * M_PI)
+            a -= 2 * M_PI;
+        if (a <= AngleTie)
+            a = 2 * M_PI;
+        return a;
+    }
+
+    // next(): the dart the face boundary continues with after 'current'.
+    bool nextDart(const VertexInfo &current, VertexInfo &next)
+    {
+        auto info = current.edgeInfo();
+        // the adjacent list range at the vertex this dart arrives at
+        int idx = current.start ? 1 : 0;
+        VertexInfo back(current.it, !current.start);
+        int iBack = -1;
+        for (int i = info->iStart[idx]; i < info->iEnd[idx]; ++i) {
+            if (adjacentList[i] == back) {
+                iBack = i;
+                break;
+            }
+        }
+        if (iBack < 0)
+            return false;
+
+        int best = -1;
+        double bestAngle = 0.0;
+        for (int i = info->iStart[idx]; i < info->iEnd[idx]; ++i) {
+            if (adjacentList[i].edgeInfo()->iteration < 0)
+                continue;
+            double a = clockWiseAngle(dartAngles[iBack], dartAngles[i]);
+            if (best < 0 || a < bestAngle) {
+                best = i;
+                bestAngle = a;
+            }
+        }
+        if (best < 0)
+            return false;
+
+        // Ties merge two faces into one, so they are worth a second look. They
+        // are what OCCT's RefineAngles is for.
+        std::vector<int> ties;
+        for (int i = info->iStart[idx]; i < info->iEnd[idx]; ++i) {
+            if (i == best || adjacentList[i].edgeInfo()->iteration < 0)
+                continue;
+            if (clockWiseAngle(dartAngles[iBack], dartAngles[i]) <= bestAngle + AngleTie)
+                ties.push_back(i);
+        }
+        if (!ties.empty()) {
+            ties.push_back(best);
+            double angleIn = 0.0;
+            if (dartAngle(adjacentList[iBack], AngleRefine, angleIn)) {
+                int refined = -1;
+                double refinedAngle = 0.0;
+                for (int i : ties) {
+                    double a = 0.0;
+                    if (!dartAngle(adjacentList[i], AngleRefine, a))
+                        continue;
+                    double turn = clockWiseAngle(angleIn, a);
+                    if (refined < 0 || turn < refinedAngle) {
+                        refined = i;
+                        refinedAngle = turn;
+                    }
+                }
+                if (refined >= 0)
+                    best = refined;
+            }
+        }
+
+        next = adjacentList[best];
+        return true;
+    }
+
+    // Drop the out and back excursions from a face boundary walk. A bridge edge
+    // has both of its darts in the same orbit, and once whatever lies beyond it
+    // is gone they sit next to each other. The pair bounds nothing, so it is
+    // not part of a wire -- those edges end up as open wires, which is where
+    // the search left them too.
+    void pruneTails(std::vector<VertexInfo> &loop)
+    {
+        std::vector<VertexInfo> result;
+        result.reserve(loop.size());
+        for (const auto &v : loop) {
+            if (!result.empty()
+                    && result.back().it == v.it
+                    && result.back().start != v.start)
+                result.pop_back();
+            else
+                result.push_back(v);
+        }
+        // the walk is a cycle, so a pair can straddle its ends
+        while (result.size() >= 2
+                && result.front().it == result.back().it
+                && result.front().start != result.back().start) {
+            result.pop_back();
+            result.erase(result.begin());
+        }
+        loop = std::move(result);
+    }
+
+    // The points a dart passes through, in the direction it is travelled: the
+    // vertex it leaves, then a mid point for each edge it covers, up to but not
+    // including the vertex it arrives at -- that one belongs to the next dart.
+    //
+    // The mid points are what keeps a loop of two arcs from being flattened
+    // onto its chords and read as empty, and the per edge walk is what keeps a
+    // merged edge honest: one of those stands for a whole chain, so its own two
+    // end points say nothing about where the chain went. Two overlapping
+    // rectangles come down to four merged edges between two vertices, and
+    // sampling only their ends puts every loop's area at zero.
+    void dartSamples(const VertexInfo &v, std::vector<gp_Pnt> &samples) const
+    {
+        const auto &s = v.it->shape();
+        if (s.ShapeType() != TopAbs_WIRE) {
+            samples.push_back(v.pt());
+            samples.push_back(v.it->mid);
+            return;
+        }
+
+        std::vector<gp_Pnt> points;
+        TopoDS_Edge last;
+        for (BRepTools_WireExplorer xp(TopoDS::Wire(s)); xp.More(); xp.Next()) {
+            const TopoDS_Edge &e = xp.Current();
+            double f = 0.0;
+            double l = 0.0;
+            Handle(Geom_Curve) c = BRep_Tool::Curve(e, f, l);
+            if (c.IsNull())
+                continue;
+            points.push_back(c->Value(e.Orientation() == TopAbs_REVERSED ? l : f));
+            points.push_back(c->Value((f + l) * 0.5));
+            last = e;
+        }
+        if (!last.IsNull()) {
+            double f = 0.0;
+            double l = 0.0;
+            Handle(Geom_Curve) c = BRep_Tool::Curve(last, f, l);
+            if (!c.IsNull())
+                points.push_back(c->Value(last.Orientation() == TopAbs_REVERSED ? f : l));
+        }
+        if (points.size() < 2) {
+            samples.push_back(v.pt());
+            return;
+        }
+        // the chain is stored one way round; this dart may travel the other
+        if (points.front().SquareDistance(v.pt()) > points.back().SquareDistance(v.pt()))
+            std::reverse(points.begin(), points.end());
+        points.pop_back();
+        samples.insert(samples.end(), points.begin(), points.end());
+    }
+
+    // Twice the signed area of a loop in myPlane. Bounded faces come out
+    // positive under the turn rule above, and the unbounded face of each
+    // connected component negative.
+    double signedArea(const std::vector<VertexInfo> &loop) const
+    {
+        std::vector<gp_Pnt> samples;
+        for (const auto &v : loop)
+            dartSamples(v, samples);
+        if (samples.size() < 3)
+            return 0.0;
+        double area = 0.0;
+        gp_XY previous = toPlane(samples.back());
+        for (const auto &pt : samples) {
+            gp_XY current = toPlane(pt);
+            area += previous.X() * current.Y() - current.X() * previous.Y();
+            previous = current;
+        }
+        return area;
+    }
+
+    // Walk every orbit of next() and keep the bounded faces. Returns false if
+    // the network does not support the rule after all, in which case nothing is
+    // claimed and the caller falls back to the search.
+    bool findAngleWires()
+    {
+        if (!computeDartAngles())
+            return false;
+
+        std::unique_ptr<Base::SequencerLauncher> seq(
+                new Base::SequencerLauncher("Finding wires", edges.size()));
+
+        for (auto &info : edges) {
+            info.wireInfo.reset();
+            info.wireInfo2.reset();
+            info.orbit[0] = info.orbit[1] = 0;
+        }
+
+        int orbit = 0;
+        std::vector<VertexInfo> loop;
+        for (auto it = edges.begin(); it != edges.end(); ++it) {
+            seq->next(true);
+            if (it->iteration < 0)
+                continue;
+            for (int k = 0; k < 2; ++k) {
+                if (it->orbit[k])
+                    continue;
+                Base::SequencerBase::Instance().checkAbort();
+
+                VertexInfo begin(it, k == 0);
+                VertexInfo current = begin;
+                ++orbit;
+                loop.clear();
+                bool closed = false;
+                while (true) {
+                    current.edgeInfo()->orbit[current.start ? 0 : 1] = orbit;
+                    loop.push_back(current);
+                    VertexInfo next;
+                    if (!nextDart(current, next))
+                        break;
+                    if (next == begin) {
+                        closed = true;
+                        break;
+                    }
+                    // next() is a permutation, so the walk can only come back
+                    // to where it started. If it does not, the angles are not
+                    // describing this network and the whole result is suspect.
+                    if (next.edgeInfo()->orbit[next.start ? 0 : 1])
+                        break;
+                    current = next;
+                }
+                if (!closed) {
+                    showShape(current.edgeInfo(), "aopen", orbit);
+                    return false;
+                }
+
+                pruneTails(loop);
+                if (loop.size() < 2)
+                    continue; // a tree or a tail, bounding nothing
+                if (signedArea(loop) <= 0.0)
+                    continue; // the unbounded face
+
+                auto wireInfo = std::make_shared<WireInfo>();
+                wireInfo->vertices = loop;
+                wireInfo->done = true;
+                for (const auto &v : loop) {
+                    auto einfo = v.edgeInfo();
+                    if (!einfo->wireInfo)
+                        einfo->wireInfo = wireInfo;
+                    else if (!einfo->wireInfo2 && einfo->wireInfo != wireInfo)
+                        einfo->wireInfo2 = wireInfo;
+                }
+                showShape(*wireInfo, "aorbit", orbit);
+            }
+        }
+        return true;
+    }
+
+    // The minimal closed wires: by the angle rule when the input allows it, by
+    // search otherwise.
+    void findMinimalWires(bool exhaust)
+    {
+        if (doAngle && myPlanar && findAngleWires())
+            return;
+        findClosedWires(true);
+        findTightBound();
+        if (exhaust)
+            exhaustTightBound();
+    }
+
     void checkStack()
     {
 #if 0
@@ -2352,12 +2774,18 @@ public:
 
         buildAdjacentList();
 
+        // The angle rule needs one 2D parameter space to measure the turns in,
+        // and a common plane is the case that can be found cheaply and the case
+        // every caller in the tree actually has. Without one -- a network of
+        // edges spread over several surfaces -- there is no cyclic order at a
+        // vertex to speak of, and the search stays. setAngleTraversal(false)
+        // forces the search as well, with nothing else changed.
+        myPlanar = doAngle && (doTightBound || doOutline) && findCommonPlane();
+
         if (!doTightBound && !doOutline)
             findClosedWires();
         else {
-            findClosedWires(true);
-            findTightBound();
-            exhaustTightBound();
+            findMinimalWires(true);
             bool done = !doOutline;
             while(!done) {
                 ++iteration;
@@ -2397,8 +2825,7 @@ public:
                         }
                     }
                 }
-                findClosedWires(true);
-                findTightBound();
+                findMinimalWires(false);
             }
 
             builder.MakeCompound(compound);
@@ -2577,6 +3004,14 @@ void WireJoiner::setSplitEdges(bool enable)
     if (enable != pimpl->doSplitEdge) {
         NotDone();
         pimpl->doSplitEdge = enable;
+    }
+}
+
+void WireJoiner::setAngleTraversal(bool enable)
+{
+    if (enable != pimpl->doAngle) {
+        NotDone();
+        pimpl->doAngle = enable;
     }
 }
 
