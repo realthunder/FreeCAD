@@ -316,6 +316,25 @@ delConstraintOnPoint(geoId:int, pointPos:int)
         <UserDocu>Deletes all constraints referencing an external geometry.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="setTextAndFont" Keyword="true">
+      <Documentation>
+        <UserDocu>
+Set the text and font of a Text constraint, rebuilding its geometry.
+
+setTextAndFont(constraint, text, font, isHeight=True, isConstruction=False)
+
+    Args:
+        constraint (int): The index of the Text constraint.
+        text (str): The text to render as sketch geometry.
+        font (str): The full path of the font file (.ttf, .otf, ...).
+        isHeight (bool): True if the constraint's handle line gives the height of
+            the text, False if it gives its width.
+        isConstruction (bool): Whether the generated geometry is construction
+            geometry. Ignored when the text already has geometry: that keeps what
+            it had.
+        </UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="setDatum">
       <Documentation>
         <UserDocu>

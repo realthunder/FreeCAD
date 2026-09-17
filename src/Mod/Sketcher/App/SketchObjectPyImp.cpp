@@ -22,11 +22,14 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <array>
 #include <memory>
 #include <sstream>
 
 #include <Geom_TrimmedCurve.hxx>
 #endif
+
+#include <Base/PyWrapParseTupleAndKeywords.h>
 
 #include <App/Document.h>
 #include <Base/AxisPy.h>
@@ -896,6 +899,58 @@ PyObject* SketchObjectPy::delConstraintOnPoint(PyObject* args)
 PyObject* SketchObjectPy::delConstraintsToExternal()
 {
     this->getSketchObjectPtr()->delConstraintsToExternal();
+    Py_Return;
+}
+
+PyObject* SketchObjectPy::setTextAndFont(PyObject* args, PyObject* kwd)
+{
+    int constrIndex = -1;
+    char* textStr = nullptr;
+    char* fontStr = nullptr;
+    PyObject* isHeightObj = Py_True;
+    PyObject* isConstrObj = Py_False;
+
+    static const std::array<const char*, 6> kwlist {"constraint", "text", "font", "isHeight",
+                                                    "isConstruction", nullptr};
+
+    if (!Base::Wrapped_ParseTupleAndKeywords(args,
+                                             kwd,
+                                             "iss|O!O!",
+                                             kwlist,
+                                             &constrIndex,
+                                             &textStr,
+                                             &fontStr,
+                                             &PyBool_Type,
+                                             &isHeightObj,
+                                             &PyBool_Type,
+                                             &isConstrObj)) {
+        return nullptr;
+    }
+
+    auto status = this->getSketchObjectPtr()->setTextAndFont(constrIndex,
+                                                             std::string(textStr),
+                                                             std::string(fontStr),
+                                                             Base::asBoolean(isHeightObj),
+                                                             Base::asBoolean(isConstrObj));
+
+    if (status != SketchSolveStatus::Success) {
+        std::stringstream str;
+        switch (status) {
+            case SketchSolveStatus::SolverError:
+                str << "Invalid constraint index, or not a Text constraint: " << constrIndex;
+                break;
+            case SketchSolveStatus::InvalidGeometry:
+                str << "Cannot set the text because the sketch has invalid geometry";
+                break;
+            default:
+                str << "Failed to set the text of constraint " << constrIndex
+                    << ": the sketch would not solve";
+                break;
+        }
+        PyErr_SetString(PyExc_ValueError, str.str().c_str());
+        return nullptr;
+    }
+
     Py_Return;
 }
 

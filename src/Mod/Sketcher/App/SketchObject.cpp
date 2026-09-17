@@ -733,6 +733,112 @@ bool SketchObject::evaluateSupport()
     return true;
 }
 
+SketchSolveStatus SketchObject::setTextAndFont(int ConstrId,
+                                               const std::string& newText,
+                                               const std::string& newFont,
+                                               bool isHeight,
+                                               bool isConstruction)
+{
+    // no need to check input data validity as this is an sketchobject managed operation.
+    Base::StateLocker lock(managedoperation, true);
+
+    if (this->Constraints.hasInvalidGeometry()) {
+        return SketchSolveStatus::InvalidGeometry;
+    }
+    const std::vector<Constraint*>& vals = this->Constraints.getValues();
+    if (ConstrId < 0 || ConstrId >= int(vals.size())) {
+        return SketchSolveStatus::SolverError;
+    }
+    if (vals[ConstrId]->Type != Text || !vals[ConstrId]->hasElement(0)) {
+        return SketchSolveStatus::SolverError;
+    }
+
+    int handleGeoId = vals[ConstrId]->getGeoId(0);
+
+    // the geometries the old text is made of go, the handle line stays
+    std::vector<int> geoIdsToDelete;
+    for (int i = 1; vals[ConstrId]->hasElement(i); ++i) {
+        int geoId = vals[ConstrId]->getGeoId(i);
+        if (geoId != GeoEnum::GeoUndef) {
+            geoIdsToDelete.push_back(geoId);
+        }
+    }
+    bool hasExistingText = !geoIdsToDelete.empty();
+
+    if (hasExistingText) {
+        // the new text is construction geometry if the old text was
+        if (const Part::Geometry* geo = getGeometry(geoIdsToDelete.front())) {
+            isConstruction = GeometryFacade::getConstruction(geo);
+        }
+        // deleting renumbers everything that came after, the handle included
+        handleGeoId -= static_cast<int>(
+                std::count_if(geoIdsToDelete.begin(), geoIdsToDelete.end(),
+                              [handleGeoId](int geoId) { return geoId < handleGeoId; }));
+        // this takes the Text constraint with it: it refers to the deleted geometry
+        delGeometries(geoIdsToDelete);
+    }
+
+    auto line = dynamic_cast<const Part::GeomLineSegment*>(getGeometry(handleGeoId));
+    if (!line) {
+        return SketchSolveStatus::SolverError;
+    }
+
+    // the glyph outlines, fitted to the handle line
+    std::string text = newText;
+    std::string font = newFont;
+    std::vector<std::unique_ptr<Part::Geometry>> newGeos;
+    Part::transformAndConvertToGeometry(newGeos,
+                                        Part::makeTextWires(text, font),
+                                        line->getStartPoint(),
+                                        line->getEndPoint(),
+                                        isHeight);
+
+    int lastGeoId = getHighestCurveIndex();
+
+    std::vector<Part::Geometry*> rawGeos;
+    rawGeos.reserve(newGeos.size());
+    for (const auto& geo : newGeos) {
+        if (isConstruction) {
+            GeometryFacade::setConstruction(geo.get(), true);
+        }
+        rawGeos.push_back(geo.get());
+    }
+    // addGeometry copies, so newGeos keeps owning what it built
+    addGeometry(rawGeos);
+
+    int newLastGeoId = getHighestCurveIndex();
+
+    auto fill = [&](Constraint* constr) {
+        for (int i = lastGeoId + 1; i <= newLastGeoId; ++i) {
+            constr->addElement(GeoElementId(i));
+        }
+        constr->setText(newText);
+        constr->setFont(newFont);
+        constr->setIsTextHeight(isHeight);
+    };
+
+    if (hasExistingText) {
+        // the old constraint went with its geometry
+        auto constr = std::make_unique<Constraint>();
+        constr->Type = Text;
+        // drop the First/Second/Third elements a constraint is born with
+        constr->truncateElements(0);
+        constr->addElement(GeoElementId(handleGeoId));
+        fill(constr.get());
+        addConstraint(std::move(constr));
+    }
+    else {
+        // The property compares against a snapshot that an in-place edit would already
+        // carry, so the changed constraint is written as a clone.
+        std::vector<Constraint*> newVals(this->Constraints.getValues());
+        newVals[ConstrId] = newVals[ConstrId]->clone();
+        fill(newVals[ConstrId]);
+        this->Constraints.setValues(std::move(newVals));
+    }
+
+    return solve();
+}
+
 bool SketchObject::isInGroup(int geoId, bool includeHandle) const
 {
     const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();

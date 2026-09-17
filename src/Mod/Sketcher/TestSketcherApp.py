@@ -30,6 +30,7 @@ from SketcherTests.TestSketchCarbonCopyReverseMapping import TestSketchCarbonCop
 from SketcherTests.TestSketchInternalFaces import TestSketchInternalFaces
 from SketcherTests.TestSketcherEllipse import TestSketcherEllipse
 from SketcherTests.TestSketchExternalGeometry import TestSketchExternalGeometry
+from SketcherTests.TestSketcherText import TestSketcherText
 
 # Path and PartDesign tests use these functions that used to live here
 # but moved to SketcherTests/TestSketcherSolver.py
