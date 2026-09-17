@@ -184,15 +184,56 @@ exposed a crash in the search that the built order had kept out of reach
 | stage | share | what it is |
 |---|---|---|
 | `addWire()` | 43% | `ShapeFix_Wire` + `BRepBuilderAPI_MakeFace` + self-intersection check per emitted wire |
-| `splitEdges()` | 40% | R-tree nearest queries in `add()` (about half), then a wire+face+`ShapeAnalysis_Wire` per candidate pair |
+| `splitEdges()` | 40% | R-tree nearest queries in `add()` (about half), then a wire+face+`ShapeAnalysis_Wire` per candidate pair (since replaced, see below) |
 | `buildAdjacentList()` | 16% | R-tree nearest queries |
 | `findAngleWires()` | below 0.3% | the traversal |
 
 On 200 nested circles (every bounding box contains the smaller ones, no
-intersection at all) 83% is `checkIntersection()`: the per-pair face
-construction, which is what the `WireJoiner2d` branch (4a08a29e22) replaces
-with cached 2D curves. Its blocker was a fixture rename that came out of the
-search's construction path; the search no longer runs on that input.
+intersection at all) 83% was `checkIntersection()`: the per-pair face
+construction. That is gone since e2a5ccef1f, below.
+
+## The 2D intersector, and what names follow
+
+`splitEdges()` used to build a wire, a face and a `ShapeAnalysis_Wire` for
+every candidate pair. It now finds one plane for the whole input, builds each
+edge's 2D curve once, and intersects the pairs with `Geom2dInt_GInter`
+directly (e2a5ccef1f, the former `WireJoiner2d` branch). 800 nested circles
+go from 51 s to 0.09 s; OCCT's `generalFuse` needs 3.1 s on the same input.
+Pairs with no common plane keep the `BRepExtrema` fallback.
+
+The branch had sat unlanded because two fixture sketches renamed a face
+under it, and the cause turned out to be worth writing down. The 2D
+intersector puts a crossing at x = -8.9e-16 where the old path hit 0
+exactly. Topology is the same. But two things downstream were reading the
+bits:
+
+* **The order the wires came out in** followed the walk, i.e. which fragment
+  was created first and which end of a merged chain became its
+  representative. The Sketcher names its faces from the wires in order
+  (`FaceMaker::postBuild` takes the first edge names no earlier face used),
+  so the face names followed the order. `build()` now sorts the finished
+  wires by the set of input edges they are made of (8f8e803e05); each
+  `EdgeInfo` carries those indices through splits and merges.
+* **Which edge a fragment is named after.** A fragment is `Modified` from the
+  edge that cut it at its start, and when two edges cut at the same point --
+  a vertical crossing a line exactly where a collinear edge starts
+  overlapping it -- `pushIntersection()` kept whichever pair the R-tree
+  offered first. It now keeps the better one by rule: a crossing beats an
+  overlap end, then the smaller source set (c211be8bad).
+
+The intersector also reports what the old path did not: two edges that share
+a stretch come back as a *segment*, and both of its ends are splits. The old
+`ShapeAnalysis_Wire` call took one point per segment by a rule of its own and
+so left one collinear overlap uncut. The one fixture that changes is
+`test_28534_truncated_pocket` Sketch019, a rectangle whose right side is three
+collinear pieces with a 0.01 overlap: 6 edges instead of 5, the same 150 unit
+face, and no edge lying on another. Pinned by
+`test_joinWires_splits_a_collinear_overlap`. Every other fixture sketch, 37
+of them, has an element map identical to the 3D path's, compared unmasked.
+
+Names that followed the bits were a hazard under any OCCT upgrade or
+platform change, not just under this rewrite. Both rules are in the 3D path
+too.
 
 The plain `findClosedWires()` -- `tighten=False`, the `Part::Face` and
 `SubShapeBinder` default -- takes 6.4 s on the same k=40 lattice against the
