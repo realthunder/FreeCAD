@@ -134,6 +134,24 @@ public:
      \retval bool - true if the geometry is supported
      */
     bool isSupportedGeometry(const Part::Geometry* geo) const;
+
+    /*!
+     \brief Returns true if the geometry is in a group
+     \param geoId - the geometry id in the sketch
+     \param includeHandle - return true if geoId is the group construction line handle
+     \retval bool - true if the geometry belongs to a Group or Text constraint
+     */
+    bool isInGroup(int geoId, bool includeHandle = true) const;
+    /// Returns true if geoId is the construction line handle of a group
+    bool isGroupHandle(int geoId) const;
+    /// Returns the geometries bound to the group whose handle is handleGeoId
+    std::set<int> getGroupGeometries(int handleGeoId) const;
+    /*!
+     \brief Returns geoId if it's not in a group. Or the group handle if it is in a group.
+     \param geoId - the geometry id in the sketch
+     */
+    int getGroupHandleIfInGroup(int geoId) const;
+
     /*!
      \brief Add geometry to a sketch - It adds a copy with a different uuid (internally uses copy()
      instead of clone()) \param geo - geometry to add \param construction - true for construction
@@ -359,6 +377,11 @@ public:
     int getVirtualSpace(int ConstrId, bool& isinvirtualspace) const;
     /// toggle the driving status of this constraint
     int toggleVirtualSpace(int ConstrId);
+    /// move these points (or curves) to a new location and solve
+    SketchSolveStatus moveGeometries(const std::vector<GeoElementId>& geoEltIds,
+                                     const Base::Vector3d& toPoint,
+                                     bool relative = false,
+                                     bool updateGeoBeforeMoving = false);
     /// move this point to a new location and solve
     SketchSolveStatus movePoint(int GeoId,
                                 PointPos PosId,
@@ -726,6 +749,7 @@ public: /* Solver exposed interface */
     }
     /// Forwards a request for a temporary initMove to the solver using the current sketch state as
     /// a reference (enables dragging)
+    inline int initTemporaryMove(const std::vector<GeoElementId>& moved);
     inline int initTemporaryMove(int geoId, PointPos pos);
     /// Forwards a request for a temporary initBSplinePieceMove to the solver using the current
     /// sketch state as a reference (enables dragging)
@@ -736,6 +760,9 @@ public: /* Solver exposed interface */
      * state as a reference (enables dragging). NOTE: A temporary move operation must always be
      * preceded by a initTemporaryMove() operation.
      */
+    inline GCS::SolveStatus moveGeometriesTemporary(const std::vector<GeoElementId>& moved,
+                                                    Base::Vector3d toPoint,
+                                                    bool relative = false);
     inline GCS::SolveStatus
     moveTemporaryPoint(int geoId, PointPos pos, Base::Vector3d toPoint, bool relative = false);
     /// forwards a request to update an extension of a geometry of the solver to the solver.
@@ -1126,7 +1153,7 @@ private:
     mutable std::map<std::string, std::string> internalElementMap;
 };
 
-inline int SketchObject::initTemporaryMove(int geoId, PointPos pos)
+inline int SketchObject::initTemporaryMove(const std::vector<GeoElementId>& moved)
 {
     // if a previous operation did not update the geometry (including geometry extensions)
     // or constraints (including any deleted pointer, as in renameConstraint) of the solver,
@@ -1135,7 +1162,13 @@ inline int SketchObject::initTemporaryMove(int geoId, PointPos pos)
         solve();
     }
 
-    return solvedSketch.initMove(geoId, pos);
+    return solvedSketch.initMove(moved);
+}
+
+inline int SketchObject::initTemporaryMove(int geoId, PointPos pos)
+{
+    std::vector<GeoElementId> moved = {GeoElementId(geoId, pos)};
+    return initTemporaryMove(moved);
 }
 
 inline int SketchObject::initTemporaryBSplinePieceMove(int geoId,
@@ -1152,12 +1185,21 @@ inline int SketchObject::initTemporaryBSplinePieceMove(int geoId,
     return solvedSketch.initBSplinePieceMove(geoId, pos, firstPoint);
 }
 
+inline GCS::SolveStatus
+SketchObject::moveGeometriesTemporary(const std::vector<GeoElementId>& moved,
+                                      Base::Vector3d toPoint,
+                                      bool relative /*=false*/)
+{
+    return solvedSketch.moveGeometries(moved, toPoint, relative);
+}
+
 inline GCS::SolveStatus SketchObject::moveTemporaryPoint(int geoId,
                                                          PointPos pos,
                                                          Base::Vector3d toPoint,
                                                          bool relative /*=false*/)
 {
-    return solvedSketch.moveGeometry(geoId, pos, toPoint, relative);
+    std::vector<GeoElementId> moved = {GeoElementId(geoId, pos)};
+    return moveGeometriesTemporary(moved, toPoint, relative);
 }
 
 using SketchObjectPython = App::FeaturePythonT<SketchObject>;

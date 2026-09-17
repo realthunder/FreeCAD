@@ -733,6 +733,75 @@ bool SketchObject::evaluateSupport()
     return true;
 }
 
+bool SketchObject::isInGroup(int geoId, bool includeHandle) const
+{
+    const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();
+
+    for (const auto& constr : vals) {
+        if (constr->Type == Group || constr->Type == Text) {
+            // First is the group construction line. We include it or not in our search.
+            int iStart = includeHandle ? 0 : 1;
+            for (int i = iStart; constr->hasElement(i); ++i) {
+                if (constr->getGeoId(i) == geoId) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool SketchObject::isGroupHandle(int geoId) const
+{
+    const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();
+
+    for (const auto& constr : vals) {
+        if (constr->Type == Group || constr->Type == Text) {
+            if (constr->getGeoId(0) == geoId) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+int SketchObject::getGroupHandleIfInGroup(int geoId) const
+{
+    const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();
+
+    for (const auto& constr : vals) {
+        if (constr->Type == Group || constr->Type == Text) {
+            // First is the group construction line.
+            int groupHandleGeoId = GeoEnum::GeoUndef;
+            for (int i = 0; constr->hasElement(i); ++i) {
+                if (i == 0) {
+                    groupHandleGeoId = constr->getGeoId(i);
+                }
+                else if (constr->getGeoId(i) == geoId) {
+                    return groupHandleGeoId;
+                }
+            }
+        }
+    }
+    return geoId;
+}
+
+std::set<int> SketchObject::getGroupGeometries(int handleGeoId) const
+{
+    std::set<int> geoIds;
+    const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();
+    for (const auto& constr : vals) {
+        if (constr->Type == Group || constr->Type == Text) {
+            if (constr->getGeoId(0) == handleGeoId) {
+                for (int i = 1; constr->hasElement(i); ++i) {
+                    geoIds.insert(constr->getGeoId(i));
+                }
+            }
+        }
+    }
+    return geoIds;
+}
+
 PyObject* SketchObject::getPyObject()
 {
     if (PythonObject.is(Py::_None())) {

@@ -133,6 +133,14 @@ FC_LOG_LEVEL_INIT("Sketch", true, true)
 SketchSolveStatus SketchObject::movePoint(int GeoId, PointPos PosId, const Base::Vector3d& toPoint,
                                           bool relative, bool updateGeoBeforeMoving)
 {
+    std::vector<GeoElementId> geoEltIds = {GeoElementId(GeoId, PosId)};
+    return moveGeometries(geoEltIds, toPoint, relative, updateGeoBeforeMoving);
+}
+
+SketchSolveStatus SketchObject::moveGeometries(const std::vector<GeoElementId>& geoEltIds,
+                                               const Base::Vector3d& toPoint,
+                                               bool relative, bool updateGeoBeforeMoving)
+{
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
@@ -158,8 +166,8 @@ SketchSolveStatus SketchObject::movePoint(int GeoId, PointPos PosId, const Base:
     if (lastHasConflict)// conflicting constraints
         return SketchSolveStatus::SolverError;
 
-    // move the point and solve
-    lastSolverStatus = solvedSketch.moveGeometry(GeoId, PosId, toPoint, relative);
+    // move the points and solve
+    lastSolverStatus = solvedSketch.moveGeometries(geoEltIds, toPoint, relative);
 
     // moving the point can not result in a conflict that we did not have
     // or a redundancy that we did not have before, or a change of DoF
