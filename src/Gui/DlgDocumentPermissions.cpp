@@ -378,10 +378,12 @@ void DlgDocumentPermissions::askHostImport(App::Document *doc)
 
     // A document's principal is a hash over its CODE (2.1), and a file
     // with no expressions at all -- most Path and Fem jobs -- hashes to
-    // the same id as every other code-free file.  A persisted answer
-    // here would therefore answer for all of them, unprompted, for good.
-    // Offer only the scopes that expire (docs/Sandbox.md 7.28, "the
-    // code-free principal").
+    // the same id as every other code-free file.  "Per document" is then
+    // a fiction, so the honest unit of the answer is the MODULE: the
+    // grant is keyed to the EXACT submodule the file named (never a
+    // package, never "*"), and the wording below says a remembered
+    // answer covers that module in any document carrying no expressions
+    // (docs/Sandbox.md 7.28, "the code-free principal").
     Sec::DocumentHashBuilder codeFree;
     const bool shared = (principal == codeFree.principalId());
 
@@ -423,8 +425,9 @@ void DlgDocumentPermissions::askHostImport(App::Document *doc)
     if (shared)
         hintText += QLatin1Char(' ')
             + tr("This document carries no expressions, and documents without any are told "
-                 "apart by nothing -- so this answer would cover every one of them. It is "
-                 "offered for this session only, never remembered.");
+                 "apart by nothing. A remembered answer is therefore recorded against the "
+                 "module named above, exactly as written, and covers that module in any "
+                 "document that carries no expressions.");
     auto hint = new QLabel(hintText, &dlg);
     hint->setWordWrap(true);
     layout->addWidget(hint);
@@ -444,12 +447,12 @@ void DlgDocumentPermissions::askHostImport(App::Document *doc)
     };
     addBtn(tr("Run once"), true, "once");
     addBtn(tr("Run this session"), true, "session");
-    if (!shared) {
-        // persisted: keyed to THIS file's code, and void the moment it
-        // is edited
-        addBtn(tr("Always run"), true, "always");
-        addBtn(tr("Never run"), false, "always");
-    }
+    // Persisted.  For a document with code the grant is keyed to THAT
+    // file's hash and is void the moment the file is edited; for a
+    // code-free one it is a MODULE grant at the exact submodule, which
+    // the hint above spells out.
+    addBtn(tr("Always run"), true, "always");
+    addBtn(tr("Never run"), false, "always");
     buttons->addStretch();
     auto later = new QPushButton(tr("Not now"), &dlg);
     connect(later, &QPushButton::clicked, &dlg, &QDialog::reject);
@@ -466,9 +469,16 @@ void DlgDocumentPermissions::askHostImport(App::Document *doc)
             continue;
         auto target = item->data(0, RoleTarget).toString().toStdString();
         try {
+            // metadata only, never matched -- but naming one file against
+            // the code-free principal would misattribute a grant that
+            // covers every such document
+            const std::string label = shared
+                ? std::string("(any document without expressions)")
+                : std::string(doc->Label.getValue());
+            const std::string path =
+                shared ? std::string() : std::string(doc->FileName.getValue());
             rt.grant(principal, Sec::Permission::HostImport, target, allowChosen,
-                     scopeChosen.toLatin1().constData(),
-                     doc->Label.getValue(), doc->FileName.getValue());
+                     scopeChosen.toLatin1().constData(), label, path);
         }
         catch (const Base::Exception &e) {
             QMessageBox::warning(Gui::getMainWindow(), tr("Expression sandbox"),

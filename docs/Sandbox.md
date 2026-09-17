@@ -9115,7 +9115,7 @@ whether the file's code runs behind it.
   -- recomputed when the tooltip is about to show (`event(ToolTip)`),
   since which document is active changes without the preference
   changing.  A shut padlock never claims more than it holds.
-- **The code-free principal, and why "always" is withheld there.**
+- **The code-free principal, and what a remembered answer there means.**
   Found building this, 2026-09-17, and it bounds what the gate is worth.
   A document's principal is a hash over its CODE alone (2.1), and
   `documentPrincipal()` does not special-case an EMPTY one: a file with
@@ -9130,12 +9130,22 @@ whether the file's code runs behind it.
   it is the first to make the collision reachable.  A persisted "always"
   answered on one such file would silently answer for every code-free
   document afterwards, unprompted -- the gate quietly disabling itself.
-  So the modal offers only the scopes that EXPIRE (once, this session)
-  when the principal is the code-free one, and says why; "always" and
-  "never" appear only for a document whose own code keys the grant.  The
-  hash itself is frozen v1 and is not changed here.  What remains open:
-  a session answer still spans the code-free documents of that session,
-  and `--grant` is process-wide by design.
+  RULED 2026-09-17, on the user's steer, and it corrects a first cut
+  that simply WITHHELD the persistent scopes there: for a code-free
+  document "per document" is a fiction, so the honest unit of the answer
+  is the MODULE.  The grant is keyed to the EXACT submodule the file
+  named -- `Path.Op.Profile`, never `Path`, never `*`; a routed
+  `TestCAMApp` run holds 14 such names, so that is 14 separate decisions
+  and not one package-wide one -- and the modal says a remembered answer
+  covers that module in any document carrying no expressions, with the
+  grant's display metadata saying the same rather than naming the one
+  file that happened to ask.  That is far narrower than the automatic
+  fallback, which admitted every module under a Mod root with no answer
+  at all, and unlike the first cut it does not re-ask every session for
+  the files this gate is mostly about.  The hash itself is frozen v1 and
+  is not changed here.  What remains, stated plainly: such an answer is
+  module-scoped, not file-scoped, and `--grant` is process-wide by
+  design.
 - **Not a file change.**  Nothing is written; the same file opens
   routed on a box whose guest has the wheel, and is held for an answer
   on one whose guest does not.  The grant that frees it is the USER's,

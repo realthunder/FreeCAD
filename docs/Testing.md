@@ -28,8 +28,11 @@ module the guest cannot serve is HELD until the document's
 `host.import:<module>` is answered, docs/Sandbox.md 7.28, so a ROUTED
 module run needs its grants -- `TestFemApp` routed with none holds 81
 Proxies and fails 2, and with `--grant host.import:femobjects --grant
-host.import:femsolver` (the TOP-LEVEL packages; the dotted-ancestor chain
-covers every submodule under them) is 90 OK, 0 held, 0 refusals, and
+host.import:femsolver` (the TOP-LEVEL packages, the COARSE form: the
+dotted-ancestor chain covers every submodule under them, which is what
+suits a suite run; the GUI modal instead grants the EXACT submodule a
+file named, 14 distinct ones in a routed CAM run) is 90 OK, 0 held, 0
+refusals, and
 `TestCAMApp` holds 411 and fails 10 with 17 errors on none but is 1343 OK
 with `--grant host.import:Path` alone -- and
 what remains under routing beyond that is `TestArch`'s 11 guest-behaviour
