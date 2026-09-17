@@ -145,6 +145,9 @@ public:
     virtual ~DrawSketchHandler();
 
     void activate(ViewProviderSketch*);
+    /// bind the handler to a sketch view without activating it, to run its
+    /// commands directly (DrawSketchHandlerScale::make_centerScale)
+    void setSketchGui(ViewProviderSketch* vp);
     void deactivate();
 
     virtual void mouseMove(Base::Vector2d onSketchPos) = 0;
