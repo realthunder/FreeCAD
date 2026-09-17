@@ -454,10 +454,19 @@ the reference; unnamed ones, and named ones with no namesake (the first
 rebuild of a sketch saved before the names), take the ids of the unnamed
 geometries in order, the positional rule these always had; ids nothing claims
 are deleted. A reference without an element map (an `App::Plane`) stays
-positional. Seams are still left out, as upstream does. The same class is
-what TechDraw's `GeometryObject::projectShape` is to adopt next; its own
-private copy of the traversal (`docs/TopoNamingEnhance.md` 3.5) is unchanged
-for now.
+positional. Seams are still left out, as upstream does.
+
+**The edge path names too (2026-09-17, follow-up).** A planar face, a wire
+and a plain edge reference go through `importEdge`, which used to take a
+bare `TopoDS_Shape` and name nothing. Each edge now comes as the sub-shape
+of the reference with its element map (`importNamedEdge`): the geometries
+it projects to are named after its mapped name, with a `;<k>` suffix when
+the normal projection breaks one edge into several pieces, so a notch cut
+into a box's top face reorders the face's edges without moving the ids of
+the ones that survive. The one segment a perpendicular planar face collapses
+into is nobody's edge and stays unnamed, positional; so does the output of
+the intersection option (a section has no map) and any reference without a
+map (an `App::Plane`). The tests are `TestSketchExternalGeometry`.
 
 ### Internal faces: WireJoiner kept (`aa31511fbd`)
 
