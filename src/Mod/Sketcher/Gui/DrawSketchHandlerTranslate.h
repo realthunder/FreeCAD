@@ -55,7 +55,8 @@ using DSHTranslateController =
                                       /*OnViewParametersT =*/OnViewParameters<6>,
                                       /*WidgetParametersT =*/WidgetParameters<2>,
                                       /*WidgetCheckboxesT =*/WidgetCheckboxes<1>,
-                                      /*WidgetComboboxesT =*/WidgetComboboxes<0>>;
+                                      /*WidgetComboboxesT =*/WidgetComboboxes<0>,
+                                      /*WidgetLineEditsT =*/WidgetLineEdits<0>>;
 
 using DSHTranslateControllerBase = DSHTranslateController::ControllerBase;
 
