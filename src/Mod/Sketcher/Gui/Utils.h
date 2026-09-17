@@ -23,6 +23,9 @@
 #ifndef SKETCHERGUI_Recompute_H
 #define SKETCHERGUI_Recompute_H
 
+#include <QMap>
+#include <QString>
+
 #include <Base/Exception.h>
 #include <Base/Tools.h>
 #include <Base/Tools2D.h>
@@ -208,6 +211,16 @@ std::string angleToDisplayFormat(double value, int digits);
 bool areColinear(const Base::Vector2d& p1, const Base::Vector2d& p2, const Base::Vector2d& p3);
 
 int indexOfGeoId(const std::vector<int>& vec, int elem);
+
+/// Constrains a line to an angle with the horizontal axis, as horizontal, vertical or an
+/// explicit angle, whichever the value calls for.
+void ConstraintLineByAngle(int geoId, double angle, App::DocumentObject* obj);
+
+/** The font files the text tool can render with, by the name shown to the user.
+ *
+ * FreeCAD's own bundled fonts come first, then the platform's font directories.
+ */
+QMap<QString, QString> findAvailableFontFiles();
 
 }  // namespace SketcherGui
 

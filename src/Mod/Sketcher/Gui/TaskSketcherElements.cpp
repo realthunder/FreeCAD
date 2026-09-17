@@ -118,6 +118,7 @@ public:
         , isStartingPointSelected(false)
         , isEndPointSelected(false)
         , isMidPointSelected(false)
+        , sketchObject(sketch)
     {
         StartingVertex = sketch->getVertexIndexGeoPos(elementnr,Sketcher::PointPos::start),
         MidVertex = sketch->getVertexIndexGeoPos(elementnr,Sketcher::PointPos::mid),
@@ -149,8 +150,9 @@ public:
             for (const auto *c : sketch->Constraints.getValues()) {
                 if ((c->Type == Sketcher::Group || c->Type == Sketcher::Text)
                         && c->getGeoId(0) == ElementNbr) {
-                    setText(ColumnIndex::ColType, c->Type == Sketcher::Group
-                            ? QObject::tr("Group") : QObject::tr("Text"));
+                    isTextHandle = (c->Type == Sketcher::Text);
+                    setText(ColumnIndex::ColType, isTextHandle
+                            ? QObject::tr("Text") : QObject::tr("Group"));
                     break;
                 }
             }
@@ -334,6 +336,10 @@ public:
     bool isInternalAligned;
     // a member of a group: the list shows the group's handle in its place
     bool isGroupMember = false;
+    // the construction line a Text constraint hangs its geometry on
+    bool isTextHandle = false;
+    // the sketch this element belongs to; the list is rebuilt whenever the sketch changes
+    Sketcher::SketchObject* sketchObject = nullptr;
 };
 
 ElementView::ElementView(QWidget *parent)
@@ -385,6 +391,12 @@ void ElementView::contextMenuEvent (QContextMenuEvent* event)
 
     Gui::MenuManager::getInstance()->setupContextMenu(&mitems, menu);
 
+    // a text can be turned into ordinary geometry by dropping its handle
+    if (items.size() == 1 && static_cast<ElementItem*>(items.first())->isTextHandle) {
+        menu.addAction(tr("Convert to geometry"), this, &ElementView::convertTextToGeometry);
+        menu.addSeparator();
+    }
+
     QAction* remove = menu.addAction(tr("Delete"), this, &ElementView::deleteSelectedItems);
     remove->setShortcut(QKeySequence(QKeySequence::Delete));
     remove->setEnabled(!items.isEmpty());
@@ -392,6 +404,35 @@ void ElementView::contextMenuEvent (QContextMenuEvent* event)
     menu.menuAction()->setIconVisibleInMenu(true);
 
     menu.exec(event->globalPos());
+}
+
+void ElementView::convertTextToGeometry()
+{
+    auto items = selectedItems();
+    if (items.isEmpty()) {
+        return;
+    }
+
+    auto* item = static_cast<ElementItem*>(items.first());
+    if (!item->isTextHandle) {
+        return;
+    }
+
+    App::Document* doc = App::GetApplication().getActiveDocument();
+    if (!doc) {
+        return;
+    }
+
+    // Deleting the handle takes the Text constraint with it, because the constraint refers
+    // to the handle. The glyph geometry stays, as ordinary geometry.
+    Gui::Selection().clearSelection();
+    doc->openTransaction("Convert text to geometry");
+    Gui::Command::doCommand(Gui::Command::Doc,
+                            "App.getDocument('%s').getObject('%s').delGeometry(%d)",
+                            item->sketchObject->getDocument()->getName(),
+                            item->sketchObject->getNameInDocument(),
+                            item->ElementNbr);
+    doc->commitTransaction();
 }
 
 void ElementView::deleteSelectedItems()

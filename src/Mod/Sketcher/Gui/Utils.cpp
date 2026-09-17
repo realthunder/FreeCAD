@@ -25,6 +25,9 @@
 #include <cfloat>
 
 #include <QCursor>
+#include <QDir>
+#include <QDirIterator>
+#include <QFileInfo>
 #include <QLocale>
 #include <QRegularExpression>
 #endif
@@ -873,4 +876,60 @@ int SketcherGui::indexOfGeoId(const std::vector<int>& vec, int elem)
         }
     }
     return -1;
+}
+
+QMap<QString, QString> SketcherGui::findAvailableFontFiles()
+{
+    QMap<QString, QString> fontMap;
+    QStringList fontPaths;
+
+    // FreeCAD's own fonts, so there is always something to render with
+    fontPaths << QString::fromStdString(App::Application::getResourceDir()
+                                        + "Mod/TechDraw/Resources/fonts/");
+
+#if defined(Q_OS_WIN)
+    fontPaths << QStringLiteral("C:/Windows/Fonts");
+#elif defined(Q_OS_MACOS)
+    fontPaths << QStringLiteral("/System/Library/Fonts") << QStringLiteral("/Library/Fonts")
+              << QDir::homePath() + QStringLiteral("/Library/Fonts");
+#else  // Linux and other Unix-like systems
+    fontPaths << QStringLiteral("/usr/share/fonts") << QStringLiteral("/usr/local/share/fonts")
+              << QDir::homePath() + QStringLiteral("/.fonts");
+#endif
+
+    for (const QString& path : fontPaths) {
+        if (!QDir(path).exists()) {
+            continue;
+        }
+
+        QDirIterator it(path,
+                        QStringList() << QStringLiteral("*.ttf") << QStringLiteral("*.otf"),
+                        QDir::Files,
+                        QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            QString filePath = it.next();
+            QFileInfo fileInfo(filePath);
+            // the base name is the friendly name, and keeps the same font from two paths
+            // (.ttf and .otf, say) to one entry
+            fontMap[fileInfo.baseName()] = filePath;
+        }
+    }
+    return fontMap;
+}
+
+void SketcherGui::ConstraintLineByAngle(int geoId, double angle, App::DocumentObject* obj)
+{
+    if (fabs(std::remainder(angle, M_PI)) < Precision::Confusion()) {
+        Gui::cmdAppObjectArgs(obj, "addConstraint(Sketcher.Constraint('Horizontal',%d)) ", geoId);
+    }
+    else if (fabs(std::remainder(angle, M_PI / 2)) < Precision::Confusion()) {
+        Gui::cmdAppObjectArgs(obj, "addConstraint(Sketcher.Constraint('Vertical',%d)) ", geoId);
+    }
+    else {
+        Gui::cmdAppObjectArgs(obj,
+                              "addConstraint(Sketcher.Constraint('Angle',%d,%d,%f)) ",
+                              Sketcher::GeoEnum::HAxis,
+                              geoId,
+                              angle);
+    }
 }

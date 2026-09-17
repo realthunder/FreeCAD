@@ -85,6 +85,7 @@
 #include "DrawSketchHandlerRectangle.h"
 #include "DrawSketchHandlerSlot.h"
 #include "DrawSketchHandlerSplitting.h"
+#include "DrawSketchHandlerText.h"
 #include "DrawSketchHandlerTrimming.h"
 
 
@@ -1558,6 +1559,43 @@ bool CmdSketcherCreateArcSlot::isActive()
     return isCommandActive(getActiveGuiDocument());
 }
 
+// Text ================================================================
+
+DEF_STD_CMD_AU(CmdSketcherCreateText)
+
+CmdSketcherCreateText::CmdSketcherCreateText()
+    : Command("Sketcher_CreateText")
+{
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Text");
+    sToolTipText = QT_TR_NOOP(
+        "Creates text geometries controlled by a Text constraint.\n"
+        "To edit: double-click the Text constraint to change the text and the font.\n"
+        "To position and size: constrain the group's construction line.\n"
+        "Note: while the Text constraint is there, constraints applied to the text geometries "
+        "themselves are ignored.\n");
+    sWhatsThis = "Sketcher_CreateText";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateText";
+    // no shortcut: "G, T" belongs to Trim Edge (upstream 99c2f19dfc)
+    sAccel = "";
+    eType = ForEdit;
+}
+
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateText, "Sketcher_CreateText")
+
+void CmdSketcherCreateText::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerText());
+}
+
+bool CmdSketcherCreateText::isActive()
+{
+    return isCommandActive(getActiveGuiDocument());
+}
+
 /* Create Regular Polygon ==============================================*/
 
 DEF_STD_CMD_AU(CmdSketcherCreateTriangle)
@@ -1814,7 +1852,7 @@ void CreateSketcherCommandsCreateGeo()
     rcCmdMgr.addCommand(new CmdSketcherCreateFillet());
     rcCmdMgr.addCommand(new CmdSketcherCreateChamfer());
     rcCmdMgr.addCommand(new CmdSketcherCompCreateFillets());
-    // rcCmdMgr.addCommand(new CmdSketcherCreateText());
+    rcCmdMgr.addCommand(new CmdSketcherCreateText());
     // rcCmdMgr.addCommand(new CmdSketcherCreateDraftLine());
     rcCmdMgr.addCommand(new CmdSketcherTrimming());
     rcCmdMgr.addCommand(new CmdSketcherExtend());
