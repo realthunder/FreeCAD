@@ -34,6 +34,20 @@ class HLRProjectionTest(unittest.TestCase):
         self.assertEqual(hlr.ElementMapSize, 0)
         self.assertEqual(len(hlr.Edges), 9)
 
+    def testAFaceSeenEdgeOnKeepsItsEdges(self):
+        # a box seen along Z: its side faces are seen edge on, and the
+        # outliner lists their boundary edges as their outline; those are
+        # the box's own edges and are named as such, not after the face
+        box = self.doc.addObject("Part::Box", "Box")
+        self.doc.recompute()
+        for hidden in (False, True):
+            hlr = box.Shape.makeHLR(Vector(0, 0, 1), Visible=not hidden, Hidden=hidden)
+            self.assertEqual(len(hlr.Edges), 4)
+            names = mappedNames(hlr)
+            self.assertEqual(len(set(names)), 4)
+            for name in names:
+                self.assertTrue(name.startswith("Edge"), name)
+
     def testVisibleAndHiddenSelection(self):
         box = self.doc.addObject("Part::Box", "Box")
         self.doc.recompute()
@@ -65,20 +79,20 @@ class HLRProjectionTest(unittest.TestCase):
         self.doc.recompute()
         shape = cyl.Shape
         # seen from the side: two silhouette lines (the length of the
-        # cylinder) that no edge of the input carries, so they are named
-        # from the side face, and the two rims seen edge on, from the circles
+        # cylinder) and the two rims seen edge on, from the circles. One
+        # silhouette is invented by the algorithm and named from the side
+        # face; the other is where the seam (Edge1, at angle 0) lies, and
+        # that projected edge is the seam's own, an input edge
         hlr = shape.makeHLR(Vector(0, 1, 0), EdgeTypes=["Hard", "Outline"])
         # a primitive's own names are its element names, so the projection's
         # names start with the source element, then the generated postfix
-        face = "Face1;"
-        silhouettes = 0
+        silhouettes = []
         for i, edge in enumerate(hlr.Edges):
             name = hlr.getElementName("Edge%d" % (i + 1), 1)
             self.assertTrue(name, "Edge%d unnamed" % (i + 1))
             if abs(edge.Length - cyl.Height.Value) < 1e-6 and isinstance(edge.Curve, Part.Line):
-                silhouettes += 1
-                self.assertTrue(name.startswith(face), "%s not from %s" % (name, face))
-        self.assertEqual(silhouettes, 2)
+                silhouettes.append(name.split(";")[0])
+        self.assertEqual(sorted(silhouettes), ["Edge1", "Face1"])
 
     def testHiddenPiecesOfOneEdgeAreToldApart(self):
         # a post in front of a wide box, seen along Y: the box's top front
