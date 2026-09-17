@@ -200,6 +200,7 @@ BaseGeomPtr BaseGeom::copy()
     result->setHlrVisible( hlrVisible);
     result->reversed = reversed;
     result->ref3D = ref3D;
+    result->ref3DFace = ref3DFace;
     result->source3D = source3D;
     result->hlrName = hlrName;
     result->cosmetic = cosmetic;
@@ -244,7 +245,10 @@ void BaseGeom::Save(Base::Writer &writer) const
     writer.Stream() << writer.ind() << "<HLRVisible value=\"" <<  v << "\"/>" << endl;
     const char r = reversed?'1':'0';
     writer.Stream() << writer.ind() << "<Reversed value=\"" << r << "\"/>" << endl;
-    writer.Stream() << writer.ind() << "<Ref3D value=\"" << ref3D << "\"/>" << endl;
+    //the face of a silhouette rides on the same element, so a file written
+    //before it existed restores the same way
+    writer.Stream() << writer.ind() << "<Ref3D value=\"" << ref3D << "\" face=\"" << ref3DFace
+                    << "\"/>" << endl;
     const char c = cosmetic?'1':'0';
     writer.Stream() << writer.ind() << "<Cosmetic value=\"" << c << "\"/>" << endl;
     writer.Stream() << writer.ind() << "<Source value=\"" << m_source << "\"/>" << endl;
@@ -267,6 +271,7 @@ void BaseGeom::Restore(Base::XMLReader &reader)
     reversed = reader.getAttributeAsInteger("value") != 0;
     reader.readElement("Ref3D");
     ref3D = reader.getAttributeAsInteger("value");
+    ref3DFace = reader.hasAttribute("face") ? reader.getAttributeAsInteger("face") : 0;
     reader.readElement("Cosmetic");
     cosmetic = reader.getAttributeAsInteger("value") != 0;
     reader.readElement("Source");
