@@ -2158,7 +2158,14 @@ public:
                 const auto &wireVertices = wireInfo->vertices;
                 auto beginVertex = wireVertices.front();
                 auto &beginInfo = *beginVertex.it;
-                initWireInfo(*wireInfo);
+                if (!initWireInfo(*wireInfo)) {
+                    // A wire that does not make a face cannot be tightened:
+                    // there is no face to classify a point against, and
+                    // isInside() on a null face is a crash, not a false. Keep
+                    // the wire as found; a non-planar loop is the usual cause.
+                    wireInfo->done = true;
+                    break;
+                }
                 showShape(wireInfo->wire, "iwire", iteration);
 
                 stack.clear();
@@ -2498,7 +2505,12 @@ public:
                         wireSet.insert(next->wireInfo.get());
 
                         const auto &wireVertices = wireInfo->vertices;
-                        initWireInfo(*wireInfo);
+                        if (!initWireInfo(*wireInfo)) {
+                            // as in findTightBound(): no face, nothing to
+                            // classify against, keep the wire as found
+                            wireInfo->done = true;
+                            break;
+                        }
 
                         std::shared_ptr<WireInfo> newWire;
 
