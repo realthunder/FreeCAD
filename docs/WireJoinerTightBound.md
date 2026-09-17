@@ -4,6 +4,13 @@ This records a defect in `findTightBound()`, and the redesign that fixed it, so
 that whoever picks this up next starts from the evidence instead of re-deriving
 it. Measured 2026-09-16 on `conda-relwithdebinfo-801`.
 
+**Since 2026-09-17 this search is the fallback, not the main path.** On planar
+input the minimal wires are read off the angular order of the edges at each
+vertex instead, which is both correct by construction and about 95x faster on a
+40x40 lattice -- see [WireJoinerAngle.md](WireJoinerAngle.md). The search still
+runs for anything without a common plane, and `angle=False` forces it, so
+everything below still applies to it.
+
 ## The symptom
 
 `Part.joinWires(..., tighten=True)` returned wires that are not tight: some
