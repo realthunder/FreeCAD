@@ -764,6 +764,7 @@ public:
             "          tighten = True : Boolean,\n"
             "          outline = False : Boolean,\n"
             "          keep_open = False : Boolean,\n"
+            "          angle = True : Boolean,\n"
             "          tol = 1e-6 : Float) -> Part.Shape | Tuple(Part.Shape, Part.Shape)\n"
             "Join edges to make closed wires.\n\n"
             "shapes: source shape or list of shapes. Only edges inside the shape will be used.\n"
@@ -775,6 +776,10 @@ public:
             "outline: remove edges that appears in more than one wire, effectively creating\n"
             "         oan outline of all wires. If True, then it implies tighten=True.\n"
             "keep_open: if True, then return a tuple of closed and open wires.\n"
+            "angle: find the wires by the angular order of the edges at each vertex, which\n"
+            "       yields the minimal wires directly instead of searching for them. Only\n"
+            "       applies to planar input, and only with tighten or outline. Pass False\n"
+            "       to force the search.\n"
             "tol: distance tolerance to check if two edges are connected."
         );
         add_varargs_method("showShapeOCCT", &Module::showShapeOCCT,
@@ -2871,12 +2876,15 @@ private:
         PyObject *outline = Py_False;
         PyObject *keep_open = Py_False;
         PyObject *no_open_original = Py_True;
+        PyObject *angle = Py_True;
         double tol = 1e-6;
         const char *op = "";
-        static std::array<const char*,10> kwd_list = {"shape", "split", "merge", "tighten", "outline",
-                                                      "keep_open", "no_open_original", "tol", "op", nullptr};
-        if(!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|OOOOOOds", kwd_list,
-                &pyshape, &split, &merge, &tighten, &outline, &keep_open, &no_open_original, &tol, &op))
+        static std::array<const char*,11> kwd_list = {"shape", "split", "merge", "tighten", "outline",
+                                                      "keep_open", "no_open_original", "angle", "tol",
+                                                      "op", nullptr};
+        if(!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|OOOOOOOds", kwd_list,
+                &pyshape, &split, &merge, &tighten, &outline, &keep_open, &no_open_original,
+                &angle, &tol, &op))
             throw Py::Exception();
 
         PY_TRY {
@@ -2887,6 +2895,7 @@ private:
             joiner.setMergeEdges(PyObject_IsTrue(merge));
             joiner.setOutline(PyObject_IsTrue(outline));
             joiner.setSplitEdges(PyObject_IsTrue(split));
+            joiner.setAngleTraversal(PyObject_IsTrue(angle));
             joiner.addShape(shapes);
             TopoShape result;
             result.makEShape(joiner, shapes, op);
