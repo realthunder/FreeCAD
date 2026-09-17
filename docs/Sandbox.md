@@ -8637,6 +8637,115 @@ new cases for the adapter, and is ALL GREEN.
 **Cost**: about 120 lines of TypeScript and CSS, plus the six gate
 cases.
 
+### 7.25 Completion, paused **[handoff 2026-09-17]**
+
+7.24 rebuilt the console's completion as a list and proved it against a
+live serve.  The handset then found it still wrong, for a reason now
+diagnosed but NOT yet written, and the work was paused here.  This
+section is the handoff: what is known, what is designed, what is open.
+
+**The console's real defect: rlcompleter matches a case-sensitive
+PREFIX.**  `global_matches` tests `word[:n] == text`, `attr_matches`
+tests `word[:n] == attr`, and our own PropertiesList loop adds
+`name.startswith(attr)`.  So `app.`, `fre` and `doc.` answer NOTHING
+while `App.` works -- and an empty answer renders as no list, which
+from a phone is indistinguishable from "the trigger never fired".  That
+one cause can produce the whole report, including it seeming to work
+only from the button: on an already-dotted line the prefix is empty and
+therefore always matches.
+
+**RULED by the user 2026-09-17: completion searches for any keyword and
+ignores case.**  Designed, not written:
+
+- Enumerate the candidates and match case-insensitively ANYWHERE in the
+  name, ordered prefixes first then alphabetical -- the ranking
+  `filterSet` already uses, so the guest and the panel agree.
+- The decoration has to be reproduced by hand, because `splice` inserts
+  the item verbatim and that is why `im` becomes `import ` and not
+  `import`: `_callable_postfix` appends `(`, and `)` as well when
+  `inspect.signature(val).parameters` is empty; a keyword gets a
+  trailing space except `{False, None, True, break, continue, pass,
+  else, _}`; `try` and `finally` get `:`.  `get_class_members` walks
+  `__bases__`.
+- Keep rlcompleter's shelf rule: hide names starting with `_` unless the
+  typed word starts with one.  With contains-matching, `init` would
+  otherwise surface `__init__`.
+- `console.py` already imports `builtins`; it needs `keyword`.
+
+**The spreadsheet has no completion at all** -- and needs no new
+matching rule.  `ExpressionCompleter` already defaults to
+`Qt::MatchContains` + `Qt::CaseInsensitive` (`ExpressionCompleter.cpp`
+2140-2145), flipped only by the `CompleterMatchExact` /
+`CompleterCaseSensitive` preferences.  What is missing is the op:
+
+- `sheet.complete`, registered NON-mutating beside `sheet.list/get/set`
+  in `installSheetControlOps` -- a view-only client may complete and
+  still may not write, which is 7.23's rule for `widgets.complete`.
+- `resolveSheet(req, boundDoc, error)` already turns `{doc, obj}` into a
+  `Sheet*`, and `ExpressionCompleter` is `GuiExport` taking a
+  `const App::DocumentObject*`, so the body is
+  `ExpressionCompleter completer(sheet);` then
+  `completer.completionsFor(text, pos, start, end, &tips)` -- the same
+  shape `widgets.complete` has at `SceneWidgets.cpp:427`.
+- Client: a `sheetComplete` wrapper beside `sheetGet`/`sheetSet` in
+  `control.ts`, over `sendOp`.
+- The panel has TWO editors sharing `editText`/`commit`: the formula bar
+  (`.fc-sheet-input`) and the in-cell editor (`.fc-sheet-cellinput`).
+  Wiring one only would repeat the "works here, not there" trap this
+  round hit twice.  **OPEN, asked and unanswered**: both, or the formula
+  bar first.  The in-cell editor commits on BLUR, so a completion tap
+  there must not blur it -- taking the pointer on `pointerdown` with
+  `preventDefault`, as the chips already do, is what prevents that.
+- Unlike all of 7.24 this half is C++: it needs a Gui rebuild and a
+  serve restart, not `npm run build` and a reload.
+
+**The one open question, and the cheapest way to settle it.**  Whether
+the console has a SECOND defect behind the case sensitivity -- whether
+an auto dot trigger fires on a real handset at all.  The test that
+separates them: type `FreeCAD.` in the correct case and see whether the
+list appears with NOTHING pressed.  If it does, case sensitivity was the
+whole story.  If it does not, the trigger is not firing on a soft
+keyboard, and the next suspect is composition: a phone keyboard fires
+`input` with `isComposing` true while a word is being composed, which
+this controller does not consider.
+
+**The tools, and where they went.**  The probes that found and proved
+7.24 are not committed (offered, not taken up), and a scratchpad is
+session-scoped, so they were copied to `~/works/sw/fcad-probes/handset/`:
+
+    chrome-probe.js     taps every chrome surface and reports whether
+                        the tap reached the <canvas> and whether each
+                        close button closes -- the one that caught the
+                        pointer-events defect
+    console-complete.js the dot trigger, local narrowing, the picked
+                        line, and a partial word with and without the
+                        button, in a phone and a desktop viewport
+    console-tap.js      the completion tap target and its 44px size
+    drag-probe.js       the header-drag leak, with the bare-canvas
+    leak-probe2.js      positive control that proved the FIRST version
+                        of that experiment inert
+
+The puppeteer knobs they need are in `docs/Testing.md`: `PUPPETEER_PATH`,
+`CHROME`, `CHROME_LIBS`, and emsdk's node.
+
+**Getting a phone onto it again** (this session's recipe):
+`FC_SERVE_TOKEN=<secret> FC_SERVE_TRUST_PROXY=1
+scripts/renderer-serve.sh scripts/demo-taskpanel.py 8077`, then
+`cloudflared tunnel --protocol http2 --url http://127.0.0.1:8077`.
+**QUIC is blocked outbound on this box**, so without `--protocol http2`
+the tunnel comes up degraded and says so.  The page is
+`/fcviewer.html?doc=<name>&token=<secret>`, with `&panel`, `&console` or
+`&sheet` to open a card on load.  The bundle is `npm run build` in
+`src/Gui/Renderer/web` into `build/wasm/web`, `npm run gate` is the pure
+gate and `npm run typecheck` the types.  The viewer bundle answers
+before the door, so the PAGE loads without a token while every route
+carrying scene data is gated -- do not read a 200 on `fcviewer.html` as
+an open server.
+
+**Where the code stands**: three commits, none pushed -- `ef831bc5d3`
+(the chrome's pointer), `cac3af4313` (the console's list), `8f9af09904`
+(7.24).  Nothing of the ruling above is written yet.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
