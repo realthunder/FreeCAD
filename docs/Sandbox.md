@@ -8931,6 +8931,44 @@ was settled by instrumented rebuilds (backtraces in `setEdit`,
 `_resetEdit`, `closeDialog`, all reverted) rather than by asking the
 live process.
 
+### 7.27 The first op, chased: never sent **[found and fixed 2026-09-17]**
+
+7.26 left one open: a page's very first control op -- the task panel
+card's `widgets.subscribe {panels:true}`, sent as the scene socket
+opens -- got no reply, the tool bar's 200 ms later did, and the card
+recovered only by asking again.  The trace that said "send accepted and
+nothing back" had logged the send BEFORE it knew the return value.
+Logged after, the same probe shows `ok=false`: the viewer refused the op
+as Offline, because the card asks at mount and the socket was not open
+yet -- `fcviewer_control_send` checks `s_wsOpen`, which `onWsOpen` sets
+before the hello and before `fc:connection`, so nothing can be sent
+ahead of the hello and nothing was.  The "recovery by re-asking" was the
+card's own 500 ms Offline timer, which on a page busy booting the viewer
+fired 2.2 s after the refusal (t=1143 refused, t=3371 sent and
+answered).  Nothing was dropped; the server's silent drop of a non-hello
+text from an unauthorized connection (the door, docs/MultiDocServe.md
+sec 8) was never reached.
+
+**Fixed by asking at the right moment.**  The panel card and the sheet
+card now re-ask on `fc:connection` (the `onConnection` listener the tool
+bar card already used), in the effect that owns the card, with an
+in-flight guard so a reconnect landing on top of a pending ask does not
+double-subscribe; the timer stays as the fallback only -- 3 s after an
+Offline (a viewer too old to send the event), 500 ms after a Timeout (a
+reply lost on the way).  The same listener closes a gap 7.26 did not
+see: a reconnect is a new connection holding no subscription, and the
+panel card never re-subscribed after one.  Proven on the serve
+(`demo-taskpanel.py`, headless Chrome): the panel's subscribe now goes
+out in the same millisecond as the tool bar's, at `fc:connection`, and
+is answered; 13 fields.  The sheet card's `sheet.list` likewise -- it
+answers UnknownOp on that scene because nothing there loads the
+Spreadsheet GUI module that registers the sheet ops, which is that
+scene's, not the card's.
+
+The probe that settles this kind of question logs the RETURN of
+`fcviewerControlSend`, not only the call; the 7.26 probe did not, and
+read a refusal as a loss.
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests

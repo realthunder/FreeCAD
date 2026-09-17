@@ -24,6 +24,7 @@ import { NARROW, draggable, fitOnScreen, loadPos, posStyle } from '../panel.ts';
 import type { Pos } from '../panel.ts';
 import { Portal } from 'solid-js/web';
 
+import { onConnection } from '../control.ts';
 import { PanelClient } from './client.ts';
 import { ExpressionDialog, Field } from './field.tsx';
 import { planLayout } from './layout.ts';
@@ -99,7 +100,14 @@ export function TaskPanelCard(props: {
   // rather than queueing it, so a single subscribe at open time leaves a
   // dead card that only a reload clears -- which is what the first run
   // against a live serve showed. An 'Offline' here is "not yet", not "no",
-  // the rule the sheet panel already keeps.
+  // the rule the sheet panel already keeps. The moment "now" arrives is
+  // the connection event, so that is what re-asks (docs/Sandbox.md 7.27):
+  // a timer polled 500 ms behind a page that was busy booting the viewer,
+  // and this was the "first op unanswered" of 7.26 -- the op was never
+  // sent. The same event covers a reconnect, whose new connection holds
+  // no subscription whatever the old one had, the way the tool bar card
+  // already re-asks. The slow timer stays for a viewer too old to send
+  // the event, and for a reply lost on the way.
   createEffect(() => {
     if (!props.open()) {
       if (client) {
@@ -111,9 +119,13 @@ export function TaskPanelCard(props: {
     }
     const c = ensure();
     let cancelled = false;
-    onCleanup(() => { cancelled = true; });
+    let inflight = false;
+    let retry = 0;
+    onCleanup(() => { cancelled = true; clearTimeout(retry); });
     const ask = () => {
-      if (cancelled || !props.open()) return;
+      if (cancelled || !props.open() || inflight) return;
+      clearTimeout(retry);
+      inflight = true;
       c.subscribe()
         .then(() => { if (!cancelled) setFailed(''); })
         .catch((err) => {
@@ -121,12 +133,14 @@ export function TaskPanelCard(props: {
           const code = String(err?.code ?? err);
           if (code === 'Offline' || code === 'Timeout') {
             setFailed('Waiting for the viewer...');
-            setTimeout(ask, 500);
+            retry = window.setTimeout(ask, code === 'Offline' ? 3000 : 500);
             return;
           }
           setFailed(`The panel stream is unavailable (${code})`);
-        });
+        })
+        .finally(() => { inflight = false; });
     };
+    onCleanup(onConnection((up) => { if (up) ask(); }));
     ask();
   });
 

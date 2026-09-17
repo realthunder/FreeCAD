@@ -16,7 +16,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'so
 import type { Accessor } from 'solid-js';
 
 import {
-  onSheetChanged, sheetComplete, sheetGet, sheetList, sheetSet,
+  onConnection, onSheetChanged, sheetComplete, sheetGet, sheetList, sheetSet,
   type SheetCell, type SheetData, type SheetEntry,
 } from './control';
 import { draggable, fitOnScreen, loadPos, posStyle, type Pos } from './panel';
@@ -196,13 +196,20 @@ export function SheetPanel(props: SheetPanelProps) {
   // by definition cannot arrive until the viewer is up. So an 'Offline'
   // refusal here is "not yet", not "no": keep asking while the panel is open,
   // rather than showing a dead card that a reload is the only way out of.
+  // The connection event is what re-asks; the timer is the fallback for a
+  // viewer too old to send it, or a reply lost on the way (docs/Sandbox.md
+  // 7.27).
   createEffect(() => {
     if (!props.open()) return;
     let cancelled = false;
-    onCleanup(() => { cancelled = true; });
+    let inflight = false;
+    let retry = 0;
+    onCleanup(() => { cancelled = true; clearTimeout(retry); });
 
     const ask = () => {
-      if (cancelled || !props.open()) return;
+      if (cancelled || !props.open() || inflight) return;
+      clearTimeout(retry);
+      inflight = true;
       sheetList(props.doc())
         .then((r) => {
           if (cancelled) return;
@@ -221,12 +228,14 @@ export function SheetPanel(props: SheetPanelProps) {
           if (cancelled) return;
           if (e?.code === 'Offline' || e?.code === 'Timeout') {
             setError('waiting for the viewer...');
-            setTimeout(ask, 500);
+            retry = window.setTimeout(ask, e?.code === 'Offline' ? 3000 : 500);
             return;
           }
           setError(e?.message ?? e?.code ?? 'no spreadsheet here');
-        });
+        })
+        .finally(() => { inflight = false; });
     };
+    onCleanup(onConnection((up) => { if (up) ask(); }));
     ask();
   });
 
