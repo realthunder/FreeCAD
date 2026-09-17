@@ -114,7 +114,7 @@ c014ab7a4e	2024-03-30	ppphp	fix	0	1	have(rev)	1		fix: some unuse argument warnin
 b5fa008272	2024-03-30	pre-commit-ci[bot]	noise	0	1	have(rev)	10		[pre-commit.ci] auto fixes from pre-commit.com hooks	Gui/DrawSketchController.h
 6c0865a7b9	2024-03-31	Roy-043	refactor	1	0	open	4		Sketcher: Rename Sketcher_BSplineApproximate.svg	Gui/CommandSketcherBSpline.cpp Gui/Resources/Sketcher.qrc Gui/Resources/icons/splines/{Sketcher_BSplineApproximate.svg => Sketcher_BSplineConvertToNURBS.svg}
 5668b6952b	2024-03-28	PaddleStroke	fix	1	0	have(sync)	82		Sketcher: Chamfer Fix #13049	App/SketchObject.cpp
-64054d13c4	2024-03-25	PaddleStroke	feature	0	0	open	104		Sketcher: Add line mid-point auto-constraint	Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandler.cpp
+64054d13c4	2024-03-25	PaddleStroke	feature	0	0	open	104	adapted 4c310bbc1d	Sketcher: Add line mid-point auto-constraint	Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandler.cpp
 c26f52c4e4	2024-03-26	PaddleStroke	fix	0	1	have(rev)	5		Sketcher: Symmetry fix #13164	App/SketchObject.cpp Gui/DrawSketchHandlerSymmetry.h
 581dee4d48	2024-03-28	PaddleStroke	fix	0	0	open	22		Sketcher: Fixes #13181	Gui/CommandAlterGeometry.cpp Gui/CommandCreateGeo.cpp Gui/Resources/Sketcher.qrc Gui/Resources/icons/geometry/{Sketcher_Create_Periodic_BSplineByInterpolation.svg => Sketcher_CreatePeriodicBSplineByInterpolation.svg} Gui/Resources/icons/geometry/{Sketcher_Create_Periodic_BSplineByInterpolation_Const
 d92267c6a7	2024-04-03	wmayer	noise	0	0	have(sync)	5		Fix several compiler warnings	Gui/DrawSketchHandlerSymmetry.h Gui/ViewProviderSketch.cpp
@@ -130,7 +130,7 @@ b64e3e750f	2024-04-03	wmayer	feature	0	0	have(sync)	57		Sketch: add command to c
 c9d8bdf13d	2024-04-07	bgbsww	feature	0	0	have(sync)	30		Toponaming/Part: Add deprecation comments, clean up code	App/SketchObject.cpp
 a88e7baff5	2024-04-13	bgbsww	fix	0	0	have(sync)	2		TopoShape/Part:  Bug fixes; pass Hasher parms, OCCT 7.8 compatibility, ElementMaps correct item count	App/SketchObject.cpp
 4b968a607d	2024-03-28	PaddleStroke	fix	0	0	open	142		Sketcher: Trim tool, hold click and move. Fixes #6152	Gui/DrawSketchHandlerTrimming.h
-280452bcc8	2024-04-17	PaddleStroke	fix	0	0	open	30		Sketcher: Fix mid-point autoconstraint not working on polyline. Fixes #13277	Gui/DrawSketchHandler.cpp
+280452bcc8	2024-04-17	PaddleStroke	fix	0	0	open	30	adapted 4c310bbc1d	Sketcher: Fix mid-point autoconstraint not working on polyline. Fixes #13277	Gui/DrawSketchHandler.cpp
 64029d3a5b	2024-04-17	wmayer	fix	0	0	open	20		Sketcher: fix crash in CmdRenderingOrder::updateIcon()	Gui/Command.cpp
 7909815002	2024-04-18	Roy-043	?	0	0	open	24		Sketcher: Improve GUI texts in SketcherSettingsAppearance.ui	Gui/SketcherSettingsAppearance.ui
 52935f8249	2024-04-21	wmayer	?	1	0	open	94	taken 619abdfac4	Sketch: expose several methods to Python	App/SketchObjectPy.xml App/SketchObjectPyImp.cpp
@@ -142,14 +142,14 @@ cb0a2d2809	2024-04-17	PaddleStroke	?	0	0	partial(sync)	144		Sketcher: Joint Line
 05e79b5d0a	2024-04-11	PaddleStroke	feature	0	0	have(sync)	44		Sketcher: Reorganize toolbars	Gui/Workbench.cpp
 3a9547c235	2024-04-22	Chris Hennes	?	0	0	open	3		Start: Create 'First Start' screen	tests/App/planegcs/Constraints.cpp
 832a0653fa	2024-01-14	hlorus	fix	1	0	open	89	n/a: no unified Measure module in the fork	[Sketcher] Add handlers for unified measurement facility	App/AppSketcher.cpp App/CMakeLists.txt App/Measure.cpp App/Measure.h
-c14e735c20	2024-04-24	wmayer	fix	1	0	open	17		Sketcher: Fix possible crash inside ~CurveConverter()	Gui/DrawSketchHandler.cpp
+c14e735c20	2024-04-24	wmayer	fix	1	0	open	17	taken 372d84ca21	Sketcher: Fix possible crash inside ~CurveConverter()	Gui/DrawSketchHandler.cpp
 56f84c8042	2024-04-30	wmayer	noise	0	0	open	1		Fix various compiler warnings:	Gui/DrawSketchHandler.cpp
 d7ade12dc3	2024-04-21	bgbsww	fix	0	0	partial(sync)	67		Ensure we set up a valid sketch even with invalid external references	App/SketchObject.cpp SketcherTests/TestSketcherSolver.py
 2e7a1cf358	2024-04-11	PaddleStroke	feature	0	0	have(sync)	80		Sketcher: Dimension tool : add arc length	Gui/CommandConstraints.cpp
 3d2419effc	2024-05-06	Max Wilfinger	feature	0	0	partial(sync)	636		Sketcher / UI: Update Sketcher Toolbars (#13763)	Gui/CommandAlterGeometry.cpp Gui/CommandConstraints.cpp Gui/CommandCreateGeo.cpp Gui/SketcherSettings.ui Gui/Workbench.cpp
 4499ea5b88	2024-05-06	Florian Foinant-Willig	fix	1	0	have(sync)	6		Fix 12755 (#13802)	Gui/DrawSketchHandlerArc.h
 684c424ccc	2024-05-06	PaddleStroke	fix	0	0	have(sync)	2		Sketcher: fix OVP placement issue #13827	Gui/DrawSketchController.h
-52ffab90e5	2024-04-12	PaddleStroke	fix	0	0	open	335		Core/Sketcher: Create ToolHandler class in core for core reuse accross other wbs.	Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h
+52ffab90e5	2024-04-12	PaddleStroke	fix	0	0	open	335	adapted cf85a2ce91	Core/Sketcher: Create ToolHandler class in core for core reuse accross other wbs.	Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h
 711a7ad827	2024-04-15	PaddleStroke	fix	0	0	have(sync)	21		Sketcher: Dimension : little fixes	Gui/CommandConstraints.cpp
 a3344c1ab8	2024-05-07	PaddleStroke	?	0	0	n/a(uncompiled)	4		Sketcher: Red point if end-point perpendicular	Gui/EditModeGeometryCoinManager.cpp
 b48bbe390b	2024-05-07	PaddleStroke	fix	0	0	n/a(uncompiled)	2		Sketcher: change rendering height of internal alignment. So that bpsline appears connected. Fixes second part of #13849	Gui/EditModeGeometryCoinManager.cpp
@@ -668,7 +668,7 @@ ed770bf849	2025-08-16	captain0xff	fix	0	0	open	6		Sketcher: fix cropping of some
 1c67ab7be2	2025-08-18	Valentin Rusu	fix	0	0	open	4	have: null refSubShape skipped earlier	Fix segfault where DatumLine does not have a refSubSHape	App/SketchObject.cpp
 fc463ee5d7	2025-08-20	PaddleStroke	?	0	0	n/a(uncompiled)	6		Sketcher: Revert DPI adjustment error #22941 (#23237)	Gui/EditModeCoinManager.cpp
 9fc40b33de	2025-08-25	Max Wilfinger	noise	0	0	open	22		Fix source string mistakes reported on Crowdin (#23157)	Gui/CommandConstraints.cpp Gui/CommandSketcherBSpline.cpp Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandler.cpp Gui/DrawSketchHandlerBSpline.h Gui/SketcherSettingsAppearance.ui Gui/TaskSketcherValidation.cpp
-19a082b63c	2025-08-25	matthiasdanner	fix	0	0	open	237	NOT sketch groups: combined constraint icons. The fork bounds-checks the second icon but keeps the two-icon assumption -- phase 3	Sketcher: Fix constraint selection in groups (#22937)	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
+19a082b63c	2025-08-25	matthiasdanner	fix	0	0	open	237	n/a: the fork's separators hold at most two icons, as upstream's do (SketcherPort.md 7)	Sketcher: Fix constraint selection in groups (#22937)	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 9bff63e38d	2025-08-21	tetektoza	fix	0	0	open	4		Sketcher: Fix construction lines becoming solid after box selection	Gui/ViewProviderSketch.cpp
 150e6c9b99	2025-08-25	PaddleStroke	fix	0	0	n/a(uncompiled)	4		Sketcher: fix constraint icon size (#22940)	Gui/EditModeCoinManager.cpp
 e2346dabd6	2025-06-13	paddle	fix	0	0	open	412		Sketcher: Port and fix internal faces from RealThunder's branch	Gui/AppSketcherGui.cpp Gui/SketcherSettings.cpp Gui/SketcherSettings.ui Gui/SketcherSettingsAppearance.ui Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
