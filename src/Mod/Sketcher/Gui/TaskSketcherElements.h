@@ -29,6 +29,7 @@
 #include <fastsignals/signal.h>
 #include <QTreeWidget>
 #include <QIcon>
+#include <map>
 
 namespace App
 {
@@ -81,6 +82,10 @@ public:
 
 private:
     void slotElementsChanged(void);
+    /// rebuilds the list when the groups of the sketch changed, and only then
+    void slotConstraintsChanged(void);
+    /// geoId -> the constraint type it is a handle of, or None for a group member
+    std::map<int, int> collectGroupRoles() const;
     void updateIcons(int element);
     void updatePreselection();
     void updateVisibility(int filterindex);
@@ -101,6 +106,7 @@ protected:
     ViewProviderSketch *sketchView;
     using Connection = fastsignals::connection;
     Connection connectionElementsChanged;
+    Connection connectionConstraintsChanged;
 
 private:
     QWidget* proxy;
@@ -109,6 +115,9 @@ private:
     int previouslySelectedItemIndex;
 
     std::map<int,QTreeWidgetItem*> itemMap;
+    /// what the list was last built for, so a constraint change that does not touch a
+    /// group does not rebuild it
+    std::map<int, int> groupRoles;
     
     bool isautoSwitchBoxChecked;
 
