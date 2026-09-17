@@ -408,6 +408,26 @@ int SketchObject::getActive(int ConstrId, bool& isactive)
     return 0;
 }
 
+bool SketchObject::isConstraintActiveInSketch(const Sketcher::Constraint* cstr) const
+{
+    // If the constraint is deactivated then it's over
+    if (!cstr || !cstr->isActive) {
+        return false;
+    }
+
+    if (cstr->Type == Group || cstr->Type == Text) {
+        return true;
+    }
+
+    // If the constraint is not deactivated, it could still constrain something in a group
+    for (int j = 0; cstr->hasElement(j); ++j) {
+        if (isInGroup(cstr->getGeoId(j), false)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 int SketchObject::toggleActive(int ConstrId)
 {
     // no need to check input data validity as this is an sketchobject managed operation.

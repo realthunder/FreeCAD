@@ -149,6 +149,7 @@ public:
                 case Sketcher::Equal:
                 case Sketcher::Symmetric:
                 case Sketcher::Block:
+                case Sketcher::Group:
                     break;
                 case Sketcher::Distance:
                 case Sketcher::DistanceX:
@@ -234,6 +235,7 @@ public:
             // Gui::BitmapFactory().iconFromTheme("Constraint_Ellipse_Axis_Angle") );
             static QIcon equal(Gui::BitmapFactory().iconFromTheme("Constraint_EqualLength"));
             static QIcon pntoo(Gui::BitmapFactory().iconFromTheme("Constraint_PointOnObject"));
+            static QIcon group(Gui::BitmapFactory().iconFromTheme("Constraint_Group"));
             static QIcon symm(Gui::BitmapFactory().iconFromTheme("Constraint_Symmetric"));
             static QIcon snell(Gui::BitmapFactory().iconFromTheme("Constraint_SnellsLaw"));
             static QIcon iaellipseminoraxis(Gui::BitmapFactory().iconFromTheme(
@@ -262,10 +264,10 @@ public:
             static QIcon snell_driven(
                 Gui::BitmapFactory().iconFromTheme("Constraint_SnellsLaw_Driven"));
 
-            auto selicon = [](const Sketcher::Constraint* constr,
-                              const QIcon& normal,
-                              const QIcon& driven) -> QIcon {
-                if (!constr->isActive) {
+            auto selicon = [this](const Sketcher::Constraint* constr,
+                                  const QIcon& normal,
+                                  const QIcon& driven) -> QIcon {
+                if (!sketch->isConstraintActiveInSketch(constr)) {
                     QIcon darkIcon;
                     int w = QApplication::style()->pixelMetric(QStyle::PM_ListViewIconSize);
                     darkIcon.addPixmap(normal.pixmap(w, w, QIcon::Disabled, QIcon::Off),
@@ -294,6 +296,8 @@ public:
                     return selicon(constraint, block, block);
                 case Sketcher::PointOnObject:
                     return selicon(constraint, pntoo, pntoo);
+                case Sketcher::Group:
+                    return selicon(constraint, group, group);
                 case Sketcher::Parallel:
                     return selicon(constraint, para, para);
                 case Sketcher::Perpendicular:
@@ -377,6 +381,7 @@ public:
             case Sketcher::Tangent:
             case Sketcher::Equal:
             case Sketcher::Symmetric:
+            case Sketcher::Group:
                 return true;
             case Sketcher::Distance:
             case Sketcher::DistanceX:
@@ -1636,6 +1641,9 @@ bool TaskSketcherConstraints::isConstraintFiltered(QListWidgetItem* item)
                 break;
             case Sketcher::PointOnObject:
                 visible = checkFilterBitset(multiFilterStatus, FilterValue::PointOnObject);
+                break;
+            case Sketcher::Group:
+                visible = checkFilterBitset(multiFilterStatus, FilterValue::Group);
                 break;
             case Sketcher::Parallel:
                 visible = checkFilterBitset(multiFilterStatus, FilterValue::Parallel);
