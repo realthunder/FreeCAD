@@ -404,6 +404,9 @@ DrawSketchHandler::suggestedConstraintsPixmaps(std::vector<AutoConstraint>& sugg
             case PointOnObject:
                 iconType = QStringLiteral("Constraint_PointOnObject");
                 break;
+            case Symmetric:
+                iconType = QStringLiteral("Constraint_Symmetric");
+                break;
             case Tangent:
                 iconType = QStringLiteral("Constraint_Tangent");
                 break;
@@ -483,15 +486,31 @@ int DrawSketchHandler::seekAutoConstraint(std::vector<AutoConstraint>& suggested
         constr.Type = Sketcher::None;
         constr.GeoId = GeoId;
         constr.PosId = PosId;
-        if ((type == AutoConstraint::VERTEX || type == AutoConstraint::VERTEX_NO_TANGENCY)
-            && PosId != Sketcher::PointPos::none) {
-            constr.Type = Sketcher::Coincident;
+        if (type == AutoConstraint::VERTEX || type == AutoConstraint::VERTEX_NO_TANGENCY) {
+            if (PosId == Sketcher::PointPos::none) {
+                bool lineCenter = false;
+                const Part::Geometry* geo = sketchgui->getSketchObject()->getGeometry(GeoId);
+                if (geo && geo->is<Part::GeomLineSegment>()) {
+                    const Part::GeomLineSegment* line =
+                        static_cast<const Part::GeomLineSegment*>(geo);
+
+                    Base::Vector2d startPoint = toVector2d(line->getStartPoint());
+                    Base::Vector2d endPoint = toVector2d(line->getEndPoint());
+                    Base::Vector2d midPoint = (startPoint + endPoint) / 2;
+
+                    // Check if we are at middle of the line
+                    if ((Pos - midPoint).Length() < (endPoint - startPoint).Length() * 0.05) {
+                        lineCenter = true;
+                    }
+                }
+
+                constr.Type = lineCenter ? Sketcher::Symmetric : Sketcher::PointOnObject;
+            }
+            else {
+                constr.Type = Sketcher::Coincident;
+            }
         }
         else if (type == AutoConstraint::CURVE && PosId != Sketcher::PointPos::none) {
-            constr.Type = Sketcher::PointOnObject;
-        }
-        else if ((type == AutoConstraint::VERTEX || type == AutoConstraint::VERTEX_NO_TANGENCY)
-                 && PosId == Sketcher::PointPos::none) {
             constr.Type = Sketcher::PointOnObject;
         }
         else if (type == AutoConstraint::CURVE && PosId == Sketcher::PointPos::none) {
@@ -778,6 +797,15 @@ void DrawSketchHandler::createAutoConstraints(const std::vector<AutoConstraint>&
                         geoId1,
                         static_cast<int>(posId1),
                         geoId2);
+                } break;
+                case Sketcher::Symmetric: {
+                    Gui::cmdAppObjectArgs(
+                        sketchgui->getObject(),
+                        "addConstraint(Sketcher.Constraint('Symmetric',%d,1,%d,2,%d,%d)) ",
+                        geoId2,
+                        geoId2,
+                        geoId1,
+                        static_cast<int>(posId1));
                 } break;
                     // In special case of Horizontal/Vertical constraint, geoId2 is normally unused
                     // and should be 'Constraint::GeoUndef' However it can be used as a way to
