@@ -177,13 +177,18 @@ void Constraint::Save(Writer& writer) const
 
     // Save elements
     {
-        // Ensure backwards compatibility with old versions
-        writer.Stream() << "First=\"" << getElement(0).GeoId << "\" "
-                        << "FirstPos=\"" << getElement(0).posIdAsInt() << "\" "
-                        << "Second=\"" << getElement(1).GeoId << "\" "
-                        << "SecondPos=\"" << getElement(1).posIdAsInt() << "\" "
-                        << "Third=\"" << getElement(2).GeoId << "\" "
-                        << "ThirdPos=\"" << getElement(2).posIdAsInt() << "\" ";
+        // Ensure backwards compatibility with old versions. A Group or Text constraint can
+        // hold fewer than three elements, and getElement() refuses one that is not there,
+        // so the missing ones are written as undefined.
+        auto legacyElement = [this](size_t index) {
+            return index < this->elements.size() ? getElement(index) : GeoElementId();
+        };
+        writer.Stream() << "First=\"" << legacyElement(0).GeoId << "\" "
+                        << "FirstPos=\"" << legacyElement(0).posIdAsInt() << "\" "
+                        << "Second=\"" << legacyElement(1).GeoId << "\" "
+                        << "SecondPos=\"" << legacyElement(1).posIdAsInt() << "\" "
+                        << "Third=\"" << legacyElement(2).GeoId << "\" "
+                        << "ThirdPos=\"" << legacyElement(2).posIdAsInt() << "\" ";
 #if SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS
         auto elements = std::views::iota(size_t {0}, this->elements.size())
             | std::views::transform([&](size_t i) { return getElement(i); });
