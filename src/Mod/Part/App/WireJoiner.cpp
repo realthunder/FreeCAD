@@ -210,6 +210,8 @@ public:
         // angle traversal, 0 for none. Index 0 is the dart leaving p1, index 1
         // the one leaving p2.
         int orbit[2];
+        // How many times this edge is in edgeSet, kept by EdgeSet itself.
+        int inEdgeSet = 0;
         // Which input edges this one came from, as indices into
         // sourceEdgeArray, sorted. One for an input edge or a fragment of one,
         // several for a merged chain. The wires are emitted in the order of
@@ -555,7 +557,47 @@ public:
         }
     };
 
-    struct EdgeSet: VectorSet<EdgeInfo*> {
+    // The edges the search has on its stack, or the edges of the chain
+    // findSuperEdges() is growing. Membership is asked for at every edge the
+    // search looks at, and the answer is a counter on the edge itself; the
+    // vector only exists so that clear() knows which counters to reset. The
+    // search inserts and erases in stack order, so erase() looks at the back
+    // first and only walks the vector for the out-of-order erases of the
+    // tight bound fallback. A sorted vector here cost the plain path a
+    // binary search per look-up and a memmove per insert and erase, together
+    // most of its time on a large network.
+    struct EdgeSet {
+        std::vector<EdgeInfo*> data;
+
+        bool contains(const EdgeInfo *info) const
+        {
+            return info->inEdgeSet > 0;
+        }
+        void insert(EdgeInfo *info)
+        {
+            ++info->inEdgeSet;
+            data.push_back(info);
+        }
+        // Removes every copy of the edge, as the sorted vector did.
+        void erase(EdgeInfo *info)
+        {
+            int count = info->inEdgeSet;
+            if (count <= 0)
+                return;
+            info->inEdgeSet = 0;
+            while (!data.empty() && data.back() == info) {
+                data.pop_back();
+                --count;
+            }
+            if (count > 0)
+                data.erase(std::remove(data.begin(), data.end(), info), data.end());
+        }
+        void clear()
+        {
+            for (auto info : data)
+                info->inEdgeSet = 0;
+            data.clear();
+        }
     };
     EdgeSet edgeSet;
 
