@@ -64,6 +64,8 @@ public:
     bool accept() override;
     /// is called by the framework if the dialog is rejected (Cancel)
     bool reject() override;
+    /// is called by the framework when the dialog is removed; it is deleted later
+    void closed() override;
     bool isAllowedAlterDocument() const override
     {
         return false;

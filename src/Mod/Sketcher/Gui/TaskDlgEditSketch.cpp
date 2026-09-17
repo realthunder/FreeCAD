@@ -143,4 +143,11 @@ bool TaskDlgEditSketch::reject()
 }
 
 
+void TaskDlgEditSketch::closed()
+{
+    // The dialog is deleted later, and a relayout of the task panel in
+    // between reads every list item; the sketch may be gone by then.
+    Constraints->sketchClosed();
+    Elements->sketchClosed();
+}
 #include "moc_TaskDlgEditSketch.cpp"
