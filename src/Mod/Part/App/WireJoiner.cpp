@@ -65,6 +65,7 @@
 #include <ShapeBuild_ReShape.hxx>
 
 #include <algorithm>
+#include <tuple>
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
@@ -861,10 +862,20 @@ public:
 
     struct IntersectInfo {
         double param;
-        TopoDS_Shape intersectShape;
+        // The edge that cuts here. A fragment is named after it (see
+        // splitEdges()), and when two edges cut at the same point the choice
+        // must not depend on which pair was checked first: an edge that
+        // crosses here beats one that merely starts overlapping here, and
+        // among equals the smaller source set wins. Mutable because that
+        // choice is made after the entry is in the set, which is keyed on
+        // param alone.
+        mutable TopoDS_Shape intersectShape;
+        mutable int rank;
+        mutable std::vector<int> cutter;
         gp_Pnt point;
-        IntersectInfo(double p, const gp_Pnt &pt, const TopoDS_Shape &s)
-            :param(p), intersectShape(s), point(pt)
+        IntersectInfo(double p, const gp_Pnt &pt, const TopoDS_Shape &s,
+                      const std::vector<int> &c, int r = 0)
+            :param(p), intersectShape(s), rank(r), cutter(c), point(pt)
         {}
         bool operator<(const IntersectInfo &other) const {
             return param < other.param;
@@ -913,7 +924,7 @@ public:
             for (double param : {ip.ParamOnFirst(), ip.ParamOnSecond()}) {
                 gp_Pnt pt = info.curve->Value(param);
                 if (!isEndParam(info, param, pt, true) && !isEndParam(info, param, pt, false))
-                    params.emplace(param, pt, info.edge);
+                    params.emplace(param, pt, info.edge, info.sources);
             }
         }
     }
@@ -967,11 +978,11 @@ public:
                     auto s2 = extss.SupportOnShape2(i);
                     if (s1.ShapeType() == TopAbs_EDGE) {
                         extss.ParOnEdgeS1(i,p);
-                        pushIntersection(params1, p, extss.PointOnShape1(i), other.edge);
+                        pushIntersection(params1, p, extss.PointOnShape1(i), other);
                     }
                     if (s2.ShapeType() == TopAbs_EDGE) {
                         extss.ParOnEdgeS2(i,p);
-                        pushIntersection(params2, p, extss.PointOnShape2(i), info.edge);
+                        pushIntersection(params2, p, extss.PointOnShape2(i), info);
                     }
                 }
                 return;
@@ -1033,24 +1044,38 @@ public:
         analysis.CheckIntersectingEdges(1, idx, points2d, points3d, errors);
         assertCheck(points2d.Length() == points3d.Length());
         for (int i=1; i<=points2d.Length(); ++i) {
-            pushIntersection(params1, points2d(i).ParamOnFirst(), points3d(i), other.edge);
-            pushIntersection(params2, points2d(i).ParamOnSecond(), points3d(i), info.edge);
+            pushIntersection(params1, points2d(i).ParamOnFirst(), points3d(i), other);
+            pushIntersection(params2, points2d(i).ParamOnSecond(), points3d(i), info);
         }
     }
 
-    void pushIntersection(std::set<IntersectInfo> &params, double param, const gp_Pnt &pt, const TopoDS_Shape &shape)
+    // 'overlap' marks the end of a stretch the two edges share rather than a
+    // crossing.
+    void pushIntersection(std::set<IntersectInfo> &params, double param,
+                          const gp_Pnt &pt, const EdgeInfo &cutter, bool overlap = false)
     {
-        IntersectInfo info(param, pt, shape);
+        IntersectInfo info(param, pt, cutter.edge, cutter.sources, overlap ? 1 : 0);
+        auto prefer = [&info](const IntersectInfo &held) {
+            if (std::tie(info.rank, info.cutter) < std::tie(held.rank, held.cutter)) {
+                held.intersectShape = info.intersectShape;
+                held.rank = info.rank;
+                held.cutter = info.cutter;
+            }
+        };
         auto it = params.upper_bound(info);
         if (it != params.end()) {
-            if (it->point.SquareDistance(pt) < myTol2)
+            if (it->point.SquareDistance(pt) < myTol2) {
+                prefer(*it);
                 return;
+            }
         }
         if (it != params.begin()) {
             auto itPrev = it;
             --itPrev;
-            if (itPrev->point.SquareDistance(pt) < myTol2)
+            if (itPrev->point.SquareDistance(pt) < myTol2) {
+                prefer(*itPrev);
                 return;
+            }
         }
         params.insert(it, info);
         return;
@@ -1111,12 +1136,12 @@ public:
             auto itParam = params.begin();
             if (isEndParam(info, itParam->param, itParam->point, true))
                 params.erase(itParam);
-            params.emplace(info.firstParam, info.p1, TopoDS_Shape());
+            params.emplace(info.firstParam, info.p1, TopoDS_Shape(), std::vector<int>());
             itParam = params.end();
             --itParam;
             if (isEndParam(info, itParam->param, itParam->point, false))
                 params.erase(itParam);
-            params.emplace(info.lastParam, info.p2, TopoDS_Shape());
+            params.emplace(info.lastParam, info.p2, TopoDS_Shape(), std::vector<int>());
 
             if (params.size() <= 2) {
                 ++it;
