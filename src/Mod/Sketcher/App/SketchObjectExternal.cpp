@@ -2333,6 +2333,26 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                     }
                 }
             };
+
+            // An edge with a mapped name (a sub-shape of a reference that
+            // carries an element map) names the geometries it projects to
+            // after itself, so their ids follow the name across rebuilds
+            // (see the allocation below); the projection can break one
+            // edge into several pieces, told apart by a ";<k>" suffix in
+            // order. An edge without a name leaves them positional.
+            auto importNamedEdge = [&](const Part::TopoShape &s) {
+                std::size_t first = geos.size();
+                importEdge(s.getShape());
+                Data::MappedName name = s.getMappedName(Data::IndexedName::fromConst("Edge", 1));
+                if (!name)
+                    return;
+                std::string element = name.toString();
+                for (std::size_t i = first; i < geos.size(); ++i) {
+                    auto egf = ExternalGeometryFacade::getFacade(geos[i].get());
+                    egf->setRefElement(i == first ? element
+                            : element + ";" + std::to_string(i - first + 1));
+                }
+            };
             
             // A face projects as its edges, each the way it would on its
             // own. A planar face perpendicular to the sketch projects to
@@ -2433,8 +2453,11 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
 
                 std::size_t before = geos.size();
                 if (!perpendicular || _Version.getValue() >= 1) {
-                    for (TopExp_Explorer xp(face, TopAbs_EDGE); xp.More(); xp.Next())
-                        importEdge(xp.Current());
+                    // each edge named after itself; the segment the
+                    // perpendicular case collapses them into below is not
+                    Part::TopoShape source = refTopoShape.isNull() ? Part::TopoShape(face) : refTopoShape;
+                    for (const auto &edge : source.getSubTopoShapes(TopAbs_EDGE))
+                        importNamedEdge(edge);
                 }
                 if (!perpendicular)
                     return;
@@ -2503,12 +2526,14 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 if (!intersection)
                     importFace(refSubShape);
                 break;
-            case TopAbs_WIRE:
-                for (const auto &s : Part::TopoShape(refSubShape).getSubShapes(TopAbs_EDGE))
-                    importEdge(s);
+            case TopAbs_WIRE: {
+                Part::TopoShape source = refTopoShape.isNull() ? Part::TopoShape(refSubShape) : refTopoShape;
+                for (const auto &s : source.getSubTopoShapes(TopAbs_EDGE))
+                    importNamedEdge(s);
                 break;
+            }
             case TopAbs_EDGE:
-                importEdge(refSubShape);
+                importNamedEdge(refTopoShape.isNull() ? Part::TopoShape(refSubShape) : refTopoShape);
                 break;
             case TopAbs_VERTEX:
                 importVertex(refSubShape);

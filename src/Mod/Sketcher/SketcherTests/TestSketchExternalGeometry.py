@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
-# Tests for external geometry ids: a face projected by hidden line removal
-# names each piece after the element of the reference it came from
-# (ExternalGeometryExtension.RefElement), and the id of a piece follows that
-# name across rebuilds instead of its position in the projection's output.
+# Tests for external geometry ids: a face projected by hidden line removal,
+# and an edge of a planar face or a wire, names each piece after the element
+# of the reference it came from (ExternalGeometryExtension.RefElement), and
+# the id of a piece follows that name across rebuilds instead of its position
+# in the projection's output.
 
 import os
 import tempfile
@@ -91,9 +92,31 @@ class TestSketchExternalGeometry(unittest.TestCase):
         self.doc.recompute()
         self.assertEqual(sorted((id, name) for id, name, _ in externals(sketch)), before)
 
-    def testUnnamedReferenceKeepsPositionalIds(self):
-        # a planar face goes through the edge path, which names nothing:
-        # the ids are handed out by position, as before
+    def notchedTopFace(self):
+        # a box with a notch cut into one edge of its top face: the top face
+        # keeps three of the box's edges, named after them, and gains the
+        # notch's; the sketch lies on that face
+        box = self.doc.addObject("Part::Box", "Box")
+        notch = self.doc.addObject("Part::Box", "Notch")
+        notch.Length = 2
+        notch.Width = 2
+        notch.Height = 2
+        notch.Placement.Base = Vector(4, -1, 9)
+        cut = self.doc.addObject("Part::Cut", "Cut")
+        cut.Base = box
+        cut.Tool = notch
+        sketch = self.doc.addObject("Sketcher::SketchObject", "Sketch")
+        sketch.Placement = App.Placement(Vector(0, 0, 10), App.Rotation())
+        self.doc.recompute()
+        top = [i + 1 for i, f in enumerate(cut.Shape.Faces) if abs(f.CenterOfMass.z - 10) < 1e-6]
+        self.assertEqual(len(top), 1)
+        sketch.addExternal("Cut", "Face%d" % top[0])
+        self.doc.recompute()
+        return notch, sketch
+
+    def testPlanarFacePiecesAreNamed(self):
+        # a planar face goes through the edge path: each piece is named
+        # after the edge of the face it came from
         box = self.doc.addObject("Part::Box", "Box")
         sketch = self.doc.addObject("Sketcher::SketchObject", "Sketch")
         self.doc.recompute()
@@ -101,8 +124,42 @@ class TestSketchExternalGeometry(unittest.TestCase):
         self.doc.recompute()
         ext = externals(sketch)
         self.assertEqual(len(ext), 4)
-        self.assertEqual([name for _, name, _ in ext], [""] * 4)
-        ids = [id for id, _, _ in ext]
-        box.Length = 20
+        names = [name for _, name, _ in ext]
+        self.assertTrue(all(names), names)
+        self.assertEqual(len(set(names)), 4)
+        # a primitive's mapped name is its element name
+        for name in names:
+            self.assertRegex(name, r"^Edge\d+$")
+
+    def testPlanarFaceIdsFollowTheName(self):
+        notch, sketch = self.notchedTopFace()
+        before = {name: id for id, name, _ in externals(sketch)}
+        self.assertEqual(len(before), 8)
+        # the notch moves along the edge: the face's own edges keep their
+        # names and ids whatever the notch does to the order
+        notch.Placement.Base = Vector(6, -1, 9)
         self.doc.recompute()
-        self.assertEqual([id for id, _, _ in externals(sketch)], ids)
+        after = {name: id for id, name, _ in externals(sketch)}
+        common = set(before) & set(after)
+        self.assertTrue(len(common) >= 3, "nothing survived: %s vs %s" % (before, after))
+        for name in common:
+            self.assertEqual(before[name], after[name], name)
+
+    def testCollapsedSegmentIsPositional(self):
+        # a planar face seen edge on collapses into one segment spanning
+        # its projected edges; that segment is nobody's edge, so it has no
+        # name and keeps its id by position, as before
+        box = self.doc.addObject("Part::Box", "Box")
+        sketch = self.doc.addObject("Sketcher::SketchObject", "Sketch")
+        self.doc.recompute()
+        sketch.addExternal("Box", "Face1")
+        self.doc.recompute()
+        ext = externals(sketch)
+        self.assertEqual(len(ext), 1)
+        self.assertEqual(ext[0][1], "")
+        ids = [id for id, _, _ in ext]
+        box.Width = 20
+        self.doc.recompute()
+        ext = externals(sketch)
+        self.assertEqual([id for id, _, _ in ext], ids)
+        self.assertAlmostEqual(ext[0][2].length(), 20)
