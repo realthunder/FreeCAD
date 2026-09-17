@@ -877,6 +877,12 @@ Removes constraints with invalid geometry indices.
         <UserDocu>sets the GeometryId of the SketchGeometryExtension of the geometry with the provided GeoId</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="setGeometryIds">
+      <Documentation>
+        <UserDocu>sets the GeometryId of the SketchGeometryExtension of the geometries with the provided GeoIds
+Expects a list of pairs (GeoId, id)</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getGeometryId">
       <Documentation>
         <UserDocu>gets the GeometryId of the SketchGeometryExtension of the geometry with the provided GeoId</UserDocu>

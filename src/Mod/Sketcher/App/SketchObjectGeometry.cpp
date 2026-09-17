@@ -1910,6 +1910,36 @@ int SketchObject::setGeometryId(int GeoId, long id)
     return 0;
 }
 
+int SketchObject::setGeometryIds(const std::vector<std::pair<int, long>>& GeoIdsToIds)
+{
+    // no need to check input data validity as this is an sketchobject managed operation.
+    Base::StateLocker lock(managedoperation, true);
+
+    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+
+    for (const auto& [GeoId, id] : GeoIdsToIds) {
+        if (GeoId < 0 || GeoId >= int(vals.size()))
+            return -1;
+    }
+
+    // deep copy once, then set every id on the copies
+    std::vector<Part::Geometry*> newVals(vals);
+    for (auto& geo : newVals)
+        geo = geo->clone();
+
+    for (const auto& [GeoId, id] : GeoIdsToIds)
+        GeometryFacade::getFacade(newVals[GeoId])->setId(id);
+
+    // There is not actual internal transaction going on here, however neither the geometry indices
+    // nor the vertices need to be updated so this is a convenient way of preventing it.
+    {
+        Base::StateLocker lock(internaltransaction, true);
+        this->Geometry.setValues(std::move(newVals));
+    }
+
+    return 0;
+}
+
 int SketchObject::getGeometryId(int GeoId, long& id) const
 {
     if (GeoId < 0 || GeoId >= int(Geometry.getValues().size()))

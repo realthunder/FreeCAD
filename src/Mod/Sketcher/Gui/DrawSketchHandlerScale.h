@@ -120,6 +120,7 @@ private:
 
             if (deleteOriginal) {
                 deleteOriginalGeos();
+                reassignFacadeIds();
             }
 
             Gui::Command::commitCommand();
@@ -202,6 +203,7 @@ private:
 
 private:
     std::vector<int> listOfGeoIds;
+    std::vector<long> listOfFacadeIds;
     Base::Vector2d referencePoint, startPoint, endPoint;
     bool deleteOriginal;
     double refLength, length, scaleFactor;
@@ -216,6 +218,27 @@ private:
         try {
             Gui::cmdAppObjectArgs(sketchgui->getObject(),
                                   "delGeometries([%s])",
+                                  stream.str().c_str());
+        }
+        catch (const Base::Exception& e) {
+            Base::Console().Error("%s\n", e.what());
+        }
+    }
+
+    // the scaled copies replace the originals: give them the originals' geometry ids
+    void reassignFacadeIds()
+    {
+        if (listOfFacadeIds.empty()) {
+            return;
+        }
+        std::stringstream stream;
+        int geoId = getHighestCurveIndex() - int(listOfFacadeIds.size()) + 1;
+        for (size_t j = 0; j < listOfFacadeIds.size(); j++, geoId++) {
+            stream << (j ? ",(" : "(") << geoId << "," << listOfFacadeIds[j] << ")";
+        }
+        try {
+            Gui::cmdAppObjectArgs(sketchgui->getObject(),
+                                  "setGeometryIds([%s])",
                                   stream.str().c_str());
         }
         catch (const Base::Exception& e) {
@@ -240,8 +263,12 @@ private:
             return;
         }
 
+        listOfFacadeIds.clear();
         for (auto& geoId : listOfGeoIds) {
             const Part::Geometry* pGeo = Obj->getGeometry(geoId);
+            long facadeId = 0;
+            Obj->getGeometryId(geoId, facadeId);
+            listOfFacadeIds.push_back(facadeId);
             auto geoUniquePtr = std::unique_ptr<Part::Geometry>(pGeo->copy());
             Part::Geometry* geo = geoUniquePtr.get();
 

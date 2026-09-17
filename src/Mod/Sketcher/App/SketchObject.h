@@ -894,6 +894,8 @@ public:
 
 public:  // geometry extension functionalities for single element sketch object user convenience
     int setGeometryId(int GeoId, long id);
+    /// Sets several GeometryIds at once, each pair being (GeoId, id)
+    int setGeometryIds(const std::vector<std::pair<int, long>>& GeoIdsToIds);
     int getGeometryId(int GeoId, long& id) const;
 
     /// Replaces geometries at `oldGeoIds` with `newGeos`, lower Ids first.
