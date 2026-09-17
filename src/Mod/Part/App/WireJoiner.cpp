@@ -1576,6 +1576,16 @@ public:
             if (BRep_Tool::IsClosed(first->superEdge)) {
                 first->iteration = -2;
                 showShape(first, "super_done");
+                // A chain that closed on itself is a result wire. The tight
+                // bound and outline paths rebuild the compound and pick every
+                // closed chain up from its iteration, but the plain path only
+                // ever adds to the compound in buildAdjacentList(), before
+                // the chains are made, and findClosedWires() skips a negative
+                // iteration -- so a chain that closes here has to be added
+                // here or it is lost, and an input that is nothing but closed
+                // loops came out as an empty compound.
+                if (!doTightBound)
+                    builder.Add(compound, first->wire());
             } else {
                 first->iteration = iteration;
                 showShape(first, "super");
