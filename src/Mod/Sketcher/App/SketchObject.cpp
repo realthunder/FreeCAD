@@ -186,6 +186,8 @@ SketchObject::SketchObject()
                       "Internal Geometry",
                       App::Prop_None,
                       "Tolerance used check vertex conincidents when making internal geometry");
+    ADD_PROPERTY_TYPE(_Version, (0), "Base",
+                      (App::PropertyType)(App::Prop_Hidden | App::Prop_ReadOnly), "");
 
     ParameterGrp::handle hGrpp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
     geoHistoryLevel = hGrpp->GetInt("GeometryHistoryLevel",1);
@@ -236,6 +238,7 @@ SketchObject::~SketchObject()
 
 void SketchObject::setupObject()
 {
+    _Version.setValue(1);
     ParameterGrp::handle hGrpp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
     ArcFitTolerance.setValue(hGrpp->GetFloat("ArcFitTolerance", Precision::Confusion()*10.0));
