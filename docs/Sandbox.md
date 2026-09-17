@@ -8665,6 +8665,9 @@ cases.
 
 ### 7.25 Completion, paused **[handoff 2026-09-17]**
 
+**Taken up the same day: 7.26 is where this went.**  What stands below is
+the diagnosis; the ruling and the sheet op are built there.
+
 7.24 rebuilt the console's completion as a list and proved it against a
 live serve.  The handset then found it still wrong, for a reason now
 diagnosed but NOT yet written, and the work was paused here.  This
@@ -8771,6 +8774,162 @@ an open server.
 **Where the code stands**: three commits, none pushed -- `ef831bc5d3`
 (the chrome's pointer), `cac3af4313` (the console's list), `8f9af09904`
 (7.24).  Nothing of the ruling above is written yet.
+
+### 7.26 One list: the completer unified with omni search **[audited, merged, BUILT and PROVEN 2026-09-17]**
+
+The audit asked of 7.23-7.25, and what it found.  The console and the
+expression dialog each carried their own copy of the completion
+controller -- `ask`, `onInput`, `pick`, `hold`, the list-open key
+block, the wide-list JSX, the chip-strip JSX, the resize and
+keyboard-inset wiring, about 130 lines mirrored in `console.tsx` and
+`widgets/field.tsx` with two debounces (140 and 160 ms) for one
+behaviour.  Only the pure helpers in `complete.ts` were shared.  The
+spreadsheet had nothing.  And the list itself was wrong in the way the
+user saw from the phone: `items().slice(0, 12)` on a wide viewport,
+`slice(0, 20)` in the horizontal chip strip on a phone, while the
+keyboard highlight cycled over the FULL set -- ArrowDown past the
+twelfth row highlighted nothing and Enter picked an item the user could
+not see; the `overflow-y: auto` was dead because nothing lay below the
+fold to scroll to.  The expression dialog had no tap target at all,
+though 7.23 ruled one mandatory and 7.24 built it for the console only.
+No `isComposing` handling anywhere.  The stale-answer guard compared
+text, not caret.  `inputModeFor` was called with a literal `''`.
+
+**RULED by the user 2026-09-17: the console's style, everywhere** -- a
+button at the right of the editor that raises a vertical list, every
+item in it, scrolling; the auto triggers (the dot, two word characters,
+Tab, Ctrl+Space) stay and raise the SAME list.  No chip strip.
+
+**RULED the same day: merge `RemoteEdit` first.**  That branch carries
+omni search (docs/OmniSearch.md), whose browser card is exactly the
+list ruled for -- `.fc-omni-list`, vertical, scrolling, title and
+description per row, Up/Down/Tab/Enter/Escape, sixty rows then "N more;
+keep typing" -- and building a second such list beside it and merging
+later would have meant extracting it twice.
+
+**The merge** (`b65cd5008c`, SecurePython 7.18-7.25 into RemoteEdit).
+Four files conflicted, all both-sides-added: `wasm/main.cpp`,
+`SceneWidgets.h`, `main.tsx`, `style.css`.  `style.css` needed more
+than markers stripped: diff3 matched `.fc-omni`'s closing seven lines
+against the identical lines in SecurePython's `.fc-console` block, and
+the plain resolution dropped them and the brace with them -- the
+bundle still BUILT, with one esbuild warning.  The committed file is
+RemoteEdit's plus SecurePython's two insertions, reconstructed rather
+than resolved, and checked by parsing every top-level rule of both
+parents against it.  One seam past the conflicts: 7.20 C3's bridge
+request copied `Conn::viewOnly`, which RemoteEdit had replaced with the
+three-level `ClientAccess`; the request carries the access now.  The
+guest wheel needed rebuilding (`src/App/ExpressionImage` moved on both
+sides).  ctest 667 of 667 under `QT_QPA_PLATFORM=offscreen`; Python
+2778 OK -- with `Expression/Sandbox:Evaluate` FALSE.  With it true,
+which `1623ac797d` made the default on 2026-09-16 without re-running
+the Python suite, 43 cases fail exactly as Testing.md's 2026-09-09 trap
+predicts: every saved Proxy of Path, Fem and Arch restores into a guest
+that has no such module.  Not the merge's, not fixed here, and the
+number one item for whoever touches routing next.
+
+**What the merge exposed, because two cards were on one page for the
+first time.**  `widgets.subscribe` REPLACED a client's three stream
+flags, so the tool bar card's `{toolbars: true}`, arriving after the
+task panel card's `{panels: true}`, silently unseated the panel
+subscription; the panel mirror stopped with its last subscriber, and
+every `pw:<n>` the dialog held went stale -- `widgets.complete` and
+`widgets.expression` answering `UnknownObject` mid-keystroke was the
+whole symptom.  Ruled and built: a key names a stream to take or leave,
+a key ABSENT leaves that stream as it was; `widgets.unsubscribe` takes
+the same keys and leaves every stream only when none is named; the
+snapshot is pushed per stream turned on, so a client adding panels to
+its tool bars gets the panel's opens and not the tool bars twice --
+which is the second half of the same defect, and the one that made a
+second visitor see "No task panel is open on the desktop" while the
+host's dialog stood.  The panel client sends `{panels: true}` on
+dispose and the tool bar card `{toolbars: true}`.  `FormWidgets`
+`test_widgetStream` pins both halves.
+
+**What was built.**
+
+- `widgets/picker.tsx` -- `PickList<T extends PickRow>`: rows in, a
+  highlight, `moveInList` for the keys (clamped, not wrapped; Home,
+  End, PageUp, PageDown), `scrollIntoView({block: 'nearest'})` on the
+  highlight, a pick on CLICK with `pointerdown` refused -- which keeps
+  the editor's focus and the phone's keyboard up AND still lets a
+  finger scroll the list, which the chips' pick-on-pointerdown never
+  could -- `PICK_LIMIT` 60 and "N more; keep typing".  A moving mouse
+  takes the highlight; a list that appears under a resting one does
+  not (Chrome delivers `pointerenter` on layout alone, and the row
+  under the cursor was what Enter then picked).  `omni.tsx` is its
+  first consumer, with no behaviour change; its row CSS became
+  `.fc-pick-*`.
+- `widgets/completion.tsx` -- `createCompletion({source, editor})`:
+  the stateful half written once.  A `Source` answers a
+  `CompletionSet`; the `Editor` is three closures (text, caret, apply)
+  so the editor's own signal stays the truth.  A serial guards the
+  answer (only the latest ask may land); the landing checks
+  `stillApplies` against the CURRENT text and caret, not the text alone;
+  `isComposing` input is ignored and keyCode 229 keys are not handled;
+  one `DEBOUNCE_MS` (150).  `CompletionList` places the list -- in the
+  editor's flow on a wide viewport, pinned above the keyboard on a
+  phone with `bottom` and `max-height` from the visual viewport.
+  `CompleteButton` is the tap target: `pointerdown` refused, the ask on
+  CLICK -- asking on the pointerdown itself raised the list under the
+  finger before the tap ended, and the tap's click then picked whatever
+  row had appeared there (`SystemExit(` landed in the console line from
+  a tap on the button, on the phone viewport).
+- The three editors: `console.tsx` over the guest, `widgets/field.tsx`
+  (the expression dialog, which now has the button) over
+  `widgets.complete`, and `sheet.tsx` over the new `sheet.complete` --
+  ONE controller for its two editors, the formula bar and the in-cell
+  editor, the caret being whichever has the focus, which is how the
+  "works here, not there" trap 7.25 named is closed.
+- `sheet.complete` (`SheetControl.cpp`), non-mutating, `resolveSheet`
+  then `ExpressionCompleter completer(sheet)` with the `=` lead char,
+  the shape of `widgets.complete`.  `sheetComplete` in `control.ts`.
+- One matching rule, three places.  `completionsFor` forces
+  `MatchContains` + `CaseInsensitive` + `PopupCompletion` on the
+  completer it is asked of, whatever the desktop user chose in the
+  popup's menu -- a remote client's completion must not depend on a
+  desktop preference, and with `Unfiltered` set the op answered the
+  whole model.  `console.py`'s `_Completer` enumerates and ranks --
+  contains, case-insensitive, prefixes first then alphabetical, the
+  `_` shelf rule, rlcompleter's decoration by hand (`(`, `()` for a
+  callable with no parameters, the keyword space, `try:`) -- so `app.`
+  and `fre` answer, and `str.JO` answers `str.join(`.  The client's
+  `filterSet` already ranked that way.  `FormWidgets` asks `Other.idt`
+  with the exact-match and case-sensitive preferences SET and gets
+  Width.
+- Gone: the chip strip and its CSS, `.fc-panel-suggest`, the dead
+  `client` prop, both copies of the controller; `scripts/panel-drive.js`
+  and the handset probes read `.fc-pick-row` now.
+
+**Proven on a live serve** (`scripts/renderer-serve.sh` on a scene with
+Pad's dialog open and a sheet, headless Chrome, both viewports):
+
+- Dialog, desktop and phone: `SketchPad.` answers 58 rows, all drawn
+  (in flow on the desktop, pinned on the phone), `con` narrows to 2,
+  ArrowDown clamps, Escape closes the list and not the dialog, the
+  preview line answers on every keystroke.
+- Sheet, from an empty cell: `=Pa` answers 9 (`Pad`, `.Pad`, `Pa`,
+  `TaskPanel#`, `SketchPad`, ...) with the highlight on the first row
+  under a resting mouse, Tab makes `=Pad`, `.Len` answers `Pad.Length`
+  and `Pad.Length2`, the button re-asks the same.
+- Console, both viewports (`~/works/sw/fcad-probes/handset/
+  console-complete.js`): `str.` 47 rows, `jo` narrows to `str.join(`,
+  `st` alone answers 9 prefixes-first, and the button on that partial
+  word answers the same 9 on the phone, where before the fix the tap
+  picked.
+- Three visitors in a row on one serve each see the 13 fields of the
+  panel (the per-stream snapshot); before, the second saw "No task
+  panel is open".
+
+**Open, found on the way and not taken.**  A page's very first op --
+the panel card's `widgets.subscribe` sent as the socket opens -- gets no
+reply on this serve (the tool bar's, sent 200 ms later, does), and the
+card recovers only by asking again; the trace shows the send accepted
+and nothing back.  And `scripts/mcp-console.py` fails on this box
+("needs the 'mcp' package"), which is why the panel-liveness question
+was settled by instrumented rebuilds (backtraces in `setEdit`,
+`_resetEdit`, `closeDialog`, all reverted) rather than by asking the
+live process.
 
 ## 8. Measurements
 
