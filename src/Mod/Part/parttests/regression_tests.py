@@ -232,6 +232,42 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(len(opened.Edges), 1)
         self.assertAlmostEqual(opened.Edges[0].Length, 10.0)
 
+    def test_joinWires_tangent_circles_touch_at_a_point(self):
+        """
+        Two circles tangent to each other touch at a point, not along a stretch.
+
+        The 2D intersector reports two tangent curves as an overlap segment:
+        with its 1e-10 tolerance, circles of radius 10 and 5 stay that close
+        for some 3e-5 on either side of the touch point. Taking the segment's
+        ends as split points cut two fragments that short off each circle and
+        emitted the small disk three times over. A segment that does not end
+        where an edge ends is a touch and contributes the touch point alone.
+        """
+        import math
+
+        def arc(c, r, a0, a1):
+            return Part.ArcOfCircle(Part.Circle(Vector(*c), Vector(0, 0, 1), r), a0, a1).toShape()
+
+        # touching at a vertex of both circles
+        big = [arc((0, 0, 0), 10, 0, math.pi), arc((0, 0, 0), 10, math.pi, 2 * math.pi)]
+        small = [arc((15, 0, 0), 5, 0, math.pi), arc((15, 0, 0), 5, math.pi, 2 * math.pi)]
+        result = Part.joinWires(Part.Compound(big + small), split=True, merge=True,
+                                tighten=True)
+        areas = sorted(round(Part.Face(w).Area, 3) for w in result.Wires)
+        self.assertEqual(areas, [round(25 * math.pi, 3), round(100 * math.pi, 3)])
+        self.assertEqual(len(result.Edges), 4)
+
+        # touching in the middle of both edges: each circle is split there
+        circles = [Part.Circle(Vector(0, 0, 0), Vector(0, 0, 1), 10).toShape(),
+                   Part.Circle(Vector(0, 15, 0), Vector(0, 0, 1), 5).toShape()]
+        result = Part.joinWires(Part.Compound(circles), split=True, merge=True,
+                                tighten=True)
+        areas = sorted(round(Part.Face(w).Area, 3) for w in result.Wires)
+        self.assertEqual(areas, [round(25 * math.pi, 3), round(100 * math.pi, 3)])
+        self.assertEqual(sorted(len(w.Edges) for w in result.Wires), [2, 2])
+        for e in result.Edges:
+            self.assertGreater(e.Length, 1.0)
+
     def test_joinWires_splits_a_collinear_overlap(self):
         """
         An edge that runs along part of another is cut where the overlap ends.
