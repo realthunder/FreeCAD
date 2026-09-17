@@ -275,6 +275,75 @@ class RegressionTests(unittest.TestCase):
         for e in result.Edges:
             self.assertGreater(e.Length, 1.0)
 
+    def test_joinWires_bridged_hole(self):
+        """
+        A hole tied to the boundary of its face by a bridge edge.
+
+        The angle walk goes out over the bridge, around the hole and back, so
+        the bridge is in the wire twice, once each way: a wire that Part.Face
+        reads at the right area but cannot build a valid face of. The face
+        makers drop an edge a wire travels both ways, the way the joiner drops
+        one it goes over and straight back, and nest what is left as the outer
+        loop and its holes. The region behind the bridge is a wire of its own,
+        which the ring maker must not make a face of twice.
+        """
+        import math
+
+        def seg(a, b):
+            return Part.LineSegment(Vector(*a), Vector(*b)).toShape()
+
+        def circle(c, r):
+            return Part.Circle(Vector(*c), Vector(0, 0, 1), r).toShape()
+
+        def faces(edges, maker):
+            result = Part.joinWires(Part.Compound(edges), split=True, merge=True, tighten=True)
+            shape = Part.makeFace(result.Wires, maker)
+            self.assertTrue(shape.isValid())
+            return sorted(round(f.Area, 3) for f in shape.Faces)
+
+        rect = [seg((-20, 20, 0), (20, 20, 0)), seg((-20, 20, 0), (-20, -20, 0)),
+                seg((-20, -20, 0), (20, -20, 0)), seg((20, -20, 0), (20, 20, 0))]
+        disk = round(100 * math.pi, 3)
+        annulus = round(1600 - 100 * math.pi, 3)
+
+        # one bridge from the rectangle to the circle's seam vertex
+        one = rect + [circle((0, 0, 0), 10), seg((10, 0, 0), (20, 0, 0))]
+        self.assertEqual(faces(one, "Part::FaceMakerBullseye"), [disk, annulus])
+        self.assertEqual(faces(one, "Part::FaceMakerRing"), [disk, annulus])
+
+        # a chain: a second circle bridged from the first, from the inside
+        chain = one + [circle((-6, 0, 0), 2), seg((-10, 0, 0), (-8, 0, 0))]
+        small = round(4 * math.pi, 3)
+        self.assertEqual(faces(chain, "Part::FaceMakerBullseye"),
+                         [small, round(disk - small, 3), annulus])
+        self.assertEqual(faces(chain, "Part::FaceMakerRing"),
+                         [small, round(disk - small, 3), annulus])
+
+        # two holes on two bridges
+        two = rect + [circle((5, 0, 0), 3), seg((8, 0, 0), (20, 0, 0)),
+                      circle((-5, 0, 0), 3), seg((-20, 0, 0), (-8, 0, 0))]
+        hole = round(9 * math.pi, 3)
+        self.assertEqual(faces(two, "Part::FaceMakerBullseye"),
+                         [hole, hole, round(1600 - 18 * math.pi, 3)])
+        self.assertEqual(faces(two, "Part::FaceMakerRing"),
+                         [hole, hole, round(1600 - 18 * math.pi, 3)])
+
+        # a hole pinched to the boundary at a vertex, bridged to another
+        pinch = rect + [circle((0, 10, 0), 10), circle((0, -10, 0), 5),
+                        seg((0, -5, 0), (0, 0, 0))]
+        small = round(25 * math.pi, 3)
+        self.assertEqual(faces(pinch, "Part::FaceMakerRing"),
+                         [small, disk, round(1600 - disk - small, 3)])
+
+        # a free circle inside the bridged hole is a hole of the disk, and,
+        # for the ring maker, a face
+        nested = one + [circle((0, 0, 0), 3)]
+        self.assertEqual(faces(nested, "Part::FaceMakerBullseye"),
+                         [round(disk - hole, 3), annulus])
+        self.assertEqual(faces(nested, "Part::FaceMakerRing"),
+                         [hole, round(disk - hole, 3), annulus])
+
+
     def test_joinWires_pinched_loop(self):
         """
         A loop touching the rest of the network at one vertex is a hole

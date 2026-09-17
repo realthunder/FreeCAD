@@ -37,6 +37,8 @@
 # include <TopoDS.hxx>
 # include <TopExp.hxx>
 # include <TopExp_Explorer.hxx>
+# include <TopoDS_Iterator.hxx>
+# include <TopTools_MapOfShape.hxx>
 # include <QtGlobal>
 #endif
 
@@ -72,6 +74,84 @@ bool FaceMakerBullseye::WireInfo::operator<(const WireInfo &other) const
     return extent - other.extent > Precision::Confusion();
 }
 
+// A wire that travels an edge both ways is a face boundary walk that went
+// out over a bridge, around whatever hangs off it, and back: a hole tied to
+// the outer boundary by a slit, say. WireJoiner's angle traversal emits such
+// a walk as one wire, in walk order (makeDartWire()), the way it does for a
+// hole touching the boundary at a vertex. An edge walked both ways bounds
+// nothing, so it is dropped -- as the joiner already drops one it goes over
+// and straight back -- and the walk falls apart into the loops the bridges
+// connected: the stretch between going out over an edge and coming back over
+// it is a loop on the far side of it, and what is left at the end is one
+// more. The wire is a cycle and may begin anywhere in it, even on the far
+// side of a bridge, so that nesting does not say which loop is the outer
+// one: it is the one enclosing the rest, which the caller picks by extent.
+// The loops behind the bridges are holes of the face the walk bounds; the
+// region inside each is a face of its own, which the walk that enumerated
+// this one has enumerated as well.
+//
+// Returns false, leaving the wire alone, if the wire has no such edge, or if
+// what remains does not close as loops -- an unordered wire, or something
+// other than a walk.
+static bool splitDoubledWire(const TopoShape &wire, std::vector<TopoShape> &loops)
+{
+    TopTools_MapOfShape seen;
+    TopTools_MapOfShape doubled;
+    for (TopoDS_Iterator it(wire.getShape()); it.More(); it.Next()) {
+        if (!seen.Add(it.Value()))
+            doubled.Add(it.Value());
+    }
+    if (doubled.IsEmpty())
+        return false;
+
+    std::vector<std::vector<TopoDS_Edge>> found;
+    std::vector<std::vector<TopoDS_Edge>> stack(1);
+    TopTools_MapOfShape open;
+    for (TopoDS_Iterator it(wire.getShape()); it.More(); it.Next()) {
+        const auto &e = TopoDS::Edge(it.Value());
+        if (!doubled.Contains(e)) {
+            stack.back().push_back(e);
+            continue;
+        }
+        if (open.Add(e)) {
+            stack.emplace_back();
+            continue;
+        }
+        // the way back: what was walked in between is a loop of its own
+        if (stack.size() < 2)
+            return false;
+        found.push_back(std::move(stack.back()));
+        stack.pop_back();
+    }
+    if (stack.size() != 1)
+        return false;
+    found.push_back(std::move(stack.front()));
+
+    std::vector<TopoShape> result;
+    BRep_Builder builder;
+    for (const auto &edges : found) {
+        if (edges.empty())
+            continue;
+        // with cumulative orientation, so that a loop walked backwards still
+        // meets itself
+        TopoDS_Vertex first = TopExp::FirstVertex(edges.front(), Standard_True);
+        TopoDS_Vertex last = TopExp::LastVertex(edges.back(), Standard_True);
+        if (first.IsNull() || last.IsNull() || !first.IsSame(last))
+            return false;
+        TopoDS_Wire w;
+        builder.MakeWire(w);
+        for (const auto &e : edges)
+            builder.Add(w, e);
+        w.Closed(true);
+        result.emplace_back(wire.Tag, wire.Hasher, w);
+        result.back().mapSubElement(wire);
+    }
+    if (result.empty())
+        return false;
+    loops = std::move(result);
+    return true;
+}
+
 void FaceMakerBullseye::Build_Essence()
 {
     if (myWires.empty())
@@ -103,14 +183,34 @@ void FaceMakerBullseye::Build_Essence()
     }
 
     std::vector<WireInfo> wireInfos;
-    for (const auto &w : this->myTopoWires) {
+    auto addWireInfo = [&](const TopoShape &w, bool cut) {
         Bnd_Box box;
         if (w.isNull())
-            continue;
+            return;
         BRepBndLib::AddOptimal(w.getShape(), box, Standard_False);
         if (box.IsVoid())
-            continue;
+            return;
         wireInfos.emplace_back(w, box);
+        wireInfos.back().cut = cut;
+    };
+    for (const auto &w : this->myTopoWires) {
+        std::vector<TopoShape> loops;
+        if (!splitDoubledWire(w, loops)) {
+            addWireInfo(w, false);
+            continue;
+        }
+        // the outer loop encloses the rest; every other one is a hole
+        std::size_t first = wireInfos.size();
+        for (const auto &loop : loops)
+            addWireInfo(loop, true);
+        if (first == wireInfos.size())
+            continue;
+        auto outer = first;
+        for (auto k = first + 1; k < wireInfos.size(); ++k) {
+            if (wireInfos[k].extent > wireInfos[outer].extent)
+                outer = k;
+        }
+        wireInfos[outer].cut = false;
     }
         
     // Sort wires by length of diagonal of bounding box.
@@ -125,7 +225,15 @@ void FaceMakerBullseye::Build_Essence()
             // if no, it's a beginning of a new face).
             FaceDriller* foundFace = nullptr;
             bool hitted = false;
+            bool bounded = false;
             for(auto rit=faces.rbegin(); rit!=faces.rend(); ++rit){
+                if ((*rit)->hasEdges(it->wire)) {
+                    // every edge of the wire bounds that face already: the
+                    // wire is the boundary of the face on the other side of
+                    // one of its holes
+                    bounded = true;
+                    break;
+                }
                 switch((*rit)->hitTest(it->wire)) {
                 case FaceDriller::HitTest::Hit:
                     foundFace = rit->get();
@@ -140,6 +248,14 @@ void FaceMakerBullseye::Build_Essence()
                 default:
                     break;
                 }
+            }
+
+            if (it->cut && (bounded || i > 0)) {
+                // a loop cut out of a walk is a hole of the walk's face and
+                // nothing else: the region inside it is on the list as a wire
+                // of its own, and that wire makes the face there
+                it = wireInfos.erase(it);
+                continue;
             }
 
             TopoDS_Wire w = TopoDS::Wire(it->wire.getShape());
@@ -188,6 +304,20 @@ FaceMakerBullseye::FaceDriller::FaceDriller(const gp_Pln& plane, TopoDS_Wire out
     builder.MakeFace(this->myFace, myHPlane, Precision::Confusion());
     builder.Add(this->myFace, outerWire);
     this->myTopoFace = TopoShape(this->myFace);
+    for (TopExp_Explorer xp(outerWire, TopAbs_EDGE); xp.More(); xp.Next())
+        myEdges.Add(xp.Current());
+}
+
+bool FaceMakerBullseye::FaceDriller::hasEdges(const TopoShape &shape) const
+{
+    TopExp_Explorer xp(shape.getShape(), TopAbs_EDGE);
+    if (!xp.More())
+        return false;
+    for (; xp.More(); xp.Next()) {
+        if (!myEdges.Contains(xp.Current()))
+            return false;
+    }
+    return true;
 }
 
 FaceMakerBullseye::FaceDriller::HitTest
@@ -262,6 +392,8 @@ void FaceMakerBullseye::FaceDriller::addHole(TopoDS_Wire w)
 
     BRep_Builder builder;
     builder.Add(this->myFace, w);
+    for (TopExp_Explorer xp(w, TopAbs_EDGE); xp.More(); xp.Next())
+        myEdges.Add(xp.Current());
 }
 
 void FaceMakerBullseye::FaceDriller::addHole(const WireInfo &wireInfo,
@@ -286,6 +418,8 @@ void FaceMakerBullseye::FaceDriller::addHole(const WireInfo &wireInfo,
     }
 
     myHoles.push_back(wireInfo);
+    for (TopExp_Explorer xp(wireInfo.wire.getShape(), TopAbs_EDGE); xp.More(); xp.Next())
+        myEdges.Add(xp.Current());
     TopoShape wire = wireInfo.wire;
 
     if (intersected) {

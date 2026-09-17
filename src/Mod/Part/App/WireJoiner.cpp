@@ -2322,6 +2322,11 @@ public:
     // is gone they sit next to each other. The pair bounds nothing, so it is
     // not part of a wire -- those edges end up as open wires, which is where
     // the search left them too.
+    //
+    // A bridge to a loop is left alone: the loop is walked between its two
+    // darts, so they are not adjacent, and the wire goes out with the edge in
+    // it once each way. FaceMakerBullseye drops such an edge and nests the
+    // loops it connected.
     void pruneTails(std::vector<VertexInfo> &loop)
     {
         std::vector<VertexInfo> result;

@@ -28,6 +28,7 @@
 #include <Geom_Surface.hxx>
 #include <gp_Pln.hxx>
 #include <Bnd_Box.hxx>
+#include <TopTools_MapOfShape.hxx>
 
 
 namespace Part
@@ -72,6 +73,9 @@ protected:
         TopoShape wire;
         Bnd_Box bound;
         double extent;
+        /// a loop cut out of a boundary walk that went out and back over an
+        /// edge: a hole of the face the walk bounds, and nothing more
+        bool cut = false;
         WireInfo(const TopoShape &s, const Bnd_Box &b)
             :wire(s), bound(b)
         {
@@ -106,6 +110,9 @@ protected:
          */
         HitTest hitTest(const TopoShape &shape) const;
 
+        /// whether every edge of the shape already bounds the face
+        bool hasEdges(const TopoShape &shape) const;
+
         void addHole(TopoDS_Wire w);
         void addHole(const WireInfo &info, std::vector<TopoShape> &sources);
         void copyFaceBound(TopoDS_Face &f, TopoShape &tf, const TopoShape &source);
@@ -126,6 +133,7 @@ protected:
         TopoShape myTopoFace;
         TopoShape myTopoFaceBound;
         std::vector<WireInfo> myHoles;
+        TopTools_MapOfShape myEdges;
         Handle(Geom_Surface) myHPlane;
         std::unique_ptr<WireJoiner> myJoiner;
     };
