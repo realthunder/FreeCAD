@@ -56,9 +56,6 @@
 #include <Geom_Plane.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <GeomLProp_CLProps.hxx>
-#include <HLRAlgo_Projector.hxx>
-#include <HLRBRep_Algo.hxx>
-#include <HLRBRep_HLRToShape.hxx>
 #include <Standard_Version.hxx>
 #include <ShapeAnalysis_Wire.hxx>
 #include <TColStd_Array1OfInteger.hxx>
@@ -109,6 +106,7 @@
 #include <Mod/Part/App/PartPyCXX.h>
 #include <Mod/Part/App/TopoShapeOpCode.h>
 #include <Mod/Part/App/WireJoiner.h>
+#include <Mod/Part/App/HLRProjector.h>
 
 #include <Mod/Part/App/GeometryMigrationExtension.h>
 #include <Mod/Part/App/TopoShapeOpCode.h>
@@ -1270,42 +1268,22 @@ gp_Pnt ProjPointOnPlane_XYZ(const gp_Pnt& P, const gp_Pln& Pl)
 
 // The visible and hidden edges of a shape seen along the sketch normal, in
 // sketch coordinates: the outline of a non-planar face is what its own edges
-// do not carry. Ported from upstream 1c514f5a15.
-static std::vector<TopoDS_Shape> projectShape(const TopoDS_Shape &inShape, const gp_Ax3 &viewAxis)
+// do not carry. Each edge is named after the element of the shape it was
+// projected from when the shape carries an element map (Part::HLRProjector).
+// Ported from upstream 1c514f5a15; the seams stay out, as there.
+static Part::TopoShape projectShape(const Part::TopoShape &inShape, const gp_Ax3 &viewAxis)
 {
-    std::vector<TopoDS_Shape> res;
-    Handle(HLRBRep_Algo) hlr;
     try {
-        hlr = new HLRBRep_Algo();
-        hlr->Add(inShape);
-        gp_Trsf trsf;
-        trsf.SetTransformation(viewAxis);
-        HLRAlgo_Projector projector(trsf, false, 1);
-        hlr->Projector(projector);
-        hlr->Update();
-        hlr->Hide();
+        Part::HLRParams params;
+        params.types = Part::HLRProjector::HardMask | Part::HLRProjector::SmoothMask
+            | Part::HLRProjector::OutlineMask | Part::HLRProjector::IsoMask;
+        params.visible = true;
+        params.hidden = true;
+        return inShape.makEHLR(viewAxis, params);
     }
     catch (const Standard_Failure &e) {
         FC_THROWM(Base::CADKernelError, "Failed to project external face: " << e.GetMessageString());
     }
-
-    try {
-        HLRBRep_HLRToShape toShape(hlr);
-        for (const auto &comp : {toShape.VCompound(), toShape.Rg1LineVCompound(),
-                                 toShape.OutLineVCompound(), toShape.IsoLineVCompound(),
-                                 toShape.HCompound(), toShape.Rg1LineHCompound(),
-                                 toShape.OutLineHCompound(), toShape.IsoLineHCompound()}) {
-            if (comp.IsNull())
-                continue;
-            // the edges come with 2D curves on the projection plane only
-            BRepLib::BuildCurves3d(comp);
-            res.push_back(comp);
-        }
-    }
-    catch (const Standard_Failure &e) {
-        FC_THROWM(Base::CADKernelError, "Failed to extract projected external face: " << e.GetMessageString());
-    }
-    return res;
 }
 
 // Auxiliary method
@@ -1715,6 +1693,8 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
 
         try {
             TopoDS_Shape refSubShape;
+            // the same with its element map, for what names its projection
+            Part::TopoShape refTopoShape;
             if (Obj->getTypeId().isDerivedFrom(App::Plane::getClassTypeId())) {
                 const App::Plane* pl = static_cast<const App::Plane*>(Obj);
                 Base::Placement plm = pl->Placement.getValue();
@@ -1729,7 +1709,8 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                     refSubShape = f;
                 }
             } else {
-                refSubShape = Part::Feature::getShape(Obj,SubElement.c_str(),true);
+                refTopoShape = Part::Feature::getTopoShape(Obj,SubElement.c_str(),true);
+                refSubShape = refTopoShape.getShape();
             }
 
             if(refSubShape.IsNull()) {
@@ -1746,7 +1727,12 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 Part::TopoShape shape(refSubShape);
                 for (auto type : types) {
                     if (shape.hasSubShape(type)) {
-                        refSubShape = shape.getSubShape(type, 1);
+                        if (refTopoShape.isNull())
+                            refSubShape = shape.getSubShape(type, 1);
+                        else {
+                            refTopoShape = refTopoShape.getSubTopoShape(type, 1);
+                            refSubShape = refTopoShape.getShape();
+                        }
                         break;
                     }
                 }
@@ -2363,9 +2349,26 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 bool planar = Part::TopoShape(face).findPlane(plane);
                 if (!planar) {
                     std::size_t before = geos.size();
-                    for (const auto &res : projectShape(face, sketchAx3)) {
-                        for (TopExp_Explorer xp(res, TopAbs_EDGE); xp.More(); xp.Next())
-                            importProjected(TopoDS::Edge(xp.Current()), TopoDS_Edge());
+                    Part::TopoShape source = refTopoShape.isNull() ? Part::TopoShape(face) : refTopoShape;
+                    Part::TopoShape projected = projectShape(source, sketchAx3);
+                    int index = 0;
+                    for (const auto &edge : projected.getSubTopoShapes(TopAbs_EDGE)) {
+                        ++index;
+                        std::size_t first = geos.size();
+                        importProjected(TopoDS::Edge(edge.getShape()), TopoDS_Edge());
+                        // the projected edge's name keys the geometry's id
+                        // across rebuilds; the converter makes one geometry
+                        // of an edge, the count is not relied on
+                        Data::MappedName name = projected.getMappedName(
+                            Data::IndexedName::fromConst("Edge", index));
+                        if (!name)
+                            continue;
+                        std::string element = name.toString();
+                        for (std::size_t i = first; i < geos.size(); ++i) {
+                            auto egf = ExternalGeometryFacade::getFacade(geos[i].get());
+                            egf->setRefElement(i == first ? element
+                                    : element + ";" + std::to_string(i - first + 1));
+                        }
                     }
                     // The projection approximates a curve seen edge on, a
                     // cylinder's rim from the side, as a flat spline: a
@@ -2394,6 +2397,8 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                                 auto line = new Part::GeomLineSegment();
                                 line->setPoints(a, b);
                                 GeometryFacade::setConstruction(line, true);
+                                ExternalGeometryFacade::getFacade(line)->setRefElement(
+                                    ExternalGeometryFacade::getFacade(geo.get())->getRefElement());
                                 geo.reset(line);
                             }
                         }
@@ -2592,14 +2597,62 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
     for(auto &geos : newGeos) {
         auto egf = ExternalGeometryFacade::getFacade(geos.front().get());
         auto &refs = externalGeoRefMap[egf->getRef()];
-        while(refs.size() < geos.size())
-            refs.push_back(++geoLastId);
+
+        // A geometry keeps the id of the geometry it replaces. One named
+        // after the element of the reference it came from (RefElement)
+        // takes the id of the geometry with the same name, so that the
+        // pieces of a face's projection keep their ids when the projection
+        // changes around them; the rest, and a named one with no namesake
+        // (the first rebuild of a sketch saved before the names), take the
+        // ids of the unnamed geometries in order, the positional rule these
+        // always had. Ids nothing claims are deleted.
+        std::vector<std::string> oldElements;
+        oldElements.reserve(refs.size());
+        for (long id : refs) {
+            auto it = externalGeoMap.find(id);
+            if (it == externalGeoMap.end())
+                oldElements.emplace_back();
+            else
+                oldElements.push_back(ExternalGeometryFacade::getFacade(
+                            ExternalGeo[it->second])->getRefElement());
+        }
+        std::vector<bool> taken(refs.size(), false);
+        std::vector<long> ids(geos.size(), 0);
+        for (std::size_t i = 0; i < geos.size(); ++i) {
+            const auto &element = ExternalGeometryFacade::getFacade(geos[i].get())->getRefElement();
+            if (element.empty())
+                continue;
+            for (std::size_t j = 0; j < refs.size(); ++j) {
+                if (!taken[j] && oldElements[j] == element) {
+                    ids[i] = refs[j];
+                    taken[j] = true;
+                    break;
+                }
+            }
+        }
+        std::size_t next = 0;
+        for (std::size_t i = 0; i < geos.size(); ++i) {
+            if (ids[i])
+                continue;
+            while (next < refs.size() && (taken[next] || !oldElements[next].empty()))
+                ++next;
+            if (next < refs.size()) {
+                ids[i] = refs[next];
+                taken[next] = true;
+            }
+            else
+                ids[i] = ++geoLastId;
+        }
 
         // In case a projection reduces output geometries, delete them
         std::set<long> geoIds;
-        geoIds.insert(refs.begin()+geos.size(),refs.end());
+        for (std::size_t j = 0; j < refs.size(); ++j) {
+            if (!taken[j])
+                geoIds.insert(refs[j]);
+        }
 
         // Sync id and ref of the new geometries
+        refs = ids;
         int i = 0;
         for(auto &geo : geos)
             GeometryFacade::setId(geo.get(), refs[i++]);

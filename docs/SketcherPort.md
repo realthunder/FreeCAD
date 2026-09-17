@@ -436,6 +436,29 @@ gives four edges), plus the perpendicular face as one segment, the same on a
 version-0 sketch as the long line, and a cylinder side face projecting its
 circle.
 
+**Element history through the projection (2026-09-17).** `HLRBRep_HLRToShape`
+returns bare compounds, so the face path had only the output order to hand
+out external ids by, and the flatten/dedupe pass above can change that order:
+a constraint on external id N silently moved to another curve. The
+projection now runs through `Part::HLRProjector` (`TopoShape::makEHLR`,
+`Part.Shape.makeHLR` in Python): the same OCCT algorithm with HLRToShape's
+traversal replayed so the source of every edge is kept, an input edge for an
+ordinary projected edge and the face for a silhouette the algorithm invented
+(the outliner rebuilds faces as empty copies, so the silhouette-to-face link
+is read from `HLRTopoBRep_Data`, keyed by the original face). The result is
+named through `makESHAPE` with op code `HLR`, a fragment index telling apart
+the pieces hiding cuts one source into. The Sketcher stores that name per
+external geometry (`ExternalGeometryExtension::RefElement`, saved only when
+set) and keys the id on it: a named geometry takes the id of its namesake in
+the reference; unnamed ones, and named ones with no namesake (the first
+rebuild of a sketch saved before the names), take the ids of the unnamed
+geometries in order, the positional rule these always had; ids nothing claims
+are deleted. A reference without an element map (an `App::Plane`) stays
+positional. Seams are still left out, as upstream does. The same class is
+what TechDraw's `GeometryObject::projectShape` is to adopt next; its own
+private copy of the traversal (`docs/TopoNamingEnhance.md` 3.5) is unchanged
+for now.
+
 ### Internal faces: WireJoiner kept (`aa31511fbd`)
 
 Upstream replaced WireJoiner + `FaceMakerRing` in `buildInternals()` with a

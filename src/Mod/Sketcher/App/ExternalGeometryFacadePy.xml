@@ -33,6 +33,15 @@
         </Documentation>
         <Parameter Name="Ref" Type="String"/>
     </Attribute>
+    <Attribute Name="RefElement" ReadOnly="false">
+        <Documentation>
+            <UserDocu>
+                Returns the element name of the reference this geometry was
+                projected from, empty when the reference has no element map.
+            </UserDocu>
+        </Documentation>
+        <Parameter Name="RefElement" Type="String"/>
+    </Attribute>
    <Attribute Name="Id" ReadOnly="false">
         <Documentation>
             <UserDocu>

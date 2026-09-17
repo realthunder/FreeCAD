@@ -137,6 +137,16 @@ void ExternalGeometryFacadePy::setRef(Py::String value)
     this->getExternalGeometryFacadePtr()->setRef(value.as_std_string());
 }
 
+Py::String ExternalGeometryFacadePy::getRefElement() const
+{
+    return Py::String(this->getExternalGeometryFacadePtr()->getRefElement());
+}
+
+void ExternalGeometryFacadePy::setRefElement(Py::String value)
+{
+    this->getExternalGeometryFacadePtr()->setRefElement(value.as_std_string());
+}
+
 Py::Long ExternalGeometryFacadePy::getId() const
 {
     return Py::Long(this->getExternalGeometryFacadePtr()->getId());
