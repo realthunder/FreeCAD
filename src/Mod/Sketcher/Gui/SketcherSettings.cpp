@@ -137,6 +137,9 @@ void SketcherSettings::saveSettings()
     hGrp->SetBool("DimensioningDiameter", Diameter);
     hGrp->SetBool("DimensioningRadius", Radius);
 
+    index = ui->autoScaleMode->currentIndex();
+    hGrp->SetInt("AutoScaleMode", index);
+
     hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/Tools");
 
@@ -198,6 +201,15 @@ void SketcherSettings::loadSettings()
     bool Radius = hGrp->GetBool("DimensioningRadius", true);
     index = Diameter ? (Radius ? 0 : 1) : 2;
     ui->radiusDiameterMode->setCurrentIndex(index);
+
+    // The items have to be added in the same order as the AutoScaleMode enum
+    ui->autoScaleMode->clear();
+    ui->autoScaleMode->addItem(tr("Always"));
+    ui->autoScaleMode->addItem(tr("Never"));
+    ui->autoScaleMode->addItem(tr("When no scale feature is visible"));
+    index = hGrp->GetInt("AutoScaleMode",
+                         static_cast<int>(AutoScaleMode::WhenNoScaleFeatureIsVisible));
+    ui->autoScaleMode->setCurrentIndex(index);
 
     hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/Tools");

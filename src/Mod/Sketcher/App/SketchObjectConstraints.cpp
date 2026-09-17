@@ -297,6 +297,14 @@ SketchSolveStatus SketchObject::setDatum(int ConstrId, double Datum)
     return status;
 }
 
+double SketchObject::getDatum(int ConstrId) const
+{
+    const auto& vals = this->Constraints.getValues();
+    if (ConstrId < 0 || ConstrId >= int(vals.size()) || !vals[ConstrId]->isDimensional()) {
+        return 0.0;
+    }
+    return vals[ConstrId]->getValue();
+}
 int SketchObject::setDriving(int ConstrId, bool isdriving)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
@@ -2072,6 +2080,13 @@ bool SketchObject::arePointsCoincident(int GeoId1, PointPos PosId1, int GeoId2, 
     return false;
 }
 
+bool SketchObject::hasBlockConstraint() const
+{
+    const auto& vals = Constraints.getValues();
+    return std::any_of(vals.begin(), vals.end(), [](const Constraint* c) {
+        return c->Type == Block;
+    });
+}
 void SketchObject::getConstraintIndices(int GeoId, std::vector<int>& constraintList) const
 {
     const std::vector<Constraint*>& constraints = this->Constraints.getValues();

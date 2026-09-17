@@ -39,8 +39,14 @@
 #include <Gui/View3DInventorViewer.h>
 #include <Mod/Sketcher/App/GeometryFacade.h>
 #include <Mod/Sketcher/App/SketchObject.h>
+#include <App/GeoFeatureGroupExtension.h>
+#include <App/OriginFeature.h>
+#include <Precision.hxx>
+#include <cmath>
 
+#include "CommandSketcherTools.h"
 #include "EditDatumDialog.h"
+#include "SketcherSettings.h"
 #include "Utils.h"
 #include "ViewProviderSketch.h"
 #include "ui_InsertDatum.h"
@@ -212,6 +218,8 @@ void EditDatumDialog::accepted()
                     ui_ins_datum->labelEdit->apply();
                 }
                 else {
+                    performAutoScale(newDatum);
+
                     Gui::cmdAppObjectArgs(sketch,
                                           "setDatum(%i,App.Units.Quantity('%f %s'))",
                                           ConstrNbr,
@@ -292,4 +300,137 @@ void EditDatumDialog::formEditorOpened(bool state)
     }
 }
 
+// Whether obj's visible flag, and that of every parent up to lastParent
+// (assumed visible when given), is up in doc
+static bool isVisibleUpTo(App::DocumentObject* obj, Gui::Document* doc, App::DocumentObject* lastParent)
+{
+    while (obj && obj != lastParent) {
+        auto parentviewprovider = doc->getViewProvider(obj);
+
+        if (!parentviewprovider || !parentviewprovider->isVisible()) {
+            return false;
+        }
+        obj = obj->getFirstParent();
+    }
+    return true;
+}
+
+// Whether something other than obj is shown in doc that gives a sense of
+// scale: a visible geometric feature with a bounding box, looked for
+// through links into other documents as well
+static bool hasVisualFeature(App::DocumentObject* obj, App::DocumentObject* rootObj, Gui::Document* doc)
+{
+    auto docObjects = doc->getDocument()->getObjects();
+    for (auto object : docObjects) {
+
+        // Presumably, the sketch that is being edited has visual features, but
+        // that's not interesting
+        if (object == obj) {
+            continue;
+        }
+
+        // No need to continue analysis if the object's visible flag is down
+        bool visible = isVisibleUpTo(object, doc, rootObj);
+        if (!visible) {
+            continue;
+        }
+
+        App::DocumentObject* link = object->getLinkedObject();
+        if (link && link->getDocument() != doc->getDocument()) {
+            Gui::Document* linkDoc = Gui::Application::Instance->getDocument(link->getDocument());
+            if (linkDoc && hasVisualFeature(link, link, linkDoc)) {
+                return true;
+            }
+            continue;
+        }
+
+        // Skip objects that are not of geometric nature
+        if (!object->isDerivedFrom<App::GeoFeature>()) {
+            continue;
+        }
+
+        // Skip datum objects
+        if (object->isDerivedFrom<App::OriginFeature>()) {
+            continue;
+        }
+
+        // Skip container objects because getting their bounding box might
+        // return a valid bounding box around annotations or datums
+        if (object->hasExtension(App::GeoFeatureGroupExtension::getExtensionClassTypeId())) {
+            continue;
+        }
+
+        // Get the bounding box of the object
+        auto viewProvider = doc->getViewProvider(object);
+        if (viewProvider && viewProvider->getBoundingBox().IsValid()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// When newDatum is the first value given to the one constraint that fixes
+// the sketch's scale, scale the whole sketch about its origin to match it,
+// so a sketch drawn freehand takes the size of its first dimension. Not
+// done when the sketch already has a scale reference: external geometry,
+// blocked geometry, or (by preference) a visible object in the document.
+void EditDatumDialog::performAutoScale(double newDatum)
+{
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
+    long autoScaleMode = hGrp->GetInt(
+        "AutoScaleMode", static_cast<int>(SketcherGui::AutoScaleMode::WhenNoScaleFeatureIsVisible));
+    if (autoScaleMode == static_cast<int>(SketcherGui::AutoScaleMode::Never)) {
+        return;
+    }
+
+    // the sketch's own document, not whichever is active
+    Gui::Document* doc = Gui::Application::Instance->getDocument(sketch->getDocument());
+    auto* vp = doc ? dynamic_cast<ViewProviderSketch*>(doc->getViewProvider(sketch)) : nullptr;
+    if (!vp || !vp->isEditing()) {
+        return;
+    }
+
+    if (autoScaleMode == static_cast<int>(SketcherGui::AutoScaleMode::WhenNoScaleFeatureIsVisible)
+        && hasVisualFeature(sketch, nullptr, doc)) {
+        return;
+    }
+
+    // External geometry beyond the two axes, or a blocked geometry, is a
+    // scale reference the sketch was drawn against
+    if (sketch->getExternalGeometryCount() > 2 || sketch->hasBlockConstraint()) {
+        return;
+    }
+
+    // Only the one scale defining constraint triggers it, whatever number of
+    // angles sit beside it
+    if (sketch->getSingleScaleDefiningConstraint() != ConstrNbr) {
+        return;
+    }
+
+    double oldDatum = sketch->getDatum(ConstrNbr);
+    if (!std::isfinite(newDatum) || !std::isfinite(oldDatum)
+        || std::abs(oldDatum) <= Precision::Confusion()) {
+        return;
+    }
+    double scaleFactor = newDatum / oldDatum;
+    if (!std::isfinite(scaleFactor) || scaleFactor <= Precision::Confusion()
+        || std::abs(scaleFactor - 1.0) <= Precision::Confusion()) {
+        return;
+    }
+
+    try {
+        centerScale(vp, scaleFactor);
+
+        // Constraints that cannot be scaled are dropped, so the datum
+        // constraint may have moved
+        int moved = sketch->getSingleScaleDefiningConstraint();
+        if (moved >= 0) {
+            ConstrNbr = moved;
+        }
+    }
+    catch (const Base::Exception& e) {
+        Base::Console().Error("Exception performing autoscale: %s\n", e.what());
+    }
+}
 #include "moc_EditDatumDialog.cpp"

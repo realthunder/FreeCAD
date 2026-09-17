@@ -344,6 +344,10 @@ void DrawSketchHandler::activate(ViewProviderSketch* vp)
     }
 }
 
+void DrawSketchHandler::setSketchGui(ViewProviderSketch* vp)
+{
+    sketchgui = vp;
+}
 void DrawSketchHandler::deactivate()
 {
     this->deactivated();

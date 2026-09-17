@@ -284,6 +284,12 @@ public:
 
     int getGeoIdFromCompleteGeometryIndex(int completeGeometryIndex) const;
 
+    /** The index of the one constraint that fixes the sketch's scale (a
+     *  distance, radius or diameter), or -1 when there is none or more
+     *  than one. Angles, weights and refraction ratios do not define scale.
+     */
+    int getSingleScaleDefiningConstraint() const;
+
     /// returns non zero if the sketch contains conflicting constraints
     int hasConflicts() const;
     /**
@@ -308,6 +314,8 @@ public:
     SketchSolveStatus solve(bool updateGeoAfterSolving = true);
     /// set the datum of a Distance or Angle constraint and solve
     SketchSolveStatus setDatum(int ConstrId, double Datum);
+    /// get the datum of a dimensional constraint, 0 for any other
+    double getDatum(int ConstrId) const;
     /// set the driving status of this constraint and solve
     int setDriving(int ConstrId, bool isdriving);
     /// get the driving status of this constraint
@@ -601,6 +609,9 @@ public:
         std::vector<PointPos>& PosIds3
     ) const;
     bool arePointsCoincident(int GeoId1, PointPos PosId1, int GeoId2, PointPos PosId2);
+
+    /// true if the sketch has one or more Block constraints
+    bool hasBlockConstraint() const;
 
     /// returns a list of indices of all constraints involving given GeoId
     void getConstraintIndices(int GeoId, std::vector<int>& constraintList) const;

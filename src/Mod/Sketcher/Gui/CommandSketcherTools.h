@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (c) 2011 Werner Mayer <wmayer[at]users.sourceforge.net>     *
+ *   Copyright (c) 2025 theo-vt                                            *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -20,53 +20,19 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef SKETCHERGUI_EditDatumDialog_H
-#define SKETCHERGUI_EditDatumDialog_H
-
-#include <QObject>
-#include <memory>
-
-
-namespace Sketcher
-{
-class Constraint;
-class SketchObject;
-}  // namespace Sketcher
+#ifndef SKETCHERGUI_CommandSketcherTools_H
+#define SKETCHERGUI_CommandSketcherTools_H
 
 namespace SketcherGui
 {
 class ViewProviderSketch;
-class Ui_InsertDatum;
 
-class EditDatumDialog: public QObject
-{
-    Q_OBJECT
+// Declared here so other parts of the module can reuse them
 
-public:
-    EditDatumDialog(ViewProviderSketch* vp, int ConstrNbr);
-    EditDatumDialog(Sketcher::SketchObject* pcSketch, int ConstrNbr);
-    ~EditDatumDialog() override;
-
-    int exec(bool atCursor = true);
-    bool isSuccess();
-
-private:
-    Sketcher::SketchObject* sketch;
-    Sketcher::Constraint* Constr;
-    int ConstrNbr;
-    bool success;
-    std::unique_ptr<Ui_InsertDatum> ui_ins_datum;
-
-private Q_SLOTS:
-    void accepted();
-    void rejected();
-    void drivingToggled(bool);
-    void datumChanged();
-    void formEditorOpened(bool);
-
-private:
-    void performAutoScale(double newDatum);
-};
+/// Scale the whole sketch about its origin by scaleFactor, keeping it the
+/// same size on screen. Runs inside the caller's transaction and does not
+/// abort it on failure.
+void centerScale(ViewProviderSketch* vp, double scaleFactor);
 
 }  // namespace SketcherGui
-#endif  // SKETCHERGUI_DrawSketchHandler_H
+#endif  // SKETCHERGUI_CommandSketcherTools_H

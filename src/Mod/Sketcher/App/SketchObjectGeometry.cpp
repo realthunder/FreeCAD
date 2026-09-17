@@ -1597,6 +1597,24 @@ int SketchObject::getGeoIdFromCompleteGeometryIndex(int completeGeometryIndex) c
         return (completeGeometryIndex - completeGeometryCount);
 }
 
+int SketchObject::getSingleScaleDefiningConstraint() const
+{
+    const std::vector<Constraint*>& vals = this->Constraints.getValues();
+
+    int found = -1;
+    for (size_t i = 0; i < vals.size(); ++i) {
+        const Constraint* c = vals[i];
+        // an angle, a pole weight or a refraction ratio does not define scale
+        if (c->isDimensional() && c->Type != Angle && c->Type != Weight
+            && c->Type != SnellsLaw) {
+            if (found != -1) {  // more than one scale defining constraint
+                return -1;
+            }
+            found = int(i);
+        }
+    }
+    return found;
+}
 std::unique_ptr<const GeometryFacade> SketchObject::getGeometryFacade(int GeoId) const
 {
     return GeometryFacade::getFacade(getGeometry(GeoId));

@@ -33,6 +33,7 @@
 #endif
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <numeric>
 
 #include <Base/Console.h>
 #include <App/Application.h>
@@ -44,11 +45,13 @@
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
 #include <Gui/Notifications.h>
+#include <Gui/View3DInventorViewer.h>
 #include <Gui/Selection.h>
 #include <Gui/SelectionObject.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include <Mod/Sketcher/App/SolverGeometryExtension.h>
 
+#include "CommandSketcherTools.h"
 #include "DrawSketchHandler.h"
 #include "SketchRectangularArrayDialog.h"
 #include "Utils.h"
@@ -2681,3 +2684,25 @@ void CreateSketcherCommandsConstraintAccel()
     rcCmdMgr.addCommand(new CmdSketcherPaste());
 }
 // clang-format on
+
+void SketcherGui::centerScale(ViewProviderSketch* vp, double scaleFactor)
+{
+    Sketcher::SketchObject* Obj = vp->getSketchObject();
+    std::vector<int> allGeoIds(Obj->Geometry.getValues().size());
+    std::iota(allGeoIds.begin(), allGeoIds.end(), 0);
+
+    auto scaler = DrawSketchHandlerScale::make_centerScale(std::move(allGeoIds), scaleFactor, false);
+    scaler->setSketchGui(vp);
+    scaler->executeCommands();
+
+    // Keep the sketch the same size on screen. A served client's camera is
+    // stated over the wire (ViewerContext::cameraIsRemote) and is left
+    // alone, as ViewProviderSketch does when entering edit.
+    auto* viewer = dynamic_cast<Gui::View3DInventorViewer*>(vp->getEditViewer());
+    if (viewer && !viewer->cameraIsRemote()) {
+        bool isAnimating = viewer->isAnimationEnabled();
+        viewer->setAnimationEnabled(false);
+        viewer->scale(static_cast<float>(scaleFactor));
+        viewer->setAnimationEnabled(isAnimating);
+    }
+}

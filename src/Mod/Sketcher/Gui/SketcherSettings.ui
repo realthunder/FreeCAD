@@ -260,6 +260,23 @@ This setting is only for the toolbar. Whichever you chose, all tools are always 
         </property>
        </widget>
       </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="autoScaleLabel">
+        <property name="text">
+         <string>Sketch autoscale:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QComboBox" name="autoScaleMode">
+        <property name="toolTip">
+         <string>When the first scale-defining dimension of a sketch (a distance, radius or diameter) is set, the whole sketch is scaled about its origin to match it and kept the same size on screen:
+'Always': Scale whenever the sketch has no external geometry and no blocked geometry.
+'Never': Do not scale.
+'When no scale feature is visible': Also leave the sketch alone when a visible object in the document already gives a sense of scale.</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
