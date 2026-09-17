@@ -96,7 +96,7 @@ export class PanelClient {
     this.stopPush?.();
     this.stopPush = null;
     try {
-      await sendOp('widgets.unsubscribe', {});
+      await sendOp('widgets.unsubscribe', { panels: true });
     }
     catch {
       // the socket is already gone: nothing to leave

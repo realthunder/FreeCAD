@@ -180,7 +180,14 @@ void SceneWidgetStream::subscribe(uint64_t client, bool toolbars, bool all, bool
         connect(&Fw::Store::instance(), &Fw::Store::messageTo, this,
                 &SceneWidgetStream::onMessageTo);
     }
-    const bool fresh = !isSubscribed(client);
+    // The streams this call turns ON get their snapshot -- per stream,
+    // not per client: a page whose tool bar card is already subscribed
+    // and whose task panel card subscribes second must still be sent the
+    // panel's opens (docs/Sandbox.md 7.26), and must not be sent the tool
+    // bars twice.
+    const bool newToolbars = toolbars && !_toolbars.contains(client);
+    const bool newAll = all && !_all.contains(client);
+    const bool newPanels = panels && !_panels.contains(client);
     if (toolbars)
         _toolbars.insert(client);
     else
@@ -194,11 +201,11 @@ void SceneWidgetStream::subscribe(uint64_t client, bool toolbars, bool all, bool
     else
         _panels.remove(client);
     checkMirror();
-    if (fresh) {
+    if (newToolbars || newAll || newPanels) {
         // after the reply has gone out: the snapshot follows it
-        QTimer::singleShot(0, this, [this, client]() {
+        QTimer::singleShot(0, this, [this, client, newToolbars, newAll, newPanels]() {
             if (isSubscribed(client))
-                pushSnapshot(client);
+                pushSnapshot(client, newToolbars, newAll, newPanels);
         });
     }
 }
@@ -208,6 +215,17 @@ void SceneWidgetStream::unsubscribe(uint64_t client)
     _toolbars.remove(client);
     _all.remove(client);
     _panels.remove(client);
+    checkMirror();
+}
+
+void SceneWidgetStream::unsubscribe(uint64_t client, bool toolbars, bool all, bool panels)
+{
+    if (toolbars)
+        _toolbars.remove(client);
+    if (all)
+        _all.remove(client);
+    if (panels)
+        _panels.remove(client);
     checkMirror();
 }
 
@@ -253,9 +271,21 @@ void SceneWidgetStream::send(uint64_t client, const std::string& json)
 
 void SceneWidgetStream::pushSnapshot(uint64_t client)
 {
+    pushSnapshot(client, true, true, true);
+}
+
+void SceneWidgetStream::pushSnapshot(uint64_t client, bool toolbars, bool all, bool panels)
+{
     Fw::Store& store = Fw::Store::instance();
     for (const QString& id : store.snapshotOrder()) {
         if (!wants(client, id))
+            continue;
+        // only the streams asked for: `all` is everything, the others
+        // their own mirrors' models
+        const bool inStream = (all && _all.contains(client))
+            || (toolbars && Fw::ToolBarMirror::owns(id))
+            || (panels && Fw::PanelMirror::owns(id));
+        if (!inStream)
             continue;
         QJsonObject msg = QJsonObject::fromVariantMap(store.snapshot(id));
         msg[QLatin1String("op")] = QStringLiteral("widgets");
@@ -327,10 +357,21 @@ void Gui::installSceneWidgetOps()
     registerSceneControlOp(QStringLiteral("widgets.subscribe"), true,
                            [](const QJsonObject& req, const std::string&, uint64_t client) {
         const QJsonValue id = req.value(QLatin1String("id"));
-        const bool toolbars = req.value(QLatin1String("toolbars")).toBool(false);
-        const bool all = req.value(QLatin1String("all")).toBool(false);
-        const bool panels = req.value(QLatin1String("panels")).toBool(false);
-        SceneWidgetStream::instance().subscribe(client, toolbars, all, panels);
+        // A key names a stream to take or leave; one ABSENT leaves that
+        // stream as it was.  The tool bar card and the task panel card
+        // each subscribe to their own stream on the same connection, and
+        // before this the second to arrive unseated the first: the
+        // panel mirror stopped with its last subscriber and every
+        // widget id the page held went stale (docs/Sandbox.md 7.26).
+        SceneWidgetStream& stream = SceneWidgetStream::instance();
+        auto flag = [&](const char* key, bool current) {
+            const QJsonValue v = req.value(QLatin1String(key));
+            return v.isUndefined() || v.isNull() ? current : v.toBool(false);
+        };
+        const bool toolbars = flag("toolbars", stream.hasToolbars(client));
+        const bool all = flag("all", stream.hasAll(client));
+        const bool panels = flag("panels", stream.hasPanels(client));
+        stream.subscribe(client, toolbars, all, panels);
         QJsonObject reply = okReply(id);
         reply[QLatin1String("subscribed")] = toolbars || all || panels;
         // whether a task dialog is up, so a client tells "none" from
@@ -351,7 +392,16 @@ void Gui::installSceneWidgetOps()
     });
     registerSceneControlOp(QStringLiteral("widgets.unsubscribe"), true,
                            [](const QJsonObject& req, const std::string&, uint64_t client) {
-        SceneWidgetStream::instance().unsubscribe(client);
+        // Named streams are left; none named leaves them all, which is
+        // what a connection going away means and what the older clients
+        // send.
+        const bool toolbars = req.value(QLatin1String("toolbars")).toBool(false);
+        const bool all = req.value(QLatin1String("all")).toBool(false);
+        const bool panels = req.value(QLatin1String("panels")).toBool(false);
+        if (toolbars || all || panels)
+            SceneWidgetStream::instance().unsubscribe(client, toolbars, all, panels);
+        else
+            SceneWidgetStream::instance().unsubscribe(client);
         return okReply(req.value(QLatin1String("id")));
     });
     registerSceneControlOp(QStringLiteral("widgets.icon"), false,

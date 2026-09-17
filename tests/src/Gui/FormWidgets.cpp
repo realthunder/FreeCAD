@@ -1357,6 +1357,40 @@ private Q_SLOTS:
         control(R"({"id":10,"op":"widgets.subscribe","toolbars":false})", 5);
         QCOMPARE(stream.subscriberCount(), 0);
 
+        // two cards on one connection (docs/Sandbox.md 7.26): a subscribe
+        // that names one stream leaves the other as it was, and an
+        // unsubscribe that names one leaves the other subscribed
+        pushed.clear();
+        control(R"({"id":11,"op":"widgets.subscribe","toolbars":true})", 8);
+        QCoreApplication::processEvents();
+        auto opensFor8 = [&pushed](const char* id) {
+            int n = 0;
+            for (const auto& p : pushed)
+                if (p.first == 8 && p.second.value(QLatin1String("id")).toString() == QLatin1String(id))
+                    ++n;
+            return n;
+        };
+        QCOMPARE(opensFor8("cmd:Std_Label"), 1);   // the tool bar snapshot
+        pushed.clear();
+        // adding the panel stream sends the panel's snapshot only: the
+        // tool bar models are not opened a second time
+        control(R"({"id":12,"op":"widgets.subscribe","panels":true})", 8);
+        QCoreApplication::processEvents();
+        QCOMPARE(opensFor8("cmd:Std_Label"), 0);
+        QVERIFY(stream.hasToolbars(8));
+        QVERIFY(stream.hasPanels(8));
+        // and `all`, added third, opens what the other two did not
+        pushed.clear();
+        control(R"({"id":15,"op":"widgets.subscribe","all":true})", 8);
+        QCoreApplication::processEvents();
+        QCOMPARE(opensFor8("g:other"), 1);
+        control(R"({"id":16,"op":"widgets.unsubscribe","all":true})", 8);
+        control(R"({"id":13,"op":"widgets.unsubscribe","panels":true})", 8);
+        QVERIFY(stream.hasToolbars(8));
+        QVERIFY(!stream.hasPanels(8));
+        control(R"({"id":14,"op":"widgets.subscribe","toolbars":false})", 8);
+        QCOMPARE(stream.subscriberCount(), 0);
+
         store.release(QStringLiteral("cmd:Std_Label"));
         store.release(QStringLiteral("g:other"));
         delete label;

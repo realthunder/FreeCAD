@@ -27,11 +27,16 @@
  *
  * Ops (all `mutating`, refused on a view-only connection):
  *   widgets.subscribe   {"toolbars": bool, "panels": bool, "all": bool}
+ *                       -- a key names a stream to take or leave; a key
+ *                       ABSENT leaves that stream as it was, so the tool
+ *                       bars and the task panel, two cards on one page,
+ *                       subscribe without unseating each other (7.26)
  *                       -> ok, "theme", "locale", "panel" (the id of the
  *                       task dialog up, or null); then one "open" push
  *                       per object in reference order, and every later
  *                       message
- *   widgets.unsubscribe                                 -> ok
+ *   widgets.unsubscribe {"toolbars"?, "panels"?, "all"?}  -> ok: leave
+ *                       the named streams, or every stream when none is
  *   widgets.icon        {"name", "size"} -> "format" ("svg" | "png"),
  *                       "data" (SVG text, or base64 PNG), "size"
  *   widgets.update      {"target", "state": {"q_...": v}} -> ok
@@ -93,6 +98,11 @@ public:
     /// snapshot is pushed from the event loop (after the reply).
     void subscribe(uint64_t client, bool toolbars, bool all, bool panels = false);
     void unsubscribe(uint64_t client);
+    /// Leave only the named streams; the client keeps the others.
+    void unsubscribe(uint64_t client, bool toolbars, bool all, bool panels);
+    bool hasToolbars(uint64_t client) const { return _toolbars.contains(client); }
+    bool hasAll(uint64_t client) const { return _all.contains(client); }
+    bool hasPanels(uint64_t client) const { return _panels.contains(client); }
     bool isSubscribed(uint64_t client) const
     {
         return _toolbars.contains(client) || _all.contains(client) || _panels.contains(client);
@@ -103,6 +113,8 @@ public:
     }
     /// Push the snapshot to one client now (what the deferred push does).
     void pushSnapshot(uint64_t client);
+    /// The opens of the named streams only, for a client adding one.
+    void pushSnapshot(uint64_t client, bool toolbars, bool all, bool panels);
 
 private:
     SceneWidgetStream();
