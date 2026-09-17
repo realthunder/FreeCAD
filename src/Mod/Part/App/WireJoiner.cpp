@@ -455,6 +455,7 @@ public:
 
     std::vector<StackInfo> stack;
     std::vector<VertexInfo> vertexStack;
+    std::vector<VertexInfo> loopDarts;
     std::vector<VertexInfo> tmpVertices;
     std::vector<VertexInfo> adjacentList;
 
@@ -2363,14 +2364,17 @@ public:
                 }
             }
 
-            wireData->Clear();
-            wireData->Add(beginInfo.shape(beginVertex.start));
-            for (auto &r : stack) {
-                const auto &v = vertexStack[r.iCurrent];
-                auto &info = *v.it;
-                wireData->Add(info.shape(v.start));
-            }
-            TopoDS_Wire wire = makeCleanWire();
+            // The darts of the loop just closed: the one it started from and
+            // the one chosen at each level of the stack. They are connected in
+            // this order and share their vertices already, so the wire is
+            // assembled from them directly -- ShapeFix_Wire had been reordering
+            // an ordered sequence, at a cost quadratic in its length, and the
+            // plain search makes its wires as long as it can.
+            loopDarts.clear();
+            loopDarts.push_back(beginVertex);
+            for (auto &r : stack)
+                loopDarts.push_back(vertexStack[r.iCurrent]);
+            TopoDS_Wire wire = makeDartWire(loopDarts);
             if (!BRep_Tool::IsClosed(wire)) {
                 FC_WARN("failed to close some wire in iteration " << iteration);
                 showShape(wire,"_FailedToClose", iteration);

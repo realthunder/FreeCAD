@@ -248,6 +248,35 @@ Inside it `splitEdges()` is three quarters, most of that `add()`, and most
 of *that* the `BRepLib_MakeWire` that `connectEdge()` goes through to
 give a fragment its shared vertices. The lookup itself is under a tenth.
 
+## The search assembles its wires the same way
+
+The plain `findClosedWires()` -- `tighten=False`, the `Part::Face` and
+`SubShapeBinder` default -- and the search fallback both close a loop as a
+list of darts: the one the search started from and the one chosen at each
+level of its stack. They are connected in that order and share their
+vertices, so `makeDartWire()` assembles them too. `ShapeFix_Wire` had been
+reordering an ordered sequence at a cost quadratic in its length, and the
+plain search makes its wires as long as it can: on the k=40 lattice
+`ShapeAnalysis_WireOrder` alone was 45% of the 6.4 s this path took. It
+now takes 0.48 s, and what is left is the search's own bookkeeping.
+
+What changes on this path is how a wire is rotated and which way round it
+runs. The fixer took the first edge in whatever orientation `connectEdge()`
+had stored it and chained the rest to fit, so a loop whose first edge was
+stored `REVERSED` came out travelled backwards and re-chained from wherever
+`ShapeAnalysis_WireOrder` chose to begin. A wire now starts at the dart the
+search started from and runs the way it was walked. Over the 37 fixture
+sketches and the synthetic cases, plain path, with and without merging (98
+runs): the set of edges in every wire is identical and so is every element
+name once its hasher ids are expanded, and 18 runs differ in rotation or
+direction only. Two things to know when reading such a comparison: the ids
+inside a name (`#e`, `#11`) are handed out in the order names are first
+built, so a change in edge index order changes them without changing what
+they stand for, and the number after the hasher id is the length of the
+postfix text, which follows the digit count of those ids. `plainab.py`
+dumps names with the ids expanded; `plaincmp.py` compares membership and
+names and reports rotation separately.
+
 ## The 2D intersector, and what names follow
 
 `splitEdges()` used to build a wire, a face and a `ShapeAnalysis_Wire` for
