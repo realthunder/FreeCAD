@@ -295,7 +295,9 @@ void HLRProjector::Private::resolveSources()
     // input edge an outline vertex lands on is split. The outliner's data
     // structure keeps both relations keyed by the ORIGINAL element, which
     // is what the element map has to name. An edge it did not touch is its
-    // own key in the algorithm's edge map.
+    // own key in the algorithm's edge map. A face seen edge on lists its
+    // own boundary edges as its outline; those are input edges and stay
+    // their own source, only an edge the algorithm invented takes the face.
     NCollection_DataMap<TopoDS_Shape, TopoDS_Shape, TopTools_ShapeMapHasher> sourceOf;
     for (int i = 1; i <= algo->NbShapes(); ++i) {
         const Handle(HLRTopoBRep_OutLiner) &outliner = algo->ShapeBounds(i).Shape();
@@ -306,8 +308,10 @@ void HLRProjector::Private::resolveSources()
         for (TopExp_Explorer xp(original, TopAbs_FACE); xp.More(); xp.Next()) {
             const TopoDS_Face &face = TopoDS::Face(xp.Current());
             auto bindAll = [&](const NCollection_List<TopoDS_Shape> &edges) {
-                for (NCollection_List<TopoDS_Shape>::Iterator it(edges); it.More(); it.Next())
-                    sourceOf.Bind(it.Value(), face);
+                for (NCollection_List<TopoDS_Shape>::Iterator it(edges); it.More(); it.Next()) {
+                    if (!inputOf.IsBound(it.Value()))
+                        sourceOf.Bind(it.Value(), face);
+                }
             };
             if (tds.FaceHasOutL(face))
                 bindAll(tds.FaceOutL(face));

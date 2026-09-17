@@ -48,11 +48,10 @@ class TestSketchExternalGeometry(unittest.TestCase):
         names = [name for _, name, _ in ext]
         self.assertTrue(all(names), names)
         self.assertEqual(len(set(names)), 4)
-        face = "Face1;"
+        # one silhouette is the algorithm's own, from the side face; the
+        # other is where the seam lies, and is the seam's projection
         silhouettes = [name for _, name, geo in ext if abs(geo.length() - cyl.Height.Value) < 1e-6]
-        self.assertEqual(len(silhouettes), 2)
-        for name in silhouettes:
-            self.assertTrue(name.startswith(face), "%s not from %s" % (name, face))
+        self.assertEqual(sorted(name.split(";")[0] for name in silhouettes), ["Edge1", "Face1"])
 
     def testIdsFollowTheNameNotThePosition(self):
         cyl, sketch = self.sideSketchOnCylinder()
