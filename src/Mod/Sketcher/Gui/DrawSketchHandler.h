@@ -197,6 +197,46 @@ public:
                            const Base::Vector2d& Pos,
                            const Base::Vector2d& Dir,
                            AutoConstraint::TargetType type = AutoConstraint::VERTEX);
+
+    /** What the pointer is over, as the auto-constraint search reads it. */
+    struct PreselectionData
+    {
+        int geoId = Sketcher::GeoEnum::GeoUndef;
+        Sketcher::PointPos posId = Sketcher::PointPos::none;
+        /// direction of the hit shape, when it is a line or a sketch axis
+        Base::Vector3d hitShapeDir = Base::Vector3d(0, 0, 0);
+        bool isLine = false;
+    };
+
+    /** @name The halves of the auto-constraint search
+     *
+     * Each answers a different question about the same cursor position, and
+     * seekAutoConstraint is the order they are asked in.
+     */
+    //@{
+    PreselectionData getPreselectionData() const;
+
+    /// whether Pos is within 5% of the line's length from its middle
+    bool isLineCenterAutoConstraint(int GeoId, const Base::Vector2d& Pos) const;
+
+    /// what the geometry under the pointer suggests
+    void seekPreselectionAutoConstraint(std::vector<AutoConstraint>& suggestedConstraints,
+                                        const Base::Vector2d& Pos,
+                                        const Base::Vector2d& Dir,
+                                        AutoConstraint::TargetType type);
+
+    /// horizontal or vertical, from the direction alone
+    bool seekAlignmentAutoConstraint(std::vector<AutoConstraint>& suggestedConstraints,
+                                     const Base::Vector2d& Dir);
+
+    /// tangency to any curve in the sketch, whether or not it is preselected
+    bool seekTangentAutoConstraint(std::vector<AutoConstraint>& suggestedConstraints,
+                                   const Base::Vector2d& Pos,
+                                   const Base::Vector2d& Dir);
+
+    /// how far from the cursor the searches above look, in sketch units
+    double getAutoConstraintSearchDistance() const;
+    //@}
     // createowncommand indicates whether a separate command shall be create and committed (for
     // example for undo purposes) or not is not it is the responsibility of the developer to create
     // and commit the command appropriately.

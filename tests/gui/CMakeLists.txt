@@ -147,3 +147,11 @@ fc_add_gui_test(GuiSketchMidpointAutoConstraint_tests_run
 fc_add_gui_test(GuiServeSketchClickPlacement_tests_run
                 serve-sketch-click-placement.py
                 --timeout 180)
+
+# The tangent auto-constraint search (upstream ed45e20768, b71a54d9cc):
+# tangency is sought before alignment and suppresses it, and the search
+# speaks GeoIds rather than indices into getCompleteGeometry(), which
+# appends external geometry in reverse.
+fc_add_gui_test(GuiSketchTangentAutoConstraint_tests_run
+                sketch-tangent-autoconstraint.py
+                --timeout 200)
