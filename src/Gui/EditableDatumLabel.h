@@ -79,6 +79,24 @@ public:
     void setLabelAutoDistanceReverse(bool val);
     void setSpinboxVisibleToMouse(bool val);
 
+    /** @name Finished editing, as distinct from set
+     *
+     * `isSet` says the box holds a value the user typed. `hasFinishedEditing`
+     * says they committed it with Enter, which is a different question: a
+     * committed parameter is skipped when Tab cycles to the next one, and
+     * Ctrl+Enter commits every visible one at once. The on-view parameter
+     * controller reads both.
+     */
+    //@{
+    /// Show that the value is committed. The lock icon upstream draws here
+    /// needs QuantitySpinBox::addIconSpace and getMargin, which this fork
+    /// does not have, and a mirror has no widget to draw it on either -- so
+    /// the state is kept and nothing is painted yet.
+    void setLockedAppearance(bool locked);
+    /// Forget the commitment and its appearance.
+    void resetLockedState();
+    //@}
+
     Function getFunction();
 
     /** @name What a view that cannot show a widget streams instead
@@ -104,6 +122,7 @@ public:
     // NOLINTBEGIN
     SoDatumLabel* label;
     bool isSet;
+    bool hasFinishedEditing;  ///< the user pressed Enter, not merely typed
     bool autoDistance;
     bool autoDistanceReverse;
     bool avoidMouseCursor;
@@ -112,8 +131,21 @@ public:
 
 Q_SIGNALS:
     void valueChanged(double val);
+    /// the value was committed with Enter
+    void editingFinished(double val);
+    /// the edit was abandoned and the value put back
+    void editingCanceled(double val);
+    /// the box was emptied, so the parameter is no longer set
+    void parameterUnset();
+    /// Ctrl+Enter: commit every visible parameter of this stage
+    void finishEditingOnAllOVPs();
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    bool syncValueFromSpinBox(bool emitParameterUnset = true);
+    void handleSpinBoxValueChanged();
     void positionSpinbox();
     SbVec3f getTextCenterPoint() const;
     /// Tell the view its on-view set moved, so a mirror can restate it.
@@ -126,6 +158,8 @@ private:
     QuantitySpinBox* spinBox;
     SoNodeSensor* cameraSensor;
     SbVec3f midpos;
+    double editStartValue;
+    bool lockedAppearance;
 
     Function function;
 };
