@@ -11,8 +11,8 @@ as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
-| Python (`FreeCADCmd -t 0`) | **2778 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-14, after the SecurePython merge, unchanged after merging 7.17 D4; SecurePython alone 2778, RemoteEdit alone 2688). Pass `FCX_PYODIDE` here too: in a fresh `FREECAD_USER_HOME` without it the 28 `SandboxProgram` / `FeaturePythonChain` cases skip ("no sandbox guest in this build") and the run still says OK -- 78 skipped is the tell |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **667 of 667 passing** (2026-09-14, after merging SecurePython sandbox 7.17 D4, which adds 10; 657 with GuiServeClaimChildren; 656 after the first SecurePython merge; SecurePython alone 625, RemoteEdit alone 634), 0 failures, 8 ctest entries disabled, 1 skipped -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available". **A merge that brings guest image changes (`src/App/ExpressionImage/`) needs `cmake --build build/pyodide-guest` and `--target fcx_image_wheel` first**: the host build keeps the old wheel, and the first run of this merge failed 16 sandbox cases (`module '_fcx' has no attribute 'surface'`) for that reason alone |
+| Python (`FreeCADCmd -t 0`) | **2778 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (re-measured 2026-09-18 on `932b16a201` and unchanged, which is what clears the Proxy-routing removal: it deletes 15 `__new__` hooks from BIM and Draft product code, and Draft, Arch, Path and Fem are all in this run; 2026-09-14, after the SecurePython merge, unchanged after merging 7.17 D4; SecurePython alone 2778, RemoteEdit alone 2688). Pass `FCX_PYODIDE` here too: in a fresh `FREECAD_USER_HOME` without it the 28 `SandboxProgram` / `FeaturePythonChain` cases skip ("no sandbox guest in this build") and the run still says OK -- 78 skipped is the tell |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **661 of 661 passing** (2026-09-18 on `932b16a201`, the Proxy-routing removal: it takes 8 sandbox cases out, and `FormWidgets_Tests_run` needed the exposure fix below to pass in company; 667 of 667 on 2026-09-14, after merging SecurePython sandbox 7.17 D4, which adds 10; 657 with GuiServeClaimChildren; 656 after the first SecurePython merge; SecurePython alone 625, RemoteEdit alone 634), 0 failures, 8 ctest entries disabled, 1 skipped -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available". **A merge that brings guest image changes (`src/App/ExpressionImage/`) needs `cmake --build build/pyodide-guest` and `--target fcx_image_wheel` first**: the host build keeps the old wheel, and the first run of this merge failed 16 sandbox cases (`module '_fcx' has no attribute 'surface'`) for that reason alone |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **497 of 497 passing** (2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
 | Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
@@ -23,10 +23,13 @@ Two traps when running the suites (2026-09-09): give the Python suite and
 -- the expression routing suites in `Tests_run` flip
 `Expression/Sandbox:Evaluate` in the shared `user.cfg` while they run, and
 the Python suite then restores every Proxy through the sandbox guest (46
-failures that vanish alone, on 2026-09-09; since 2026-09-17 a Proxy whose
-module the guest cannot serve is HELD until the document's
-`host.import:<module>` is answered, docs/Sandbox.md 7.28, so a ROUTED
-module run needs its grants -- `TestFemApp` routed with none holds 81
+failures that vanish alone, on 2026-09-09; **since 2026-09-18 this half
+is history**: docs/Sandbox.md 7.31 removed Proxy routing, so a saved
+Proxy always restores natively and no suite needs an import grant.
+What follows is the record of what routed runs used to need.  A Proxy
+whose module the guest could not serve was HELD until the document's
+`host.import:<module>` was answered, docs/Sandbox.md 7.28, so a ROUTED
+module run needed its grants -- `TestFemApp` routed with none held 81
 Proxies and fails 2, and with `--grant host.import:femobjects --grant
 host.import:femsolver` (the TOP-LEVEL packages, the COARSE form: the
 dotted-ancestor chain covers every submodule under them, which is what
@@ -37,7 +40,22 @@ refusals, and
 with `--grant host.import:Path` alone -- and
 what remains under routing beyond that is `TestArch`'s 11 guest-behaviour
 cases); and the home directory must **exist** before
-the run, or FreeCAD falls back to the real one.  `Tests_run` gained
+the run, or FreeCAD falls back to the real one.
+
+A third trap, found 2026-09-18 by running the full `ctest` for the
+first time in a while: `FormWidgets_Tests_run`'s three panel-mirror
+cases passed alone and failed in company (21 passed, 2 failed), which
+reads as a mirror bug and is not one.  The mirror's watch is
+PAINT-driven (`QEvent::Paint` -> `markDirty` -> `_dirty`, and
+`flush()` returns early when that set is empty), and `QWidget::show()`
+makes a window visible but not necessarily EXPOSED: after any earlier
+case has put a window up, the next one is mapped late, no paint
+arrives, and the store emits nothing.  Every other state variable is
+identical between a passing and a failing run -- same ids, same store
+count, same running mirror -- so only the emitted-message count tells
+them apart.  The fix is `QVERIFY(QTest::qWaitForWindowExposed(&host))`
+after the `show()`; no amount of `processEvents()` or `qWait()` helps,
+because waiting cannot map a window that was never mapped.  `Tests_run` gained
 `ProxyImport.*` (7) and four `TypeImport.*` cases on 2026-09-09 (the
 Proxy import rule, docs/Sandbox.md sec 11 item 1); the per-binary counts
 below predate that.

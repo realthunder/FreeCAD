@@ -1658,6 +1658,12 @@ private Q_SLOTS:
         hostLay->addWidget(box2);
         hostLay->addWidget(buttons);
         host.show();
+        // the mirror's watch is PAINT-driven (QEvent::Paint -> markDirty),
+        // and an unexposed window is never painted: shown is not enough.
+        // Without this the case passes alone and fails after any case that
+        // put a window up, because the new window is mapped late and the
+        // widget change is never seen -- no wait can fix what is not mapped.
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
         QCoreApplication::processEvents();
 
         mirror.show(QStringLiteral("TestDialog"), {box, box2}, buttons);
@@ -2001,6 +2007,12 @@ private Q_SLOTS:
         auto hostLay = new QVBoxLayout(&host);
         hostLay->addWidget(box);
         host.show();
+        // the mirror's watch is PAINT-driven (QEvent::Paint -> markDirty),
+        // and an unexposed window is never painted: shown is not enough.
+        // Without this the case passes alone and fails after any case that
+        // put a window up, because the new window is mapped late and the
+        // widget change is never seen -- no wait can fix what is not mapped.
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
         QCoreApplication::processEvents();
 
         mirror.show(QStringLiteral("ItemsDialog"), {box}, nullptr);
@@ -2283,6 +2295,12 @@ private Q_SLOTS:
         auto hostLay = new QVBoxLayout(&host);
         hostLay->addWidget(box);
         host.show();
+        // the mirror's watch is PAINT-driven (QEvent::Paint -> markDirty),
+        // and an unexposed window is never painted: shown is not enough.
+        // Without this the case passes alone and fails after any case that
+        // put a window up, because the new window is mapped late and the
+        // widget change is never seen -- no wait can fix what is not mapped.
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
         tick();
         mirror.show(QStringLiteral("MouseDialog"), {box}, nullptr);
         const QString panelId = mirror.panelId();
