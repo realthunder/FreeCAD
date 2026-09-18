@@ -55,6 +55,7 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
                                        bool autoDistance,
                                        bool avoidMouseCursor)
     : isSet(false)
+    , hasFinishedEditing(false)
     , autoDistance(autoDistance)
     , autoDistanceReverse(false)
     , avoidMouseCursor(avoidMouseCursor)
@@ -62,6 +63,8 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
     , viewer(view)
     , spinBox(nullptr)
     , cameraSensor(nullptr)
+    , editStartValue(0.0)
+    , lockedAppearance(false)
     , function(Function::Positioning)
 {
     if (viewer) {
@@ -172,6 +175,11 @@ void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool 
     // streamed to the client instead (docs/ThinClient.md section 8.7).
     QWidget* mdi = viewer->datumEditorParent();
 
+    // A fresh edit is not a committed one, and Escape has to know what the
+    // value was before it started.
+    resetLockedState();
+    editStartValue = val;
+
     label->string = " ";
 
     spinBox = new QuantitySpinBox(mdi);
@@ -181,6 +189,13 @@ void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool 
     spinBox->setButtonSymbols(QAbstractSpinBox::NoButtons);
     spinBox->setKeyboardTracking(false);
     spinBox->setFocusPolicy(Qt::ClickFocus); // prevent passing focus with tab.
+    // Installed first, so it runs LAST: Qt calls a widget's filters in
+    // reverse order of installation, and the sketcher's keyboard manager
+    // decides which keys reach the box at all. Enter and Tab it passes
+    // through (it only notes the mode and returns false), so they arrive
+    // here; Escape it claims for the tool, which is why the branch below
+    // is not what cancels a sketch tool.
+    spinBox->installEventFilter(this);
     if (eventFilteringObj) {
         spinBox->installEventFilter(eventFilteringObj);
     }
@@ -198,11 +213,7 @@ void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool 
     setFocusToSpinbox();
 
     connect(spinBox, qOverload<double>(&QuantitySpinBox::valueChanged),
-        this, [this](double value) {
-        this->isSet = true;
-        this->value = value;
-        Q_EMIT this->valueChanged(value);
-    });
+            this, &EditableDatumLabel::handleSpinBoxValueChanged);
 }
 
 void EditableDatumLabel::stopEdit()
@@ -349,6 +360,114 @@ SbVec3f EditableDatumLabel::getTextCenterPoint() const
     P2D.TransformToCoordinateSystem(pos, RXb, RYb);
 
     return {float(P2D.x), float(P2D.y), float(P2D.z)};
+}
+
+bool EditableDatumLabel::syncValueFromSpinBox(bool emitParameterUnset)
+{
+    if (!spinBox) {
+        return false;
+    }
+
+    // An emptied box is not a zero: the parameter goes back to being unset,
+    // so the tool takes its value from the pointer again.
+    if (!spinBox->hasValidInput()) {
+        if (emitParameterUnset) {
+            resetLockedState();
+            Q_EMIT parameterUnset();
+        }
+        return false;
+    }
+
+    value = spinBox->rawValue();
+    isSet = true;
+
+    if (hasFinishedEditing) {
+        setLockedAppearance(true);
+    }
+
+    return true;
+}
+
+void EditableDatumLabel::handleSpinBoxValueChanged()
+{
+    if (syncValueFromSpinBox()) {
+        Q_EMIT valueChanged(value);
+    }
+}
+
+bool EditableDatumLabel::eventFilter(QObject* watched, QEvent* event)
+{
+    if (event->type() == QEvent::KeyPress) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+
+        if (keyEvent->key() == Qt::Key_Escape) {
+            if (qobject_cast<QAbstractSpinBox*>(watched)) {
+                this->value = this->editStartValue;
+                this->isSet = false;
+                this->hasFinishedEditing = false;
+                this->setLockedAppearance(false);
+                this->setSpinboxValue(this->editStartValue);
+                this->stopEdit();
+                Q_EMIT this->editingCanceled(this->value);
+                return true;
+            }
+        }
+        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter
+            || keyEvent->key() == Qt::Key_Tab) {
+
+            if (qobject_cast<QAbstractSpinBox*>(watched)) {
+                // Tab with nothing typed just moves on; it does not commit a
+                // value the user never entered.
+                if (keyEvent->key() == Qt::Key_Tab && !this->isSet) {
+                    if (!this->spinBox->hasValidInput()) {
+                        syncValueFromSpinBox();
+                        return true;
+                    }
+                    return false;
+                }
+
+                // Ctrl+Enter takes every visible parameter as it stands.
+                if (keyEvent->modifiers() & Qt::ControlModifier) {
+                    Q_EMIT this->finishEditingOnAllOVPs();
+                    return true;
+                }
+
+                this->hasFinishedEditing = true;
+
+                if (!syncValueFromSpinBox()) {
+                    return true;
+                }
+
+                const double finishedValue = value;
+                Q_EMIT this->editingFinished(finishedValue);
+                return true;
+            }
+        }
+        else if (this->hasFinishedEditing && keyEvent->key() != Qt::Key_Tab) {
+            // typing again after committing reopens the parameter
+            this->resetLockedState();
+            return false;
+        }
+    }
+
+    return QObject::eventFilter(watched, event);
+}
+
+void EditableDatumLabel::setLockedAppearance(bool locked)
+{
+    // Upstream draws a lock icon inside the box here. That needs
+    // QuantitySpinBox::addIconSpace and getMargin, which this fork does not
+    // carry, and a mirror has no widget to draw one on in any case -- a
+    // client would need it as streamed state beside getText() and
+    // getSelection() (docs/ThinClient.md sec 8.7). The state is real and is
+    // what the controller reads; only the affordance is missing.
+    lockedAppearance = locked;
+}
+
+void EditableDatumLabel::resetLockedState()
+{
+    hasFinishedEditing = false;
+    setLockedAppearance(false);
 }
 
 void EditableDatumLabel::setPlacement(const Base::Placement& plc)
