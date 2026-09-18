@@ -599,7 +599,7 @@ public:
     void projectPointToLine(const SbVec2s&, SbVec3f& pt1, SbVec3f& pt2) const;
 
     /** Get the normalized position of the 2d point. */
-    SbVec2f getNormalizedPosition(const SbVec2s&) const;
+    SbVec2f getNormalizedPosition(const SbVec2s&) const override;
     //@}
 
     /** @name Dimension controls

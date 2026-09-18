@@ -153,3 +153,12 @@ fc_add_gui_test(GuiServeClaimChildren_tests_run serve-claim-children.py
 fc_add_gui_test(GuiSketchMidpointAutoConstraint_tests_run
                 sketch-midpoint-autoconstraint.py
                 --timeout 200)
+
+# A sketch tool's click lands where the client pointed (ThinClient 8.3):
+# a click in empty space is placed by projecting the pixel onto the
+# sketch plane, and that projection used to apply the aspect ratio twice
+# in a mirror, putting every off-centre x aspect times too far out. Exact
+# at the middle of the canvas, which is where every other probe clicks.
+fc_add_gui_test(GuiServeSketchClickPlacement_tests_run
+                serve-sketch-click-placement.py
+                --timeout 180)
