@@ -39,6 +39,9 @@
 // declares a PyObject* row.
 #include <Python.h>
 
+#include <Inventor/SbLine.h>
+#include <Inventor/SbPlane.h>
+#include <Inventor/SbViewVolume.h>
 #include <Inventor/SoDB.h>
 #include <Inventor/SoInteraction.h>
 #include <Inventor/SoPickedPoint.h>
@@ -492,6 +495,53 @@ TEST_F(MirrorViewerTest, theCameraMathAgreesWithThePickPathAboutAPixel)
         const SbVec2s back = mirror->getPointOnViewport(got);
         EXPECT_NEAR(float(back[0]), float(viewportPixel[0]), 1.0F);
         EXPECT_NEAR(float(back[1]), float(viewportPixel[1]), 1.0F);
+    }
+}
+
+TEST_F(MirrorViewerTest, theNormalizedPositionIsTheOneThisCameraTakes)
+{
+    // The row an edit mode projects a pixel through: ask the viewer for the
+    // pixel's normalized position, hand THAT to the camera's own view
+    // volume, and meet the plane being edited.
+    //
+    // ViewProviderSketch used to inline the desktop viewer's answer here,
+    // aspect correction and all. That correction exists because nothing
+    // sets a desktop SoCamera::aspectRatio, so its frustum is square; a
+    // mirror's camera states the client's real aspect, so correcting again
+    // multiplies it in twice and every off-centre x comes back aspect times
+    // too far out. Dead centre it is exact either way, which is where every
+    // other probe clicks, so nothing said so for a long time.
+    const auto camera = perspectiveCamera(800, 600);
+    mirror->setCamera(camera);
+
+    const float focal = 0.5F * (camera.nearDistance + camera.farDistance);
+    const float th = std::tan(0.5F * camera.heightOrAngle);
+
+    const float pixels[][2] = {
+        {400, 300}, {150, 200}, {650, 420}, {60, 540},
+    };
+    for (const auto& pixel : pixels) {
+        // The client's own answer for this pixel, independent of anything
+        // the mirror does: along its ray, at the focal plane.
+        const float nx = 2.0F * pixel[0] / 800.0F - 1.0F;
+        const float ny = 1.0F - 2.0F * pixel[1] / 600.0F;
+        const SbVec3f expected(nx * th * camera.aspectRatio * focal, ny * th * focal,
+                               camera.position[2] - focal);
+
+        // Coin's viewport pixels are bottom-up.
+        const SbVec2s viewportPixel(short(pixel[0]), short(600.0F - pixel[1]));
+
+        const SbViewVolume vol =
+            mirror->getSoRenderManager()->getCamera()->getViewVolume();
+        SbLine line;
+        vol.projectPointToLine(mirror->getNormalizedPosition(viewportPixel), line);
+
+        SbVec3f got;
+        ASSERT_TRUE(vol.getPlane(focal).intersect(line, got))
+            << "pixel " << pixel[0] << "," << pixel[1];
+        EXPECT_NEAR(got[0], expected[0], 0.02F) << "pixel " << pixel[0] << "," << pixel[1];
+        EXPECT_NEAR(got[1], expected[1], 0.02F) << "pixel " << pixel[0] << "," << pixel[1];
+        EXPECT_NEAR(got[2], expected[2], 0.02F) << "pixel " << pixel[0] << "," << pixel[1];
     }
 }
 

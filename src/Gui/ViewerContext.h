@@ -292,6 +292,16 @@ public:
     //@{
     virtual SbVec3f getViewDirection() const = 0;
     virtual SbVec3f getCenterPointOnFocalPlane() const = 0;
+    /** A viewport pixel as the point of the camera's normalized [0, 1]
+     * frustum that the projection math takes.
+     *
+     * The two viewers answer this differently, and have to: a desktop
+     * viewer leaves SoCamera::aspectRatio at 1 and corrects for the
+     * aspect here, while a mirror's camera states the client's real one
+     * and must not correct again (see MirrorViewer). So this is asked
+     * of the viewer and never worked out by a caller.
+     */
+    virtual SbVec2f getNormalizedPosition(const SbVec2s& pnt) const = 0;
     virtual SbVec3f getPointOnFocalPlane(const SbVec2s& pnt) const = 0;
     virtual SbVec3f getPointOnXYPlaneOfPlacement(const SbVec2s& pnt,
                                                  const Base::Placement& plc) const = 0;

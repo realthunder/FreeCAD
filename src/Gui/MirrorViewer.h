@@ -263,6 +263,7 @@ public:
     //@{
     SbVec3f getViewDirection() const override;
     SbVec3f getCenterPointOnFocalPlane() const override;
+    SbVec2f getNormalizedPosition(const SbVec2s& pnt) const override;
     SbVec3f getPointOnFocalPlane(const SbVec2s& pnt) const override;
     SbVec3f getPointOnXYPlaneOfPlacement(const SbVec2s& pnt,
                                          const Base::Placement& plc) const override;

@@ -910,33 +910,19 @@ void ViewProviderSketch::setAngleSnapping(bool enable, Base::Vector2d referenceP
 
 void ViewProviderSketch::getProjectingLine(const SbVec2s& pnt, const Gui::ViewerContext *viewer, SbLine& line) const
 {
-    const SbViewportRegion& vp = viewer->getSoRenderManager()->getViewportRegion();
-
-    short x, y;
-    pnt.getValue(x, y);
-    SbVec2f VPsize = vp.getViewportSize();
-    float dX, dY;
-    VPsize.getValue(dX, dY);
-
-    float fRatio = vp.getViewportAspectRatio();
-    float pX = (float)x / float(vp.getViewportSizePixels()[0]);
-    float pY = (float)y / float(vp.getViewportSizePixels()[1]);
-
-    // now calculate the real points respecting aspect ratio information
-    //
-    if (fRatio > 1.0f) {
-        pX = (pX - 0.5f * dX) * fRatio + 0.5f * dX;
-    }
-    else if (fRatio < 1.0f) {
-        pY = (pY - 0.5f * dY) / fRatio + 0.5f * dY;
-    }
-
     SoCamera* pCam = viewer->getSoRenderManager()->getCamera();
     if (!pCam)
         return;
     SbViewVolume vol = pCam->getViewVolume();
 
-    vol.projectPointToLine(SbVec2f(pX, pY), line);
+    // The viewer's, never worked out here. This used to inline the
+    // desktop viewer's getNormalizedPosition, aspect correction and all,
+    // which is right only while SoCamera::aspectRatio is 1 -- true of a
+    // desktop viewer and false of a mirror, whose camera states the
+    // client's real aspect. Inlined, the correction went in twice there
+    // and every off-centre click landed aspect times too far out in x,
+    // which is invisible at the centre of the viewport and nowhere else.
+    vol.projectPointToLine(viewer->getNormalizedPosition(pnt), line);
 }
 
 Base::Matrix4D ViewProviderSketch::getEditingPlacement() const {

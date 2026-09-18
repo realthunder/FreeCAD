@@ -917,6 +917,11 @@ SbVec3f MirrorViewer::getCenterPointOnFocalPlane() const
         + pimpl->camera->focalDistance.getValue() * direction;
 }
 
+SbVec2f MirrorViewer::getNormalizedPosition(const SbVec2s& pnt) const
+{
+    return pimpl->normalizedPosition(pnt);
+}
+
 SbVec3f MirrorViewer::getPointOnFocalPlane(const SbVec2s& pnt) const
 {
     if (!hasCamera()) {
