@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2022 Boyer Pierre-Louis <pierrelouis.boyer@gmail.com>   *
  *                                                                         *
@@ -21,8 +23,7 @@
  ***************************************************************************/
 
 
-#ifndef SKETCHERGUI_DrawSketchHandlerScale_H
-#define SKETCHERGUI_DrawSketchHandlerScale_H
+#pragma once
 
 #include <QApplication>
 
@@ -36,9 +37,10 @@
 
 #include "DrawSketchDefaultWidgetController.h"
 #include "DrawSketchControllableHandler.h"
+#include "SketcherTransformationExpressionHelper.h"
+
 #include "Utils.h"
 
-#include <cmath>
 #include <memory>
 
 using namespace Sketcher;
@@ -48,15 +50,15 @@ namespace SketcherGui
 
 class DrawSketchHandlerScale;
 
-using DSHScaleController =
-    DrawSketchDefaultWidgetController<DrawSketchHandlerScale,
-                                      StateMachines::ThreeSeekEnd,
-                                      /*PAutoConstraintSize =*/0,
-                                      /*OnViewParametersT =*/OnViewParameters<3>,
-                                      /*WidgetParametersT =*/WidgetParameters<0>,
-                                      /*WidgetCheckboxesT =*/WidgetCheckboxes<1>,
-                                      /*WidgetComboboxesT =*/WidgetComboboxes<0>,
-                                      /*WidgetLineEditsT =*/WidgetLineEdits<0>>;
+using DSHScaleController = DrawSketchDefaultWidgetController<
+    DrawSketchHandlerScale,
+    StateMachines::ThreeSeekEnd,
+    /*PAutoConstraintSize =*/0,
+    /*OnViewParametersT =*/OnViewParameters<3>,
+    /*WidgetParametersT =*/WidgetParameters<0>,
+    /*WidgetCheckboxesT =*/WidgetCheckboxes<1>,
+    /*WidgetComboboxesT =*/WidgetComboboxes<0>,
+    /*WidgetLineEditsT =*/WidgetLineEdits<0>>;
 
 using DSHScaleControllerBase = DSHScaleController::ControllerBase;
 
@@ -64,6 +66,8 @@ using DrawSketchHandlerScaleBase = DrawSketchControllableHandler<DSHScaleControl
 
 class DrawSketchHandlerScale: public DrawSketchHandlerScaleBase
 {
+    Q_DECLARE_TR_FUNCTIONS(SketcherGui::DrawSketchHandlerScale)
+
     friend DSHScaleController;
     friend DSHScaleControllerBase;
 
@@ -73,6 +77,7 @@ public:
         , deleteOriginal(true)
         , abortOnFail(true)
         , allowOriginConstraint(false)
+        , isAllGeoIds(false)
         , refLength(0.0)
         , length(0.0)
         , scaleFactor(0.0)
@@ -85,61 +90,102 @@ public:
 
     ~DrawSketchHandlerScale() override = default;
 
-    /// A handler that scales the given geometries about the sketch origin by
-    /// scaleFactor, keeping their constraints to the origin, for running its
-    /// commands directly (setSketchGui, then executeCommands) without a tool
-    /// session. With abortOnFail false a failure leaves the enclosing
-    /// transaction open for the caller to decide.
-    static std::unique_ptr<DrawSketchHandlerScale>
-    make_centerScale(std::vector<int> listOfGeoIds, double scaleFactor, bool abortOnFail)
+
+    static std::unique_ptr<DrawSketchHandlerScale> make_centerScaleAll(
+        SketcherGui::ViewProviderSketch* vp,
+        double scaleFactor,
+        bool abortOnFail
+    )
     {
-        auto out = std::make_unique<DrawSketchHandlerScale>(std::move(listOfGeoIds));
+        std::vector<int> allGeoIds(vp->getSketchObject()->Geometry.getValues().size());
+        std::iota(allGeoIds.begin(), allGeoIds.end(), 0);
+        auto out = std::make_unique<DrawSketchHandlerScale>(std::move(allGeoIds));
+
+        out->setSketchGui(vp);
         out->referencePoint = Base::Vector2d(0.0, 0.0);
         out->scaleFactor = scaleFactor;
         out->abortOnFail = abortOnFail;
         out->allowOriginConstraint = true;
+        out->isAllGeoIds = true;
         return out;
     }
 
+public:
     void executeCommands() override
     {
-        // validate the scale factor to prevent geometric collapse and crashes
+        // validate scale factor to prevent geometric collapse and crashes
         if (scaleFactor <= Precision::Confusion() || !std::isfinite(scaleFactor)) {
-            THROWM(Base::ValueError,
-                   QT_TRANSLATE_NOOP("Notifications",
-                                     "Invalid scale factor. Scale factor must be a positive number."));
+            THROWM(
+                Base::ValueError,
+                QT_TRANSLATE_NOOP(
+                    "Notifications",
+                    "Invalid scale factor. Scale factor must be a positive number."
+                )
+            );
         }
 
         try {
-            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Scale geometries"));
+            openCommand(QT_TRANSLATE_NOOP("Command", "Scale geometries"));
 
             createShape(false);
+
+            if (deleteOriginal) {
+                deleteOriginalGeos();
+            }
+            int initialConstraintCount = sketchgui->getSketchObject()->Constraints.getSize();
 
             commandAddShapeGeometryAndConstraints();
 
             if (deleteOriginal) {
-                deleteOriginalGeos();
                 reassignFacadeIds();
             }
 
-            Gui::Command::commitCommand();
+            scaleLabels(initialConstraintCount);
+            commitCommand();
         }
         catch (const Base::Exception& e) {
-            e.ReportException();
-            Gui::NotifyError(sketchgui,
-                             QT_TRANSLATE_NOOP("Notifications", "Error"),
-                             QT_TRANSLATE_NOOP("Notifications", "Failed to scale"));
+            e.reportException();
+            Gui::NotifyError(
+                sketchgui,
+                QT_TRANSLATE_NOOP("Notifications", "Error"),
+                QT_TRANSLATE_NOOP("Notifications", "Failed to scale")
+            );
 
             if (abortOnFail) {
-                Gui::Command::abortCommand();
+                abortCommand();
             }
-            THROWM(Base::RuntimeError,
-                   QT_TRANSLATE_NOOP(
-                       "Notifications",
-                       "Tool execution aborted") "\n")  // This prevents constraints from being
-                                                        // applied on non existing geometry
+            THROWM(
+                Base::RuntimeError,
+                QT_TRANSLATE_NOOP(
+                    "Notifications",
+                    "Tool execution aborted"
+                ) "\n"
+            )  // This prevents constraints from being
+               // applied on non existing geometry
         }
     }
+
+
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        using enum Gui::InputHint::UserInput;
+
+        return Gui::lookupHints<SelectMode>(
+            state(),
+            {
+                {.state = SelectMode::SeekFirst,
+                 .hints =
+                     {
+                         {tr("%1 pick reference point"), {MouseLeft}},
+                     }},
+                {.state = SelectMode::SeekSecond,
+                 .hints =
+                     {
+                         {tr("%1 set scale factor"), {MouseLeft}},
+                     }},
+            });
+    }
+
 private:
     void updateDataAndDrawToPosition(Base::Vector2d onSketchPos) override
     {
@@ -165,8 +211,6 @@ private:
                 break;
         }
     }
-
-
 
     void createAutoConstraints() override
     {
@@ -200,7 +244,7 @@ private:
 
     QString getToolWidgetText() const override
     {
-        return QString(QObject::tr("Scale parameters"));
+        return QString(tr("Scale Parameters"));
     }
 
     void activated() override
@@ -230,13 +274,23 @@ private:
     }
 
 private:
+    struct LabelToScale
+    {
+        int constrId;
+        float position;
+        float distance;
+    };
+
     std::vector<int> listOfGeoIds;
+    std::vector<LabelToScale> listOfLabelsToScale;
     std::vector<long> listOfFacadeIds;
     Base::Vector2d referencePoint, startPoint, endPoint;
     bool deleteOriginal;
     bool abortOnFail;  // When the scale operation is part of a larger transaction, one might want
                        // to continue even if the scaling failed
     bool allowOriginConstraint;  // Conserve constraints with origin
+    bool isAllGeoIds;            // if true (default for centerScaleAll), and deleteOriginal is true
+                       // (default), use deleteAllGeometries to avoid many searches in a vector
     double refLength, length, scaleFactor;
 
     void deleteOriginalGeos()
@@ -244,39 +298,72 @@ private:
         if (listOfGeoIds.empty()) {
             return;
         }
-        std::stringstream stream;
-        for (size_t j = 0; j < listOfGeoIds.size() - 1; j++) {
-            stream << listOfGeoIds[j] << ",";
+
+        if (isAllGeoIds) {
+            try {
+                Gui::cmdAppObjectArgs(sketchgui->getObject(), "deleteAllGeometry(True)");
+            }
+            catch (const Base::Exception& e) {
+                Base::Console().error("%s\n", e.what());
+            }
         }
-        stream << listOfGeoIds[listOfGeoIds.size() - 1];
-        try {
-            Gui::cmdAppObjectArgs(sketchgui->getObject(),
-                                  "delGeometries([%s])",
-                                  stream.str().c_str());
-        }
-        catch (const Base::Exception& e) {
-            Base::Console().Error("%s\n", e.what());
+        else {
+            std::stringstream stream;
+            for (size_t j = 0; j < listOfGeoIds.size() - 1; j++) {
+                stream << listOfGeoIds[j] << ",";
+            }
+            stream << listOfGeoIds[listOfGeoIds.size() - 1];
+            try {
+                Gui::cmdAppObjectArgs(
+                    sketchgui->getObject(),
+                    "delGeometries([%s], True)",
+                    stream.str().c_str()
+                );
+            }
+            catch (const Base::Exception& e) {
+                Base::Console().error("%s\n", e.what());
+            }
         }
     }
-
-    // the scaled copies replace the originals: give them the originals' geometry ids
     void reassignFacadeIds()
     {
         if (listOfFacadeIds.empty()) {
             return;
         }
+
         std::stringstream stream;
-        int geoId = getHighestCurveIndex() - int(listOfFacadeIds.size()) + 1;
-        for (size_t j = 0; j < listOfFacadeIds.size(); j++, geoId++) {
-            stream << (j ? ",(" : "(") << geoId << "," << listOfFacadeIds[j] << ")";
+        int geoId = getHighestCurveIndex() - listOfFacadeIds.size() + 1;
+        for (size_t j = 0; j < listOfFacadeIds.size() - 1; j++) {
+            stream << "(" << geoId << "," << listOfFacadeIds[j] << "),";
+            geoId++;
         }
+        stream << "(" << geoId << "," << listOfFacadeIds.back() << ")";
         try {
-            Gui::cmdAppObjectArgs(sketchgui->getObject(),
-                                  "setGeometryIds([%s])",
-                                  stream.str().c_str());
+            Gui::cmdAppObjectArgs(sketchgui->getObject(), "setGeometryIds([%s])", stream.str().c_str());
         }
         catch (const Base::Exception& e) {
-            Base::Console().Error("%s\n", e.what());
+            Base::Console().error("%s\n", e.what());
+        }
+    }
+    void scaleLabels(int constraintIndexOffset)
+    {
+        SketchObject* sketch = sketchgui->getSketchObject();
+
+        for (auto toScale : listOfLabelsToScale) {
+            int constrId = toScale.constrId + constraintIndexOffset;
+
+            sketch->setLabelDistance(constrId, toScale.distance * static_cast<float>(scaleFactor));
+
+            // Label position or radii anddiameters represent an angle, so
+            // they should not be scaled
+            Sketcher::ConstraintType type = sketch->Constraints[constrId]->Type;
+            if (type == Sketcher::ConstraintType::Radius
+                || type == Sketcher::ConstraintType::Diameter) {
+                sketch->setLabelPosition(constrId, toScale.position);
+            }
+            else {
+                sketch->setLabelPosition(constrId, toScale.position * static_cast<float>(scaleFactor));
+            }
         }
     }
 
@@ -300,10 +387,11 @@ private:
         listOfFacadeIds.clear();
         for (auto& geoId : listOfGeoIds) {
             const Part::Geometry* pGeo = Obj->getGeometry(geoId);
-            long facadeId = 0;
+            long facadeId;
+
             Obj->getGeometryId(geoId, facadeId);
             listOfFacadeIds.push_back(facadeId);
-            auto geoUniquePtr = std::unique_ptr<Part::Geometry>(pGeo->copy());
+            auto geoUniquePtr = std::unique_ptr<Part::Geometry>(pGeo->clone());
             Part::Geometry* geo = geoUniquePtr.get();
 
             if (isCircle(*geo)) {
@@ -315,33 +403,55 @@ private:
                 auto* arcOfCircle = static_cast<Part::GeomArcOfCircle*>(geo);  // NOLINT
                 arcOfCircle->setRadius(arcOfCircle->getRadius() * scaleFactor);
                 arcOfCircle->setCenter(
-                    getScaledPoint(arcOfCircle->getCenter(), referencePoint, scaleFactor));
+                    getScaledPoint(arcOfCircle->getCenter(), referencePoint, scaleFactor)
+                );
             }
             else if (isLineSegment(*geo)) {
                 auto* line = static_cast<Part::GeomLineSegment*>(geo);  // NOLINT
-                line->setPoints(getScaledPoint(line->getStartPoint(), referencePoint, scaleFactor),
-                                getScaledPoint(line->getEndPoint(), referencePoint, scaleFactor));
+                line->setPoints(
+                    getScaledPoint(line->getStartPoint(), referencePoint, scaleFactor),
+                    getScaledPoint(line->getEndPoint(), referencePoint, scaleFactor)
+                );
             }
             else if (isEllipse(*geo)) {
                 auto* ellipse = static_cast<Part::GeomEllipse*>(geo);  // NOLINT
-                ellipse->setMajorRadius(ellipse->getMajorRadius() * scaleFactor);
-                ellipse->setMinorRadius(ellipse->getMinorRadius() * scaleFactor);
-                ellipse->setCenter(
-                    getScaledPoint(ellipse->getCenter(), referencePoint, scaleFactor));
+
+                // OpenCascade throws if we try to set a major radius smaller than
+                // the minor radius or conversely, so we reorder the operations
+                // depending on if we scale up or down
+                if (scaleFactor < 1.0) {
+                    ellipse->setMinorRadius(ellipse->getMinorRadius() * scaleFactor);
+                    ellipse->setMajorRadius(ellipse->getMajorRadius() * scaleFactor);
+                }
+                else {
+                    ellipse->setMajorRadius(ellipse->getMajorRadius() * scaleFactor);
+                    ellipse->setMinorRadius(ellipse->getMinorRadius() * scaleFactor);
+                }
+                ellipse->setCenter(getScaledPoint(ellipse->getCenter(), referencePoint, scaleFactor));
             }
             else if (isArcOfEllipse(*geo)) {
                 auto* arcOfEllipse = static_cast<Part::GeomArcOfEllipse*>(geo);  // NOLINT
-                arcOfEllipse->setMajorRadius(arcOfEllipse->getMajorRadius() * scaleFactor);
-                arcOfEllipse->setMinorRadius(arcOfEllipse->getMinorRadius() * scaleFactor);
+
+                // Same reasoning as Part::GeomEllipse
+                if (scaleFactor < 1.0) {
+                    arcOfEllipse->setMinorRadius(arcOfEllipse->getMinorRadius() * scaleFactor);
+                    arcOfEllipse->setMajorRadius(arcOfEllipse->getMajorRadius() * scaleFactor);
+                }
+                else {
+                    arcOfEllipse->setMajorRadius(arcOfEllipse->getMajorRadius() * scaleFactor);
+                    arcOfEllipse->setMinorRadius(arcOfEllipse->getMinorRadius() * scaleFactor);
+                }
                 arcOfEllipse->setCenter(
-                    getScaledPoint(arcOfEllipse->getCenter(), referencePoint, scaleFactor));
+                    getScaledPoint(arcOfEllipse->getCenter(), referencePoint, scaleFactor)
+                );
             }
             else if (isArcOfHyperbola(*geo)) {
                 auto* arcOfHyperbola = static_cast<Part::GeomArcOfHyperbola*>(geo);  // NOLINT
                 arcOfHyperbola->setMajorRadius(arcOfHyperbola->getMajorRadius() * scaleFactor);
                 arcOfHyperbola->setMinorRadius(arcOfHyperbola->getMinorRadius() * scaleFactor);
                 arcOfHyperbola->setCenter(
-                    getScaledPoint(arcOfHyperbola->getCenter(), referencePoint, scaleFactor));
+                    getScaledPoint(arcOfHyperbola->getCenter(), referencePoint, scaleFactor)
+                );
             }
             else if (isArcOfParabola(*geo)) {
                 auto* arcOfParabola = static_cast<Part::GeomArcOfParabola*>(geo);  // NOLINT
@@ -350,7 +460,8 @@ private:
                 arcOfParabola->getRange(start, end, true);
                 arcOfParabola->setRange(start * scaleFactor, end * scaleFactor, true);
                 arcOfParabola->setCenter(
-                    getScaledPoint(arcOfParabola->getCenter(), referencePoint, scaleFactor));
+                    getScaledPoint(arcOfParabola->getCenter(), referencePoint, scaleFactor)
+                );
             }
             else if (isBSplineCurve(*geo)) {
                 auto* bSpline = static_cast<Part::GeomBSplineCurve*>(geo);  // NOLINT
@@ -375,11 +486,18 @@ private:
             addLineToShapeGeometry(toVector3d(referencePoint), toVector3d(endPoint), true);
         }
         else {
-            int firstCurveCreated = getHighestCurveIndex() + 1;
+            int firstCurveCreated = 0;
+            if (deleteOriginal) {
+                // Initial geometries will be removed before adding new geometries
+                firstCurveCreated = getHighestCurveIndex() + 1 - listOfGeoIds.size();
+            }
+            else {
+                firstCurveCreated = getHighestCurveIndex() + 1;
+            }
 
             const std::vector<Constraint*>& vals = Obj->Constraints.getValues();
-
-            for (auto& cstr : vals) {
+            int cstrIndex = 0;
+            for (auto cstr : vals) {
                 if (skipConstraint(cstr)) {
                     continue;
                 }
@@ -390,6 +508,16 @@ private:
 
                 auto newConstr = std::unique_ptr<Constraint>(cstr->copy());
 
+                if (firstIndex != GeoEnum::GeoUndef) {
+                    listOfLabelsToScale.push_back(
+                        LabelToScale {
+                            .constrId = cstrIndex,
+                            .position = cstr->LabelPosition,
+                            .distance = cstr->LabelDistance
+                        }
+                    );
+                }
+
                 if ((cstr->Type == Symmetric || cstr->Type == Tangent || cstr->Type == Perpendicular
                      || cstr->Type == Angle)
                     && firstIndex != GeoEnum::GeoUndef && secondIndex != GeoEnum::GeoUndef
@@ -398,44 +526,54 @@ private:
                     newConstr->Second = secondIndex;
                     newConstr->Third = thirdIndex;
                 }
-                else if ((cstr->Type == Coincident || cstr->Type == Tangent
-                          || cstr->Type == Symmetric || cstr->Type == Perpendicular
-                          || cstr->Type == Parallel || cstr->Type == Equal || cstr->Type == Angle
-                          || cstr->Type == PointOnObject || cstr->Type == InternalAlignment)
-                         && firstIndex != GeoEnum::GeoUndef && secondIndex != GeoEnum::GeoUndef
-                         && thirdIndex == GeoEnum::GeoUndef) {
+                else if (
+                    (cstr->Type == Coincident || cstr->Type == Tangent || cstr->Type == Symmetric
+                     || cstr->Type == Perpendicular || cstr->Type == Parallel || cstr->Type == Equal
+                     || cstr->Type == Angle || cstr->Type == PointOnObject
+                     || cstr->Type == InternalAlignment)
+                    && firstIndex != GeoEnum::GeoUndef && secondIndex != GeoEnum::GeoUndef
+                    && thirdIndex == GeoEnum::GeoUndef
+                ) {
                     newConstr->First = firstIndex;
                     newConstr->Second = secondIndex;
                 }
-                else if (cstr->Type == Angle && firstIndex != GeoEnum::GeoUndef
-                         && cstr->Second == GeoEnum::GeoUndef && cstr->Third == GeoEnum::GeoUndef) {
+                else if (
+                    cstr->Type == Angle && firstIndex != GeoEnum::GeoUndef
+                    && secondIndex == GeoEnum::GeoUndef && thirdIndex == GeoEnum::GeoUndef
+                ) {
                     newConstr->First = firstIndex;
                 }
-                else if ((cstr->Type == Radius || cstr->Type == Diameter)
-                         && firstIndex != GeoEnum::GeoUndef) {
+                else if (
+                    (cstr->Type == Radius || cstr->Type == Diameter) && firstIndex != GeoEnum::GeoUndef
+                ) {
                     newConstr->First = firstIndex;
                     newConstr->setValue(newConstr->getValue() * scaleFactor);
                 }
-                else if ((cstr->Type == Distance || cstr->Type == DistanceX
-                          || cstr->Type == DistanceY)
-                         && firstIndex != GeoEnum::GeoUndef && secondIndex != GeoEnum::GeoUndef) {
+                else if (
+                    (cstr->Type == Distance || cstr->Type == DistanceX || cstr->Type == DistanceY)
+                    && firstIndex != GeoEnum::GeoUndef && secondIndex != GeoEnum::GeoUndef
+                ) {
                     newConstr->First = firstIndex;
                     newConstr->Second = secondIndex;
                     newConstr->setValue(newConstr->getValue() * scaleFactor);
                 }
-                else if ((cstr->Type == Distance || cstr->Type == DistanceX
-                          || cstr->Type == DistanceY)
-                         && firstIndex != GeoEnum::GeoUndef && cstr->Second == GeoEnum::GeoUndef) {
+                else if (
+                    (cstr->Type == Distance || cstr->Type == DistanceX || cstr->Type == DistanceY)
+                    && firstIndex != GeoEnum::GeoUndef && cstr->Second == GeoEnum::GeoUndef
+                ) {
                     newConstr->First = firstIndex;
                     newConstr->setValue(newConstr->getValue() * scaleFactor);
                 }
-                else if ((cstr->Type == Block || cstr->Type == Weight)
-                         && firstIndex != GeoEnum::GeoUndef) {
+                else if (
+                    (cstr->Type == Block || cstr->Type == Weight) && firstIndex != GeoEnum::GeoUndef
+                ) {
                     newConstr->First = firstIndex;
                 }
-                else if ((cstr->Type == Vertical || cstr->Type == Horizontal)
-                         && firstIndex != GeoEnum::GeoUndef
-                         && (cstr->Second == GeoEnum::GeoUndef || secondIndex != GeoEnum::GeoUndef)) {
+                else if (
+                    (cstr->Type == Vertical || cstr->Type == Horizontal)
+                    && (firstIndex != GeoEnum::GeoUndef
+                        && (cstr->Second == GeoEnum::GeoUndef || secondIndex != GeoUndef))
+                ) {
                     newConstr->First = firstIndex;
                     newConstr->Second = secondIndex;
                 }
@@ -444,15 +582,15 @@ private:
                 }
 
                 ShapeConstraints.push_back(std::move(newConstr));
+                cstrIndex++;
             }
         }
     }
-
     bool skipConstraint(const Constraint* constr) const
     {
         // We might want to skip (remove) a constraint if
         return
-            // 1. its first geometry is undefined => not a valid constraint, should not happen
+            // 1. it's first geometry is undefined => not a valid constraint, should not happen
             (constr->First == GeoEnum::GeoUndef)
 
             // 2. we do not want to have constraints that relate to the origin => it would break if
@@ -468,28 +606,32 @@ private:
             || (constr->Third != GeoEnum::GeoUndef && constr->Third <= GeoEnum::RefExt);
     }
 
-    // The id a constraint's geometry has after the scale: the index of its
-    // copy among the new geometries, the axis or root point itself when the
-    // scale centre is the origin, GeoUndef for anything not scaled. Assumes
-    // skipConstraint() has let the constraint through.
-    int offsetGeoID(int id, int firstCurveCreated) const
+    // Offset the geom index to match the newly created one
+    // except if it is negative in which case it is external
+    // or origin which remain unchanged
+    // this assumes that a call to skipConstraint() has been
+    // performed and that the constraint is valid within the context
+    // of the scale operation
+    int offsetGeoID(int id, int firstCurveCreated)
     {
-        if (id < 0) {  // external geometry, origin and undef
+        if (id < 0) {  // Covers external geometry, origin and undef
             if (allowOriginConstraint && (id == GeoEnum::HAxis || id == GeoEnum::VAxis)) {
                 return id;
             }
             return GeoEnum::GeoUndef;
         }
         int index = indexOfGeoId(listOfGeoIds, id);
+
         if (index < 0) {
             return GeoEnum::GeoUndef;
         }
         return index + firstCurveCreated;
     }
-
-    Base::Vector3d getScaledPoint(Base::Vector3d&& pointToScale,
-                                  const Base::Vector2d& referencePoint,
-                                  double scaleFactor)
+    Base::Vector3d getScaledPoint(
+        Base::Vector3d&& pointToScale,
+        const Base::Vector2d& referencePoint,
+        double scaleFactor
+    )
     {
         Base::Vector2d pointToScale2D;
         pointToScale2D.x = pointToScale.x;
@@ -525,14 +667,16 @@ void DSHScaleController::configureToolWidget()
     if (!init) {  // Code to be executed only upon initialisation
         toolWidget->setCheckboxLabel(
             WCheckbox::FirstBox,
-            QApplication::translate("TaskSketcherTool_c1_scale", "Keep original geometries (U)"));
+            QApplication::translate("TaskSketcherTool_c1_scale", "Keep original geometries (U)")
+        );
     }
 
     onViewParameters[OnViewParameter::First]->setLabelType(Gui::SoDatumLabel::DISTANCEX);
     onViewParameters[OnViewParameter::Second]->setLabelType(Gui::SoDatumLabel::DISTANCEY);
     onViewParameters[OnViewParameter::Third]->setLabelType(
         Gui::SoDatumLabel::DISTANCE,
-        Gui::EditableDatumLabel::Function::Dimensioning);
+        Gui::EditableDatumLabel::Function::Forced
+    );
 }
 
 template<>
@@ -589,10 +733,14 @@ void DSHScaleController::adaptParameters(Base::Vector2d onSketchPos)
             bool sameSign = onSketchPos.x * onSketchPos.y > 0.;
             onViewParameters[OnViewParameter::First]->setLabelAutoDistanceReverse(!sameSign);
             onViewParameters[OnViewParameter::Second]->setLabelAutoDistanceReverse(sameSign);
-            onViewParameters[OnViewParameter::First]->setPoints(Base::Vector3d(),
-                                                                toVector3d(onSketchPos));
-            onViewParameters[OnViewParameter::Second]->setPoints(Base::Vector3d(),
-                                                                 toVector3d(onSketchPos));
+            onViewParameters[OnViewParameter::First]->setPoints(
+                Base::Vector3d(),
+                toVector3d(onSketchPos)
+            );
+            onViewParameters[OnViewParameter::Second]->setPoints(
+                Base::Vector3d(),
+                toVector3d(onSketchPos)
+            );
         } break;
         case SelectMode::SeekThird: {
             if (!onViewParameters[OnViewParameter::Third]->isSet) {
@@ -609,20 +757,20 @@ void DSHScaleController::adaptParameters(Base::Vector2d onSketchPos)
 }
 
 template<>
-void DSHScaleController::doChangeDrawSketchHandlerMode()
+void DSHScaleController::computeNextDrawSketchHandlerMode()
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
             if (onViewParameters[OnViewParameter::First]->isSet
                 && onViewParameters[OnViewParameter::Second]->isSet) {
 
-                handler->setState(SelectMode::SeekSecond);
+                handler->setNextState(SelectMode::SeekSecond);
             }
         } break;
         case SelectMode::SeekThird: {
-            if (onViewParameters[OnViewParameter::Third]->isSet) {
+            if (onViewParameters[OnViewParameter::Third]->hasFinishedEditing) {
 
-                handler->setState(SelectMode::End);
+                handler->setNextState(SelectMode::End);
             }
         } break;
             break;
@@ -633,6 +781,3 @@ void DSHScaleController::doChangeDrawSketchHandlerMode()
 
 
 }  // namespace SketcherGui
-
-
-#endif  // SKETCHERGUI_DrawSketchHandlerScale_H

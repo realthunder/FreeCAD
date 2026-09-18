@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 #ifndef _PreComp_
 #include <cfloat>
+#include <numbers>
 
 #include <QCursor>
 #include <QDir>
@@ -831,7 +832,7 @@ std::string SketcherGui::angleToDisplayFormat(double value, int digits)
 }
 
 
-bool SketcherGui::areColinear(const Base::Vector2d& p1,
+bool SketcherGui::areCollinear(const Base::Vector2d& p1,
                               const Base::Vector2d& p2,
                               const Base::Vector2d& p3)
 {
@@ -915,6 +916,36 @@ QMap<QString, QString> SketcherGui::findAvailableFontFiles()
         }
     }
     return fontMap;
+}
+
+void SketcherGui::Constraint2LinesByAngle(int geoId1,
+                                          int geoId2,
+                                          double angle,
+                                          App::DocumentObject* obj)
+{
+    using std::numbers::pi;
+    double angleModPi = std::fmod(angle, pi);
+    double angleModHalfPi = std::fmod(angle, pi / 2);
+
+    if (fabs(angleModPi) < Precision::Confusion()) {
+        Gui::cmdAppObjectArgs(obj,
+                              "addConstraint(Sketcher.Constraint('Parallel',%d,%d)) ",
+                              geoId1,
+                              geoId2);
+    }
+    else if (fabs(angleModHalfPi) < Precision::Confusion()) {
+        Gui::cmdAppObjectArgs(obj,
+                              "addConstraint(Sketcher.Constraint('Perpendicular',%d,%d)) ",
+                              geoId1,
+                              geoId2);
+    }
+    else {
+        Gui::cmdAppObjectArgs(obj,
+                              "addConstraint(Sketcher.Constraint('Angle',%d, 2, %d, 1, %f)) ",
+                              geoId1,
+                              geoId2,
+                              angle);
+    }
 }
 
 void SketcherGui::ConstraintLineByAngle(int geoId, double angle, App::DocumentObject* obj)

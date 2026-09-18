@@ -75,6 +75,9 @@ public:
     /// returns which entity will currently receive the event.
     KeyboardEventHandlingMode getMode();
 
+    /// Hand the keys back to the view provider.
+    void resetMode();
+
     bool eventFilter(QObject* object, QEvent* event);
 
     /// sets the timeout to the amount of milliseconds.

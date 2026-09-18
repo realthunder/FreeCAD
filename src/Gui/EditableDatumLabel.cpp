@@ -49,6 +49,29 @@ struct NodeData {
     EditableDatumLabel* label;
 };
 
+namespace {
+/// The colour a parameter wears before the user gives it a value. Needed
+/// before the object exists, for the constructor that picks its own.
+SbColor deactivatedDimColor()
+{
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/View");
+    SbColor color(0.5f, 0.5f, 0.5f);  // NOLINT
+    unsigned long packed = (unsigned long)(color.getPackedValue());
+    packed = hGrp->GetUnsigned("DeactivatedConstrDimColor", packed);
+    float transparency = 0.f;  // SbColor takes it by reference
+    color.setPackedValue((uint32_t)packed, transparency);
+    return color;
+}
+}  // namespace
+
+EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
+                                       const Base::Placement& plc,
+                                       bool autoDistance,
+                                       bool avoidMouseCursor)
+    : EditableDatumLabel(view, plc, deactivatedDimColor(), autoDistance, avoidMouseCursor)
+{}
+
 EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
                                        const Base::Placement& plc,
                                        SbColor color,
@@ -67,6 +90,7 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
     , lockedAppearance(false)
     , function(Function::Positioning)
 {
+    initColors();
     if (viewer) {
         viewer->addOnViewParameter(this);
     }
@@ -468,6 +492,34 @@ void EditableDatumLabel::resetLockedState()
 {
     hasFinishedEditing = false;
     setLockedAppearance(false);
+}
+
+void EditableDatumLabel::initColors()
+{
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/View");
+
+    dimConstrColor = SbColor(1.0f, 0.149f, 0.0f);           // NOLINT
+    dimConstrDeactivatedColor = SbColor(0.5f, 0.5f, 0.5f);  // NOLINT
+
+    float transparency = 0.f;
+    unsigned long color = (unsigned long)(dimConstrColor.getPackedValue());
+    color = hGrp->GetUnsigned("ConstrainedDimColor", color);
+    dimConstrColor.setPackedValue((uint32_t)color, transparency);
+
+    color = (unsigned long)(dimConstrDeactivatedColor.getPackedValue());
+    color = hGrp->GetUnsigned("DeactivatedConstrDimColor", color);
+    dimConstrDeactivatedColor.setPackedValue((uint32_t)color, transparency);
+}
+
+void EditableDatumLabel::setActivatedColor()
+{
+    setColor(dimConstrColor);
+}
+
+void EditableDatumLabel::setDeactivatedColor()
+{
+    setColor(dimConstrDeactivatedColor);
 }
 
 void EditableDatumLabel::setPlacement(const Base::Placement& plc)

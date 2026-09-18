@@ -118,6 +118,8 @@ public:
     static const Unit Length;
     /// Mass unit
     static const Unit Mass;
+    /// the dimensionless unit, for a quantity that is a plain number
+    static const Unit One;
 
     /// Angle
     static const Unit Angle;

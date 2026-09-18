@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2022 Abdullah Tahiri <abdullah.tahiri.yo@gmail.com>     *
  *                                                                         *
@@ -20,33 +22,40 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef SKETCHERGUI_DrawSketchHandlerPoint_H
-#define SKETCHERGUI_DrawSketchHandlerPoint_H
+#pragma once
 
 #include <Gui/BitmapFactory.h>
 #include <Gui/Notifications.h>
 #include <Gui/Command.h>
 #include <Gui/CommandT.h>
+#include <Gui/InputHint.h>
 
 #include <Mod/Sketcher/App/SketchObject.h>
 
+
 #include "DrawSketchDefaultWidgetController.h"
 #include "DrawSketchControllableHandler.h"
+
+#include <vector>
+#include <algorithm>
 
 namespace SketcherGui
 {
 
 class DrawSketchHandlerPoint;
 
-using DSHPointController = DrawSketchController<DrawSketchHandlerPoint,
-                                                StateMachines::OneSeekEnd,
-                                                /*PAutoConstraintSize =*/1,
-                                                /*OnViewParametersT =*/OnViewParameters<2>>;
+using DSHPointController = DrawSketchController<
+    DrawSketchHandlerPoint,
+    StateMachines::OneSeekEnd,
+    /*PAutoConstraintSize =*/1,
+    /*OnViewParametersT =*/OnViewParameters<2>>;
 
 using DrawSketchHandlerPointBase = DrawSketchControllableHandler<DSHPointController>;
 
 class DrawSketchHandlerPoint: public DrawSketchHandlerPointBase
 {
+    Q_DECLARE_TR_FUNCTIONS(SketcherGui::DrawSketchHandlerPoint)
+
     // Allow specialisations of controllers access to private members
     friend DSHPointController;
 
@@ -55,18 +64,25 @@ public:
     ~DrawSketchHandlerPoint() override = default;
 
 private:
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        using enum Gui::InputHint::UserInput;
+        return {
+            {tr("%1 place a point", "Sketcher Point: hint"), {MouseLeft}},
+        };
+    }
+
     void updateDataAndDrawToPosition(Base::Vector2d onSketchPos) override
     {
         switch (state()) {
             case SelectMode::SeekFirst: {
-                toolWidgetManager.drawPositionAtCursor(onSketchPos);
+                seekAndRenderAutoConstraint(sugConstraints[0], onSketchPos, Base::Vector2d(0.f, 0.f));
 
+                // Upstream offers the line-extension hint's snap point here;
+                // group C, which produces it, is not ported yet.
                 editPoint = onSketchPos;
 
-                if (seekAutoConstraint(sugConstraints[0], onSketchPos, Base::Vector2d(0.f, 0.f))) {
-                    renderSuggestConstraintsCursor(sugConstraints[0]);
-                    return;
-                }
+                toolWidgetManager.drawPositionAtCursor(editPoint);
             } break;
             default:
                 break;
@@ -76,20 +92,25 @@ private:
     void executeCommands() override
     {
         try {
-            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Add sketch point"));
-            Gui::cmdAppObjectArgs(sketchgui->getObject(),
-                                  "addGeometry(Part.Point(App.Vector(%f,%f,0)))",
-                                  editPoint.x,
-                                  editPoint.y);
+            openCommand(QT_TRANSLATE_NOOP("Command", "Add sketch point"));
+            Gui::cmdAppObjectArgs(
+                sketchgui->getObject(),
+                "addGeometry(Part.Point(App.Vector(%f,%f,0)), %s)",
+                editPoint.x,
+                editPoint.y,
+                isConstructionMode() ? "True" : "False"
+            );
 
-            Gui::Command::commitCommand();
+            commitCommand();
         }
         catch (const Base::Exception&) {
-            Gui::NotifyError(sketchgui,
-                             QT_TRANSLATE_NOOP("Notifications", "Error"),
-                             QT_TRANSLATE_NOOP("Notifications", "Failed to add point"));
+            Gui::NotifyError(
+                sketchgui,
+                QT_TRANSLATE_NOOP("Notifications", "Error"),
+                QT_TRANSLATE_NOOP("Notifications", "Failed to add point")
+            );
 
-            Gui::Command::abortCommand();
+            abortCommand();
         }
     }
 
@@ -97,9 +118,11 @@ private:
     {
 
         if (!sugConstraints[0].empty()) {
-            DrawSketchHandler::createAutoConstraints(sugConstraints[0],
-                                                     getHighestCurveIndex(),
-                                                     Sketcher::PointPos::start);
+            DrawSketchHandler::createAutoConstraints(
+                sugConstraints[0],
+                getHighestCurveIndex(),
+                Sketcher::PointPos::start
+            );
             sugConstraints[0].clear();
         }
     }
@@ -156,10 +179,12 @@ void DSHPointController::adaptDrawingToOnViewParameterChange(int labelindex, dou
     }
     onViewParameters[OnViewParameter::First]->setPoints(
         Base::Vector3d(0., 0., 0.),
-        Base::Vector3d(handler->editPoint.x, handler->editPoint.y, 0.));
+        Base::Vector3d(handler->editPoint.x, handler->editPoint.y, 0.)
+    );
     onViewParameters[OnViewParameter::Second]->setPoints(
         Base::Vector3d(0., 0., 0.),
-        Base::Vector3d(handler->editPoint.x, handler->editPoint.y, 0.));
+        Base::Vector3d(handler->editPoint.x, handler->editPoint.y, 0.)
+    );
 }
 
 template<>
@@ -167,12 +192,15 @@ void DSHPointController::doEnforceControlParameters(Base::Vector2d& onSketchPos)
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (onViewParameters[OnViewParameter::First]->isSet) {
-                onSketchPos.x = onViewParameters[OnViewParameter::First]->getValue();
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
+
+            if (firstParam->isSet) {
+                onSketchPos.x = firstParam->getValue();
             }
 
-            if (onViewParameters[OnViewParameter::Second]->isSet) {
-                onSketchPos.y = onViewParameters[OnViewParameter::Second]->getValue();
+            if (secondParam->isSet) {
+                onSketchPos.y = secondParam->getValue();
             }
         } break;
         default:
@@ -185,23 +213,28 @@ void DSHPointController::adaptParameters(Base::Vector2d onSketchPos)
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (!onViewParameters[OnViewParameter::First]->isSet) {
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
+
+            if (!firstParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::First, onSketchPos.x);
             }
 
-            if (!onViewParameters[OnViewParameter::Second]->isSet) {
+            if (!secondParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::Second, onSketchPos.y);
             }
 
             bool sameSign = onSketchPos.x * onSketchPos.y > 0.;
-            onViewParameters[OnViewParameter::First]->setLabelAutoDistanceReverse(!sameSign);
-            onViewParameters[OnViewParameter::Second]->setLabelAutoDistanceReverse(sameSign);
-            onViewParameters[OnViewParameter::First]->setPoints(
+            firstParam->setLabelAutoDistanceReverse(!sameSign);
+            secondParam->setLabelAutoDistanceReverse(sameSign);
+            firstParam->setPoints(
                 Base::Vector3d(0., 0., 0.),
-                Base::Vector3d(onSketchPos.x, onSketchPos.y, 0.));
-            onViewParameters[OnViewParameter::Second]->setPoints(
+                Base::Vector3d(onSketchPos.x, onSketchPos.y, 0.)
+            );
+            secondParam->setPoints(
                 Base::Vector3d(0., 0., 0.),
-                Base::Vector3d(onSketchPos.x, onSketchPos.y, 0.));
+                Base::Vector3d(onSketchPos.x, onSketchPos.y, 0.)
+            );
         } break;
         default:
             break;
@@ -209,14 +242,15 @@ void DSHPointController::adaptParameters(Base::Vector2d onSketchPos)
 }
 
 template<>
-void DSHPointController::doChangeDrawSketchHandlerMode()
+void DSHPointController::computeNextDrawSketchHandlerMode()
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (onViewParameters[OnViewParameter::First]->isSet
-                && onViewParameters[OnViewParameter::Second]->isSet) {
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
 
-                handler->setState(SelectMode::End);
+            if (firstParam->hasFinishedEditing && secondParam->hasFinishedEditing) {
+                handler->setNextState(SelectMode::End);
                 // handler->finish(); // Called by the change of mode
             }
         } break;
@@ -239,29 +273,32 @@ void DSHPointController::addConstraints()
     using namespace Sketcher;
 
     if (x0set && y0set && x0 == 0. && y0 == 0.) {
-        ConstraintToAttachment(GeoElementId(firstCurve, PointPos::start),
-                               GeoElementId::RtPnt,
-                               x0,
-                               handler->sketchgui->getObject());
+        ConstraintToAttachment(
+            GeoElementId(firstCurve, PointPos::start),
+            GeoElementId::RtPnt,
+            x0,
+            handler->sketchgui->getObject()
+        );
     }
     else {
         if (x0set) {
-            ConstraintToAttachment(GeoElementId(firstCurve, PointPos::start),
-                                   GeoElementId::VAxis,
-                                   x0,
-                                   handler->sketchgui->getObject());
+            ConstraintToAttachment(
+                GeoElementId(firstCurve, PointPos::start),
+                GeoElementId::VAxis,
+                x0,
+                handler->sketchgui->getObject()
+            );
         }
 
         if (y0set) {
-            ConstraintToAttachment(GeoElementId(firstCurve, PointPos::start),
-                                   GeoElementId::HAxis,
-                                   y0,
-                                   handler->sketchgui->getObject());
+            ConstraintToAttachment(
+                GeoElementId(firstCurve, PointPos::start),
+                GeoElementId::HAxis,
+                y0,
+                handler->sketchgui->getObject()
+            );
         }
     }
 }
 
 }  // namespace SketcherGui
-
-
-#endif  // SKETCHERGUI_DrawSketchHandlerPoint_H

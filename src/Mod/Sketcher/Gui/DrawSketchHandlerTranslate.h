@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2022 Boyer Pierre-Louis <pierrelouis.boyer@gmail.com>   *
  *                                                                         *
@@ -21,10 +23,16 @@
  ***************************************************************************/
 
 
-#ifndef SKETCHERGUI_DrawSketchHandlerTranslate_H
-#define SKETCHERGUI_DrawSketchHandlerTranslate_H
+#pragma once
+
+#include <algorithm>
+#include <cmath>
 
 #include <QApplication>
+#include <map>
+#include <utility>
+
+#include <Base/Tools.h>
 
 #include <Gui/BitmapFactory.h>
 #include <Gui/Notifications.h>
@@ -36,6 +44,8 @@
 
 #include "DrawSketchDefaultWidgetController.h"
 #include "DrawSketchControllableHandler.h"
+#include "SketcherTransformationExpressionHelper.h"
+
 #include "Utils.h"
 
 
@@ -46,15 +56,15 @@ namespace SketcherGui
 
 class DrawSketchHandlerTranslate;
 
-using DSHTranslateController =
-    DrawSketchDefaultWidgetController<DrawSketchHandlerTranslate,
-                                      StateMachines::ThreeSeekEnd,
-                                      /*PAutoConstraintSize =*/0,
-                                      /*OnViewParametersT =*/OnViewParameters<6>,
-                                      /*WidgetParametersT =*/WidgetParameters<2>,
-                                      /*WidgetCheckboxesT =*/WidgetCheckboxes<1>,
-                                      /*WidgetComboboxesT =*/WidgetComboboxes<0>,
-                                      /*WidgetLineEditsT =*/WidgetLineEdits<0>>;
+using DSHTranslateController = DrawSketchDefaultWidgetController<
+    DrawSketchHandlerTranslate,
+    StateMachines::ThreeSeekEnd,
+    /*PAutoConstraintSize =*/0,
+    /*OnViewParametersT =*/OnViewParameters<6>,  // NOLINT
+    /*WidgetParametersT =*/WidgetParameters<2>,  // NOLINT
+    /*WidgetCheckboxesT =*/WidgetCheckboxes<2>,  // NOLINT
+    /*WidgetComboboxesT =*/WidgetComboboxes<0>,  // NOLINT
+    /*WidgetLineEditsT =*/WidgetLineEdits<0>>;   // NOLINT
 
 using DSHTranslateControllerBase = DSHTranslateController::ControllerBase;
 
@@ -62,6 +72,8 @@ using DrawSketchHandlerTranslateBase = DrawSketchControllableHandler<DSHTranslat
 
 class DrawSketchHandlerTranslate: public DrawSketchHandlerTranslateBase
 {
+    Q_DECLARE_TR_FUNCTIONS(SketcherGui::DrawSketchHandlerTranslate)
+
     friend DSHTranslateController;
     friend DSHTranslateControllerBase;
 
@@ -70,7 +82,9 @@ public:
         : listOfGeoIds(listOfGeoIds)
         , deleteOriginal(false)
         , cloneConstraints(false)
-        , numberOfCopies(0)
+        , firstDirectionSymmetric(false)
+        , secondDirectionSymmetric(false)
+        , numberOfCopies(1)
         , secondNumberOfCopies(1)
     {}
 
@@ -110,30 +124,46 @@ private:
     void executeCommands() override
     {
         try {
-            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Translate geometries"));
+            openCommand(QT_TRANSLATE_NOOP("Command", "Translate geometries"));
+
+            expressionHelper.storeOriginalExpressions(sketchgui->getSketchObject(), listOfGeoIds);
 
             createShape(false);
 
             commandAddShapeGeometryAndConstraints();
 
+            expressionHelper.copyExpressionsToNewConstraints(
+                sketchgui->getSketchObject(),
+                listOfGeoIds,
+                ShapeGeometry.size(),
+                listOfGeoIds.empty() ? 0
+                                     : static_cast<int>(ShapeGeometry.size() / listOfGeoIds.size()),
+                1
+            );
+
             if (deleteOriginal) {
                 deleteOriginalGeos();
             }
 
-            Gui::Command::commitCommand();
+            commitCommand();
         }
         catch (const Base::Exception& e) {
-            e.ReportException();
-            Gui::NotifyError(sketchgui,
-                             QT_TRANSLATE_NOOP("Notifications", "Error"),
-                             QT_TRANSLATE_NOOP("Notifications", "Failed to translate"));
+            e.reportException();
+            Gui::NotifyError(
+                sketchgui,
+                QT_TRANSLATE_NOOP("Notifications", "Error"),
+                QT_TRANSLATE_NOOP("Notifications", "Failed to translate")
+            );
 
-            Gui::Command::abortCommand();
-            THROWM(Base::RuntimeError,
-                   QT_TRANSLATE_NOOP(
-                       "Notifications",
-                       "Tool execution aborted") "\n")  // This prevents constraints from being
-                                                        // applied on non existing geometry
+            abortCommand();
+            THROWM(
+                Base::RuntimeError,
+                QT_TRANSLATE_NOOP(
+                    "Notifications",
+                    "Tool execution aborted"
+                ) "\n"
+            )  // This prevents constraints from being
+               // applied on non existing geometry
         }
     }
 
@@ -169,7 +199,7 @@ private:
 
     QString getToolWidgetText() const override
     {
-        return QString(QObject::tr("Translate parameters"));
+        return QString(tr("Translate Parameters"));
     }
 
     void onButtonPressed(Base::Vector2d onSketchPos) override
@@ -180,6 +210,9 @@ private:
             setState(SelectMode::End);
         }
         else {
+            if (state() == SelectMode::SeekSecond) {
+                secondDirectionSymmetric = firstDirectionSymmetric;
+            }
             this->moveToNextMode();
         }
     }
@@ -198,8 +231,7 @@ private:
             return false;
         }
         if (state() == SelectMode::SeekThird
-            && secondTranslationVector.Length() < Precision::Confusion()
-            && secondNumberOfCopies > 1) {
+            && secondTranslationVector.Length() < Precision::Confusion() && secondNumberOfCopies > 1) {
             return false;
         }
         return true;
@@ -221,8 +253,10 @@ private:
     Base::Vector2d referencePoint, firstTranslationPoint, secondTranslationPoint;
     Base::Vector3d firstTranslationVector, secondTranslationVector;
 
-    bool deleteOriginal, cloneConstraints;
+    bool deleteOriginal, cloneConstraints, firstDirectionSymmetric, secondDirectionSymmetric;
     int numberOfCopies, secondNumberOfCopies;
+
+    SketcherTransformationExpressionHelper expressionHelper;
 
     void deleteOriginalGeos()
     {
@@ -232,12 +266,10 @@ private:
         }
         stream << listOfGeoIds[listOfGeoIds.size() - 1];
         try {
-            Gui::cmdAppObjectArgs(sketchgui->getObject(),
-                                  "delGeometries([%s])",
-                                  stream.str().c_str());
+            Gui::cmdAppObjectArgs(sketchgui->getObject(), "delGeometries([%s])", stream.str().c_str());
         }
         catch (const Base::Exception& e) {
-            Base::Console().Error("%s\n", e.what());
+            Base::Console().error("%s\n", e.what());
         }
     }
 
@@ -247,90 +279,140 @@ private:
 
         ShapeGeometry.clear();
 
-        int numberOfCopiesToMake = numberOfCopies;
-        if (numberOfCopies == 0) {
-            numberOfCopiesToMake = 1;
-            deleteOriginal = 1;
-        }
-        else {
-            deleteOriginal = 0;
+        std::vector<std::pair<double, double>> copyOffsets;
+        bool transformOriginal = numberOfCopies == 1 && secondNumberOfCopies == 1;
+        if (transformOriginal) {
+            deleteOriginal = true;
+            copyOffsets.emplace_back(1.0, 0.0);
         }
 
-        for (int k = 0; k < secondNumberOfCopies; k++) {
-            for (int i = 0; i <= numberOfCopiesToMake; i++) {
-                if ((k == 0 && i == 0)) {
-                    continue;
+        if (!transformOriginal) {
+            auto buildFactors = [](int elementCount, bool symmetric) {
+                elementCount = std::max(elementCount, 1);
+                std::vector<double> factors;
+                factors.reserve(elementCount);
+
+                if (!symmetric) {
+                    for (int i = 0; i < elementCount; i++) {
+                        factors.push_back(i);
+                    }
+                    return factors;
                 }
-                Base::Vector3d vec = firstTranslationVector * i + secondTranslationVector * k;
 
-                for (auto& geoId : listOfGeoIds) {
-                    const Part::Geometry* pGeo = Obj->getGeometry(geoId);
-                    auto geoUniquePtr = std::unique_ptr<Part::Geometry>(pGeo->copy());
-                    Part::Geometry* geo = geoUniquePtr.get();
-
-                    if (isCircle(*geo)) {
-                        Part::GeomCircle* circle = static_cast<Part::GeomCircle*>(geo);  // NOLINT
-                        circle->setCenter(circle->getCenter() + vec);
-                    }
-                    else if (isArcOfCircle(*geo)) {
-                        Part::GeomArcOfCircle* arc =
-                            static_cast<Part::GeomArcOfCircle*>(geo);  // NOLINT
-                        arc->setCenter(arc->getCenter() + vec);
-                    }
-                    else if (isEllipse(*geo)) {
-                        Part::GeomEllipse* ellipse =
-                            static_cast<Part::GeomEllipse*>(geo);  // NOLINT
-                        ellipse->setCenter(ellipse->getCenter() + vec);
-                    }
-                    else if (isArcOfEllipse(*geo)) {
-                        Part::GeomArcOfEllipse* aoe =
-                            static_cast<Part::GeomArcOfEllipse*>(geo);  // NOLINT
-                        aoe->setCenter(aoe->getCenter() + vec);
-                    }
-                    else if (isArcOfHyperbola(*geo)) {
-                        Part::GeomArcOfHyperbola* aoh =
-                            static_cast<Part::GeomArcOfHyperbola*>(geo);  // NOLINT
-                        aoh->setCenter(aoh->getCenter() + vec);
-                    }
-                    else if (isArcOfParabola(*geo)) {
-                        Part::GeomArcOfParabola* aop =
-                            static_cast<Part::GeomArcOfParabola*>(geo);  // NOLINT
-                        aop->setCenter(aop->getCenter() + vec);
-                    }
-                    else if (isLineSegment(*geo)) {
-                        auto* line = static_cast<Part::GeomLineSegment*>(geo);  // NOLINT
-                        line->setPoints(line->getStartPoint() + vec, line->getEndPoint() + vec);
-                    }
-                    else if (isBSplineCurve(*geo)) {
-                        auto* bSpline = static_cast<Part::GeomBSplineCurve*>(geo);  // NOLINT
-                        std::vector<Base::Vector3d> poles = bSpline->getPoles();
-                        for (size_t p = 0; p < poles.size(); p++) {
-                            poles[p] = poles[p] + vec;
-                        }
-                        bSpline->setPoles(poles);
-                    }
-                    else if (isPoint(*geo)) {
-                        auto* point = static_cast<Part::GeomPoint*>(geo);  // NOLINT
-                        point->setPoint(point->getPoint() + vec);
-                    }
-
-                    ShapeGeometry.emplace_back(std::move(geoUniquePtr));
+                int sideCount = elementCount / 2;
+                bool hasOriginal = elementCount % 2 == 1;
+                if (hasOriginal) {
+                    factors.push_back(0.0);
                 }
+
+                for (int i = 1; i <= sideCount; i++) {
+                    factors.push_back(hasOriginal ? i : i - 0.5);
+                }
+
+                for (int i = 1; i <= sideCount; i++) {
+                    factors.push_back(hasOriginal ? -i : 0.5 - i);
+                }
+
+                return factors;
+            };
+
+            auto hasOriginalFactor = [](const std::vector<double>& factors) {
+                return std::any_of(factors.begin(), factors.end(), [](double factor) {
+                    return std::abs(factor) < Precision::Confusion();
+                });
+            };
+
+            std::vector<double> firstFactors = buildFactors(numberOfCopies, firstDirectionSymmetric);
+            std::vector<double> secondFactors
+                = buildFactors(secondNumberOfCopies, secondDirectionSymmetric);
+
+            deleteOriginal = !(hasOriginalFactor(firstFactors) && hasOriginalFactor(secondFactors));
+
+            if (!firstFactors.empty() && !secondFactors.empty()) {
+                copyOffsets.reserve(firstFactors.size() * secondFactors.size() - 1);
+            }
+
+            for (double secondFactor : secondFactors) {
+                for (double firstFactor : firstFactors) {
+                    if (std::abs(firstFactor) < Precision::Confusion()
+                        && std::abs(secondFactor) < Precision::Confusion()) {
+                        continue;
+                    }
+                    copyOffsets.emplace_back(firstFactor, secondFactor);
+                }
+            }
+        }
+
+        for (auto [firstFactor, secondFactor] : copyOffsets) {
+            Base::Vector3d vec = firstTranslationVector * firstFactor
+                + secondTranslationVector * secondFactor;
+
+            for (auto& geoId : listOfGeoIds) {
+                const Part::Geometry* pGeo = Obj->getGeometry(geoId);
+                auto geoUniquePtr = std::unique_ptr<Part::Geometry>(pGeo->copy());
+                Part::Geometry* geo = geoUniquePtr.get();
+
+                if (isCircle(*geo)) {
+                    Part::GeomCircle* circle = static_cast<Part::GeomCircle*>(geo);  // NOLINT
+                    circle->setCenter(circle->getCenter() + vec);
+                }
+                else if (isArcOfCircle(*geo)) {
+                    Part::GeomArcOfCircle* arc = static_cast<Part::GeomArcOfCircle*>(geo);  // NOLINT
+                    arc->setCenter(arc->getCenter() + vec);
+                }
+                else if (isEllipse(*geo)) {
+                    Part::GeomEllipse* ellipse = static_cast<Part::GeomEllipse*>(geo);  // NOLINT
+                    ellipse->setCenter(ellipse->getCenter() + vec);
+                }
+                else if (isArcOfEllipse(*geo)) {
+                    Part::GeomArcOfEllipse* aoe = static_cast<Part::GeomArcOfEllipse*>(geo);  // NOLINT
+                    aoe->setCenter(aoe->getCenter() + vec);
+                }
+                else if (isArcOfHyperbola(*geo)) {
+                    Part::GeomArcOfHyperbola* aoh = static_cast<Part::GeomArcOfHyperbola*>(geo);  // NOLINT
+                    aoh->setCenter(aoh->getCenter() + vec);
+                }
+                else if (isArcOfParabola(*geo)) {
+                    Part::GeomArcOfParabola* aop = static_cast<Part::GeomArcOfParabola*>(geo);  // NOLINT
+                    aop->setCenter(aop->getCenter() + vec);
+                }
+                else if (isLineSegment(*geo)) {
+                    auto* line = static_cast<Part::GeomLineSegment*>(geo);  // NOLINT
+                    line->setPoints(line->getStartPoint() + vec, line->getEndPoint() + vec);
+                }
+                else if (isBSplineCurve(*geo)) {
+                    auto* bSpline = static_cast<Part::GeomBSplineCurve*>(geo);  // NOLINT
+                    std::vector<Base::Vector3d> poles = bSpline->getPoles();
+                    for (size_t p = 0; p < poles.size(); p++) {
+                        poles[p] = poles[p] + vec;
+                    }
+                    bSpline->setPoles(poles);
+                }
+                else if (isPoint(*geo)) {
+                    auto* point = static_cast<Part::GeomPoint*>(geo);  // NOLINT
+                    point->setPoint(point->getPoint() + vec);
+                }
+
+                ShapeGeometry.emplace_back(std::move(geoUniquePtr));
             }
         }
 
         if (onlyeditoutline) {
             // Add the lines to show angle
             if (firstTranslationVector.Length() > Precision::Confusion()) {
-                addLineToShapeGeometry(toVector3d(referencePoint),
-                                       toVector3d(firstTranslationPoint),
-                                       true);
+                addLineToShapeGeometry(
+                    toVector3d(referencePoint),
+                    toVector3d(firstTranslationPoint),
+                    true
+                );
             }
 
             if (secondTranslationVector.Length() > Precision::Confusion()) {
-                addLineToShapeGeometry(toVector3d(referencePoint),
-                                       toVector3d(secondTranslationPoint),
-                                       true);
+                addLineToShapeGeometry(
+                    toVector3d(referencePoint),
+                    toVector3d(secondTranslationPoint),
+                    true
+                );
             }
         }
         else {
@@ -347,81 +429,119 @@ private:
                 int secondIndex = indexOfGeoId(listOfGeoIds, cstr->Second);
                 int thirdIndex = indexOfGeoId(listOfGeoIds, cstr->Third);
 
-                for (int k = 0; k < secondNumberOfCopies; k++) {
-                    for (int i = 0; i <= numberOfCopiesToMake; i++) {
-                        if (k == 0 && i == 0) {
-                            continue;
-                        }
+                for (size_t copyIndex = 0; copyIndex < copyOffsets.size(); copyIndex++) {
+                    int firstIndexi = firstCurveCreated + firstIndex
+                        + size * static_cast<int>(copyIndex);
+                    int secondIndexi = firstCurveCreated + secondIndex
+                        + size * static_cast<int>(copyIndex);
+                    int thirdIndexi = firstCurveCreated + thirdIndex
+                        + size * static_cast<int>(copyIndex);
 
-                        int firstIndexi = firstCurveCreated + firstIndex + size * (i - 1)
-                            + size * (numberOfCopiesToMake + 1) * k;
-                        int secondIndexi = firstCurveCreated + secondIndex + size * (i - 1)
-                            + size * (numberOfCopiesToMake + 1) * k;
-                        int thirdIndexi = firstCurveCreated + thirdIndex + size * (i - 1)
-                            + size * (numberOfCopiesToMake + 1) * k;
+                    auto newConstr = std::unique_ptr<Constraint>(cstr->copy());
+                    newConstr->First = firstIndexi;
 
-                        auto newConstr = std::unique_ptr<Constraint>(cstr->copy());
-                        newConstr->First = firstIndexi;
-
-                        if ((cstr->Type == Symmetric || cstr->Type == Tangent
-                             || cstr->Type == Perpendicular || cstr->Type == Angle)
-                            && firstIndex >= 0 && secondIndex >= 0 && thirdIndex >= 0) {
-                            newConstr->Second = secondIndexi;
-                            newConstr->Third = thirdIndexi;
-                        }
-                        else if ((cstr->Type == Coincident || cstr->Type == Tangent
-                                  || cstr->Type == Symmetric || cstr->Type == Perpendicular
-                                  || cstr->Type == Parallel || cstr->Type == Equal
-                                  || cstr->Type == Angle || cstr->Type == PointOnObject
-                                  || cstr->Type == Horizontal || cstr->Type == Vertical
-                                  || cstr->Type == InternalAlignment)
-                                 && firstIndex >= 0 && secondIndex >= 0
-                                 && thirdIndex == GeoEnum::GeoUndef) {
-                            newConstr->Second = secondIndexi;
-                        }
-                        else if ((cstr->Type == Radius || cstr->Type == Diameter
-                                  || cstr->Type == Weight)
-                                 && firstIndex >= 0) {
-                            if (deleteOriginal || !cloneConstraints) {
-                                newConstr->setValue(cstr->getValue());
-                            }
-                            else {
-                                newConstr->Type = Equal;
-                                newConstr->First = cstr->First;
-                                newConstr->Second = firstIndexi;
-                            }
-                        }
-                        else if ((cstr->Type == Distance || cstr->Type == DistanceX
-                                  || cstr->Type == DistanceY)
-                                 && firstIndex >= 0 && secondIndex >= 0) {
-                            if (!deleteOriginal && cloneConstraints
-                                && cstr->First == cstr->Second) {  // only line distances
-                                if (indexOfGeoId(geoIdsWhoAlreadyHasEqual, secondIndexi) != -1) {
-                                    continue;
-                                }
-                                newConstr->Type = Equal;
-                                newConstr->First = cstr->First;
-                                newConstr->Second = secondIndexi;
-                                geoIdsWhoAlreadyHasEqual.push_back(secondIndexi);
-                            }
-                            else {
-                                newConstr->Second = secondIndexi;
-                            }
-                        }
-                        else if ((cstr->Type == Block || cstr->Type == Horizontal
-                                  || cstr->Type == Vertical)
-                                 && firstIndex >= 0) {
-                            newConstr->First = firstIndexi;
+                    if ((cstr->Type == Symmetric || cstr->Type == Tangent
+                         || cstr->Type == Perpendicular || cstr->Type == Angle)
+                        && firstIndex >= 0 && secondIndex >= 0 && thirdIndex >= 0) {
+                        newConstr->Second = secondIndexi;
+                        newConstr->Third = thirdIndexi;
+                    }
+                    else if (
+                        (cstr->Type == Coincident || cstr->Type == Tangent
+                         || cstr->Type == Symmetric || cstr->Type == Perpendicular
+                         || cstr->Type == Parallel || cstr->Type == Equal || cstr->Type == Angle
+                         || cstr->Type == PointOnObject || cstr->Type == Horizontal
+                         || cstr->Type == Vertical || cstr->Type == InternalAlignment)
+                        && firstIndex >= 0 && secondIndex >= 0 && thirdIndex == GeoEnum::GeoUndef
+                    ) {
+                        newConstr->Second = secondIndexi;
+                    }
+                    else if (
+                        (cstr->Type == Radius || cstr->Type == Diameter || cstr->Type == Weight)
+                        && firstIndex >= 0
+                    ) {
+                        if (deleteOriginal || !cloneConstraints) {
+                            newConstr->setValue(cstr->getValue());
                         }
                         else {
-                            continue;
+                            newConstr->Type = Equal;
+                            newConstr->First = cstr->First;
+                            newConstr->Second = firstIndexi;
                         }
-
-                        ShapeConstraints.push_back(std::move(newConstr));
                     }
+                    else if (
+                        (cstr->Type == Distance || cstr->Type == DistanceX || cstr->Type == DistanceY)
+                        && firstIndex >= 0 && secondIndex >= 0
+                    ) {
+                        if (!deleteOriginal && cloneConstraints
+                            && cstr->First == cstr->Second) {  // only line distances
+                            if (indexOfGeoId(geoIdsWhoAlreadyHasEqual, secondIndexi) != -1) {
+                                continue;
+                            }
+                            newConstr->Type = Equal;
+                            newConstr->First = cstr->First;
+                            newConstr->Second = secondIndexi;
+                            geoIdsWhoAlreadyHasEqual.push_back(secondIndexi);
+                        }
+                        else {
+                            newConstr->Second = secondIndexi;
+                        }
+                    }
+                    else if (
+                        (cstr->Type == Block || cstr->Type == Horizontal || cstr->Type == Vertical)
+                        && firstIndex >= 0
+                    ) {
+                        newConstr->First = firstIndexi;
+                    }
+                    else {
+                        continue;
+                    }
+
+                    ShapeConstraints.push_back(std::move(newConstr));
                 }
             }
         }
+    }
+
+
+public:
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        using enum Gui::InputHint::UserInput;
+
+        const Gui::InputHint elementsHint {
+            tr("%1/%2 increase/decrease number of elements", "Sketcher Translate: hint"),
+            {KeyU, KeyJ}
+        };
+        const Gui::InputHint rowsHint {
+            tr("%1/%2 increase/decrease number of rows", "Sketcher Translate: hint"),
+            {KeyR, KeyF}
+        };
+
+        return Gui::lookupHints<SelectMode>(
+            state(),
+            {
+                {.state = SelectMode::SeekFirst,
+                 .hints =
+                     {
+                         {tr("%1 pick reference point", "Sketcher Translate: hint"), {MouseLeft}},
+                     }},
+                {.state = SelectMode::SeekSecond,
+                 .hints =
+                     {
+                         {tr("%1 set translation vector", "Sketcher Translate: hint"), {MouseLeft}},
+                         elementsHint,
+                         rowsHint,
+                     }},
+                {.state = SelectMode::SeekThird,
+                 .hints =
+                     {
+                         {tr("%1 set second translation vector", "Sketcher Translate: hint"), {MouseLeft}},
+                         elementsHint,
+                         rowsHint,
+                     }},
+            }
+        );
     }
 };
 
@@ -457,7 +577,7 @@ template<>
 void DSHTranslateController::secondKeyShortcut()
 {
     auto value = toolWidget->getParameter(WParameter::First);
-    if (value > 0.0) {
+    if (value > 1.0) {
         toolWidget->setParameterWithoutPassingFocus(WParameter::First, value - 1);
     }
 }
@@ -484,45 +604,66 @@ void DSHTranslateController::configureToolWidget()
     if (!init) {  // Code to be executed only upon initialisation
         toolWidget->setCheckboxLabel(
             WCheckbox::FirstBox,
-            QApplication::translate("TaskSketcherTool_c1_translate", "Apply equal constraints"));
+            QApplication::translate("TaskSketcherTool_c1_translate", "Apply equal constraints")
+        );
         toolWidget->setCheckboxToolTip(
             WCheckbox::FirstBox,
-            QApplication::translate("TaskSketcherTool_c1_translate",
-                                    "If this option is selected dimensional constraints are "
-                                    "excluded from the operation.\n"
-                                    "Instead equal constraints are applied between the original "
-                                    "objects and their copies."));
+            QApplication::translate(
+                "TaskSketcherTool_c1_translate",
+                "If this option is selected dimensional constraints are "
+                "excluded from the operation.\n"
+                "Instead equal constraints are applied between the original "
+                "objects and their copies."
+            )
+        );
+        toolWidget->setCheckboxLabel(
+            WCheckbox::SecondBox,
+            QApplication::translate("TaskSketcherTool_c2_translate", "Symmetric")
+        );
+        toolWidget->setCheckboxToolTip(
+            WCheckbox::SecondBox,
+            QApplication::translate(
+                "TaskSketcherTool_c2_translate",
+                "Distribute the elements symmetrically around the original position."
+            )
+        );
     }
 
     onViewParameters[OnViewParameter::First]->setLabelType(Gui::SoDatumLabel::DISTANCEX);
     onViewParameters[OnViewParameter::Second]->setLabelType(Gui::SoDatumLabel::DISTANCEY);
     onViewParameters[OnViewParameter::Third]->setLabelType(
         Gui::SoDatumLabel::DISTANCE,
-        Gui::EditableDatumLabel::Function::Dimensioning);
+        Gui::EditableDatumLabel::Function::Dimensioning
+    );
     onViewParameters[OnViewParameter::Fourth]->setLabelType(
         Gui::SoDatumLabel::ANGLE,
-        Gui::EditableDatumLabel::Function::Dimensioning);
+        Gui::EditableDatumLabel::Function::Dimensioning
+    );
 
     onViewParameters[OnViewParameter::Fifth]->setLabelType(
         Gui::SoDatumLabel::DISTANCE,
-        Gui::EditableDatumLabel::Function::Dimensioning);
+        Gui::EditableDatumLabel::Function::Dimensioning
+    );
     onViewParameters[OnViewParameter::Sixth]->setLabelType(
         Gui::SoDatumLabel::ANGLE,
-        Gui::EditableDatumLabel::Function::Dimensioning);
+        Gui::EditableDatumLabel::Function::Dimensioning
+    );
 
     toolWidget->setParameterLabel(
         WParameter::First,
-        QApplication::translate("TaskSketcherTool_p3_translate", "Copies (+'U'/-'J')"));
+        QApplication::translate("TaskSketcherTool_p3_translate", "Elements")
+    );
     toolWidget->setParameterLabel(
         WParameter::Second,
-        QApplication::translate("TaskSketcherTool_p5_translate", "Rows (+'R'/-'F')"));
+        QApplication::translate("TaskSketcherTool_p5_translate", "Rows")
+    );
 
-    toolWidget->setParameter(OnViewParameter::First, 0.0);
+    toolWidget->setParameter(OnViewParameter::First, 1.0);
     toolWidget->setParameter(OnViewParameter::Second, 1.0);
     toolWidget->configureParameterUnit(OnViewParameter::First, Base::Unit());
     toolWidget->configureParameterUnit(OnViewParameter::Second, Base::Unit());
-    toolWidget->configureParameterMin(OnViewParameter::First, 0.0);      // NOLINT
-    toolWidget->configureParameterMin(OnViewParameter::Second, 0.0);     // NOLINT
+    toolWidget->configureParameterMin(OnViewParameter::First, 1.0);      // NOLINT
+    toolWidget->configureParameterMin(OnViewParameter::Second, 1.0);     // NOLINT
     toolWidget->configureParameterMax(OnViewParameter::First, 9999.0);   // NOLINT
     toolWidget->configureParameterMax(OnViewParameter::Second, 9999.0);  // NOLINT
     toolWidget->configureParameterDecimals(OnViewParameter::First, 0);
@@ -534,10 +675,13 @@ void DSHTranslateController::adaptDrawingToParameterChange(int parameterindex, d
 {
     switch (parameterindex) {
         case WParameter::First:
-            handler->numberOfCopies = floor(abs(value));
+            handler->numberOfCopies = std::max(1, static_cast<int>(floor(abs(value))));
             break;
         case WParameter::Second:
             handler->secondNumberOfCopies = floor(abs(value));
+            if (handler->secondNumberOfCopies < 1) {
+                handler->secondNumberOfCopies = 1;
+            }
             break;
     }
 }
@@ -549,6 +693,14 @@ void DSHTranslateController::adaptDrawingToCheckboxChange(int checkboxindex, boo
         case WCheckbox::FirstBox: {
             handler->cloneConstraints = value;
         } break;
+        case WCheckbox::SecondBox: {
+            if (handler->state() == SelectMode::SeekThird) {
+                handler->secondDirectionSymmetric = value;
+            }
+            else {
+                handler->firstDirectionSymmetric = value;
+            }
+        } break;
     }
 }
 
@@ -557,56 +709,65 @@ void DSHTranslateControllerBase::doEnforceControlParameters(Base::Vector2d& onSk
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (onViewParameters[OnViewParameter::First]->isSet) {
-                onSketchPos.x = onViewParameters[OnViewParameter::First]->getValue();
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
+
+            if (firstParam->isSet) {
+                onSketchPos.x = firstParam->getValue();
             }
 
-            if (onViewParameters[OnViewParameter::Second]->isSet) {
-                onSketchPos.y = onViewParameters[OnViewParameter::Second]->getValue();
+            if (secondParam->isSet) {
+                onSketchPos.y = secondParam->getValue();
             }
         } break;
         case SelectMode::SeekSecond: {
+            auto& thirdParam = onViewParameters[OnViewParameter::Third];
+            auto& fourthParam = onViewParameters[OnViewParameter::Fourth];
+
             Base::Vector2d dir = onSketchPos - handler->referencePoint;
             if (dir.Length() < Precision::Confusion()) {
                 dir.x = 1.0;  // if direction null, default to (1,0)
             }
             double length = dir.Length();
 
-            if (onViewParameters[OnViewParameter::Third]->isSet) {
-                length = onViewParameters[OnViewParameter::Third]->getValue();
-                if (length < Precision::Confusion()) {
-                    unsetOnViewParameter(onViewParameters[OnViewParameter::Third].get());
+            if (thirdParam->isSet) {
+                length = thirdParam->getValue();
+                if (length < Precision::Confusion() && thirdParam->hasFinishedEditing) {
+                    unsetOnViewParameter(thirdParam.get());
                     return;
                 }
 
                 onSketchPos = handler->referencePoint + length * dir.Normalize();
             }
 
-            if (onViewParameters[OnViewParameter::Fourth]->isSet) {
-                double angle = onViewParameters[OnViewParameter::Fourth]->getValue() * M_PI / 180;
+            if (fourthParam->isSet) {
+                double angle = Base::toRadians(fourthParam->getValue());
                 onSketchPos.x = handler->referencePoint.x + cos(angle) * length;
                 onSketchPos.y = handler->referencePoint.y + sin(angle) * length;
             }
         } break;
         case SelectMode::SeekThird: {
+            auto& fifthParam = onViewParameters[OnViewParameter::Fifth];
+            auto& sixthParam = onViewParameters[OnViewParameter::Sixth];
+
             Base::Vector2d dir = onSketchPos - handler->referencePoint;
             if (dir.Length() < Precision::Confusion()) {
                 dir.x = 1.0;  // if direction null, default to (1,0)
             }
             double length = dir.Length();
 
-            if (onViewParameters[OnViewParameter::Fifth]->isSet) {
-                length = onViewParameters[OnViewParameter::Fifth]->getValue();
-                if (length < Precision::Confusion()) {
-                    unsetOnViewParameter(onViewParameters[OnViewParameter::Fifth].get());
+            if (fifthParam->isSet) {
+                length = fifthParam->getValue();
+                if (length < Precision::Confusion() && fifthParam->hasFinishedEditing) {
+                    unsetOnViewParameter(fifthParam.get());
                     return;
                 }
 
                 onSketchPos = handler->referencePoint + length * dir.Normalize();
             }
 
-            if (onViewParameters[OnViewParameter::Sixth]->isSet) {
-                double angle = onViewParameters[OnViewParameter::Sixth]->getValue() * M_PI / 180;
+            if (sixthParam->isSet) {
+                double angle = Base::toRadians(sixthParam->getValue());
                 onSketchPos.x = handler->referencePoint.x + cos(angle) * length;
                 onSketchPos.y = handler->referencePoint.y + sin(angle) * length;
             }
@@ -621,65 +782,76 @@ void DSHTranslateController::adaptParameters(Base::Vector2d onSketchPos)
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (!onViewParameters[OnViewParameter::First]->isSet) {
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
+
+            if (!firstParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::First, onSketchPos.x);
             }
 
-            if (!onViewParameters[OnViewParameter::Second]->isSet) {
+            if (!secondParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::Second, onSketchPos.y);
             }
 
             bool sameSign = onSketchPos.x * onSketchPos.y > 0.;
-            onViewParameters[OnViewParameter::First]->setLabelAutoDistanceReverse(!sameSign);
-            onViewParameters[OnViewParameter::Second]->setLabelAutoDistanceReverse(sameSign);
-            onViewParameters[OnViewParameter::First]->setPoints(Base::Vector3d(),
-                                                                toVector3d(onSketchPos));
-            onViewParameters[OnViewParameter::Second]->setPoints(Base::Vector3d(),
-                                                                 toVector3d(onSketchPos));
+            firstParam->setLabelAutoDistanceReverse(!sameSign);
+            secondParam->setLabelAutoDistanceReverse(sameSign);
+            firstParam->setPoints(Base::Vector3d(), toVector3d(onSketchPos));
+            secondParam->setPoints(Base::Vector3d(), toVector3d(onSketchPos));
         } break;
         case SelectMode::SeekSecond: {
-            if (!onViewParameters[OnViewParameter::Third]->isSet) {
+            auto& thirdParam = onViewParameters[OnViewParameter::Third];
+            auto& fourthParam = onViewParameters[OnViewParameter::Fourth];
+
+            if (!thirdParam->isSet) {
                 double length = (onSketchPos - handler->referencePoint).Length();
                 setOnViewParameterValue(OnViewParameter::Third, length);
             }
 
-            Base::Vector2d vec2d = Base::Vector2d(handler->firstTranslationVector.x,
-                                                  handler->firstTranslationVector.y);
+            Base::Vector2d vec2d = Base::Vector2d(
+                handler->firstTranslationVector.x,
+                handler->firstTranslationVector.y
+            );
             double angle = vec2d.Angle();
-            double range = angle * 180 / M_PI;
+            double range = angle * 180 / std::numbers::pi;
 
-            if (!onViewParameters[OnViewParameter::Fourth]->isSet) {
+            if (!fourthParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::Fourth, range, Base::Unit::Angle);
             }
 
             Base::Vector3d start = toVector3d(handler->referencePoint);
             Base::Vector3d end = toVector3d(onSketchPos);
 
-            onViewParameters[OnViewParameter::Third]->setPoints(start, end);
-            onViewParameters[OnViewParameter::Fourth]->setPoints(start, Base::Vector3d());
-            onViewParameters[OnViewParameter::Fourth]->setLabelRange(angle);
+            thirdParam->setPoints(start, end);
+            fourthParam->setPoints(start, Base::Vector3d());
+            fourthParam->setLabelRange(angle);
         } break;
         case SelectMode::SeekThird: {
-            if (!onViewParameters[OnViewParameter::Fifth]->isSet) {
+            auto& fifthParam = onViewParameters[OnViewParameter::Fifth];
+            auto& sixthParam = onViewParameters[OnViewParameter::Sixth];
+
+            if (!fifthParam->isSet) {
                 double length = (onSketchPos - handler->referencePoint).Length();
                 setOnViewParameterValue(OnViewParameter::Fifth, length);
             }
 
-            Base::Vector2d vec2d = Base::Vector2d(handler->secondTranslationVector.x,
-                                                  handler->secondTranslationVector.y);
+            Base::Vector2d vec2d = Base::Vector2d(
+                handler->secondTranslationVector.x,
+                handler->secondTranslationVector.y
+            );
             double angle = vec2d.Angle();
-            double range = angle * 180 / M_PI;
+            double range = angle * 180 / std::numbers::pi;
 
-            if (!onViewParameters[OnViewParameter::Sixth]->isSet) {
+            if (!sixthParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::Sixth, range, Base::Unit::Angle);
             }
 
             Base::Vector3d start = toVector3d(handler->referencePoint);
             Base::Vector3d end = toVector3d(onSketchPos);
 
-            onViewParameters[OnViewParameter::Fifth]->setPoints(start, end);
-            onViewParameters[OnViewParameter::Sixth]->setPoints(start, Base::Vector3d());
-            onViewParameters[OnViewParameter::Sixth]->setLabelRange(angle);
+            fifthParam->setPoints(start, end);
+            sixthParam->setPoints(start, Base::Vector3d());
+            sixthParam->setLabelRange(angle);
         } break;
         default:
             break;
@@ -687,33 +859,37 @@ void DSHTranslateController::adaptParameters(Base::Vector2d onSketchPos)
 }
 
 template<>
-void DSHTranslateController::doChangeDrawSketchHandlerMode()
+void DSHTranslateController::computeNextDrawSketchHandlerMode()
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (onViewParameters[OnViewParameter::First]->isSet
-                && onViewParameters[OnViewParameter::Second]->isSet) {
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
 
-                handler->setState(SelectMode::SeekSecond);
+            if (firstParam->hasFinishedEditing && secondParam->hasFinishedEditing) {
+                handler->setNextState(SelectMode::SeekSecond);
             }
         } break;
         case SelectMode::SeekSecond: {
-            if (onViewParameters[OnViewParameter::Third]->isSet
-                && onViewParameters[OnViewParameter::Fourth]->isSet) {
+            auto& thirdParam = onViewParameters[OnViewParameter::Third];
+            auto& fourthParam = onViewParameters[OnViewParameter::Fourth];
 
+            if (thirdParam->hasFinishedEditing && fourthParam->hasFinishedEditing) {
                 if (handler->secondNumberOfCopies == 1) {
-                    handler->setState(SelectMode::End);
+                    handler->setNextState(SelectMode::End);
                 }
                 else {
-                    handler->setState(SelectMode::SeekThird);
+                    handler->secondDirectionSymmetric = handler->firstDirectionSymmetric;
+                    handler->setNextState(SelectMode::SeekThird);
                 }
             }
         } break;
         case SelectMode::SeekThird: {
-            if (onViewParameters[OnViewParameter::Fifth]->isSet
-                && onViewParameters[OnViewParameter::Sixth]->isSet) {
+            auto& fifthParam = onViewParameters[OnViewParameter::Fifth];
+            auto& sixthParam = onViewParameters[OnViewParameter::Sixth];
 
-                handler->setState(SelectMode::End);
+            if (fifthParam->hasFinishedEditing && sixthParam->hasFinishedEditing) {
+                handler->setNextState(SelectMode::End);
             }
         } break;
         default:
@@ -722,6 +898,3 @@ void DSHTranslateController::doChangeDrawSketchHandlerMode()
 }
 
 }  // namespace SketcherGui
-
-
-#endif  // SKETCHERGUI_DrawSketchHandlerTranslate_H

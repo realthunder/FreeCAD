@@ -125,6 +125,8 @@ SET(SketcherGui_SRCS
     TaskSketcherValidation.h
     ShortcutListener.cpp
     ShortcutListener.h
+    SketcherTransformationExpressionHelper.cpp
+    SketcherTransformationExpressionHelper.h
     # EditModeInformationOverlayCoinConverter.cpp
     # EditModeInformationOverlayCoinConverter.h
     # EditModeGeometryCoinConverter.cpp

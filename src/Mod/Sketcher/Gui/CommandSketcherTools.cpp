@@ -2715,12 +2715,9 @@ void CreateSketcherCommandsConstraintAccel()
 
 void SketcherGui::centerScale(ViewProviderSketch* vp, double scaleFactor)
 {
-    Sketcher::SketchObject* Obj = vp->getSketchObject();
-    std::vector<int> allGeoIds(Obj->Geometry.getValues().size());
-    std::iota(allGeoIds.begin(), allGeoIds.end(), 0);
-
-    auto scaler = DrawSketchHandlerScale::make_centerScale(std::move(allGeoIds), scaleFactor, false);
-    scaler->setSketchGui(vp);
+    // The factory enumerates the sketch's geometry and binds the handler to
+    // the view provider itself.
+    auto scaler = DrawSketchHandlerScale::make_centerScaleAll(vp, scaleFactor, false);
     scaler->executeCommands();
 
     // Keep the sketch the same size on screen. A served client's camera is

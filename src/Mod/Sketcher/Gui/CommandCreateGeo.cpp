@@ -654,7 +654,10 @@ CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateBSpline, "Sketcher_CreateBSpline")
 void CmdSketcherCreateBSpline::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerBSpline(0));
+    ActivateHandler(
+        getActiveGuiDocument(),
+        new DrawSketchHandlerBSpline(
+            ConstructionMethods::BSplineConstructionMethod::ControlPoints));
 }
 
 bool CmdSketcherCreateBSpline::isActive()
@@ -687,7 +690,11 @@ CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreatePeriodicBSpline, "Sketcher_Create_Pe
 void CmdSketcherCreatePeriodicBSpline::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerBSpline(1));
+    ActivateHandler(
+        getActiveGuiDocument(),
+        new DrawSketchHandlerBSpline(
+            ConstructionMethods::BSplineConstructionMethod::ControlPoints,
+            /*periodic = */ true));
 }
 
 bool CmdSketcherCreatePeriodicBSpline::isActive()

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2022 Abdullah Tahiri <abdullah.tahiri.yo@gmail.com>     *
  *                                                                         *
@@ -21,8 +23,7 @@
  ***************************************************************************/
 
 
-#ifndef SKETCHERGUI_DrawSketchDefaultHandler_H
-#define SKETCHERGUI_DrawSketchDefaultHandler_H
+#pragma once
 
 #include <Inventor/events/SoKeyboardEvent.h>
 
@@ -36,12 +37,12 @@
 #include <Mod/Sketcher/App/SketchObject.h>
 #include <Mod/Sketcher/App/SolverGeometryExtension.h>
 
+#include "AutoConstraint.h"
 #include "DrawSketchHandler.h"
 #include "ViewProviderSketch.h"
+#include "SnapManager.h"
 
 #include "Utils.h"
-
-namespace bp = boost::placeholders;
 
 namespace SketcherGui
 {
@@ -154,7 +155,7 @@ protected:
     /** Ensure the state machine is the provided mode
      * but only if the mode is an earlier state.
      *
-     * This allows to return to previous states (e.g.
+     * This allows one to return to previous states (e.g.
      * for modification), only if that state has previously
      * been completed.
      */
@@ -178,6 +179,25 @@ protected:
         return Mode == state;
     }
 
+    void setNextState(std::optional<SelectModeT> nextState)
+    {
+        nextMode = nextState;
+    }
+
+    std::optional<SelectModeT> getNextState()
+    {
+        return nextMode;
+    }
+
+    void applyNextState()
+    {
+        if (nextMode) {
+            auto next = std::move(*nextMode);
+            nextMode = std::nullopt;
+            setState(next);
+        }
+    }
+
     bool isFirstState() const
     {
         return Mode == (static_cast<SelectModeT>(0));
@@ -193,10 +213,9 @@ protected:
         return static_cast<SelectModeT>(0);
     }
 
-    SelectModeT getNextMode() const
+    SelectModeT computeNextMode() const
     {
         auto modeint = static_cast<int>(state());
-
 
         if (modeint < maxMode) {
             auto newmode = static_cast<SelectModeT>(modeint + 1);
@@ -209,20 +228,25 @@ protected:
 
     void moveToNextMode()
     {
-        setState(getNextMode());
+        setState(computeNextMode());
     }
 
     void reset()
     {
+        nextMode = std::nullopt;
         if (Mode != static_cast<SelectModeT>(0)) {
             setState(static_cast<SelectModeT>(0));
         }
     }
 
-    virtual void onModeChanged() {};
+    virtual bool onModeChanged()
+    {
+        return true;
+    };
 
 private:
     SelectModeT Mode;
+    std::optional<SelectModeT> nextMode;
     static const constexpr int maxMode = static_cast<int>(SelectModeT::End);
 };
 
@@ -260,7 +284,8 @@ class ConstructionMethodMachine
 {
 public:
     ConstructionMethodMachine(
-        ConstructionMethodT constructionmethod = static_cast<ConstructionMethodT>(0))
+        ConstructionMethodT constructionmethod = static_cast<ConstructionMethodT>(0)
+    )
         : ConstructionMode(constructionmethod)
     {}
     virtual ~ConstructionMethodMachine()
@@ -336,7 +361,7 @@ private:
  * - handling of continuous creation mode
  *
  * This class is intended to be used by instantiating the template with a new DSH type, and
- * then derive the new type from the instantiated template. This allows to inherit all
+ * then derive the new type from the instantiated template. This allows one to inherit all
  * the functionality, have direct access to all handler members, while allowing the DSH creator to
  * add additional data members and functions (and avoiding extensive usage of macros).
  *
@@ -376,17 +401,19 @@ private:
  * DrawSketchDefaultWidgetHandler. Then you will have to implement the code that is exclusively
  * necessary for the default widget to work.
  */
-template<typename HandlerT,     // A type for which the handler template is instantiated
-         typename SelectModeT,  // The state machine defining the states that the handle iterates
-         int PInitAutoConstraintSize,  // The initial size of the AutoConstraint>
-         typename ConstructionMethodT = ConstructionMethods::DefaultConstructionMethod>
+template<
+    typename HandlerT,            // A type for which the handler template is instantiated
+    typename SelectModeT,         // The state machine defining the states that the handle iterates
+    int PInitAutoConstraintSize,  // The initial size of the AutoConstraint>
+    typename ConstructionMethodT = ConstructionMethods::DefaultConstructionMethod>
 class DrawSketchDefaultHandler: public DrawSketchHandler,
                                 public StateMachine<SelectModeT>,
                                 public ConstructionMethodMachine<ConstructionMethodT>
 {
 public:
     DrawSketchDefaultHandler(
-        ConstructionMethodT constructionmethod = static_cast<ConstructionMethodT>(0))
+        ConstructionMethodT constructionmethod = static_cast<ConstructionMethodT>(0)
+    )
         : ConstructionMethodMachine<ConstructionMethodT>(constructionmethod)
         , sugConstraints(PInitAutoConstraintSize)
         , avoidRedundants(true)
@@ -405,8 +432,7 @@ public:
     //@{
     void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
-        Base::Vector2d onSketchPos = snapHandle.compute();
-        updateDataAndDrawToPosition(onSketchPos);
+        updateDataAndDrawToPosition(snapHandle.compute());
     }
 
     bool pressButton(Base::Vector2d onSketchPos) override
@@ -436,20 +462,23 @@ public:
             this->iterateToNextConstructionMethod();
         }
         else if (key == SoKeyboardEvent::ESCAPE && pressed) {
-
-            if (this->isFirstState()) {
-                quit();
-            }
-            else {
-                handleContinuousMode();
-            }
+            cancelCurrentAction();
         }
     }
 
     void pressRightButton(Base::Vector2d onSketchPos) override
     {
         Q_UNUSED(onSketchPos);
+        cancelCurrentAction();
+    }
 
+    void cancelCurrentAction() override
+    {
+        rightButtonOrEsc();
+    }
+
+    virtual void rightButtonOrEsc()
+    {
         if (this->isFirstState()) {
             quit();
         }
@@ -487,8 +516,10 @@ protected:
      * 3. createAutoConstraints() : Must be provided with the commands to create autoconstraints
      *
      * It recomputes if not solves and handles continuous mode automatically
+     *
+     * It returns true if the handler has been purged.
      */
-    void finish()
+    bool finish()
     {
         if (this->isState(SelectMode::End)) {
             unsetCursor();
@@ -498,25 +529,34 @@ protected:
                 executeCommands();
 
                 if (sugConstraints.size() > 0) {
-                    generateAutoConstraints();
-
                     beforeCreateAutoConstraints();
+
+                    generateAutoConstraints();
 
                     createAutoConstraints();
                 }
-
-                tryAutoRecomputeIfNotSolve(
-                    static_cast<Sketcher::SketchObject*>(sketchgui->getObject()));
             }
             catch (const Base::RuntimeError& e) {
                 // RuntimeError exceptions inside of the block above must provide a translatable
                 // message. It is reported both to developer (report view) and user (notifications
                 // area).
-                Base::Console().Error(e.what());
+                Base::Console().error(e.what());
             }
 
-            handleContinuousMode();
+            // Keep the recompute separate so that everything is drawn even if execution fails
+            // partially
+            try {
+                tryAutoRecomputeIfNotSolve(sketchgui->getSketchObject());
+            }
+            catch (const Base::RuntimeError& e) {
+                // RuntimeError exceptions inside of the block above must provide a translatable
+                // message. It is reported both to developer (report view) and user (notifications
+                // area).
+                Base::Console().error(e.what());
+            }
+            return handleContinuousMode();
         }
+        return false;
     }
 
     /** @brief This function resets the handler to the initial state.
@@ -531,8 +571,8 @@ protected:
     void reset()
     {
         clearEdit();
-
-        ModeStateMachine::reset();
+        // Upstream also resets the parallel/perpendicular hint here; group C,
+        // which owns it, is not ported yet.
 
         for (auto& ac : sugConstraints) {
             ac.clear();
@@ -543,6 +583,9 @@ protected:
         ShapeConstraints.clear();
 
         onReset();
+
+        ModeStateMachine::reset();
+
         applyCursor();
     }
 
@@ -555,16 +598,18 @@ protected:
      *
      * It performs all the operations in reset().
      */
-    void handleContinuousMode()
+    bool handleContinuousMode()
     {
         if (continuousMode) {
             // This code enables the continuous creation mode.
             reset();
             // It is ok not to call to purgeHandler in continuous creation mode because the
             // handler is destroyed by the quit() method on pressing the right button of the mouse
+            return false;
         }
         else {
             sketchgui->purgeHandler();  // no code after, Handler get deleted in ViewProvider
+            return true;
         }
     }
     //@}
@@ -607,11 +652,12 @@ protected:
     /** @brief Minimal handle activation respecting avoid redundants and continuous mode.*/
     void activated() override
     {
-        avoidRedundants =
-            sketchgui->AvoidRedundant.getValue() && sketchgui->Autoconstraints.getValue();
+        avoidRedundants = sketchgui->AvoidRedundant.getValue()
+            && sketchgui->Autoconstraints.getValue();
 
         ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Mod/Sketcher");
+            "User parameter:BaseApp/Preferences/Mod/Sketcher"
+        );
 
         continuousMode = hGrp->GetBool("ContinuousCreationMode", true);
     }
@@ -635,10 +681,11 @@ protected:
 
     /** @brief Default behaviour that upon arriving to the End state of the state machine, the
      * command is finished. */
-    void onModeChanged() override
+    bool onModeChanged() override
     {
         angleSnappingControl();
-        finish();  // internally checks that state is SelectMode::End, and only finishes then.
+        // internally checks that state is SelectMode::End, and only finishes then.
+        return !finish();
     };
     //@}
 
@@ -651,208 +698,19 @@ protected:
      *
      * This generates actual Sketcher::Constraint which can be used for diagnostic before addition.
      */
-    void generateAutoConstraintsOnElement(const std::vector<AutoConstraint>& autoConstrs,
-                                          int geoId1,
-                                          Sketcher::PointPos posId1)
+    void generateAutoConstraintsOnElement(
+        const std::vector<AutoConstraint>& autoConstrs,
+        int geoId1,
+        Sketcher::PointPos posId1
+    )
     {
         if (!sketchgui->Autoconstraints.getValue()) {
             return;
         }
 
-        if (autoConstrs.size() > 0) {
-            for (auto& ac : autoConstrs) {
-                int geoId2 = ac.GeoId;
-
-                switch (ac.Type) {
-                    case Sketcher::Coincident: {
-                        if (posId1 == Sketcher::PointPos::none) {
-                            continue;
-                        }
-
-                        // find if there is already a matching tangency
-                        auto result = std::find_if(AutoConstraints.begin(),
-                                                   AutoConstraints.end(),
-                                                   [&](const auto& ace) {
-                                                       return ace->Type == Sketcher::Tangent
-                                                           && ace->First == geoId1
-                                                           && ace->Second == ac.GeoId;
-                                                   });
-
-
-                        if (result
-                            != AutoConstraints.end()) {  // modify tangency to endpoint-to-endpoint
-                            (*result)->FirstPos = posId1;
-                            (*result)->SecondPos = ac.PosId;
-                        }
-                        else {
-                            auto c = std::make_unique<Sketcher::Constraint>();
-                            c->Type = Sketcher::Coincident;
-                            c->First = geoId1;
-                            c->FirstPos = posId1;
-                            c->Second = ac.GeoId;
-                            c->SecondPos = ac.PosId;
-                            AutoConstraints.push_back(std::move(c));
-                        }
-
-                    } break;
-                    case Sketcher::PointOnObject: {
-                        Sketcher::PointPos posId2 = ac.PosId;
-                        if (posId1 == Sketcher::PointPos::none) {
-                            // Auto constraining an edge so swap parameters
-                            std::swap(geoId1, geoId2);
-                            std::swap(posId1, posId2);
-                        }
-
-                        auto result = std::find_if(AutoConstraints.begin(),
-                                                   AutoConstraints.end(),
-                                                   [&](const auto& ace) {
-                                                       return ace->Type == Sketcher::Tangent
-                                                           && ace->First == geoId1
-                                                           && ace->Second == ac.GeoId;
-                                                   });
-
-                        // if tangency, convert to point-to-edge tangency
-                        if (result != AutoConstraints.end()) {
-                            (*result)->FirstPos = posId1;
-
-                            if ((*result)->First != geoId1) {
-                                std::swap((*result)->Second, (*result)->First);
-                            }
-                        }
-                        else {
-                            auto c = std::make_unique<Sketcher::Constraint>();
-                            c->Type = Sketcher::PointOnObject;
-                            c->First = geoId1;
-                            c->FirstPos = posId1;
-                            c->Second = geoId2;
-                            AutoConstraints.push_back(std::move(c));
-                        }
-                    } break;
-                    case Sketcher::Symmetric: {
-                        auto c = std::make_unique<Sketcher::Constraint>();
-                        c->Type = Sketcher::Symmetric;
-                        c->First = geoId2;
-                        c->FirstPos = Sketcher::PointPos::start;
-                        c->Second = geoId2;
-                        c->SecondPos = Sketcher::PointPos::end;
-                        c->Third = geoId1;
-                        c->ThirdPos = posId1;
-                        AutoConstraints.push_back(std::move(c));
-                    } break;
-                    // In special case of Horizontal/Vertical constraint, geoId2 is normally unused
-                    // and should be 'Constraint::GeoUndef' However it can be used as a way to
-                    // require the function to apply these constraints on another geometry In this
-                    // case the caller as to set geoId2, then it will be used as target instead of
-                    // geoId2
-                    case Sketcher::Horizontal: {
-                        auto c = std::make_unique<Sketcher::Constraint>();
-                        c->Type = Sketcher::Horizontal;
-                        c->First = (geoId2 != Sketcher::GeoEnum::GeoUndef ? geoId2 : geoId1);
-                        AutoConstraints.push_back(std::move(c));
-                    } break;
-                    case Sketcher::Vertical: {
-                        auto c = std::make_unique<Sketcher::Constraint>();
-                        c->Type = Sketcher::Vertical;
-                        c->First = (geoId2 != Sketcher::GeoEnum::GeoUndef ? geoId2 : geoId1);
-                        AutoConstraints.push_back(std::move(c));
-                    } break;
-                    case Sketcher::Tangent: {
-                        Sketcher::SketchObject* Obj =
-                            static_cast<Sketcher::SketchObject*>(sketchgui->getObject());
-
-                        const Part::Geometry* geom1 = Obj->getGeometry(geoId1);
-                        const Part::Geometry* geom2 = Obj->getGeometry(ac.GeoId);
-
-                        // ellipse tangency support using construction elements (lines)
-                        if (geom1 && geom2
-                            && (geom1->getTypeId() == Part::GeomEllipse::getClassTypeId()
-                                || geom2->getTypeId() == Part::GeomEllipse::getClassTypeId())) {
-
-                            if (geom1->getTypeId() != Part::GeomEllipse::getClassTypeId()) {
-                                std::swap(geoId1, geoId2);
-                            }
-
-                            // geoId1 is the ellipse
-                            geom1 = Obj->getGeometry(geoId1);
-                            geom2 = Obj->getGeometry(geoId2);
-
-                            if (geom2->getTypeId() == Part::GeomEllipse::getClassTypeId()
-                                || geom2->getTypeId() == Part::GeomArcOfEllipse::getClassTypeId()
-                                || geom2->getTypeId() == Part::GeomCircle::getClassTypeId()
-                                || geom2->getTypeId() == Part::GeomArcOfCircle::getClassTypeId()) {
-                                // in all these cases an intermediate element is needed
-                                /*makeTangentToEllipseviaNewPoint(Obj,
-                                                                static_cast<const Part::GeomEllipse
-                                   *>(geom1), geom2, geoId1, geoId2);*/
-                                // NOTE: Temporarily deactivated
-                                return;
-                            }
-                        }
-
-                        // arc of ellipse tangency support using external elements
-                        if (geom1 && geom2
-                            && (geom1->getTypeId() == Part::GeomArcOfEllipse::getClassTypeId()
-                                || geom2->getTypeId()
-                                    == Part::GeomArcOfEllipse::getClassTypeId())) {
-
-                            if (geom1->getTypeId() != Part::GeomArcOfEllipse::getClassTypeId()) {
-                                std::swap(geoId1, geoId2);
-                            }
-
-                            // geoId1 is the arc of ellipse
-                            geom1 = Obj->getGeometry(geoId1);
-                            geom2 = Obj->getGeometry(geoId2);
-
-                            if (geom2->getTypeId() == Part::GeomArcOfEllipse::getClassTypeId()
-                                || geom2->getTypeId() == Part::GeomCircle::getClassTypeId()
-                                || geom2->getTypeId() == Part::GeomArcOfCircle::getClassTypeId()) {
-                                // in all these cases an intermediate element is needed
-                                // makeTangentToArcOfEllipseviaNewPoint(Obj,
-                                //                                    static_cast<const
-                                //                                    Part::GeomArcOfEllipse
-                                //                                    *>(geom1), geom2, geoId1,
-                                //                                    geoId2);
-                                // NOTE: Temporarily deactivated
-                                return;
-                            }
-                        }
-
-                        auto resultcoincident =
-                            std::find_if(AutoConstraints.begin(),
-                                         AutoConstraints.end(),
-                                         [&](const auto& ace) {
-                                             return ace->Type == Sketcher::Coincident
-                                                 && ace->First == geoId1 && ace->Second == ac.GeoId;
-                                         });
-
-                        auto resultpointonobject = std::find_if(
-                            AutoConstraints.begin(),
-                            AutoConstraints.end(),
-                            [&](const auto& ace) {
-                                return ace->Type == Sketcher::PointOnObject
-                                    && ((ace->First == geoId1 && ace->Second == ac.GeoId)
-                                        || (ace->First == ac.GeoId && ace->Second == geoId1));
-                            });
-
-                        if (resultcoincident
-                            != AutoConstraints.end()) {  // endpoint-to-endpoint tangency
-                            (*resultcoincident)->Type = Sketcher::Tangent;
-                        }
-                        else if (resultpointonobject
-                                 != AutoConstraints.end()) {  // endpoint-to-edge tangency
-                            (*resultpointonobject)->Type = Sketcher::Tangent;
-                        }
-                        else {  // regular edge to edge tangency
-                            auto c = std::make_unique<Sketcher::Constraint>();
-                            c->Type = Sketcher::Tangent;
-                            c->First = geoId1;
-                            c->Second = ac.GeoId;
-                            AutoConstraints.push_back(std::move(c));
-                        }
-                    } break;
-                    default:
-                        break;
-                }
+        for (auto& ac : autoConstrs) {
+            if (!generateOneAutoConstraintFromSuggestion(ac, geoId1, posId1, AutoConstraints)) {
+                return;
             }
         }
     }
@@ -861,22 +719,30 @@ protected:
      * all the constraints stored in the AutoConstraints vector. */
     void createGeneratedAutoConstraints(bool owncommand)
     {
-        // add auto-constraints
-        if (owncommand) {
-            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Add auto constraints"));
+        try {
+            // add auto-constraints
+            if (owncommand) {
+                openCommand(QT_TRANSLATE_NOOP("Command", "Add Auto-Constraints"));
+            }
+
+            tryAddAutoConstraints();
+
+            if (owncommand) {
+                commitCommand();
+            }
         }
-
-        auto autoConstraints = toPointerVector(AutoConstraints);
-
-        Gui::Command::doCommand(
-            Gui::Command::Doc,
-            Sketcher::PythonConverter::convert(Gui::Command::getObjectCmd(sketchgui->getObject()),
-                                               autoConstraints)
-                .c_str());
-
-        if (owncommand) {
-            Gui::Command::commitCommand();
+        catch (const Base::PyException&) {
+            if (owncommand) {
+                abortCommand();
+            }
         }
+    }
+
+    /** @brief Convenience function to automatically add to the SketchObjects
+     * all the constraints stored in the AutoConstraints vector. */
+    void tryAddAutoConstraints()
+    {
+        addGeneratedAutoConstraints(AutoConstraints);
     }
 
     /** @brief Convenience function to remove redundant autoconstraints from the AutoConstraints
@@ -893,66 +759,27 @@ protected:
      */
     void removeRedundantAutoConstraints()
     {
-
-        if (AutoConstraints.empty()) {
-            return;
-        }
-
-        auto sketchobject = getSketchObject();
-
-        auto autoConstraints = toPointerVector(AutoConstraints);
-
-        // Allows a diagnose with the new autoconstraints as if they were part of the sketchobject,
-        // but WITHOUT adding them to the sketchobject..
-        sketchobject->diagnoseAdditionalConstraints(autoConstraints);
-
-        if (sketchobject->getLastHasRedundancies()) {
-            Base::Console().Warning(
-                QT_TRANSLATE_NOOP("Notifications",
-                                  "Autoconstraints cause redundancy. Removing them") "\n");
-
-            auto lastsketchconstraintindex = sketchobject->Constraints.getSize() - 1;
-
-            auto redundants = sketchobject->getLastRedundant();  // redundants is always sorted
-
-            for (int index = redundants.size() - 1; index >= 0; index--) {
-                int redundantconstraintindex = redundants[index] - 1;
-                if (redundantconstraintindex > lastsketchconstraintindex) {
-                    int removeindex = redundantconstraintindex - lastsketchconstraintindex - 1;
-                    AutoConstraints.erase(std::next(AutoConstraints.begin(), removeindex));
-                }
-                else {
-                    // This exception stops the procedure here, which means that:
-                    // 1) Geometry (and constraints of the geometry in case of a multicurve shape)
-                    // are created 2) No autoconstrains are actually added 3) No widget mandated
-                    // constraints are added
-                    THROWM(Base::RuntimeError,
-                           QT_TRANSLATE_NOOP(
-                               "Notifications",
-                               "Redundant constraint is not an autoconstraint. No autoconstraints "
-                               "or additional constraints were added. Please report!") "\n");
-                }
-            }
-
-            // NOTE: If we removed all redundants in the list, then at this moment there are no
-            // redundants anymore
-        }
-
-        // This is an awful situation. It should not be possible if the DSH works properly. It is
-        // just a safeguard.
-        if (sketchobject->getLastHasConflicts()) {
-            THROWM(Base::RuntimeError,
-                   QT_TRANSLATE_NOOP(
-                       "Notifications",
-                       "Autoconstraints cause conflicting constraints - Please report!") "\n");
+        if (!filterRedundantAutoConstraints(AutoConstraints)) {
+            // This exception stops the procedure here, which means that:
+            // 1) Geometry (and constraints of the geometry in case of a multicurve shape)
+            // are created 2) No autoconstrains are actually added 3) No widget mandated
+            // constraints are added
+            THROWM(
+                Base::RuntimeError,
+                QT_TRANSLATE_NOOP(
+                    "Notifications",
+                    "Redundant constraint is not an autoconstraint. No autoconstraints "
+                    "or additional constraints were added. Please report!"
+                ) "\n"
+            );
         }
     }
 
     /** @brief Function that performs a sketcher solver diagnose (determination of DoF and dependent
      * parameters), taking into account the suggested AutoConstraints.
      *
-     * @details This function allows to refresh solver information by taking into account any added
-     * constraint, such as the ones introduced by a widget or on-screen parameters during the
+     * @details This function allows one to refresh solver information by taking into account any
+     * added constraint, such as the ones introduced by a widget or on-screen parameters during the
      * execution of the DSH.
      *
      * Ultimately, it is intended to operate in combination with functions obtaining point/element
@@ -967,16 +794,21 @@ protected:
         sketchobject->diagnoseAdditionalConstraints(autoConstraints);
 
         if (sketchobject->getLastHasRedundancies() || sketchobject->getLastHasConflicts()) {
-            THROWM(Base::RuntimeError,
-                   QT_TRANSLATE_NOOP("Notifications",
-                                     "Unexpected Redundancy/Conflicting constraint. Check the "
-                                     "constraints and autoconstraints of this operation.") "\n");
+            THROWM(
+                Base::RuntimeError,
+                QT_TRANSLATE_NOOP(
+                    "Notifications",
+                    "Unexpected Redundancy/Conflicting constraint. Check the "
+                    "constraints and autoconstraints of this operation."
+                ) "\n"
+            );
         }
     }
 
     /** @brief Function to obtain detailed solver information on one point type geometric element.*/
-    Sketcher::SolverGeometryExtension::PointParameterStatus
-    getPointInfo(const Sketcher::GeoElementId& element)
+    Sketcher::SolverGeometryExtension::PointParameterStatus getPointInfo(
+        const Sketcher::GeoElementId& element
+    )
     {
         if (element.isCurve()) {
             THROWM(Base::TypeError, "getPointInfo: Provided geometry element is not a point!")
@@ -995,16 +827,17 @@ protected:
             return pointinfo;
         }
 
-        THROWM(Base::ValueError,
-               "Geometry element does not have solver information (possibly when trying to apply "
-               "widget constraints)!")
+        THROWM(
+            Base::ValueError,
+            "Geometry element does not have solver information (possibly when trying to apply "
+            "widget constraints)!"
+        )
     }
 
     /** @brief Function to obtain detailed DoFs of one line type geometric element.*/
     int getLineDoFs(int geoid)
     {
-        auto startpointinfo =
-            getPointInfo(Sketcher::GeoElementId(geoid, Sketcher::PointPos::start));
+        auto startpointinfo = getPointInfo(Sketcher::GeoElementId(geoid, Sketcher::PointPos::start));
 
         auto endpointinfo = getPointInfo(Sketcher::GeoElementId(geoid, Sketcher::PointPos::end));
 
@@ -1026,14 +859,16 @@ protected:
         auto solvext = solvedsketch.getSolverExtension(geoid);
 
         if (solvext) {
-            Sketcher::SolverGeometryExtension::EdgeParameterStatus edgeinfo =
-                solvext->getEdgeParameters();
+            Sketcher::SolverGeometryExtension::EdgeParameterStatus edgeinfo
+                = solvext->getEdgeParameters();
 
             return edgeinfo;
         }
 
-        THROWM(Base::ValueError,
-               "Geometry does not have solver extension when trying to apply widget constraints!")
+        THROWM(
+            Base::ValueError,
+            "Geometry does not have solver extension when trying to apply widget constraints!"
+        )
     }
 
     /** @brief Function to add shape inherent constraints (the ones that define the shape) to the
@@ -1043,13 +878,15 @@ protected:
      * inherent part of it and the shape would not go without them. Lower priority constraints are
      * AutoConstraints and constraints mandated by the widget/on-screen parameters.
      * .*/
-    auto addToShapeConstraints(Sketcher::ConstraintType type,
-                               int first,
-                               Sketcher::PointPos firstPos = Sketcher::PointPos::none,
-                               int second = -2000,
-                               Sketcher::PointPos secondPos = Sketcher::PointPos::none,
-                               int third = -2000,
-                               Sketcher::PointPos thirdPos = Sketcher::PointPos::none)
+    auto addToShapeConstraints(
+        Sketcher::ConstraintType type,
+        int first,
+        Sketcher::PointPos firstPos = Sketcher::PointPos::none,
+        int second = Sketcher::GeoEnum::GeoUndef,
+        Sketcher::PointPos secondPos = Sketcher::PointPos::none,
+        int third = Sketcher::GeoEnum::GeoUndef,
+        Sketcher::PointPos thirdPos = Sketcher::PointPos::none
+    )
     {
         auto constr = std::make_unique<Sketcher::Constraint>();
         constr->Type = type;
@@ -1068,24 +905,79 @@ protected:
         auto line = std::make_unique<Part::GeomLineSegment>();
         line->setPoints(p1, p2);
         Sketcher::GeometryFacade::setConstruction(line.get(), constructionMode);
-        return static_cast<Part::GeomLineSegment*>(
-            ShapeGeometry.emplace_back(std::move(line)).get());
+        return static_cast<Part::GeomLineSegment*>(ShapeGeometry.emplace_back(std::move(line)).get());
     }
 
     /** @brief Function to add an arc to the ShapeGeometry vector.*/
-    auto addArcToShapeGeometry(Base::Vector3d p1,
-                               double start,
-                               double end,
-                               double radius,
-                               bool constructionMode)
+    auto addArcToShapeGeometry(Base::Vector3d p1, double start, double end, double radius, bool constructionMode)
     {
         auto arc = std::make_unique<Part::GeomArcOfCircle>();
         arc->setCenter(p1);
         arc->setRange(start, end, true);
         arc->setRadius(radius);
         Sketcher::GeometryFacade::setConstruction(arc.get(), constructionMode);
-        return static_cast<Part::GeomArcOfCircle*>(
-            ShapeGeometry.emplace_back(std::move(arc)).get());
+        return static_cast<Part::GeomArcOfCircle*>(ShapeGeometry.emplace_back(std::move(arc)).get());
+    }
+
+    /** @brief Function to add an arc of ellipse to the ShapeGeometry vector.*/
+    auto addArcOfEllipseToShapeGeometry(
+        Base::Vector3d centerPoint,
+        Base::Vector3d majorAxisDirection,
+        double majorRadius,
+        double minorRadius,
+        double start,
+        double end,
+        bool constructionMode
+    )
+    {
+        auto arc = std::make_unique<Part::GeomArcOfEllipse>();
+        arc->setCenter(centerPoint);
+        arc->setMajorAxisDir(majorAxisDirection);
+        arc->setMajorRadius(majorRadius);
+        arc->setMinorRadius(minorRadius);
+        arc->setRange(start, end, true);
+        Sketcher::GeometryFacade::setConstruction(arc.get(), constructionMode);
+        return static_cast<Part::GeomArcOfEllipse*>(ShapeGeometry.emplace_back(std::move(arc)).get());
+    }
+
+    /** @brief Function to add an arc of hyperbola to the ShapeGeometry vector.*/
+    auto addArcOfHyperbolaToShapeGeometry(
+        Base::Vector3d centerPoint,
+        Base::Vector3d majorAxisDirection,
+        double majorRadius,
+        double minorRadius,
+        double start,
+        double end,
+        bool constructionMode
+    )
+    {
+        auto arc = std::make_unique<Part::GeomArcOfHyperbola>();
+        arc->setCenter(centerPoint);
+        arc->setMajorAxisDir(majorAxisDirection);
+        arc->setMajorRadius(majorRadius);
+        arc->setMinorRadius(minorRadius);
+        arc->setRange(start, end, true);
+        Sketcher::GeometryFacade::setConstruction(arc.get(), constructionMode);
+        return static_cast<Part::GeomArcOfHyperbola*>(ShapeGeometry.emplace_back(std::move(arc)).get());
+    }
+
+    /** @brief Function to add an arc of parabola to the ShapeGeometry vector.*/
+    auto addArcOfParabolaToShapeGeometry(
+        Base::Vector3d axisDirection,
+        Base::Vector3d centerPoint,
+        double focal,
+        double start,
+        double end,
+        bool constructionMode
+    )
+    {
+        auto arc = std::make_unique<Part::GeomArcOfParabola>();
+        arc->setXAxisDir(axisDirection);
+        arc->setCenter(centerPoint);
+        arc->setFocal(focal);
+        arc->setRange(start, end, true);
+        Sketcher::GeometryFacade::setConstruction(arc.get(), constructionMode);
+        return static_cast<Part::GeomArcOfParabola*>(ShapeGeometry.emplace_back(std::move(arc)).get());
     }
 
     /** @brief Function to add a point to the ShapeGeometry vector.*/
@@ -1098,11 +990,13 @@ protected:
     }
 
     /** @brief Function to add an ellipse to the ShapeGeometry vector.*/
-    auto addEllipseToShapeGeometry(Base::Vector3d centerPoint,
-                                   Base::Vector3d majorAxisDirection,
-                                   double majorRadius,
-                                   double minorRadius,
-                                   bool constructionMode)
+    auto addEllipseToShapeGeometry(
+        Base::Vector3d centerPoint,
+        Base::Vector3d majorAxisDirection,
+        double majorRadius,
+        double minorRadius,
+        bool constructionMode
+    )
     {
         auto ellipse = std::make_unique<Part::GeomEllipse>();
         ellipse->setMajorRadius(majorRadius);
@@ -1110,8 +1004,7 @@ protected:
         ellipse->setMajorAxisDir(majorAxisDirection);
         ellipse->setCenter(centerPoint);
         Sketcher::GeometryFacade::setConstruction(ellipse.get(), constructionMode);
-        return static_cast<Part::GeomEllipse*>(
-            ShapeGeometry.emplace_back(std::move(ellipse)).get());
+        return static_cast<Part::GeomEllipse*>(ShapeGeometry.emplace_back(std::move(ellipse)).get());
     }
 
     /** @brief Function to add a circle to the ShapeGeometry vector.*/
@@ -1129,19 +1022,26 @@ protected:
     void commandAddShapeGeometryAndConstraints()
     {
         auto shapeGeometry = toPointerVector(ShapeGeometry);
-        Gui::Command::doCommand(Gui::Command::Doc,
-                                Sketcher::PythonConverter::convert(
-                                    Gui::Command::getObjectCmd(sketchgui->getObject()),
-                                    shapeGeometry,
-                                    Sketcher::PythonConverter::Mode::OmitInternalGeometry)
-                                    .c_str());
+        std::string sketchObj = Gui::Command::getObjectCmd(sketchgui->getObject());
+        Gui::Command::doCommand(Gui::Command::Doc, "ActiveSketch = %s\n", sketchObj.c_str());
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            Sketcher::PythonConverter::convert(
+                sketchObj,
+                shapeGeometry,
+                Sketcher::PythonConverter::Mode::OmitInternalGeometry
+            )
+                .c_str()
+        );
 
+        size_t initialConstraintCount = sketchgui->getSketchObject()->Constraints.getSize();
         auto shapeConstraints = toPointerVector(ShapeConstraints);
         Gui::Command::doCommand(
             Gui::Command::Doc,
-            Sketcher::PythonConverter::convert(Gui::Command::getObjectCmd(sketchgui->getObject()),
-                                               shapeConstraints)
-                .c_str());
+            Sketcher::PythonConverter::convert(sketchObj, shapeConstraints).c_str()
+        );
+
+        reassignVirtualSpace(initialConstraintCount);
     }
 
     /** @brief Function to draw as an edit curve all the geometry in the ShapeGeometry vector.*/
@@ -1159,6 +1059,41 @@ protected:
 
     //@}
 
+private:
+    // Reassign the correct virtual space index for the added constraints
+    void reassignVirtualSpace(size_t startIndex)
+    {
+        if (ShapeConstraints.empty()) {
+            return;
+        }
+
+        std::stringstream stream;
+        bool hasConstraintsInVirtualSpace = false;
+        for (size_t i = 0; i < ShapeConstraints.size(); ++i) {
+            if (ShapeConstraints[i]->isInVirtualSpace) {
+                if (hasConstraintsInVirtualSpace) {
+                    stream << ",";
+                }
+                stream << i + startIndex;
+                hasConstraintsInVirtualSpace = true;
+            }
+        }
+        if (!hasConstraintsInVirtualSpace) {
+            return;
+        }
+
+        try {
+            Gui::cmdAppObjectArgs(
+                sketchgui->getObject(),
+                "setVirtualSpace([%s], True)",
+                stream.str().c_str()
+            );
+        }
+        catch (const Base::Exception& e) {
+            Base::Console().error("%s\n", e.what());
+        }
+    }
+
 protected:
     std::vector<std::vector<AutoConstraint>> sugConstraints;
 
@@ -1171,6 +1106,3 @@ protected:
 };
 
 }  // namespace SketcherGui
-
-
-#endif  // SKETCHERGUI_DrawSketchDefaultHandler_H
