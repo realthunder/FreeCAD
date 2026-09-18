@@ -1167,6 +1167,51 @@ the grid line at 20. Before, the line starts at x = 20.96, the raw
 pointer position; after, at 20. Step 3 is **not** covered -- see its
 commit message for why.
 
+### Construction mode belongs to the sketch (`9a1020929e`)
+
+The first piece of the handler resync, taken ahead of the handler files
+because it is what deletes `extern GeometryCreationMode
+geometryCreationMode` from twenty-six of them -- and the resync deletes
+that line anyway.
+
+`geometryCreationMode` was a single global defined in
+`CommandCreateGeo.cpp`, so "is the next line construction geometry?" had
+one answer for every sketch in every document in the process. Turn it on
+to draw a couple of guide lines in one sketch, leave it, open another,
+and the first line drawn there was construction too. The state is a
+member of `ViewProviderSketch` now, and
+`DrawSketchHandler::isConstructionMode()` -- which is where upstream's
+handler text asks -- forwards to the sketch the tool is editing.
+
+Adaptations:
+
+- The toolbar icon has no state of its own to show any more, so it
+  follows whichever sketch is in edit: four `Gui::Application` signals
+  (`signalActiveDocument`, `signalNewDocument`, `signalInEdit`,
+  `signalResetEdit`) drive `updateCommands("ToggleConstruction", ...)`.
+  Upstream open-codes the in-edit lookup at each of them; the fork
+  already had it as `getInactiveHandlerEditModeSketchViewProvider`.
+- Upstream's `drawEdit` hunk is **n/a**. The fork's
+  `ViewProviderSketch::drawEdit` predates the `EditModeCoinManager`
+  split: it fills the coordinate and material nodes itself with a single
+  `CreateCurveColor` and never consults the mode.
+- Six controller `configureToolWidget` bodies say
+  `handler->isConstructionMode()`, the member being reachable there
+  through `friend ControllerT`.
+
+`tests/gui/sketch-construction-mode.py`
+(`GuiSketchConstructionMode_tests_run`) is the guard, and it is built so
+that the global fails it: construction toggled on in sketch A and a line
+drawn, a line drawn in B without the toggle being touched, then A
+re-entered and drawn in again. A's two lines are construction, B's one is
+not, and the re-entry shows the mode travelled with the sketch rather
+than being reset by leaving edit. The lines are drawn by the Line tool
+over the wire, because the mode is only read where a tool creates
+geometry -- `addGeometry` from Python takes the flag as an argument. The
+toggle is run on the desktop side: `Sketcher_ToggleConstruction` is not
+on the browser-safe command allowlist, and widening that list is gated on
+the modal-dialog question, not on this.
+
 ### Rows closed without a pick
 
 - `19a082b63c` "Fix constraint selection in groups" -- **n/a**. Its subject
