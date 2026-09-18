@@ -1496,29 +1496,31 @@ public:
         sketchgui->draw(false, false); // Redraw
     }
 
-    void registerPressedKey(bool pressed, int key) override
+    /// This tool's modes are the constraints the selection allows, in turn.
+    bool canIterateToolMode() const override
     {
-        if (key == SoKeyboardEvent::M && pressed) {
-            if (availableConstraint == AvailableConstraint::FIRST) {
-                availableConstraint = AvailableConstraint::SECOND;
-            }
-            else if (availableConstraint == AvailableConstraint::SECOND) {
-                availableConstraint = AvailableConstraint::THIRD;
-            }
-            else if (availableConstraint == AvailableConstraint::THIRD) {
-                availableConstraint = AvailableConstraint::FOURTH;
-            }
-            else if (availableConstraint == AvailableConstraint::FOURTH) {
-                availableConstraint = AvailableConstraint::FIFTH;
-            }
-            else if (availableConstraint == AvailableConstraint::FIFTH || availableConstraint == AvailableConstraint::RESET) {
-                availableConstraint = AvailableConstraint::FIRST;
-            }
-            makeAppropriateConstraint(previousOnSketchPos);
+        return true;
+    }
+
+    void iterateToolMode() override
+    {
+        if (availableConstraint == AvailableConstraint::FIRST) {
+            availableConstraint = AvailableConstraint::SECOND;
         }
-        else {
-            DrawSketchHandler::registerPressedKey(pressed, key);
+        else if (availableConstraint == AvailableConstraint::SECOND) {
+            availableConstraint = AvailableConstraint::THIRD;
         }
+        else if (availableConstraint == AvailableConstraint::THIRD) {
+            availableConstraint = AvailableConstraint::FOURTH;
+        }
+        else if (availableConstraint == AvailableConstraint::FOURTH) {
+            availableConstraint = AvailableConstraint::FIFTH;
+        }
+        else if (availableConstraint == AvailableConstraint::FIFTH
+                 || availableConstraint == AvailableConstraint::RESET) {
+            availableConstraint = AvailableConstraint::FIRST;
+        }
+        makeAppropriateConstraint(previousOnSketchPos);
     }
 
     void mouseMove(SnapManager::SnapHandle snapHandle) override

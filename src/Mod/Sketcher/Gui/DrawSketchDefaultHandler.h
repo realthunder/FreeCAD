@@ -456,12 +456,19 @@ public:
         return !this->isFirstState() && !this->isLastState();
     }
 
+    bool canIterateToolMode() const override
+    {
+        return !this->isLastState();
+    }
+
+    void iterateToolMode() override
+    {
+        this->iterateToNextConstructionMethod();
+    }
+
     void registerPressedKey(bool pressed, int key) override
     {
-        if (key == SoKeyboardEvent::M && pressed && !this->isLastState()) {
-            this->iterateToNextConstructionMethod();
-        }
-        else if (key == SoKeyboardEvent::ESCAPE && pressed) {
+        if (key == SoKeyboardEvent::ESCAPE && pressed) {
             cancelCurrentAction();
         }
     }

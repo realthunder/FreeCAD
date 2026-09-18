@@ -232,6 +232,37 @@ public:
         return finishCommand(onSketchPos);
     }
 
+    /** This tool's second axis is the knot multiplicity at the last point.
+     *
+     * It is a dialog rather than a mode, but it is what M did here, so it
+     * moves with the rest: leaving it on the raw key would have meant the
+     * accelerator silently swallowing it. A dialog is also why
+     * Sketcher_NextToolMode is not on the browser-safe command list -- a
+     * modal on the GUI thread of a serving process stops serving everyone
+     * (Gui/SceneControl.cpp).
+     */
+    bool canIterateToolMode() const override
+    {
+        return BSplineMults.size() > 1;
+    }
+
+    void iterateToolMode() override
+    {
+        BSplineMults.back() = QInputDialog::getInt(
+            Gui::getMainWindow(),
+            QObject::tr("Set knot multiplicity"),
+            QObject::tr("Set knot multiplicity at the last point provided, between 1 and %1:"
+                        "Note that multiplicity may be ignored under certain circumstances."
+                        "Please refer to documentation for details")
+                .arg(QString::number(SplineDegree)),
+            BSplineMults.back(),
+            1,
+            SplineDegree,
+            1);
+        // FIXME: Pressing Esc here also finishes the B-Spline creation.
+        // The user may only want to exit the dialog.
+    }
+
     void registerPressedKey(bool pressed, int key) override
     {
         // if (SoKeyboardEvent::D == key && pressed) {
@@ -244,26 +275,8 @@ public:
         //     // FIXME: Pressing Esc here also finishes the B-Spline creation.
         //     // The user may only want to exit the dialog.
         // }
-        if (SoKeyboardEvent::M == key && pressed) {
-            if (BSplineMults.size() > 1) {
-                BSplineMults.back() = QInputDialog::getInt(
-                    Gui::getMainWindow(),
-                    QObject::tr("Set knot multiplicity"),
-                    QObject::tr(
-                        "Set knot multiplicity at the last point provided, between 1 and %1:"
-                        "Note that multiplicity may be ignored under certain circumstances."
-                        "Please refer to documentation for details")
-                        .arg(QString::number(SplineDegree)),
-                    BSplineMults.back(),
-                    1,
-                    SplineDegree,
-                    1);
-            }
-            // FIXME: Pressing Esc here also finishes the B-Spline creation.
-            // The user may only want to exit the dialog.
-        }
         // On pressing Backspace delete last knot
-        else if (SoKeyboardEvent::BACKSPACE == key && pressed) {
+        if (SoKeyboardEvent::BACKSPACE == key && pressed) {
             // when mouse is pressed we are in a transitional state so don't mess with it
             if (MOUSE_PRESSED == MousePressMode) {
                 return;
