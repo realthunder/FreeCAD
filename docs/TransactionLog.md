@@ -73,7 +73,69 @@ able to invert them.
   different features and it is worth being deliberate about which one is
   being built.
 
-## 4. Open questions
+## 4. Why this is the multi-client substrate (user, 2026-09-18)
+
+The user's framing, and it reaches further than undo: **this is what would
+eventually unlock simultaneous editing by several clients.**
+
+That is not a new argument bolted on -- it answers the one
+`docs/ThinClient.md` 8.11 already made. The reason the fork chose shared
+sessions (all clients mirroring one desktop session) over per-client
+sessions was explicitly *not* view plumbing:
+
+> the parts that make it hard are not view plumbing but the document:
+> per-user undo over one history, and merging two sessions' writes into
+> one sketch whose geometry is written back as whole arrays.
+
+Both of those are log problems.
+
+- **Per-user undo over one history** is exactly what undo-as-a-forward-
+  transaction gives. Against a stack, "undo my change when someone else
+  has committed after me" has no meaning. Against a log it is an ordinary
+  append, and it streams to every client like any other edit.
+- **Merging two sessions' writes** is the harder half, and it is what
+  decides the unit question in section 5 -- and decides it hard.
+
+**A property-delta log gives undo. It does not give merge.** Two clients
+each writing the whole `Geometry` array is last-writer-wins, whatever the
+store underneath. Merge needs *operations* -- "add a line from A to B",
+"move vertex 3 of Sketch001" -- that can be transformed or rebased against
+concurrent ones. So if concurrent editing is the goal, the unit is
+operations, and that has to be settled before anything is built:
+retrofitting operations onto a property log is a rewrite, not a
+refinement.
+
+Two things make this more reachable here than it sounds.
+
+**FreeCAD already emits an operation log.** `MacroManager::addLine` is
+called for every `Gui::cmdAppObjectArgs` / `doCommand`, and its `LineType`
+already separates `App` ("effects only the document and Application") from
+`Gui`. Every GUI-initiated document change is already recorded, at
+operation granularity, in a form complete enough to rebuild the document.
+It is not a sound state log -- it refers to objects by name, depends on
+application state, is not invertible, and has no ordering guarantee across
+sessions -- but it is strong evidence that the operation level is
+reachable, and it is the obvious prototyping shortcut.
+
+**This fork already has the identity machinery that operation transform
+needs.** An operation has to name what it acts on, and that name has to
+survive someone else's concurrent edit. That is the topological naming
+problem, and it is the thing this fork solved first: the element map,
+`StringHasher`, and -- inside a sketch specifically --
+`SketchGeometryExtension::getId()`, a persistent geometry id independent
+of the array index. Most kernels cannot say "this edge" across an edit at
+all; here it is already the normal way of speaking.
+
+**One trap the git analogy sets.** Live co-editing and branch/merge are
+two different machines. Git *conflicts*; it does not transform. A store
+modelled on git is a reasonable idea; a concurrency model modelled on
+git's merge probably is not, because the interesting case is two people in
+the same sketch at the same time, which is an ordering problem rather than
+a three-way-merge problem. What Onshape actually does for each -- live
+co-editing versus its branching workflow -- is the Onshape question in section 5, and the
+answer likely differs between them.
+
+## 5. Open questions
 
 These are the design, and none of them is settled.
 
@@ -122,7 +184,7 @@ These are the design, and none of them is settled.
    common case (one property, one object) or it will be felt on every
    edit.
 
-## 5. What this is not
+## 6. What this is not
 
 Not a fix for the case that prompted the discussion: a modeless task
 dialog holding a transaction while the user edits a property elsewhere,
@@ -139,7 +201,7 @@ Also not a reason to take upstream's `f4665aa7b5`. That was evaluated on
 (`docs/SketcherPort.md` section 7): it does not fix the splitting, it
 removes a guard the fork currently has, and it costs 245 files.
 
-## 6. Related
+## 7. Related
 
 - `docs/ThinClient.md` 8.11, 8.12 -- the shared-session model, one undo
   stack per document, and the process-global chrome inventory.
