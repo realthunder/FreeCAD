@@ -908,6 +908,14 @@ void ViewProviderSketch::setAngleSnapping(bool enable, Base::Vector2d referenceP
     snapManager->setAngleSnapping(enable, referencePoint);
 }
 
+void ViewProviderSketch::snapPoint(double& x, double& y) const
+{
+    assert(snapManager);
+    const Base::Vector2d pos = snapManager->snap(Base::Vector2d(x, y));
+    x = pos.x;
+    y = pos.y;
+}
+
 void ViewProviderSketch::getProjectingLine(const SbVec2s& pnt, const Gui::ViewerContext *viewer, SbLine& line) const
 {
     SoCamera* pCam = viewer->getSoRenderManager()->getCamera();
@@ -1012,7 +1020,7 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
 
     try {
         getCoordsOnSketchPlane(pos, normal, x, y);
-        snapManager->snap(x, y);
+        snapPoint(x, y);
         prvPickedPoint[0] = x;
         prvPickedPoint[1] = y;
     }
@@ -1416,7 +1424,7 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
     double x,y;
     try {
         getCoordsOnSketchPlane(line.getPosition(), line.getDirection(), x, y);
-        snapManager->snap(x, y);
+        snapPoint(x, y);
     }
     catch (const Base::ZeroDivisionError&) {
         return false;
@@ -1602,7 +1610,7 @@ void ViewProviderSketch::initDragging(int geoId, Sketcher::PointPos pos)
         relative = true;
         xInit = prvPickedPoint[0];
         yInit = prvPickedPoint[1];
-        snapManager->snap(xInit, yInit);
+        snapPoint(xInit, yInit);
     };
 
     if (edit->Dragged.size() == 1 && pos == Sketcher::PointPos::none) {

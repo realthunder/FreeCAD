@@ -51,6 +51,24 @@ private:
     friend class SnapManager;
 };
 
+/** Which kinds of snapping a caller will accept.
+ *
+ * A tool that is placing a point wants all of them; one that is dragging
+ * a dimension label wants none, and one that is following a curve wants
+ * the grid but not the angle. The mask is the caller's, so the manager
+ * does not have to guess from the tool's state.
+ */
+enum class SnapType
+{
+    None = 0x0,
+    Angle = 0x1,
+    Point = 0x2,
+    Edge = 0x4,
+    Grid = 0x8,
+
+    All = Angle | Point | Edge | Grid
+};
+
 /* This class is used to manage the overriding of mouse pointer coordinates in Sketcher
  *  (in Edit-Mode) depending on the situation. Those situations are in priority order :
  *  1 - Snap at angle: For tools like Slot, Arc, Line, Ellipse, this enables to constrain the angle
@@ -99,10 +117,10 @@ public:
     explicit SnapManager(ViewProviderSketch& vp);
     ~SnapManager();
 
-    bool snap(double& x, double& y);
-    bool snapAtAngle(double& x, double& y);
-    bool snapToObject(double& x, double& y);
-    bool snapToGrid(double& x, double& y);
+    Base::Vector2d snap(Base::Vector2d inputPos, SnapType mask = SnapType::All);
+    bool snapAtAngle(Base::Vector2d inputPos, Base::Vector2d& snapPos);
+    bool snapToObject(Base::Vector2d inputPos, Base::Vector2d& snapPos, SnapType mask);
+    bool snapToGrid(Base::Vector2d inputPos, Base::Vector2d& snapPos);
 
     bool snapToLineMiddle(Base::Vector3d& pointToOverride, const Part::GeomLineSegment* line);
     bool snapToArcMiddle(Base::Vector3d& pointToOverride, const Part::GeomArcOfCircle* arc);
