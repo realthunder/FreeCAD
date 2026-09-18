@@ -1212,6 +1212,98 @@ toggle is run on the desktop side: `Sketcher_ToggleConstruction` is not
 on the browser-safe command allowlist, and widening that list is gated on
 the modal-dialog question, not on this.
 
+### The handler resync, first six files
+
+The method: take `git show upstream/main:<path>` whole, then put back a
+**named** set of fork invariants. On the six files that do not touch the
+controller state machine it works as advertised --
+
+| file | was | now |
+|---|---|---|
+| Symmetry | +43 -78 | *byte-identical to upstream* |
+| Splitting | +34 -67 | +3 -6 |
+| Extend | +68 -97 | +3 -6 |
+| Fillet | +59 -110 | +3 -6 |
+| Trimming | +88 -190 | +3 -6 |
+| CarbonCopy | +72 -82 | +38 -6 |
+
+-- 364+/624- of divergence down to 50+/30-, and what is left is legible
+instead of being spread through every function as reformatting.
+
+The invariants, for the next twenty:
+
+1. `<Gui/Selection/X.h>` -> `<Gui/X.h>`; this fork has no `Gui/Selection/`
+   directory.
+2. the six selection gates derive from `SketcherSelectionFilterGate`, not
+   `Gui::SelectionFilterGate`. It holds `object` for them and overrides
+   `restoreCursor()` to put the tool's cursor back.
+3. whatever thin-client work the tool carries -- see below.
+
+Everything else upstream's text needs is already here: `Gui::ToolHandler`
+and `getToolHints()` (`cf85a2ce91`), the transaction wrappers and
+`seekAndRenderAutoConstraint` (`57dc241e3c`), `isConstructionMode`
+(`5ffec208cd`), `mouseMove(SnapManager::SnapHandle)` (`de12a44256`),
+`Base::Tools::isNullOrEmpty`, `isDerivedFrom<T>()`, `getObject<T>()`,
+`Gui::lookupHints`, `ToolHandler::updateHint`, and C++20 for `using enum`
+and `std::numbers`. One line had to be added to `DrawSketchHandler.h`:
+`#include <Gui/InputHint.h>`, which upstream's base header has and this
+fork's did not -- `Gui/ToolHandler.h` only forward-declares the type, so a
+handler that builds a hint list needs the definition.
+
+**The trap, and what caught it.** Invariant 3 is not optional and does not
+announce itself: a wholesale take compiles perfectly with the fork's
+thin-client work deleted. `DrawSketchHandlerCarbonCopy.h` lost six things
+that way -- `sketchgui->sessionSelection()` in three places,
+`setSessionSelectionEnabled(true)` where upstream reaches for the active
+window's viewer, the `gateOn` member the destructor needs, and
+`Gui::ViewerContext::currentKeyboardModifiers()` where upstream asks
+`QApplication` (a replayed event carries its own modifiers,
+docs/ThinClient.md 8.11) -- and the only signal was
+`GuiServeExternalPick_tests_run` failing its carbon-copy half. So before
+overwriting a file, and again before committing it:
+
+    git show HEAD:<path> | grep -nE "sessionSelection|\
+    setSessionSelectionEnabled|ViewerContext|getViewer|allowExternal|\
+    inSequence|toggle\(|gateOn|ThinClient"
+    git diff -w HEAD:<path> <path> | grep "^-"
+
+Of these six only CarbonCopy hit, so the check is cheap.
+
+Line endings are the other mechanical trap: `.gitattributes` here is
+`* -text`, "whatever a file already has stays put", and upstream's blobs
+are LF while most of these files are CRLF. Convert on write, or the commit
+reads as a whole-file rewrite and the non-ASCII hook sees every line as
+added.
+
+### The controller framework is a second keystone (user ruling, 2026-09-18)
+
+Section 7's "A + B + the SnapHandle signature unblocks the other ~30" was
+incomplete. **Nineteen** of the twenty-seven handler files also call a
+controller API this fork does not have: `hasFinishedEditing`,
+`setNextState`, `computeNextDrawSketchHandlerMode`. It is not a rename --
+upstream splits "a value is set" from "the user finished entering it",
+which is what drives Enter-cycling between on-view parameters and
+Ctrl+Enter to accept them all.
+
+That subsystem is where this fork's view-less on-view parameters live
+(docs/ThinClient.md 8.7, guarded by `GuiServeOnViewParams_tests_run`), so
+taking it is not free. Asked, the user ruled: **take the controller
+framework first**, as its own unit --
+`DrawSketchController.h` (+115 -211), `DrawSketchDefaultHandler.h`
+(+363 -287), `DrawSketchDefaultWidgetController.h` (+75 -70),
+`DrawSketchControllableHandler.h` (+20 -52) and
+`SketcherToolDefaultWidget.{h,cpp}` (+139 -132) -- rather than
+hand-translating upstream's spelling back in nineteen files and paying it
+again at the next resync.
+
+Still outside both groups: `DrawSketchHandlerExternal.h`, which needs
+`App/Datums.h` and `Mod/Part/App/Datums.h` (upstream moved the datum
+features; neither header exists here) on top of being the most
+thin-client-local file in the family, and `DrawSketchHandlerLine.h`,
+`LineSet.h` and `Point.h`, which want group C's directional hints.
+`DrawSketchHandlerBSplineByInterpolation.h` is fork-only and has no
+upstream blob at all.
+
 ### Rows closed without a pick
 
 - `19a082b63c` "Fix constraint selection in groups" -- **n/a**. Its subject
