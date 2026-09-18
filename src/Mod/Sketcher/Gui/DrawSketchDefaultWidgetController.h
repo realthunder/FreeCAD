@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 Abdullah Tahiri <abdullah.tahiri.yo@gmail.com>     *
  *                                                                         *
@@ -20,8 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef SKETCHERGUI_DrawSketchDefaultWidgetController_H
-#define SKETCHERGUI_DrawSketchDefaultWidgetController_H
+#pragma once
 
 #include <Base/Tools.h>
 #include <Gui/EditableDatumLabel.h>
@@ -71,31 +72,26 @@ namespace sp = std::placeholders;
  *
  * This class is not intended to control based on a custom widget.
  */
-template<typename HandlerT,           // The name of the actual handler of the tool
-         typename SelectModeT,        // The state machine defining the working of the tool
-         int PAutoConstraintSize,     // The initial size of the AutoConstraint vector
-         typename OnViewParametersT,  // The number of parameter spinboxes in the 3D view
-         typename WidgetParametersT,  // The number of parameter spinboxes in the default widget
-         typename WidgetCheckboxesT,  // The number of checkboxes in the default widget
-         typename WidgetComboboxesT,  // The number of comboboxes in the default widget
-         typename WidgetLineEditsT,   // The number of line edits in the default widget
-         typename ConstructionMethodT = ConstructionMethods::DefaultConstructionMethod,
-         bool PFirstComboboxIsConstructionMethod =
-             false>  // The handler template or class having this as inner class
-class DrawSketchDefaultWidgetController: public DrawSketchController<HandlerT,
-                                                                     SelectModeT,
-                                                                     PAutoConstraintSize,
-                                                                     OnViewParametersT,
-                                                                     ConstructionMethodT>
+template<
+    typename HandlerT,           // The name of the actual handler of the tool
+    typename SelectModeT,        // The state machine defining the working of the tool
+    int PAutoConstraintSize,     // The initial size of the AutoConstraint vector
+    typename OnViewParametersT,  // The number of parameter spinboxes in the 3D view
+    typename WidgetParametersT,  // The number of parameter spinboxes in the default widget
+    typename WidgetCheckboxesT,  // The number of checkboxes in the default widget
+    typename WidgetComboboxesT,  // The number of comboboxes in the default widget
+    typename WidgetLineEditsT,   // The number of line edits in the default widget
+    typename ConstructionMethodT = ConstructionMethods::DefaultConstructionMethod,
+    bool PFirstComboboxIsConstructionMethod = false>  // The handler template or class having this
+                                                      // as inner class
+class DrawSketchDefaultWidgetController
+    : public DrawSketchController<HandlerT, SelectModeT, PAutoConstraintSize, OnViewParametersT, ConstructionMethodT>
 {
 public:
     /** @name Meta-programming definitions and members */
     //@{
-    using ControllerBase = DrawSketchController<HandlerT,
-                                                SelectModeT,
-                                                PAutoConstraintSize,
-                                                OnViewParametersT,
-                                                ConstructionMethodT>;
+    using ControllerBase
+        = DrawSketchController<HandlerT, SelectModeT, PAutoConstraintSize, OnViewParametersT, ConstructionMethodT>;
     //@}
 
 private:
@@ -106,8 +102,6 @@ private:
 
     SketcherToolDefaultWidget* toolWidget;
 
-    // All four are blocked while the widget is rebuilt, so they are
-    // connected blockable -- see Base::ConnectionBlocker.
     using Connection = fastsignals::advanced_connection;
 
     Connection connectionParameterTabOrEnterPressed;
@@ -188,26 +182,29 @@ public:
     /** boost slot triggering when a combobox has changed in the widget
      * It is intended to remote control the DrawSketchDefaultWidgetHandler
      */
-    /** slot triggering when a line edit has changed in the widget
+    void comboboxSelectionChanged(int comboboxindex, int value)
+    {
+        adaptDrawingToComboboxChange(comboboxindex, value);  // specialisation interface
+
+        ControllerBase::finishControlsChanged();
+    }
+    //@}
+
+    /** boost slot triggering when a line edit has changed in the widget
      * It is intended to remote control the DrawSketchDefaultWidgetHandler
      */
     void lineEditTextChanged(int lineeditindex, const QString& value)
     {
         adaptDrawingToLineEditTextChange(lineeditindex, value);  // specialisation interface
 
-        // Typing into the line edit must not hand the focus to an on-view parameter.
+        // Temporarily disable auto-passing focus to OVP.
+        // This prevents the focus from being stolen from the LineEdit when the text changes.
         ControllerBase::focusAutoPassing = false;
 
         ControllerBase::finishControlsChanged();
 
+        // Restore the default behavior.
         ControllerBase::focusAutoPassing = true;
-    }
-
-    void comboboxSelectionChanged(int comboboxindex, int value)
-    {
-        adaptDrawingToComboboxChange(comboboxindex, value);  // specialisation interface
-
-        ControllerBase::finishControlsChanged();
     }
     //@}
 
@@ -232,25 +229,30 @@ public:
     }
 
     /// Change DSH to reflect a comboBox changed in the widget
-    /// Change DSH to reflect a line edit changed in the widget
-    void adaptDrawingToLineEditTextChange([[maybe_unused]] int lineeditindex,
-                                          [[maybe_unused]] const QString& value)
-    {}
-
     void adaptDrawingToComboboxChange(int comboboxindex, [[maybe_unused]] int value)
     {
-        Q_UNUSED(comboboxindex);
-
         if constexpr (PFirstComboboxIsConstructionMethod == true) {
 
-            if (comboboxindex == WCombobox::FirstCombo && handler->ConstructionMethodsCount() > 1) {
+            if (handler && comboboxindex == WCombobox::FirstCombo
+                && handler->ConstructionMethodsCount() > 1) {
                 handler->setConstructionMethod(static_cast<ConstructionMethodT>(value));
             }
         }
     }
 
+    /// Change DSH to reflect a line edit changed in the widget
+    void adaptDrawingToLineEditTextChange(int lineeditindex, const QString& value)
+    {
+        Q_UNUSED(lineeditindex);
+        Q_UNUSED(value);
+    }
+
     /// function to create constraints based on widget information.
     void addConstraints() override
+    {}
+
+    /// function to create constraints based on control information for infinite DSH (polyline).
+    void addStepConstraints() override
     {}
 
     /// function to configure the default widget.
@@ -258,7 +260,7 @@ public:
     {}
 
     /** function that is called by the handler with a Vector2d position to update the widget*/
-    void doChangeDrawSketchHandlerMode() override
+    void computeNextDrawSketchHandlerMode() override
     {}
 
     /** function that is called by the handler with a Vector2d position to update the widget */
@@ -348,8 +350,10 @@ protected:
                 toolWidget->setParameterFocus(widgetIndex);
                 ControllerBase::parameterWithFocus = parameterindex;
             }
+            // Check if the index corresponds to a LineEdit
             else if (widgetIndex < static_cast<unsigned int>(nParameter + nLineEdit)) {
-                toolWidget->setLineEditFocus(widgetIndex - nParameter);
+                unsigned int lineEditIndex = widgetIndex - nParameter;
+                toolWidget->setLineEditFocus(lineEditIndex);
                 ControllerBase::parameterWithFocus = parameterindex;
             }
         }
@@ -360,7 +364,7 @@ protected:
     {
         unsigned int index = ControllerBase::parameterWithFocus + 1;
 
-        // The focus cycles through the on-view parameters, the spin boxes and the line edits.
+        // The total number of focusable items now includes LineEdits.
         if (index >= ControllerBase::onViewParameters.size() + nParameter + nLineEdit) {
             index = 0;
         }
@@ -374,17 +378,21 @@ protected:
                 }
                 idx++;
             }
+            // Check SpinBoxes
             if (idx < ControllerBase::onViewParameters.size() + nParameter) {
                 if (nParameter > 0) {
                     setFocusToParameter(idx);
                     return true;
                 }
-                // no spin boxes: carry on into the line edits
+                // If no spinboxes, update index to check line edits
                 idx = ControllerBase::onViewParameters.size() + nParameter;
             }
+            // Check LineEdits
             if (idx < ControllerBase::onViewParameters.size() + nParameter + nLineEdit) {
-                setFocusToParameter(idx);
-                return true;
+                if (nLineEdit > 0) {
+                    setFocusToParameter(idx);
+                    return true;
+                }
             }
             return false;
         };
@@ -407,40 +415,32 @@ private:
         toolWidget = static_cast<SketcherToolDefaultWidget*>(widget);  // NOLINT
 
         connectionParameterTabOrEnterPressed = toolWidget->registerParameterTabOrEnterPressed(
-            std::bind(&DrawSketchDefaultWidgetController::parameterTabOrEnterPressed,
-                      this,
-                      sp::_1));
+            std::bind(&DrawSketchDefaultWidgetController::parameterTabOrEnterPressed, this, sp::_1)
+        );
 
         connectionParameterValueChanged = toolWidget->registerParameterValueChanged(
-            std::bind(&DrawSketchDefaultWidgetController::parameterValueChanged,
-                      this,
-                      sp::_1,
-                      sp::_2));
+            std::bind(&DrawSketchDefaultWidgetController::parameterValueChanged, this, sp::_1, sp::_2)
+        );
 
         connectionCheckboxCheckedChanged = toolWidget->registerCheckboxCheckedChanged(
-            std::bind(&DrawSketchDefaultWidgetController::checkboxCheckedChanged,
-                      this,
-                      sp::_1,
-                      sp::_2));
+            std::bind(&DrawSketchDefaultWidgetController::checkboxCheckedChanged, this, sp::_1, sp::_2)
+        );
 
         connectionComboboxSelectionChanged = toolWidget->registerComboboxSelectionChanged(
-            std::bind(&DrawSketchDefaultWidgetController::comboboxSelectionChanged,
-                      this,
-                      sp::_1,
-                      sp::_2));
+            std::bind(&DrawSketchDefaultWidgetController::comboboxSelectionChanged, this, sp::_1, sp::_2)
+        );
 
         connectionLineEditTextChanged = toolWidget->registerLineEditTextChanged(
-            std::bind(&DrawSketchDefaultWidgetController::lineEditTextChanged,
-                      this,
-                      sp::_1,
-                      sp::_2));
+            std::bind(&DrawSketchDefaultWidgetController::lineEditTextChanged, this, sp::_1, sp::_2)
+        );
     }
 
     /// Resets the widget
     void resetDefaultWidget()
     {
         fastsignals::shared_connection_block parameter_focus_block(
-            connectionParameterTabOrEnterPressed);
+            connectionParameterTabOrEnterPressed
+        );
         fastsignals::shared_connection_block parameter_block(connectionParameterValueChanged);
         fastsignals::shared_connection_block checkbox_block(connectionCheckboxCheckedChanged);
         fastsignals::shared_connection_block combobox_block(connectionComboboxSelectionChanged);
@@ -466,8 +466,7 @@ private:
 
             if (currentindex != methodint) {
                 // avoid triggering of method change
-                fastsignals::shared_connection_block combobox_block(
-                    connectionComboboxSelectionChanged);
+                fastsignals::shared_connection_block combobox_block(connectionComboboxSelectionChanged);
                 toolWidget->setComboboxIndex(WCombobox::FirstCombo, methodint);
             }
         }
@@ -516,8 +515,7 @@ private:
             auto actualconstructionmethod = static_cast<int>(handler->constructionMethod());
 
             if (constructionmethod != actualconstructionmethod) {
-                fastsignals::shared_connection_block combobox_block(
-                    connectionComboboxSelectionChanged);
+                fastsignals::shared_connection_block combobox_block(connectionComboboxSelectionChanged);
                 toolWidget->setComboboxIndex(WCombobox::FirstCombo, actualconstructionmethod);
             }
         }
@@ -527,6 +525,3 @@ private:
 
 
 }  // namespace SketcherGui
-
-
-#endif  // SKETCHERGUI_DrawSketchDefaultWidgetController_H

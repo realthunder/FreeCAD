@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2022 Abdullah Tahiri <abdullah.tahiri.yo@gmail.com>     *
  *                                                                         *
@@ -21,8 +23,7 @@
  ***************************************************************************/
 
 
-#ifndef SKETCHERGUI_DrawSketchHandlerEllipse_H
-#define SKETCHERGUI_DrawSketchHandlerEllipse_H
+#pragma once
 
 #include <cmath>
 
@@ -49,17 +50,17 @@ namespace SketcherGui
 /* Ellipse ==============================================================================*/
 class DrawSketchHandlerEllipse;
 
-using DSHEllipseController =
-    DrawSketchDefaultWidgetController<DrawSketchHandlerEllipse,
-                                      StateMachines::ThreeSeekEnd,
-                                      /*PAutoConstraintSize =*/3,
-                                      /*OnViewParametersT =*/OnViewParameters<5, 6>,  // NOLINT
-                                      /*WidgetParametersT =*/WidgetParameters<0, 0>,  // NOLINT
-                                      /*WidgetCheckboxesT =*/WidgetCheckboxes<0, 0>,  // NOLINT
-                                      /*WidgetComboboxesT =*/WidgetComboboxes<1, 1>,  // NOLINT
-                                      /*WidgetLineEditsT =*/WidgetLineEdits<0, 0>,
-                                      ConstructionMethods::CircleEllipseConstructionMethod,
-                                      /*bool PFirstComboboxIsConstructionMethod =*/true>;
+using DSHEllipseController = DrawSketchDefaultWidgetController<
+    DrawSketchHandlerEllipse,
+    StateMachines::ThreeSeekEnd,
+    /*PAutoConstraintSize =*/3,
+    /*OnViewParametersT =*/OnViewParameters<5, 6>,  // NOLINT
+    /*WidgetParametersT =*/WidgetParameters<0, 0>,  // NOLINT
+    /*WidgetCheckboxesT =*/WidgetCheckboxes<0, 0>,  // NOLINT
+    /*WidgetComboboxesT =*/WidgetComboboxes<1, 1>,  // NOLINT
+    /*WidgetLineEditsT =*/WidgetLineEdits<0, 0>,
+    ConstructionMethods::CircleEllipseConstructionMethod,
+    /*bool PFirstComboboxIsConstructionMethod =*/true>;
 
 using DSHEllipseControllerBase = DSHEllipseController::ControllerBase;
 
@@ -67,6 +68,8 @@ using DrawSketchHandlerEllipseBase = DrawSketchControllableHandler<DSHEllipseCon
 
 class DrawSketchHandlerEllipse: public DrawSketchHandlerEllipseBase
 {
+    Q_DECLARE_TR_FUNCTIONS(SketcherGui::DrawSketchHandlerEllipse)
+
     friend DSHEllipseController;
     friend DSHEllipseControllerBase;
 
@@ -82,6 +85,58 @@ public:
     ~DrawSketchHandlerEllipse() override = default;
 
 private:
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        using State = std::pair<ConstructionMethod, SelectMode>;
+        using enum Gui::InputHint::UserInput;
+
+        const Gui::InputHint switchModeHint {tr("%1 switch mode"), {KeyM}};
+
+        return Gui::lookupHints<State>(
+            {constructionMethod(), state()},
+            {
+                // Center method
+                {.state = {ConstructionMethod::Center, SelectMode::SeekFirst},
+                 .hints =
+                     {
+                         {tr("%1 pick ellipse center"), {MouseLeft}},
+                         switchModeHint,
+                     }},
+                {.state = {ConstructionMethod::Center, SelectMode::SeekSecond},
+                 .hints =
+                     {
+                         {tr("%1 pick axis endpoint"), {MouseLeft}},
+                         switchModeHint,
+                     }},
+                {.state = {ConstructionMethod::Center, SelectMode::SeekThird},
+                 .hints =
+                     {
+                         {tr("%1 pick minor axis endpoint"), {MouseLeft}},
+                         switchModeHint,
+                     }},
+
+                // ThreeRim method
+                {.state = {ConstructionMethod::ThreeRim, SelectMode::SeekFirst},
+                 .hints =
+                     {
+                         {tr("%1 pick first rim point"), {MouseLeft}},
+                         switchModeHint,
+                     }},
+                {.state = {ConstructionMethod::ThreeRim, SelectMode::SeekSecond},
+                 .hints =
+                     {
+                         {tr("%1 pick second rim point"), {MouseLeft}},
+                         switchModeHint,
+                     }},
+                {.state = {ConstructionMethod::ThreeRim, SelectMode::SeekThird},
+                 .hints =
+                     {
+                         {tr("%1 pick third rim point"), {MouseLeft}},
+                         switchModeHint,
+                     }},
+            });
+    }
+
     void updateDataAndDrawToPosition(Base::Vector2d onSketchPos) override
     {
         switch (state()) {
@@ -91,23 +146,17 @@ private:
                 if (constructionMethod() == ConstructionMethod::Center) {
                     centerPoint = onSketchPos;
 
-                    if (seekAutoConstraint(sugConstraints[0],
-                                           onSketchPos,
-                                           Base::Vector2d(0.f, 0.f))) {
-                        renderSuggestConstraintsCursor(sugConstraints[0]);
-                        return;
-                    }
+                    seekAndRenderAutoConstraint(sugConstraints[0], onSketchPos, Base::Vector2d(0.f, 0.f));
                 }
                 else {
                     apoapsis = onSketchPos;
 
-                    if (seekAutoConstraint(sugConstraints[0],
-                                           onSketchPos,
-                                           Base::Vector2d(0.f, 0.f),
-                                           AutoConstraint::CURVE)) {
-                        renderSuggestConstraintsCursor(sugConstraints[0]);
-                        return;
-                    }
+                    seekAndRenderAutoConstraint(
+                        sugConstraints[0],
+                        onSketchPos,
+                        Base::Vector2d(0.f, 0.f),
+                        AutoConstraint::CURVE
+                    );
                 }
             } break;
             case SelectMode::SeekSecond: {
@@ -124,13 +173,12 @@ private:
                     toolWidgetManager.drawPositionAtCursor(onSketchPos);
                 }
 
-                if (seekAutoConstraint(sugConstraints[1],
-                                       onSketchPos,
-                                       Base::Vector2d(0.f, 0.f),
-                                       AutoConstraint::CURVE)) {
-                    renderSuggestConstraintsCursor(sugConstraints[1]);
-                    return;
-                }
+                seekAndRenderAutoConstraint(
+                    sugConstraints[1],
+                    onSketchPos,
+                    Base::Vector2d(0.f, 0.f),
+                    AutoConstraint::CURVE
+                );
             } break;
             case SelectMode::SeekThird: {
                 calculateThroughPointMinorAxisParameters(onSketchPos);
@@ -138,21 +186,18 @@ private:
                 CreateAndDrawShapeGeometry();
 
                 if (constructionMethod() == ConstructionMethod::Center) {
-                    toolWidgetManager.drawWidthHeightAtCursor(onSketchPos,
-                                                              firstRadius,
-                                                              secondRadius);
+                    toolWidgetManager.drawWidthHeightAtCursor(onSketchPos, firstRadius, secondRadius);
                 }
                 else {
                     toolWidgetManager.drawPositionAtCursor(onSketchPos);
                 }
 
-                if (seekAutoConstraint(sugConstraints[2],
-                                       onSketchPos,
-                                       Base::Vector2d(0.f, 0.f),
-                                       AutoConstraint::CURVE)) {
-                    renderSuggestConstraintsCursor(sugConstraints[2]);
-                    return;
-                }
+                seekAndRenderAutoConstraint(
+                    sugConstraints[2],
+                    onSketchPos,
+                    Base::Vector2d(0.f, 0.f),
+                    AutoConstraint::CURVE
+                );
             } break;
             default:
                 break;
@@ -162,7 +207,7 @@ private:
     void executeCommands() override
     {
         try {
-            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Add sketch ellipse"));
+            openCommand(QT_TRANSLATE_NOOP("Command", "Add sketch ellipse"));
 
             ellipseGeoId = getHighestCurveIndex() + 1;
 
@@ -172,26 +217,28 @@ private:
 
             // in the exceptional event that this may lead to a circle, do not
             // exposeInternalGeometry
-            if (!ShapeGeometry.empty()
-                && ShapeGeometry[0]->getTypeId() == Part::GeomEllipse::getClassTypeId()) {
-                Gui::cmdAppObjectArgs(sketchgui->getObject(),
-                                      "exposeInternalGeometry(%d)",
-                                      ellipseGeoId);
+            if (!ShapeGeometry.empty() && ShapeGeometry[0]->is<Part::GeomEllipse>()) {
+                Gui::cmdAppObjectArgs(sketchgui->getObject(), "exposeInternalGeometry(%d)", ellipseGeoId);
             }
 
-            Gui::Command::commitCommand();
+            commitCommand();
         }
         catch (const Base::Exception&) {
-            Gui::NotifyError(sketchgui,
-                             QT_TRANSLATE_NOOP("Notifications", "Error"),
-                             QT_TRANSLATE_NOOP("Notifications", "Failed to add ellipse"));
+            Gui::NotifyError(
+                sketchgui,
+                QT_TRANSLATE_NOOP("Notifications", "Error"),
+                QT_TRANSLATE_NOOP("Notifications", "Failed to add ellipse")
+            );
 
-            Gui::Command::abortCommand();
-            THROWM(Base::RuntimeError,
-                   QT_TRANSLATE_NOOP(
-                       "Notifications",
-                       "Tool execution aborted") "\n")  // This prevents constraints from being
-                                                        // applied on non existing geometry
+            abortCommand();
+            THROWM(
+                Base::RuntimeError,
+                QT_TRANSLATE_NOOP(
+                    "Notifications",
+                    "Tool execution aborted"
+                ) "\n"
+            )  // This prevents constraints from being
+               // applied on non existing geometry
         }
     }
 
@@ -207,15 +254,18 @@ private:
             generateAutoConstraintsOnElement(
                 ac1,
                 ellipseGeoId,
-                Sketcher::PointPos::mid);  // add auto constraints for the center point
+                Sketcher::PointPos::mid
+            );  // add auto constraints for the center point
             generateAutoConstraintsOnElement(
                 ac2,
                 ellipseGeoId,
-                Sketcher::PointPos::none);  // add auto constraints for the edge
+                Sketcher::PointPos::none
+            );  // add auto constraints for the edge
             generateAutoConstraintsOnElement(
                 ac3,
                 ellipseGeoId,
-                Sketcher::PointPos::none);  // add auto constraints for the edge
+                Sketcher::PointPos::none
+            );  // add auto constraints for the edge
         }
         else {
 
@@ -226,15 +276,18 @@ private:
             generateAutoConstraintsOnElement(
                 ac1,
                 ellipseGeoId,
-                Sketcher::PointPos::none);  // add auto constraints for the first point
+                Sketcher::PointPos::none
+            );  // add auto constraints for the first point
             generateAutoConstraintsOnElement(
                 ac2,
                 ellipseGeoId,
-                Sketcher::PointPos::none);  // add auto constraints for the second point
+                Sketcher::PointPos::none
+            );  // add auto constraints for the second point
             generateAutoConstraintsOnElement(
                 ac3,
                 ellipseGeoId,
-                Sketcher::PointPos::none);  // add auto constraints for the edge
+                Sketcher::PointPos::none
+            );  // add auto constraints for the edge
         }
         // Ensure temporary autoconstraints do not generate a redundancy and that the geometry
         // parameters are accurate This is particularly important for adding widget mandated
@@ -284,7 +337,7 @@ private:
 
     QString getToolWidgetText() const override
     {
-        return QString(QObject::tr("Ellipse parameters"));
+        return QString(tr("Ellipse Parameters"));
     }
 
     bool canGoToNextMode() override
@@ -328,17 +381,28 @@ private:
         // we calculate the ellipse that will pass via the cursor as per de la Hire
 
         Base::Vector2d projx;
-        projx.ProjectToLine(onSketchPos - centerPoint,
-                            firstAxis);  // projection onto the major axis
+        projx.ProjectToLine(
+            onSketchPos - centerPoint,
+            firstAxis
+        );  // projection onto the major axis
 
         auto projy = onSketchPos - centerPoint - projx;
 
         auto lprojx = projx.Length();  // Px = a cos t
         auto lprojy = projy.Length();  // Py = b sin t
 
-        double t = std::acos(lprojx / firstRadius);
-
-        secondRadius = lprojy / std::sin(t);  // b = Py / sin t
+        if (lprojx > firstRadius) {
+            secondRadius = lprojy;
+        }
+        else {
+            double t = std::acos(lprojx / firstRadius);
+            if (t == 0.0) {
+                secondRadius = 0.0;
+            }
+            else {
+                secondRadius = lprojy / std::sin(t);  // b = Py / sin t
+            }
+        }
 
         secondAxis = projy.Normalize() * secondRadius;
     }
@@ -379,11 +443,13 @@ private:
             addCircleToShapeGeometry(toVector3d(centerPoint), firstRadius, isConstructionMode());
         }
         else {
-            addEllipseToShapeGeometry(toVector3d(centerPoint),
-                                      toVector3d(majorAxis),
-                                      majorRadius,
-                                      minorRadius,
-                                      isConstructionMode());
+            addEllipseToShapeGeometry(
+                toVector3d(centerPoint),
+                toVector3d(majorAxis),
+                majorRadius,
+                minorRadius,
+                isConstructionMode()
+            );
         }
     }
 
@@ -428,28 +494,35 @@ void DSHEllipseController::configureToolWidget()
 {
 
     if (!init) {  // Code to be executed only upon initialisation
-        QStringList names = {QStringLiteral("Center"), QStringLiteral("Axis endpoints and radius")};
+        QStringList names = {
+            QApplication::translate("Sketcher_CreateEllipse", "Center"),
+            QApplication::translate("Sketcher_CreateEllipse", "Axis endpoints")
+        };
         toolWidget->setComboboxElements(WCombobox::FirstCombo, names);
 
         if (handler->isConstructionMode()) {
             toolWidget->setComboboxItemIcon(
                 WCombobox::FirstCombo,
                 0,
-                Gui::BitmapFactory().iconFromTheme("Sketcher_CreateEllipseByCenter_Constr"));
+                Gui::BitmapFactory().iconFromTheme("Sketcher_CreateEllipseByCenter_Constr")
+            );
             toolWidget->setComboboxItemIcon(
                 WCombobox::FirstCombo,
                 1,
-                Gui::BitmapFactory().iconFromTheme("Sketcher_CreateEllipse_3points_Constr"));
+                Gui::BitmapFactory().iconFromTheme("Sketcher_CreateEllipse_3points_Constr")
+            );
         }
         else {
             toolWidget->setComboboxItemIcon(
                 WCombobox::FirstCombo,
                 0,
-                Gui::BitmapFactory().iconFromTheme("Sketcher_CreateEllipseByCenter"));
+                Gui::BitmapFactory().iconFromTheme("Sketcher_CreateEllipseByCenter")
+            );
             toolWidget->setComboboxItemIcon(
                 WCombobox::FirstCombo,
                 1,
-                Gui::BitmapFactory().iconFromTheme("Sketcher_CreateEllipse_3points"));
+                Gui::BitmapFactory().iconFromTheme("Sketcher_CreateEllipse_3points")
+            );
         }
     }
 
@@ -466,13 +539,16 @@ void DSHEllipseController::configureToolWidget()
     else {
         onViewParameters[OnViewParameter::Third]->setLabelType(
             Gui::SoDatumLabel::RADIUS,
-            Gui::EditableDatumLabel::Function::Dimensioning);
+            Gui::EditableDatumLabel::Function::Dimensioning
+        );
         onViewParameters[OnViewParameter::Fourth]->setLabelType(
             Gui::SoDatumLabel::ANGLE,
-            Gui::EditableDatumLabel::Function::Dimensioning);
+            Gui::EditableDatumLabel::Function::Dimensioning
+        );
         onViewParameters[OnViewParameter::Fifth]->setLabelType(
             Gui::SoDatumLabel::RADIUS,
-            Gui::EditableDatumLabel::Function::Dimensioning);
+            Gui::EditableDatumLabel::Function::Dimensioning
+        );
     }
 }
 
@@ -482,15 +558,21 @@ void DSHEllipseControllerBase::doEnforceControlParameters(Base::Vector2d& onSket
 
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (onViewParameters[OnViewParameter::First]->isSet) {
-                onSketchPos.x = onViewParameters[OnViewParameter::First]->getValue();
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
+
+            if (firstParam->isSet) {
+                onSketchPos.x = firstParam->getValue();
             }
 
-            if (onViewParameters[OnViewParameter::Second]->isSet) {
-                onSketchPos.y = onViewParameters[OnViewParameter::Second]->getValue();
+            if (secondParam->isSet) {
+                onSketchPos.y = secondParam->getValue();
             }
         } break;
         case SelectMode::SeekSecond: {
+            auto& thirdParam = onViewParameters[OnViewParameter::Third];
+            auto& fourthParam = onViewParameters[OnViewParameter::Fourth];
+
             if (handler->constructionMethod()
                 == DrawSketchHandlerEllipse::ConstructionMethod::Center) {
                 Base::Vector2d dir = onSketchPos - handler->centerPoint;
@@ -499,66 +581,64 @@ void DSHEllipseControllerBase::doEnforceControlParameters(Base::Vector2d& onSket
                 }
                 double length = dir.Length();
 
-                if (onViewParameters[OnViewParameter::Third]->isSet) {
-                    length = onViewParameters[OnViewParameter::Third]->getValue();
-                    if (length < Precision::Confusion()) {
-                        unsetOnViewParameter(onViewParameters[OnViewParameter::Third].get());
+                if (thirdParam->isSet) {
+                    length = thirdParam->getValue();
+                    if (length < Precision::Confusion() && thirdParam->hasFinishedEditing) {
+                        unsetOnViewParameter(thirdParam.get());
                         return;
                     }
 
                     onSketchPos = handler->centerPoint + length * dir.Normalize();
                 }
 
-                if (onViewParameters[OnViewParameter::Fourth]->isSet) {
-                    double angle =
-                        Base::toRadians(onViewParameters[OnViewParameter::Fourth]->getValue());
+                if (fourthParam->isSet) {
+                    double angle = Base::toRadians(fourthParam->getValue());
                     onSketchPos.x = handler->centerPoint.x + cos(angle) * length;
                     onSketchPos.y = handler->centerPoint.y + sin(angle) * length;
                 }
             }
             else {
-                if (onViewParameters[OnViewParameter::Third]->isSet) {
-                    onSketchPos.x = onViewParameters[OnViewParameter::Third]->getValue();
+                if (thirdParam->isSet) {
+                    onSketchPos.x = thirdParam->getValue();
                 }
 
-                if (onViewParameters[OnViewParameter::Fourth]->isSet) {
-                    onSketchPos.y = onViewParameters[OnViewParameter::Fourth]->getValue();
+                if (fourthParam->isSet) {
+                    onSketchPos.y = fourthParam->getValue();
                 }
 
-                if (onViewParameters[OnViewParameter::Third]->isSet
-                    && onViewParameters[OnViewParameter::Fourth]->isSet
+                if (thirdParam->hasFinishedEditing && fourthParam->hasFinishedEditing
                     && (onSketchPos - handler->apoapsis).Length() < Precision::Confusion()) {
-                    unsetOnViewParameter(onViewParameters[OnViewParameter::Third].get());
-                    unsetOnViewParameter(onViewParameters[OnViewParameter::Fourth].get());
+                    unsetOnViewParameter(thirdParam.get());
+                    unsetOnViewParameter(fourthParam.get());
                 }
             }
         } break;
         case SelectMode::SeekThird: {
+            auto& fifthParam = onViewParameters[OnViewParameter::Fifth];
+
             if (handler->constructionMethod()
                 == DrawSketchHandlerEllipse::ConstructionMethod::Center) {
-                if (onViewParameters[OnViewParameter::Fifth]->isSet) {
-                    auto minorradius = onViewParameters[OnViewParameter::Fifth]->getValue();
+                if (fifthParam->isSet) {
+                    auto minorradius = fifthParam->getValue();
                     onSketchPos = handler->centerPoint
-                        + (handler->periapsis - handler->centerPoint)
-                                .Perpendicular(true)
-                                .Normalize()
+                        + (handler->periapsis - handler->centerPoint).Perpendicular(true).Normalize()
                             * minorradius;
                 }
             }
             else {
-                if (onViewParameters[OnViewParameter::Fifth]->isSet) {
-                    onSketchPos.x = onViewParameters[OnViewParameter::Fifth]->getValue();
+                auto& sixthParam = onViewParameters[OnViewParameter::Sixth];
+                if (fifthParam->isSet) {
+                    onSketchPos.x = fifthParam->getValue();
                 }
 
-                if (onViewParameters[OnViewParameter::Sixth]->isSet) {
-                    onSketchPos.y = onViewParameters[OnViewParameter::Sixth]->getValue();
+                if (sixthParam->isSet) {
+                    onSketchPos.y = sixthParam->getValue();
                 }
 
-                if (onViewParameters[OnViewParameter::Fifth]->isSet
-                    && onViewParameters[OnViewParameter::Sixth]->isSet
-                    && areColinear(handler->apoapsis, handler->periapsis, onSketchPos)) {
-                    unsetOnViewParameter(onViewParameters[OnViewParameter::Fifth].get());
-                    unsetOnViewParameter(onViewParameters[OnViewParameter::Sixth].get());
+                if (fifthParam->hasFinishedEditing && sixthParam->hasFinishedEditing
+                    && areCollinear(handler->apoapsis, handler->periapsis, onSketchPos)) {
+                    unsetOnViewParameter(fifthParam.get());
+                    unsetOnViewParameter(sixthParam.get());
                 }
             }
         } break;
@@ -572,32 +652,36 @@ void DSHEllipseController::adaptParameters(Base::Vector2d onSketchPos)
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (!onViewParameters[OnViewParameter::First]->isSet) {
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
+
+            if (!firstParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::First, onSketchPos.x);
             }
 
-            if (!onViewParameters[OnViewParameter::Second]->isSet) {
+            if (!secondParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::Second, onSketchPos.y);
             }
 
             bool sameSign = onSketchPos.x * onSketchPos.y > 0.;
-            onViewParameters[OnViewParameter::First]->setLabelAutoDistanceReverse(!sameSign);
-            onViewParameters[OnViewParameter::Second]->setLabelAutoDistanceReverse(sameSign);
-            onViewParameters[OnViewParameter::First]->setPoints(Base::Vector3d(),
-                                                                toVector3d(onSketchPos));
-            onViewParameters[OnViewParameter::Second]->setPoints(Base::Vector3d(),
-                                                                 toVector3d(onSketchPos));
+            firstParam->setLabelAutoDistanceReverse(!sameSign);
+            secondParam->setLabelAutoDistanceReverse(sameSign);
+            firstParam->setPoints(Base::Vector3d(), toVector3d(onSketchPos));
+            secondParam->setPoints(Base::Vector3d(), toVector3d(onSketchPos));
         } break;
         case SelectMode::SeekSecond: {
+            auto& thirdParam = onViewParameters[OnViewParameter::Third];
+            auto& fourthParam = onViewParameters[OnViewParameter::Fourth];
+
             if (handler->constructionMethod()
                 == DrawSketchHandlerEllipse::ConstructionMethod::Center) {
 
                 auto vec = onSketchPos - handler->centerPoint;
-                if (!onViewParameters[OnViewParameter::Third]->isSet) {
+                if (!thirdParam->isSet) {
                     setOnViewParameterValue(OnViewParameter::Third, vec.Length());
                 }
 
-                if (!onViewParameters[OnViewParameter::Fourth]->isSet) {
+                if (!fourthParam->isSet) {
                     double angle = vec.Length() > 0 ? Base::toDegrees(vec.Angle()) : 0;
                     setOnViewParameterValue(OnViewParameter::Fourth, angle, Base::Unit::Angle);
                 }
@@ -605,59 +689,56 @@ void DSHEllipseController::adaptParameters(Base::Vector2d onSketchPos)
                 Base::Vector3d start = toVector3d(handler->centerPoint);
                 Base::Vector3d end = toVector3d(onSketchPos);
 
-                onViewParameters[OnViewParameter::Third]->setPoints(start, end);
+                thirdParam->setPoints(start, end);
 
-
-                onViewParameters[OnViewParameter::Fourth]->setPoints(start, Base::Vector3d());
-                onViewParameters[OnViewParameter::Fourth]->setLabelRange(
-                    (onSketchPos - handler->centerPoint).Angle());
+                fourthParam->setPoints(start, Base::Vector3d());
+                fourthParam->setLabelRange((onSketchPos - handler->centerPoint).Angle());
             }
             else {
-                if (!onViewParameters[OnViewParameter::Third]->isSet) {
+                if (!thirdParam->isSet) {
                     setOnViewParameterValue(OnViewParameter::Third, onSketchPos.x);
                 }
 
-                if (!onViewParameters[OnViewParameter::Fourth]->isSet) {
+                if (!fourthParam->isSet) {
                     setOnViewParameterValue(OnViewParameter::Fourth, onSketchPos.y);
                 }
 
                 bool sameSign = onSketchPos.x * onSketchPos.y > 0.;
-                onViewParameters[OnViewParameter::Third]->setLabelAutoDistanceReverse(!sameSign);
-                onViewParameters[OnViewParameter::Fourth]->setLabelAutoDistanceReverse(sameSign);
-                onViewParameters[OnViewParameter::Third]->setPoints(Base::Vector3d(),
-                                                                    toVector3d(onSketchPos));
-                onViewParameters[OnViewParameter::Fourth]->setPoints(Base::Vector3d(),
-                                                                     toVector3d(onSketchPos));
+                thirdParam->setLabelAutoDistanceReverse(!sameSign);
+                fourthParam->setLabelAutoDistanceReverse(sameSign);
+                thirdParam->setPoints(Base::Vector3d(), toVector3d(onSketchPos));
+                fourthParam->setPoints(Base::Vector3d(), toVector3d(onSketchPos));
             }
         } break;
         case SelectMode::SeekThird: {
+            auto& fifthParam = onViewParameters[OnViewParameter::Fifth];
+
             if (handler->constructionMethod()
                 == DrawSketchHandlerEllipse::ConstructionMethod::Center) {
-                if (!onViewParameters[OnViewParameter::Fifth]->isSet) {
+                if (!fifthParam->isSet) {
                     setOnViewParameterValue(OnViewParameter::Fifth, handler->secondAxis.Length());
                 }
 
                 Base::Vector3d start = toVector3d(handler->centerPoint);
                 Base::Vector3d end = toVector3d(handler->centerPoint + handler->secondAxis);
 
-                onViewParameters[OnViewParameter::Fifth]->setPoints(start, end);
+                fifthParam->setPoints(start, end);
             }
             else {
-                if (!onViewParameters[OnViewParameter::Fifth]->isSet) {
+                auto& sixthParam = onViewParameters[OnViewParameter::Sixth];
+                if (!fifthParam->isSet) {
                     setOnViewParameterValue(OnViewParameter::Fifth, onSketchPos.x);
                 }
 
-                if (!onViewParameters[OnViewParameter::Sixth]->isSet) {
+                if (!sixthParam->isSet) {
                     setOnViewParameterValue(OnViewParameter::Sixth, onSketchPos.y);
                 }
 
                 bool sameSign = onSketchPos.x * onSketchPos.y > 0.;
-                onViewParameters[OnViewParameter::Fifth]->setLabelAutoDistanceReverse(!sameSign);
-                onViewParameters[OnViewParameter::Sixth]->setLabelAutoDistanceReverse(sameSign);
-                onViewParameters[OnViewParameter::Fifth]->setPoints(Base::Vector3d(),
-                                                                    toVector3d(onSketchPos));
-                onViewParameters[OnViewParameter::Sixth]->setPoints(Base::Vector3d(),
-                                                                    toVector3d(onSketchPos));
+                fifthParam->setLabelAutoDistanceReverse(!sameSign);
+                sixthParam->setLabelAutoDistanceReverse(sameSign);
+                fifthParam->setPoints(Base::Vector3d(), toVector3d(onSketchPos));
+                sixthParam->setPoints(Base::Vector3d(), toVector3d(onSketchPos));
             }
         } break;
         default:
@@ -666,36 +747,38 @@ void DSHEllipseController::adaptParameters(Base::Vector2d onSketchPos)
 }
 
 template<>
-void DSHEllipseController::doChangeDrawSketchHandlerMode()
+void DSHEllipseController::computeNextDrawSketchHandlerMode()
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (onViewParameters[OnViewParameter::First]->isSet
-                && onViewParameters[OnViewParameter::Second]->isSet) {
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
 
-                handler->setState(SelectMode::SeekSecond);
+            if (firstParam->hasFinishedEditing && secondParam->hasFinishedEditing) {
+                handler->setNextState(SelectMode::SeekSecond);
             }
         } break;
         case SelectMode::SeekSecond: {
-            if (onViewParameters[OnViewParameter::Third]->isSet
-                && onViewParameters[OnViewParameter::Fourth]->isSet) {
+            auto& thirdParam = onViewParameters[OnViewParameter::Third];
+            auto& fourthParam = onViewParameters[OnViewParameter::Fourth];
 
-                handler->setState(SelectMode::SeekThird);
+            if (thirdParam->hasFinishedEditing && fourthParam->hasFinishedEditing) {
+                handler->setNextState(SelectMode::SeekThird);
             }
         } break;
         case SelectMode::SeekThird: {
+            auto& fifthParam = onViewParameters[OnViewParameter::Fifth];
+
             if (handler->constructionMethod()
                 == DrawSketchHandlerEllipse::ConstructionMethod::Center) {
-                if (onViewParameters[OnViewParameter::Fifth]->isSet) {
-
-                    handler->setState(SelectMode::End);
+                if (fifthParam->hasFinishedEditing) {
+                    handler->setNextState(SelectMode::End);
                 }
             }
             else {
-                if (onViewParameters[OnViewParameter::Fifth]->isSet
-                    && onViewParameters[OnViewParameter::Sixth]->isSet) {
-
-                    handler->setState(SelectMode::End);
+                auto& sixthParam = onViewParameters[OnViewParameter::Sixth];
+                if (fifthParam->hasFinishedEditing && sixthParam->hasFinishedEditing) {
+                    handler->setNextState(SelectMode::End);
                 }
             }
         } break;
@@ -722,8 +805,7 @@ void DSHEllipseController::addConstraints()
 
         using namespace Sketcher;
 
-        if (!handler->ShapeGeometry.empty()
-            && handler->ShapeGeometry[0]->getTypeId() == Part::GeomEllipse::getClassTypeId()) {
+        if (!handler->ShapeGeometry.empty() && handler->ShapeGeometry[0]->is<Part::GeomEllipse>()) {
 
             int firstLine = firstCurve + 1;   // this is always the major axis
             int secondLine = firstCurve + 2;  // this is always the minor axis
@@ -737,17 +819,21 @@ void DSHEllipseController::addConstraints()
             // always goes with firstRadiusSet.
 
             auto constraintx0 = [&]() {
-                ConstraintToAttachment(GeoElementId(firstCurve, PointPos::mid),
-                                       GeoElementId::VAxis,
-                                       x0,
-                                       handler->sketchgui->getObject());
+                ConstraintToAttachment(
+                    GeoElementId(firstCurve, PointPos::mid),
+                    GeoElementId::VAxis,
+                    x0,
+                    handler->sketchgui->getObject()
+                );
             };
 
             auto constrainty0 = [&]() {
-                ConstraintToAttachment(GeoElementId(firstCurve, PointPos::mid),
-                                       GeoElementId::HAxis,
-                                       y0,
-                                       handler->sketchgui->getObject());
+                ConstraintToAttachment(
+                    GeoElementId(firstCurve, PointPos::mid),
+                    GeoElementId::HAxis,
+                    y0,
+                    handler->sketchgui->getObject()
+                );
             };
 
             auto constraintFirstRadius = [&]() {
@@ -758,7 +844,8 @@ void DSHEllipseController::addConstraints()
                     3,
                     firstLine,
                     1,
-                    handler->firstRadius);
+                    handler->firstRadius
+                );
             };
 
             auto constraintSecondRadius = [&]() {
@@ -769,14 +856,17 @@ void DSHEllipseController::addConstraints()
                     3,
                     secondLine,
                     1,
-                    handler->secondRadius);
+                    handler->secondRadius
+                );
             };
 
             auto constraintAngle = [&]() {
-                Gui::cmdAppObjectArgs(handler->sketchgui->getObject(),
-                                      "addConstraint(Sketcher.Constraint('Angle',%d,%f)) ",
-                                      firstLine,
-                                      angle);
+                Gui::cmdAppObjectArgs(
+                    handler->sketchgui->getObject(),
+                    "addConstraint(Sketcher.Constraint('Angle',%d,%f)) ",
+                    firstLine,
+                    angle
+                );
             };
 
             // NOTE: if AutoConstraints is empty, we can add constraints directly without any
@@ -808,20 +898,19 @@ void DSHEllipseController::addConstraints()
                 }
             }
             else {  // There is a valid diagnose.
-                auto centerpointinfo =
-                    handler->getPointInfo(GeoElementId(firstCurve, PointPos::mid));
+                auto centerpointinfo = handler->getPointInfo(GeoElementId(firstCurve, PointPos::mid));
 
                 // if Autoconstraints is empty we do not have a diagnosed system and the parameter
                 // will always be set
                 if (x0set && centerpointinfo.isXDoF()) {
                     constraintx0();
 
-                    handler
-                        ->diagnoseWithAutoConstraints();  // ensure we have recalculated parameters
-                                                          // after each constraint addition
+                    handler->diagnoseWithAutoConstraints();  // ensure we have recalculated parameters
+                                                             // after each constraint addition
 
                     centerpointinfo = handler->getPointInfo(
-                        GeoElementId(firstCurve, PointPos::mid));  // get updated point position
+                        GeoElementId(firstCurve, PointPos::mid)
+                    );  // get updated point position
                 }
 
                 // if Autoconstraints is empty we do not have a diagnosed system and the parameter
@@ -829,9 +918,8 @@ void DSHEllipseController::addConstraints()
                 if (y0set && centerpointinfo.isYDoF()) {
                     constrainty0();
 
-                    handler
-                        ->diagnoseWithAutoConstraints();  // ensure we have recalculated parameters
-                                                          // after each constraint addition
+                    handler->diagnoseWithAutoConstraints();  // ensure we have recalculated parameters
+                                                             // after each constraint addition
                 }
 
                 // Major axis (it is not a solver parameter in the solver implementation)
@@ -840,19 +928,17 @@ void DSHEllipseController::addConstraints()
 
                 if (firstRadiusSet && leftDoFs > 0) {
                     constraintFirstRadius();
-                    handler
-                        ->diagnoseWithAutoConstraints();  // It is not a normal line as it is
-                                                          // constrained by the Ellipse, so we need
-                                                          // to recalculate after radius addition
+                    handler->diagnoseWithAutoConstraints();  // It is not a normal line as it is
+                                                             // constrained by the Ellipse, so we need
+                                                             // to recalculate after radius addition
                     leftDoFs = handler->getLineDoFs(firstLine);
                 }
 
                 if (angleSet && leftDoFs > 0) {
                     constraintAngle();
-                    handler
-                        ->diagnoseWithAutoConstraints();  // It is not a normal line as it is
-                                                          // constrained by the Ellipse, so we need
-                                                          // to recalculate after radius addition
+                    handler->diagnoseWithAutoConstraints();  // It is not a normal line as it is
+                                                             // constrained by the Ellipse, so we need
+                                                             // to recalculate after radius addition
                 }
 
                 // Minor axis (it is a solver parameter in the solver implementation)
@@ -878,24 +964,30 @@ void DSHEllipseController::addConstraints()
             using namespace Sketcher;
 
             auto constraintx0 = [&]() {
-                ConstraintToAttachment(GeoElementId(firstCurve, PointPos::mid),
-                                       GeoElementId::VAxis,
-                                       x0,
-                                       handler->sketchgui->getObject());
+                ConstraintToAttachment(
+                    GeoElementId(firstCurve, PointPos::mid),
+                    GeoElementId::VAxis,
+                    x0,
+                    handler->sketchgui->getObject()
+                );
             };
 
             auto constrainty0 = [&]() {
-                ConstraintToAttachment(GeoElementId(firstCurve, PointPos::mid),
-                                       GeoElementId::HAxis,
-                                       y0,
-                                       handler->sketchgui->getObject());
+                ConstraintToAttachment(
+                    GeoElementId(firstCurve, PointPos::mid),
+                    GeoElementId::HAxis,
+                    y0,
+                    handler->sketchgui->getObject()
+                );
             };
 
             auto constraintradius = [&]() {
-                Gui::cmdAppObjectArgs(handler->sketchgui->getObject(),
-                                      "addConstraint(Sketcher.Constraint('Radius',%d,%f)) ",
-                                      firstCurve,
-                                      handler->firstRadius);
+                Gui::cmdAppObjectArgs(
+                    handler->sketchgui->getObject(),
+                    "addConstraint(Sketcher.Constraint('Radius',%d,%f)) ",
+                    firstCurve,
+                    handler->firstRadius
+                );
             };
 
             // NOTE: if AutoConstraints is empty, we can add constraints directly without any
@@ -914,20 +1006,19 @@ void DSHEllipseController::addConstraints()
                 }
             }
             else {  // There is a valid diagnose.
-                auto startpointinfo =
-                    handler->getPointInfo(GeoElementId(firstCurve, PointPos::mid));
+                auto startpointinfo = handler->getPointInfo(GeoElementId(firstCurve, PointPos::mid));
 
                 // if Autoconstraints is empty we do not have a diagnosed system and the parameter
                 // will always be set
                 if (x0set && startpointinfo.isXDoF()) {
                     constraintx0();
 
-                    handler
-                        ->diagnoseWithAutoConstraints();  // ensure we have recalculated parameters
-                                                          // after each constraint addition
+                    handler->diagnoseWithAutoConstraints();  // ensure we have recalculated parameters
+                                                             // after each constraint addition
 
                     startpointinfo = handler->getPointInfo(
-                        GeoElementId(firstCurve, PointPos::mid));  // get updated point position
+                        GeoElementId(firstCurve, PointPos::mid)
+                    );  // get updated point position
                 }
 
                 // if Autoconstraints is empty we do not have a diagnosed system and the parameter
@@ -935,9 +1026,8 @@ void DSHEllipseController::addConstraints()
                 if (y0set && startpointinfo.isYDoF()) {
                     constrainty0();
 
-                    handler
-                        ->diagnoseWithAutoConstraints();  // ensure we have recalculated parameters
-                                                          // after each constraint addition
+                    handler->diagnoseWithAutoConstraints();  // ensure we have recalculated parameters
+                                                             // after each constraint addition
                 }
 
                 auto edgeinfo = handler->getEdgeInfo(firstCurve);
@@ -953,9 +1043,4 @@ void DSHEllipseController::addConstraints()
     }
     // No constraint possible for 3 rim ellipse.
 }
-
-
 }  // namespace SketcherGui
-
-
-#endif  // SKETCHERGUI_DrawSketchHandlerEllipse_H

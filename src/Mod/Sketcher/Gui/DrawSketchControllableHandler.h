@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 Abdullah Tahiri <abdullah.tahiri.yo@gmail.com>     *
  *                                                                         *
@@ -21,12 +23,12 @@
  ***************************************************************************/
 
 
-#ifndef SKETCHERGUI_DrawSketchControllableHandler_H
-#define SKETCHERGUI_DrawSketchControllableHandler_H
+#pragma once
 
 #include <type_traits>
 
 #include "DrawSketchDefaultHandler.h"
+#include "SnapManager.h"
 
 namespace SketcherGui
 {
@@ -39,11 +41,11 @@ namespace SketcherGui
  * controlling entities such as widgets and on-screen controls.
  */
 template<typename ControllerT>
-class DrawSketchControllableHandler
-    : public DrawSketchDefaultHandler<typename ControllerT::HandlerType,
-                                      typename ControllerT::SelectModeType,
-                                      ControllerT::AutoConstraintInitialSize,
-                                      typename ControllerT::ContructionMethodType>
+class DrawSketchControllableHandler: public DrawSketchDefaultHandler<
+                                         typename ControllerT::HandlerType,
+                                         typename ControllerT::SelectModeType,
+                                         ControllerT::AutoConstraintInitialSize,
+                                         typename ControllerT::ContructionMethodType>
 {
     /** @name Meta-programming definitions and members */
     //@{
@@ -54,10 +56,8 @@ class DrawSketchControllableHandler
 
     /** @name Convenience definitions */
     //@{
-    using DSDefaultHandler = DrawSketchDefaultHandler<HandlerType,
-                                                      SelectModeType,
-                                                      ControllerT::AutoConstraintInitialSize,
-                                                      ConstructionMethodType>;
+    using DSDefaultHandler
+        = DrawSketchDefaultHandler<HandlerType, SelectModeType, ControllerT::AutoConstraintInitialSize, ConstructionMethodType>;
 
     using ConstructionMachine = ConstructionMethodMachine<ConstructionMethodType>;
     //@}
@@ -70,7 +70,8 @@ class DrawSketchControllableHandler
 
 public:
     DrawSketchControllableHandler(
-        ConstructionMethodType constructionmethod = static_cast<ConstructionMethodType>(0))
+        ConstructionMethodType constructionmethod = static_cast<ConstructionMethodType>(0)
+    )
         : DSDefaultHandler(constructionmethod)
         , toolWidgetManager(static_cast<HandlerType*>(this))
     {}
@@ -82,16 +83,29 @@ public:
     void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
         Base::Vector2d onSketchPos = snapHandle.compute();
+        // Upstream snaps to the directional hints here; group C, the
+        // subsystem that produces them, is not ported yet.
         toolWidgetManager.mouseMoved(onSketchPos);
 
-        toolWidgetManager.enforceControlParameters(onSketchPos);
+        if (!toolWidgetManager.enforceControlParameters(onSketchPos)) {
+            return;
+        }
         updateDataAndDrawToPosition(onSketchPos);
         toolWidgetManager.adaptParameters(onSketchPos);
     }
 
     bool pressButton(Base::Vector2d onSketchPos) override
     {
-        toolWidgetManager.enforceControlParameters(onSketchPos);
+        // Upstream snaps to the directional hints here too; group C, which
+        // owns them, is not ported yet.
+        // ensure controller state is initialized even if no mouseMove occurred
+        // ie. when a modal dialog blocks input before the first click
+        toolWidgetManager.mouseMoved(onSketchPos);
+        if (!toolWidgetManager.enforceControlParameters(onSketchPos)) {
+            return false;
+        }
+        updateDataAndDrawToPosition(onSketchPos);
+        toolWidgetManager.adaptParameters(onSketchPos);
 
         onButtonPressed(onSketchPos);
         return true;
@@ -118,6 +132,11 @@ protected:
         return DrawSketchHandler::getCrosshairCursorSVGName();
     }
     //@}
+
+    void addStepControlConstraints()
+    {
+        toolWidgetManager.addStepConstraints();
+    }
 
 private:
     /** @name functions requiring specialisation */
@@ -158,17 +177,23 @@ private:
         toolWidgetManager.resetControls();
     }
 
-    void onModeChanged() override
+    bool onModeChanged() override
     {
         DrawSketchHandler::resetPositionText();
-        toolWidgetManager.onHandlerModeChanged();
-        DSDefaultHandler::onModeChanged();
+        DrawSketchHandler::updateHint();
 
-        toolWidgetManager.afterHandlerModeChanged();
+        toolWidgetManager.onHandlerModeChanged();
+
+        if (DSDefaultHandler::onModeChanged()) {
+            // If onModeChanged returns false, then the handler has been purged.
+            toolWidgetManager.afterHandlerModeChanged();
+        }
+        return true;
     }
 
     void onConstructionMethodChanged() override
     {
+        DrawSketchHandler::updateHint();
         toolWidgetManager.onConstructionMethodChanged();
     }
 
@@ -184,6 +209,14 @@ private:
             toolWidgetManager.secondKeyShortcut();
         }
 
+        if (key == SoKeyboardEvent::R && !pressed && !this->isLastState()) {
+            toolWidgetManager.thirdKeyShortcut();
+        }
+
+        if (key == SoKeyboardEvent::F && !pressed && !this->isLastState()) {
+            toolWidgetManager.fourthKeyShortcut();
+        }
+
         if (key == SoKeyboardEvent::TAB && !pressed) {
             toolWidgetManager.tabShortcut();
         }
@@ -195,6 +228,3 @@ protected:
 };
 
 }  // namespace SketcherGui
-
-
-#endif  // SKETCHERGUI_DrawSketchControllableHandler_H

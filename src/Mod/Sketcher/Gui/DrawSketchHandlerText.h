@@ -31,6 +31,7 @@
 #include <Gui/Notifications.h>
 #include <Gui/Command.h>
 #include <Gui/CommandT.h>
+#include <Gui/InputHint.h>
 
 #include <Mod/Sketcher/App/SketchObject.h>
 
@@ -103,10 +104,7 @@ private:
 
                 startPoint = onSketchPos;
 
-                if (seekAutoConstraint(sugConstraints[0], onSketchPos, Base::Vector2d(0.f, 0.f))) {
-                    renderSuggestConstraintsCursor(sugConstraints[0]);
-                    return;
-                }
+                seekAndRenderAutoConstraint(sugConstraints[0], onSketchPos, Base::Vector2d(0.f, 0.f));
             } break;
             case SelectMode::SeekSecond: {
                 toolWidgetManager.drawDirectionAtCursor(onSketchPos, startPoint);
@@ -119,10 +117,7 @@ private:
                 catch (const Base::ValueError&) {
                 }  // equal points while hovering raise an objection that can be safely ignored
 
-                if (seekAutoConstraint(sugConstraints[1], onSketchPos, onSketchPos - startPoint)) {
-                    renderSuggestConstraintsCursor(sugConstraints[1]);
-                    return;
-                }
+                seekAndRenderAutoConstraint(sugConstraints[1], onSketchPos, onSketchPos - startPoint);
             } break;
             default:
                 break;
@@ -132,7 +127,7 @@ private:
     void executeCommands() override
     {
         try {
-            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Add sketch Text"));
+            openCommand(QT_TRANSLATE_NOOP("Command", "Add sketch Text"));
 
             // Add the Handle Line
             Gui::cmdAppObjectArgs(
@@ -178,7 +173,7 @@ private:
                 constrBoolStr
             );
 
-            Gui::Command::commitCommand();
+            commitCommand();
         }
         catch (const Base::Exception& e) {
             Gui::NotifyError(
@@ -187,7 +182,7 @@ private:
                 QT_TRANSLATE_NOOP("Notifications", "Failed to add text")
             );
 
-            Gui::Command::abortCommand();
+            abortCommand();
         }
     }
 
@@ -322,6 +317,23 @@ private:
         }
     }
 
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        return lookupTextHints(static_cast<int>(constructionMethod()), static_cast<int>(state()));
+    }
+
+    struct HintEntry
+    {
+        int constructionMethod;
+        int state;
+        std::list<Gui::InputHint> hints;
+    };
+
+    using HintTable = std::vector<HintEntry>;
+
+    static Gui::InputHint switchModeHint();
+    static HintTable getTextHintTable();
+    static std::list<Gui::InputHint> lookupTextHints(int method, int state);
 };
 
 template<>
@@ -550,7 +562,7 @@ void DSHTextController::adaptParameters(Base::Vector2d onSketchPos)
                     Base::Unit::Angle
                 );
             }
-            else if (fourthParam->isSet && vec.Length() > Precision::Confusion()) {
+            else if (fourthParam->hasFinishedEditing && vec.Length() > Precision::Confusion()) {
                 double ovpRange = Base::toRadians(fourthParam->getValue());
                 if (fabs(range - ovpRange) > Precision::Confusion()) {
                     setOnViewParameterValue(
@@ -571,23 +583,23 @@ void DSHTextController::adaptParameters(Base::Vector2d onSketchPos)
 }
 
 template<>
-void DSHTextController::doChangeDrawSketchHandlerMode()
+void DSHTextController::computeNextDrawSketchHandlerMode()
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
             auto& firstParam = onViewParameters[OnViewParameter::First];
             auto& secondParam = onViewParameters[OnViewParameter::Second];
 
-            if (firstParam->isSet && secondParam->isSet) {
-                handler->setState(SelectMode::SeekSecond);
+            if (firstParam->hasFinishedEditing && secondParam->hasFinishedEditing) {
+                handler->setNextState(SelectMode::SeekSecond);
             }
         } break;
         case SelectMode::SeekSecond: {
             auto& thirdParam = onViewParameters[OnViewParameter::Third];
             auto& fourthParam = onViewParameters[OnViewParameter::Fourth];
 
-            if (thirdParam->isSet && fourthParam->isSet) {
-                handler->setState(SelectMode::End);
+            if (thirdParam->hasFinishedEditing && fourthParam->hasFinishedEditing) {
+                handler->setNextState(SelectMode::End);
             }
         } break;
         default:
@@ -706,6 +718,50 @@ void DSHTextController::addConstraints()
             constraintp4angle();
         }
     }
+}
+
+Gui::InputHint DrawSketchHandlerText::switchModeHint()
+{
+    return {QObject::tr("%1 switch mode"), {Gui::InputHint::UserInput::KeyM}};
+}
+
+DrawSketchHandlerText::HintTable DrawSketchHandlerText::getTextHintTable()
+{
+    const auto switchHint = switchModeHint();
+    return {
+        // Structure: {constructionMethod, state, {hints...}}
+        {static_cast<int>(ConstructionMethod::Height),
+         0,
+         {{QObject::tr("%1 pick bottom-left point"), {Gui::InputHint::UserInput::MouseLeft}},
+          switchHint}},
+        {static_cast<int>(ConstructionMethod::Height),
+         1,
+         {{QObject::tr("%1 pick top-left point"), {Gui::InputHint::UserInput::MouseLeft}},
+          switchHint}},
+        {static_cast<int>(ConstructionMethod::Width),
+         0,
+         {{QObject::tr("%1 pick bottom-left point"), {Gui::InputHint::UserInput::MouseLeft}},
+          switchHint}},
+        {static_cast<int>(ConstructionMethod::Width),
+         1,
+         {{QObject::tr("%1 pick bottom-right point"), {Gui::InputHint::UserInput::MouseLeft}},
+          switchHint}}
+    };
+}
+
+std::list<Gui::InputHint> DrawSketchHandlerText::lookupTextHints(int method, int state)
+{
+    const auto TextHintTable = getTextHintTable();
+
+    auto it = std::find_if(
+        TextHintTable.begin(),
+        TextHintTable.end(),
+        [method, state](const HintEntry& entry) {
+            return entry.constructionMethod == method && entry.state == state;
+        }
+    );
+
+    return (it != TextHintTable.end()) ? it->hints : std::list<Gui::InputHint> {};
 }
 
 }  // namespace SketcherGui

@@ -49,10 +49,12 @@ class GuiExport EditableDatumLabel : public QObject
 public:
     enum class Function {
         Positioning,
-        Dimensioning
+        Dimensioning,
+        Forced
     };
 
     EditableDatumLabel(ViewerContext* view, const Base::Placement& plc, SbColor color, bool autoDistance = false, bool avoidMouseCursor = false);
+    EditableDatumLabel(ViewerContext* view, const Base::Placement& plc, bool autoDistance = false, bool avoidMouseCursor = false);
 
     ~EditableDatumLabel() override;
 
@@ -67,6 +69,10 @@ public:
     void setSpinboxValue(double val, const Base::Unit& unit = Base::Unit::Length);
     void setPlacement(const Base::Placement& plc);
     void setColor(SbColor color);
+    /// the colour of a parameter the user has given a value
+    void setActivatedColor();
+    /// the colour of one still taking its value from the pointer
+    void setDeactivatedColor();
     void setFocus();
     void setPoints(SbVec3f p1, SbVec3f p2);
     void setPoints(Base::Vector3d p1, Base::Vector3d p2);
@@ -121,6 +127,7 @@ public:
 
     // NOLINTBEGIN
     SoDatumLabel* label;
+    SbColor dimConstrColor, dimConstrDeactivatedColor;
     bool isSet;
     bool hasFinishedEditing;  ///< the user pressed Enter, not merely typed
     bool autoDistance;
@@ -144,6 +151,7 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    void initColors();
     bool syncValueFromSpinBox(bool emitParameterUnset = true);
     void handleSpinBoxValueChanged();
     void positionSpinbox();

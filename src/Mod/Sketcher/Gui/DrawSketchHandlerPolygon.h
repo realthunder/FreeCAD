@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2022 Abdullah Tahiri <abdullah.tahiri.yo@gmail.com>     *
  *                                                                         *
@@ -21,8 +23,7 @@
  ***************************************************************************/
 
 
-#ifndef SKETCHERGUI_DrawSketchHandlerPolygon_H
-#define SKETCHERGUI_DrawSketchHandlerPolygon_H
+#pragma once
 
 #include <QApplication>
 
@@ -30,8 +31,10 @@
 #include <Gui/Notifications.h>
 #include <Gui/Command.h>
 #include <Gui/CommandT.h>
+#include <Gui/InputHint.h>
 
 #include <Mod/Sketcher/App/SketchObject.h>
+
 #include "Utils.h"
 
 #include "DrawSketchDefaultWidgetController.h"
@@ -44,15 +47,15 @@ namespace SketcherGui
 
 class DrawSketchHandlerPolygon;
 
-using DSHPolygonController =
-    DrawSketchDefaultWidgetController<DrawSketchHandlerPolygon,
-                                      StateMachines::TwoSeekEnd,
-                                      /*PAutoConstraintSize =*/2,
-                                      /*OnViewParametersT =*/OnViewParameters<4>,
-                                      /*WidgetParametersT =*/WidgetParameters<1>,
-                                      /*WidgetCheckboxesT =*/WidgetCheckboxes<0>,
-                                      /*WidgetComboboxesT =*/WidgetComboboxes<0>,
-                                      /*WidgetLineEditsT =*/WidgetLineEdits<0>>;
+using DSHPolygonController = DrawSketchDefaultWidgetController<
+    DrawSketchHandlerPolygon,
+    StateMachines::TwoSeekEnd,
+    /*PAutoConstraintSize =*/2,
+    /*OnViewParametersT =*/OnViewParameters<4>,
+    /*WidgetParametersT =*/WidgetParameters<1>,
+    /*WidgetCheckboxesT =*/WidgetCheckboxes<0>,
+    /*WidgetComboboxesT =*/WidgetComboboxes<0>,
+    /*WidgetLineEditsT =*/WidgetLineEdits<0>>;
 
 using DSHPolygonControllerBase = DSHPolygonController::ControllerBase;
 
@@ -61,6 +64,8 @@ using DrawSketchHandlerPolygonBase = DrawSketchControllableHandler<DSHPolygonCon
 
 class DrawSketchHandlerPolygon: public DrawSketchHandlerPolygonBase
 {
+    Q_DECLARE_TR_FUNCTIONS(SketcherGui::DrawSketchHandlerPolygon)
+
     friend DSHPolygonController;
     friend DSHPolygonControllerBase;
 
@@ -80,10 +85,7 @@ private:
 
                 centerPoint = onSketchPos;
 
-                if (seekAutoConstraint(sugConstraints[0], onSketchPos, Base::Vector2d(0.f, 0.f))) {
-                    renderSuggestConstraintsCursor(sugConstraints[0]);
-                    return;
-                }
+                seekAndRenderAutoConstraint(sugConstraints[0], onSketchPos, Base::Vector2d(0.f, 0.f));
             } break;
             case SelectMode::SeekSecond: {
                 toolWidgetManager.drawDirectionAtCursor(onSketchPos, centerPoint);
@@ -92,10 +94,7 @@ private:
 
                 CreateAndDrawShapeGeometry();
 
-                if (seekAutoConstraint(sugConstraints[1], onSketchPos, Base::Vector2d(0.f, 0.f))) {
-                    renderSuggestConstraintsCursor(sugConstraints[1]);
-                    return;
-                }
+                seekAndRenderAutoConstraint(sugConstraints[1], onSketchPos, Base::Vector2d(0.f, 0.f));
             } break;
             default:
                 break;
@@ -106,62 +105,79 @@ private:
     {
         unsetCursor();
         resetPositionText();
-        Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Add polygon"));
+        openCommand(QT_TRANSLATE_NOOP("Command", "Add polygon"));
 
         try {
-            Gui::Command::doCommand(Gui::Command::Doc,
-                                    "import ProfileLib.RegularPolygon\n"
-                                    "ProfileLib.RegularPolygon.makeRegularPolygon(%s,%i,App.Vector("
-                                    "%f,%f,0),App.Vector(%f,%f,0),%s)",
-                                    Gui::Command::getObjectCmd(sketchgui->getObject()).c_str(),
-                                    numberOfCorners,
-                                    centerPoint.x,
-                                    centerPoint.y,
-                                    firstCorner.x,
-                                    firstCorner.y,
-                                    constructionModeAsBooleanText());
+            Gui::Command::doCommand(
+                Gui::Command::Doc,
+                "import ProfileLib.RegularPolygon\n"
+                "ProfileLib.RegularPolygon.makeRegularPolygon(%s,%i,App.Vector("
+                "%f,%f,0),App.Vector(%f,%f,0),%s)",
+                Gui::Command::getObjectCmd(sketchgui->getObject()).c_str(),
+                numberOfCorners,
+                centerPoint.x,
+                centerPoint.y,
+                firstCorner.x,
+                firstCorner.y,
+                constructionModeAsBooleanText()
+            );
 
-            Gui::Command::commitCommand();
+            commitCommand();
 
-            tryAutoRecomputeIfNotSolve(
-                static_cast<Sketcher::SketchObject*>(sketchgui->getObject()));
+            tryAutoRecomputeIfNotSolve(sketchgui->getObject<Sketcher::SketchObject>());
         }
         catch (const Base::Exception&) {
-            Gui::NotifyError(sketchgui,
-                             QT_TRANSLATE_NOOP("Notifications", "Error"),
-                             QT_TRANSLATE_NOOP("Notifications", "Failed to add polygon"));
+            Gui::NotifyError(
+                sketchgui,
+                QT_TRANSLATE_NOOP("Notifications", "Error"),
+                QT_TRANSLATE_NOOP("Notifications", "Failed to add polygon")
+            );
 
-            Gui::Command::abortCommand();
-            THROWM(Base::RuntimeError,
-                   QT_TRANSLATE_NOOP(
-                       "Notifications",
-                       "Tool execution aborted") "\n")  // This prevents constraints from being
-                                                        // applied on non existing geometry
+            abortCommand();
+            THROWM(
+                Base::RuntimeError,
+                QT_TRANSLATE_NOOP(
+                    "Notifications",
+                    "Tool execution aborted"
+                ) "\n"
+            )  // This prevents constraints from being
+               // applied on non existing geometry
         }
     }
 
     void generateAutoConstraints() override
     {
         // add auto constraints at the center of the polygon
-        int circlegeoid = getHighestCurveIndex();
-        int lastsidegeoid = getHighestCurveIndex() - 1;
-        if (sugConstraints[0].size() > 0) {
-            generateAutoConstraintsOnElement(sugConstraints[0],
-                                             circlegeoid,
-                                             Sketcher::PointPos::mid);
-        }
+        auto* obj = sketchgui->getObject<Sketcher::SketchObject>();
+        for (int geoId = getHighestCurveIndex(); geoId >= 0; geoId--) {
+            const Part::Geometry* geo = obj->getGeometry(geoId);
+            if (geo->is<Part::GeomCircle>()) {
+                int circlegeoid = geoId;
+                int lastsidegeoid = geoId - 1;
+                if (sugConstraints[0].size() > 0) {
+                    generateAutoConstraintsOnElement(
+                        sugConstraints[0],
+                        circlegeoid,
+                        Sketcher::PointPos::mid
+                    );
+                }
 
-        // add auto constraints to the last side of the polygon
-        if (sugConstraints[1].size() > 0) {
-            generateAutoConstraintsOnElement(sugConstraints[1],
-                                             lastsidegeoid,
-                                             Sketcher::PointPos::end);
-        }
+                // add auto constraints to the last side of the polygon
+                if (sugConstraints[1].size() > 0) {
+                    generateAutoConstraintsOnElement(
+                        sugConstraints[1],
+                        lastsidegeoid,
+                        Sketcher::PointPos::end
+                    );
+                }
 
-        // Ensure temporary autoconstraints do not generate a redundancy and that the geometry
-        // parameters are accurate This is particularly important for adding widget mandated
-        // constraints.
-        removeRedundantAutoConstraints();
+                // Ensure temporary autoconstraints do not generate a redundancy and that the
+                // geometry parameters are accurate This is particularly important for adding widget
+                // mandated constraints.
+                removeRedundantAutoConstraints();
+                return;
+            }
+        }
     }
 
     void createAutoConstraints() override
@@ -199,7 +215,7 @@ private:
 
     QString getToolWidgetText() const override
     {
-        return QString(QObject::tr("Polygon parameters"));
+        return QString(tr("Polygon Parameters"));
     }
 
     bool canGoToNextMode() override
@@ -242,7 +258,8 @@ private:
             return;
         }
 
-        double angleOfSeparation = 2.0 * M_PI / static_cast<double>(numberOfCorners);  // NOLINT
+        double angleOfSeparation = 2.0 * std::numbers::pi
+            / static_cast<double>(numberOfCorners);  // NOLINT
         double cos_v = cos(angleOfSeparation);
         double sin_v = sin(angleOfSeparation);
 
@@ -254,11 +271,32 @@ private:
             rx = cos_v * rx - sin_v * ry;
             ry = cos_v * ry + sin_v * old_rx;
             Base::Vector2d newCorner = Base::Vector2d(centerPoint.x + rx, centerPoint.y + ry);
-            addLineToShapeGeometry(toVector3d(prevCorner),
-                                   toVector3d(newCorner),
-                                   isConstructionMode());
+            addLineToShapeGeometry(toVector3d(prevCorner), toVector3d(newCorner), isConstructionMode());
             prevCorner = newCorner;
         }
+    }
+
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        using enum Gui::InputHint::UserInput;
+
+        return Gui::lookupHints<SelectMode>(
+            state(),
+            {
+                {.state = SelectMode::SeekFirst,
+                 .hints =
+                     {
+                         {tr("%1 pick polygon center"), {MouseLeft}},
+                         {tr("%1/%2 increase/decrease number of sides"), {KeyU, KeyJ}},
+                     }},
+                {.state = SelectMode::SeekSecond,
+                 .hints =
+                     {
+                         {tr("%1 pick rotation and size"), {MouseMove}},
+                         {tr("%1 confirm"), {MouseLeft}},
+                         {tr("%1/%2 increase/decrease number of sides"), {KeyU, KeyJ}},
+                     }},
+            });
     }
 };
 
@@ -283,7 +321,7 @@ template<>
 void DSHPolygonController::firstKeyShortcut()
 {
     auto value = toolWidget->getParameter(WParameter::First);
-    toolWidget->setParameterWithoutPassingFocus(OnViewParameter::First, value + 1);
+    toolWidget->setParameterWithoutPassingFocus(WParameter::First, value + 1);
 }
 
 template<>
@@ -291,7 +329,7 @@ void DSHPolygonController::secondKeyShortcut()
 {
     auto value = toolWidget->getParameter(WParameter::First);
     if (value > 3.0) {  // NOLINT
-        toolWidget->setParameterWithoutPassingFocus(OnViewParameter::First, value - 1);
+        toolWidget->setParameterWithoutPassingFocus(WParameter::First, value - 1);
     }
 }
 
@@ -299,24 +337,28 @@ template<>
 void DSHPolygonController::configureToolWidget()
 {
 
-    toolWidget->setParameterLabel(OnViewParameter::First,
-                                  QApplication::translate("ToolWidgetManager_p4", "Sides 'U'/'J'"));
-    toolWidget->setParameter(OnViewParameter::First,
+    toolWidget->setParameterLabel(
+        WParameter::First,
+        QApplication::translate("ToolWidgetManager_p4", "Sides")
+    );
+    toolWidget->setParameter(WParameter::First,
                              handler->numberOfCorners);  // unconditionally set
-    toolWidget->configureParameterUnit(OnViewParameter::First, Base::Unit());
-    toolWidget->configureParameterMin(OnViewParameter::First, 3.0);  // NOLINT
+    toolWidget->configureParameterUnit(WParameter::First, Base::Unit());
+    toolWidget->configureParameterMin(WParameter::First, 3.0);  // NOLINT
     // We set a reasonable max to avoid the spinbox from being very large
-    toolWidget->configureParameterMax(OnViewParameter::First, 9999.0);  // NOLINT
-    toolWidget->configureParameterDecimals(OnViewParameter::First, 0);
+    toolWidget->configureParameterMax(WParameter::First, 9999.0);  // NOLINT
+    toolWidget->configureParameterDecimals(WParameter::First, 0);
 
     onViewParameters[OnViewParameter::First]->setLabelType(Gui::SoDatumLabel::DISTANCEX);
     onViewParameters[OnViewParameter::Second]->setLabelType(Gui::SoDatumLabel::DISTANCEY);
     onViewParameters[OnViewParameter::Third]->setLabelType(
         Gui::SoDatumLabel::DISTANCE,
-        Gui::EditableDatumLabel::Function::Dimensioning);
+        Gui::EditableDatumLabel::Function::Dimensioning
+    );
     onViewParameters[OnViewParameter::Fourth]->setLabelType(
         Gui::SoDatumLabel::ANGLE,
-        Gui::EditableDatumLabel::Function::Dimensioning);
+        Gui::EditableDatumLabel::Function::Dimensioning
+    );
 }
 
 template<>
@@ -334,34 +376,39 @@ void DSHPolygonControllerBase::doEnforceControlParameters(Base::Vector2d& onSket
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (onViewParameters[OnViewParameter::First]->isSet) {
-                onSketchPos.x = onViewParameters[OnViewParameter::First]->getValue();
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
+
+            if (firstParam->isSet) {
+                onSketchPos.x = firstParam->getValue();
             }
 
-            if (onViewParameters[OnViewParameter::Second]->isSet) {
-                onSketchPos.y = onViewParameters[OnViewParameter::Second]->getValue();
+            if (secondParam->isSet) {
+                onSketchPos.y = secondParam->getValue();
             }
         } break;
         case SelectMode::SeekSecond: {
+            auto& thirdParam = onViewParameters[OnViewParameter::Third];
+            auto& fourthParam = onViewParameters[OnViewParameter::Fourth];
+
             Base::Vector2d dir = onSketchPos - handler->centerPoint;
             if (dir.Length() < Precision::Confusion()) {
                 dir.x = 1.0;  // if direction null, default to (1,0)
             }
             double length = dir.Length();
 
-            if (onViewParameters[OnViewParameter::Third]->isSet) {
-                length = onViewParameters[OnViewParameter::Third]->getValue();
-                if (length < Precision::Confusion()) {
-                    unsetOnViewParameter(onViewParameters[OnViewParameter::Third].get());
+            if (thirdParam->isSet) {
+                length = thirdParam->getValue();
+                if (length < Precision::Confusion() && thirdParam->hasFinishedEditing) {
+                    unsetOnViewParameter(thirdParam.get());
                     return;
                 }
 
                 onSketchPos = handler->centerPoint + length * dir.Normalize();
             }
 
-            if (onViewParameters[OnViewParameter::Fourth]->isSet) {
-                double angle =
-                    Base::toRadians(onViewParameters[OnViewParameter::Fourth]->getValue());
+            if (fourthParam->isSet) {
+                double angle = Base::toRadians(fourthParam->getValue());
                 onSketchPos.x = handler->centerPoint.x + cos(angle) * length;
                 onSketchPos.y = handler->centerPoint.y + sin(angle) * length;
             }
@@ -376,41 +423,47 @@ void DSHPolygonController::adaptParameters(Base::Vector2d onSketchPos)
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (!onViewParameters[OnViewParameter::First]->isSet) {
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
+
+            if (!firstParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::First, onSketchPos.x);
             }
 
-            if (!onViewParameters[OnViewParameter::Second]->isSet) {
+            if (!secondParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::Second, onSketchPos.y);
             }
 
             bool sameSign = onSketchPos.x * onSketchPos.y > 0.;
-            onViewParameters[OnViewParameter::First]->setLabelAutoDistanceReverse(!sameSign);
-            onViewParameters[OnViewParameter::Second]->setLabelAutoDistanceReverse(sameSign);
-            onViewParameters[OnViewParameter::First]->setPoints(Base::Vector3d(),
-                                                                toVector3d(onSketchPos));
-            onViewParameters[OnViewParameter::Second]->setPoints(Base::Vector3d(),
-                                                                 toVector3d(onSketchPos));
+            firstParam->setLabelAutoDistanceReverse(!sameSign);
+            secondParam->setLabelAutoDistanceReverse(sameSign);
+            firstParam->setPoints(Base::Vector3d(), toVector3d(onSketchPos));
+            secondParam->setPoints(Base::Vector3d(), toVector3d(onSketchPos));
         } break;
         case SelectMode::SeekSecond: {
+            auto& thirdParam = onViewParameters[OnViewParameter::Third];
+            auto& fourthParam = onViewParameters[OnViewParameter::Fourth];
+
             Base::Vector3d start = toVector3d(handler->centerPoint);
             Base::Vector3d end = toVector3d(handler->firstCorner);
             Base::Vector3d vec = end - start;
 
-            if (!onViewParameters[OnViewParameter::Third]->isSet) {
+            if (!thirdParam->isSet) {
                 setOnViewParameterValue(OnViewParameter::Third, vec.Length());
             }
 
             double range = (handler->firstCorner - handler->centerPoint).Angle();
-            if (!onViewParameters[OnViewParameter::Fourth]->isSet) {
-                setOnViewParameterValue(OnViewParameter::Fourth,
-                                        Base::toDegrees(range),
-                                        Base::Unit::Angle);
+            if (!fourthParam->isSet) {
+                setOnViewParameterValue(
+                    OnViewParameter::Fourth,
+                    Base::toDegrees(range),
+                    Base::Unit::Angle
+                );
             }
 
-            onViewParameters[OnViewParameter::Third]->setPoints(start, end);
-            onViewParameters[OnViewParameter::Fourth]->setPoints(start, Base::Vector3d());
-            onViewParameters[OnViewParameter::Fourth]->setLabelRange(range);
+            thirdParam->setPoints(start, end);
+            fourthParam->setPoints(start, Base::Vector3d());
+            fourthParam->setLabelRange(range);
 
         } break;
         default:
@@ -419,21 +472,23 @@ void DSHPolygonController::adaptParameters(Base::Vector2d onSketchPos)
 }
 
 template<>
-void DSHPolygonController::doChangeDrawSketchHandlerMode()
+void DSHPolygonController::computeNextDrawSketchHandlerMode()
 {
     switch (handler->state()) {
         case SelectMode::SeekFirst: {
-            if (onViewParameters[OnViewParameter::First]->isSet
-                && onViewParameters[OnViewParameter::Second]->isSet) {
+            auto& firstParam = onViewParameters[OnViewParameter::First];
+            auto& secondParam = onViewParameters[OnViewParameter::Second];
 
-                handler->setState(SelectMode::SeekSecond);
+            if (firstParam->hasFinishedEditing && secondParam->hasFinishedEditing) {
+                handler->setNextState(SelectMode::SeekSecond);
             }
         } break;
         case SelectMode::SeekSecond: {
-            if (onViewParameters[OnViewParameter::Third]->isSet
-                && onViewParameters[OnViewParameter::Fourth]->isSet) {
+            auto& thirdParam = onViewParameters[OnViewParameter::Third];
+            auto& fourthParam = onViewParameters[OnViewParameter::Fourth];
 
-                handler->setState(SelectMode::End);
+            if (thirdParam->hasFinishedEditing && fourthParam->hasFinishedEditing) {
+                handler->setNextState(SelectMode::End);
             }
         } break;
         default:
@@ -444,37 +499,95 @@ void DSHPolygonController::doChangeDrawSketchHandlerMode()
 template<>
 void DSHPolygonController::addConstraints()
 {
+    App::DocumentObject* obj = handler->sketchgui->getObject();
+
     int lastCurve = handler->getHighestCurveIndex();
 
     auto x0 = onViewParameters[OnViewParameter::First]->getValue();
     auto y0 = onViewParameters[OnViewParameter::Second]->getValue();
     auto radius = onViewParameters[OnViewParameter::Third]->getValue();
+    auto angle = Base::toRadians(onViewParameters[OnViewParameter::Fourth]->getValue());
 
     auto x0set = onViewParameters[OnViewParameter::First]->isSet;
     auto y0set = onViewParameters[OnViewParameter::Second]->isSet;
     auto radiusSet = onViewParameters[OnViewParameter::Third]->isSet;
+    auto angleSet = onViewParameters[OnViewParameter::Fourth]->isSet;
 
     using namespace Sketcher;
 
     auto constraintx0 = [&]() {
-        ConstraintToAttachment(GeoElementId(lastCurve, PointPos::mid),
-                               GeoElementId::VAxis,
-                               x0,
-                               handler->sketchgui->getObject());
+        ConstraintToAttachment(GeoElementId(lastCurve, PointPos::mid), GeoElementId::VAxis, x0, obj);
     };
 
     auto constrainty0 = [&]() {
-        ConstraintToAttachment(GeoElementId(lastCurve, PointPos::mid),
-                               GeoElementId::HAxis,
-                               y0,
-                               handler->sketchgui->getObject());
+        ConstraintToAttachment(GeoElementId(lastCurve, PointPos::mid), GeoElementId::HAxis, y0, obj);
     };
 
     auto constraintradius = [&]() {
-        Gui::cmdAppObjectArgs(handler->sketchgui->getObject(),
-                              "addConstraint(Sketcher.Constraint('Radius',%d,%f)) ",
-                              lastCurve,
-                              radius);
+        Gui::cmdAppObjectArgs(obj, "addConstraint(Sketcher.Constraint('Radius',%d,%f)) ", lastCurve, radius);
+    };
+
+    auto constraintAngle = [&]() {
+        int circleGeoId = lastCurve;
+        int lastSideGeoId = lastCurve - 1;
+
+        using std::numbers::pi;
+        // for horizontal/vertical angles add according constraint instead of angle constraint
+        if (fabs(std::remainder(angle, pi)) < Precision::Confusion()) {
+            Gui::cmdAppObjectArgs(
+                obj,
+                "addConstraint(Sketcher.Constraint('Horizontal',%d,%d,%d,%d)) ",
+                circleGeoId,
+                static_cast<int>(PointPos::mid),
+                lastSideGeoId,
+                static_cast<int>(PointPos::end)
+            );
+        }
+        else if (fabs(std::remainder(angle, pi / 2)) < Precision::Confusion()) {
+            Gui::cmdAppObjectArgs(
+                obj,
+                "addConstraint(Sketcher.Constraint('Vertical',%d,%d,%d,%d)) ",
+                circleGeoId,
+                static_cast<int>(PointPos::mid),
+                lastSideGeoId,
+                static_cast<int>(PointPos::end)
+            );
+        }
+        else {
+            Gui::cmdAppObjectArgs(
+                obj,
+                "addGeometry(Part.LineSegment(App.Vector(%f,%f,0),App.Vector(%f,%f,0)),True)",
+                handler->centerPoint.x,
+                handler->centerPoint.y,
+                handler->firstCorner.x,
+                handler->firstCorner.y
+            );
+
+            int radialGeoId = handler->getHighestCurveIndex();
+            Gui::cmdAppObjectArgs(
+                obj,
+                "addConstraint(Sketcher.Constraint('Coincident',%d,%d,%d,%d))",
+                radialGeoId,
+                static_cast<int>(PointPos::start),
+                circleGeoId,
+                static_cast<int>(PointPos::mid)
+            );
+            Gui::cmdAppObjectArgs(
+                obj,
+                "addConstraint(Sketcher.Constraint('Coincident',%d,%d,%d,%d))",
+                radialGeoId,
+                static_cast<int>(PointPos::end),
+                lastSideGeoId,
+                static_cast<int>(PointPos::end)
+            );
+
+            Gui::cmdAppObjectArgs(
+                obj,
+                "addConstraint(Sketcher.Constraint('Angle',%d,%f))",
+                radialGeoId,
+                angle
+            );
+        }
     };
 
     // NOTE: if AutoConstraints is empty, we can add constraints directly without any diagnose. No
@@ -491,6 +604,10 @@ void DSHPolygonController::addConstraints()
         if (radiusSet) {
             constraintradius();
         }
+
+        if (angleSet) {
+            constraintAngle();
+        }
     }
     else {  // There is a valid diagnose.
         auto startpointinfo = handler->getPointInfo(GeoElementId(lastCurve, PointPos::mid));
@@ -504,7 +621,8 @@ void DSHPolygonController::addConstraints()
                                                      // each constraint addition
 
             startpointinfo = handler->getPointInfo(
-                GeoElementId(lastCurve, PointPos::mid));  // get updated point position
+                GeoElementId(lastCurve, PointPos::mid)
+            );  // get updated point position
         }
 
         // if Autoconstraints is empty we do not have a diagnosed system and the parameter will
@@ -524,11 +642,11 @@ void DSHPolygonController::addConstraints()
         if (radiusSet && circle.isRadiusDoF()) {
             constraintradius();
         }
+
+        if (angleSet) {
+            constraintAngle();
+        }
     }
 }
 
-
 }  // namespace SketcherGui
-
-
-#endif  // SKETCHERGUI_DrawSketchHandlerPolygon_H

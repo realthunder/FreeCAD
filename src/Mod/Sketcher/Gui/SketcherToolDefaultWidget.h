@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2022 Pierre-Louis Boyer <pierrelouis.boyer@gmail.com>   *
  *                                                                         *
@@ -21,13 +23,14 @@
  ***************************************************************************/
 
 
-#ifndef SketcherGui_SketcherToolDefaultWidget_H
-#define SketcherGui_SketcherToolDefaultWidget_H
+#pragma once
+
+#include <QLabel>
 
 #include <Base/Unit.h>
 #include <Gui/TaskView/TaskView.h>
 #include <Gui/TaskView/TaskDialog.h>
-#include <Gui/Selection.h>
+#include <Gui/Selection/Selection.h>
 #include <fastsignals/signal.h>
 
 
@@ -125,8 +128,7 @@ public:
     void configureParameterMin(int parameterindex, double val);
     double getParameter(int parameterindex);
     bool isParameterSet(int parameterindex);
-    void
-    updateVisualValue(int parameterindex, double val, const Base::Unit& unit = Base::Unit::Length);
+    void updateVisualValue(int parameterindex, double val, const Base::Unit& unit = Base::Unit::Length);
 
     void setParameterEnabled(int parameterindex, bool active = true);
     void setParameterFocus(int parameterindex);
@@ -159,8 +161,11 @@ public:
     void setComboboxLabel(int comboboxindex, const QString& string);
     int getComboboxIndex(int comboboxindex);
     QString getComboboxCurrentText(int comboboxindex);
-    void setComboboxCurrentText(int comboboxindex, const QString& text);
+    int setComboboxCurrentText(int comboboxIndex, const QString& text);
     void setComboboxElements(int comboboxindex, const QStringList& names);
+    void setComboboxItemIcon(int comboboxindex, int index, QIcon icon);
+    void setComboboxPrefEntry(int comboboxindex, const std::string& prefEntry);
+    void restoreComboboxPref(int comboboxindex);
 
     void initNLineEdits(int nlineedit);
     void setLineEditVisible(int lineeditindex, bool visible);
@@ -168,40 +173,39 @@ public:
     void setLineEditLabel(int lineeditindex, const QString& string);
     QString getLineEditText(int lineeditindex);
     void setLineEditFocus(int lineeditindex);
-    void setComboboxItemIcon(int comboboxindex, int index, QIcon icon);
-    void setComboboxPrefEntry(int comboboxindex, const std::string& prefEntry);
-    void restoreComboboxPref(int comboboxindex);
 
     template<typename F>
     fastsignals::advanced_connection registerParameterTabOrEnterPressed(F&& fn)
     {
-        return signalParameterTabOrEnterPressed.connect(std::forward<F>(fn), fastsignals::advanced_tag {});
+        return signalParameterTabOrEnterPressed.connect(
+            std::forward<F>(fn),
+            fastsignals::advanced_tag()
+        );
     }
 
     template<typename F>
     fastsignals::advanced_connection registerParameterValueChanged(F&& fn)
     {
-        return signalParameterValueChanged.connect(std::forward<F>(fn), fastsignals::advanced_tag {});
+        return signalParameterValueChanged.connect(std::forward<F>(fn), fastsignals::advanced_tag());
     }
 
     template<typename F>
     fastsignals::advanced_connection registerCheckboxCheckedChanged(F&& fn)
     {
-        return signalCheckboxCheckedChanged.connect(std::forward<F>(fn), fastsignals::advanced_tag {});
+        return signalCheckboxCheckedChanged.connect(std::forward<F>(fn), fastsignals::advanced_tag());
     }
 
     template<typename F>
     fastsignals::advanced_connection registerComboboxSelectionChanged(F&& fn)
     {
-        return signalComboboxSelectionChanged.connect(std::forward<F>(fn), fastsignals::advanced_tag {});
+        return signalComboboxSelectionChanged.connect(std::forward<F>(fn), fastsignals::advanced_tag());
     }
 
     template<typename F>
     fastsignals::advanced_connection registerLineEditTextChanged(F&& fn)
     {
-        return signalLineEditTextChanged.connect(std::forward<F>(fn), fastsignals::advanced_tag {});
+        return signalLineEditTextChanged.connect(std::forward<F>(fn), fastsignals::advanced_tag());
     }
-
 
     // Q_SIGNALS:
 protected Q_SLOTS:
@@ -262,5 +266,3 @@ private:
 
 
 }  // namespace SketcherGui
-
-#endif  // SketcherGui_SketcherToolDefaultWidget_H

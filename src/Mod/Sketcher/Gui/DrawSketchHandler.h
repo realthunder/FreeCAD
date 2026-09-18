@@ -160,6 +160,8 @@ public:
     {
         return false;
     }
+    /// Cancels the current tool action. Used by Esc, right click, and OVP cancel.
+    virtual void cancelCurrentAction();
     virtual void registerPressedKey(bool pressed, int key);
     virtual void pressRightButton(Base::Vector2d onSketchPos);
 
@@ -248,6 +250,24 @@ public:
     // createowncommand indicates whether a separate command shall be create and committed (for
     // example for undo purposes) or not is not it is the responsibility of the developer to create
     // and commit the command appropriately.
+    /** @name Turning suggestions into constraints
+     *
+     * What DrawSketchDefaultHandler builds its auto-constraints through:
+     * each suggestion is turned into a constraint on its own, the set is
+     * filtered for redundancy, and what survives is written in one command.
+     */
+    //@{
+    bool generateOneAutoConstraintFromSuggestion(
+        const AutoConstraint& autoConstraint,
+        int geoId,
+        Sketcher::PointPos pointPos,
+        std::vector<std::unique_ptr<Sketcher::Constraint>>& autoConstraints);
+    bool filterRedundantAutoConstraints(
+        std::vector<std::unique_ptr<Sketcher::Constraint>>& autoConstraints);
+    void addGeneratedAutoConstraints(
+        const std::vector<std::unique_ptr<Sketcher::Constraint>>& autoConstraints);
+    //@}
+
     void createAutoConstraints(const std::vector<AutoConstraint>& autoConstrs,
                                int geoId,
                                Sketcher::PointPos pointPos = Sketcher::PointPos::none,

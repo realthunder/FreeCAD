@@ -563,6 +563,7 @@ const Unit Unit::ElectricCurrent            (0, 0, 0, 1);
 const Unit Unit::Length                     (1);
 const Unit Unit::LuminousIntensity          (0, 0, 0, 0, 0, 0, 1);
 const Unit Unit::Mass                       (0, 1);
+const Unit Unit::One;
 const Unit Unit::Temperature                (0, 0, 0, 0, 1);
 const Unit Unit::TimeSpan                   (0, 0, 1);
 

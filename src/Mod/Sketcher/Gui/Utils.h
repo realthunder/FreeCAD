@@ -195,13 +195,16 @@ bool useSystemDecimals();
 std::string lengthToDisplayFormat(double value, int digits);
 std::string angleToDisplayFormat(double value, int digits);
 
-bool areColinear(const Base::Vector2d& p1, const Base::Vector2d& p2, const Base::Vector2d& p3);
+bool areCollinear(const Base::Vector2d& p1, const Base::Vector2d& p2, const Base::Vector2d& p3);
 
 int indexOfGeoId(const std::vector<int>& vec, int elem);
 
 /// Constrains a line to an angle with the horizontal axis, as horizontal, vertical or an
 /// explicit angle, whichever the value calls for.
 void ConstraintLineByAngle(int geoId, double angle, App::DocumentObject* obj);
+/// Constrains two lines to an angle between them, as parallel, perpendicular
+/// or an explicit angle, whichever the value calls for.
+void Constraint2LinesByAngle(int geoId1, int geoId2, double angle, App::DocumentObject* obj);
 
 /** The font files the text tool can render with, by the name shown to the user.
  *
