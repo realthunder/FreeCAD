@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2022 Abdullah Tahiri <abdullah.tahiri.yo@gmail.com>     *
  *                                                                         *
@@ -20,8 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef SKETCHERGUI_DrawSketchHandlerExtend_H
-#define SKETCHERGUI_DrawSketchHandlerExtend_H
+#pragma once
 
 #include <Gui/Notifications.h>
 #include <Gui/SelectionFilter.h>
@@ -33,12 +34,13 @@
 #include "DrawSketchHandler.h"
 #include "Utils.h"
 #include "ViewProviderSketch.h"
+#include "SnapManager.h"
 
 
 namespace SketcherGui
 {
 
-class ExtendSelection : public SketcherSelectionFilterGate
+class ExtendSelection: public SketcherSelectionFilterGate
 {
 public:
     explicit ExtendSelection(App::DocumentObject* obj)
@@ -51,7 +53,7 @@ public:
         if (pObj != this->object) {
             return false;
         }
-        if (!sSubName || sSubName[0] == '\0') {
+        if (Base::Tools::isNullOrEmpty(sSubName)) {
             return false;
         }
         if (disabled) {
@@ -81,6 +83,8 @@ protected:
 
 class DrawSketchHandlerExtend: public DrawSketchHandler
 {
+    Q_DECLARE_TR_FUNCTIONS(SketcherGui::DrawSketchHandlerExtend)
+
 public:
     DrawSketchHandlerExtend()
         : Mode(STATUS_SEEK_First)
@@ -104,12 +108,13 @@ public:
     void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
         Base::Vector2d onSketchPos = snapHandle.compute();
-        Q_UNUSED(onSketchPos);
+
+        using std::numbers::pi;
+
         if (Mode == STATUS_SEEK_Second) {
             const Part::Geometry* geom = sketchgui->getSketchObject()->getGeometry(BaseGeoId);
             if (geom->is<Part::GeomLineSegment>()) {
-                const Part::GeomLineSegment* lineSeg =
-                    static_cast<const Part::GeomLineSegment*>(geom);
+                const Part::GeomLineSegment* lineSeg = static_cast<const Part::GeomLineSegment*>(geom);
                 // project point to the existing curve
                 Base::Vector3d start3d = lineSeg->getStartPoint();
                 Base::Vector3d end3d = lineSeg->getEndPoint();
@@ -135,19 +140,20 @@ public:
                  * If out-of-curve, the intuitive behavior is for the closest line endpoint to
                  * expand.
                  */
-                bool inCurve = (projection.Length() < recenteredLine.Length()
-                                && projection.GetAngle(recenteredLine)
-                                    < 0.1);  // Two possible values here, M_PI and 0, but 0.1 is to
-                                             // avoid floating point problems.
+                bool inCurve
+                    = (projection.Length() < recenteredLine.Length()
+                       && projection.GetAngle(recenteredLine) < 0.1);  // Two possible values here,
+                                                                       // pi and 0, but 0.1 is to
+                                                                       // avoid floating point
+                                                                       // problems.
                 if (inCurve) {
-                    Increment = SavedExtendFromStart
-                        ? -1 * projection.Length()
-                        : projection.Length() - recenteredLine.Length();
+                    Increment = SavedExtendFromStart ? -1 * projection.Length()
+                                                     : projection.Length() - recenteredLine.Length();
                     ExtendFromStart = SavedExtendFromStart;
                 }
                 else {
-                    ExtendFromStart =
-                        onSketchPos.Distance(startPoint) < onSketchPos.Distance(endPoint);
+                    ExtendFromStart = onSketchPos.Distance(startPoint)
+                        < onSketchPos.Distance(endPoint);
                     Increment = ExtendFromStart ? projection.Length()
                                                 : projection.Length() - recenteredLine.Length();
                 }
@@ -162,13 +168,13 @@ public:
                 arc->getRange(start, end, true);
                 double arcAngle = end - start;
 
-                Base::Vector2d angle =
-                    Base::Vector2d(onSketchPos.x - center.x, onSketchPos.y - center.y);
+                Base::Vector2d angle
+                    = Base::Vector2d(onSketchPos.x - center.x, onSketchPos.y - center.y);
                 Base::Vector2d startAngle = Base::Vector2d(cos(start), sin(start));
                 Base::Vector2d endAngle = Base::Vector2d(cos(end), sin(end));
 
-                Base::Vector2d arcHalf =
-                    Base::Vector2d(cos(start + arcAngle / 2.0), sin(start + arcAngle / 2.0));
+                Base::Vector2d arcHalf
+                    = Base::Vector2d(cos(start + arcAngle / 2.0), sin(start + arcAngle / 2.0));
                 double angleToEndAngle = angle.GetAngle(endAngle);
                 double angleToStartAngle = angle.GetAngle(startAngle);
 
@@ -180,8 +186,8 @@ public:
                     bool isCCWFromStart = crossProduct(angle, startAngle) < 0;
                     if (outOfArc) {
                         if (isCCWFromStart) {
-                            modStartAngle -= 2 * M_PI - angleToStartAngle;
-                            modArcAngle += 2 * M_PI - angleToStartAngle;
+                            modStartAngle -= 2 * pi - angleToStartAngle;
+                            modArcAngle += 2 * pi - angleToStartAngle;
                         }
                         else {
                             modStartAngle -= angleToStartAngle;
@@ -194,8 +200,8 @@ public:
                             modArcAngle -= angleToStartAngle;
                         }
                         else {
-                            modStartAngle += 2 * M_PI - angleToStartAngle;
-                            modArcAngle -= 2 * M_PI - angleToStartAngle;
+                            modStartAngle += 2 * pi - angleToStartAngle;
+                            modArcAngle -= 2 * pi - angleToStartAngle;
                         }
                     }
                 }
@@ -203,7 +209,7 @@ public:
                     bool isCWFromEnd = crossProduct(angle, endAngle) >= 0;
                     if (outOfArc) {
                         if (isCWFromEnd) {
-                            modArcAngle += 2 * M_PI - angleToEndAngle;
+                            modArcAngle += 2 * pi - angleToEndAngle;
                         }
                         else {
                             modArcAngle += angleToEndAngle;
@@ -214,23 +220,23 @@ public:
                             modArcAngle -= angleToEndAngle;
                         }
                         else {
-                            modArcAngle -= 2 * M_PI - angleToEndAngle;
+                            modArcAngle -= 2 * pi - angleToEndAngle;
                         }
                     }
                 }
                 Increment = modArcAngle - (end - start);
                 for (int i = 0; i < 31; i++) {
                     double angle = modStartAngle + i * modArcAngle / 30.0;
-                    EditCurve[i] = Base::Vector2d(center.x + radius * cos(angle),
-                                                  center.y + radius * sin(angle));
+                    EditCurve[i] = Base::Vector2d(
+                        center.x + radius * cos(angle),
+                        center.y + radius * sin(angle)
+                    );
                 }
                 drawEdit(EditCurve);
             }
             int curveId = getPreselectCurve();
-            if (BaseGeoId != curveId
-                && seekAutoConstraint(SugConstr, onSketchPos, Base::Vector2d(0.f, 0.f))) {
-                renderSuggestConstraintsCursor(SugConstr);
-                return;
+            if (BaseGeoId != curveId) {
+                seekAndRenderAutoConstraint(SugConstr, onSketchPos, Base::Vector2d(0.f, 0.f));
             }
         }
     }
@@ -249,31 +255,27 @@ public:
             if (BaseGeoId > -1) {
                 const Part::Geometry* geom = sketchgui->getSketchObject()->getGeometry(BaseGeoId);
                 if (geom->is<Part::GeomLineSegment>()) {
-                    const Part::GeomLineSegment* seg =
-                        static_cast<const Part::GeomLineSegment*>(geom);
+                    const Part::GeomLineSegment* seg = static_cast<const Part::GeomLineSegment*>(geom);
                     Base::Vector3d start3d = seg->getStartPoint();
                     Base::Vector3d end3d = seg->getEndPoint();
                     Base::Vector2d start = Base::Vector2d(start3d.x, start3d.y);
                     Base::Vector2d end = Base::Vector2d(end3d.x, end3d.y);
-                    SavedExtendFromStart =
-                        (onSketchPos.Distance(start) < onSketchPos.Distance(end));
+                    SavedExtendFromStart = (onSketchPos.Distance(start) < onSketchPos.Distance(end));
                     ExtendFromStart = SavedExtendFromStart;
                     Mode = STATUS_SEEK_Second;
                 }
                 else if (geom->is<Part::GeomArcOfCircle>()) {
-                    const Part::GeomArcOfCircle* arc =
-                        static_cast<const Part::GeomArcOfCircle*>(geom);
+                    const Part::GeomArcOfCircle* arc = static_cast<const Part::GeomArcOfCircle*>(geom);
                     double start, end;
                     arc->getRange(start, end, true);
 
                     Base::Vector3d center = arc->getCenter();
-                    Base::Vector2d angle =
-                        Base::Vector2d(onSketchPos.x - center.x, onSketchPos.y - center.y);
+                    Base::Vector2d angle
+                        = Base::Vector2d(onSketchPos.x - center.x, onSketchPos.y - center.y);
                     double angleToStart = angle.GetAngle(Base::Vector2d(cos(start), sin(start)));
                     double angleToEnd = angle.GetAngle(Base::Vector2d(cos(end), sin(end)));
-                    ExtendFromStart =
-                        (angleToStart
-                         < angleToEnd);  // move start point if closer to angle than end point
+                    ExtendFromStart = (angleToStart < angleToEnd);  // move start point if closer to
+                                                                    // angle than end point
                     EditCurve.resize(31);
                     Mode = STATUS_SEEK_Second;
                 }
@@ -282,17 +284,20 @@ public:
         }
         else if (Mode == STATUS_SEEK_Second) {
             try {
-                Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Extend edge"));
-                Gui::cmdAppObjectArgs(sketchgui->getObject(),
-                                      "extend(%d, %f, %d)\n",  // GeoId, increment, PointPos
-                                      BaseGeoId,
-                                      Increment,
-                                      ExtendFromStart ? static_cast<int>(Sketcher::PointPos::start)
-                                                      : static_cast<int>(Sketcher::PointPos::end));
-                Gui::Command::commitCommand();
+                openCommand(QT_TRANSLATE_NOOP("Command", "Extend edge"));
+                Gui::cmdAppObjectArgs(
+                    sketchgui->getObject(),
+                    "extend(%d, %f, %d)\n",  // GeoId, increment, PointPos
+                    BaseGeoId,
+                    Increment,
+                    ExtendFromStart ? static_cast<int>(Sketcher::PointPos::start)
+                                    : static_cast<int>(Sketcher::PointPos::end)
+                );
+                commitCommand();
 
                 ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-                    "User parameter:BaseApp/Preferences/Mod/Sketcher");
+                    "User parameter:BaseApp/Preferences/Mod/Sketcher"
+                );
                 bool autoRecompute = hGrp->GetBool("AutoRecompute", false);
                 if (autoRecompute) {
                     Gui::Command::updateActive();
@@ -300,10 +305,11 @@ public:
 
                 // constrain chosen point
                 if (!SugConstr.empty()) {
-                    createAutoConstraints(SugConstr,
-                                          BaseGeoId,
-                                          (ExtendFromStart) ? Sketcher::PointPos::start
-                                                            : Sketcher::PointPos::end);
+                    createAutoConstraints(
+                        SugConstr,
+                        BaseGeoId,
+                        (ExtendFromStart) ? Sketcher::PointPos::start : Sketcher::PointPos::end
+                    );
                     SugConstr.clear();
                 }
                 bool continuousMode = hGrp->GetBool("ContinuousCreationMode", true);
@@ -327,17 +333,20 @@ public:
                 }
             }
             catch (const Base::Exception&) {
-                Gui::NotifyError(sketchgui,
-                                 QT_TRANSLATE_NOOP("Notifications", "Error"),
-                                 QT_TRANSLATE_NOOP("Notifications", "Failed to extend edge"));
-                Gui::Command::abortCommand();
+                Gui::NotifyError(
+                    sketchgui,
+                    QT_TRANSLATE_NOOP("Notifications", "Error"),
+                    QT_TRANSLATE_NOOP("Notifications", "Failed to extend edge")
+                );
+                abortCommand();
             }
         }
         else {  // exit extension tool if user clicked on empty space
             BaseGeoId = -1;
-            sketchgui
-                ->purgeHandler();  // no code after this line, Handler get deleted in ViewProvider
+            sketchgui->purgeHandler();  // no code after this line, Handler get deleted in ViewProvider
         }
+
+        updateHint();
         return true;
     }
 
@@ -365,6 +374,27 @@ protected:
     double Increment;
     std::vector<AutoConstraint> SugConstr;
 
+public:
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        using enum Gui::InputHint::UserInput;
+
+        return Gui::lookupHints<SelectMode>(
+            Mode,
+            {
+                {.state = STATUS_SEEK_First,
+                 .hints =
+                     {
+                         {tr("%1 pick edge to extend", "Sketcher Extend: hint"), {MouseLeft}},
+                     }},
+                {.state = STATUS_SEEK_Second,
+                 .hints =
+                     {
+                         {tr("%1 set extension length", "Sketcher Extend: hint"), {MouseLeft}},
+                     }},
+            });
+    }
+
 private:
     int crossProduct(Base::Vector2d& vec1, Base::Vector2d& vec2)
     {
@@ -372,8 +402,4 @@ private:
     }
 };
 
-
 }  // namespace SketcherGui
-
-
-#endif  // SKETCHERGUI_DrawSketchHandlerExtend_H

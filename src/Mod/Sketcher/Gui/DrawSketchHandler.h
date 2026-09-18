@@ -30,6 +30,7 @@
 
 #include <Gui/SelectionFilter.h>
 #include <Gui/ToolHandler.h>
+#include <Gui/InputHint.h>
 #include <Base/Parameter.h>
 #include <Base/Tools2D.h>
 #include <Gui/Selection.h>
