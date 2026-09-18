@@ -1523,11 +1523,16 @@ public:
 
     void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
-        Base::Vector2d onSketchPos = snapHandle.compute();
         if (hasBeenAborted()) {
             resetTool();
             return;
         }
+
+        // Every snap except to edges: snapping the label onto an edge makes
+        // an angle constraint jump to the other side of it.
+        SnapType mask = static_cast<SnapType>(static_cast<int>(SnapType::All)
+                                              & ~static_cast<int>(SnapType::Edge));
+        Base::Vector2d onSketchPos = snapHandle.compute(mask);
 
         previousOnSketchPos = onSketchPos;
 
