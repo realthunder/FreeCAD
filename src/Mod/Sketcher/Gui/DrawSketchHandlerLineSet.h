@@ -192,15 +192,16 @@ public:
             else {
                 EditCurve.resize(32);
             }
-            mouseMove(onSketchPos); // trigger an update of EditCurve
+            mouseMove(SnapManager::SnapHandle(nullptr, onSketchPos)); // trigger an update of EditCurve
             return true;
         }
 
         return false;
     }
 
-    void mouseMove(Base::Vector2d onSketchPos) override
+    void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
+        Base::Vector2d onSketchPos = snapHandle.compute();
         suppressTransition = false;
         if (Mode == STATUS_SEEK_First) {
             setPositionText(onSketchPos);
@@ -736,7 +737,7 @@ public:
                 SegmentMode = SEGMENT_MODE_Line;
                 SnapMode = SNAP_MODE_Free;
                 EditCurve[1] = EditCurve[0];
-                mouseMove(onSketchPos);  // trigger an update of EditCurve
+                mouseMove(SnapManager::SnapHandle(nullptr, onSketchPos));  // trigger an update of EditCurve
             }
         }
         return true;

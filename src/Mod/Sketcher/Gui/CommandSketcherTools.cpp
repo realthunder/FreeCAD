@@ -1230,8 +1230,9 @@ public:
         Snap5Degree
     };
 
-    void mouseMove(Base::Vector2d onSketchPos) override
+    void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
+        Base::Vector2d onSketchPos = snapHandle.compute();
         if (Mode == STATUS_SEEK_First) {
 
             if (QApplication::keyboardModifiers() == Qt::ControlModifier)
@@ -1723,8 +1724,9 @@ public:
         Snap5Degree
     };
 
-    void mouseMove(Base::Vector2d onSketchPos) override
+    void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
+        Base::Vector2d onSketchPos = snapHandle.compute();
         if (Mode == STATUS_SEEK_First) {
 
             if (QApplication::keyboardModifiers() == Qt::ControlModifier)

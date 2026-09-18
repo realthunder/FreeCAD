@@ -127,6 +127,28 @@ public:
 
     void setAngleSnapping(bool enable, Base::Vector2d referencepoint);
 
+    /** A cursor position that has not been snapped yet, and the manager
+     * that would snap it.
+     *
+     * The view builds one per event and hands it to the tool rather than
+     * snapping first, so the tool is the one that says which kinds of
+     * snapping apply to what it is doing. A handle with no manager is an
+     * already-decided position and computes to itself, which is what the
+     * on-view parameters feed in.
+     */
+    struct SnapHandle
+    {
+        SnapManager* mgr = nullptr;
+        Base::Vector2d cursorPos;
+
+        SnapHandle(SnapManager* m, const Base::Vector2d& cursorPos)
+            : mgr(m)
+            , cursorPos(cursorPos)
+        {}
+
+        Base::Vector2d compute(SnapType mask = SnapType::All);
+    };
+
 private:
     /// Reference to ViewProviderSketch in order to access the public and the Attorney Interface
     ViewProviderSketch& viewProvider;
