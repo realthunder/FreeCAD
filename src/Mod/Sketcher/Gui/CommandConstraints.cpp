@@ -1016,7 +1016,7 @@ public:
         Gui::Selection().rmvSelectionGate();
     }
 
-    void mouseMove(Base::Vector2d /*onSketchPos*/) override
+    void mouseMove(SnapManager::SnapHandle /*snapHandle*/) override
     {}
 
     bool pressButton(Base::Vector2d /*onSketchPos*/) override
@@ -1521,8 +1521,9 @@ public:
         }
     }
 
-    void mouseMove(Base::Vector2d onSketchPos) override
+    void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
+        Base::Vector2d onSketchPos = snapHandle.compute();
         if (hasBeenAborted()) {
             resetTool();
             return;

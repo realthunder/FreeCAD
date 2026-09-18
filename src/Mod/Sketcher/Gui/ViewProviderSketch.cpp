@@ -1424,11 +1424,16 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
     double x,y;
     try {
         getCoordsOnSketchPlane(line.getPosition(), line.getDirection(), x, y);
-        snapPoint(x, y);
     }
     catch (const Base::ZeroDivisionError&) {
         return false;
     }
+
+    // Deliberately NOT snapped here. Each consumer below asks for the
+    // snapping it wants, which is how a tool opts out of a kind that
+    // fights what it is doing -- the dimension tool and edge snapping,
+    // for one.
+    SnapManager::SnapHandle snapHandle(snapManager.get(), Base::Vector2d(x, y));
 
     bool preselectChanged = false;
     if (_Mode != STATUS_SELECT_Point &&
@@ -1485,8 +1490,10 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
             edit->PreselectCross = -1;
             edit->PreselectConstraintSet.clear();
             return true;
-        case STATUS_SKETCH_Drag:
-            doDragStep(x, y);
+        case STATUS_SKETCH_Drag: {
+            const Base::Vector2d dragPos = snapHandle.compute();
+            doDragStep(dragPos.x, dragPos.y);
+        }
             return true;
         case STATUS_SKETCH_DragConstraint:
             if (!edit->DragConstraintSet.empty()) {
@@ -1495,12 +1502,13 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
                             QT_TRANSLATE_NOOP("Command", "Drag Constraint"));
                 }
                 auto idset = edit->DragConstraintSet;
+                const Base::Vector2d constrPos = snapHandle.compute();
                 for(int id : idset)
-                    moveConstraint(id, Base::Vector2d(x,y));
+                    moveConstraint(id, constrPos);
             }
             return true;
         case STATUS_SKETCH_UseHandler:
-            edit->sketchHandler->mouseMove(Base::Vector2d(x,y));
+            edit->sketchHandler->mouseMove(snapHandle);
             if (preselectChanged) {
                 this->drawConstraintIcons();
                 this->updateColor();

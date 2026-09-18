@@ -404,6 +404,14 @@ bool SnapManager::snapToArcMiddle(Base::Vector3d& pointToOverride, const Part::G
     return false;
 }
 
+Base::Vector2d SnapManager::SnapHandle::compute(SnapType mask)
+{
+    if (!mgr) {
+        return cursorPos;
+    }
+    return mgr->snap(cursorPos, mask);
+}
+
 void SnapManager::setAngleSnapping(bool enable, Base::Vector2d referencepoint)
 {
     angleSnapRequested = enable;

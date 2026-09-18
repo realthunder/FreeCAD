@@ -663,8 +663,9 @@ public:
     ~DrawSketchHandlerBSplineInsertKnot() override
     {}
 
-    void mouseMove(Base::Vector2d onSketchPos) override
+    void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
+        Base::Vector2d onSketchPos = snapHandle.compute();
         auto bsp = static_cast<const Part::GeomBSplineCurve*>(Obj->getGeometry(GeoId));
 
         // get closest parameter using OCC

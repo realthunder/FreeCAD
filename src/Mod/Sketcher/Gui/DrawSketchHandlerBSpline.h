@@ -76,8 +76,9 @@ public:
         MOUSE_NOT_PRESSED
     };
 
-    void mouseMove(Base::Vector2d onSketchPos) override
+    void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
+        Base::Vector2d onSketchPos = snapHandle.compute();
         prevCursorPosition = onSketchPos;
 
         if (Mode == STATUS_SEEK_FIRST_CONTROLPOINT) {

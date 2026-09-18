@@ -37,6 +37,7 @@
 #include <Mod/Sketcher/App/Constraint.h>
 
 #include "AutoConstraint.h"
+#include "SnapManager.h"
 
 class QWidget;
 
@@ -151,7 +152,7 @@ public:
     void setSketchGui(ViewProviderSketch* vp);
     void deactivate() override;
 
-    virtual void mouseMove(Base::Vector2d onSketchPos) = 0;
+    virtual void mouseMove(SnapManager::SnapHandle snapHandle) = 0;
     virtual bool pressButton(Base::Vector2d onSketchPos) = 0;
     virtual bool releaseButton(Base::Vector2d onSketchPos) = 0;
     virtual bool onSelectionChanged(const Gui::SelectionChanges&)
