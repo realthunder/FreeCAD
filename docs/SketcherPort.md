@@ -18,12 +18,18 @@ the user's ruling of 2026-09-18 that reverses decision 4's deferral of the
 hints framework -- the core of it was already in the fork and only that
 one class was missing. `DrawSketchHandler.{h,cpp}` is the keystone the
 tool handler files need, and its group B (the auto-constraint search) is
-in with the three fixes that ride on it. The auto-constraint family now
-has a GUI harness that drives a tool through a served mirror, which is the
-only way to get real preselection under test -- and building it turned up
-a defect of its own: **every Sketcher tool misplaced every point a browser
+in with the three fixes that ride on it, and so is the snap mask and the
+deferred `SnapHandle` -- which was the last thing standing between the
+port and the ~30 tool handler files. The auto-constraint family now has a
+GUI harness that drives a tool through a served mirror, which is the only
+way to get real preselection under test -- and building it turned up a
+defect of its own: **every Sketcher tool misplaced every point a browser
 put down anywhere but the middle of the canvas**, fixed in `8a4b30bc83`
 on the user's ruling to take it before continuing.
+
+Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
+evaluated and **declined**; `docs/TransactionLog.md` records why, and the
+direction the user wants instead.
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
@@ -1111,6 +1117,55 @@ viewport cannot see a scale error.
 remains and is not this defect: y lands about 0.12 sketch units (~1.4 px)
 low, consistently and in both directions -- an origin convention, not a
 scale.
+
+### The snap mask and the deferred handle (`42a58c4533`, `de12a44256`, `261b3e0b92`)
+
+The last keystone piece, and the one that lets the handler files move:
+upstream's handlers all declare `mouseMove(SnapManager::SnapHandle)`, and a
+pure virtual's signature cannot change for some overrides and not others.
+
+Taken in three steps so each is verifiable on its own:
+
+1. **The mask.** `snap()` takes a `SnapType` (Angle | Point | Edge | Grid)
+   and the signatures go to upstream's value-in/value-out shape. That is
+   what makes a *partial* snap expressible, and with it came the behaviour
+   fix: **an axis is no longer a full snap.** Hovering the X axis used to
+   set `y = 0` and return true, so `snap()` returned there and the grid
+   step never ran -- x stayed wherever the pointer was, which is the one
+   thing a user hovering an axis with grid snapping on does not want
+   (`72d021108f`, its tail `9f2b0f910b`, and `129d64dd87`'s two
+   initialisations).
+2. **The handle.** `mouseMove` takes the raw position plus the manager
+   instead of a pre-snapped position; all 19 overrides gain one
+   `compute()` line with the default mask, so it is behaviour-neutral by
+   construction. `ViewProviderSketch::mouseMove` builds one handle per
+   event and each consumer computes for itself. A handle with **no
+   manager** computes to itself, which is how an already-decided position
+   enters -- `DrawSketchController`'s four calls (an on-view parameter or
+   a typed coordinate, which must not be snapped again) and
+   `DrawSketchHandlerLineSet`'s two self-calls.
+3. **The one tool that wants a narrower mask.** The dimension tool drops
+   `SnapType::Edge`: snapping its label onto an edge makes an angle
+   constraint jump to the other side as the pointer crosses it
+   (upstream #24150). That is the whole point of the mechanism, and it is
+   the only non-default mask upstream has.
+
+The button paths and the drag initialisation still snap eagerly through
+`snapPoint()`. Nothing needs them deferred and changing them would be
+untested churn.
+
+Only the **Gui** half of `62c222c211` is taken. Its App hunk is an
+unrelated `PointPos` fix in `reverseAngleConstraintToSupplementary`,
+bundled in the same PR, and upstream rewrote that function again in
+`8b06bca68a` -- it stays with the angle-expression cluster.
+
+`tests/gui/sketch-axis-grid-snap.py`
+(`GuiSketchAxisGridSnap_tests_run`) covers step 1 end to end and, after
+step 2, exercises the handle path as well: grid on, grid size 10, first
+point clicked at world (21, 0), which is on the X axis and one unit from
+the grid line at 20. Before, the line starts at x = 20.96, the raw
+pointer position; after, at 20. Step 3 is **not** covered -- see its
+commit message for why.
 
 ### Rows closed without a pick
 
