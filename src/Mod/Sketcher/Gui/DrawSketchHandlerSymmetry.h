@@ -36,16 +36,12 @@
 
 #include "DrawSketchDefaultWidgetController.h"
 #include "DrawSketchControllableHandler.h"
-
-#include "GeometryCreationMode.h"
 #include "Utils.h"
 
 using namespace Sketcher;
 
 namespace SketcherGui
 {
-
-extern GeometryCreationMode geometryCreationMode;  // defined in CommandCreateGeo.cpp
 
 class DrawSketchHandlerSymmetry;
 

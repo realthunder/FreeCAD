@@ -24,7 +24,6 @@
 #define SKETCHERGUI_DrawSketchHandlerExternal_H
 
 #include <array>
-#include "GeometryCreationMode.h"
 #include "Utils.h"
 #include <Gui/ViewerContext.h>
 
@@ -33,8 +32,6 @@
 
 namespace SketcherGui
 {
-
-extern GeometryCreationMode geometryCreationMode;  // defined in CommandCreateGeo.cpp
 
 class ExternalSelection : public SketcherSelectionFilterGate
 {

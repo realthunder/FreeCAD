@@ -51,7 +51,6 @@
 #include <Mod/Sketcher/App/SketchObject.h>
 
 #include "CircleEllipseConstructionMethod.h"
-#include "GeometryCreationMode.h"
 #include "Utils.h"
 #include "ViewProviderSketch.h"
 
@@ -60,8 +59,6 @@
 #include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/ViewParams.h>
 #include <Gui/ToolBarManager.h>
-
-#include "GeometryCreationMode.h"
 
 // DrawSketchHandler* must be last includes
 #include "DrawSketchHandler.h"
@@ -109,11 +106,6 @@ using namespace SketcherGui;
             }                                                                                      \
         }                                                                                          \
     }
-
-namespace SketcherGui
-{
-GeometryCreationMode geometryCreationMode = GeometryCreationMode::Normal;
-}
 
 /* Sketch commands =======================================================*/
 

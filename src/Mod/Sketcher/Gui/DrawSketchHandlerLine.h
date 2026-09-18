@@ -33,14 +33,10 @@
 
 #include "DrawSketchDefaultWidgetController.h"
 #include "DrawSketchControllableHandler.h"
-
-#include "GeometryCreationMode.h"
 #include "Utils.h"
 
 namespace SketcherGui
 {
-
-extern GeometryCreationMode geometryCreationMode;  // defined in CommandCreateGeo.cpp
 
 class DrawSketchHandlerLine;
 
@@ -282,7 +278,7 @@ void DSHLineController::configureToolWidget()
                              QStringLiteral("2 points")};
         toolWidget->setComboboxElements(WCombobox::FirstCombo, names);
 
-        if (isConstructionMode()) {
+        if (handler->isConstructionMode()) {
             toolWidget->setComboboxItemIcon(
                 WCombobox::FirstCombo,
                 0,

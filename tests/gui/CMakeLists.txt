@@ -178,3 +178,10 @@ fc_add_gui_test(GuiSketchTangentAutoConstraint_tests_run
 fc_add_gui_test(GuiSketchAxisGridSnap_tests_run
                 sketch-axis-grid-snap.py
                 --timeout 180)
+
+# Construction mode belongs to the sketch (upstream 9a1020929e): it was
+# one global, so turning it on in one sketch made the next line drawn in
+# any other sketch construction geometry too.
+fc_add_gui_test(GuiSketchConstructionMode_tests_run
+                sketch-construction-mode.py
+                --timeout 240)
