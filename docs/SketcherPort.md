@@ -1358,19 +1358,50 @@ handler demoted to `Sketcher_CreatePolylineLegacy`. The whole file was
 taken, so the new tool is present but unused here; adopting it is a
 one-line command change and a separate decision.
 
-**`M` is hardcoded and that is a defect** (user, 2026-09-18). It is the raw
-Coin constant `SoKeyboardEvent::M`, tested inside `registerPressedKey`,
-which `ViewProviderSketch` feeds straight from the viewport. It is not a
-`Gui::Command`, so it has no shortcut-editor entry, cannot be rebound, and
-cannot be put on a client's tool bar -- which is why `toggle()` exists at
-all. Three handlers hardcode it (`DrawSketchDefaultHandler`, `LineSet`,
-`BSplineByInterpolation`). Queued, at the user's direction, for after this
-landed: one virtual `iterateToolMode()` on the base, a real
-`Sketcher_NextToolMode` command with accel `M`, and the `registerPressedKey`
-branches removed so the key has one path. The conflict question is already
-answered -- this fork has `Gui::ShortcutManager`, which resolves
-accelerators dynamically by priority (`Command.cpp:272` records that the
-old static check was retired for it).
+### The tool mode became a command (`90f0e23eac`)
+
+**`M` was hardcoded and that was a defect** (user, 2026-09-18). It was the
+raw Coin constant `SoKeyboardEvent::M`, tested inside `registerPressedKey`,
+which `ViewProviderSketch` feeds straight from the viewport: not a
+`Gui::Command`, so no shortcut-editor entry, no rebinding, no tool bar, and
+no way for a client without key bindings to reach it -- which is why
+`toggle()` exists at all.
+
+**Four** handlers hardcoded it, not three: `DrawSketchDefaultHandler` (the
+construction-method machine), `DrawSketchHandlerLineSet` (segment and
+transition), the dimension tool in `CommandConstraints.cpp` (which of the
+constraints the selection allows), and
+`DrawSketchHandlerBSplineByInterpolation` (the knot multiplicity at the
+last point).
+
+The handler answers the question now -- `canIterateToolMode()` and
+`iterateToolMode()` on the base, each override keeping the guard its key
+branch had -- and `Sketcher_NextToolMode` asks, with `M` as an ordinary
+accelerator. The conflict question was the user's to answer and they did:
+this fork has `Gui::ShortcutManager`, which arbitrates accelerators
+dynamically by priority, and `Command.cpp:272` records that the static
+check was retired for it.
+
+Two things worth keeping:
+
+- The B-spline case is a **dialog**, not a mode, and sits oddly under that
+  name. Leaving it on the raw key would have meant the new accelerator
+  silently swallowing it, so it moved with the rest. It is also why the
+  command is **not** on the browser-safe list in `Gui/SceneControl.cpp`: a
+  modal on the GUI thread of a serving process stops serving everyone.
+- It **looks** like a behaviour change for unit entry and is not. With an
+  on-view parameter focused, `DrawSketchKeyboardManager` only claims keys
+  for the spin box for a short window after a digit, so an `m` typed
+  outside that window already reached the view provider and cycled the
+  mode. What changes is that it is consistent, and that a user who does not
+  want it can now clear the shortcut.
+
+`tests/gui/sketch-next-tool-mode.py`
+(`GuiSketchNextToolMode_tests_run`) reads the claim through geometry, which
+is the only place the mode is visible: with a line already drawn the
+polyline's cycle runs Line/Free -> Perpendicular_L -> Tangent ->
+Arc/Tangent, so three runs of the command turn the next segment into an
+arc, while the same run's first segment stays a line as the control.
 
 ### Rows closed without a pick
 
