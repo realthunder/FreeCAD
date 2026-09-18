@@ -35,19 +35,13 @@
 
 #include "DrawSketchDefaultWidgetController.h"
 #include "DrawSketchControllableHandler.h"
-#include "GeometryCreationMode.h"
 #include "Utils.h"
 #include "ViewProviderSketch.h"
-
-#include "GeometryCreationMode.h"
-#include "Utils.h"
 
 #include "CircleEllipseConstructionMethod.h"
 
 namespace SketcherGui
 {
-
-extern GeometryCreationMode geometryCreationMode;  // defined in CommandCreateGeo.cpp
 
 class DrawSketchHandlerCircle;
 
@@ -367,7 +361,7 @@ void DSHCircleController::configureToolWidget()
         QStringList names = {QStringLiteral("Center"), QStringLiteral("3 rim points")};
         toolWidget->setComboboxElements(WCombobox::FirstCombo, names);
 
-        if (isConstructionMode()) {
+        if (handler->isConstructionMode()) {
             toolWidget->setComboboxItemIcon(
                 WCombobox::FirstCombo,
                 0,

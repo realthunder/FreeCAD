@@ -43,6 +43,7 @@
 #include <Mod/Sketcher/App/GeoEnum.h>
 #include <Mod/Sketcher/App/GeoList.h>
 
+#include "GeometryCreationMode.h"
 #include "PropertyVisualLayerList.h"
 
 #include "ShortcutListener.h"
@@ -232,6 +233,21 @@ public:
     void setAxisPickStyle(bool on);
     /// show/hide editing geometry
     void showGeometry(bool visible=true);
+    //@}
+
+    /** @name geometry creation mode
+     *
+     * Whether the next geometry a tool creates is construction geometry.
+     * It belongs to the sketch being edited, not to the application: two
+     * sketches open at once each keep their own answer, and editing one
+     * does not toggle the other's.
+     */
+    //@{
+    bool isConstructionMode() const;
+    /// set the current GeometryCreationMode mode
+    void setGeometryCreationMode(GeometryCreationMode newMode);
+    /// gets the GeometryCreationMode
+    GeometryCreationMode getGeometryCreationMode() const;
     //@}
 
     /** @name modus handling */
@@ -676,6 +692,9 @@ protected:
     ShortcutListener* listener;
 
     std::unique_ptr<SnapManager> snapManager;
+
+    /// the active sketch GeometryCreationMode
+    GeometryCreationMode geometryCreationMode = GeometryCreationMode::Normal;
 
     using Connection = fastsignals::connection;
     Connection connectionToolWidget;

@@ -35,7 +35,6 @@
 
 #include "DrawSketchDefaultWidgetController.h"
 #include "DrawSketchControllableHandler.h"
-#include "GeometryCreationMode.h"
 #include "Utils.h"
 #include "ViewProviderSketch.h"
 
@@ -45,8 +44,6 @@ using namespace std;
 
 namespace SketcherGui
 {
-
-extern GeometryCreationMode geometryCreationMode;  // defined in CommandCreateGeo.cpp
 
 class DrawSketchHandlerArc;
 
@@ -469,7 +466,7 @@ void DSHArcController::configureToolWidget()
         QStringList names = {QStringLiteral("Center"), QStringLiteral("3 rim points")};
         toolWidget->setComboboxElements(WCombobox::FirstCombo, names);
 
-        if (isConstructionMode()) {
+        if (handler->isConstructionMode()) {
             toolWidget->setComboboxItemIcon(
                 WCombobox::FirstCombo,
                 0,

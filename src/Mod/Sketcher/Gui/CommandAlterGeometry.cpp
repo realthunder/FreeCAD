@@ -35,6 +35,7 @@
 #include <Gui/Notifications.h>
 #include <Gui/Selection.h>
 #include <Gui/SelectionObject.h>
+#include <Gui/ViewProviderDocumentObject.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
 #include "GeometryCreationMode.h"
@@ -59,10 +60,43 @@ bool isAlterGeoActive(Gui::Document* doc)
     return false;
 }
 
-namespace SketcherGui
+namespace
 {
 
-extern GeometryCreationMode geometryCreationMode;
+void updateToggleConstructionCommands(GeometryCreationMode mode)
+{
+    Gui::Application::Instance->commandManager().updateCommands("ToggleConstruction",
+                                                               static_cast<int>(mode));
+}
+
+GeometryCreationMode geometryCreationModeOf(const SketcherGui::ViewProviderSketch* vp)
+{
+    return vp ? vp->getGeometryCreationMode() : GeometryCreationMode::Normal;
+}
+
+void updateToggleConstructionCommands(const Gui::Document& doc)
+{
+    updateToggleConstructionCommands(geometryCreationModeOf(
+        dynamic_cast<const SketcherGui::ViewProviderSketch*>(doc.getInEdit())));
+}
+
+void resetToggleConstructionCommandsForDocument(const Gui::ViewProviderDocumentObject& vp)
+{
+    if (vp.getDocument() == Gui::Application::Instance->activeDocument()) {
+        updateToggleConstructionCommands(GeometryCreationMode::Normal);
+    }
+}
+
+GeometryCreationMode toggleCreationMode(GeometryCreationMode currentMode)
+{
+    return currentMode == GeometryCreationMode::Normal ? GeometryCreationMode::Construction
+                                                       : GeometryCreationMode::Normal;
+}
+
+}  // namespace
+
+namespace SketcherGui
+{
 
 /* Constrain commands =======================================================*/
 DEF_STD_CMD_AU(CmdSketcherToggleConstruction)
@@ -79,6 +113,26 @@ CmdSketcherToggleConstruction::CmdSketcherToggleConstruction()
     sPixmap = "Sketcher_ToggleConstruction";
     sAccel = "G, N";
     eType = ForEdit;
+
+    // The mode belongs to the sketch, so the toolbar icon follows whichever
+    // sketch is in edit rather than holding a state of its own.
+    auto app = Gui::Application::Instance;
+
+    app->signalActiveDocument.connect(
+        [](const Gui::Document& doc) { updateToggleConstructionCommands(doc); });
+
+    app->signalNewDocument.connect([](const Gui::Document&, bool) {
+        updateToggleConstructionCommands(GeometryCreationMode::Normal);
+    });
+
+    app->signalInEdit.connect([](const Gui::ViewProviderDocumentObject& vp) {
+        updateToggleConstructionCommands(
+            geometryCreationModeOf(dynamic_cast<const ViewProviderSketch*>(&vp)));
+    });
+
+    app->signalResetEdit.connect([](const Gui::ViewProviderDocumentObject& vp) {
+        resetToggleConstructionCommandsForDocument(vp);
+    });
 
     // list of toggle construction commands
     Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
@@ -141,16 +195,14 @@ void CmdSketcherToggleConstruction::activated(int iMsg)
     // Option A: nothing is selected change creation mode from/to construction
     if (Gui::Selection().countObjectsOfType(Sketcher::SketchObject::getClassTypeId()) == 0) {
 
-        Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
+        auto vp = getInactiveHandlerEditModeSketchViewProvider(getActiveGuiDocument());
 
-        if (geometryCreationMode == GeometryCreationMode::Construction) {
-            geometryCreationMode = GeometryCreationMode::Normal;
-        }
-        else {
-            geometryCreationMode = GeometryCreationMode::Construction;
-        }
+        if (vp) {
+            GeometryCreationMode newMode = toggleCreationMode(vp->getGeometryCreationMode());
+            vp->setGeometryCreationMode(newMode);
 
-        rcCmdMgr.updateCommands("ToggleConstruction", static_cast<int>(geometryCreationMode));
+            updateToggleConstructionCommands(newMode);
+        }
     }
     else  // there was a selection, so operate in toggle mode.
     {
