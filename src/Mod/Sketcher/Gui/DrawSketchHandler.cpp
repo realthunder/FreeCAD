@@ -750,6 +750,21 @@ bool DrawSketchHandler::seekTangentAutoConstraint(
     return false;
 }
 
+void DrawSketchHandler::openCommand(const std::string& name)
+{
+    Gui::Command::openCommand(name.c_str());
+}
+
+void DrawSketchHandler::commitCommand()
+{
+    Gui::Command::commitCommand();
+}
+
+void DrawSketchHandler::abortCommand()
+{
+    Gui::Command::abortCommand();
+}
+
 int DrawSketchHandler::seekAutoConstraint(std::vector<AutoConstraint>& suggestedConstraints,
                                           const Base::Vector2d& Pos,
                                           const Base::Vector2d& Dir,
@@ -774,6 +789,24 @@ int DrawSketchHandler::seekAutoConstraint(std::vector<AutoConstraint>& suggested
             // We don't check for alignment if there is already a tangency.
             seekAlignmentAutoConstraint(suggestedConstraints, Dir);
         }
+    }
+
+    return suggestedConstraints.size();
+}
+
+int DrawSketchHandler::seekAndRenderAutoConstraint(
+    std::vector<AutoConstraint>& suggestedConstraints,
+    const Base::Vector2d& Pos,
+    const Base::Vector2d& Dir,
+    AutoConstraint::TargetType type)
+{
+    const int constraintCount = seekAutoConstraint(suggestedConstraints, Pos, Dir, type);
+
+    if (constraintCount) {
+        renderSuggestConstraintsCursor(suggestedConstraints);
+    }
+    else {
+        applyCursor();
     }
 
     return suggestedConstraints.size();
