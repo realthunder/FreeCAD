@@ -155,3 +155,11 @@ fc_add_gui_test(GuiServeSketchClickPlacement_tests_run
 fc_add_gui_test(GuiSketchTangentAutoConstraint_tests_run
                 sketch-tangent-autoconstraint.py
                 --timeout 200)
+
+# Hovering an axis locks one coordinate and leaves the other to the grid
+# (upstream 72d021108f, 9f2b0f910b). The object step used to treat an axis
+# as a full snap and return before the grid ever ran, so the free
+# coordinate stayed wherever the pointer was.
+fc_add_gui_test(GuiSketchAxisGridSnap_tests_run
+                sketch-axis-grid-snap.py
+                --timeout 180)

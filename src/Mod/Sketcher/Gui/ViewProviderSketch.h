@@ -191,6 +191,11 @@ public:
     /// Toggle angle snapping and set the reference point
     void setAngleSnapping(bool enable, Base::Vector2d referencePoint = Base::Vector2d(0., 0.));
 
+    /// Move a sketch-plane position onto whatever the snap manager says it
+    /// should be, in place. Every snap kind is offered; a caller that wants
+    /// fewer asks the manager itself.
+    void snapPoint(double& x, double& y) const;
+
     /// Show/Hide nodes from information layer
     void showRestoreInformationLayer();
 
