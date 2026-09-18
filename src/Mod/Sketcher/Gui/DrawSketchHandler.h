@@ -199,6 +199,12 @@ public:
                            const Base::Vector2d& Dir,
                            AutoConstraint::TargetType type = AutoConstraint::VERTEX);
 
+    /// seekAutoConstraint, then put what it found on the cursor
+    int seekAndRenderAutoConstraint(std::vector<AutoConstraint>& suggestedConstraints,
+                                    const Base::Vector2d& Pos,
+                                    const Base::Vector2d& Dir,
+                                    AutoConstraint::TargetType type = AutoConstraint::VERTEX);
+
     /** What the pointer is over, as the auto-constraint search reads it. */
     struct PreselectionData
     {
@@ -352,6 +358,19 @@ protected:
     void moveConstraint(int constNum, const Base::Vector2d& toPos);
 
     void signalToolChanged() const;
+
+    /** @name The tool's transaction
+     *
+     * A tool says openCommand/commitCommand/abortCommand rather than naming
+     * Gui::Command, which is what upstream's handler text does. Upstream
+     * carries an id per handler so that several transactions can be open at
+     * once; this fork has one active transaction, so these forward.
+     */
+    //@{
+    void openCommand(const std::string& name);
+    void commitCommand();
+    void abortCommand();
+    //@}
 
     /** The view this sketch is being edited in, or null.
      *
