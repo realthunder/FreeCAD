@@ -16,10 +16,14 @@ groups.
 **Phase 3 (Gui) is under way** (section 7). `Gui/ToolHandler` is in, on
 the user's ruling of 2026-09-18 that reverses decision 4's deferral of the
 hints framework -- the core of it was already in the fork and only that
-one class was missing. It is the keystone the tool handler files need.
-Two picks on top of it so far, and the auto-constraint family now has a
-GUI harness that drives a tool through a served mirror, which is the only
-way to get real preselection under test.
+one class was missing. `DrawSketchHandler.{h,cpp}` is the keystone the
+tool handler files need, and its group B (the auto-constraint search) is
+in with the three fixes that ride on it. The auto-constraint family now
+has a GUI harness that drives a tool through a served mirror, which is the
+only way to get real preselection under test -- and building it turned up
+a defect of its own: **every Sketcher tool misplaced every point a browser
+put down anywhere but the middle of the canvas**, fixed in `8a4b30bc83`
+on the user's ruling to take it before continuing.
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
@@ -1023,6 +1027,90 @@ the `u16` and the client thread dies inside `struct.pack`; and on-view
 parameters have to be switched off
 (`Mod/Sketcher/Tools`/`OnViewParameterVisibility` = 0) or an OVP takes
 the click before the auto-constraint is ever consulted.
+
+### The keystone, and what it decomposes into
+
+`DrawSketchHandler.{h,cpp}` is the file every handler inherits from, so it
+comes before the handlers. Comparing the member lists settles how big that
+really is: the fork has exactly **one** member upstream lacks -- `getViewer`,
+the thin-client hook -- and what it is missing falls into three groups that
+do not depend on each other:
+
+| group | size | what | needed by |
+|---|---|---|---|
+| A | ~56 lines | `openCommand`/`commitCommand`/`abortCommand` wrappers, `isConstructionMode`, `getAutoConstraintSearchDistance` | nearly every handler's text |
+| B | ~550 lines | the `seekAutoConstraint` decomposition, plus `seekAndRenderAutoConstraint` | every handler |
+| C | ~578 lines | the directional-hint subsystem (line-extension, tangent, parallel/perpendicular, hover timer) | **only** Line, LineSet and Point |
+
+The useful part is that **C is not a prerequisite**. Only three handlers
+touch it, so the minimum that unblocks resyncing the other ~30 is A + B +
+the `mouseMove(SnapManager::SnapHandle)` signature -- and `SnapManager` is
+already here, 73+/90- from upstream's.
+
+Group A is not free either, and both of its costs are worth knowing: the
+command wrappers want upstream's **multiple active transactions**
+(`f4665aa7b5`, a Core change -- `Gui::Document::openCommand` returning an
+id and `Gui::Command::commitCommand(int)`), and `isConstructionMode` wants
+**per-sketch GeometryCreationMode** (`9a1020929e`), which touches all 30
+handler files to delete an `extern` the resync deletes anyway. So A belongs
+*with* the resync, not before it, and its members would be dead code until
+the handlers call them.
+
+### B: the auto-constraint search (`d879adcf9e`)
+
+Taken for the three fixes that rode in on upstream's split, not for the
+split itself:
+
+- **tangency wins over alignment** (`ed45e20768`) -- the tangency pass runs
+  first and suppresses the alignment one. A vertical line drawn tangent to
+  a circle used to get BOTH a Vertical and a Tangent.
+- **the tangency search speaks GeoIds** (`b71a54d9cc`).
+  `getCompleteGeometry()` appends external geometry in REVERSE, so the loop
+  index is not a GeoId. The fork's own conversion,
+  `getHighestCurveIndex() - tangId`, has the direction wrong: with one
+  projected circle it yields **-1, the X axis**, so the tangency was written
+  against entirely the wrong geometry.
+- **no Tangent without a direction** (`596fa2856b`), and the fork's axis
+  clause `... || ((HAxis||VAxis) && fabs(cosangle) < 0.1)` goes, its right
+  half being unreachable under the left.
+
+Two things upstream has in these functions were deliberately left, each
+because its consumer is not here yet: the endpoint-tangency handling
+(`tanPos`, `removeCoincidentConstraint`), which upstream compensates for in
+`generateOneAutoConstraintFromSuggestion` -- taking the seek half alone
+would drop a Coincident and put nothing in its place; and the
+parallel/perpendicular branch and tangent-hint early-outs, which are
+group C and inert without it.
+
+### The aspect bug this turned up (`8a4b30bc83`)
+
+Writing the tangency test, a click aimed at x = 25 landed at x = 33.36. The
+same pixel column gave x = 4 when the click hit geometry and x = 5.30 when
+it did not: **the pick path and the projection path disagreed by exactly the
+aspect ratio**, in one run, on one camera.
+
+`ViewProviderSketch::getProjectingLine` had inlined a copy of
+`View3DInventorViewer::getNormalizedPosition`, aspect correction and all.
+That correction is right for a desktop viewer and only for one -- nothing
+sets its `SoCamera::aspectRatio`, so the frustum is square and the pixel has
+to be stretched into it. A mirror's camera states the client's real aspect,
+so correcting again multiplies it in twice.
+`MirrorViewer::normalizedPosition` had said so in a comment since the mirror
+was written; the Sketcher was not asking. It asks now:
+`getNormalizedPosition` is a `ViewerContext` virtual beside the rest of the
+view-less camera math.
+
+**Every Sketcher tool misplaced every point a browser put down anywhere but
+the middle of the canvas**, and nothing caught it because the error is
+exactly zero at the centre -- which is where `serve-mirror-edit`,
+`serve-onview-params` and `serve-shared-edit` all click. The lesson
+generalises past this bug: a probe that only clicks the middle of the
+viewport cannot see a scale error.
+
+`tests/gui/serve-sketch-click-placement.py` is the guard. A residual
+remains and is not this defect: y lands about 0.12 sketch units (~1.4 px)
+low, consistently and in both directions -- an origin convention, not a
+scale.
 
 ### Rows closed without a pick
 

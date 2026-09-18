@@ -303,7 +303,7 @@ c3bad9da25	2024-09-15	CalligaroV	?	0	0	open	7		Do the same for the elements sele
 fd28d94f6a	2024-09-07	CalligaroV	?	0	0	have(sync)	35		Sketcher/Gui: check if there's a 3D view while executing ViewProviderSketch::unsetEdit()	Gui/ViewProviderSketch.cpp
 c5ad54d5a8	2024-09-21	bgbsww	refactor	0	0	open	6		Update method names and clean	SketcherTests/TestSketcherSolver.py
 837920f378	2024-09-23	bgbsww	?	0	0	have(sync)	12		Match LS3 opcodes for sketch shape	App/SketchObject.cpp
-596fa2856b	2024-10-03	Ajinkya Dahale	?	1	0	open	9		[Sketcher] Apply tangent autoconstraint only when `Dir` given	Gui/DrawSketchHandler.cpp
+596fa2856b	2024-10-03	Ajinkya Dahale	?	1	0	open	9	adapted d879adcf9e	[Sketcher] Apply tangent autoconstraint only when `Dir` given	Gui/DrawSketchHandler.cpp
 5ce6c7933a	2024-10-04	Benjamin Brstrup Sayoc	?	0	1	have(rev)	6		[Sketcher] If origin selected: don't do distance to origin	Gui/CommandConstraints.cpp
 a9bff78974	2024-10-08	PaddleStroke	fix	0	0	have(sync)	6		Sketcher: Fix double click of wire and remove selection that was not working	Gui/ViewProviderSketch.cpp
 d2637ec881	2024-10-15	wmayer	fix	0	0	open	9	adapted e8315e9a39: clones held in unique_ptr	Sketch: Fix creating the shape of a sketch	App/SketchObject.cpp
@@ -313,7 +313,7 @@ d03441fca0	2024-10-24	PaddleStroke	fix	0	0	have(sync)	18		Sketcher: PythonConver
 c098d9b312	2024-10-24	PaddleStroke	refactor	0	1	have(rev)	20		Formating PythonConverter.cpp	App/PythonConverter.cpp
 982ffeac08	2024-10-24	PaddleStroke	fix	1	0	have(sync)	25		Sketcher: DrawSketchHandlerRotate : Fix unwanted copy of DistanceX/Y constraints	Gui/DrawSketchHandlerRotate.h
 336dda316d	2024-10-25	PaddleStroke	?	0	0	open	17	have: constNew->Name cleared in addSymmetric (arrived with the trim/split take d8d462426e)	Sketcher: Symmetric: Do not copy names of constraints (#17433)	App/SketchObject.cpp
-ed45e20768	2024-10-23	PaddleStroke	fix	0	0	open	8		Fix circle tangent issue	Gui/DrawSketchHandler.cpp
+ed45e20768	2024-10-23	PaddleStroke	fix	0	0	open	8	adapted d879adcf9e	Fix circle tangent issue	Gui/DrawSketchHandler.cpp
 837d088f3e	2024-10-25	wmayer	noise	0	1	have(rev)	2		Fix compiler warnings	App/SketchObject.cpp
 e44c59d2a8	2024-10-27	wmayer	?	1	0	open	8		Sketch: Make sure that variable 'ActiveSketch' is defined in macro	Gui/DrawSketchDefaultHandler.h
 0a06ceff4d	2024-10-23	PaddleStroke	fix	0	0	have(sync)	30		Sketcher: Dimension: Handle case of vertical/horizontal lines	Gui/CommandConstraints.cpp
@@ -506,7 +506,7 @@ c0d469d404	2025-03-30	Ajinkya Dahale	fix	0	0	open	163	taken 9b75379eb1	[Sketcher
 f869bace95	2025-03-30	Ajinkya Dahale	?	0	0	open	30	taken 9b75379eb1	[Sketcher][test] Remove some obsolete TODOs	tests/App/SketchObjectChanges.cpp
 581fa12e45	2025-04-08	Ajinkya Dahale	fix	0	0	open	399		Sketcher: Refactor and fix `DrawSketchDefaultHandler.h`	Gui/DrawSketchDefaultHandler.h
 b300c80b90	2025-04-11	Kacper Donat	refactor	0	0	open	2	n/a: refactor/cleanup, no behaviour change	Base: Use explicit pointer syntax for freecad_cast (#20694)	App/SketchObject.cpp
-f9f76a2516	2025-04-14	PaddleStroke	fix	0	0	open	224		Sketcher: Refactor DrawSketchHandler::seekAutoConstraint (#20476)	Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h
+f9f76a2516	2025-04-14	PaddleStroke	fix	0	0	open	224	adapted d879adcf9e	Sketcher: Refactor DrawSketchHandler::seekAutoConstraint (#20476)	Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h
 f932c7e4e0	2025-04-09	Benjamin Nauck	refactor	0	0	open	21		Use Base::toRadians() instead of manually converting	Gui/CommandConstraints.cpp Gui/DrawSketchHandler.cpp Gui/DrawSketchHandlerTranslate.h Gui/SnapManager.cpp
 22120fa597	2025-04-09	Benjamin Nauck	refactor	0	0	open	4		Use Base::toDegrees() instead of manually converting	Gui/DrawSketchHandler.cpp Gui/ViewProviderSketch.cpp
 755cabc5ba	2025-04-15	PaddleStroke	refactor	0	0	open	620	superseded: the fillet take c2924c2fa4	Sketcher: Refactor SketchObject::Fillet() (#20544)	App/SketchObject.cpp
@@ -1048,7 +1048,7 @@ ec298e9e9a	2026-06-15	Turan Furkan Topak	?	0	0	open	519		Sketcher: AutoConstrant
 b178a7aede	2026-06-14	Joao Matos	?	0	0	n/a(uncompiled)	54		Sketcher: collect preselection candidates before resolving	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h
 cb025c145a	2026-06-22	PaddleStroke	fix	0	0	open	11		Sketcher: Polyline: Fix errors when arc invalid (#30497)	Gui/DrawSketchHandlerLineSet.h
 9a1020929e	2026-06-23	John Lewin	feature	0	0	open	247		Add per sketch GeometryCreationMode state (#30761)	Gui/CommandAlterGeometry.cpp Gui/CommandCreateGeo.cpp Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/DrawSketchHandlerArcOfParabola.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSplin
-b71a54d9cc	2026-06-24	Timothy Miller	fix	0	0	open	16		Sketcher: fix auto-constraint to external geometry using wrong GeoId (#30942)	Gui/DrawSketchHandler.cpp
+b71a54d9cc	2026-06-24	Timothy Miller	fix	0	0	open	16	adapted d879adcf9e	Sketcher: fix auto-constraint to external geometry using wrong GeoId (#30942)	Gui/DrawSketchHandler.cpp
 5f6494b7db	2026-06-25	Timothy Miller	fix	0	0	open	3		Sketcher: fix flaky TestExternalFacePreselection camera framing (#30993)	SketcherTests/TestExternalFacePreselection.py
 cda241dbd0	2026-06-29	Yash Suthar	feature	0	0	open	445		Sketcher : added transparency parameter to see object behind axes (#26594)	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/EditModeCoinManagerParameters.h Gui/EditModeGeometryCoinManager.cpp Gui/SketcherSettings.cpp Gui/SketcherSettingsDisplay.ui
 1050996387	2026-06-29	theo-vt	fix	1	0	open	7		Sketcher: Prevent self-tangency	Gui/CommandConstraints.cpp
