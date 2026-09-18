@@ -162,6 +162,27 @@ public:
     }
     /// Cancels the current tool action. Used by Esc, right click, and OVP cancel.
     virtual void cancelCurrentAction();
+
+    /** @name The tool's own modes
+     *
+     * Most sketch tools have a second axis of choice beside the pointer --
+     * the construction method, the transition between polyline segments,
+     * which of several constraints a dimension will add. Upstream reaches
+     * it by hardcoding SoKeyboardEvent::M inside registerPressedKey, which
+     * cannot be rebound, cannot go on a tool bar, and cannot be sent by a
+     * client that has no key bindings. Here it is a question the handler
+     * answers, so Sketcher_NextToolMode can ask it.
+     */
+    //@{
+    /// Whether this tool has another mode to move to right now.
+    virtual bool canIterateToolMode() const
+    {
+        return false;
+    }
+    /// Move to it. Only called when canIterateToolMode() said yes.
+    virtual void iterateToolMode()
+    {}
+    //@}
     virtual void registerPressedKey(bool pressed, int key);
     virtual void pressRightButton(Base::Vector2d onSketchPos);
 

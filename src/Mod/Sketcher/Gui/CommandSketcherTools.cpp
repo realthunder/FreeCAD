@@ -2373,6 +2373,50 @@ bool CmdSketcherSwapGeometryID::isActive(void)
 // ================================================================================
 
 
+/* Next tool mode ========================================================*/
+
+DEF_STD_CMD_A(CmdSketcherNextToolMode)
+
+CmdSketcherNextToolMode::CmdSketcherNextToolMode()
+    : Command("Sketcher_NextToolMode")
+{
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Next tool mode");
+    sToolTipText = QT_TR_NOOP("Moves the running sketch tool to its next mode: the construction "
+                              "method, the transition between polyline segments, or which "
+                              "constraint a dimension will add");
+    sWhatsThis = "Sketcher_NextToolMode";
+    sStatusTip = sToolTipText;
+    sAccel = "M";
+    eType = ForEdit;
+}
+
+void CmdSketcherNextToolMode::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    auto vp = getInactiveHandlerEditModeSketchViewProvider(getActiveGuiDocument());
+    if (!vp) {
+        return;
+    }
+    auto handler = vp->currentHandler();
+    if (handler && handler->canIterateToolMode()) {
+        handler->iterateToolMode();
+    }
+}
+
+bool CmdSketcherNextToolMode::isActive()
+{
+    auto doc = getActiveGuiDocument();
+    if (!isSketchInEdit(doc)) {
+        return false;
+    }
+    auto vp = static_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit());
+    auto handler = vp->currentHandler();
+    return handler && handler->canIterateToolMode();
+}
+
 DEF_STD_CMD_A(CmdSketcherRemoveAxesAlignment)
 
 CmdSketcherRemoveAxesAlignment::CmdSketcherRemoveAxesAlignment()
@@ -2707,6 +2751,7 @@ void CreateSketcherCommandsConstraintAccel()
     rcCmdMgr.addCommand(new CmdSketcherExportCompound());
     rcCmdMgr.addCommand(new CmdSketcherSwapGeometryID());
     rcCmdMgr.addCommand(new CmdSketcherRemoveAxesAlignment());
+    rcCmdMgr.addCommand(new CmdSketcherNextToolMode());
     rcCmdMgr.addCommand(new CmdSketcherCopyClipboard());
     rcCmdMgr.addCommand(new CmdSketcherCut());
     rcCmdMgr.addCommand(new CmdSketcherPaste());

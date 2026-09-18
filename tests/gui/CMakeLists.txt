@@ -185,3 +185,10 @@ fc_add_gui_test(GuiSketchAxisGridSnap_tests_run
 fc_add_gui_test(GuiSketchConstructionMode_tests_run
                 sketch-construction-mode.py
                 --timeout 240)
+
+# The sketch tool's mode is a command, not a hardcoded key: M was the raw
+# Coin constant SoKeyboardEvent::M inside each handler's registerPressedKey,
+# so it could not be rebound, put on a tool bar, or sent by a client.
+fc_add_gui_test(GuiSketchNextToolMode_tests_run
+                sketch-next-tool-mode.py
+                --timeout 240)

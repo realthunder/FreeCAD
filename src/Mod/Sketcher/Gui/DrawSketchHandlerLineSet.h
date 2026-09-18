@@ -223,15 +223,14 @@ public:
         return false;
     }
 
-    void registerPressedKey(bool pressed, int key) override
+    bool canIterateToolMode() const override
     {
-        if (Mode == STATUS_SEEK_Second && key == SoKeyboardEvent::M && pressed
-            && previousCurve != -1) {
-            cycleSegmentAndTransitionMode();
-        }
-        else {
-            DrawSketchHandler::registerPressedKey(pressed, key);
-        }
+        return Mode == STATUS_SEEK_Second && previousCurve != -1;
+    }
+
+    void iterateToolMode() override
+    {
+        cycleSegmentAndTransitionMode();
     }
 
     void mouseMove(SnapManager::SnapHandle snapHandle) override
