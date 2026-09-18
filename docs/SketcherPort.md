@@ -1304,6 +1304,74 @@ thin-client-local file in the family, and `DrawSketchHandlerLine.h`,
 `DrawSketchHandlerBSplineByInterpolation.h` is fork-only and has no
 upstream blob at all.
 
+### The framework resync, and the rest of the family (`b4b8f10a3b`)
+
+The ruling above, carried out. `+6194 -12516` against upstream across the
+handler family became `+806 -1511`, and **nineteen files are byte-identical
+to upstream**: Arc, ArcOfEllipse, ArcOfHyperbola, ArcOfParabola, ArcSlot,
+BSpline, Circle, Ellipse, Offset, Polygon, Rectangle, Rotate, Scale, Slot,
+Text, Translate, `DrawSketchDefaultWidgetController.h` and
+`SketcherToolDefaultWidget.{h,cpp}`. What is left is five named invariants,
+listed in the commit message and in the resync section above.
+
+`EditableDatumLabel` was **added to, not resynced** (`4d210d07f8`): the
+fork rebuilt it on `Gui::ViewerContext` so a view with no widget can stream
+the entry box to a client, and it carries that whole API --
+`getAnchorPoint`, `getText`, `getSelection`, `sendKeyEvent`,
+`notifyChanged`. That divergence is about *where the box renders*;
+upstream's feature is about *what it does with a keypress*, so only the
+second was taken. The browser gets it for nothing: `sendKeyEvent` goes
+through `QApplication::sendEvent`, which runs the receiver's filters. Not
+taken: the lock icon, which needs `QuantitySpinBox::addIconSpace` and
+`getMargin` and has nowhere to be drawn on a mirror -- `setLockedAppearance`
+keeps the state and paints nothing.
+
+What the compiler turned up as genuinely missing, each added rather than
+worked around: the three auto-constraint helpers
+`DrawSketchDefaultHandler` builds through; `cancelCurrentAction`;
+`Base::Unit::One`; `DrawSketchKeyboardManager::resetMode`;
+`Constraint2LinesByAngle`; `SketchObject`'s four label accessors; and
+upstream's `SketcherTransformationExpressionHelper`, a new file pair.
+`areColinear` took upstream's spelling.
+
+**The direction of the endpoint-tangency hazard matters.** Section 7 warns
+that taking the *seek* half alone would drop a Coincident and put nothing
+in its place. Taking `generateOneAutoConstraintFromSuggestion` -- the
+*generate* half -- alone is safe in the other direction: it only upgrades
+a Coincident when a matching Tangent is already in the set, which is a
+no-op for what this fork currently suggests.
+
+### LineSet: upstream had the same cycle, on a key
+
+The tool-bar `toggle()` looked at first like a fork feature the resync
+would destroy. It is not: upstream has **the identical six-mode cycle**,
+bound to `M` in `registerPressedKey`, and this fork had dropped the `M`
+path when it added `toggle()`. So the body is factored into
+`cycleSegmentAndTransitionMode()` and both triggers call it -- `M` exactly
+as upstream guards it (`previousCurve != -1`), and `toggle()` as the fork
+added it, with `geom` allowed to be null because a button press need not
+have a previous curve.
+
+Upstream's file carries a **second** polyline as well: a controller-based
+`DrawSketchHandlerPolyLine` on `Sketcher_CreatePolyline`, with the classic
+handler demoted to `Sketcher_CreatePolylineLegacy`. The whole file was
+taken, so the new tool is present but unused here; adopting it is a
+one-line command change and a separate decision.
+
+**`M` is hardcoded and that is a defect** (user, 2026-09-18). It is the raw
+Coin constant `SoKeyboardEvent::M`, tested inside `registerPressedKey`,
+which `ViewProviderSketch` feeds straight from the viewport. It is not a
+`Gui::Command`, so it has no shortcut-editor entry, cannot be rebound, and
+cannot be put on a client's tool bar -- which is why `toggle()` exists at
+all. Three handlers hardcode it (`DrawSketchDefaultHandler`, `LineSet`,
+`BSplineByInterpolation`). Queued, at the user's direction, for after this
+landed: one virtual `iterateToolMode()` on the base, a real
+`Sketcher_NextToolMode` command with accel `M`, and the `registerPressedKey`
+branches removed so the key has one path. The conflict question is already
+answered -- this fork has `Gui::ShortcutManager`, which resolves
+accelerators dynamically by priority (`Command.cpp:272` records that the
+old static check was retired for it).
+
 ### Rows closed without a pick
 
 - `19a082b63c` "Fix constraint selection in groups" -- **n/a**. Its subject
