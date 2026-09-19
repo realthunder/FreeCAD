@@ -1058,17 +1058,19 @@ always ended in `available()` and falls back to native).  `available()`
 is memoized and, where there is no runtime, answers no without booting
 anything; off the routed path the native restore still runs under the
 Mod-root import restriction of sec 11 item 1, so refusing widens
-nothing.  Gate: `ExpressionImageEvalTest.proxyRestoreNeedsRuntime`.
+nothing.  Its gate `ExpressionImageEvalTest.proxyRestoreNeedsRuntime`
+went with the routing in 7.31; this paragraph is the record of what the
+restore half did, not live design.
 
 Python: `FreeCAD.ExpressionSandbox` -- `routed`, `setRouting`,
 `available`, `imageInfo`, `evaluate`, `evaluateNative`, `exec` (statements
 in the guest as the session principal, optionally as a named module),
-`evalCount`, `stats`, `resetStats`, `reset`, `proxyNew`, `proxyInfo` (rung 2, 3.2),
-`hostProxies` (the objects restored in this process, 7.28),
-`deferredProxies` and `resumeProxies` (the Proxies HELD for an unanswered
-`host.import`, and the answer re-run over them, 7.28),
-`pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
+`evalCount`, `stats`, `memoryInfo`, `resetStats`, `reset`, `bootCount`,
+`proxyInfo` (a guest proxy's identity, 3.2), `libraries`,
+`surfaceVersion`, `pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
 `pyodideAbi`; constants `OptionCallFrame`, `OptionPythonMode`.
+(`proxyNew`, `hostProxies`, `deferredProxies` and `resumeProxies` were
+removed with Proxy routing, 7.31.)
 
 ## 4. Runtimes **[built]**
 
@@ -9990,13 +9992,14 @@ Every gtest and the corpus gate select a runtime per process through
 Preferences under `User parameter:BaseApp/Preferences/Expression/`:
 
     Sandbox:Runtime          "pyodide" | "wasi" (default: pyodide when built)
-    Sandbox:Evaluate         route evaluation through the image (default ON
-                             since 2026-09-16, OFF before);
-                             also routes a document object's saved Proxy
-                             to the guest at open, failing closed (3.5);
-                             BOTH halves also require a runtime that
-                             boots, so the preference alone never
-                             de-Proxies a document (2026-09-16)
+    Sandbox:Evaluate         route EVALUATION through the image, and
+                             nothing else (default ON since 2026-09-16,
+                             OFF before).  It also requires a runtime
+                             that boots: the preference alone routes
+                             nothing.  It used to switch a saved
+                             Proxy's restore on as well, which is how
+                             one flag moved two unrelated halves --
+                             REMOVED 2026-09-18 (7.31)
     Sandbox:BudgetMs         5000        Sandbox:GraceMs   1000
     Sandbox:MemoryMB         1024: the ceiling on a guest's linear memory
                              (the Python heap) and on its array buffers,
@@ -10157,11 +10160,14 @@ push the user's call).
    compared, 195 expressions, 195 same, 0 differ, no error on either
    side, one timeout (8.2) -- the 2026-09-14 result to the number.
    Found on the way and fixed BEFORE the flip: the same preference also
-   routes a saved Proxy's restore, which the gate does not measure, and
+   routed a saved Proxy's restore, which the gate does not measure, and
    on a build with no runtime installed that de-Proxied 70 of 70
-   objects of a real Draft document, so `proxyRestoreRouted()` now asks
-   `available()` too (3.5; gate
-   `ExpressionImageEvalTest.proxyRestoreNeedsRuntime`).  The flip
+   objects of a real Draft document, so `proxyRestoreRouted()` was made
+   to ask `available()` too (3.5), gated by
+   `ExpressionImageEvalTest.proxyRestoreNeedsRuntime`.  BOTH went in
+   7.31 (2026-09-18): the restore half is removed, and this preference
+   routes evaluation only -- that one flag moved two unrelated halves
+   is the whole reason the removal happened.  The flip
    itself is the three defaults in `ExpressionEvaluator.cpp` and the
    save/restore in `SandboxProxyImport.py`, which would otherwise read
    False from an unset key and write it back.  Measured on the flipped
