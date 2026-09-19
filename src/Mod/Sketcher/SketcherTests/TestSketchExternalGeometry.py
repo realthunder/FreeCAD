@@ -163,3 +163,58 @@ class TestSketchExternalGeometry(unittest.TestCase):
         ext = externals(sketch)
         self.assertEqual([id for id, _, _ in ext], ids)
         self.assertAlmostEqual(ext[0][2].length(), 20)
+
+    def originSketch(self):
+        """A sketch on an App::Part's XY plane, with that origin's features."""
+        part = self.doc.addObject("App::Part", "Part")
+        roles = {f.Role: f for f in part.Origin.OriginFeatures}
+        sketch = self.doc.addObject("Sketcher::SketchObject", "Sketch")
+        part.addObject(sketch)
+        sketch.AttachmentSupport = [(roles["XY_Plane"], "")]
+        sketch.MapMode = "FlatFace"
+        self.doc.recompute()
+        return roles, sketch
+
+    def testOriginAxisIsExternalGeometry(self):
+        # An App::Line carries no shape of its own, so the projection has
+        # to build the edge; before that it came back null and the
+        # reference projected to nothing.
+        roles, sketch = self.originSketch()
+        sketch.addExternal(roles["Y_Axis"].Name, "")
+        self.doc.recompute()
+        self.assertEqual(len(sketch.ExternalGeometry), 1)
+        geo = sketch.ExternalGeo[-1]
+        self.assertEqual(geo.TypeId, "Part::GeomLineSegment")
+        # the Y axis seen on the XY plane is the sketch's own y direction
+        direction = geo.EndPoint - geo.StartPoint
+        self.assertAlmostEqual(abs(direction.normalize().y), 1.0)
+
+    def testOriginPointIsExternalGeometry(self):
+        # The same for App::Point, which the Datums port added.
+        roles, sketch = self.originSketch()
+        sketch.addExternal(roles["Origin"].Name, "")
+        self.doc.recompute()
+        self.assertEqual(len(sketch.ExternalGeometry), 1)
+        geo = sketch.ExternalGeo[-1]
+        self.assertEqual(geo.TypeId, "Part::GeomPoint")
+        self.assertAlmostEqual(geo.X, 0.0)
+        self.assertAlmostEqual(geo.Y, 0.0)
+
+    def testOriginExternalsSurviveSaveAndLoad(self):
+        # External geometry is re-projected on restore, so the branches
+        # above have to hold there too.
+        roles, sketch = self.originSketch()
+        sketch.addExternal(roles["Y_Axis"].Name, "")
+        sketch.addExternal(roles["Origin"].Name, "")
+        self.doc.recompute()
+        before = [g.TypeId for g in sketch.ExternalGeo]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "origin_externals.FCStd")
+            self.doc.saveAs(path)
+            name = self.doc.Name
+            App.closeDocument(name)
+            self.doc = App.open(path)
+            sketch = self.doc.getObject("Sketch")
+            self.doc.recompute()
+            self.assertEqual([g.TypeId for g in sketch.ExternalGeo], before)
+            self.assertNotIn("Invalid", sketch.State)
