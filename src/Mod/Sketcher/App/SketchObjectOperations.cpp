@@ -281,7 +281,7 @@ std::vector<int> SketchObject::chooseFilletsEdges(const std::vector<int>& GeoIdL
 
     std::vector<int> dst;
     for (auto id : GeoIdList) {
-        if (!GeometryFacade::getFacade(getGeometry(id))->getConstruction()) {
+        if (!GeometryFacade::getConstruction(getGeometry(id))) {
             dst.push_back(id);
 
             if (dst.size() > 2) {

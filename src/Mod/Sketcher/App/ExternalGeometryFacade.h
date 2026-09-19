@@ -307,22 +307,23 @@ private:
         return const_cast<Part::Geometry*>(Geo);
     }
 
-    std::shared_ptr<const SketchGeometryExtension> getGeoExt() const
+    // Borrowed, as in GeometryFacade: the accessors only dereference it.
+    const SketchGeometryExtension* getGeoExt() const
     {
-        return SketchGeoExtension;
+        return SketchGeoExtension.get();
     }
-    std::shared_ptr<SketchGeometryExtension> getGeoExt()
+    SketchGeometryExtension* getGeoExt()
     {
-        return std::const_pointer_cast<SketchGeometryExtension>(SketchGeoExtension);
+        return const_cast<SketchGeometryExtension*>(SketchGeoExtension.get());
     }
 
-    std::shared_ptr<const ExternalGeometryExtension> getExternalGeoExt() const
+    const ExternalGeometryExtension* getExternalGeoExt() const
     {
-        return ExternalGeoExtension;
+        return ExternalGeoExtension.get();
     }
-    std::shared_ptr<ExternalGeometryExtension> getExternalGeoExt()
+    ExternalGeometryExtension* getExternalGeoExt()
     {
-        return std::const_pointer_cast<ExternalGeometryExtension>(ExternalGeoExtension);
+        return const_cast<ExternalGeometryExtension*>(ExternalGeoExtension.get());
     }
 
 private:

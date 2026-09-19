@@ -349,13 +349,15 @@ private:
         return const_cast<Part::Geometry*>(Geo);
     }
 
-    std::shared_ptr<const SketchGeometryExtension> getGeoExt() const
+    // Borrowed: every accessor below goes through this, and returning the
+    // shared_ptr by value charged a reference count round trip for each one.
+    const SketchGeometryExtension* getGeoExt() const
     {
-        return SketchGeoExtension;
+        return SketchGeoExtension.get();
     }
-    std::shared_ptr<SketchGeometryExtension> getGeoExt()
+    SketchGeometryExtension* getGeoExt()
     {
-        return std::const_pointer_cast<SketchGeometryExtension>(SketchGeoExtension);
+        return const_cast<SketchGeometryExtension*>(SketchGeoExtension.get());
     }
 
     static void throwOnNullPtr(const Part::Geometry* geo);

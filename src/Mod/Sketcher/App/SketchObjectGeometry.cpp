@@ -1946,7 +1946,7 @@ int SketchObject::setGeometryIds(const std::vector<std::pair<int, long>>& GeoIds
         geo = geo->clone();
 
     for (const auto& [GeoId, id] : GeoIdsToIds)
-        GeometryFacade::getFacade(newVals[GeoId])->setId(id);
+        GeometryFacade::setId(newVals[GeoId], id);
 
     // There is not actual internal transaction going on here, however neither the geometry indices
     // nor the vertices need to be updated so this is a convenient way of preventing it.
