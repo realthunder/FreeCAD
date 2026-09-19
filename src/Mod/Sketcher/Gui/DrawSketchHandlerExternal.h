@@ -52,14 +52,10 @@ public:
 
         this->notAllowedReason = "";
 
-        // An App datum element -- an origin plane, axis or point, or a
-        // Part::DatumLine/DatumPoint -- carries no shape of its own; the
-        // sketch builds one when it projects (SketchObjectExternal.cpp).
-        // The shape check below therefore cannot speak for them, and
-        // rejects every one with "No shape" if it is allowed to try.
-        const bool shapelessDatum = pObj->isDerivedFrom<App::DatumElement>();
+        // Set below, for a datum element that has no shape to classify.
+        bool shapelessDatum = false;
 
-        bool checkShape = !shapelessDatum;
+        bool checkShape = true;
         if (sSubName && sSubName[0]) {
             for (auto type : allowedTypes) {
                 if (boost::starts_with(sSubName, type)) {
@@ -76,29 +72,40 @@ public:
         if (checkShape) {
             auto shape = Part::TopoShape(Part::Feature::getShape(pObj));
             if (shape.isNull()) {
-                this->notAllowedReason = QT_TR_NOOP("No shape. ");
-                return false;
-            }
-            sSubName = nullptr;
-            for (auto type : allowedTypes) {
-                auto shapeType = Part::TopoShape::shapeType(type);
-                if (shape.shapeType() == shapeType) {
-                    sSubName = type;
-                    break;
-                }
-                int count = shape.countSubShapes(shapeType);
-                if (count == 1) {
-                    sSubName = type;
-                    break;
-                }
-                if (count > 1) {
-                    this->notAllowedReason = QT_TR_NOOP("Multiple elements. ");
+                // A datum element may legitimately have none. App::Line and
+                // App::Plane do get one synthesized by
+                // Part::Feature::getTopoShape(), but App::Point does not,
+                // and the sketch builds its vertex when it projects
+                // (SketchObjectExternal.cpp). Anything else with no shape
+                // is simply not referenceable.
+                if (!pObj->isDerivedFrom<App::DatumElement>()) {
+                    this->notAllowedReason = QT_TR_NOOP("No shape. ");
                     return false;
                 }
+                shapelessDatum = true;
             }
-            if (!sSubName) {
-                this->notAllowedReason = QT_TR_NOOP("Unknown element. ");
-                return false;
+            else {
+                sSubName = nullptr;
+                for (auto type : allowedTypes) {
+                    auto shapeType = Part::TopoShape::shapeType(type);
+                    if (shape.shapeType() == shapeType) {
+                        sSubName = type;
+                        break;
+                    }
+                    int count = shape.countSubShapes(shapeType);
+                    if (count == 1) {
+                        sSubName = type;
+                        break;
+                    }
+                    if (count > 1) {
+                        this->notAllowedReason = QT_TR_NOOP("Multiple elements. ");
+                        return false;
+                    }
+                }
+                if (!sSubName) {
+                    this->notAllowedReason = QT_TR_NOOP("Unknown element. ");
+                    return false;
+                }
             }
         }
 
@@ -139,12 +146,10 @@ public:
         // return false;
         //}
 
-        // A datum is taken whole: a shapeless one has no sub-element to
-        // name, and a Part::Datum is a single face, edge or vertex
-        // already. Checked after isExternalAllowed() above, so a datum
-        // does not get a pass on the circular-reference and other-body
-        // rules.
-        if (shapelessDatum || pObj->isDerivedFrom<Part::Datum>()) {
+        // A shapeless datum is taken whole: there is no sub-element to
+        // name. Checked after isExternalAllowed() above, so it gets no
+        // pass on the circular-reference and other-body rules.
+        if (shapelessDatum) {
             return true;
         }
 
@@ -155,6 +160,9 @@ public:
             boost::starts_with(element, "Face") ||
             boost::starts_with(element, "Wire"))
         {
+            return true;
+        }
+        if (pObj->isDerivedFrom<App::Plane>() || pObj->isDerivedFrom<Part::Datum>()) {
             return true;
         }
         return false;

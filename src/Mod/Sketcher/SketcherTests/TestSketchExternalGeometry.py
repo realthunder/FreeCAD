@@ -176,9 +176,11 @@ class TestSketchExternalGeometry(unittest.TestCase):
         return roles, sketch
 
     def testOriginAxisIsExternalGeometry(self):
-        # An App::Line carries no shape of its own, so the projection has
-        # to build the edge; before that it came back null and the
-        # reference projected to nothing.
+        # This one already worked: Part::Feature::getTopoShape() hands back
+        # a synthesized infinite edge for an App::Line (PartFeature.cpp), so
+        # the axis goes through the ordinary path. Here to hold that, since
+        # it would be easy to "fix" it by building the edge by hand and lose
+        # the element map that path carries.
         roles, sketch = self.originSketch()
         sketch.addExternal(roles["Y_Axis"].Name, "")
         self.doc.recompute()
@@ -190,7 +192,9 @@ class TestSketchExternalGeometry(unittest.TestCase):
         self.assertAlmostEqual(abs(direction.normalize().y), 1.0)
 
     def testOriginPointIsExternalGeometry(self):
-        # The same for App::Point, which the Datums port added.
+        # App::Point is the one datum element with no shape at all --
+        # PartFeature.cpp has no case for it -- so the projection builds the
+        # vertex. This is what the Datums port actually unblocked.
         roles, sketch = self.originSketch()
         sketch.addExternal(roles["Origin"].Name, "")
         self.doc.recompute()

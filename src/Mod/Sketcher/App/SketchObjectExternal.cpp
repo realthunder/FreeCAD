@@ -71,7 +71,6 @@
 #include <gp_Elips.hxx>
 #include <gp_Hypr.hxx>
 #include <gp_Parab.hxx>
-#include <gp_Lin.hxx>
 #include <gp_Pln.hxx>
 #endif
 
@@ -1709,22 +1708,18 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                     TopoDS_Face f = TopoDS::Face(fBuilder.Shape());
                     refSubShape = f;
                 }
-            } else if (Obj->getTypeId().isDerivedFrom(App::Line::getClassTypeId())) {
-                // An axis has no shape of its own, so it is built here, the
-                // way the plane above is. getBasePoint()/getDirection() and
-                // not Placement: a datum element inside a placed local
-                // coordinate system carries that placement too, and for an
-                // Origin (where the LCS placement is the identity) they
-                // answer exactly what Placement would.
-                const App::Line* line = static_cast<const App::Line*>(Obj);
-                Base::Vector3d base = line->getBasePoint();
-                Base::Vector3d dir = line->getDirection();
-                gp_Lin l(gp_Pnt(base.x, base.y, base.z), gp_Dir(dir.x, dir.y, dir.z));
-                BRepBuilderAPI_MakeEdge eBuilder(l);
-                if (eBuilder.IsDone()) {
-                    refSubShape = TopoDS::Edge(eBuilder.Shape());
-                }
             } else if (Obj->getTypeId().isDerivedFrom(App::Point::getClassTypeId())) {
+                // App::Point is the one datum element with no shape at all:
+                // Part::Feature::getTopoShape() synthesizes an infinite edge
+                // for App::Line and a face for App::Plane (PartFeature.cpp),
+                // but has no case for a point, so the else below would hand
+                // back a null shape. Only this type is built here; the other
+                // two keep going through getTopoShape, which is also what
+                // carries their element map.
+                //
+                // getBasePoint() and not Placement: a datum element inside a
+                // placed local coordinate system carries that placement too,
+                // and for an Origin the two agree.
                 const App::Point* point = static_cast<const App::Point*>(Obj);
                 Base::Vector3d base = point->getBasePoint();
                 BRepBuilderAPI_MakeVertex vBuilder(gp_Pnt(base.x, base.y, base.z));

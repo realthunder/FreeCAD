@@ -1559,18 +1559,38 @@ selection (docs/ThinClient.md 8.11 item 3). Upstream has none of
 it. Taking upstream's blob would delete all of it, and nothing would
 fail to compile.
 
-What the Datums port did unblock is much smaller and entirely
-worthwhile: **a datum element can now be external geometry.** Neither
-end of the path could handle one, because a datum carries no shape --
-`SketchObjectExternal.cpp` built a face for `App::Plane` and asked
-`Part::Feature::getTopoShape` for everything else, and the selection
-gate rejected anything shapeless with "No shape" before it ever reached
-its own closing `App::Plane` check, which was therefore unreachable.
-Now the projection builds an edge from an `App::Line` and a vertex from
-an `App::Point` (so an origin axis and the origin point can be
-referenced, and `Part::DatumLine`/`DatumPoint` with them), and the gate
-lets a shapeless datum through the shape check while still holding it to
-`isExternalAllowed()`.
+What the Datums port did unblock is much smaller: **`App::Point` can be
+external geometry.** Only that one type, and the first version of this
+change was wrong about why, so the shape of it is worth stating
+exactly.
+
+**Origin axes and planes already worked.**
+`Part::Feature::getTopoShape()` synthesizes a shape for them --
+`PartFeature.cpp` builds a static infinite edge for an `App::Line` and a
+static infinite face for an `App::Plane`, placed by the resolution
+matrix -- so `Part::Feature::getShape()` returns an Edge for `Y_Axis`
+and a Face for `XY_Plane`. Both ends of the external-geometry path were
+therefore already satisfied for them, the selection gate's shape check
+included. **`App::Point` has no such case**, so it alone came back null
+and could not be referenced.
+
+So the projection builds a vertex for `App::Point` and nothing else; an
+`App::Line` keeps going through `getTopoShape`, which is also **what
+carries its element map** (`refTopoShape`, "the same with its element
+map, for what names its projection"). Intercepting `App::Line` here to
+build the edge by hand looks harmless and is not: it leaves
+`refTopoShape` null and the projection loses the names it should
+inherit. `Part::DatumPoint` rides along, being an `App::Point`;
+`Part::DatumLine` already worked, being an `App::Line`.
+
+The selection gate's change is correspondingly narrow: a shape that is
+null is accepted, instead of rejected with "No shape", **only** when the
+object is an `App::DatumElement`, and that object is then taken whole.
+Everything with a shape -- including origin planes -- still goes through
+the type classification, which is what sets `sSubName` and so what makes
+the task panel's face-pick gate apply to them. Widening the bypass to
+every datum element by type silently turns that gate off for origin
+planes.
 
 Read `getBasePoint()`/`getDirection()` and not `Placement` when adding
 to this: a datum inside a placed `LocalCoordinateSystem` carries that
