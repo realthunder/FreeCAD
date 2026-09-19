@@ -103,9 +103,20 @@ add_custom_command(
     COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/make_wheel.py
             --name fcx_image --version ${FCX_IMAGE_VERSION}
             --abi ${PYODIDE_ABI} --platform ${PYODIDE_PLATFORM}
-            --summary "FreeCAD expression sandbox image for pyodide"
+            --summary "FreeCAD expression sandbox guest image for Pyodide"
+            # Publishing metadata (docs/PyodideHost.md sec 12.3).  PyPI
+            # cannot edit these after an upload, so the wheel the build
+            # makes is the wheel that gets published, description and all.
+            --license "LGPL-2.1-or-later"
+            --requires-python "==3.14.*"
+            --homepage "https://github.com/realthunder/FreeCAD"
+            --description-file ${CMAKE_CURRENT_SOURCE_DIR}/README.md
+            --classifier "License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)"
+            --classifier "Intended Audience :: Developers"
+            --classifier "Topic :: Scientific/Engineering"
             --out ${CMAKE_CURRENT_BINARY_DIR}/dist
             $<TARGET_FILE:_fcx_image>
     DEPENDS _fcx_image ${CMAKE_CURRENT_SOURCE_DIR}/make_wheel.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/README.md
     COMMENT "Wrapping _fcx_image into a wheel")
 add_custom_target(fcx_image_wheel ALL DEPENDS ${FCX_WHEEL})
