@@ -100,6 +100,10 @@ class TestObjectOpen(unittest.TestCase):
         self.document.saveAs(file_path)
         FreeCAD.closeDocument(self.document.Name)
         self.document = FreeCAD.open(file_path)
+        # Delete the file only once the document is closed. unittest runs
+        # cleanups after tearDown, which closes it. Windows refuses to unlink
+        # a file an open document still holds, where Linux allows it.
+        self.addCleanup(remove, file_path)
 
         # C++ objects
         self.compare_cpp_objs(self.document)
@@ -110,7 +114,6 @@ class TestObjectOpen(unittest.TestCase):
         from femsolver.elmer.equations.flux import Proxy
         from femobjects.constraint_electromagnetic import ConstraintElectromagnetic
 
-        remove(file_path)
         self.assertEqual(Proxy, self.document.Flux.Proxy.__class__)
         self.assertEqual(
             ConstraintElectromagnetic, self.document.ConstraintElectromagnetic.Proxy.__class__
