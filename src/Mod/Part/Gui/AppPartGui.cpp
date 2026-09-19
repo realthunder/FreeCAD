@@ -49,6 +49,7 @@
 #include "ViewProvider.h"
 #include "ViewProvider2DObject.h"
 #include "ViewProviderAttachExtension.h"
+#include "ViewProviderDatum.h"
 #include "ViewProviderGridExtension.h"
 #include "ViewProviderBoolean.h"
 #include "ViewProviderBox.h"
@@ -170,6 +171,10 @@ PyMOD_INIT_FUNC(PartGui)
     PartGui::ViewProviderSplineExtension            ::init();
     PartGui::ViewProviderSplineExtensionPython      ::init();
     PartGui::ViewProviderPartExt                    ::init();
+    PartGui::ViewProviderLine                       ::init();
+    PartGui::ViewProviderPlane                      ::init();
+    PartGui::ViewProviderPoint                      ::init();
+    PartGui::ViewProviderLCS                        ::init();
     PartGui::ViewProviderPart                       ::init();
     PartGui::ViewProviderPrimitive                  ::init();
     PartGui::ViewProviderEllipsoid                  ::init();

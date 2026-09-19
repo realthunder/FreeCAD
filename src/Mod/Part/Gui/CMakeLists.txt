@@ -168,6 +168,8 @@ SET(PartGui_SRCS
     ViewProvider.h
     ViewProviderAttachExtension.h
     ViewProviderAttachExtension.cpp
+    ViewProviderDatum.h
+    ViewProviderDatum.cpp
     MeshLevelBuild.cpp
     MeshLevelSource.cpp
     MeshLevelSource.h
