@@ -126,6 +126,15 @@ public:
     std::weak_ptr<const GeometryExtension> getExtension(const std::string& name) const;
     std::weak_ptr<GeometryExtension> getExtension(const Base::Type& type);
     std::weak_ptr<GeometryExtension> getExtension(const std::string& name);
+    /** Borrowed extension lookup, nullptr when there is none of that type.
+     *
+     * Unlike getExtension() this neither throws nor touches a reference
+     * count, so a one-shot read costs one scan and no atomic. The extension
+     * stays owned by this Geometry; the pointer is invalidated by
+     * setExtension() and deleteExtension().
+     */
+    const GeometryExtension* getExtensionPtr(const Base::Type& type) const noexcept;
+    GeometryExtension* getExtensionPtr(const Base::Type& type) noexcept;
     void setExtension(std::unique_ptr<GeometryExtension>&& geo);
     void deleteExtension(const Base::Type& type);
     void deleteExtension(const std::string& name);

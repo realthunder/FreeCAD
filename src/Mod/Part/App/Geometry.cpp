@@ -418,6 +418,7 @@ boost::uuids::uuid Geometry::getTag() const
 std::vector<std::weak_ptr<const GeometryExtension>> Geometry::getExtensions() const
 {
     std::vector<std::weak_ptr<const GeometryExtension>> wp;
+    wp.reserve(extensions.size());
 
     for (auto& ext : extensions) {
         wp.push_back(ext);
@@ -428,14 +429,14 @@ std::vector<std::weak_ptr<const GeometryExtension>> Geometry::getExtensions() co
 
 bool Geometry::hasExtension(const Base::Type& type) const
 {
-    return std::any_of(extensions.begin(), extensions.end(), [type](auto geoExt) {
+    return std::any_of(extensions.begin(), extensions.end(), [&type](const auto& geoExt) {
         return geoExt->getTypeId() == type;
     });
 }
 
 bool Geometry::hasExtension(const std::string& name) const
 {
-    return std::any_of(extensions.begin(), extensions.end(), [name](auto geoExt) {
+    return std::any_of(extensions.begin(), extensions.end(), [&name](const auto& geoExt) {
         return geoExt->getName() == name;
     });
 }
@@ -464,12 +465,32 @@ std::weak_ptr<GeometryExtension> Geometry::getExtension(const std::string& name)
 
 std::weak_ptr<const GeometryExtension> Geometry::getExtension(const Base::Type& type) const
 {
-    return const_cast<Geometry*>(this)->getExtension(type).lock();
+    // No lock(): a weak_ptr<GeometryExtension> converts to weak_ptr<const ...>
+    // directly, while going through a shared_ptr costs a reference count round
+    // trip for nothing.
+    return const_cast<Geometry*>(this)->getExtension(type);
 }
 
 std::weak_ptr<const GeometryExtension> Geometry::getExtension(const std::string& name) const
 {
-    return const_cast<Geometry*>(this)->getExtension(name).lock();
+    return const_cast<Geometry*>(this)->getExtension(name);
+}
+
+const GeometryExtension* Geometry::getExtensionPtr(const Base::Type& type) const noexcept
+{
+    for (const auto& ext : extensions) {
+        if (ext->getTypeId() == type) {
+            return ext.get();
+        }
+    }
+
+    return nullptr;
+}
+
+GeometryExtension* Geometry::getExtensionPtr(const Base::Type& type) noexcept
+{
+    return const_cast<GeometryExtension*>(
+        const_cast<const Geometry*>(this)->getExtensionPtr(type));
 }
 
 
