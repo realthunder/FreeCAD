@@ -1512,12 +1512,35 @@ worth knowing before writing another. The search distance is
 to what the camera shows, so **the band is a fixed ~`0.002 * VH` pixels
 at any zoom** -- 1.2 px at the 800x600 the other sketch tests state,
 which no integer pixel can be relied on to land inside. The test states
-2400x1800 for a 3.6 px band, which also absorbs the one pixel the
-mirror's projection sits below `pixel_of()`'s model (x agrees exactly;
-only y is off by one, consistently, which no test had needed to notice
-before). And a control click must be kept off the prolongation of the
-line the *previous* case drew: put it there and group C snaps it to that
-line instead, quite correctly, and the control measures nothing.
+2400x1800 for a 3.6 px band. And a control click must be kept off the
+prolongation of the line the *previous* case drew: put it there and
+group C snaps it to that line instead, quite correctly, and the control
+measures nothing.
+
+### The `pixel_of()` off-by-one, chased and closed
+
+Writing that test also showed `pixel_of()`'s y landing one pixel below
+where the mirror put it, x agreeing exactly. It was worked around then
+and **diagnosed since: the helper was wrong, not the mirror.**
+
+A canvas reports a pixel from the top left and Coin's viewport origin is
+the bottom left, so the client's y is flipped on the way in. Both paths
+spell that flip the same way -- `windowsize[1] - p.y() - 1` in
+`Gui/Quarter/Mouse.cpp`, `size[1] - 1 - input.y` in `MirrorViewer.cpp`
+-- and both then normalize by dividing by the viewport height, so
+**the served tier and the desktop agree about a pixel**; the y branch of
+the desktop's aspect correction is a no-op in landscape, and x is never
+flipped, which is exactly why only y was off. The helper inverted that
+as `VH/2 - y*scale`, dropping the `-1`, and so was out by one pixel
+everywhere and by one pixel only.
+
+The fix is that `-1`, in all seven copies of the helper across
+`tests/gui`. `sketch-line-extension-autoconstraint.py` now asserts it
+rather than tolerating it: an unsnapped point *is* the clicked pixel
+unprojected, so the residual between where the tool put it and what
+`world_y_of_pixel()` predicts measures the helper against the mirror's
+own arithmetic. It was exactly `-1.0` px before and is `-0.0000` px
+after.
 
 ## 8. Phases
 
