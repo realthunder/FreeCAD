@@ -21,21 +21,27 @@
  *                                                                         *
  ***************************************************************************/
 
-
 #ifndef APP_Origin_H
 #define APP_Origin_H
 
-#include "GeoFeatureGroupExtension.h"
-#include "OriginFeature.h"
-
-#include "QCoreApplication"
+#include "Datums.h"
 
 namespace App
 {
 
-/** Base class of all geometric document objects.
+/** The local coordinate system a document, Part or Body is built on.
+ *
+ * An Origin is a LocalCoordinateSystem pinned to the identity placement.
+ * Everything it offers -- the axes, the planes, the origin point, the
+ * OriginFeatures property and the role-prefix subname lookup -- lives on
+ * that base; what stays here is what this fork does differently:
+ *
+ *  - the datum features are created LAZILY, so an Origin that nothing ever
+ *    asks about costs nothing. getPropertyByName() is the second trigger,
+ *    for code that reaches OriginFeatures directly rather than by getter.
+ *  - the held group extension is not saved (canSaveExtension/Restore).
  */
-class AppExport Origin : public App::DocumentObject
+class AppExport Origin : public App::LocalCoordinateSystem
 {
     PROPERTY_HEADER_WITH_OVERRIDE(App::Origin);
     Q_DECLARE_TR_FUNCTIONS(App::Origin)
@@ -50,107 +56,44 @@ public:
         return "Gui::ViewProviderOrigin";
     }
 
-    virtual Property *getPropertyByName(const char* name) const;
+    bool isOrigin() const override {
+        return true;
+    }
 
-    /** @name Axis and plane access
-     * This functions returns casted axis and planes objects and asserts they are set correctly
-     * otherwise Base::Exception is thrown.
+    /** Materializes the datum features when OriginFeatures is asked for.
+     *
+     * Fork-local, and the reason the laziness is invisible to callers:
+     * code that reads the property directly rather than through a getter
+     * still sees a populated Origin.
      */
-    ///@{
-    // returns X axis
-    App::Line *getX () const {
-        return getAxis (AxisRoles[0]);
-    }
-    // returns Y axis
-    App::Line *getY () const {
-        return getAxis (AxisRoles[1]);
-    }
-    // returns Z axis
-    App::Line *getZ () const {
-        return getAxis (AxisRoles[2]);
+    Property* getPropertyByName(const char* name) const override;
+
+    /// Kept spelling of LocalCoordinateSystem::getDatumElement
+    App::DatumElement* getOriginFeature(const char* role) const {
+        return getDatumElement(role);
     }
 
-    // returns XY plane
-    App::Plane *getXY () const {
-        return getPlane (PlaneRoles[0]);
-    }
-    // returns XZ plane
-    App::Plane *getXZ () const {
-        return getPlane (PlaneRoles[1]);
-    }
-    // returns YZ plane
-    App::Plane *getYZ () const {
-        return getPlane (PlaneRoles[2]);
-    }
-
-    /// Returns all axis objects to iterate on them
-    std::vector<App::Line *> axes() const {
-        return { getX(), getY(), getZ() };
-    }
-
-    /// Returns all base planes objects to iterate on them
-    std::vector<App::Plane *> planes() const {
-        return { getXY(), getXZ(), getYZ() };
-    }
-
-    /// Returns all controlled objects (both planes and axis) to iterate on them
-    std::vector<App::OriginFeature *> baseObjects() const {
-        return { getX(), getY(), getZ(), getXY(), getXZ(), getYZ() };
-    }
-
-    /// Returns an axis by it's name
-    App::OriginFeature *getOriginFeature( const char* role ) const;
-
-    /// Returns an axis by it's name
-    App::Line *getAxis( const char* role ) const;
-
-    /// Returns an axis by it's name
-    App::Plane *getPlane( const char* role ) const;
-    ///@}
-
-    /// Returns true if the given object is part of the origin
-    bool hasObject (const DocumentObject *obj) const;
-
-    /// Returns the default bounding box of the origin (use this if you confused what should be s )
-    // TODO Delete me if not really needed (2015-09-01, Fat-Zer)
-    static Base::BoundBox3d defaultBoundBox();
-
-    /// Returns true on changing OriginFeature set
-    short mustExecute() const override;
-
-    /// Make sure origin features are initialized
-    void initObjects() const;
-
-    /// Axis types
-    static constexpr const char* AxisRoles[3] = {"X_Axis", "Y_Axis", "Z_Axis"};
-    /// Baseplane types
-    static constexpr const char* PlaneRoles[3] = {"XY_Plane", "XZ_Plane", "YZ_Plane"};
-
-    // Axis links
-    PropertyLinkList OriginFeatures;
+    void onDocumentRestored() override;
 
 protected:
-    /// Checks integrity of the Origin
-    App::DocumentObjectExecReturn *execute() override;
-    /// Creates all corresponding Axes and Planes objects for the origin if they aren't linked yet
-    void setupObject () override;
-    /// Removes all planes and axis if they are still linked to the document
-    void unsetupObject () override;
+    /** Does NOT check that the datum features exist.
+     *
+     * LocalCoordinateSystem::execute() reaches every getter to assert the
+     * set is complete, and each getter materializes. That would create the
+     * features on the first recompute of every document, which is exactly
+     * what the laziness here is for.
+     */
+    App::DocumentObjectExecReturn* execute() override;
 
-    bool canSaveExtension(Extension *) const override;
+    /** Creates the features only if the preference asks for it.
+     *
+     * Deliberately does not chain to LocalCoordinateSystem::setupObject(),
+     * which creates them unconditionally.
+     */
+    void setupObject() override;
+
+    bool canSaveExtension(Extension*) const override;
     void Restore(Base::XMLReader& reader) override;
-
-private:
-    class OriginExtension : public GeoFeatureGroupExtension {
-        Origin* obj;
-    public:
-        OriginExtension(Origin* obj);
-        const App::PropertyLinkList &getExportGroupProperty(int reason) const override;
-        void initExtension(ExtensionContainer* obj) override;
-        bool extensionGetSubObject(DocumentObject *&ret, const char *subname,
-                PyObject **, Base::Matrix4D *, bool, int) const override;
-    };
-    OriginExtension extension;
 };
 
 } //namespace App

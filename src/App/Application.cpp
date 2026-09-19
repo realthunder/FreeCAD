@@ -116,6 +116,7 @@
 #include "MaterialObject.h"
 #include "MeasureDistance.h"
 #include "ShaderObject.h"
+#include "Datums.h"
 #include "Origin.h"
 #include "OriginFeature.h"
 #include "OriginGroupExtension.h"
@@ -2484,9 +2485,11 @@ void Application::initTypes()
     App::ExpressionLibrary         ::init();
     App::Placement                 ::init();
     App::PlacementPython           ::init();
-    App::OriginFeature             ::init();
+    App::DatumElement              ::init();
     App::Plane                     ::init();
     App::Line                      ::init();
+    App::Point                     ::init();
+    App::LocalCoordinateSystem     ::init();
     App::Part                      ::init();
     App::Origin                    ::init();
     App::Link                      ::init();
@@ -2591,6 +2594,7 @@ void Application::initTypes()
     Base::Type::addLegacyName(App::ShaderBinding::getClassTypeId(), "App::Appearance");
     Base::Type::addLegacyName(App::ShaderBindingPython::getClassTypeId(),
                               "App::AppearancePython");
+    Base::Type::addLegacyName(App::DatumElement::getClassTypeId(), "App::OriginFeature");
 }
 
 namespace {

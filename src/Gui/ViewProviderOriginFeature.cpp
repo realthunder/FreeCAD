@@ -256,10 +256,10 @@ void ViewProviderOriginFeature::setDisplayMode (const char* ModeName)
 }
 
 bool ViewProviderOriginFeature::onDelete(const std::vector<std::string> &) {
-    auto feat = static_cast <App::OriginFeature *> ( getObject() );
-    // Forbid deletion if there is an origin this feature belongs to
+    auto feat = static_cast <App::DatumElement *> ( getObject() );
+    // Forbid deletion if there is a coordinate system this feature belongs to
 
-    if ( feat->getOrigin () ) {
+    if ( feat->getLCS () ) {
         return false;
     } else {
         return true;

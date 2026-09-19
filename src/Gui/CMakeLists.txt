@@ -1068,6 +1068,7 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderOriginFeature.cpp
     ViewProviderPlane.cpp
     ViewProviderLine.cpp
+    ViewProviderPoint.cpp
     ViewProviderGeoFeatureGroup.cpp
     ViewProviderOriginGroup.cpp
     ViewProviderPart.cpp
@@ -1111,6 +1112,7 @@ SET(Viewprovider_SRCS
     ViewProviderOriginFeature.h
     ViewProviderPlane.h
     ViewProviderLine.h
+    ViewProviderPoint.h
     ViewProviderGeoFeatureGroup.h
     ViewProviderOriginGroup.h
     ViewProviderPart.h
