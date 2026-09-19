@@ -1625,6 +1625,67 @@ Tests: `testOriginAxisIsExternalGeometry`,
 `TestSketchExternalGeometry.py` -- the last because external geometry is
 re-projected on restore, so the new branches have to hold there too.
 
+### LineSet is closed too: the resync already happened
+
+The ledger carried `DrawSketchHandlerLineSet.h` as the one tool handler
+still genuinely open, on the strength of its size: 196 differing lines
+against upstream, 117 fork-only to 79 upstream-only, and no thin-client
+marker anywhere in it. That profile reads as drift. It is not.
+
+**The file was taken whole in `b4b8f10a3b`**, the controller-framework
+resync -- upstream's second, controller-based `DrawSketchHandlerPolyLine`
+is sitting in it, which is the proof. What `90f0e23eac` and `338b27fea2`
+then put back on top is the divergence being counted.
+
+Measured rather than read, the 196 lines are almost all spelling. Against
+upstream's tip blob, ignoring whitespace, the file is 48 fork-only lines
+to 10 upstream-only; stripping whitespace entirely, so that a reflowed
+line cannot hide a real one, 45 to 10. The remaining 69 lines on each
+side are upstream's 2025-11-11 reformat.
+
+**All ten upstream-only lines are one edit, and it is the inverse of a
+fork change**: they re-inline `cycleSegmentAndTransitionMode()` back into
+a `registerPressedKey` override that tests the raw `SoKeyboardEvent::M`.
+Six are the signature, the `Mode == STATUS_SEEK_Second && ... &&
+previousCurve != -1` guard, the unguarded `geom` lookup and the `else`
+that forwards to the base; the other four are the fork's four
+`if (geom && geom->is<Part::GeomArcOfCircle>())` tests minus the null
+guard. There is no upstream fix and no upstream feature in this file that
+the fork does not have -- the tip-blob comparison proves it for the whole
+history at once, which is stronger than walking the log.
+
+So taking the blob would buy nothing and would delete, without a compile
+error, every override being counted as drift:
+
+- `cycleSegmentAndTransitionMode()`, the cycle body the two triggers share;
+- `toggle()`, so that pressing the polyline button again cycles the mode
+  instead of restarting the tool -- the route a client with no key
+  bindings has;
+- `canIterateToolMode()` / `iterateToolMode()`, which is how
+  `Sketcher_NextToolMode` reaches the cycle and how its menu entry knows
+  to grey out;
+- the `geom &&` guards and the `dirVec` fallback, which are what make the
+  button route safe when there is no previous curve. The M route cannot
+  reach a null `geom`, because `canIterateToolMode()` carries upstream's
+  `previousCurve != -1` guard unchanged.
+
+Nothing is lost on the key path: `M` is still the default, now as
+`sAccel` on `Sketcher_NextToolMode` rather than a hardcoded constant, and
+the handler no longer overrides `registerPressedKey` at all, which is what
+upstream's `else` branch did by hand.
+
+The one thing here that is still open is a decision, not a resync:
+upstream's `DrawSketchHandlerPolyLine` is compiled but never instantiated,
+since `CmdSketcherCreatePolyline::activated()` still constructs
+`DrawSketchHandlerLineSet`. Adopting it is the one-line command change
+noted above, and upstream pairs it with a `Sketcher_CreatePolylineLegacy`
+command that this fork does not register.
+
+**The lesson is [[measure-the-before-state]] applied to a diff**: a line
+count is not a baseline. The marker grep from the CarbonCopy lesson would
+have caught this one too -- `toggle(` is on its list -- and the count was
+believed over the grep.
+
 ## 8. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
