@@ -296,16 +296,25 @@ if(TARGET FreeCADRenderer)
     # reasoning as above, and then some: the whole claim of the mode is
     # that the process needs no GPU and no display, which only a test
     # that links nothing graphical can make.
-    # UNIX only: it speaks to the server over BSD sockets, and proves no
-    # driver got mapped by enumerating the loaded images -- through
-    # /proc/self/maps on Linux and dyld on macOS. Windows has neither;
-    # porting it needs Winsock and EnumProcessModules.
-    if(UNIX)
-        add_executable(PublishOnly_tests_run
-                       ${CMAKE_CURRENT_SOURCE_DIR}/PublishOnly.cpp)
-        target_link_libraries(PublishOnly_tests_run gtest_main FreeCADRenderer)
-        add_test(NAME PublishOnly_tests_run COMMAND PublishOnly_tests_run)
+    # Built on every platform. It used to be if(UNIX), on the grounds
+    # that it speaks BSD sockets and enumerates loaded images; the
+    # second half was the real constraint and the first was self-
+    # inflicted -- SceneServerWire below tests the same server over
+    # Boost.Beast and builds everywhere, so this one does too. Image
+    # enumeration is /proc/self/maps on Linux, dyld on macOS and
+    # EnumProcessModules on Windows, hence psapi; a platform that
+    # reports nothing skips the assertion rather than passing it.
+    add_executable(PublishOnly_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/PublishOnly.cpp)
+    target_include_directories(PublishOnly_tests_run PRIVATE
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(PublishOnly_tests_run gtest_main FreeCADRenderer)
+    if(WIN32)
+        target_link_libraries(PublishOnly_tests_run ws2_32 mswsock psapi)
+    elseif(UNIX)
+        target_link_libraries(PublishOnly_tests_run pthread)
     endif()
+    add_test(NAME PublishOnly_tests_run COMMAND PublishOnly_tests_run)
 
     # The scene server over a real socket (docs/SceneServerPort.md
     # stage 0): the oracle every stage of the port is judged by. The
