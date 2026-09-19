@@ -100,8 +100,11 @@ def pixel_of(x, y, z=0.0):
     depth = EYE[2] - z
     half = depth * math.tan(HEIGHT_ANGLE / 2.0)
     scale = (VH / 2.0) / half
+    # VH - 1 - py is the flip a canvas pixel goes through to reach
+    # Coin's bottom-left y -- desktop (Quarter/Mouse.cpp) and mirror
+    # alike -- so the inverse carries that -1. x is not flipped.
     return (int(round(VW / 2.0 + (x - EYE[0]) * scale)),
-            int(round(VH / 2.0 - (y - EYE[1]) * scale)))
+            int(round(VH / 2.0 - 1.0 - (y - EYE[1]) * scale)))
 
 
 def click_at(ws, px, py, t):
