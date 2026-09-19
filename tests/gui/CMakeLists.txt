@@ -156,6 +156,17 @@ fc_add_gui_test(GuiSketchTangentAutoConstraint_tests_run
                 sketch-tangent-autoconstraint.py
                 --timeout 200)
 
+# The line-extension auto-constraint hint and its snap (group C). A click
+# past a segment's END, where nothing is drawn, picks up a PointOnObject
+# to that segment and is placed exactly on its prolongation; nothing else
+# in the search can speak out there. Over the wire because the fork's
+# visibility gate asks the edit session's viewer for its viewport region
+# rather than the active window's GL widget (ThinClient 8.3), so only a
+# mirror exercises the code that had to be rewritten.
+fc_add_gui_test(GuiSketchLineExtensionAutoConstraint_tests_run
+                sketch-line-extension-autoconstraint.py
+                --timeout 240)
+
 # Hovering an axis locks one coordinate and leaves the other to the grid
 # (upstream 72d021108f, 9f2b0f910b). The object step used to treat an axis
 # as a full snap and return before the grid ever ran, so the free
