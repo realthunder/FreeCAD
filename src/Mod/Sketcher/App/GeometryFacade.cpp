@@ -136,82 +136,115 @@ void GeometryFacade::ensureSketchGeometryExtension(Part::Geometry* geometry)
     }
 }
 
+namespace
+{
+
+/** Borrowed access to the sketch extension, for the one-shot static queries.
+ *
+ * Each of those used to build a whole GeometryFacade on the heap to read or
+ * write a single field -- an allocation, two linear extension scans and a
+ * reference count round trip -- when the extension is all they need.
+ *
+ * Both contracts are kept exactly as the facade constructors spell them: a
+ * const Geometry without the extension throws, and a mutable one is given the
+ * extension.
+ */
+const SketchGeometryExtension& sketchExtension(const Part::Geometry* geometry)
+{
+    const auto* ext = geometry->getExtensionPtr(SketchGeometryExtension::getClassTypeId());
+
+    if (!ext) {
+        THROWM(Base::ValueError,
+               "Cannot create a GeometryFacade out of a const Geometry pointer not having a "
+               "SketchGeometryExtension!");
+    }
+
+    return *static_cast<const SketchGeometryExtension*>(ext);
+}
+
+SketchGeometryExtension& sketchExtension(Part::Geometry* geometry)
+{
+    auto* ext = geometry->getExtensionPtr(SketchGeometryExtension::getClassTypeId());
+
+    if (!ext) {
+        geometry->setExtension(std::make_unique<SketchGeometryExtension>());
+        ext = geometry->getExtensionPtr(SketchGeometryExtension::getClassTypeId());
+    }
+
+    return *static_cast<SketchGeometryExtension*>(ext);
+}
+
+}  // namespace
+
 void GeometryFacade::copyId(const Part::Geometry* src, Part::Geometry* dst)
 {
     throwOnNullPtr(src);
     throwOnNullPtr(dst);
 
-    auto gfsrc = GeometryFacade::getFacade(src);
-    auto gfdst = GeometryFacade::getFacade(dst);
-    gfdst->setId(gfsrc->getId());
+    sketchExtension(dst).setId(sketchExtension(src).getId());
 }
 
-int GeometryFacade::getId(const Part::Geometry * geometry)
+int GeometryFacade::getId(const Part::Geometry* geometry)
 {
-    auto gf = GeometryFacade::getFacade(geometry);
-    return gf->getId();
+    throwOnNullPtr(geometry);
+
+    return sketchExtension(geometry).getId();
 }
 
-void GeometryFacade::setId(Part::Geometry * geometry, int id)
+void GeometryFacade::setId(Part::Geometry* geometry, int id)
 {
-    auto gf = GeometryFacade::getFacade(geometry);
-    return gf->setId(id);
+    throwOnNullPtr(geometry);
+
+    sketchExtension(geometry).setId(id);
 }
 
 bool GeometryFacade::getConstruction(const Part::Geometry* geometry)
 {
     throwOnNullPtr(geometry);
 
-    auto gf = GeometryFacade::getFacade(geometry);
-    return gf->getConstruction();
+    return sketchExtension(geometry).testGeometryMode(GeometryMode::Construction);
 }
 
 void GeometryFacade::setConstruction(Part::Geometry* geometry, bool construction)
 {
     throwOnNullPtr(geometry);
 
-    auto gf = GeometryFacade::getFacade(geometry);
-    return gf->setConstruction(construction);
+    sketchExtension(geometry).setGeometryMode(GeometryMode::Construction, construction);
 }
 
 bool GeometryFacade::isInternalType(const Part::Geometry* geometry, InternalType::InternalType type)
 {
     throwOnNullPtr(geometry);
 
-    auto gf = GeometryFacade::getFacade(geometry);
-    return gf->getInternalType() == type;
+    return sketchExtension(geometry).getInternalType() == type;
 }
 
 bool GeometryFacade::isInternalAligned(const Part::Geometry* geometry)
 {
     throwOnNullPtr(geometry);
 
-    auto gf = GeometryFacade::getFacade(geometry);
-    return gf->isInternalAligned();
+    return sketchExtension(geometry).getInternalType() != InternalType::None;
 }
 
 InternalType::InternalType GeometryFacade::getInternalType(const Part::Geometry* geometry)
 {
     throwOnNullPtr(geometry);
 
-    auto gf = GeometryFacade::getFacade(geometry);
-    return gf->getInternalType();
+    return sketchExtension(geometry).getInternalType();
 }
 
 void GeometryFacade::setInternalType(Part::Geometry* geometry, InternalType::InternalType type)
 {
     throwOnNullPtr(geometry);
 
-    auto gf = GeometryFacade::getFacade(geometry);
-    gf->setInternalType(type);
+    sketchExtension(geometry).setInternalType(type);
 }
 
 bool GeometryFacade::getBlocked(const Part::Geometry* geometry)
 {
     throwOnNullPtr(geometry);
 
-    auto gf = GeometryFacade::getFacade(geometry);
-    return gf->getBlocked();
+    return sketchExtension(geometry).testGeometryMode(GeometryMode::Blocked);
 }
 
 PyObject* GeometryFacade::getPyObject()
