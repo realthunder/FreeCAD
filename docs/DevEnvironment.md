@@ -1483,9 +1483,24 @@ onto FreeCAD's Qt main thread (the `Web::AppServer` pattern) so document/OCCT/Co
 work is safe. The interpreter session is persistent (a REPL), captures
 stdout/stderr, returns the last expression's value, and reports exceptions as text.
 
-Runtime dependency: the `mcp` Python package in the active interpreter
-(`pip install mcp`, or `conda install mcp` from conda-forge; add to the feedstock
-host/run deps for distribution).
+Runtime dependency: the `mcp` Python package in the active interpreter. **It is
+installed in `.conda/freecad` as of 2026-09-19** -- `mcp` 2.1.1 from conda-forge,
+38 packages in all, pulled with the channel held down:
+
+```sh
+conda install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
+    --override-channels -y mcp
+```
+
+`--override-channels` is not decoration here. The env's records still name the
+dead `realthunder` channel, and the smesh section above warns that a plain solve
+into this env now *succeeds* and quietly installs a second OCCT beside the fork's
+local build. Restricting the solve to conda-forge kept this one purely additive:
+conda revision 13 is 38 `+` lines with no removals and no version arrows, the
+prefix still carries **no** `occt` record at all, and `qt6-main`, `pyside6`,
+`vtk` and `libboost` did not move. None of the 38 is pinned, so `mcp`,
+`pydantic`, `starlette` and `uvicorn` are what a later solve may bump. The
+feedstock already carries `mcp` in its run deps for distribution.
 
 **Both major versions of `mcp` are supported.** The high-level server class moved,
 and so did where the bind address goes, so `_make_server()` picks whichever is
@@ -1498,8 +1513,14 @@ installed:
 
 Both expose the same `tool(name=..., description=...)` decorator and default the
 endpoint to `/mcp`, so the rest of the module is version-agnostic. Verified on
-1.28.1 and 2.0.0: server constructed, served over Streamable HTTP, `initialize`
-answered 200.
+1.28.1 and 2.0.0 (server constructed, served over Streamable HTTP, `initialize`
+answered 200) and, 2026-09-19 on the installed **2.1.1**, end to end against the
+headless serve: `initialize` 200, `tools/list` returning all three tools
+(`run_python`, `search_api`, `get_log`), and `run_python` running
+`App.getHomePath()` on the live process's Qt main thread. On 2.x the
+`mcp.server.fastmcp` ImportError spells the class `mcp.server.mcpserver.MCPServer`;
+the shorter `from mcp.server import MCPServer` that `_make_server()` uses still
+resolves.
 
 Start it from FreeCAD's Python console (main thread):
 
@@ -1512,6 +1533,22 @@ Point an MCP client (Claude Code, etc.) at that URL. The single tool is
 intentional: the whole FreeCAD API is already Python-reachable, so the tool's
 description teaches the agent the entry points (`App`, `Gui`, `App.ActiveDocument`,
 `dir()`/`help()`) rather than wrapping operations as extra tools.
+
+**Nothing printed after `start()` reaches the terminal.** `start()` attaches the
+console capture, and from that moment `print()` and `Console.PrintMessage` land in
+the ring buffer instead -- so a script that starts the console and prints the
+status line looks like it did nothing whatsoever: exit code 0 and an empty log.
+That is what made `scripts/mcp-console.py` look broken under `FreeCADCmd`, and it
+is not -- writing to a raw fd (`os.write`) instead of stdout shows every line.
+The same mechanism is why `/tmp/fc-serve-<port>.log` never says the console came
+up: read the port from `ss -tlnp`, from `mcp_console.url()`, or by calling the
+`get_log` tool, which hands the captured status line straight back.
+
+**One `mcp_console.log` path, every process.** The default is
+`<UserAppData>/mcp_console.log` and `start()` rotates it (`.1` ... `.5`) at
+session start, so a second FreeCAD rotates the log out from under a running
+first one. Pass `log=` when two consoles may be live, the way the port needs
+`port=`.
 
 Conformance is verified end-to-end (initialize / tools list+call with input &
 output schema, structured content, main-thread execution, and driving the live

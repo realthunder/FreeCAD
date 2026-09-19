@@ -8974,6 +8974,17 @@ was settled by instrumented rebuilds (backtraces in `setEdit`,
 `_resetEdit`, `closeDialog`, all reverted) rather than by asking the
 live process.
 
+**The mcp half is CLOSED 2026-09-19.**  `mcp` 2.1.1 is installed in
+`.conda/freecad` from conda-forge, and the console answers: `initialize`
+200, `tools/list` giving `run_python`, `search_api` and `get_log`, and
+`run_python` running `App.getHomePath()` on the live headless serve's Qt
+main thread.  So the next question of this shape is asked of the running
+process, not of a rebuild.  Two traps came with it -- everything printed
+after `start()` goes to the capture ring rather than the terminal (which
+is why the script looked broken and the serve log never says the console
+is up), and every process shares and rotates one `mcp_console.log`.
+Both are in `docs/DevEnvironment.md`, "MCP debug console".
+
 ### 7.27 The first op, chased: never sent **[found and fixed 2026-09-17]**
 
 7.26 left one open: a page's very first control op -- the task panel
