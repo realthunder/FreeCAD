@@ -1419,6 +1419,106 @@ arc, while the same run's first segment stays a line as the control.
   Symmetric separators rely on the "no icon id found -> the separator's own
   index" fallback it replaces.
 
+### Group C: the directional auto-constraint hints
+
+The keystone's last group, and with it `DrawSketchHandler.{h,cpp}`
+themselves. Group C is the subsystem that shows a user *where* a
+constraint the tool is about to suggest would come from, before they
+click: the dashed prolongation of a line the cursor has run past, and the
+parallel / perpendicular reference lines of whatever the pointer has been
+resting on. It also snaps the cursor onto those lines, which is why five
+sites in the resynced handlers had to be commented out with "group C,
+which owns it, is not ported yet" until it arrived.
+
+It came in three pieces.
+
+**The edit scene had to learn to draw them.** Upstream's drawing lives in
+`EditModeCoinManager`, which this fork predates, so the two primitives
+were written against the fork's own `EditData`: a
+`LineExtensionAutoConstraintHint` line set and a
+`ParallelPerpendicularHint` line set, each in its own unpickable
+separator on the information layer, each dashed with the `0x0f0f` pattern
+the fork already uses there. The parallel/perpendicular set binds one
+colour per line (`SoMaterialBinding::PER_FACE`) so that the line the
+cursor is currently aligned with can be lit in `InformationColor` while
+the others stay in a new muted `DirectionalHintColor`; upstream reaches
+for its grid colour, which has no counterpart here.
+
+`isLineExtensionAutoConstraintHintVisible` is the one that needed real
+thought rather than translation. Upstream asks `getActiveView()` for a
+`View3DInventor`, then its `QGLWidget` for a width and height. Both
+questions are meaningless for a mirror -- "which window is active" has no
+useful answer in a process serving several browsers, and a mirror has no
+widget at all (docs/ThinClient.md sec 8.3). The fork's version asks
+`editViewer()` for the session's viewer and takes the size from its
+**viewport region**, which a mirror answers with what the browser stated
+over the wire. The sketch's editing placement still has to be applied
+before projecting, exactly as upstream's `getScreenCoordinates` does.
+
+**`DrawSketchHandler.{h,cpp}` were resynced whole**, the same method as
+the nineteen handler files before them: take `git show upstream/main:` and
+put the fork's invariants back. Group C is most of what the fork was
+missing, so the numbers are the largest of the phase -- the header went
+from 412 differing lines against upstream to **114**, the source from
+about 2800 to **92**. Neither can ever be byte-identical, because six
+things in them are the fork:
+
+- the `PreCompiled.h` include block (upstream dropped the PCH here);
+- `getViewer()`, which names the edit session's view rather than the
+  active window, and `SketcherSelectionFilterGate`;
+- the constraint icons on the cursor are sized by
+  `ToolHandler::devicePixelRatio()`, the *client's* ratio, where upstream
+  now hardcodes 16 px;
+- `openCommand`/`commitCommand`/`abortCommand` forward to the
+  `Gui::Command` statics. This is the ruling against `f4665aa7b5` still
+  standing, and it has one visible consequence: upstream's new
+  `deactivate()` aborts any transaction still open, which is safe there
+  only because its `abortCommand()` names the handler's own id. Aborting
+  blindly here would take a transaction something else opened, so that
+  line was not taken. For the same reason the two `closeAndRecompute(
+  currentTransactionID, ...)` calls in `createAutoConstraints` are not
+  taken either -- this fork's `makeTangentTo*viaNewPoint` helpers commit
+  or abort on their own, which upstream's no longer do;
+- `moveConstraint` without `OffsetMode`, and `setOriginPointMarker` left
+  out: both are separate upstream features, not group C.
+
+`Base::toRadians` and `toDegrees` became `constexpr` -- the fork's own
+templates, not upstream's tightened pair that refuses a deduced integer.
+Three group C call sites need them in a constant expression and nothing
+else changes.
+
+**The consumers.** All five commented-out sites were re-enabled, and two
+`getStartPointOfCurrentSegment` overrides came across with them --
+`Line.h` and `LineSet.h` are the tools that can say where the segment
+being drawn starts, which is what the endpoint parallel/perpendicular
+hint hangs off, and without them `updateParallelPerpendicularEndpointHint`
+can never fire. The payoff is that **`DrawSketchHandlerLine.h`,
+`DrawSketchHandlerPoint.h` and `DrawSketchControllableHandler.h` are now
+byte-identical to upstream**, one more than the handoff predicted.
+
+`tests/gui/sketch-line-extension-autoconstraint.py`
+(`GuiSketchLineExtensionAutoConstraint_tests_run`) guards the half of
+group C that can be read without pixels. A click *past* a segment's end,
+where nothing is drawn, picks up a PointOnObject to that segment and is
+placed exactly on its prolongation -- and nothing else in the
+auto-constraint search can speak out there, so the constraint can only
+have come from group C. It is driven over the wire because the
+visibility gate above is the piece that had to be rewritten, and only a
+mirror exercises it.
+
+Two numbers in that test were learned by writing it wrong first, and are
+worth knowing before writing another. The search distance is
+`0.1 * getScaleFactor()`, and that factor is a world length proportional
+to what the camera shows, so **the band is a fixed ~`0.002 * VH` pixels
+at any zoom** -- 1.2 px at the 800x600 the other sketch tests state,
+which no integer pixel can be relied on to land inside. The test states
+2400x1800 for a 3.6 px band, which also absorbs the one pixel the
+mirror's projection sits below `pixel_of()`'s model (x agrees exactly;
+only y is off by one, consistently, which no test had needed to notice
+before). And a control click must be kept off the prolongation of the
+line the *previous* case drew: put it there and group C snaps it to that
+line instead, quite correctly, and the control measures nothing.
+
 ## 8. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
