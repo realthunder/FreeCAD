@@ -72,8 +72,8 @@ NEAR, FAR = 10.0, 200.0
 # is a world length proportional to what the camera shows, so the band is
 # a fixed ~0.002 * VH PIXELS wide however the view is zoomed: 1.2 px at
 # 600, which no integer pixel can be relied on to land inside, and 3.6 px
-# here, which leaves room for the half-pixel of rounding and the one
-# pixel the mirror's projection sits below this helper's model.
+# here, which leaves room for the half-pixel of rounding that naming a
+# whole pixel costs.
 VW, VH = 2400, 1800
 
 # The segment whose prolongation is under test. Horizontal, kept clear of
@@ -132,15 +132,23 @@ def pixel_of(x, y, z=0.0):
     depth = EYE[2] - z
     half = depth * math.tan(HEIGHT_ANGLE / 2.0)
     scale = (VH / 2.0) / half
+    # VH - 1 - py is the flip a canvas pixel goes through to reach
+    # Coin's bottom-left y -- desktop (Quarter/Mouse.cpp) and mirror
+    # alike -- so the inverse carries that -1. x is not flipped.
     return (int(round(VW / 2.0 + (x - EYE[0]) * scale)),
-            int(round(VH / 2.0 - (y - EYE[1]) * scale)))
+            int(round(VH / 2.0 - 1.0 - (y - EYE[1]) * scale)))
 
 
 def world_y_of_pixel(py):
     """The inverse of pixel_of's y, which is what an unsnapped tool would
     place. Integer pixels do not land on SEG_Y, and that gap is what
-    tells a snapped answer from an unsnapped one."""
-    return (VH / 2.0 - py) / scale_px_per_unit()
+    tells a snapped answer from an unsnapped one.
+
+    Exact, not approximate: MirrorViewer flips a client pixel to
+    VH - 1 - py and normalizes by VH, so this is that same arithmetic
+    read backwards, and an unsnapped point must come back on it to
+    within the rounding pixel_of() already spent."""
+    return (VH / 2.0 - 1.0 - py) / scale_px_per_unit()
 
 
 def click_at(ws, px, py, t):
@@ -398,6 +406,18 @@ def verify():
               and abs(off_start[1] - off_clicked_y) < 0.1
               and abs(off_start[1] - SEG_Y) > 1.0,
               "start=%r, clicked y=%r" % (off_start, off_clicked_y))
+
+        # An unsnapped point is the clicked pixel unprojected, so this
+        # measures pixel_of()/world_y_of_pixel() against the mirror's own
+        # arithmetic rather than against a tolerance chosen to pass. It is
+        # held to well under a pixel on purpose: drop the -1 from the y
+        # flip either side and the residual becomes exactly one pixel,
+        # which is how the helper's long-standing off-by-one was found.
+        if off_start is not None and off_clicked_y is not None:
+            residual_px = (off_start[1] - off_clicked_y) * scale_px_per_unit()
+            check("the helper's pixel model agrees with the mirror to under "
+                  "a pixel", abs(residual_px) < 0.5,
+                  "residual %.4f px" % residual_px)
 
         reset = reply_of(client.reset)
         check("the client's resetEdit is accepted", reset.get("ok") is True, reset)
