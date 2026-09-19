@@ -37,7 +37,10 @@ set(PYODIDE_PYTHON_INCLUDE "$ENV{PYODIDE_PYTHON_INCLUDE}" CACHE PATH
 # The wheel tag pyodide checks at load; from pyodide-lock.json "info".
 set(PYODIDE_ABI "cp314" CACHE STRING "CPython ABI tag of the target pyodide")
 set(PYODIDE_PLATFORM "pyodide_2026_0_wasm32" CACHE STRING "platform tag of the target pyodide")
-set(FCX_IMAGE_VERSION "0.1" CACHE STRING "wheel version")
+# Three components, because this is what gets published: PyPI normalises
+# and compares 0.1 and 0.1.0 as the same release, and a version there can
+# never be reused, so the shipped spelling is fixed here.
+set(FCX_IMAGE_VERSION "0.1.0" CACHE STRING "wheel version")
 
 foreach(var FREECAD_GENERATED_DIR BOOST_INCLUDE_DIR PYODIDE_PYTHON_INCLUDE)
     if(NOT ${var})

@@ -1157,7 +1157,7 @@ emcmake cmake -S src/App/PyodideHost/guest -B build/pyodide-guest -G Ninja \
   -DFREECAD_GENERATED_DIR=$PWD/build/conda-relwithdebinfo-801/src \
   -DBOOST_INCLUDE_DIR=$PWD/.conda/freecad/include
 cmake --build build/pyodide-guest
-# -> build/pyodide-guest/dist/fcx_image-0.1-cp314-cp314-pyodide_2026_0_wasm32.whl
+# -> build/pyodide-guest/dist/fcx_image-0.1.0-cp314-cp314-pyodide_2026_0_wasm32.whl
 ```
 
 *** **Do NOT run this through `.conda/run.sh`.** The guest is a cross build, and
@@ -1174,7 +1174,7 @@ docs/Sandbox.md 7.31: installed workbench code is not a sandbox target.)
 
 ```sh
 $RUN cmake -S . -B build/conda-relwithdebinfo-801 \
-  -DFREECAD_FCX_IMAGE_WHEEL=$PWD/build/pyodide-guest/dist/fcx_image-0.1-cp314-cp314-pyodide_2026_0_wasm32.whl
+  -DFREECAD_FCX_IMAGE_WHEEL=$PWD/build/pyodide-guest/dist/fcx_image-0.1.0-cp314-cp314-pyodide_2026_0_wasm32.whl
 $RUN cmake --build build/conda-relwithdebinfo-801
 $RUN build/conda-relwithdebinfo-801/bin/FreeCADCmd -c \
   "import freecad.pyodide as P; print(P.install_runtime(source='github'))"

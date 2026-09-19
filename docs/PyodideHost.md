@@ -250,7 +250,7 @@ pyodide guest carries the SAME slice:
   project.  An `add_executable` with a `.so` suffix, NOT
   `add_library(MODULE)`: CMake's Emscripten platform archives a MODULE
   with emar, and an archive is not a side module.  Output:
-  `dist/fcx_image-0.1-cp314-cp314-pyodide_2026_0_wasm32.whl` (1.9 MB
+  `dist/fcx_image-0.1.0-cp314-cp314-pyodide_2026_0_wasm32.whl` (1.9 MB
   .so; the whole slice compiled against Python 3.14 headers with zero
   errors).
 
