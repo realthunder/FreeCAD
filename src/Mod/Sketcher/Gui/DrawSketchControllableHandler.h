@@ -83,8 +83,9 @@ public:
     void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
         Base::Vector2d onSketchPos = snapHandle.compute();
-        // Upstream snaps to the directional hints here; group C, the
-        // subsystem that produces them, is not ported yet.
+        if (!this->snapToTangentHint(onSketchPos)) {
+            this->snapToParallelPerpendicularHint(onSketchPos);
+        }
         toolWidgetManager.mouseMoved(onSketchPos);
 
         if (!toolWidgetManager.enforceControlParameters(onSketchPos)) {
@@ -96,8 +97,9 @@ public:
 
     bool pressButton(Base::Vector2d onSketchPos) override
     {
-        // Upstream snaps to the directional hints here too; group C, which
-        // owns them, is not ported yet.
+        if (!this->snapToTangentHint(onSketchPos)) {
+            this->snapToParallelPerpendicularHint(onSketchPos);
+        }
         // ensure controller state is initialized even if no mouseMove occurred
         // ie. when a modal dialog blocks input before the first click
         toolWidgetManager.mouseMoved(onSketchPos);

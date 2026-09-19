@@ -78,9 +78,9 @@ private:
             case SelectMode::SeekFirst: {
                 seekAndRenderAutoConstraint(sugConstraints[0], onSketchPos, Base::Vector2d(0.f, 0.f));
 
-                // Upstream offers the line-extension hint's snap point here;
-                // group C, which produces it, is not ported yet.
-                editPoint = onSketchPos;
+                Base::Vector2d snapPoint;
+                editPoint = getLineExtensionAutoConstraintSnapPoint(snapPoint) ? snapPoint
+                                                                               : onSketchPos;
 
                 toolWidgetManager.drawPositionAtCursor(editPoint);
             } break;
