@@ -2196,6 +2196,23 @@ inherits `conda-windows-release` and overrides:
 | `BUILD_FEM=ON`, `FREECAD_USE_EXTERNAL_SMESH=OFF`, `BUILD_FEM_NETGEN=OFF` | 2026-09-19: FEM builds here against the **bundled** `src/3rdParty/salomesmesh`, so it needs no `smesh` package at all -- which is what makes it reachable on this box, the `realthunder` channel being unreachable from this network. MEDFile resolves straight out of `.conda/freecad`, and `ply` must be installed there too. `BUILD_FEM_NETGEN` must stay OFF: MSVC defaults it ON, but it adds `-DFCWithNetgen` and links `NETGENPlugin`, a target only the external smesh package supplies. Linux uses the external SMESH instead |
 | `ENABLE_DEVELOPER_TESTS=ON` | as on Linux since 2026-09-04; see "Running the C++ (GoogleTest) suites" |
 
+*** **On this box the preset is the authority on build flags, not your command
+line.** `tools\build-fcad.cmd` re-runs `cmake --preset win-relwithdebinfo-local`
+before every build, and `cmake --preset` passes each `cacheVariables` entry as
+`-D` on *every* invocation -- so a flag forced by hand onto a standing tree is
+silently reverted by the next build. Measured on a throwaway project
+(2026-09-19): `cmake --preset p` gives `FOO=ON`; `cmake -S . -B b -DFOO=OFF`
+gives `FOO=OFF`; `cmake --preset p` again gives `FOO=ON`. The other half of the
+rule holds and points the opposite way: with `FOO` *removed* from
+`cacheVariables`, a changed `option()` default does not reach the existing tree
+(`-DFOO=OFF`, then `cmake --preset p`, leaves `FOO=OFF`). One mechanism, two
+halves, and which one bites depends on whether anything re-runs the preset --
+here something always does. So **put the setting in `CMakeUserPresets.json`**,
+not on the command line. Getting this backwards cost two build cycles on
+2026-09-19, when `-DBUILD_FEM=ON` was reverted twice before the value moved into
+the preset, and the build in between silently contained no FEM at all. The file
+is gitignored (`.gitignore:51`), so what it holds stays per-box.
+
 **`OCCT_CMAKE_FALLBACK` must be OFF.** The repo's `conda` preset turns it ON, which
 skips `find_package(OpenCASCADE CONFIG)` in favour of a hand-rolled search. That
 search does not know about the `libi` suffix, so `find_library` yields
