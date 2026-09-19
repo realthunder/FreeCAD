@@ -364,6 +364,15 @@ export function TaskPanelCard(props: {
       return Array.isArray(value) ? (value as unknown[]).map(String) : [];
     };
     const colCount = () => Math.max(columns().length, num(p.w, 'columnCount'), 1);
+    /// A LIST has no header. Qt's QListWidget and QListView draw none at
+    /// all, but the model still carries `columns` -- those are
+    /// QStandardItemModel's default labels, "1", "2", ... -- so trusting
+    /// `columns` alone puts a column headed "1" over Sketcher's constraint
+    /// list, which is exactly what the first live run drew.
+    const headed = () => p.w.model !== 'QListWidgetModel'
+      && p.w.model !== 'QListViewModel'
+      && p.w.state.headerHidden !== true
+      && columns().length > 0;
     const expandable = () => p.w.state.itemsExpandable !== false;
     const selected = (): number[] => {
       const value = p.w.state.selection;
@@ -449,7 +458,7 @@ export function TaskPanelCard(props: {
 
     return (
       <div class="fc-panel-rows">
-        <Show when={p.w.state.headerHidden !== true && columns().length > 0}>
+        <Show when={headed()}>
           <div class="fc-panel-row fc-panel-head-row" style={gridStyle()}>
             <span class="fc-panel-twisty" />
             <For each={columns()}>{(label) => <span>{label}</span>}</For>

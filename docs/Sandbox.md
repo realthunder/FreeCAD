@@ -52,7 +52,7 @@ runs in the guest.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W2 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test -- but NOT proven on screen: this box has no chrome/puppeteer, so panel-drive.js cannot run, and it reports rows as flat text anyway; W3 next
+    the panels in the browser (G7)  W2 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same); the Proxy-restore half that rode the same preference was REMOVED 2026-09-18 (7.31)
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -8345,7 +8345,7 @@ Then W2 to W5 as staged: the item views properly (the checks, the
 nesting, the refill coalesced), the pictures and icons, the dialogs and
 modality, and the measurement against 8.4.
 
-**W2 BUILT 2026-09-19, and NOT proven on screen.**  Four pieces.  *The
+**W2 BUILT 2026-09-19, and PROVEN on screen the same day.**  Four pieces.  *The
 store's missing ops*: it applied `clear`/`insert`/`set` and dropped
 `row`, `remove` and `sort` on the floor -- the recorded corpus carries
 none of them, because a Sketcher list never nests, never deletes a row
@@ -8386,22 +8386,56 @@ and sends them back when the desktop user selects, so a click in the
 page writes those properties.  The gate now asserts the distinction
 instead of the mistake.
 
-**What is not done.**  The on-screen check cannot run on this box: all
-three of `docs/Testing.md`'s puppeteer paths are missing
-(`~/works/sw/fcad-probes/node_modules/puppeteer-core`,
-`~/.cache/puppeteer/chrome/*`), so `scripts/panel-drive.js` has nothing
-to drive -- and it reports rows as flat text, with its `checks` coming
-from `.fc-panel-check` (the QCheckBox widget class, not an item's box),
-so it needs extending for the header, the nesting and the item checks
-before it could prove anything here.  The live scene wants a Sketcher
-panel rather than Pad's: `test_sketcher_constraints` is the recipe
-(`SketcherGui::ConstraintView`, `listWidgetConstraints`, a check on every
-row).  W2 is therefore in exactly the state W1 was in on 2026-09-16
-before its proof.  Also deliberately left: the cell colours, because the
-host sends `fg`/`bg` as QVariantLists and guessing the packing would
-paint the wrong thing; and one correction to the W1 note above -- this
-tree emits no `panel.js`, the card ships inside `inspector.js` (the
-`inspector` entry is `src/main.tsx`, 85.5 kB).
+**W2 PROVEN on screen 2026-09-19, and the write reached the sketch.**
+Pad's panel cannot show W2 -- its Profile list is flat, unchecked and
+single-column -- so `scripts/demo-sketcherpanel.py` serves Sketcher's
+edit panel instead, which carries both shapes at once: Elements, a
+`SketcherGui::ElementView` tree with five columns, and Constraints, a
+`SketcherGui::ConstraintView` list with a check on every row.
+`scripts/panel-drive.js` grew what W2 needs -- rows read STRUCTURALLY
+(header, nesting depth, the item check boxes, selection, the grid
+tracks) rather than as flat text, and `FC_PANEL_CHECK=<n>` to click the
+nth box.  The result: 12 constraint rows each with a check box, all
+checked; the Elements header drawn as `Type/Name/Reference/Flags/Mapped`
+over six real px tracks, no NaN.  **And the write went the whole way**:
+clicking the first check box in headless Chrome left the host holding
+`Constraints[0].InVirtualSpace` True, having been False before -- the
+page's `set` op through `commCustom` -> `applyItemOp` -> `emitItemOp` ->
+the real QListWidget -> Sketcher's own `itemChanged` slot -> the sketch.
+That is the op-vs-event ruling above confirmed by the machine rather
+than by argument: the event form would have gone green here and moved
+nothing.
+
+**What the screen found that the gate could not.**  *A column headed
+"1" over the constraint list.*  Qt draws no header on a QListWidget, but
+the model still carries `columns` -- those are QStandardItemModel's
+default labels -- so trusting `columns` alone invents a header for every
+list.  The view now asks the model's CLASS, not its state.  Fixed and
+re-proven in the same run.  Two blind spots remain, both named rather
+than papered over: nothing in this scene NESTS (`maxDepth` 0), so the
+twisty and the expand op are still unproven on screen, and the cell
+colours are deliberately undrawn because the host sends `fg`/`bg` as
+QVariantLists and guessing the packing would paint the wrong thing.
+
+**Two corrections to the record.**  This tree emits no `panel.js`; the
+card ships inside `inspector.js` (the `inspector` entry is
+`src/main.tsx`, 85.5 kB).  And the earlier claim here that the box had
+no chrome or puppeteer was simply wrong -- both are installed, and what
+looked like absence was a `~` and a `*` that the shell never expanded.
+The fourth knob is the one to remember: `CHROME_LIBS`, a directory
+holding a `libasound.so.2` symlink, prepended to the browser's
+`LD_LIBRARY_PATH`, because Chrome for Testing links a library this
+system does not have and there is no sudo to install it
+(`docs/Testing.md`; `docs/DevEnvironment.md` now points at it).
+
+**A note on how the scene was debugged**, since it is the first use of
+the console installed the same morning: the demo script's own
+`Console.PrintMessage` lines never reached `/tmp/fc-serve-8078.log`,
+because passing `FC_MCP_PORT` starts the MCP console and its capture
+swallows everything printed after `start()` -- the trap recorded in
+`docs/DevEnvironment.md` that same day.  They were read back out of the
+ring with the `get_log` tool, and `run_python` answered what the panel
+was doing (`setEdit -> True`, 12 constraints) without a rebuild.
 
 **Cost** (new; TypeScript unless noted):
 

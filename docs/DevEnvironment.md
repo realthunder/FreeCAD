@@ -3264,7 +3264,20 @@ carries the page, the scene stream and the blobs:
 against it is enough -- plain `puppeteer` would download a second
 Chrome. `scripts/wasm-chrome.js` is the Linux harness and its "real"
 tier is WSLg-specific, so on Windows use its headless shape:
-`--enable-unsafe-swiftshader --use-angle=swiftshader`. Two things that
+`--enable-unsafe-swiftshader --use-angle=swiftshader`.
+
+**On Linux the same harnesses need a FOURTH knob, and only
+`docs/Testing.md` carries it**: `CHROME_LIBS`, a directory holding a
+`libasound.so.2` symlink to the conda env's copy, prepended to the
+browser's `LD_LIBRARY_PATH`. Chrome for Testing links that library, the
+system does not have it, and there is no sudo to install it -- so
+without the knob the browser never starts and it reads as a broken
+harness. The full set is `PUPPETEER_PATH`, `CHROME`, `CHROME_LIBS` and
+`NODE` (emsdk's, the only node here); see Testing.md, "Setting the
+browser tooling up again". All of it is installed on this box -- a `~`
+or a `*` the shell did not expand is what makes it look otherwise.
+
+Two things that
 cost time here, both about software rendering rather than about the
 viewer:
 
